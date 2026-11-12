@@ -1,12 +1,15 @@
 """`GET /api/v1/search?q=`: the local search of the catalogue (EF-BIB-010), and with `scope=all`
 the federated search over the sources that are switched on (EF-SRC-005, EF-UX-011).
 
-Admin only, for now: a child or a member profile may not search until the visibility barrier
-(M3 L09) exists, and the family search (M3 L19) is built on it. A member or a child, or a key of
-either, is refused (403) before the index is read and before one source is asked: a remote result
-has no rating, so for a child it is never shown, and `scope=all` is not her door. The query is
-words, never FTS syntax. A federated search is continued with the `next_cursor` it gave, which
-only the same person can use, for the same query, for a short while.
+The local search answers every profile through the one filter of the catalogue (M3 L09): the
+reader's scope (an adult sees everything, a child what is rated and under her ceiling) is a
+condition of the query, so a hidden Work is neither returned nor counted, and is answered exactly
+like a Work that does not exist. A key or a token reads as its own profile, never as who issued it.
+`scope=all` stays the administrator's: a member or a child, or a key of either, is refused (403)
+before one source is asked, because a remote result has no rating and for a child it is never
+shown (the family search, M3 L19, is her door). The query is words, never FTS syntax. A federated
+search is continued with the `next_cursor` it gave, which only the same person can use, for the
+same query, for a short while.
 """
 
 from __future__ import annotations
@@ -24,8 +27,8 @@ from shelfhold.acquisition.application.federated_search import (
     FederatedPage,
     SourceReport,
 )
-from shelfhold.catalog.public import search_works
-from shelfhold.identity.public import Principal
+from shelfhold.catalog.public import search_page
+from shelfhold.identity.public import Principal, reader_scope
 from shelfhold.interfaces.http_api.auth import require_principal
 from shelfhold.interfaces.http_api.ops import refusals
 from shelfhold.interfaces.http_api.problems import ProblemError
@@ -45,6 +48,7 @@ class SearchHitOut(BaseModel):
 
 class SearchOut(BaseModel):
     items: list[SearchHitOut]
+    total: int  # the Works the reader may see that match: never more than the pages hold
 
 
 class EditionOut(BaseModel):
@@ -140,12 +144,6 @@ class FederatedOut(BaseModel):
         )  # fmt: skip
 
 
-def require_admin(principal: Annotated[Principal, Depends(require_principal)]) -> Principal:
-    if principal.role != "admin":
-        raise ProblemError("forbidden")
-    return principal
-
-
 def build_search_router(
     get_engine: Callable[[], Engine], get_ops: Callable[[], OpsServices]
 ) -> APIRouter:
@@ -153,7 +151,7 @@ def build_search_router(
 
     @router.get("/search", response_model=SearchOut | FederatedOut)
     def search(
-        admin: Annotated[Principal, Depends(require_admin)],
+        principal: Annotated[Principal, Depends(require_principal)],
         q: Annotated[str, Query(max_length=MAX_QUERY)],
         limit: Annotated[int, Query(ge=1, le=200)] = 50,
         offset: Annotated[int, Query(ge=0)] = 0,
@@ -161,15 +159,21 @@ def build_search_router(
         cursor: Annotated[str | None, Query(max_length=MAX_CURSOR)] = None,
     ) -> SearchOut | FederatedOut:
         if scope == "all":
+            if principal.role != "admin":  # before the query is read, before one source is asked
+                raise ProblemError("forbidden")
             if not q.strip():
                 raise ProblemError("validation_failed")
             with refusals():
-                page = get_ops().acquire.federated_search(q, owner=admin.user_id, cursor=cursor)
+                page = get_ops().acquire.federated_search(q, owner=principal.user_id, cursor=cursor)
             return FederatedOut.of(page)
         with get_engine().connect() as connection:
-            hits = search_works(connection, q, limit=limit, offset=offset)
+            found = search_page(
+                connection, q, limit=limit, offset=offset,
+                scope=reader_scope(connection, principal.user_id),
+            )  # fmt: skip
         return SearchOut(
-            items=[SearchHitOut(work_id=h.work_id, title=h.title, kind=h.kind) for h in hits]
+            items=[SearchHitOut(work_id=h.work_id, title=h.title, kind=h.kind) for h in found.hits],
+            total=found.total,
         )
 
     return router

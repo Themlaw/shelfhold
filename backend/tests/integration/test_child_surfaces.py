@@ -19,7 +19,6 @@ from typing import Any
 import pytest
 import sqlalchemy as sa
 from fastapi.testclient import TestClient
-from shelfhold.events.projection import project_event
 
 from shelfhold.catalog.public import (
     count_visible_works,
@@ -30,6 +29,7 @@ from shelfhold.catalog.public import (
 )
 from shelfhold.config import Settings
 from shelfhold.events.activity import ActivityEvent, Viewer
+from shelfhold.events.projection import project_event
 from shelfhold.identity.public import local_auth, reader_scope, scope_of
 from shelfhold.infrastructure.schema import platform
 from tests.auth_env import CSRF_HEADER, AuthEnv, auth_env, run_cli
@@ -47,6 +47,7 @@ ME = "/api/v1/me"
 # to a child (403), by session and by key.
 
 PUBLIC = (
+    "GET /api/v1/source",
     "POST /api/v1/auth/login",
     "POST /api/v1/auth/passkeys/login",
     "POST /api/v1/auth/passkeys/login/options",
@@ -152,7 +153,6 @@ CLOSED = (
     "POST /api/v1/shelves/{shelf_id}/destinations",
     "POST /api/v1/shelves/{shelf_id}/max-age",
     "POST /api/v1/shelves/{shelf_id}/skip-read-upgrades",
-    "GET /api/v1/source",
     "POST /api/v1/sources",
     "POST /api/v1/sources/suwayomi/recheck",
     "POST /api/v1/sources/suwayomi/reconnect",
@@ -183,15 +183,19 @@ CLOSED = (
     "POST /api/v1/works/{work_id}/rating",
 )
 
+# The one route whose body is read before its guard answers: it is given a valid one, so that the
+# refusal under test is the child's, not a validation error.
+BODIES = {"POST /api/v1/reconcile/forget-root": {"root_id": "x", "confirm": "x"}}
+
 # Surfaces that do not exist yet: the lot that builds each one adds its child case, and this
 # list is where the suite notices that the surface has arrived (the meta-test fails when a path
 # with that word shows up in the OpenAPI document).
 PENDING_SURFACES = {
-    "sse": ("L12", "stream"),
-    "thumbnails": ("L24", "thumb"),
-    "covers": ("L24", "cover"),
-    "notifications": ("L14", "notification"),
-    "opds": ("M5", "opds"),
+    "sse": ("L12", ("stream", "events")),
+    "thumbnails": ("L24", ("thumb", "thumbs", "thumbnail", "thumbnails")),
+    "covers": ("L24", ("cover", "covers")),
+    "notifications": ("L14", ("notification", "notifications")),
+    "opds": ("M5", ("opds",)),
 }
 
 SURFACES = (
@@ -283,8 +287,12 @@ def test_every_openapi_route_has_a_child_case(api: AuthEnv) -> None:
 def test_pending_surfaces_get_a_real_child_case_when_they_arrive(api: AuthEnv) -> None:
     """SSE (L12), thumbnails (L24), notifications (L14), OPDS (M5): the day a path of that
     surface shows up in the OpenAPI document, this fails until its child case is written."""
-    paths = " ".join(p for p in _routes(api.app)).lower()
-    arrived = {name: lot for name, (lot, word) in PENDING_SURFACES.items() if word in paths}
+    segments = {
+        seg for route in _routes(api.app) for seg in route.split(" ", 1)[1].lower().split("/")
+    }
+    arrived = {
+        name: lot for name, (lot, words) in PENDING_SURFACES.items() if segments & set(words)
+    }
     assert not arrived, f"surfaces that arrived without a child case: {arrived}"
 
 
@@ -324,12 +332,12 @@ def test_child_is_refused_on_every_closed_route(world: World) -> None:
     env, failures = world.env, []
     key = (
         local_auth(world.seed.engine, env.settings)
-        .create_api_key(name="kidkey", username="kid", read_only=False)
+        .create_api_key(name="kidkey", username="kid", read_only=True)
         .value
     )
     for route in CLOSED:
         method, path = _fill(route)
-        body: dict[str, Any] = {"json": {}} if method != "GET" else {}
+        body: dict[str, Any] = {"json": BODIES.get(route, {})} if method != "GET" else {}
         by_session = world.kid.request(
             method, path, headers={CSRF_HEADER: env.csrf(world.kid)}, **body
         )
@@ -365,6 +373,7 @@ def _surface_search(world: World) -> None:
         world.seed.title_of(k) for k in VISIBLE_FOR_CEILING_10
     )
     world.clean(response.text)
+    assert response.json()["total"] == len(VISIBLE_FOR_CEILING_10)  # a total never counts hidden
     nothing = world.kid.get(SEARCH, params={"q": "Zzzzqx"}).json()
     for key in HIDDEN_FROM_CEILING_10:  # a hidden Work is exactly like one that does not exist
         answer = world.kid.get(SEARCH, params={"q": world.seed.title_of(key)})
@@ -379,6 +388,7 @@ def _surface_search_pages(world: World) -> None:
     for offset in range(0, 20):
         page = world.kid.get(SEARCH, params={"q": "Tale", "limit": 1, "offset": offset}).json()
         assert len(page["items"]) <= 1
+        assert page["total"] == len(VISIBLE_FOR_CEILING_10)  # the same total on every page
         seen += [h["title"] for h in page["items"]]
         world.clean(str(page))
     assert sorted(seen) == sorted(world.seed.title_of(k) for k in VISIBLE_FOR_CEILING_10)
@@ -622,12 +632,12 @@ def test_ceiling_lowered_takes_effect_on_the_next_request(world: World) -> None:
 def test_reader_scope_comes_from_the_profile_row(world: World) -> None:
     engine = world.seed.engine
     assert reader_scope(engine, world.kid_id) == scope_of("child", 10)
-    assert reader_scope(engine, MISSING).sees_nothing  # unknown: nothing
+    assert reader_scope(engine, MISSING).kind == "none"  # unknown: nothing
     admin_id = str(
         engine.connect().execute(sa.text("SELECT id FROM user WHERE role='admin'")).scalar()
     )
     assert reader_scope(engine, admin_id).unrestricted
-    assert reader_scope(engine, None).sees_nothing  # type: ignore[arg-type]
+    assert reader_scope(engine, None).kind == "none"  # type: ignore[arg-type]
 
 
 @pytest.mark.req("EF-USR-006")

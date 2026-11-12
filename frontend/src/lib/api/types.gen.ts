@@ -109,6 +109,16 @@ export type ActivityOut = {
 };
 
 /**
+ * AddDirectlyIn
+ */
+export type AddDirectlyIn = {
+    /**
+     * Shelf Id
+     */
+    shelf_id: string;
+};
+
+/**
  * AdoptedLibraryIn
  */
 export type AdoptedLibraryIn = {
@@ -1767,6 +1777,10 @@ export type ProfileOut = {
      * Username
      */
     username: string;
+    /**
+     * Visibility
+     */
+    visibility: string;
 };
 
 /**
@@ -3038,6 +3052,26 @@ export type UnmaskedOut = {
 };
 
 /**
+ * VisibilityIn
+ */
+export type VisibilityIn = {
+    /**
+     * Visibility
+     */
+    visibility: 'private' | 'household';
+};
+
+/**
+ * VisibilityOut
+ */
+export type VisibilityOut = {
+    /**
+     * Visibility
+     */
+    visibility: string;
+};
+
+/**
  * WaitingOut
  */
 export type WaitingOut = {
@@ -3213,6 +3247,10 @@ export type ShelfholdInterfacesHttpApiSearchSearchOut = {
      * Items
      */
     items: Array<SearchHitOut>;
+    /**
+     * Total
+     */
+    total: number;
 };
 
 /**
@@ -4301,6 +4339,44 @@ export type EditionsListResponses = {
 
 export type EditionsListResponse = EditionsListResponses[keyof EditionsListResponses];
 
+export type AddDirectlyData = {
+    body: AddDirectlyIn;
+    path: {
+        /**
+         * Edition Id
+         */
+        edition_id: string;
+    };
+    query?: never;
+    url: '/api/v1/editions/{edition_id}/add-directly';
+};
+
+export type AddDirectlyErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type AddDirectlyError = AddDirectlyErrors[keyof AddDirectlyErrors];
+
+export type AddDirectlyResponses = {
+    /**
+     * Successful Response
+     */
+    200: FiledOut;
+};
+
+export type AddDirectlyResponse = AddDirectlyResponses[keyof AddDirectlyResponses];
+
 export type BackfillEstimateData = {
     body?: never;
     path: {
@@ -5302,6 +5378,72 @@ export type PutLanguagesResponses = {
 
 export type PutLanguagesResponse = PutLanguagesResponses[keyof PutLanguagesResponses];
 
+export type GetOwnVisibilityData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/me/visibility';
+};
+
+export type GetOwnVisibilityErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type GetOwnVisibilityError = GetOwnVisibilityErrors[keyof GetOwnVisibilityErrors];
+
+export type GetOwnVisibilityResponses = {
+    /**
+     * Successful Response
+     */
+    200: VisibilityOut;
+};
+
+export type GetOwnVisibilityResponse = GetOwnVisibilityResponses[keyof GetOwnVisibilityResponses];
+
+export type PutOwnVisibilityData = {
+    body: VisibilityIn;
+    path?: never;
+    query?: never;
+    url: '/api/v1/me/visibility';
+};
+
+export type PutOwnVisibilityErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type PutOwnVisibilityError = PutOwnVisibilityErrors[keyof PutOwnVisibilityErrors];
+
+export type PutOwnVisibilityResponses = {
+    /**
+     * Successful Response
+     */
+    200: VisibilityOut;
+};
+
+export type PutOwnVisibilityResponse = PutOwnVisibilityResponses[keyof PutOwnVisibilityResponses];
+
 export type GetTitleData = {
     body?: never;
     path: {
@@ -5928,6 +6070,44 @@ export type SetSourcePolicyResponses = {
 };
 
 export type SetSourcePolicyResponse = SetSourcePolicyResponses[keyof SetSourcePolicyResponses];
+
+export type SetVisibilityData = {
+    body: VisibilityIn;
+    path: {
+        /**
+         * Profile Id
+         */
+        profile_id: string;
+    };
+    query?: never;
+    url: '/api/v1/profiles/{profile_id}/visibility';
+};
+
+export type SetVisibilityErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type SetVisibilityError = SetVisibilityErrors[keyof SetVisibilityErrors];
+
+export type SetVisibilityResponses = {
+    /**
+     * Successful Response
+     */
+    200: VisibilityOut;
+};
+
+export type SetVisibilityResponse = SetVisibilityResponses[keyof SetVisibilityResponses];
 
 export type RestoreAdoptData = {
     body: ShelfholdInterfacesHttpApiOpsRestoreIn;

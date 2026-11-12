@@ -1,5 +1,7 @@
 """A migrated database with works, titles and credited names for the search tests (M3 L17)."""
 
+from datetime import UTC, datetime
+
 import sqlalchemy as sa
 
 from shelfhold.infrastructure.ids import new_ulid
@@ -40,7 +42,13 @@ def rate(h: Harness, work_id: str, age: int | None, *, adult: bool = False) -> N
     h.connection.execute(
         sa.update(catalog.work)
         .where(catalog.work.c.id == work_id)
-        .values(age_rating=age, is_adult=adult)
+        .values(
+            age_rating=age,
+            is_adult=adult,
+            rated_at=None
+            if age is None
+            else datetime(2026, 11, 1, tzinfo=UTC),  # an admin rated it
+        )
     )
 
 

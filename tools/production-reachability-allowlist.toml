@@ -178,3 +178,13 @@ symbols = [
   "shelfhold.acquisition.application.team_switch:switch_to_preferred_team",
   "shelfhold.catalog.application.service:CatalogService.prefer_team",
 ]
+
+[[allow]]
+category = "m3-l09-works-listing"
+reason = "2026-11-12 (M3 L09): the filter of what a reader may see also answers a count and a page of Works (`count_visible_works`, `list_visible_works`) and a single Work (`work_is_visible`), proved by tests against the same condition as the search and the per-user state. No route lists the Works of the catalogue yet: it comes with the `?since=` list of L11 and the library screens of the UI lots, which call these and add their child case to `test_child_surfaces`."
+until = "M3"
+symbols = [
+  "shelfhold.catalog.application.queries:count_visible_works",
+  "shelfhold.catalog.application.queries:list_visible_works",
+  "shelfhold.catalog.application.queries:work_is_visible",
+]

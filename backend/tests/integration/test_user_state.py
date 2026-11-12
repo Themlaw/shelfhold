@@ -53,9 +53,10 @@ def _works(env: AuthEnv) -> None:
     ):
         _sql(
             env,
-            "INSERT INTO work (id, kind, title, sort_title, age_rating, age_x) "
-            "VALUES (?, ?, ?, ?, ?, ?)",
+            "INSERT INTO work (id, kind, title, sort_title, age_rating, age_x, rated_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
             work_id, kind, title, title.lower(), age, x,
+            None if age is None else "2026-11-01 10:00:00",  # rated by an admin (M3 L09)
         )  # fmt: skip
     for work_id, lang, kind_, title in (
         (OK_WORK, "ja", "localized", "ある題名"),

@@ -90,6 +90,8 @@ _REFUSALS: dict[str, Callable[[], str]] = {
     "cannot_remove_self": lambda: t("profiles.cannot_remove_self"),
     "cannot_change_own_role": lambda: t("profiles.cannot_change_own_role"),
     "changed_meanwhile": lambda: t("profiles.changed_meanwhile"),
+    "invalid_visibility": lambda: t("profiles.invalid_visibility"),
+    "child_visibility_household": lambda: t("profiles.child_visibility_household"),
 }
 
 

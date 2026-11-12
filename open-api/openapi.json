@@ -170,6 +170,22 @@
         "title": "ActivityOut",
         "type": "object"
       },
+      "AddDirectlyIn": {
+        "additionalProperties": false,
+        "properties": {
+          "shelf_id": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Shelf Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "shelf_id"
+        ],
+        "title": "AddDirectlyIn",
+        "type": "object"
+      },
       "AdoptedLibraryIn": {
         "properties": {
           "kind": {
@@ -2820,6 +2836,10 @@
           "username": {
             "title": "Username",
             "type": "string"
+          },
+          "visibility": {
+            "title": "Visibility",
+            "type": "string"
           }
         },
         "required": [
@@ -2827,7 +2847,8 @@
           "username",
           "role",
           "max_age_rating",
-          "can_rate"
+          "can_rate",
+          "visibility"
         ],
         "title": "ProfileOut",
         "type": "object"
@@ -4866,6 +4887,37 @@
         "title": "UnmaskedOut",
         "type": "object"
       },
+      "VisibilityIn": {
+        "additionalProperties": false,
+        "properties": {
+          "visibility": {
+            "enum": [
+              "private",
+              "household"
+            ],
+            "title": "Visibility",
+            "type": "string"
+          }
+        },
+        "required": [
+          "visibility"
+        ],
+        "title": "VisibilityIn",
+        "type": "object"
+      },
+      "VisibilityOut": {
+        "properties": {
+          "visibility": {
+            "title": "Visibility",
+            "type": "string"
+          }
+        },
+        "required": [
+          "visibility"
+        ],
+        "title": "VisibilityOut",
+        "type": "object"
+      },
       "WaitingOut": {
         "properties": {
           "command": {
@@ -5122,10 +5174,15 @@
             },
             "title": "Items",
             "type": "array"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
           }
         },
         "required": [
-          "items"
+          "items",
+          "total"
         ],
         "title": "SearchOut",
         "type": "object"
@@ -6938,6 +6995,79 @@
         ]
       }
     },
+    "/api/v1/editions/{edition_id}/add-directly": {
+      "post": {
+        "description": "\"Ajouter directement\": the row of the truth table, then the admission of every road.\nRefused (`filed: false`, with the reason) is an answer, not an error: the Edition waits in\n\"À classer\" and the adult may ask instead.",
+        "operationId": "add_directly",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "edition_id",
+            "required": true,
+            "schema": {
+              "title": "Edition Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AddDirectlyIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FiledOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Connexion requise, ou mot de passe à confirmer (reauth-required)."
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée)."
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Détail du problème (RFC 9457)."
+          }
+        },
+        "summary": "Add Directly",
+        "tags": [
+          "shelves"
+        ]
+      }
+    },
     "/api/v1/editions/{edition_id}/backfill": {
       "get": {
         "operationId": "backfill_estimate",
@@ -8697,6 +8827,116 @@
         ]
       }
     },
+    "/api/v1/me/visibility": {
+      "get": {
+        "operationId": "get_own_visibility",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VisibilityOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Connexion requise, ou mot de passe à confirmer (reauth-required)."
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée)."
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Détail du problème (RFC 9457)."
+          }
+        },
+        "summary": "Get Own Visibility",
+        "tags": [
+          "profiles"
+        ]
+      },
+      "put": {
+        "operationId": "put_own_visibility",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VisibilityIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VisibilityOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Connexion requise, ou mot de passe à confirmer (reauth-required)."
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée)."
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Détail du problème (RFC 9457)."
+          }
+        },
+        "summary": "Put Own Visibility",
+        "tags": [
+          "profiles"
+        ]
+      }
+    },
     "/api/v1/me/works/{work_id}/title": {
       "get": {
         "operationId": "get_title",
@@ -9766,6 +10006,78 @@
           }
         },
         "summary": "Set Source Policy",
+        "tags": [
+          "profiles"
+        ]
+      }
+    },
+    "/api/v1/profiles/{profile_id}/visibility": {
+      "put": {
+        "operationId": "set_visibility",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "profile_id",
+            "required": true,
+            "schema": {
+              "title": "Profile Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VisibilityIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VisibilityOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Connexion requise, ou mot de passe à confirmer (reauth-required)."
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée)."
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Détail du problème (RFC 9457)."
+          }
+        },
+        "summary": "Set Visibility",
         "tags": [
           "profiles"
         ]

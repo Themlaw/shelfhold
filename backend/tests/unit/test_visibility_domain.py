@@ -23,7 +23,7 @@ def test_adults_see_everything_a_child_sees_up_to_the_ceiling() -> None:
     assert scope_of("admin", None).unrestricted
     assert scope_of("member", None).unrestricted
     child = scope_of("child", 12)
-    assert not child.unrestricted and child.ceiling == 12 and not child.sees_nothing
+    assert not child.unrestricted and child.ceiling == 12 and child.kind == "ceiling"
 
 
 @pytest.mark.req("EF-USR-006")
@@ -43,7 +43,7 @@ def test_adults_see_everything_a_child_sees_up_to_the_ceiling() -> None:
 )
 def test_unknown_or_malformed_profile_sees_nothing(role: object, ceiling: object) -> None:
     scope = scope_of(role, ceiling)  # type: ignore[arg-type]
-    assert scope.sees_nothing and not scope.unrestricted
+    assert scope.kind == "none" and not scope.unrestricted
 
 
 @pytest.mark.req("EF-USR-006")

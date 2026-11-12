@@ -27,6 +27,7 @@ from shelfhold.identity.application.ports import (
 )
 from shelfhold.identity.domain.policy import check_source_policy, effective_source_policy
 from shelfhold.identity.domain.roles import ProfileError
+from shelfhold.identity.domain.visibility import check_visibility, effective_visibility
 from shelfhold.infrastructure.identity_counter import DAMAGED, IdentityCounter
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.restore_notice import (
@@ -341,11 +342,12 @@ class SqlIdentityStore:
             role=row.role,
             max_age_rating=row.max_age_rating,
             can_rate=bool(row.can_rate),
+            visibility=row.visibility,
         )
 
     def profiles(self) -> Sequence[ProfileRecord]:
         columns = (_user.c.id, _user.c.username, _user.c.role, _user.c.max_age_rating,
-                   _user.c.can_rate)  # fmt: skip
+                   _user.c.can_rate, _user.c.visibility)  # fmt: skip
         with self._engine.connect() as conn:
             rows = conn.execute(sa.select(*columns).order_by(_user.c.created_at, _user.c.id)).all()
         return [self._profile_of(row) for row in rows]
@@ -423,7 +425,7 @@ class SqlIdentityStore:
                 )
             written = conn.execute(
                 sa.select(_user.c.id, _user.c.username, _user.c.role, _user.c.max_age_rating,
-                          _user.c.can_rate).where(_user.c.id == user_id)
+                          _user.c.can_rate, _user.c.visibility).where(_user.c.id == user_id)
             ).one()  # fmt: skip
             return self._profile_of(written)  # what this transaction wrote, never a later read
 
@@ -465,6 +467,40 @@ class SqlIdentityStore:
                 policy=policy,
                 effective=effective_source_policy(role, policy, family=bool(family)),
             )  # the row written, read from this transaction
+
+    def visibility_state(self, user_id: str) -> tuple[str, str | None] | None:
+        """`(role, stored visibility)` of a profile; None: no such profile."""
+        with self._engine.connect() as conn:
+            row = conn.execute(
+                sa.select(_user.c.role, _user.c.visibility).where(_user.c.id == user_id)
+            ).first()
+        return None if row is None else (row[0], row[1])
+
+    def set_visibility(
+        self,
+        user_id: str,
+        visibility: object,
+        *,
+        actor_id: str | None = None,
+        by_admin: bool = False,
+    ) -> tuple[str, str]:
+        """Store the choice of a profile: `(visibility that held, visibility that holds)`. The role
+        is read under the lock that writes, so a child just demoted or promoted meets the rule of
+        her role now (`ProfileError`: `invalid_visibility`, `child_visibility_household`).
+        `by_admin`: the caller is an admin, re-read under the same lock (`not_allowed`)."""
+        immediate = self._engine.execution_options(shelfhold_begin="BEGIN IMMEDIATE")
+        with immediate.begin() as conn:
+            if by_admin:
+                _require_admin_caller(conn, actor_id)
+            row = conn.execute(
+                sa.select(_user.c.role, _user.c.visibility).where(_user.c.id == user_id)
+            ).first()
+            if row is None:
+                raise ProfileError("not_found")
+            before = effective_visibility(row.role, row.visibility)
+            chosen = check_visibility(row.role, visibility)
+            conn.execute(sa.update(_user).where(_user.c.id == user_id).values(visibility=chosen))
+        return before, effective_visibility(row.role, chosen)
 
     def source_policy_state(
         self, user_id: str, source_key: str

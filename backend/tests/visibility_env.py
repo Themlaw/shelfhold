@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from pathlib import Path
 
 import sqlalchemy as sa
 from sqlalchemy import Engine
@@ -106,7 +107,11 @@ def _shelf(connection: sa.Connection, name: str, ceiling: int | None, allowed: l
 
 
 def seed_catalogue(env: AuthEnv, *, other_profile: str = "someone-else") -> Seed:
-    engine = create_db_engine(env.settings.database_path)
+    return seed_database(env.settings.database_path, other_profile=other_profile)
+
+
+def seed_database(path: Path, *, other_profile: str = "someone-else") -> Seed:
+    engine = create_db_engine(path)
     with engine.begin() as connection:
         kind = str(connection.execute(sa.text("SELECT key FROM work_kind LIMIT 1")).scalar_one())
         family = _shelf(connection, "Family", 13, [other_profile])  # not the kid's own id

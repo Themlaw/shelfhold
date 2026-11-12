@@ -1,4 +1,4 @@
-"""`search_works`: the Works that hold every word of a query (EF-BIB-010, EF-BIB-022).
+"""`search_page`: the Works that hold every word of a query (EF-BIB-010, EF-BIB-022).
 
 Each word is answered by the table that fits it, and the answers are intersected: a word of
 letters by the FTS5 table (prefix, diacritics and case folded), a CJK word of three characters or
@@ -12,6 +12,7 @@ from dataclasses import dataclass
 
 import sqlalchemy as sa
 
+from shelfhold.catalog.application.queries import ReaderScope, visible_works_clause
 from shelfhold.catalog.application.search.capability import SearchCapability, search_capability
 from shelfhold.catalog.application.search.query import (
     Term,
@@ -23,7 +24,7 @@ from shelfhold.catalog.application.search.tables import fts_tables
 from shelfhold.catalog.domain.sort_key import sort_key
 from shelfhold.infrastructure.schema import catalog
 
-__all__ = ["DEFAULT_LIMIT", "MAX_LIMIT", "SearchHit", "search_works"]
+__all__ = ["DEFAULT_LIMIT", "MAX_LIMIT", "SearchHit", "SearchPage", "search_page"]
 
 DEFAULT_LIMIT = 50
 MAX_LIMIT = 200
@@ -82,33 +83,35 @@ def _matching(connection: sa.Connection, terms: list[Term], caps: SearchCapabili
     return result or set()
 
 
-def search_works(
+@dataclass(frozen=True)
+class SearchPage:
+    hits: list[SearchHit]  # the page asked for
+    total: int  # the Works the reader may see that match, all pages together
+
+
+def search_page(
     connection: sa.Connection,
     query: str,
     *,
     limit: int = DEFAULT_LIMIT,
     offset: int = 0,
-    max_age: int | None = None,
-) -> list[SearchHit]:
-    """The Works whose titles or contributor names hold every word of `query`, in title order.
+    scope: ReaderScope | None = None,
+) -> SearchPage:
+    """The Works whose titles or contributor names hold every word of `query`, in title order,
+    and how many there are.
 
-    `max_age` is the ceiling of a child profile, applied here: a Work that is unrated, rated above
-    it or marked adult is not returned. L19 builds the profile's whole filter on this seam."""
+    `scope` is the reader's (`queries.visible_works_clause`, the one filter of L09): it is a
+    condition of this query, applied before the page is cut and before the total is made, so a
+    Work the reader may not see is neither returned nor counted. No scope means the whole
+    catalogue (the indexer, the CLI)."""
     terms = terms_of(query)
     if not terms:
-        return []
+        return SearchPage([], 0)
     ids = _matching(connection, terms, search_capability(connection))
     if not ids:
-        return []
+        return SearchPage([], 0)
     w = catalog.work.c
-    wanted: list[sa.ColumnElement[bool]] = []
-    if max_age is not None:
-        wanted = [
-            w.age_rating.is_not(None),
-            w.age_rating <= max_age,
-            w.age_x.is_(False),
-            w.is_adult.is_(False),
-        ]
+    wanted: list[sa.ColumnElement[bool]] = [] if scope is None else [visible_works_clause(scope)]
     langs = {
         r.work_id: r.lang
         for r in connection.execute(
@@ -125,4 +128,5 @@ def search_works(
         )
         hits += [SearchHit(r.id, r.title, r.kind, sort_key(r.title, langs.get(r.id))) for r in rows]
     hits.sort(key=lambda hit: (hit.sort_key, hit.work_id))
-    return hits[offset : offset + max(0, min(limit, MAX_LIMIT))]
+    start = max(0, offset)
+    return SearchPage(hits[start : start + max(0, min(limit, MAX_LIMIT))], len(hits))

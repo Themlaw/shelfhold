@@ -643,6 +643,8 @@ last_admin = "C'est le dernier administrateur : l'instance ne peut pas s'en pass
 cannot_remove_self = "Un profil ne se supprime pas lui-même."
 cannot_change_own_role = "Un profil ne change pas son propre rôle."
 changed_meanwhile = "Le profil a changé entre-temps : relisez-le puis recommencez."
+invalid_visibility = "La visibilité doit être « private » ou « household »."
+child_visibility_household = "Un profil enfant reste visible des parents : seule « household » est possible."
 source_policy_format = "attendu : SOURCE=add_directly|request|forbidden"
 
 [admin]

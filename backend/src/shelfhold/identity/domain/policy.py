@@ -8,7 +8,7 @@ that a source taken off the family list closes its door even if a row says other
 
 from typing import Final
 
-from shelfhold.identity.domain.roles import KNOWN_ROLES, ProfileError
+from shelfhold.identity.domain.roles import KNOWN_ROLES, ProfileError, holds_rate_right
 
 SOURCE_POLICIES: Final = ("add_directly", "request", "forbidden")
 
@@ -38,3 +38,27 @@ def effective_source_policy(role: str, stored: str | None, *, family: bool) -> s
     if role == "child" and not family:
         return "forbidden"
     return stored if stored in SOURCE_POLICIES else default_source_policy(role, family=family)
+
+
+ADD_DIRECTLY_REFUSALS: Final = ("not_an_adult", "unrated_edition", "rate_right_required")
+
+
+def add_directly_refusal(
+    role: str, *, can_rate: bool, edition_rated: bool, shelf_family: bool
+) -> str | None:
+    """The row of the truth table "adult -> Ajouter directement -> shelf" (EF-BIB-055, D14), or
+    None when nothing here stops it (the admission of the shelf still decides after).
+
+    Closed by default: only an adult adds directly. Towards a family shelf (below 18+) an Edition
+    nobody rated never goes, whoever the adult is (it waits in "À classer"); and an adult without
+    the right to classify does not choose a family shelf at all, she asks. Towards any other shelf
+    the filing is the adult's."""
+    if role not in ("admin", "member"):
+        return "not_an_adult"
+    if not shelf_family:
+        return None
+    if not edition_rated:
+        return "unrated_edition"
+    if not holds_rate_right(role, can_rate):
+        return "rate_right_required"
+    return None

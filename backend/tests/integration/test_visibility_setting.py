@@ -90,7 +90,7 @@ def test_visibility_setting_is_the_callers_own_and_session_only(api: AuthEnv) ->
     _mum, mum_id = _user(api, "mum", "member", "10.0.0.3")
     key = (
         local_auth(_engine(api), api.settings)
-        .create_api_key(name="k", username="mum", read_only=False)
+        .create_api_key(name="k", username="mum", read_only=True)
         .value
     )
     by_key = api.other_client("10.0.0.9")
@@ -138,10 +138,10 @@ def test_visibility_change_audited(api: AuthEnv) -> None:
     # the member changes her own: no audit of "someone else's"
     assert _put(api, mum, ME, {"visibility": "private"}).status_code == 200
     assert len(_audit(api, "profile.visibility_set")) == 1
-    # the next change by the admin is a second line
-    assert _put(api, api.client, path, {"visibility": "private"}).status_code == 200
+    # the next change by the admin (back to household, over her own choice) is a second line
+    assert _put(api, api.client, path, {"visibility": "household"}).status_code == 200
     assert [r[1] for r in _audit(api, "profile.visibility_set")] == [
-        f"{mum_id}|household", f"{mum_id}|private",
+        f"{mum_id}|household", f"{mum_id}|household",
     ]  # fmt: skip
 
 

@@ -32,6 +32,7 @@ from shelfhold.identity.domain.roles import (
     check_child_ceiling,
     normalise_profile,
 )
+from shelfhold.identity.domain.visibility import effective_visibility
 from shelfhold.infrastructure.ids import new_ulid
 
 Audit = Callable[[str, Principal | None, str | None], None]
@@ -185,6 +186,37 @@ class ProfileService:
         if pseudonym is None:
             raise ProfileError("not_found")
         self._audit("profile.removed", by, pseudonym)
+
+    # --- the visibility of a profile (EF-USR-016) -----------------------------------------------
+
+    def visibility_of(self, profile_id: str) -> str:
+        """What holds now for this profile (the choice, else the default of its role); an unknown
+        profile has the closed default, `private`."""
+        state = self._store.visibility_state(profile_id)
+        return "private" if state is None else effective_visibility(*state)
+
+    def set_visibility(
+        self, profile_id: str, visibility: object, *, by: Principal | None = None
+    ) -> str:
+        """Change the visibility of someone else's profile: a profile management action (an admin
+        session or the host, never a key), audited when it changes what holds. The audit line holds
+        the profile and the word, nothing else."""
+        self._manager(by)
+        self._existing(profile_id)
+        before, after = self._store.set_visibility(
+            profile_id, visibility, actor_id=self._actor_id(by), by_admin=by is not None
+        )  # fmt: skip
+        if before != after:
+            self._audit("profile.visibility_set", by, f"{profile_id}|{after}")
+        return after
+
+    def set_own_visibility(self, by: Principal, visibility: object) -> str:
+        """A person changes their own visibility: theirs to do, so no audit of "someone else's".
+        A session only: a key or a token is a program, it has no visibility to choose."""
+        if by.credential is not Credential.SESSION:
+            raise ProfileError("not_allowed")
+        _, after = self._store.set_visibility(by.user_id, visibility)
+        return after
 
     # --- the policy per source ---------------------------------------------------------------
 

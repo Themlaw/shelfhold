@@ -4,13 +4,14 @@
 of the same row take turns, and the second one merges against what the first one stamped.
 """
 
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Collection, Sequence
 from typing import Any
 
 import sqlalchemy as sa
 from sqlalchemy import Engine
 
-from shelfhold.catalog.public import RatingService, ceiling_of
+from shelfhold.catalog.public import visible_work_ids
+from shelfhold.identity.adapters.reader_scope import reader_scope
 from shelfhold.identity.application.user_state import UserStateService
 from shelfhold.identity.domain.user_state import UserFlags
 from shelfhold.infrastructure.clock import Clock, Stamped
@@ -88,30 +89,13 @@ class SqlUserStateStore:
             )
 
 
-_ADULT_ROLES = frozenset({"admin", "member"})
-
-
 def user_state_service(engine: Engine, clock: Clock) -> UserStateService:
-    rating = RatingService()
-
-    def admits(user_id: str, work_id: str) -> bool:
-        """Closed by default: only what is known to be visible is visible."""
+    def admits(user_id: str, work_ids: Collection[str]) -> set[str]:
+        """The one filter of L09: the reader's scope is read now, and the Works are asked of the
+        same condition every other surface uses. Hidden, unrated, above the ceiling and absent
+        are one answer."""
         with engine.connect() as conn:
-            user = conn.execute(
-                sa.select(identity.user.c.role, identity.user.c.max_age_rating).where(
-                    identity.user.c.id == user_id
-                )
-            ).first()
-            exists = conn.execute(
-                sa.select(catalog.work.c.id).where(catalog.work.c.id == work_id)
-            ).first()
-            if user is None or exists is None:
-                return False
-            if user.role in _ADULT_ROLES:
-                return True
-            ceiling = ceiling_of(user.max_age_rating) if user.role == "child" else None
-            age = rating.effective_age_of(conn, work_id)
-            return ceiling is not None and age is not None and age.allowed_under(ceiling)
+            return visible_work_ids(conn, reader_scope(conn, user_id), work_ids)
 
     def titles_of(work_id: str) -> tuple[str, list[tuple[str, str, str]]]:
         with engine.connect() as conn:

@@ -9,9 +9,13 @@ to classify for a child, the last admin stays.
 
 Reading the list and the policies is for the admin's session too, and nothing here carries a
 password or its hash.
+
+`visibility` (EF-USR-016, M3 L09): `PUT /api/v1/profiles/{id}/visibility` is the same management
+action (audited when it changes what holds), and `GET`/`PUT /api/v1/me/visibility` is the caller's
+own, session only: a key or a token is a program, it has no visibility to choose.
 """
 
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends, Request, Response
 from pydantic import BaseModel, ConfigDict, Field, StrictInt
@@ -22,8 +26,14 @@ from shelfhold.identity.public import (
     ProfileError,
     ProfileRecord,
     SourcePolicyRecord,
+    effective_visibility,
 )
-from shelfhold.interfaces.http_api.auth import gate_of, require_principal, reserved_action
+from shelfhold.interfaces.http_api.auth import (
+    gate_of,
+    require_principal,
+    require_session,
+    reserved_action,
+)
 from shelfhold.interfaces.http_api.problems import ProblemError
 
 PROFILES_PATH = "/api/v1/profiles"
@@ -60,12 +70,22 @@ class PolicyIn(BaseModel):
     policy: str = Field(min_length=1, max_length=32)
 
 
+class VisibilityIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    visibility: Literal["private", "household"]
+
+
+class VisibilityOut(BaseModel):
+    visibility: str  # what holds now: the choice, else the default of the role
+
+
 class ProfileOut(BaseModel):
     id: str
     username: str
     role: str
     max_age_rating: int | None
     can_rate: bool
+    visibility: str  # what holds now (EF-USR-016): `private` for an adult, `household` for a child
 
 
 class ProfileList(BaseModel):
@@ -89,6 +109,7 @@ def _out(record: ProfileRecord) -> ProfileOut:
         role=record.role,
         max_age_rating=record.max_age_rating,
         can_rate=record.can_rate,
+        visibility=effective_visibility(record.role, record.visibility),
     )
 
 
@@ -155,6 +176,19 @@ def build_profiles_router() -> APIRouter:
         )
         return _out(record)
 
+    @router.put("/{profile_id}/visibility", response_model=VisibilityOut)
+    def set_visibility(
+        request: Request,
+        profile_id: str,
+        body: VisibilityIn,
+        principal: Annotated[Principal, Depends(_UPDATE)],
+    ) -> Any:
+        chosen = run(
+            request,
+            lambda auth: auth.profile_set_visibility(profile_id, body.visibility, by=principal),
+        )
+        return VisibilityOut(visibility=chosen)
+
     @router.delete("/{profile_id}", status_code=204)
     def remove_profile(
         request: Request, profile_id: str, principal: Annotated[Principal, Depends(_REMOVE)]
@@ -189,5 +223,29 @@ def build_profiles_router() -> APIRouter:
             )
 
         return run(request, put)
+
+    return router
+
+
+def build_own_visibility_router() -> APIRouter:
+    router = APIRouter(prefix="/api/v1/me", tags=["profiles"])
+
+    @router.get("/visibility", response_model=VisibilityOut)
+    def get_own_visibility(
+        request: Request, principal: Annotated[Principal, Depends(require_session)]
+    ) -> Any:
+        return VisibilityOut(visibility=gate_of(request).auth.visibility_of(principal.user_id))
+
+    @router.put("/visibility", response_model=VisibilityOut)
+    def put_own_visibility(
+        request: Request,
+        body: VisibilityIn,
+        principal: Annotated[Principal, Depends(require_session)],
+    ) -> Any:
+        try:
+            chosen = gate_of(request).auth.set_own_visibility(principal, body.visibility)
+        except ProfileError as error:
+            raise _problem(error) from None
+        return VisibilityOut(visibility=chosen)
 
     return router

@@ -119,7 +119,7 @@ def test_child_key_and_stranger_never_reach_add_directly(api: tuple[AuthEnv, See
     assert _add(env, kid, edition, adult).status_code == 403  # a child never adds directly
     auth = local_auth(seed.engine, env.settings)
     add_profile(env, "mum", "member", "10.0.0.3")
-    key = auth.create_api_key(name="k", username="mum", read_only=False).value
+    key = auth.create_api_key(name="k", username="mum", read_only=True).value
     by_key = env.other_client("10.0.0.9").post(
         f"/api/v1/editions/{edition}/add-directly",
         json={"shelf_id": adult},

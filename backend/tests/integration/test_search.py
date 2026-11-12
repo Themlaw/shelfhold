@@ -14,11 +14,11 @@ from shelfhold.catalog.public import (
     index_work,
     rebuild_search_index,
     search_capability,
-    search_works,
+    search_page,
     sync_search_index,
 )
 from shelfhold.config import Settings
-from shelfhold.identity.public import local_auth
+from shelfhold.identity.public import local_auth, scope_of
 from shelfhold.infrastructure.db import create_db_engine
 from tests.auth_env import PASSWORD, AuthEnv, auth_env, db_rows, run_cli
 from tests.catalog_env import Harness, harness
@@ -32,7 +32,7 @@ def h() -> Iterator[Harness]:
 
 
 def _ids(h: Harness, query: str, **kwargs: object) -> list[str]:
-    return [hit.work_id for hit in search_works(h.connection, query, **kwargs)]  # type: ignore[arg-type]
+    return [hit.work_id for hit in search_page(h.connection, query, **kwargs).hits]  # type: ignore[arg-type]
 
 
 def _library(h: Harness) -> dict[str, str]:
@@ -190,9 +190,12 @@ def test_search_filters_child_at_query_not_index(h: Harness) -> None:
     sync_search_index(h.connection)
     assert len(index_rows(h)) == 8  # all four, in both tables: the index holds no filter
     assert set(_ids(h, "dragon")) == {kids, teen, adult, unrated}
-    assert _ids(h, "dragon", max_age=8) == [kids]  # unrated and above the ceiling: not there
-    assert set(_ids(h, "dragon", max_age=16)) == {kids, teen}
-    assert _ids(h, "dragon", max_age=0) == []
+    child = scope_of
+    assert _ids(h, "dragon", scope=child("child", 8)) == [kids]  # unrated, above: not there
+    assert set(_ids(h, "dragon", scope=child("child", 16))) == {kids, teen}
+    assert _ids(h, "dragon", scope=child("child", 0)) == []
+    assert set(_ids(h, "dragon", scope=child("member", None))) == {kids, teen, adult, unrated}
+    assert _ids(h, "dragon", scope=child("ghost", None)) == []  # an unknown profile sees nothing
 
 
 ATTACKS = [
@@ -292,33 +295,37 @@ def _key_of(api: AuthEnv, username: str) -> str:
         engine.dispose()
 
 
-@pytest.mark.req("EF-BIB-010")
-def test_search_api_is_admin_only_until_the_visibility_barrier(
+@pytest.mark.req("EF-BIB-010", "EF-USR-006")
+def test_search_api_answers_each_profile_through_the_one_filter(
     monkeypatch: pytest.MonkeyPatch, api: AuthEnv
 ) -> None:
+    """Since M3 L09 every profile searches: an adult the whole catalogue, a child what is rated and
+    under her ceiling (the seeded Work is unrated: she gets nothing, like a title that does not
+    exist), a key as its own profile. `scope=all` stays the administrator's."""
     _seed_users(api)
     assert run_cli(monkeypatch, api.settings, "search", "rebuild") == 0
     assert api.login().status_code == 200
     ok = api.client.get("/api/v1/search", params={"q": "quiet"})
     assert ok.status_code == 200
     assert [hit["title"] for hit in ok.json()["items"]] == ["Quiet Gardens"]
+    expected = {"member": ["Quiet Gardens"], "kid": []}
     for username in ("member", "kid"):
         client = api.other_client("10.0.0.20")
         assert api.login(username, PASSWORD, client=client).status_code == 200
-        denied = client.get("/api/v1/search", params={"q": "quiet"})
-        assert denied.status_code == 403, username
-        assert "Quiet" not in denied.text
+        answer = client.get("/api/v1/search", params={"q": "quiet"})
+        assert answer.status_code == 200, username
+        assert [hit["title"] for hit in answer.json()["items"]] == expected[username]
         key = _key_of(api, username)
         by_key = api.other_client("10.0.0.21").get(
             "/api/v1/search", params={"q": "quiet"}, headers={"Authorization": f"Bearer {key}"}
         )
-        assert by_key.status_code == 403 and "Quiet" not in by_key.text
+        assert by_key.status_code == 200
+        assert [hit["title"] for hit in by_key.json()["items"]] == expected[username]
+        wide = client.get("/api/v1/search", params={"q": "quiet", "scope": "all"})
+        assert wide.status_code == 403 and "Quiet" not in wide.text
     assert api.other_client("10.0.0.22").get(
         "/api/v1/search", params={"q": "quiet"}
-    ).status_code in (
-        401,
-        403,
-    )
+    ).status_code in (401, 403)
 
 
 @pytest.mark.req("EF-BIB-010")

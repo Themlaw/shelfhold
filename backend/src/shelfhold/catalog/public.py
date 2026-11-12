@@ -97,6 +97,19 @@ from shelfhold.catalog.application.merge import (
 from shelfhold.catalog.application.new_edition_gate import Filing, file_new_edition
 from shelfhold.catalog.application.places import place_key
 from shelfhold.catalog.application.ports import StoredVariant
+from shelfhold.catalog.application.queries import (
+    ReaderScope,
+    VisibleWork,
+    count_visible_works,
+    list_visible_works,
+    visible_edition_ids,
+    visible_editions_clause,
+    visible_series_ids,
+    visible_unit_ids,
+    visible_work_ids,
+    visible_works_clause,
+    work_is_visible,
+)
 from shelfhold.catalog.application.rating import (
     EditionSuggestion,
     RatingRefusedError,
@@ -133,9 +146,10 @@ from shelfhold.catalog.application.rights import Rights, RightsReport
 from shelfhold.catalog.application.search import (
     SearchCapability,
     SearchHit,
+    SearchPage,
     index_work,
     search_capability,
-    search_works,
+    search_page,
 )
 from shelfhold.catalog.application.search import (
     ensure_tables as ensure_search_tables,
@@ -434,6 +448,7 @@ __all__ = [
     "RatingRefusedError",
     "RatingResult",
     "RatingService",
+    "ReaderScope",
     "Refiling",
     "RelatedWork",
     "RelationError",
@@ -452,6 +467,7 @@ __all__ = [
     "RightsService",
     "SearchCapability",
     "SearchHit",
+    "SearchPage",
     "SeriesAlreadyAttachedError",
     "StaleMergePlanError",
     "StoredExternalId",
@@ -464,6 +480,7 @@ __all__ = [
     "UnsupportedFileError",
     "VariantFacts",
     "Verdict",
+    "VisibleWork",
     "Withdrawal",
     "add_external_id",
     "admission",
@@ -475,6 +492,7 @@ __all__ = [
     "check_before_fallback",
     "check_coverage",
     "content_warning_age",
+    "count_visible_works",
     "default_registry",
     "detect_suwayomi_migrations",
     "edit_field",
@@ -489,6 +507,7 @@ __all__ = [
     "ingest_isolated",
     "is_age_field",
     "join_people",
+    "list_visible_works",
     "lock_current",
     "lock_field",
     "normalize_external_id",
@@ -513,7 +532,7 @@ __all__ = [
     "remove_from_search_index",
     "renumber_external_id",
     "search_capability",
-    "search_works",
+    "search_page",
     "sort_key",
     "stored_bounds",
     "stored_date",
@@ -526,4 +545,11 @@ __all__ = [
     "unlock_field",
     "unrelate_works",
     "verify_item",
+    "visible_edition_ids",
+    "visible_editions_clause",
+    "visible_series_ids",
+    "visible_unit_ids",
+    "visible_work_ids",
+    "visible_works_clause",
+    "work_is_visible",
 ]

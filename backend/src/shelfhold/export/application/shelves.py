@@ -53,7 +53,7 @@ from shelfhold.export.domain.path_map import (
     PathMode,
     clean_absolute,
 )
-from shelfhold.identity.public import AuditEntry, audit_insert
+from shelfhold.identity.public import AuditEntry, add_directly_refusal, audit_insert
 from shelfhold.infrastructure.clock import Clock, SystemClock
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import catalog, export
@@ -304,6 +304,20 @@ class ShelfService:
         ).first()
         return elsewhere is not None
 
+    def _file(self, connection: Connection, edition_id: str, shelf_id: str) -> FileResult:
+        """The admission every road uses, in the caller's transaction (nothing is audited here)."""
+        if self._library_taken(connection, edition_id, shelf_id):
+            return FileResult(False, TAKEN)
+        verdict = self._rating.admission_of(connection, edition_id, shelf_id=shelf_id)
+        if verdict is not Admission.ALLOWED:
+            return FileResult(False, verdict.value)
+        connection.execute(
+            sa.update(catalog.edition)
+            .where(catalog.edition.c.id == edition_id)
+            .values(shelf_id=shelf_id)
+        )
+        return FileResult(True)
+
     def file_edition(
         self, edition_id: str, shelf_id: str, *, actor: Actor | None = None
     ) -> FileResult:
@@ -311,18 +325,49 @@ class ShelfService:
         below 18+ takes it only once an admin rated it and nothing suggests more. A shelf that aims
         at a remote library already holding the Edition under another shelf refuses it."""
         with self._immediate().begin() as connection:
-            if self._library_taken(connection, edition_id, shelf_id):
-                return FileResult(False, TAKEN)
-            verdict = self._rating.admission_of(connection, edition_id, shelf_id=shelf_id)
-            if verdict is not Admission.ALLOWED:
-                return FileResult(False, verdict.value)
-            connection.execute(
-                sa.update(catalog.edition)
-                .where(catalog.edition.c.id == edition_id)
-                .values(shelf_id=shelf_id)
+            result = self._file(connection, edition_id, shelf_id)
+            if result.filed:
+                self._audit(
+                    connection, actor, "edition.file", f"edition:{edition_id};shelf:{shelf_id}"
+                )
+        return result
+
+    def add_directly(
+        self,
+        edition_id: str,
+        shelf_id: str,
+        *,
+        role: str,
+        can_rate: bool,
+        actor: Actor | None = None,
+    ) -> FileResult:
+        """ "Ajouter directement" by a person (EF-BIB-055, M3 L09): the row of the truth table
+        first (`add_directly_refusal`: an Edition nobody rated never goes to a family shelf, and an
+        adult without the right to classify does not choose one), then the admission every road
+        uses. A refusal is audited, with the Edition and the shelf; the Edition stays where it was
+        (unrated: unfiled, waiting in "À classer"). `LookupError`: no such Edition or shelf."""
+        with self._immediate().begin() as connection:
+            ceiling = connection.execute(
+                sa.select(export.shelf.c.max_age_rating).where(export.shelf.c.id == shelf_id)
+            ).first()
+            rated = connection.execute(
+                sa.select(catalog.edition.c.rated_at).where(catalog.edition.c.id == edition_id)
+            ).first()
+            if ceiling is None or rated is None:
+                raise LookupError("no such Edition or shelf")
+            reason = add_directly_refusal(
+                role, can_rate=can_rate, edition_rated=rated[0] is not None,
+                shelf_family=is_family(ceiling[0]),
+            )  # fmt: skip
+            result = (
+                FileResult(False, reason)
+                if reason
+                else self._file(connection, edition_id, shelf_id)
             )
-            self._audit(connection, actor, "edition.file", f"edition:{edition_id};shelf:{shelf_id}")
-        return FileResult(True)
+            target = f"edition:{edition_id};shelf:{shelf_id}"
+            action = "edition.add_directly" if result.filed else "edition.add_directly_refused"
+            self._audit(connection, actor, action, target)
+        return result
 
     def file_default(self, edition_id: str, *, actor: Actor | None = None) -> FileResult:
         """File an Edition that sits nowhere on the shelf its kind proposes. The door is the one of
