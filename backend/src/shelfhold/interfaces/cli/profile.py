@@ -12,11 +12,12 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from collections.abc import Callable
 
 from shelfhold.i18n import t
 from shelfhold.identity.domain.policy import SOURCE_POLICIES
 from shelfhold.identity.public import ProfileError, ProfileRecord
-from shelfhold.interfaces.cli.admin import _command, _password_error, _read_password
+from shelfhold.interfaces.cli.admin import _command, _read_password
 from shelfhold.interfaces.local_cli import IdentityCommands
 
 ROLES = ("member", "child", "admin")
@@ -71,8 +72,38 @@ def _fail(message: str) -> int:
     return 1
 
 
+# One literal key per code: the catalogue test reads the keys, and the message never holds more
+# than the catalogue's own text (nothing typed, nothing read from the password file).
+_REFUSALS: dict[str, Callable[[], str]] = {
+    "not_allowed": lambda: t("profiles.not_allowed"),
+    "not_found": lambda: t("profiles.not_found"),
+    "invalid_role": lambda: t("profiles.invalid_role"),
+    "invalid_policy": lambda: t("profiles.invalid_policy"),
+    "child_requires_max_age": lambda: t("profiles.child_requires_max_age"),
+    "max_age_only_for_child": lambda: t("profiles.max_age_only_for_child"),
+    "child_cannot_rate": lambda: t("profiles.child_cannot_rate"),
+    "child_source_not_family": lambda: t("profiles.child_source_not_family"),
+    "ceiling_above_creator": lambda: t("profiles.ceiling_above_creator"),
+    "username_taken": lambda: t("profiles.username_taken"),
+    "too_many_admins": lambda: t("profiles.too_many_admins"),
+    "last_admin": lambda: t("profiles.last_admin"),
+    "cannot_remove_self": lambda: t("profiles.cannot_remove_self"),
+    "cannot_change_own_role": lambda: t("profiles.cannot_change_own_role"),
+    "changed_meanwhile": lambda: t("profiles.changed_meanwhile"),
+}
+
+
 def _refusal(error: ProfileError) -> int:
-    return _fail(t(f"profiles.{error.code}"))
+    return _fail(_REFUSALS.get(error.code, _REFUSALS["not_allowed"])())
+
+
+def _bad_secret_shape(exc: ValueError) -> int:
+    """Only the kind of refusal, chosen from fixed texts: never the value that was refused."""
+    if str(exc) == "invalid_username":
+        return _fail(t("admin.invalid_username"))
+    if str(exc) == "password_too_long":
+        return _fail(t("admin.password_too_long"))
+    return _fail(t("admin.password_too_short"))
 
 
 def _profile(auth: IdentityCommands, username: str) -> ProfileRecord | None:
@@ -85,7 +116,7 @@ def run_add(args: argparse.Namespace, auth: IdentityCommands) -> int:
     try:
         password = _read_password(args.password_file)
     except (OSError, UnicodeDecodeError) as exc:
-        return _fail(t("admin.password_unreadable", detail=exc))
+        return _fail(t("admin.password_unreadable", detail=type(exc).__name__))
     try:
         auth.profile_add(
             args.username, password, args.role, max_age_rating=args.max_age,
@@ -94,7 +125,7 @@ def run_add(args: argparse.Namespace, auth: IdentityCommands) -> int:
     except ProfileError as error:
         return _refusal(error)
     except ValueError as exc:
-        return _fail(_password_error(exc))
+        return _bad_secret_shape(exc)
     print(t("profiles.created", username=args.username.strip()))
     return 0
 

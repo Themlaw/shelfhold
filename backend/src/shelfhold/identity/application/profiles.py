@@ -59,7 +59,7 @@ class ProfileService:
         Otherwise the host socket or a session of an admin the database still holds as one."""
         if by is None:
             return None
-        if by.credential is Credential.LOCAL_CLI:
+        if by.is_host:
             if by.role != "admin":
                 raise ProfileError("not_allowed")
             return by

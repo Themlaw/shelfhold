@@ -51,8 +51,12 @@ def test_cli_profile_add_list_set_remove_with_the_server_stopped(
     assert run_cli(monkeypatch, stopped, *add, "mum", "--role", "member") == 0
     assert run_cli(monkeypatch, stopped, *add, "kid", "--role", "child", "--max-age", "10") == 0
     assert run_cli(monkeypatch, stopped, *add, "kid2", "--role", "child") == 1  # no ceiling
-    assert run_cli(monkeypatch, stopped, *add, "kid3", "--role", "child", "--max-age", "10",
-                   "--can-rate") == 1  # fmt: skip
+    assert (
+        run_cli(
+            monkeypatch, stopped, *add, "kid3", "--role", "child", "--max-age", "10", "--can-rate"
+        )
+        == 1
+    )
     assert run_cli(monkeypatch, stopped, *add, "mum", "--role", "member") == 1  # taken
     with pytest.raises(SystemExit):  # argparse refuses an unknown role
         run_cli(monkeypatch, stopped, *add, "bad", "--role", "ghost")
@@ -145,3 +149,37 @@ def test_the_socket_answers_a_refusal_with_its_code_and_never_a_password(
         )
     assert call(socket, "identity.profile_list", {})
     assert [r[0] for r in _rows(running.settings)] == [ADMIN]
+
+
+@pytest.mark.req("EF-USR-005", "ENF-SEC-008")
+def test_cli_never_prints_the_password_nor_what_was_refused(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], stopped: Settings
+) -> None:
+    for secret, role in (("tiny", "member"), (PASSWORD, "child")):
+        path = stopped.data_dir.parent / "leak.password"
+        path.write_text(secret + "\n", encoding="utf-8")
+        path.chmod(0o600)
+        capsys.readouterr()
+        # too short, then a refusal of the rules (a child without ceiling)
+        assert (
+            run_cli(
+                monkeypatch,
+                stopped,
+                "profile",
+                "add",
+                "--password-file",
+                str(path),
+                "leaky",
+                "--role",
+                role,
+            )
+            == 1
+        )
+        captured = capsys.readouterr()
+        assert secret not in captured.out + captured.err
+    unreadable = stopped.data_dir.parent / "missing.password"
+    assert (
+        run_cli(monkeypatch, stopped, "profile", "add", "--password-file", str(unreadable), "leaky")
+        == 1
+    )
+    assert str(unreadable) not in capsys.readouterr().err
