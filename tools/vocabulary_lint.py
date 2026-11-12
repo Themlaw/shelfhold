@@ -29,7 +29,16 @@ NAMED = re.compile(r"gutenberg|standard\s+ebooks", re.IGNORECASE)
 BANNED = re.compile(r"sources?\s+l[ée]gales?", re.IGNORECASE)
 REQUIRED = re.compile(r"aux\s+[ÉE]tats-Unis", re.IGNORECASE)
 CATALOGS = ("backend/src/shelfhold/locales/fr.toml", "frontend/src/lib/i18n/fr.json")
-DOCS = ("README.md", "ROADMAP.md", "docs/admin", "docs/legal", "docs/governance", "docs/reference")
+DOCS = (
+    "README.md",
+    "ROADMAP.md",
+    "docs/admin",
+    "docs/legal",
+    "docs/governance",
+    "docs/reference",
+    "docs/plugins",
+    "docs/famille",
+)
 PROXY = re.compile(r"\bprox(?:y|ies)\b", re.IGNORECASE)
 CIRCUMVENTION = re.compile(
     r"contourn|d[ée]bloqu|\bbloqu[ée]e?s?\b|blocage|censu[r]|g[ée]o-?(?:restr|bloc)|interdit"

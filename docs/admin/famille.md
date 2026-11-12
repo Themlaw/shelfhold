@@ -107,3 +107,6 @@ d'une Œuvre non classée **restent lisibles là où ils sont**, jusqu'à ce que
 (`shelfhold rate`) ou les retiriez (`shelf withdraw`). L'aperçu de `shelfhold adopt` le dit, et le suivi
 de ces Œuvres est suspendu (`follow_suspended`) : aucun nouveau chapitre n'est demandé avant le
 classement.
+
+La page à donner à ceux qui lisent : [../famille/README.md](../famille/README.md). Pour lire avec OPDS et savoir
+ce qui se télécharge, voir [clients.md](clients.md).

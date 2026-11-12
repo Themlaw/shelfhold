@@ -1,0 +1,43 @@
+name: Rapport d'appareil
+description: Dire ce qui marche (ou non) sur un appareil de lecture
+labels: ["appareil"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **Rappel : pas de nom de site, pas de lien vers du contenu non autorisé, pas de clé OPDS.** Ce rapport alimente la matrice de `docs/admin/clients.md`. Une case n'y passe de « non vérifié » à un fait que si vous donnez les éléments ci-dessous.
+  - type: input
+    id: appareil
+    attributes:
+      label: Appareil et version du système
+      description: Modèle de la liseuse, du téléphone ou de la tablette.
+    validations:
+      required: true
+  - type: input
+    id: client
+    attributes:
+      label: Client utilisé
+      description: Navigateur, KOReader, Kover, autre client OPDS, avec sa version.
+    validations:
+      required: true
+  - type: textarea
+    id: useragent
+    attributes:
+      label: User-Agent relevé
+      description: Pour information seulement ; l'interface n'en tient pas compte.
+  - type: dropdown
+    id: hors-ligne
+    attributes:
+      label: Téléchargement depuis Kavita pour lire sans réseau
+      options: [Fonctionne, Ne fonctionne pas, Non essayé]
+    validations:
+      required: true
+  - type: textarea
+    id: restreint
+    attributes:
+      label: Compte restreint (OPDS)
+      description: Une série réservée aux adultes apparaît-elle avec l'adresse OPDS d'un compte d'enfant ?
+  - type: textarea
+    id: details
+    attributes:
+      label: Formats d'image et remarques

@@ -1,0 +1,11 @@
+[project]
+name = "shelfhold-plugin-gabarit"
+version = "0.1.0"
+description = "Gabarit de source Shelfhold"
+requires-python = ">=3.13"
+license = "AGPL-3.0-or-later"
+# Le SDK est celui de ce dépôt (`shelfhold.sdk`) tant que `shelfhold-sdk` n'est pas publié (M6).
+dependencies = []
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
