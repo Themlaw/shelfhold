@@ -140,6 +140,16 @@ class DataFolder:
     def names(self) -> list[str]:
         return os.listdir(self._fd)
 
+    def is_regular(self, name: str) -> bool:
+        """`name` is a regular file of the folder, not a link, a folder or a special file (nothing
+        is opened or read)."""
+        if not name or "/" in name or name in (".", ".."):
+            return False
+        try:
+            return stat.S_ISREG(os.stat(name, dir_fd=self._fd, follow_symlinks=False).st_mode)
+        except OSError:
+            return False
+
     def read(self, name: str, limit: int) -> bytes:
         """The regular file `name` of the folder, never through a link, at most `limit` bytes.
         `ValueError` for a link, a special file or a name that is not plain."""

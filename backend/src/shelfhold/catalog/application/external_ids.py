@@ -90,11 +90,29 @@ def renumber_external_id(
 ) -> None:
     """A provider renumbered: add the new value, mark the old one `superseded`, overwrite nothing.
 
-    Applying the same renumbering again changes nothing."""
+    Applying the same renumbering again changes nothing. A value to itself, or
+    back to one the entity already superseded (the table is append-only, so it could not be
+    `current` again), is refused: the entity would be left with no current identifier."""
     clean_old = _clean(old)
     new = _clean(ExternalId(old.entity_type, old.provider, new_value, old.id_scheme))
-    add_external_id(connection, entity_id, new, origin=origin)
+    if (clean_old.entity_type, clean_old.provider, clean_old.value) == (
+        new.entity_type, new.provider, new.value,
+    ):  # fmt: skip
+        raise ExternalIdConflictError(new, entity_id)
     table = catalog.external_id
+    back = (
+        connection.execute(  # the table is append-only: a superseded value is never current again
+            sa.select(table.c.state).where(
+                table.c.entity_type == new.entity_type,
+                table.c.provider == new.provider,
+                table.c.value == new.value,
+                table.c.entity_id == entity_id,
+            )
+        ).scalar()
+    )
+    if back == "superseded":
+        raise ExternalIdConflictError(new, entity_id)
+    add_external_id(connection, entity_id, new, origin=origin)
     connection.execute(
         sa.update(table)
         .where(

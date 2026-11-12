@@ -33,7 +33,9 @@ from shelfhold.ops.attach import AttachOps
 from shelfhold.ops.backfill import BackfillOps
 from shelfhold.ops.content import ContentOps
 from shelfhold.ops.edition_merge import EditionMergeOps
+from shelfhold.ops.editions import EditionOps
 from shelfhold.ops.events import BusTargetEvents
+from shelfhold.ops.export_item import ExportItemOps
 from shelfhold.ops.follows import FollowOps
 from shelfhold.ops.import_folder import ImportOps
 from shelfhold.ops.intents import IntentOps
@@ -43,6 +45,7 @@ from shelfhold.ops.library import LibraryOps
 from shelfhold.ops.meta import MetaOps
 from shelfhold.ops.normalize import NormalizeOps
 from shelfhold.ops.rating import RatingOps
+from shelfhold.ops.resplit import ResplitOps
 from shelfhold.ops.restore import RestoreCredentialsExit, RestoreGuardExit
 from shelfhold.ops.revisions import RevisionOps
 from shelfhold.ops.roots import RootOps
@@ -145,7 +148,8 @@ def open_ops(
             engine, clock, bus, fresh_auth_s=settings.fresh_auth_s,
             screens=CatalogScreens(composition),
         ),
-        edition_merge=EditionMergeOps(composition),
+        edition_merge=EditionMergeOps(composition), editions=EditionOps(composition),
+        resplit=ResplitOps(composition), export_items=ExportItemOps(composition),
         follows=FollowOps(composition), acquire=AcquireOps(composition), roots=RootOps(composition),
         window=MaintenanceWindow.from_text(
             settings.maintenance_window_start, settings.maintenance_window_end, settings.timezone

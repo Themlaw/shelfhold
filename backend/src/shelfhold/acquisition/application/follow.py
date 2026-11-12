@@ -74,6 +74,7 @@ from shelfhold.acquisition.application.tickets import (
     Sleep,
     TicketReport,
 )
+from shelfhold.acquisition.application.volume_cut import cut_volumes
 from shelfhold.acquisition.domain.backfill import BackfillMode
 from shelfhold.acquisition.domain.failures import Disposition, classify, disposition_of
 from shelfhold.acquisition.domain.filters import DEFAULT_NEWS_CAP, parse_filters
@@ -102,7 +103,7 @@ from shelfhold.catalog.public import (
     stored_date,
 )
 from shelfhold.events.bus import EventBus, PublishedEvent
-from shelfhold.export.public import attach_to_volume
+from shelfhold.export.public import adopted_volumes, attach_to_volume
 from shelfhold.infrastructure.clock import Clock, FutureDateError, reject_future
 from shelfhold.infrastructure.content_trust import sanitize_upstream_text
 from shelfhold.infrastructure.follow_suspended import suspended_work_ids
@@ -306,6 +307,7 @@ class FollowCycle:
         )  # fmt: skip
         self._pending: list[PublishedEvent] = []
         self._caps = (service_cap, key_cap)
+        self._held: dict[str, int] = {}
         self._prefs = TeamPreference(inactive_months=inactive_months)
         self._fallback = Fallback(self._emit, return_to_origin=fallback_return)
         self._fallback_return = fallback_return
@@ -328,6 +330,8 @@ class FollowCycle:
         self._keep_range = keep_range  # the host store of a ranged file (EF-SRC-032)
         self._ranged: dict[str, list[UnitInfo]] = {}  # listing of the ranged series, this cycle
         self._ranged_ids: dict[str, frozenset[str]] = {}  # their Units under a volume's file
+        self._cut_ids: dict[str, frozenset[str]] = {}  # of those, the ones whose volume is ours
+        self._cut_waiting: dict[str, frozenset[str]] = {}  # ... and the ones the policy holds back
         self._left_out: dict[str, list[str]] = {}
         self._listed: dict[str, list[UnitInfo]] = {}  # discovered now: the listing already read
         self._notices = Notices(clock)
@@ -447,7 +451,7 @@ class FollowCycle:
         self._unloaded = unloaded
         present = self._reconcile_library(in_library, report)
         self._rank_fallback(unloaded, report)
-        budget = RequestBudget(*self._caps)
+        budget = RequestBudget(*self._caps, held=self._held)
         self._series_taken = {}
         self._asked_units = set()
         self._capped = set()
@@ -474,6 +478,7 @@ class FollowCycle:
             await self._discover_isolated(binding, report, budget)
         self._fill(followed, budget, report)
         await self._ranges(followed, budget, report)
+        self._held = budget.holds  # what a waiting volume keeps free, for the next cycle only
         self._watch_gaps(followed, report)
         started = self._clock.now()
         report.tickets = await self._tickets.advance()
@@ -598,9 +603,10 @@ class FollowCycle:
                     )
                 }
                 units = []
+                held_back = self._cut_waiting.get(binding.id, frozenset())
                 for i in infos:
                     held = by_remote.get(i.remote_unit_id)
-                    if held is None:
+                    if held is None or i.remote_unit_id in held_back:  # held back by the policy
                         continue
                     if refusals(connection, binding.edition_id, held[0], {held[1]}):
                         continue  # filtered: a range never carries it (EF-SRC-039)
@@ -869,6 +875,26 @@ class FollowCycle:
                     )  # fmt: skip
             log.warning("follow.series_skipped", binding_id=binding.id, failure_class=failure_class)
 
+    def _cut(self, binding: _Binding, units: list[UnitInfo]) -> list[UnitInfo]:
+        """A source that names no volumes: the novel is cut by the size and the policy of the
+        Edition (EF-SRC-032, EF-BIB-040, D5)."""
+        edition = catalog.edition
+        with self._engine.connect() as connection:
+            row = connection.execute(
+                sa.select(edition.c.volume_policy, edition.c.volume_size,
+                          edition.c.upstream_status).where(edition.c.id == binding.edition_id)
+            ).first()  # fmt: skip
+            adopted = bool(adopted_volumes(connection, binding.edition_id))
+        if row is None:
+            return units
+        cut = cut_volumes(
+            units, policy=row.volume_policy, size=row.volume_size, cap=self._caps[1],
+            finished=row.upstream_status == "finished", adopted=adopted,
+        )  # fmt: skip
+        self._cut_ids[binding.id] = cut.cut
+        self._cut_waiting[binding.id] = cut.waiting
+        return cut.infos
+
     async def _discover(
         self, binding: _Binding, report: FollowReport, budget: RequestBudget
     ) -> None:
@@ -880,6 +906,7 @@ class FollowCycle:
             self._left_out[binding.remote_id] = self._take_quarantined()
         self._quarantine(binding)
         if self._is_ranged():
+            units = self._cut(binding, units)
             self._ranged[binding.id] = units
             self._ranged_ids[binding.id] = frozenset(
                 u.remote_unit_id for u in units if u.volume_label
@@ -1012,9 +1039,14 @@ class FollowCycle:
         caps leave no room (the next cycle asks) or another team offers the same chapter (elected
         once the whole listing is read). A chapter named `Vol.N` that an adopted volume N holds is
         under that volume (EF-BIB-044): nothing is asked for it."""
-        if info.volume_label and attach_to_volume(
-            connection, look.binding.edition_id, result.unit_id, info.volume_label
-        ):
+        ours = info.remote_unit_id in self._cut_ids.get(look.binding.id, ())
+        if (
+            info.volume_label
+            and not ours
+            and attach_to_volume(
+                connection, look.binding.edition_id, result.unit_id, info.volume_label
+            )
+        ):  # a volume of ours is no `Vol.N` of an adopted file: it never joins one
             return
         if info.volume_label and self._is_ranged():
             return  # the file of its volume carries it: the range request asks, not the chapter

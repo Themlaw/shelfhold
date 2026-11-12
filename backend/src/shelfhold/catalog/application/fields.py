@@ -35,6 +35,7 @@ from shelfhold.sdk.metadata import FieldProposal
 __all__ = [
     "ADMIN_PROVIDER",
     "FieldReport",
+    "lock_current",
     "lock_field",
     "propose_fields",
     "read_field",
@@ -176,6 +177,15 @@ def lock_field(connection: Connection, key: FieldKey, value: object, *, now: dat
     _write(
         connection, key, StoredField(encode_value(value), ADMIN_PROVIDER, "manual", None, True, now)
     )
+
+
+def lock_current(connection: Connection, key: FieldKey) -> bool:
+    """Lock the value that is stored, whoever gave it: its provider and provenance are kept.
+    `False` when nothing is stored for that field (there is nothing to lock)."""
+    done = connection.execute(
+        sa.update(catalog.metadata_field).where(_where(key)).values(locked=True)
+    )
+    return bool(done.rowcount)
 
 
 def unlock_field(connection: Connection, key: FieldKey) -> bool:

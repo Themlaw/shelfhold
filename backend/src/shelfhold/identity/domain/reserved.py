@@ -59,6 +59,11 @@ class Effect(StrEnum):
     # (the "to rewrite" queue, EF-BIB-043), or that the suspect-revision guard be lifted for one
     # (EF-BIB-024): KOReader positions are reset and the old version only survives in the bin
     REWRITES_EXPORTED_FILES = "rewrites_exported_files"
+    # `coverage resplit apply`: says that chapters re-cut from a covered one are carried by its
+    # file, which is what presence (I20) reads: no follow cycle or backfill asks for them after it
+    # (EF-BIB-044). Nothing is removed, but a wrong answer hides a missing chapter, so it is
+    # reserved and fresh like the other decisions on what a library holds
+    CHANGES_COVERAGE = "changes_coverage"
 
 
 # P3 (inverted by the PR #43 review): freshness applies by default, so a new `Effect` that nobody

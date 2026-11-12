@@ -639,6 +639,39 @@
         "title": "Done",
         "type": "object"
       },
+      "EditionLineOut": {
+        "properties": {
+          "edition_id": {
+            "title": "Edition Id",
+            "type": "string"
+          },
+          "lang": {
+            "title": "Lang",
+            "type": "string"
+          },
+          "sort_key": {
+            "title": "Sort Key",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "work_id": {
+            "title": "Work Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "edition_id",
+          "work_id",
+          "lang",
+          "title",
+          "sort_key"
+        ],
+        "title": "EditionLineOut",
+        "type": "object"
+      },
       "EditionShelfIn": {
         "properties": {
           "shelf_id": {
@@ -681,6 +714,22 @@
         "title": "EditionSuggestionOut",
         "type": "object"
       },
+      "EditionsOut": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/EditionLineOut"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "EditionsOut",
+        "type": "object"
+      },
       "EstimateOut": {
         "properties": {
           "free_bytes": {
@@ -716,6 +765,147 @@
           "needs_confirmation"
         ],
         "title": "EstimateOut",
+        "type": "object"
+      },
+      "ExportItemOut": {
+        "properties": {
+          "closed": {
+            "title": "Closed",
+            "type": "boolean"
+          },
+          "edition_id": {
+            "title": "Edition Id",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "kept": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Kept"
+          },
+          "kept_problem": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Kept Problem"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label"
+          },
+          "units": {
+            "title": "Units",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "edition_id",
+          "kind",
+          "label",
+          "closed",
+          "units",
+          "kept",
+          "kept_problem"
+        ],
+        "title": "ExportItemOut",
+        "type": "object"
+      },
+      "FieldIn": {
+        "additionalProperties": false,
+        "properties": {
+          "lang": {
+            "default": "und",
+            "maxLength": 35,
+            "title": "Lang",
+            "type": "string"
+          },
+          "on": {
+            "default": "edition",
+            "enum": [
+              "edition",
+              "work"
+            ],
+            "title": "On",
+            "type": "string"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "maxLength": 4096,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value"
+          }
+        },
+        "title": "FieldIn",
+        "type": "object"
+      },
+      "FieldOut": {
+        "properties": {
+          "edition_id": {
+            "title": "Edition Id",
+            "type": "string"
+          },
+          "field": {
+            "title": "Field",
+            "type": "string"
+          },
+          "kept": {
+            "title": "Kept",
+            "type": "boolean"
+          },
+          "lang": {
+            "title": "Lang",
+            "type": "string"
+          },
+          "locked": {
+            "title": "Locked",
+            "type": "boolean"
+          },
+          "on": {
+            "title": "On",
+            "type": "string"
+          }
+        },
+        "required": [
+          "edition_id",
+          "field",
+          "lang",
+          "on",
+          "locked",
+          "kept"
+        ],
+        "title": "FieldOut",
         "type": "object"
       },
       "FiledOut": {
@@ -2172,6 +2362,81 @@
         "title": "RecheckOut",
         "type": "object"
       },
+      "RenumberIn": {
+        "additionalProperties": false,
+        "properties": {
+          "id_scheme": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Id Scheme"
+          },
+          "new": {
+            "maxLength": 512,
+            "minLength": 1,
+            "title": "New",
+            "type": "string"
+          },
+          "old": {
+            "maxLength": 512,
+            "minLength": 1,
+            "title": "Old",
+            "type": "string"
+          },
+          "provider": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Provider",
+            "type": "string"
+          }
+        },
+        "required": [
+          "provider",
+          "old",
+          "new"
+        ],
+        "title": "RenumberIn",
+        "type": "object"
+      },
+      "RenumberOut": {
+        "properties": {
+          "added": {
+            "title": "Added",
+            "type": "boolean"
+          },
+          "edition_id": {
+            "title": "Edition Id",
+            "type": "string"
+          },
+          "new": {
+            "title": "New",
+            "type": "string"
+          },
+          "old": {
+            "title": "Old",
+            "type": "string"
+          },
+          "provider": {
+            "title": "Provider",
+            "type": "string"
+          }
+        },
+        "required": [
+          "edition_id",
+          "provider",
+          "old",
+          "new",
+          "added"
+        ],
+        "title": "RenumberOut",
+        "type": "object"
+      },
       "RepatriateIn": {
         "properties": {
           "fingerprint": {
@@ -2216,6 +2481,127 @@
           "outcome"
         ],
         "title": "ResolvedOut",
+        "type": "object"
+      },
+      "ResplitAppliedOut": {
+        "properties": {
+          "added": {
+            "title": "Added",
+            "type": "integer"
+          },
+          "children": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Children",
+            "type": "array"
+          },
+          "edition_id": {
+            "title": "Edition Id",
+            "type": "string"
+          },
+          "parent": {
+            "title": "Parent",
+            "type": "string"
+          }
+        },
+        "required": [
+          "edition_id",
+          "parent",
+          "children",
+          "added"
+        ],
+        "title": "ResplitAppliedOut",
+        "type": "object"
+      },
+      "ResplitApplyIn": {
+        "additionalProperties": false,
+        "properties": {
+          "child_unit_ids": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 200,
+            "minItems": 1,
+            "title": "Child Unit Ids",
+            "type": "array"
+          },
+          "confirm": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Confirm",
+            "type": "string"
+          },
+          "parent_unit_id": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Parent Unit Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "parent_unit_id",
+          "child_unit_ids",
+          "confirm"
+        ],
+        "title": "ResplitApplyIn",
+        "type": "object"
+      },
+      "ResplitIn": {
+        "additionalProperties": false,
+        "properties": {
+          "child_unit_ids": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 200,
+            "minItems": 1,
+            "title": "Child Unit Ids",
+            "type": "array"
+          },
+          "parent_unit_id": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Parent Unit Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "parent_unit_id",
+          "child_unit_ids"
+        ],
+        "title": "ResplitIn",
+        "type": "object"
+      },
+      "ResplitProposedOut": {
+        "properties": {
+          "children": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Children",
+            "type": "array"
+          },
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "edition_id": {
+            "title": "Edition Id",
+            "type": "string"
+          },
+          "parent": {
+            "title": "Parent",
+            "type": "string"
+          }
+        },
+        "required": [
+          "edition_id",
+          "parent",
+          "children",
+          "code"
+        ],
+        "title": "ResplitProposedOut",
         "type": "object"
       },
       "RestoreIn": {
@@ -3134,6 +3520,28 @@
           "remote_id"
         ],
         "title": "UnfollowIn",
+        "type": "object"
+      },
+      "UnlockIn": {
+        "additionalProperties": false,
+        "properties": {
+          "lang": {
+            "default": "und",
+            "maxLength": 35,
+            "title": "Lang",
+            "type": "string"
+          },
+          "on": {
+            "default": "edition",
+            "enum": [
+              "edition",
+              "work"
+            ],
+            "title": "On",
+            "type": "string"
+          }
+        },
+        "title": "UnlockIn",
         "type": "object"
       },
       "UnmaskedOut": {
@@ -4696,6 +5104,128 @@
         ]
       }
     },
+    "/api/v1/coverage/resplit/apply": {
+      "post": {
+        "operationId": "resplit_apply",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ResplitApplyIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResplitAppliedOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Connexion requise, ou mot de passe à confirmer (reauth-required)."
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée)."
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Détail du problème (RFC 9457)."
+          }
+        },
+        "summary": "Resplit Apply",
+        "tags": [
+          "catalog"
+        ]
+      }
+    },
+    "/api/v1/coverage/resplit/propose": {
+      "post": {
+        "operationId": "resplit_propose",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ResplitIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResplitProposedOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Connexion requise, ou mot de passe à confirmer (reauth-required)."
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée)."
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Détail du problème (RFC 9457)."
+          }
+        },
+        "summary": "Resplit Propose",
+        "tags": [
+          "catalog"
+        ]
+      }
+    },
     "/api/v1/detach": {
       "post": {
         "operationId": "restore_upstream",
@@ -4756,6 +5286,93 @@
         "summary": "Restore Upstream",
         "tags": [
           "library"
+        ]
+      }
+    },
+    "/api/v1/editions": {
+      "get": {
+        "operationId": "editions_list",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "sort",
+            "required": false,
+            "schema": {
+              "const": "title",
+              "default": "title",
+              "title": "Sort",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 200,
+              "maximum": 1000,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EditionsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Connexion requise, ou mot de passe à confirmer (reauth-required)."
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée)."
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Détail du problème (RFC 9457)."
+          }
+        },
+        "summary": "Editions List",
+        "tags": [
+          "catalog"
         ]
       }
     },
@@ -4965,6 +5582,240 @@
         "summary": "Follow Check",
         "tags": [
           "follows"
+        ]
+      }
+    },
+    "/api/v1/editions/{edition_id}/external-ids/renumber": {
+      "post": {
+        "operationId": "renumber_id",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "edition_id",
+            "required": true,
+            "schema": {
+              "title": "Edition Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RenumberIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RenumberOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Connexion requise, ou mot de passe à confirmer (reauth-required)."
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée)."
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Détail du problème (RFC 9457)."
+          }
+        },
+        "summary": "Renumber Id",
+        "tags": [
+          "catalog"
+        ]
+      }
+    },
+    "/api/v1/editions/{edition_id}/fields/{field}/lock": {
+      "post": {
+        "operationId": "field_lock",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "edition_id",
+            "required": true,
+            "schema": {
+              "title": "Edition Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "field",
+            "required": true,
+            "schema": {
+              "title": "Field",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FieldIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FieldOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Connexion requise, ou mot de passe à confirmer (reauth-required)."
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée)."
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Détail du problème (RFC 9457)."
+          }
+        },
+        "summary": "Field Lock",
+        "tags": [
+          "catalog"
+        ]
+      }
+    },
+    "/api/v1/editions/{edition_id}/fields/{field}/unlock": {
+      "post": {
+        "operationId": "field_unlock",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "edition_id",
+            "required": true,
+            "schema": {
+              "title": "Edition Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "field",
+            "required": true,
+            "schema": {
+              "title": "Field",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UnlockIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FieldOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Connexion requise, ou mot de passe à confirmer (reauth-required)."
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée)."
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Détail du problème (RFC 9457)."
+          }
+        },
+        "summary": "Field Unlock",
+        "tags": [
+          "catalog"
         ]
       }
     },
@@ -5256,6 +6107,68 @@
         "summary": "Shelf Proposal",
         "tags": [
           "shelves"
+        ]
+      }
+    },
+    "/api/v1/export-items/{item_id}": {
+      "get": {
+        "operationId": "export_item",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "item_id",
+            "required": true,
+            "schema": {
+              "title": "Item Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExportItemOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Connexion requise, ou mot de passe à confirmer (reauth-required)."
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée)."
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Détail du problème (RFC 9457)."
+          }
+        },
+        "summary": "Export Item",
+        "tags": [
+          "catalog"
         ]
       }
     },

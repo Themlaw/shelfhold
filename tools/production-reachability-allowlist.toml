@@ -142,9 +142,6 @@ reason = "The arrival of an Edition with its external identifiers and field prop
 until = "M2"
 symbols = [
   "shelfhold.catalog.application.auto_attach:IncomingEdition",
-  "shelfhold.catalog.application.external_ids:renumber_external_id",
-  "shelfhold.catalog.application.fields:lock_field",
-  "shelfhold.catalog.application.fields:unlock_field",
 ]
 
 [[allow]]
@@ -161,7 +158,6 @@ reason = "The rights review that announces the non-blocking warning (`Rights.rev
 until = "M2"
 symbols = [
   "shelfhold.catalog.application.rights:Rights.refresh_cache",
-  "shelfhold.catalog.domain.sort_key:sort_key",
 ]
 
 [[allow]]
@@ -241,26 +237,6 @@ reason = "2026-11-11 (M2 L17): `RevisionQueue.apply_metadata` is the whole metad
 until = "M2"
 symbols = [
   "shelfhold.catalog.application.revisions:RevisionQueue.apply_metadata",
-]
-
-[[allow]]
-category = "unwired-m2-l26"
-reason = "2026-11-11 (M2 L26b): the export of a volume is wired (the planner, the age gate and the family barrier, `RangedExporter` behind `ExportPipeline._write`, the replacement of the open tail through the same-path upgrade); what L26 proposed beyond it is still reached by no entry point: the re-cut chapter proposals (`propose_resplit`, `apply_resplit`: the porteur confirms them, a command or a screen of M3), the range read from an adopted ComicInfo (`comicinfo_range`, `apply_comicinfo_range`: the adoption cycle will hand it over), the cut of a closed volume by Shelfhold (`volume_slices`, its default size: M2 L25 asks for it once lncrawl is wired), and `locate_ranged`, a helper for display."
-until = "M2"
-symbols = [
-  "shelfhold.catalog.application.coverage:ConfirmationRequiredError",
-  "shelfhold.catalog.application.coverage:ResplitError",
-  "shelfhold.catalog.application.coverage:ResplitProposal",
-  "shelfhold.catalog.application.coverage:ResplitSigner",
-  "shelfhold.catalog.application.coverage:apply_resplit",
-  "shelfhold.catalog.application.coverage:propose_resplit",
-  "shelfhold.export.application.coverage:apply_comicinfo_range",
-  "shelfhold.export.application.coverage:comicinfo_range",
-  "shelfhold.export.application.ranged_export:locate_ranged",
-  "shelfhold.library.domain.volume_policy:DEFAULT_POLICY",
-  "shelfhold.library.domain.volume_policy:DEFAULT_VOLUME_SIZE",
-  "shelfhold.library.domain.volume_policy:ExportDecision.exports",
-  "shelfhold.library.domain.volume_policy:volume_slices",
 ]
 
 [[allow]]

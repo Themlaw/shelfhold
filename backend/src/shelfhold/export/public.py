@@ -2,11 +2,11 @@
 
 from sqlalchemy import Connection
 
-from shelfhold.export.application.coverage import attach_to_volume
+from shelfhold.export.application.coverage import adopted_volumes, attach_to_volume
 from shelfhold.export.application.pairing import pending_pairing
 from shelfhold.export.application.waiting_marks import clear as _clear_marks
 
-__all__ = ["attach_to_volume", "forget_coverage_unknown", "pending_pairing"]
+__all__ = ["adopted_volumes", "attach_to_volume", "forget_coverage_unknown", "pending_pairing"]
 
 
 def forget_coverage_unknown(connection: Connection, export_series_id: str) -> None:

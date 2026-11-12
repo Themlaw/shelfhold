@@ -343,6 +343,57 @@ def _meta_enrich(ops: OpsServices, _by: Principal, p: Params) -> object:
     return ops.meta.enrich(_text(p, "target"))
 
 
+def _texts(params: Params, name: str) -> list[str]:
+    value = params.get(name)
+    if not isinstance(value, list) or not all(isinstance(v, str) for v in value):
+        raise RpcError(INVALID_PARAMS, t("local_cli.param_invalid", name=name, expected="list"))
+    return list(value)
+
+
+def _meta_lock(ops: OpsServices, _by: Principal, p: Params) -> object:
+    return ops.editions.lock(
+        _text(p, "edition"), _text(p, "field"), _optional(p, "value"),
+        lang=_optional(p, "lang") or "und", on=_optional(p, "on") or "edition",
+    )  # fmt: skip
+
+
+def _meta_unlock(ops: OpsServices, _by: Principal, p: Params) -> object:
+    return ops.editions.unlock(
+        _text(p, "edition"), _text(p, "field"),
+        lang=_optional(p, "lang") or "und", on=_optional(p, "on") or "edition",
+    )  # fmt: skip
+
+
+def _edition_renumber_id(ops: OpsServices, _by: Principal, p: Params) -> object:
+    return ops.editions.renumber(
+        _text(p, "edition"), _text(p, "provider"), _text(p, "old"), _text(p, "new"),
+        id_scheme=_optional(p, "id_scheme"),
+    )  # fmt: skip
+
+
+def _edition_list(ops: OpsServices, _by: Principal, p: Params) -> object:
+    limit, offset = _count(p, "limit"), _count(p, "offset")
+    return ops.editions.listing(
+        sort=_optional(p, "sort") or "title",
+        limit=200 if limit is None else limit,
+        offset=0 if offset is None else offset,
+    )
+
+
+def _coverage_resplit_propose(ops: OpsServices, by: Principal, p: Params) -> object:
+    return ops.resplit.propose(_text(p, "parent"), _texts(p, "children"), principal=by)
+
+
+def _coverage_resplit_apply(ops: OpsServices, by: Principal, p: Params) -> object:
+    return ops.resplit.apply(
+        _text(p, "parent"), _texts(p, "children"), confirm=_text(p, "confirm"), principal=by
+    )
+
+
+def _export_item_show(ops: OpsServices, _by: Principal, p: Params) -> object:
+    return ops.export_items.show(_text(p, "item"))
+
+
 def _count(params: Params, name: str) -> int | None:
     value = params.get(name)
     if value is None:
@@ -588,6 +639,13 @@ OPS_METHODS: Mapping[str, tuple[OpsMethod, str | None]] = {
     "ops.meta_rebuild": (_meta_rebuild, None),
     "ops.meta_check": (_meta_check, None),
     "ops.meta_enrich": (_meta_enrich, None),
+    "ops.meta_lock": (_meta_lock, None),
+    "ops.meta_unlock": (_meta_unlock, None),
+    "ops.edition_renumber_id": (_edition_renumber_id, None),
+    "ops.edition_list": (_edition_list, None),
+    "ops.coverage_resplit_propose": (_coverage_resplit_propose, "coverage.resplit"),
+    "ops.coverage_resplit_apply": (_coverage_resplit_apply, "coverage.resplit"),
+    "ops.export_item_show": (_export_item_show, None),
     "ops.backfill_estimate": (_backfill_estimate, None),
     "ops.backfill_start": (_backfill_start, None),
     "ops.import_scan": (_import_scan, None),
@@ -611,6 +669,7 @@ READS_AND_RESTORE_EXITS = frozenset(
         "ops.migration_report", "ops.repatriate_plan", "ops.repatriate_check",
         "ops.intents_list", "ops.withdraw_plan", "ops.backfill_estimate", "ops.meta_check",
         "ops.rate_pending", "ops.attach_list", "ops.source_search", "ops.source_filters",
+        "ops.edition_list", "ops.export_item_show",
         "ops.restore_adopt", "ops.restore_acknowledge", "ops.tombstone_set_aside_journal",
         "ops.secrets_import",
         "ops.tombstone_accept_lost_keyring",

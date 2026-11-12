@@ -628,3 +628,31 @@ def test_the_mirror_carries_closed_so_a_restore_keeps_the_volume_frozen() -> Non
         ]
         items = [e["export_item"] for e in lines if e.get("kind") == "entry"]
         assert items and all(i["closed"] is True for i in items)
+
+
+def test_chapters_a_resplit_made_are_not_exported_beside_the_volume_that_carries_their_parent() -> (
+    None
+):
+    """Review of #172: after `coverage resplit apply`, 10.1 and 10.2 are covered by their parent
+    (`carrier_type = unit`) and must not leave as chapters next to the file that carries it."""
+    with export_env() as env:
+        series, bench = volume_on_shelf(env, 3, closed=True)
+        parent = bench.unit_ids[0]
+        kids = [env.add_chapter(series, "10.1"), env.add_chapter(series, "10.2")]
+        with env.engine.begin() as connection:
+            for position, kid in enumerate(kids):
+                connection.execute(
+                    sa.insert(export.unit_coverage).values(
+                        carrier_type="unit",
+                        carrier_id=parent,
+                        unit_id=kid,
+                        position=position,
+                        extent="full",
+                        origin="manual",
+                    )
+                )
+        assert run(env) == 1  # the volume alone
+        assert [p.suffix for p in env.files()] == [".epub"]
+        assert {r.export_item_id for r in env.rows(export.export_record)} == {bench.item_id}
+        before = state_of(env)
+        assert run(env) == 0 and state_of(env) == before
