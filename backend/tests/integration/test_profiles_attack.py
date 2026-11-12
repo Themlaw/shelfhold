@@ -97,7 +97,7 @@ def _audit(env: AuthEnv, action: str) -> list[tuple[object, ...]]:
     return db_rows(env.settings, "SELECT session_id, auth_time FROM audit WHERE action = ?", action)
 
 
-# -- management is reserved: fresh session, admin, never a key or a token --------------------------
+# -- management is reserved: fresh session, admin, never a key or a token ----
 
 
 @pytest.mark.req("EF-USR-022", "EF-USR-024", "ENF-SEC-010")
@@ -159,7 +159,7 @@ def test_profile_management_is_fresh_in_every_profile_even_with_nobody_to_protec
     assert _row(api, "k") == ()
 
 
-# -- escalation of role -----------------------------------------------------------------------------
+# -- escalation of role ----
 
 
 @pytest.mark.req("EF-USR-005", "ENF-SEC-008")
@@ -268,7 +268,7 @@ def test_the_last_admin_cannot_be_demoted_or_removed(
     assert [u for u in _users(api) if u[1] == "admin"] == [(ADMIN, "admin", 1, None)]
 
 
-# -- the parental ceiling and the right to classify -------------------------------------------------
+# -- the parental ceiling and the right to classify ----
 
 
 @pytest.mark.req("EF-USR-005", "EF-USR-015")
@@ -345,7 +345,7 @@ def test_child_cannot_change_own_ceiling_or_policy(api: AuthEnv) -> None:
     assert db_rows(api.settings, "SELECT * FROM profile_source_policy") == []
 
 
-# -- the per-source policy --------------------------------------------------------------------------
+# -- the per-source policy ----
 
 
 @pytest.mark.req("EF-USR-005", "EF-USR-014")
@@ -386,7 +386,7 @@ def test_add_directly_never_given_to_a_child_on_a_source_that_is_not_family(
     }
 
 
-# -- IDOR and visibility ----------------------------------------------------------------------------
+# -- IDOR and visibility ----
 
 
 @pytest.mark.req("EF-USR-005", "ENF-SEC-010")

@@ -17,4 +17,8 @@ CODES: tuple[ErrorCode, ...] = (
     ErrorCode("passkey_refused", 422, "user"),
     ErrorCode("passkey_not_found", 404, "user"),
     ErrorCode("last_login_factor", 409, "user"),
+    # Household profiles (M3 L05): the rule that refused is in the `reason` extension
+    ErrorCode("profile_not_found", 404, "user"),
+    ErrorCode("profile_conflict", 409, "user"),
+    ErrorCode("profile_refused", 422, "user"),
 )

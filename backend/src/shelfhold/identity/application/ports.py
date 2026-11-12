@@ -16,6 +16,24 @@ class UserRecord:
 
 
 @dataclass(frozen=True)
+class ProfileRecord:
+    """A household profile as the management sees it: never a password hash."""
+
+    id: str
+    username: str
+    role: str
+    max_age_rating: int | None
+    can_rate: bool
+
+
+@dataclass(frozen=True)
+class SourcePolicyRecord:
+    source_key: str
+    policy: str  # the stored choice
+    effective: str  # what holds now (a child on a source that is not family: forbidden)
+
+
+@dataclass(frozen=True)
 class SessionRecord:
     id: str
     user: UserRecord
@@ -135,7 +153,49 @@ class IdentityStore(Protocol):
         max_age_rating: int | None = None,
     ) -> None: ...
     def set_password_hash(self, user_id: str, password_hash: str) -> None: ...
-    def delete_user(self, user_id: str) -> str | None: ...
+    def delete_user(self, user_id: str, *, keep_one_admin: bool = False) -> str | None:
+        """`keep_one_admin`: the last admin is refused (`ProfileError("last_admin")`), decided in
+        the transaction that deletes."""
+        ...
+
+    # --- household profiles (M3 L05) ---
+    def profiles(self) -> Sequence[ProfileRecord]: ...
+    def profile(self, user_id: str) -> ProfileRecord | None: ...
+    def create_profile(
+        self,
+        *,
+        id: str,
+        username: str,
+        role: str,
+        password_hash: str,
+        max_age_rating: int | None,
+        can_rate: bool,
+        now: datetime,
+        max_admins: int,
+    ) -> None:
+        """`ProfileError`: `username_taken`, `too_many_admins` (counted in the transaction)."""
+        ...
+
+    def update_profile(
+        self,
+        user_id: str,
+        *,
+        expected_role: str,
+        role: str,
+        max_age_rating: int | None,
+        can_rate: bool,
+        max_admins: int,
+        now: datetime,
+    ) -> None:
+        """One transaction: `ProfileError` `changed_meanwhile` (the role moved since it was read),
+        `last_admin`, `too_many_admins`. A change of role closes the sessions of the profile."""
+        ...
+
+    def source_family(self, source_key: str) -> bool: ...
+    def set_source_policy(
+        self, user_id: str, source_key: str, policy: str, *, now: datetime
+    ) -> None: ...
+    def stored_source_policies(self, user_id: str) -> Mapping[str, str]: ...
 
     def insert_session(self, session: NewSession) -> None:
         """`PasskeyGoneError` when `session.passkey_id` is revoked at the moment of writing: the

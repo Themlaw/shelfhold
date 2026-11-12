@@ -7,7 +7,6 @@ socket of a running server, where the principal is `local_cli` and the audit say
 import json
 import os
 from collections.abc import Iterator
-from pathlib import Path
 
 import pytest
 
@@ -55,7 +54,8 @@ def test_cli_profile_add_list_set_remove_with_the_server_stopped(
     assert run_cli(monkeypatch, stopped, *add, "kid3", "--role", "child", "--max-age", "10",
                    "--can-rate") == 1  # fmt: skip
     assert run_cli(monkeypatch, stopped, *add, "mum", "--role", "member") == 1  # taken
-    assert run_cli(monkeypatch, stopped, *add, "bad", "--role", "ghost") == 2  # argparse
+    with pytest.raises(SystemExit):  # argparse refuses an unknown role
+        run_cli(monkeypatch, stopped, *add, "bad", "--role", "ghost")
     assert run_cli(monkeypatch, stopped, *add, "dad", "--role", "member", "--max-age", "5") == 1
     assert [r[0] for r in _rows(stopped)] == [ADMIN, "mum", "kid"]
     capsys.readouterr()
@@ -88,9 +88,8 @@ def test_cli_profile_add_list_set_remove_with_the_server_stopped(
         )
         == 1
     )
-    assert (
-        run_cli(monkeypatch, stopped, "profile", "set", "kid", "--source-policy", "nonsense") == 2
-    )
+    with pytest.raises(SystemExit):  # not SOURCE=POLICY
+        run_cli(monkeypatch, stopped, "profile", "set", "kid", "--source-policy", "nonsense")
     assert [r[1:] for r in _rows(stopped)] == [
         ("admin", 1, None),
         ("member", 1, None),
@@ -139,7 +138,10 @@ def test_the_socket_answers_a_refusal_with_its_code_and_never_a_password(
     assert (refused.value.data or {}).get("code") == "child_requires_max_age"
     assert PASSWORD not in str(refused.value)
     with pytest.raises(RpcFailure):
-        call(socket, "identity.profile_add",
-             {"username": "z", "password": PASSWORD, "role": "child", "max_age_rating": "ten"})  # fmt: skip
+        call(
+            socket,
+            "identity.profile_add",
+            {"username": "z", "password": PASSWORD, "role": "child", "max_age_rating": "ten"},
+        )
     assert call(socket, "identity.profile_list", {})
     assert [r[0] for r in _rows(running.settings)] == [ADMIN]

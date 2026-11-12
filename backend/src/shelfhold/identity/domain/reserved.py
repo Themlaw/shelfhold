@@ -43,6 +43,10 @@ class Effect(StrEnum):
     # `passkey.register`: adds a way in that outlives the session (and its revocation) that added it
     ENROLS_PASSKEY = "enrols_passkey"
     ACCEPTS_ADMIN_RISK = "accepts_admin_risk"  # `--accept-admin-risk`
+    # `profile add|set|remove` and the per-source policy: who may sign in, with which role, ceiling
+    # and right to classify. A stolen session must not make an admin or lift a child's ceiling, so
+    # it is fresh in every profile (EF-USR-022), unlike the other parental decisions
+    MANAGES_PROFILES = "manages_profiles"
     # `intents resolve`: completes, replays or gives up an interrupted file operation, which lifts
     # the protection its paths had from the planner and the reconciliation (EF-EXP-041)
     SETTLES_FS_INTENT = "settles_fs_intent"

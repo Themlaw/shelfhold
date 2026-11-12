@@ -36,17 +36,18 @@ def session(role: str, *, can_rate: bool) -> Principal:
 
 
 @pytest.mark.req("EF-USR-005", "EF-BIB-036")
-def test_rate_right_held_by_admins_only_before_m3() -> None:
+def test_rate_right_held_by_adult_profiles_only_since_m3_l05() -> None:
     assert {"admin", "member", "child"} == KNOWN_ROLES
-    assert {"admin"} == RATE_ROLES
-    assert holds_rate_right("admin", True)
-    assert not holds_rate_right("admin", False)  # the flag is the right, the role alone is not
-    for role in ("member", "child", "integration", "ghost"):
-        assert not holds_rate_right(role, True)  # a flag set by hand does not widen M1b
+    assert {"admin", "member"} == RATE_ROLES  # given per adult profile, never to a child
+    for role in ("admin", "member"):
+        assert holds_rate_right(role, True)
+        assert not holds_rate_right(role, False)  # the flag is the right, the role alone is not
+    for role in ("child", "integration", "ghost"):
+        assert not holds_rate_right(role, True)  # a flag set by hand does not widen it
 
 
 @pytest.mark.req("EF-USR-005", "EF-BIB-036")
-@pytest.mark.parametrize("role", ["member", "child", "integration", "ghost"])
+@pytest.mark.parametrize("role", ["child", "integration", "ghost"])
 def test_route_naming_a_role_cannot_give_it_the_right_to_rate(role: str) -> None:
     verdict = authorize_reserved(session(role, can_rate=True), RATE, now=T0, allowed_roles=EVERYONE)
     assert isinstance(verdict, RoleNotAllowed)

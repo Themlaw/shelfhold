@@ -5,13 +5,20 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
+from shelfhold.identity.domain.policy import (
+    SOURCE_POLICIES,
+    check_source_policy,
+    default_source_policy,
+    effective_source_policy,
+)
+from shelfhold.identity.domain.roles import check_child_ceiling, normalise_profile
 from shelfhold.identity.public import (
     KNOWN_ROLES,
     RATE_ROLES,
     RESERVED_ACTIONS,
     Allowed,
-    CredentialNotAllowed,
     Credential,
+    CredentialNotAllowed,
     Effect,
     Principal,
     ProfileError,
@@ -21,13 +28,6 @@ from shelfhold.identity.public import (
     holds_rate_right,
     truth_table,
 )
-from shelfhold.identity.domain.policy import (
-    SOURCE_POLICIES,
-    check_source_policy,
-    default_source_policy,
-    effective_source_policy,
-)
-from shelfhold.identity.domain.roles import check_child_ceiling, normalise_profile
 
 T0 = datetime(2026, 11, 12, 9, 0, tzinfo=UTC)
 PROFILE_ACTIONS = ("profile.create", "profile.update", "profile.remove", "profile.source_policy")
@@ -44,7 +44,7 @@ def session(role: str, *, fresh: bool, can_rate: bool = False) -> Principal:
 @pytest.mark.req("EF-USR-005")
 def test_roles_admin_member_child_policy_per_source() -> None:
     assert SOURCE_POLICIES == ("add_directly", "request", "forbidden")
-    assert KNOWN_ROLES == {"admin", "member", "child"}
+    assert {"admin", "member", "child"} == KNOWN_ROLES
     # D14: a child asks on a family source and has nothing elsewhere; an adult adds directly
     assert default_source_policy("child", family=True) == "request"
     assert default_source_policy("child", family=False) == "forbidden"

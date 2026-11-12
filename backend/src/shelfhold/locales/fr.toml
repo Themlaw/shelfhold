@@ -123,6 +123,16 @@ diagnostic_out_help = "Fichier à écrire (zip) ; il ne doit pas exister."
 diagnostic_exclude_help = "Section à laisser hors du paquet ; répétable. Utile quand un titre courant fait refuser une section."
 diagnostic_log_file_help = "Journal à inclure, une fois réduit à ses champs autorisés (par exemple la sortie de docker compose logs) ; répétable."
 stats_since_help = "Fenêtre d'observation, en jours : 30d par défaut."
+profile_help = "Gère les profils du foyer (membres, enfants, droit de classer, politique par source)."
+profile_add_help = "Crée un profil (le mot de passe vient d'un fichier ou de l'entrée standard)."
+profile_list_help = "Liste les profils."
+profile_set_help = "Change le rôle, l'âge maximal, le droit de classer ou la politique d'une source."
+profile_remove_help = "Supprime un profil (ses traces d'audit restent, pseudonymisées)."
+profile_username_help = "Identifiant du profil."
+profile_role_help = "Rôle : member (défaut), child ou admin (deux au plus)."
+profile_max_age_help = "Âge maximal d'un enfant (0 à 99, obligatoire pour un enfant)."
+profile_can_rate_help = "Droit de classer (jamais pour un enfant)."
+profile_source_policy_help = "Politique pour une source, SOURCE=add_directly|request|forbidden (répétable)."
 admin_help = "Administre les comptes locaux, les sessions et les clés d'API."
 admin_create_help = "Crée le compte administrateur local (mot de passe haché en argon2id)."
 admin_acknowledge_through_help = "Référence affichée par « status » : acquitte les enregistrements jusqu'à celle-ci, pas ceux qui sont arrivés après."
@@ -608,6 +618,31 @@ param_invalid = "Paramètre « {name} » invalide : {expected} attendu."
 unknown_method = "Méthode inconnue : {method}."
 not_allowed = "Action refusée à ce canal."
 
+[profiles]
+created = "Profil « {username} » créé."
+updated = "Profil « {username} » mis à jour."
+removed = "Profil « {username} » supprimé."
+policy_set = "Politique de « {username} » pour la source {source} : {policy}."
+none = "Aucun profil."
+line = "{username}  {role}  âge max : {ceiling}  classer : {rate}"
+unknown = "Profil inconnu : {username}."
+not_allowed = "Cette personne n'a pas le droit de gérer les profils."
+not_found = "Profil inconnu."
+invalid_role = "Rôle inconnu : administrateur, membre ou enfant."
+invalid_policy = "Politique inconnue : add_directly, request ou forbidden."
+child_requires_max_age = "Un enfant a toujours un âge maximal (0 à 99) : ajoutez --max-age."
+max_age_only_for_child = "Seul un enfant a un âge maximal."
+child_cannot_rate = "Un enfant n'a jamais le droit de classer."
+child_source_not_family = "Un enfant ne peut ajouter ou demander que sur une source marquée « famille »."
+ceiling_above_creator = "L'âge maximal ne peut pas dépasser celui de la personne qui le donne."
+username_taken = "Ce nom est déjà pris."
+too_many_admins = "Deux administrateurs au plus."
+last_admin = "C'est le dernier administrateur : l'instance ne peut pas s'en passer."
+cannot_remove_self = "Un profil ne se supprime pas lui-même."
+cannot_change_own_role = "Un profil ne change pas son propre rôle."
+changed_meanwhile = "Le profil a changé entre-temps : relisez-le puis recommencez."
+source_policy_format = "attendu : SOURCE=add_directly|request|forbidden"
+
 [admin]
 passkeys_unknown_reference = "Aucun enregistrement en attente n'a la référence {through} : relisez « shelfhold status »."
 passkeys_acknowledged = "{count} enregistrement(s) de clé d'accès acquitté(s)."
@@ -1001,6 +1036,18 @@ action = "Actualisez la liste des clés d'accès."
 [errors."last_login_factor"]
 title = "C'est votre dernier moyen de connexion."
 action = "Enregistrez une autre clé d'accès avant de révoquer celle-ci."
+
+[errors."profile_conflict"]
+title = "Ce changement de profil est en conflit avec l'état du foyer."
+action = "Lisez la raison indiquée (nom déjà pris, dernier administrateur, deux administrateurs au plus, profil en cours de modification), puis recommencez."
+
+[errors."profile_not_found"]
+title = "Ce profil n'existe pas."
+action = "Actualisez la liste des profils."
+
+[errors."profile_refused"]
+title = "Ce profil ne respecte pas les règles du foyer."
+action = "Un enfant a toujours un âge maximal et jamais le droit de classer ; un adulte n'a pas d'âge maximal ; un enfant ne peut ajouter ou demander que sur une source « famille »."
 
 [errors."reauth_required"]
 title = "Confirmez votre mot de passe pour continuer."

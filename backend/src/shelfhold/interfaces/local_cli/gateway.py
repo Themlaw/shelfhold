@@ -21,7 +21,14 @@ from shelfhold.headless import (
     TargetAdded,
 )
 from shelfhold.headless.admin import ConfigValues, PathMapSpec
-from shelfhold.identity.public import AdminExistsError, CreatedApiKey, UnknownUserError
+from shelfhold.identity.public import (
+    PROFILE_ERRORS,
+    AdminExistsError,
+    CreatedApiKey,
+    ProfileError,
+    ProfileRecord,
+    UnknownUserError,
+)
 from shelfhold.infrastructure.local_socket import RpcFailure, call
 
 _VALUE_ERRORS = frozenset(
@@ -66,6 +73,17 @@ class IdentityCommands(Protocol):
     ) -> CreatedApiKey | None: ...
     def api_keys(self) -> Sequence[KeyView]: ...
     def revoke_api_key(self, prefix: str) -> bool: ...
+    def profile_add(
+        self, username: str, password: str, role: str, *,
+        max_age_rating: int | None = None, can_rate: bool | None = None,
+    ) -> str: ...  # fmt: skip
+    def profile_list(self) -> Sequence[ProfileRecord]: ...
+    def profile_set(
+        self, profile_id: str, *, role: str | None = None, max_age_rating: int | None = None,
+        can_rate: bool | None = None,
+    ) -> object: ...  # fmt: skip
+    def profile_remove(self, profile_id: str) -> None: ...
+    def profile_policy_set(self, profile_id: str, source_key: str, policy: str) -> None: ...
 
 
 @dataclass(frozen=True)
@@ -107,6 +125,8 @@ class SocketIdentity:
                 raise AdminExistsError from None
             if code in _VALUE_ERRORS:
                 raise ValueError(code) from None
+            if code in PROFILE_ERRORS:
+                raise ProfileError(str(code)) from None
             if code == "key_rotation_failed":
                 raise RuntimeError("api_key_prefix_exhausted") from None
             raise
@@ -160,6 +180,53 @@ class SocketIdentity:
 
     def revoke_api_key(self, prefix: str) -> bool:
         return bool(self._call("identity.keys_revoke", prefix=prefix))
+
+    def profile_add(
+        self, username: str, password: str, role: str, *,
+        max_age_rating: int | None = None, can_rate: bool | None = None,
+    ) -> str:  # fmt: skip
+        return str(
+            self._call(
+                "identity.profile_add",
+                username=username,
+                password=password,
+                role=role,
+                max_age_rating=max_age_rating,
+                can_rate=can_rate,
+            )
+        )
+
+    def profile_list(self) -> Sequence[ProfileRecord]:
+        rows = self._call("identity.profile_list")
+        if not isinstance(rows, list):
+            raise ValueError("malformed_reply")
+        return [
+            ProfileRecord(
+                id=row["id"],
+                username=row["username"],
+                role=row["role"],
+                max_age_rating=row["max_age_rating"],
+                can_rate=bool(row["can_rate"]),
+            )
+            for row in rows
+        ]
+
+    def profile_set(
+        self, profile_id: str, *, role: str | None = None, max_age_rating: int | None = None,
+        can_rate: bool | None = None,
+    ) -> object:  # fmt: skip
+        return self._call(
+            "identity.profile_set", profile_id=profile_id, role=role,
+            max_age_rating=max_age_rating, can_rate=can_rate,
+        )  # fmt: skip
+
+    def profile_remove(self, profile_id: str) -> None:
+        self._call("identity.profile_remove", profile_id=profile_id)
+
+    def profile_policy_set(self, profile_id: str, source_key: str, policy: str) -> None:
+        self._call(
+            "identity.profile_policy", profile_id=profile_id, source_key=source_key, policy=policy
+        )
 
 
 # -- headless configuration ---------------------------------------------------------------------

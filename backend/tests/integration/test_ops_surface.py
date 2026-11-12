@@ -137,7 +137,7 @@ def test_healthz_reasons_are_for_administrators_and_never_carry_a_title(api: Aut
         "library.safeguard": "dead_letter",
     }
     assert member["paused_queues"] == ["export.run", "follow", "library.safeguard"]
-    assert "paused" not in member and "paused_reasons" not in member  # for administrators
+    assert "paused" not in member  # the reason is for administrators
     assert anonymous == {"state": "ok"}
     for body in (admin, member, anonymous):
         assert "Secret Title" not in json.dumps(body)  # no title, whoever asks

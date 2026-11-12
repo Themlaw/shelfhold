@@ -20,9 +20,11 @@ from shelfhold.identity.application.ports import (
     NewSession,
     PasskeyGoneError,
     PasskeyRecord,
+    ProfileRecord,
     SessionRecord,
     UserRecord,
 )
+from shelfhold.identity.domain.roles import ProfileError
 from shelfhold.infrastructure.identity_counter import DAMAGED, IdentityCounter
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.restore_notice import (
@@ -31,7 +33,7 @@ from shelfhold.infrastructure.restore_notice import (
     read_notice,
     write_notice,
 )
-from shelfhold.infrastructure.schema import identity
+from shelfhold.infrastructure.schema import acquisition, identity
 
 _user = identity.user
 _session = identity.session
@@ -182,6 +184,10 @@ def _passkey_of(row: Any) -> PasskeyRecord:
     )
 
 
+def _admin_count(conn: sa.Connection) -> int:
+    return int(conn.execute(sa.select(sa.func.count()).where(_user.c.role == "admin")).scalar_one())
+
+
 class _NoLiveKeyError(Exception):
     pass
 
@@ -274,7 +280,7 @@ class SqlIdentityStore:
                 )
             )
 
-    def delete_user(self, user_id: str) -> str | None:
+    def delete_user(self, user_id: str, *, keep_one_admin: bool = False) -> str | None:
         """Delete the account and keep its traces under one pseudonym (EF-USR-013, ENF-OPS-009).
 
         In one transaction the user row goes (its sessions, keys and passkeys with it) and every
@@ -286,7 +292,11 @@ class SqlIdentityStore:
         id outside the hashed fields. Returns the pseudonym, or None if there was no such user.
         """
         pseudonym = f"deleted:{secrets.token_hex(8)}"
-        with self._changing() as conn:
+        with self._changing(immediate=keep_one_admin) as conn:
+            if keep_one_admin:  # decided here, in the transaction that deletes (no race)
+                role = conn.execute(sa.select(_user.c.role).where(_user.c.id == user_id)).scalar()
+                if role == "admin" and _admin_count(conn) <= 1:
+                    raise ProfileError("last_admin")
             gone = conn.execute(sa.delete(_user).where(_user.c.id == user_id)).rowcount
             if not gone:
                 return None
@@ -298,6 +308,114 @@ class SqlIdentityStore:
             keys = identity.idempotency_key  # 24 hours of replayable answers: not a trace to keep
             conn.execute(sa.delete(keys).where(keys.c.actor_id == user_id))
         return pseudonym
+
+    # --- household profiles (M3 L05, EF-USR-001, EF-USR-005) ---------------------------------
+
+    @staticmethod
+    def _profile_of(row: Any) -> ProfileRecord:
+        return ProfileRecord(
+            id=row.id,
+            username=row.username,
+            role=row.role,
+            max_age_rating=row.max_age_rating,
+            can_rate=bool(row.can_rate),
+        )
+
+    def profiles(self) -> Sequence[ProfileRecord]:
+        columns = (_user.c.id, _user.c.username, _user.c.role, _user.c.max_age_rating,
+                   _user.c.can_rate)  # fmt: skip
+        with self._engine.connect() as conn:
+            rows = conn.execute(sa.select(*columns).order_by(_user.c.created_at, _user.c.id)).all()
+        return [self._profile_of(row) for row in rows]
+
+    def profile(self, user_id: str) -> ProfileRecord | None:
+        return next((p for p in self.profiles() if p.id == user_id), None)
+
+    def create_profile(
+        self, *, id: str, username: str, role: str, password_hash: str,
+        max_age_rating: int | None, can_rate: bool, now: datetime, max_admins: int,
+    ) -> None:  # fmt: skip
+        with self._changing(immediate=True) as conn:
+            taken = conn.execute(sa.select(_user.c.id).where(_user.c.username == username)).first()
+            if taken is not None:  # NOCASE: "Mum" and "mum" are one name
+                raise ProfileError("username_taken")
+            if role == "admin" and _admin_count(conn) >= max_admins:
+                raise ProfileError("too_many_admins")
+            conn.execute(
+                sa.insert(_user).values(
+                    id=id,
+                    username=username,
+                    role=role,
+                    can_rate=can_rate,
+                    max_age_rating=max_age_rating,
+                    password_hash=password_hash,
+                    created_at=now,
+                )
+            )
+
+    def update_profile(
+        self, user_id: str, *, expected_role: str, role: str, max_age_rating: int | None,
+        can_rate: bool, max_admins: int, now: datetime,
+    ) -> None:  # fmt: skip
+        with self._changing(immediate=True) as conn:
+            current = conn.execute(sa.select(_user.c.role).where(_user.c.id == user_id)).scalar()
+            if current is None:
+                raise ProfileError("not_found")
+            if current != expected_role:
+                raise ProfileError("changed_meanwhile")
+            admins = _admin_count(conn)
+            if current == "admin" and role != "admin" and admins <= 1:
+                raise ProfileError("last_admin")
+            if current != "admin" and role == "admin" and admins >= max_admins:
+                raise ProfileError("too_many_admins")
+            conn.execute(
+                sa.update(_user)
+                .where(_user.c.id == user_id)
+                .values(role=role, max_age_rating=max_age_rating, can_rate=can_rate)
+            )
+            if current != role:  # a changed role starts again: no session or key of the old one
+                conn.execute(
+                    sa.update(_session)
+                    .where(_session.c.user_id == user_id, _session.c.revoked_at.is_(None))
+                    .values(revoked_at=now)
+                )
+                conn.execute(
+                    sa.update(_key)
+                    .where(_key.c.user_id == user_id, _key.c.revoked_at.is_(None))
+                    .values(revoked_at=now)
+                )
+
+    def source_family(self, source_key: str) -> bool:
+        config = acquisition.source_config
+        with self._engine.connect() as conn:
+            row = conn.execute(
+                sa.select(config.c.family_safe).where(config.c.plugin_id == source_key)
+            ).first()
+        return bool(row[0]) if row else False  # a source nobody configured is not a family one
+
+    def set_source_policy(
+        self, user_id: str, source_key: str, policy: str, *, now: datetime
+    ) -> None:
+        table = identity.profile_source_policy
+        with self._engine.begin() as conn:
+            conn.execute(
+                sa.delete(table).where(table.c.user_id == user_id, table.c.source_key == source_key)
+            )
+            conn.execute(
+                sa.insert(table).values(
+                    user_id=user_id, source_key=source_key, policy=policy, updated_at=now
+                )
+            )
+
+    def stored_source_policies(self, user_id: str) -> dict[str, str]:
+        table = identity.profile_source_policy
+        with self._engine.connect() as conn:
+            rows = conn.execute(
+                sa.select(table.c.source_key, table.c.policy)
+                .where(table.c.user_id == user_id)
+                .order_by(table.c.source_key)
+            ).all()
+        return {row.source_key: row.policy for row in rows}
 
     def set_password_hash(self, user_id: str, password_hash: str) -> None:
         with self._changing() as conn:
