@@ -20,9 +20,8 @@ import sqlalchemy as sa
 from sqlalchemy import Connection, Engine
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
-from shelfhold.infrastructure.fsops import Fsops
 from shelfhold.infrastructure.schema import acquisition, catalog, export, storage
-from shelfhold.library.adapters.fresh_inodes import fresh_library_inodes, is_own_inode
+from shelfhold.library.adapters.fresh_inodes import Disk, fresh_library_inodes, is_own_inode
 from shelfhold.library.adapters.units import content_error_candidates
 from shelfhold.library.domain.store_budget import Candidate
 from shelfhold.library.replica import store_copies
@@ -126,7 +125,7 @@ def _kept_as_a_link(content: sa.Table) -> sa.ColumnElement[bool]:
 
 
 class SafeguardInventory:
-    def __init__(self, engine: Engine, fsops: Fsops | None = None) -> None:
+    def __init__(self, engine: Engine, fsops: Disk | None = None) -> None:
         self._engine = engine
         self._fsops = fsops  # given: a kept copy is a link or not as the disk says now
 
