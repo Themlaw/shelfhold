@@ -26,6 +26,7 @@ RESERVED = {
     ("shelf withdraw", "withdrawal_pending"),  # M1b L10: EF-BIB-037
     ("restore acknowledge", "restored_credentials"),  # cross review: after a restore
     ("reconcile --adopt-after-restore [confirm-deletion]", "restored_behind"),
+    ("reconcile --forget-root", "restored_behind"),
 }
 NOT_RESERVED = {
     ("missing resolve", "missing"),

@@ -36,6 +36,7 @@ CODES: tuple[ErrorCode, ...] = (
     ErrorCode("import.disk_full", 507, "admin"),
     ErrorCode("import.not_stored", 500, "admin"),
     ErrorCode("import.tombstoned", 409, "user"),
+    ErrorCode("import.own_export", 409, "user"),  # Shelfhold's own export coming back (I50)
     ErrorCode("import.original_not_kept", 409, "admin"),
     # An existing Suwayomi download tree (EF-INT-009): a chapter left alone, or a tree not read
     ErrorCode("import.tree_unreadable", 422, "admin"),

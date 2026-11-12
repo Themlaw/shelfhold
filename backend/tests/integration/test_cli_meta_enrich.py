@@ -72,6 +72,25 @@ def test_cli_meta_enrich(
         assert b.cli("meta", "enrich", edition) == 0  # by Edition: the same book
 
 
+@pytest.mark.req("EF-BIB-013")
+def test_cli_meta_enrich_takes_a_pasted_openlibrary_address(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    settings: Settings,
+    tmp_path: Path,
+) -> None:
+    with bench54(monkeypatch, settings, tmp_path) as b:
+        fake = FakeOpenLibrary()
+        edition = wire(b, fake, monkeypatch)
+        assert b.cli("meta", "enrich", f"https://{API_HOST}/isbn/{ISBN}") == 0
+        assert field(b, edition, "contributors") is not None
+        capsys.readouterr()
+        # an address by OpenLibrary key names no ISBN: refused, never guessed
+        assert b.cli("meta", "enrich", f"https://{API_HOST}/books/OL1M") != 0
+        # an address of another host is not an OpenLibrary address: not an identifier either
+        assert b.cli("meta", "enrich", f"https://example.org/isbn/{ISBN}") != 0
+
+
 @pytest.mark.req("EF-BIB-013", "ENF-LEG-005")
 def test_cli_meta_enrich_sends_the_configured_contact(
     monkeypatch: pytest.MonkeyPatch, settings: Settings, tmp_path: Path

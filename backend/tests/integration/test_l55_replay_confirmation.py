@@ -202,3 +202,41 @@ def test_replay_deletion_of_irreplaceable_requires_typed_confirmation(
         assert db_rows(settings, "SELECT restore_generation FROM instance") == [(0,)]
         audit = db_rows(settings, "SELECT action FROM audit WHERE action LIKE 'reconcile.%'")
         assert [a[0] for a in audit] == ["reconcile.confirm_deletion"]
+
+
+@pytest.mark.req("EF-INT-026")
+def test_forget_root_command_states_its_cost_refuses_then_forgets(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from shelfhold.export.application.restore import forget_root_phrase
+    from shelfhold.infrastructure.ids import new_ulid
+    from shelfhold.infrastructure.schema import platform
+
+    with scene(monkeypatch) as sc:
+        dead = sc.env.library.parent / "dead-disk"
+        dead.mkdir()
+        dead_id = new_ulid()
+        engine = sa.create_engine(f"sqlite:///{sc.settings.database_path}")
+        with engine.begin() as connection:  # the file was replaced: not the env's engine
+            connection.execute(
+                sa.insert(platform.physical_root).values(root_id=dead_id, path_entry=str(dead))
+            )
+        engine.dispose()
+        alive_id = db_rows(
+            sc.settings, "SELECT root_id FROM physical_root WHERE root_id != ?", dead_id
+        )[0][0]
+        phrase = forget_root_phrase(dead_id)
+        capsys.readouterr()
+        forget = ["reconcile", "--forget-root"]
+        assert run_cli(monkeypatch, sc.settings, *forget, dead_id) == 2  # the cost, nothing done
+        assert phrase in capsys.readouterr().err
+        assert run_cli(monkeypatch, sc.settings, *forget, dead_id, "--confirm", "no") == 5
+        assert run_cli(monkeypatch, sc.settings, *forget, new_ulid(), "--confirm", "x") == 5
+        alive_phrase = forget_root_phrase(alive_id)
+        assert run_cli(monkeypatch, sc.settings, *forget, alive_id, "--confirm", alive_phrase) == 5
+        capsys.readouterr()
+        done = run_cli(monkeypatch, sc.settings, *forget, dead_id, "--confirm", phrase)
+        assert done == 0, capsys.readouterr().err
+        assert dead_id in capsys.readouterr().out
+        rows = db_rows(sc.settings, "SELECT mode FROM physical_root WHERE root_id = ?", dead_id)
+        assert rows[0][0] == "adopt_ro"

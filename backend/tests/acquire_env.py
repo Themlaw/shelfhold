@@ -23,26 +23,27 @@ from shelfhold.acquisition.public import NativeAcquirer
 from shelfhold.events.bus import EventBus
 from shelfhold.export.application.locks import work_lock_for
 from shelfhold.infrastructure.clock import SystemClock
-from shelfhold.infrastructure.fetcher import Network
 from shelfhold.library.public import PassthroughStore, UntrustedEpubStore
 from shelfhold.plugin_host import attestation
 from shelfhold.plugin_host.attestation import FIRST_PARTY_PLUGIN_KEYS
-from shelfhold.plugin_host.registry import PluginCandidate, PluginOrigin, PluginRegistry
+from shelfhold.plugin_host.registry import PluginRegistry
 from shelfhold.plugin_host.source_fetcher import SourceFetchers
 from shelfhold.sdk.age import AgeRating  # noqa: F401 (the SDK surface a plugin imports)
 from shelfhold.sdk.models import API_VERSION as API
 from shelfhold.sdk.models import Cursor, DomainRule, Page, Permissions, PluginKind, RateLimit
 from shelfhold.sdk.refs import FileAsset, ImageRequest, SeriesInfo, SeriesRef, UnitInfo
 from shelfhold.sdk.source import Capability, SourceManifest
-from tests.fakes_fetcher import FakeResolver, Recorder
+from tests.fakes_fetcher import Recorder
 from tests.follow_env import empty_catalog
 from tests.library_env import LibEnv, lib_env
 from tests.null_tombstones import NONE_PURGED
+from tests.support.sources import first_party, no_work_hits, source_stack
 
 KEY = "native-books"
+
+
 HOST = "books.example.org"
 EVIL = "files.evil.example"
-PUBLIC = "93.184.216.34"
 BOOK = "book/42"
 UNIT = "native-books:42:ebook"
 PAGE = f"https://{HOST}/{BOOK}"
@@ -202,6 +203,7 @@ def acquire_bench(
     hosts: tuple[str, ...] = (HOST, EVIL),
     cache_enabled: bool = True,
     known: bool = True,
+    work_screen: Any = no_work_hits,
 ) -> Iterator[Bench]:
     plugin = plugin or NativeBooks()
     # `known`: the host's own plugin (a `publisher` value is taken as declared); otherwise a plugin
@@ -209,25 +211,23 @@ def acquire_bench(
     keys = FIRST_PARTY_PLUGIN_KEYS | {KEY} if known else FIRST_PARTY_PLUGIN_KEYS
     with patch.object(attestation, "FIRST_PARTY_PLUGIN_KEYS", keys), lib_env() as lib:
         empty_catalog(lib)
-        recorder_holder: list[Wire] = []
-        recorder = Recorder(lambda request: recorder_holder[0].respond(request))
-        wire = Wire(recorder, files=dict(files or {}), robots=robots)
-        recorder_holder.append(wire)
-        network = Network(
-            resolver=FakeResolver({h: [PUBLIC] for h in hosts}), transport=recorder.transport
-        )
-        registry = PluginRegistry()
-        registry.load_all(
-            [PluginCandidate(key=KEY, origin=PluginOrigin.FIRST_PARTY, load=lambda: plugin)]
-        )
-        fetchers = SourceFetchers(network, cache_enabled=cache_enabled)
-        clock = SystemClock()
-        bus = EventBus(clock)
         delivered: list[Any] = []
-        bus.subscribe(delivered.append, event_type="unit.stored")
-        (lib.tmp / "recv").mkdir()
-        acquirer = NativeAcquirer(
-            lib.engine, clock, bus, registry, fetchers, staging_dir=lib.tmp / "recv",
-            max_bytes=8 * 1024 * 1024,
-        )  # fmt: skip
-        yield Bench(lib, plugin, wire, registry, fetchers, acquirer, bus, delivered)
+        stack = source_stack(
+            lib,
+            lambda recorder: Wire(recorder, files=dict(files or {}), robots=robots),
+            hosts=hosts,
+            candidates=[first_party(KEY, lambda: plugin)],
+            fetchers=lambda net: SourceFetchers(net, cache_enabled=cache_enabled),
+            work_screen=work_screen,
+            subscribe={"unit.stored": delivered.append},
+        )
+        yield Bench(
+            lib,
+            plugin,
+            stack.wire,
+            stack.registry,
+            stack.fetchers,
+            stack.acquirer,
+            stack.bus,
+            delivered,
+        )

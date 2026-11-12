@@ -61,17 +61,6 @@ class PartialDate:
 
     __str__ = iso
 
-    def coarsened_to(self, precision: DatePrecision) -> "PartialDate":
-        """Lower the precision; asking for more than the data holds is an error."""
-        order = list(DatePrecision)
-        if order.index(precision) > order.index(self.precision):
-            raise ValueError(f"cannot raise precision from {self.precision} to {precision}")
-        if precision is DatePrecision.YEAR:
-            return PartialDate(self.year)
-        if precision is DatePrecision.MONTH:
-            return PartialDate(self.year, self.month)
-        return self
-
 
 def parse_partial_date(value: str | int | float | None) -> "PartialDate | None":
     """`2023`, `2023-05`, `2023-05-14`; a null or zero value from a source gives `None`.
@@ -98,18 +87,3 @@ def parse_partial_date(value: str | int | float | None) -> "PartialDate | None":
         return PartialDate(year or 0, month, day)
     except ValueError as exc:
         raise ValueError(f"invalid partial date: {text!r}") from exc
-
-
-def comicinfo_date_fields(date: PartialDate) -> dict[str, int]:
-    """ComicInfo `Year`/`Month`/`Day` fields, none finer than the data."""
-    fields = {"Year": date.year}
-    if date.month is not None:
-        fields["Month"] = date.month
-        if date.day is not None:
-            fields["Day"] = date.day
-    return fields
-
-
-def opf_date(date: PartialDate) -> str:
-    """OPF `dc:date`, at the precision of the data."""
-    return date.iso()

@@ -23,6 +23,7 @@ from shelfhold.acquisition.public import (
 from shelfhold.infrastructure.fetcher import FetchError
 from shelfhold.infrastructure.schema import acquisition
 from shelfhold.ops.errors import CodedRefusal, ExitUnavailableError
+from shelfhold.ops.tombstone_screens import CatalogScreens
 from shelfhold.plugin_host.errors import NoSourceForUrl, RefHasSecret
 from shelfhold.plugin_host.settings import SourceSettings
 from shelfhold.sdk.refs import SeriesRef
@@ -55,6 +56,7 @@ class AcquireOps:
             source_settings=self._settings_of,
             source_secrets=self._secrets_of,
             connected=(lambda key: link if key == "suwayomi" else None),
+            work_screen=CatalogScreens(comp).open,
         )  # fmt: skip
 
     def _settings_of(self, plugin_id: str) -> dict[str, Any]:

@@ -44,6 +44,9 @@ _DECLARED = (
     _action("tombstone.accept_lost_keyring", Effect.TOUCHES_TOMBSTONES),
     _action("tombstone.set_aside_journal", Effect.TOUCHES_TOMBSTONES),
     _action("tombstone.rekey", Effect.TOUCHES_TOMBSTONES),  # EF-BIB-054 (10): after a key leak
+    # The way out of `restored_behind` for a root that will not come back (M2 L31): demoted to
+    # read-only, typed, audited; a fresh session, never a key
+    _action("reconcile.forget_root", Effect.REINITS_STORAGE),
     _action("root.takeover", Effect.REINITS_STORAGE),
     _action("root.reinit", Effect.REINITS_STORAGE),
     _action("store.takeover", Effect.REINITS_STORAGE),
@@ -133,6 +136,7 @@ EXIT_ROUTES: tuple[ExitRoute, ...] = (
         "restored_behind",
         "reconcile.confirm_deletion",
     ),
+    _exit("reconcile --forget-root", "restored_behind", "reconcile.forget_root"),
     _exit("secrets import", "tombstone_key_unknown", "secrets.import"),
     _exit(
         "tombstone accept-lost-keyring", "tombstone_key_unknown", "tombstone.accept_lost_keyring"

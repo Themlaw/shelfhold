@@ -7,8 +7,6 @@ import pytest
 from shelfhold.catalog.domain.dates import (
     DatePrecision,
     PartialDate,
-    comicinfo_date_fields,
-    opf_date,
     parse_partial_date,
 )
 from shelfhold.plugin_host.adapters.meta.suwayomi.service import _upload_date
@@ -25,19 +23,11 @@ def test_partial_dates_never_gain_precision() -> None:
     year = parse_partial_date("2023")
     assert year is not None
     assert year.precision is DatePrecision.YEAR
-    assert comicinfo_date_fields(year) == {"Year": 2023}
-    assert opf_date(year) == "2023"
     month = parse_partial_date("2023-05")
-    assert month is not None
-    assert comicinfo_date_fields(month) == {"Year": 2023, "Month": 5}
-    assert opf_date(month) == "2023-05"
+    assert month is not None and month.precision is DatePrecision.MONTH
     day = parse_partial_date("2023-05-14")
-    assert day is not None
-    assert comicinfo_date_fields(day) == {"Year": 2023, "Month": 5, "Day": 14}
-    assert opf_date(day) == "2023-05-14"
-    with pytest.raises(ValueError, match="precision"):
-        year.coarsened_to(DatePrecision.DAY)
-    assert day.coarsened_to(DatePrecision.MONTH) == month
+    assert day is not None and day.precision is DatePrecision.DAY
+    assert str(year) == "2023" and str(month) == "2023-05" and str(day) == "2023-05-14"
 
 
 @pytest.mark.req("EF-BIB-047")

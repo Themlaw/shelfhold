@@ -777,7 +777,10 @@ class LocalAuth:
         *,
         restricted_profile_exists: bool,
         allowed_roles: frozenset[str] = DEFAULT_RESERVED_ROLES,
+        audit: bool = True,
     ) -> Verdict:
+        """`audit=False`: the route writes its own line, with its target, in the transaction that
+        discloses (the unmasking): the guard then writes none, so one disclosure is one line."""
         verdict = authorize_reserved(
             principal,
             action,
@@ -788,7 +791,8 @@ class LocalAuth:
             allowed_roles=allowed_roles,
         )
         if isinstance(verdict, Allowed):  # EF-USR-022 (3): session and auth_time in the audit
-            self._audit(action.name, principal)
+            if audit:
+                self._audit(action.name, principal)
         else:
             # a reauthentication asked for is the normal way in: INFO; a refusal is a WARNING
             level = "info" if isinstance(verdict, ReauthRequired) else "warning"

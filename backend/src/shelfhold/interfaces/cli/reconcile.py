@@ -28,11 +28,14 @@ from shelfhold.export.application.restore import (
     AdoptionBlockedError,
     AdoptionPreview,
     DeletionConfirmation,
+    DeletionRefusedError,
     DeletionUnavailableError,
+    ForgetRootRefusedError,
     PreviewStaleError,
     ReplayConfirmationRequiredError,
     RestoreAdopter,
     RestoreGuard,
+    forget_root_phrase,
 )
 from shelfhold.export.application.restore_purge import DeletionIncompleteError, RestoreDeletion
 from shelfhold.export.application.roots import load_roots
@@ -70,6 +73,9 @@ def register(commands: argparse._SubParsersAction[argparse.ArgumentParser]) -> N
     reconcile = commands.add_parser("reconcile", help=t("reconcile.help"), allow_abbrev=False)
     reconcile.add_argument(
         "--adopt-after-restore", action="store_true", help=t("reconcile.adopt_after_restore_help")
+    )
+    reconcile.add_argument(
+        "--forget-root", metavar="ID", default=None, help=t("reconcile.forget_root_help")
     )
     reconcile.add_argument(
         "--rebaseline-inodes", action="store_true", help=t("reconcile.rebaseline_help")
@@ -216,7 +222,48 @@ def _mark_store_missing(resolved: ResolvedSettings) -> StoreOutcome:
         engine.dispose()
 
 
+def run_forget_root(args: argparse.Namespace, resolved: ResolvedSettings) -> int:
+    """The way out of `root_not_mounted`: a root that will not come back is demoted to read-only.
+    Typed (`--confirm "forget root <id>"`), audited, a reserved action of the host's console."""
+    database = resolved.values.database_path
+    if not database.exists() or current_revision(database) != head_revision():
+        print(t("status.database_not_migrated"), file=sys.stderr)
+        return NEEDS_CONFIRMATION
+    phrase = forget_root_phrase(args.forget_root)
+    if not args.confirm:
+        print(
+            t("reconcile.forget_root_cost", root=args.forget_root, phrase=phrase), file=sys.stderr
+        )
+        return NEEDS_CONFIRMATION
+    principal = _principal(resolved.values.data_dir)
+    if principal is None:
+        print(t("reconcile.deletion_refused"), file=sys.stderr)
+        return REFUSED
+    try:
+        with open_restore(resolved) as (adopter, _guard):
+            adopter.forget_root(args.forget_root, confirm=args.confirm, principal=principal)
+    except InstanceLockHeldError:
+        print(t("reconcile.instance_running"), file=sys.stderr)
+        return BLOCKED
+    except ForgetRootRefusedError as refused:
+        if refused.reason == "unknown_root":
+            message = t("reconcile.forget_root_unknown_root", root=args.forget_root)
+        elif refused.reason == "still_readable":
+            message = t("reconcile.forget_root_still_readable", root=args.forget_root)
+        else:
+            message = t("reconcile.forget_root_phrase_mismatch", phrase=phrase)
+        print(message, file=sys.stderr)
+        return REFUSED
+    except DeletionRefusedError:
+        print(t("reconcile.deletion_refused"), file=sys.stderr)
+        return REFUSED
+    print(t("reconcile.forget_root_done", root=args.forget_root))
+    return 0
+
+
 def run(args: argparse.Namespace, resolved: ResolvedSettings) -> int:
+    if args.forget_root:
+        return run_forget_root(args, resolved)
     if args.rebaseline_inodes:
         if args.adopt_after_restore:
             print(t("reconcile.one_action"), file=sys.stderr)

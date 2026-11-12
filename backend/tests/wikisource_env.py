@@ -25,23 +25,21 @@ import sqlalchemy as sa
 
 from shelfhold.acquisition.public import NativeAcquirer
 from shelfhold.events.bus import EventBus
-from shelfhold.infrastructure.clock import SystemClock
-from shelfhold.infrastructure.fetcher import Network
 from shelfhold.plugin_host import attestation
-from shelfhold.plugin_host.registry import PluginCandidate, PluginOrigin, PluginRegistry
+from shelfhold.plugin_host.registry import PluginRegistry
 from shelfhold.plugin_host.source_fetcher import SourceFetchers
 from shelfhold.sdk.refs import SeriesRef
 from tests.fakes.wikisource import Page, info_answer, search_answer
-from tests.fakes_fetcher import FakeResolver, Recorder
+from tests.fakes_fetcher import Recorder
 from tests.follow_env import empty_catalog
 from tests.gutenberg_env import FakeTime, RoutedStore, host_of
 from tests.library_env import LibEnv, lib_env
+from tests.support.sources import first_party, source_stack
 
 KEY = "wikisource"
 API_HOST = "fr.wikisource.org"
 EXPORT_HOST = "ws-export.wmcloud.org"
 OUTSIDE_HOSTS = ("en.wikipedia.org", "fr.wikisource.evil.example")
-PUBLIC = "93.184.216.34"
 PAGE_URL = f"https://{API_HOST}/wiki/Le_Comte_de_Test"
 
 BOOK = "Le Comte de Test"
@@ -152,28 +150,28 @@ def wikisource_bench(
         lib_env() as lib,
     ):
         empty_catalog(lib)
-        holder: list[Wire] = []
-        recorder = Recorder(lambda request: holder[0].respond(request))
-        served = Wire(recorder, exports=dict(exports or {}))
-        if pages is not None:
-            served.pages = dict(pages)
-        served.now = fake.clock
-        holder.append(served)
-        hosts = (API_HOST, EXPORT_HOST, *OUTSIDE_HOSTS)
-        network = Network(
-            resolver=FakeResolver({h: [PUBLIC] for h in hosts}), transport=recorder.transport
-        )
         source = plugin or WikisourceSource()
-        registry = PluginRegistry()
-        registry.load_all(
-            [PluginCandidate(key=KEY, origin=PluginOrigin.FIRST_PARTY, load=lambda: source)]
-        )
-        fetchers = SourceFetchers(network, pace_clock=fake.clock, pace_sleep=fake.sleep)
-        clock = SystemClock()
-        bus = EventBus(clock)
-        (lib.tmp / "recv").mkdir()
-        acquirer = NativeAcquirer(
-            lib.engine, clock, bus, registry, fetchers, staging_dir=lib.tmp / "recv",
-            max_bytes=8 * 1024 * 1024, source_settings=lambda _key: dict(chosen),
+
+        def make_wire(recorder: Recorder) -> Wire:
+            served = Wire(recorder, exports=dict(exports or {}))
+            if pages is not None:
+                served.pages = dict(pages)
+            served.now = fake.clock
+            return served
+
+        stack = source_stack(
+            lib, make_wire, hosts=(API_HOST, EXPORT_HOST, *OUTSIDE_HOSTS),
+            candidates=[first_party(KEY, lambda: source)], settings=chosen,
+            fetchers=lambda net: SourceFetchers(net, pace_clock=fake.clock, pace_sleep=fake.sleep),
         )  # fmt: skip
-        yield Bench(lib, source, served, registry, fetchers, acquirer, bus, fake, chosen)
+        yield Bench(
+            lib,
+            source,
+            stack.wire,
+            stack.registry,
+            stack.fetchers,
+            stack.acquirer,
+            stack.bus,
+            fake,
+            chosen,
+        )

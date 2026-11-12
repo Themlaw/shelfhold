@@ -154,6 +154,23 @@ class FakeLncrawl:
             body=json.dumps(payload).encode(),
         )  # fmt: skip
 
+    def _leaky_chapter(self, chapter: dict[str, Any]) -> dict[str, Any]:
+        """The instance repeats the name in the fields a host stores: title and team."""
+        out = dict(chapter)
+        if self.leak_name:
+            out["title"] = f"{out['title']} {CANARY}"
+            out["team"] = f"{out.get('team', '')} {CANARY}"
+            out["crawler"] = CANARY
+        return out
+
+    def _leaky_novel(self, novel: dict[str, Any]) -> dict[str, Any]:
+        out = {k: v for k, v in novel.items() if k != "chapters"}
+        if self.leak_name:
+            out["title"] = f"{out['title']} {CANARY}"
+            out["authors"] = [*out.get("authors", []), CANARY]
+            out["crawler"] = CANARY
+        return out
+
     def _get(self, path: str, request: RecordedRequest) -> Response:
         if path == "/status":
             if self.huge_reply:
@@ -161,17 +178,24 @@ class FakeLncrawl:
                                    "pad": "x" * (4 << 20)})  # fmt: skip
             return self._json({"version": self.version, "instance": self.instance})
         if path == "/library":
-            return self._page([{"id": n["id"], "title": n["title"]} for n in self.novels], request)
+            return self._page(
+                [
+                    {k: v for k, v in self._leaky_novel(n).items() if k in ("title", "crawler")}
+                    | {"id": n["id"]}
+                    for n in self.novels
+                ],
+                request,
+            )
         if m := re.fullmatch(r"/novels/([\w-]+)/chapters", path):
             novel = self.novel(m.group(1))
             if novel is None:
                 return self._json({"detail": "no such novel"}, 404)
-            return self._page([dict(c) for c in novel["chapters"]], request)
+            return self._page([self._leaky_chapter(c) for c in novel["chapters"]], request)
         if m := re.fullmatch(r"/novels/([\w-]+)", path):
             novel = self.novel(m.group(1))
             if novel is None:
                 return self._json({"detail": "no such novel"}, 404)
-            return self._json({k: v for k, v in novel.items() if k != "chapters"})
+            return self._json(self._leaky_novel(novel))
         if m := re.fullmatch(r"/jobs/([\w-]+)", path):
             return self._job(m.group(1))
         if m := re.fullmatch(r"/artifacts/([\w-]+)/file", path):

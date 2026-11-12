@@ -13,6 +13,7 @@ from shelfhold.catalog.application.dto import (
     TeamRef,
 )
 from shelfhold.catalog.application.ports import EditionStore, TeamStore, UnitStore, WorkStore
+from shelfhold.catalog.domain.identity import TextVersionRef
 from shelfhold.catalog.domain.placement import (
     VariantFacts,
     missing_numbers,
@@ -75,6 +76,20 @@ class CatalogService:
     # Editions
     def ensure_edition(self, spec: EditionSpec) -> EditionRef:
         return editions.ensure_edition(self._editions, spec)
+
+    def edition_for_translation(
+        self,
+        spec: EditionSpec,
+        *,
+        kind: str,
+        nature: str,
+        text_version: TextVersionRef | None = None,
+    ) -> EditionRef:
+        """The Edition of a translation: a community one is a Team of one Edition, a published one
+        a `text_version` (EF-BIB-049)."""
+        return editions.edition_for_translation(
+            self._editions, spec, kind=kind, nature=nature, text_version=text_version
+        )
 
     @staticmethod
     def translation_type_for(nature: str) -> str:

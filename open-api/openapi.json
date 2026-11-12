@@ -1043,6 +1043,26 @@
         "title": "ForceIn",
         "type": "object"
       },
+      "ForgetRootIn": {
+        "properties": {
+          "confirm": {
+            "minLength": 1,
+            "title": "Confirm",
+            "type": "string"
+          },
+          "root_id": {
+            "minLength": 1,
+            "title": "Root Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "root_id",
+          "confirm"
+        ],
+        "title": "ForgetRootIn",
+        "type": "object"
+      },
       "GuardsTriggered": {
         "properties": {
           "foreign_writer": {
@@ -7183,6 +7203,67 @@
         ]
       }
     },
+    "/api/v1/reconcile/forget-root": {
+      "post": {
+        "operationId": "restore_forget_root",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ForgetRootIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Done"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Connexion requise, ou mot de passe à confirmer (reauth-required)."
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée)."
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Détail du problème (RFC 9457)."
+          }
+        },
+        "summary": "Restore Forget Root",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
     "/api/v1/restore/acknowledge": {
       "post": {
         "description": "The passkeys and passwords changed since the backup were looked at: passkey sign-in\ncomes back. Lists the passkeys created or revoked since the backup, as far as known.",
@@ -10063,6 +10144,10 @@
       "code": "acquire.series_tombstoned",
       "status": 409
     },
+    "/api/v1/problems/acquire.tombstones-unavailable": {
+      "code": "acquire.tombstones_unavailable",
+      "status": 409
+    },
     "/api/v1/problems/acquire.unit-required": {
       "code": "acquire.unit_required",
       "status": 422
@@ -10070,6 +10155,10 @@
     "/api/v1/problems/acquire.unsupported-file": {
       "code": "acquire.unsupported_file",
       "status": 422
+    },
+    "/api/v1/problems/acquire.work-tombstoned": {
+      "code": "acquire.work_tombstoned",
+      "status": 409
     },
     "/api/v1/problems/backfill.confirmation-required": {
       "code": "backfill.confirmation_required",
@@ -10325,6 +10414,10 @@
     },
     "/api/v1/problems/import.original-not-kept": {
       "code": "import.original_not_kept",
+      "status": 409
+    },
+    "/api/v1/problems/import.own-export": {
+      "code": "import.own_export",
       "status": 409
     },
     "/api/v1/problems/import.pdf-refused": {

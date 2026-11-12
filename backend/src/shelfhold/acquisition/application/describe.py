@@ -25,10 +25,8 @@ import structlog
 from shelfhold.catalog.public import (
     Catalog,
     ExternalId,
-    ExternalIdConflictError,
     ExternalIdError,
     TextVersionRef,
-    add_external_id,
     holder_of,
     propose_fields,
 )
@@ -36,7 +34,13 @@ from shelfhold.infrastructure.schema import catalog
 from shelfhold.sdk.metadata import FieldProposal, Provenance
 from shelfhold.sdk.refs import SeriesInfo
 
-__all__ = ["credit_authors", "known_work", "remember_work", "text_version_for", "write_rights"]
+__all__ = [
+    "credit_authors",
+    "incoming_work_ids",
+    "known_work",
+    "text_version_for",
+    "write_rights",
+]
 
 log = structlog.get_logger(__name__)
 WRITER = "aut"
@@ -57,20 +61,12 @@ def known_work(connection: sa.Connection, plugin_key: str, info: SeriesInfo) -> 
         return None
 
 
-def remember_work(
-    connection: sa.Connection, work_id: str, plugin_key: str, info: SeriesInfo
-) -> None:
-    """The source's own identifiers, and the key that groups its books."""
+def incoming_work_ids(plugin_key: str, info: SeriesInfo) -> tuple[ExternalId, ...]:
+    """The source's own identifiers of its Work, and the key that groups its books: what the
+    arrival of the Edition hands over (`AutoAttachService.arrive`), which asks the Work tombstones
+    before any of them is recorded."""
     pairs = [(_provider(plugin_key), info.work_key), *info.external_ids.items()]
-    for provider, value in pairs:
-        if not value:
-            continue
-        try:
-            add_external_id(
-                connection, work_id, ExternalId("work", provider, value), origin="source"
-            )
-        except (ExternalIdError, ExternalIdConflictError):
-            log.info("acquire.external_id_skipped", plugin_id=plugin_key, provider=provider)
+    return tuple(ExternalId("work", provider, value) for provider, value in pairs if value)
 
 
 def credit_authors(

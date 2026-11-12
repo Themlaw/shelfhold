@@ -29,6 +29,7 @@ BODIES: dict[str, dict[str, object]] = {
     "source set-secret": {"secret": "user:pass"},
     "target recheck [child_exposure]": {},
     "reconcile --adopt-after-restore [confirm-deletion]": {"confirm_deletion": True},
+    "reconcile --forget-root": {"root_id": "r", "confirm": "x"},
     "tombstone accept-lost-keyring": {"confirmation": "x"},
     "tombstone set-aside-journal": {},
     "secrets import": {"passphrase_file": "p", "in_file": "export.age"},
