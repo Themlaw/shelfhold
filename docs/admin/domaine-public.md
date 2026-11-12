@@ -6,6 +6,14 @@ de l'auteur plus 70 ans, plus les prorogations de guerre, plus 30 ans pour un au
 France, et une traduction a ses propres droits (EF-SRC-024, ADR-0032). Shelfhold ne qualifie pas
 l'usage que vous faites d'un livre, et ce qui suit n'est pas un avis juridique.
 
+## Les sources concernées
+
+Le tableau de [sources.md](sources.md) dit, pour chaque source, la base de droits qu'elle déclare :
+
+- libre de droits aux États-Unis : Gutenberg et Standard Ebooks, libres de droits aux États-Unis ;
+- licence : Wikisource (CC BY-SA, avec attribution) ;
+- fichiers fournis par vous : OPDS et dossier d'import.
+
 ## Le pays de l'instance
 
 `instance.jurisdiction` est un code de pays à deux lettres. Il est **déduit de la langue du

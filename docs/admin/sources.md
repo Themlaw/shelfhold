@@ -4,6 +4,38 @@ Chaque source décrit ses réglages dans son manifeste (`settings_schema`, un pe
 champs plats : texte, nombre, booléen, liste de valeurs). Shelfhold le vérifie au chargement du
 plugin et refuse un plugin dont le schéma sort de ce cadre (EF-SRC-013).
 
+## Les sources natives de M2 : conditions, limites et `terms_url`
+
+Chaque source livrée avec Shelfhold déclare dans son manifeste (`sources/<nom>/manifest.json`) l'adresse des
+conditions sous lesquelles elle a été admise (`terms_url`), son débit et ce qu'elle suppose sur les droits et sur la
+confiance. Une source n'envoie **rien** tant que vous ne l'avez pas ajoutée aux sources actives
+(`SHELFHOLD_ACTIVE_SOURCES`) et, pour celles qui en ont besoin, réglée. La liste d'admission que le mainteneur
+valide est dans [../plugins/source.md](../plugins/source.md).
+
+| Source | `terms_url` | Débit tenu par Shelfhold | Droits et confiance |
+|---|---|---|---|
+| `opds` | [cette page](sources.md) : les conditions sont celles du catalogue que vous branchez | 2 requêtes par seconde | `user_supplied`, EPUB non fiables |
+| `gutenberg` | `https://www.gutenberg.org/policy/terms_of_use.html` | 1 requête toutes les 5 secondes | libre de droits aux États-Unis, EPUB non fiables |
+| `wikisource` | `https://foundation.wikimedia.org/wiki/Policy:Terms_of_Use` | 1 requête par seconde | `licence` (CC BY-SA, attribution obligatoire), EPUB non fiables |
+| `standardebooks` | `https://standardebooks.org/about` | 1 requête toutes les 5 secondes | libre de droits aux États-Unis (CC0 pour la production), EPUB non fiables |
+| `lncrawl` | `https://github.com/lncrawl/lightnovel-crawler/blob/dev/LICENSE` (la licence du logiciel) | 5 requêtes par seconde vers **votre** instance | contenu non fiable ; les droits sont ceux des textes que votre instance rapporte |
+| `import_folder` | [dossier-import.md](dossier-import.md) | aucun réseau (déclaré : 1 fichier par seconde au plus) | `user_supplied`, non fiable, sauf achat déclaré |
+| `openlibrary` (métadonnées) | `https://openlibrary.org/developers/api` | 1 requête par seconde, 3 avec `SHELFHOLD_METADATA_CONTACT`, 5000 par jour | données CC0, voir [metadonnees.md](metadonnees.md) |
+
+Conditions communes :
+
+- Les EPUB reçus d'une source native sont **non fiables** : le neutraliseur passe avant tout export
+  ([neutraliseur.md](neutraliseur.md)).
+- Les règles de domaine ne laissent passer que les adresses que le manifeste déclare ; une redirection hors de
+  cette liste est refusée à ce saut.
+- Le débit est tenu par Shelfhold pour toute la source, quel que soit le nombre de demandes en cours, et
+  `robots.txt` est lu et respecté pour les sources natives (hors lncrawl, qui parle à votre instance).
+- Aucune source n'est appelée au démarrage : un ajout ou une recherche part d'un geste de votre part
+  (`shelfhold source search <clé> <mots>`, `shelfhold source acquire <clé> <identifiant>`, `shelfhold acquire <adresse>`),
+  ou du suivi d'une série que vous avez demandée.
+- Gutenberg et Standard Ebooks sont libres de droits aux États-Unis ; pour votre pays, voir
+  [domaine-public.md](domaine-public.md).
+
 ## Valeurs, secrets et cookies
 
 - Une **valeur ordinaire** (langue, taille de page…) se lit et se change librement :
@@ -143,3 +175,18 @@ cette origine), et masqué des journaux, du cache, des références et du paquet
 rythme est lent (une requête toutes les 5 secondes au plus pour toute la source) et les EPUB sont
 toujours **non fiables** : le neutraliseur passe avant tout export, l'original est gardé dans
 `/store`. Pour l'activer, ajoutez la clé `standardebooks` aux sources actives.
+
+## lncrawl, en service connecté
+
+La source `lncrawl` n'est pas un site : c'est **votre propre instance** lncrawl, branchée comme un service
+connecté (capacités `FOLLOW`, `RANGED_CONTENT` et `SEARCH`). Shelfhold ne parle qu'à l'adresse `base_url` que vous
+réglez, avec une clé d'API en secret, et demande un EPUB par tome. Ses conditions sont celles de votre
+instance et de ce qu'elle rapporte ; le `terms_url` du manifeste pointe vers la licence du logiciel, pas vers un site.
+Aucun crawler n'est fourni, listé ni suggéré. Tout est dans [lncrawl.md](lncrawl.md).
+
+## Où vont les autres sujets
+
+- Suivi de la même série sur plusieurs sources : [suivi-multi-sources.md](suivi-multi-sources.md).
+- Métadonnées d'un fournisseur : [metadonnees.md](metadonnees.md).
+- Écrire une source ou un fournisseur : [../plugins/source.md](../plugins/source.md) et
+  [../plugins/metadata-provider.md](../plugins/metadata-provider.md).

@@ -2,6 +2,54 @@
 
 Format : [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/). Versionnement : [SemVer](https://semver.org/lang/fr/). Procédure de release : `docs/releasing.md`.
 
+## [0.4.0] (à paraître) — M2
+
+Migration : oui (de 0020 à 0040 : 0020, 0021, 0025, 0026, 0027, 0028, 0035, 0037 et 0040 ; les 0013 à 0017 sont celles de la 0.3.0), réversible : non automatiquement. `shelfhold migrate` sauvegarde la base avant de migrer (`/data/backups/pre-migration`) ; un retour à la 0.3.0 passe par cette sauvegarde (`docs/admin/retour-arriere.md`). Les migrations 0020 et suivantes sont publiées avec ce tag (`tools/published-migrations.toml`) : à partir de là, une version corrective n'en modifie ni n'en ajoute aucune (ENF-OPS-002). Version minimale de Kavita : 0.9.1, inchangée.
+
+Cette section est un brouillon : le mainteneur la date et la fige au moment du tag.
+
+Migrations de M2 :
+
+- 0020 : schéma M2 (métadonnées et leurs provenances, caches HTTP, quotas des fournisseurs, entrées d'import, attestations de plugins, trous de série, échantillons de cadence).
+- 0021 : `export_upgrade` (remplacement d'un fichier exporté au même chemin).
+- 0025 : données : rouvre les suggestions d'âge d'Édition que l'ancien classement avait réglées.
+- 0026 : identifiants externes en ajout seul et journal des rattachements.
+- 0027 : réglages par source et secrets scellés (`source_secret`).
+- 0028 : file des révisions en attente.
+- 0035 : une seule demande ouverte par Unité.
+- 0037 : `export_record.spine_count` (garde des révisions suspectes).
+- 0040 : `source_binding.last_refreshed_at` (dernière demande de rafraîchissement, pour la cadence adaptative).
+
+### Ajouté
+
+- **Sources natives** (EF-SRC-006, EF-SRC-007, EF-SRC-011, EF-SRC-012, ENF-LEG-003) : source OPDS générique (1.2 et 2.0, OpenSearch, authentification Basic ou clé d'API, règle anti-écho), Project Gutenberg (libre de droits aux États-Unis : catalogue officiel et miroir d'une liste blanche figée, jamais le site), Wikisource (un EPUB par livre, attribution CC BY-SA construite et copiée dans l'EPUB), Standard Ebooks (libre de droits aux États-Unis : une adresse par livre, flux OPDS réservé aux patrons), dossier d'import (CBZ, EPUB, PDF). Chaque source déclare son `terms_url` et ses limites de débit ; voir `docs/admin/sources.md`.
+- **Acquisition ponctuelle** : `shelfhold source search`, `source filters`, `source acquire`, `shelfhold acquire <adresse>` (EF-SRC-015, EF-SRC-004).
+- **lncrawl en service connecté** (EF-SRC-032, EF-SRC-034) : votre propre instance, un EPUB par tome et par plage de chapitres, politique de tomes des romans (`closed_only`, `rolling_tail`, `whole`), export de `/data/ranged`. Aucun crawler n'est fourni, listé ni suggéré (`docs/admin/lncrawl.md`).
+- **Dossier d'import** (EF-SRC-012, EF-INT-009) : `shelfhold import scan [--dry-run] [--purchase]`, `shelfhold import tree <chemin>` (arbre de téléchargements Suwayomi existant, sans retélécharger) ; fichiers protégés refusés avec un message, audio refusé, heuristique de tatouage, retrait seulement après relecture par empreinte.
+- **Contenu non fiable** (EF-BIB-051, ENF-SEC-015) : `xhtml-neutralizer@v1` et son corpus d'EPUB piégés, dérivé neutralisé exporté, original gardé dans `/store`, `shelfhold content reneutralize`, PDF non fiable rangé et non exporté (`content.untrusted_pdf`), SVG d'un CBZ non fiable rastérisé dans le worker de décodage (coupable de M2, livré).
+- **Fichiers tatoués** (ENF-LEG-009, ADR-0033) : drapeau `watermarked`, aucune réécriture hors de l'OPF, jamais vers une destination `egress = externe`, jamais dans un paquet de diagnostic.
+- **Métadonnées** (EF-BIB-008, EF-BIB-013, EF-BIB-003, EF-BIB-037) : contrat `MetadataProvider` du SDK 1.2 avec kit de conformité, fournisseur OpenLibrary (agent identifiable, seau à jetons par fournisseur, cache obligatoire, couverture décodée dans le worker), provenance et verrous par champ (`shelfhold meta enrich|lock|unlock`), identifiants externes en ajout seul (`shelfhold edition renumber-id`), rattachement automatique affiché et annulable (`edition attachments|detach|attach-confirm|attach-decline`), fusion d'Éditions (`edition merge`).
+- **Droits** (EF-SRC-024, ENF-LEG-008) : pays de l'instance (`instance.jurisdiction`, confirmé par `shelfhold config set`), domaine public calculé sur toutes les contributions, avertissement indicatif jamais bloquant, vocabulaire « libre de droits aux États-Unis » contrôlé par la CI.
+- **Suivi multi-sources** (EF-SRC-037, EF-SRC-038, EF-SRC-039, EF-BIB-056) : liaisons classées par Édition, une demande par Unité et par cycle, repli notifié (`source.fallback`) et retour au rang d'origine, mise à niveau tardive vers un meilleur rang, filtres de téléchargement appliqués avant la demande, détection des trous de numérotation (`shelfhold follow gap-ack`), cadence adaptative et `shelfhold follow check <édition>` (coupable de M2, livré).
+- **Révisions** (EF-BIB-009, EF-BIB-024, EF-BIB-043, EF-EXP-016) : garde de révision suspecte (`SHELFHOLD_REVISION_MIN_PAGE_RATIO`), file `shelfhold revisions list|apply` avec jeton de lot et `--force-suspect`, mise à niveau au même chemin par le journal d'intentions, ancienne version à la corbeille.
+- **Export** (EF-EXP-015) : EPUB vers une bibliothèque Kavita « Livres », âge de série poussé verrouillé avant le premier export, omnibus en série distincte, option lien dur pour un contenu remplaçable sur le même montage (`shelfhold shelf link-mode`, coupable de M2, livré ; jamais pour une Unité irremplaçable ni une copie conservée).
+- **Plugins** (EF-SRC-002, EF-SRC-003, EF-SRC-004, EF-SRC-013, EF-EXP-065) : garde des entrées-sorties directes (détecteur), domaines avec suffixes, réglages par source avec secrets et cookies chiffrés un par un, attestation par l'administrateur des valeurs de confiance (`shelfhold plugin attest|withdraw`), références distantes sans secret.
+- **Pierres tombales d'Œuvre** (EF-BIB-053, EF-BIB-054) : `shelfhold purge --work`, fusions d'Éditions qui les consultent.
+- **Diagnostic** (ENF-LEG-009, EF-BIB-041) : `shelfhold diagnostic bundle --out <fichier.zip>`, paquet fermé par défaut, dernière barrière qui refuse d'écrire si une valeur à protéger s'y trouve, aucun fichier tatoué.
+- **Documentation** : `docs/admin/` complété (sources, dossier d'import, lncrawl, métadonnées, domaine public, fichiers tatoués, neutraliseur, révisions, suivi multi-sources, diagnostic), `docs/plugins/source.md` et `metadata-provider.md` avec la liste d'admission (ENF-LEG-003), ADR-0021, ADR-0027, ADR-0035 et ADR-0047 amendées, `docs/decisions/M2.md`.
+- Variables : `SHELFHOLD_IMPORT_DIR`, `SHELFHOLD_REVISION_MIN_PAGE_RATIO`, `SHELFHOLD_FOLLOW_FALLBACK_RETURN`, `SHELFHOLD_FOLLOW_CHECK_MIN_S`, `_MAX_S`, `_FINISHED_S`, `SHELFHOLD_METADATA_CONTACT` (`docs/reference/config.md`).
+
+### Modifié
+
+- Le compose d'exemple passe à l'image `0.4` et documente le dossier d'import ; `/store` est recommandé dès qu'une source non fiable est active (sans lui, l'original d'un EPUB non fiable n'est gardé nulle part).
+- **EF-EXP-033 lu contre la définition de fini de 03** (ADR-0027, D1) : aucun âge dans l'OPF d'un EPUB ; l'âge de série est poussé verrouillé par l'API Kavita et n'est visible que dans la bibliothèque adulte.
+- Un EPUB `untrusted` n'atteint plus jamais `/library` sous sa forme d'origine : seul son dérivé neutralisé y est rangé.
+
+### Sécurité
+
+- Un EPUB ou un CBZ reçu d'une source native ou du dossier d'import est traité comme non fiable : neutraliseur avant tout export, entrées SVG rastérisées ou refusées, PDF jamais exporté tant qu'il n'est pas déclaré d'éditeur.
+- Aucun secret de source n'est relu par l'API ni la CLI ; il est masqué des journaux, du cache HTTP, des références et du paquet de diagnostic.
+
 ## [0.3.0] - 2026-11-11 — M1b
 
 Migration : oui (migrations 0013 à 0017 pour M1b, plus 0020, 0021, 0025, 0026, 0027, 0028, 0035 et 0037 déjà sur `main`, voir ci-dessous), réversible : non automatiquement. `shelfhold migrate` sauvegarde la base avant de migrer (`/data/backups/pre-migration`) ; un retour à la 0.2.0 passe par cette sauvegarde et par `shelfhold reconcile --adopt-after-restore` avec le service complet (`docs/admin/retour-arriere.md`). Version minimale de Kavita prise en charge : **0.9.1** (ENF-COMP-001) ; les étagères famille la refusent en dessous.

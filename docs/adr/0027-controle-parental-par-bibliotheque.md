@@ -1,7 +1,7 @@
 ---
 status: accepté
 date: 2026-11-02
-amended: 2026-11-03 (passe 5) ; 2026-11-03 (passe 7) ; 2026-11-03 (passe 10) ; 2026-11-03 (passe 11) ; 2026-11-03 (passe 12)
+amended: 2026-11-03 (passe 5) ; 2026-11-03 (passe 7) ; 2026-11-03 (passe 10) ; 2026-11-03 (passe 11) ; 2026-11-03 (passe 12) ; 2026-11-12 (M2 L33)
 decision-makers: mainteneur
 ---
 # ADR-0027 — Contrôle parental par bibliothèque (classer = approuver)
@@ -126,3 +126,7 @@ N3 (GAP-13-03).
 - Test : `test_kavita_reconnect_repushes_rated_series_ages`.
 
 Source : `deliverables/review/chasseur-trous-passe13.md`, `deliverables/review/explorateur-passe13.md`, `deliverables/review/ARBITRAGES-passe13.md` (passe 13)
+
+## Amendement M2 (2026-11-12) : EF-EXP-033 lu contre la définition de fini de 03 (D1)
+
+Lot M2 L33. La définition de fini de M2 dans `03-roadmap-tdd.md` dit « un EPUB 16+ porte son classement OPF ». Les passes 11 et 12 et l'exigence EF-EXP-033 l'interdisent : **aucun âge n'est écrit dans un EPUB**. Les arbitrages priment et la clause se lit : **aucun âge dans l'OPF, âge de série poussé verrouillé par l'API Kavita, visible seulement dans la bibliothèque adulte**. L'âge vit en base ; il atteint Kavita sur la série, verrouillé, avant le premier export d'un EPUB de cette série (PR #140, M2 L09) ; la réécriture d'un EPUB reçu ne touche que les éléments de série listés de l'OPF, sans âge, et conserve le sens de lecture et l'accessibilité (PR #130, M2 L08). Le texte de 03 n'est pas modifié : cette section en est la lecture faisant foi.

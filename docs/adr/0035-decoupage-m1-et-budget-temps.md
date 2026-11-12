@@ -1,7 +1,7 @@
 ---
 status: accepté
 date: 2026-11-03
-amended: 2026-11-03 (passe 5) ; 2026-11-03 (passe 6) ; 2026-11-03 (passe 7)
+amended: 2026-11-03 (passe 5) ; 2026-11-03 (passe 6) ; 2026-11-03 (passe 7) ; 2026-11-12 (M2 L33)
 decision-makers: mainteneur
 ---
 # ADR-0035 — Découpage de M1 (M1a / M1b) et budget de temps par jalon
@@ -74,3 +74,7 @@ ENF-GOV-005, ENF-GOV-003, ENF-GOV-001, EF-USR-021, EF-INT-023, ENF-SEC-015, EF-E
 - `deliverables/review/explorateur-passe5.md`
 - `deliverables/review/ARBITRAGES-passe5.md`
 - `deliverables/review/chasseur-trous-passe7.md`, `deliverables/review/explorateur-passe7.md`, `deliverables/review/ARBITRAGES-passe7.md` (passe 7)
+
+## Amendement M2 (2026-11-12) : coupables de M2 (D2)
+
+Lot M2 L33. 03 ne listait aucun élément coupable pour M2, ce qui, d'après la règle de coupe, interdisait toute coupe. La liste de M2 est : rastérisation SVG, Standard Ebooks, EF-SRC-038, EF-INT-009 et l'option lien dur d'EF-EXP-015 (environ 17 h). **Aucun n'a été coupé : tous ont été livrés** : SVG rastérisé dans le worker de décodage (PR #164, L10), Standard Ebooks (PR #155, L24), cadence adaptative EF-SRC-038 (PR #169, L29), import d'un arbre Suwayomi EF-INT-009 (PR #166, L21), option lien dur (PR #171, L18). Les garanties de cohérence, la sécurité, le contrôle parental et la surface d'exploitation restent non coupables.
