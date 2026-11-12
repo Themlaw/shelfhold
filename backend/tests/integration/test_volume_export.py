@@ -19,6 +19,7 @@ import sqlalchemy as sa
 
 from shelfhold.export.application.pipeline import SourceMissingError, wanted_names
 from shelfhold.export.application.plans import StalePlanError
+from shelfhold.export.application.ranged_export import RangedExporter
 from shelfhold.export.application.upgrade import SamePathUpgrade, UpgradeRequest
 from shelfhold.export.application.withdrawal import WithdrawalService
 from shelfhold.export.domain.planner import AGE_WAIT
@@ -133,8 +134,33 @@ def test_names_of_a_closed_volume_are_asked_before_any_disk_is_read() -> None:
     nothing, and the closed volume never leaves (M2 L32)."""
     with export_env() as env:
         volume_on_shelf(env, 3, closed=True)
-        names, _kind = wanted_names(env.engine, env.destination_id)
+        names, _kind = wanted_names(env.engine, env.destination_id, ranged_hash=kept_hash(env))
         assert names != []
+
+
+def kept_hash(env: ExportEnv):  # type: ignore[no-untyped-def]
+    """What the export job passes: the fingerprint of a kept file, read under /data only."""
+    return RangedExporter(env.engine, env.lib.data).source_hash
+
+
+@pytest.mark.req("EF-BIB-040", "ENF-OPS-014")
+def test_names_of_a_served_tail_are_not_asked_again() -> None:
+    """An open tail already sent under a rolling policy: the next cycle asks no name (the disks
+    stay asleep)."""
+    with export_env() as env:
+        _, _bench = volume_on_shelf(env, 2, closed=False, policy="rolling_tail")
+        assert run(env) == 1
+        assert wanted_names(env.engine, env.destination_id, ranged_hash=kept_hash(env))[0] == []
+
+
+@pytest.mark.req("EF-BIB-040")
+def test_open_volume_never_leaves() -> None:
+    with export_env() as env:
+        volume_on_shelf(env, 3, closed=False)
+        names, _kind = wanted_names(env.engine, env.destination_id, ranged_hash=kept_hash(env))
+        assert names == []
+        assert env.pipeline.run(env.destination_id, job_id=new_ulid()).ops == ()
+        assert env.files() == []
 
 
 def test_volume_named_from_its_label_and_a_volume_without_number_is_refused() -> None:

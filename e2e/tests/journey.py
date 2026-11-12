@@ -42,8 +42,12 @@ class Cli:
 @dataclass
 class Journey:
     files: list[str] = field(default_factory=lambda: ["compose.yaml", "journey.yaml"])
-    app_image: str | None = None  # the image of `shelfhold` alone (the rollback journey)
-    extra_env: dict[str, str] = field(default_factory=dict)  # E2E_PKI_DIR (the M2 overlay)
+    app_image: str | None = (
+        None  # the image of `shelfhold` alone (the rollback journey)
+    )
+    extra_env: dict[str, str] = field(
+        default_factory=dict
+    )  # E2E_PKI_DIR (the M2 overlay)
 
     def _command(self) -> list[str]:
         command = ["docker", "compose", "-p", PROJECT]
@@ -66,7 +70,9 @@ class Journey:
             timeout=timeout, env=self._env(),
         )  # fmt: skip
         if check and result.returncode:
-            raise RuntimeError(f"docker compose {' '.join(args)} failed:\n{result.stderr}")
+            raise RuntimeError(
+                f"docker compose {' '.join(args)} failed:\n{result.stderr}"
+            )
         return result
 
     # -- what the administrator types -------------------------------------------------
@@ -75,7 +81,9 @@ class Journey:
     ) -> Cli:
         """`env`: variables of this one command (the restored instance of a restore journey)."""
         given = [item for k, v in (env or {}).items() for item in ("-e", f"{k}={v}")]
-        done = self.compose("exec", "-T", *given, service, "shelfhold", *args, check=False)
+        done = self.compose(
+            "exec", "-T", *given, service, "shelfhold", *args, check=False
+        )
         return Cli(done.returncode, done.stdout, done.stderr)
 
     def put(self, path: str, text: str, *, service: str = "shelfhold") -> None:
@@ -105,7 +113,9 @@ class Journey:
         )  # fmt: skip
         return done.stdout
 
-    def api(self, *steps: tuple[object, ...], mode: str = "session") -> list[tuple[int, object]]:
+    def api(
+        self, *steps: tuple[object, ...], mode: str = "session"
+    ) -> list[tuple[int, object]]:
         """Requests of the SPA, in one session: `(method, path[, body])`. `mode`: `session`
         (login, then the CSRF header as the page sends it), `nocsrf` (the cookie alone, a forged
         cross-site request), `anon` (nothing), `bearer:<key>` (an API key)."""
@@ -124,7 +134,9 @@ class Journey:
 
     def egress(self) -> list[str]:
         """What left the network namespace of the stack (ENF-PRIV-001): nothing, ever."""
-        logs = self.compose("logs", "--no-color", "--no-log-prefix", "egress-watch").stdout
+        logs = self.compose(
+            "logs", "--no-color", "--no-log-prefix", "egress-watch"
+        ).stdout
         return [line for line in logs.splitlines() if line.startswith("EGRESS")]
 
     def switch_app_image(self, image: str) -> None:
@@ -160,11 +172,21 @@ class Journey:
         """`publish_hidden`, `sleep`, `wake`, `expire`: what happens to the simulated Suwayomi."""
         self.fake("suwayomi", f"{SUWAYOMI_URL}/_fake/{action}", post=True)
 
-    def child_account(self, name: str, library_id: int) -> None:
-        """A restricted Kavita account that reads one library, as a child of the household."""
+    def child_account(
+        self,
+        name: str,
+        library_id: int,
+        *,
+        more: tuple[int, ...] = (),
+        age: int = -1,
+        unknowns: bool = True,
+    ) -> None:
+        """A restricted Kavita account that reads some libraries, as a child of the household
+        (`age`: the Kavita rating that caps it, -1 for none)."""
+        libraries = "".join(f"&library={i}" for i in (library_id, *more))
         self.fake(
             "kavita",
-            f"{KAVITA_URL}/_fake/child?name={name}&library={library_id}",
+            f"{KAVITA_URL}/_fake/child?name={name}{libraries}&age={age}&unknowns={int(unknowns)}",
             post=True,
         )
 
@@ -197,9 +219,13 @@ class Journey:
             "</ComicInfo>'); z.close()"
         )
         self.compose("exec", "-T", "shelfhold", "python", "-c", code, folder, name)
-        self.fake("kavita", KAVITA_URL + "/_fake/index?folder=" + quote(folder), post=True)
+        self.fake(
+            "kavita", KAVITA_URL + "/_fake/index?folder=" + quote(folder), post=True
+        )
 
-    def suwayomi_category(self, name: str, *, exclude: bool, assign: tuple[str, ...]) -> None:
+    def suwayomi_category(
+        self, name: str, *, exclude: bool, assign: tuple[str, ...]
+    ) -> None:
         """A category in Suwayomi's library (`exclude`: its series skip the scheduled updates)."""
         from urllib.parse import quote
 
@@ -263,9 +289,13 @@ class Journey:
         and the chapters visible now become the baseline (nothing is asked). Returns once the
         chapters are listed, so what is published afterwards is new."""
         assert self.shelfhold("jobs", "run", "follow.cycle").code == 0
-        assert wait_for(lambda: self.units_known() > 0, 120), "la découverte n'a rien listé"
+        assert wait_for(lambda: self.units_known() > 0, 120), (
+            "la découverte n'a rien listé"
+        )
 
-    def follow_until(self, predicate: Callable[[], bool], seconds: float = 240.0) -> bool:
+    def follow_until(
+        self, predicate: Callable[[], bool], seconds: float = 240.0
+    ) -> bool:
         """Ask for follow cycles until `predicate` holds. A download takes two looks of the
         service (asked in one cycle, collected in the next), as with Suwayomi's own queue."""
         deadline = time.monotonic() + seconds
@@ -279,13 +309,17 @@ class Journey:
         done = self.compose(
             "exec", "-T", "shelfhold", "find", "/library", "-type", "f", check=False
         )
-        return sorted(line for line in done.stdout.splitlines() if line)  # names hold spaces
+        return sorted(
+            line for line in done.stdout.splitlines() if line
+        )  # names hold spaces
 
     def container_id(self, service: str = "shelfhold") -> str:
         return self.compose("ps", "-a", "-q", service).stdout.strip()
 
 
-def wait_for(predicate: Callable[[], bool], seconds: float = 30.0, step: float = 1.0) -> bool:
+def wait_for(
+    predicate: Callable[[], bool], seconds: float = 30.0, step: float = 1.0
+) -> bool:
     deadline = time.monotonic() + seconds
     while time.monotonic() < deadline:
         try:

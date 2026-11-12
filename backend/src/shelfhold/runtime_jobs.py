@@ -69,6 +69,7 @@ from shelfhold.export.application.pipeline import (
 )
 from shelfhold.export.application.plans import StalePlanError
 from shelfhold.export.application.preflight import PermissionPreflight
+from shelfhold.export.application.ranged_export import RangedExporter
 from shelfhold.export.application.reconcile import Reconciler
 from shelfhold.export.application.restore import RestoredBehindError
 from shelfhold.export.application.snapshot import load_context
@@ -533,6 +534,8 @@ async def _export_bound(
         names, kind = wanted_names(
             comp.engine, destination.id,
             segment_policy_confirmed=comp.settings.naming_segment_policy_confirmed,
+            # a kept volume is read under /data only, never a library
+            ranged_hash=RangedExporter(comp.engine, comp.settings.data_dir).source_hash,
         )  # fmt: skip
         if names or apply is not None:
             pipeline, _fsops = disks.get()

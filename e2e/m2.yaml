@@ -93,8 +93,8 @@ services:
       - incoming:/import
       - tree:/tree  # an old download tree of the administrator, read by `import tree`
       - ./fakes/m2/hosts:/etc/hosts:ro
-      # the Fetcher reads the system bundle of the image and no environment variable: the test
-      # authority is put there, in this container only, beside the authorities the image has
+      # the Fetcher reads the system bundle of the image and no environment variable: this file
+      # REPLACES the bundle in this container only, so the test authority is the one it trusts
       - ${E2E_PKI_DIR:?}/ca.pem:/etc/ssl/certs/ca-certificates.crt:ro
 
 volumes:

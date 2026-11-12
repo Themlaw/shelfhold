@@ -41,7 +41,9 @@ def books_install(j: Journey) -> None:
 
 
 def library_epubs(j: Journey) -> list[str]:
-    return [f for f in j.library_files() if f.endswith(".epub") and "/.shelfhold/" not in f]
+    return [
+        f for f in j.library_files() if f.endswith(".epub") and "/.shelfhold/" not in f
+    ]
 
 
 def kavita_titles(j: Journey) -> list[str]:
@@ -83,8 +85,12 @@ def test_m2_import_folder_journey(journey_m2: Journey) -> None:
     identical, byte for byte, to what was dropped."""
     j = journey_m2
     books_install(j)
-    hostile = book("Le Livre du Foyer", lang="fr", body="<p>texte</p><script>alert(1)</script>")
-    protected = book("Le Verrouillé", extra=(Member("META-INF/encryption.xml", ENCRYPTION),))
+    hostile = book(
+        "Le Livre du Foyer", lang="fr", body="<p>texte</p><script>alert(1)</script>"
+    )
+    protected = book(
+        "Le Verrouillé", extra=(Member("META-INF/encryption.xml", ENCRYPTION),)
+    )
     locked_pdf = pdf_encrypted()
     bought = book("L'Achat Tatoué", metadata=PERSONAL)
     j.put_bytes("/import/Le Livre du Foyer.epub", hostile)
@@ -97,11 +103,15 @@ def test_m2_import_folder_journey(journey_m2: Journey) -> None:
     assert wait_for(lambda: len(j.library_files()) <= 2, 1)  # a dry run moved nothing
     scan = j.shelfhold("import", "scan", "--purchase")
     assert scan.code == 0, scan.err
-    assert scan.out.count("Fichier protégé") == 2 and "drapeau tatoué" in scan.out, scan.out
+    assert scan.out.count("Fichier protégé") == 2 and "drapeau tatoué" in scan.out, (
+        scan.out
+    )
     # the refused files are still in the folder, bit for bit; the stored ones are gone from it
     assert j.read_bytes("/import/locked.epub") == protected
     assert j.read_bytes("/import/locked.pdf") == locked_pdf
-    left = j.compose("exec", "-T", "shelfhold", "find", "/import", "-type", "f").stdout.split()
+    left = j.compose(
+        "exec", "-T", "shelfhold", "find", "/import", "-type", "f"
+    ).stdout.split()
     assert sorted(left) == ["/import/locked.epub", "/import/locked.pdf"], left
 
     assert j.shelfhold("jobs", "run", "export.run").code == 0
@@ -113,14 +123,18 @@ def test_m2_import_folder_journey(journey_m2: Journey) -> None:
     assert b"<script" not in b"".join(members(served).values())
     kept = [
         f
-        for f in j.compose("exec", "-T", "shelfhold", "find", "/store", "-type", "f").stdout.split()
+        for f in j.compose(
+            "exec", "-T", "shelfhold", "find", "/store", "-type", "f"
+        ).stdout.split()
     ]
     assert any(j.read_bytes(f) == hostile for f in kept), kept
 
     # (6) the purchase: everything but the package document is the very same bytes
     got, sent = members(exported_epub(j, "Achat")), members(bought)
     opf = "OEBPS/content.opf"
-    assert {n: b for n, b in got.items() if n != opf} == {n: b for n, b in sent.items() if n != opf}
+    assert {n: b for n, b in got.items() if n != opf} == {
+        n: b for n, b in sent.items() if n != opf
+    }
     assert j.kavita()["violations"] == []
     assert j.egress() == []
 
@@ -162,12 +176,16 @@ def wait_epubs(j: Journey, wanted: int) -> None:
 
 
 def store_files(j: Journey) -> list[str]:
-    done = j.compose("exec", "-T", "shelfhold", "find", "/store", "-type", "f", check=False)
+    done = j.compose(
+        "exec", "-T", "shelfhold", "find", "/store", "-type", "f", check=False
+    )
     return done.stdout.split()
 
 
 @pytest.mark.e2e_timeout(900)
-@pytest.mark.req("EF-SRC-007", "ENF-LEG-003", "EF-BIB-049", "EF-SRC-024", "ENF-PRIV-001")
+@pytest.mark.req(
+    "EF-SRC-007", "ENF-LEG-003", "EF-BIB-049", "EF-SRC-024", "ENF-PRIV-001"
+)
 def test_m2_gutenberg_to_kavita_books_journey(journey_m2: Journey) -> None:
     """(1) A novel of the books project, through the catalogue and the mirror the administrator
     named (never the website), reaches Kavita's Books shelf as a neutralized copy; the original
@@ -190,8 +208,13 @@ def test_m2_gutenberg_to_kavita_books_journey(journey_m2: Journey) -> None:
     assert kavita_titles(j) == ["A Study in Test"]
     served = exported_epub(j, "A Study in Test")
     assert b"<script" not in b"".join(members(served).values())  # the neutralized copy
-    assert any(b"<script" in b"".join(members(j.read_bytes(f)).values()) for f in store_files(j))
-    assert j.shelfhold("status").out.count("peut encore être protégée") == 0  # died 1920
+    assert any(
+        b"<script" in b"".join(members(j.read_bytes(f)).values())
+        for f in store_files(j)
+    )
+    assert (
+        j.shelfhold("status").out.count("peut encore être protégée") == 0
+    )  # died 1920
 
     # (7) the instance is in France; a book whose author died in 1960 is added, with a warning
     assert j.shelfhold("config", "set", "instance.jurisdiction", "FR").code == 0
@@ -201,7 +224,10 @@ def test_m2_gutenberg_to_kavita_books_journey(journey_m2: Journey) -> None:
     assert "peut encore être protégée" in j.shelfhold("status").out
 
     seen = sources_seen(j)
-    assert {line.split()[0] for line in seen} <= {"catalog.example", "aleph.gutenberg.org"}, seen
+    assert {line.split()[0] for line in seen} <= {
+        "catalog.example",
+        "aleph.gutenberg.org",
+    }, seen
     assert j.kavita()["violations"] == []
     assert j.egress() == []
 
@@ -220,17 +246,27 @@ def test_m2_wikisource_attribution_journey(journey_m2: Journey) -> None:
     asked = j.shelfhold("acquire", "https://fr.wikisource.org/wiki/Le_Comte_de_Test")
     assert asked.code == 0, asked.err
     wait_epubs(j, 1)
-    publisher = j.shelfhold("acquire", "https://standardebooks.org/ebooks/jane-synth/le-test")
+    publisher = j.shelfhold(
+        "acquire", "https://standardebooks.org/ebooks/jane-synth/le-test"
+    )
     assert publisher.code == 0, publisher.err
     wait_epubs(j, 2)
     export_until(j, 2)
     assert kavita_titles(j) == ["Le Comte de Test", "Le Test"]
-    package = members(exported_epub(j, "Le Comte de Test"))["OEBPS/content.opf"].decode()
-    assert "CC BY-SA" in package and "Alice Synth" in package and "Bruno Synth" in package
+    package = members(exported_epub(j, "Le Comte de Test"))[
+        "OEBPS/content.opf"
+    ].decode()
+    assert (
+        "CC BY-SA" in package and "Alice Synth" in package and "Bruno Synth" in package
+    )
     assert "wikisource" in package  # a link to the origin
     assert "peut encore être protégée" not in j.shelfhold("status").out
     hosts = {line.split()[0] for line in sources_seen(j)}
-    assert hosts <= {"fr.wikisource.org", "ws-export.wmcloud.org", "standardebooks.org"}, hosts
+    assert hosts <= {
+        "fr.wikisource.org",
+        "ws-export.wmcloud.org",
+        "standardebooks.org",
+    }, hosts
     assert j.kavita()["violations"] == []
     assert j.egress() == []
 
@@ -268,11 +304,23 @@ def test_m2_epub_age_only_adult_library_journey(journey_m2: Journey) -> None:
     assert filed == [(200, {"filed": True, "reason": None})], (filed, j.waiting())
     refused = j.api(("POST", f"/api/v1/editions/{edition}/shelf",
                      {"shelf_id": str(j.sql("select id from shelf where name = 'Famille'")[0][0])}))  # fmt: skip
-    assert refused == [(200, {"filed": False, "reason": "unrated_edition"})]  # no age, no family
+    assert refused == [
+        (200, {"filed": False, "reason": "unrated_edition"})
+    ]  # no age, no family
     classed = j.shelfhold("rate", "16+", "--work", work)
     assert classed.code == 0, classed.err
     libraries = {lib["name"]: lib["id"] for lib in j.kavita()["libraries"]}  # type: ignore[index,union-attr]
-    j.child_account("kid", int(libraries["Famille"]))
+    from shelfhold.export.domain.kavita_access import rating_for_age
+
+    # the child reads BOTH libraries, capped at 12+, unknowns hidden: only the age keeps it out
+    j.child_account(
+        "kid", int(libraries["Famille"]), more=(int(libraries[BOOKS_SHELF]),),
+        age=int(rating_for_age(12, x=False)), unknowns=False,
+    )  # fmt: skip
+    # once classed 16+, the family shelf refuses the book (a later filing is refused too)
+    later = j.api(("POST", f"/api/v1/editions/{edition}/shelf",
+                   {"shelf_id": str(j.sql("select id from shelf where name = 'Famille'")[0][0])}))  # fmt: skip
+    assert later[0][1]["filed"] is False, later
 
     export_until(j, 1)
 
@@ -284,11 +332,17 @@ def test_m2_epub_age_only_adult_library_journey(journey_m2: Journey) -> None:
     assert wait_for(pushed, 240, 5), j.kavita()["ages"]
     (series,) = j.kavita()["series"]  # type: ignore[misc]
     assert series["libraryId"] == libraries[BOOKS_SHELF]  # the adult library
+    (age,) = j.kavita()["ages"].values()  # type: ignore[attr-defined]
+    assert (
+        age["ageRating"] == int(rating_for_age(16, x=False)) and age["ageRatingLocked"]
+    ), age
     assert (
         j.visible_to("kid") == []
-    )  # the family library holds nothing, and the child reads only it
+    )  # it reads both libraries: its ceiling alone hides the book
     package = members(exported_epub(j, "Le Roman Seize"))["OEBPS/content.opf"].decode()
-    assert "16" not in package and "dc:subject" not in package  # no age anywhere in the file
+    assert (
+        "16" not in package and "dc:subject" not in package
+    )  # no age anywhere in the file
     assert [n for n in members(exported_epub(j, "Le Roman Seize"))] == [
         n for n in members(original)
     ]
@@ -306,7 +360,9 @@ def test_m2_opds_anti_echo_journey(journey_m2: Journey) -> None:
     j.put_bytes("/import/Le Livre du Foyer.epub", book("Le Livre du Foyer", lang="fr"))
     assert j.shelfhold("import", "scan").code == 0
     export_until(j, 1)
-    before = j.sql("select (select count(*) from unit_variant), (select count(*) from content)")
+    before = j.sql(
+        "select (select count(*) from unit_variant), (select count(*) from content)"
+    )
     set_ = j.shelfhold("plugin", "set", "opds", 'base_url="http://opds.example/opds"')
     assert set_.code == 0, set_.err
     found = j.shelfhold("source", "search", "opds", "foyer")
@@ -318,7 +374,9 @@ def test_m2_opds_anti_echo_journey(journey_m2: Journey) -> None:
     assert wait_for(lambda: any("/opds/file/" in s for s in sources_seen(j)), 180)
     assert j.shelfhold("jobs", "run", "export.run").code == 0
     assert wait_for(lambda: j.shelfhold("status").code == 0, 30)
-    after = j.sql("select (select count(*) from unit_variant), (select count(*) from content)")
+    after = j.sql(
+        "select (select count(*) from unit_variant), (select count(*) from content)"
+    )
     assert after == before, (before, after)  # a replica: no Variant, no new content
     assert len(library_epubs(j)) == 1
     assert j.kavita()["violations"] == []
@@ -336,9 +394,19 @@ def test_m2_lncrawl_neutralized_journey(journey_m2: Journey) -> None:
     j = journey_m2
     books_install(j)
     j.put("/tmp/lncrawl.key", "synthetic-test-key-not-a-real-one\n")
-    assert j.shelfhold("plugin", "set", "lncrawl", 'base_url="http://lncrawl.lan:8090"').code == 0
+    assert (
+        j.shelfhold(
+            "plugin", "set", "lncrawl", 'base_url="http://lncrawl.lan:8090"'
+        ).code
+        == 0
+    )
     keyed = j.shelfhold(
-        "plugin", "set-secret", "lncrawl", "api_key", "--secret-file", "/tmp/lncrawl.key"
+        "plugin",
+        "set-secret",
+        "lncrawl",
+        "api_key",
+        "--secret-file",
+        "/tmp/lncrawl.key",
     )
     assert keyed.code == 0, keyed.err
 
@@ -363,7 +431,9 @@ def test_m2_lncrawl_neutralized_journey(journey_m2: Journey) -> None:
     assert wait_for(lambda: len(kavita_titles(j)) >= 1, 240), kavita_titles(j)
     assert j.sql("select title from work") == [("Novel Alpha",)]
     # the file a range brings is kept as received under /data (never in the library), for the export
-    kept = j.compose("exec", "-T", "shelfhold", "sh", "-c", "ls /data/ranged/*.epub").stdout.split()
+    kept = j.compose(
+        "exec", "-T", "shelfhold", "sh", "-c", "ls /data/ranged/*.epub"
+    ).stdout.split()
     assert kept and any(
         b"<script" in b"".join(members(j.read_bytes(f)).values()) for f in kept
     ), kept
@@ -413,7 +483,9 @@ def test_m2_suwayomi_tree_journey(journey_m2: Journey) -> None:
     assert sub, "no sub-source"
     folder = f"/tree/mangas/{sub[0][0]} ({str(sub[0][1]).upper()})/Series Alpha"
     j.put_bytes(f"{folder}/Chapter 1.cbz", comic_archive(1))
-    j.put_bytes(f"{folder}/Chapter 2/001.png", comic_archive(2)[:0] + b"\x89PNG\r\n\x1a\n-")
+    j.put_bytes(
+        f"{folder}/Chapter 2/001.png", comic_archive(2)[:0] + b"\x89PNG\r\n\x1a\n-"
+    )
     j.put_bytes(f"{folder}/Chapter 2/notes.txt", b"not a page")
     before = tree_listing(j)
     downloads = j.suwayomi()["requests"]
@@ -426,9 +498,13 @@ def test_m2_suwayomi_tree_journey(journey_m2: Journey) -> None:
     assert done.code == 0, done
     print(done.out)
     assert tree_listing(j) == before  # read only, whatever happened
-    assert j.sql("select count(*) from content")[0][0] == stored[0][0] + 1  # Chapter 1 only
+    assert (
+        j.sql("select count(*) from content")[0][0] == stored[0][0] + 1
+    )  # Chapter 1 only
     assert j.suwayomi()["requests"] == downloads  # nothing was asked of the service
     again = j.shelfhold("import", "tree", "/tree")
     assert again.code == 0
-    assert j.sql("select count(*) from content")[0][0] == stored[0][0] + 1  # not stored twice
+    assert (
+        j.sql("select count(*) from content")[0][0] == stored[0][0] + 1
+    )  # not stored twice
     assert j.egress() == []

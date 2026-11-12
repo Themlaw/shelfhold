@@ -231,13 +231,12 @@ def wanted_names(
     destination_id: str,
     *,
     segment_policy_confirmed: bool = False,
-    ranged_hash: RangedHash = lambda _item: "sha256:unread",
+    ranged_hash: RangedHash = lambda _item: None,
 ) -> tuple[list[str], str | None]:
     """The names a plan of this destination asks `plugin/parse` about, and the Kavita library
     type to ask with. Read from the database alone: no disk is looked at, so an empty answer
-    (nothing to write) costs the disks nothing (ENF-OPS-014). A kept file of a volume is taken as
-    present here (its bytes are read when the plan is made for writing): a missing one must not hide
-    the names the volume asks."""
+    (nothing to write) costs the disks nothing (ENF-OPS-014). `ranged_hash` reads the kept file of a
+    volume under /data only (never a library); the job passes it, or a volume asks no name."""
     asked: list[str] = []
 
     def record(name: str) -> Parsed:
