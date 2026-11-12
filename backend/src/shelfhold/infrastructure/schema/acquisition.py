@@ -13,6 +13,7 @@ from shelfhold.infrastructure.schema._base import (
     UtcDateTime,
     bool_column,
     in_check,
+    json_shape_check,
     metadata,
     now_column,
     positive_check,
@@ -27,6 +28,7 @@ CONTENT_TRUSTS = ("publisher", "untrusted")  # default untrusted (EF-BIB-051)
 BACKFILL_MODES = ("none", "gaps", "all")
 UPGRADE_POLICIES = ("keep_first", "prefer_rank")
 CHECK_OVERRIDES = ("completed", "paused")  # "terminée", "en pause" (EF-SRC-038)
+ALIAS_MIGRATION_STATES = ("previewed", "applied", "cancelled")
 DOWNLOAD_TARGETS = ("unit", "range")
 DOWNLOAD_STATES = (
     "requested",
@@ -538,4 +540,39 @@ binding_release_sample = sa.Table(
     _fk("source_binding_id", "source_binding.id", ondelete="CASCADE"),
     sa.Column("observed_at", UtcDateTime(), nullable=False),
     sa.PrimaryKeyConstraint("source_binding_id", "observed_at"),
+)
+
+# A remote result not yet made a Work (EF-USR-010): what a request on `source_ref` points at.
+pending_source_item = sa.Table(
+    "pending_source_item",
+    metadata,
+    ulid_column("id", primary_key=True),
+    sa.Column("source_key", sa.String(), nullable=False),
+    sa.Column("series_ref", sa.String(), nullable=False),
+    sa.Column("title", sa.String(), nullable=False),
+    sa.Column("fetched_at", UtcDateTime(), nullable=False),
+    ulid_check("id"),
+    sa.CheckConstraint(
+        "\"source_key\" <> '' AND \"series_ref\" <> '' AND \"title\" <> ''", name="named"
+    ),
+    sa.UniqueConstraint("source_key", "series_ref"),
+)
+
+# A bulk change of the identity scheme of a source, previewed before it is applied (EF-SRC-022).
+source_alias_migration = sa.Table(
+    "source_alias_migration",
+    metadata,
+    ulid_column("id", primary_key=True),
+    sa.Column("source_key", sa.String(), nullable=False),
+    sa.Column("from_scheme", sa.String(), nullable=False),
+    sa.Column("to_scheme", sa.String(), nullable=False),
+    sa.Column("state", sa.String(), nullable=False, server_default="previewed"),
+    sa.Column("preview", sa.JSON(), nullable=False, server_default="{}"),
+    now_column(),
+    ulid_check("id"),
+    in_check("state", ALIAS_MIGRATION_STATES),
+    json_shape_check("preview", "object"),
+    sa.CheckConstraint('"from_scheme" <> "to_scheme"', name="schemes_differ"),
+    sa.CheckConstraint("\"source_key\" <> ''", name="source_key_not_empty"),
+    sa.Index("ix_source_alias_migration_source", "source_key"),
 )

@@ -147,3 +147,12 @@ def json_valid_check(column: str) -> sa.CheckConstraint:
     """The column is NULL or a valid JSON document, of any shape."""
     c = _quoted(column)
     return sa.CheckConstraint(f"{c} IS NULL OR json_valid({c})", name=f"{column}_json")
+
+
+def clock_time_check(column: str) -> sa.CheckConstraint:
+    """The column is NULL or a wall-clock time `HH:MM` (00:00 to 23:59)."""
+    c = _quoted(column)
+    return sa.CheckConstraint(
+        f"{c} IS NULL OR ({c} GLOB '[0-2][0-9]:[0-5][0-9]' AND {c} < '24:00')",
+        name=f"{column}_clock",
+    )

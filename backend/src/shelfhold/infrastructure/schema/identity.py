@@ -5,6 +5,7 @@ import sqlalchemy as sa
 from shelfhold.infrastructure.schema._base import (
     UtcDateTime,
     bool_column,
+    clock_time_check,
     in_check,
     json_shape_check,
     metadata,
@@ -18,6 +19,10 @@ from shelfhold.infrastructure.schema._base import (
 ROLES = ("admin", "member", "child")
 THEMES = ("bibliotheque", "console", "galerie", "calme")
 COLOR_SCHEMES = ("auto", "light", "dark")
+NOTIFY_MODES = ("digest", "immediate")
+SOURCE_POLICIES = ("add_directly", "request", "forbidden")
+REQUEST_TARGET_KINDS = ("work_id", "source_ref", "isbn", "free_text")
+REQUEST_STATES = ("pending", "approved", "rejected", "not_found", "cancelled", "arrived")
 
 user = sa.Table(
     "user",
@@ -35,6 +40,15 @@ user = sa.Table(
     sa.Column("theme", sa.String(), nullable=True),  # null: the instance default
     sa.Column("color_scheme", sa.String(), nullable=False, server_default="auto"),
     now_column(),
+    # Parental ceiling (EF-USR-015): NULL for an adult; a child always has one, NULL is never
+    # "all ages" (check `child_has_age_ceiling`).
+    sa.Column("max_age_rating", sa.Integer(), nullable=True),
+    sa.Column("kavita_username", sa.String(), nullable=True),  # declarative link (EF-USR-017)
+    sa.Column("notify_mode", sa.String(), nullable=False, server_default="digest"),
+    sa.Column("quiet_start", sa.String(), nullable=True),  # local `HH:MM`, with `quiet_end`
+    sa.Column("quiet_end", sa.String(), nullable=True),
+    bool_column("hide_unrated_remote", default=True),  # EF-USR-018, the safe side
+    sa.Column("subject_filter", sa.JSON(), nullable=False, server_default="[]"),
     ulid_check("id"),
     sa.CheckConstraint(
         '"password_hash" IS NULL OR "password_hash" GLOB \'$argon2id$*\'',
@@ -43,8 +57,27 @@ user = sa.Table(
     in_check("role", ROLES),
     in_check("theme", THEMES),
     in_check("color_scheme", COLOR_SCHEMES),
+    in_check("notify_mode", NOTIFY_MODES),
+    sa.CheckConstraint(
+        '"max_age_rating" IS NULL OR (typeof("max_age_rating") = \'integer\' '
+        'AND "max_age_rating" BETWEEN 0 AND 99)',
+        name="max_age_rating_min_age",
+    ),
+    sa.CheckConstraint(
+        '"role" <> \'child\' OR "max_age_rating" IS NOT NULL', name="child_has_age_ceiling"
+    ),
+    sa.CheckConstraint(
+        '"kavita_username" IS NULL OR "kavita_username" <> \'\'', name="kavita_username_not_empty"
+    ),
+    clock_time_check("quiet_start"),
+    clock_time_check("quiet_end"),
+    sa.CheckConstraint(
+        '("quiet_start" IS NULL) = ("quiet_end" IS NULL)', name="quiet_hours_both_or_none"
+    ),
+    json_shape_check("subject_filter", "array"),
     sa.CheckConstraint('"role" <> \'admin\' OR "can_rate"', name="admin_can_rate"),
     sa.UniqueConstraint("username"),
+    sa.UniqueConstraint("kavita_username"),
 )
 
 # A passkey (EF-USR-025, ADR-0050). `credential_id` is the raw WebAuthn identifier, unique across
@@ -164,4 +197,85 @@ idempotency_key = sa.Table(
     sa.PrimaryKeyConstraint("actor_id", "key"),
     prefixed_hash_check("request_hash"),
     sa.Index("ix_idempotency_key_expiry", "expires_at"),
+)
+
+# What a profile may do with a source (EF-USR-005): add directly, ask, or nothing. The defaults of
+# D14 are applied where no row exists; a row is only an explicit choice.
+profile_source_policy = sa.Table(
+    "profile_source_policy",
+    metadata,
+    sa.Column(
+        "user_id", sa.String(26), sa.ForeignKey("user.id", ondelete="CASCADE"), nullable=False
+    ),
+    sa.Column("source_key", sa.String(), nullable=False),
+    sa.Column("policy", sa.String(), nullable=False),
+    now_column("updated_at"),
+    sa.PrimaryKeyConstraint("user_id", "source_key"),
+    in_check("policy", SOURCE_POLICIES),
+    sa.CheckConstraint("\"source_key\" <> ''", name="source_key_not_empty"),
+)
+
+# Follow, favourite and read state of one user on one Work (EF-USR-007); `stamp` is the server
+# instant of the last write (`Stamped.received_at`), the clock of the last-write-wins merge.
+user_state = sa.Table(
+    "user_state",
+    metadata,
+    sa.Column(
+        "user_id", sa.String(26), sa.ForeignKey("user.id", ondelete="CASCADE"), nullable=False
+    ),
+    sa.Column(
+        "work_id", sa.String(26), sa.ForeignKey("work.id", ondelete="CASCADE"), nullable=False
+    ),
+    bool_column("followed", default=False),
+    bool_column("favorite", default=False),
+    sa.Column("read_at", UtcDateTime(), nullable=True),
+    now_column("stamp"),
+    sa.PrimaryKeyConstraint("user_id", "work_id"),
+    sa.Index("ix_user_state_work", "work_id"),
+)
+
+# A request of a profile (EF-USR-010). The target is polymorphic and only becomes a Work at
+# approval; `reject_reason` exists only on a refusal.
+request = sa.Table(
+    "request",
+    metadata,
+    ulid_column("id", primary_key=True),
+    sa.Column(
+        "requester_user_id",
+        sa.String(26),
+        sa.ForeignKey("user.id", ondelete="CASCADE"),
+        nullable=False,
+    ),
+    sa.Column("target_kind", sa.String(), nullable=False),
+    sa.Column("target_value", sa.String(), nullable=False),
+    sa.Column("state", sa.String(), nullable=False, server_default="pending"),
+    sa.Column("reject_reason", sa.String(), nullable=True),
+    now_column(),
+    now_column("updated_at"),
+    ulid_check("id"),
+    in_check("target_kind", REQUEST_TARGET_KINDS),
+    in_check("state", REQUEST_STATES),
+    sa.CheckConstraint("\"target_value\" <> ''", name="target_value_not_empty"),
+    sa.CheckConstraint(
+        '"target_kind" <> \'work_id\' OR (length("target_value") = 26 '
+        "AND \"target_value\" NOT GLOB '*[^0-9A-HJKMNP-TV-Z]*')",
+        name="work_target_is_ulid",
+    ),
+    sa.CheckConstraint(
+        '"reject_reason" IS NULL OR "state" = \'rejected\'', name="reason_only_on_refusal"
+    ),
+    sa.Index("ix_request_requester", "requester_user_id", "state"),
+)
+
+# The digest being built for a user, sent at `due_at` (EF-INT-021).
+notification_digest = sa.Table(
+    "notification_digest",
+    metadata,
+    sa.Column(
+        "user_id", sa.String(26), sa.ForeignKey("user.id", ondelete="CASCADE"), nullable=False
+    ),
+    sa.Column("due_at", UtcDateTime(), nullable=False),
+    sa.Column("payload", sa.JSON(), nullable=False, server_default="{}"),
+    sa.PrimaryKeyConstraint("user_id", "due_at"),
+    json_shape_check("payload", "object"),
 )

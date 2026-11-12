@@ -176,6 +176,8 @@ response_body = "Body of the stored response."
 [tables.instance]
 description = "One row: identity and restore bookkeeping of this instance."
 [tables.instance.columns]
+maintenance_since = "When maintenance mode was switched on (UTC); NULL when it is off. Acquisitions and exports are frozen meanwhile."
+maintenance_by = "Admin who switched maintenance mode on (`user.id`); NULL after that user is deleted."
 jurisdiction_confirmed_at = "When the admin confirmed the jurisdiction (UTC); NULL while it is only deduced from the locale."
 instance_id = "Instance identifier (ULID)."
 singleton = "Always 1; makes a second row impossible."
@@ -328,6 +330,13 @@ taken_at = "When the snapshot was taken (UTC)."
 [tables.user]
 description = "Accounts: the admin and the household members."
 [tables.user.columns]
+max_age_rating = "Highest minimum age this user may see; NULL for an adult, never NULL for a child (NULL is not \"all ages\")."
+kavita_username = "Name of the matching Kavita account (declarative link used by the audit), unique; NULL when none."
+notify_mode = "`digest` (daily summary, default) or `immediate`."
+quiet_start = "Start of the quiet hours (local `HH:MM`); set together with `quiet_end`."
+quiet_end = "End of the quiet hours (local `HH:MM`); set together with `quiet_start`."
+hide_unrated_remote = "Hide unrated remote search results entirely (default yes)."
+subject_filter = "List of subjects and words filtered out of remote search results."
 id = "User identifier (ULID)."
 username = "Login name, unique."
 password_hash = "argon2id hash; NULL for accounts that only sign in through a proxy, OIDC or passkey."
@@ -472,6 +481,7 @@ line = "The encrypted JSON line, as it will be written."
 [tables.trash_item]
 description = "Contents of the bin of each physical root, emptied after 30 days."
 [tables.trash_item.columns]
+level = "Level of the deletion: `unfollow`, `remove_destinations` or `delete_content`; an entry from before M3 is `delete_content`."
 id = "Bin entry identifier (ULID)."
 kind = "What was binned: a Unit, a Work or an export item."
 ref = "Identifier of the binned object."
@@ -635,6 +645,7 @@ linked_from_adoption = "Created by the adoption of an existing library."
 [tables.team]
 description = "A translation team, attached to an Edition."
 [tables.team.columns]
+number_offset = "Numbering offset between teams (EF-BIB-028); laid down, no behaviour yet."
 id = "Team identifier (ULID)."
 label = "Normalized team name."
 label_raw = "Team name as seen."
@@ -707,6 +718,8 @@ rank = "Rank; 1 is preferred."
 [tables.unit]
 description = "A place in an Edition (track, segment, number, part). Which file fills it is a Variant."
 [tables.unit.columns]
+integrity_state = "Result of the last integrity check of the file: `unchecked`, `ok` or `corrupt`."
+integrity_checked_at = "When the file was last checked (UTC); NULL until the first check."
 availability_detail = "The availability value the contract does not know, kept as received; the Unit is treated as `locked`."
 filtered_reason = "Why a follow filter left the Unit out of the download queue; open vocabulary, NULL when not filtered."
 id = "Unit identifier (ULID)."
@@ -1014,3 +1027,84 @@ notified_at = "When the admin was told (UTC); NULL until then."
 description = "Release times observed on a binding; the cadence of the binding is computed from them."
 [tables.binding_release_sample.columns]
 observed_at = "When a new release was observed (UTC)."
+
+[tables.profile_source_policy]
+description = "Explicit choice of a profile for a source; where there is no row the default of the profile applies."
+[tables.profile_source_policy.columns]
+policy = "`add_directly`, `request` or `forbidden`."
+
+[tables.user_state]
+description = "Follow, favourite and read state of one user on one Work."
+[tables.user_state.columns]
+followed = "Whether the user follows the Work."
+favorite = "Whether the Work is one of the user's favourites."
+read_at = "When the user marked the Work as read (UTC); NULL when not read."
+stamp = "Server instant of the last write, the clock of the last-write-wins merge (UTC)."
+
+[tables.request]
+description = "A request of a profile for a title; the target only becomes a Work at approval."
+[tables.request.columns]
+id = "Request identifier (ULID)."
+requester_user_id = "User who asked (`user.id`)."
+target_kind = "What the target is: `work_id`, `source_ref`, `isbn` or `free_text`."
+target_value = "The target: a Work identifier, a source reference, an ISBN or free text."
+state = "`pending`, `approved`, `rejected`, `not_found`, `cancelled` or `arrived`."
+reject_reason = "Reason of the refusal; only set when the state is `rejected`."
+
+[tables.notification_digest]
+description = "The digest being built for a user, sent at its due time."
+[tables.notification_digest.columns]
+due_at = "When the digest is to be sent (UTC)."
+payload = "What the digest holds, grouped by series (JSON object)."
+
+[tables.pending_source_item]
+description = "A remote search result that is not yet a Work, the target of a request on a source reference."
+[tables.pending_source_item.columns]
+id = "Pending item identifier (ULID)."
+series_ref = "Reference of the series in the source."
+title = "Title as the source gave it."
+fetched_at = "When the source was asked (UTC)."
+
+[tables.source_alias_migration]
+description = "A bulk change of the identity scheme of a source, previewed before it is applied."
+[tables.source_alias_migration.columns]
+id = "Migration identifier (ULID)."
+from_scheme = "Identity scheme before the change."
+to_scheme = "Identity scheme after the change."
+state = "`previewed`, `applied` or `cancelled`."
+preview = "What the change would do, shown before applying (JSON object)."
+
+[tables.merge_log]
+description = "Journal of the merges and splits of Works, undoable for 30 days."
+[tables.merge_log.columns]
+id = "Journal entry identifier (ULID)."
+kind = "`merge` or `split`."
+survivor_id = "Work that remains (`work.id`; not a foreign key, the journal outlives the Works)."
+absorbed_id = "Work that was absorbed (not a foreign key, the journal outlives the Works)."
+snapshot = "What is needed to restore the two Works (JSON object)."
+undone_at = "When the operation was undone (UTC); NULL while in force."
+
+[tables.work_redirect]
+description = "An old Work identifier that now leads to another Work, so that links keep working."
+[tables.work_redirect.columns]
+from_work_id = "The old Work identifier (ULID)."
+to_work_id = "The Work it leads to (`work.id`)."
+merge_log_id = "Journal entry that caused the redirect (`merge_log.id`)."
+
+[tables.thumbnail]
+description = "Cover thumbnail addressed by the hash of its source, generated lazily."
+[tables.thumbnail.columns]
+content_hash = "Hash of the source image (`sha256:<hex>`)."
+size = "Width in pixels: 160, 320 or 640."
+path = "File relative to the thumbnail directory."
+bytes = "Size of the file in bytes."
+last_used_at = "When the thumbnail was last served (UTC); drives the garbage collection."
+
+[tables.time_window]
+description = "A daily window in which a kind of job may run, in UTC."
+[tables.time_window.columns]
+id = "Window identifier (ULID)."
+scope = "What the window applies to (a kind of job)."
+start_utc = "Start of the window, `HH:MM` UTC."
+end_utc = "End of the window, `HH:MM` UTC."
+tz = "IANA time zone used to show the window."

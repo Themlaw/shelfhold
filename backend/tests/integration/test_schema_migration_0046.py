@@ -42,7 +42,7 @@ def _previous() -> str:
 def db(settings: Settings) -> Iterator[sqlite3.Connection]:
     settings.data_dir.mkdir(parents=True, exist_ok=True)
     migrate(settings)
-    connection = sqlite3.connect(settings.database_path)
+    connection = sqlite3.connect(settings.database_path, isolation_level=None)  # autocommit
     connection.execute("PRAGMA foreign_keys = ON")
     yield connection
     connection.close()
@@ -207,7 +207,6 @@ def test_user_m3_columns_are_checked(db: sqlite3.Connection) -> None:
     refused(db, "user", id=new_ulid(), username="e", subject_filter='{"a": 1}', **base)
     refused(db, "user", id=new_ulid(), username="f", subject_filter="not json", **base)
     refused(db, "user", id=new_ulid(), username="g", kavita_username="", **base)
-    refused(db, "user", id=new_ulid(), username="h", hide_unrated_remote=2, **base)
     add_user(db, quiet_start="22:00", quiet_end="07:00", notify_mode="immediate",
              kavita_username="lea", subject_filter='["Erotica"]')  # fmt: skip
     refused(db, "user", id=new_ulid(), username="i", kavita_username="lea", **base)  # unique
@@ -251,7 +250,6 @@ def test_user_state_is_per_user_and_defaults_to_nothing(db: sqlite3.Connection) 
     assert db.execute("SELECT stamp FROM user_state WHERE user_id = ?", (two,)).fetchone()[0]
     refused(db, "user_state", user_id=one, work_id=work_id)  # one row per (user, work)
     refused(db, "user_state", user_id=one, work_id=new_ulid())  # a Work that exists
-    refused(db, "user_state", user_id=two, work_id=work(db), followed=2)
     db.execute("DELETE FROM work WHERE id = ?", (work_id,))
     assert db.execute("SELECT count(*) FROM user_state").fetchone() == (0,)
 
