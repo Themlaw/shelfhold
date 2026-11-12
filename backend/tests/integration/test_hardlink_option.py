@@ -422,7 +422,9 @@ def test_a_linked_unit_that_comes_to_owe_a_copy_is_made_independent_by_the_cycle
         linking(env).keep(unit)
         assert stored(env).stat().st_nlink == 2
         _owe(env, case)
-        assert unit in [c.unit_id for c in SafeguardInventory(env.engine).owed_candidates()]
+        assert unit in [
+            c.unit_id for c in SafeguardInventory(env.engine, env.fsops).owed_candidates()
+        ]
         cycle = SafeguardCycle(
             env.engine, env.fsops, keeper(env), NONE_PURGED, lambda: ROOMY,
             lambda connection, event, payload: None, ManualClock(NOW),
@@ -446,7 +448,7 @@ def test_a_linked_unit_that_stays_replaceable_is_not_picked() -> None:
     with lib_env() as env:
         unit, _, _ = filed(env)
         linking(env).keep(unit)
-        assert SafeguardInventory(env.engine).owed_candidates() == []
+        assert SafeguardInventory(env.engine, env.fsops).owed_candidates() == []
 
 
 def test_the_link_is_made_on_the_inode_that_was_checked_not_on_the_name(

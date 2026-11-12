@@ -36,11 +36,6 @@ from shelfhold.infrastructure.fsops import (
 )
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import catalog, export, storage
-from shelfhold.library.adapters.fresh_inodes import (
-    fresh_library_inodes,
-    is_own_inode,
-    refresh_library_rows,
-)
 from shelfhold.library.adapters.meta_projection import MetaProjection
 from shelfhold.library.adapters.origin_comicinfo import keep_origin_comicinfo
 from shelfhold.library.adapters.units import irreplaceability
@@ -54,10 +49,13 @@ from shelfhold.library.domain.failures import (
 )
 from shelfhold.library.domain.store_budget import Candidate
 from shelfhold.library.replica import (
+    fresh_library_inodes,
+    is_own_inode,
     library_copies,
     record_library_rewrite,
     record_replica,
     record_store_observation,
+    refresh_library_rows,
     sibling_inodes,
     store_copies,
 )

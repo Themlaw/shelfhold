@@ -41,7 +41,6 @@ from shelfhold.infrastructure.clock import Clock
 from shelfhold.infrastructure.content_trust import UntrustedEntryError
 from shelfhold.infrastructure.fsops import FileIdentity, Fsops, FsopsError
 from shelfhold.infrastructure.schema import acquisition, catalog, coherence, platform, storage
-from shelfhold.library.adapters.fresh_inodes import fresh_library_inodes, is_own_inode
 from shelfhold.library.adapters.safeguard import payload_hash_at
 from shelfhold.library.adapters.safeguard_inventory import (
     PurgeCandidate,
@@ -74,6 +73,8 @@ from shelfhold.library.domain.store_budget import (
 )
 from shelfhold.library.replica import (
     StoreProof,
+    fresh_library_inodes,
+    is_own_inode,
     library_copies,
     sibling_inodes,
     store_proofs,

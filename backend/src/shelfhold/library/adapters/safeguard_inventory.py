@@ -21,10 +21,9 @@ from sqlalchemy import Connection, Engine
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
 from shelfhold.infrastructure.schema import acquisition, catalog, export, storage
-from shelfhold.library.adapters.fresh_inodes import Disk, fresh_library_inodes, is_own_inode
 from shelfhold.library.adapters.units import content_error_candidates
 from shelfhold.library.domain.store_budget import Candidate
-from shelfhold.library.replica import store_copies
+from shelfhold.library.replica import Disk, linked_now
 
 __all__ = [
     "PurgeCandidate",
@@ -106,24 +105,6 @@ def record_backlog(connection: Connection, *, units: int, size: int, now: dateti
     )
 
 
-def _kept_as_a_link(content: sa.Table) -> sa.ColumnElement[bool]:
-    """A kept copy (`retention = keep`) whose `/store` file is one inode with a name in the library
-    (the option of EF-EXP-015): it is no copy of its own, so a Unit that is owed still owes one."""
-    store, library = storage.replica.alias("s"), storage.replica.alias("l")
-    return sa.and_(
-        content.c.retention == "keep",
-        sa.exists().where(
-            store.c.unit_id == content.c.unit_id,
-            store.c.location == "store",
-            sa.not_(store.c.independent),
-            library.c.unit_id == store.c.unit_id,
-            library.c.location == "library",
-            library.c.dev == store.c.dev,
-            library.c.ino == store.c.ino,
-        ),
-    )
-
-
 class SafeguardInventory:
     def __init__(self, engine: Engine, fsops: Disk | None = None) -> None:
         self._engine = engine
@@ -138,11 +119,8 @@ class SafeguardInventory:
             rows = connection.execute(
                 sa.select(content.c.unit_id, content.c.size, content.c.id, content.c.retention)
                 .where(
-                    sa.or_(
-                        content.c.retention == "passthrough",
-                        content.c.retention == "keep"
-                        if self._fsops is not None
-                        else _kept_as_a_link(content),
+                    content.c.retention.in_(
+                        ("passthrough", "keep") if self._fsops is not None else ("passthrough",)
                     ),
                     content.c.unit_id.in_(owed),
                     sa.exists().where(catalog.unit_variant.c.unit_id == content.c.unit_id),
@@ -150,25 +128,17 @@ class SafeguardInventory:
                 .order_by(content.c.id)
             ).all()
             kept = {r.unit_id for r in rows if r.retention == "keep"}
-            linked = {u for u in kept if self._linked_now(connection, u)}
+            linked = (
+                {u for u in kept if linked_now(connection, self._fsops, u)}
+                if self._fsops
+                else set()
+            )
         found: dict[str, Candidate] = {}
         for r in rows:
             if r.retention == "keep" and r.unit_id not in linked:
                 continue
             found.setdefault(r.unit_id, Candidate(r.unit_id, int(r.size)))
         return list(found.values())
-
-    def _linked_now(self, connection: Connection, unit_id: str) -> bool:
-        """Is a kept copy of the Unit not a copy of its own, on the disk now (a name shared with a
-        library file, or a second name)? Only the disk answers."""
-        if self._fsops is None:
-            return True  # the rows already said so (`_kept_as_a_link`)
-        siblings = fresh_library_inodes(connection, self._fsops, unit_id)
-        return any(
-            not is_own_inode(self._fsops, c.local, siblings)[0]
-            for c in store_copies(connection, unit_id)
-            if self._fsops.observe(c.local) is not None
-        )
 
     def upstream_candidates(self, *, request_id: str | None = None) -> list[PurgeCandidate]:
         """Downloads fetched and not yet let go of, whose content was exported to a shelf that
