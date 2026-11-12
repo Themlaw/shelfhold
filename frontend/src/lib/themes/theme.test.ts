@@ -19,7 +19,7 @@ const appHtml = readFileSync(join(here, '..', '..', 'app.html'), 'utf8');
 
 /** Run the boot script of `app.html` the way the browser does: once, before anything renders. */
 function boot(stored: string | null) {
-  document.documentElement.removeAttribute('data-theme');
+  document.documentElement.setAttribute('data-theme', DEFAULT_THEME); // the markup of app.html
   document.documentElement.removeAttribute('data-color-scheme');
   if (stored !== null) localStorage.setItem(STORAGE_KEY, stored);
   else localStorage.removeItem(STORAGE_KEY);
@@ -136,7 +136,7 @@ describe('theme variants', () => {
       );
       for (const [point, values] of Object.entries(VARIANT_POINTS)) {
         expect(values as readonly string[], `${theme.name}/${point}`).toContain(
-          declared[point.replace('_', '-')].$value
+          declared[point.replace('_', '-')]!.$value
         );
       }
     }

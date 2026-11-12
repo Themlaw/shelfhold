@@ -132,7 +132,9 @@ def test_an_api_key_has_no_preferences(api: AuthEnv) -> None:
     keyed = TestClient(api.app, base_url="https://testserver")  # type: ignore[arg-type]
     headers = {"Authorization": f"Bearer {key}"}
     assert keyed.get(PREFERENCES, headers=headers).status_code == 403
-    assert keyed.patch(PREFERENCES, json={"color_scheme": "dark"}, headers=headers).status_code == 403
+    assert (
+        keyed.patch(PREFERENCES, json={"color_scheme": "dark"}, headers=headers).status_code == 403
+    )
     assert _theme_columns(api, "admin") == (None, "auto")
 
 

@@ -67,7 +67,8 @@ describe('SPA CSP', () => {
       expect(meta, 'a CSP meta in the build').not.toBeNull();
       const csp = meta![1];
       expect(csp).not.toContain('unsafe-inline');
-      for (const [, body] of built.matchAll(/<script>([\s\S]*?)<\/script>/g)) {
+      for (const match of built.matchAll(/<script>([\s\S]*?)<\/script>/g)) {
+        const body = match[1] ?? '';
         expect(csp, `inline script ${body.slice(0, 30)}`).toContain(`'${sha(body)}'`);
       }
     }

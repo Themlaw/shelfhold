@@ -7,7 +7,7 @@ from fastapi import FastAPI
 from fastapi.responses import FileResponse, Response
 from starlette.requests import Request
 
-from shelfhold.infrastructure.http_headers import IMMUTABLE_CACHE, NO_CACHE
+from shelfhold.infrastructure.http_headers import IMMUTABLE_CACHE, NO_CACHE, source_hash
 from shelfhold.interfaces.http_api.catalog import error_code
 from shelfhold.interfaces.http_api.problems import build_problem_response
 
@@ -18,10 +18,52 @@ CSP_META = re.compile(
 )
 
 
-def _header_csp(index: Path) -> str | None:
-    """The build's CSP (hashes change with each build); the middleware adds `frame-ancestors`."""
-    match = CSP_META.search(index.read_text(encoding="utf-8"))
-    return match.group(1) if match else None
+INLINE_SCRIPT = re.compile(r"<script\b([^>]*)>(.*?)</script>", re.IGNORECASE | re.DOTALL)
+_LOOSE_SOURCES = ("'unsafe-inline'", "'unsafe-eval'", "*", "https:", "http:", "data:", "blob:")
+_GUARDED = ("default-src", "script-src", "style-src")
+
+
+def _directive(csp: str, name: str) -> list[str]:
+    for part in csp.split(";"):
+        words = part.split()
+        if words and words[0].lower() == name:
+            return words[1:]
+    return []
+
+
+def _inline_scripts(html: str) -> list[str]:
+    """The body of every script the page carries itself, which a CSP by hash must name."""
+    return [body for attrs, body in INLINE_SCRIPT.findall(html) if "src=" not in attrs.lower()]
+
+
+def _fallback_csp(html: str) -> str:
+    """A build that carries no CSP of its own is still served under one by hash (ENF-SEC-004)."""
+    hashes = " ".join(sorted({source_hash(body) for body in _inline_scripts(html)}))
+    scripts = f"script-src 'self' {hashes}".strip()
+    directives = ["default-src 'self'", scripts, "style-src 'self'", "object-src 'none'"]
+    return "; ".join([*directives, "base-uri 'none'", "form-action 'self'"])
+
+
+def spa_csp(html: str) -> str:
+    """The CSP the SPA is served under: the build's own (its hashes change with each build; the
+    middleware adds `frame-ancestors`), checked before a byte is served. A build that loosens a
+    script or style source, or whose inline script no hash covers, is refused at start-up: that
+    page was not the one audited."""
+    match = CSP_META.search(html)
+    if match is None:
+        return _fallback_csp(html)
+    csp = match.group(1)
+    for name in _GUARDED:
+        loose = [v for v in _directive(csp, name) if v.lower() in _LOOSE_SOURCES]
+        if loose:
+            raise RuntimeError(f"the CSP of the SPA build is loose: {name} allows {loose}")
+    allowed = _directive(csp, "script-src") or _directive(csp, "default-src")
+    for body in _inline_scripts(html):
+        if source_hash(body) not in allowed:
+            raise RuntimeError(
+                f"the SPA build has an inline script its CSP does not hash: {body[:40]!r}"
+            )
+    return csp
 
 
 def mount_spa(app: FastAPI, build_dir: Path) -> bool:
@@ -30,12 +72,12 @@ def mount_spa(app: FastAPI, build_dir: Path) -> bool:
     index = root / "index.html"
     if not index.is_file():
         return False
-    csp = _header_csp(index)
+    csp = spa_csp(index.read_text(encoding="utf-8"))
 
     def respond(file: Path, cache: str) -> Response:
         response = FileResponse(file)
         response.headers["Cache-Control"] = cache
-        if csp is not None and file == index:
+        if file == index:
             response.headers["Content-Security-Policy"] = csp
         return response
 

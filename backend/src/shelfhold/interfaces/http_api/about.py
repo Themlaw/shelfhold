@@ -25,12 +25,22 @@ class About(BaseModel):
     source_url: str
 
 
+class Source(BaseModel):
+    source_url: str
+
+
 def build_about_router(*, version: str, source_url: str) -> APIRouter:
     router = APIRouter(prefix="/api/v1")
 
     @router.get("/about", response_model=About)
     def about(_principal: Annotated[Principal, Depends(require_principal)]) -> About:
         return About(version=version, source_url=source_url)
+
+    @router.get("/source", response_model=Source)
+    def source() -> Source:
+        """Offered to anyone who reaches the instance, signed in or not (AGPL section 13): the
+        footer of every screen links to it. The address only, nothing of the instance."""
+        return Source(source_url=source_url)
 
     @router.get("/openapi.json", include_in_schema=False)
     def openapi(

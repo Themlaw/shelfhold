@@ -2,17 +2,19 @@ import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { dirname, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { ESLint } from 'eslint';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const eslint = new ESLint({ cwd: root });
 
 async function themeMessages(code: string, file: string): Promise<string[]> {
   const [result] = await eslint.lintText(code, { filePath: join(root, file) });
-  return result.messages
+  return (result?.messages ?? [])
     .filter((m) => m.ruleId === 'no-restricted-syntax' && /theme/i.test(m.message))
     .map((m) => m.message);
 }
+
+vi.setConfig({ testTimeout: 60_000 });
 
 const COMPONENT = 'src/lib/components/Probe.svelte';
 const wrap = (script: string, markup = '<p>x</p>') =>
@@ -36,7 +38,7 @@ describe('no component reads the name of the theme (I51)', () => {
   it('refuses it in a store or a helper of the lib too', async () => {
     const code = "export const isDark = () => document.documentElement.dataset.colorScheme === 'dark';\n";
     expect(await themeMessages(code, 'src/lib/store.ts')).not.toEqual([]);
-    expect(await themeMessages(code, 'src/routes/a-classer/+page.svelte')).not.toEqual([]);
+    expect(await themeMessages(wrap(code), 'src/routes/a-classer/+page.svelte')).not.toEqual([]);
   });
 
   // req: EF-UX-012

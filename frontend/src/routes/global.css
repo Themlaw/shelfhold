@@ -1,16 +1,19 @@
-:root {
-  color-scheme: light dark;
-}
-:root[data-color-scheme='light'] {
-  color-scheme: light;
-}
-:root[data-color-scheme='dark'] {
-  color-scheme: dark;
-}
 body {
   margin: 0;
   background: var(--color-bg);
   color: var(--color-ink);
   font-family: var(--font-ui);
   line-height: 1.5;
+}
+
+/* ENF-A11Y-003: nothing moves for someone who asked the system for less motion. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }

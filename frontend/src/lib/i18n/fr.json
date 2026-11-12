@@ -1,5 +1,7 @@
 {
   "app.name": "Shelfhold",
+  "footer.source": "Code source",
+  "footer.source_unknown": "Code source : adresse indisponible",
   "home.title": "Shelfhold — pré-alpha",
   "home.tagline": "L'atelier de la bibliothèque personnelle de votre foyer.",
   "health.heading": "État du serveur",
