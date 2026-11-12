@@ -26,7 +26,8 @@ _SENSITIVE_PARAM = re.compile(
     r"token|key|secret|sig|auth|pass|pwd|session|cookie|jwt|bearer|credential|code", re.IGNORECASE
 )
 # Characters XML 1.0 cannot carry at all, not even escaped.
-_XML_FORBIDDEN = re.compile("[\x00-\x08\x0b\x0c\x0e-\x1f￾￿]")
+# (C0 controls except tab, newline and carriage return, U+FFFE, U+FFFF; a translation table.)
+_XML_FORBIDDEN = dict.fromkeys([*range(0x09), 0x0B, 0x0C, *range(0x0E, 0x20), 0xFFFE, 0xFFFF])
 _XML_ESCAPES = {
     "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;",
     "\n": "&#10;", "\r": "&#13;", "\t": "&#9;",
@@ -145,7 +146,7 @@ def export_follows(engine: sa.Engine, fmt: str) -> str:
 
 def _attribute(value: str) -> str:
     """Escaped for a double-quoted attribute; line breaks and tabs are kept as references."""
-    escaped = _XML_FORBIDDEN.sub("", value)
+    escaped = value.translate(_XML_FORBIDDEN)
     for raw, reference in _XML_ESCAPES.items():
         escaped = escaped.replace(raw, reference)
     return escaped
