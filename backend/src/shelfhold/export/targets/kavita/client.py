@@ -29,6 +29,7 @@ from shelfhold.export.domain.kavita_compat import (
     KnownBad,
     TargetMode,
     assess_version,
+    parser_replica_covers,
 )
 from shelfhold.export.domain.kavita_key_expiry import KeyNotice, key_notices
 from shelfhold.export.domain.scan_debounce import DEFAULT_QUIET, ScanDebouncer
@@ -122,8 +123,9 @@ class KavitaClient:
 
     @property
     def preview_verified(self) -> bool:
-        """False when the name check is unavailable: the preview is shown as "not verified"."""
-        return self.collision_check_available
+        """False when the name check is unavailable, or when the version probed is not one the
+        replica of the parser covers: the preview is shown as "not verified" (EF-EXP-005)."""
+        return self.collision_check_available and parser_replica_covers(self.health.version)
 
     # -- the one way out -----------------------------------------------------------------------
 

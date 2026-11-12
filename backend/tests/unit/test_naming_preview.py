@@ -23,7 +23,11 @@ TEMPLATE = replace(DEFAULT_TEMPLATE, version=2, chapter="{series} Ch {number}")
 
 def item(key: str, number: str = "1", series: str = "Dr Stone", **kw: object) -> NamingItem:
     frozen = FrozenAttrs(
-        series=series, track="main", number_norm=number, template_ref=TEMPLATE.ref, **kw  # type: ignore[arg-type]
+        series=series,
+        track="main",
+        number_norm=number,
+        template_ref=TEMPLATE.ref,
+        **kw,  # type: ignore[arg-type]
     )
     return NamingItem(key, frozen, ".cbz")
 
@@ -38,7 +42,7 @@ def test_naming_preview_via_plugin_parse() -> None:
     preview = preview_names(items, TEMPLATE, parse=simulate_parse, verified=True)
     assert preview.verified
     assert [e.status for e in preview.entries] == ["confirmed"] * 3
-    assert [e.rel_path for e in preview.entries][0] == "Dr Stone/Dr Stone Ch 1.cbz"
+    assert preview.entries[0].rel_path == "Dr Stone/Dr Stone Ch 1.cbz"
     assert preview.collisions == ()
 
 
@@ -47,7 +51,7 @@ def test_naming_preview_flags_a_name_kavita_reads_as_another_number() -> None:
     """A template that Kavita reads wrongly (a number glued to a volume marker) is signalled."""
     bad = replace(TEMPLATE, chapter="{series} S{number}")  # `S<n>` is a volume in 0.9.1.4
     entries = preview_names(
-        [item("a", "5", template_ref=bad.ref)], bad, parse=simulate_parse, verified=True
+        [item("a", "5")], bad, parse=simulate_parse, verified=True
     ).entries
     assert entries[0].status == "flagged"
     assert entries[0].flags
@@ -145,18 +149,14 @@ def test_attack_series_named_like_the_reserved_folder(series: str) -> None:
 def test_attack_template_whose_folder_is_the_reserved_folder() -> None:
     sneaky = replace(TEMPLATE, special_dir=".shelfhold")
     special = FrozenAttrs("Dr Stone", "special", "1", template_ref=sneaky.ref)
-    preview = preview_names(
-        [NamingItem("a", special, ".cbz")], sneaky, parse=None, verified=False
-    )
+    preview = preview_names([NamingItem("a", special, ".cbz")], sneaky, parse=None, verified=False)
     assert "reserved_name" in preview.entries[0].flags
 
 
 @pytest.mark.req("EF-EXP-005")
 def test_attack_longest_names_never_exceed_a_component_and_are_flagged() -> None:
     long_series = "\U0001f600" * 120  # 480 bytes
-    preview = preview_names(
-        [item("a", series=long_series)], TEMPLATE, parse=None, verified=False
-    )
+    preview = preview_names([item("a", series=long_series)], TEMPLATE, parse=None, verified=False)
     entry = preview.entries[0]
     assert "truncated" in entry.flags
     assert all(len(part.encode()) <= MAX_COMPONENT_BYTES for part in entry.rel_path.split("/"))
@@ -185,6 +185,8 @@ def test_a_clean_preview_has_no_flag_at_all() -> None:
 @pytest.mark.req("EF-EXP-005")
 def test_the_preview_of_the_manifest_entry_carries_the_template_that_names_it() -> None:
     preview = preview_names([item("a")], TEMPLATE, parse=None, verified=False)
-    assert preview.entries[0].template_ref == TEMPLATE.ref == NamingTemplate(
-        template_id="kavita-manga", version=2
-    ).ref
+    assert (
+        preview.entries[0].template_ref
+        == TEMPLATE.ref
+        == NamingTemplate(template_id="kavita-manga", version=2).ref
+    )

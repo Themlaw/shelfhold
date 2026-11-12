@@ -127,7 +127,10 @@ def test_naming_preview_route_is_admin_only_reads_only_and_carries_the_mark(
 ) -> None:
     pipeline = FakePipeline()
     url = "/api/v1/plans/naming-preview"
-    body = {"shelf_destination_id": "01JDEST0000000000000000A1", "template": {"chapter": "{series} Ch {number}"}}
+    body = {
+        "shelf_destination_id": "01JDEST0000000000000000A1",
+        "template": {"chapter": "{series} Ch {number}"},
+    }
     with auth_env(monkeypatch, settings, plan_service=pipeline) as api:
         assert api.client.post(url, json=body).status_code == 401
         assert api.login().status_code == 200

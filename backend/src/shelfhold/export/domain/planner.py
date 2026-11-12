@@ -288,7 +288,7 @@ def _part(text: str | int) -> int:
     return int(text) if str(text).isdigit() and int(text) >= 1 else 1
 
 
-def plan_destination(request: PlanRequest, parse: Callable[[str], Parsed]) -> Plan:
+def plan_destination(request: PlanRequest, parse: Callable[[str], Parsed] | None) -> Plan:
     dest = request.destination
     blocked: list[Blocked] = []
     warnings: list[PlanWarning] = []
@@ -438,7 +438,7 @@ class _Shared:
     """What the loop over the Units leaves for the loop over the volumes: one plan, one set of
     names taken, one set of series whose first EPUB has gone."""
 
-    parse: Callable[[str], Parsed]
+    parse: Callable[[str], Parsed] | None
     editions: Mapping[str, EditionFacts]
     known: Mapping[str, SeriesFacts]
     resolve_series: Callable[[str], "SeriesRef | Blocked"]

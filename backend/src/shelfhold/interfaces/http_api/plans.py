@@ -8,14 +8,16 @@ job (`GET /api/v1/jobs/{id}`), the refusals that need no disk being answered bef
 """
 
 import re
+import string
 from collections.abc import Callable
-from dataclasses import asdict
+from dataclasses import asdict, replace
 from typing import Any, Protocol
 
 from fastapi import APIRouter, Depends, Request, Response
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 from shelfhold.export.application.export_items import SeriesCollisionError
+from shelfhold.export.application.naming_preview import NamingPreview
 from shelfhold.export.application.pipeline import (
     SourceMissingError,
     UnknownPlanError,
@@ -24,6 +26,7 @@ from shelfhold.export.application.pipeline import (
 from shelfhold.export.application.plans import StalePlanError
 from shelfhold.export.application.restore import RestoredBehindError
 from shelfhold.export.application.target_state import DestinationPausedError
+from shelfhold.export.domain.naming import DEFAULT_TEMPLATE, NamingTemplate
 from shelfhold.identity.public import Credential, Principal
 from shelfhold.interfaces.http_api.accepted import JobAccepted, accepted_job
 from shelfhold.interfaces.http_api.auth import require_principal
@@ -36,6 +39,9 @@ __all__ = ["build_plans_router"]
 
 class PlanPipeline(Protocol):
     def preview(self, shelf_destination_id: str) -> Any: ...
+    def naming_preview(
+        self, shelf_destination_id: str, template: NamingTemplate | None
+    ) -> NamingPreview: ...
     def queue_apply(self, plan_id: str, *, if_match: str) -> str:
         """Queue the application of a stored plan; returns the identifier of the job."""
         ...
@@ -43,6 +49,67 @@ class PlanPipeline(Protocol):
 
 class PlanIn(BaseModel):
     shelf_destination_id: str
+
+
+class NamingTemplateIn(BaseModel):
+    """The fields of a candidate template; what is left out is the default's."""
+
+    model_config = ConfigDict(extra="forbid")
+    chapter: str | None = None
+    volume: str | None = None
+    special: str | None = None
+    special_dir: str | None = None
+    segment: str | None = None
+
+
+class NamingPreviewIn(BaseModel):
+    shelf_destination_id: str
+    template: NamingTemplateIn | None = None
+
+
+class NameEntryOut(BaseModel):
+    key: str
+    rel_path: str
+    template_ref: str
+    status: str
+    flags: list[str]
+
+
+class CollisionOut(BaseModel):
+    kind: str
+    names: list[str]
+
+
+class NamingPreviewOut(BaseModel):
+    """`verified` false is the "not verified" mark: Kavita could not confirm the names."""
+
+    verified: bool
+    entries: list[NameEntryOut]
+    collisions: list[CollisionOut]
+
+
+_PLACEHOLDERS = {
+    "chapter": {"series", "number"},
+    "volume": {"series", "number"},
+    "special": {"series", "label"},
+    "segment": {"series", "n"},
+}
+
+
+def _candidate(body: NamingTemplateIn | None) -> NamingTemplate | None:
+    """A template made of the default and the fields given; a placeholder it does not know is
+    a 422, since the rendering would fail on it."""
+    if body is None:
+        return None
+    fields = body.model_dump(exclude_none=True)
+    for name, text in fields.items():
+        try:
+            used = {field for _lit, field, _spec, _conv in string.Formatter().parse(text) if field}
+        except ValueError:
+            raise ProblemError("validation_failed") from None
+        if name in _PLACEHOLDERS and not used <= _PLACEHOLDERS[name]:
+            raise ProblemError("validation_failed")
+    return replace(DEFAULT_TEMPLATE, template_id="preview", version=1, **fields)
 
 
 class PlanOut(BaseModel):
@@ -100,6 +167,20 @@ def build_plans_router(get_pipeline: Callable[[], PlanPipeline]) -> APIRouter:
             blocked=[asdict(b) for b in result.blocked],
             warnings=[asdict(w) for w in result.warnings],
             checks=list(result.checks),
+        )
+
+    @router.post("/naming-preview", status_code=200)
+    def naming_preview(
+        body: NamingPreviewIn,
+        _principal: Principal = Depends(require_admin),  # noqa: B008
+    ) -> NamingPreviewOut:
+        """The names a template would give, read by Kavita or marked "not verified" (EF-EXP-005).
+        Read-only: nothing is written and nothing is stored."""
+        result = get_pipeline().naming_preview(body.shelf_destination_id, _candidate(body.template))
+        return NamingPreviewOut(
+            verified=result.verified,
+            entries=[NameEntryOut(**{**asdict(e), "flags": list(e.flags)}) for e in result.entries],
+            collisions=[CollisionOut(kind=c.kind, names=list(c.names)) for c in result.collisions],
         )
 
     @router.post("/{plan_id}/apply", status_code=202, response_model=JobAccepted)

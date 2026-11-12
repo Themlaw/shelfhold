@@ -405,6 +405,27 @@
         "title": "CheckOut",
         "type": "object"
       },
+      "CollisionOut": {
+        "properties": {
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "names": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Names",
+            "type": "array"
+          }
+        },
+        "required": [
+          "kind",
+          "names"
+        ],
+        "title": "CollisionOut",
+        "type": "object"
+      },
       "ConfigOut": {
         "properties": {
           "items": {
@@ -1584,6 +1605,158 @@
           "total"
         ],
         "title": "MigrationProgress",
+        "type": "object"
+      },
+      "NameEntryOut": {
+        "properties": {
+          "flags": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Flags",
+            "type": "array"
+          },
+          "key": {
+            "title": "Key",
+            "type": "string"
+          },
+          "rel_path": {
+            "title": "Rel Path",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "template_ref": {
+            "title": "Template Ref",
+            "type": "string"
+          }
+        },
+        "required": [
+          "key",
+          "rel_path",
+          "template_ref",
+          "status",
+          "flags"
+        ],
+        "title": "NameEntryOut",
+        "type": "object"
+      },
+      "NamingPreviewIn": {
+        "properties": {
+          "shelf_destination_id": {
+            "title": "Shelf Destination Id",
+            "type": "string"
+          },
+          "template": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/NamingTemplateIn"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "shelf_destination_id"
+        ],
+        "title": "NamingPreviewIn",
+        "type": "object"
+      },
+      "NamingPreviewOut": {
+        "description": "`verified` false is the \"not verified\" mark: Kavita could not confirm the names.",
+        "properties": {
+          "collisions": {
+            "items": {
+              "$ref": "#/components/schemas/CollisionOut"
+            },
+            "title": "Collisions",
+            "type": "array"
+          },
+          "entries": {
+            "items": {
+              "$ref": "#/components/schemas/NameEntryOut"
+            },
+            "title": "Entries",
+            "type": "array"
+          },
+          "verified": {
+            "title": "Verified",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "verified",
+          "entries",
+          "collisions"
+        ],
+        "title": "NamingPreviewOut",
+        "type": "object"
+      },
+      "NamingTemplateIn": {
+        "additionalProperties": false,
+        "description": "The fields of a candidate template; what is left out is the default's.",
+        "properties": {
+          "chapter": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Chapter"
+          },
+          "segment": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Segment"
+          },
+          "special": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Special"
+          },
+          "special_dir": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Special Dir"
+          },
+          "volume": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Volume"
+          }
+        },
+        "title": "NamingTemplateIn",
         "type": "object"
       },
       "PairAutoIn": {
@@ -6809,6 +6982,68 @@
           }
         },
         "summary": "Preview",
+        "tags": [
+          "plans"
+        ]
+      }
+    },
+    "/api/v1/plans/naming-preview": {
+      "post": {
+        "description": "The names a template would give, read by Kavita or marked \"not verified\" (EF-EXP-005).\nRead-only: nothing is written and nothing is stored.",
+        "operationId": "naming_preview",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NamingPreviewIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NamingPreviewOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Connexion requise, ou mot de passe à confirmer (reauth-required)."
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée)."
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Détail du problème (RFC 9457)."
+          }
+        },
+        "summary": "Naming Preview",
         "tags": [
           "plans"
         ]

@@ -54,7 +54,7 @@ def test_naming_preview_unverified_on_a_version_the_replica_does_not_cover(
 ) -> None:
     with seeded(settings, tmp_path) as env:
         env.add_chapter(env.new_series(), "1")
-        env.inst.kavita.version = "0.9.2.0"
+        env.inst.kavita.version = "0.9.2.0"  # updated since the last probe
         preview = service(env).naming_preview(env.destination_id, TEMPLATE)
         assert not preview.verified
         assert [e.status for e in preview.entries] == ["unverified"]
@@ -65,7 +65,7 @@ def test_number_collision_flagged_in_preview(settings: Settings, tmp_path: Path)
     with seeded(settings, tmp_path) as env:
         series = env.new_series()
         env.add_chapter(series, "10")
-        env.add_chapter(series, "10")  # two Units that Kavita reads as chapter 10
+        env.add_chapter(series, "10", part=2)  # Kavita reads both as chapter 10
         preview = service(env).naming_preview(env.destination_id, TEMPLATE)
         assert preview.collisions
         assert all(e.flags for e in preview.entries)

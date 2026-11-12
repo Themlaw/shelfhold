@@ -257,6 +257,20 @@ export type CheckOut = {
 };
 
 /**
+ * CollisionOut
+ */
+export type CollisionOut = {
+    /**
+     * Kind
+     */
+    kind: string;
+    /**
+     * Names
+     */
+    names: Array<string>;
+};
+
+/**
  * ConfigOut
  */
 export type ConfigOut = {
@@ -980,6 +994,91 @@ export type MigrationProgress = {
      * Total
      */
     total: number;
+};
+
+/**
+ * NameEntryOut
+ */
+export type NameEntryOut = {
+    /**
+     * Flags
+     */
+    flags: Array<string>;
+    /**
+     * Key
+     */
+    key: string;
+    /**
+     * Rel Path
+     */
+    rel_path: string;
+    /**
+     * Status
+     */
+    status: string;
+    /**
+     * Template Ref
+     */
+    template_ref: string;
+};
+
+/**
+ * NamingPreviewIn
+ */
+export type NamingPreviewIn = {
+    /**
+     * Shelf Destination Id
+     */
+    shelf_destination_id: string;
+    template?: NamingTemplateIn | null;
+};
+
+/**
+ * NamingPreviewOut
+ *
+ * `verified` false is the "not verified" mark: Kavita could not confirm the names.
+ */
+export type NamingPreviewOut = {
+    /**
+     * Collisions
+     */
+    collisions: Array<CollisionOut>;
+    /**
+     * Entries
+     */
+    entries: Array<NameEntryOut>;
+    /**
+     * Verified
+     */
+    verified: boolean;
+};
+
+/**
+ * NamingTemplateIn
+ *
+ * The fields of a candidate template; what is left out is the default's.
+ */
+export type NamingTemplateIn = {
+    /**
+     * Chapter
+     */
+    chapter?: string | null;
+    /**
+     * Segment
+     */
+    segment?: string | null;
+    /**
+     * Special
+     */
+    special?: string | null;
+    /**
+     * Special Dir
+     */
+    special_dir?: string | null;
+    /**
+     * Volume
+     */
+    volume?: string | null;
 };
 
 /**
@@ -4153,6 +4252,39 @@ export type PreviewResponses = {
 };
 
 export type PreviewResponse = PreviewResponses[keyof PreviewResponses];
+
+export type NamingPreviewData = {
+    body: NamingPreviewIn;
+    path?: never;
+    query?: never;
+    url: '/api/v1/plans/naming-preview';
+};
+
+export type NamingPreviewErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type NamingPreviewError = NamingPreviewErrors[keyof NamingPreviewErrors];
+
+export type NamingPreviewResponses = {
+    /**
+     * Successful Response
+     */
+    200: NamingPreviewOut;
+};
+
+export type NamingPreviewResponse = NamingPreviewResponses[keyof NamingPreviewResponses];
 
 export type ApplyData = {
     body?: never;
