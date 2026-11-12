@@ -405,6 +405,32 @@ export type Done = {
 };
 
 /**
+ * EditionLineOut
+ */
+export type EditionLineOut = {
+    /**
+     * Edition Id
+     */
+    edition_id: string;
+    /**
+     * Lang
+     */
+    lang: string;
+    /**
+     * Sort Key
+     */
+    sort_key: string;
+    /**
+     * Title
+     */
+    title: string;
+    /**
+     * Work Id
+     */
+    work_id: string;
+};
+
+/**
  * EditionShelfIn
  */
 export type EditionShelfIn = {
@@ -440,6 +466,16 @@ export type EditionSuggestionOut = {
 };
 
 /**
+ * EditionsOut
+ */
+export type EditionsOut = {
+    /**
+     * Items
+     */
+    items: Array<EditionLineOut>;
+};
+
+/**
  * EstimateOut
  */
 export type EstimateOut = {
@@ -463,6 +499,92 @@ export type EstimateOut = {
      * Units
      */
     units: number;
+};
+
+/**
+ * ExportItemOut
+ */
+export type ExportItemOut = {
+    /**
+     * Closed
+     */
+    closed: boolean;
+    /**
+     * Edition Id
+     */
+    edition_id: string;
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Kept
+     */
+    kept: string | null;
+    /**
+     * Kept Problem
+     */
+    kept_problem: string | null;
+    /**
+     * Kind
+     */
+    kind: string;
+    /**
+     * Label
+     */
+    label: string | null;
+    /**
+     * Units
+     */
+    units: number;
+};
+
+/**
+ * FieldIn
+ */
+export type FieldIn = {
+    /**
+     * Lang
+     */
+    lang?: string;
+    /**
+     * On
+     */
+    on?: 'edition' | 'work';
+    /**
+     * Value
+     */
+    value?: string | null;
+};
+
+/**
+ * FieldOut
+ */
+export type FieldOut = {
+    /**
+     * Edition Id
+     */
+    edition_id: string;
+    /**
+     * Field
+     */
+    field: string;
+    /**
+     * Kept
+     */
+    kept: boolean;
+    /**
+     * Lang
+     */
+    lang: string;
+    /**
+     * Locked
+     */
+    locked: boolean;
+    /**
+     * On
+     */
+    on: string;
 };
 
 /**
@@ -1357,6 +1479,54 @@ export type RecheckOut = {
 };
 
 /**
+ * RenumberIn
+ */
+export type RenumberIn = {
+    /**
+     * Id Scheme
+     */
+    id_scheme?: string | null;
+    /**
+     * New
+     */
+    new: string;
+    /**
+     * Old
+     */
+    old: string;
+    /**
+     * Provider
+     */
+    provider: string;
+};
+
+/**
+ * RenumberOut
+ */
+export type RenumberOut = {
+    /**
+     * Added
+     */
+    added: boolean;
+    /**
+     * Edition Id
+     */
+    edition_id: string;
+    /**
+     * New
+     */
+    new: string;
+    /**
+     * Old
+     */
+    old: string;
+    /**
+     * Provider
+     */
+    provider: string;
+};
+
+/**
  * RepatriateIn
  */
 export type RepatriateIn = {
@@ -1382,6 +1552,82 @@ export type ResolvedOut = {
      * Outcome
      */
     outcome: string;
+};
+
+/**
+ * ResplitAppliedOut
+ */
+export type ResplitAppliedOut = {
+    /**
+     * Added
+     */
+    added: number;
+    /**
+     * Children
+     */
+    children: Array<string>;
+    /**
+     * Edition Id
+     */
+    edition_id: string;
+    /**
+     * Parent
+     */
+    parent: string;
+};
+
+/**
+ * ResplitApplyIn
+ */
+export type ResplitApplyIn = {
+    /**
+     * Child Unit Ids
+     */
+    child_unit_ids: Array<string>;
+    /**
+     * Confirm
+     */
+    confirm: string;
+    /**
+     * Parent Unit Id
+     */
+    parent_unit_id: string;
+};
+
+/**
+ * ResplitIn
+ */
+export type ResplitIn = {
+    /**
+     * Child Unit Ids
+     */
+    child_unit_ids: Array<string>;
+    /**
+     * Parent Unit Id
+     */
+    parent_unit_id: string;
+};
+
+/**
+ * ResplitProposedOut
+ */
+export type ResplitProposedOut = {
+    /**
+     * Children
+     */
+    children: Array<string>;
+    /**
+     * Code
+     */
+    code: string;
+    /**
+     * Edition Id
+     */
+    edition_id: string;
+    /**
+     * Parent
+     */
+    parent: string;
 };
 
 /**
@@ -1983,6 +2229,20 @@ export type UnfollowIn = {
      * Source Key
      */
     source_key: string;
+};
+
+/**
+ * UnlockIn
+ */
+export type UnlockIn = {
+    /**
+     * Lang
+     */
+    lang?: string;
+    /**
+     * On
+     */
+    on?: 'edition' | 'work';
 };
 
 /**
@@ -2954,6 +3214,72 @@ export type PatchConfigResponses = {
 
 export type PatchConfigResponse = PatchConfigResponses[keyof PatchConfigResponses];
 
+export type ResplitApplyData = {
+    body: ResplitApplyIn;
+    path?: never;
+    query?: never;
+    url: '/api/v1/coverage/resplit/apply';
+};
+
+export type ResplitApplyErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type ResplitApplyError = ResplitApplyErrors[keyof ResplitApplyErrors];
+
+export type ResplitApplyResponses = {
+    /**
+     * Successful Response
+     */
+    200: ResplitAppliedOut;
+};
+
+export type ResplitApplyResponse = ResplitApplyResponses[keyof ResplitApplyResponses];
+
+export type ResplitProposeData = {
+    body: ResplitIn;
+    path?: never;
+    query?: never;
+    url: '/api/v1/coverage/resplit/propose';
+};
+
+export type ResplitProposeErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type ResplitProposeError = ResplitProposeErrors[keyof ResplitProposeErrors];
+
+export type ResplitProposeResponses = {
+    /**
+     * Successful Response
+     */
+    200: ResplitProposedOut;
+};
+
+export type ResplitProposeResponse = ResplitProposeResponses[keyof ResplitProposeResponses];
+
 export type RestoreUpstreamData = {
     body: DetachIn;
     path?: never;
@@ -2990,6 +3316,52 @@ export type RestoreUpstreamResponses = {
 };
 
 export type RestoreUpstreamResponse = RestoreUpstreamResponses[keyof RestoreUpstreamResponses];
+
+export type EditionsListData = {
+    body?: never;
+    path?: never;
+    query?: {
+        /**
+         * Sort
+         */
+        sort?: 'title';
+        /**
+         * Limit
+         */
+        limit?: number;
+        /**
+         * Offset
+         */
+        offset?: number;
+    };
+    url: '/api/v1/editions';
+};
+
+export type EditionsListErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type EditionsListError = EditionsListErrors[keyof EditionsListErrors];
+
+export type EditionsListResponses = {
+    /**
+     * Successful Response
+     */
+    200: EditionsOut;
+};
+
+export type EditionsListResponse = EditionsListResponses[keyof EditionsListResponses];
 
 export type BackfillEstimateData = {
     body?: never;
@@ -3109,6 +3481,128 @@ export type FollowCheckResponses = {
 };
 
 export type FollowCheckResponse = FollowCheckResponses[keyof FollowCheckResponses];
+
+export type RenumberIdData = {
+    body: RenumberIn;
+    path: {
+        /**
+         * Edition Id
+         */
+        edition_id: string;
+    };
+    query?: never;
+    url: '/api/v1/editions/{edition_id}/external-ids/renumber';
+};
+
+export type RenumberIdErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type RenumberIdError = RenumberIdErrors[keyof RenumberIdErrors];
+
+export type RenumberIdResponses = {
+    /**
+     * Successful Response
+     */
+    200: RenumberOut;
+};
+
+export type RenumberIdResponse = RenumberIdResponses[keyof RenumberIdResponses];
+
+export type FieldLockData = {
+    body: FieldIn;
+    path: {
+        /**
+         * Edition Id
+         */
+        edition_id: string;
+        /**
+         * Field
+         */
+        field: string;
+    };
+    query?: never;
+    url: '/api/v1/editions/{edition_id}/fields/{field}/lock';
+};
+
+export type FieldLockErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type FieldLockError = FieldLockErrors[keyof FieldLockErrors];
+
+export type FieldLockResponses = {
+    /**
+     * Successful Response
+     */
+    200: FieldOut;
+};
+
+export type FieldLockResponse = FieldLockResponses[keyof FieldLockResponses];
+
+export type FieldUnlockData = {
+    body: UnlockIn;
+    path: {
+        /**
+         * Edition Id
+         */
+        edition_id: string;
+        /**
+         * Field
+         */
+        field: string;
+    };
+    query?: never;
+    url: '/api/v1/editions/{edition_id}/fields/{field}/unlock';
+};
+
+export type FieldUnlockErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type FieldUnlockError = FieldUnlockErrors[keyof FieldUnlockErrors];
+
+export type FieldUnlockResponses = {
+    /**
+     * Successful Response
+     */
+    200: FieldOut;
+};
+
+export type FieldUnlockResponse = FieldUnlockResponses[keyof FieldUnlockResponses];
 
 export type EditionSetLangData = {
     body: LanguageIn;
@@ -3265,6 +3759,44 @@ export type ShelfProposalResponses = {
 };
 
 export type ShelfProposalResponse = ShelfProposalResponses[keyof ShelfProposalResponses];
+
+export type ExportItemData = {
+    body?: never;
+    path: {
+        /**
+         * Item Id
+         */
+        item_id: string;
+    };
+    query?: never;
+    url: '/api/v1/export-items/{item_id}';
+};
+
+export type ExportItemErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type ExportItemError = ExportItemErrors[keyof ExportItemErrors];
+
+export type ExportItemResponses = {
+    /**
+     * Successful Response
+     */
+    200: ExportItemOut;
+};
+
+export type ExportItemResponse = ExportItemResponses[keyof ExportItemResponses];
 
 export type UnfollowData = {
     body: UnfollowIn;
