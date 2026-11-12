@@ -310,7 +310,7 @@ VIOLATIONS = [
      "import shelfhold.infrastructure.db\n", "catalog/application/synthetic.py"),
     ("fts-sole-reader", "catalog/application/synthetic.py",
      "import shelfhold.infrastructure.schema.search\n", "catalog/application/search/reader.py"),
-    ("fts-sole-reader", "interfaces/http_api/synthetic.py",
+    ("fts-sole-reader", "export/synthetic.py",
      "from shelfhold.infrastructure.schema import search\n", None),
     ("identity-not-export-acquisition", "identity/application/synthetic.py",
      "from shelfhold.export import public\n", "jobs/synthetic.py"),
@@ -730,7 +730,7 @@ def test_m3_search_packages_exist_and_are_documented() -> None:
 
 @pytest.mark.req("ENF-QUAL-002")
 def test_http_contract_ignores_are_named_with_the_lot_that_settles_them() -> None:
-    """Debts found on main are ignored with a reason and the lot that removes them, never silently."""
+    """Debts found on main are ignored with the lot that removes them, never silently."""
     text = CONFIG.read_text("utf-8")
     block = text.split("[importlinter:contract:http-no-infrastructure-adapter]")[1].split(
         "[importlinter"
@@ -742,7 +742,7 @@ def test_http_contract_ignores_are_named_with_the_lot_that_settles_them() -> Non
 @pytest.mark.req("ENF-GOV-006")
 def test_gate_p2_is_recorded_as_waiting_for_the_owner() -> None:
     portes = (BACKEND.parent / "docs" / "governance" / "portes.md").read_text("utf-8")
-    row = next(line for line in portes.splitlines() if line.startswith("| P2 | "))
+    row = [ln for ln in portes.splitlines() if ln.startswith("| P2 | ")][-1]
     assert "en attente de la réponse du porteur (D1 de PLAN-M3)" in row
     assert "réussi" not in row.lower()
     assert "échec" not in row.lower()
