@@ -41,6 +41,13 @@ class SuwayomiProbe(Protocol):
 
     def auth_mode(self, *, url: str, username: str | None, password: str | None) -> str: ...
 
+    def disable_update_filters(
+        self, *, url: str, mode: str, username: str | None, password: str | None
+    ) -> list[str]:
+        """Switch off the two global update filters (owner decision 2026-11-12), only once the admin
+        confirmed. The names that still block afterwards; `ConnectionError` / `PermissionError`."""
+        ...
+
 
 class ChannelValidator(Protocol):
     def validate(self, url: str) -> str:

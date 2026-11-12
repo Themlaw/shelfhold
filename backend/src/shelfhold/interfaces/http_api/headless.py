@@ -64,6 +64,7 @@ class SourceIn(BaseModel):
     kind: str = "suwayomi"
     url: str = Field(min_length=1)
     secret: str | None = Field(default=None, repr=False)  # user:password
+    fix_suwayomi_settings: bool = False  # the admin confirms: switch off the two update filters
 
 
 class Created(BaseModel):
@@ -147,12 +148,17 @@ def build_headless_router(
     def add_source(
         body: SourceIn,
         response: Response,
-        _principal: Principal = Depends(reserved_action(_SECRET)),  # noqa: B008
+        principal: Principal = Depends(reserved_action(_SECRET)),  # noqa: B008
     ) -> Created:
         if body.kind != "suwayomi":
             raise ProblemError("config.invalid_value")
         try:
-            added = get_admin().source_add_suwayomi(url=body.url, secret=body.secret)
+            added = get_admin().source_add_suwayomi(
+                url=body.url,
+                secret=body.secret,
+                fix_suwayomi_settings=body.fix_suwayomi_settings,
+                actor=_actor_of(principal),
+            )
         except HeadlessError as error:
             raise _problem(error) from None
         located(response, f"/api/v1/sources/{added.plugin_id}")

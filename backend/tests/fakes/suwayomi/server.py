@@ -52,13 +52,21 @@ ALLOWED_FIELDS = frozenset({
     "login", "refreshToken",  # M1b L20: the JWT pair of `ui_login`, in the exact S5 forms
     "user",  # M1b L20: the roles of the logged-in account (D1), when the server exposes them
     "downloadStatus",  # M1b L22: the download queue, read before a chapter is asked again
+    "setSettings",  # owner decision 2026-11-12: the two update filters, in one exact form
 })  # fmt: skip
 FORBIDDEN_FIELDS = frozenset({
     "fetchChapterPages", "fetchManga", "fetchSourceManga", "updateLibrary",
     "updateCategoryManga", "deleteDownloadedChapters", "deleteCategory",
     "clearDownloader", "startDownloader", "restoreBackup",
-    "installExternalExtension", "updateExtension", "addExtensionStore", "setSettings",
+    "installExternalExtension", "updateExtension", "addExtensionStore",
 })  # fmt: skip
+# The only settings write: both global update filters switched off, nothing else (pinned schema:
+# `setSettings(input: SetSettingsInput!)`, `SetSettingsInput { settings: <partial settings> }`).
+_SET_SETTINGS = re.compile(
+    r"^\s*mutation\s*\{\s*setSettings\(input:\s*\{settings:\s*\{"
+    r"excludeUnreadChapters:\s*false,\s*excludeNotStarted:\s*false\}\}\)\s*"
+    r"\{\s*settings\s*\{\s*excludeUnreadChapters\s+excludeNotStarted\s*\}\s*\}\s*\}\s*$"
+)
 _TOKEN = re.compile(r"[A-Za-z_]\w*")
 # The S5 forms (`spikes/s5`, `harness.login` and the contract test), nothing looser:
 _LOGIN = re.compile(
@@ -139,6 +147,8 @@ class FakeSuwayomi:
     hidden: list[tuple[int, dict[str, Any]]] = field(default_factory=list)  # (manga id, chapter)
     refreshed: list[int] = field(default_factory=list)  # manga ids of `fetchChapters`, in order
     exclude_unread: bool = False  # global update filter "exclude unread" (M1b L22)
+    settings_writes: list[dict[str, bool]] = field(default_factory=list)
+    ignore_settings_writes: bool = False  # accepts `setSettings` but keeps the old values
     exclude_not_started: bool = False  # global update filter "exclude not started" (M1b L22)
 
     # -- scenario helpers -------------------------------------------------------------------
@@ -375,6 +385,8 @@ class FakeSuwayomi:
         found = frozenset(_TOKEN.findall(query)) & (ALLOWED_FIELDS | FORBIDDEN_FIELDS)
         if query.lstrip().startswith("mutation"):
             found = found - {"downloadStatus"}  # the sub-selection of the download mutations
+            if "setSettings" in found:
+                found = found - {"settings"}  # the sub-selection of `setSettings`
         recorded.fields = found
         bad = found & FORBIDDEN_FIELDS
         if bad or not found:
@@ -383,6 +395,26 @@ class FakeSuwayomi:
             return self._token_mutation(query)
         if not authenticated and found != {"aboutServer"}:
             return self._json({"data": None, "errors": [{"message": "Unauthorized"}]})
+        if "setSettings" in found:
+            if found != {"setSettings"} or not _SET_SETTINGS.match(query):
+                return self._violation("setSettings outside the two update filters")
+            if not self.ignore_settings_writes:
+                self.exclude_unread = self.exclude_not_started = False
+            self.settings_writes.append(
+                {"excludeUnreadChapters": False, "excludeNotStarted": False}
+            )
+            return self._json(
+                {
+                    "data": {
+                        "setSettings": {
+                            "settings": {
+                                "excludeUnreadChapters": self.exclude_unread,
+                                "excludeNotStarted": self.exclude_not_started,
+                            }
+                        }
+                    }
+                }
+            )
         if "user" in found and self.roles_payload is not None:
             return self._json(self.roles_payload)
         if "user" in found and not self.expose_roles:  # a schema without that field (S5)

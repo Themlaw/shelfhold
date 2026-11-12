@@ -3202,6 +3202,11 @@
       },
       "SourceIn": {
         "properties": {
+          "fix_suwayomi_settings": {
+            "default": false,
+            "title": "Fix Suwayomi Settings",
+            "type": "boolean"
+          },
           "kind": {
             "default": "suwayomi",
             "title": "Kind",

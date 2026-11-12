@@ -19,6 +19,14 @@ DOWNLOADS_PATH = "query { settings { downloadsPath } }"
 DOWNLOAD_QUEUE = "query { downloadStatus { state queue { chapter { id } } } }"
 # EF-SRC-026 (d): the global update filters that leave out the series the user has not read
 UPDATE_FILTERS = "query { settings { excludeUnreadChapters excludeNotStarted } }"
+# Owner decision 2026-11-12: the only write in the settings of Suwayomi, confirmed by the admin.
+# The shape of the pinned schema (v2.4.2366): `setSettings(input: SetSettingsInput!)`, with
+# `SetSettingsInput { clientMutationId, settings: PartialSettingsTypeInput! }` and a payload that
+# returns the `settings`. Both filters off, nothing else, no variables.
+DISABLE_UPDATE_FILTERS = (
+    "mutation { setSettings(input: {settings: {excludeUnreadChapters: false, "
+    "excludeNotStarted: false}}) { settings { excludeUnreadChapters excludeNotStarted } } }"
+)
 SOURCES = "query { sources { nodes { id displayName lang isNsfw } } }"
 _MANGA_FIELDS = "id sourceId url title description author artist"
 LIBRARY = f"query {{ mangas(condition: {{inLibrary: true}}) {{ nodes {{ {_MANGA_FIELDS} }} }} }}"

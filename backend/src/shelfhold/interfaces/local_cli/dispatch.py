@@ -250,7 +250,10 @@ def _source_add(admin: HeadlessAdmin, params: Params) -> object:
     if params.get("kind", "suwayomi") != "suwayomi":
         raise _invalid("kind", "suwayomi")
     added = admin.source_add_suwayomi(
-        url=str(_text(params, "url")), secret=_text(params, "secret", required=False)
+        url=str(_text(params, "url")),
+        secret=_text(params, "secret", required=False),
+        fix_suwayomi_settings=_flag(params, "fix_suwayomi_settings"),
+        actor=_actor(params),
     )
     return {"id": added.plugin_id, "auth_mode": added.auth_mode, "created": added.created}
 
