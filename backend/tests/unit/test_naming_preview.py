@@ -50,9 +50,7 @@ def test_naming_preview_via_plugin_parse() -> None:
 def test_naming_preview_flags_a_name_kavita_reads_as_another_number() -> None:
     """A template that Kavita reads wrongly (a number glued to a volume marker) is signalled."""
     bad = replace(TEMPLATE, chapter="{series} S{number}")  # `S<n>` is a volume in 0.9.1.4
-    entries = preview_names(
-        [item("a", "5")], bad, parse=simulate_parse, verified=True
-    ).entries
+    entries = preview_names([item("a", "5")], bad, parse=simulate_parse, verified=True).entries
     assert entries[0].status == "flagged"
     assert entries[0].flags
 

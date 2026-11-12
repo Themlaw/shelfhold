@@ -71,7 +71,9 @@ class Seeded:
         """A Unit received through the production store, into the inbox of the first root.
         `page` replaces the single page (name, bytes) of the archive."""
         with self.inst.engine.begin() as connection:
-            unit = add_unit(connection, series.edition_id, number, part=part)
+            unit = add_unit(
+                connection, series.edition_id, number, **({"part": part} if part > 1 else {})
+            )
             variant = add_variant(connection, unit, series.binding_id, f"ch-{new_ulid()}")
         name, data = page or (
             f"{number}-001.png",
