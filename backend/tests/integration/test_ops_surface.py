@@ -593,6 +593,7 @@ def test_the_reserved_column_of_the_socket_table_matches_the_catalogue() -> None
     declared.add("intents.resolve")  # L51: reserved; the drift it settles is no waiting state
     declared.add("normalize.migrate")  # L55: reserved; no waiting state either
     declared |= {"revisions.apply", "revisions.force"}  # M2 L17: the confirmed rewrite batch
+    declared.add("coverage.resplit")  # M2 L26: a re-cut chapter confirmed (EF-BIB-044)
     declared.add("edition.merge")  # M2 L14: reserved; the merge of two Editions, no waiting state
     declared.add("shelf.withdraw")  # M1b L10: applying the removal plan of a family shelf
     declared.add("shelf.purge_upstream")  # M1b L16: turning on the erasure of the upstream copy
