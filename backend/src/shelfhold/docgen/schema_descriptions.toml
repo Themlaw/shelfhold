@@ -628,6 +628,7 @@ disabled_reason = "Why the binding was disabled."
 check_cron = "Observed check cadence."
 next_expected = "When a new release is expected (UTC)."
 last_checked = "When the source was last checked (UTC)."
+last_refreshed_at = "When the source was last asked to refresh the series, piloted mode (UTC); NULL: never."
 content_trust = "`publisher` or `untrusted` (default)."
 linked_from_adoption = "Created by the adoption of an existing library."
 

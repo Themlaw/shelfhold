@@ -55,7 +55,6 @@ __all__ = [
 UNKNOWN_CADENCE = timedelta(days=1)  # a series with no measurable rhythm yet
 OVERDUE_DIVISOR = 4  # an overdue series is looked at again after a quarter of its interval
 RARE_UPSTREAM = ("finished", "paused")  # edition.upstream_status
-REFRESHED = "refreshed@"  # `source_binding.check_cron` marks when the source was last asked
 
 
 class UnknownSeriesError(LookupError):
@@ -118,15 +117,6 @@ def _rarely_checked(connection: sa.Connection, edition_id: str, override: str | 
     )
 
 
-def _refreshed_at(mark: str | None) -> datetime | None:
-    if not mark or not mark.startswith(REFRESHED):
-        return None
-    try:
-        return datetime.fromisoformat(mark[len(REFRESHED) :])
-    except ValueError:
-        return None
-
-
 def check_now(
     connection: sa.Connection, edition_id: str, now: datetime, policy: CadencePolicy | None = None
 ) -> list[str]:
@@ -135,7 +125,7 @@ def check_now(
     less than `check_min` ago is left alone and `[]` is returned: ten clicks are one look."""
     b, si, f = acquisition.source_binding, acquisition.source_item, acquisition.series_follow
     rows = connection.execute(
-        sa.select(b.c.id, si.c.plugin_id, f.c.check_override, b.c.check_cron)
+        sa.select(b.c.id, si.c.plugin_id, f.c.check_override, b.c.last_refreshed_at)
         .select_from(
             b.join(si, si.c.id == b.c.source_item_id).join(f, f.c.edition_id == b.c.edition_id)
         )
@@ -146,7 +136,7 @@ def check_now(
     if rows[0].check_override == "paused":
         raise SeriesPausedError(edition_id)
     floor = (policy or CadencePolicy()).check_min
-    fresh = [(at := _refreshed_at(r.check_cron)) is not None and now - at < floor for r in rows]
+    fresh = [r.last_refreshed_at is not None and now - r.last_refreshed_at < floor for r in rows]
     if all(fresh):
         return []
     connection.execute(
@@ -240,7 +230,7 @@ class CadencedFollowCycle(FollowCycle):
                 when = next_check(now, seen, self._policy, finished=finished)
                 values: dict[str, Any] = {"next_expected": when}
                 if binding_id in self._due:  # the source was asked in this cycle
-                    values["check_cron"] = f"{REFRESHED}{now.isoformat()}"
+                    values["last_refreshed_at"] = now
                 connection.execute(
                     sa.update(table).where(table.c.id == binding_id).values(**values)
                 )

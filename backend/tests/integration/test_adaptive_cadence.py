@@ -31,7 +31,7 @@ def _weekly(bench: Bench) -> None:
 
 def _expected(bench: Bench, binding_id: str | None = None) -> dict[str, str]:
     return bench.rows(
-        "SELECT next_expected, check_cron FROM source_binding WHERE id = :b",
+        "SELECT next_expected FROM source_binding WHERE id = :b",
         b=binding_id or bench.binding_id,
     )[0]
 
@@ -41,7 +41,9 @@ def test_adaptive_check_interval_from_observed_cadence() -> None:
     with follow_bench(check_mode="piloted", cycle_class=CadencedFollowCycle) as bench:
         _weekly(bench)
         row = _expected(bench)
-        assert row["check_cron"]
+        assert bench.rows(
+            "SELECT last_refreshed_at FROM source_binding WHERE id = :b", b=bench.binding_id
+        )[0]["last_refreshed_at"]
         wait = _expected_at(row) - bench.clock.now()
         assert timedelta(hours=1) <= wait <= 7 * DAY
         assert wait >= 6 * DAY  # a weekly series: around the next week, not tomorrow
