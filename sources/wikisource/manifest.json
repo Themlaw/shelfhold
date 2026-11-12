@@ -59,5 +59,6 @@
   "rights_jurisdiction": null,
   "translation_nature": "unknown",
   "content_trust": "untrusted",
-  "tests": []
+  "tests": [],
+  "waiting_states": []
 }
