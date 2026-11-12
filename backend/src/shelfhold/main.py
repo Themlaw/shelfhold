@@ -24,6 +24,7 @@ from shelfhold.export.application.wiring import open_pipeline, roots_signature
 from shelfhold.headless import HeadlessAdmin, wiring
 from shelfhold.headless.applied import record_applied_public_url
 from shelfhold.identity.adapters.preferences import SqlPreferencesStore
+from shelfhold.identity.adapters.user_state_store import user_state_service
 from shelfhold.identity.application.preferences import PreferencesService
 from shelfhold.identity.public import PasskeyRecord, local_auth, reconcile_identity_counter
 from shelfhold.infrastructure.clock import Clock, SystemClock
@@ -55,6 +56,7 @@ from shelfhold.interfaces.http_api.identity import build_identity_router
 from shelfhold.interfaces.http_api.intents import build_intents_router
 from shelfhold.interfaces.http_api.jobs import build_jobs_router
 from shelfhold.interfaces.http_api.library import build_library_router
+from shelfhold.interfaces.http_api.me import build_me_router
 from shelfhold.interfaces.http_api.ops import build_ops_router
 from shelfhold.interfaces.http_api.plans import build_plans_router
 from shelfhold.interfaces.http_api.plugins import build_plugins_router
@@ -258,6 +260,7 @@ def create_app(
         build_catalog_admin_router(ops_services),
         build_follows_router(ops_services),  # EF-SRC-029: follow, unfollow
         build_sources_router(ops_services),  # EF-SRC-015, EF-SRC-004: search, acquire, a URL
+        build_me_router(cache(lambda: user_state_service(engine, clock))),  # EF-USR-007, EF-BIB-022
         build_activity_router(lambda: engine),  # EF-USR-016: `activity_view`, unmask audited
         build_search_router(lambda: engine),  # EF-BIB-010: admin only until the barrier (L09)
         build_identity_router(

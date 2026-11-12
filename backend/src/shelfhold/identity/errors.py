@@ -21,4 +21,6 @@ CODES: tuple[ErrorCode, ...] = (
     ErrorCode("profile_not_found", 404, "user"),
     ErrorCode("profile_conflict", 409, "user"),
     ErrorCode("profile_refused", 422, "user"),
+    # Per-user state (M3 L36): a claim from the future, a language tag that is not one
+    ErrorCode("user_state_refused", 422, "user"),
 )

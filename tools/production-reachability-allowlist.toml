@@ -115,8 +115,6 @@ reason = "Deleting an account with its audit entries kept under a pseudonym (EF-
 until = "M3"
 symbols = [
   "shelfhold.events.bus:EventBus.subscribe",
-  "shelfhold.infrastructure.clock:Stamped",
-  "shelfhold.infrastructure.clock:merge_last_write_wins",
 ]
 
 [[allow]]
