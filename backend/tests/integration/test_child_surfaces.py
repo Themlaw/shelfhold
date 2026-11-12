@@ -87,6 +87,14 @@ OPEN = {
 }
 CLOSED = (
     "GET /api/v1/openapi.json",
+    "GET /api/v1/maintenance",  # M3 L13: the mode, the window and the queue are the admin's
+    "POST /api/v1/maintenance/enter",
+    "POST /api/v1/maintenance/exit",
+    "POST /api/v1/queue/pause",
+    "POST /api/v1/queue/resume",
+    "POST /api/v1/jobs/{job_id}/cancel",
+    "POST /api/v1/jobs/{job_id}/priority",
+    "POST /api/v1/jobs/{job_id}/replay",
     "POST /api/v1/acquire",
     "POST /api/v1/activity/{ref}/unmask",
     "POST /api/v1/adoption/{destination_id}/confirm-migration",
@@ -379,6 +387,65 @@ def test_child_is_refused_on_every_closed_route(world: World) -> None:
                 failures.append((route, how, "success"))
             world.clean(response.text)
     assert not failures, failures
+
+
+MAINTENANCE_ROUTES = CLOSED[1:9]  # the eight routes of M3 L13, listed first in CLOSED
+
+
+@pytest.mark.req("EF-USR-006", "EF-INT-018", "EF-INT-017")
+def test_child_session_and_key_change_nothing_through_the_maintenance_and_queue_routes(
+    world: World,
+) -> None:
+    """M3 L13: the mode, the window and the control of the queue are the admin's. A child, by her
+    session or by her key, gets 403 on each route and nothing moves: the mode stays off, no pause
+    is recorded, no job changes and no audit line is written."""
+    assert all(
+        "/maintenance" in r or "/queue/" in r or r.endswith(("cancel", "priority", "replay"))
+        for r in MAINTENANCE_ROUTES
+    )
+    env, engine = world.env, world.seed.engine
+    key = (
+        local_auth(engine, env.settings)
+        .create_api_key(name="kidkey2", username="kid", read_only=True)
+        .value
+    )
+
+    def state() -> tuple[object, ...]:
+        with engine.connect() as conn:
+            return (
+                conn.execute(sa.text("SELECT maintenance_since FROM instance")).scalar(),
+                conn.execute(
+                    sa.text("SELECT count(*) FROM app_setting WHERE key LIKE 'queue.%'")
+                ).scalar(),
+                conn.execute(sa.text("SELECT count(*) FROM job_view")).scalar(),
+                conn.execute(
+                    sa.text(
+                        "SELECT count(*) FROM audit WHERE action LIKE 'maintenance.%' "
+                        "OR action LIKE 'queue.%'"
+                    )
+                ).scalar(),
+            )
+
+    before = state()
+    for route in MAINTENANCE_ROUTES:
+        method, path = _fill(route)
+        body: dict[str, Any] = {"json": {"source": "source-a", "priority_class": "new"}}
+        by_session = world.kid.request(
+            method,
+            path,
+            headers={CSRF_HEADER: env.csrf(world.kid)},
+            **(body if method != "GET" else {}),
+        )
+        by_key = env.other_client("10.0.0.52").request(
+            method,
+            path,
+            headers={"Authorization": f"Bearer {key}"},
+            **(body if method != "GET" else {}),
+        )
+        assert by_session.status_code == 403, (route, "session", by_session.status_code)
+        assert by_key.status_code == 403, (route, "key", by_key.status_code)
+        world.clean(by_session.text + by_key.text)
+    assert state() == before
 
 
 @pytest.mark.req("EF-USR-006", "ENF-SEC-010")
