@@ -186,3 +186,12 @@ symbols = [
   "shelfhold.sdk.models:WAITING_EXITS",
   "shelfhold.sdk.source:Source.fetch_range",
 ]
+
+[[allow]]
+category = "m3-l20-preferred-team"
+reason = "2026-11-12: the preferred team is stored and the switch is tested end to end (the files served are replaced by the upgrade under intent), but its admin door (route and CLI, with the upgrader of the running instance) comes with the series page of M3 (L21 and the UI lots)."
+until = "M3"
+symbols = [
+  "shelfhold.acquisition.application.team_switch:switch_to_preferred_team",
+  "shelfhold.catalog.application.service:CatalogService.prefer_team",
+]
