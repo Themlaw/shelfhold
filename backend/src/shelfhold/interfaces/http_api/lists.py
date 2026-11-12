@@ -1,26 +1,41 @@
-"""`ETag` and `?since=` on lists (EF-INT-001, volet coupable of M1a).
+"""`ETag` and `?since=` on lists (EF-INT-001; the M3 volet, L11).
 
-`?since=` takes an opaque token backed by the sequence of the `event` table, never a timestamp.
-The M1a token carries the sequence only; the removals of a list (deleted, purged, merged,
-visibility lost) arrive with M3, before the 1.0 freeze. A token older than the event retention
-answers `resync_required`, symmetric to the SSE `resync_required`.
+`?since=` takes an opaque, signed token backed by the sequence of the `event` table, never a
+timestamp. What a list reports with it is its removals (a deleted object, an object that left the
+reader's view), limited to what that reader could see when the token was issued: that rule lives
+in `catalog.application.changes`, which reads the events; this module only holds the token.
+
+The token is `s2.<sequence>.<signature>`: the signature (HMAC-SHA256 under a key of the instance,
+cut to 16 bytes) covers the list the token is for and the sequence, so a token cannot be edited,
+carried to another list or minted by a client. A token older than the event retention answers
+`resync_required` (410), symmetric to the SSE `resync_required`; one that is not ours,
+`invalid_cursor`.
 """
 
 import base64
 import binascii
+import contextlib
 import hashlib
+import hmac
 import json
+import secrets
+import threading
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 from fastapi import Query
 from starlette.requests import Request
 from starlette.responses import Response
 
+from shelfhold.infrastructure.secrets.atomic import write_private
 from shelfhold.interfaces.http_api.problems import ProblemError
 
-_PREFIX = "s1."
-_MAX_TOKEN_CHARS = 64
+_PREFIX = "s2."
+MAX_TOKEN_CHARS = 96
+_MAC_BYTES = 16
+_MAX_SEQ = 2**63 - 1
+KEY_FILE = "since-token.key"
 
 
 @dataclass(frozen=True)
@@ -33,27 +48,61 @@ class Since:
             raise ProblemError("resync_required")
 
 
-def encode_since(seq: int) -> str:
-    raw = str(seq).encode("ascii")
-    return _PREFIX + base64.urlsafe_b64encode(raw).rstrip(b"=").decode("ascii")
+class SinceKey:
+    """The signing key of the tokens of an instance: 32 random bytes, kept in the data directory
+    (`0600`, created on first use, never logged)."""
+
+    def __init__(self, data_dir: Path) -> None:
+        self._path = data_dir / KEY_FILE
+        self._key: bytes | None = None
+        self._lock = threading.Lock()
+
+    def value(self) -> bytes:
+        with self._lock:
+            if self._key is None:
+                with contextlib.suppress(FileExistsError):  # another process made it first
+                    write_private(self._path, secrets.token_bytes(32), overwrite=False)
+                self._key = self._path.read_bytes()
+            return self._key
 
 
-def decode_since(token: str) -> Since:
+def _b64(raw: bytes) -> str:
+    return base64.urlsafe_b64encode(raw).rstrip(b"=").decode("ascii")
+
+
+def _mac(key: bytes, kind: str, seq: int) -> str:
+    body = f"since:{kind}:{seq}".encode("ascii")
+    return _b64(hmac.new(key, body, hashlib.sha256).digest()[:_MAC_BYTES])
+
+
+def encode_since(seq: int, *, key: bytes, kind: str) -> str:
+    if not 0 <= seq <= _MAX_SEQ:
+        raise ValueError("a sequence is a non-negative 63-bit integer")
+    return f"{_PREFIX}{_b64(str(seq).encode('ascii'))}.{_mac(key, kind, seq)}"
+
+
+def decode_since(token: str, *, key: bytes, kind: str) -> Since:
     try:
-        if len(token) > _MAX_TOKEN_CHARS or not token.startswith(_PREFIX):
+        if len(token) > MAX_TOKEN_CHARS or not token.isascii() or not token.startswith(_PREFIX):
             raise ValueError("shape")
-        body = token[len(_PREFIX) :]
+        body, _, mac = token[len(_PREFIX) :].partition(".")
         text = base64.b64decode(body + "=" * (-len(body) % 4), altchars=b"-_", validate=True)
         seq = int(text.decode("ascii"))
-        if not 0 <= seq < 2**63 or str(seq) != text.decode("ascii"):
+        if not 0 <= seq <= _MAX_SEQ or str(seq) != text.decode("ascii"):
             raise ValueError("range")
-    except (ValueError, binascii.Error) as exc:
+        expected = _mac(key, kind, seq)
+        if not hmac.compare_digest(mac.encode("ascii"), expected.encode("ascii")):
+            raise ValueError("signature")
+        if token != encode_since(seq, key=key, kind=kind):  # one spelling per token
+            raise ValueError("spelling")
+    except (ValueError, binascii.Error, UnicodeError) as exc:
         raise ProblemError("invalid_cursor") from exc
     return Since(seq=seq)
 
 
-def since_param(since: str | None = Query(None)) -> Since | None:
-    return decode_since(since) if since is not None else None
+def since_param(since: str | None = Query(None)) -> str | None:
+    """The raw token: the route decodes it, since it knows its list and its key."""
+    return since
 
 
 def content_etag(body: bytes) -> str:

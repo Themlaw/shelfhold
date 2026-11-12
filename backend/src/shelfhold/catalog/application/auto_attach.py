@@ -43,6 +43,7 @@ from typing import Any, Protocol
 import sqlalchemy as sa
 from sqlalchemy import Connection
 
+from shelfhold.catalog.application.changes import track_work_changes
 from shelfhold.catalog.application.external_ids import (
     ExternalIdConflictError,
     add_external_id,
@@ -372,8 +373,9 @@ class AutoAttachService:
             raise AttachRefusedError("tombstoned: the identifier was purged since the suggestion")
         savepoint = connection.begin_nested()
         try:
-            _carry(connection, row.edition_id, row.from_work_id, now=row.created_at)
-            _move(connection, row.edition_id, row.to_work_id)
+            with track_work_changes(connection, [row.from_work_id, row.to_work_id]):
+                _carry(connection, row.edition_id, row.from_work_id, now=row.created_at)
+                _move(connection, row.edition_id, row.to_work_id)
             _clear_rating(connection, row.edition_id)
             withdrawals = self._rating.withdrawals(connection, work_id=row.to_work_id)
         finally:
@@ -468,8 +470,9 @@ class AutoAttachService:
                 restore_field(connection, key, _stored(written["before"]))
             else:
                 kept.append(key)
-        _move(connection, row.edition_id, row.from_work_id)
-        _uncarry(connection, prior.get("suggestions", {}))
+        with track_work_changes(connection, [row.from_work_id, row.to_work_id]):
+            _move(connection, row.edition_id, row.from_work_id)
+            _uncarry(connection, prior.get("suggestions", {}))
         connection.execute(
             sa.update(catalog.edition)
             .where(catalog.edition.c.id == row.edition_id)
@@ -536,8 +539,9 @@ class AutoAttachService:
         keys = keys_of(list(work_fields), {"work": to_work})
         snapshot = {k: read_field(connection, k) for k in keys}
         origin_work = _work_rating(connection, from_work)
-        carried = _carry(connection, edition_id, from_work, now=now)
-        _move(connection, edition_id, to_work)
+        with track_work_changes(connection, [from_work, to_work], now=now):
+            carried = _carry(connection, edition_id, from_work, now=now)
+            _move(connection, edition_id, to_work)
         _clear_rating(connection, edition_id)  # new to this Work: unrated there (EF-BIB-055)
         report = propose_fields(connection, {"work": to_work}, work_fields, now=now, origin=origin)
         filing = file_new_edition(connection, edition_id, shelf_id, rating=self._rating)

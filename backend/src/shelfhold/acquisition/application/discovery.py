@@ -31,6 +31,7 @@ from shelfhold.catalog.public import (
     content_warning_age,
     edition_key_lang,
     numbered_mark,
+    track_work_changes,
     translation_type_for,
 )
 from shelfhold.export.public import forget_coverage_unknown, pending_pairing
@@ -368,13 +369,14 @@ class SeriesDiscovery:
                     .values(shelf_id=shelf_id)
                 )
                 if suggested is not None:  # the sub-source says X (`isNsfw`): never a rating
-                    connection.execute(
-                        sa.insert(catalog.age_suggestion).values(
-                            id=new_ulid(), entity_type="edition", entity_id=edition_id,
-                            value=suggested.min_age, x=suggested.x,
-                            provenance="sub_source", seen_at=now,
-                        )
-                    )  # fmt: skip
+                    with track_work_changes(connection, [work_id], now=now):
+                        connection.execute(
+                            sa.insert(catalog.age_suggestion).values(
+                                id=new_ulid(), entity_type="edition", entity_id=edition_id,
+                                value=suggested.min_age, x=suggested.x,
+                                provenance="sub_source", seen_at=now,
+                            )
+                        )  # fmt: skip
                 item_id = self._source_item(connection, ref, now)
                 binding_id = new_ulid()
                 connection.execute(

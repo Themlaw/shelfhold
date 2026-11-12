@@ -34,6 +34,7 @@ from typing import Any
 import sqlalchemy as sa
 from sqlalchemy import Connection, exc
 
+from shelfhold.catalog.application.changes import track_work_changes
 from shelfhold.catalog.application.new_edition_gate import Filing, file_new_edition
 from shelfhold.catalog.application.tombstone_screen import MergedPlace, TombstoneScreen
 from shelfhold.catalog.domain.external_ids import ExternalId
@@ -348,6 +349,26 @@ def _carried(connection: Connection, drop_id: str) -> dict[str, int]:
 
 
 def apply_edition_merge(
+    connection: Connection,
+    keep_id: str,
+    drop_id: str,
+    *,
+    confirm: str,
+    screen: TombstoneScreen,
+    audit: Callable[[Connection, EditionMergePlan], None] | None = None,
+) -> EditionMerged:
+    """`_apply_edition_merge`, with what a reader sees of the Work recorded: the survivor takes
+    the strictest age, so the Work may leave a younger reader's list (M3 L11)."""
+    work_id = connection.execute(
+        sa.select(catalog.edition.c.work_id).where(catalog.edition.c.id == keep_id)
+    ).scalar()
+    with track_work_changes(connection, [] if work_id is None else [str(work_id)]):
+        return _apply_edition_merge(
+            connection, keep_id, drop_id, confirm=confirm, screen=screen, audit=audit
+        )
+
+
+def _apply_edition_merge(
     connection: Connection,
     keep_id: str,
     drop_id: str,

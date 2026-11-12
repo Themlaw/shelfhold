@@ -15,6 +15,7 @@ from datetime import datetime
 import sqlalchemy as sa
 from sqlalchemy import Connection
 
+from shelfhold.catalog.application.changes import track_work_changes
 from shelfhold.catalog.domain.age import (
     Admission,
     EditionAge,
@@ -135,22 +136,25 @@ class RatingService:
         _check_tier(rating)
         age, x = to_columns(rating)
         work, edition = catalog.work, catalog.edition
-        found = connection.execute(
-            sa.update(work)
-            .where(work.c.id == work_id)
-            .values(age_rating=age, age_x=x, rated_at=now)
-        )
-        if found.rowcount != 1:
-            raise LookupError(f"no such Work: {work_id}")
-        connection.execute(
-            sa.update(edition)
-            .where(edition.c.work_id == work_id, edition.c.rated_at.is_(None))
-            .values(rated_at=now)
-        )
-        editions = connection.execute(sa.select(edition.c.id).where(edition.c.work_id == work_id))
-        covered = [("work", work_id), *(("edition", r[0]) for r in editions)]
-        lift(connection, work_id)  # rating is the way out of an adopted child library (EF-EXP-048)
-        return _settle(connection, covered, rating, keep_edition_above=True)
+        with track_work_changes(connection, [work_id], now=now):  # what a reader sees may move
+            found = connection.execute(
+                sa.update(work)
+                .where(work.c.id == work_id)
+                .values(age_rating=age, age_x=x, rated_at=now)
+            )
+            if found.rowcount != 1:
+                raise LookupError(f"no such Work: {work_id}")
+            connection.execute(
+                sa.update(edition)
+                .where(edition.c.work_id == work_id, edition.c.rated_at.is_(None))
+                .values(rated_at=now)
+            )
+            editions = connection.execute(
+                sa.select(edition.c.id).where(edition.c.work_id == work_id)
+            )
+            covered = [("work", work_id), *(("edition", r[0]) for r in editions)]
+            lift(connection, work_id)  # the way out of an adopted child library (EF-EXP-048)
+            return _settle(connection, covered, rating, keep_edition_above=True)
 
     def rate_edition(
         self, connection: Connection, edition_id: str, rating: AgeRating, *,
@@ -161,17 +165,20 @@ class RatingService:
         _check_tier(rating)
         age, x = to_columns(rating)
         edition = catalog.edition
-        row = connection.execute(
-            sa.update(edition)
-            .where(edition.c.id == edition_id)
-            .values(age_rating=age, age_x=x, rated_at=now)
-            .returning(edition.c.work_id)
-        ).first()
-        if row is None:
+        parent = connection.execute(
+            sa.select(edition.c.work_id).where(edition.c.id == edition_id)
+        ).scalar()
+        if parent is None:
             raise LookupError(f"no such Edition: {edition_id}")
-        settled = _settle(connection, [("edition", edition_id)], rating)
+        with track_work_changes(connection, [parent], now=now):
+            connection.execute(
+                sa.update(edition)
+                .where(edition.c.id == edition_id)
+                .values(age_rating=age, age_x=x, rated_at=now)
+            )
+            settled = _settle(connection, [("edition", edition_id)], rating)
         return self._done(
-            connection, f"edition:{edition_id}", row.work_id, rating, principal, now, settled
+            connection, f"edition:{edition_id}", parent, rating, principal, now, settled
         )
 
     # -- reads ----------------------------------------------------------------------------------

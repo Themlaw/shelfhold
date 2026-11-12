@@ -50,14 +50,11 @@ symbols = [
 
 [[allow]]
 category = "unwired-m3"
-reason = "Content serving and the `?since=` tokens (backed by the event sequence, with the removals of a list) come with the reader and the admin UI of M3 (B1 for content_response); no list is backed by the event table in M1a. The cursor and the ETag of a list are wired on the job list. The diagnostic bundle is wired by its CLI (M2 L30); its download over HTTP (attachment_disposition) comes with the admin UI of M3."
+reason = "Content serving comes with the reader and the admin UI of M3 (B1 for content_response). The diagnostic bundle is wired by its CLI (M2 L30); its download over HTTP (attachment_disposition) comes with the admin UI of M3. The `?since=` tokens left this entry with M3 L11 (the lists of Works and of shelves)."
 until = "M3"
 symbols = [
   "shelfhold.infrastructure.http_headers:attachment_disposition",
   "shelfhold.interfaces.http_api.content:content_response",
-  "shelfhold.interfaces.http_api.lists:Since",
-  "shelfhold.interfaces.http_api.lists:decode_since",
-  "shelfhold.interfaces.http_api.lists:encode_since",
 ]
 
 [[allow]]
@@ -182,12 +179,19 @@ symbols = [
 
 [[allow]]
 category = "m3-l09-works-listing"
-reason = "2026-11-12 (M3 L09): the filter of what a reader may see also answers a count and a page of Works (`count_visible_works`, `list_visible_works`) and a single Work (`work_is_visible`), proved by tests against the same condition as the search and the per-user state. No route lists the Works of the catalogue yet: it comes with the `?since=` list of L11 and the library screens of the UI lots, which call these and add their child case to `test_child_surfaces`."
+reason = "2026-11-12 (M3 L09, narrowed by L11): the filter of what a reader may see also answers a single Work (`work_is_visible`), proved by tests against the same condition as the search and the per-user state. The count and the page of Works are served by `GET /works` since L11; a single Work is shown by the library screens of the UI lots, which call it and add their child case to `test_child_surfaces`."
 until = "M3"
 symbols = [
-  "shelfhold.catalog.application.queries:count_visible_works",
-  "shelfhold.catalog.application.queries:list_visible_works",
   "shelfhold.catalog.application.queries:work_is_visible",
+]
+
+[[allow]]
+category = "m3-l11-removal-writers"
+reason = "2026-11-12 (M3 L11): `GET /works?since=` and `GET /shelves?since=` read the removals from the event sequence; the writers of a deletion are `record_work_removed` and `record_removed`. No code path deletes a Work row or a shelf yet (a purge removes Units and tombstones, never the Work; there is no shelf deletion): the merge of Works (EF-BIB-019) and the deletion of a shelf are the lots that call them, each inside the transaction of the delete and before the row goes. Proved by tests that delete a row after the call."
+until = "M3"
+symbols = [
+  "shelfhold.catalog.application.changes:record_removed",
+  "shelfhold.catalog.application.changes:record_work_removed",
 ]
 
 [[allow]]

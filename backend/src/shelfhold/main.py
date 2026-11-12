@@ -49,6 +49,7 @@ from shelfhold.interfaces.http_api.app import HttpApplication, Routers, create_h
 from shelfhold.interfaces.http_api.auth import AuthGate
 from shelfhold.interfaces.http_api.backfill import build_backfill_router
 from shelfhold.interfaces.http_api.catalog_admin import build_catalog_admin_router
+from shelfhold.interfaces.http_api.catalog_lists import build_catalog_lists_router
 from shelfhold.interfaces.http_api.follows import build_follows_router
 from shelfhold.interfaces.http_api.headless import build_headless_router
 from shelfhold.interfaces.http_api.health import build_health_page_router
@@ -56,6 +57,7 @@ from shelfhold.interfaces.http_api.identity import build_identity_router
 from shelfhold.interfaces.http_api.intents import build_intents_router
 from shelfhold.interfaces.http_api.jobs import build_jobs_router
 from shelfhold.interfaces.http_api.library import build_library_router
+from shelfhold.interfaces.http_api.lists import SinceKey
 from shelfhold.interfaces.http_api.maintenance import build_maintenance_router
 from shelfhold.interfaces.http_api.me import build_me_router
 from shelfhold.interfaces.http_api.ops import build_ops_router
@@ -276,6 +278,9 @@ def create_app(
         build_sources_router(ops_services),  # EF-SRC-015, EF-SRC-004: search, acquire, a URL
         build_me_router(cache(lambda: user_state_service(engine, clock))),  # EF-USR-007, EF-BIB-022
         build_activity_router(lambda: engine),  # EF-USR-016: `activity_view`, unmask audited
+        build_catalog_lists_router(
+            lambda: engine, SinceKey(resolved.data_dir)
+        ),  # M3 L11: `?since=`
         build_search_router(
             lambda: engine, ops_services
         ),  # EF-BIB-010, EF-SRC-005: admin only (L09)

@@ -30,6 +30,7 @@ from shelfhold.interfaces.http_api.lists import decode_since, encode_since
 from shelfhold.interfaces.http_api.problems import ProblemError
 from tests.auth_env import CSRF_HEADER, AuthEnv, auth_env
 from tests.visibility_env import (
+    RATED,
     Seed,
     _work,
     add_profile,
@@ -154,45 +155,64 @@ def test_since_token_reports_removals_and_visibility_loss(world: World) -> None:
     assert world.removed("kid", after["since"]) == []
 
 
+def _purge(world: World, *, days_ahead: int = 1000) -> None:
+    """The real retention job, run far enough in the future to expire every event."""
+    from datetime import UTC, datetime, timedelta
+
+    from shelfhold.jobs.retention import RetentionPolicy, expire_events_and_jobs
+
+    expire_events_and_jobs(
+        world.seed.engine,
+        now=datetime.now(UTC) + timedelta(days=days_ahead),
+        policy=RetentionPolicy(),
+    )
+
+
 @pytest.mark.req("EF-INT-001")
 def test_since_token_too_old_returns_resync_required(world: World) -> None:
     token = world.token("kid")
     assert world.rate("ok", "18+").status_code == 200
-    assert world.rate("twelve", "18+").status_code == 200
-    with world.seed.engine.begin() as connection:  # retention purged an event after the token
-        first = connection.execute(
-            sa.select(sa.func.min(platform.event.c.id)).where(platform.event.c.id > 0)
-        ).scalar_one()
-        assert first is not None
-        connection.execute(
-            sa.delete(platform.event)
-            .where(platform.event.c.type.in_(CHANGE_TYPES))
-            .where(platform.event.c.id == first)
-        )
+    _purge(world)  # the retention took the event that came after the token
     answer = world.get("kid", since=token)
     assert answer.status_code == 410
-    assert answer.json()["type"] == "/api/v1/problems/resync_required"
+    assert answer.json()["type"] == "/api/v1/problems/resync-required"
     assert "removed" not in answer.text
     # a list without a token still works: this is how the client resynchronises
-    assert world.get("kid", limit=200).status_code == 200
+    fresh = world.get("kid", limit=200)
+    assert fresh.status_code == 200
+    assert world.removed("kid", fresh.json()["since"]) == []  # and its token is good
 
 
 @pytest.mark.req("EF-INT-001")
-def test_since_token_for_an_empty_table_after_full_purge(world: World) -> None:
-    token = world.token("kid")
+def test_a_token_newer_than_what_the_purge_took_stays_good(world: World) -> None:
     assert world.rate("ok", "18+").status_code == 200
-    with world.seed.engine.begin() as connection:
-        connection.execute(sa.delete(platform.event))
-    assert world.get("kid", since=token).status_code == 410
-    fresh = world.token("kid")  # a token minted after the purge is good
-    assert world.removed("kid", fresh) == []
+    _purge(world)  # everything up to here is gone
+    token = world.token("kid")  # issued after the purge
+    assert world.rate("twelve", "18+").status_code == 200
+    assert world.rate("adult_shelf", "18+").status_code == 200
+    assert world.removed("kid", token) == [world.work("adult_shelf")]
+    # a purge that takes only events older than the token does not invalidate it
+    with world.seed.engine.connect() as connection:
+        assert changes.window(connection).floor < changes.window(connection).head
+
+
+@pytest.mark.req("EF-INT-001")
+def test_a_token_from_the_future_is_a_restore_and_asks_for_a_resync(world: World) -> None:
+    from shelfhold.interfaces.http_api.lists import SinceKey
+
+    key = SinceKey(world.env.settings.data_dir).value()
+    ahead = encode_since(
+        10**9, key=key, kind="works"
+    )  # signed by this instance, but not issued yet
+    answer = world.get("kid", since=ahead)
+    assert answer.status_code == 410
 
 
 @pytest.mark.req("EF-INT-001")
 def test_since_removals_never_list_items_never_visible_to_viewer(world: World) -> None:
     token = world.token("kid")
     # hidden at the token, raised then lowered, lowered then deleted: never hers
-    assert world.rate("unrated", "6+").status_code == 200  # becomes visible after the token
+    assert world.rate("unrated", "0+").status_code == 200  # becomes visible after the token
     assert world.rate("unrated", "18+").status_code == 200  # and leaves again
     assert world.rate("above", "18+").status_code == 200  # hidden before and after
     assert world.rate("x", "18+").status_code == 200
@@ -217,7 +237,7 @@ def test_since_removals_never_list_items_never_visible_to_viewer(world: World) -
 @pytest.mark.req("EF-INT-001")
 def test_since_removals_follow_each_readers_own_ceiling(world: World) -> None:
     kid, kid16 = world.token("kid"), world.token("kid16")
-    assert world.rate("twelve", "14+").status_code == 200  # 12 -> 14: lost for ceiling 10? no
+    assert world.rate("twelve", "13+").status_code == 200  # hers (ceiling 16) both before and after
     assert world.rate("above", "18+").status_code == 200  # 16 -> 18+
     # ceiling 10 never saw `twelve` (12 > 10) nor `above`; ceiling 16 saw `above` and `twelve`
     assert world.removed("kid", kid) == []
@@ -229,7 +249,7 @@ def test_since_token_tampered_rejected(world: World) -> None:
     token = world.token("kid")
     body = token.split(".")
     assert len(body) == 3 and body[0] == "s2"
-    other = base64.urlsafe_b64encode(b"0").rstrip(b"=").decode()
+    other = base64.urlsafe_b64encode(b"1").rstrip(b"=").decode()
     forged = [
         ".".join([body[0], body[1], body[2][:-1] + ("A" if body[2][-1] != "A" else "B")]),
         ".".join([body[0], other, body[2]]),  # another sequence, the same signature
@@ -246,7 +266,7 @@ def test_since_token_tampered_rejected(world: World) -> None:
     for bad in forged:
         answer = world.get("kid", since=bad)
         assert answer.status_code == 400, bad
-        assert answer.json()["type"] == "/api/v1/problems/invalid_cursor"
+        assert answer.json()["type"] == "/api/v1/problems/invalid-cursor"
         assert "removed" not in answer.text
 
 
@@ -282,7 +302,7 @@ def test_child_key_reads_removals_as_the_child_not_as_its_creator(world: World) 
 def test_token_carried_to_another_reader_is_filtered_for_that_reader(world: World) -> None:
     """IDOR: a token proves nothing about who holds it; the answer is the holder's own view."""
     admin_token = world.token("admin")
-    assert world.rate("unrated", "6+").status_code == 200
+    assert world.rate("unrated", "0+").status_code == 200
     assert world.rate("unrated", "18+").status_code == 200
     assert world.rate("ok", "18+").status_code == 200
     assert world.rate("above", "18+").status_code == 200
@@ -294,9 +314,9 @@ def test_token_carried_to_another_reader_is_filtered_for_that_reader(world: Worl
 
 @pytest.mark.req("EF-INT-001", "EF-USR-006")
 def test_member_sees_every_removal_but_never_the_shelf_list(world: World) -> None:
+    gone = world.new_work("Tale of Gone Quietly")
     token = world.token("member")
     assert world.rate("ok", "18+").status_code == 200
-    gone = world.new_work("Tale of Gone Quietly")
     with world.seed.engine.begin() as connection:
         changes.record_work_removed(connection, gone)
         connection.execute(sa.delete(catalog.work).where(catalog.work.c.id == gone))
@@ -338,8 +358,8 @@ def test_rating_without_the_right_leaves_no_trace_in_the_sequence(world: World) 
             headers={CSRF_HEADER: world.env.csrf(client)},
         )  # fmt: skip
         assert refused.status_code in (401, 403)
-    for read_only in (True, False):
-        key = _key_for(world, "member", read_only=read_only)
+    for username, read_only in (("member", True), ("admin", False), ("admin", True)):
+        key = _key_for(world, username, read_only=read_only)
         refused = world.env.other_client("10.0.0.56").post(
             f"{WORKS}/{work_id}/rating", json={"age": "18+"}, headers=key
         )
@@ -358,7 +378,7 @@ def test_rating_without_the_right_leaves_no_trace_in_the_sequence(world: World) 
 
 @pytest.mark.req("EF-INT-001")
 def test_a_change_that_changes_nothing_writes_no_event(world: World) -> None:
-    assert world.rate("ok", "6+").status_code == 200  # the same age
+    assert world.rate("twelve", "12+").status_code == 200  # the same age
     assert world.change_events() == []
     assert world.rate("ok", "18+").status_code == 200
     events = world.change_events()
@@ -366,7 +386,7 @@ def test_a_change_that_changes_nothing_writes_no_event(world: World) -> None:
     payload = events[0].payload
     assert payload["work_id"] == world.work("ok")
     assert payload["need_before"] == 6 and payload["need_after"] == 18
-    assert set(payload) == {"work_id", "need_before", "need_after"}  # ids and numbers: no title
+    assert set(payload) == {"work_id", "need_before", "need_after", "created_seq"}  # no title
     assert events[0].visibility == "ops"
 
 
@@ -387,7 +407,8 @@ def test_the_age_of_a_new_edition_that_hides_a_work_is_a_visibility_loss(world: 
 def test_tracker_does_not_swallow_the_error_of_the_wrapped_write(world: World) -> None:
     work_id = world.work("ok")
     with (
-        pytest.raises(RuntimeError, match="boom"), world.seed.engine.begin() as connection,
+        pytest.raises(RuntimeError, match="boom"),
+        world.seed.engine.begin() as connection,
         changes.track_work_changes(connection, [work_id]),
     ):
         connection.execute(
@@ -402,8 +423,8 @@ def test_removals_beyond_the_cap_ask_for_a_resync(
     world: World, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(changes, "MAX_REMOVED", 2)
-    token = world.token("admin")
     ids = [world.new_work(f"Tale of Crowd {n}") for n in range(3)]
+    token = world.token("admin")
     with world.seed.engine.begin() as connection:
         for work_id in ids:
             changes.record_work_removed(connection, work_id)
@@ -447,7 +468,7 @@ def test_since_token_round_trip_is_signed_and_scoped() -> None:
     for key, kind in ((bytes(32), "works"), (KEY, "shelves")):
         with pytest.raises(ProblemError) as caught:
             decode_since(token, key=key, kind=kind)
-        assert caught.value.code == "invalid_cursor"
+        assert caught.value.spec.code == "invalid_cursor"
     assert re.fullmatch(r"s2\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+", token)
     assert encode_since(42, key=KEY, kind="works") == token  # deterministic
     assert encode_since(43, key=KEY, kind="works") != token
@@ -466,9 +487,10 @@ def test_since_token_is_never_a_timestamp_and_bounds_hold() -> None:
 
 
 @pytest.mark.req("EF-INT-001")
-def test_edition_merge_that_raises_the_age_of_the_work_is_recorded() -> None:
-    """The survivor of a merge takes the strictest age: a writer outside the rating route, so the
-    merge wraps its write in the tracker."""
+def test_edition_merge_runs_in_the_tracker_and_records_only_a_real_change() -> None:
+    """The survivor of a merge takes the strictest age. The merge is wrapped in the tracker: a
+    merge that leaves the Work as visible as it was writes no event, and the Work stays a
+    Work a younger reader sees for what it was."""
     from tests.family_env import NOW, family_env
     from tests.integration.test_l14_edition_merge import merge, pair
 
@@ -476,22 +498,91 @@ def test_edition_merge_that_raises_the_age_of_the_work_is_recorded() -> None:
         p = pair(env)
         with env.engine.begin() as connection:
             connection.execute(
+                sa.update(catalog.work)
+                .where(catalog.work.c.id == p.series.work_id)
+                .values(age_rating=0, age_x=False, rated_at=NOW, is_adult=False)
+            )
+            connection.execute(
                 sa.update(catalog.edition)
                 .where(catalog.edition.c.id == p.donor)
                 .values(age_rating=16, rated_at=NOW)
             )
             before = changes.work_need(connection, p.series.work_id)
+        assert before == 16  # the donor's age already counts
         merge(p)
         with env.engine.connect() as connection:
-            after = changes.work_need(connection, p.series.work_id)
-            events = list(
-                connection.execute(
-                    sa.select(platform.event.c.payload).where(
-                        platform.event.c.type == "ops.work_visibility"
-                    )
+            assert changes.work_need(connection, p.series.work_id) == before
+            kinds = connection.execute(
+                sa.select(platform.event.c.type).where(platform.event.c.type.in_(CHANGE_TYPES))
+            ).all()
+        assert kinds == []
+
+
+# -- shelves, and the corners of the reader ---------------------------------------------------
+
+
+@pytest.mark.req("EF-INT-001")
+def test_admin_shelf_list_reports_removed_shelves_and_only_admins_read_it(world: World) -> None:
+    from tests.visibility_env import _shelf
+
+    with world.seed.engine.begin() as connection:
+        doomed = _shelf(connection, "Doomed", None, [])
+    first = world.env.client.get(SHELVES)
+    assert first.status_code == 200
+    shelves = {s["id"]: s for s in first.json()["items"]}
+    assert shelves[world.seed.shelves["family"]]["max_age_rating"] == 13
+    assert doomed in shelves and first.json()["removed"] == []
+    assert "allowed_profiles" not in first.text  # the list says a shelf exists, not who may see it
+    with world.seed.engine.begin() as connection:
+        changes.record_removed(connection, "shelf", doomed)
+        connection.execute(sa.text("DELETE FROM shelf WHERE id = :id"), {"id": doomed})
+    after = world.env.client.get(SHELVES, params={"since": first.json()["since"]})
+    assert after.status_code == 200
+    assert after.json()["removed"] == [doomed]
+    assert doomed not in {s["id"] for s in after.json()["items"]}
+    assert (
+        world.env.client.get(SHELVES, params={"since": after.json()["since"]}).json()["removed"]
+        == []
+    )
+    # the member and the child never reach it, and a shelf event never shows in a list of Works
+    assert world.get("member", SHELVES, since=first.json()["since"]).status_code == 403
+    assert world.removed("admin", world.token("admin")) == []
+
+
+@pytest.mark.req("EF-INT-001")
+def test_a_scope_nobody_defined_is_told_nothing_and_foreign_events_are_ignored(
+    world: World,
+) -> None:
+    from shelfhold.identity.domain.visibility import NOBODY
+
+    with world.seed.engine.begin() as connection:
+        changes.record_work_removed(connection, world.work("ok"))
+        for payload in ({}, {"work_id": 5, "need_before": 1}, {"work_id": "x", "need_before": "1"}):
+            connection.execute(
+                sa.insert(platform.event).values(
+                    type="ops.work_removed", schema_version=1, payload=payload,
+                    occurred_at=RATED, visibility="ops",
                 )
-            )
-        assert after > before  # the strictest age moved the Work out of a younger reader's view
-        assert [e.payload for e in events] == [
-            {"work_id": p.series.work_id, "need_before": before, "need_after": after}
-        ]
+            )  # fmt: skip
+        assert changes.removed_ids(connection, NOBODY, 0) == []
+        assert changes.removed_ids(connection, scope_of("admin", None), 0) == [world.work("ok")]
+        with changes.track_work_changes(connection, []):
+            pass  # nothing to track, nothing written
+    assert [e.type for e in world.change_events()].count("ops.work_removed") == 4
+
+
+@pytest.mark.req("EF-INT-001")
+def test_the_event_schema_version_is_the_one_of_the_bus() -> None:
+    from shelfhold.events.bus import SCHEMA_VERSION
+
+    assert changes.EVENT_SCHEMA_VERSION == SCHEMA_VERSION
+
+
+@pytest.mark.req("EF-INT-001", "EF-USR-016")
+def test_a_child_never_reads_the_change_events_in_the_activity_feed(world: World) -> None:
+    assert world.rate("ok", "18+").status_code == 200
+    assert world.change_events()  # an event exists, for the admin's feed
+    for who in ("kid", "kid16"):
+        answer = world.get(who, "/api/v1/activity", limit=100)
+        assert answer.status_code == 200
+        assert "ops.work_visibility" not in answer.text and world.work("ok") not in answer.text

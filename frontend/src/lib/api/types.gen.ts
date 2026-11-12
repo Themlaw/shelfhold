@@ -3015,6 +3015,24 @@ export type ShelfIn = {
 };
 
 /**
+ * ShelfItemOut
+ */
+export type ShelfItemOut = {
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Max Age Rating
+     */
+    max_age_rating: number | null;
+    /**
+     * Name
+     */
+    name: string;
+};
+
+/**
  * ShelfOut
  */
 export type ShelfOut = {
@@ -3022,6 +3040,24 @@ export type ShelfOut = {
      * Id
      */
     id: string;
+};
+
+/**
+ * ShelvesPageOut
+ */
+export type ShelvesPageOut = {
+    /**
+     * Items
+     */
+    items: Array<ShelfItemOut>;
+    /**
+     * Removed
+     */
+    removed: Array<string>;
+    /**
+     * Since
+     */
+    since: string;
 };
 
 /**
@@ -3596,6 +3632,24 @@ export type WithdrawalOut = {
 };
 
 /**
+ * WorkItemOut
+ */
+export type WorkItemOut = {
+    /**
+     * Kind
+     */
+    kind: string;
+    /**
+     * Title
+     */
+    title: string;
+    /**
+     * Work Id
+     */
+    work_id: string;
+};
+
+/**
  * WorkOut
  *
  * A Work as the sources name it; `appended`: it was shown before, these Editions are new.
@@ -3627,6 +3681,28 @@ export type WorkOut = {
      * Title
      */
     title: string;
+};
+
+/**
+ * WorksPageOut
+ */
+export type WorksPageOut = {
+    /**
+     * Items
+     */
+    items: Array<WorkItemOut>;
+    /**
+     * Removed
+     */
+    removed: Array<string>;
+    /**
+     * Since
+     */
+    since: string;
+    /**
+     * Total
+     */
+    total: number;
 };
 
 /**
@@ -7678,6 +7754,44 @@ export type SeriesResumeResponses = {
 
 export type SeriesResumeResponse = SeriesResumeResponses[keyof SeriesResumeResponses];
 
+export type ShelvesData = {
+    body?: never;
+    path?: never;
+    query?: {
+        /**
+         * Since
+         */
+        since?: string | null;
+    };
+    url: '/api/v1/shelves';
+};
+
+export type ShelvesErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type ShelvesError = ShelvesErrors[keyof ShelvesErrors];
+
+export type ShelvesResponses = {
+    /**
+     * Successful Response
+     */
+    200: ShelvesPageOut;
+};
+
+export type ShelvesResponse = ShelvesResponses[keyof ShelvesResponses];
+
 export type CreateShelfData = {
     body: ShelfIn;
     path?: never;
@@ -8946,6 +9060,52 @@ export type DeletionRestoreResponses = {
 };
 
 export type DeletionRestoreResponse = DeletionRestoreResponses[keyof DeletionRestoreResponses];
+
+export type ListWorksData = {
+    body?: never;
+    path?: never;
+    query?: {
+        /**
+         * Limit
+         */
+        limit?: number;
+        /**
+         * Offset
+         */
+        offset?: number;
+        /**
+         * Since
+         */
+        since?: string | null;
+    };
+    url: '/api/v1/works';
+};
+
+export type ListWorksErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type ListWorksError = ListWorksErrors[keyof ListWorksErrors];
+
+export type ListWorksResponses = {
+    /**
+     * Successful Response
+     */
+    200: WorksPageOut;
+};
+
+export type ListWorksResponse = ListWorksResponses[keyof ListWorksResponses];
 
 export type RateBatchData = {
     body: RateBatchIn;
