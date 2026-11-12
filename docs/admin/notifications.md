@@ -1,6 +1,6 @@
 # Notifications d'exploitation (Apprise)
 
-Shelfhold prévient l'administrateur quand quelque chose demande son attention : sauvegarde en échec, disque plein, destination injoignable, tâche abandonnée, secret illisible, source cassée, etc. (la liste est celle des événements d'exploitation, EF-INT-006). Les notifications passent par [Apprise](https://github.com/caronc/apprise), version 2.1 ou plus récente, moins de 3.
+Shelfhold prévient l'administrateur quand quelque chose demande son attention : sauvegarde en échec, disque plein, destination injoignable, tâche abandonnée, secret illisible, source cassée, nouvelle clé d'accès enregistrée sur un compte (`auth.passkey_registered`, à acquitter avec `shelfhold admin acknowledge-passkeys`), etc. (la liste est celle des événements d'exploitation, EF-INT-006). Les notifications passent par [Apprise](https://github.com/caronc/apprise), version 2.1 ou plus récente, moins de 3.
 
 ## Ce qui est accepté
 

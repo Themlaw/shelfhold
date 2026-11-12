@@ -51,6 +51,23 @@ Le défi d'une connexion est lié au navigateur qui l'a demandé par un cookie d
 enregistrement, connexion, révocation et recul de compteur est dans l'audit ; les journaux ne
 contiennent ni identifiant de clé, ni clé publique, ni défi.
 
+## Chaque enregistrement vous est signalé
+
+Un compte peut ajouter une clé qui survit à la révocation de ses sessions : Shelfhold vous le dit à
+**chaque** enregistrement, sur n'importe quel compte, y compris le vôtre.
+
+- un événement `auth.passkey_registered` part sur vos canaux de notification (identifiants seulement : le nom
+  donné à la clé n'y figure jamais) ;
+- `shelfhold status` garde une ligne `passkey_registered` (nombre, comptes et noms des clés) **jusqu'à ce que vous
+  l'acquittiez**, depuis l'hôte :
+
+      shelfhold admin acknowledge-passkeys
+
+  L'acquittement couvre tout ce que `status` montrait, il est journalisé (`passkey.registrations_acknowledged`) et
+  ne fait rien s'il n'y a rien à acquitter. Une clé inconnue se révoque dans la page des clés d'accès du compte, ou
+  par `shelfhold admin reset-password` (qui révoque aussi ses clés). Révoquer une clé n'acquitte pas
+  son enregistrement ; un enregistrement refusé (doublon, justificatif invalide) ne signale rien.
+
 ## Changer de domaine
 
 Les clés sont liées à l'ancien nom : après un changement de `SHELFHOLD_PUBLIC_URL` vers un autre

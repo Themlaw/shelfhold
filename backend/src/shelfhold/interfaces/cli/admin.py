@@ -82,6 +82,10 @@ def register(commands: argparse._SubParsersAction[argparse.ArgumentParser]) -> N
         )
         parser.set_defaults(handler=handler)
 
+    acknowledge = actions.add_parser(
+        "acknowledge-passkeys", help=t("cli.admin_acknowledge_passkeys_help"), allow_abbrev=False
+    )
+    acknowledge.set_defaults(handler=run_acknowledge_passkeys)
     sessions = actions.add_parser("sessions", help=t("cli.admin_sessions_help"))
     session_actions = sessions.add_subparsers(dest="sessions_command", required=True)
     revoke = session_actions.add_parser(
@@ -267,6 +271,12 @@ def run_reset_password(args: argparse.Namespace, auth: IdentityCommands) -> int:
     except ValueError as exc:
         return _fail(_password_error(exc))
     print(t("admin.password_reset", count=closed))
+    return 0
+
+
+@_command
+def run_acknowledge_passkeys(_args: argparse.Namespace, auth: IdentityCommands) -> int:
+    print(t("admin.passkeys_acknowledged", count=auth.acknowledge_passkeys()))
     return 0
 
 

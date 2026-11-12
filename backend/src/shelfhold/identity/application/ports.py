@@ -179,6 +179,11 @@ class IdentityStore(Protocol):
         decided and written in one transaction, with the sessions that passkey opened."""
         ...
 
+    def passkey_registrations_since_acknowledgement(self) -> list[tuple[str, str, str, datetime]]:
+        """`(passkey id, username, passkey name, registered at)` for each registration audited
+        after the last `passkey.registrations_acknowledged` entry, oldest first."""
+        ...
+
     def passkey_rp_ids(self) -> set[str]:
         """The RP IDs of the live passkeys that know theirs."""
         ...

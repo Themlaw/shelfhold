@@ -378,6 +378,28 @@ class SqlIdentityStore:
             )
         return "revoked"
 
+    def passkey_registrations_since_acknowledgement(self) -> list[tuple[str, str, str, datetime]]:
+        audit, user = identity.audit, _user
+        with self._engine.connect() as conn:
+            last = conn.execute(
+                sa.select(sa.func.max(audit.c.id)).where(
+                    audit.c.action == "passkey.registrations_acknowledged"
+                )
+            ).scalar_one()
+            query = (
+                sa.select(_passkey.c.id, user.c.username, _passkey.c.name, audit.c.at)
+                .select_from(
+                    audit.join(_passkey, _passkey.c.id == audit.c.target).join(
+                        user, user.c.id == _passkey.c.user_id
+                    )
+                )
+                .where(audit.c.action == "passkey.registered")
+                .order_by(audit.c.at, audit.c.id)
+            )
+            if last is not None:
+                query = query.where(audit.c.id > last)
+            return [(r.id, r.username, r.name, r.at) for r in conn.execute(query)]
+
     def passkey_rp_ids(self) -> set[str]:
         with self._engine.connect() as conn:
             rows = conn.execute(

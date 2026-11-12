@@ -249,8 +249,11 @@ class LocalAuth:
         reauth_methods: Sequence[ReauthMethod] | None = None,
         device_proof: DeviceProofPort | None = None,
         passkeys: PasskeyCeremony | None = None,
+        on_passkey_registered: Callable[[PasskeyRecord], None] | None = None,
     ) -> None:
         self._store = store
+        # Owner decision 2026-11-12: told after every registration, on any account (the event)
+        self._on_passkey_registered = on_passkey_registered
         self._hasher = hasher
         self._clock = clock
         self.hardened = hardened
@@ -576,7 +579,26 @@ class LocalAuth:
             structlog.get_logger().warning("auth.passkey_refused", reason=refused.reason)
             raise
         self._audit("passkey.registered", principal, target=passkey.id)
+        if self._on_passkey_registered is not None:
+            try:
+                self._on_passkey_registered(passkey)
+            except Exception:  # the status line is read from the audit: the event is a plus
+                structlog.get_logger().warning("auth.passkey_event_failed")
         return passkey
+
+    def unacknowledged_passkeys(self) -> list[tuple[str, str, str, datetime]]:
+        """The registrations `status` shows until `acknowledge_passkeys` (owner decision
+        2026-11-12): `(passkey id, username, name, registered at)`."""
+        return self._store.passkey_registrations_since_acknowledgement()
+
+    def acknowledge_passkeys(self, by: Principal | None = None) -> int:
+        """The admin has looked at the registrations of `status`: one audit line closes them all.
+        The count acknowledged (0: nothing was waiting, nothing is written)."""
+        waiting = self._store.passkey_registrations_since_acknowledgement()
+        if not waiting:
+            return 0
+        self._audit("passkey.registrations_acknowledged", by, target=f"count:{len(waiting)}")
+        return len(waiting)
 
     def passkey_revoke(self, principal: Principal, passkey_id: str) -> None:
         outcome = self._store.revoke_passkey(principal.user_id, passkey_id, now=self.now())

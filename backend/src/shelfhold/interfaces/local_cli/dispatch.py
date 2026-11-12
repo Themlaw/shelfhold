@@ -96,6 +96,10 @@ def _reset_password(auth: LocalAuth, by: Principal, params: Params) -> object:
     )
 
 
+def _acknowledge_passkeys(auth: LocalAuth, by: Principal, params: Params) -> object:
+    return auth.acknowledge_passkeys(by)
+
+
 def _sessions_revoke(auth: LocalAuth, by: Principal, params: Params) -> object:
     return auth.revoke_sessions(
         username=_text(params, "username", required=False),
@@ -147,6 +151,7 @@ METHODS: Mapping[str, tuple[Method, str | None]] = {
     "ping": (lambda _a, _b, _c: "pong", None),
     "identity.create_admin": (_create_admin, None),
     "identity.reset_password": (_reset_password, None),
+    "identity.acknowledge_passkeys": (_acknowledge_passkeys, None),
     "identity.sessions_revoke": (_sessions_revoke, None),
     "identity.keys_create": (_keys_create, "keys.create"),
     "identity.keys_rotate": (_keys_rotate, "keys.rotate"),

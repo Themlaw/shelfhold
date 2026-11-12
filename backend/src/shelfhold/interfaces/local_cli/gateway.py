@@ -51,6 +51,7 @@ class KeyView(Protocol):
 class IdentityCommands(Protocol):
     def create_admin(self, username: str, password: str) -> str: ...
     def reset_password(self, username: str, password: str) -> int: ...
+    def acknowledge_passkeys(self) -> int: ...
     def revoke_sessions(
         self, *, username: str | None = None, session_id: str | None = None
     ) -> int: ...
@@ -112,6 +113,9 @@ class SocketIdentity:
 
     def reset_password(self, username: str, password: str) -> int:
         return int(str(self._call("identity.reset_password", username=username, password=password)))
+
+    def acknowledge_passkeys(self) -> int:
+        return int(str(self._call("identity.acknowledge_passkeys")))
 
     def revoke_sessions(self, *, username: str | None = None, session_id: str | None = None) -> int:
         return int(

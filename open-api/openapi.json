@@ -10158,6 +10158,8 @@
     },
     "/api/v1/problems/acquire.work-tombstoned": {
       "code": "acquire.work_tombstoned",
+    "/api/v1/problems/auth.passkey-registered": {
+      "code": "auth.passkey_registered",
       "status": 409
     },
     "/api/v1/problems/backfill.confirmation-required": {
