@@ -48,8 +48,8 @@ def test_the_preview_offers_a_versioned_plan_and_writes_nothing() -> None:
 
 
 def test_no_plan_for_a_library_the_children_cannot_read() -> None:
-    with family_env(13) as env:
-        a = adoption(env)  # no restricted account: not a child library
+    with family_env(18) as env:
+        a = adoption(env)  # an adult shelf, no restricted account: not a child library
         a.add_series("Dr Stone", ["Dr Stone - Ch.1.cbz"])
         report = _preview(a, env)
         assert not report.child_library
@@ -160,3 +160,33 @@ def test_a_rated_work_is_never_in_the_plan() -> None:
         names = {f.rel_path.split("/", 1)[0] for i in plan.items for f in i.files}
         assert names == {"Dr Stone", "Monster"}
         assert known  # Akira and Lupin were rated before the adoption
+
+
+def test_the_cli_preview_prints_the_plan_and_the_command_to_confirm(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    from shelfhold.interfaces.cli.adopt import _show
+
+    with family_env(13) as env:
+        _rated_before(env)
+        a = _child_library(env)
+        report = _preview(a, env)
+        _show(report)
+        out = capsys.readouterr().out
+        plan = report.withdrawal_plan
+        assert plan.version in out and "Dr Stone" in out and "Monster" in out
+        assert f"shelf withdraw --adopted {env.destination_id} --apply --confirm" in out
+        assert "Akira" not in out.split("Plan de retrait", 1)[1]  # a rated Work is never planned
+
+
+def test_the_withdraw_command_takes_the_adopted_destination() -> None:
+    from shelfhold.interfaces.cli.registry import build_parser
+
+    args = build_parser().parse_args(["shelf", "withdraw", "--adopted", "D1"])
+    assert args.adopted == "D1"
+    assert build_parser().parse_args(["shelf", "withdraw"]).adopted is None
+
+
+def test_a_plan_for_an_unknown_destination_is_refused_not_empty() -> None:
+    with family_env(13) as env, pytest.raises(LookupError):
+        _service(env, []).adopted_unrated_plan("no-such-destination")

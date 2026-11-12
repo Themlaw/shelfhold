@@ -21,7 +21,7 @@ A crash after 1 leaves the intent: the next start finishes the move of that file
 
 import hashlib
 import json
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from contextlib import nullcontext
 from dataclasses import asdict, dataclass
 from datetime import datetime
@@ -57,7 +57,9 @@ __all__ = [
     "WithdrawalReport",
     "WithdrawalService",
     "WithdrawnFile",
+    "adopted_unrated_plan",
     "build_plan",
+    "plan_version",
 ]
 
 log = structlog.get_logger(__name__)
@@ -144,6 +146,53 @@ def build_plan(
     return WithdrawalPlan(tuple(items), hashlib.sha256(material.encode()).digest()[:16].hex())
 
 
+def plan_version(files: Iterable[tuple[str, str]]) -> str:
+    """The version of a plan of the unrated adopted files, from `(destination_id, rel_path)` alone:
+    the preview of the adoption (nothing is stored yet) and the plan read afterwards compute the
+    same one while nothing moved, and any rating, any new file or any missing one changes it."""
+    material = json.dumps(sorted(set(files)), separators=(",", ":"))
+    return hashlib.sha256(material.encode()).digest()[:16].hex()
+
+
+def adopted_unrated_plan(connection: Connection, destination_id: str) -> WithdrawalPlan:
+    """Owner decision 2026-11-12: the files the adoption of a child library left readable for the
+    Works nobody rated (the list of `shelf.follow_suspended`), on any shelf: an 18+ shelf that
+    restricted accounts read is not a family shelf for `build_plan`, but its unrated files are
+    just as readable. Rating a Work lifts its suspension and takes it out of the plan."""
+    destination = export.shelf_destination
+    shelf_id = connection.execute(
+        sa.select(destination.c.shelf_id).where(destination.c.id == destination_id)
+    ).scalar_one_or_none()
+    if shelf_id is None:
+        raise LookupError(f"no such destination: {destination_id}")
+    suspended = connection.execute(
+        sa.select(export.shelf.c.follow_suspended).where(export.shelf.c.id == shelf_id)
+    ).scalar_one()
+    works = [str(w) for w in (suspended or [])]
+    editions = (
+        connection.execute(
+            sa.select(catalog.edition.c.id)
+            .where(catalog.edition.c.work_id.in_(works), catalog.edition.c.shelf_id == shelf_id)
+            .order_by(catalog.edition.c.id)
+        ).scalars()
+        if works
+        else ()
+    )
+    items = [
+        WithdrawalItem(edition_id, shelf_id, "adopted_unrated", files)
+        for edition_id in editions
+        if (
+            files := tuple(
+                f
+                for f in _files(connection, edition_id, shelf_id)
+                if f.destination_id == destination_id
+            )
+        )
+    ]
+    version = plan_version((f.destination_id, f.rel_path) for i in items for f in i.files)
+    return WithdrawalPlan(tuple(items), version)
+
+
 def _files(connection: Connection, edition_id: str, shelf_id: str) -> tuple[WithdrawnFile, ...]:
     record, item = export.export_record, export.export_item
     destination = export.shelf_destination
@@ -194,8 +243,18 @@ class WithdrawalService:
         with self._engine.connect() as connection:
             return self._plan(connection, shelf_id)
 
+    def adopted_unrated_plan(self, destination_id: str) -> WithdrawalPlan:
+        """The plan of the unrated Works of an adopted child library; nothing moves."""
+        with self._engine.connect() as connection:
+            return adopted_unrated_plan(connection, destination_id)
+
     def _plan(self, connection: Connection, shelf_id: str | None) -> WithdrawalPlan:
         return build_plan(connection, self._rating, shelf_id)
+
+    def _read(self, shelf_id: str | None, destination_id: str | None) -> WithdrawalPlan:
+        if destination_id is not None:
+            return self.adopted_unrated_plan(destination_id)
+        return self.plan(shelf_id)
 
     # -- the application ----------------------------------------------------------------------
 
@@ -206,6 +265,7 @@ class WithdrawalService:
         principal: Principal,
         now: datetime,
         shelf_id: str | None = None,
+        destination_id: str | None = None,
     ) -> WithdrawalReport:
         verdict = authorize_reserved(
             principal, RESERVED_ACTIONS["shelf.withdraw"], now=now,
@@ -214,7 +274,7 @@ class WithdrawalService:
         )  # fmt: skip
         if not isinstance(verdict, Allowed):
             raise WithdrawalRefusedError(type(verdict).__name__)
-        first = self.plan(shelf_id)
+        first = self._read(shelf_id, destination_id)
         if first.version != if_match:
             raise StalePlanError("the ratings moved since the plan was read: read it again")
         works = self._works_of(first)
@@ -227,7 +287,7 @@ class WithdrawalService:
                 else nullcontext()
             ):
                 # read again under the locks: an export that was writing has finished or waits
-                current = self.plan(shelf_id)
+                current = self._read(shelf_id, destination_id)
                 if current.version != if_match:
                     raise StalePlanError("a file arrived while the locks were taken: read again")
                 return self._apply_locked(current, principal, now)

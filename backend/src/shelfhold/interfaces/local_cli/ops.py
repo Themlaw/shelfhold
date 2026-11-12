@@ -478,13 +478,14 @@ def _relink(ops: OpsServices, by: Principal, p: Params) -> object:
 
 
 def _withdraw_plan(ops: OpsServices, _by: Principal, p: Params) -> object:
-    return ops.library.withdraw_plan(_optional(p, "shelf_id"))
+    return ops.library.withdraw_plan(_optional(p, "shelf_id"), _optional(p, "destination_id"))
 
 
 def _withdraw_apply(ops: OpsServices, by: Principal, p: Params) -> object:
     return ops.library.withdraw_apply(
-        if_match=_text(p, "if_match"), shelf_id=_optional(p, "shelf_id"), principal=by
-    )
+        if_match=_text(p, "if_match"), shelf_id=_optional(p, "shelf_id"),
+        destination_id=_optional(p, "destination_id"), principal=by,
+    )  # fmt: skip
 
 
 def _shelf_purge_upstream(ops: OpsServices, by: Principal, p: Params) -> object:

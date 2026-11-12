@@ -29,6 +29,8 @@ def register(commands: argparse._SubParsersAction[argparse.ArgumentParser]) -> N
     create.set_defaults(handler=run_create, configure_logging=False)
     withdraw = actions.add_parser("withdraw", help=t("cli.shelf_withdraw_help"), allow_abbrev=False)
     withdraw.add_argument("--shelf", default=None, help=t("cli.shelf_withdraw_shelf_help"))
+    withdraw.add_argument("--adopted", default=None, metavar="DESTINATION",
+                          help=t("cli.shelf_withdraw_adopted_help"))  # fmt: skip
     withdraw.add_argument("--apply", action="store_true", help=t("cli.shelf_withdraw_apply_help"))
     withdraw.add_argument("--confirm", default=None, help=t("cli.shelf_withdraw_confirm_help"))
     withdraw.set_defaults(handler=run_withdraw, configure_logging=False)
@@ -67,9 +69,13 @@ def run_purge_upstream(args: argparse.Namespace, channel: OpsChannel) -> int:
     return 0
 
 
+def _scope(args: argparse.Namespace) -> str:
+    return f" --adopted {args.adopted}" if args.adopted else ""
+
+
 @ops_command
 def run_withdraw(args: argparse.Namespace, channel: OpsChannel) -> int:
-    plan = channel.call("ops.withdraw_plan", shelf_id=args.shelf)
+    plan = channel.call("ops.withdraw_plan", shelf_id=args.shelf, destination_id=args.adopted)
     if not args.apply:
         for item in plan["items"]:
             print(
@@ -79,12 +85,17 @@ def run_withdraw(args: argparse.Namespace, channel: OpsChannel) -> int:
         if not plan["items"]:
             print(t("cli.shelf_withdraw_nothing"))
             return 0
-        print(t("cli.shelf_withdraw_next", version=plan["version"]))
+        print(t("cli.shelf_withdraw_next", version=plan["version"], scope=_scope(args)))
         return 0
     if args.confirm != plan["version"]:  # typed from the plan that was read, never assumed
         print(t("cli.shelf_withdraw_needs_confirm", version=plan["version"]), file=sys.stderr)
         return 2
-    done = channel.call("ops.withdraw_apply", if_match=args.confirm, shelf_id=args.shelf)
+    done = channel.call(
+        "ops.withdraw_apply",
+        if_match=args.confirm,
+        shelf_id=args.shelf,
+        destination_id=args.adopted,
+    )
     print(t("cli.shelf_withdraw_done", editions=len(done["withdrawn"]), files=done["files"]))
     if done["pending"]:
         print(t("cli.shelf_withdraw_pending", count=len(done["pending"])), file=sys.stderr)

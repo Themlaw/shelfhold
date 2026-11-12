@@ -54,6 +54,7 @@ from shelfhold.export.application.migration_detect import (
     SwitchoverUnconfirmed,
 )
 from shelfhold.export.application.snapshot import DestinationContext, load_context
+from shelfhold.export.application.withdrawal import plan_version
 from shelfhold.export.domain.bindings import LibraryNotDedicatedError, is_family
 from shelfhold.export.domain.kavita_instance import library_is_dedicated
 from shelfhold.export.domain.naming import (
@@ -181,6 +182,22 @@ class AdoptedSeries:
 
 
 @dataclass(frozen=True)
+class WithdrawalSeries:
+    name: str
+    files: tuple[str, ...]  # below the destination root
+
+
+@dataclass(frozen=True)
+class AdoptionWithdrawalPlan:
+    """Owner decision 2026-11-12: what the children can read of the Works nobody rated. Offered by
+    the preview, never applied by the adoption: the admin confirms it afterwards with this
+    version (`shelf withdraw --adopted`), which is the version of the plan read after adopting."""
+
+    series: tuple[WithdrawalSeries, ...]
+    version: str
+
+
+@dataclass(frozen=True)
 class AdoptionReport:
     destination_id: str
     library_ref: str
@@ -214,6 +231,20 @@ class AdoptionReport:
                     volume, first, last = comicinfo_range(info) or ("", "", "")
                     found.append(f"{f.rel_path}: volume {volume}, chapters {first}-{last}")
         return tuple(found)
+    def withdrawal_plan(self) -> AdoptionWithdrawalPlan:
+        """The removal plan of the unrated Works of a child library; empty for any other."""
+        if not self.child_library:
+            return AdoptionWithdrawalPlan((), plan_version(()))
+        listed = tuple(
+            WithdrawalSeries(
+                s.frozen_series, tuple(f.rel_path for f in s.files if not f.tombstoned)
+            )
+            for s in self.series
+            if s.unrated and s.files
+        )
+        listed = tuple(s for s in listed if s.files)
+        version = plan_version((self.destination_id, f) for s in listed for f in s.files)
+        return AdoptionWithdrawalPlan(listed, version)
 
     @property
     def tombstoned(self) -> tuple[str, ...]:

@@ -73,6 +73,7 @@ class FiledOut(BaseModel):
 class WithdrawIn(BaseModel):
     if_match: str
     shelf_id: str | None = None
+    destination_id: str | None = None  # the unrated files of an adopted child library
 
 
 class ShelfOut(BaseModel):
@@ -185,11 +186,13 @@ def build_shelves_router(
     @router.get("/withdrawals")
     def withdrawal_plan(
         shelf_id: str | None = None,
+        destination_id: str | None = None,
         _principal: Principal = Depends(reserved_action(_WITHDRAW)),  # noqa: B008
     ) -> dict[str, Any]:
-        """What the admission refuses on the shelves below 18+; nothing moves."""
+        """What the admission refuses on the shelves below 18+ (or, with `destination_id`, the
+        unrated files of an adopted child library); nothing moves."""
         try:
-            plan: dict[str, Any] = get_ops().library.withdraw_plan(shelf_id)
+            plan: dict[str, Any] = get_ops().library.withdraw_plan(shelf_id, destination_id)
         except OpsError as error:
             raise ProblemError(error.code) from None
         return plan
@@ -201,7 +204,10 @@ def build_shelves_router(
     ) -> dict[str, Any]:
         try:
             done: dict[str, Any] = get_ops().library.withdraw_apply(
-                if_match=body.if_match, shelf_id=body.shelf_id, principal=principal
+                if_match=body.if_match,
+                shelf_id=body.shelf_id,
+                destination_id=body.destination_id,
+                principal=principal,
             )
         except OpsError as error:
             raise ProblemError(error.code) from None

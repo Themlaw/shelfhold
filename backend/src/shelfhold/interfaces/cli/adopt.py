@@ -94,6 +94,15 @@ def _show(report: AdoptionReport) -> None:
         for name in report.suspended:
             print(t("adopt.to_rate_line", name=name))
         print(t("adopt.child_library_files"))
+        plan = report.withdrawal_plan
+        if plan.series:
+            count = sum(len(s.files) for s in plan.series)
+            print(t("adopt.child_plan_header", version=plan.version, count=count))
+            for planned in plan.series:
+                print(t("adopt.child_plan_series", name=planned.name, files=len(planned.files)))
+            print(
+                t("adopt.child_plan_next", destination=report.destination_id, version=plan.version)
+            )
     for rename in report.renames:
         print(t("adopt.rename_line", from_path=rename.from_path, to_path=rename.to_path))
     for path in report.active_content:

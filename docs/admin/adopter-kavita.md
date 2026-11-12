@@ -33,6 +33,23 @@ shelfhold adopt --destination <id> --confirm <empreinte>
 Si quoi que ce soit a changé depuis l'aperçu, la confirmation est refusée
 (`adopt.preview_stale`) : refaites l'aperçu. Sans `--dry-run` ni `--confirm`, rien n'est lu.
 
+## Bibliothèque lisible par des enfants : plan de retrait
+
+Si des enfants peuvent lire la bibliothèque (étagère sous 18+ ou comptes restreints), l'aperçu liste les
+Œuvres non classées et **propose un plan de retrait** de leurs fichiers, avec une **version**. L'adoption elle-même
+ne déplace toujours aucun fichier. Après l'adoption, relisez puis confirmez, comme pour `shelf withdraw` :
+
+```sh
+shelfhold shelf withdraw --adopted <destination>                      # relit le plan et sa version
+shelfhold shelf withdraw --adopted <destination> --apply --confirm <version>
+```
+
+Les fichiers vont à la corbeille de leur racine (`.shelfhold/recycle`, restaurables) et Kavita est invité à
+analyser les dossiers. C'est une action réservée (session administrateur récente ou console de l'hôte, jamais
+une clé d'API). Si une Œuvre a été classée ou si un fichier a changé depuis la lecture, la version ne correspond
+plus (`plan.stale`) : relisez. Classer l'Œuvre (`shelfhold rate`) la sort du plan. Dans l'API :
+`GET /api/v1/withdrawals?destination_id=…` puis `POST /api/v1/withdrawals` avec `destination_id` et `if_match`.
+
 ## Ce que l'adoption écrit
 
 - En base : un enregistrement `adopted` par fichier (chemin relatif, empreinte, taille, date), et

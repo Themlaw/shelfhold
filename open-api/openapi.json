@@ -3609,6 +3609,17 @@
       },
       "WithdrawIn": {
         "properties": {
+          "destination_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Destination Id"
+          },
           "if_match": {
             "title": "If Match",
             "type": "string"
@@ -7787,7 +7798,7 @@
     },
     "/api/v1/shelves/withdrawals": {
       "get": {
-        "description": "What the admission refuses on the shelves below 18+; nothing moves.",
+        "description": "What the admission refuses on the shelves below 18+ (or, with `destination_id`, the\nunrated files of an adopted child library); nothing moves.",
         "operationId": "withdrawal_plan",
         "parameters": [
           {
@@ -7804,6 +7815,22 @@
                 }
               ],
               "title": "Shelf Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "destination_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Destination Id"
             }
           }
         ],
