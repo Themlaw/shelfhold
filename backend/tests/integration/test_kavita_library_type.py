@@ -10,10 +10,8 @@ from typing import Any
 
 import pytest
 import sqlalchemy as sa
-from shelfhold.export.targets.kavita.library_type import LibraryTypeService
-from shelfhold.export.targets.kavita.revalidate import Revalidator
-from shelfhold.jobs.daily_checks import library_type_check, major_update_replay
 
+from shelfhold.config import Settings
 from shelfhold.events.waiting_state import WaitingState
 from shelfhold.export.application.target_state import (
     DestinationPausedError,
@@ -24,13 +22,19 @@ from shelfhold.export.application.target_state import (
 from shelfhold.export.targets.kavita.adopt import BulkParse
 from shelfhold.export.targets.kavita.dto import LibraryType
 from shelfhold.export.targets.kavita.errors import TargetError
+from shelfhold.export.targets.kavita.library_type import LibraryTypeService
+from shelfhold.export.targets.kavita.revalidate import Revalidator
 from shelfhold.infrastructure.ids import new_ulid
-from shelfhold.infrastructure.schema import export
+from shelfhold.infrastructure.schema import export, platform
+from shelfhold.jobs.daily_checks import library_type_check, major_update_replay
 from shelfhold.ops.errors import StillWaitingError
+from shelfhold.ops.events import BusTargetEvents
+from shelfhold.runtime_jobs import connected_clients
 from tests.export_env import ExportEnv, add_second_shelf, export_env, state_of
 from tests.fakes.kavita import FakeKavita
 from tests.kavita_env import run
 from tests.kavita_export_env import LIBRARY_ID, Wired, wire
+from tests.l41_env import instance
 from tests.ops_env import make_ops
 
 LOT_EVENTS = frozenset({"target.library_type_changed", "reconcile.drift"})
@@ -335,6 +339,7 @@ def test_the_replay_is_not_lost_when_kavita_does_not_answer() -> None:
         assert w.events.details("reconcile.drift") == []
 
         w.fake.missing.clear()
+        w.rebuild_client()  # tomorrow's job: a client with no memory of the 404
         report = run(_revalidator(env, w).check(w.client, env.target_id))
         assert report.replayed is True and len(report.rejected) == 1
 
@@ -396,7 +401,8 @@ def test_daily_checks_are_idempotent() -> None:
             type_check()
             replay()
         assert _announced(w).count("target.library_type_changed") == 1
-        assert _announced(w).count("reconcile.drift") == 1
+        kinds = [d["kind"] for d in w.events.details("reconcile.drift")]
+        assert sorted(kinds) == ["kavita_library_type", "kavita_major_update"]  # one each
         replayed = [c for c in _bulk_calls(w) if c.json()["libraryType"] == MANGA]
         assert len(replayed) == 1  # the major update is replayed once
         assert w.fake.writes == [] and w.fake.violations == []
@@ -419,3 +425,105 @@ def wire_down(env: ExportEnv) -> Wired:
     down = wire(env)
     down.fake.asleep = True
     return down
+
+
+@pytest.mark.req("EF-EXP-049")
+def test_the_daily_jobs_announce_on_the_real_bus_through_the_connected_targets(
+    settings: Settings, tmp_path: Any
+) -> None:
+    with instance(settings, tmp_path) as inst:
+        inst.configure()
+        inst.kavita.manga_parse_only = False
+        with inst.engine.begin() as connection:
+            destination = connection.execute(sa.select(export.shelf_destination)).one()
+            library_id = new_ulid()
+            connection.execute(
+                sa.insert(export.remote_library).values(
+                    id=library_id, export_target_id=destination.target_id, remote_ref="7"
+                )
+            )
+            connection.execute(
+                sa.insert(export.shelf_destination_remote_library).values(
+                    shelf_destination_id=destination.id,
+                    remote_library_id=library_id,
+                    export_target_id=destination.target_id,
+                )
+            )
+        inst.kavita.libraries[0]["type"] = COMIC
+        events = BusTargetEvents(inst.engine, inst.comp.bus)
+        clients = connected_clients(inst.comp)
+        library_type_check(inst.engine, inst.comp.clock, events, clients)()
+        library_type_check(inst.engine, inst.comp.clock, events, clients)()
+
+        (shelf,) = inst.engine.connect().execute(sa.select(export.shelf)).all()
+        assert shelf.paused_reason == "library_type_changed"
+        with inst.engine.connect() as connection:
+            rows = connection.execute(
+                sa.select(platform.event.c.payload).where(
+                    platform.event.c.type == "target.library_type_changed"
+                )
+            ).all()
+        assert [r.payload for r in rows] == [
+            {
+                "target_id": destination.target_id,
+                "destination_id": destination.id,
+                "stored_type": MANGA,
+                "seen_type": COMIC,
+            }
+        ]  # the bus keeps the ids and the numbers, once
+
+
+# -- what the replay leaves aside ----------------------------------------------------------------
+
+
+@pytest.mark.req("EF-EXP-049")
+def test_a_name_that_parse_bulk_does_not_answer_is_rejected_never_assumed_good(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from shelfhold.export.targets.kavita import revalidate
+
+    async def silent(_client: Any, _names: Any, _library_type: Any) -> BulkParse:
+        return BulkParse({})
+
+    with export_env() as env:
+        w = wire(env)
+        (rel,) = w.written()
+        monkeypatch.setattr(revalidate.BulkParse, "fetch", silent)
+        report = run(_revalidator(env, w).replay_sample(w.client, env.target_id))
+        assert [(r.rel_path, r.code) for r in report.rejected] == [(rel, revalidate.UNANSWERED)]
+
+
+@pytest.mark.req("EF-EXP-049")
+def test_an_item_that_names_nothing_readable_is_left_out_of_the_sample() -> None:
+    with export_env() as env:
+        w = wire(env)
+        w.written(chapters=("2", "3"))
+        with env.engine.begin() as connection:
+            item = connection.execute(sa.select(export.export_item.c.id)).scalars().first()
+            connection.execute(
+                sa.update(export.export_item)
+                .where(export.export_item.c.id == item)
+                .values(frozen_attrs={"series": "x", "track": "main", "number_norm": "abc"})
+            )
+        report = run(_revalidator(env, w).replay_sample(w.client, env.target_id))
+        assert report.sampled == 1 and report.rejected == ()
+
+
+@pytest.mark.req("EF-EXP-049")
+def test_a_version_that_cannot_be_read_records_nothing() -> None:
+    with export_env() as env:
+        w = wire(env)
+        w.fake.version = ""
+        report = run(_revalidator(env, w).check(w.client, env.target_id))
+        assert report.replayed is False and report.version is None
+        assert _health(env).replayed_version is None
+
+
+@pytest.mark.req("EF-EXP-049")
+def test_the_replay_job_survives_a_kavita_that_does_not_answer() -> None:
+    with export_env() as env:
+        w = wire(env)
+        w.fake.asleep = True
+        replay = major_update_replay(env.engine, env.clock, w.events, _clients(env, w.client))
+        replay()  # logged, tried again tomorrow
+        assert _health(env).replayed_version is None and _announced(w) == []

@@ -20,7 +20,6 @@ symbols = [
   "shelfhold.events.operating:M1B",
   "shelfhold.events.operating:WAITING_WITHOUT_EVENT",
   "shelfhold.export.targets.kavita.routes:SETUP_ROUTES",
-  "shelfhold.identity.domain.catalogue:EXIT_STATES_LATER",
   "shelfhold.identity.domain.emitters:DELETION_SITES",
   "shelfhold.identity.domain.emitters:REPLACEMENT_SITES",
   "shelfhold.identity.domain.reserved:SYSTEM_EMITTERS",
@@ -104,7 +103,6 @@ symbols = [
   "shelfhold.export.application.migration_detect:SwitchoverDetector.classify_download_dir",
   "shelfhold.export.domain.physical_roots:discover_physical_roots",
   "shelfhold.export.targets.kavita.adopt:Adopter.link_library",
-  "shelfhold.export.targets.kavita.adopt:BulkParse.for_plan",
   "shelfhold.export.targets.kavita.series:Resolution.renamed",
   "shelfhold.export.targets.kavita.series:SeriesResolver",
 ]
@@ -115,6 +113,14 @@ reason = "Deleting an account with its audit entries kept under a pseudonym (EF-
 until = "M3"
 symbols = [
   "shelfhold.events.bus:EventBus.subscribe",
+]
+
+[[allow]]
+category = "deferred-l31-bulk-parse-for-plan"
+reason = "2026-11-12 (M3 L31): `BulkParse.for_plan` reads the names a plan asks `plugin/parse` about, in bulk, for the adoption of a foreign library (EF-EXP-045, EF-EXP-060). The export job reads them with `wanted_names` and the replay of EF-EXP-049 asks the names of the manifest (`Revalidator`), both through `BulkParse.fetch`: no caller needs the pipeline form before the adoption screen; redated to M4 with the cut, as the sheet of L31 allows."
+until = "M4"
+symbols = [
+  "shelfhold.export.targets.kavita.adopt:BulkParse.for_plan",
 ]
 
 [[allow]]

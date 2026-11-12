@@ -3,7 +3,7 @@
 import pytest
 
 from shelfhold.events.waiting_state import WaitingState
-from shelfhold.identity.public import EXIT_ROUTES, EXIT_STATES_LATER, RESERVED_ACTIONS, Effect
+from shelfhold.identity.public import EXIT_ROUTES, RESERVED_ACTIONS, Effect
 
 # The classification of the specification, spelled out (not derived from the code under test).
 RESERVED = {
@@ -35,6 +35,7 @@ NOT_RESERVED = {
     ("jobs retry", "dead_letter"),
     ("target reconnect", "instance_changed"),
     ("target reconnect", "target_forbidden"),
+    ("target reconnect", "library_type_changed"),
     ("jobs retry", "not_indexed"),
     ("adopt --confirm-migration", "adoption_refused"),
     ("target recheck", "permission_denied"),
@@ -55,10 +56,9 @@ NOT_RESERVED = {
 @pytest.mark.req("EF-INT-023", "EF-USR-024")
 def test_every_waiting_state_has_an_exit_route_with_its_class() -> None:
     covered = {route.waiting_state for route in EXIT_ROUTES}
-    missing = {s.value for s in WaitingState} - covered - EXIT_STATES_LATER
+    missing = {s.value for s in WaitingState} - covered
     assert not missing, f"waiting states without a classified exit command: {sorted(missing)}"
     assert covered <= {s.value for s in WaitingState}
-    assert not (covered & EXIT_STATES_LATER), "a state listed as later must not already have routes"
 
 
 @pytest.mark.req("EF-INT-023", "EF-USR-024")

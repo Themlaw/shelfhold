@@ -12,6 +12,7 @@ from shelfhold.export.application.target_state import load_health, save_health
 from shelfhold.export.targets.kavita.audit import AccessAuditor
 from shelfhold.export.targets.kavita.client import KavitaClient
 from shelfhold.export.targets.kavita.errors import TargetError
+from shelfhold.export.targets.kavita.library_type import resume_after_correction
 from shelfhold.export.targets.kavita.reinstall import InstanceService
 from shelfhold.infrastructure.clock import Clock
 from shelfhold.ops.errors import StillWaitingError
@@ -71,12 +72,15 @@ class KavitaTargetOps:
             self._run(self._auditor.audit(client, target_id, resume=True))
 
     def reconnect(self, target_id: str) -> None:
-        """Take the pauses off: the 403 (rights back) first, then a reinstalled server."""
+        """Take the pauses off: the 403 (rights back) first, then a reinstalled server, then a
+        library type that is back to the one the shelf was set up for."""
         client = self._client(target_id)
         try:
             if client.health.paused:
                 self._run(client.reconnect())
             if client.health.instance_changed:
                 self._run(self._instance.reconnect(client, target_id, auditor=self._auditor))
+            if client.health.library_type_changed:  # EF-EXP-049: released once Kavita agrees again
+                self._run(resume_after_correction(self._engine, client, target_id))
         finally:
             self._save(client, target_id)

@@ -30,6 +30,9 @@ class TargetHealth:
     instance_changed: bool = False  # Kavita was reinstalled: exports wait for `target reconnect`
     not_indexed: bool = False  # a written file was never indexed (EF-EXP-034)
     child_exposure: bool = False  # a shelf of this target is paused by the access audit
+    library_type_changed: bool = False  # a library changed its type in Kavita (EF-EXP-049)
+    replayed_version: str | None = None  # the Kavita line the names were last replayed for
+    replay_rejected: list[str] = field(default_factory=list)  # paths `parse-bulk` rejected then
 
     @property
     def mode(self) -> TargetMode:
@@ -39,13 +42,15 @@ class TargetHealth:
 
     def refresh_waiting(self) -> None:
         """The state a human must leave, by priority: forbidden, a changed instance, child
-        exposure, route missing, not indexed, key expiring."""
+        exposure, a library type changed, route missing, not indexed, key expiring."""
         if self.paused:
             self.waiting_state = WaitingState.TARGET_FORBIDDEN
         elif self.instance_changed:
             self.waiting_state = WaitingState.INSTANCE_CHANGED
         elif self.child_exposure:
             self.waiting_state = WaitingState.CHILD_EXPOSURE
+        elif self.library_type_changed:
+            self.waiting_state = WaitingState.LIBRARY_TYPE_CHANGED
         elif self.missing_routes:
             self.waiting_state = WaitingState.ROUTE_MISSING
         elif self.not_indexed:
@@ -76,6 +81,9 @@ class TargetHealth:
             "instance_changed": self.instance_changed,
             "not_indexed": self.not_indexed,
             "child_exposure": self.child_exposure,
+            "library_type_changed": self.library_type_changed,
+            "replayed_version": self.replayed_version,
+            "replay_rejected": list(self.replay_rejected),
         }
 
     @classmethod
@@ -102,4 +110,7 @@ class TargetHealth:
             instance_changed=bool(data.get("instance_changed", False)),
             not_indexed=bool(data.get("not_indexed", False)),
             child_exposure=bool(data.get("child_exposure", False)),
+            library_type_changed=bool(data.get("library_type_changed", False)),
+            replayed_version=data.get("replayed_version"),
+            replay_rejected=[str(path) for path in data.get("replay_rejected", ())],
         )

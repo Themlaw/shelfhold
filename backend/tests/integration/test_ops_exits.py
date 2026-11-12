@@ -25,7 +25,7 @@ from shelfhold.events.waiting_state import WaitingState
 from shelfhold.export.application.preflight import PermissionPreflight
 from shelfhold.export.application.target_state import load_health
 from shelfhold.export.domain.kavita_key_expiry import KeyNoticeState
-from shelfhold.identity.public import EXIT_ROUTES, EXIT_STATES_LATER
+from shelfhold.identity.public import EXIT_ROUTES
 from shelfhold.infrastructure.db import create_db_engine
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.restore_notice import RestoreNoticeData, write_notice
@@ -91,9 +91,9 @@ M1B_STATES = frozenset(
         WaitingState.RESTORED_CREDENTIALS,
     }
 )
-M3_STATES = frozenset({s for s in WaitingState if s.value in EXIT_STATES_LATER})
-PLAYED_STATES = M1A_STATES | M1B_SERVED_STATES  # the states with an end-to-end scenario below
-LATER_STATES = (M1B_STATES - M1B_SERVED_STATES) | M3_STATES
+M3_STATES = frozenset({WaitingState.LIBRARY_TYPE_CHANGED})  # EF-EXP-049, `target reconnect`
+PLAYED_STATES = M1A_STATES | M1B_SERVED_STATES | M3_STATES  # with an end-to-end scenario below
+LATER_STATES = M1B_STATES - M1B_SERVED_STATES
 
 
 def _waiting(ops: OpsServices, state: str) -> list[object]:
@@ -194,6 +194,17 @@ def instance_changed() -> None:
         ops = make_ops(env, w)
         put_health(env, instance_changed=True, install_id="old")
         _listed_then_gone(ops, "instance_changed", lambda: ops.target_reconnect(env.target_id))
+
+
+def library_type_changed() -> None:
+    with export_env() as env:
+        w = wire(env)
+        ops = make_ops(env, w)
+        put_health(env, library_type_changed=True)
+        with env.engine.begin() as connection:
+            connection.execute(sa.update(export.shelf).values(paused_reason="library_type_changed"))
+        _listed_then_gone(ops, "library_type_changed", lambda: ops.target_reconnect(env.target_id))
+        assert env.rows(export.shelf)[0].paused_reason is None
 
 
 def target_forbidden() -> None:
@@ -716,7 +727,7 @@ SCENARIOS: dict[str, Callable[..., None]] = {
         restored_behind, restored_credentials, tombstone_key_unknown, tombstone_lines_owed, route_missing,
         series_name_collision, mount_sentinel_missing, rating_pending, follow_suspended,
         source_instance_changed, foreign_root, root_lost, root_behind, store_lost,
-        safeguard_backlog,
+        safeguard_backlog, library_type_changed,
         tombstone_journal_truncated,
     )
 }  # fmt: skip
@@ -736,8 +747,8 @@ def test_every_waiting_state_has_exit_command(
     routes = [r for r in EXIT_ROUTES if r.waiting_state == state.value]
     if state in LATER_STATES:
         # the exit arrives with the milestone where the state appears (EF-INT-023): until then it
-        # is declared in the catalogue and has no scenario; M3 states have no route yet
-        assert (state.value in EXIT_STATES_LATER) == (not routes)
+        # is declared in the catalogue and has no scenario
+        assert routes
         assert state not in PLAYED_STATES
         return
     assert state in PLAYED_STATES and routes, f"{state} has no exit command"

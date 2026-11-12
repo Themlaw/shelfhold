@@ -13,6 +13,7 @@ CODES: tuple[ErrorCode, ...] = (
     ErrorCode("target.foreign_writer_detected", 409, "admin", event=True),
     ErrorCode("target.permission_denied", 403, "admin", event=True),
     ErrorCode("target.child_exposure", 409, "admin", event=True),
+    ErrorCode("target.library_type_changed", 409, "admin", event=True),  # EF-EXP-049
     # 412, not 409: 409 stays for business conflicts (EF-EXP-042, If-Match semantics)
     ErrorCode("plan.stale", 412, "user"),
     # EF-EXP-045: a name `plugin/parse` would misread is refused, never written
