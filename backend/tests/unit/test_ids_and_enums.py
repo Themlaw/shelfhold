@@ -33,6 +33,7 @@ SPEC_WAITING_STATES = {
     "language_unknown",
     "restored_behind",
     "library_type_changed",
+    "maintenance",  # M3 L13 (EF-INT-018): left by `maintenance off`
     "foreign_root",
     "root_lost",
     "root_behind",

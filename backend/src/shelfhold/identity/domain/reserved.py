@@ -77,6 +77,12 @@ class Effect(StrEnum):
     # is removed, but it is the one action that carries all of it away, so it is the admin's
     # alone and fresh like the other decisions that reveal what a library holds
     MOVES_INSTANCE_DATA = "moves_instance_data"
+    # `maintenance on|off` (EF-INT-018): freezes every write of the instance, or lifts that freeze.
+    # A stolen session could stop the household's service or hold it still: fresh in every profile
+    FREEZES_INSTANCE = "freezes_instance"
+    # `queue pause|resume|cancel|priority|replay` (EF-INT-017): decides what the workers do.
+    # Nothing is erased and each command is undone by another: fresh in the hardened profile only
+    CONTROLS_QUEUE = "controls_queue"
 
 
 # P3 (inverted by the PR #43 review): freshness applies by default, so a new `Effect` that nobody
@@ -92,6 +98,7 @@ NO_REAUTH_EFFECTS = frozenset(
         Effect.UNMASKS_REQUEST,
         Effect.MANAGES_CREDENTIALS,
         Effect.ATTESTS_TRUST,  # D15: freshness only in the hardened profile
+        Effect.CONTROLS_QUEUE,  # M3 L13: reversible; freshness only in the hardened profile
     }  # not ACCEPTS_ADMIN_RISK: it takes a third party's admin password (L38 review)
 )
 

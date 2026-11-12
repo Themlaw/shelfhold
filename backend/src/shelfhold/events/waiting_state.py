@@ -44,3 +44,4 @@ class WaitingState(StrEnum):
     WITHDRAWAL_PENDING = "withdrawal_pending"  # a file waits to leave a family shelf (EF-BIB-037)
     # M3
     LIBRARY_TYPE_CHANGED = "library_type_changed"
+    MAINTENANCE = "maintenance"  # EF-INT-018: left by `maintenance off` (L13)

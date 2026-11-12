@@ -9,6 +9,7 @@ import json
 from collections.abc import Collection
 from dataclasses import dataclass
 from datetime import datetime
+from typing import Final
 
 import sqlalchemy as sa
 from sqlalchemy import Connection, Engine
@@ -16,9 +17,14 @@ from sqlalchemy import Connection, Engine
 from shelfhold.infrastructure.clock import Clock
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import platform
+from shelfhold.jobs.kinds import security_repair_kinds
 
 job_view = platform.job_view
+app_setting = platform.app_setting
+instance = platform.instance
 ACTIVE = ("queued", "running", "paused")
+PAUSE_PREFIX: Final = "queue.pause."  # `app_setting` keys: `.all`, `.source.<key>`
+CANCEL_PREFIX: Final = "job.cancel."  # `app_setting` key: a running job asked to stop
 MAX_ATTEMPTS = 3  # a job that failed this many times is a dead letter (EF-INT-023)
 RETRY_BACKOFF_S = (30, 300)  # the wait before the second and the third attempt
 FAILED = "job.failed"  # `error_code` of a job that raised
@@ -128,12 +134,32 @@ class JobLedger:
 
     def claim_running(self, job_id: str) -> bool:
         """`queued` -> `running`, once: False when another task of the same job got there first
-        (a job can reach Huey twice, e.g. a crash between enqueue and `mark_dispatched`)."""
+        (a job can reach Huey twice, e.g. a crash between enqueue and `mark_dispatched`), or when
+        the maintenance mode is on or the queue (or the job's source) is paused.
+
+        The mode and the pause are read by the statement that claims the row, not before it: an
+        entry or a pause that commits between a check and a claim could not otherwise be seen, and
+        the job would start under a mode that reported nothing running (EF-INT-018). A security
+        repair is not stopped by a pause, only by the mode."""
+        frozen = sa.exists().where(instance.c.maintenance_since.is_not(None))
+        paused = sa.exists().where(
+            sa.or_(
+                app_setting.c.key == f"{PAUSE_PREFIX}all",
+                app_setting.c.key
+                == sa.literal(f"{PAUSE_PREFIX}source.").concat(job_view.c.source_key),
+            )
+        )
+        where = [
+            job_view.c.id == job_id,
+            job_view.c.status == "queued",
+            ~frozen,
+            sa.or_(~paused, job_view.c.kind.in_(security_repair_kinds())),
+        ]
         with self._engine.begin() as conn:
-            return bool(
+            claimed = bool(
                 conn.execute(
                     sa.update(job_view)
-                    .where(job_view.c.id == job_id, job_view.c.status == "queued")
+                    .where(*where)
                     .values(
                         status="running",
                         started_at=self._clock.now(),
@@ -141,6 +167,11 @@ class JobLedger:
                     )
                 ).rowcount
             )
+            if claimed:  # a cancel belongs to the run it was asked in, never to the next one
+                conn.execute(
+                    sa.delete(app_setting).where(app_setting.c.key == f"{CANCEL_PREFIX}{job_id}")
+                )
+            return claimed
 
     def set_window_end(self, job_id: str, window_end: datetime) -> bool:
         """Move a still-queued window job to another window; False if it is not queued."""
@@ -221,11 +252,14 @@ class JobLedger:
 
     def resume_paused(self, code: str, job_id: str | None = None) -> list[PendingJob]:
         """The jobs parked with `code` go back to the queue, to be sent again."""
+        where: tuple[object, ...] = (
+            job_view.c.status == "paused", job_view.c.error_code == code,
+            *((job_view.c.id == job_id,) if job_id else ()),
+        )  # fmt: skip
+        with self._engine.connect() as probe:  # the tick asks this every minute: a read, no lock
+            if probe.execute(sa.select(job_view.c.id).where(*where).limit(1)).first() is None:  # type: ignore[arg-type]
+                return []
         with self._engine.begin() as conn:
-            where: tuple[object, ...] = (
-                job_view.c.status == "paused", job_view.c.error_code == code,
-                *((job_view.c.id == job_id,) if job_id else ()),
-            )  # fmt: skip
             rows = conn.execute(sa.select(job_view).where(*where)).all()  # type: ignore[arg-type]
             conn.execute(
                 sa.update(job_view)

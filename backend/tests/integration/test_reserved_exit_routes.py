@@ -38,6 +38,7 @@ BODIES: dict[str, dict[str, object]] = {
     "root reinit": {},
     "store reinit": {},
     "restore acknowledge": {},
+    "maintenance off": {},
 }
 
 
@@ -51,6 +52,11 @@ class _Ops:
     def __init__(self) -> None:
         self.calls: list[str] = []
         self.rating = SimpleNamespace(rate=self._rate)
+        self.maintenance = SimpleNamespace(leave=self._leave)
+
+    def _leave(self, **_: object) -> dict[str, object]:
+        self.calls.append("maintenance_leave")
+        return {"active": False, "changed": True}
 
     def _rate(self, age: str, **_: object) -> dict[str, object]:
         self.calls.append("rate")
@@ -98,6 +104,10 @@ class _Ops:
     def tombstone_set_aside_journal(self, **_: object) -> dict[str, str]:
         self.calls.append("tombstone_set_aside_journal")
         return {}
+
+    @staticmethod
+    def maintenance_active() -> bool:
+        return False  # asked by the gate of the socket methods, not an operation of a route
 
     def __getattr__(self, name: str) -> Callable[..., None]:
         def operation(*_a: object, **_k: object) -> None:

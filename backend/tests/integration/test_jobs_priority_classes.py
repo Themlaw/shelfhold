@@ -104,3 +104,23 @@ def test_the_tick_promotes_the_aged_backfill(
     assert cls == "request"
     drain(pools, order)
     assert order == ["old"]  # the first task was consumed, the duplicate is harmless
+
+
+@pytest.mark.req("EF-INT-017", "EF-INT-018")
+def test_the_tick_promotes_nothing_while_the_maintenance_mode_is_on(
+    pools: JobPools, engine: Engine, clock: ManualClock, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Promoting writes `priority_class` and sends a task: a frozen instance does neither."""
+    order: list[str] = []
+    register(pools, order)
+    pools.submit("fetch", dedupe_key="old-backfill", priority_class="backfill")
+    clock.advance(seconds=BACKFILL_MAX_WAIT.total_seconds() + 60)
+    monkeypatch.setattr(pools.mode, "active", lambda: True)
+    pools.tick()
+    with engine.connect() as conn:
+        frozen = conn.execute(sa.select(platform.job_view.c.priority_class)).scalar()
+    assert frozen == "backfill"
+    monkeypatch.undo()
+    pools.tick()
+    with engine.connect() as conn:
+        assert conn.execute(sa.select(platform.job_view.c.priority_class)).scalar() == "request"

@@ -10,6 +10,7 @@ import json
 import re
 import sqlite3
 from collections.abc import Iterator
+from contextlib import closing
 from datetime import UTC, datetime, timedelta
 from itertools import product
 from types import SimpleNamespace
@@ -105,8 +106,11 @@ def audit_rows(env: AuthEnv, action: str) -> list[tuple[object, ...]]:
 
 
 # one disclosure, one line, written by the route; `forget_root` writes its own line in the
-# transaction that demotes the root, so a refused HTTP call (the host holds the lock) leaves none
+# transaction that demotes the root, so a refused HTTP call (the host holds the lock) leaves none;
+# the queue routes (M3 L13) leave their line, with its target (`pause:<source>`), to the service:
+# one for a change made, none for a refusal or a job that does not exist
 SELF_AUDITED = {"request.unmask", "reconcile.forget_root"}
+SERVICE_AUDITED = {"queue.control"}
 
 
 @pytest.mark.req("EF-USR-022", "EF-USR-024", "ENF-SEC-010")
@@ -128,8 +132,32 @@ def test_real_reserved_routes_follow_the_table_for_a_fresh_then_a_stale_admin(
         fresh = call(api, method, path)
         assert fresh.status_code not in (401, 403), (path, fresh.text)
         written = audit_rows(api, action)[before:]
+        if action == "maintenance.enter":  # the fresh call really entered the mode: leave it, or
+            with closing(sqlite3.connect(api.settings.database_path)) as db:  # the gate (503)
+                db.execute(
+                    "UPDATE instance SET maintenance_since = NULL, maintenance_by = NULL"
+                )  # answers before auth
+                db.commit()
         own = 1 if action in SELF_AUDITED else 0  # the route writes its own line, on a disclosure
-        assert len(written) == 1 - own
+        if action in SERVICE_AUDITED:
+            refused_by_service = "/jobs/" in path  # a job that does not exist: the service refuses
+            if refused_by_service:
+                # unknown job (404), or an empty body the route rejects before the service (422)
+                assert fresh.status_code in (404, 422), (path, fresh.status_code)
+                assert written == []
+            else:  # a change made: exactly one line, and it says what was changed
+                assert len(written) == 1, (path, written)
+                targets = [
+                    t
+                    for (t,) in db_rows(
+                        api.settings, "SELECT target FROM audit WHERE action = ?", action
+                    )
+                ]
+                assert targets[before] and targets[before].startswith(path.rsplit("/", 1)[-1]), (
+                    targets
+                )
+        else:
+            assert len(written) == 1 - own
         for line in written:
             assert line[0] and line[1]  # EF-USR-022 (3): on every action, fresh or not
         api.clock.advance(timedelta(minutes=20))  # beyond the 900 s of P3

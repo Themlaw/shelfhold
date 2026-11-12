@@ -6,6 +6,7 @@ import json
 import re
 from datetime import timedelta
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -334,6 +335,15 @@ def _body(command: str) -> dict[str, Any]:
     }.get(command, {})
 
 
+class _Maintenance:
+    """`maintenance off`: the service behind it is tested with a real database in L13's tests."""
+
+    mode = SimpleNamespace(active=lambda: False)  # the gate of the socket asks this
+
+    def leave(self, **_: object) -> dict[str, object]:
+        return {"active": False, "changed": True}
+
+
 class _Roots:
     """The root exits: the services behind them are tested with real roots elsewhere (L25)."""
 
@@ -395,6 +405,7 @@ def test_reserved_exit_commands_require_fresh_session_or_cli_on_the_real_routes(
             headless=_Headless(),
             roots=_Roots(),
             credentials=_Credentials(),
+            maintenance=_Maintenance(),
         )
         put_health(env, child_exposure=True)
         ids = {"target_id": env.target_id, "work_id": env.new_series().work_id, "root": "x"}
@@ -576,6 +587,11 @@ def test_the_reserved_column_of_the_socket_table_matches_the_catalogue() -> None
     declared.add("normalize.migrate")  # L55: reserved; no waiting state either
     declared |= {"revisions.apply", "revisions.force"}  # M2 L17: the confirmed rewrite batch
     declared.add("contributor.set_died_for_france")  # M2 L15b: no waiting state
+    declared |= {
+        "maintenance.enter",
+        "maintenance.exit",
+        "queue.control",
+    }  # M3 L13
     declared.add("coverage.resplit")  # M2 L26: a re-cut chapter confirmed (EF-BIB-044)
     declared.add("edition.merge")  # M2 L14: reserved; the merge of two Editions, no waiting state
     declared.add("shelf.withdraw")  # M1b L10: applying the removal plan of a family shelf

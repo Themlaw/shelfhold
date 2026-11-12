@@ -271,6 +271,20 @@ export type BatchRatedOut = {
 };
 
 /**
+ * CancelOut
+ */
+export type CancelOut = {
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Outcome
+     */
+    outcome: string;
+};
+
+/**
  * CeilingIn
  */
 export type CeilingIn = {
@@ -1198,6 +1212,33 @@ export type LoginRequest = {
 };
 
 /**
+ * MaintenanceOut
+ */
+export type MaintenanceOut = {
+    /**
+     * Active
+     */
+    active: boolean;
+    /**
+     * Running Jobs
+     */
+    running_jobs: number;
+    /**
+     * Since
+     */
+    since: string | null;
+};
+
+/**
+ * MaintenanceStatusOut
+ */
+export type MaintenanceStatusOut = {
+    maintenance: MaintenanceOut;
+    queue: QueueStateOut;
+    window: WindowOut;
+};
+
+/**
  * MeOut
  */
 export type MeOut = {
@@ -1241,6 +1282,24 @@ export type MigrationProgress = {
      * Total
      */
     total: number;
+};
+
+/**
+ * ModeOut
+ */
+export type ModeOut = {
+    /**
+     * Active
+     */
+    active: boolean;
+    /**
+     * Changed
+     */
+    changed: boolean;
+    /**
+     * Running Jobs
+     */
+    running_jobs?: number | null;
 };
 
 /**
@@ -1515,6 +1574,20 @@ export type PasswordReauth = {
 };
 
 /**
+ * PausedOut
+ */
+export type PausedOut = {
+    /**
+     * Parked
+     */
+    parked: number;
+    /**
+     * Scope
+     */
+    scope: string;
+};
+
+/**
  * PausedQueue
  */
 export type PausedQueue = {
@@ -1664,6 +1737,30 @@ export type PreferencesOut = {
      * Theme
      */
     theme: string;
+};
+
+/**
+ * PriorityIn
+ */
+export type PriorityIn = {
+    /**
+     * Priority Class
+     */
+    priority_class: string;
+};
+
+/**
+ * PriorityOut
+ */
+export type PriorityOut = {
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Priority Class
+     */
+    priority_class: string;
 };
 
 /**
@@ -1873,6 +1970,20 @@ export type QueueOut = {
      * Reason
      */
     reason: string;
+};
+
+/**
+ * QueueStateOut
+ */
+export type QueueStateOut = {
+    /**
+     * Parked Jobs
+     */
+    parked_jobs: number;
+    /**
+     * Paused
+     */
+    paused: Array<string>;
 };
 
 /**
@@ -2111,6 +2222,20 @@ export type RepatriateIn = {
 };
 
 /**
+ * ReplayOut
+ */
+export type ReplayOut = {
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Replayed
+     */
+    replayed: boolean;
+};
+
+/**
  * ResolvedOut
  */
 export type ResolvedOut = {
@@ -2198,6 +2323,20 @@ export type ResplitProposedOut = {
      * Parent
      */
     parent: string;
+};
+
+/**
+ * ResumedOut
+ */
+export type ResumedOut = {
+    /**
+     * Resumed
+     */
+    resumed: number;
+    /**
+     * Scope
+     */
+    scope: string;
 };
 
 /**
@@ -2349,6 +2488,16 @@ export type ScanOut = {
      * Created
      */
     created: Array<string>;
+};
+
+/**
+ * ScopeIn
+ */
+export type ScopeIn = {
+    /**
+     * Source
+     */
+    source?: string | null;
 };
 
 /**
@@ -2687,6 +2836,36 @@ export type SourceIn = {
      * Url
      */
     url: string;
+};
+
+/**
+ * SpanOut
+ */
+export type SpanOut = {
+    /**
+     * Duration S
+     */
+    duration_s: number;
+    /**
+     * End Local
+     */
+    end_local: string;
+    /**
+     * End Utc
+     */
+    end_utc: string;
+    /**
+     * Open
+     */
+    open: boolean;
+    /**
+     * Start Local
+     */
+    start_local: string;
+    /**
+     * Start Utc
+     */
+    start_utc: string;
 };
 
 /**
@@ -3099,6 +3278,34 @@ export type WaitingOut = {
      * Subject
      */
     subject: string;
+};
+
+/**
+ * WindowOut
+ */
+export type WindowOut = {
+    /**
+     * Crosses Midnight
+     */
+    crosses_midnight: boolean;
+    current: SpanOut | null;
+    /**
+     * End
+     */
+    end: string;
+    next: SpanOut;
+    /**
+     * Start
+     */
+    start: string;
+    /**
+     * Timezone
+     */
+    timezone: string;
+    /**
+     * Upcoming
+     */
+    upcoming: Array<SpanOut>;
 };
 
 /**
@@ -5066,6 +5273,120 @@ export type JobStatusResponses = {
 
 export type JobStatusResponse = JobStatusResponses[keyof JobStatusResponses];
 
+export type JobCancelData = {
+    body?: never;
+    path: {
+        /**
+         * Job Id
+         */
+        job_id: string;
+    };
+    query?: never;
+    url: '/api/v1/jobs/{job_id}/cancel';
+};
+
+export type JobCancelErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type JobCancelError = JobCancelErrors[keyof JobCancelErrors];
+
+export type JobCancelResponses = {
+    /**
+     * Successful Response
+     */
+    200: CancelOut;
+};
+
+export type JobCancelResponse = JobCancelResponses[keyof JobCancelResponses];
+
+export type JobPriorityData = {
+    body: PriorityIn;
+    path: {
+        /**
+         * Job Id
+         */
+        job_id: string;
+    };
+    query?: never;
+    url: '/api/v1/jobs/{job_id}/priority';
+};
+
+export type JobPriorityErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type JobPriorityError = JobPriorityErrors[keyof JobPriorityErrors];
+
+export type JobPriorityResponses = {
+    /**
+     * Successful Response
+     */
+    200: PriorityOut;
+};
+
+export type JobPriorityResponse = JobPriorityResponses[keyof JobPriorityResponses];
+
+export type JobReplayData = {
+    body?: never;
+    path: {
+        /**
+         * Job Id
+         */
+        job_id: string;
+    };
+    query?: never;
+    url: '/api/v1/jobs/{job_id}/replay';
+};
+
+export type JobReplayErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type JobReplayError = JobReplayErrors[keyof JobReplayErrors];
+
+export type JobReplayResponses = {
+    /**
+     * Successful Response
+     */
+    200: ReplayOut;
+};
+
+export type JobReplayResponse = JobReplayResponses[keyof JobReplayResponses];
+
 export type JobsRetryData = {
     body?: never;
     path: {
@@ -5103,6 +5424,105 @@ export type JobsRetryResponses = {
 };
 
 export type JobsRetryResponse = JobsRetryResponses[keyof JobsRetryResponses];
+
+export type MaintenanceStatusData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/maintenance';
+};
+
+export type MaintenanceStatusErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type MaintenanceStatusError = MaintenanceStatusErrors[keyof MaintenanceStatusErrors];
+
+export type MaintenanceStatusResponses = {
+    /**
+     * Successful Response
+     */
+    200: MaintenanceStatusOut;
+};
+
+export type MaintenanceStatusResponse = MaintenanceStatusResponses[keyof MaintenanceStatusResponses];
+
+export type MaintenanceEnterData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/maintenance/enter';
+};
+
+export type MaintenanceEnterErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type MaintenanceEnterError = MaintenanceEnterErrors[keyof MaintenanceEnterErrors];
+
+export type MaintenanceEnterResponses = {
+    /**
+     * Successful Response
+     */
+    200: ModeOut;
+};
+
+export type MaintenanceEnterResponse = MaintenanceEnterResponses[keyof MaintenanceEnterResponses];
+
+export type MaintenanceExitData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/maintenance/exit';
+};
+
+export type MaintenanceExitErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type MaintenanceExitError = MaintenanceExitErrors[keyof MaintenanceExitErrors];
+
+export type MaintenanceExitResponses = {
+    /**
+     * Successful Response
+     */
+    200: ModeOut;
+};
+
+export type MaintenanceExitResponse = MaintenanceExitResponses[keyof MaintenanceExitResponses];
 
 export type MeData = {
     body?: never;
@@ -6108,6 +6528,72 @@ export type SetVisibilityResponses = {
 };
 
 export type SetVisibilityResponse = SetVisibilityResponses[keyof SetVisibilityResponses];
+
+export type QueuePauseData = {
+    body: ScopeIn;
+    path?: never;
+    query?: never;
+    url: '/api/v1/queue/pause';
+};
+
+export type QueuePauseErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type QueuePauseError = QueuePauseErrors[keyof QueuePauseErrors];
+
+export type QueuePauseResponses = {
+    /**
+     * Successful Response
+     */
+    200: PausedOut;
+};
+
+export type QueuePauseResponse = QueuePauseResponses[keyof QueuePauseResponses];
+
+export type QueueResumeData = {
+    body: ScopeIn;
+    path?: never;
+    query?: never;
+    url: '/api/v1/queue/resume';
+};
+
+export type QueueResumeErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type QueueResumeError = QueueResumeErrors[keyof QueueResumeErrors];
+
+export type QueueResumeResponses = {
+    /**
+     * Successful Response
+     */
+    200: ResumedOut;
+};
+
+export type QueueResumeResponse = QueueResumeResponses[keyof QueueResumeResponses];
 
 export type RestoreAdoptData = {
     body: ShelfholdInterfacesHttpApiOpsRestoreIn;

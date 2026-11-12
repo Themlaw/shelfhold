@@ -422,6 +422,24 @@
         "title": "BatchRatedOut",
         "type": "object"
       },
+      "CancelOut": {
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "outcome": {
+            "title": "Outcome",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "outcome"
+        ],
+        "title": "CancelOut",
+        "type": "object"
+      },
       "CeilingIn": {
         "properties": {
           "max_age_rating": {
@@ -1927,6 +1945,56 @@
         "title": "LoginRequest",
         "type": "object"
       },
+      "MaintenanceOut": {
+        "properties": {
+          "active": {
+            "title": "Active",
+            "type": "boolean"
+          },
+          "running_jobs": {
+            "title": "Running Jobs",
+            "type": "integer"
+          },
+          "since": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Since"
+          }
+        },
+        "required": [
+          "active",
+          "since",
+          "running_jobs"
+        ],
+        "title": "MaintenanceOut",
+        "type": "object"
+      },
+      "MaintenanceStatusOut": {
+        "properties": {
+          "maintenance": {
+            "$ref": "#/components/schemas/MaintenanceOut"
+          },
+          "queue": {
+            "$ref": "#/components/schemas/QueueStateOut"
+          },
+          "window": {
+            "$ref": "#/components/schemas/WindowOut"
+          }
+        },
+        "required": [
+          "maintenance",
+          "queue",
+          "window"
+        ],
+        "title": "MaintenanceStatusOut",
+        "type": "object"
+      },
       "MeOut": {
         "properties": {
           "id": {
@@ -1988,6 +2056,35 @@
           "total"
         ],
         "title": "MigrationProgress",
+        "type": "object"
+      },
+      "ModeOut": {
+        "properties": {
+          "active": {
+            "title": "Active",
+            "type": "boolean"
+          },
+          "changed": {
+            "title": "Changed",
+            "type": "boolean"
+          },
+          "running_jobs": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Running Jobs"
+          }
+        },
+        "required": [
+          "active",
+          "changed"
+        ],
+        "title": "ModeOut",
         "type": "object"
       },
       "NameEntryOut": {
@@ -2431,6 +2528,24 @@
         "title": "PasswordReauth",
         "type": "object"
       },
+      "PausedOut": {
+        "properties": {
+          "parked": {
+            "title": "Parked",
+            "type": "integer"
+          },
+          "scope": {
+            "title": "Scope",
+            "type": "string"
+          }
+        },
+        "required": [
+          "scope",
+          "parked"
+        ],
+        "title": "PausedOut",
+        "type": "object"
+      },
       "PausedQueue": {
         "properties": {
           "queue": {
@@ -2662,6 +2777,39 @@
           "color_scheme"
         ],
         "title": "PreferencesOut",
+        "type": "object"
+      },
+      "PriorityIn": {
+        "properties": {
+          "priority_class": {
+            "maxLength": 20,
+            "minLength": 1,
+            "title": "Priority Class",
+            "type": "string"
+          }
+        },
+        "required": [
+          "priority_class"
+        ],
+        "title": "PriorityIn",
+        "type": "object"
+      },
+      "PriorityOut": {
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "priority_class": {
+            "title": "Priority Class",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "priority_class"
+        ],
+        "title": "PriorityOut",
         "type": "object"
       },
       "ProbeIn": {
@@ -2995,6 +3143,27 @@
           "command"
         ],
         "title": "QueueOut",
+        "type": "object"
+      },
+      "QueueStateOut": {
+        "properties": {
+          "parked_jobs": {
+            "title": "Parked Jobs",
+            "type": "integer"
+          },
+          "paused": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Paused",
+            "type": "array"
+          }
+        },
+        "required": [
+          "paused",
+          "parked_jobs"
+        ],
+        "title": "QueueStateOut",
         "type": "object"
       },
       "RateBatchIn": {
@@ -3388,6 +3557,24 @@
         "title": "RepatriateIn",
         "type": "object"
       },
+      "ReplayOut": {
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "replayed": {
+            "title": "Replayed",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "replayed"
+        ],
+        "title": "ReplayOut",
+        "type": "object"
+      },
       "ResolvedOut": {
         "properties": {
           "intent_id": {
@@ -3525,6 +3712,24 @@
           "code"
         ],
         "title": "ResplitProposedOut",
+        "type": "object"
+      },
+      "ResumedOut": {
+        "properties": {
+          "resumed": {
+            "title": "Resumed",
+            "type": "integer"
+          },
+          "scope": {
+            "title": "Scope",
+            "type": "string"
+          }
+        },
+        "required": [
+          "scope",
+          "resumed"
+        ],
+        "title": "ResumedOut",
         "type": "object"
       },
       "RevisionOut": {
@@ -3750,6 +3955,25 @@
           "created"
         ],
         "title": "ScanOut",
+        "type": "object"
+      },
+      "ScopeIn": {
+        "properties": {
+          "source": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source"
+          }
+        },
+        "title": "ScopeIn",
         "type": "object"
       },
       "SearchHitOut": {
@@ -4288,6 +4512,44 @@
           "url"
         ],
         "title": "SourceIn",
+        "type": "object"
+      },
+      "SpanOut": {
+        "properties": {
+          "duration_s": {
+            "title": "Duration S",
+            "type": "integer"
+          },
+          "end_local": {
+            "title": "End Local",
+            "type": "string"
+          },
+          "end_utc": {
+            "title": "End Utc",
+            "type": "string"
+          },
+          "open": {
+            "title": "Open",
+            "type": "boolean"
+          },
+          "start_local": {
+            "title": "Start Local",
+            "type": "string"
+          },
+          "start_utc": {
+            "title": "Start Utc",
+            "type": "string"
+          }
+        },
+        "required": [
+          "start_utc",
+          "end_utc",
+          "start_local",
+          "end_local",
+          "duration_s",
+          "open"
+        ],
+        "title": "SpanOut",
         "type": "object"
       },
       "StateIn": {
@@ -4954,6 +5216,57 @@
           "reserved"
         ],
         "title": "WaitingOut",
+        "type": "object"
+      },
+      "WindowOut": {
+        "properties": {
+          "crosses_midnight": {
+            "title": "Crosses Midnight",
+            "type": "boolean"
+          },
+          "current": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SpanOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "end": {
+            "title": "End",
+            "type": "string"
+          },
+          "next": {
+            "$ref": "#/components/schemas/SpanOut"
+          },
+          "start": {
+            "title": "Start",
+            "type": "string"
+          },
+          "timezone": {
+            "title": "Timezone",
+            "type": "string"
+          },
+          "upcoming": {
+            "items": {
+              "$ref": "#/components/schemas/SpanOut"
+            },
+            "title": "Upcoming",
+            "type": "array"
+          }
+        },
+        "required": [
+          "timezone",
+          "start",
+          "end",
+          "crosses_midnight",
+          "current",
+          "next",
+          "upcoming"
+        ],
+        "title": "WindowOut",
         "type": "object"
       },
       "WithdrawIn": {
@@ -8317,6 +8630,202 @@
         ]
       }
     },
+    "/api/v1/jobs/{job_id}/cancel": {
+      "post": {
+        "operationId": "job_cancel",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "title": "Job Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CancelOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Connexion requise, ou mot de passe à confirmer (reauth-required)."
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée)."
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Détail du problème (RFC 9457)."
+          }
+        },
+        "summary": "Job Cancel",
+        "tags": [
+          "maintenance"
+        ]
+      }
+    },
+    "/api/v1/jobs/{job_id}/priority": {
+      "post": {
+        "operationId": "job_priority",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "title": "Job Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PriorityIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PriorityOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Connexion requise, ou mot de passe à confirmer (reauth-required)."
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée)."
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Détail du problème (RFC 9457)."
+          }
+        },
+        "summary": "Job Priority",
+        "tags": [
+          "maintenance"
+        ]
+      }
+    },
+    "/api/v1/jobs/{job_id}/replay": {
+      "post": {
+        "operationId": "job_replay",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "title": "Job Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReplayOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Connexion requise, ou mot de passe à confirmer (reauth-required)."
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée)."
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Détail du problème (RFC 9457)."
+          }
+        },
+        "summary": "Job Replay",
+        "tags": [
+          "maintenance"
+        ]
+      }
+    },
     "/api/v1/jobs/{job_id}/retry": {
       "post": {
         "operationId": "jobs_retry",
@@ -8376,6 +8885,159 @@
         "summary": "Jobs Retry",
         "tags": [
           "operations"
+        ]
+      }
+    },
+    "/api/v1/maintenance": {
+      "get": {
+        "operationId": "maintenance_status",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MaintenanceStatusOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Connexion requise, ou mot de passe à confirmer (reauth-required)."
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée)."
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Détail du problème (RFC 9457)."
+          }
+        },
+        "summary": "Maintenance Status",
+        "tags": [
+          "maintenance"
+        ]
+      }
+    },
+    "/api/v1/maintenance/enter": {
+      "post": {
+        "operationId": "maintenance_enter",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModeOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Connexion requise, ou mot de passe à confirmer (reauth-required)."
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée)."
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Détail du problème (RFC 9457)."
+          }
+        },
+        "summary": "Maintenance Enter",
+        "tags": [
+          "maintenance"
+        ]
+      }
+    },
+    "/api/v1/maintenance/exit": {
+      "post": {
+        "operationId": "maintenance_exit",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModeOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Connexion requise, ou mot de passe à confirmer (reauth-required)."
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée)."
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Détail du problème (RFC 9457)."
+          }
+        },
+        "summary": "Maintenance Exit",
+        "tags": [
+          "maintenance"
         ]
       }
     },
@@ -10080,6 +10742,128 @@
         "summary": "Set Visibility",
         "tags": [
           "profiles"
+        ]
+      }
+    },
+    "/api/v1/queue/pause": {
+      "post": {
+        "operationId": "queue_pause",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ScopeIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PausedOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Connexion requise, ou mot de passe à confirmer (reauth-required)."
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée)."
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Détail du problème (RFC 9457)."
+          }
+        },
+        "summary": "Queue Pause",
+        "tags": [
+          "maintenance"
+        ]
+      }
+    },
+    "/api/v1/queue/resume": {
+      "post": {
+        "operationId": "queue_resume",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ScopeIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResumedOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Connexion requise, ou mot de passe à confirmer (reauth-required)."
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée)."
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Détail du problème (RFC 9457)."
+          }
+        },
+        "summary": "Queue Resume",
+        "tags": [
+          "maintenance"
         ]
       }
     },
@@ -13470,6 +14254,10 @@
       "code": "csrf_failed",
       "status": 403
     },
+    "/api/v1/problems/db.busy": {
+      "code": "db.busy",
+      "status": 503
+    },
     "/api/v1/problems/deletion.blocked": {
       "code": "deletion.blocked",
       "status": 409
@@ -13790,6 +14578,10 @@
       "code": "last_login_factor",
       "status": 409
     },
+    "/api/v1/problems/maintenance.active": {
+      "code": "maintenance.active",
+      "status": 503
+    },
     "/api/v1/problems/metadata.provider-down": {
       "code": "metadata.provider_down",
       "status": 503
@@ -13920,6 +14712,10 @@
     },
     "/api/v1/problems/purge.wal-busy": {
       "code": "purge.wal_busy",
+      "status": 409
+    },
+    "/api/v1/problems/queue.priority-locked": {
+      "code": "queue.priority_locked",
       "status": 409
     },
     "/api/v1/problems/reauth-required": {

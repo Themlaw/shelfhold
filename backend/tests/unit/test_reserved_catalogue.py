@@ -7,6 +7,7 @@ from shelfhold.identity.public import EXIT_ROUTES, RESERVED_ACTIONS, Effect
 
 # The classification of the specification, spelled out (not derived from the code under test).
 RESERVED = {
+    ("maintenance off", "maintenance"),  # M3 L13: the exit of the mode that froze every write
     ("source set-secret", "auth_expired"),
     ("target rotate-key", "key_expiring"),
     ("secrets import", "tombstone_key_unknown"),

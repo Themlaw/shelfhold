@@ -25,6 +25,7 @@ from shelfhold.interfaces.http_api.idempotency import (
 )
 from shelfhold.interfaces.http_api.identity_headers import IdentityHeaderFilter, parse_networks
 from shelfhold.interfaces.http_api.login import build_login_router
+from shelfhold.interfaces.http_api.maintenance import MaintenanceGuard
 from shelfhold.interfaces.http_api.middleware import (
     RequestContextMiddleware,
     SecurityHeadersMiddleware,
@@ -63,6 +64,7 @@ def create_http_app(
     auth: AuthGate | None = None,
     source_url: str | None = None,
     forward_auth_trusted_cidrs: Sequence[str] = (),
+    maintenance_active: Callable[[], bool | None] | None = None,
 ) -> FastAPI:
     """Without `auth` (offline schema export, protocol tests) the authentication routes are still
     declared, so that the exported schema documents them, but nobody is ever authenticated."""
@@ -101,6 +103,8 @@ def create_http_app(
         app.add_middleware(IdempotencyMiddleware, store=idempotency, actor_of=actor_of)
     if auth is not None:
         app.add_middleware(AuthMiddleware, gate=auth)  # outside the ledger: the real actor
+    if maintenance_active is not None:  # EF-INT-018: inside the request context, outside auth
+        app.add_middleware(MaintenanceGuard, active=maintenance_active)
     app.add_middleware(RequestContextMiddleware)
     app.add_middleware(SecurityHeadersMiddleware)  # wraps every response
     app.add_middleware(  # outermost: nothing below ever sees a proxy identity header (P5)
