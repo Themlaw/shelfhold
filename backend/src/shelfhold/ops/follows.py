@@ -16,12 +16,17 @@ import sqlalchemy as sa
 
 from shelfhold.acquisition.application.gap_watch import acknowledge, unacknowledge
 from shelfhold.acquisition.public import (
+    CadencePolicy,
     FollowConfirmationRequired,
     FollowOutcome,
     FollowRefused,
     FollowRequests,
+    SeriesPausedError,
     ServiceNotConnectedError,
+    UnknownSeriesError,
+    request_check_job,
 )
+from shelfhold.i18n import t
 from shelfhold.infrastructure.schema import acquisition
 from shelfhold.ops.errors import (
     CodedRefusal,
@@ -82,6 +87,31 @@ class FollowOps:
                 actor_id=actor_id, now=self._comp.clock.now(),
             )  # fmt: skip
         return {"changed": changed, "undone": False}
+
+    def check(self, edition_id: str) -> dict[str, Any]:
+        """`follow check`: look at this series at the next look, as a job of the news class
+        (EF-SRC-038). The spacing by upstream source applies as for any look. Always-on: no
+        source is asked, the job only reads what the service knows (`refresh` is false)."""
+        pools = self._comp.pools()
+        if pools is None:
+            raise ExitUnavailableError("the job queue is not running")
+        policy = CadencePolicy.from_settings(self._comp.settings)
+        try:
+            plugins = request_check_job(
+                self._comp.engine, self._comp.clock, pools, edition_id, policy
+            )
+        except UnknownSeriesError:
+            raise UnknownSubjectError("no followed series has this identifier") from None
+        except SeriesPausedError:
+            raise InvalidChoiceError("a series that is not paused") from None
+        refresh = self._comp.check_mode() == "piloted"
+        if not plugins:
+            message = t("ops.follow_check_recent")
+        elif refresh:
+            message = t("ops.follow_check_queued")
+        else:
+            message = t("ops.follow_check_always_on")
+        return {"queued": len(plugins), "refresh": refresh and bool(plugins), "message": message}
 
     def follow(
         self, source_key: str, remote_id: str, *, requester_user_id: str | None

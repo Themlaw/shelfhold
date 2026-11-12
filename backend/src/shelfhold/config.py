@@ -87,6 +87,13 @@ class Settings(BaseModel):
     # EF-SRC-037: a binding that fell back to the next rank because its upstream source was not
     # loaded goes back to its own rank when the source is loaded again. Off: it stays where it fell.
     follow_fallback_return: bool = True
+    # EF-SRC-038: the adaptive check cadence of a piloted follow. The wait between two looks at a
+    # series follows its observed rhythm, never under `follow_check_min_s` (1 h) nor over
+    # `follow_check_max_s` (7 days); a finished or paused series is looked at once per
+    # `follow_check_finished_s` (30 days) at most.
+    follow_check_min_s: int = Field(default=3_600, ge=60)
+    follow_check_max_s: int = Field(default=7 * 86_400, ge=60)
+    follow_check_finished_s: int = Field(default=30 * 86_400, ge=3_600)
     # Q50: a non-empty numbering segment stays in `numbering_conflict`, unexported, until the
     # naming golden (one Kavita series per segment) is confirmed by the nightly against a real
     # Kavita (L40). Leave it false; the lot that records the confirmation flips the default.
@@ -238,6 +245,12 @@ class Settings(BaseModel):
     @property
     def database_path(self) -> Path:
         return self.data_dir / "shelfhold.db"
+
+    @model_validator(mode="after")
+    def _check_min_not_above_max(self) -> Self:
+        if self.follow_check_min_s > self.follow_check_max_s:
+            raise ValueError("follow_check_min_s (check_min) must not exceed follow_check_max_s")
+        return self
 
     @model_validator(mode="after")
     def _resume_above_pause(self) -> Self:

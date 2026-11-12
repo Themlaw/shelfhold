@@ -387,6 +387,10 @@ def _gap_ack(ops: OpsServices, by: Principal, p: Params) -> object:
     )  # fmt: skip
 
 
+def _follow_check(ops: OpsServices, _by: Principal, p: Params) -> object:
+    return ops.follows.check(_text(p, "edition_id"))
+
+
 def _unfollow(ops: OpsServices, _by: Principal, p: Params) -> object:
     return ops.follows.unfollow(
         _text(p, "source_key"), _text(p, "remote_id"),
@@ -591,6 +595,7 @@ OPS_METHODS: Mapping[str, tuple[OpsMethod, str | None]] = {
     "ops.follow": (_follow, None),
     "ops.unfollow": (_unfollow, None),
     "ops.follow_gap_ack": (_gap_ack, None),
+    "ops.follow_check": (_follow_check, None),
     "ops.source_search": (_source_search, None),
     "ops.source_filters": (_source_filters, None),
     "ops.acquire": (_acquire, None),

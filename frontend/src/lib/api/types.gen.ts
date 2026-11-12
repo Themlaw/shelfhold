@@ -239,6 +239,24 @@ export type CeilingIn = {
 };
 
 /**
+ * CheckOut
+ */
+export type CheckOut = {
+    /**
+     * Message
+     */
+    message: string;
+    /**
+     * Queued
+     */
+    queued: number;
+    /**
+     * Refresh
+     */
+    refresh: boolean;
+};
+
+/**
  * ConfigOut
  */
 export type ConfigOut = {
@@ -3053,6 +3071,44 @@ export type BackfillStartResponses = {
 };
 
 export type BackfillStartResponse = BackfillStartResponses[keyof BackfillStartResponses];
+
+export type FollowCheckData = {
+    body?: never;
+    path: {
+        /**
+         * Edition Id
+         */
+        edition_id: string;
+    };
+    query?: never;
+    url: '/api/v1/editions/{edition_id}/check';
+};
+
+export type FollowCheckErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type FollowCheckError = FollowCheckErrors[keyof FollowCheckErrors];
+
+export type FollowCheckResponses = {
+    /**
+     * Successful Response
+     */
+    200: CheckOut;
+};
+
+export type FollowCheckResponse = FollowCheckResponses[keyof FollowCheckResponses];
 
 export type EditionSetLangData = {
     body: LanguageIn;

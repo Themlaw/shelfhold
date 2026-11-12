@@ -129,6 +129,9 @@ LOGGED_SETTINGS: dict[str, str] = {
     "fresh_auth_s": "recent_login_window_s",  # a duration
     "revision_min_page_ratio": "revision_min_page_ratio",
     "follow_fallback_return": "follow_fallback_return",
+    "follow_check_min_s": "follow_check_min_s",
+    "follow_check_max_s": "follow_check_max_s",
+    "follow_check_finished_s": "follow_check_finished_s",
     "secret_key_file": "trousseau_path",  # where the keyring is: a path, not the keyring
     "forward_auth_trusted_cidrs": "proxy_trusted_cidrs",  # networks, not credentials
     "maintenance_window_start": "maintenance_window_start",

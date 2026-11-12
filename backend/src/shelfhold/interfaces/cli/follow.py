@@ -7,6 +7,8 @@ automatic download; asking twice changes nothing. `unfollow` keeps the series in
 with the exact command). The route and this command go through the same service.
 `follow gap-ack <edition> <number>` says that a number the series shows as missing does not exist:
 the gap is no longer told. `--undo` takes it back.
+`follow check <edition>` asks for a look at one series at once (EF-SRC-038): a job of the news
+class, spaced by upstream source like any look.
 """
 
 from __future__ import annotations
@@ -20,6 +22,7 @@ from shelfhold.interfaces.local_cli import OpsChannel
 
 NEEDS_CONFIRMATION = 3
 GAP_ACK = "gap-ack"
+CHECK = "check"
 
 
 def register(commands: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
@@ -60,6 +63,13 @@ def _gap_ack(args: argparse.Namespace, channel: OpsChannel) -> int:
 
 
 @ops_command
+def _check(args: argparse.Namespace, channel: OpsChannel) -> int:
+    answer = channel.call("ops.follow_check", edition_id=args.remote_id)
+    print(answer["message"])
+    return 0
+
+
+@ops_command
 def _follow(args: argparse.Namespace, channel: OpsChannel) -> int:
     answer = channel.call("ops.follow", source_key=args.source_key, remote_id=args.remote_id)
     if answer["state"] == "in_progress":
@@ -77,6 +87,11 @@ def run_follow(args: argparse.Namespace, resolved: object) -> int:
             print(t("ops.gap_ack_needs_number"), file=sys.stderr)
             return 2
         return _gap_ack(args, resolved)  # type: ignore[arg-type]
+    if args.source_key == CHECK:
+        if args.number is not None:
+            print(t("ops.follow_extra_argument"), file=sys.stderr)
+            return 2
+        return _check(args, resolved)  # type: ignore[arg-type]
     if args.number is not None:
         print(t("ops.follow_extra_argument"), file=sys.stderr)
         return 2

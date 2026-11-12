@@ -147,6 +147,8 @@ source_binding = sa.Table(
     sa.Column("check_cron", sa.String(), nullable=True),
     sa.Column("next_expected", UtcDateTime(), nullable=True),
     sa.Column("last_checked", UtcDateTime(), nullable=True),
+    # when the source was last asked to refresh the series (the adaptive cadence, EF-SRC-038)
+    sa.Column("last_refreshed_at", UtcDateTime(), nullable=True),
     # declared by the manifest, copied here; the admin may only lower it to `untrusted`
     sa.Column("content_trust", sa.String(), nullable=False, server_default="untrusted"),
     bool_column("linked_from_adoption", default=False),

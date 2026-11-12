@@ -128,7 +128,7 @@ def test_a_locked_keyring_stops_lncrawl_alone_and_the_other_service_still_follow
         )
         monkeypatch.setattr(inst.comp, "suwayomi", lambda: link)
         monkeypatch.setattr(inst.comp, "lncrawl", locked)
-        monkeypatch.setattr(rj, "FollowCycle", Cycle)
+        monkeypatch.setattr(rj, "CadencedFollowCycle", Cycle)
         monkeypatch.setattr(rj, "bounded_receiver", lambda *_a, **_k: None)
         monkeypatch.setattr(rj, "epub_only", lambda keep: keep)
         follow_handler(inst.comp, _Pools())(context("follow.cycle"))  # type: ignore[arg-type]
