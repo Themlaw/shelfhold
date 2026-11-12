@@ -114,7 +114,7 @@ un trousseau absent ou aux droits trop ouverts ; il ne sait pas si vous l'avez e
    La première commande dit ce que cela coûte : la racine n'est plus ni écrite ni vérifiée, ses copies
    restent enregistrées mais ne sont retrouvées que si vous la réadoptez (`root takeover`). **Aucun
    fichier n'est supprimé.** Action réservée : session fraîche, jamais une clé d'API ; elle est auditée.
-   Seule une racine dont la sentinelle est illisible peut être oubliée.
+   Seule une racine dont la sentinelle est absente peut être oubliée ; si elle revient, elle reste en lecture seule et se récupère par `root takeover`.
 6. Si la restauration doit faire disparaître des fichiers recouverts par une pierre tombale (ce que
    vous aviez purgé après la sauvegarde), ils sont **proposés** à la suppression, pas supprimés.
    Ajoutez `--confirm-deletion` pour les supprimer ; c'est une action réservée

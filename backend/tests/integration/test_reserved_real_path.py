@@ -102,7 +102,9 @@ def audit_rows(env: AuthEnv, action: str) -> list[tuple[object, ...]]:
     return db_rows(env.settings, "SELECT session_id, auth_time FROM audit WHERE action = ?", action)
 
 
-SELF_AUDITED = {"request.unmask"}  # one disclosure, one line, written by the route (M2 L31)
+# one disclosure, one line, written by the route; `forget_root` writes its own line in the
+# transaction that demotes the root, so a refused HTTP call (the host CLI holds the lock) leaves none
+SELF_AUDITED = {"request.unmask", "reconcile.forget_root"}
 
 
 @pytest.mark.req("EF-USR-022", "EF-USR-024", "ENF-SEC-010")

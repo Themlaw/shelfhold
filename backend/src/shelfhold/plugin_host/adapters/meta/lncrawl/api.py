@@ -62,6 +62,10 @@ def identifier(value: object) -> str:
     return value
 
 
+# the fields in which an instance names itself or its crawler: a name there is never displayed
+SELF_NAMING: Final = frozenset({"crawler", "source"})
+
+
 def text(value: object, *, limit: int = MAX_TEXT) -> str | None:
     """A bounded display string, or None. Control characters never get through."""
     if not isinstance(value, str):

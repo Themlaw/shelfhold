@@ -400,7 +400,8 @@ def build_ops_router(get_ops: Callable[[], OpsServices]) -> APIRouter:
 
     @router.post(_path("reconcile", "--forget-root"))
     def restore_forget_root(body: ForgetRootIn, request: Request) -> Done:
-        principal = conditional(request, "reconcile.forget_root")  # a fresh session, never a key
+        # a fresh session, never a key; the guard writes no line (the host path writes its own)
+        principal = reserved_action(RESERVED_ACTIONS["reconcile.forget_root"], audit=False)(request)
         with refusals():
             get_ops().restore_forget_root(
                 root_id=body.root_id, confirm=body.confirm, principal=principal
