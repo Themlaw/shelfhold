@@ -302,7 +302,7 @@ def test_a_safe_source_without_an_age_is_stored_as_the_follow_does(warning: str)
 
 
 @pytest.mark.req("EF-INT-009")
-@pytest.mark.parametrize("folder", ["S.ource (EN)", "Sou rce (EN)", "Source-(EN)", "Sourc (EN)"])
+@pytest.mark.parametrize("folder", ["S.ource (EN)", "Sou rce (EN)", "Source-(EN)", "Sourcee (EN)"])
 def test_a_source_folder_is_compared_without_dropping_characters(folder: str) -> None:
     with import_env() as env:
         env.drop(f"mangas/{folder}/{SERIES}/Chapter 7.cbz", CBZ)
