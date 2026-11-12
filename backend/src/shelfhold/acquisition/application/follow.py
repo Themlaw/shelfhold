@@ -327,6 +327,7 @@ class FollowCycle:
         self._receive_files = receive
         self._keep_range = keep_range  # the host store of a ranged file (EF-SRC-032)
         self._ranged: dict[str, list[UnitInfo]] = {}  # listing of the ranged series, this cycle
+        self._ranged_ids: dict[str, frozenset[str]] = {}  # their Units under a volume's file
         self._left_out: dict[str, list[str]] = {}
         self._listed: dict[str, list[UnitInfo]] = {}  # discovered now: the listing already read
         self._notices = Notices(clock)
@@ -608,6 +609,7 @@ class FollowCycle:
             tickets = RangeTickets(
                 self._engine, self._clock, self._service, self._fetcher, self._receive_files,
                 self._keep_range, edition_id=binding.edition_id, binding_id=binding.id, series=ref,
+                origin=getattr(self._service, "origin", None),
             )  # fmt: skip
             for group in tickets.plan(units):
                 tickets.request(group, budget)
@@ -879,6 +881,9 @@ class FollowCycle:
         self._quarantine(binding)
         if self._is_ranged():
             self._ranged[binding.id] = units
+            self._ranged_ids[binding.id] = frozenset(
+                u.remote_unit_id for u in units if u.volume_label
+            )
         await self._credit_authors(binding, ref)
         with self._engine.connect() as connection:
             mark = watermark_of(connection, binding.edition_id)
@@ -1011,6 +1016,8 @@ class FollowCycle:
             connection, look.binding.edition_id, result.unit_id, info.volume_label
         ):
             return
+        if info.volume_label and self._is_ranged():
+            return  # the file of its volume carries it: the range request asks, not the chapter
         if result.outcome not in (IngestOutcome.NEW_VARIANT, IngestOutcome.SUPERSEDING):
             return
         record_release(connection, result.team_id, info.published_at or look.now)
@@ -1249,6 +1256,13 @@ class FollowCycle:
             binding = by_id.get(election.binding_id) if election else None
             if election is None or binding is None:
                 return "skipped"  # no Variant that a followed, active binding can be asked for
+            remote = connection.execute(
+                sa.select(catalog.unit_variant.c.remote_unit_id).where(
+                    catalog.unit_variant.c.id == election.variant_id
+                )
+            ).scalar()
+            if remote in self._ranged_ids.get(binding.id, ()):
+                return "skipped"  # under a volume's file: the range request asks, not the chapter
             if not self._take(binding, budget, catch_up=catch_up):
                 return "exhausted"
             opened = DownloadTickets.open(

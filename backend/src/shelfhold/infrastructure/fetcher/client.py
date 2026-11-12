@@ -591,10 +591,11 @@ class IntegrationFetcher(GuardedFetcher):
         transport: httpx2.AsyncBaseTransport | None = None,
         tls_context: ssl.SSLContext | None = None,
         user_agent: str = USER_AGENT,
+        domains: DomainAllowlist | None = None,
     ) -> None:
         super().__init__(
             resolver, limits=limits, transport=transport, tls_context=tls_context,
-            user_agent=user_agent,
+            user_agent=user_agent, domains=domains,
         )  # fmt: skip
         self._lan = lan_targets
 

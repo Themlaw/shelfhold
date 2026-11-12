@@ -17,6 +17,7 @@ import httpx2
 
 from shelfhold.infrastructure.fetcher.client import FetchLimits, GuardedFetcher, IntegrationFetcher
 from shelfhold.infrastructure.fetcher.errors import FetchError, InvalidLanTarget
+from shelfhold.infrastructure.fetcher.guard import DomainAllowlist
 from shelfhold.infrastructure.fetcher.lan import LanTargets
 from shelfhold.infrastructure.fetcher.resolver import Resolver, SystemResolver
 from shelfhold.sdk.fetcher import Response
@@ -30,7 +31,11 @@ class Network:
     transport: httpx2.AsyncBaseTransport | None = None
 
     async def open_integration_fetcher(
-        self, url: str, limits: FetchLimits | None = None
+        self,
+        url: str,
+        limits: FetchLimits | None = None,
+        *,
+        domains: DomainAllowlist | None = None,
     ) -> GuardedFetcher:
         """`limits`: the delays of this service when they are not the default ones (the wake of a
         tool that sleeps waits longer than a request does)."""
@@ -39,13 +44,19 @@ class Network:
         try:
             lan = await LanTargets.declare([f"{parts.hostname}:{port}"], self.resolver)
         except (InvalidLanTarget, FetchError):  # not a LAN address, or blocked: stay guarded
-            return GuardedFetcher(self.resolver, limits=limits, transport=self.transport)
+            return GuardedFetcher(
+                self.resolver, limits=limits, transport=self.transport, domains=domains
+            )
         return IntegrationFetcher(
-            self.resolver, lan_targets=lan, limits=limits, transport=self.transport
-        )
+            self.resolver, lan_targets=lan, limits=limits, transport=self.transport,
+            domains=domains,
+        )  # fmt: skip
 
-    def integration_fetcher(self, url: str, limits: FetchLimits | None = None) -> GuardedFetcher:
-        return asyncio.run(self.open_integration_fetcher(url, limits))
+    def integration_fetcher(
+        self, url: str, limits: FetchLimits | None = None, *, domains: DomainAllowlist | None = None
+    ) -> GuardedFetcher:
+        """`domains`: the DomainRules of a plugin's service, checked by name at every hop."""
+        return asyncio.run(self.open_integration_fetcher(url, limits, domains=domains))
 
     def one_shot(self, url: str, limits: FetchLimits | None = None) -> OneShotFetcher:
         """A fetcher that opens its connection for each call and closes it: it is bound to no

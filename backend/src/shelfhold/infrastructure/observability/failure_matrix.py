@@ -145,7 +145,10 @@ _CLOSED = {
     "tombstone_journal_truncated": "tests/property/test_tombstone_chain.py::test_tombstone_journal_truncation_detected",
     "store_missing_after_restore": "tests/integration/test_backup_restore.py::test_restore_without_store_marks_store_missing_no_deletion",
 }
-# The M2 rows whose emitter has shipped (L13).
+# The M2 rows whose emitter has shipped (L13, L25).
+_CLOSED["lncrawl_unreachable"] = (
+    "tests/integration/test_lncrawl_follow.py::test_lncrawl_unreachable_pauses_service"
+)
 _CLOSED["metadata_api_down"] = (
     "tests/integration/test_openlibrary_enrich.py::test_metadata_provider_down_notifies_only"
 )

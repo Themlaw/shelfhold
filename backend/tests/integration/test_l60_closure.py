@@ -35,6 +35,7 @@ from tests.headless_env import SUWAYOMI_URL, headless
 from tests.integration.test_schema_catalog import add_edition, add_work
 from tests.l41_env import context, instance
 from tests.l50_env import REMOTE_ROOT
+from tests.ranged_env import volume_epub
 
 # -- ENF-SEC-001: one rule for every service address ------------------------------------------------
 
@@ -116,7 +117,7 @@ def test_follow_handler_keeps_the_file_of_a_range_it_asked_for(
     async def receive(asset: Any) -> Any:
         staged = tmp_path / "staged" / asset.filename
         staged.parent.mkdir(exist_ok=True)
-        staged.write_bytes(b"PK-synthetic-" + asset.filename.encode())
+        staged.write_bytes(volume_epub(1))  # a ranged file is an EPUB container (M2 L25)
         import hashlib
 
         digest = "sha256:" + hashlib.sha256(staged.read_bytes()).hexdigest()

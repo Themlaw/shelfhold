@@ -23,6 +23,7 @@ install runs every job and none of them touches anything.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import threading
 import time
 from collections.abc import Callable, Iterable
@@ -40,8 +41,10 @@ from shelfhold.acquisition.public import (
     ACQUIRE_JOB_KIND,
     FOLLOW_JOB_KIND,
     FollowCycle,
+    FollowReport,
     LeasedReceiver,
     bounded_receiver,
+    epub_only,
 )
 from shelfhold.composition import (
     KAVITA_WAKE,
@@ -263,11 +266,21 @@ def acquire_handler(comp: Composition, pools: JobPools) -> Callable[[JobContext]
 def follow_handler(comp: Composition, pools: JobPools) -> Callable[[JobContext], None]:
     def run(context: JobContext) -> None:
         arrived: list[int] = []
-        link = comp.suwayomi()
-        if link is None:
+        links: list[Any] = []
+        for build in (comp.suwayomi, comp.lncrawl):
+            try:
+                link = build()
+            except KeyringUnavailableError as error:
+                # a locked keyring stops the service that needs a key, never the others
+                log.info("follow.link_skipped", reason=type(error).__name__)
+                continue
+            if link is not None:
+                links.append(link)
+        if not links:
             log.debug("follow.skipped", reason="no_connected_service")
             context.record(skipped="no_connected_service")
             return  # no connected service configured yet
+        closed: set[int] = set()
         try:
             with ExitStack() as stack:
                 lazy = _LazyWrite(comp, stack)
@@ -277,40 +290,48 @@ def follow_handler(comp: Composition, pools: JobPools) -> Callable[[JobContext],
 
                 keeper = RangedKeeper(comp.settings.data_dir)
                 keeper.sweep(comp.engine)  # files of a transaction that did not commit
-                cycle = FollowCycle(
-                    comp.engine, comp.bus, comp.clock, link.service, link.fetcher,
-                    store=cast("PassthroughStore", _LazyStore(comp, lazy)),
-                    receive=LeasedReceiver(
-                        bounded_receiver(
-                            link.guarded, staging_dir=comp.settings.data_dir / "tmp",
-                            max_bytes=comp.settings.received_cbz_max_bytes,
-                            authorize=getattr(link.fetcher, "authorize", None),  # the archive
-                        ),  # asks for the same credential as the other routes of the service
-                        lazy.get,  # the lease first: nothing is downloaded that cannot be filed
-                    ),
-                    place=place, slots=pools.slots,
-                    keep_range=keeper,  # EF-SRC-034
-                    tombstones=cast("Any", _LazyTombstones(comp)),
-                    wakes=comp.wakes(),
-                    check_mode="piloted" if comp.check_mode() == "piloted" else "always_on",
-                    min_page_ratio=comp.settings.revision_min_page_ratio,
-                    fallback_return=comp.settings.follow_fallback_return,
-                    upgrader=_LazyUpgrader(comp, lazy),
-                )  # fmt: skip
+                for position, link in enumerate(links):
+                    cycle = FollowCycle(
+                        comp.engine, comp.bus, comp.clock, link.service, link.fetcher,
+                        store=cast("PassthroughStore", _LazyStore(comp, lazy)),
+                        receive=LeasedReceiver(
+                            bounded_receiver(
+                                link.guarded, staging_dir=comp.settings.data_dir / "tmp",
+                                max_bytes=comp.settings.received_cbz_max_bytes,
+                                authorize=getattr(link.fetcher, "authorize", None),  # the archive
+                            ),  # asks for the same credential as the other routes of the service
+                            lazy.get,  # the lease first: nothing is downloaded that cannot be filed
+                        ),
+                        place=place, slots=pools.slots,
+                        keep_range=epub_only(keeper),  # EF-SRC-034: an EPUB container, nothing else
+                        tombstones=cast("Any", _LazyTombstones(comp)),
+                        wakes=comp.wakes(),
+                        check_mode="piloted" if comp.check_mode() == "piloted" else "always_on",
+                        min_page_ratio=comp.settings.revision_min_page_ratio,
+                        fallback_return=comp.settings.follow_fallback_return,
+                        upgrader=_LazyUpgrader(comp, lazy),
+                    )  # fmt: skip
+                    prefix = "" if position == 0 else f"{link.service.manifest.key}_"
 
-                async def once() -> None:
-                    try:
-                        report = await cycle.run()
-                        context.record(**report.counters())
-                        arrived.append(report.fetched)
-                    finally:
-                        await link.guarded.aclose()
+                    async def once(cycle: FollowCycle = cycle, link: Any = link) -> FollowReport:
+                        try:
+                            return await cycle.run()
+                        finally:
+                            closed.add(id(link))
+                            await link.guarded.aclose()
 
-                asyncio.run(once())
+                    report = asyncio.run(once())
+                    context.record(**{f"{prefix}{k}": v for k, v in report.counters().items()})
+                    arrived.append(report.fetched)
         except (NoLibraryError, KeyringUnavailableError) as error:
             log.info("follow.cycle_skipped", reason=type(error).__name__)
             context.record(skipped=type(error).__name__)
             return
+        finally:
+            for link in links:  # a service the cycle never reached has its fetcher closed too
+                if id(link) not in closed:
+                    with contextlib.suppress(Exception):
+                        asyncio.run(link.guarded.aclose())
         if any(arrived):  # what arrived goes out; a quiet cycle asks for nothing (the cron does)
             pools.submit(EXPORT_JOB_KIND, dedupe_key=EXPORT_JOB_KIND)
 

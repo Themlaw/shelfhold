@@ -337,6 +337,8 @@ def test_failure_matrix_m2_rows_labelled_m2() -> None:
     closed = {
         "metadata_api_down": "tests/integration/test_openlibrary_enrich.py"
         "::test_metadata_provider_down_notifies_only",  # M2 L13
+        "lncrawl_unreachable": "tests/integration/test_lncrawl_follow.py"
+        "::test_lncrawl_unreachable_pauses_service",  # M2 L25
     }
     for row in rows_for("M2"):
         assert row.proof == closed.get(row.key, "lot M2: the emitter ships with it"), row.key
