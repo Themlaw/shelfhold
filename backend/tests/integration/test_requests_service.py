@@ -566,3 +566,27 @@ def test_an_age_is_written_over_a_laxer_one_never_over_a_stricter_one(settings: 
         assert _to_apply(connection, rated, AgeRating(3)) is None  # laxer: the 6 stands
         assert _to_apply(connection, fresh, AgeRating(3)) == AgeRating(3)  # nobody rated it
         assert _to_apply(connection, fresh, None) is None
+
+
+@pytest.mark.req("EF-USR-010", "EF-USR-006")
+def test_arrived_series_is_reclassed_by_a_stricter_age_never_by_a_laxer_one(
+    settings: Settings,
+) -> None:
+    ports = FakePorts(kinds={"alpha": "manga"})
+    with rig(settings, ports=ports) as r:
+        first = ask(r, CHILD_ID, "child")
+        r.service.approve(first, admin(), age=16)
+        with r.engine.begin() as connection:
+            work = bind_work(connection, "alpha", "r1")
+        r.service.arrived(work)
+        lax = ask(r, SIBLING_ID, "child")
+        shown = r.service.preview(lax, admin())
+        assert (shown.current_age, shown.current_x) == (16, False)
+        r.service.approve(lax, admin(), age=10)
+        ages = r.rows("SELECT age_rating FROM work WHERE id = :w", w=work)
+        assert ages[0][0] == 16 and r.audit("rate") != []  # the laxer 10 never reclasses
+        before = len(r.audit("rate"))
+        strict = r.service.create_from_ref(requester(MEMBER_ID, "member"), REF).id
+        assert r.service.preview(strict, admin()).current_age == 16
+        r.service.approve(strict, admin())  # an adult's request carries no age
+        assert len(r.audit("rate")) == before

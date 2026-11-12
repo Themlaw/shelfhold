@@ -99,6 +99,8 @@ class ApprovalOut(BaseModel):
     units_minimum: bool  # a follow: the Units known now, more will come
     decided_age: int | None  # an age already decided for this series, to see before choosing
     decided_x: bool
+    current_age: int | None  # the age the Work has now, when it is already rated
+    current_x: bool
     needs_age: bool  # a child's request: "Choisir un âge"
     confirmation_required: bool  # over 100 Units or 5 GiB
     edition_id: str | None

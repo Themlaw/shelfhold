@@ -140,6 +140,8 @@ class ApprovalPreview:
     units_minimum: bool = False  # a follow: more Units will be added later
     decided_age: int | None = None  # an age already decided for this Work or series
     decided_x: bool = False
+    current_age: int | None = None  # the age the Work already has, when it is rated
+    current_x: bool = False
 
 
 class Ports(Protocol):
@@ -347,6 +349,8 @@ class RequestService:
             shelf = self._ports.proposed_shelf(edition) if edition else None
             rated = _rated(connection, work) if work else False
             decided = _decided(connection, row, work)
+            held = work or _bound_work(connection, resolved.source)
+            current = _current_rating(connection, held) if held else None
             return ApprovalPreview(
                 estimate.units, estimate.size_bytes,
                 needs_age=needs_age(owner.role) and not rated,
@@ -358,6 +362,8 @@ class RequestService:
                 resolved=resolved.found, units_minimum=estimate.ongoing,
                 decided_age=None if decided is None else decided.min_age,
                 decided_x=bool(decided and decided.x),
+                current_age=None if current is None else current.min_age,
+                current_x=bool(current and current.x),
             )  # fmt: skip
 
     # -- deciding -------------------------------------------------------------------------------
@@ -405,9 +411,13 @@ class RequestService:
             )  # fmt: skip
             work, edition, handle = prepared.work_id, prepared.edition_id, prepared.handle
         shelf: str | None = None
+        if manga:  # a followed series whose Work already exists: only its age can still change
+            with self._engine.connect() as connection:
+                work = _bound_work(connection, resolved.source)
         if work is not None:
             with self._engine.connect() as connection:
-                edition = edition or self._edition(connection, work, row.requester_user_id)
+                if not manga:
+                    edition = edition or self._edition(connection, work, row.requester_user_id)
                 to_apply = _to_apply(connection, work, rating)
             shelf = self._ports.settle(work, edition, to_apply, shelf_id, principal=principal)
         self._claim(request_id, principal, rating, shelf_id, resume=resume)
@@ -751,6 +761,32 @@ def _to_apply(connection: Connection, work_id: str, rating: AgeRating | None) ->
     if row is None or row.rated_at is None:
         return rating
     return rating if _strictness(rating) > (int(row.age_rating), bool(row.age_x)) else None
+
+
+def _bound_work(connection: Connection, source: tuple[str, str] | None) -> str | None:
+    """The Work a source result is already bound to (a followed series that has arrived)."""
+    if source is None:
+        return None
+    item, binding = acquisition.source_item, acquisition.source_binding
+    found: str | None = connection.execute(
+        sa.select(binding.c.work_id)
+        .select_from(binding.join(item, item.c.id == binding.c.source_item_id))
+        .where(item.c.source_key == source[0], item.c.remote_id == source[1])
+        .order_by(binding.c.work_id)
+        .limit(1)
+    ).scalar_one_or_none()
+    return found
+
+
+def _current_rating(connection: Connection, work_id: str) -> AgeRating | None:
+    row = connection.execute(
+        sa.select(catalog.work.c.rated_at, catalog.work.c.age_rating, catalog.work.c.age_x).where(
+            catalog.work.c.id == work_id
+        )
+    ).first()
+    if row is None or row.rated_at is None:
+        return None
+    return AgeRating(18, x=True) if row.age_x else AgeRating(int(row.age_rating))
 
 
 def _decided(connection: Connection, row: Any, work_id: str | None) -> AgeRating | None:

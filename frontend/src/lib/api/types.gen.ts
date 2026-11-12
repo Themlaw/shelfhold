@@ -177,6 +177,14 @@ export type ApprovalOut = {
      */
     confirmation_required: boolean;
     /**
+     * Current Age
+     */
+    current_age: number | null;
+    /**
+     * Current X
+     */
+    current_x: boolean;
+    /**
      * Decided Age
      */
     decided_age: number | null;

@@ -263,6 +263,21 @@
             "title": "Confirmation Required",
             "type": "boolean"
           },
+          "current_age": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current Age"
+          },
+          "current_x": {
+            "title": "Current X",
+            "type": "boolean"
+          },
           "decided_age": {
             "anyOf": [
               {
@@ -334,6 +349,8 @@
           "units_minimum",
           "decided_age",
           "decided_x",
+          "current_age",
+          "current_x",
           "needs_age",
           "confirmation_required",
           "edition_id",
