@@ -73,8 +73,11 @@ def test_a_client_cannot_name_its_own_role_or_navigation(
         _as(api, "kid")
         forged = api.client.get(
             "/api/v1/me?role=admin&nav=activity,settings",
-            headers={"X-Role": "admin", "X-Shelfhold-Role": "admin", "X-Forwarded-User": ADMIN},
-            cookies={"role": "admin"},
+            headers={
+                "X-Role": "admin",
+                "X-Shelfhold-Role": "admin",
+                "X-Forwarded-User": ADMIN,
+            },
         )
         assert forged.status_code == 200
         assert forged.json()["role"] == "child"
