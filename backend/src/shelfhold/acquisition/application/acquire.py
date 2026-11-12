@@ -581,27 +581,19 @@ class NativeAcquirer:
         # An Edition that already sits on a shelf stays there (no withdrawal is automatic,
         # EF-BIB-037): a suggestion above its rating shows as `withdrawal_pending` (`shelf
         # withdraw`) and the export refuses the Edition, so the new file does not reach the shelf
-        kept_on = _shelf_of(connection, edition_id) if joined else None
         if ids:
             if screen is None:  # pragma: no cover (`prepare` refuses it before the transaction)
                 raise AcquireRefused("acquire.tombstones_unavailable")
             arrival = AutoAttachService(tombstones=screen).arrive(
-                connection, IncomingEdition(edition_id, shelf, ids), now=now
+                connection, IncomingEdition(edition_id, shelf, ids, keep_filed=joined), now=now
             )
             if "tombstoned" in arrival.conflicts:
                 raise AcquireRefused("acquire.work_tombstoned", "the work was deleted on purpose")
             attached = arrival.work_id != work_id  # an identifier it carried named another Work
             work_id = arrival.work_id
         else:
-            if kept_on is None:
-                file_new_edition(connection, edition_id, shelf)
+            file_new_edition(connection, edition_id, shelf, keep_filed=joined)
             attached = False
-        if kept_on is not None:  # the gate of the arrival must not take it off its shelf
-            connection.execute(
-                sa.update(catalog.edition)
-                .where(catalog.edition.c.id == edition_id)
-                .values(shelf_id=kept_on)
-            )
         if not attached:  # an Edition attached to a known Work leaves that Work's credits alone
             credit_authors(connection, work_id, info, _clean)
         if translator is not None:
@@ -902,12 +894,6 @@ def _language(raw: str | None) -> str | None:
         return str(edition_key_lang(raw))
     except LanguageError:
         return None
-
-
-def _shelf_of(connection: Connection, edition_id: str) -> str | None:
-    return connection.execute(
-        sa.select(catalog.edition.c.shelf_id).where(catalog.edition.c.id == edition_id)
-    ).scalar()
 
 
 def _refuse_tombstoned(screen: TombstoneScreen | None, ids: Sequence[ExternalId]) -> None:

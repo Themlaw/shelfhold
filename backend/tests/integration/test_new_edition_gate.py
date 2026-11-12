@@ -69,6 +69,38 @@ def test_unrated_new_edition_never_enters_family_shelf() -> None:
         assert gate(env, later, env.shelf_id) == Filing(env.shelf_id, waiting=False, reason=None)
 
 
+def test_gate_keeps_an_edition_already_filed_where_it_is() -> None:
+    """A book that joins an Edition already on a shelf never moves it, whatever the admission says
+    (no withdrawal is automatic, M1b L10): the caller asks `keep_filed`, the reason is reported."""
+    with family_env(13) as env:
+        series = env.new_series()
+        rate(env, series, 10)
+        later = add_edition_to(env, series)
+        rate_edition(env, later, 10)
+        with env.engine.begin() as connection:
+            connection.execute(
+                sa.update(catalog.edition)
+                .where(catalog.edition.c.id == later)
+                .values(shelf_id=env.shelf_id)
+            )
+        suggest(env, later, 18)  # above the rating: a free gate would unfile it
+        with env.engine.begin() as connection:
+            kept = file_new_edition(connection, later, env.shelf_id, keep_filed=True)
+        assert kept == Filing(env.shelf_id, waiting=True, reason="suggestion_above")
+        assert shelf_of(env, later) == env.shelf_id
+        assert gate(env, later, env.shelf_id).shelf_id is None  # the free gate still withdraws
+
+
+def test_gate_keep_filed_files_an_unfiled_edition_as_usual() -> None:
+    with family_env(13) as env:
+        series = env.new_series()
+        rate(env, series, 10)
+        later = add_edition_to(env, series)
+        with env.engine.begin() as connection:
+            filing = file_new_edition(connection, later, env.shelf_id, keep_filed=True)
+        assert filing == Filing(None, waiting=True, reason="unrated_edition")
+
+
 def test_gate_files_on_an_adult_shelf_at_once() -> None:
     with family_env(13) as env:
         adult_shelf, _ = add_adult_shelf(env)
