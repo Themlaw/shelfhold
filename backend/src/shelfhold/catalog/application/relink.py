@@ -23,6 +23,7 @@ from shelfhold.catalog.application.new_edition_gate import file_new_edition
 from shelfhold.catalog.application.places import place_key
 from shelfhold.catalog.application.rating import RatingService
 from shelfhold.catalog.application.service import CatalogService
+from shelfhold.catalog.domain.identity import sort_title
 from shelfhold.identity.public import AuditEntry, Credential, Principal, audit_insert
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import acquisition, catalog
@@ -33,6 +34,12 @@ __all__ = [
     "RelinkRequest",
     "RelinkResult",
     "Relinker",
+    "SameWorkProposal",
+    "detect_suwayomi_migration",
+    "migration_proposal",
+    "propose_same_work",
+    "same_work",
+    "suwayomi_migration",
 ]
 
 
@@ -73,6 +80,16 @@ class RelinkResult:
     carried_teams: tuple[str, ...]  # raw labels whose alias moved to the new binding
 
 
+@dataclass(frozen=True)
+class SameWorkProposal:
+    """A new source whose normalized title matches a Work whose old binding disappeared:
+    propose "Même œuvre ?" instead of creating a new Work (EF-BIB-029)."""
+
+    work_id: str
+    title: str
+    reason: str = "same_work"
+
+
 class Relinker:
     def __init__(
         self, catalog_for: Callable[[Connection], CatalogService], rating: RatingService
@@ -110,6 +127,21 @@ class Relinker:
             )
         )  # fmt: skip
         return RelinkResult(binding_id, edition_id, created, missing, to_rate, carried)
+
+    # -- detection of a Suwayomi migration ---------------------------------------------
+    def detect_suwayomi_migration(
+        self, connection: Connection, *, title: str, plugin_id: str | None = None
+    ) -> SameWorkProposal | None:
+        return detect_suwayomi_migration(connection, title=title, plugin_id=plugin_id)
+
+    def propose_same_work(
+        self, connection: Connection, *, title: str, plugin_id: str | None = None
+    ) -> SameWorkProposal | None:
+        return self.detect_suwayomi_migration(connection, title=title, plugin_id=plugin_id)
+
+    same_work = propose_same_work
+    suwayomi_migration = detect_suwayomi_migration
+    migration_proposal = detect_suwayomi_migration
 
     # -- the Edition ----------------------------------------------------------------------------
     @staticmethod
@@ -297,6 +329,43 @@ def _carry_teams(
         if ordered:
             books.set_team_priority(binding.edition_id, ordered)
     return tuple(labels)
+
+
+def detect_suwayomi_migration(
+    connection: Connection, *, title: str, plugin_id: str | None = None
+) -> SameWorkProposal | None:
+    """An old binding that disappeared (inactive) plus a new source with the same normalized
+    title: propose "Même œuvre ?" instead of creating a new Work (EF-BIB-029)."""
+    target = sort_title(title)
+    work = catalog.work
+    binding = acquisition.source_binding
+    rows = connection.execute(sa.select(work.c.id, work.c.title)).all()
+    candidates: list[tuple[str, str]] = []
+    for row in rows:
+        if sort_title(row.title or "") != target:
+            continue
+        # an old binding that disappeared for this work
+        has_gone = connection.execute(
+            sa.select(sa.func.count())
+            .select_from(binding)
+            .where(
+                binding.c.work_id == row.id,
+                binding.c.active.is_(False),
+            )
+        ).scalar()
+        if has_gone:
+            candidates.append((str(row.id), row.title or ""))
+    if not candidates:
+        return None
+    work_id, found_title = candidates[0]
+    return SameWorkProposal(work_id=work_id, title=found_title)
+
+
+# Aliases
+propose_same_work = detect_suwayomi_migration
+same_work = detect_suwayomi_migration
+suwayomi_migration = detect_suwayomi_migration
+migration_proposal = detect_suwayomi_migration
 
 
 def _missing(

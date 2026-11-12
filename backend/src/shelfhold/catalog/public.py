@@ -186,6 +186,14 @@ from shelfhold.catalog.domain.provenance import FieldKey, is_age_field
 from shelfhold.catalog.domain.public_domain import Verdict
 from shelfhold.catalog.domain.revisions import DEFAULT_MIN_PAGE_RATIO, suspect_reason
 from shelfhold.catalog.domain.sort_key import sort_key
+from shelfhold.catalog.domain.team_offset import (  # noqa: F401
+    OffsetCheck,
+    OffsetMismatch,
+    apply_offset,
+)
+from shelfhold.catalog.domain.team_offset import (
+    check as check_team_offset,
+)
 from shelfhold.catalog.lang import LANG_NORMALIZER_ID, LanguageError, edition_key_lang
 from shelfhold.events.bus import EventBus
 from shelfhold.identity.public import Principal
@@ -418,6 +426,8 @@ __all__ = [
     "NoPersonFieldName",
     "NormalizerId",
     "NormalizerRegistry",
+    "OffsetCheck",
+    "OffsetMismatch",
     "PendingRevision",
     "PersonField",
     "RatingRefusedError",
@@ -461,6 +471,7 @@ __all__ = [
     "bounds_from_toc",
     "ceiling_of",
     "check_coverage",
+    "check_team_offset",
     "content_warning_age",
     "default_registry",
     "edit_field",
