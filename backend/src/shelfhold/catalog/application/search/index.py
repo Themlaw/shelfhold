@@ -12,6 +12,7 @@ from dataclasses import dataclass
 import sqlalchemy as sa
 
 from shelfhold.catalog.application.search.capability import SearchCapability, ensure_tables
+from shelfhold.catalog.application.search.romanize import romanized
 from shelfhold.catalog.application.search.tables import fts_tables
 from shelfhold.infrastructure.schema import catalog
 
@@ -34,7 +35,9 @@ class Document:
 
 
 def _join(values: set[str]) -> str:
-    return "\n".join(sorted(values))
+    """The texts, and the reading of each Japanese one (D6): found by either writing."""
+    readings = {r for value in values if (r := romanized(value))}
+    return "\n".join(sorted(values | readings))
 
 
 def documents(connection: sa.Connection, work_id: str | None = None) -> list[Document]:

@@ -237,6 +237,17 @@ def test_search_column_targeting_cannot_reach_other_columns(h: Harness) -> None:
     assert _ids(h, digest) == [] and _ids(h, f"digest:{digest}") == []
 
 
+@pytest.mark.req("EF-BIB-010")
+def test_search_romanized_title(h: Harness) -> None:
+    """D6: a Japanese title is also found by its romanization, computed at the indexing."""
+    work = h.work(title="進撃の巨人")
+    rebuild_search_index(h.connection)
+    assert _ids(h, "shingeki") == [work]
+    assert _ids(h, "kyojin") == [work]
+    assert _ids(h, "Shingeki no Kyojin") == [work]
+    assert _ids(h, "進撃") == [work]  # the original writing still answers
+
+
 # -- the HTTP route: admin only until L09 makes the visibility barrier ---------------------------
 
 
