@@ -13,6 +13,7 @@ from sqlalchemy import Engine, exc
 from shelfhold.infrastructure.db import create_db_engine
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import coherence, identity, metadata, platform
+from tests.support.users import with_ceiling
 
 SHA = "sha256:" + "a" * 64
 ARGON = "$argon2id$v=19$m=65536,t=3,p=4$c2FsdA$aGFzaA"
@@ -31,7 +32,16 @@ def add_user(connection: sa.Connection, *, role: str = "admin", can_rate: bool =
     user_id = new_ulid()
     connection.execute(
         sa.insert(identity.user).values(
-            id=user_id, username=f"u-{user_id}", password_hash=ARGON, role=role, can_rate=can_rate
+            with_ceiling(
+                role,
+                dict(
+                    id=user_id,
+                    username=f"u-{user_id}",
+                    password_hash=ARGON,
+                    role=role,
+                    can_rate=can_rate,
+                ),
+            )
         )
     )
     return user_id

@@ -37,6 +37,8 @@ EXTERNAL_ID_ORIGINS = ("source", "provider", "manual", "legacy")
 EXTERNAL_ID_STATES = ("current", "superseded")
 TRANSLATION_TYPES = ("official", "fan", "machine", "raw")
 VOLUME_POLICIES = ("closed_only", "rolling_tail", "whole")
+INTEGRITY_STATES = ("unchecked", "ok", "corrupt")
+MERGE_KINDS = ("merge", "split")
 UNIT_TRACKS = ("main", "annual", "special", "extra", "oneshot", "unnumbered")
 UNIT_KINDS = ("chapter", "episode", "book")
 UNIT_AVAILABILITIES = ("free", "purchased", "expiring", "locked", "stubbed", "removed")
@@ -315,6 +317,43 @@ work_relation_kind = sa.Table(
     sa.CheckConstraint("\"key\" <> '' AND \"key\" NOT GLOB '*[^a-z0-9_]*'", name="key_slug"),
 )
 
+# Journal of merges and splits of Works, undoable for 30 days (EF-BIB-019). The identifiers are not
+# foreign keys: the absorbed Work is gone once the merge is done, the journal must outlive it.
+merge_log = sa.Table(
+    "merge_log",
+    metadata,
+    ulid_column("id", primary_key=True),
+    sa.Column("kind", sa.String(), nullable=False),
+    ulid_column("survivor_id"),
+    ulid_column("absorbed_id"),
+    sa.Column("snapshot", sa.JSON(), nullable=False),  # what is needed to restore the two Works
+    now_column(),
+    sa.Column("undone_at", UtcDateTime(), nullable=True),
+    ulid_check("id"),
+    ulid_check("survivor_id"),
+    ulid_check("absorbed_id"),
+    in_check("kind", MERGE_KINDS),
+    json_shape_check("snapshot", "object"),
+    sa.CheckConstraint('"survivor_id" <> "absorbed_id"', name="distinct_works"),
+    sa.Index("ix_merge_log_survivor", "survivor_id"),
+    sa.Index("ix_merge_log_absorbed", "absorbed_id"),
+)
+
+# An old Work identifier that now leads to another one (EF-BIB-019): links keep working.
+work_redirect = sa.Table(
+    "work_redirect",
+    metadata,
+    ulid_column("from_work_id", primary_key=True),
+    sa.Column(
+        "to_work_id", sa.String(26), sa.ForeignKey("work.id", ondelete="CASCADE"), nullable=False
+    ),
+    sa.Column("merge_log_id", sa.String(26), sa.ForeignKey("merge_log.id", ondelete="SET NULL")),
+    now_column(),
+    ulid_check("from_work_id"),
+    sa.CheckConstraint('"from_work_id" <> "to_work_id"', name="no_self_redirect"),
+    sa.Index("ix_work_redirect_target", "to_work_id"),
+)
+
 work_relation = sa.Table(
     "work_relation",
     metadata,
@@ -471,7 +510,11 @@ unit = sa.Table(
     sa.Column("follow_suppressed_by", sa.String(26), sa.ForeignKey("user.id", ondelete="SET NULL")),
     sa.Column("follow_suppressed_at", UtcDateTime(), nullable=True),
     now_column(),
+    # Integrity check of the Unit's file (EF-BIB-012); NULL until the first check.
+    sa.Column("integrity_state", sa.String(), nullable=False, server_default="unchecked"),
+    sa.Column("integrity_checked_at", UtcDateTime(), nullable=True),
     ulid_check("id"),
+    in_check("integrity_state", INTEGRITY_STATES),
     in_check("track", UNIT_TRACKS),
     in_check("kind", UNIT_KINDS),
     in_check("availability", UNIT_AVAILABILITIES),
@@ -519,7 +562,10 @@ team = sa.Table(
     sa.Column("label_norm_by", sa.String(), nullable=True),
     sa.Column("last_release_at", UtcDateTime(), nullable=True),
     now_column(),
+    # Numbering offset between teams (EF-BIB-028, may be cut): laid down, no behaviour yet.
+    sa.Column("number_offset", sa.Integer(), nullable=False, server_default="0"),
     ulid_check("id"),
+    sa.CheckConstraint("typeof(\"number_offset\") = 'integer'", name="number_offset_integer"),
     norm_by_check("label_norm_by"),
     sa.UniqueConstraint("edition_id", "label"),
     # target of the composite foreign key that keeps a team_priority within its own Edition

@@ -26,6 +26,8 @@ from shelfhold.infrastructure.schema.catalog import MEDIA, norm_by_check
 RETENTIONS = ("passthrough", "keep", "adopted_ref")
 STORE_PROVENANCES = ("received", "extracted", "extracted_derived")
 TRASH_KINDS = ("unit", "work", "export_file")
+TRASH_LEVELS = ("unfollow", "remove_destinations", "delete_content")
+THUMBNAIL_SIZES = (160, 320, 640)
 REPLICA_LOCATIONS = ("upstream", "library", "store", "destination", "adopted_ro")
 REPLICA_FIDELITIES = ("original", "derived")
 WATERMARK_ORIGINS = ("none", "heuristic", "user")
@@ -119,9 +121,13 @@ trash_item = sa.Table(
     sa.Column("size", sa.BigInteger(), nullable=True),
     sa.Column("deleted_at", UtcDateTime(), nullable=False),
     sa.Column("purge_after", UtcDateTime(), nullable=False),  # 30 days (ENF-OPS-009)
+    # Level of the deletion that put it here (EF-BIB-021); what a bin entry held before M3 was
+    # a deleted content.
+    sa.Column("level", sa.String(), nullable=False, server_default="delete_content"),
     ulid_check("id"),
     ulid_check("ref"),
     in_check("kind", TRASH_KINDS),
+    in_check("level", TRASH_LEVELS),
     relative_path_check("path"),
     positive_check("size"),
     sa.CheckConstraint('"purge_after" >= "deleted_at"', name="purge_after_deleted_at"),
@@ -227,4 +233,24 @@ import_entry = sa.Table(
     in_check("state", IMPORT_STATES),
     positive_check("size"),
     sa.Index("ix_import_entry_state", "state"),
+)
+
+# A cover thumbnail, addressed by the hash of its source (EF-BIB-020); generated lazily.
+thumbnail = sa.Table(
+    "thumbnail",
+    metadata,
+    sa.Column("content_hash", sa.String(), nullable=False),
+    sa.Column("size", sa.Integer(), nullable=False),
+    sa.Column("path", sa.Text(), nullable=False),  # relative to the thumbnail directory
+    sa.Column("bytes", sa.BigInteger(), nullable=False),
+    now_column(),
+    sa.Column("last_used_at", UtcDateTime(), nullable=True),
+    sa.PrimaryKeyConstraint("content_hash", "size"),
+    prefixed_hash_check("content_hash"),
+    sa.CheckConstraint(
+        '"size" IN (' + ", ".join(str(n) for n in THUMBNAIL_SIZES) + ")", name="size_values"
+    ),
+    relative_path_check("path"),
+    positive_check("bytes"),
+    sa.Index("ix_thumbnail_last_used", "last_used_at"),
 )

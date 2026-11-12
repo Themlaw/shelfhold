@@ -23,10 +23,16 @@ def main(data_dir: Path) -> None:
     engine = create_db_engine(data_dir / "shelfhold.db")
     digest = Argon2Hasher().hash(PASSWORD)
     with engine.begin() as db:
-        for name, role in (("membre", "member"), ("enfant8", "child")):
+        # A child always has an age ceiling (migration 0046): 7 for the child of 8.
+        for name, role, ceiling in (("membre", "member", None), ("enfant8", "child", 7)):
             db.execute(
                 sa.insert(identity.user).values(
-                    id=new_ulid(), username=name, password_hash=digest, role=role, can_rate=False
+                    id=new_ulid(),
+                    username=name,
+                    password_hash=digest,
+                    role=role,
+                    can_rate=False,
+                    max_age_rating=ceiling,
                 )
             )
         shelf_id = new_ulid()

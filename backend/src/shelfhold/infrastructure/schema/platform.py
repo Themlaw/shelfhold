@@ -6,6 +6,7 @@ from shelfhold.infrastructure.schema._base import (
     UtcDateTime,
     add_trigger,
     bool_column,
+    clock_time_check,
     in_check,
     metadata,
     now_column,
@@ -49,7 +50,14 @@ instance = sa.Table(
     sa.Column("tombstone_count", sa.Integer(), nullable=True),
     sa.Column("tombstone_last_tag", sa.String(), nullable=True),
     now_column(),
+    # Maintenance mode (EF-INT-018): acquisitions and exports are frozen while it is set.
+    sa.Column("maintenance_since", UtcDateTime(), nullable=True),
+    sa.Column("maintenance_by", sa.String(26), sa.ForeignKey("user.id", ondelete="SET NULL")),
     ulid_check("instance_id"),
+    sa.CheckConstraint(
+        '"maintenance_by" IS NULL OR "maintenance_since" IS NOT NULL',
+        name="maintenance_by_has_since",
+    ),
     sa.CheckConstraint("singleton = 1", name="single_row"),
     in_check("refresh_mode", REFRESH_MODES),
     positive_check("restore_epoch"),
@@ -281,4 +289,22 @@ http_cache = sa.Table(
     sa.PrimaryKeyConstraint("scope", "url_hash"),
     positive_check("max_age"),
     relative_path_check("body_ref"),
+)
+
+# A daily window in which a kind of job may run (EF-INT-004): bounds in UTC, `tz` only says how
+# the interface shows them, so a change of hour never moves the window.
+time_window = sa.Table(
+    "time_window",
+    metadata,
+    ulid_column("id", primary_key=True),
+    sa.Column("scope", sa.String(), nullable=False),
+    sa.Column("start_utc", sa.String(), nullable=False),  # `HH:MM`
+    sa.Column("end_utc", sa.String(), nullable=False),
+    sa.Column("tz", sa.String(), nullable=False),  # IANA name
+    ulid_check("id"),
+    clock_time_check("start_utc"),
+    clock_time_check("end_utc"),
+    sa.CheckConstraint("\"scope\" <> ''", name="scope_not_empty"),
+    sa.CheckConstraint("\"tz\" <> ''", name="tz_not_empty"),
+    sa.Index("ix_time_window_scope", "scope"),
 )
