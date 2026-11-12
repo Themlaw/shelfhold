@@ -74,8 +74,8 @@ def _age(minimum: int | None, x: bool) -> AgeRating | None:
 
 
 def fold(text: str) -> str:
-    """NFKC, case-folded, spaces reduced to one: no letter or digit is dropped (`S.ource` is not
-    `Source`)."""
+    """NFKC, case-folded, spaces reduced to one: nothing else is dropped, a dot inside a name
+    makes another name."""
     return " ".join(unicodedata.normalize("NFKC", text).casefold().split())
 
 
