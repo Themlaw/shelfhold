@@ -1064,6 +1064,23 @@ class LibraryOps:
         service.set_purge_upstream(shelf_id, enabled, actor=principal)
         return {"shelf_id": shelf_id, "enabled": enabled}
 
+    @_refused
+    def shelf_link_mode(
+        self, *, shelf: str, link_mode: str, principal: Principal
+    ) -> dict[str, Any]:
+        """Choose how a kept copy of a shelf is made: `copy` or `hardlink` (EF-EXP-015). Not a
+        deletion, so no reserved action; the writer refuses anything but those two."""
+        service = ShelfService(self._comp.engine, clock=self._comp.clock)
+        try:
+            shelf_id = service.shelf_id_of(shelf)
+        except LookupError as error:
+            raise UnknownSubjectError(str(error)) from None
+        try:
+            service.set_link_mode(shelf_id, link_mode, actor=principal)
+        except ValueError as error:
+            raise CodedRefusal("validation_failed", str(error)) from None
+        return {"shelf_id": shelf_id, "link_mode": link_mode}
+
     def _restricted_profile_exists(self) -> bool:
         """P3: a parental change asks a fresh password once a child profile exists."""
         with self._comp.engine.connect() as connection:

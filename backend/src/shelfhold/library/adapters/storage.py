@@ -28,11 +28,17 @@ from shelfhold.catalog.public import DEFAULT_MIN_PAGE_RATIO, guard_received
 from shelfhold.infrastructure.archives import DEFAULT_LIMITS, ArchiveLimits, safe_open_archive
 from shelfhold.infrastructure.content_trust import check_cbz_entries
 from shelfhold.infrastructure.content_trust.cbz_entries import COMICINFO_MAX_BYTES
-from shelfhold.infrastructure.fsops import CopyVerificationError, Fsops, FsopsError
+from shelfhold.infrastructure.fsops import (
+    CopyVerificationError,
+    Fsops,
+    FsopsError,
+    LinkUnavailableError,
+)
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import catalog, export, storage
 from shelfhold.library.adapters.meta_projection import MetaProjection
 from shelfhold.library.adapters.origin_comicinfo import keep_origin_comicinfo
+from shelfhold.library.adapters.units import irreplaceability
 from shelfhold.library.domain.content_hash import CONTENT_HASH_BY, FILE_HASH_BY, content_hash
 from shelfhold.library.domain.copies import CopyFacts, is_independent
 from shelfhold.library.domain.failures import (
@@ -43,10 +49,13 @@ from shelfhold.library.domain.failures import (
 )
 from shelfhold.library.domain.store_budget import Candidate
 from shelfhold.library.replica import (
+    fresh_library_inodes,
+    is_own_inode,
     library_copies,
     record_library_rewrite,
     record_replica,
     record_store_observation,
+    refresh_library_rows,
     sibling_inodes,
     store_copies,
 )
@@ -320,7 +329,7 @@ class Derivative:
 class Kept:
     unit_id: str
     rel_path: str  # under /store
-    method: Literal["reflink", "copy", "extracted"]
+    method: Literal["reflink", "copy", "extracted", "hardlink"]
     file_hash: str
 
 
@@ -377,8 +386,44 @@ def keep_candidates(engine: Engine) -> list[Candidate]:
     return list(found.values())
 
 
+class LinkPolicy:
+    """Whether a Unit's kept copy may be a hard link (EF-EXP-015): the option of the shelf the
+    Unit is on, and only for content that can be had again. Off by default (`link_mode = copy`),
+    off for a Unit on no shelf, off for an irreplaceable Unit. The same-mount condition is the
+    writer's: it is read where the link is made."""
+
+    def __init__(self, engine: Engine) -> None:
+        self._engine = engine
+
+    def refusal(self, unit_id: str) -> str | None:
+        """Why this Unit's copy is not a link, or None when the option applies."""
+        with self._engine.connect() as connection:
+            mode = connection.execute(
+                sa.select(export.shelf.c.link_mode)
+                .select_from(
+                    catalog.unit.join(
+                        catalog.edition, catalog.edition.c.id == catalog.unit.c.edition_id
+                    ).join(export.shelf, export.shelf.c.id == catalog.edition.c.shelf_id)
+                )
+                .where(catalog.unit.c.id == unit_id)
+            ).scalar_one_or_none()
+            if mode != "hardlink":
+                return "option_off"
+            if irreplaceability(connection, unit_id).irreplaceable:
+                return "irreplaceable"
+        return None
+
+    def allows(self, unit_id: str) -> bool:
+        return self.refusal(unit_id) is None
+
+
 class KeepCopier:
-    """Keep a copy of a Unit in /store, as an independent copy: never a link (EF-BIB-027, D9).
+    """Keep a copy of a Unit in /store, as an independent copy: never a link (EF-BIB-027, D9),
+    except on the one road of the option: a keeper given a `LinkPolicy` (the catch-up job, never
+    the safeguard) makes a hard link for a replaceable Unit of a shelf that asked for it
+    (EF-EXP-015), falls back to the copy, with a warning, when the mount does not allow it, and
+    never links an irreplaceable Unit. A kept link is no second copy: it is not counted, and the
+    safeguard replaces it by an independent copy, by rename, when the Unit stops being replaceable.
 
     The file in /library, when it is still byte for byte what was received, is copied by
     `Fsops.copy_independent` (a reflink clone if the file system allows it, else a copy flushed
@@ -399,7 +444,9 @@ class KeepCopier:
         *,
         hold_work: WorkHolder,
         extract: Callable[[str], Any] | None = None,
+        links: LinkPolicy | None = None,
     ) -> None:
+        self._links = links
         self._hold_work = hold_work
         self._engine = engine
         self._fsops = fsops
@@ -433,8 +480,9 @@ class KeepCopier:
                 )
                 .order_by(storage.content.c.id)
             ).first()
-            if content is None:
-                raise SafeguardFailedError("no_content", "nothing in passthrough to keep")
+        if content is None:
+            return self._make_independent(unit_id)  # a kept link, else `no_content`
+        with self._engine.connect() as connection:
             copies = list(library_copies(connection, unit_id))
         for copy in copies:
             with suppress(FileNotFoundError, FsopsError):
@@ -519,11 +567,17 @@ class KeepCopier:
             expected_file_id=seen[1] if seen else None,
         )  # fmt: skip
         self._journal.mark_applying(intent_id)
+        expected = content.original_sha256.removeprefix("sha256:")
+        linked = False
+        method: Literal["reflink", "copy", "hardlink"]
         try:
-            done = self._fsops.copy_independent(
-                source, target, parents=True, replace=True,
-                expected_sha256=content.original_sha256.removeprefix("sha256:"),
-            )  # fmt: skip
+            if self._link(unit_id, source, target, expected):
+                linked, method = True, "hardlink"
+            else:
+                done = self._fsops.copy_independent(
+                    source, target, parents=True, replace=True, expected_sha256=expected
+                )
+                method = "reflink" if done.reflinked else "copy"
         except CopyVerificationError as error:  # the library file changed since it was looked at
             self._journal.cancel(intent_id)
             raise SafeguardFailedError("library_differs_from_original", str(error)) from error
@@ -536,10 +590,81 @@ class KeepCopier:
                 datetime.now(UTC),
             )  # fmt: skip
             self._journal.mark_done(intent_id, within=connection)
-        if not independent:  # impossible by construction; said, not hidden
+        if independent == linked:  # a copy that shares its inode, or a link that does not
             raise SafeguardFailedError("not_independent", "the copy shares an inode")
         self._projection.project(unit_id)
-        return Kept(unit_id, rel, "reflink" if done.reflinked else "copy", "sha256:" + done.sha256)
+        return Kept(unit_id, rel, method, content.original_sha256)
+
+    def _link(self, unit_id: str, source: str, target: str, expected: str) -> bool:
+        """The one road of the option (EF-EXP-015): a hard link instead of the copy, only when the
+        keeper was given the option, the shelf asked for it and the Unit is replaceable. False
+        means "copy": the option does not apply, or the mount does not allow it (said, once, as a
+        warning). A full disk or a quota is not a reason to copy and is raised as it is."""
+        if self._links is None or self._links.refusal(unit_id) is not None:
+            return False
+        try:
+            self._fsops.link_replaceable(
+                source, target, parents=True, replace=True, expected_sha256=expected
+            )
+        except LinkUnavailableError as unavailable:
+            log.warning("store.link_fallback_copy", unit_id=unit_id, reason=unavailable.reason)
+            return False
+        return True
+
+    def _make_independent(self, unit_id: str) -> Kept:
+        """A kept copy that is a link (the Unit was replaceable then) stops being one: the safeguard
+        wants a copy of its own. The copy replaces the store name by a rename, so the library's
+        name keeps the inode and nothing is written in place (a replacement never goes through a
+        name that has a second one). `verify_kept` records what is on the disk."""
+        with self._engine.connect() as connection:
+            content = connection.execute(
+                sa.select(storage.content)
+                .where(storage.content.c.unit_id == unit_id, storage.content.c.retention == "keep")
+                .order_by(storage.content.c.id)
+            ).first()
+            libraries = list(library_copies(connection, unit_id))
+            stores = list(store_copies(connection, unit_id))
+        if content is None or not stores:
+            raise SafeguardFailedError("no_content", "nothing in passthrough to keep")
+        if self._links is not None and self._links.refusal(unit_id) is None:
+            raise SafeguardFailedError("no_content", "kept as a link, as the shelf asked")
+        names = []
+        for copy in libraries:
+            with suppress(FileNotFoundError, FsopsError):
+                names.append((copy.local, self._fsops.link_stat(copy.local)))
+        for stored in stores:
+            with suppress(FileNotFoundError, FsopsError):
+                dev, ino, nlink, *_ = self._fsops.link_stat(stored.local)
+                for local, (ldev, lino, *_rest) in names:
+                    if nlink > 1 and (dev, ino) == (ldev, lino):
+                        self._copy_over_link(unit_id, content, local, stored.local)
+                        verify_kept(self._engine, self._fsops, unit_id)
+                        return Kept(
+                            unit_id, keep_rel(unit_id, content.id), "copy", content.original_sha256
+                        )
+        raise SafeguardFailedError("no_content", "nothing in passthrough to keep")
+
+    def _copy_over_link(self, unit_id: str, content: Any, source: str, target: str) -> None:
+        seen = self._fsops.observe(source)
+        intent_id = self._journal.record(
+            op="copy_cross_root", src=source, dst=target,
+            expected_sha256=content.original_sha256,
+            expected_file_id=seen[1] if seen else None,
+        )  # fmt: skip
+        self._journal.mark_applying(intent_id)
+        try:
+            self._fsops.copy_independent(
+                source, target, parents=True, replace=True,
+                expected_sha256=content.original_sha256.removeprefix("sha256:"),
+            )  # fmt: skip
+        except CopyVerificationError as error:
+            self._journal.cancel(intent_id)
+            raise SafeguardFailedError("library_differs_from_original", str(error)) from error
+        except BaseException:
+            self._journal.cancel(intent_id)
+            raise
+        with self._engine.begin() as connection:
+            self._journal.mark_done(intent_id, within=connection)
 
 
 def complete_keep(
@@ -579,7 +704,8 @@ def complete_keep(
     identity = found[1]
     device = fsops.device_of(target)
     seen_hash = fsops.sha256_of(target)
-    siblings = sibling_inodes(connection, row.unit_id)
+    siblings = sibling_inodes(connection, row.unit_id, skip=("library",))
+    siblings |= fresh_library_inodes(connection, fsops, row.unit_id)  # never the stored rows
     if source is not None and (origin := fsops.observe(source)) is not None:
         siblings.add((fsops.device_of(source), origin[1].ino))  # the file it was copied from
     independent = is_independent(
@@ -624,12 +750,16 @@ _KEEP_NAME: Final = re.compile(r"/units/[0-9A-Z]{2}/[0-9A-Z]{26}/(?P<content>[0-
 
 
 def verify_kept(engine: Engine, fsops: Fsops, unit_id: str) -> int:
-    """Look at the Unit's /store copies again: each counts only with a distinct inode and the
-    hash it was stored at. Returns how many count."""
+    """Look at the Unit's /store copies again: each counts only with an inode of its own (one name,
+    and not the inode of any library file) and the hash it was stored at. Both sides are read on
+    the disk now, never in the stored rows; the library rows are brought up to date. Returns how
+    many count."""
     counted = 0
     now = datetime.now(UTC)
     with engine.begin() as connection:
-        siblings = sibling_inodes(connection, unit_id)
+        refresh_library_rows(connection, fsops, unit_id, now)
+        siblings = sibling_inodes(connection, unit_id, skip=("library",))
+        siblings |= fresh_library_inodes(connection, fsops, unit_id)
         for copy in store_copies(connection, unit_id):
             try:
                 found = fsops.observe(copy.local)
@@ -643,7 +773,8 @@ def verify_kept(engine: Engine, fsops: Fsops, unit_id: str) -> int:
                 )  # fmt: skip
                 continue
             identity, device = found[1], fsops.device_of(copy.local)
-            good = is_independent(
+            own, _ = is_own_inode(fsops, copy.local, siblings)
+            good = own and is_independent(
                 CopyFacts(device, identity.ino, seen or ""), stored_sha256=copy.file_hash,
                 siblings=siblings,
             )  # fmt: skip

@@ -27,6 +27,7 @@ from shelfhold.infrastructure.observability.wiring import thresholds_of
 from shelfhold.jobs.public import JobContext, JobPools
 from shelfhold.library.public import (
     KeepCopier,
+    LinkPolicy,
     Safeguard,
     SafeguardFailedError,
     StoreBudget,
@@ -75,6 +76,7 @@ def keep_catchup_handler(comp: Composition) -> Callable[[JobContext], None]:
                     comp.engine, w.fsops, w.loaded.locate, store_dir, comp.settings.data_dir,
                     IntentJournal(comp.engine, w.fsops, clock=comp.clock),
                     extract=safeguard.run, hold_work=work_holder(comp),
+                    links=LinkPolicy(comp.engine),  # EF-EXP-015: this keeper only
                 )  # fmt: skip
 
                 def step(unit_id: str) -> Callable[[], None]:

@@ -13,9 +13,10 @@ another `content_hash` once looked at, so it is not counted either.
 """
 
 from collections.abc import Collection, Sequence
+from contextlib import suppress
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any
+from typing import Any, Protocol
 
 import sqlalchemy as sa
 from sqlalchemy import Connection
@@ -397,14 +398,18 @@ def kept_file_hashes(connection: Connection) -> dict[str, str]:
     return {r.unit_id: r.file_hash for r in rows}
 
 
-def sibling_inodes(connection: Connection, unit_id: str) -> set[tuple[int, int]]:
+def sibling_inodes(
+    connection: Connection, unit_id: str, *, skip: tuple[str, ...] = ()
+) -> set[tuple[int, int]]:
     """`(dev, ino)` of the Unit's other copies on disk (library, destinations, adopted files):
-    a /store file that is one of them is not a copy of its own."""
+    a /store file that is one of them is not a copy of its own. `skip` names locations whose rows
+    the caller reads on the disk instead (the library: a stored inode can be stale)."""
     rows = connection.execute(
         sa.select(replica_table.c.dev, replica_table.c.ino).where(
             replica_table.c.unit_id == unit_id,
             replica_table.c.location != "store",
             replica_table.c.location != "upstream",
+            replica_table.c.location.not_in(skip),
             replica_table.c.dev.is_not(None),
             replica_table.c.ino.is_not(None),
         )
@@ -812,3 +817,75 @@ def adopted_original_unprotected(connection: Connection, file_hash: str) -> bool
         )
     ).first()
     return adopted is not None and not has_independent_store_copy(connection, file_hash)
+
+
+# -- the independence of a copy is read on the disk (EF-BIB-027, EF-EXP-015) -----------------
+
+
+class Disk(Protocol):
+    """What `Fsops` answers about a file (the library does not import fsops: ENF contract)."""
+
+    def link_stat(self, local: str) -> tuple[int, int, int, int, int]: ...
+    def hash_and_identity(self, local: str) -> tuple[str, Any, int] | None: ...
+    def observe(self, local: str, *, host: bool = False) -> Any: ...
+
+
+def fresh_library_inodes(connection: Connection, fsops: Disk, unit_id: str) -> set[tuple[int, int]]:
+    """`(dev, ino)` of the Unit's library files as they are now (a missing file is no sibling)."""
+    found: set[tuple[int, int]] = set()
+    for copy in library_copies(connection, unit_id):
+        with suppress(OSError):
+            dev, ino, *_ = fsops.link_stat(copy.local)
+            found.add((dev, ino))
+    return found
+
+
+def is_own_inode(
+    fsops: Disk, local: str, siblings: set[tuple[int, int]]
+) -> tuple[bool, tuple[int, int, int] | None]:
+    """Is `local` an inode of its own, now: one name, and not the inode of any sibling? Also its
+    `(dev, ino, nlink)`, None when it cannot be read."""
+    try:
+        dev, ino, nlink, *_ = fsops.link_stat(local)
+    except OSError:
+        return False, None
+    return nlink == 1 and (dev, ino) not in siblings, (dev, ino, nlink)
+
+
+def refresh_library_rows(connection: Connection, fsops: Disk, unit_id: str, now: datetime) -> None:
+    """The library rows say what the disk says: a row whose inode is no longer the file's is
+    rewritten, but only when the bytes are still the ones the row names (a changed file is the
+    integrity check's business, never hidden here)."""
+    table = replica_table
+    rows = connection.execute(
+        sa.select(table.c.id, table.c.dev, table.c.ino, table.c.file_hash).where(
+            table.c.unit_id == unit_id, table.c.location == "library"
+        )
+    ).all()
+    by_id = {c.replica_id: c for c in library_copies(connection, unit_id)}
+    for row in rows:
+        copy = by_id.get(row.id)
+        if copy is None:
+            continue
+        with suppress(OSError):
+            dev, ino, _nlink, mtime_ns, _ctime = fsops.link_stat(copy.local)
+            if (dev, ino) == (row.dev, row.ino):
+                continue
+            seen = fsops.hash_and_identity(copy.local)
+            if seen is None or seen[0] != row.file_hash:
+                continue
+            record_library_rewrite(
+                connection, row.id, file_hash=row.file_hash, dev=dev, ino=ino, size=seen[1].size,
+                mtime_ns=mtime_ns, verified_at=now,
+            )  # fmt: skip
+
+
+def linked_now(connection: Connection, disk: Disk, unit_id: str) -> bool:
+    """Is a kept copy of the Unit no copy of its own, on the disk now (a name shared with a library
+    file, or a second name)? Only the disk answers, never the stored rows (EF-EXP-015)."""
+    siblings = fresh_library_inodes(connection, disk, unit_id)
+    return any(
+        not is_own_inode(disk, c.local, siblings)[0]
+        for c in store_copies(connection, unit_id)
+        if disk.observe(c.local) is not None
+    )

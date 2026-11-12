@@ -11,7 +11,25 @@ avant d'être mis en place. Sur un système de fichiers qui partage les blocs (b
 reflink), Shelfhold fait un clone (`FICLONE`) : l'espace n'est consommé qu'à la première
 modification, mais le fichier reste un fichier à part. Ailleurs, il copie les octets et les vide
 sur le disque. Il ne fait **jamais** de lien dur, même si `/library` et `/store` sont sur le même
-volume.
+volume, sauf sur l'unique voie de l'option ci-dessous.
+
+## Option « lien dur » (EF-EXP-015)
+
+`shelfhold shelf link-mode <étagère> --link-mode hardlink` économise l'espace : la copie conservée
+d'une Unité **remplaçable** (une source active la liste encore) devient un second nom du fichier de
+`/library`. Elle est désactivée par défaut (`--link-mode copy`) et ne s'applique que :
+
+- si `/library` et `/store` sont sur le même système de fichiers **et** le même montage, et si le
+  fichier n'a pas déjà un second nom posé par un tiers ; sinon Shelfhold fait la copie
+  indépendante et l'écrit au journal (`store.link_fallback_copy`) ;
+- jamais à une Unité irremplaçable, jamais à « Mettre à l'abri » : ils reçoivent toujours une copie
+  indépendante, et une Unité qui devient irremplaçable voit son lien remplacé par une copie ;
+- jamais par lien symbolique.
+
+Un lien n'est **pas** une copie : la page Santé ne le compte pas, et une modification du fichier
+par Kavita ou par vous change les deux noms (la vérification d'intégrité la voit). Le remplacement
+d'un nom se fait par `rename`, jamais en place ; effacer un nom laisse l'autre intact. Disque plein
+ou quota : rien n'est posé, l'erreur est remontée.
 
 ## Ce que la page Santé compte
 

@@ -73,6 +73,8 @@ from shelfhold.library.domain.store_budget import (
 )
 from shelfhold.library.replica import (
     StoreProof,
+    fresh_library_inodes,
+    is_own_inode,
     library_copies,
     sibling_inodes,
     store_proofs,
@@ -274,7 +276,7 @@ class SafeguardCycle:
         self._budget = budget
         self._publish = publish
         self._clock = clock
-        self._inventory = SafeguardInventory(engine)
+        self._inventory = SafeguardInventory(engine, fsops)
         self._failures: dict[str, int] = {}
 
     def plan(self, report: CycleReport) -> list[Candidate]:
@@ -404,7 +406,7 @@ class UpstreamPurge:
         self._fetcher = fetcher
         self._clock = clock
         self._ticket = ticket  # token -> the SDK's `Ticket`
-        self._inventory = SafeguardInventory(engine)
+        self._inventory = SafeguardInventory(engine, fsops)
 
     # -- the facts, read from the database and the disks, never carried over -------------------
 
@@ -476,7 +478,10 @@ class UpstreamPurge:
                 for p in store_proofs(connection, candidate.unit_id)
                 if p.content_hash == content_hash
             ]
+            siblings = fresh_library_inodes(connection, self._fsops, candidate.unit_id)
         for proof in proofs:
+            if not is_own_inode(self._fsops, proof.local, siblings)[0]:
+                continue  # one inode with a library name, or two names: no copy of its own
             try:
                 self._check_pinned(candidate.unit_id, proof)
             except PurgeRefused:

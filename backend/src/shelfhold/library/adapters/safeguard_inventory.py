@@ -23,6 +23,7 @@ from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from shelfhold.infrastructure.schema import acquisition, catalog, export, storage
 from shelfhold.library.adapters.units import content_error_candidates
 from shelfhold.library.domain.store_budget import Candidate
+from shelfhold.library.replica import Disk, linked_now
 
 __all__ = [
     "PurgeCandidate",
@@ -105,8 +106,9 @@ def record_backlog(connection: Connection, *, units: int, size: int, now: dateti
 
 
 class SafeguardInventory:
-    def __init__(self, engine: Engine) -> None:
+    def __init__(self, engine: Engine, fsops: Disk) -> None:
         self._engine = engine
+        self._fsops = fsops  # given: a kept copy is a link or not as the disk says now
 
     def owed_candidates(self) -> list[Candidate]:
         content = storage.content
@@ -115,16 +117,20 @@ class SafeguardInventory:
             if not owed:
                 return []
             rows = connection.execute(
-                sa.select(content.c.unit_id, content.c.size, content.c.id)
+                sa.select(content.c.unit_id, content.c.size, content.c.id, content.c.retention)
                 .where(
-                    content.c.retention == "passthrough",
+                    content.c.retention.in_(("passthrough", "keep")),
                     content.c.unit_id.in_(owed),
                     sa.exists().where(catalog.unit_variant.c.unit_id == content.c.unit_id),
                 )
                 .order_by(content.c.id)
             ).all()
+            kept = {r.unit_id for r in rows if r.retention == "keep"}
+            linked = {u for u in kept if linked_now(connection, self._fsops, u)}
         found: dict[str, Candidate] = {}
         for r in rows:
+            if r.retention == "keep" and r.unit_id not in linked:
+                continue
             found.setdefault(r.unit_id, Candidate(r.unit_id, int(r.size)))
         return list(found.values())
 

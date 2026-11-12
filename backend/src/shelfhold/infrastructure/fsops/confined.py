@@ -400,6 +400,16 @@ class ConfinedRoot:
         finally:
             os.close(src_parent)
 
+    def link_fd(self, fd: int, dst: str) -> None:
+        """A hard link to the file OPEN at `fd`, under a new name of this root (`EXDEV` on another
+        mount). The inode is the one the caller has checked, not whatever a name says now: a
+        name swapped for a symbolic link meanwhile changes nothing (EF-EXP-015). Never clobbers."""
+        dst_parent, dst_name = self._parent(dst)
+        try:
+            os.link(f"/proc/self/fd/{fd}", dst_name, dst_dir_fd=dst_parent, follow_symlinks=True)
+        finally:
+            os.close(dst_parent)
+
     def link_to(self, other: Self, src: str, dst: str) -> None:
         """A hard link from a file of this root to a new name in another root (`EXDEV` when they
         are on different file systems). Never clobbers; used by the capability probe."""

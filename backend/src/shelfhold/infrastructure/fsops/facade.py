@@ -93,8 +93,10 @@ from shelfhold.infrastructure.fsops.tombstone_journal import (
 )
 from shelfhold.infrastructure.fsops.writer import (
     HashingReader,
+    LinkedFile,
     Readable,
     ensure_host_dirs,
+    link_replaceable,
     write_atomic,
     write_independent,
 )
@@ -1341,6 +1343,29 @@ class Fsops:
             finally:
                 os.close(fd)
         return IndependentCopy(sha256=expected, reflinked=cloned, identity=identity)
+
+    def link_replaceable(
+        self,
+        src: str,
+        dst: str,
+        *,
+        expected_sha256: str,
+        parents: bool = False,
+        replace: bool = False,
+    ) -> LinkedFile:
+        """A second name for the regular file `src`, on one mount (EF-EXP-015, D9): the option for
+        content that can be had again, and the only road on which a file gets a second name. The
+        caller has decided it is allowed (never for an irreplaceable Unit, never for a safeguard)
+        and records the intent around the call; `LinkUnavailableError` means nothing was placed.
+        See `writer.link_replaceable` for what is checked."""
+        a, b = self._locate(src), self._locate(dst)
+        if b.read_only:
+            raise ReadOnlyRootError(f"{b.root_path} is an adoption root: never written")
+        with self._root(a.root_path) as source, self._gated(b) as target:
+            return link_replaceable(
+                source, a.rel, target, b.rel, expected_sha256=expected_sha256,
+                parents=parents, replace=replace,
+            )  # fmt: skip
 
 
 def _digest_of(fd: int) -> str:

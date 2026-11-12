@@ -520,7 +520,7 @@ def test_replacements_in_library_are_classed() -> None:
 
         def visit_Call(self, node: ast.Call) -> None:
             name = getattr(node.func, "attr", getattr(node.func, "id", ""))
-            if name in {"write_atomic", "copy_independent", "rename"} and any(
+            if name in {"write_atomic", "copy_independent", "link_replaceable", "rename"} and any(
                 k.arg == "replace" and isinstance(k.value, ast.Constant) and k.value.value is True
                 for k in node.keywords
             ):

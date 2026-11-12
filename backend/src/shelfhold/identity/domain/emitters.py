@@ -187,6 +187,14 @@ REPLACEMENT_SITES: Mapping[str, str] = MappingProxyType(
         "shelfhold/library/adapters/storage.py::KeepCopier._copy": (
             "the copy to /store of a file read back against its hash, the target of its own intent"
         ),
+        "shelfhold/library/adapters/storage.py::KeepCopier._link": (
+            "a hard link of the option (EF-EXP-015) put by rename on the staged name, the "
+            "inode read back with two names and its hash; only for a replaceable Unit"
+        ),
+        "shelfhold/library/adapters/storage.py::KeepCopier._copy_over_link": (
+            "the copy of its own that takes the place of a kept link by rename, read back "
+            "against its hash, the target of its own intent (the library's name keeps the inode)"
+        ),
         "shelfhold/library/adapters/safeguard.py::Safeguard._verify_and_write": (
             "the safeguard writes into /store, never /library, once the payload verifies"
         ),

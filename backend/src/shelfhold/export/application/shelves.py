@@ -50,6 +50,7 @@ from shelfhold.identity.public import AuditEntry, audit_insert
 from shelfhold.infrastructure.clock import Clock, SystemClock
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import catalog, export
+from shelfhold.infrastructure.schema.export import LINK_MODES
 
 __all__ = ["Actor", "CeilingChange", "FileResult", "ShelfService", "resolve_folder"]
 
@@ -201,6 +202,22 @@ class ShelfService:
             self._audit(
                 connection, actor, "shelf.set_skip_read_upgrades", f"shelf:{shelf_id};{skip}"
             )
+
+    def set_link_mode(self, shelf_id: str, mode: str, *, actor: Actor | None = None) -> None:
+        """How a kept copy reaches /store from the library (EF-EXP-015): `copy` (the default, an
+        independent copy) or `hardlink` (one inode under two names, for content that can be had
+        again, on one mount only). Never a symbolic link: anything else is refused before the
+        database is asked. This is the only writer of `shelf.link_mode`; the decision of the Unit
+        (irreplaceable: never) and of the mount is taken where the copy is made."""
+        if mode not in LINK_MODES:
+            raise ValueError(f"link mode {mode!r}: one of {', '.join(LINK_MODES)}")
+        with self._engine.begin() as connection:
+            done = connection.execute(
+                sa.update(export.shelf).where(export.shelf.c.id == shelf_id).values(link_mode=mode)
+            )
+            if done.rowcount != 1:
+                raise LookupError(f"no such shelf: {shelf_id}")
+            self._audit(connection, actor, "shelf.set_link_mode", f"shelf:{shelf_id};{mode}")
 
     def set_purge_upstream(
         self, shelf_id: str, enabled: bool, *, actor: Actor | None = None
