@@ -29,7 +29,6 @@ __all__ = ["build_me_router"]
 Session = Annotated[Principal, Depends(require_session)]
 
 
-
 class StateIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
     followed: bool | None = None
