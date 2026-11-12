@@ -1049,6 +1049,10 @@ action = "Actualisez la liste des profils."
 title = "Ce profil ne respecte pas les règles du foyer."
 action = "Un enfant a toujours un âge maximal et jamais le droit de classer ; un adulte n'a pas d'âge maximal ; un enfant ne peut ajouter ou demander que sur une source « famille »."
 
+[errors."user_state_refused"]
+title = "Cette valeur n'est pas acceptée."
+action = "Une date envoyée ne peut pas dépasser l'heure du serveur de plus de quelques minutes ; une langue de titre est un code comme « ja » ou « en-US », huit au plus, sans « und » ni « mul »."
+
 [errors."reauth_required"]
 title = "Confirmez votre mot de passe pour continuer."
 action = "Saisissez de nouveau votre mot de passe, puis recommencez l'action."

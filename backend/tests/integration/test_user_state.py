@@ -110,7 +110,9 @@ def _shape(response: Any) -> tuple[int, str, str]:
 def test_user_state_isolated_between_profiles(api: AuthEnv) -> None:
     mum = _user(api, "mum", "member", "10.0.0.2")
     dad = _user(api, "dad", "member", "10.0.0.3")
-    done = _put(api, mum, f"{ME}/state/{OK_WORK}", {"followed": True, "favorite": True, "read": True})
+    done = _put(
+        api, mum, f"{ME}/state/{OK_WORK}", {"followed": True, "favorite": True, "read": True}
+    )
     assert done.status_code == 200, done.text
     assert done.json()["followed"] and done.json()["favorite"] and done.json()["read_at"]
     seen = dad.get(f"{ME}/state/{OK_WORK}")
@@ -144,7 +146,7 @@ def test_user_state_idor_other_id_child_reading_parent_and_key(
     named = _put(api, kid, f"{ME}/state/{OK_WORK}", {"favorite": True, "user_id": mum_id})
     assert named.status_code == 422
     assert _state_rows(api) == before
-    # the child reads its own state of a Work the parent marked: its own defaults, never the parent's
+    # the child reads its own state of a Work the parent marked: its defaults, never the parent's
     assert kid.get(f"{ME}/state/{OK_WORK}").json()["favorite"] is False
     assert kid.get(f"{ME}/state").json()["items"] == []
     assert _put(api, kid, f"{ME}/state/{OK_WORK}", {"favorite": False}).status_code == 200
@@ -227,16 +229,22 @@ def test_user_state_client_clock_is_bounded_and_never_orders(api: AuthEnv) -> No
     mum = _user(api, "mum", "member", "10.0.0.2")
     path = f"{ME}/state/{OK_WORK}"
     now = api.clock.now()
-    ahead = _put(api, mum, path, {"favorite": True, "client_ts": (now + timedelta(days=400)).isoformat()})
+    ahead = _put(
+        api, mum, path, {"favorite": True, "client_ts": (now + timedelta(days=400)).isoformat()}
+    )
     assert ahead.status_code == 422
     assert ahead.json()["type"] == "/api/v1/problems/user-state-refused"
     assert _state_rows(api) == []  # refused whole: nothing written
     naive = _put(api, mum, path, {"favorite": True, "client_ts": "2026-11-05T09:00:00"})
     assert naive.status_code == 422 and _state_rows(api) == []
     # within the tolerated drift, or far in the past: accepted, and the stamp is the server's
-    near = _put(api, mum, path, {"favorite": True, "client_ts": (now + timedelta(minutes=2)).isoformat()})
+    near = _put(
+        api, mum, path, {"favorite": True, "client_ts": (now + timedelta(minutes=2)).isoformat()}
+    )
     assert near.status_code == 200
-    assert near.json()["stamp"] == now.isoformat().replace("+00:00", "Z") or near.json()["stamp"].startswith(now.isoformat()[:19])
+    assert near.json()["stamp"] == now.isoformat().replace("+00:00", "Z") or near.json()[
+        "stamp"
+    ].startswith(now.isoformat()[:19])
     old = _put(api, mum, path, {"favorite": False, "client_ts": "2001-01-01T00:00:00+00:00"})
     assert old.status_code == 200 and old.json()["favorite"] is False  # an old claim never loses
 
@@ -249,7 +257,9 @@ def test_preferred_title_language_per_user(api: AuthEnv) -> None:
     mum = _user(api, "mum", "member", "10.0.0.2")
     dad = _user(api, "dad", "member", "10.0.0.3")
     assert _put(api, mum, f"{ME}/title-languages", {"languages": ["ja", "en"]}).status_code == 200
-    assert _put(api, dad, f"{ME}/title-languages", {"languages": ["EN-us", "fr"]}).status_code == 200
+    assert (
+        _put(api, dad, f"{ME}/title-languages", {"languages": ["EN-us", "fr"]}).status_code == 200
+    )
     assert mum.get(f"{ME}/title-languages").json() == {"languages": ["ja", "en"]}
     assert dad.get(f"{ME}/title-languages").json() == {"languages": ["en-US", "fr"]}
     assert mum.get(f"{ME}/works/{OK_WORK}/title").json()["title"] == "ある題名"
@@ -277,10 +287,8 @@ def test_title_language_never_shows_a_title_the_viewer_may_not_see(api: AuthEnv)
 def test_title_languages_refuse_wildcards_junk_and_excess(api: AuthEnv) -> None:
     mum = _user(api, "mum", "member", "10.0.0.2")
     assert _put(api, mum, f"{ME}/title-languages", {"languages": ["ja"]}).status_code == 200
-    for bad in (
-        ["und"], ["mul"], ["all"], [""], ["a b"], ["<script>"], ["en"] * 3 + ["fr", "de", "it", "es", "pt", "nl"],
-        [1], "en", None,
-    ):  # fmt: skip
+    many = ["en", "fr", "de", "it", "es", "pt", "nl", "sv", "da"]
+    for bad in (["und"], ["mul"], ["all"], [""], ["a b"], ["<script>"], many, [1], "en", None):
         refused = _put(api, mum, f"{ME}/title-languages", {"languages": bad})
         assert refused.status_code == 422, bad
     assert mum.get(f"{ME}/title-languages").json() == {"languages": ["ja"]}  # unchanged
