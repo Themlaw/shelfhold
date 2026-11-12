@@ -1,0 +1,10 @@
+{
+  "interactions": [
+    {
+      "method": "GET",
+      "url": "https://catalogue.exemple.invalid/catalogue.json",
+      "status": 200,
+      "body": "{\"books\": [{\"id\": \"b-001\", \"title\": \"Un livre libre\", \"author\": \"Autrice Exemple\", \"epub\": \"https://catalogue.exemple.invalid/b-001.epub\"}]}"
+    }
+  ]
+}

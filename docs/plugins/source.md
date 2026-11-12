@@ -1,7 +1,8 @@
-# Écrire une source (SDK 1.2)
+# Écrire une source (SDK 1.3)
 
 Une **source** donne à Shelfhold des séries et des fichiers : elle cherche, décrit, liste les Unités et fournit leur
-contenu. Le contrat vit dans `shelfhold.sdk.source` (licence MIT) et s'appuie sur le **SDK 1.2** (`SDK_VERSION`).
+contenu. Le contrat vit dans `shelfhold.sdk.source` (licence MIT) et s'appuie sur le **SDK 1.3** (`SDK_VERSION`). Le parcours complet, du gabarit à l'index, est dans
+[parcours.md](parcours.md).
 Un fournisseur de métadonnées, qui ne fournit pas de fichier, est un autre plugin : voir
 [metadata-provider.md](metadata-provider.md). Un plugin tiers est désactivé par défaut et tourne avec les droits de
 Shelfhold : lisez [../admin/plugins-tiers.md](../admin/plugins-tiers.md) avant d'en publier un.
@@ -10,7 +11,7 @@ Shelfhold : lisez [../admin/plugins-tiers.md](../admin/plugins-tiers.md) avant d
 
 `SourceManifest` (clé, version, `api`, nom, `permissions`, `settings_schema`, `terms_url`, `respects_robots`,
 `attribution`, `langs`, `content_kinds`, `url_patterns`, `capabilities`, `rate_limit`, `auth`, `id_scheme`,
-`rights_basis`, `rights_jurisdiction`, `content_trust`, `tests`). Points qui comptent :
+`rights_basis`, `rights_jurisdiction`, `content_trust`, `waiting_states`, `tests`). Points qui comptent :
 
 | Champ | Ce que l'hôte en fait |
 |---|---|
@@ -20,12 +21,13 @@ Shelfhold : lisez [../admin/plugins-tiers.md](../admin/plugins-tiers.md) avant d
 | `rights_basis` | `us_public_domain`, `worldwide_public_domain`, `licence` ou `user_supplied`. Pour les États-Unis, écrivez « libre de droits aux États-Unis », jamais « source légale ». |
 | `content_trust` | `untrusted` par défaut : l'hôte neutralise les EPUB avant tout export. `publisher` n'est qu'un défaut proposé, que l'admin doit attester ([../admin/neutraliseur.md](../admin/neutraliseur.md)). |
 | `settings_schema` | Schéma plat ; un champ `writeOnly` ou `format: password` est un secret, injecté par l'hôte et jamais relu. |
+| `waiting_states` | SDK 1.3 : un état où le plugin attend un humain porte un nom, une sortie (`retry`, `recheck`, `reconfigure`) et son événement `plugin.<clé>.<nom>`. Le kit refuse un état sans sortie. |
 | `capabilities` | `SEARCH`, `LATEST`, `POPULAR`, `URL_RESOLVE`, `LOGIN`, `FILTERS`, `METADATA_ONLY`, `FOLLOW`, `SUB_SOURCES`, `RANGED_CONTENT` ; un service connecté déclare aussi sa file côté serveur. |
 
 ## Les méthodes
 
 Le protocole `Source` : `search`, `resolve_url` (si `URL_RESOLVE`), `get_series`, `list_units`, `fetch_unit`,
-`fetch_range` (si `RANGED_CONTENT`), `resolve_page`, `login` et `refresh` (si `auth`), `migrate_ref`, `migrate_memo`.
+`fetch_range` (facultatif depuis le SDK 1.3 : une plage passe par le ticket d'un service connecté), `resolve_page`, `login` et `refresh` (si `auth`), `migrate_ref`, `migrate_memo`.
 Chaque méthode reçoit un `Fetcher` fourni par l'hôte : agent identifiable, cache, robots, domaines déclarés. Une source
 n'ouvre jamais elle-même un socket, un fichier ou un processus : un détecteur d'entrées-sorties directes le refuse et
 fait échouer la conformité.
@@ -34,15 +36,22 @@ Les erreurs sont typées (`AuthRequired`, `RateLimited`, `ContentRemoved`, `Sour
 `NotConfigured`) : leur code pilote l'état de santé. Un changement de format de la source est `SourceChanged`, jamais
 un contenu vide.
 
+## Règle de stabilité (EF-SRC-036)
+
+`remote_unit_id` et `SeriesRef` restent stables à la réinstallation de l'outil connecté et à la rotation des
+identifiants : `remote_unit_id` est l'identifiant de la source amont, jamais celui de la base de l'outil relayé.
+Le kit la contrôle (`simulated_reinstall`). Voir [parcours.md](parcours.md#4-la-règle-de-stabilité-ef-src-036).
+
 ## Kit de conformité
 
 ```python
-import asyncio
-from shelfhold.sdk.testing import FakeFetcher, run_source_conformance
+from shelfhold.sdk.testing import FakeFetcher, assert_conforms
 
-report = asyncio.run(run_source_conformance(MySource(), FakeFetcher.from_cassette(cassette)))
-report.assert_ok()
+assert_conforms(MySource(), FakeFetcher.from_cassette(cassette))
 ```
+
+Les contrôles sont détaillés dans [kit.md](kit.md) ; un dépôt de départ qui passe le kit est dans
+[gabarit/](gabarit/).
 
 La cassette est synthétique : aucun réseau n'est possible en test, et aucun dépôt d'extensions n'est contacté.
 `run_trapped_epub_corpus` rejoue le corpus d'EPUB piégés contre le neutraliseur. Les tests de la CI du dépôt n'utilisent

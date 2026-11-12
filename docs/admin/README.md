@@ -49,3 +49,8 @@ l'installation.
 | Lire les journaux, régler leur niveau | [journaux.md](journaux.md) |
 | Joindre un paquet de diagnostic à une demande d'aide | [diagnostic.md](diagnostic.md) |
 | Dimensionner la machine | [budget-ram.md](budget-ram.md) |
+| Plateformes (Docker, Unraid, TrueNAS, Synology, Podman), prérequis, veille du NAS | [plateformes.md](plateformes.md), [nas-energie.md](nas-energie.md) |
+| Avec quoi lire : navigateurs, liseuses, KOReader, OPDS, colonne « hors ligne » | [clients.md](clients.md) |
+| Désinstaller sans rien perdre (sauvegarde, kit de secours, `/store`) | [desinstaller.md](desinstaller.md) |
+| Écrire un plugin (source, destination, kit, gabarit) | [../plugins/parcours.md](../plugins/parcours.md) |
+| Page à donner à la famille | [../famille/README.md](../famille/README.md) |
