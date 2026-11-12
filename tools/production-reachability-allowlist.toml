@@ -186,15 +186,6 @@ symbols = [
 ]
 
 [[allow]]
-category = "m3-l11-removal-writers"
-reason = "2026-11-12 (M3 L11): `GET /works?since=` and `GET /shelves?since=` read the removals from the event sequence; the writers of a deletion are `record_work_removed` and `record_removed`. No code path deletes a Work row or a shelf yet (a purge removes Units and tombstones, never the Work; there is no shelf deletion): the merge of Works (EF-BIB-019) and the deletion of a shelf are the lots that call them, each inside the transaction of the delete and before the row goes. Proved by tests that delete a row after the call."
-until = "M3"
-symbols = [
-  "shelfhold.catalog.application.changes:record_removed",
-  "shelfhold.catalog.application.changes:record_work_removed",
-]
-
-[[allow]]
 category = "m3-l13-served-states"
 reason = "2026-11-12: the table of the M3 waiting states whose exit is served (`maintenance`) is read by the exit-table tests only; production reads the catalogue and the routes, which say where each exit is."
 until = "M3"

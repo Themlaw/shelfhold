@@ -188,6 +188,7 @@ lease_heartbeat_at = "Last heartbeat of the running instance (UTC)."
 restore_epoch = "Incremented on any restore or rollback."
 restore_epoch_at = "When `restore_epoch` last changed (UTC)."
 restore_generation = "Generation counter changed by a restore or rollback."
+events_purged_through = "Highest `event.id` the retention purged: a `?since=` token under it is `resync_required`; 0 until the first purge."
 
 [tables.job_view]
 description = "Read model of the background jobs (the queue itself lives in Huey)."
@@ -503,6 +504,7 @@ first_published = "Date of first publication, possibly partial."
 is_adult = "The Work is adult content."
 reading_direction = "Reading direction; NULL means the kind's default."
 locked_fields = "JSON list of fields the admin locked against upstream changes."
+created_seq = "Sequence of the `event` table when the Work was created (set by a trigger); `?since=` never reports a removal of a Work created after the token; 0 for older Works."
 
 [tables.edition]
 description = "An Edition: a Work in a language, translation, media and packaging. Its key is sextuplet-based."

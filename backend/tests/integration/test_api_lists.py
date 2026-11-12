@@ -53,9 +53,9 @@ def test_since_token_malformed_is_a_400_problem(token: str) -> None:
 
 @pytest.mark.req("EF-INT-001")
 def test_since_token_out_of_range_is_refused_both_ways() -> None:
-    with pytest.raises(ValueError, match="63-bit"):
+    with pytest.raises(ValueError, match="sequence_out_of_range"):
         _token(2**63)
-    with pytest.raises(ValueError, match="63-bit"):
+    with pytest.raises(ValueError, match="sequence_out_of_range"):
         _token(-1)
 
 

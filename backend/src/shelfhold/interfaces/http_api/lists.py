@@ -53,7 +53,7 @@ def _mac(key: bytes, kind: str, seq: int) -> str:
 
 def encode_since(seq: int, *, key: bytes, kind: str) -> str:
     if not 0 <= seq <= _MAX_SEQ:
-        raise ValueError("a sequence is a non-negative 63-bit integer")
+        raise ValueError("sequence_out_of_range")
     return f"{_PREFIX}{_b64(str(seq).encode('ascii'))}.{_mac(key, kind, seq)}"
 
 

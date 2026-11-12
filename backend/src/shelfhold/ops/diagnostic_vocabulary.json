@@ -1066,6 +1066,7 @@
   "shelfhold.events.errors",
   "shelfhold.events.operating",
   "shelfhold.events.projection",
+  "shelfhold.events.since_key",
   "shelfhold.events.waiting_state",
   "shelfhold.export",
   "shelfhold.export.application",
