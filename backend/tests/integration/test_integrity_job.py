@@ -70,6 +70,7 @@ def test_inside_the_window_the_batch_checks_and_asks_for_the_corrupt_unit_again(
         flip_page_byte(rig.received())
         env.clock.set(INSIDE)
         ctx = context(INTEGRITY_KIND)
+        ctx.clock.set(INSIDE)  # the job reads the clock of its context
         integrity_handler(_comp(rig), DEFAULT_WINDOW)(ctx)
         assert (ctx.counters["corrupt"], ctx.counters["requested"]) == (1, 1)
         assert rig.state()[0] == "corrupt" and len(rig.requests()) == 1
@@ -86,6 +87,7 @@ def test_outside_the_window_no_file_is_opened(monkeypatch: pytest.MonkeyPatch) -
         rig = Rig(env, export_one(env))
         env.clock.set(NOON)
         ctx = context(INTEGRITY_KIND)
+        ctx.clock.set(NOON)  # the job reads the clock of its context
         integrity_handler(_comp(rig), DEFAULT_WINDOW)(ctx)
         assert ctx.preempted is True
         assert rig.state()[0] == "unchecked"
@@ -96,6 +98,7 @@ def test_a_closing_window_stops_the_batch_between_two_units() -> None:
         rig = Rig(env, export_one(env))
         env.clock.set(INSIDE)
         ctx = context(INTEGRITY_KIND)
+        ctx.clock.set(INSIDE)  # the job reads the clock of its context
         ctx.window_end = INSIDE  # already closing
         integrity_handler(_comp(rig), DEFAULT_WINDOW)(ctx)
         assert ctx.preempted is True and rig.state()[0] == "unchecked"

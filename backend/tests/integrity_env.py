@@ -4,6 +4,7 @@ Built on the upgrade world: a real exported chapter, its received archive in /li
 same-path upgrade service. Nothing here touches the network.
 """
 
+import hashlib
 import io
 import zipfile
 from dataclasses import dataclass, field
@@ -13,15 +14,12 @@ from pathlib import Path
 import sqlalchemy as sa
 
 from shelfhold.acquisition.application.reacquire import Reacquirer
-from shelfhold.export.domain.physical_roots import RECEIVED_DIR
-from shelfhold.infrastructure.ids import new_ulid
+from shelfhold.export.application.library_repair import LibraryRepair
 from shelfhold.infrastructure.schema import platform
 from shelfhold.library.application.integrity import IntegrityChecker, Throttle
-from shelfhold.library.public import PassthroughStore
 from shelfhold.library.replica import library_copies
 from tests.export_env import ExportEnv
 from tests.locks_env import work_lock
-from tests.null_tombstones import NONE_PURGED
 from tests.upgrade_env import Exported, service
 
 
@@ -87,23 +85,35 @@ class Rig:
     def upgrader(self) -> object:
         return service(self.env)
 
-    def repair_copy(self, data: bytes) -> str:
-        """The fresh bytes of the Unit, filed as one more copy of its content (the ticket's own
-        path, `PassthroughStore.ingest(repair=True)`); the content id."""
-        with self.env.engine.connect() as connection:
-            variant, content = connection.execute(
-                sa.text("SELECT variant_id, id FROM content WHERE unit_id = :u"),
-                {"u": self.exported.unit_id},
-            ).one()
-        lib = self.env.lib
-        PassthroughStore(
-            self.env.engine, lib.fsops, lib.locate, lib.data, tombstones=NONE_PURGED,
-            hold_work=work_lock(self.env.engine),
-        ).ingest(
-            unit_id=self.exported.unit_id, variant_id=variant, staged=lib.stage(data),
-            dest=str(lib.manga / RECEIVED_DIR / f"repair-{new_ulid()}.cbz"), repair=True,
-        )  # fmt: skip
-        return str(content)
+    def repair_copy(self, data: bytes) -> bool:
+        """The fresh bytes of the Unit, put in the place of the damaged library file by the repair
+        the ticket calls (`LibraryRepair`); True when a file was replaced."""
+        return repair_with(self.env.engine, self.env.lib, self.env.clock, _bus(self.env),
+                           self.exported.unit_id, data)  # fmt: skip
+
+
+def repair_with(engine, lib, clock, bus, unit_id: str, data: bytes) -> bool:  # type: ignore[no-untyped-def]
+    with engine.connect() as connection:
+        variant = connection.execute(
+            sa.text("SELECT variant_id FROM content WHERE unit_id = :u"), {"u": unit_id}
+        ).scalar_one()
+    staged = lib.stage(data)
+    return LibraryRepair(
+        engine,
+        lib.fsops,
+        lib.locate,
+        clock,
+        hold_work=work_lock(engine),
+        bus=bus,
+        data_dir=lib.data,
+    )(unit_id, variant, staged, "sha256:" + hashlib.sha256(data).hexdigest())
+
+
+def held_repair(env: ExportEnv) -> LibraryRepair:
+    return LibraryRepair(
+        env.engine, env.lib.fsops, env.lib.locate, env.clock, hold_work=work_lock(env.engine),
+        bus=_bus(env), data_dir=env.lib.data,
+    )  # fmt: skip
 
 
 def _bus(env: ExportEnv) -> object:

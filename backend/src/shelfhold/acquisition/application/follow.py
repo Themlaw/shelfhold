@@ -71,6 +71,7 @@ from shelfhold.acquisition.application.tickets import (
     OpenRequest,
     Placement,
     Receiver,
+    Repairer,
     Sleep,
     TicketReport,
 )
@@ -277,6 +278,7 @@ class FollowCycle:
         min_page_ratio: float = DEFAULT_MIN_PAGE_RATIO,
         fallback_return: bool = True,
         upgrader: Upgrader | None = None,
+        repairer: Repairer | None = None,
     ) -> None:
         self._min_page_ratio = min_page_ratio
         self._engine = engine
@@ -303,7 +305,7 @@ class FollowCycle:
             plugin_id=self._plugin_id, sleep=sleep, slots=slots, max_attempts=max_attempts,
             stall_after=stall_after, announce=self._emit, requeue_cap=requeue_cap,
             queue_empty=self._server_queue_empty, blocked=self._request_blocked,
-            filtered=self._request_filtered,
+            filtered=self._request_filtered, repairer=repairer,
         )  # fmt: skip
         self._pending: list[PublishedEvent] = []
         self._caps = (service_cap, key_cap)

@@ -194,6 +194,7 @@ def test_only_heavy_disk_work_is_a_window_job(settings: Settings, tmp_path: Path
             "store.index",  # INDEX.jsonl of /store
             "library.safeguard",  # "Mettre à l'abri" and the optional upstream purge (L16)
             "retention.recycle",  # the bins of /library
+            "integrity_rolling",  # the rolling integrity check of the archives (EF-BIB-012)
             "wal_checkpoint",
             "vacuum_monthly",
         }

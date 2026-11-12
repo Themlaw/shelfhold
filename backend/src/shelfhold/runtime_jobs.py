@@ -30,7 +30,7 @@ from collections.abc import Callable, Iterable, Iterator
 from contextlib import ExitStack, contextmanager
 from dataclasses import dataclass
 from datetime import timedelta
-from pathlib import PurePath
+from pathlib import Path, PurePath
 from typing import Any, cast
 
 import sqlalchemy as sa
@@ -57,6 +57,7 @@ from shelfhold.composition import (
 )
 from shelfhold.export.application import blocked_memo
 from shelfhold.export.application.intents import IntentJournal
+from shelfhold.export.application.library_repair import LibraryRepair
 from shelfhold.export.application.locks import work_lock_for
 from shelfhold.export.application.migration_detect import SwitchoverDetector, SwitchoverGate
 from shelfhold.export.application.naming_preview import NamingPreview, preview_names
@@ -209,6 +210,24 @@ class _LazyUpgrader:
         return [r.outcome.value for r in upgrade.upgrade_unit(unit_id, content_id)]
 
 
+class _LazyRepairer:
+    """Fresh bytes of a corrupt Unit put in the place of the damaged file (EF-BIB-012), on the
+    write context the cycle opens when a chapter is received."""
+
+    def __init__(self, comp: Composition, lazy: _LazyWrite) -> None:
+        self._comp = comp
+        self._lazy = lazy
+
+    def __call__(self, unit_id: str, variant_id: str, staged: Path, sha256: str) -> bool:
+        w = self._lazy.get()
+        repair = LibraryRepair(
+            self._comp.engine, w.fsops, w.loaded.locate, self._comp.clock,
+            hold_work=work_holder(self._comp), bus=w.bus,
+            data_dir=self._comp.settings.data_dir,
+        )  # fmt: skip
+        return repair(unit_id, variant_id, staged, sha256)
+
+
 class _LazyTombstones:
     """The tombstone checks of the cycle (a read of the database: no lease), on the service that
     is replayed once per process and found again here, opened at the first check."""
@@ -339,6 +358,7 @@ def follow_handler(comp: Composition, pools: JobPools) -> Callable[[JobContext],
                         min_page_ratio=comp.settings.revision_min_page_ratio,
                         fallback_return=comp.settings.follow_fallback_return,
                         upgrader=_LazyUpgrader(comp, lazy),
+                        repairer=_LazyRepairer(comp, lazy),
                         policy=CadencePolicy.from_settings(comp.settings),
                     )  # fmt: skip
                     prefix = "" if position == 0 else f"{link.service.manifest.key}_"

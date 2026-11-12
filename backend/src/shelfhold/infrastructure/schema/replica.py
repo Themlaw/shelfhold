@@ -42,6 +42,9 @@ replica = sa.Table(
     bool_column("mutable_by_third_party", default=False),  # Kavita, KOReader, the user
     sa.Column("fidelity", sa.String(), nullable=False, server_default="original"),
     sa.Column("verified_at", UtcDateTime(), nullable=True),
+    # the integrity check read this file and it failed (EF-BIB-012): never counted, never read
+    # for an export or a purge; NULL for every healthy copy, imported or not
+    sa.Column("damaged_at", UtcDateTime(), nullable=True),
     now_column(),
     ulid_check("id"),
     in_check("location", REPLICA_LOCATIONS),

@@ -18,7 +18,7 @@ import structlog
 
 from shelfhold.acquisition.application.reacquire import Reacquirer
 from shelfhold.composition import Composition, KeyringUnavailableError, NoLibraryError
-from shelfhold.export.application.upgrade import SamePathUpgrade
+from shelfhold.export.application.library_repair import LibraryRepair, held_path
 from shelfhold.jobs.huey_app import JobContext, JobPools
 from shelfhold.jobs.window import (
     MaintenanceWindow,
@@ -28,6 +28,7 @@ from shelfhold.jobs.window import (
 )
 from shelfhold.library.application.integrity import DEFAULT_RATE, IntegrityChecker, Throttle
 from shelfhold.library.public import irreplaceability
+from shelfhold.work_locks import work_holder
 
 __all__ = ["INTEGRITY_KIND", "integrity_handler", "register_integrity_job", "window_guard"]
 
@@ -48,29 +49,31 @@ def window_guard(now: Callable[[], datetime], window: MaintenanceWindow) -> Call
     return guard
 
 
+def retry_held(comp: Composition, unit_id: str) -> bool:
+    """The fresh bytes kept while the barrier of a shelf was closed, tried again on the write
+    context (nothing is written while it stays closed)."""
+    with comp.write_context() as w:
+        repair = LibraryRepair(
+            comp.engine, w.fsops, w.loaded.locate, comp.clock,
+            hold_work=work_holder(comp), bus=w.bus, data_dir=comp.settings.data_dir,
+        )  # fmt: skip
+        return repair.retry_held(unit_id)
+
+
 def integrity_handler(comp: Composition, window: MaintenanceWindow) -> Callable[[JobContext], None]:
     def run(context: JobContext) -> None:
         checker = IntegrityChecker(
-            comp.engine, comp.bus, comp.clock,
-            throttle=Throttle(DEFAULT_RATE), guard=window_guard(comp.clock.now, window),
+            comp.engine, comp.bus, context.clock,
+            throttle=Throttle(DEFAULT_RATE), guard=window_guard(context.clock.now, window),
         )  # fmt: skip
         reacquirer = Reacquirer(
-            comp.engine, comp.bus, comp.clock,
+            comp.engine, comp.bus, context.clock,
             irreplaceable=lambda connection, unit: irreplaceability(connection, unit).irreplaceable,
         )  # fmt: skip
 
         def closing() -> bool:
-            over = context.window_end is not None and comp.clock.now() >= context.window_end
+            over = context.window_end is not None and context.clock.now() >= context.window_end
             return over or context.stop_requested
-
-        def swap(unit_id: str, content_id: str) -> list[str]:
-            with comp.write_context() as w:
-                upgrade = SamePathUpgrade(
-                    comp.engine, w.fsops, locate=w.loaded.locate,
-                    data_dir=comp.settings.data_dir, clock=comp.clock, bus=w.bus,
-                )  # fmt: skip
-                results = upgrade.upgrade_unit(unit_id, content_id, reason="integrity_reacquire")
-                return [r.outcome.value for r in results]
 
         try:
             corrupt = replaced = requested = 0
@@ -83,9 +86,12 @@ def integrity_handler(comp: Composition, window: MaintenanceWindow) -> Callable[
                 if closing():
                     context.preempted = True
                     break
-                requested += reacquirer.reacquire(unit_id).value == "requested"
-                done = reacquirer.complete(unit_id, repaired=checker.repaired, upgrade=swap)
-                replaced += done.outcome in ("replaced", "repaired")
+                if held_path(comp.settings.data_dir, unit_id).is_file():
+                    retry_held(comp, unit_id)  # fresh bytes wait for a barrier: not asked again
+                else:
+                    requested += reacquirer.reacquire(unit_id).value == "requested"
+                done = reacquirer.complete(unit_id, repaired=checker.repaired)
+                replaced += done.outcome == "replaced"
             context.record(corrupt=corrupt, requested=requested, replaced=replaced)
         except OutsideMaintenanceWindowError:
             context.preempted = True  # the window closed under the batch: tomorrow night

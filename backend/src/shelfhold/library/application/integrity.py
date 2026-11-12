@@ -11,9 +11,10 @@ opened and refuses outside it; the reads are paced by a `Throttle`; a Unit check
 due again, so the disks are not woken every cycle. A file that is not there is not "corrupt" (the
 store verification says so, not this check) and changes nothing. This module marks and says; it
 never deletes, replaces or moves a file. A damaged copy stops being an independent copy at once
-(`replica.mark_damaged`: nothing counts it, no reader picks it) and stays on disk. What follows a
+(`replica.damaged_at`: nothing counts it, no export or purge reads it)
+and stays on disk. What follows a
 corrupt mark is the reacquisition (`acquisition.application.reacquire`). Every copy is checked,
-`/library` and `/store`; only the independent ones are (a damaged one is already known).
+`/library` and `/store`; only those not already known damaged are read.
 """
 
 from __future__ import annotations
@@ -221,7 +222,7 @@ class IntegrityChecker:
         found: list[_Target] = []
         damaged: set[str] = set()
         for copy in library:
-            if not copy.independent:
+            if copy.damaged:
                 damaged.add("library")
                 continue
             found.append(
@@ -231,7 +232,7 @@ class IntegrityChecker:
                 )
             )  # fmt: skip
         for kept in store:
-            if not kept.independent:
+            if kept.damaged:
                 damaged.add("store")
                 continue
             found.append(
@@ -275,10 +276,10 @@ class IntegrityChecker:
                 return UnitVerdict(unit_id, str(previous), "missing", 0)  # nothing was read
             failed = [(t, v) for t, v in verdicts if not v.ok]
             for target, _verdict in failed:
-                mark_damaged(connection, target.replica_id)
+                mark_damaged(connection, target.replica_id, self._clock.now())
             # a place with a damaged copy and no intact one left is not whole
             intact_places = {t.location for t, v in verdicts if v.ok}
-            unrepaired = damaged - intact_places
+            unrepaired = (damaged - intact_places) if previous == "corrupt" else set()
             state = "ok" if not failed and not unrepaired else "corrupt"
             connection.execute(
                 sa.update(unit)
@@ -305,7 +306,7 @@ class IntegrityChecker:
         with self._engine.begin() as connection:
             for target, verdict in verdicts:
                 if not verdict.ok:
-                    mark_damaged(connection, target.replica_id)
+                    mark_damaged(connection, target.replica_id, self._clock.now())
         if not verdicts or any(not v.ok for _t, v in verdicts):
             return False
         return damaged <= {t.location for t, _v in verdicts}

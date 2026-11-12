@@ -6,17 +6,19 @@ Variant already has its archive: this is what used to be swallowed and thrown aw
 is `ok` once the fresh copy has been read.
 """
 
-from datetime import UTC, datetime
-
 import pytest
 import sqlalchemy as sa
 
 from shelfhold.acquisition.application.reacquire import ReacquireOutcome, Reacquirer
-from shelfhold.library.application.integrity import IntegrityChecker
+from shelfhold.export.application.library_repair import LibraryRepair
+from shelfhold.export.domain.physical_roots import RECYCLE_DIR
+from shelfhold.infrastructure.schema import platform
+from shelfhold.library.application.integrity import IntegrityChecker, check_cbz
 from shelfhold.library.public import irreplaceability
 from shelfhold.library.replica import independent_copies
 from tests.follow_env import follow_bench
 from tests.integrity_env import flip_page_byte
+from tests.locks_env import work_lock
 
 pytestmark = pytest.mark.req("EF-BIB-012")
 
@@ -35,8 +37,24 @@ def test_reacquisition_files_a_repair_copy_through_the_ticket_path() -> None:
             -1:
         ]  # the chapter that was fetched
         engine = bench.lib.engine
+        with engine.begin() as connection:  # the intent journal needs the instance row
+            connection.execute(
+                sa.insert(platform.instance).values(
+                    instance_id=bench.lib.instance_id, jurisdiction="FR"
+                )
+            )
+        bench.cycle = bench.new_cycle(  # the repair the runtime wires into the ticket
+            repairer=LibraryRepair(
+                engine,
+                bench.lib.fsops,
+                bench.lib.locate,
+                bench.clock,
+                hold_work=work_lock(engine),
+                bus=bench.bus,
+            )
+        )
         good = damaged.read_bytes()
-        bench.clock.set(datetime.now(UTC))  # the check is later than the reception
+        bench.clock.advance(hours=1)  # the check is later than the reception
         flip_page_byte(damaged)
         before = damaged.read_bytes()
         checker = IntegrityChecker(engine, bench.bus, bench.clock)
@@ -51,6 +69,7 @@ def test_reacquisition_files_a_repair_copy_through_the_ticket_path() -> None:
         with engine.connect() as connection:
             assert independent_copies(connection, unit_id) == held - 1
         assert reacquirer.reacquire(unit_id) is ReacquireOutcome.REQUESTED
+        bench.clock.advance(minutes=5)  # the fetch is later than the check
         for _ in range(4):
             bench.run()
         newest = bench.rows(
@@ -60,11 +79,17 @@ def test_reacquisition_files_a_repair_copy_through_the_ticket_path() -> None:
         assert newest["state"] == "fetched"
 
         files = [p for p in bench.library_files() if p.suffix == ".cbz"]
-        assert damaged in files and len(files) == 2  # the damaged one stays, a fresh one beside
-        assert damaged.read_bytes() == before and before != good
+        assert files == [
+            damaged
+        ]  # no duplicate chapter, no `repair-*` file in the tree Kavita reads
+        assert damaged.read_bytes() == good and before != good  # the served path is whole again
+        assert check_cbz(damaged, expected_pages=None, expected_hash=None).ok
+        binned = [p for p in (bench.lib.library / RECYCLE_DIR).rglob("*") if p.is_file()]
+        assert [p.read_bytes() for p in binned] == [before]  # the damaged file is in the bin
         assert len(bench.rows("SELECT id FROM content WHERE unit_id = :u", u=unit_id)) == 1
-        done = reacquirer.complete(unit_id, repaired=checker.repaired, upgrade=lambda *_: [])
-        assert done.outcome == "repaired"
+        bench.clock.advance(hours=1)
+        done = reacquirer.complete(unit_id, repaired=checker.repaired)
+        assert done.outcome == "replaced"
         with engine.connect() as connection:
             assert independent_copies(connection, unit_id) == held
             state = connection.execute(

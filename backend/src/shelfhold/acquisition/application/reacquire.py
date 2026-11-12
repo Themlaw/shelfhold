@@ -1,13 +1,11 @@
 """Whole-Unit reacquisition after a failed integrity check (EF-BIB-012).
 
 A Unit the check marked `corrupt` is asked for again in full, from a live source, like any other
-request (one open ticket per Unit, I52). The fresh bytes are filed as one more copy of the
-content (`PassthroughStore.ingest(repair=True)`, the ticket's own path): nothing is written over
-the damaged file and nothing is deleted, the damaged copy only stops counting as an independent
-copy. The Unit is `ok` once every place that held a damaged copy holds an intact one that was
-read again; the served files are then offered the content through the same-path upgrade
-(`reason = integrity_reacquire`, a read Unit included), which keeps its other guards and tells the
-Activity that KOReader's position was reset when it replaces a file (EF-EXP-016, D21).
+request (one open ticket per Unit, I52). The fresh bytes are put **in the place of the damaged
+file** (`export.LibraryRepair`, called by the ticket: staged outside the tree a library scans,
+swapped under the intent journal, the damaged file to the bin of its root, never deleted). The
+damaged copy stops counting as an independent copy as soon as it is found. The Unit is `ok` once
+every place that held a damaged copy holds an intact one, the served path read again.
 
 A Unit with no live source (irreplaceable, EF-BIB-031) has nothing to be asked of: it is flagged
 in the Activity (`ops.integrity_irreplaceable`, at most once a month) and left exactly as it is;
@@ -19,7 +17,7 @@ copies through the registry (`library.replica`), passed in as `irreplaceable`.
 from __future__ import annotations
 
 import enum
-from collections.abc import Callable, Sequence
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import timedelta
 from typing import Final
@@ -41,7 +39,6 @@ log = structlog.get_logger(__name__)
 ALERT_EVENT: Final = "ops.integrity_irreplaceable"
 COOLDOWN: Final = timedelta(days=7)  # a corrupt copy is not asked for again every night
 ALERT_EVERY: Final = timedelta(days=30)
-_GOOD: Final = frozenset({"upgraded", "up_to_date"})
 
 
 class ReacquireOutcome(enum.Enum):
@@ -54,7 +51,7 @@ class ReacquireOutcome(enum.Enum):
 
 @dataclass(frozen=True, slots=True)
 class Replacement:
-    # replaced | repaired | irreplaceable | no_fresh_copy | fresh_copy_corrupt | not_corrupt
+    # replaced | irreplaceable | no_fresh_copy | fresh_copy_corrupt | not_corrupt
     outcome: str
     content_id: str | None = None
 
@@ -163,21 +160,15 @@ class Reacquirer:
             is not None
         )
 
-    def complete(
-        self,
-        unit_id: str,
-        *,
-        repaired: Callable[[str], bool],
-        upgrade: Callable[[str, str], Sequence[str]],
-    ) -> Replacement:
-        """After a repair copy of the Unit arrived (`PassthroughStore.ingest(repair=True)`).
+    def complete(self, unit_id: str, *, repaired: Callable[[str], bool]) -> Replacement:
+        """After a repair put fresh bytes in the place of a damaged library file
+        (`export.LibraryRepair`, through the ticket).
 
-        Nothing is read until a new copy has arrived since the last attempt. Then `repaired(unit)`
-        reads every independent copy, `/library` and `/store`, and says whether each place that
-        held a damaged copy now holds an intact one; only then is the Unit `ok`, and the served
-        files are offered the content through the same-path upgrade (`upgrade(unit, content)`, its
-        outcomes as words), which says KOReader's position was reset when it replaces one. An
-        irreplaceable Unit is never touched; the damaged files are never deleted here."""
+        Nothing is read until a file was replaced since the last attempt. Then `repaired(unit)`
+        reads every independent copy again, the served path included, `/library` and `/store`, and
+        says whether each place that held a damaged copy now holds an intact one; only then is the
+        Unit `ok`. An irreplaceable Unit is never touched; the damaged files are never deleted
+        here (the repair moved them to the bin)."""
         with self._engine.connect() as connection:
             row = connection.execute(
                 sa.select(catalog.unit.c.integrity_state, catalog.unit.c.integrity_checked_at)
@@ -192,22 +183,17 @@ class Reacquirer:
             content_id = fresh_repair_content(connection, unit_id, row.integrity_checked_at)
         if content_id is None:
             return Replacement("no_fresh_copy")  # the ticket is open, or nothing new came
-        now = self._clock.now()
         done = repaired(unit_id)
         with self._engine.begin() as connection:  # the attempt is dated: no new copy, no new read
             connection.execute(
                 sa.update(catalog.unit)
                 .where(catalog.unit.c.id == unit_id)
-                .values(integrity_state="ok" if done else "corrupt", integrity_checked_at=now)
+                .values(
+                    integrity_state="ok" if done else "corrupt",
+                    integrity_checked_at=self._clock.now(),
+                )
             )
         if not done:
-            return Replacement(
-                "fresh_copy_corrupt", content_id
-            )  # the damaged ones stay as they are
-        try:
-            outcomes = list(upgrade(unit_id, content_id))
-        except LookupError:  # nothing served for it, or no source: the copies are repaired anyway
-            outcomes = []
+            return Replacement("fresh_copy_corrupt", content_id)
         log.info("integrity.repaired", unit_id=unit_id, content_id=content_id)
-        good = all(o in _GOOD for o in outcomes)
-        return Replacement("replaced" if outcomes and good else "repaired", content_id)
+        return Replacement("replaced", content_id)

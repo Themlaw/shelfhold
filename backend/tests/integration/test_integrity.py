@@ -15,7 +15,7 @@ from shelfhold.acquisition.application.reacquire import ReacquireOutcome
 from shelfhold.events.activity import ActivityEvent, Viewer, activity_view
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import platform
-from shelfhold.library.domain.failures import RepairRefusedError
+from shelfhold.library.application.integrity import check_cbz
 from shelfhold.library.replica import independent_copies, record_replica
 from shelfhold.ops.status import koreader_reset_report
 from tests.export_env import export_env
@@ -40,14 +40,8 @@ def _damage(rig: Rig, how: str) -> str:
 
 
 def _complete(rig: Rig, repaired=None):  # type: ignore[no-untyped-def]
-    checker = rig.checker()
     return rig.reacquirer().complete(
-        rig.exported.unit_id,
-        repaired=repaired or checker.repaired,
-        upgrade=lambda unit, content: [
-            r.outcome.value
-            for r in rig.upgrader().upgrade_unit(unit, content, reason="integrity_reacquire")  # type: ignore[attr-defined]
-        ],
+        rig.exported.unit_id, repaired=repaired or rig.checker().repaired
     )
 
 
@@ -83,13 +77,24 @@ def test_integrity_crc_and_page_count_reacquires_whole_unit() -> None:
         assert (request.target_kind, request.state) == ("unit", "requested")
         assert rig.state()[0] == "corrupt"
 
-        # the fresh bytes arrive: filed beside the damaged file, which is not touched
-        rig.env.clock.advance(days=1)  # the check is older than the arrival
-        rig.repair_copy(good)
+        # the fresh bytes arrive: they take the damaged file's place, which goes to the bin
+        rig.env.clock.advance(days=1)  # the check is older than the repair
+        assert rig.repair_copy(good) is True
+        assert damaged.read_bytes() == good and before != good  # the served path is whole
+        assert [p.read_bytes() for p in bin_files(env)] == [before]  # the old one is kept
+        assert not [p for p in env.lib.files_under(env.lib.library) if "repair-" in p.name]
+        assert check_cbz(damaged, expected_pages=1, expected_hash=None).ok
         done = _complete(rig)
-        assert done.outcome in ("replaced", "repaired"), done
+        assert done.outcome == "replaced", done
         assert rig.state()[0] == "ok" and _copies(rig) == 1
-        assert damaged.exists() and damaged.read_bytes() == before  # never deleted, never replaced
+        (event,) = rig.events("unit.upgraded")  # the Activity says KOReader starts again
+        assert event.payload["koreader_reset"] is True
+        assert event.payload["reason"] == "integrity_reacquire" and event.visibility == "ops"
+        with env.engine.connect() as connection:
+            listed = koreader_reset_report(connection, env.clock.now() - timedelta(days=2))
+        assert [(r["unit_id"], r["reason"]) for r in listed] == [
+            (rig.exported.unit_id, "integrity_reacquire")
+        ]
 
 
 def test_integrity_reacquire_logs_koreader_reset() -> None:
@@ -140,7 +145,7 @@ def test_corrupt_irreplaceable_unit_alerts_never_deleted() -> None:
         assert len(rig.events("ops.integrity_irreplaceable")) == 1  # said once
         assert rig.requests() == []  # nothing is asked of anyone
         env.clock.advance(days=1)
-        rig.repair_copy(good)  # even good bytes that are there are not swapped in on their own
+        assert rig.repair_copy(good) is False  # even good bytes are not swapped in on their own
         assert _complete(rig).outcome == "irreplaceable"
         assert (received.read_bytes(), served.read_bytes()) == before
         assert bin_files(env) == [] and rig.state()[0] == "corrupt"
@@ -151,13 +156,14 @@ def test_a_repair_that_is_not_the_recorded_payload_is_refused() -> None:
         rig = _rig(env)
         _damage(rig, "crc")
         rig.checker().check_unit(rig.exported.unit_id)
-        with pytest.raises(RepairRefusedError):
-            rig.repair_copy(cbz_bytes((("1-001.png", PNG + b"another page"),)))
+        before = rig.received().read_bytes()
+        assert rig.repair_copy(cbz_bytes((("1-001.png", PNG + b"another page"),))) is False
+        assert rig.received().read_bytes() == before and bin_files(env) == []
         assert rig.state()[0] == "corrupt" and _copies(rig) == 0
 
 
 def test_the_unit_is_not_ok_while_a_place_holds_only_damaged_copies() -> None:
-    """A damaged copy in /store is not made good by a fresh one in /library."""
+    """A damaged copy in /store is not made good by a repaired one in /library."""
     with export_env() as env:
         rig = _rig(env)
         good = rig.received().read_bytes()
@@ -172,24 +178,16 @@ def test_the_unit_is_not_ok_while_a_place_holds_only_damaged_copies() -> None:
                 connection, unit_id=rig.exported.unit_id, location="store",
                 content_hash=row[0], file_hash=row[1], independent=True,
                 physical_root_id=lib.store_root, rel_path="kept.cbz", size=len(good),
+                verified_at=env.clock.now(),
             )  # fmt: skip
         flip_page_byte(kept)
+        flip_page_byte(rig.received())
         assert rig.checker().check_unit(rig.exported.unit_id).state == "corrupt"
-        assert _copies(rig) == 1  # the library copy still counts; the store one does not
         env.clock.advance(days=1)
-        rig.repair_copy(good)
+        assert rig.repair_copy(good) is True
         done = _complete(rig)
         assert done.outcome == "fresh_copy_corrupt"
         assert rig.state()[0] == "corrupt" and kept.exists()
-        # the store gets its intact copy back (the safeguard's catch-up): now the Unit is whole
-        kept.write_bytes(good)
-        with env.engine.begin() as connection:
-            connection.execute(
-                sa.text("UPDATE replica SET independent = 1 WHERE location = 'store'")
-            )
-        env.clock.advance(days=1)
-        rig.repair_copy(good)
-        assert _complete(rig).outcome in ("replaced", "repaired") and rig.state()[0] == "ok"
 
 
 def test_no_new_copy_no_new_read() -> None:
@@ -286,3 +284,66 @@ def test_koreader_reset_never_touches_anyones_reading_position() -> None:
             )  # fmt: skip
             assert seen is None
         assert platform  # the event table is the Activity's source
+
+
+def test_handing_a_ticket_over_never_takes_a_purges_leftover() -> None:
+    """The service names a chapter's download by one token: it follows the live request, but a
+    request a purge closed keeps its own (`leftover_tickets` still lists it), and so does one that
+    is still open."""
+    from types import SimpleNamespace
+
+    from shelfhold.acquisition.application.tickets import DownloadTickets
+    from shelfhold.library.public import leftover_tickets
+
+    with export_env() as env:
+        rig = _rig(env)
+        binding = rig.exported.series.binding_id
+        with env.engine.connect() as connection:
+            variant = connection.execute(
+                sa.text("SELECT id FROM unit_variant LIMIT 1")
+            ).scalar_one()
+        ids = {name: new_ulid() for name in ("purged", "fetched", "open", "new")}
+        with env.engine.begin() as connection:
+            for name, state, token in (
+                ("purged", "closed_by_purge", "t-purged"),
+                ("fetched", "fetched", "t-fetched"),
+                ("open", "requested", "t-open"),
+            ):
+                connection.execute(
+                    sa.text(
+                        "INSERT INTO download_request (id, target_kind, variant_id, unit_id, "
+                        "source_binding_id, ticket, state, requested_at) VALUES "
+                        "(:i, 'unit', :v, :u, :b, :t, :s, :now)"
+                    ),
+                    {"i": ids[name], "v": None if name == "purged" else variant,
+                     "u": None if name != "open" else rig.exported.unit_id, "b": binding,
+                     "t": token, "s": state, "now": env.clock.now()},
+                )  # fmt: skip
+        tickets = object.__new__(DownloadTickets)
+        tickets._engine = env.engine  # type: ignore[attr-defined]
+        for token in ("t-purged", "t-fetched", "t-open"):
+            tickets._hand_over(SimpleNamespace(id=ids["new"], binding_id=binding), token)  # type: ignore[attr-defined,arg-type]
+        with env.engine.connect() as connection:
+            held = dict(
+                connection.execute(sa.text("SELECT id, ticket FROM download_request")).all()
+            )
+            assert [t.ticket for t in leftover_tickets(connection)] == ["t-purged"]
+        assert held[ids["purged"]] == "t-purged" and held[ids["open"]] == "t-open"
+        assert held[ids["fetched"]] is None  # only a finished fetch lets go of the token
+
+
+def test_when_every_copy_is_damaged_nothing_proves_a_copy_and_the_unit_is_irreplaceable() -> None:
+    """No purge upstream can rest on a damaged copy: it counts for nothing, and a Unit with no
+    live source left is irreplaceable."""
+    from shelfhold.library.public import irreplaceability
+
+    with export_env() as env:
+        rig = _rig(env)
+        flip_page_byte(rig.received())
+        make_irreplaceable(env)
+        assert rig.checker().check_unit(rig.exported.unit_id).state == "corrupt"
+        with env.engine.connect() as connection:
+            verdict = irreplaceability(connection, rig.exported.unit_id)
+        assert verdict.irreplaceable is True and verdict.independent_copies == 0
+        assert rig.reacquirer().reacquire(rig.exported.unit_id) is ReacquireOutcome.IRREPLACEABLE
+        assert len(rig.events("ops.integrity_irreplaceable")) == 1
