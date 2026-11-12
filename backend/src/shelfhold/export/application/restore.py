@@ -38,6 +38,7 @@ import structlog
 from sqlalchemy import Connection, Engine
 
 from shelfhold.events.bus import EventBus
+from shelfhold.export.application.blocked_units import blocked_units
 from shelfhold.export.application.roots import LoadedRoots, load_roots
 from shelfhold.export.application.snapshot import DestinationContext, load_context
 from shelfhold.export.domain.export_item import CoverageError, check_coverage
@@ -1307,58 +1308,7 @@ class RestoreAdopter:
     ) -> None:
         """The restored database still holds what was purged after the backup: its Units are
         blocked from any new request, and the files it exported are proposed for deletion."""
-        unit, variant, edition = catalog.unit, catalog.unit_variant, catalog.edition
-        binding, item, stored = acquisition.source_binding, acquisition.source_item, storage.content
-        rows = connection.execute(
-            sa.select(
-                unit.c.id, unit.c.track, unit.c.number_segment, unit.c.number_raw, unit.c.part,
-                edition.c.work_id, edition.c.lang, edition.c.translation_type, edition.c.media,
-                edition.c.publisher, edition.c.text_version, edition.c.performance,
-                edition.c.packaging, variant.c.remote_unit_id, item.c.plugin_id, item.c.source_key,
-                item.c.remote_id, stored.c.content_hash, stored.c.content_hash_by,
-            )
-            .select_from(
-                unit.join(edition, edition.c.id == unit.c.edition_id)
-                .outerjoin(variant, variant.c.unit_id == unit.c.id)
-                .outerjoin(binding, binding.c.id == variant.c.source_binding_id)
-                .outerjoin(item, item.c.id == binding.c.source_item_id)
-                .outerjoin(stored, stored.c.variant_id == variant.c.id)
-            )
-        )  # fmt: skip
-        scopes: dict[str, str] = {}
-        for row in rows:
-            if row.id in scopes:
-                continue
-            hashes = (
-                [(row.content_hash_by, row.content_hash)]
-                if row.content_hash and row.content_hash_by
-                else []
-            )
-            if (
-                row.remote_unit_id
-                and row.source_key
-                and self._screen.variant_blocked(
-                    None, row.plugin_id, row.source_key, row.remote_unit_id, hashes
-                )
-            ):
-                scopes[row.id] = "variant"
-            elif self._screen.place_blocked(
-                None,
-                {
-                    "work_id": row.work_id, "lang": row.lang,
-                    "translation_type": row.translation_type, "media": row.media,
-                    "publisher": row.publisher, "text_version": row.text_version,
-                    "performance": row.performance, "packaging": row.packaging,
-                },
-                row.track, row.number_segment, row.number_raw, row.part,
-            ):  # fmt: skip
-                scopes[row.id] = "place"
-            elif (
-                row.source_key
-                and row.remote_id
-                and self._screen.series_blocked(None, row.plugin_id, row.source_key, row.remote_id)
-            ):
-                scopes[row.id] = "series_binding"
+        scopes = blocked_units(connection, self._screen)
         survey.blocked_units = dict(scopes)
         if not scopes:
             return

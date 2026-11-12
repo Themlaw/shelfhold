@@ -51,6 +51,7 @@ from shelfhold.catalog.application.dedup import (
     open_suggestions,
     suggest_duplicates,
 )
+from shelfhold.catalog.application.dedup import tombstoned as tombstoned_work_ids
 from shelfhold.catalog.application.dto import (
     BindingRef,
     EditionRef,
@@ -521,6 +522,7 @@ __all__ = [
     "suggest_duplicates",
     "suspect_reason",
     "sync_search_index",
+    "tombstoned_work_ids",
     "translation_discriminant",
     "translation_type_for",
     "unlock_field",

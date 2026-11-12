@@ -407,6 +407,14 @@ def _contributor_set_died_for_france(ops: OpsServices, by: Principal, p: Params)
     )
 
 
+def _export_all(ops: OpsServices, by: Principal, p: Params) -> object:
+    return ops.export_all.export_all(_text(p, "folder"), principal=by)
+
+
+def _import_all(ops: OpsServices, by: Principal, p: Params) -> object:
+    return ops.export_all.import_all(_text(p, "folder"), principal=by)
+
+
 def _export_item_show(ops: OpsServices, _by: Principal, p: Params) -> object:
     return ops.export_items.show(_text(p, "item"))
 
@@ -675,6 +683,8 @@ OPS_METHODS: Mapping[str, tuple[OpsMethod, str | None]] = {
         _contributor_set_died_for_france,
         "contributor.set_died_for_france",
     ),
+    "ops.export_all": (_export_all, "export.all"),
+    "ops.import_all": (_import_all, "import.all"),
     "ops.export_item_show": (_export_item_show, None),
     "ops.backfill_estimate": (_backfill_estimate, None),
     "ops.backfill_start": (_backfill_start, None),

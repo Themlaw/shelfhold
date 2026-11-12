@@ -32,6 +32,7 @@ __all__ = [
     "open_offset_suggestion",
     "open_suggestions",
     "suggest_duplicates",
+    "tombstoned",
 ]
 
 REASON = "same_title_same_author"

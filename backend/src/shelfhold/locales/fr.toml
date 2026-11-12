@@ -690,6 +690,17 @@ op_line = "{kind} {path}"
 blocked_line = "Bloqué ({code}) : chapitre {unit}"
 warning_line = "Avertissement ({code}) : chapitre {unit}"
 
+[exportall]
+export_help = "Exporte toute la bibliothèque au format ouvert shelfhold-export/1 (JSON versionné et arbre de fichiers), sans pierre tombale ni secret. Réservé à l'admin, journalisé."
+folder_help = "Dossier de destination, neuf ou vide (jamais /data, /store ni la bibliothèque), nommé par chemin absolu."
+import_help = "Importe un export shelfhold-export/1 dans une instance neuve : refusé si l'instance contient déjà quelque chose. Réservé à l'admin, journalisé."
+import_folder_help = "Dossier produit par « shelfhold export-all »."
+exported = "Export écrit dans {folder} : {rows} ligne(s) dans {tables} table(s), {files} fichier(s)."
+withheld = "Laissé hors de l'export, parce qu'une pierre tombale le couvre : {units} chapitre(s), {works} œuvre(s)."
+files_warning = "Attention : {missing} fichier(s) connu(s) du registre introuvable(s) sur le disque, {altered} copie(s) qui ne correspond(ent) plus à l'empreinte du registre (voir manifest.json)."
+imported = "Import terminé : {rows} ligne(s) dans {tables} table(s), {files} fichier(s)."
+next_steps = "Suite : « shelfhold admin reset-password » pour chaque profil (aucun mot de passe n'est exporté), « shelfhold search rebuild » pour l'index de recherche, puis « shelfhold reconcile » pour que l'instance recense les fichiers restaurés."
+
 [diagnostic]
 out_dir_missing = "Le dossier du fichier demandé n'existe pas."
 out_exists = "Le fichier demandé existe déjà : un paquet de diagnostic n'écrase jamais rien."

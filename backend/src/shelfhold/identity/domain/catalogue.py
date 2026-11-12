@@ -67,6 +67,9 @@ _DECLARED = (
     _action("coverage.resplit", Effect.CHANGES_COVERAGE),
     # `contributor set-died-for-france --yes|--no|--unknown` (M2 L15b, EF-SRC-024)
     _action("contributor.set_died_for_france", Effect.RECORDS_LEGAL_FACT),
+    # The open export and its import (M3 L37, EF-INT-016): every profile's data leaves, or enters
+    _action("export.all", Effect.MOVES_INSTANCE_DATA),
+    _action("import.all", Effect.MOVES_INSTANCE_DATA),
     # Parental control
     _action("shelf.max_age_rating", Effect.PARENTAL_CONTROL),
     _action("shelf.allowed_profiles", Effect.PARENTAL_CONTROL),

@@ -55,6 +55,7 @@ from shelfhold.ops.errors import (
     StillWaitingError,
     UnknownSubjectError,
 )
+from shelfhold.ops.export_all import ExportAllOps
 from shelfhold.ops.export_item import ExportItemOps
 from shelfhold.ops.follows import FollowOps
 from shelfhold.ops.import_folder import ImportOps
@@ -203,6 +204,7 @@ class OpsServices:
         resplit: ResplitOps | None = None,
         contributors: ContributorOps | None = None,
         export_items: ExportItemOps | None = None,
+        export_all: ExportAllOps | None = None,
         follows: FollowOps | None = None,
         acquire: AcquireOps | None = None,
         roots: RootOps | None = None,
@@ -235,6 +237,7 @@ class OpsServices:
         self._resplit = resplit
         self._contributors = contributors
         self._export_items = export_items
+        self._export_all = export_all
         self._follows = follows
         self._acquire = acquire
         self._roots = roots
@@ -726,6 +729,13 @@ class OpsServices:
         if self._contributors is None:
             raise ExitUnavailableError("the contributor commands are not connected")
         return self._contributors
+
+    @property
+    def export_all(self) -> ExportAllOps:
+        """`export-all` and `import-all`: the whole library in the open format (EF-INT-016)."""
+        if self._export_all is None:
+            raise ExitUnavailableError("the open export is not connected")
+        return self._export_all
 
     @property
     def export_items(self) -> ExportItemOps:
