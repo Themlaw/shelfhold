@@ -26,8 +26,11 @@ def register(commands: argparse._SubParsersAction[argparse.ArgumentParser]) -> N
     enrich = actions.add_parser("enrich", help=t("cli.meta_enrich_help"), allow_abbrev=False)
     enrich.add_argument("target", help=t("cli.meta_target_help"))
     enrich.set_defaults(handler=run_enrich)
-    for name, help_key in (("lock", "cli.meta_lock_help"), ("unlock", "cli.meta_unlock_help")):
-        lock = actions.add_parser(name, help=t(help_key), allow_abbrev=False)
+    for name, help_text in (
+        ("lock", t("cli.meta_lock_help")),
+        ("unlock", t("cli.meta_unlock_help")),
+    ):
+        lock = actions.add_parser(name, help=help_text, allow_abbrev=False)
         lock.add_argument("edition", help=t("cli.meta_edition_help"))
         lock.add_argument("field", help=t("cli.meta_field_help"))
         if name == "lock":
@@ -82,8 +85,9 @@ def run_check(args: argparse.Namespace, channel: OpsChannel) -> int:
 def run_lock(args: argparse.Namespace, channel: OpsChannel) -> int:
     done = channel.call("ops.meta_lock", edition=args.edition, field=args.field,
                         value=args.value, lang=args.lang, on=args.on)  # fmt: skip
-    key = "meta.locked_kept" if done["kept"] else "meta.locked"
-    print(t(key, edition=done["edition_id"], field=done["field"], lang=done["lang"], on=done["on"]))
+    shown = {"edition": done["edition_id"], "field": done["field"], "lang": done["lang"],
+             "on": done["on"]}  # fmt: skip
+    print(t("meta.locked_kept", **shown) if done["kept"] else t("meta.locked", **shown))
     return 0
 
 

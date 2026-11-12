@@ -46,8 +46,8 @@ def run_item_show(args: argparse.Namespace, channel: OpsChannel) -> int:
     print(t("export.item_header", id=done["id"], kind=done["kind"], edition=done["edition_id"]))
     if done["label"]:
         print(t("export.item_volume", label=done["label"]))
-    print(t("export.item_state", units=done["units"],
-            state=t("export.item_closed" if done["closed"] else "export.item_open")))  # fmt: skip
+    closed = t("export.item_closed") if done["closed"] else t("export.item_open")
+    print(t("export.item_state", units=done["units"], state=closed))
     if done["kept"]:
         print(t("export.item_kept", path=done["kept"]))
     else:
