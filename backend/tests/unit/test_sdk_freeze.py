@@ -96,6 +96,8 @@ def test_fsop_plan_refuses_an_unknown_field_or_op() -> None:
         {"op": "write_inline", "rel_path": "a"},
         {"op": "touch_mtime", "rel_path": "a"},
         {"op": "mkdir", "rel_path": "a", "dst_rel_path": "b"},
+        {"op": "mkdir", "rel_path": "a", "mtime": "2026-01-02T03:04:05Z"},
+        {"op": "mkdir", "rel_path": "a" * 5000},
         {"op": "recycle", "rel_path": "a", "content_ref": {"kind": "sidecar", "ref": "x"}},
     ],
 )
@@ -176,6 +178,14 @@ def test_fsop_unlink_host_only_never_in_destination_plan() -> None:
     object.__setattr__(plan2.ops[0], "rel_path", ".shelfhold/x")
     with pytest.raises(FsOpPlanError):
         check_destination_plan(plan2)
+
+
+@pytest.mark.req("EF-EXP-065")
+def test_fsop_plan_object_form_and_bound_are_checked_again() -> None:
+    assert len(parse_destination_plan({"ops": [{"op": "mkdir", "rel_path": "a"}]}).ops) == 1
+    huge = FsOpPlan.model_construct(ops=[FsOp(op="mkdir", rel_path="a")] * 10_001)
+    with pytest.raises(FsOpPlanError):
+        check_destination_plan(huge)
 
 
 @pytest.mark.req("EF-EXP-065")
