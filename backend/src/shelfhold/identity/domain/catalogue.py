@@ -129,6 +129,7 @@ EXIT_ROUTES: tuple[ExitRoute, ...] = (
     _exit("jobs retry", "dead_letter"),
     _exit("target reconnect", "instance_changed"),
     _exit("target reconnect", "target_forbidden"),
+    _exit("target reconnect", "library_type_changed"),  # EF-EXP-049: once Kavita's type is back
     _exit("target rotate-key", "key_expiring", "target.rotate_key"),
     _exit("jobs retry", "not_indexed"),
     _exit("source set-secret", "auth_expired", "source.set_secret"),
@@ -173,6 +174,3 @@ EXIT_ROUTES: tuple[ExitRoute, ...] = (
     _exit("shelf withdraw", "withdrawal_pending", "shelf.withdraw"),
     _exit("restore acknowledge", "restored_credentials", "restore.acknowledge"),
 )
-
-# States whose exit command is not specified yet (M3): the test fails when one gets routes.
-EXIT_STATES_LATER = frozenset({"library_type_changed"})

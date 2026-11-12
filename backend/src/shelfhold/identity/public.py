@@ -42,7 +42,6 @@ from shelfhold.identity.application.service import (
 )
 from shelfhold.identity.domain.catalogue import (
     EXIT_ROUTES,
-    EXIT_STATES_LATER,
     RESERVED_ACTIONS,
     ExitRoute,
 )
@@ -103,7 +102,6 @@ __all__ = [
     "DEFAULT_RESERVED_ROLES",
     "DELETION_SITES",
     "EXIT_ROUTES",
-    "EXIT_STATES_LATER",
     "IDENTITY_HEADER_AUDIT",
     "INTEGRATION_ROLE",
     "KNOWN_ROLES",

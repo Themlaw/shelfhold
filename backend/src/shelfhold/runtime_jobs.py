@@ -13,6 +13,9 @@
   jobs (ENF-OPS-014): by day nothing looks at the disks, the second one may hash files;
 - `target.access_audit` (L26, L37) and `ops.disk_check` (L37): see `infrastructure.observability`;
 - `target.key_expiry` (daily): the J-14/J-1 notices of a Kavita key, read again from the target;
+- `target.library_type_check` and `target.major_update_replay` (daily, EF-EXP-049): the type of
+  each Kavita library read again (a change pauses the shelf), and the names replayed through
+  `parse-bulk` when the Kavita line changed; both only report, nothing is renamed or written;
 - `intents.prune` (daily): the closed intents older than the retention leave the journal;
 - `notify.dispatch` (EF-INT-006): the sender of the notification queue.
 
@@ -93,6 +96,7 @@ from shelfhold.export.targets.kavita.errors import (
     TargetForbidden,
     TargetUnreachable,
 )
+from shelfhold.export.targets.kavita.library_type import LibraryTypeService
 from shelfhold.export.targets.kavita.series import (
     SeriesAgeGate,
     SeriesAges,
@@ -108,6 +112,7 @@ from shelfhold.infrastructure.observability.wiring import daily_access_audit
 from shelfhold.infrastructure.schema import coherence, export
 from shelfhold.infrastructure.wake import WakeDeferred
 from shelfhold.integrations.apprise import NotificationDispatcher, register_notification_job
+from shelfhold.jobs.daily_checks import library_type_check, major_update_replay
 from shelfhold.jobs.integrity_job import register_integrity_job
 from shelfhold.jobs.public import JobContext, JobFailedError, JobPools
 from shelfhold.library.public import (
@@ -130,6 +135,8 @@ __all__ = [
     "EXPORT_JOB_KIND",
     "INTENT_PRUNE_KIND",
     "KEY_EXPIRY_KIND",
+    "LIBRARY_TYPE_CHECK_KIND",
+    "MAJOR_UPDATE_REPLAY_KIND",
     "RECONCILE_HASH_KIND",
     "RECONCILE_KIND",
     "PlanService",
@@ -148,8 +155,12 @@ EXPORT_CRON = "*/5 * * * *"
 RECONCILE_CRON = "*/10 * * * *"  # window job: runs every 10 minutes of the window only
 INTENT_PRUNE_KIND = "intents.prune"
 KEY_EXPIRY_KIND = "target.key_expiry"
+LIBRARY_TYPE_CHECK_KIND = "target.library_type_check"
+MAJOR_UPDATE_REPLAY_KIND = "target.major_update_replay"
 INTENT_PRUNE_CRON = "41 3 * * *"
 KEY_EXPIRY_CRON = "23 6 * * *"
+LIBRARY_TYPE_CHECK_CRON = "47 6 * * *"
+MAJOR_UPDATE_REPLAY_CRON = "52 6 * * *"
 INTENT_RETENTION = timedelta(days=30)  # a closed intent is kept a month for the audit trail
 RECONCILE_HASH_CRON = "30 3 * * *"  # inside the maintenance window, where files may be hashed
 SCAN_QUIET_S = 31  # the debounce of the scans (30 s of calm per destination)
@@ -562,12 +573,17 @@ async def _export_bound(
             ranged_hash=RangedExporter(comp.engine, comp.settings.data_dir).source_hash,
         )  # fmt: skip
         if names or apply is not None:
+            events = BusTargetEvents(comp.engine, comp.bus)
+            # the type of the libraries, read at each connection that is about to write: a type
+            # that changed pauses the shelf, and the pipeline below refuses to run (EF-EXP-049)
+            await LibraryTypeService(comp.engine, comp.clock, events).check(
+                client, destination.target_id
+            )
             pipeline, _fsops = disks.get()
             bulk = await BulkParse.fetch(client, names, library_type_named(kind))
             pipeline.bind_parse(bulk, verified=True)
             # EPUB series (EF-EXP-040): the ages due pushed, then read back locked, before any
             # plan; Kavita failing keeps the gate closed and no EPUB beyond what it shows leaves
-            events = BusTargetEvents(comp.engine, comp.bus)
             gate = SeriesAgeGate(comp.engine, comp.clock, events)
             pipeline.bind_age_gate(
                 await gate.open(client, destination.id),
@@ -953,6 +969,18 @@ def register_runtime_jobs(pools: JobPools, comp: Composition) -> None:
     key_check, prune = key_expiry(comp), intents_prune(comp)
     pools.register(KEY_EXPIRY_KIND, pool="io", handler=lambda _context: key_check(), writes=False)
     pools.scheduler.add(KEY_EXPIRY_KIND, KEY_EXPIRY_CRON, jitter_s=300)
+
+    events = BusTargetEvents(comp.engine, comp.bus)
+    type_check = library_type_check(comp.engine, comp.clock, events, connected_clients(comp))
+    replay = major_update_replay(comp.engine, comp.clock, events, connected_clients(comp))
+    pools.register(
+        LIBRARY_TYPE_CHECK_KIND, pool="io", handler=lambda _context: type_check(), writes=False
+    )
+    pools.scheduler.add(LIBRARY_TYPE_CHECK_KIND, LIBRARY_TYPE_CHECK_CRON, jitter_s=300)
+    pools.register(
+        MAJOR_UPDATE_REPLAY_KIND, pool="io", handler=lambda _context: replay(), writes=False
+    )
+    pools.scheduler.add(MAJOR_UPDATE_REPLAY_KIND, MAJOR_UPDATE_REPLAY_CRON, jitter_s=300)
 
     def run_prune(_context: JobContext) -> None:
         prune()

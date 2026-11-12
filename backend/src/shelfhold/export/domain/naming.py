@@ -388,10 +388,31 @@ def checked_export_path(
     path = export_path(frozen, template, extension)
     if parse is None:  # a preview of the names alone (EF-EXP-005): nothing is read, nothing written
         return path
+    check_parsed_path(frozen, path, parse, extension)
+    return path
+
+
+def parsed_components(frozen: FrozenAttrs, path: ExportPath, extension: str = ".cbz") -> list[str]:
+    """The names `plugin/parse` is asked about for a path: every folder, and for a chapter or a
+    special the file name and the name without its extension. A closed volume is meant to deduce
+    a volume: only its folders are read."""
     components = list(path.directory)
     if frozen.kind != "volume":
         components += [path.filename, path.filename.removesuffix(extension)]
-    for component in components:
+    return components
+
+
+def check_parsed_path(
+    frozen: FrozenAttrs,
+    path: ExportPath,
+    parse: Callable[[str], "Parsed"],
+    extension: str = ".cbz",
+) -> None:
+    """What `plugin/parse` reads in a path, against what the path must say: a volume deduced
+    anywhere in a chapter's path, or a chapter number that is not the unit's, is refused. The
+    same check serves the plan (a path about to be written) and the replay (a path already
+    written, read again by a newer Kavita)."""
+    for component in parsed_components(frozen, path, extension):
         if volume_deduced(parse(component)):
             raise SeriesNameYieldsVolume("a volume is deduced from the name", component=component)
     if frozen.kind == "unit" and frozen.track == "main" and not is_chapter_zero(frozen):
@@ -401,7 +422,6 @@ def checked_export_path(
             raise NameMisreadNumber(
                 f"read {read}, expected {frozen.number_norm}", component=path.filename
             )
-    return path
 
 
 def series_cover_source(items: Iterable[FrozenAttrs]) -> FrozenAttrs | None:

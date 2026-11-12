@@ -1302,6 +1302,10 @@ action = "Confirmez avec « shelfhold target reconnect » ; rien n'est recréé 
 title = "La clé d'API de Kavita expire bientôt."
 action = "Générez une nouvelle clé dans Kavita et enregistrez-la dans Shelfhold."
 
+[errors."target.library_type_changed"]
+title = "Le type d'une bibliothèque Kavita a changé."
+action = "L'étagère est en pause et rien n'est renommé. Remettez le type d'origine dans Kavita, puis lancez « shelfhold target reconnect »."
+
 [errors."target.not_indexed"]
 title = "Le fichier écrit n'apparaît pas dans Kavita."
 action = "Vérifiez l'exclusion de dossier, le type de bibliothèque et la surveillance des dossiers dans Kavita."

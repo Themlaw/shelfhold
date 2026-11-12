@@ -70,6 +70,7 @@ _TEMPLATES = {
     "auth_mode_unsupported": "shelfhold source recheck",
     "permission_denied": "shelfhold target recheck {extra}",
     "child_exposure": "shelfhold target recheck {subject}",
+    "library_type_changed": "shelfhold target reconnect {subject}",  # EF-EXP-049
     # M2 L09: the age gate of an EPUB series (not states of the enumeration: the next export
     # run reads Kavita again and lifts them; the recheck says what Kavita answers)
     "series_age_stale": "shelfhold target recheck {extra}",
@@ -309,6 +310,7 @@ def _targets(connection: Connection) -> list[WaitingItem]:
                 "route_missing": ", ".join(health.missing_routes),
                 "key_expiring": f"key expires {health.key_expires_at}",
                 "not_indexed": "a written file was never indexed",
+                "library_type_changed": "a library type changed in Kavita; the shelf is paused",
             }.get(state, state)
             items.append(_item(state, "export", row.id, reason or state))
     return items
