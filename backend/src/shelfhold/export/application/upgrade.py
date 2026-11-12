@@ -96,6 +96,7 @@ class UpgradeOutcome(enum.Enum):
     BUSY = "busy"  # another intent holds the path
     TARGET_CHANGED = "target_changed"  # the served file is not the manifest's: left alone
     SUSPECT_REVISION = "suspect_revision"  # quarantined by the guard: never promoted (EF-BIB-024)
+    REFUSED_AGE = "refused_age"  # the shelf below 18+ no longer admits the Edition (EF-BIB-037)
 
 
 @dataclass(frozen=True)
