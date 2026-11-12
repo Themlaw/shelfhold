@@ -40,6 +40,8 @@ class FollowOut(BaseModel):
 
 class CheckOut(BaseModel):
     queued: int  # follow jobs queued (or joined) for the services this series comes through
+    refresh: bool  # false: no source is asked (always-on mode, or asked too recently)
+    message: str
 
 
 def build_follows_router(get_ops: Callable[[], OpsServices]) -> APIRouter:

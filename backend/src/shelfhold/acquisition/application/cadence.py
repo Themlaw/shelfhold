@@ -55,6 +55,7 @@ __all__ = [
 UNKNOWN_CADENCE = timedelta(days=1)  # a series with no measurable rhythm yet
 OVERDUE_DIVISOR = 4  # an overdue series is looked at again after a quarter of its interval
 RARE_UPSTREAM = ("finished", "paused")  # edition.upstream_status
+REFRESHED = "refreshed@"  # `source_binding.check_cron` marks when the source was last asked
 
 
 class UnknownSeriesError(LookupError):
@@ -117,12 +118,24 @@ def _rarely_checked(connection: sa.Connection, edition_id: str, override: str | 
     )
 
 
-def check_now(connection: sa.Connection, edition_id: str, now: datetime) -> list[str]:
+def _refreshed_at(mark: str | None) -> datetime | None:
+    if not mark or not mark.startswith(REFRESHED):
+        return None
+    try:
+        return datetime.fromisoformat(mark[len(REFRESHED) :])
+    except ValueError:
+        return None
+
+
+def check_now(
+    connection: sa.Connection, edition_id: str, now: datetime, policy: CadencePolicy | None = None
+) -> list[str]:
     """Make the series due at the next look; the plugins (services) to look through are returned.
-    A series paused by hand is refused: it is never looked at."""
+    A series paused by hand is refused: it is never looked at. A series whose source was asked
+    less than `check_min` ago is left alone and `[]` is returned: ten clicks are one look."""
     b, si, f = acquisition.source_binding, acquisition.source_item, acquisition.series_follow
     rows = connection.execute(
-        sa.select(b.c.id, si.c.plugin_id, f.c.check_override)
+        sa.select(b.c.id, si.c.plugin_id, f.c.check_override, b.c.check_cron)
         .select_from(
             b.join(si, si.c.id == b.c.source_item_id).join(f, f.c.edition_id == b.c.edition_id)
         )
@@ -132,6 +145,10 @@ def check_now(connection: sa.Connection, edition_id: str, now: datetime) -> list
         raise UnknownSeriesError(edition_id)
     if rows[0].check_override == "paused":
         raise SeriesPausedError(edition_id)
+    floor = (policy or CadencePolicy()).check_min
+    fresh = [(at := _refreshed_at(r.check_cron)) is not None and now - at < floor for r in rows]
+    if all(fresh):
+        return []
     connection.execute(
         sa.update(b).where(b.c.id.in_([r.id for r in rows])).values(next_expected=now)
     )
@@ -139,17 +156,34 @@ def check_now(connection: sa.Connection, edition_id: str, now: datetime) -> list
 
 
 def make_all_due(connection: sa.Connection, now: datetime) -> None:
-    """An admin who runs the follow job by hand asks for a look at every series: the cadence
-    is for the periodic pace, not for a request."""
-    b = acquisition.source_binding
-    connection.execute(sa.update(b).where(b.c.active).values(next_expected=now))
+    """An admin who runs the follow job by hand asks for a look at every series that is being
+    followed actively: the cadence is for the periodic pace, not for a request. Finished and
+    paused series keep their rare pace."""
+    b, f = acquisition.source_binding, acquisition.series_follow
+    e, w = catalog.edition, catalog.work
+    rare = (
+        sa.select(f.c.edition_id)
+        .select_from(f.join(e, e.c.id == f.c.edition_id).join(w, w.c.id == e.c.work_id))
+        .where(
+            sa.or_(
+                f.c.check_override.in_(NOT_CHECKED),
+                e.c.upstream_status.in_(RARE_UPSTREAM),
+                w.c.status.in_(FINISHED_STATUSES),
+            )
+        )
+    )
+    connection.execute(
+        sa.update(b).where(b.c.active, b.c.edition_id.notin_(rare)).values(next_expected=now)
+    )
 
 
-def request_check_job(engine: sa.Engine, clock: Any, pools: Any, edition_id: str) -> list[str]:
+def request_check_job(
+    engine: sa.Engine, clock: Any, pools: Any, edition_id: str, policy: CadencePolicy | None = None
+) -> list[str]:
     """ "Check now": the series is made due and the follow job of its service is queued in the
-    news class (a double click joins the job in flight)."""
+    news class (a double click joins the job in flight). `[]`: asked too recently, nothing done."""
     with engine.begin() as connection:
-        plugins = check_now(connection, edition_id, clock.now())
+        plugins = check_now(connection, edition_id, clock.now(), policy)
     for plugin_id in plugins:
         pools.submit(
             FOLLOW_JOB_KIND, dedupe_key=follow_dedupe_key(plugin_id), source_key=plugin_id,
@@ -189,7 +223,8 @@ class CadencedFollowCycle(FollowCycle):
         expected = connection.execute(
             sa.select(table.c.next_expected).where(table.c.id == binding.id)
         ).scalar_one()
-        return expected is None or expected <= now
+        farthest = now + max(self._policy.check_max, self._policy.check_finished)
+        return expected is None or expected <= now or expected > farthest  # a clock set back
 
     def _reschedule(self) -> None:
         """After the look: the series that were refreshed, or that showed a new release, get
@@ -203,9 +238,9 @@ class CadencedFollowCycle(FollowCycle):
                     continue
                 finished = _rarely_checked(connection, binding.edition_id, binding.check_override)
                 when = next_check(now, seen, self._policy, finished=finished)
-                seconds = int((when - now).total_seconds())
+                values: dict[str, Any] = {"next_expected": when}
+                if binding_id in self._due:  # the source was asked in this cycle
+                    values["check_cron"] = f"{REFRESHED}{now.isoformat()}"
                 connection.execute(
-                    sa.update(table).where(table.c.id == binding_id).values(
-                        next_expected=when, check_cron=f"@every {seconds}s"
-                    )
-                )  # fmt: skip
+                    sa.update(table).where(table.c.id == binding_id).values(**values)
+                )

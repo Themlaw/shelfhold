@@ -64,8 +64,8 @@ def _gap_ack(args: argparse.Namespace, channel: OpsChannel) -> int:
 
 @ops_command
 def _check(args: argparse.Namespace, channel: OpsChannel) -> int:
-    channel.call("ops.follow_check", edition_id=args.remote_id)
-    print(t("ops.follow_check_queued"))
+    answer = channel.call("ops.follow_check", edition_id=args.remote_id)
+    print(answer["message"])
     return 0
 
 

@@ -243,9 +243,17 @@ export type CeilingIn = {
  */
 export type CheckOut = {
     /**
+     * Message
+     */
+    message: string;
+    /**
      * Queued
      */
     queued: number;
+    /**
+     * Refresh
+     */
+    refresh: boolean;
 };
 
 /**

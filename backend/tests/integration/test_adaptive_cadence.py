@@ -12,6 +12,7 @@ from shelfhold.acquisition.application.cadence import (
     SeriesPausedError,
     UnknownSeriesError,
     check_now,
+    make_all_due,
 )
 from shelfhold.acquisition.application.follow import FOLLOW_JOB_KIND, REFRESH_SPACING
 from shelfhold.jobs.huey_app import JobPools
@@ -141,6 +142,7 @@ def test_check_now_asks_only_the_requested_series() -> None:
         bench.add_binding("suwayomi:7002", "/series-beta")
         bench.run()
         asked = len(bench.server.refreshed)
+        bench.clock.advance(hours=2)  # the source was not asked a moment ago
         with bench.lib.engine.begin() as c:
             check_now(c, bench.edition_id, bench.clock.now())
         bench.run()
@@ -154,6 +156,7 @@ def test_check_now_on_a_finished_series_checks_once_and_returns_to_the_rare_pace
             c.execute(sa.text("UPDATE edition SET upstream_status = 'finished'"))
         bench.run()
         asked = len(bench.server.refreshed)
+        bench.clock.advance(hours=2)  # the source was not asked a moment ago
         with bench.lib.engine.begin() as c:
             check_now(c, bench.edition_id, bench.clock.now())
         bench.run()
@@ -204,3 +207,69 @@ def test_check_now_job_is_of_the_news_class(tmp_path: Path) -> None:
         assert jobs == [{"kind": FOLLOW_JOB_KIND, "priority_class": "new"}]
         request_check_job(bench.lib.engine, bench.clock, pools, bench.edition_id)  # a double click
         assert len(bench.rows("SELECT id FROM job_view")) == 1
+
+
+@pytest.mark.req("EF-SRC-038", "EF-SRC-009")
+def test_check_now_clicked_ten_times_is_one_look_of_the_source() -> None:
+    """Attack: a source asked less than `check_min` ago is not asked again on request."""
+    with follow_bench(check_mode="piloted", cycle_class=CadencedFollowCycle) as bench:
+        bench.run()
+        asked = len(bench.server.refreshed)
+        before = _expected(bench)
+        for _ in range(10):
+            with bench.lib.engine.begin() as c:
+                assert check_now(c, bench.edition_id, bench.clock.now()) == []
+            bench.run()
+        assert len(bench.server.refreshed) == asked
+        assert _expected(bench) == before  # not even made due
+        bench.clock.advance(hours=2)
+        with bench.lib.engine.begin() as c:
+            assert check_now(c, bench.edition_id, bench.clock.now()) == ["suwayomi"]
+        bench.run()
+        assert len(bench.server.refreshed) == asked + 1
+
+
+@pytest.mark.req("EF-SRC-038")
+def test_series_scheduled_absurdly_far_away_is_due_again() -> None:
+    """Attack: a clock set back, or `check_max` lowered, cannot starve a series."""
+    with follow_bench(check_mode="piloted", cycle_class=CadencedFollowCycle) as bench:
+        bench.run()
+        asked = len(bench.server.refreshed)
+        far = bench.clock.now() + 400 * DAY
+        with bench.lib.engine.begin() as c:
+            c.execute(sa.text("UPDATE source_binding SET next_expected = :f"), {"f": far})
+        bench.run()
+        assert len(bench.server.refreshed) == asked + 1
+
+
+@pytest.mark.req("EF-SRC-038")
+def test_manual_follow_run_leaves_finished_and_paused_series_alone() -> None:
+    with follow_bench(check_mode="piloted", cycle_class=CadencedFollowCycle) as bench:
+        bench.add_binding("suwayomi:7002", "/series-beta")
+        bench.run()
+        far = bench.clock.now() + 20 * DAY
+        with bench.lib.engine.begin() as c:
+            c.execute(sa.text("UPDATE source_binding SET next_expected = :f"), {"f": far})
+            c.execute(
+                sa.text("UPDATE edition SET upstream_status = 'finished' WHERE id = :e"),
+                {"e": bench.edition_id},
+            )
+            make_all_due(c, bench.clock.now())
+        rows = {
+            r["edition_id"]: r["next_expected"]
+            for r in bench.rows("SELECT edition_id, next_expected FROM source_binding")
+        }
+        assert str(far.replace(tzinfo=None))[:10] in rows[bench.edition_id]  # finished: untouched
+        others = [v for k, v in rows.items() if k != bench.edition_id]
+        assert others and all(str(far.replace(tzinfo=None))[:10] not in v for v in others)
+        with bench.lib.engine.begin() as c:
+            c.execute(sa.text("UPDATE series_follow SET check_override = 'paused'"))
+            c.execute(sa.text("UPDATE source_binding SET next_expected = :f"), {"f": far})
+            make_all_due(c, bench.clock.now())
+        assert all(
+            str(far.replace(tzinfo=None))[:10] in r["next_expected"]
+            for r in bench.rows(
+                "SELECT b.next_expected FROM source_binding b "
+                "JOIN series_follow f ON f.edition_id = b.edition_id"
+            )
+        )

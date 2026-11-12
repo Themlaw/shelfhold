@@ -49,7 +49,7 @@ def test_cli_follow_check_queues_a_news_class_job(
         edition = _follow(api)
         capsys.readouterr()
         assert run_cli(monkeypatch, settings, "follow", "check", edition) == 0
-        assert "Vérification demandée" in capsys.readouterr().out
+        assert "aucune source" in capsys.readouterr().out  # always-on: nothing is asked
         assert {"kind": "follow.cycle", "priority_class": "new"} in _jobs(api)
         assert _next_expected(api) is not None  # due at the next look
 
@@ -90,7 +90,9 @@ def test_check_route_needs_a_session_the_csrf_token_and_the_admin(
         assert missing.status_code == 404
         done = api.api.post(url)
         assert done.status_code == 200, done.text
-        assert done.json() == {"queued": 1}
+        body = done.json()
+        assert body["queued"] == 1 and body["refresh"] is False  # always-on: no source is asked
+        assert "aucune source" in body["message"]
         assert {"kind": "follow.cycle", "priority_class": "new"} in _jobs(api)
         assert _next_expected(api) is not None
 

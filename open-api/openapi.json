@@ -384,13 +384,23 @@
       },
       "CheckOut": {
         "properties": {
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
           "queued": {
             "title": "Queued",
             "type": "integer"
+          },
+          "refresh": {
+            "title": "Refresh",
+            "type": "boolean"
           }
         },
         "required": [
-          "queued"
+          "queued",
+          "refresh",
+          "message"
         ],
         "title": "CheckOut",
         "type": "object"
