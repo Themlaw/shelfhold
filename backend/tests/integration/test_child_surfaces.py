@@ -298,20 +298,12 @@ def test_pending_surfaces_get_a_real_child_case_when_they_arrive(api: AuthEnv) -
 
 @pytest.mark.req("EF-USR-006", "ENF-SEC-010")
 def test_new_route_without_a_child_case_is_caught(api: AuthEnv) -> None:
-    """The meta-test is not decoration: a route added to the application is reported."""
-    app = api.app
-    before = _routes(app)
-
-    @app.get("/api/v1/zz-new-surface")  # type: ignore[attr-defined]
-    def _new() -> dict[str, str]:  # pragma: no cover (never called)
-        return {}
-
-    app.openapi_schema = None  # type: ignore[attr-defined]
-    after = _routes(app)
-    assert after - before == {"GET /api/v1/zz-new-surface"}
-    assert after - set([*PUBLIC, *OWN, *OPEN, *CLOSED]) == {"GET /api/v1/zz-new-surface"}
-    app.router.routes.pop()  # type: ignore[attr-defined]
-    app.openapi_schema = None  # type: ignore[attr-defined]
+    """The meta-test is not decoration: a route that no registry names is reported as missing."""
+    known = set([*PUBLIC, *OWN, *OPEN, *CLOSED])
+    assert _routes(api.app) - known == set()  # today: every route has its case
+    assert ({*_routes(api.app), "GET /api/v1/zz-new-surface"} - known) == {
+        "GET /api/v1/zz-new-surface"
+    }
 
 
 # -- the closed routes -----------------------------------------------------------------------

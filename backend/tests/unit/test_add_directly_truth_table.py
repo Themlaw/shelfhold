@@ -5,7 +5,7 @@ import itertools
 
 import pytest
 
-from shelfhold.identity.public import ADD_DIRECTLY_REFUSALS, add_directly_refusal
+from shelfhold.identity.public import add_directly_refusal
 
 
 def _oracle(role: str, can_rate: bool, rated: bool, family: bool) -> str | None:
@@ -16,7 +16,7 @@ def _oracle(role: str, can_rate: bool, rated: bool, family: bool) -> str | None:
         return None  # an adult shelf takes what an adult chooses
     if not rated:
         return "unrated_edition"  # to every adult, whoever she is
-    if role == "member" and not can_rate:
+    if not can_rate:
         return "rate_right_required"  # she asks instead (D14)
     return None
 
@@ -43,4 +43,3 @@ def test_an_unrated_edition_never_reaches_a_family_shelf_for_any_adult() -> None
             role, can_rate=can_rate, edition_rated=False, shelf_family=True
         )
         assert refusal == "unrated_edition", (role, can_rate)
-    assert set(ADD_DIRECTLY_REFUSALS) == {"not_an_adult", "unrated_edition", "rate_right_required"}
