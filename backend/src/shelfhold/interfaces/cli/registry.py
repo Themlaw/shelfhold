@@ -14,13 +14,11 @@ import sys
 from collections.abc import Callable, Iterable, Sequence
 from types import ModuleType
 
-from shelfhold.config import ConfigError, ResolvedSettings, Settings, load_settings
+from shelfhold.config import ConfigError, ResolvedSettings, load_settings
 from shelfhold.i18n import t
-from shelfhold.infrastructure.clock import SystemClock
-from shelfhold.infrastructure.db import create_db_engine
 from shelfhold.infrastructure.logging import configure_logging
 from shelfhold.infrastructure.settings_store import load_db_settings
-from shelfhold.jobs.mode import MaintenanceMode
+from shelfhold.jobs.mode import frozen_on_disk
 
 Handler = Callable[[argparse.Namespace, ResolvedSettings], int]
 
@@ -108,21 +106,6 @@ def label_leaves(
     return found
 
 
-def frozen(settings: Settings) -> bool:
-    """True when the database says the mode is on. A database that is absent, not migrated that far
-    or busy is not the mode: the command goes on and meets its own error."""
-    database = settings.database_path
-    if not database.exists():
-        return False
-    engine = create_db_engine(database)
-    try:
-        return MaintenanceMode(engine, SystemClock()).state().active
-    except Exception:
-        return False
-    finally:
-        engine.dispose()
-
-
 def resolve_settings() -> ResolvedSettings:
     return load_settings(os.environ, db_loader=load_db_settings)
 
@@ -142,7 +125,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     if getattr(args, "configure_logging", True):
         settings = resolved.values
         configure_logging(level=settings.log_level, log_format=settings.log_format)
-    if getattr(args, "command_path", ()) not in FROZEN_OPEN and frozen(resolved.values):
+    if getattr(args, "command_path", ()) not in FROZEN_OPEN and frozen_on_disk(
+        resolved.values.database_path
+    ):
         print(t("local_cli.maintenance_active"), file=sys.stderr)  # EF-INT-018
         return 1
     handler: Handler = args.handler

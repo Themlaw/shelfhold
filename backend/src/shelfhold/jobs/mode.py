@@ -24,6 +24,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
+from pathlib import Path
 from typing import Final
 
 import sqlalchemy as sa
@@ -32,7 +33,7 @@ from sqlalchemy import Connection, Engine
 from shelfhold.infrastructure.clock import Clock
 from shelfhold.infrastructure.schema import platform
 
-__all__ = ["ACTIVE_CODE", "PARK_CODE", "MaintenanceMode", "MaintenanceState"]
+__all__ = ["ACTIVE_CODE", "PARK_CODE", "MaintenanceMode", "MaintenanceState", "frozen_on_disk"]
 
 ACTIVE_CODE: Final = "maintenance.active"  # the catalog code of the refusal (HTTP 503)
 PARK_CODE: Final = "maintenance"  # `job_view.error_code` of a job parked by the mode
@@ -45,6 +46,26 @@ class MaintenanceState:
     active: bool
     since: datetime | None = None
     by: str | None = None  # the user that entered it (None: the host CLI)
+
+
+def frozen_on_disk(database: Path) -> bool:
+    """Is the mode on, read from the file alone (the host CLI, before it runs a command)? A
+    read-only connection with no pragma and no pool: asking must never be what holds the database.
+    An absent file, a database not migrated that far or a locked one is not the mode."""
+    if not database.exists():
+        return False
+    engine = sa.create_engine(
+        f"sqlite:///file:{database}?mode=ro&uri=true",
+        poolclass=sa.pool.NullPool,
+        connect_args={"timeout": 1},
+    )
+    try:
+        with engine.connect() as conn:
+            return conn.execute(sa.select(instance.c.maintenance_since)).scalar() is not None
+    except sa.exc.DBAPIError:
+        return False
+    finally:
+        engine.dispose()
 
 
 class MaintenanceMode:

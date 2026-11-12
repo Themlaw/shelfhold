@@ -252,11 +252,14 @@ class JobLedger:
 
     def resume_paused(self, code: str, job_id: str | None = None) -> list[PendingJob]:
         """The jobs parked with `code` go back to the queue, to be sent again."""
+        where: tuple[object, ...] = (
+            job_view.c.status == "paused", job_view.c.error_code == code,
+            *((job_view.c.id == job_id,) if job_id else ()),
+        )  # fmt: skip
+        with self._engine.connect() as probe:  # the tick asks this every minute: a read, no lock
+            if probe.execute(sa.select(job_view.c.id).where(*where).limit(1)).first() is None:  # type: ignore[arg-type]
+                return []
         with self._engine.begin() as conn:
-            where: tuple[object, ...] = (
-                job_view.c.status == "paused", job_view.c.error_code == code,
-                *((job_view.c.id == job_id,) if job_id else ()),
-            )  # fmt: skip
             rows = conn.execute(sa.select(job_view).where(*where)).all()  # type: ignore[arg-type]
             conn.execute(
                 sa.update(job_view)
