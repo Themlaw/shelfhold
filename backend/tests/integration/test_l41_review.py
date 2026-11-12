@@ -3,6 +3,7 @@
 import asyncio
 import os
 from datetime import timedelta
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -192,7 +193,9 @@ def test_m3_a_destination_lost_after_the_writing_does_not_escape(monkeypatch) ->
             clock=None,  # type: ignore[arg-type]
             session_duration=timedelta(minutes=5),
         ),
-        settings=SimpleNamespace(naming_segment_policy_confirmed=False, data_dir=None),
+        settings=SimpleNamespace(
+            naming_segment_policy_confirmed=False, data_dir=Path("/nonexistent-data")
+        ),
     )
     asyncio.run(
         rj._export_one(comp, Disks(), Client(), rj.Destination("d", "t"), scans, context)  # type: ignore[arg-type]
