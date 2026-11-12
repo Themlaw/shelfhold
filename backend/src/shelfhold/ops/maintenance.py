@@ -151,7 +151,7 @@ class MaintenanceOps:
                 conn, source=source, at=self._clock.now(), by=_user(principal)
             )
             self._audit(conn, principal, QUEUE, f"pause:{source or 'all'}")
-        log.info("queue.paused", source=source, parked=parked)
+        log.info("queue.paused", scope=source, parked=parked)
         return {"scope": source or "all", "parked": parked}
 
     def resume(self, source: str | None, *, principal: Principal) -> dict[str, Any]:
@@ -159,7 +159,7 @@ class MaintenanceOps:
         with self._engine.begin() as conn:
             resumed = self.control.resume(conn, source=source)
             self._audit(conn, principal, QUEUE, f"resume:{source or 'all'}")
-        log.info("queue.resumed", source=source, resumed=resumed)
+        log.info("queue.resumed", scope=source, resumed=resumed)
         return {"scope": source or "all", "resumed": resumed}
 
     def cancel(self, job_id: str, *, principal: Principal) -> dict[str, Any]:

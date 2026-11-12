@@ -382,7 +382,8 @@ class JobPools:
             return ScanReport(())
         self.end_maintenance_parks()
         report = self.scheduler.scan()
-        self.promote_aged_backfill()
+        if not self.mode.active():  # frozen: no write, no send (EF-INT-018)
+            self.promote_aged_backfill()
         log.debug("scheduler.scanned", queued=len(report.queued))
         return report
 
