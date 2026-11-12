@@ -34,6 +34,7 @@ CODES: tuple[ErrorCode, ...] = (
     ErrorCode("shelf.rating_required", 422, "user"),
     ErrorCode("shelf.above_ceiling", 422, "user"),
     ErrorCode("shelf.suggestion_above", 422, "user"),
+    ErrorCode("shelf.family_ceiling_too_high", 422, "user"),
     ErrorCode("shelf.destination_not_partitioned", 409, "admin"),
     ErrorCode("shelf.library_not_dedicated", 409, "admin"),
     ErrorCode("target.remote_folder_shared", 409, "admin"),

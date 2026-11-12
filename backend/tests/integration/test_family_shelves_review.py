@@ -118,6 +118,10 @@ def test_ceiling_raised_after_the_link_pauses_the_shelf_until_recheck(
                     export.shelf_destination.c.id == destination
                 )
             ).scalar_one()
+        with inst.engine.begin() as c:  # "Famille" is capped at 13+ (L33): raise another shelf
+            c.execute(
+                sa.update(export.shelf).where(export.shelf.c.id == shelf_id).values(name="Ados")
+            )
         ShelfService(inst.engine).set_max_age(shelf_id, 99, actor=None)
         with inst.engine.connect() as c:
             paused = c.execute(

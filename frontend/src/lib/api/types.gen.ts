@@ -109,6 +109,20 @@ export type ActivityOut = {
 };
 
 /**
+ * AdoptedLibraryIn
+ */
+export type AdoptedLibraryIn = {
+    /**
+     * Kind
+     */
+    kind: string;
+    /**
+     * Name
+     */
+    name: string;
+};
+
+/**
  * AppliedOut
  */
 export type AppliedOut = {
@@ -469,7 +483,7 @@ export type EditionShelfIn = {
     /**
      * Shelf Id
      */
-    shelf_id: string;
+    shelf_id?: string | null;
 };
 
 /**
@@ -1402,6 +1416,26 @@ export type PlanOut = {
     warnings: Array<{
         [key: string]: unknown;
     }>;
+};
+
+/**
+ * PrecreateIn
+ */
+export type PrecreateIn = {
+    /**
+     * Adopted
+     */
+    adopted?: Array<AdoptedLibraryIn>;
+};
+
+/**
+ * PrecreatedOut
+ */
+export type PrecreatedOut = {
+    /**
+     * Created
+     */
+    created: Array<string>;
 };
 
 /**
@@ -5243,6 +5277,39 @@ export type CreateShelfResponses = {
 };
 
 export type CreateShelfResponse = CreateShelfResponses[keyof CreateShelfResponses];
+
+export type PrecreateData = {
+    body: PrecreateIn;
+    path?: never;
+    query?: never;
+    url: '/api/v1/shelves/precreate';
+};
+
+export type PrecreateErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type PrecreateError = PrecreateErrors[keyof PrecreateErrors];
+
+export type PrecreateResponses = {
+    /**
+     * Successful Response
+     */
+    201: PrecreatedOut;
+};
+
+export type PrecreateResponse = PrecreateResponses[keyof PrecreateResponses];
 
 export type WithdrawalPlanData = {
     body?: never;

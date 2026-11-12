@@ -1042,6 +1042,10 @@ action = "Retirez-la manuellement de la bibliothèque Suwayomi."
 title = "Ce plafond d'âge n'est pas un palier de l'échelle."
 action = "Choisissez 0+, 10+, 12+, 13+, 16+, 18+, X, ou aucun plafond."
 
+[errors."shelf.family_ceiling_too_high"]
+title = "L'étagère « Famille » ne peut pas dépasser 13+."
+action = "Choisissez 13+ ou moins pour Famille, ou créez une autre étagère pour les contenus plus âgés."
+
 [errors."shelf.rating_required"]
 title = "Cette Édition n'est pas classée : elle ne peut pas entrer dans une étagère famille."
 action = "Classez l'Œuvre (shelfhold rate) : seul un administrateur approuve un contenu pour les enfants."

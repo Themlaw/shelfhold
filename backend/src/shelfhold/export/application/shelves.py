@@ -12,6 +12,7 @@ profiles are reserved actions: the caller has passed `authorize_reserved`; the a
 """
 
 import os
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Protocol
@@ -19,7 +20,12 @@ from typing import Protocol
 import sqlalchemy as sa
 from sqlalchemy import Connection, Engine
 
-from shelfhold.catalog.public import Admission, RatingService
+from shelfhold.catalog.public import Admission, RatingService, file_new_edition
+from shelfhold.export.application.precreate import (
+    AdoptedLibrary,
+    Precreated,
+    precreate_shelves,
+)
 from shelfhold.export.application.snapshot import load_context
 from shelfhold.export.application.target_state import CHILD_EXPOSURE, pause_shelf
 from shelfhold.export.application.withdrawal import WithdrawalPlan, build_plan
@@ -29,6 +35,7 @@ from shelfhold.export.domain.bindings import (
     Egress,
     check_binding,
     check_ceiling,
+    check_family_cap,
     check_partitioning,
     effective_partitioning,
     is_family,
@@ -64,6 +71,9 @@ class Actor(Protocol):
     def session_id(self) -> str | None: ...
     @property
     def auth_time(self) -> datetime | None: ...
+
+
+TAKEN = "remote_library_taken"  # the reason `FileResult` gives for the one-per-library rule
 
 
 @dataclass(frozen=True)
@@ -115,6 +125,7 @@ class ShelfService:
         """A ceiling off the scale is refused before anything is stored. "Retenir tant que non
         classé" is on by default for a shelf below 18+ (EF-EXP-050)."""
         check_ceiling(max_age_rating)
+        check_family_cap(name, max_age_rating)
         hold = is_family(max_age_rating) if hold_until_rated is None else hold_until_rated
         shelf_id = new_ulid()
         with self._engine.begin() as connection:
@@ -135,9 +146,12 @@ class ShelfService:
         the new ceiling no longer admits comes back as a removal plan, never as a removal."""
         check_ceiling(max_age_rating)
         with self._engine.begin() as connection:
-            previous = connection.execute(
-                sa.select(export.shelf.c.max_age_rating).where(export.shelf.c.id == shelf_id)
-            ).scalar_one()
+            name, previous = connection.execute(
+                sa.select(export.shelf.c.name, export.shelf.c.max_age_rating).where(
+                    export.shelf.c.id == shelf_id
+                )
+            ).one()
+            check_family_cap(name, max_age_rating)
             for partitioning in self._partitionings(connection, shelf_id):
                 check_partitioning(max_age_rating, partitioning)
             connection.execute(
@@ -254,12 +268,51 @@ class ShelfService:
             raise LookupError(f"no single shelf is called {name_or_id!r}")
         return str(found[0])
 
+    def precreate(self, adopted: Sequence[AdoptedLibrary] = ()) -> Precreated:
+        """The shelves of a new instance and one per adopted library, none rewritten."""
+        return precreate_shelves(self._engine, adopted=adopted)
+
+    def _immediate(self) -> Engine:
+        """The write starts with the lock (SQLite `BEGIN IMMEDIATE`): what a filing checks is
+        still true when it writes, even with another writer at the same time."""
+        return self._engine.execution_options(shelfhold_begin="BEGIN IMMEDIATE")
+
+    @staticmethod
+    def _library_taken(connection: Connection, edition_id: str, shelf_id: str) -> bool:
+        """One Edition, one shelf per remote library (EF-EXP-002): a library the shelf aims at
+        already holds a series of this Edition made by another shelf."""
+        link, dest = export.shelf_destination_remote_library, export.shelf_destination
+        series, made = export.export_series, export.edition_export_series
+        mine = (
+            sa.select(link.c.remote_library_id)
+            .select_from(link.join(dest, dest.c.id == link.c.shelf_destination_id))
+            .where(dest.c.shelf_id == shelf_id)
+        )
+        owner = dest.alias("owner")
+        elsewhere = connection.execute(
+            sa.select(owner.c.shelf_id)
+            .select_from(
+                made.join(series, series.c.id == made.c.export_series_id).join(
+                    owner, owner.c.id == series.c.shelf_destination_id
+                )
+            )
+            .where(
+                made.c.edition_id == edition_id,
+                made.c.remote_library_id.in_(mine),
+                owner.c.shelf_id != shelf_id,
+            )
+        ).first()
+        return elsewhere is not None
+
     def file_edition(
         self, edition_id: str, shelf_id: str, *, actor: Actor | None = None
     ) -> FileResult:
         """Put an Edition on a shelf, by the one admission every road uses (EF-BIB-055): a shelf
-        below 18+ takes it only once an admin rated it and nothing suggests more."""
-        with self._engine.begin() as connection:
+        below 18+ takes it only once an admin rated it and nothing suggests more. A shelf that aims
+        at a remote library already holding the Edition under another shelf refuses it."""
+        with self._immediate().begin() as connection:
+            if self._library_taken(connection, edition_id, shelf_id):
+                return FileResult(False, TAKEN)
             verdict = self._rating.admission_of(connection, edition_id, shelf_id=shelf_id)
             if verdict is not Admission.ALLOWED:
                 return FileResult(False, verdict.value)
@@ -271,24 +324,50 @@ class ShelfService:
             self._audit(connection, actor, "edition.file", f"edition:{edition_id};shelf:{shelf_id}")
         return FileResult(True)
 
+    def file_default(self, edition_id: str, *, actor: Actor | None = None) -> FileResult:
+        """File an Edition that sits nowhere on the shelf its kind proposes. The door is the one of
+        the new Edition (`file_new_edition`): a shelf below 18+ never takes an Edition nobody
+        rated or rated above its ceiling, and the default never moves an Edition already shelved."""
+        with self._immediate().begin() as connection:
+            current = connection.execute(
+                sa.select(catalog.edition.c.shelf_id).where(catalog.edition.c.id == edition_id)
+            ).scalar_one()
+            if current is not None:
+                return FileResult(False, "already_shelved")
+            shelf_id = self._default_shelf(connection, edition_id)
+            if shelf_id is None:
+                return FileResult(False, "no_default_shelf")
+            if self._library_taken(connection, edition_id, shelf_id):
+                return FileResult(False, TAKEN)
+            filing = file_new_edition(connection, edition_id, shelf_id, rating=self._rating)
+            if filing.shelf_id is None or filing.waiting:
+                return FileResult(False, filing.reason)
+            self._audit(connection, actor, "edition.file", f"edition:{edition_id};shelf:{shelf_id}")
+        return FileResult(True)
+
+    @staticmethod
+    def _default_shelf(connection: Connection, edition_id: str) -> str | None:
+        kind, work, edition, shelf = catalog.work_kind, catalog.work, catalog.edition, export.shelf
+        found = connection.execute(
+            sa.select(shelf.c.id)
+            .select_from(
+                edition.join(work, work.c.id == edition.c.work_id)
+                .join(kind, kind.c.key == work.c.kind)
+                .join(shelf, shelf.c.name == kind.c.default_shelf)
+            )
+            .where(edition.c.id == edition_id)
+        ).scalar()
+        return None if found is None else str(found)
+
     def proposed_shelf(self, edition_id: str) -> str | None:
         """The shelf the kind of the Work proposes (`work_kind.default_shelf`, a shelf name), unless
         it is a shelf below 18+ that would not take the Edition (EF-EXP-002)."""
-        kind, work, edition, shelf = catalog.work_kind, catalog.work, catalog.edition, export.shelf
         with self._engine.connect() as connection:
-            shelf_id = connection.execute(
-                sa.select(shelf.c.id)
-                .select_from(
-                    edition.join(work, work.c.id == edition.c.work_id)
-                    .join(kind, kind.c.key == work.c.kind)
-                    .join(shelf, shelf.c.name == kind.c.default_shelf)
-                )
-                .where(edition.c.id == edition_id)
-            ).scalar()
+            shelf_id = self._default_shelf(connection, edition_id)
             if shelf_id is None:
                 return None
             verdict = self._rating.admission_of(connection, edition_id, shelf_id=shelf_id)
-        return str(shelf_id) if verdict is Admission.ALLOWED else None
+        return shelf_id if verdict is Admission.ALLOWED else None
 
     @staticmethod
     def _is_linked(connection: Connection, shelf_id: str) -> bool:

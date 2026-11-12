@@ -15,6 +15,7 @@ from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 
 from shelfhold.export.application.plans import StalePlanError
+from shelfhold.export.application.precreate import AdoptedLibrary
 from shelfhold.export.application.shelves import ShelfService
 from shelfhold.export.domain.bindings import BindingError
 from shelfhold.headless.actor import Actor
@@ -45,6 +46,19 @@ class ShelfIn(BaseModel):
     skip_read_upgrades: bool = True  # a read Unit is never replaced by a better one (EF-EXP-016)
 
 
+class AdoptedLibraryIn(BaseModel):
+    name: str = Field(min_length=1)
+    kind: str = Field(min_length=1)
+
+
+class PrecreateIn(BaseModel):
+    adopted: list[AdoptedLibraryIn] = Field(default_factory=list)
+
+
+class PrecreatedOut(BaseModel):
+    created: list[str]
+
+
 class SkipReadUpgradesIn(BaseModel):
     skip_read_upgrades: bool
 
@@ -62,7 +76,7 @@ class ProfilesOut(BaseModel):
 
 
 class EditionShelfIn(BaseModel):
-    shelf_id: str
+    shelf_id: str | None = None  # none: the shelf the kind of the Work proposes, by the same door
 
 
 class FiledOut(BaseModel):
@@ -112,6 +126,16 @@ def build_shelves_router(
         except BindingError as error:
             raise ProblemError(error.code) from None
         return ShelfOut(id=shelf_id)
+
+    @router.post("/precreate", status_code=201)
+    def precreate(
+        body: PrecreateIn,
+        _principal: Principal = Depends(reserved_action(_CEILING)),  # noqa: B008
+    ) -> PrecreatedOut:
+        """The shelves a new instance starts with and one per adopted library (EF-UX-007);
+        idempotent, a shelf that exists is never rewritten."""
+        made = get_service().precreate([AdoptedLibrary(a.name, a.kind) for a in body.adopted])
+        return PrecreatedOut(created=list(made.created))
 
     @router.post("/{shelf_id}/skip-read-upgrades")
     def set_skip_read_upgrades(
@@ -236,7 +260,14 @@ def build_edition_shelf_router(get_service: Callable[[], ShelfService]) -> APIRo
         principal: Principal = Depends(reserved_action(_FAMILY)),  # noqa: B008
     ) -> FiledOut:
         """File an Edition on a shelf; a shelf below 18+ takes it only through the admission."""
-        result = get_service().file_edition(edition_id, body.shelf_id, actor=_actor(principal))
+        service = get_service()
+        try:
+            if body.shelf_id is None:
+                result = service.file_default(edition_id, actor=_actor(principal))
+            else:
+                result = service.file_edition(edition_id, body.shelf_id, actor=_actor(principal))
+        except (LookupError, sa.exc.NoResultFound, sa.exc.IntegrityError):
+            raise ProblemError("not_found") from None
         return FiledOut(filed=result.filed, reason=result.reason)
 
     return router
