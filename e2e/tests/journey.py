@@ -43,6 +43,7 @@ class Cli:
 class Journey:
     files: list[str] = field(default_factory=lambda: ["compose.yaml", "journey.yaml"])
     app_image: str | None = None  # the image of `shelfhold` alone (the rollback journey)
+    extra_env: dict[str, str] = field(default_factory=dict)  # E2E_PKI_DIR (the M2 overlay)
 
     def _command(self) -> list[str]:
         command = ["docker", "compose", "-p", PROJECT]
@@ -53,6 +54,7 @@ class Journey:
     def _env(self) -> dict[str, str]:
         return {
             **os.environ,
+            **self.extra_env,
             **({"SHELFHOLD_APP_IMAGE": self.app_image} if self.app_image else {}),
         }
 
@@ -83,6 +85,25 @@ class Journey:
              f"umask 077; cat > {shlex.quote(path)}"],
             input=text, text=True, check=True, capture_output=True, timeout=60, env=self._env(),
         )  # fmt: skip
+
+    def put_bytes(
+        self, path: str, data: bytes, *, service: str = "shelfhold", old: bool = True
+    ) -> None:
+        """A file the administrator drops (binary); `old`: its date is far in the past, as a file
+        that finished copying long ago (the import folder waits for a file to settle)."""
+        subprocess.run(  # noqa: S603
+            [*self._command(), "exec", "-T", service, "sh", "-c",
+             f"umask 022; mkdir -p \"$(dirname {shlex.quote(path)})\"; cat > {shlex.quote(path)}"
+             + (f"; touch -d '2020-01-01 00:00:00' {shlex.quote(path)}" if old else "")],
+            input=data, check=True, capture_output=True, timeout=60, env=self._env(),
+        )  # fmt: skip
+
+    def read_bytes(self, path: str, *, service: str = "shelfhold") -> bytes:
+        done = subprocess.run(  # noqa: S603
+            [*self._command(), "exec", "-T", service, "cat", path],
+            check=True, capture_output=True, timeout=60, env=self._env(),
+        )  # fmt: skip
+        return done.stdout
 
     def api(self, *steps: tuple[object, ...], mode: str = "session") -> list[tuple[int, object]]:
         """Requests of the SPA, in one session: `(method, path[, body])`. `mode`: `session`

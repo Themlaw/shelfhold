@@ -37,4 +37,12 @@ SHARDS: dict[str, tuple[str, ...]] = {
         "test_rollback_adoption_clears_restored_behind",
         "test_rollback_with_a_work_tombstone_starts_the_previous_release",
     ),
+    # M2 (L32): one journey per runner
+    "m2-import": ("test_m2_import_folder_journey",),
+    "m2-age": ("test_m2_epub_age_only_adult_library_journey",),
+    "m2-gutenberg": ("test_m2_gutenberg_to_kavita_books_journey",),
+    "m2-encyclopedia": ("test_m2_wikisource_attribution_journey",),
+    "m2-opds": ("test_m2_opds_anti_echo_journey",),
+    "m2-lncrawl": ("test_m2_lncrawl_neutralized_journey",),
+    "m2-tree": ("test_m2_suwayomi_tree_journey",),
 }

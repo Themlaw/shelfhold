@@ -208,3 +208,56 @@ def test_nightly_real_kavita_family_library_age_restriction(kavita: RealKavita) 
     assert (audited["tolerant"].age_rating, audited["tolerant"].include_unknowns) == (8, True)
     assert audited["free"].age_rating == -1 and audited["free"].include_unknowns
     assert all(audited[name].library_ids == {library} for name in ("teen", "tolerant", "small"))
+
+
+def _epub(title: str) -> bytes:
+    """A well-formed EPUB with its own identifier and title, no age anywhere in it (L09: the age
+    of an EPUB series is never written in the file)."""
+    import hashlib
+
+    from shelfhold.sdk.testing.corpus.trapped_epubs.build import epub_bytes, opf, xhtml
+
+    ident = hashlib.sha256(title.encode()).hexdigest()[:32]
+    package = (
+        opf()
+        .replace(b"urn:uuid:00000000-0000-0000-0000-000000000001", f"urn:uuid:{ident}".encode())
+        .replace(b"<dc:title>Synthetic</dc:title>", f"<dc:title>{title}</dc:title>".encode())
+    )
+    return epub_bytes(xhtml(f"<p>{title}</p>"), opf_bytes=package)
+
+
+@pytest.mark.req("EF-EXP-033", "EF-EXP-040", "ENF-COMP-001")
+def test_nightly_real_kavita_epub_series_age_lock(kavita: RealKavita) -> None:
+    """DoD 03 on the real server, for each version: the age of an EPUB series is pushed through
+    the API and locked, and the lock survives the scans that follow (a Books library reads no age
+    in the file, so nothing else could set it back). A restricted account then reads the series
+    its ceiling allows and no other, the series without an age only when it includes unknowns."""
+    ages = {"Book Kids": 5, "Book Adult": 13}  # AgeRating: 10+ and 18+
+    for name in (*ages, "Book Unrated"):
+        kavita.write(f"books/{name}/{name}.epub", _epub(name))
+    library = kavita.create_library(
+        "Books", [kavita.remote("books")], library_type=LibraryType.BOOK
+    )
+    kavita.scan(kavita.remote("books"))
+    found = kavita.wait_series(library, lambda s: len(s) == 3, "the three book series")
+    for series in found:
+        if series.name in ages:
+            current = run(kavita.client.series_age(series.id))  # type: ignore[union-attr]
+            assert not current.locked  # nothing was locked before Shelfhold pushed
+            run(kavita.client.set_series_age(current, ages[series.name]))  # type: ignore[union-attr]
+
+    kavita.scan(kavita.remote("books"))  # the lock is checked after a scan, not before
+    kavita.settle(library, 10)
+    for series in kavita.series(library):
+        age = run(kavita.client.series_age(series.id))  # type: ignore[union-attr]
+        if series.name in ages:
+            assert (age.age_rating, age.locked) == (ages[series.name], True), series.name
+        else:
+            assert not age.locked  # the series left without an age stays "unknown"
+
+    kids = kavita.restricted_account("kid", [library], age_rating=5, include_unknowns=False)
+    assert kavita.visible_to(kids) == {"Book Kids"}
+    tolerant = kavita.restricted_account("tolerant", [library], age_rating=5, include_unknowns=True)
+    assert kavita.visible_to(tolerant) == {"Book Kids", "Book Unrated"}
+    free = kavita.restricted_account("free", [library], age_rating=-1, include_unknowns=True)
+    assert kavita.visible_to(free) == {"Book Kids", "Book Adult", "Book Unrated"}

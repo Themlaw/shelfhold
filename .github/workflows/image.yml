@@ -95,7 +95,7 @@ jobs:
       # One runner per shard, the same image artifact for all (e2e/shards.py: each under 10 minutes).
       matrix:
         arch: ${{ fromJSON(inputs.arm64 && '["amd64","arm64"]' || '["amd64"]') }}
-        shard: [smoke-install, redeploy, redeploy-export, detach-exits, exits-live-roots, detach-exclusion, name-collision, name-foreign, m1b-family, m1b-safeguard, m1b-wake, m1b-backup, m1b-ui-login, m1b-purge, m1b-rollback]
+        shard: [smoke-install, redeploy, redeploy-export, detach-exits, exits-live-roots, detach-exclusion, name-collision, name-foreign, m1b-family, m1b-safeguard, m1b-wake, m1b-backup, m1b-ui-login, m1b-purge, m1b-rollback, m2-import, m2-age, m2-gutenberg, m2-encyclopedia, m2-opds, m2-lncrawl, m2-tree]
     runs-on: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-24.04' }}
     timeout-minutes: 15
     permissions:

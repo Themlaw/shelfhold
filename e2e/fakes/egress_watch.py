@@ -79,8 +79,8 @@ def main(subnet: str, dns_names: list[str]) -> None:
     seen: set[str] = set()
     while True:
         frame, address = sock.recvfrom(65535)
-        if address[2] != PACKET_OUTGOING or len(frame) < 14:
-            continue
+        if address[2] != PACKET_OUTGOING or len(frame) < 14 or address[0] == "lo":
+            continue  # what goes through `lo` (an address of the stack's own) never leaves
         finding = inspect(frame, allowed, dns_ok)
         if finding and finding not in seen:
             seen.add(finding)

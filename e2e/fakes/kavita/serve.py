@@ -38,6 +38,12 @@ def _json(payload: object, status: int = 200) -> tuple[int, dict[str, str], byte
     return status, {"content-type": "application/json"}, json.dumps(payload).encode()
 
 
+def _books(folder: Path, *, deep: bool = True) -> list[Path]:
+    """The files Kavita indexes: comic archives and EPUB (a Books library, M2)."""
+    walk = folder.rglob if deep else folder.glob
+    return [p for pattern in ("*.cb[zr]", "*.epub") for p in walk(pattern)]
+
+
 def _scan(body: bytes) -> None:
     """Index what is on disk under the scanned folder, one series per folder holding CBZ."""
     folder = json.loads(body).get("folderPath") or ""
@@ -54,10 +60,10 @@ def _scan(body: bytes) -> None:
     )
     if library is None:
         return
-    for directory in sorted({p.parent for p in root.rglob("*.cb[zr]")}):
+    for directory in sorted({p.parent for p in _books(root)}):
         if any(part.startswith(".") for part in directory.relative_to(root).parts):
             continue  # Kavita is told to ignore the reserved area; the fake agrees
-        files = sorted(str(p) for p in directory.glob("*.cb[zr]"))
+        files = sorted(str(p) for p in _books(directory, deep=False))
         fake.discover(str(directory), files, library_id=library["id"])
 
 
@@ -66,7 +72,8 @@ def handle(method: str, target: str, headers: dict[str, str], body: bytes):  # t
     if path == "/_fake/state":
         return _json({"series": fake.series, "files": {str(k): v for k, v in fake.files.items()},
                       "libraries": fake.libraries, "violations": fake.violations,
-                      "scans": fake.scans, "keys": keys})  # fmt: skip
+                      "scans": fake.scans, "keys": keys,
+                      "ages": {str(k): v for k, v in fake.ages.items()}})  # fmt: skip
     lowered = path.lower()
     if path == "/_fake/foreign_series" and method == "POST":
         # a series Kavita holds from another source, in the first library: ?name=<name>
@@ -96,7 +103,16 @@ def handle(method: str, target: str, headers: dict[str, str], body: bytes):  # t
         name = parse_qs(urlsplit(target).query)["name"][0]
         user = next(u for u in fake.users if u["username"] == name)
         allowed = {lib["id"] for lib in user["libraries"]}
-        return _json([s["name"] for s in fake.series if s["libraryId"] in allowed])
+        ceiling = user["ageRestriction"]["ageRating"]
+        unknowns = user["ageRestriction"]["includeUnknowns"]
+
+        def readable(
+            series: dict[str, object],
+        ) -> bool:  # Kavita's own rule for a restricted account
+            age = int(fake.ages[int(series["id"])]["ageRating"])  # type: ignore[call-overload]
+            return ceiling < 0 or (unknowns if age == 0 else age <= ceiling)
+
+        return _json([s["name"] for s in fake.series if s["libraryId"] in allowed and readable(s)])
     if path == "/_fake/index" and method == "POST":
         # Kavita looks at a folder of the shared volume: ?folder=<path> (as a scan would)
         from urllib.parse import parse_qs, urlsplit

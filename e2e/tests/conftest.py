@@ -90,6 +90,7 @@ def wait_for(predicate: Callable[[], bool], seconds: float = 20.0) -> bool:
 
 
 M1B_FILES = ["compose.yaml", "journey.yaml", "m1b.yaml"]
+M2_FILES = ["compose.yaml", "journey.yaml", "m2.yaml"]
 
 
 @pytest.fixture
@@ -105,12 +106,24 @@ def journey_m1b() -> Iterator["Journey"]:
 
 
 @pytest.fixture
+def journey_m2(tmp_path: Path) -> Iterator["Journey"]:
+    """The journey stack with the import folder, the sources switched on, and the simulated servers
+    they ask (M2 overlay): the names resolve to an address of the stack's own loopback and the
+    test authority of `pki.py` is the only trust anchor added."""
+    from pki import make
+
+    folder = tmp_path / "pki"
+    make(folder, ["fr.wikisource.org", "ws-export.wmcloud.org", "standardebooks.org"])
+    yield from _journey(M2_FILES, extra_env={"E2E_PKI_DIR": str(folder), **({"E2E_LOG_LEVEL": os.environ["E2E_LOG_LEVEL"]} if "E2E_LOG_LEVEL" in os.environ else {})})
+
+
+@pytest.fixture
 def journey_ui_login() -> Iterator["Journey"]:
     """The M1b stack with the simulated Suwayomi in `ui_login` (JWT pair, per-account libraries)."""
     yield from _journey([*M1B_FILES, "ui-login.yaml"])
 
 
-def _journey(files: list[str]) -> Iterator["Journey"]:
+def _journey(files: list[str], extra_env: dict[str, str] | None = None) -> Iterator["Journey"]:
     from journey import Journey
 
     if not os.environ.get("SHELFHOLD_IMAGE"):
@@ -119,7 +132,7 @@ def _journey(files: list[str]) -> Iterator["Journey"]:
         )
     if shutil.which("docker") is None:
         pytest.skip("docker is not available")
-    stack = Journey(files=files)
+    stack = Journey(files=files, extra_env=extra_env or {})
     stack.compose("down", "-v", "-t", "1", check=False)
     try:
         stack.compose("up", "--wait", "-d")

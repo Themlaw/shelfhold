@@ -4,7 +4,8 @@ name: nightly
 # (EF-SRC-008, ENF-LEG-013, ENF-COMP-001). NEVER required to merge: it is not in `ci-success`, runs
 # on a schedule and on demand only, and a pull request cannot trigger it. No real content source:
 # every file is built by the tests, the extension reads a fixture server on an internal network.
-# A failure is read in the Actions tab (no issue is opened: the token has no write permission).
+# The Kavita job also locks the age of an EPUB series on a Books library (M2 L32, DoD 03) and reads
+# it back after a scan, for each version below. A failure is read in the Actions tab (no issue is opened: the token has no write permission).
 
 on:
   workflow_dispatch:

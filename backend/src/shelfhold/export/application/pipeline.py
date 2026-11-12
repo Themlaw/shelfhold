@@ -231,11 +231,13 @@ def wanted_names(
     destination_id: str,
     *,
     segment_policy_confirmed: bool = False,
-    ranged_hash: RangedHash = lambda _item: None,
+    ranged_hash: RangedHash = lambda _item: "sha256:unread",
 ) -> tuple[list[str], str | None]:
     """The names a plan of this destination asks `plugin/parse` about, and the Kavita library
     type to ask with. Read from the database alone: no disk is looked at, so an empty answer
-    (nothing to write) costs the disks nothing (ENF-OPS-014)."""
+    (nothing to write) costs the disks nothing (ENF-OPS-014). A kept file of a volume is taken as
+    present here (its bytes are read when the plan is made for writing): a missing one must not hide
+    the names the volume asks."""
     asked: list[str] = []
 
     def record(name: str) -> Parsed:
@@ -250,6 +252,9 @@ def wanted_names(
             covered_locals=open_intent_paths(connection),
             segment_policy_confirmed=segment_policy_confirmed,
             ranged_hash=ranged_hash,
+            # the gate is read from Kavita only once a name is asked: a closed one here would plan
+            # no EPUB of a rated Work, ask for no name, and the gate would never be read (M2 L32)
+            age_gate=AgeGateFacts(open=True),
         )  # fmt: skip
         kind = connection.execute(
             sa.select(export.shelf_destination.c.kavita_library_type).where(
