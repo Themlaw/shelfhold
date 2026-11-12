@@ -6,13 +6,18 @@ lends them a socket, inside the E2E network namespace (nothing leaves it).
 
 from __future__ import annotations
 
+import ssl
 from collections.abc import Callable
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 Handler = Callable[[str, str, dict[str, str], bytes], tuple[int, dict[str, str], bytes]]
 
 
-def serve(host: str, port: int, handle: Handler, banner: str) -> None:
+def make_server(
+    host: str, port: int, handle: Handler, banner: str, tls: tuple[str, str] | None = None
+) -> ThreadingHTTPServer:
+    """`tls`: (certificate chain file, key file) to serve HTTPS."""
+
     class Shell(BaseHTTPRequestHandler):
         protocol_version = "HTTP/1.1"
 
@@ -34,5 +39,15 @@ def serve(host: str, port: int, handle: Handler, banner: str) -> None:
         def log_message(self, format: str, *args: object) -> None:  # noqa: A002
             print(f"{banner} {self.command} {self.path.split('?')[0]}", flush=True)
 
+    server = ThreadingHTTPServer((host, port), Shell)
+    if tls is not None:
+        context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        context.minimum_version = ssl.TLSVersion.TLSv1_2
+        context.load_cert_chain(*tls)
+        server.socket = context.wrap_socket(server.socket, server_side=True)
     print(f"{banner} listening on {host}:{port}", flush=True)
-    ThreadingHTTPServer((host, port), Shell).serve_forever()
+    return server
+
+
+def serve(host: str, port: int, handle: Handler, banner: str) -> None:
+    make_server(host, port, handle, banner).serve_forever()

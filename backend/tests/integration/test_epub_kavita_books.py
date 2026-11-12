@@ -18,6 +18,7 @@ from typing import Any
 import pytest
 import sqlalchemy as sa
 
+import shelfhold.export.application.pipeline as pipeline_mod
 from shelfhold.export.domain.planner import (
     DestinationFacts,
     EditionFacts,
@@ -163,6 +164,19 @@ def test_first_epub_export_waits_for_age_push() -> None:
         assert w.fake.violations == []
 
 
+@pytest.mark.req("EF-EXP-040")
+def test_names_are_asked_for_a_first_epub_before_the_gate_is_read() -> None:
+    """The job reads the age gate from Kavita only when a name is asked: the question is put with
+    the gate open, or a rated EPUB would ask no name and the gate would never be read."""
+    with family_env(13) as env:
+        books_library(env)
+        book = env.new_series("Le Livre")
+        add_book(env, book, "1")
+        rate(env, book, 10)
+        names, _kind = env.pipeline.wanted_names(env.destination_id)
+        assert names != []
+
+
 @pytest.mark.req("EF-BIB-001", "EF-EXP-040")
 def test_omnibus_packaging_separate_edition_two_kavita_series() -> None:
     """Golden: an `omnibus` Edition of the same Work, in the same language, is a Kavita series of
@@ -271,3 +285,43 @@ def test_novel_shelf_requires_book_library_type() -> None:
         books_library(env)
         preview = env.pipeline.preview(env.destination_id)
         assert "target.library_type_mismatch" not in [w.code for w in preview.warnings]
+
+
+@pytest.mark.req("EF-EXP-040", "EF-BIB-001")
+def test_unrated_epub_never_reaches_family_shelf() -> None:
+    with family_env(13) as env:
+        books_library(env)
+        w = wire(env)
+        book = env.new_series("Sans Age")
+        add_book(env, book, "1")
+        assert export_round(w) == [] and written(env) == []
+
+
+@pytest.mark.req("EF-EXP-040", "EF-BIB-001")
+def test_epub_above_ceiling_never_reaches_family_shelf() -> None:
+    with family_env(13) as env:
+        books_library(env)
+        w = wire(env)
+        book = env.new_series("Trop Vieux")
+        add_book(env, book, "1")
+        rate(env, book, 16)
+        assert export_round(w) == [] and written(env) == []
+
+
+@pytest.mark.req("EF-EXP-040", "EF-BIB-001")
+def test_barrier_is_still_read_before_an_epub_write(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[str] = []
+
+    def closed(_connection: object, _destination_id: str, edition_id: str) -> bool:
+        calls.append(edition_id)
+        return False
+
+    monkeypatch.setattr(pipeline_mod, "barrier_holds", closed)
+    with family_env(13) as env:
+        books_library(env)
+        w = wire(env)
+        book = env.new_series("Le Livre")
+        add_book(env, book, "1")
+        rate(env, book, 10)
+        assert export_round(w) == [] and written(env) == []
+        assert calls  # the last look was consulted

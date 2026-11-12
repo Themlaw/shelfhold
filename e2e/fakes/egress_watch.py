@@ -9,6 +9,7 @@ Usage: egress_watch.py <allowed-subnet|auto> [allowed-dns-name ...]
 
 import fcntl
 import ipaddress
+import os
 import socket
 import struct
 import sys
@@ -61,6 +62,10 @@ def inspect(frame: bytes, allowed: ipaddress.IPv4Network, dns_ok: set[str]) -> s
     return None
 
 
+# addresses the stack itself owns on `lo` (the M2 overlay: names that look public to the guard)
+LOOPBACK_ALIASES = frozenset(filter(None, os.environ.get("WATCH_LOOPBACK_ALIASES", "").split(",")))
+
+
 def own_subnet(interface: str = "eth0") -> ipaddress.IPv4Network:
     """Subnet of the container's own network (SIOCGIFADDR / SIOCGIFNETMASK)."""
     with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as probe:
@@ -81,6 +86,9 @@ def main(subnet: str, dns_names: list[str]) -> None:
         frame, address = sock.recvfrom(65535)
         if address[2] != PACKET_OUTGOING or len(frame) < 14:
             continue
+        if address[0] == "lo" and len(frame) >= 34 and frame[12:14] == b"\x08\x00":
+            if socket.inet_ntoa(frame[30:34]) in LOOPBACK_ALIASES:
+                continue  # an alias of the stack's own on `lo`: it never leaves
         finding = inspect(frame, allowed, dns_ok)
         if finding and finding not in seen:
             seen.add(finding)

@@ -1,0 +1,5 @@
+127.0.0.1 localhost lncrawl.lan
+::1 localhost
+# the names the sources of the host ask for, all on one address that exists on the loopback of the
+# namespace only (fakes/m2/net_init.py): public-looking for the guard of the Fetcher, never routed
+93.184.216.34 catalog.example mirror.example aleph.gutenberg.org fr.wikisource.org ws-export.wmcloud.org standardebooks.org opds.example

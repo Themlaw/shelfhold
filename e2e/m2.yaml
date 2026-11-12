@@ -1,0 +1,102 @@
+# M2 overlay (L32), used with compose.yaml and journey.yaml: `-f compose.yaml -f journey.yaml
+# -f m2.yaml`. Adds the import folder, the sources the administrator switches on, and the
+# simulated servers they talk to (all synthetic, all inside the network namespace of the stack):
+# - `fake-sources`: one server answering by host name for the catalogue and the mirror of the
+#   books project, the encyclopedia sources and the generic OPDS catalogue (plain HTTP and TLS);
+# - `fake-lncrawl`: the administrator's own instance (a LAN address, like Kavita and Suwayomi).
+# The sources of the host go through the guard of the Fetcher, which refuses private and loopback
+# addresses. The stack therefore gives the names a public-looking address that exists only on the
+# loopback of the namespace (`fake-net-init`, `fakes/m2/hosts`), and the test CA (`E2E_PKI_DIR`,
+# made by the test fixture) is the only trust anchor added. Nothing leaves the namespace:
+# `egress-watch` ignores that one alias on the loopback and still reads everything else.
+name: shelfhold-e2e-m2
+
+services:
+  egress-watch:
+    environment:
+      WATCH_LOOPBACK_ALIASES: "93.184.216.34"  # the alias `fake-net-init` adds on `lo`
+    sysctls:
+      net.ipv4.ip_unprivileged_port_start: 0  # the fakes listen on 80 and 443, as uid 1000
+
+  library-init:
+    command: ["sh", "-c", "chown 1000:1000 /library /import /tree"]
+    volumes:
+      - library:/library
+      - incoming:/import
+      - tree:/tree
+
+  fake-net-init:
+    image: ${SHELFHOLD_IMAGE:?}
+    user: "0:0"
+    read_only: true
+    cap_drop: [ALL]
+    cap_add: [NET_ADMIN]
+    security_opt: ["no-new-privileges:true"]
+    network_mode: service:egress-watch
+    restart: "no"
+    command: ["python", "/fakes/m2/net_init.py"]
+    environment:
+      PYTHONDONTWRITEBYTECODE: "1"
+    depends_on:
+      egress-watch: { condition: service_healthy }
+    volumes:
+      - ./fakes:/fakes:ro
+
+  fake-sources:
+    image: ${SHELFHOLD_IMAGE:?}
+    user: "1000:1000"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    network_mode: service:egress-watch
+    command: ["python", "/fakes/m2/serve.py"]
+    environment:
+      PYTHONPATH: /fakes:/pkg
+      PYTHONDONTWRITEBYTECODE: "1"
+    depends_on:
+      egress-watch: { condition: service_healthy }
+      fake-net-init: { condition: service_completed_successfully }
+    volumes:
+      - ./fakes:/fakes:ro
+      - ../backend/tests:/pkg/tests:ro
+      - ${E2E_PKI_DIR:?}:/pki:ro
+      - library:/library:ro  # what Shelfhold exported: the catalogue serves it back
+    tmpfs: ["/tmp"]
+
+  fake-lncrawl:
+    image: ${SHELFHOLD_IMAGE:?}
+    user: "1000:1000"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    network_mode: service:egress-watch
+    command: ["python", "/fakes/lncrawl/serve.py"]
+    environment:
+      PYTHONPATH: /fakes:/pkg
+      PYTHONDONTWRITEBYTECODE: "1"
+    depends_on:
+      egress-watch: { condition: service_healthy }
+    volumes:
+      - ./fakes:/fakes:ro
+      - ../backend/tests:/pkg/tests:ro
+    tmpfs: ["/tmp"]
+
+  shelfhold:
+    depends_on:
+      fake-sources: { condition: service_started }
+      fake-lncrawl: { condition: service_started }
+    environment:
+      SHELFHOLD_IMPORT_DIR: /import
+      SHELFHOLD_ACTIVE_SOURCES: gutenberg,wikisource,standardebooks,opds,lncrawl
+      SHELFHOLD_LOG_LEVEL: ${E2E_LOG_LEVEL:-INFO}
+    volumes:
+      - incoming:/import
+      - tree:/tree  # an old download tree of the administrator, read by `import tree`
+      - ./fakes/m2/hosts:/etc/hosts:ro
+      # the Fetcher reads the system bundle of the image and no environment variable: this file
+      # REPLACES the bundle in this container only, so the test authority is the one it trusts
+      - ${E2E_PKI_DIR:?}/ca.pem:/etc/ssl/certs/ca-certificates.crt:ro
+
+volumes:
+  incoming:
+  tree:
