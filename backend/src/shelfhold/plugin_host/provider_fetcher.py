@@ -33,12 +33,14 @@ from shelfhold.infrastructure.fetcher.resolver import Resolver
 from shelfhold.infrastructure.fetcher.robots import RobotsPolicy
 from shelfhold.sdk.fetcher import CookieJarView, DownloadedFile, Response
 from shelfhold.sdk.metadata import MetadataManifest
+from shelfhold.sdk.models import sdk_supports
 from shelfhold.sdk.refs import ImageRequest
 
 __all__ = [
     "DEFAULT_RUNTIME",
     "ProviderFetcher",
     "ProviderRuntime",
+    "SdkTooOldError",
     "default_runtime",
     "open_provider",
 ]
@@ -142,6 +144,11 @@ class ProviderFetcher:
 _PLUGIN_DOWNLOAD_MAX = 16 * 1024 * 1024
 
 
+class SdkTooOldError(ValueError):
+    """The provider was written for an SDK this host does not have (a later minor, or another
+    major): nothing is asked of it (ADR-0024)."""
+
+
 def open_provider(
     manifest: MetadataManifest,
     resolver: Resolver,
@@ -152,6 +159,8 @@ def open_provider(
     limits: FetchLimits | None = None,
 ) -> ProviderFetcher:
     """The Fetcher of `manifest`'s provider for this instance (`contact`: the configured one)."""
+    if not sdk_supports(manifest.min_sdk):
+        raise SdkTooOldError(f"{manifest.key}: asks for SDK {manifest.min_sdk}")
     runtime = runtime or default_runtime()
     inner = GuardedFetcher(
         resolver,

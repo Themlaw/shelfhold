@@ -50,19 +50,6 @@ symbols = [
 ]
 
 [[allow]]
-category = "unwired-m2"
-reason = "Consumers arrive with the content and plugin features of M2: image decode worker and caps (B1), CBZ writer from pages, EPUB/OPF dates, and the per-key limits of the Source contract (Suwayomi downloads through tickets)."
-until = "M2"
-symbols = [
-  "shelfhold.catalog.application.editions:edition_for_translation",
-  "shelfhold.catalog.domain.dates:comicinfo_date_fields",
-  "shelfhold.catalog.domain.dates:PartialDate.coarsened_to",
-  "shelfhold.catalog.domain.identity:Discriminant",
-  "shelfhold.catalog.domain.identity:translation_discriminant",
-  "shelfhold.catalog.domain.dates:opf_date",
-]
-
-[[allow]]
 category = "unwired-m3-series"
 reason = "A Series attached after its Works exist, and the explicit plan that moves the exported link of an Edition to the series (EF-BIB-025, EF-EXP-062, I26): the model and the guard of an adopted series are here, the plan with its path warning (EF-EXP-037) and the merge and split of Works (EF-BIB-019) are M3's, the only callers."
 until = "M3"
@@ -128,50 +115,6 @@ tests = [
 ]
 
 [[allow]]
-category = "unwired-m2-l11"
-reason = "MetadataProvider contract (SDK 1.2, EF-BIB-013, M2 L11): the SDK version check is proved by the conformance kit and the fake provider; its first host caller is the plugin installer of the metadata plugins (M2 L11 follow-up); the proposal types are wired since the OpenLibrary enrichment (M2 L13)."
-until = "M2"
-symbols = [
-  "shelfhold.sdk.models:SDK_VERSION",
-  "shelfhold.sdk.models:sdk_supports",
-]
-
-[[allow]]
-category = "unwired-m2-l12"
-reason = "The arrival of an Edition with its external identifiers and field proposals (`AutoAttachService.arrive`, EF-BIB-003, EF-BIB-008, EF-BIB-055, M2 L12), the append-only identifier store, the field locks and the suggested ages are proved by their tests; their first production callers are the ingest pipeline of the M2 sources (L19); the OpenLibrary enrichment (M2 L13) already reads the identifiers and stores the proposals and suggested ages. The undo, the confirmation and the list of attaches are already wired (`shelfhold edition detach|attach-confirm|attach-decline|attachments`)."
-until = "M2"
-symbols = [
-  "shelfhold.catalog.application.auto_attach:IncomingEdition",
-]
-
-[[allow]]
-category = "unwired-m2-l14"
-reason = "The arrival of an Edition now asks the Work tombstones first (`AutoAttachService.arrive`, EF-BIB-053, EF-BIB-054, M2 L14): a purged Work does not come back by an external identifier it carried, and an arrival without a screen fails closed. Its first production caller is the ingest pipeline of the M2 sources (L19), which hands it the screen (`ops.tombstone_screens.CatalogScreens`); the plan and the confirmation of a suggested attach, and `edition merge`, already use that screen."
-until = "M2"
-symbols = [
-  "shelfhold.catalog.application.auto_attach:AutoAttachService.arrive",
-]
-
-[[allow]]
-category = "unwired-m2-l15"
-reason = "The rights review that announces the non-blocking warning (`Rights.review`), the derived death-year cache and the article-free sort key (EF-SRC-024, EF-BIB-046, ENF-I18N-003, M2 L15) are proved by their tests; their first production callers are the Gutenberg / Standard Ebooks ingest of the M2 source lots (review, cache) and the atelier list (sort key, M3). `status` already reads the calculation through `Rights.protected`."
-until = "M2"
-symbols = [
-  "shelfhold.catalog.application.rights:Rights.refresh_cache",
-]
-
-[[allow]]
-category = "unwired-m2-l06"
-reason = "The periodic spread `Scheduler.add_default` (ENF-LEG-007, M2 L06) is proved by its tests; its first caller is the adaptive check cadence of M2 L29. The per-source cache factory (`cache_for`) and the robots.txt policy are wired by the native acquisition (M2 L19, `SourceFetchers`)."
-until = "M2"
-symbols = [
-  "shelfhold.jobs.scheduler:Scheduler.add_default",
-]
-
-# What L31 (M1b) did not wire: wiring it would change what production does (a refusal, a check, a
-# screen, a command), which the refactor does not do. Each group names the milestone that owns the
-# feature and the first caller; docs/decisions/M1b.md (L31) lists them for the owner to arbitrate.
-[[allow]]
 category = "deferred-l31-adoption-and-preview"
 reason = "M1a features whose production caller is a screen or a command that does not exist yet: the journaled rename of a series folder (EF-EXP-041, `apply_rename`), the adoption of a foreign library (EF-EXP-044, EF-EXP-051, EF-EXP-055: download folder verdict, library link, bulk parse), the `ParseSeriesName` collision check and the \"not verified\" mark of the preview (EF-EXP-009, ENF-COMP-001), the naming pre-checks of an incoming file (EF-EXP-028) and the discovery of physical roots (EF-EXP-059). Wiring any of them adds a check or a refusal to the export path."
 until = "M3"
@@ -220,23 +163,65 @@ symbols = [
   "shelfhold.sdk.export_target:ExportTarget",
 ]
 
+# What waited for M2 and is neither wired nor deleted (M2 L31, 2026-11-12): each group names the
+# lot that owns it. A group whose lot is a cut (L10, L21, L29) goes with that lot; the others have
+# their first caller in the screens and commands of M3, written down here for the owner to
+# arbitrate (docs/decisions/M2-L31-debts.md).
 [[allow]]
-category = "unwired-m2-l13"
-reason = "`probe_image` and `diagnose_worker` of the decode worker client (ENF-SEC-003) have no production caller yet: the cover of the OpenLibrary enrichment (M2 L13) is the first one to run the worker (`make_thumbnail`, wired); the probe of an arriving page belongs to the CBZ writer from pages and the Source download (M2 L19), the sandbox report to `status`. The URL <-> identifier mapping of the OpenLibrary provider is proved by the conformance kit; its first host caller is the resolution of a pasted URL to a provider (M2 L19)."
-until = "M2"
+category = "m2-l31-cut-svg-derivative"
+reason = "2026-11-12 (M2 L31): the lot that would call them is a cut (L10, `[[deferred]]`): `declare_derivative` (the derivative of a CBZ made by a descrambler, a Processor or the SVG rasterizer), and the probe and the sandbox report of the decode worker (`probe_image` asks the worker about the pages of an arriving CBZ, `diagnose_worker` reports what the sandbox really allows). The neutralizer of M2 L03 does not go through the first, and the cover of the OpenLibrary enrichment already runs the worker through `make_thumbnail`. They come back with L10, in M3 if it is taken up."
+until = "M3"
 symbols = [
+  "shelfhold.library.adapters.storage:KeepCopier.declare_derivative",
   "shelfhold.infrastructure.imaging.client:diagnose_worker",
   "shelfhold.infrastructure.imaging.client:probe_image",
-  "shelfhold.plugin_host.adapters.native.openlibrary.provider:OpenLibraryProvider.ids_from_url",
-  "shelfhold.plugin_host.adapters.native.openlibrary.provider:OpenLibraryProvider.url_for",
 ]
 
 [[allow]]
-category = "m2-l17-revision-queue-single-connection"
-reason = "2026-11-11 (M2 L17): `RevisionQueue.apply_metadata` is the whole metadata push on one connection, as the tests drive it. The operating surface (`ops.revisions`) composes its parts (`metadata_candidates`, then `settle_metadata` in a transaction of its own per row), because the Kavita call must never be awaited inside a write transaction. The rewrite requester (`RewriteRequester`) has no production binding until the acquisition lot that fetches a revised file: `revisions apply` answers `ops.exit_unavailable` after the batch token is checked."
-until = "M2"
+category = "m2-l31-cut-cbz-from-pages"
+reason = "2026-11-12 (M2 L31): the CBZ made from pages, for the folders of images of a Suwayomi download tree (L21) and the pages a Source hands over (L10): both lots are cuts (`[[deferred]]`). `repackage_cbz` is wired; the writer from pages has no caller until one of them is taken up."
+until = "M3"
 symbols = [
-  "shelfhold.catalog.application.revisions:RevisionQueue.apply_metadata",
+  "shelfhold.infrastructure.packaging.cbz.packager:write_cbz",
+]
+
+[[allow]]
+category = "m2-l31-cut-adaptive-cadence"
+reason = "2026-11-12 (M2 L31): the periodic spread `Scheduler.add_default` (ENF-LEG-007) has its first caller in the adaptive check cadence (L29), a cut (`[[deferred]]`): the follow cycle keeps its fixed cron until then."
+until = "M3"
+symbols = [
+  "shelfhold.jobs.scheduler:Scheduler.add_default",
+]
+
+[[allow]]
+category = "m2-l31-metadata-editor"
+reason = "2026-11-12 (M2 L31): what an admin does to the metadata of an Edition by hand, and what an identity migration does to a provider's identifiers: the lock and the unlock of a field (`lock_field`, `unlock_field`, EF-BIB-008: the value is `manual`, locked, never replaced by a provider) and the renumbering of an external identifier (`renumber_external_id`, EF-BIB-003: the old value is marked `superseded`, nothing is overwritten) are proved by their tests and read by the enrichment (a locked field is never replaced); their callers are the metadata editor of the atelier and the identity migration job (EF-SRC-022), both M3. The article-free sort key (`sort_key`, ENF-I18N-003) is the key of the atelier list, M3."
+until = "M3"
+symbols = [
+  "shelfhold.catalog.application.external_ids:renumber_external_id",
+  "shelfhold.catalog.application.fields:lock_field",
+  "shelfhold.catalog.application.fields:unlock_field",
+  "shelfhold.catalog.domain.sort_key:sort_key",
+]
+
+[[allow]]
+category = "m2-l31-volume-resplit"
+reason = "2026-11-12 (M2 L31): what L26 proposed beyond the export of a volume (the planner, the age gate and the family barrier, `RangedExporter` behind `ExportPipeline._write`, the replacement of the open tail through the same-path upgrade: wired). The re-cut chapter proposals (`propose_resplit`, `apply_resplit`: the porteur confirms them, a command or a screen of M3), the range read from an adopted ComicInfo (`comicinfo_range`, `apply_comicinfo_range`: the adoption cycle of M3 hands it over), the cut of a closed volume by Shelfhold (`volume_slices` and its default size: asked for once a source gives no volumes, M3) and `locate_ranged` (a helper for the display of a kept file, M3)."
+until = "M3"
+symbols = [
+  "shelfhold.catalog.application.coverage:ConfirmationRequiredError",
+  "shelfhold.catalog.application.coverage:ResplitError",
+  "shelfhold.catalog.application.coverage:ResplitProposal",
+  "shelfhold.catalog.application.coverage:ResplitSigner",
+  "shelfhold.catalog.application.coverage:apply_resplit",
+  "shelfhold.catalog.application.coverage:propose_resplit",
+  "shelfhold.export.application.coverage:apply_comicinfo_range",
+  "shelfhold.export.application.coverage:comicinfo_range",
+  "shelfhold.export.application.ranged_export:locate_ranged",
+  "shelfhold.library.domain.volume_policy:DEFAULT_POLICY",
+  "shelfhold.library.domain.volume_policy:DEFAULT_VOLUME_SIZE",
+  "shelfhold.library.domain.volume_policy:ExportDecision.exports",
+  "shelfhold.library.domain.volume_policy:volume_slices",
 ]
 
 [[allow]]

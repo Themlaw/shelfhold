@@ -23,9 +23,6 @@ import httpx2
 import sqlalchemy as sa
 
 from shelfhold.acquisition.public import NativeAcquirer
-from shelfhold.events.bus import EventBus
-from shelfhold.infrastructure.clock import SystemClock
-from shelfhold.infrastructure.fetcher import Network
 from shelfhold.plugin_host import attestation
 from shelfhold.plugin_host.native_sources import first_party_native_candidates
 from shelfhold.plugin_host.registry import PluginRegistry
@@ -39,16 +36,15 @@ from tests.fakes.standardebooks import (
     patron_root,
     search_doc,
 )
-from tests.fakes_fetcher import FakeResolver, Recorder
 from tests.follow_env import empty_catalog
 from tests.gutenberg_env import FakeTime, RoutedStore, host_of
 from tests.library_env import LibEnv, lib_env
 from tests.opds_env import Wire, document, file
+from tests.support.sources import source_stack
 
 KEY = "standardebooks"
 HOST = "standardebooks.org"
 EVIL = "files.evil.example"
-PUBLIC = "93.184.216.34"
 SLUG = "jane-synth/le-test"
 SLUG2 = "jane-synth/la-tulipe"
 
@@ -168,31 +164,20 @@ def standardebooks_bench(
     fake = FakeTime()
     with patch.object(attestation, "FIRST_PARTY_PLUGIN_KEYS", keys), lib_env() as lib:
         empty_catalog(lib)
-        holder: list[TimedWire] = []
-        recorder = Recorder(lambda request: holder[0].respond(request))
-        wire = TimedWire(recorder, now=fake.clock)
-        holder.append(wire)
-        network = Network(
-            resolver=FakeResolver({h: [PUBLIC] for h in (HOST, EVIL)}),
-            transport=recorder.transport,
-        )
-        registry = PluginRegistry()
-        registry.load_all([c for c in first_party_native_candidates() if c.key == KEY])
-        fetchers = SourceFetchers(network, pace_clock=fake.clock, pace_sleep=fake.sleep)
-        clock = SystemClock()
-        bus = EventBus(clock)
-        (lib.tmp / "recv").mkdir()
         settings: dict[str, Any] = {"auth": auth, **(extra_settings or {})}
         held: dict[str, str] = {}
         if auth == "basic":
             settings["username"] = username
             held["password"] = password or secrets.token_urlsafe(24)
-        acquirer = NativeAcquirer(
-            lib.engine, clock, bus, registry, fetchers, staging_dir=lib.tmp / "recv",
-            max_bytes=8 * 1024 * 1024, source_settings=lambda _key: dict(settings),
-            source_secrets=lambda _key: dict(held),
+        stack = source_stack(
+            lib, lambda recorder: TimedWire(recorder, now=fake.clock), hosts=(HOST, EVIL),
+            candidates=[c for c in first_party_native_candidates() if c.key == KEY],
+            fetchers=lambda net: SourceFetchers(net, pace_clock=fake.clock, pace_sleep=fake.sleep),
+            settings=settings, secrets=held,
         )  # fmt: skip
-        bench = Bench(lib, wire, registry, fetchers, acquirer, settings, held, fake)
+        bench = Bench(
+            lib, stack.wire, stack.registry, stack.fetchers, stack.acquirer, settings, held, fake
+        )
         yield bench
 
 

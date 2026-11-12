@@ -28,27 +28,26 @@ from shelfhold.acquisition.public import NativeAcquirer
 from shelfhold.events.bus import EventBus
 from shelfhold.export.application.locks import work_lock_for
 from shelfhold.infrastructure.clock import SystemClock
-from shelfhold.infrastructure.fetcher import Network
 from shelfhold.infrastructure.schema import platform
 from shelfhold.library.public import PassthroughStore, UntrustedEpubStore
 from shelfhold.plugin_host import attestation
 from shelfhold.plugin_host.adapters.native.gutenberg import GutenbergSource
 from shelfhold.plugin_host.gutenberg_rdf import read_rdf
-from shelfhold.plugin_host.registry import PluginCandidate, PluginOrigin, PluginRegistry
+from shelfhold.plugin_host.registry import PluginRegistry
 from shelfhold.plugin_host.source_fetcher import SourceFetchers
 from shelfhold.sdk.refs import SeriesRef
 from shelfhold.sdk.testing.corpus.trapped_epubs.build import epub_bytes, xhtml
-from tests.fakes_fetcher import FakeResolver, Recorder
+from tests.fakes_fetcher import Recorder
 from tests.follow_env import empty_catalog
 from tests.library_env import LibEnv, lib_env
 from tests.null_tombstones import NONE_PURGED
+from tests.support.sources import first_party, source_stack
 
 KEY = "gutenberg"
 CATALOG_HOST = "catalog.example.org"
 MIRROR_HOST = "mirror.example.net"
 OFFICIAL_MIRROR_HOST = "aleph.gutenberg.org"  # on the frozen list of official mirrors
 SITE_HOSTS = ("www.gutenberg.org", "gutenberg.org")
-PUBLIC = "93.184.216.34"
 CATALOG_URL = f"https://{CATALOG_HOST}/cache/epub/feeds/pg_catalog.csv"
 MIRROR_URL = f"https://{MIRROR_HOST}/gutenberg"
 CATALOG_PATH = "/cache/epub/feeds/pg_catalog.csv"
@@ -276,35 +275,34 @@ def gutenberg_bench(
         {"catalog_url": CATALOG_URL, "mirror_url": MIRROR_URL} if settings is None else settings
     )
     fake = FakeTime()
-    first_party = attestation.FIRST_PARTY_PLUGIN_KEYS | {KEY}
-    with patch.object(attestation, "FIRST_PARTY_PLUGIN_KEYS", first_party), lib_env() as lib:
+    first_party_keys = attestation.FIRST_PARTY_PLUGIN_KEYS | {KEY}
+    with patch.object(attestation, "FIRST_PARTY_PLUGIN_KEYS", first_party_keys), lib_env() as lib:
         empty_catalog(lib)
-        holder: list[Wire] = []
-        recorder = Recorder(lambda request: holder[0].respond(request))
-        served = Wire(recorder, files=dict(files or {}), **(wire or {}))
-        served.now = fake.clock
-        holder.append(served)
-        hosts = (CATALOG_HOST, MIRROR_HOST, OFFICIAL_MIRROR_HOST, *SITE_HOSTS)
-        network = Network(
-            resolver=FakeResolver({h: [PUBLIC] for h in hosts}), transport=recorder.transport
-        )
         source = plugin or GutenbergSource(clock=fake.clock, rdf=read_rdf)
-        registry = PluginRegistry()
-        registry.load_all(
-            [PluginCandidate(key=KEY, origin=PluginOrigin.FIRST_PARTY, load=lambda: source)]
-        )
-        fetchers = SourceFetchers(network, pace_clock=fake.clock, pace_sleep=fake.sleep)
-        clock = SystemClock()
-        bus = EventBus(clock)
         bench_warnings: list[Any] = []
-        bus.subscribe(bench_warnings.append, event_type="ops.rights_warning")
-        (lib.tmp / "recv").mkdir()
-        acquirer = NativeAcquirer(
-            lib.engine, clock, bus, registry, fetchers, staging_dir=lib.tmp / "recv",
-            max_bytes=8 * 1024 * 1024, source_settings=lambda _key: dict(chosen),
+
+        def make_wire(recorder: Recorder) -> Wire:
+            served = Wire(recorder, files=dict(files or {}), **(wire or {}))
+            served.now = fake.clock
+            return served
+
+        stack = source_stack(
+            lib, make_wire, hosts=(CATALOG_HOST, MIRROR_HOST, OFFICIAL_MIRROR_HOST, *SITE_HOSTS),
+            candidates=[first_party(KEY, lambda: source)], settings=chosen,
+            fetchers=lambda net: SourceFetchers(net, pace_clock=fake.clock, pace_sleep=fake.sleep),
+            subscribe={"ops.rights_warning": bench_warnings.append},
         )  # fmt: skip
         yield Bench(
-            lib, source, served, registry, fetchers, acquirer, bus, fake, chosen, bench_warnings
+            lib,
+            source,
+            stack.wire,
+            stack.registry,
+            stack.fetchers,
+            stack.acquirer,
+            stack.bus,
+            fake,
+            chosen,
+            bench_warnings,
         )
 
 

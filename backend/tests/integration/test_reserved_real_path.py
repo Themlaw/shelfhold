@@ -102,6 +102,9 @@ def audit_rows(env: AuthEnv, action: str) -> list[tuple[object, ...]]:
     return db_rows(env.settings, "SELECT session_id, auth_time FROM audit WHERE action = ?", action)
 
 
+SELF_AUDITED = {"request.unmask"}  # one disclosure, one line, written by the route (M2 L31)
+
+
 @pytest.mark.req("EF-USR-022", "EF-USR-024", "ENF-SEC-010")
 def test_real_reserved_routes_follow_the_table_for_a_fresh_then_a_stale_admin(
     api: AuthEnv,
@@ -121,14 +124,16 @@ def test_real_reserved_routes_follow_the_table_for_a_fresh_then_a_stale_admin(
         fresh = call(api, method, path)
         assert fresh.status_code not in (401, 403), (path, fresh.text)
         written = audit_rows(api, action)[before:]
-        assert len(written) == 1
-        assert written[0][0] and written[0][1]  # EF-USR-022 (3): on every action, fresh or not
+        own = 1 if action in SELF_AUDITED else 0  # the route writes its own line, on a disclosure
+        assert len(written) == 1 - own
+        for line in written:
+            assert line[0] and line[1]  # EF-USR-022 (3): on every action, fresh or not
         api.clock.advance(timedelta(minutes=20))  # beyond the 900 s of P3
         stale = call(api, method, path)
         if needs:
             assert stale.status_code == 401, (path, action)
             assert stale.json()["type"] == "/api/v1/problems/reauth-required"
-            assert len(audit_rows(api, action)) == before + 1  # the refusal wrote no entry
+            assert len(audit_rows(api, action)) == before + 1 - own  # the refusal wrote no entry
         else:
             assert stale.status_code not in (401, 403), (path, action)
 

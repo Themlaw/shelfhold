@@ -1129,6 +1129,14 @@ action = "Relancez la demande en précisant l'identifiant de l'élément voulu."
 title = "Cette série a été supprimée volontairement : elle n'est pas recréée."
 action = "Levez la pierre tombale de la série si vous la voulez à nouveau."
 
+[errors."acquire.work_tombstoned"]
+title = "Cette œuvre a été supprimée volontairement : elle ne revient pas par un identifiant qu'elle portait."
+action = "Levez la pierre tombale de l'œuvre si vous la voulez à nouveau."
+
+[errors."acquire.tombstones_unavailable"]
+title = "Les pierres tombales ne peuvent pas être lues ici : rien n'est ajouté."
+action = "Vérifiez la bibliothèque montée et le trousseau, puis recommencez."
+
 [errors."unit.stored"]
 title = "Le livre demandé est rangé dans la bibliothèque."
 action = "Il sera exporté au prochain passage vers les étagères concernées."
@@ -1726,6 +1734,10 @@ action = "Le fichier reste dans le dossier d'import. Consultez le diagnostic pui
 
 [errors."import.tombstoned"]
 title = "Ce contenu a été purgé : il n'est pas rangé de nouveau."
+action = "Le fichier reste dans le dossier d'import. Retirez-le vous-même si vous n'en voulez plus."
+
+[errors."import.own_export"]
+title = "Ce fichier est un export de Shelfhold lui-même : il est noté comme réplique, pas rangé de nouveau."
 action = "Le fichier reste dans le dossier d'import. Retirez-le vous-même si vous n'en voulez plus."
 
 [errors."import.original_not_kept"]

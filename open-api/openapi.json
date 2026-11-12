@@ -10063,6 +10063,10 @@
       "code": "acquire.series_tombstoned",
       "status": 409
     },
+    "/api/v1/problems/acquire.tombstones-unavailable": {
+      "code": "acquire.tombstones_unavailable",
+      "status": 409
+    },
     "/api/v1/problems/acquire.unit-required": {
       "code": "acquire.unit_required",
       "status": 422
@@ -10070,6 +10074,10 @@
     "/api/v1/problems/acquire.unsupported-file": {
       "code": "acquire.unsupported_file",
       "status": 422
+    },
+    "/api/v1/problems/acquire.work-tombstoned": {
+      "code": "acquire.work_tombstoned",
+      "status": 409
     },
     "/api/v1/problems/backfill.confirmation-required": {
       "code": "backfill.confirmation_required",
@@ -10325,6 +10333,10 @@
     },
     "/api/v1/problems/import.original-not-kept": {
       "code": "import.original_not_kept",
+      "status": 409
+    },
+    "/api/v1/problems/import.own-export": {
+      "code": "import.own_export",
       "status": 409
     },
     "/api/v1/problems/import.pdf-refused": {

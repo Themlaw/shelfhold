@@ -13,6 +13,7 @@ from shelfhold.identity.domain.reserved import Allowed
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import storage
 from tests.catalog_env import Harness, at, harness
+from tests.support.revisions import apply_metadata
 
 HASH_A = "sha256:" + "a" * 64
 HASH_B = "sha256:" + "b" * 64
@@ -87,7 +88,7 @@ def accumulate(h: Harness, count: int) -> list[str]:
 
 def queue(h: Harness, recorder: Recorder | None = None, **kw) -> RevisionQueue:  # type: ignore[no-untyped-def]
     rec = recorder or Recorder()
-    return RevisionQueue(h.connection, pusher=rec, requester=rec, **kw)
+    return RevisionQueue(h.connection, requester=rec, **kw)
 
 
 @pytest.mark.req("EF-BIB-043")
@@ -103,7 +104,7 @@ def test_pre_m2_revisions_never_bulk_rewritten() -> None:
         assert len(rows) == 400 and {(r["nature"], r["state"]) for r in rows} == {
             ("rewrite", "open")
         }
-        assert q.apply_metadata() == []  # nothing here is a metadata-only change
+        assert apply_metadata(q, rec, h.connection) == []  # nothing here is a metadata-only change
         assert rec.requested == [] and rec.pushed == []
         assert h.rows("SELECT * FROM content") == before  # not one file was rewritten
 
@@ -197,7 +198,7 @@ def test_metadata_only_revision_applied_via_kavita_api() -> None:
         assert (row["nature"], row["state"]) == ("metadata_only", "open")
         rec = Recorder()
         q = queue(h, rec)
-        applied = q.apply_metadata()  # no confirmation: nothing is rewritten
+        applied = apply_metadata(q, rec, h.connection)  # no confirmation: nothing is rewritten
         assert rec.pushed == [(base.unit_id, "summary", "A new summary")]
         assert len(applied) == 1 and rec.requested == []
         (done,) = h.rows("SELECT state, applied_via, resolved_at FROM revision_pending")
@@ -222,8 +223,9 @@ def test_metadata_the_api_cannot_take_goes_to_the_rewrite_queue() -> None:
                 metadata=(("summary", "x"),),
             )
         )
-        q = queue(h, Recorder(takes=False))  # a third party locked the field
-        assert q.apply_metadata() == []
+        takes_not = Recorder(takes=False)  # a third party locked the field
+        q = queue(h, takes_not)
+        assert apply_metadata(q, takes_not, h.connection) == []
         (row,) = h.rows("SELECT nature, state FROM revision_pending")
         assert (row["nature"], row["state"]) == ("rewrite", "open")
 
@@ -244,12 +246,13 @@ def test_crash_while_applying_leaves_the_row_open_and_replays_once() -> None:
                 metadata=(("summary", "x"),),
             )
         )
+        broken = Recorder(boom=RuntimeError("kill"))
         with pytest.raises(RuntimeError):
-            queue(h, Recorder(boom=RuntimeError("kill"))).apply_metadata()
+            apply_metadata(queue(h, broken), broken, h.connection)
         assert h.scalar("SELECT state FROM revision_pending") == "open"  # nothing marked
         good = Recorder()
-        assert len(queue(h, good).apply_metadata()) == 1
-        assert len(queue(h, good).apply_metadata()) == 0  # applied once, not twice
+        assert len(apply_metadata(queue(h, good), good, h.connection)) == 1
+        assert len(apply_metadata(queue(h, good), good, h.connection)) == 0  # applied once
         assert len(good.pushed) == 1
 
 

@@ -127,7 +127,9 @@ class OpenLibraryProvider:
 
     def _proposals(self, book: dict[str, Any], target: EntityRef) -> IdentifyResult:
         key = _text(book.get("key"))
-        source = f"https://{API_HOST}{key}" if key and key.startswith("/books/OL") else None
+        source = (
+            f"https://{API_HOST}{key}" if key and key.startswith("/books/OL") else None
+        ) or self.url_for(target.ids)  # no key in the answer: the address of what was asked
         provenance = Provenance(
             provider=KEY,
             fetched_at=datetime.now(UTC),

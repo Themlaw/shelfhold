@@ -21,12 +21,10 @@ import sqlalchemy as sa
 
 from shelfhold.acquisition.public import NativeAcquirer
 from shelfhold.events.bus import EventBus
-from shelfhold.infrastructure.clock import SystemClock
-from shelfhold.infrastructure.fetcher import Network
 from shelfhold.plugin_host import attestation
 from shelfhold.plugin_host.attestation import FIRST_PARTY_PLUGIN_KEYS
 from shelfhold.plugin_host.native_sources import opds_source
-from shelfhold.plugin_host.registry import PluginCandidate, PluginOrigin, PluginRegistry
+from shelfhold.plugin_host.registry import PluginRegistry
 from shelfhold.plugin_host.source_fetcher import SourceFetchers
 from tests.acquire_env import RoutedStore
 from tests.fakes.opds import (
@@ -39,15 +37,15 @@ from tests.fakes.opds import (
     navigation_entry,
 )
 from tests.fakes.opds.feeds import link
-from tests.fakes_fetcher import FakeResolver, Recorder
+from tests.fakes_fetcher import Recorder
 from tests.follow_env import empty_catalog
 from tests.library_env import LibEnv, lib_env
+from tests.support.sources import first_party, source_stack
 
 KEY = "opds"
 HOST = "opds.example.org"
 ORIGIN = f"https://{HOST}"
 EVIL = "files.evil.example"
-PUBLIC = "93.184.216.34"
 
 Handler = Callable[[httpx2.Request], httpx2.Response]
 
@@ -168,23 +166,6 @@ def opds_bench(
     keys = FIRST_PARTY_PLUGIN_KEYS | {KEY}
     with patch.object(attestation, "FIRST_PARTY_PLUGIN_KEYS", keys), lib_env() as lib:
         empty_catalog(lib)
-        holder: list[Wire] = []
-        recorder = Recorder(lambda request: holder[0].respond(request))
-        wire = Wire(recorder)
-        holder.append(wire)
-        network = Network(
-            resolver=FakeResolver({h: [PUBLIC] for h in hosts}), transport=recorder.transport
-        )
-        registry = PluginRegistry()
-        registry.load_all(
-            [PluginCandidate(key=KEY, origin=PluginOrigin.FIRST_PARTY, load=opds_source)]
-        )
-        fetchers = SourceFetchers(network, cache_enabled=cache_enabled)
-        clock = SystemClock()
-        bus = EventBus(clock)
-        delivered: list[Any] = []
-        bus.subscribe(delivered.append, event_type="unit.stored")
-        (lib.tmp / "recv").mkdir()
         settings: dict[str, Any] = {
             "base_url": f"{ORIGIN}{base_path}",
             "auth": auth,
@@ -196,13 +177,23 @@ def opds_bench(
             held["password"] = password or new_key()
         elif auth.startswith("api_key"):
             held["api_key"] = api_key or new_key()
-        acquirer = NativeAcquirer(
-            lib.engine, clock, bus, registry, fetchers, staging_dir=lib.tmp / "recv",
-            max_bytes=8 * 1024 * 1024,
-            source_settings=lambda _key: dict(settings),
-            source_secrets=lambda _key: dict(held),
+        delivered: list[Any] = []
+        stack = source_stack(
+            lib, Wire, hosts=hosts, candidates=[first_party(KEY, opds_source)],
+            fetchers=lambda net: SourceFetchers(net, cache_enabled=cache_enabled),
+            settings=settings, secrets=held, subscribe={"unit.stored": delivered.append},
         )  # fmt: skip
-        yield Bench(lib, wire, registry, fetchers, acquirer, settings, held, bus, delivered)
+        yield Bench(
+            lib,
+            stack.wire,
+            stack.registry,
+            stack.fetchers,
+            stack.acquirer,
+            settings,
+            held,
+            stack.bus,
+            delivered,
+        )
 
 
 # -- the two servers the source is meant for -------------------------------------------------

@@ -666,7 +666,7 @@ class RestoreAdopter:
         blocked = {
             f.root_id: reason
             for f in survey.status.findings
-            if (reason := self._screen.root_blocked(f.root_id)) is not None
+            if (reason := self._root_blocked(f)) is not None
         }
         report = replace(self._report(survey), unverified_tombstone_lines=self._screen.unverified())
         irreplaceable = self._irreplaceable(deletions)
@@ -694,6 +694,14 @@ class RestoreAdopter:
             fingerprint_of(document), report, readopt, deletions, unresolved, blocked,
             irreplaceable,
         )  # fmt: skip
+
+    def _root_blocked(self, finding: RootFinding) -> str | None:
+        """Why a root cannot be reconciled now. A root the database knows and that is not mounted
+        has no sentinel to read: it is not judged, and adopting without it would stamp the others
+        and leave it behind (a rollback to 0.2.0 reads the sentinels once, at its adoption)."""
+        if finding.state is RootState.MISSING:
+            return "root_not_mounted"
+        return self._screen.root_blocked(finding.root_id)
 
     def _irreplaceable(self, deletions: tuple[DeletionCandidate, ...]) -> tuple[str, ...]:
         """What is to be typed: the id of each irreplaceable Unit the database knows under a

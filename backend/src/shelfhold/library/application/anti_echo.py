@@ -31,12 +31,20 @@ from shelfhold.infrastructure.schema import acquisition, catalog, export, storag
 from shelfhold.library.domain.content_hash import content_hash
 from shelfhold.library.replica import record_replica, upstream_echo_of
 
-__all__ = ["EchoOfOwnExport", "OwnExport", "absorb_echo", "own_export_of", "received_content_hash"]
+__all__ = [
+    "EchoOfOwnExport",
+    "OwnExport",
+    "absorb_echo",
+    "absorb_import_echo",
+    "own_export_of",
+    "received_content_hash",
+]
 
 log = structlog.get_logger(__name__)
 
 MatchedBy = Literal["file_hash", "content_hash", "document_alias", "export_content"]
 _EPUB = ".epub"
+IMPORT_REF = "import-folder"  # the `remote_ref` of a replica found in the import folder
 
 
 @dataclass(frozen=True)
@@ -195,6 +203,39 @@ def absorb_echo(
         request_id=request_id,
         matched_by=own.matched_by,
         export_item_id=own.export_item_id,
+    )
+    return EchoOfOwnExport(own, replica_id)
+
+
+def absorb_import_echo(
+    engine: Engine, *, staged: Path, kind: str, file_hash: str, size: int
+) -> EchoOfOwnExport | None:
+    """The same rule for a file dropped in the import folder (I50, EF-SRC-006: it holds for every
+    source): what Shelfhold exported and comes back is a replica of that `export_item`, never a
+    Unit. Nothing else is made, and nothing is removed: the file stays where the person put it.
+    A look again records nothing twice. None when it is not an echo."""
+    payload = received_content_hash(staged, kind)
+    with engine.connect() as connection:
+        connection.execution_options(shelfhold_begin="BEGIN IMMEDIATE")
+        with connection.begin():
+            own = own_export_of(connection, file_hash=file_hash, content_hash=payload)
+            if own is None:
+                return None
+            replica_id = upstream_echo_of(connection, own.export_item_id, IMPORT_REF, file_hash)
+            if replica_id is None:
+                replica_id = record_replica(
+                    connection,
+                    unit_id=None,
+                    export_item_id=own.export_item_id,
+                    location="upstream",
+                    content_hash=payload,
+                    file_hash=file_hash,
+                    independent=False,  # a file dropped by hand is not a copy we hold (EF-BIB-045)
+                    remote_ref=IMPORT_REF,
+                    size=size,
+                )
+    log.info(
+        "import.echo_of_own_export", matched_by=own.matched_by, export_item_id=own.export_item_id
     )
     return EchoOfOwnExport(own, replica_id)
 

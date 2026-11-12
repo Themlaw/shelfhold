@@ -311,12 +311,19 @@ def require_session(request: Request) -> Principal:
 
 
 def reserved_action(
-    action: ReservedAction, *, roles: frozenset[str] | Sequence[str] = DEFAULT_RESERVED_ROLES
+    action: ReservedAction,
+    *,
+    roles: frozenset[str] | Sequence[str] = DEFAULT_RESERVED_ROLES,
+    audit: bool = True,
 ) -> Callable[[Request], Principal]:
     """Dependency of a route that performs a reserved action (EF-USR-024, EF-USR-022 (2)).
 
     Sessions of any role but `admin` are refused (403 `forbidden`) unless `roles=` says so: a
-    route that lets `member` or `child` do something reserved (e.g. rate) must name it."""
+    route that lets `member` or `child` do something reserved (e.g. rate) must name it.
+
+    The guard writes the audit line of an allowed action. `audit=False` is for the route that
+    writes its own line, with its target, in the transaction that does the thing (the unmasking of
+    a title): one disclosure, one line, and none when nothing was disclosed."""
     allowed = frozenset(roles)
 
     def dependency(request: Request) -> Principal:
@@ -329,6 +336,7 @@ def reserved_action(
             action,
             restricted_profile_exists=auth.restricted_profile_exists(),
             allowed_roles=allowed,
+            audit=audit,
         )
         if isinstance(verdict, RoleNotAllowed):
             raise ProblemError("forbidden", extensions={"action": action.name})

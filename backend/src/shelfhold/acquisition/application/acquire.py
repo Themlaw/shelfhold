@@ -36,18 +36,21 @@ from sqlalchemy import Connection, Engine
 
 from shelfhold.acquisition.application.describe import (
     credit_authors,
+    incoming_work_ids,
     known_work,
-    remember_work,
     text_version_for,
     write_rights,
 )
 from shelfhold.catalog.public import (
+    AutoAttachService,
     BindingRef,
     Catalog,
     EditionSpec,
+    IncomingEdition,
     IncomingUnit,
     LanguageError,
     RightsService,
+    TombstoneScreen,
     UnsupportedFileError,
     announced_kind,
     edition_key_lang,
@@ -220,6 +223,7 @@ class NativeAcquirer:
         source_settings: Callable[[str], Mapping[str, object]] | None = None,
         source_secrets: Callable[[str], Mapping[str, str]] | None = None,
         connected: Callable[[str], Any] | None = None,
+        work_screen: Callable[[], TombstoneScreen] | None = None,
     ) -> None:
         self._engine = engine
         self._clock = clock
@@ -231,6 +235,9 @@ class NativeAcquirer:
         self._settings = source_settings or (lambda _key: {})
         self._secrets = source_secrets or (lambda _key: {})  # the sealed secrets of a source (L07)
         self._connected = connected  # the connected service (Suwayomi): search only
+        # The Work tombstones (EF-BIB-053): asked for the identifiers a source gives for its Work,
+        # opened before the write transaction (the replay of the journal may write)
+        self._work_screen = work_screen
 
     # -- opening a source ---------------------------------------------------------------------
 
@@ -377,10 +384,23 @@ class NativeAcquirer:
         finally:
             await handle.aclose()
         chosen = self._choose(units, unit)
+        screen = self._screen_for(record, info)
         return self._record_request(
             record, manifest, ref, info, chosen,
             requester_user_id=requester_user_id, visibility=visibility, shelf_id=shelf_id,
+            screen=screen,
         )  # fmt: skip
+
+    def _screen_for(self, record: Any, info: SeriesInfo) -> TombstoneScreen | None:
+        """The Work tombstones, when the source gives identifiers for its Work: no screen to ask
+        means no arrival, never an unscreened one (fails closed)."""
+        if not incoming_work_ids(record.key, info):
+            return None
+        if self._work_screen is None:
+            raise AcquireRefused(
+                "acquire.tombstones_unavailable", "the Work tombstones cannot be checked here"
+            )
+        return self._work_screen()
 
     @staticmethod
     def _choose(units: list[UnitInfo], wanted: str | None) -> UnitInfo:
@@ -405,6 +425,7 @@ class NativeAcquirer:
         requester_user_id: str | None,
         visibility: str,
         shelf_id: str | None,
+        screen: TombstoneScreen | None = None,
     ) -> Prepared:
         now = self._clock.now()
         title = info.title or ref.title
@@ -413,7 +434,7 @@ class NativeAcquirer:
             connection.execution_options(shelfhold_begin="BEGIN IMMEDIATE")
             with connection.begin():
                 binding_id, work_id, edition_id, created = self._binding(
-                    connection, record, manifest, ref, title, unit, shelf_id, now, info
+                    connection, record, manifest, ref, title, unit, shelf_id, now, info, screen
                 )
                 if created:  # the warning of the rights review is announced, never blocking
                     announced = self._review_rights(connection, edition_id, now)
@@ -461,7 +482,9 @@ class NativeAcquirer:
                 events.append(published)
                 return published
 
-        RightsService(connection, _Announce(self._bus)).review(edition_id, today=now.date())
+        rights = RightsService(connection, _Announce(self._bus))
+        rights.refresh_cache(edition_id)  # the death years the credits give, before the review
+        rights.review(edition_id, today=now.date())
         return events
 
     def _binding(
@@ -475,6 +498,7 @@ class NativeAcquirer:
         shelf_id: str | None,
         now: datetime,
         info: SeriesInfo,
+        screen: TombstoneScreen | None = None,
     ) -> tuple[str, str, str, bool]:
         item, binding = acquisition.source_item, acquisition.source_binding
         found = connection.execute(
@@ -489,6 +513,11 @@ class NativeAcquirer:
         if found is not None:
             return found.id, found.work_id, found.edition_id, False
         books = Catalog(connection)
+        ids = incoming_work_ids(record.key, info)
+        if ids and screen is not None and screen.work_ids(ids):
+            # a Work purged on purpose does not come back by an identifier it carried (EF-BIB-053):
+            # asked before anything is made, so that nothing is left of the refusal
+            raise AcquireRefused("acquire.work_tombstoned", "the work was deleted on purpose")
         # a book of a source that groups its books joins the Work its sibling made (EF-BIB-049)
         work_id = known_work(connection, record.key, info) or books.create_work(
             WORK_KIND, _title(title, ref.remote_id)
@@ -510,27 +539,43 @@ class NativeAcquirer:
                 )
             )  # fmt: skip
         else:
-            edition_id = books.ensure_edition(
+            edition_id = books.edition_for_translation(
                 EditionSpec(
                     work_id,
                     lang,
                     translation_type=translation,
                     media="text",
                     publisher=publisher,
-                    text_version=version,
-                )
+                ),
+                kind=WORK_KIND,
+                nature=manifest.translation_nature,
+                text_version=version,
             ).id
         write_rights(
             connection, edition_id, basis=manifest.rights_basis,
             jurisdiction=manifest.rights_jurisdiction, attribution=_attribution(info.rights),
             plugin_key=record.key, now=now,
         )  # fmt: skip
-        remember_work(connection, work_id, record.key, info)
-        credit_authors(connection, work_id, info, _clean)
+        # the one door of the shelf and of the identifiers of a new Edition: a shelf below 18+
+        # never takes it unrated, and the Work tombstones are asked again under the lock
+        shelf = shelf_id or _shelf(connection)
+        if ids:
+            if screen is None:  # pragma: no cover (`prepare` refuses it before the transaction)
+                raise AcquireRefused("acquire.tombstones_unavailable")
+            arrival = AutoAttachService(tombstones=screen).arrive(
+                connection, IncomingEdition(edition_id, shelf, ids), now=now
+            )
+            if "tombstoned" in arrival.conflicts:
+                raise AcquireRefused("acquire.work_tombstoned", "the work was deleted on purpose")
+            attached = arrival.work_id != work_id  # an identifier it carried named another Work
+            work_id = arrival.work_id
+        else:
+            file_new_edition(connection, edition_id, shelf)
+            attached = False
+        if not attached:  # an Edition attached to a known Work leaves that Work's credits alone
+            credit_authors(connection, work_id, info, _clean)
         if translator is not None:
             books.credit_edition(edition_id, translator, "trl")
-        # the one door of the shelf of a new Edition: a shelf below 18+ never takes it unrated
-        file_new_edition(connection, edition_id, shelf_id or _shelf(connection))
         item_id = new_ulid()
         connection.execute(
             sa.insert(item).values(

@@ -83,7 +83,7 @@ def test_a_purged_work_does_not_come_back_by_an_acquisition() -> None:
 
 @pytest.mark.req("EF-BIB-053", "EF-BIB-003")
 def test_an_acquisition_with_identifiers_and_no_screen_fails_closed() -> None:
-    with acquire_bench(WithIds()) as b:  # nothing can say whether the Work was purged
+    with acquire_bench(WithIds(), work_screen=None) as b:  # nothing says whether it was purged
         with pytest.raises(AcquireRefused) as refused:
             run(b.acquirer.prepare(b.plugin._series()))
         assert refused.value.code == "acquire.tombstones_unavailable"
@@ -95,9 +95,7 @@ def test_an_acquisition_records_its_identifiers_through_the_arrival() -> None:
     with acquire_bench(WithIds(), work_screen=lambda: NoCatalogHits()) as b:
         prepared = run(b.acquirer.prepare(b.plugin._series()))
         assert prepared.request_id is not None
-        [row] = b.rows(
-            "SELECT provider, value, origin FROM external_id WHERE entity_type = 'work'"
-        )
+        [row] = b.rows("SELECT provider, value, origin FROM external_id WHERE entity_type = 'work'")
         assert (row["provider"], row["value"]) == GUTENBERG_ID and row["origin"] == "source"
 
 
@@ -176,10 +174,12 @@ def test_the_adoption_refuses_while_a_known_root_is_not_mounted() -> None:
         backup = env.backup()
         env.export()
         env.restore(backup)
-        with env.engine.begin() as connection:  # a root the database knows, not mounted here
+        empty_mountpoint = env.library.parent / "not-mounted"
+        empty_mountpoint.mkdir()  # the folder is there, the volume is not: no sentinel to read
+        with env.engine.begin() as connection:  # a root the database knows
             connection.execute(
                 sa.insert(platform.physical_root).values(
-                    root_id=new_ulid(), path_entry=str(env.library.parent / "not-mounted")
+                    root_id=new_ulid(), path_entry=str(empty_mountpoint)
                 )
             )
         env.open_instance()
@@ -219,4 +219,3 @@ def test_a_proposal_without_a_work_key_still_cites_the_address_of_the_book() -> 
     found = provider._proposals({"title": "Un titre"}, target)
     urls = {p.provenance.source_url for p in found.proposals}
     assert urls == {provider.url_for({"isbn13": "9780306406157"})}
-
