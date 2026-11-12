@@ -1905,17 +1905,21 @@ export type ScanOut = {
 };
 
 /**
- * SearchOut
+ * SearchHitOut
  */
-export type SearchOut = {
+export type SearchHitOut = {
     /**
-     * Items
+     * Kind
      */
-    items: Array<SeriesOut>;
+    kind: string;
     /**
-     * Next
+     * Title
      */
-    next: string | null;
+    title: string;
+    /**
+     * Work Id
+     */
+    work_id: string;
 };
 
 /**
@@ -2530,6 +2534,30 @@ export type ShelfholdInterfacesHttpApiPluginsSecretIn = {
      * Value
      */
     value: string;
+};
+
+/**
+ * SearchOut
+ */
+export type ShelfholdInterfacesHttpApiSearchSearchOut = {
+    /**
+     * Items
+     */
+    items: Array<SearchHitOut>;
+};
+
+/**
+ * SearchOut
+ */
+export type ShelfholdInterfacesHttpApiSourcesSearchOut = {
+    /**
+     * Items
+     */
+    items: Array<SeriesOut>;
+    /**
+     * Next
+     */
+    next: string | null;
 };
 
 export type AboutData = {
@@ -4903,6 +4931,52 @@ export type RootTakeoverResponses = {
 
 export type RootTakeoverResponse = RootTakeoverResponses[keyof RootTakeoverResponses];
 
+export type SearchData = {
+    body?: never;
+    path?: never;
+    query: {
+        /**
+         * Q
+         */
+        q: string;
+        /**
+         * Limit
+         */
+        limit?: number;
+        /**
+         * Offset
+         */
+        offset?: number;
+    };
+    url: '/api/v1/search';
+};
+
+export type SearchErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type SearchError = SearchErrors[keyof SearchErrors];
+
+export type SearchResponses = {
+    /**
+     * Successful Response
+     */
+    200: ShelfholdInterfacesHttpApiSearchSearchOut;
+};
+
+export type SearchResponse = SearchResponses[keyof SearchResponses];
+
 export type SecretsImportData = {
     body: SecretsImportIn;
     path?: never;
@@ -5618,7 +5692,7 @@ export type FiltersResponses = {
 
 export type FiltersResponse = FiltersResponses[keyof FiltersResponses];
 
-export type SearchData = {
+export type Search2Data = {
     body?: never;
     path: {
         /**
@@ -5643,7 +5717,7 @@ export type SearchData = {
     url: '/api/v1/sources/{source_key}/search';
 };
 
-export type SearchErrors = {
+export type Search2Errors = {
     /**
      * Connexion requise, ou mot de passe à confirmer (reauth-required).
      */
@@ -5658,16 +5732,16 @@ export type SearchErrors = {
     default: Problem;
 };
 
-export type SearchError = SearchErrors[keyof SearchErrors];
+export type Search2Error = Search2Errors[keyof Search2Errors];
 
-export type SearchResponses = {
+export type Search2Responses = {
     /**
      * Successful Response
      */
-    200: SearchOut;
+    200: ShelfholdInterfacesHttpApiSourcesSearchOut;
 };
 
-export type SearchResponse = SearchResponses[keyof SearchResponses];
+export type Search2Response = Search2Responses[keyof Search2Responses];
 
 export type StatsData = {
     body?: never;

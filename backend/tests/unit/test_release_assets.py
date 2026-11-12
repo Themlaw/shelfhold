@@ -34,7 +34,8 @@ def _migrated_catalog(workdir: Path) -> dict[str, list[str]]:
             name
             for (name,) in connection.execute(
                 "SELECT name FROM sqlite_master WHERE type = 'table' "
-                "AND name NOT LIKE 'sqlite\\_%' ESCAPE '\\' ORDER BY name"
+                "AND name NOT LIKE 'sqlite\\_%' ESCAPE '\\' "
+                "AND name NOT GLOB 'search_fts*' AND name NOT GLOB 'search_trigram*' ORDER BY name"
             )
         ]
         return {
@@ -46,7 +47,7 @@ def _migrated_catalog(workdir: Path) -> dict[str, list[str]]:
 
 
 def _internal(name: str) -> bool:
-    return name.startswith("sqlite_")
+    return name.startswith(("sqlite_", "search_fts", "search_trigram"))  # FTS5: a projection
 
 
 def _catalog(connection: sqlite3.Connection) -> list[tuple[str, str, str, str]]:

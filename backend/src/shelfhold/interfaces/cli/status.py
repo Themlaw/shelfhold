@@ -10,6 +10,7 @@ from typing import Any
 import sqlalchemy as sa
 from sqlalchemy import Engine
 
+from shelfhold.catalog.public import search_capability
 from shelfhold.composition import open_fsops
 from shelfhold.config import ResolvedSettings
 from shelfhold.export.application.restore import RestoreGuard
@@ -167,6 +168,8 @@ def warnings(resolved: ResolvedSettings) -> list[dict[str, str]]:
         stale_rps = auth.stale_passkey_rp_ids(
             current.id if isinstance(current, RelyingParty) else None
         )
+        with engine.connect() as connection:
+            search_degraded = search_capability(connection).degraded
     finally:
         engine.dispose()
     pending: list[dict[str, str]] = []
@@ -195,6 +198,10 @@ def warnings(resolved: ResolvedSettings) -> list[dict[str, str]]:
                 "code": "passkey_rp_changed",
                 "message": t("status.passkey_rp_changed", old=rp_id),
             }
+        )
+    if search_degraded:  # D7: no FTS5 or no trigram tokenizer: `LIKE`, said and not failed
+        pending.append(
+            {"code": "search_like_fallback", "message": t("status.search_like_fallback")}
         )
     if unverified:  # D1: the roles of the Suwayomi service account could not be read
         pending.append({"code": "roles_unverified", "message": t("status.roles_unverified")})

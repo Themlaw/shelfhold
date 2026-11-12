@@ -129,7 +129,8 @@ def _migrated_database(workdir: Path) -> Path:
 def _tables(connection: sqlite3.Connection) -> list[str]:
     rows = connection.execute(
         "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite\\_%' "
-        "ESCAPE '\\' ORDER BY name"
+        "ESCAPE '\\' AND name NOT GLOB 'search_fts*' AND name NOT GLOB 'search_trigram*' "
+        "ORDER BY name"
     )
     return [name for (name,) in rows]
 
@@ -181,7 +182,8 @@ def render_schema_sql(connection: sqlite3.Connection, revision: str) -> str:
     rank = {"table": 0, "index": 1, "view": 2, "trigger": 3}
     rows = connection.execute(
         "SELECT type, name, sql FROM sqlite_master "
-        "WHERE sql IS NOT NULL AND name NOT LIKE 'sqlite\\_%' ESCAPE '\\'"
+        "WHERE sql IS NOT NULL AND name NOT LIKE 'sqlite\\_%' ESCAPE '\\' "
+        "AND name NOT GLOB 'search_fts*' AND name NOT GLOB 'search_trigram*'"
     ).fetchall()
     rows.sort(key=lambda row: (rank[row[0]], row[1]))
     header = (

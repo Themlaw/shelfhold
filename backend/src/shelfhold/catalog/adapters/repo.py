@@ -16,6 +16,7 @@ from shelfhold.catalog.application.dto import (
     IncomingUnit,
 )
 from shelfhold.catalog.application.ports import StoredVariant
+from shelfhold.catalog.application.search import index_work
 from shelfhold.catalog.domain.availability import Availability
 from shelfhold.catalog.domain.identity import sort_title
 from shelfhold.catalog.domain.normalizers import (
@@ -49,6 +50,7 @@ class SqlWorkStore:
                     series_id=series_id, work_id=work_id, position=position
                 )
             )
+        index_work(self._c, work_id)  # EF-BIB-010: the index follows the write
         return work_id
 
     def series_of(self, work_id: str) -> str | None:
@@ -122,6 +124,7 @@ class SqlContributorStore:
                 role=role, position=position,
             )
         )  # fmt: skip
+        index_work(self._c, work_id)  # EF-BIB-010: the credited names are searchable
         return True
 
     def credit_edition(
