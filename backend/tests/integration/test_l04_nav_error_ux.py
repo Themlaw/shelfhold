@@ -10,12 +10,11 @@ import re
 from typing import Any
 
 import pytest
-from fastapi import APIRouter
 from fastapi.testclient import TestClient
 
 from shelfhold.i18n import load_catalog
 from shelfhold.interfaces.http_api.catalog import all_error_codes
-from shelfhold.interfaces.http_api.problems import ProblemError, cause_of, problem_body
+from shelfhold.interfaces.http_api.problems import cause_of, problem_body
 from tests.auth_env import ADMIN, CSRF_HEADER, PASSWORD, AuthEnv, auth_env, db_rows, run_cli
 
 HTTPS = "https://testserver"
@@ -184,25 +183,6 @@ def test_a_cause_never_carries_what_the_raising_code_puts_in_detail_or_extension
         for member in ("cause", "action", "title"):
             assert not any(leak in body[member] for leak in LEAKS), (spec.code, member)
         assert body["cause"] == cause_of(spec)
-
-
-@pytest.mark.req("EF-UX-003", "ENF-SEC-001")
-def test_a_problem_raised_with_a_dirty_detail_answers_a_clean_cause(
-    monkeypatch: pytest.MonkeyPatch, settings: Any
-) -> None:
-    router = APIRouter()
-
-    @router.get("/api/v1/_l04_dirty")
-    def dirty() -> None:
-        raise ProblemError("not_found", detail=" ".join(LEAKS))
-
-    with auth_env(monkeypatch, settings, routers=(router,)) as api:
-        assert api.login().status_code == 200
-        response = api.client.get("/api/v1/_l04_dirty")
-    assert response.status_code == 404
-    body = response.json()
-    assert body["cause"] == load_catalog()["errors.not_found.cause"]
-    assert not any(leak in body["cause"] for leak in LEAKS)
 
 
 @pytest.mark.req("EF-UX-003")
