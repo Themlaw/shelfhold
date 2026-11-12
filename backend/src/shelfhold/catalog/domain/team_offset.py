@@ -1,12 +1,14 @@
-"""Numbering offset between teams (EF-BIB-028, GAP-8-05).
+"""Numbering offset between teams, checked before any team fallback (EF-BIB-028, GAP-8-05).
 
-A team may declare a `number_offset`: its "chapter 10" is the Edition's chapter
-`10 + offset`. Before any team fallback, the normalized title and the page count of the
-candidate must agree with those of the team already on disk: an offset that does not line up
-suspends the fallback and opens a suggestion instead of silently republishing another
-team's content under a number.
+Two teams may number the same chapters differently: a team declares a `number_offset`, the shift
+between its numbers and the Edition's. Before the election departs from the team that holds the
+files (a *fallback*), what the other team offers for the Unit is held against what the team on
+disk has: the normalized title and the page count must agree. A gap that no declared offset
+explains, or a declared offset that the evidence contradicts, suspends the fallback; the caller
+opens a suggestion and says why. A translation is never silently swapped under a number.
 
-Pure: the facts come from the caller.
+Pure: the facts come from the caller. This is the only place the rule lives; the acquisition
+side reads its verdict through `catalog.public`.
 """
 
 from dataclasses import dataclass
@@ -14,82 +16,63 @@ from dataclasses import dataclass
 from shelfhold.catalog.domain.identity import sort_title
 
 __all__ = [
-    "OffsetCheck",
-    "OffsetMismatch",
-    "adjusted_number",
-    "apply_offset",
-    "check",
-    "check_offset",
-    "coherent",
-    "consistent",
-    "is_consistent",
-    "offset_ok",
-    "team_offset_ok",
-    "verify",
-    "verify_offset",
+    "OFFSET_INCONSISTENT",
+    "OFFSET_UNEXPLAINED",
+    "OFFSET_UNVERIFIED",
+    "OffsetVerdict",
+    "TeamFacts",
+    "check_before_fallback",
 ]
+
+OFFSET_INCONSISTENT = "offset_inconsistent"  # a declared offset, and the evidence contradicts it
+OFFSET_UNEXPLAINED = "offset_unexplained"  # no offset known, and the two offers differ
+OFFSET_UNVERIFIED = "offset_unverified"  # an offset is declared, and nothing can confirm it
 
 
 @dataclass(frozen=True)
-class OffsetCheck:
+class TeamFacts:
+    """What one team's offer for a Unit says: its declared offset, title and page count."""
+
+    offset: int = 0
+    title: str | None = None
+    page_count: int | None = None
+
+
+@dataclass(frozen=True)
+class OffsetVerdict:
     ok: bool
-    reason: str | None = None  # title_mismatch | page_count_mismatch | offset_mismatch
+    reason: str = ""  # empty when ok
 
 
-def _norm_title(title: str | None) -> str | None:
-    if title is None:
-        return None
-    value = sort_title(title)
-    return value if value.strip() else None
+_OK = OffsetVerdict(True)
 
 
-def check(
-    *,
-    offset: int = 0,
-    other_offset: int = 0,
-    title: str | None = None,
-    other_title: str | None = None,
-    pages: int | None = None,
-    other_pages: int | None = None,
-    normalized_title: str | None = None,
-    other_normalized_title: str | None = None,
-    page_count: int | None = None,
-    other_page_count: int | None = None,
-) -> OffsetCheck:
-    left_title = _norm_title(normalized_title if normalized_title is not None else title)
-    right_title = _norm_title(
-        other_normalized_title if other_normalized_title is not None else other_title
-    )
-    if left_title is not None and right_title is not None and left_title != right_title:
-        return OffsetCheck(False, "title_mismatch")
-    left_pages = page_count if page_count is not None else pages
-    right_pages = other_page_count if other_page_count is not None else other_pages
-    if left_pages is not None and right_pages is not None and left_pages != right_pages:
-        return OffsetCheck(False, "page_count_mismatch")
-    return OffsetCheck(True, None)
+def _normalized(title: str | None) -> str | None:
+    value = sort_title(title) if title else ""
+    return value or None  # a blank title says nothing
 
 
-def apply_offset(number: int | str, offset: int) -> int:
-    try:
-        value = int(number)
-    except (TypeError, ValueError):
-        return number  # type: ignore[return-value]
-    return value + int(offset)
+def check_before_fallback(held: TeamFacts, offered: TeamFacts) -> OffsetVerdict:
+    """May the election fall back from the team that holds the files (`held`) to `offered`?
 
-
-adjusted_number = apply_offset
-
-check_offset = check
-consistent = check
-is_consistent = lambda **kw: check(**kw).ok  # noqa: E731
-coherent = check
-verify = check
-verify_offset = check
-team_offset_ok = lambda **kw: check(**kw).ok  # noqa: E731
-
-
-def offset_ok(**kw: object) -> bool:
-    return check(**kw).ok  # type: ignore[arg-type]
-
-
-OffsetMismatch = OffsetCheck  # back-compat alias for a result type
+    The evidence is the normalized title and the page count, each compared only when both sides
+    give one: what one side does not say proves nothing. A gap is `offset_unexplained` when both
+    teams declare the same offset (none, by default) and `offset_inconsistent` when they declare
+    different ones. Different offsets with nothing to compare are `offset_unverified`: a declared
+    shift is not trusted blindly. Same offsets with nothing to compare leave the fallback alone."""
+    titles = (_normalized(held.title), _normalized(offered.title))
+    pages = (held.page_count, offered.page_count)
+    compared = False
+    gap = False
+    if titles[0] is not None and titles[1] is not None:
+        compared = True
+        gap = gap or titles[0] != titles[1]
+    if pages[0] is not None and pages[1] is not None:
+        compared = True
+        gap = gap or pages[0] != pages[1]
+    shifted = held.offset != offered.offset
+    if gap:
+        return OffsetVerdict(False, OFFSET_INCONSISTENT if shifted else OFFSET_UNEXPLAINED)
+    if shifted and not compared:
+        return OffsetVerdict(False, OFFSET_UNVERIFIED)
+    return _OK
