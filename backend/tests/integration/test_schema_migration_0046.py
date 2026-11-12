@@ -92,7 +92,7 @@ def work(db: sqlite3.Connection) -> str:
 @pytest.mark.req("ENF-OPS-002")
 def test_0046_chains_on_the_real_head_0040_and_is_the_only_head() -> None:
     script = ScriptDirectory(str(default_script_location()))
-    assert script.get_heads() == ["0046"]
+    assert len(script.get_heads()) == 1  # later migrations move the head, never fork it
     assert script.get_revision("0046").down_revision == "0040"
 
 
