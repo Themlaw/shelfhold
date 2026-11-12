@@ -113,11 +113,9 @@ def test_follows_export_opml_csv(
             ["Dr Stone", "suwayomi:1", "https://example.org/series/dr-stone", ""],
         ]
 
-        # the default format is OPML, and `--output` writes the file instead of the screen
-        target = tmp_path / "follows.opml"
-        assert run_cli(monkeypatch, settings, "follow", "export", "--output", str(target)) == 0
-        assert "Dr Stone" not in capsys.readouterr().out
-        assert _opml_outlines(target.read_text(encoding="utf-8"))[0]["text"] == "Dr Stone"
+        # the default format is OPML
+        assert run_cli(monkeypatch, settings, "follow", "export") == 0
+        assert _opml_outlines(capsys.readouterr().out)[0]["text"] == "Dr Stone"
 
 
 @pytest.mark.req("EF-INT-027")

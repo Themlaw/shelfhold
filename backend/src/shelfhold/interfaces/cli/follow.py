@@ -9,7 +9,7 @@ with the exact command). The route and this command go through the same service.
 the gap is no longer told. `--undo` takes it back.
 `follow check <edition>` asks for a look at one series at once (EF-SRC-038): a job of the news
 class, spaced by upstream source like any look.
-`follow export [--format opml|csv] [--output FILE]` writes the followed series as plain text
+`follow export [--format opml|csv]` writes the followed series as plain text
 (EF-INT-027): read-only, straight from the database, no running instance needed.
 """
 
@@ -17,7 +17,6 @@ from __future__ import annotations
 
 import argparse
 import sys
-from pathlib import Path
 
 from shelfhold.acquisition.application.follows_export import FORMATS, export_follows
 from shelfhold.config import ResolvedSettings
@@ -41,7 +40,6 @@ def register(commands: argparse._SubParsersAction[argparse.ArgumentParser]) -> N
     follow.add_argument(
         "--format", choices=FORMATS, default="opml", help=t("ops.help_export_format")
     )
-    follow.add_argument("--output", default=None, help=t("ops.help_export_output"))
     follow.set_defaults(handler=run_follow, configure_logging=False)
     unfollow = commands.add_parser(
         "unfollow", help=t("ops.help_unfollow_series"), allow_abbrev=False
@@ -94,11 +92,7 @@ def _export(args: argparse.Namespace, resolved: ResolvedSettings) -> int:
         content = export_follows(engine, args.format)
     finally:
         engine.dispose()
-    if args.output:
-        Path(args.output).write_text(content, encoding="utf-8")
-        print(t("ops.follow_export_written", path=args.output))
-    else:
-        print(content, end="")
+    print(content, end="")
     return 0
 
 
