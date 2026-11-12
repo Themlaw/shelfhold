@@ -82,7 +82,6 @@ def test_open_format_export_roundtrip(tmp_path: Path) -> None:
     with export_env() as env:
         series = env.new_series("Berserk")
         env.add_chapter(series, "1")
-        env.pipeline.run(env.destination_id, job_id="01J0000000000000000000JOB0")
 
         out = tmp_path / "out"
         export_all(env.engine, env.lib.data, env.lib.library, env.lib.store, out)
