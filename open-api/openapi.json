@@ -9328,6 +9328,10 @@
       "code": "import.tree_duplicate",
       "status": 409
     },
+    "/api/v1/problems/import.tree-needs-rating": {
+      "code": "import.tree_needs_rating",
+      "status": 409
+    },
     "/api/v1/problems/import.tree-no-series": {
       "code": "import.tree_no_series",
       "status": 409
@@ -9339,6 +9343,10 @@
     "/api/v1/problems/import.tree-unreadable": {
       "code": "import.tree_unreadable",
       "status": 422
+    },
+    "/api/v1/problems/import.tree-wrong-source": {
+      "code": "import.tree_wrong_source",
+      "status": 409
     },
     "/api/v1/problems/import.unsafe-name": {
       "code": "import.unsafe_name",

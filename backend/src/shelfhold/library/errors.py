@@ -43,4 +43,6 @@ CODES: tuple[ErrorCode, ...] = (
     ErrorCode("import.tree_ambiguous_series", 409, "user"),
     ErrorCode("import.tree_unnumbered", 409, "user"),
     ErrorCode("import.tree_duplicate", 409, "user"),
+    ErrorCode("import.tree_wrong_source", 409, "user"),
+    ErrorCode("import.tree_needs_rating", 409, "admin"),
 )

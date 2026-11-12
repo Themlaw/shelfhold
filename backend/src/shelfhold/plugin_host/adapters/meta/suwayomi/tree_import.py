@@ -20,6 +20,7 @@ with no binding is left alone, a purged one is refused.
 
 from __future__ import annotations
 
+import fcntl
 import hashlib
 import os
 import re
@@ -31,9 +32,15 @@ from pathlib import Path
 from typing import Any, BinaryIO, Final, cast
 
 from shelfhold.acquisition.public import SeriesBinding, TreeTargets, chapter_number, series_key
-from shelfhold.infrastructure.content_trust import sniff_image_kind
+from shelfhold.infrastructure.archives import UnsafeArchiveError, safe_open_archive
+from shelfhold.infrastructure.content_trust import (
+    UntrustedEntryError,
+    check_cbz_entries,
+    sniff_image_kind,
+)
 from shelfhold.infrastructure.packaging.cbz.packager import write_cbz
 from shelfhold.infrastructure.packaging.comicinfo import ComicInfoData, render_comicinfo
+from shelfhold.infrastructure.xml import UnsafeXmlError, safe_parse_xml
 from shelfhold.library.adapters.import_scan import (
     ARCHIVE,
     LINK,
@@ -53,18 +60,37 @@ from shelfhold.library.adapters.import_scan import (
     collision_key,
     display_path,
 )
+from shelfhold.sdk.age import X_MIN_AGE, AgeRating, from_comicinfo
 
-ENTRY_PREFIX: Final = "suwayomi-tree/"
+# A key the import folder never makes: its keys are percent-encoded, so a raw backslash cannot
+# start one (a folder of the import folder named like our prefix gets another key).
+ENTRY_PREFIX: Final = "\\suwayomi-tree\\"
 TREE_DIR: Final = "mangas"
 NO_SERIES: Final = "import.tree_no_series"
 AMBIGUOUS_SERIES: Final = "import.tree_ambiguous_series"
 UNNUMBERED: Final = "import.tree_unnumbered"
 DUPLICATE: Final = "import.tree_duplicate"
+WRONG_SOURCE: Final = "import.tree_wrong_source"
+NEEDS_RATING: Final = "import.tree_needs_rating"  # "to be rated": never recorded as decided
 MAX_PAGES: Final = 5_000
 MAX_PAGE_BYTES: Final = 64 * 1024 * 1024
 _EXTENSION: Final = {"jpeg": "jpg", "png": "png", "webp": "webp", "gif": "gif", "avif": "avif",
                      "jxl": "jxl"}  # fmt: skip
 _DIGITS = re.compile(r"(\d+)")
+
+
+def _file_age(staged: Path) -> AgeRating | None:
+    """The `AgeRating` of the ComicInfo of a CBZ, as a suggestion only (never a rating)."""
+    try:
+        with safe_open_archive(staged, name="import.cbz") as archive:
+            name = check_cbz_entries(archive).comicinfo
+            if name is None:
+                return None
+            root = safe_parse_xml(archive.read(name, max_bytes=1024 * 1024))
+    except (UnsafeArchiveError, UntrustedEntryError, UnsafeXmlError):
+        return None  # the allowlist says why; here nothing is suggested
+    node = root.find("AgeRating")
+    return from_comicinfo(node.text) if node is not None and node.text else None
 
 
 def _natural(name: str) -> list[Any]:
@@ -84,6 +110,7 @@ class Chapter:
     found: Found  # a CBZ: the file. A folder: the folder (size: its pages', time: the newest)
     series: str
     name: str
+    source: str = ""  # the `<source>` folder above the series
     pages: tuple[Page, ...] | None = None  # None: a CBZ file
 
 
@@ -109,15 +136,34 @@ class SuwayomiTree(ImportFolder):
     def __init__(self, root: Path, *, targets: TreeTargets, **options: Any) -> None:
         self._targets = targets
         self._plans: dict[str, tuple[SeriesBinding, str, str]] = {}
+        self._held: SeriesBinding | None = None  # the series of the chapter being taken in
         inner = options.get("precheck")
 
         def precheck(staged: Path, kind: str, sha: str, trust: str) -> str | None:
             if kind != "cbz":
                 return UNSUPPORTED  # a chapter is a CBZ, whatever the name of the file says
+            if self._held is not None and self._exceeds(self._held, _file_age(staged)):
+                return NEEDS_RATING
             return inner(staged, kind, sha, trust) if inner is not None else None
 
         options.update(keep_source=True, entry_prefix=ENTRY_PREFIX, precheck=precheck)
         super().__init__(root, target=self._target_of, **options)
+
+    @staticmethod
+    def _exceeds(series: SeriesBinding, suggested: AgeRating | None) -> bool:
+        """An age the file or the source only suggests is above what the Work was rated (a Work
+        nobody rated counts as 18+): the chapter is not stored, it waits to be rated (the gate of
+        a new Edition, EF-BIB-055)."""
+        if suggested is None:
+            return False
+        return (series.age if series.age is not None else AgeRating(X_MIN_AGE)) < suggested
+
+    def _refuse(
+        self, item: Found, shown: str, code: str, sha: str | None = None, *, kind: str | None = None
+    ) -> ImportOutcome:
+        if code != NEEDS_RATING:
+            return super()._refuse(item, shown, code, sha, kind=kind)
+        return ImportOutcome(shown, "refused", code, False, None, kind)  # nothing recorded
 
     def _target_of(self, item: ImportItem) -> tuple[str, str]:
         series, number, title = self._plans[item.rel]
@@ -286,7 +332,9 @@ class SuwayomiTree(ImportFolder):
             waiting.append(Verdict(shown, NOT_READY))  # Suwayomi may be writing it
         else:
             chapter = Found(rel, info.st_size, info.st_mtime_ns, info.st_ino)
-            found.append(Chapter(chapter, parents[-1], name))
+            found.append(
+                Chapter(chapter, parents[-1], name, parents[-2] if len(parents) > 1 else "")
+            )
 
     def _folder_chapter(
         self, fd: int, here: tuple[str, ...], found: list[Chapter], refused: list[Verdict],
@@ -307,7 +355,12 @@ class SuwayomiTree(ImportFolder):
             return
         size = sum(p.size for p in pages)
         info = os.fstat(fd)
-        found.append(Chapter(Found(rel, size, newest, info.st_ino), here[-2], here[-1], pages))
+        found.append(
+            Chapter(
+                Found(rel, size, newest, info.st_ino), here[-2], here[-1],
+                here[-3] if len(here) > 2 else "", pages,
+            )
+        )  # fmt: skip
 
     def _pages_of(self, fd: int) -> tuple[Page, ...]:
         """The files of an image folder, in reading order, each checked: a regular file, alone on
@@ -346,6 +399,23 @@ class SuwayomiTree(ImportFolder):
     # -- taking in ----------------------------------------------------------------------------
 
     def import_tree(self, *, dry_run: bool = False) -> TreeReport:
+        if dry_run:
+            return self._import_tree(dry_run=True)
+        try:
+            lock = os.open(self._staging, os.O_RDONLY | os.O_DIRECTORY | os.O_CLOEXEC)
+        except OSError:
+            return TreeReport((), (), (), ())
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError:
+            os.close(lock)
+            return TreeReport((), (), (), ())  # another import of a tree is running: never two
+        try:
+            return self._import_tree(dry_run=False)
+        finally:
+            os.close(lock)
+
+    def _import_tree(self, *, dry_run: bool) -> TreeReport:
         ready, refused, waiting = self.look()
         for verdict in refused:
             self._record(verdict.rel, 0, 0, None, "refused", verdict.code)
@@ -371,13 +441,21 @@ class SuwayomiTree(ImportFolder):
         known = self._known(found)
         if known is not None:
             return ImportOutcome(shown, "refused", known)
-        matches = series_of.get(series_key(chapter.series), [])
+        candidates = series_of.get(series_key(chapter.series), [])
+        # the `<source>` folder must be the source of the binding: the same title under another
+        # source is another series, and may be one of another age
+        source = series_key(chapter.source)
+        matches = [b for b in candidates if source in b.folders]
+        if candidates and not matches:
+            return ImportOutcome(shown, "skipped", WRONG_SOURCE)
         if len(matches) != 1:
             code = NO_SERIES if not matches else AMBIGUOUS_SERIES
             return ImportOutcome(shown, "skipped", code)
         series = matches[0]
         if self._targets.blocked(series):
             return self._refuse(found, shown, TOMBSTONED)  # a purged series stays purged
+        if self._exceeds(series, series.suggested):
+            return ImportOutcome(shown, "refused", NEEDS_RATING)  # asked to be rated, not decided
         number = chapter_number(chapter.name)
         if number is None:
             return ImportOutcome(shown, "skipped", UNNUMBERED)
@@ -385,12 +463,14 @@ class SuwayomiTree(ImportFolder):
             return ImportOutcome(shown, "skipped", DUPLICATE)
         title = chapter.name.removesuffix(".cbz")
         self._plans[found.rel] = (series, number, title)
+        self._held = series
         try:
             if chapter.pages is None:
                 return self._import(root_fd, found, shown, False)
             return self._import_folder(root_fd, chapter, series, number, title, shown)
         finally:
             self._plans.pop(found.rel, None)
+            self._held = None
 
     def _import_folder(
         self, root_fd: int, chapter: Chapter, series: SeriesBinding, number: str, title: str,

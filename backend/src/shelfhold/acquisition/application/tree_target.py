@@ -21,19 +21,26 @@ from dataclasses import dataclass
 import sqlalchemy as sa
 from sqlalchemy import Connection, Engine
 
-from shelfhold.catalog.public import BindingRef, Catalog, IncomingUnit, numbered_mark
+from shelfhold.catalog.public import (
+    BindingRef,
+    Catalog,
+    IncomingUnit,
+    content_warning_age,
+    effective_age,
+    numbered_mark,
+)
 from shelfhold.infrastructure.clock import Clock
 from shelfhold.infrastructure.schema import acquisition, catalog, storage
 from shelfhold.library.public import SeriesBindingRef, TombstoneGate
+from shelfhold.sdk.age import X_MIN_AGE, AgeRating
 
 __all__ = ["SUWAYOMI_PLUGIN", "SeriesBinding", "TreeTargets", "chapter_number", "series_key"]
 
 SUWAYOMI_PLUGIN = "suwayomi"
 _NUMBER = re.compile(
-    r"(?:\b(?:ch(?:apter|\.)?|chap\.?|ep(?:isode|\.)?|#)\s*)(\d{1,5}(?:\.\d{1,2})?)\b",
+    r"(?:(?<![^\W_])(?:ch(?:apter|\.)?|chap\.?|ep(?:isode|\.)?|#)\s*)(\d{1,5}(?:\.\d{1,2})?)\b",
     re.IGNORECASE,
 )
-_ANY_NUMBER = re.compile(r"(\d{1,5}(?:\.\d{1,2})?)")
 
 
 def series_key(title: str) -> str:
@@ -44,14 +51,25 @@ def series_key(title: str) -> str:
 
 
 def chapter_number(name: str) -> str | None:
-    """`Ch.12.5`, `Chapter 12`, `Team_Chapter 12 - title` -> `12.5`, `12`; a name with a single
-    number in it gives that one; anything else is unnumbered (None)."""
-    stem = name.removesuffix(".cbz")
-    found = _NUMBER.search(stem)
-    if found:
-        return found.group(1)
-    every = _ANY_NUMBER.findall(stem)
-    return every[0] if len(every) == 1 else None
+    """`Ch.12.5`, `Chapter 12`, `Team_Chapter 12 - title` -> `12.5`, `12`. A name that does not
+    say "chapter" (a volume, an extra, a bonus, a one-shot, a year) is unnumbered (None): a
+    number is never guessed out of it."""
+    found = _NUMBER.search(name.removesuffix(".cbz"))
+    return found.group(1) if found else None
+
+
+def _age(minimum: int | None, x: bool) -> AgeRating | None:
+    if x:
+        return AgeRating(X_MIN_AGE, x=True)
+    return None if minimum is None else AgeRating(minimum)
+
+
+def _folders(name: str | None, lang: str | None) -> frozenset[str]:
+    """How Suwayomi names the folder of a source: `Name (LANG)`, or the name alone."""
+    if not name:
+        return frozenset()
+    spellings = [name, f"{name} ({lang})" if lang else name]
+    return frozenset(series_key(x) for x in spellings if series_key(x))
 
 
 @dataclass(frozen=True)
@@ -61,6 +79,9 @@ class SeriesBinding:
     source_key: str
     remote_id: str
     title: str
+    folders: frozenset[str] = frozenset()  # the keys of the `<source>` folder names it may have
+    age: AgeRating | None = None  # the most restrictive age of its Work and Edition
+    suggested: AgeRating | None = None  # what its source's content warning suggests
 
 
 class TreeTargets:
@@ -74,6 +95,7 @@ class TreeTargets:
     def bindings(self) -> dict[str, list[SeriesBinding]]:
         """The Suwayomi bindings by the key of their series title."""
         binding, item, work = acquisition.source_binding, acquisition.source_item, catalog.work
+        edition, sub = catalog.edition, acquisition.sub_source
         with self._engine.connect() as connection:
             rows = connection.execute(
                 sa.select(
@@ -82,10 +104,24 @@ class TreeTargets:
                     item.c.source_key,
                     item.c.remote_id,
                     work.c.title,
+                    work.c.age_rating,
+                    work.c.age_x,
+                    edition.c.age_rating.label("e_age"),
+                    edition.c.age_x.label("e_x"),
+                    sub.c.name.label("s_name"),
+                    sub.c.lang.label("s_lang"),
+                    sub.c.content_warning.label("s_warning"),
                 )
                 .select_from(
-                    binding.join(item, item.c.id == binding.c.source_item_id).join(
-                        work, work.c.id == binding.c.work_id
+                    binding.join(item, item.c.id == binding.c.source_item_id)
+                    .join(work, work.c.id == binding.c.work_id)
+                    .join(edition, edition.c.id == binding.c.edition_id)
+                    .outerjoin(
+                        sub,
+                        sa.and_(
+                            sub.c.plugin_id == item.c.plugin_id,
+                            sub.c.source_key == item.c.source_key,
+                        ),
                     )
                 )
                 .where(item.c.plugin_id == SUWAYOMI_PLUGIN)
@@ -93,8 +129,18 @@ class TreeTargets:
             ).all()
         found: dict[str, list[SeriesBinding]] = {}
         for row in rows:
+            warning = row.s_warning
             found.setdefault(series_key(row.title), []).append(
-                SeriesBinding(row.id, row.edition_id, row.source_key, row.remote_id, row.title)
+                SeriesBinding(
+                    row.id,
+                    row.edition_id,
+                    row.source_key,
+                    row.remote_id,
+                    row.title,
+                    folders=_folders(row.s_name, row.s_lang),
+                    age=effective_age(_age(row.age_rating, row.age_x), [_age(row.e_age, row.e_x)]),
+                    suggested=content_warning_age(warning) if warning else None,
+                )
             )
         return found
 

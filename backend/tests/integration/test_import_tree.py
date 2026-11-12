@@ -16,7 +16,7 @@ from typing import Any
 import pytest
 import sqlalchemy as sa
 
-from shelfhold.acquisition.public import TreeTargets
+from shelfhold.acquisition.public import TreeTargets, chapter_number
 from shelfhold.infrastructure.clock import SystemClock
 from shelfhold.infrastructure.schema import acquisition, catalog
 from shelfhold.library.adapters.import_scan import make_precheck
@@ -59,6 +59,22 @@ class Gate:
         return self.content
 
 
+def seed_source(engine: Any, *, warning: str = "safe") -> None:
+    """The sub-source the bench's binding belongs to: its folder is `Source (EN)`."""
+    table = acquisition.sub_source
+    with engine.begin() as connection:
+        connection.execute(sa.delete(table))
+        connection.execute(
+            sa.insert(table).values(
+                plugin_id="suwayomi",
+                source_key="suwayomi:1",
+                name="Source",
+                lang="en",
+                content_warning=warning,
+            )
+        )
+
+
 def tree_of(env: ImportEnv, gate: Any = NONE_PURGED, **kw: Any) -> SuwayomiTree:
     lib = env.lib
 
@@ -72,6 +88,7 @@ def tree_of(env: ImportEnv, gate: Any = NONE_PURGED, **kw: Any) -> SuwayomiTree:
         "precheck": make_precheck(gate),
     }  # fmt: skip
     options.update(kw)
+    seed_source(lib.engine)
     return SuwayomiTree(
         env.incoming, targets=TreeTargets(lib.engine, SystemClock(), gate), **options
     )
@@ -177,6 +194,89 @@ def test_two_bindings_with_the_same_title_are_not_guessed() -> None:
             connection.execute(sa.insert(binding).values(**line))
         report = tree_of(env).import_tree()
         assert states(report) == [("skipped", "import.tree_ambiguous_series")]
+
+
+@pytest.mark.req("EF-INT-009")
+def test_the_same_title_under_another_source_is_not_the_series_of_the_binding() -> None:
+    """BLOCKING of the review: the `<source>` folder is part of the identity. A child's Work
+    bound to source 1 never takes the chapters of an adult source with the same title."""
+    with import_env() as env:
+        env.drop(f"mangas/Adult Source (EN)/{SERIES}/Chapter 7.cbz", CBZ)
+        page_folder_in(env, "mangas/Adult Source (EN)", "Chapter 8", {"1.png": PAGE_A})
+        with env.lib.engine.begin() as c:
+            c.execute(sa.update(catalog.work).values(age_rating=6))
+        report = tree_of(env).import_tree()
+        assert states(report) == [("skipped", "import.tree_wrong_source")] * 2
+        assert env.contents() == [] and env.entries() == {}
+
+
+def page_folder_in(env: ImportEnv, source: str, chapter: str, pages: dict[str, bytes]) -> None:
+    for name, data in pages.items():
+        env.drop(f"{source}/{SERIES}/{chapter}/{name}", data)
+
+
+@pytest.mark.req("EF-INT-009", "EF-BIB-055")
+def test_a_source_that_suggests_an_age_above_the_work_holds_the_chapter_to_rate() -> None:
+    with import_env() as env:
+        env.drop(f"{CH}/Chapter 7.cbz", CBZ)
+        page_folder(env, "Chapter 8", {"1.png": PAGE_A})
+        with env.lib.engine.begin() as c:
+            c.execute(sa.update(catalog.work).values(age_rating=6))
+        tree = tree_of(env)
+        seed_source(env.lib.engine, warning="nsfw")
+        report = tree.import_tree()
+        assert states(report) == [("refused", "import.tree_needs_rating")] * 2
+        assert env.contents() == [] and env.entries() == {}  # waits: nothing is "decided"
+        with env.lib.engine.begin() as c:  # an admin rates the Work 18+ (X): it is let in
+            c.execute(sa.update(catalog.work).values(age_rating=18, age_x=True))
+        assert states(tree.import_tree()) == [("stored", None)] * 2
+
+
+@pytest.mark.req("EF-INT-009", "EF-BIB-055")
+@pytest.mark.parametrize("label", ["Adults Only 18+", "X18+", "R18+", "Mature 17+"])
+def test_a_comicinfo_age_above_the_work_holds_the_chapter_to_rate(label: str) -> None:
+    info = f"<ComicInfo><AgeRating>{label}</AgeRating></ComicInfo>".encode()
+    with import_env() as env:
+        env.drop(f"{CH}/Chapter 7.cbz", cbz_bytes(comicinfo=info))
+        with env.lib.engine.begin() as c:
+            c.execute(sa.update(catalog.work).values(age_rating=6))
+        report = tree_of(env).import_tree()
+        assert states(report) == [("refused", "import.tree_needs_rating")]
+        assert env.contents() == [] and env.entries() == {}
+
+
+@pytest.mark.req("EF-INT-009", "EF-BIB-055")
+def test_a_comicinfo_age_within_the_work_rating_is_stored() -> None:
+    info = b"<ComicInfo><AgeRating>Everyone</AgeRating></ComicInfo>"
+    with import_env() as env:
+        env.drop(f"{CH}/Chapter 7.cbz", cbz_bytes(comicinfo=info))
+        with env.lib.engine.begin() as c:
+            c.execute(sa.update(catalog.work).values(age_rating=6))
+        assert states(tree_of(env).import_tree()) == [("stored", None)]
+
+
+@pytest.mark.req("EF-INT-009")
+def test_a_number_is_never_guessed_out_of_a_volume_an_extra_or_a_year() -> None:
+    for name in ["Vol.2 Extra", "Volume 3", "Oneshot 2023", "Bonus 1", "Extras", "2023"]:
+        assert chapter_number(name) is None, name
+    assert chapter_number("Team_Ch.12 - Part 2") == "12"
+    assert chapter_number("Chapter 12.5.cbz") == "12.5"
+
+
+@pytest.mark.req("EF-INT-009")
+def test_two_imports_of_a_tree_never_cross(monkeypatch: pytest.MonkeyPatch) -> None:
+    import fcntl
+
+    with import_env() as env:
+        env.drop(f"{CH}/Chapter 1.cbz", CBZ)
+        fd = os.open(env.lib.tmp / "staging", os.O_RDONLY | os.O_DIRECTORY)
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX)
+            report = tree_of(env).import_tree()
+            assert report.outcomes == () and env.contents() == []
+        finally:
+            os.close(fd)
+        assert states(tree_of(env).import_tree()) == [("stored", None)]
 
 
 @pytest.mark.req("EF-INT-009")
@@ -461,4 +561,6 @@ def test_a_refusal_is_kept_apart_from_the_import_folders_own() -> None:
     with import_env() as env:
         env.drop(f"{CH}/Chapter 1.cbz", b"not an archive at all")
         tree_of(env).import_tree()
-        assert all(key.startswith("suwayomi-tree/") for key in env.entries())
+        assert env.entries() and all(
+            key.startswith(tree_import.ENTRY_PREFIX) for key in env.entries()
+        )

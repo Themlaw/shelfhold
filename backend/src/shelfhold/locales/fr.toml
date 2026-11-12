@@ -1688,6 +1688,14 @@ action = "L'arbre n'est pas modifié. Renommez le chapitre avec « Chapter N » 
 title = "Ce chapitre est déjà rangé."
 action = "Rien n'est à faire : la copie existante est gardée et l'arbre n'est pas modifié."
 
+[errors."import.tree_wrong_source"]
+title = "Le dossier de source de ce chapitre n'est pas celui de la liaison de cette série."
+action = "L'arbre n'est pas modifié. Une série du même titre sous une autre source n'est pas la même série : suivez-la depuis cette source."
+
+[errors."import.tree_needs_rating"]
+title = "À classer : l'âge que suggèrent le fichier ou la source dépasse le classement de l'Œuvre."
+action = "Rien n'est rangé et l'arbre n'est pas modifié. Classez l'Œuvre (« shelfhold rate »), puis relancez l'import."
+
 [errors."content.untrusted_pdf"]
 title = "PDF rangé tel quel, non exporté : sa provenance n'est pas déclarée."
 action = "Un PDF peut contenir du code que lirait le lecteur d'une destination. Déclarez-le comme un achat à l'import pour l'exporter."

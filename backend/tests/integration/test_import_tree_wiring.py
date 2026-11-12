@@ -13,7 +13,7 @@ import pytest
 import sqlalchemy as sa
 
 from shelfhold.config import Settings
-from shelfhold.infrastructure.schema import catalog, storage
+from shelfhold.infrastructure.schema import acquisition, catalog, storage
 from tests.auth_env import run_cli
 from tests.l50_env import seeded
 from tests.library_env import PNG, cbz_bytes
@@ -46,6 +46,16 @@ def test_import_tree_command_end_to_end(
     tree.mkdir()
     with seeded(settings, tmp_path / "inst") as env:
         env.new_series("Dr Stone")
+        with env.inst.engine.begin() as connection:  # the source of the binding: `Source (EN)`
+            connection.execute(
+                sa.insert(acquisition.sub_source).values(
+                    plugin_id="suwayomi",
+                    source_key="suwayomi:1",
+                    name="Source",
+                    lang="en",
+                    content_warning="safe",
+                )
+            )
         drop(tree, "mangas/Source (EN)/Dr Stone/Chapter 1.cbz", CBZ)
         drop(tree, "mangas/Source (EN)/Dr Stone/Chapter 2/002.png", PNG + b"2")
         drop(tree, "mangas/Source (EN)/Dr Stone/Chapter 2/001.png", PNG + b"1")
