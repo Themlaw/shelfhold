@@ -163,6 +163,19 @@ def test_first_epub_export_waits_for_age_push() -> None:
         assert w.fake.violations == []
 
 
+@pytest.mark.req("EF-EXP-040")
+def test_names_are_asked_for_a_first_epub_before_the_gate_is_read() -> None:
+    """The job reads the age gate from Kavita only when a name is asked: the question is put with
+    the gate open, or a rated EPUB would ask no name and the gate would never be read."""
+    with family_env(13) as env:
+        books_library(env)
+        book = env.new_series("Le Livre")
+        add_book(env, book, "1")
+        rate(env, book, 10)
+        names, _kind = env.pipeline.wanted_names(env.destination_id)
+        assert names != []
+
+
 @pytest.mark.req("EF-BIB-001", "EF-EXP-040")
 def test_omnibus_packaging_separate_edition_two_kavita_series() -> None:
     """Golden: an `omnibus` Edition of the same Work, in the same language, is a Kavita series of
