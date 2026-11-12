@@ -15,7 +15,7 @@ from alembic.script import ScriptDirectory
 
 from shelfhold.config import Settings
 from shelfhold.infrastructure.migrate import current_revision, default_script_location, migrate
-from shelfhold.infrastructure.schema import export, metadata, reading, storage
+from shelfhold.infrastructure.schema import export, metadata, reading, replica, storage
 from tests.integration.test_schema_migration_0002 import (
     PLATFORM_TABLES,
     alembic_config,
@@ -100,8 +100,12 @@ def test_metadata_covers_exactly_the_migrated_tables(tmp_path: Path) -> None:
         | M3_TABLES
     )
     assert tables(database) == {t.name for t in metadata.sorted_tables} == expected
-    for module, names in ((storage, STORAGE_TABLES), (export, EXPORT_TABLES)):
-        assert {t.name for t in vars(module).values() if isinstance(t, sa.Table)} == names
+    # `replica` moved to its own module (M3 L00) without changing the migrated DDL
+    storage_side = [storage, replica]
+    assert {
+        t.name for m in storage_side for t in vars(m).values() if isinstance(t, sa.Table)
+    } == STORAGE_TABLES
+    assert {t.name for t in vars(export).values() if isinstance(t, sa.Table)} == EXPORT_TABLES
     assert {t.name for t in vars(reading).values() if isinstance(t, sa.Table)} == READING_TABLES
 
 
