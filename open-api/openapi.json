@@ -1054,19 +1054,15 @@
         "type": "object"
       },
       "FamilyItemOut": {
-        "description": "What a child sees of a remote result: a title and the one action. No cover, no summary, no\nformat, no source name: only what a request needs, by opaque reference.",
+        "description": "What a child sees of a remote result: a title and the one action. No cover, no summary, no\nformat, no source name or key: only what a request needs, by an opaque reference.",
         "properties": {
           "action": {
             "const": "request",
             "title": "Action",
             "type": "string"
           },
-          "remote_id": {
-            "title": "Remote Id",
-            "type": "string"
-          },
-          "source_key": {
-            "title": "Source Key",
+          "request_ref": {
+            "title": "Request Ref",
             "type": "string"
           },
           "title": {
@@ -1077,8 +1073,7 @@
         "required": [
           "title",
           "action",
-          "source_key",
-          "remote_id"
+          "request_ref"
         ],
         "title": "FamilyItemOut",
         "type": "object"

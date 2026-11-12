@@ -126,6 +126,7 @@ class FederatedEdition:
     remote_id: str
     title: str
     format: str
+    memo: Mapping[str, Any] = field(default_factory=dict, compare=False, repr=False)  # host only
 
 
 @dataclass(frozen=True)
@@ -188,13 +189,16 @@ class _Walk:
     sources: dict[str, _SourceWalk]
     works: list[_Work] = field(default_factory=list)
     by_id: dict[tuple[str, str], int] = field(default_factory=dict)
-    editions: set[tuple[str, str]] = field(default_factory=set)
+    editions: set[tuple[str, str, str]] = field(default_factory=set)
     served: int = 0
 
     def add(self, source: FederatedSource, ref: SeriesRef, fresh: dict[int, int]) -> None:
         """Append one result. `fresh`: position of each Work -> editions already given before this
         page (so the page can say which are new)."""
-        identity = (source.key, ref.remote_id)
+        entry = ref.memo.get(
+            "entry"
+        )  # one feed page can hold many books: the entry tells them apart
+        identity = (source.key, ref.remote_id, entry if isinstance(entry, str) else "")
         if identity in self.editions:
             return
         self.editions.add(identity)
@@ -212,7 +216,13 @@ class _Walk:
             if self.by_id.setdefault(found, position) == position:
                 work.ids.add(found)
         work.editions.append(
-            FederatedEdition(source.key, ref.remote_id, ref.title[:MAX_TITLE_CHARS], source.format)
+            FederatedEdition(
+                source.key,
+                ref.remote_id,
+                ref.title[:MAX_TITLE_CHARS],
+                source.format,
+                dict(ref.memo),
+            )
         )
 
 

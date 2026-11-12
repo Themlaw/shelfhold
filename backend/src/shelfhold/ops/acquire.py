@@ -16,7 +16,10 @@ import sqlalchemy as sa
 
 from shelfhold.acquisition.application.family_search import (
     FamilyPage,
+    FamilyRef,
+    FamilyRefs,
     FamilySearch,
+    InvalidFamilyRefError,
     empty_page,
 )
 from shelfhold.acquisition.application.federated_search import (
@@ -33,10 +36,10 @@ from shelfhold.acquisition.public import (
     NativeAcquirer,
     acquire_dedupe_key,
 )
-from shelfhold.catalog.public import clean_terms, is_flagged
+from shelfhold.catalog.public import clean_terms, is_flagged, visible_title
 from shelfhold.identity.public import family_profile, family_search_mode, family_source_keys
 from shelfhold.infrastructure.fetcher import FetchError
-from shelfhold.infrastructure.schema import acquisition
+from shelfhold.infrastructure.schema import acquisition, catalog
 from shelfhold.ops.errors import CodedRefusal, ExitUnavailableError
 from shelfhold.ops.tombstone_screens import CatalogScreens
 from shelfhold.plugin_host.errors import NoSourceForUrl, RefHasSecret
@@ -59,6 +62,7 @@ class AcquireOps:
         self._walks = FederatedCursors(comp.clock.now)  # the cursors of the federated search
         # the child's walks are kept apart: an adult's cursor is never a child's
         self._family_walks = FederatedCursors(comp.clock.now)
+        self._family_refs = FamilyRefs(comp.clock.now)  # what "request" will resolve (L35)
 
     # -- the acquirer -------------------------------------------------------------------------
 
@@ -176,7 +180,8 @@ class AcquireOps:
                 if (
                     isinstance(manifest, SourceManifest)
                     and Capability.SEARCH in manifest.capabilities
-                ):
+                    and manifest.content_warning == "safe"  # one that says it is not for children
+                ):  # is never asked for a child, whatever the admin ticked
                     known[record.key] = manifest
             open_keys = family_source_keys(connection, owner, "child", known)
         sources = [
@@ -185,15 +190,52 @@ class AcquireOps:
             if key in open_keys
         ]
         terms = clean_terms(profile.subject_filter)
+
+        def keep(ref: SeriesRef) -> bool:
+            """Not flagged, and not a title the catalogue already rated: that one follows the
+            catalogue (the one filter of L09), it is never an unrated result."""
+            return not is_flagged(ref.title, ref.memo, terms) and not self._classified(ref)
+
         service = FamilySearch(
-            self.acquirer(), self._family_walks,
-            keep=lambda ref: not is_flagged(ref.title, ref.memo, terms),
+            self.acquirer(), self._family_walks, self._family_refs,
+            keep=keep, title_of=visible_title,
         )  # fmt: skip
         try:
             page: FamilyPage = comp.run(service.search(sources, query, owner=owner, cursor=cursor))
         except InvalidFederatedCursorError:
             raise CodedRefusal("invalid_cursor", "the cursor is not one this search gave") from None
         return page
+
+    def _classified(self, ref: SeriesRef) -> bool:
+        """Whether the catalogue already holds this result as a rated Work or Edition. Its rating
+        is the admin's decision: for a child the result is not "unrated", it is hidden (above her
+        ceiling) or already in her catalogue (found by the local half), never offered again."""
+        item, binding = acquisition.source_item, acquisition.source_binding
+        work, edition = catalog.work, catalog.edition
+        query = (
+            sa.select(sa.literal(1))
+            .select_from(
+                item.join(binding, binding.c.source_item_id == item.c.id)
+                .join(work, work.c.id == binding.c.work_id)
+                .join(edition, edition.c.id == binding.c.edition_id)
+            )
+            .where(
+                item.c.source_key == ref.source_key,
+                item.c.remote_id == ref.remote_id,
+                sa.or_(work.c.rated_at.is_not(None), edition.c.rated_at.is_not(None)),
+            )
+            .limit(1)
+        )
+        with self._comp.engine.connect() as connection:
+            return connection.execute(query).first() is not None
+
+    def resolve_family_ref(self, token: str, *, owner: str) -> FamilyRef:
+        """What a reference of the family search stands for, for the child it was shown to (the
+        request of L35 takes it); `invalid_ref` for any other."""
+        try:
+            return self._family_refs.resolve(token, owner=owner)
+        except InvalidFamilyRefError:
+            raise CodedRefusal("invalid_ref", "the reference is not one this search gave") from None
 
     def acquire(
         self,

@@ -4,8 +4,8 @@ search a reader gets (`family_search_mode`), and the subject and word filter (`i
 from __future__ import annotations
 
 import pytest
-from shelfhold.catalog.domain.subject_filter import DEFAULT_TERMS, clean_terms, is_flagged
 
+from shelfhold.catalog.domain.subject_filter import DEFAULT_ROOTS, clean_terms, is_flagged
 from shelfhold.identity.domain.visibility import (
     ALL,
     NOBODY,
@@ -75,7 +75,7 @@ def test_the_profile_adds_terms_and_never_removes_the_default_ones() -> None:
     assert is_flagged(
         "Erotica", {}, ("dragons",)
     )  # the default list holds whatever the profile has
-    assert "erotica" in DEFAULT_TERMS
+    assert "erot" in DEFAULT_ROOTS
 
 
 @pytest.mark.req("EF-USR-018")

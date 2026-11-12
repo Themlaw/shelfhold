@@ -195,7 +195,8 @@ _IPV6 = re.compile(r"(?<![\w:])(?:[0-9a-fA-F]{1,4}:){2,7}[0-9a-fA-F]{0,4}(?![\w:
 _URL = re.compile(r"\b[a-z][a-z0-9+.-]*://[A-Za-z0-9\[]", re.IGNORECASE)
 # Columns whose text names something of the household: titles, names, paths, URLs, remote ids.
 _SENSITIVE_COLUMN = re.compile(
-    r"(title|name|label|url|path|remote_id|username|host|series|memo|settings|alias|value|email)",
+    r"(title|name|label|url|path|remote_id|username|host|series|memo|settings|alias|value|email"
+    r"|subject)",
 )
 _NOT_SENSITIVE_COLUMN = re.compile(r"(_by|_hash|_kind|_lang|_state|_at)$")
 # Names and titles (and the keys that name a source): a whole word, whatever the length.

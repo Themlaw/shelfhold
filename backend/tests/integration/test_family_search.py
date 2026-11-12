@@ -23,7 +23,7 @@ from tests.visibility_env import HIDDEN_TITLES, VISIBLE_TITLES, add_profile, see
 
 SEARCH = "/api/v1/search"
 ALL = {"scope": "all", "q": "tale"}
-REDUCED_KEYS = {"title", "action", "source_key", "remote_id"}
+REDUCED_KEYS = {"title", "action", "request_ref"}
 # What must never reach a child from a remote result: more than a title, any way to take it.
 FORBIDDEN_WORDS = (
     "cover", "summary", "description", "excerpt", "add_directly", '"add"', "preview", "read",
@@ -128,7 +128,10 @@ def test_child_search_family_sources_title_only_request_action(
             assert item["action"] == "request"
         for word in FORBIDDEN_WORDS:
             assert word not in answer.text, word
-        assert "SECRETSUMMARY" not in answer.text  # the summary the source gave stays behind
+        assert "SECRETSUMMARY" not in answer.text
+        for item in body["items"]:  # the reference says nothing of the source or the result
+            assert "alpha" not in item["request_ref"].lower() and item["request_ref"] != "a1"
+        assert '"alpha"' not in answer.text  # the summary the source gave stays behind
         assert beta.calls == []  # a source that is not "family" is never asked
         assert "Beta Tale" not in answer.text
 
@@ -475,6 +478,8 @@ def test_the_admin_sets_the_family_search_of_a_profile_and_it_is_audited(
             {"hide_unrated_remote": True, "subject_filter": ["x"] * 101},
             {"hide_unrated_remote": True, "subject_filter": ["x" * 65]},
             {"hide_unrated_remote": True, "subject_filter": [], "extra": 1},
+            {"hide_unrated_remote": True, "subject_filter": ["--"]},  # folds to nothing: refused
+            {"hide_unrated_remote": True, "subject_filter": ["ok", "   "]},
             {"subject_filter": []},
         ):
             assert _put(api, api.client, path, bad).status_code == 422, bad
@@ -562,3 +567,54 @@ def test_the_family_settings_are_read_from_the_row_and_closed_when_it_is_not_the
                 assert family_source_keys(connection, MEMBER_ID, "child", ["alpha"]) == frozenset()
         finally:
             engine.dispose()
+
+
+@pytest.mark.req("EF-USR-018")
+def test_a_word_in_another_script_is_kept_and_filters(
+    monkeypatch: pytest.MonkeyPatch, settings: Settings
+) -> None:
+    alpha, beta = sources()
+    with instance(monkeypatch, settings, alpha, beta) as api:
+        mark_family(api, "alpha")
+        assert api.login().status_code == 200
+        path = f"/api/v1/profiles/{CHILD_ID}/family-search"
+        word = "дракон"  # a Cyrillic word
+        done = _put(api, api.client, path, {"hide_unrated_remote": False, "subject_filter": [word]})
+        assert done.status_code == 200 and done.json()["subject_filter"] == [word]
+
+
+@pytest.mark.req("EF-USR-018", "ENF-SEC-010")
+def test_the_family_search_of_a_member_is_refused_and_a_demotion_resets_it(
+    monkeypatch: pytest.MonkeyPatch, settings: Settings
+) -> None:
+    alpha, beta = sources()
+    with instance(monkeypatch, settings, alpha, beta) as api:
+        assert api.login().status_code == 200
+        loosen = {"hide_unrated_remote": False, "subject_filter": ["x"]}
+        refused = _put(api, api.client, f"/api/v1/profiles/{MEMBER_ID}/family-search", loosen)
+        assert refused.status_code in (400, 409, 422), refused.text
+        set_profile(api, CHILD_ID, hide_unrated_remote=0, subject_filter=["x"])
+        patched = api.client.patch(
+            f"/api/v1/profiles/{CHILD_ID}",
+            json={"role": "member", "max_age_rating": None, "can_rate": False},
+            headers={CSRF_HEADER: api.csrf()},
+        )
+        assert patched.status_code == 200, patched.text
+        rows = db_rows(
+            api.settings,
+            'SELECT hide_unrated_remote, subject_filter FROM "user" WHERE id = ?',
+            CHILD_ID,
+        )
+        assert rows[0][0] in (1, True) and json.loads(rows[0][1]) == []
+
+
+@pytest.mark.req("EF-USR-014")
+def test_a_source_that_says_it_is_not_for_children_is_never_asked(
+    monkeypatch: pytest.MonkeyPatch, settings: Settings
+) -> None:
+    alpha, beta = sources()
+    alpha.manifest = alpha.manifest.model_copy(update={"content_warning": "mixed"})
+    with instance(monkeypatch, settings, alpha, beta) as api:
+        open_door(api)
+        assert kid_client(api).get(SEARCH, params=ALL).json()["items"] == []
+        assert alpha.calls == []

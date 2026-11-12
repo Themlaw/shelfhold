@@ -202,7 +202,15 @@ class GutenbergSource:
         chunk = found[offset : offset + PAGE_SIZE]
         more = offset + PAGE_SIZE < len(found)
         return Page[SeriesRef](
-            items=[SeriesRef(source_key=KEY, remote_id=str(b.pg_id), title=b.title) for b in chunk],
+            items=[
+                SeriesRef(
+                    source_key=KEY,
+                    remote_id=str(b.pg_id),
+                    title=b.title,
+                    memo={"subjects": list(b.subjects)} if b.subjects else {},
+                )
+                for b in chunk
+            ],
             next=Cursor(token=str(offset + PAGE_SIZE)) if more else None,
         )
 

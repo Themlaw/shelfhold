@@ -18,9 +18,22 @@ own, session only: a key or a token is a program, it has no visibility to choose
 from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends, Request, Response
-from pydantic import BaseModel, ConfigDict, Field, StrictBool, StrictInt, StringConstraints
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    StrictBool,
+    StrictInt,
+    StringConstraints,
+    field_validator,
+)
 
-from shelfhold.catalog.public import MAX_TERM_CHARS, MAX_TERMS, clean_terms
+from shelfhold.catalog.public import (
+    MAX_TERM_CHARS,
+    MAX_TERMS,
+    InvalidTermError,
+    check_terms,
+)
 from shelfhold.identity.public import (
     RESERVED_ACTIONS,
     Principal,
@@ -85,6 +98,15 @@ class FamilySearchIn(BaseModel):
     subject_filter: list[Annotated[str, StringConstraints(max_length=MAX_TERM_CHARS)]] = Field(
         max_length=MAX_TERMS
     )
+
+    @field_validator("subject_filter")
+    @classmethod
+    def _words_keep_a_letter(cls, value: list[str]) -> list[str]:
+        try:
+            check_terms(value)
+        except InvalidTermError:
+            raise ValueError("invalid_term") from None
+        return value
 
 
 class FamilySearchOut(BaseModel):
@@ -220,7 +242,7 @@ def build_profiles_router() -> APIRouter:
         saved = run(
             request,
             lambda auth: auth.profile_set_family_search(
-                profile_id, body.hide_unrated_remote, clean_terms(body.subject_filter), by=principal
+                profile_id, body.hide_unrated_remote, check_terms(body.subject_filter), by=principal
             ),
         )
         return FamilySearchOut(

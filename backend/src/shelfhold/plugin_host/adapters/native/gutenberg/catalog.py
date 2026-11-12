@@ -34,6 +34,7 @@ __all__ = [
 
 MAX_BOOKS = 400_000  # the whole catalogue is about 80 000 books; a document far over is not it
 MAX_PG_ID = 10**9
+MAX_SUBJECTS = 50  # subjects kept per book
 _HEADER = ("Text#", "Type", "Title", "Language", "Authors")
 _YEARS = re.compile(r",\s*(\d{1,4})?\s*-\s*(\d{1,4})?\s*$")
 _SPACE = re.compile(r"\s+")
@@ -59,6 +60,7 @@ class CatalogBook:
     publisher: str | None = None
     issued: str | None = None
     searchable: str = field(default="", compare=False)
+    subjects: tuple[str, ...] = field(default=(), compare=False)  # the catalogue's "Subjects"
 
     @property
     def work_key(self) -> str:
@@ -84,9 +86,12 @@ def make_book(
     translators: tuple[str, ...] = (),
     publisher: str | None = None,
     issued: str | None = None,
+    subjects: tuple[str, ...] = (),
 ) -> CatalogBook:
     searchable = " ".join([title, *(a.name for a in authors)]).casefold()
-    return CatalogBook(pg_id, title, languages, authors, translators, publisher, issued, searchable)
+    return CatalogBook(
+        pg_id, title, languages, authors, translators, publisher, issued, searchable, subjects
+    )
 
 
 def _author_of(raw: str) -> Author | None:
@@ -121,9 +126,17 @@ def parse_csv(raw: bytes, *, limit: int = MAX_BOOKS) -> list[CatalogBook]:
         authors = tuple(
             a for a in (_author_of(p) for p in (row.get("Authors") or "").split(";")) if a
         )
+        subjects = tuple(
+            x for x in (clean_text(p) for p in (row.get("Subjects") or "").split(";")) if x
+        )[:MAX_SUBJECTS]
         books.append(
             make_book(
-                int(number), title, languages, authors, issued=clean_text(row.get("Issued")) or None
+                int(number),
+                title,
+                languages,
+                authors,
+                issued=clean_text(row.get("Issued")) or None,
+                subjects=subjects,
             )
         )
         if len(books) > limit:

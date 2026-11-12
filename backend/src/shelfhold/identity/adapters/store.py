@@ -423,6 +423,11 @@ class SqlIdentityStore:
             if current != role:  # a changed role starts again: no session or key of the old one
                 policies = identity.profile_source_policy  # nor a policy of the old one: D14 again
                 conn.execute(sa.delete(policies).where(policies.c.user_id == user_id))
+                conn.execute(  # nor the family search of the old role: back to hide, no words
+                    sa.update(_user)
+                    .where(_user.c.id == user_id)
+                    .values(hide_unrated_remote=True, subject_filter=[])
+                )
                 conn.execute(
                     sa.update(_session)
                     .where(_session.c.user_id == user_id, _session.c.revoked_at.is_(None))
@@ -534,6 +539,8 @@ class SqlIdentityStore:
             row = conn.execute(sa.select(*columns).where(_user.c.id == user_id)).first()
             if row is None:
                 raise ProfileError("not_found")
+            if row.role != "child":  # only a child has a family search: nothing is left to wake up
+                raise ProfileError("not_a_child")
             before = self._profile_of(row)
             conn.execute(
                 sa.update(_user)

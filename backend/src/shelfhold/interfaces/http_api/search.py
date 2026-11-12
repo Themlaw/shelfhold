@@ -129,12 +129,11 @@ class SearchedInOut(BaseModel):
 
 class FamilyItemOut(BaseModel):
     """What a child sees of a remote result: a title and the one action. No cover, no summary, no
-    format, no source name: only what a request needs, by opaque reference."""
+    format, no source name or key: only what a request needs, by an opaque reference."""
 
     title: str
     action: Literal["request"]
-    source_key: str
-    remote_id: str
+    request_ref: str  # means nothing outside this host: no source key, no remote id
 
 
 class FamilyOut(BaseModel):
@@ -225,10 +224,7 @@ def build_search_router(
             ]
         return FamilyOut(
             items=[
-                FamilyItemOut(
-                    title=r.title, action=r.action, source_key=r.source_key,
-                    remote_id=r.remote_id,
-                )
+                FamilyItemOut(title=r.title, action=r.action, request_ref=r.request_ref)
                 for r in page.items
             ],
             local=local, state=page.state, next_cursor=page.next_cursor,

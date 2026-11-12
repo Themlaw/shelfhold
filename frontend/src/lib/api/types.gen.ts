@@ -687,7 +687,7 @@ export type ExternalIdOut = {
  * FamilyItemOut
  *
  * What a child sees of a remote result: a title and the one action. No cover, no summary, no
- * format, no source name: only what a request needs, by opaque reference.
+ * format, no source name or key: only what a request needs, by an opaque reference.
  */
 export type FamilyItemOut = {
     /**
@@ -695,13 +695,9 @@ export type FamilyItemOut = {
      */
     action: 'request';
     /**
-     * Remote Id
+     * Request Ref
      */
-    remote_id: string;
-    /**
-     * Source Key
-     */
-    source_key: string;
+    request_ref: string;
     /**
      * Title
      */

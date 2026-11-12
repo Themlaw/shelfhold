@@ -245,8 +245,30 @@ class World:
         return self.kid.put(path, json=body, headers={CSRF_HEADER: self.env.csrf(self.kid)})
 
 
+FAMILY_SOURCE = "famsrc"
+# What the family source answers: the titles of Works the admin rated (above her ceiling or not)
+# and one title the catalogue knows nothing of.
+REMOTE_RATED = ("above", "twelve", "adult_edition")
+REMOTE_PLAIN = "Plain Remote Tale"
+
+
 @pytest.fixture
 def api(monkeypatch: pytest.MonkeyPatch, settings: Settings) -> Iterator[AuthEnv]:
+    import shelfhold.main as main_module
+    from shelfhold.plugin_host.registry import PluginCandidate, PluginOrigin, PluginRegistry
+    from tests.federated_env import FakeSource, hit
+
+    titles = [{**VISIBLE_TITLES, **HIDDEN_TITLES}[k] for k in REMOTE_RATED]
+    source = FakeSource(
+        FAMILY_SOURCE, name="Family source",
+        pages=[[*(hit(f"r-{k}", t) for k, t in zip(REMOTE_RATED, titles, strict=True)),
+                hit("r-plain", REMOTE_PLAIN)]],
+    )  # fmt: skip
+    registry = PluginRegistry(active_keys=None)
+    registry.load_all(
+        [PluginCandidate(key=source.key, origin=PluginOrigin.FIRST_PARTY, load=lambda: source)]  # type: ignore[arg-type]
+    )
+    monkeypatch.setattr(main_module, "start_plugins", lambda *_a, **_k: (registry, []))
     with auth_env(monkeypatch, settings) as env:
         yield env
 
@@ -513,23 +535,49 @@ def _surface_search_key(world: World) -> None:
 
 def _surface_federated(world: World) -> None:
     """A remote result has no rating: the child's door is the family search (L19), a reduced form
-    that holds no source that is not marked "family", and by key none at all."""
-    answer = world.kid.get(SEARCH, params={"q": "Tale", "scope": "all"})
+    that holds no source that is not marked "family", and by key none at all. A family source that
+    names Works the admin rated is the attack: they follow the catalogue (hidden above her
+    ceiling), they are never offered as unrated results."""
+    import sqlite3
+
+    from tests.integration.test_family_search_review_poc import bind
+
+    database = str(world.env.settings.database_path)
+    ask = {"q": "Tale", "scope": "all"}
+    answer = world.kid.get(SEARCH, params=ask)
     assert answer.status_code == 200, answer.text
     body = answer.json()
     assert set(body) == {"items", "local", "state", "next_cursor"}  # no total, no count
-    assert body["items"] == [] and body["state"] == "empty"  # no source is marked "family"
+    assert body["items"] == [] and body["state"] == "empty"  # hide mode, the default: no source
     assert sorted(h["title"] for h in body["local"]) == sorted(
         world.seed.title_of(k) for k in VISIBLE_FOR_CEILING_10
     )
     world.clean(answer.text)
+    # the family source: ticked, the profile shows the reduced form, the catalogue knows three
+    connection = sqlite3.connect(database)
+    try:
+        connection.execute(
+            "INSERT INTO source_config (plugin_id, family_safe) VALUES (?, 1)", (FAMILY_SOURCE,)
+        )
+        connection.execute(
+            'UPDATE "user" SET hide_unrated_remote = 0 WHERE id = ?', (world.kid_id,)
+        )
+        connection.commit()
+    finally:
+        connection.close()
+    for key in REMOTE_RATED:
+        bind(database, FAMILY_SOURCE, f"r-{key}", world.seed.works[key], world.seed.editions[key])
+    reduced = world.kid.get(SEARCH, params=ask)
+    assert reduced.status_code == 200, reduced.text
+    assert [i["title"] for i in reduced.json()["items"]] == [REMOTE_PLAIN]  # the rest is rated
+    world.clean(reduced.text)
     key = (
         local_auth(world.seed.engine, world.env.settings)
         .create_api_key(name="kidkey2", username="kid", read_only=True)
         .value
     )
     keyed = world.env.other_client("10.0.0.53").get(
-        SEARCH, params={"q": "Tale", "scope": "all"}, headers={"Authorization": f"Bearer {key}"}
+        SEARCH, params=ask, headers={"Authorization": f"Bearer {key}"}
     )
     assert keyed.status_code == 403
     world.clean(keyed.text)

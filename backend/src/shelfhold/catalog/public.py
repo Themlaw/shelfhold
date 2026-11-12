@@ -209,8 +209,11 @@ from shelfhold.catalog.domain.sort_key import sort_key
 from shelfhold.catalog.domain.subject_filter import (
     MAX_TERM_CHARS,
     MAX_TERMS,
+    InvalidTermError,
+    check_terms,
     clean_terms,
     is_flagged,
+    visible_title,
 )
 from shelfhold.catalog.domain.team_offset import (
     OffsetVerdict,
@@ -444,6 +447,7 @@ __all__ = [
     "IncomingUnit",
     "IngestOutcome",
     "IngestResult",
+    "InvalidTermError",
     "LanguageError",
     "ListedUnit",
     "MergedPlace",
@@ -500,6 +504,7 @@ __all__ = [
     "ceiling_of",
     "check_before_fallback",
     "check_coverage",
+    "check_terms",
     "clean_terms",
     "content_warning_age",
     "count_visible_works",
@@ -560,6 +565,7 @@ __all__ = [
     "visible_edition_ids",
     "visible_editions_clause",
     "visible_series_ids",
+    "visible_title",
     "visible_unit_ids",
     "visible_work_ids",
     "visible_works_clause",

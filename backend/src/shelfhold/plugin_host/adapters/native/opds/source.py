@@ -121,6 +121,15 @@ def build_manifest() -> SourceManifest:
     )
 
 
+def _memo_of(entry: Entry) -> dict[str, Any]:
+    """What a result keeps of its entry: which one, and the subjects the feed gives it (the key
+    `"subjects"` the family filter reads)."""
+    memo: dict[str, Any] = {"entry": entry.id}
+    if entry.categories:
+        memo["subjects"] = list(entry.categories)
+    return memo
+
+
 class OpdsSource:
     def __init__(self, parse_xml: ParseXml, *, base_url: str | None = None) -> None:
         self.manifest = build_manifest()
@@ -269,7 +278,7 @@ class OpdsSource:
         if entry.acquisitions or entry.locked:
             return SeriesRef(
                 source_key=KEY, remote_id=self._relative(feed_url), title=title,
-                memo={"entry": entry.id},
+                memo=_memo_of(entry),
             )  # fmt: skip
         return None
 
