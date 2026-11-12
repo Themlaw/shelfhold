@@ -62,9 +62,17 @@ La source ne lit **jamais les pages du site**. Elle prend :
   à l'adresse du réglage `catalog_url`. Il est lu au plus une fois par semaine, avec une requête
   conditionnelle (`ETag` / `If-Modified-Since`) ;
 - **les fichiers d'un miroir** de la liste officielle, que vous choisissez : réglage `mirror_url`,
-  obligatoire. Un miroir n'est jamais le site lui-même.
+  obligatoire. Un miroir n'est jamais le site lui-même. Une **liste blanche figée**, écrite dans le code
+  et non modifiable par un réglage, reconnaît deux miroirs officiels du projet, libre de droits aux États-Unis :
+  - `aleph.gutenberg.org`, libre de droits aux États-Unis, cité par le guide officiel comme point rsync ;
+    au 2026-11-12 il répond en HTTP, mais son certificat HTTPS ne porte que le nom `aleph.pglaf.org`, donc
+    une adresse `https://aleph.gutenberg.org` (libre de droits aux États-Unis) échoue à la vérification TLS : utilisez `http://` ;
+  - `gutenberg.pglaf.org`, libre de droits aux États-Unis, en `https://`.
 
-Aucun hôte n'est écrit dans le code : sans ces deux réglages, la source n'est pas configurée
+  Le site (`www.gutenberg.org`, `gutenberg.org`, `gutenberg.net`), libre de droits aux États-Unis, et tout
+  autre nom sous ces domaines restent refusés comme miroir. Les EPUB restent non fiables dans tous les cas.
+
+Hors cette liste, aucun hôte n'est écrit dans le code : sans ces deux réglages, la source n'est pas configurée
 (`source.not_configured`) et n'envoie rien. Les règles de domaine ne laissent passer que ces deux
 adresses ; si le catalogue est servi par le site, seul le chemin des flux officiels est ouvert sur cet
 hôte, et un miroir qui redirige vers une page du site est refusé à ce saut.
