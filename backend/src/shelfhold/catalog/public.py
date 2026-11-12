@@ -46,7 +46,11 @@ from shelfhold.catalog.application.coverage import (
     verify_item,
 )
 from shelfhold.catalog.application.dating import period_start, stored_date
-from shelfhold.catalog.application.dedup import open_suggestions, suggest_duplicates
+from shelfhold.catalog.application.dedup import (
+    open_offset_suggestion,
+    open_suggestions,
+    suggest_duplicates,
+)
 from shelfhold.catalog.application.dto import (
     BindingRef,
     EditionRef,
@@ -113,6 +117,7 @@ from shelfhold.catalog.application.relink import (
     RelinkRefusedError,
     RelinkRequest,
     RelinkResult,
+    detect_suwayomi_migrations,
 )
 from shelfhold.catalog.application.revisions import (
     ApplyReport,
@@ -186,6 +191,11 @@ from shelfhold.catalog.domain.provenance import FieldKey, is_age_field
 from shelfhold.catalog.domain.public_domain import Verdict
 from shelfhold.catalog.domain.revisions import DEFAULT_MIN_PAGE_RATIO, suspect_reason
 from shelfhold.catalog.domain.sort_key import sort_key
+from shelfhold.catalog.domain.team_offset import (
+    OffsetVerdict,
+    TeamFacts,
+    check_before_fallback,
+)
 from shelfhold.catalog.lang import LANG_NORMALIZER_ID, LanguageError, edition_key_lang
 from shelfhold.events.bus import EventBus
 from shelfhold.identity.public import Principal
@@ -418,6 +428,7 @@ __all__ = [
     "NoPersonFieldName",
     "NormalizerId",
     "NormalizerRegistry",
+    "OffsetVerdict",
     "PendingRevision",
     "PersonField",
     "RatingRefusedError",
@@ -444,6 +455,7 @@ __all__ = [
     "SeriesAlreadyAttachedError",
     "StaleMergePlanError",
     "StoredExternalId",
+    "TeamFacts",
     "TeamRef",
     "TextVersionRef",
     "TombstoneScreen",
@@ -460,9 +472,11 @@ __all__ = [
     "apply_resplit",
     "bounds_from_toc",
     "ceiling_of",
+    "check_before_fallback",
     "check_coverage",
     "content_warning_age",
     "default_registry",
+    "detect_suwayomi_migrations",
     "edit_field",
     "edition_key_lang",
     "effective_age",
@@ -479,6 +493,7 @@ __all__ = [
     "lock_field",
     "normalize_external_id",
     "numbered_mark",
+    "open_offset_suggestion",
     "open_suggestions",
     "parse_age",
     "parse_number",

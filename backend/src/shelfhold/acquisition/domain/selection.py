@@ -26,6 +26,9 @@ class Candidate:
     tombstoned: bool = False  # EF-BIB-053
     same_work: bool = True  # the binding belongs to the Edition's own Work
     filtered: str | None = None  # the reason a download filter refused it (EF-SRC-039)
+    # Why the numbering check of EF-BIB-028 suspended a fallback to this offer (None: not
+    # checked, or it passed). The verdict is the catalog's; selection only obeys it.
+    offset_refusal: str | None = None
 
 
 @dataclass(frozen=True)
@@ -38,6 +41,7 @@ def select(
     candidates: Collection[Candidate], choose_team: Callable[[set[TeamKey]], TeamChoice]
 ) -> Selection | None:
     pool = [c for c in candidates if not c.tombstoned and c.filtered is None]  # tombstones, filters
+    pool = [c for c in pool if c.offset_refusal is None]  # a fallback the numbering check suspended
     pool = [c for c in pool if c.active and c.same_work]  # a binding that can be asked at all
     if not pool:
         return None

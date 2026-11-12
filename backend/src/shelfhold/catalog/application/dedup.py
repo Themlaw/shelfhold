@@ -25,9 +25,17 @@ from shelfhold.catalog.domain.identity import sort_title
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import catalog
 
-__all__ = ["REASON", "Suggestion", "open_suggestions", "suggest_duplicates"]
+__all__ = [
+    "REASON",
+    "SAME_WORK_REASON",
+    "Suggestion",
+    "open_offset_suggestion",
+    "open_suggestions",
+    "suggest_duplicates",
+]
 
 REASON = "same_title_same_author"
+SAME_WORK_REASON = "suwayomi_migration"  # "Même œuvre ?" (EF-BIB-029)
 
 
 @dataclass(frozen=True)
@@ -39,7 +47,7 @@ class Suggestion:
     state: str
 
 
-def _tombstoned(
+def tombstoned(
     connection: Connection, screen: TombstoneScreen, work_ids: Sequence[str]
 ) -> set[str]:
     t = catalog.external_id
@@ -68,13 +76,13 @@ def suggest_duplicates(connection: Connection, *, screen: TombstoneScreen) -> li
             )
         ):
             credited[str(row.entity_id)].add(str(row.contributor_id))
-        barred = _tombstoned(connection, screen, ids)
+        barred = tombstoned(connection, screen, ids)
         for first, second in combinations(ids, 2):
             if first in barred or second in barred:
                 continue
             if not credited[first] & credited[second]:
                 continue  # the title alone is not a ground
-            if _told_apart(connection, first, second):
+            if told_apart(connection, first, second):
                 continue
             suggestion_id = new_ulid()
             done = connection.execute(
@@ -87,7 +95,7 @@ def suggest_duplicates(connection: Connection, *, screen: TombstoneScreen) -> li
     return created
 
 
-def _told_apart(connection: Connection, first: str, second: str) -> bool:
+def told_apart(connection: Connection, first: str, second: str) -> bool:
     """Two places of one Series, or two identifiers of one provider: two Works, not one."""
     s, e = catalog.series_member, catalog.external_id
     places = {
@@ -123,3 +131,16 @@ def open_suggestions(connection: Connection) -> list[Suggestion]:
         .order_by(m.c.created_at, m.c.id)
     )
     return [Suggestion(r.id, r.a, r.b, r.reason, r.state) for r in rows]
+
+
+def open_offset_suggestion(
+    connection: Connection, held_variant: str, offered_variant: str, reason: str
+) -> None:
+    """A fallback the numbering check suspended (EF-BIB-028): the two Variants are put to the admin
+    with the reason. One row per pair and reason; nothing else is touched, and nothing is chosen."""
+    first, second = sorted((held_variant, offered_variant))
+    connection.execute(
+        sqlite_insert(catalog.merge_suggestion)
+        .values(id=new_ulid(), entity_type="variant", a=first, b=second, reason=reason)
+        .on_conflict_do_nothing()
+    )

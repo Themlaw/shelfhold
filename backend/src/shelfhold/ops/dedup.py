@@ -1,6 +1,7 @@
 """The suggestions of duplicate Works on the admin door (EF-BIB-004).
 
-`scan` looks for pairs that share a title and a credited person and records them as suggestions;
+`scan` looks for pairs that share a title and a credited person, and for a series that moved
+sources in Suwayomi (EF-BIB-029), and records them as suggestions;
 `suggestions` lists the open ones. Nothing is merged here: a merge is the admin's own decision,
 through the merge plan. The Work tombstones are asked first (fails closed: with no screen there
 is no scan), before any write transaction.
@@ -10,7 +11,12 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, Protocol
 
-from shelfhold.catalog.public import TombstoneScreen, open_suggestions, suggest_duplicates
+from shelfhold.catalog.public import (
+    TombstoneScreen,
+    detect_suwayomi_migrations,
+    open_suggestions,
+    suggest_duplicates,
+)
 from shelfhold.ops.errors import ExitUnavailableError
 
 if TYPE_CHECKING:
@@ -34,6 +40,8 @@ class DedupOps:
         screen = self._screens.open()  # opened before the write transaction: the replay may write
         with self._engine.begin() as connection:
             created = suggest_duplicates(connection, screen=screen)
+            # a series that moved sources in Suwayomi: "Même œuvre ?", never a creation
+            created += detect_suwayomi_migrations(connection, screen=screen)
         return {"created": created}
 
     def suggestions(self) -> list[dict[str, str]]:

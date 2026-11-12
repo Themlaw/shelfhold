@@ -11,7 +11,7 @@ before EF-EXP-016.
 """
 
 from collections.abc import Collection
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime
 
 import sqlalchemy as sa
@@ -26,8 +26,15 @@ from shelfhold.acquisition.domain.team_policy import (
     TeamKey,
     TeamStats,
     choose_team,
+    majority_team,
 )
-from shelfhold.catalog.public import Catalog, VariantFacts
+from shelfhold.catalog.public import (
+    Catalog,
+    TeamFacts,
+    VariantFacts,
+    check_before_fallback,
+    open_offset_suggestion,
+)
 from shelfhold.infrastructure.schema import acquisition, catalog
 
 log = structlog.get_logger(__name__)
@@ -55,6 +62,31 @@ def record_release(connection: Connection, team_id: str | None, at: datetime) ->
         )
         .values(last_release_at=at)
     )
+
+
+def _team_facts(connection: Connection, team_id: TeamKey, variant_id: str | None) -> TeamFacts:
+    """A team's declared offset and what its Variant of the Unit says: the page count of its latest
+    revision. A Variant carries no title of its own yet (the Unit holds one), so none is read."""
+    offset = 0
+    if team_id is not None:
+        found = connection.execute(
+            sa.select(catalog.team.c.number_offset).where(catalog.team.c.id == team_id)
+        ).scalar()
+        offset = int(found) if found is not None else 0
+    pages = None
+    if variant_id is not None:
+        r = catalog.variant_revision
+        pages = connection.execute(
+            sa.select(r.c.page_count)
+            .where(
+                r.c.variant_id == variant_id,
+                r.c.quarantined_at.is_(None),
+                r.c.page_count.is_not(None),
+            )
+            .order_by(r.c.revision.desc())
+            .limit(1)
+        ).scalar()
+    return TeamFacts(offset=offset, page_count=pages)
 
 
 def _reason_shown(candidates: list[Candidate]) -> str | None:
@@ -105,6 +137,24 @@ class TeamPreference:
         refused = refusals(connection, unit.edition_id, unit_id, {f.id for f in live})
         candidates = self._candidates(connection, unit.edition_id, live, allowed, refused)
         selected = select(candidates, team)
+        held_team = majority_team(stats)
+        while selected is not None and selected.choice.fallback is not None:
+            # EF-BIB-028 (GAP-8-05): a team fallback is checked before it is taken. A gap in the
+            # numbering suspends it: the offer is left out, the reason is logged and a suggestion
+            # opened; the election then goes on without it.
+            verdict = self._offset_verdict(connection, live, selected.candidate, held_team)
+            if verdict is None:
+                break
+            log.warning(
+                "team.offset_suspended", reason=verdict, unit_id=unit_id, number=unit.number_norm,
+                edition_id=unit.edition_id, team_id=selected.candidate.team_id,
+                held_team_id=held_team,
+            )  # fmt: skip
+            candidates = [
+                replace(c, offset_refusal=verdict) if c is selected.candidate else c
+                for c in candidates
+            ]
+            selected = select(candidates, team)
         # Told on the Unit, so that the series' page says why nothing was asked (EF-SRC-039)
         set_filtered_reason(connection, unit_id, _reason_shown(candidates))
         if selected is None:
@@ -124,6 +174,23 @@ class TeamPreference:
                 edition_id=unit.edition_id, team_id=choice.team_id,
             )  # fmt: skip
         return self._election(connection, chosen.id, choice)
+
+    @staticmethod
+    def _offset_verdict(
+        connection: Connection, live: list[VariantFacts], offered: Candidate, held_team: TeamKey
+    ) -> str | None:
+        """Why the fallback to `offered` is suspended, None when it may go on. The team that holds
+        the files is the reference: its Variant of the Unit when it has one."""
+        reference = next((f for f in live if f.team_id == held_team), None)
+        verdict = check_before_fallback(
+            _team_facts(connection, held_team, reference.id if reference else None),
+            _team_facts(connection, offered.team_id, offered.variant_id),
+        )
+        if verdict.ok:
+            return None
+        if reference is not None:
+            open_offset_suggestion(connection, reference.id, offered.variant_id, verdict.reason)
+        return verdict.reason
 
     @staticmethod
     def _candidates(

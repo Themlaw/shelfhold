@@ -18,11 +18,14 @@ import sqlalchemy as sa
 from sqlalchemy import Connection
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
+from shelfhold.catalog.application.dedup import SAME_WORK_REASON, told_apart, tombstoned
 from shelfhold.catalog.application.dto import BindingRef, EditionSpec
 from shelfhold.catalog.application.new_edition_gate import file_new_edition
 from shelfhold.catalog.application.places import place_key
 from shelfhold.catalog.application.rating import RatingService
 from shelfhold.catalog.application.service import CatalogService
+from shelfhold.catalog.application.tombstone_screen import TombstoneScreen
+from shelfhold.catalog.domain.identity import sort_title
 from shelfhold.identity.public import AuditEntry, Credential, Principal, audit_insert
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import acquisition, catalog
@@ -33,7 +36,11 @@ __all__ = [
     "RelinkRequest",
     "RelinkResult",
     "Relinker",
+    "detect_suwayomi_migrations",
 ]
+
+SUWAYOMI = "suwayomi"  # the plugin id of the connected service
+_DISAPPEARED = ("not_loaded", "removed_upstream")  # a binding that went away, not one paused
 
 
 class RelinkRefusedError(Exception):
@@ -318,3 +325,61 @@ def _missing(
             else f"{row.track}|{row.number_segment}|{row.number_norm}|{row.part}"
         )  # fmt: skip
     return tuple(u for u in listed if place_key(u.raw_number, u.source_order) not in held)
+
+
+def detect_suwayomi_migrations(connection: Connection, *, screen: TombstoneScreen) -> list[str]:
+    """Propose "Même œuvre ?" for a series that moved sources in Suwayomi (EF-BIB-029).
+
+    A migration leaves two marks together: a Work whose Suwayomi bindings all went away (source
+    unloaded or series removed upstream; a pause or failures are not leaving), and another Work of
+    the same kind with a live Suwayomi binding and the same normalized title. The title alone
+    proposes nothing: two live Works of one title, or a Work whose binding is still there, are not
+    a migration. Never a merge and never a creation here: a suggestion is one row, and the admin
+    decides through the merge plan (or `relink`). Returns the ids of the suggestions made now."""
+    w, b, i = catalog.work, acquisition.source_binding, acquisition.source_item
+    live: set[str] = set()
+    gone: set[str] = set()
+    for row in connection.execute(
+        sa.select(b.c.work_id, b.c.active, b.c.disabled_reason)
+        .select_from(b.join(i, i.c.id == b.c.source_item_id))
+        .where(i.c.plugin_id == SUWAYOMI)
+    ):
+        if row.active:
+            live.add(str(row.work_id))
+        elif row.disabled_reason in _DISAPPEARED:
+            gone.add(str(row.work_id))
+    served = {  # a Work any live binding still serves, of Suwayomi or not, did not leave
+        str(r)
+        for r in connection.execute(sa.select(b.c.work_id).where(b.c.active.is_(True))).scalars()
+    }
+    gone -= served
+    if not gone or not live:
+        return []
+    titles = {
+        str(r.id): (r.kind, sort_title(r.title))
+        for r in connection.execute(sa.select(w.c.id, w.c.kind, w.c.title))
+        if str(r.id) in gone | live
+    }
+    created: list[str] = []
+    m = catalog.merge_suggestion
+    for old in sorted(gone):
+        arrivals = sorted(n for n in live if titles[n] == titles[old])
+        if not arrivals:
+            continue  # nothing came back under that title
+        barred = tombstoned(connection, screen, [old, *arrivals])
+        for new in arrivals:
+            if old in barred or new in barred or told_apart(connection, old, new):
+                continue
+            first, second = sorted((old, new))
+            suggestion_id = new_ulid()
+            done = connection.execute(
+                sqlite_insert(m)
+                .values(
+                    id=suggestion_id, entity_type="work", a=first, b=second,
+                    reason=SAME_WORK_REASON,
+                )
+                .on_conflict_do_nothing()
+            )  # fmt: skip
+            if done.rowcount:
+                created.append(suggestion_id)
+    return created
