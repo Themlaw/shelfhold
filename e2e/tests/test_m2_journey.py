@@ -178,8 +178,8 @@ def wait_epubs(j: Journey, wanted: int) -> None:
 def store_files(j: Journey) -> list[str]:
     """The Unit copies kept in /store. `/store/INDEX.jsonl` (the index of what /store says about
     itself, rewritten by the `store.index` job) is a legitimate non-archive file there, so it is
-    no copy: `find` lists it before or after the copies depending on the directory order, which
-    made the journey fail only when it came first."""
+    no copy. Other non-archive files can sit there too (the journey still failed after this
+    filter), so callers that open archives keep only the files with the ZIP signature."""
     done = j.compose(
         "exec", "-T", "shelfhold", "find", "/store", "-type", "f", check=False
     )
@@ -212,10 +212,9 @@ def test_m2_gutenberg_to_kavita_books_journey(journey_m2: Journey) -> None:
     assert kavita_titles(j) == ["A Study in Test"]
     served = exported_epub(j, "A Study in Test")
     assert b"<script" not in b"".join(members(served).values())  # the neutralized copy
-    assert any(
-        b"<script" in b"".join(members(j.read_bytes(f)).values())
-        for f in store_files(j)
-    )
+    kept = {f: j.read_bytes(f) for f in store_files(j)}
+    archives = [data for data in kept.values() if data[:4] == b"PK\x03\x04"]
+    assert any(b"<script" in b"".join(members(data).values()) for data in archives), sorted(kept)
     assert (
         j.shelfhold("status").out.count("peut encore être protégée") == 0
     )  # died 1920
