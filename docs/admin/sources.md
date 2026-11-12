@@ -66,6 +66,10 @@ La source ne lit **jamais les pages du site**. Elle prend :
   officiels (`aleph.gutenberg.org`, `gutenberg.pglaf.org`) est reconnue dans le code, y compris sous le
   nom du projet : tout autre nom en `gutenberg.org` ou `gutenberg.net`, dont `www.gutenberg.org` et
   `gutenberg.org`, reste refusé comme miroir. La liste ne se modifie pas par un réglage.
+  `aleph.gutenberg.org` est cité par le guide officiel comme point rsync ; au 2026-11-12 il répond aussi en
+  HTTP, mais son certificat HTTPS ne porte que le nom `aleph.pglaf.org` : une adresse `https://aleph.gutenberg.org`
+  est donc refusée à la vérification TLS. Utilisez `http://aleph.gutenberg.org/…` ou `https://gutenberg.pglaf.org/…`
+  (les EPUB restent traités comme non fiables dans les deux cas).
 
 Aucun hôte n'est écrit dans le code : sans ces deux réglages, la source n'est pas configurée
 (`source.not_configured`) et n'envoie rien. Les règles de domaine ne laissent passer que ces deux

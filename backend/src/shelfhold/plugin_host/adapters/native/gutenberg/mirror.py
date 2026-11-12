@@ -31,7 +31,10 @@ _PROJECT = ("gutenberg.org", "gutenberg.net")  # the project and every host unde
 # Owner decision 2026-11-12: the official mirrors of the project that may be the `mirror_url`,
 # frozen in the code, never read from a setting, a catalogue or a redirection. Taken from the
 # mirror list the project publishes (`gutenberg.org/MIRRORS.ALL`, "Project Gutenberg" providers)
-# and from its mirroring how-to (`aleph.gutenberg.org`); none is invented. The website itself
+# and from its mirroring how-to (`aleph.gutenberg.org`, which the how-to cites as an rsync point;
+# checked 2026-11-12: it also answers plain HTTP, while its HTTPS certificate names
+# `aleph.pglaf.org` only, so a verified HTTPS fetch of `aleph.gutenberg.org` fails: use
+# `http://`, the file is untrusted and neutralized anyway); none is invented. The website itself
 # (`gutenberg.org`, `www.gutenberg.org`) is not on it, and a host under an official name is not
 # official: the match is on the whole canonical host name.
 OFFICIAL_MIRRORS = frozenset({"aleph.gutenberg.org", "gutenberg.pglaf.org"})
