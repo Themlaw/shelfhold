@@ -142,6 +142,7 @@ birth_date = "Birth date, possibly partial."
 birth_precision = "Precision of `birth_date`."
 death_date = "Death date, possibly partial."
 death_precision = "Precision of `death_date`."
+died_for_france = "\"Mort pour la France\" (30 more years in France); NULL: unknown, read cautiously."
 
 [tables.domain_slot]
 description = "Concurrency slots per upstream domain, so a domain is never hit by too many jobs at once."

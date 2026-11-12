@@ -64,6 +64,10 @@ class Effect(StrEnum):
     # (EF-BIB-044). Nothing is removed, but a wrong answer hides a missing chapter, so it is
     # reserved and fresh like the other decisions on what a library holds
     CHANGES_COVERAGE = "changes_coverage"
+    # `contributor set-died-for-france`: a legal fact about a person that decides whether the
+    # rights warning of a book shows (EF-SRC-024). Nothing is removed or exposed, but a wrong
+    # answer hides a warning, so it is reserved and fresh like the other decisions of the admin
+    RECORDS_LEGAL_FACT = "records_legal_fact"
 
 
 # P3 (inverted by the PR #43 review): freshness applies by default, so a new `Effect` that nobody

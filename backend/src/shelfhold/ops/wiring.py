@@ -32,6 +32,7 @@ from shelfhold.ops.adoption import LibraryAdoptionExit
 from shelfhold.ops.attach import AttachOps
 from shelfhold.ops.backfill import BackfillOps
 from shelfhold.ops.content import ContentOps
+from shelfhold.ops.contributors import ContributorOps
 from shelfhold.ops.edition_merge import EditionMergeOps
 from shelfhold.ops.editions import EditionOps
 from shelfhold.ops.events import BusTargetEvents
@@ -149,7 +150,8 @@ def open_ops(
             screens=CatalogScreens(composition),
         ),
         edition_merge=EditionMergeOps(composition), editions=EditionOps(composition),
-        resplit=ResplitOps(composition), export_items=ExportItemOps(composition),
+        resplit=ResplitOps(composition), contributors=ContributorOps(composition),
+        export_items=ExportItemOps(composition),
         follows=FollowOps(composition), acquire=AcquireOps(composition), roots=RootOps(composition),
         window=MaintenanceWindow.from_text(
             settings.maintenance_window_start, settings.maintenance_window_end, settings.timezone
