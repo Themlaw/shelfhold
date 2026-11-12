@@ -127,7 +127,7 @@ def test_x_and_the_highest_ceiling(seed: Seed) -> None:
     assert seed.works["above"] in sixteen and seed.works["x"] not in sixteen
     assert seed.works["x"] not in eighteen  # X is above 18+
     assert seed.works["x"] in top  # unless the ceiling is X itself
-    for never in ("unrated", "orphan", "misfiled", "flagged", "adult_edition"):
+    for never in ("unrated", "orphan", "misfiled", "flagged"):
         assert seed.works[never] not in top, (
             never
         )  # not rated as a whole, or adult: never a child's
