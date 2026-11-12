@@ -17,6 +17,7 @@ from shelfhold.export.application.root_bootstrap import (
     RootRefusedError,
     register_roots,
 )
+from shelfhold.export.domain.kavita_compat import Assessment, KavitaVersion, TargetMode
 from shelfhold.export.domain.path_map import PathMode
 from shelfhold.export.domain.planner import GATE_CLOSED
 from shelfhold.export.targets.kavita.errors import TargetUnreachable
@@ -126,6 +127,11 @@ def test_m2_an_unwritable_root_does_not_stop_the_others(settings: Settings, tmp_
 
 def test_m3_a_destination_lost_after_the_writing_does_not_escape(monkeypatch) -> None:
     class Client:
+        async def probe(self) -> Assessment:  # Kavita answers: reachable, in range
+            return Assessment(
+                raw="0.9.1.4", version=KavitaVersion.parse("0.9.1.4"), mode=TargetMode.FULL
+            )
+
         async def flush_scans(self, allowed: object = None) -> None:
             raise TargetUnreachable("Library/scan-folder: ConnectError")
 
@@ -161,6 +167,10 @@ def test_m3_a_destination_lost_after_the_writing_does_not_escape(monkeypatch) ->
     async def no_probe(*_: object) -> None: ...
 
     monkeypatch.setattr(rj, "_probe_version", no_probe)  # no server nor database behind this stub
+
+    async def no_type_check(*_: object) -> None: ...  # no database: the library types are not read
+
+    monkeypatch.setattr(rj.LibraryTypeService, "check", no_type_check)
     monkeypatch.setattr(rj, "_names_may_refresh", lambda *_: False)
     monkeypatch.setattr(rj, "refresh_names", no_rename)  # no database behind this stub comp
     monkeypatch.setattr(rj, "wanted_names", lambda *_, **__: (["x"], None))
