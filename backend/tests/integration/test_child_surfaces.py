@@ -59,6 +59,7 @@ PUBLIC = (
     "GET /readyz",
 )
 OWN = (
+    "GET /api/v1/me",
     "GET /api/v1/about",
     "POST /api/v1/auth/logout",
     "GET /api/v1/auth/passkeys",
