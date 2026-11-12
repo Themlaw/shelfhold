@@ -103,7 +103,7 @@ def audit_rows(env: AuthEnv, action: str) -> list[tuple[object, ...]]:
 
 
 # one disclosure, one line, written by the route; `forget_root` writes its own line in the
-# transaction that demotes the root, so a refused HTTP call (the host CLI holds the lock) leaves none
+# transaction that demotes the root, so a refused HTTP call (the host holds the lock) leaves none
 SELF_AUDITED = {"request.unmask", "reconcile.forget_root"}
 
 

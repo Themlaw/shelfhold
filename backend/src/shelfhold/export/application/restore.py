@@ -166,8 +166,9 @@ class DeletionRefusedError(PermissionError):
 
 
 class ForgetRootRefusedError(RuntimeError):
-    """The root cannot be forgotten: `unknown_root`, `still_readable` (its sentinel is there, readable
-    or not: it is judged, never forgotten) or `phrase_mismatch` (the typed sentence is not the one asked)."""
+    """The root cannot be forgotten: `unknown_root`, `still_readable` (its sentinel is there,
+    readable or not: it is judged, never forgotten) or `phrase_mismatch` (the typed sentence is
+    not the one asked)."""
 
     def __init__(self, reason: str) -> None:
         super().__init__(f"forget-root refused: {reason}")
@@ -719,7 +720,8 @@ class RestoreAdopter:
         command removes a root. The root is demoted to read-only (`adopt_ro`): Shelfhold neither
         writes it nor reads its sentinel any more, its copies stay recorded, nothing is deleted
         on any disk. A reserved action (fresh session, never a key), typed and audited in the
-        transaction that demotes it. Only a root whose sentinel is absent is forgotten; a back-again root stays read-only until `root takeover`."""
+        transaction that demotes it. Only a root whose sentinel is absent is forgotten; one that
+        comes back stays read-only until `root takeover`."""
         verdict = authorize_reserved(principal, _FORGET, now=self._clock.now())
         if not isinstance(verdict, Allowed):
             raise DeletionRefusedError(verdict)
