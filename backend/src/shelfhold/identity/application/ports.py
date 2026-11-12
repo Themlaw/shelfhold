@@ -1,6 +1,6 @@
 """What the local authentication needs from storage and from a password hasher."""
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Protocol
@@ -24,6 +24,7 @@ class ProfileRecord:
     role: str
     max_age_rating: int | None
     can_rate: bool
+    visibility: str | None = None  # the stored choice; `effective_visibility` says what holds
 
 
 @dataclass(frozen=True)
@@ -199,6 +200,24 @@ class IdentityStore(Protocol):
         right to classify differ from what was read. `actor_id`: an admin caller is re-read under
         the lock (`not_allowed`). A change of role closes the sessions and keys of the profile and
         drops its stored policies (D14 again)."""
+        ...
+
+    def visibility_state(self, user_id: str) -> tuple[str, str | None] | None:
+        """`(role, stored visibility)`; None: no such profile."""
+        ...
+
+    def set_visibility(
+        self,
+        user_id: str,
+        visibility: object,
+        *,
+        actor_id: str | None = None,
+        by_admin: bool = False,
+        audit: Callable[[str, str], AuditEntry | None] | None = None,
+    ) -> tuple[str, str]:
+        """`(visibility that held, visibility that holds)`, the role read under the lock that
+        writes; `ProfileError` of the rule that refuses; `not_allowed` when `by_admin` and the
+        caller is no longer an admin."""
         ...
 
     def source_family(self, source_key: str) -> bool: ...

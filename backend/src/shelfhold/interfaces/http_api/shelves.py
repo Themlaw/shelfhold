@@ -5,14 +5,18 @@ a key): the ceiling (`shelf.max_age_rating`, which answers with the removal plan
 fits), the allowed profiles (`shelf.allowed_profiles`), choosing a family shelf for an Edition
 (`shelf.choose_family`) and applying a removal plan (`shelf.withdraw`). The audit entry is written
 in the transaction of the change.
+
+"Ajouter directement" (`POST /editions/{id}/add-directly`, M3 L09, EF-BIB-055) is an adult's own
+session (admin or member, never a child, a key or a token): an Edition nobody rated never goes to
+a family shelf, and an adult without the right to classify does not choose one.
 """
 
 from collections.abc import Callable
 from typing import Any, Literal
 
 import sqlalchemy as sa
-from fastapi import APIRouter, Depends
-from pydantic import BaseModel, Field
+from fastapi import APIRouter, Depends, Request
+from pydantic import BaseModel, ConfigDict, Field
 
 from shelfhold.export.application.plans import StalePlanError
 from shelfhold.export.application.precreate import AdoptedLibrary
@@ -20,7 +24,7 @@ from shelfhold.export.application.shelves import ShelfService
 from shelfhold.export.domain.bindings import BindingError
 from shelfhold.headless.actor import Actor
 from shelfhold.identity.public import RESERVED_ACTIONS, Principal, audit_actor
-from shelfhold.interfaces.http_api.auth import reserved_action
+from shelfhold.interfaces.http_api.auth import require_session, reserved_action
 from shelfhold.interfaces.http_api.problems import ProblemError
 from shelfhold.ops.errors import OpsError
 
@@ -77,6 +81,11 @@ class ProfilesOut(BaseModel):
 
 class EditionShelfIn(BaseModel):
     shelf_id: str | None = None  # none: the shelf the kind of the Work proposes, by the same door
+
+
+class AddDirectlyIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    shelf_id: str = Field(min_length=1, max_length=64)  # a shelf is always named: it is a choice
 
 
 class FiledOut(BaseModel):
@@ -242,6 +251,13 @@ def build_shelves_router(
     return router
 
 
+def _adult_session(principal: Principal = Depends(require_session)) -> Principal:  # noqa: B008
+    """An adult's own session: a child is refused here, a key or a token before that."""
+    if principal.role not in ("admin", "member"):
+        raise ProblemError("forbidden")
+    return principal
+
+
 def build_edition_shelf_router(get_service: Callable[[], ShelfService]) -> APIRouter:
     router = APIRouter(prefix="/api/v1/editions", tags=["shelves"])
 
@@ -252,6 +268,29 @@ def build_edition_shelf_router(get_service: Callable[[], ShelfService]) -> APIRo
     ) -> dict[str, str | None]:
         """The shelf the kind of the Work proposes, unless a shelf below 18+ would refuse it."""
         return {"shelf_id": get_service().proposed_shelf(edition_id)}
+
+    @router.post("/{edition_id}/add-directly")
+    def add_directly(
+        edition_id: str,
+        body: AddDirectlyIn,
+        request: Request,
+        principal: Principal = Depends(_adult_session),  # noqa: B008
+    ) -> FiledOut:
+        """ "Ajouter directement": the row of the truth table, then the admission of every road.
+        Refused (`filed: false`, with the reason) is an answer, not an error: the Edition waits in
+        "À classer" and the adult may ask instead."""
+        try:
+            if get_service().touches_family(edition_id, body.shelf_id):
+                # not a second door: a family shelf, in or out, is `shelf.choose_family`'s, with its
+                # roles and its freshness; the guard answers 403 or 401 as it does on `/shelf`
+                principal = reserved_action(_FAMILY)(request)
+            result = get_service().add_directly(
+                edition_id, body.shelf_id, role=principal.role, can_rate=principal.can_rate,
+                actor=_actor(principal),
+            )  # fmt: skip
+        except (LookupError, sa.exc.NoResultFound, sa.exc.IntegrityError):
+            raise ProblemError("not_found") from None
+        return FiledOut(filed=result.filed, reason=result.reason)
 
     @router.post("/{edition_id}/shelf")
     def file_edition(

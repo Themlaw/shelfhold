@@ -277,6 +277,7 @@ class LocalAuth:
             hasher,
             clock.now,
             lambda action, by, target: self._audit(action, by, target=target),
+            lambda action, by, target: self._entry(action, by, target),
         )
 
     @property
@@ -431,6 +432,17 @@ class LocalAuth:
 
     def effective_source_policy(self, profile_id: str, source_key: str) -> str:
         return self._profiles.effective_source_policy(profile_id, source_key)
+
+    def visibility_of(self, profile_id: str) -> str:
+        return self._profiles.visibility_of(profile_id)
+
+    def profile_set_visibility(
+        self, profile_id: str, visibility: object, *, by: Principal | None = None
+    ) -> str:
+        return self._profiles.set_visibility(profile_id, visibility, by=by)
+
+    def set_own_visibility(self, by: Principal, visibility: object) -> str:
+        return self._profiles.set_own_visibility(by, visibility)
 
     # --- sessions ----------------------------------------------------------------------------
 

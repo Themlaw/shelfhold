@@ -10,7 +10,7 @@ instant that counts is the one the server takes on receipt. A client's own times
 checked (a claim from beyond the tolerated drift is refused), never used to order writes.
 """
 
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Collection, Sequence
 from dataclasses import dataclass, replace
 from datetime import datetime
 from typing import Protocol
@@ -31,8 +31,9 @@ from shelfhold.infrastructure.clock import (
 
 NOT_FOUND = "not_found"  # absent, above the ceiling and unrated-for-a-child look the same
 
-# "Is this Work one this user may see?": answered by the composition root, who knows the catalog.
-Admits = Callable[[str, str], bool]
+# "Which of these Works may this user see?": answered by the composition root, who knows the
+# catalogue, with the one filter of L09 (a condition of the query, never a loop after it).
+Admits = Callable[[str, Collection[str]], set[str]]
 # The Work's own title and its `(lang, kind, title)` rows: also the catalog's, read after `Admits`.
 TitlesOf = Callable[[str], tuple[str, Sequence[tuple[str, str, str]]]]
 
@@ -87,7 +88,7 @@ class UserStateService:
         return principal.user_id
 
     def _visible(self, user_id: str, work_id: str) -> None:
-        if not self._admits(user_id, work_id):
+        if work_id not in self._admits(user_id, [work_id]):
             raise UserStateError(NOT_FOUND)
 
     def get(self, principal: Principal, work_id: str) -> WorkState:
@@ -97,11 +98,9 @@ class UserStateService:
 
     def items(self, principal: Principal) -> list[WorkState]:
         user_id = self._owner(principal)
-        return [
-            WorkState(work_id, flags)
-            for work_id, flags in self._store.items(user_id)
-            if self._admits(user_id, work_id)
-        ]
+        stored = self._store.items(user_id)
+        admitted = self._admits(user_id, [work_id for work_id, _ in stored])
+        return [WorkState(work_id, flags) for work_id, flags in stored if work_id in admitted]
 
     def set(
         self,

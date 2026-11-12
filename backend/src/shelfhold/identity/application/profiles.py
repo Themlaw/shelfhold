@@ -18,7 +18,10 @@ from collections.abc import Callable, Mapping, Sequence
 from datetime import datetime
 from typing import Any
 
+import structlog
+
 from shelfhold.identity.application.ports import (
+    AuditEntry,
     IdentityStore,
     PasswordHasherPort,
     ProfileRecord,
@@ -32,9 +35,11 @@ from shelfhold.identity.domain.roles import (
     check_child_ceiling,
     normalise_profile,
 )
+from shelfhold.identity.domain.visibility import effective_visibility
 from shelfhold.infrastructure.ids import new_ulid
 
 Audit = Callable[[str, Principal | None, str | None], None]
+Entry = Callable[[str, Principal | None, str | None], AuditEntry]
 MAX_USERNAME = 128
 MAX_SOURCE_KEY = 200
 
@@ -46,7 +51,9 @@ class ProfileService:
         hasher: PasswordHasherPort,
         now: Callable[[], datetime],
         audit: Audit,
+        entry: Entry | None = None,
     ) -> None:
+        self._entry = entry
         self._store = store
         self._hasher = hasher
         self._now = now
@@ -185,6 +192,52 @@ class ProfileService:
         if pseudonym is None:
             raise ProfileError("not_found")
         self._audit("profile.removed", by, pseudonym)
+
+    # --- the visibility of a profile (EF-USR-016) -----------------------------------------------
+
+    def visibility_of(self, profile_id: str) -> str:
+        """What holds now for this profile (the choice, else the default of its role); an unknown
+        profile has the closed default, `private`."""
+        state = self._store.visibility_state(profile_id)
+        return "private" if state is None else effective_visibility(*state)
+
+    def set_visibility(
+        self, profile_id: str, visibility: object, *, by: Principal | None = None
+    ) -> str:
+        """Change the visibility of someone else's profile: a profile management action (an admin
+        session or the host, never a key), audited when it changes what holds. The audit line holds
+        the profile and the word, nothing else."""
+        self._manager(by)
+        self._existing(profile_id)
+
+        def trace(before: str, after: str) -> AuditEntry | None:
+            """Written in the transaction of the change, with what held and what holds."""
+            if before == after or self._entry is None:
+                return None
+            return self._entry("profile.visibility_set", by, f"{profile_id}|{before}>{after}")
+
+        before, after = self._store.set_visibility(
+            profile_id, visibility, actor_id=self._actor_id(by), by_admin=by is not None,
+            audit=trace,
+        )  # fmt: skip
+        if before != after:
+            self._log("profile.visibility_set", by)
+        return after
+
+    def set_own_visibility(self, by: Principal, visibility: object) -> str:
+        """A person changes their own visibility: theirs to do, so no audit of "someone else's".
+        A session only: a key or a token is a program, it has no visibility to choose."""
+        if by.credential is not Credential.SESSION:
+            raise ProfileError("not_allowed")
+        _, after = self._store.set_visibility(by.user_id, visibility)
+        return after
+
+    def _log(self, action: str, by: Principal | None) -> None:
+        """The log line of an audit written elsewhere: the word of the action, nothing else."""
+        structlog.get_logger().info(
+            "auth.audit", action=action, actor_id=None if by is None else by.user_id,
+            role=getattr(by, "role", None),
+        )  # fmt: skip
 
     # --- the policy per source ---------------------------------------------------------------
 

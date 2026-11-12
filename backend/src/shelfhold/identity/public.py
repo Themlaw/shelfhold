@@ -1,6 +1,7 @@
 """What the interfaces and the composition root may use from the identity context."""
 
 from shelfhold.identity.adapters.factory import local_auth
+from shelfhold.identity.adapters.reader_scope import reader_scope
 from shelfhold.identity.adapters.store import (
     audit_insert,
     reconcile_identity_counter,
@@ -65,7 +66,11 @@ from shelfhold.identity.domain.emitters import (
 )
 from shelfhold.identity.domain.passkeys import CHALLENGE_TTL, RelyingParty, relying_party
 from shelfhold.identity.domain.passkeys import MAX_NAME as PASSKEY_NAME_MAX
-from shelfhold.identity.domain.policy import SOURCE_POLICIES
+from shelfhold.identity.domain.policy import (
+    ADD_DIRECTLY_REFUSALS,
+    SOURCE_POLICIES,
+    add_directly_refusal,
+)
 from shelfhold.identity.domain.reserved import (
     DEFAULT_FRESH_AUTH_S,
     DEFAULT_RESERVED_ROLES,
@@ -93,8 +98,17 @@ from shelfhold.identity.domain.roles import (
 from shelfhold.identity.domain.throttle import LoginThrottle
 from shelfhold.identity.domain.tokens import same_secret
 from shelfhold.identity.domain.truth_table import TruthRow, truth_table
+from shelfhold.identity.domain.visibility import (
+    VISIBILITIES,
+    ViewerScope,
+    check_visibility,
+    default_visibility,
+    effective_visibility,
+    scope_of,
+)
 
 __all__ = [
+    "ADD_DIRECTLY_REFUSALS",
     "CHALLENGE_TTL",
     "CLOSED_SITES",
     "CREDENTIAL_AXIS",
@@ -119,6 +133,7 @@ __all__ = [
     "SOURCE_POLICIES",
     "SYSTEM_EMITTERS",
     "TABLE_ROLES",
+    "VISIBILITIES",
     "ActionNotDeclared",
     "AdminExistsError",
     "Allowed",
@@ -161,16 +176,23 @@ __all__ = [
     "UnknownUserError",
     "UserRecord",
     "Verdict",
+    "ViewerScope",
+    "add_directly_refusal",
     "audit_actor",
     "audit_insert",
     "authorize_reserved",
+    "check_visibility",
     "credential_axis",
+    "default_visibility",
+    "effective_visibility",
     "holds_rate_right",
     "local_auth",
+    "reader_scope",
     "reconcile_identity_counter",
     "relying_party",
     "revoke_all_credentials",
     "same_secret",
+    "scope_of",
     "session_policy",
     "truth_table",
 ]

@@ -49,6 +49,9 @@ user = sa.Table(
     sa.Column("quiet_end", sa.String(), nullable=True),
     bool_column("hide_unrated_remote", default=True),  # EF-USR-018, the safe side
     sa.Column("subject_filter", sa.JSON(), nullable=False, server_default="[]"),
+    # What the profile's requests and activity show to the others (EF-USR-016): `private` or
+    # `household`; NULL is the default of the role. Read through `effective_visibility`.
+    sa.Column("visibility", sa.String(), nullable=True),
     ulid_check("id"),
     sa.CheckConstraint(
         '"password_hash" IS NULL OR "password_hash" GLOB \'$argon2id$*\'',

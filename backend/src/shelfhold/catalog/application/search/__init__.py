@@ -7,16 +7,21 @@ from shelfhold.catalog.application.search.capability import (
     search_capability,
 )
 from shelfhold.catalog.application.search.index import index_work, rebuild, remove_works, sync
-from shelfhold.catalog.application.search.service import SearchHit, search_works
+from shelfhold.catalog.application.search.service import (
+    SearchHit,
+    SearchPage,
+    search_page,
+)
 
 __all__ = [
     "SearchCapability",
     "SearchHit",
+    "SearchPage",
     "ensure_tables",
     "index_work",
     "rebuild",
     "remove_works",
     "search_capability",
-    "search_works",
+    "search_page",
     "sync",
 ]

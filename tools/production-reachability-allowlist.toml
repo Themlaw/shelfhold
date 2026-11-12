@@ -93,6 +93,15 @@ tests = [
   "backend/tests/integration/test_http_headers.py::test_svg_served_as_attachment_with_csp_sandbox",
 ]
 
+[[route_test]]
+category = "generic-mechanics"
+reason = "2026-11-12 (M3 L09): proves that the child-surface meta-test walks the routes left out of the OpenAPI document (a stream, a thumbnail, a cover are `include_in_schema=False`): the tests declare one such route (and a mount, and a WebSocket) to show they are counted. No product route has the case before L12 (SSE) and L24 (thumbnails), which add their own child case."
+until = "M3"
+tests = [
+  "backend/tests/integration/test_l09_review_poc.py::test_review_poc_meta_test_sees_routes_outside_openapi",
+  "backend/tests/integration/test_child_surfaces.py::test_meta_test_counts_mounts_and_websockets",
+]
+
 [[allow]]
 category = "deferred-l31-adoption-and-preview"
 reason = "M1a features whose production caller is a screen or a command that does not exist yet: the journaled rename of a series folder (EF-EXP-041, `apply_rename`), the adoption of a foreign library (EF-EXP-044, EF-EXP-051, EF-EXP-055: download folder verdict, library link, bulk parse), and the discovery of physical roots (EF-EXP-059). Wiring any of them adds a check or a refusal to the export path."
@@ -177,4 +186,14 @@ until = "M3"
 symbols = [
   "shelfhold.acquisition.application.team_switch:switch_to_preferred_team",
   "shelfhold.catalog.application.service:CatalogService.prefer_team",
+]
+
+[[allow]]
+category = "m3-l09-works-listing"
+reason = "2026-11-12 (M3 L09): the filter of what a reader may see also answers a count and a page of Works (`count_visible_works`, `list_visible_works`) and a single Work (`work_is_visible`), proved by tests against the same condition as the search and the per-user state. No route lists the Works of the catalogue yet: it comes with the `?since=` list of L11 and the library screens of the UI lots, which call these and add their child case to `test_child_surfaces`."
+until = "M3"
+symbols = [
+  "shelfhold.catalog.application.queries:count_visible_works",
+  "shelfhold.catalog.application.queries:list_visible_works",
+  "shelfhold.catalog.application.queries:work_is_visible",
 ]

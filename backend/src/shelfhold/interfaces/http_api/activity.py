@@ -1,7 +1,9 @@
 """`/api/v1/activity`: events and download requests as one person may see them (EF-USR-016, D19).
 
-Every item goes through `activity_view`; the route reads the row, resolves the title of what it
-points at, and hands both over. An item whose title is masked says so (`title_masked`).
+Every item goes through `project_event` (`activity_view` plus the visibility filter of L09: an
+item about a Work a child may not see leaves no trace); the route reads the row, resolves the
+title of what it points at, and hands both over. An item whose title is masked says so
+(`title_masked`).
 Unmasking is its own call, behind the reserved action `request.unmask` (a session of an admin,
 never a key): the right is checked before anything is read, so a refusal says the same thing
 whether the entry exists or not; for the one who holds the right, an entry that is absent, not
@@ -21,15 +23,16 @@ from shelfhold.events.activity import (
     ActivityEvent,
     UnmaskRefusedError,
     Viewer,
-    activity_view,
     download_request_event,
     unmask_title,
 )
+from shelfhold.events.projection import project_event
 from shelfhold.identity.public import (
     INTEGRATION_ROLE,
     RESERVED_ACTIONS,
     Credential,
     Principal,
+    reader_scope,
 )
 from shelfhold.infrastructure.schema import acquisition, catalog, identity, platform
 from shelfhold.interfaces.http_api.auth import gate_of, require_principal, reserved_action
@@ -56,10 +59,15 @@ class UnmaskedOut(BaseModel):
     title: str
 
 
-def viewer_of(principal: Principal) -> Viewer:
-    """A key or a token is a program: it reads like the integration role, whoever issued it."""
+def viewer_of(principal: Principal, scope_kind: str = "all") -> Viewer:
+    """A session reads as its profile. A key or a token of an adult is a program: it reads like
+    the integration role. One of a child never reads more than the child does: it is the child
+    (`scope_kind` is the one of her profile, read at the request), never the integration role,
+    which sees every `ops` event and every sibling's `household` entry."""
     if principal.credential is Credential.SESSION:
         return Viewer(principal.user_id, principal.role)
+    if scope_kind != "all":  # a child, a profile that is gone, a role nobody knows
+        return Viewer(principal.user_id, "child")
     return Viewer(None, INTEGRATION_ROLE)
 
 
@@ -74,8 +82,8 @@ def _title_of(connection: Connection, payload: Mapping[str, object]) -> str | No
     return None
 
 
-def _request_title(connection: Connection, row: Any) -> str | None:
-    """The Work a request is about: through its Variant, or through the Edition of its range."""
+def _request_edition(connection: Connection, row: Any) -> str | None:
+    """The Edition a request is about: through its Variant, or through the range it asks."""
     edition_id = (row.range_ref or {}).get("edition_id") if row.range_ref else None
     if row.variant_id is not None:
         edition_id = connection.execute(
@@ -83,7 +91,13 @@ def _request_title(connection: Connection, row: Any) -> str | None:
             .join(catalog.unit_variant, catalog.unit_variant.c.unit_id == catalog.unit.c.id)
             .where(catalog.unit_variant.c.id == row.variant_id)
         ).scalar()
-    if not isinstance(edition_id, str):
+    return edition_id if isinstance(edition_id, str) else None
+
+
+def _request_title(connection: Connection, row: Any) -> str | None:
+    """The Work a request is about, resolved through its Edition."""
+    edition_id = _request_edition(connection, row)
+    if edition_id is None:
         return None
     return _title_of(
         connection,
@@ -140,14 +154,16 @@ def build_activity_router(get_engine: Callable[[], Engine]) -> APIRouter:
         principal: Annotated[Principal, Depends(require_principal)],
         limit: Annotated[int, Query(ge=1, le=MAX_LIMIT)] = 50,
     ) -> list[ActivityOut]:
-        viewer = viewer_of(principal)
         found: list[ActivityOut] = []
         with get_engine().connect() as connection:
+            # the reader's own profile, a key or a token included: never who issued the key
+            scope = reader_scope(connection, principal.user_id)
+            viewer = viewer_of(principal, scope.kind)
             events = connection.execute(
                 sa.select(platform.event).order_by(platform.event.c.id.desc()).limit(limit * 4)
             )
             for row in events:  # the projection decides: a hidden entry leaves no trace
-                item = activity_view(viewer, _activity_event(connection, row))
+                item = project_event(connection, viewer, scope, _activity_event(connection, row))
                 if item is not None:
                     found.append(_out(item, row.occurred_at))
             requests = connection.execute(
@@ -156,7 +172,10 @@ def build_activity_router(get_engine: Callable[[], Engine]) -> APIRouter:
                 .limit(limit * 4)
             )
             for request in requests:
-                item = activity_view(viewer, _request_event(connection, request))
+                item = project_event(
+                    connection, viewer, scope, _request_event(connection, request),
+                    editions=[e] if (e := _request_edition(connection, request)) else [],
+                )  # fmt: skip
                 if item is not None:
                     found.append(_out(item, request.requested_at))
         found.sort(key=lambda entry: entry.occurred_at, reverse=True)
