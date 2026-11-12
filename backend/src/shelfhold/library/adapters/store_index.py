@@ -21,6 +21,7 @@ from sqlalchemy import Engine
 from shelfhold.infrastructure.fsops import Fsops, FsopsError
 from shelfhold.infrastructure.schema import catalog, storage
 from shelfhold.library.adapters.storage import ContentTombstones
+from shelfhold.library.adapters.trash import units_binned_from_store
 from shelfhold.library.domain.content_hash import CONTENT_HASH_BY, FILE_HASH_BY
 from shelfhold.library.replica import kept_file_hashes
 from shelfhold.library.tombstones.values import ContentHash
@@ -61,6 +62,7 @@ class StoreIndex:
         content, unit, edition, work = storage.content, catalog.unit, catalog.edition, catalog.work
         with self._engine.connect() as connection:
             hashes = kept_file_hashes(connection)
+            binned = units_binned_from_store(connection)  # in a bin for 30 days (EF-BIB-021)
             rows = connection.execute(
                 sa.select(
                     content.c.unit_id,
@@ -81,7 +83,7 @@ class StoreIndex:
             ).all()
         lines: list[str] = []
         left_out = 0
-        excluded = set(without_units)
+        excluded = set(without_units) | binned
         for row in rows:
             if row.unit_id in excluded:
                 left_out += 1

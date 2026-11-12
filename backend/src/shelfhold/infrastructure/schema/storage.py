@@ -122,6 +122,10 @@ trash_item = sa.Table(
     # Level of the deletion that put it here (EF-BIB-021); what a bin entry held before M3 was
     # a deleted content.
     sa.Column("level", sa.String(), nullable=False, server_default="delete_content"),
+    # The run that binned it and what a restore needs (EF-BIB-021, migration 0055): the registry
+    # row and the export record as they were. NULL for the entries of before.
+    sa.Column("deletion_id", sa.String(26), nullable=True),
+    sa.Column("snapshot", sa.JSON(none_as_null=True), nullable=True),
     ulid_check("id"),
     ulid_check("ref"),
     in_check("kind", TRASH_KINDS),
@@ -135,6 +139,7 @@ trash_item = sa.Table(
     ),
     sa.Index("ix_trash_item_purge_after", "purge_after"),
     sa.Index("ix_trash_item_ref", "kind", "ref"),
+    sa.Index("ix_trash_item_deletion", "deletion_id"),
 )
 
 # What "Mettre à l'abri" could not take in its last cycle (EF-BIB-042 (4), EF-INT-023): one row, the

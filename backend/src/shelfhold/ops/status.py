@@ -29,7 +29,12 @@ from shelfhold.export.domain.kavita_compat import (
 from shelfhold.identity.public import EXIT_ROUTES
 from shelfhold.infrastructure.schema import acquisition, catalog, export, platform
 from shelfhold.infrastructure.wal import WAL_PENDING_KEY
-from shelfhold.library.public import KEPT_PREFIX, backlog_row, content_error_candidates
+from shelfhold.library.public import (
+    KEPT_PREFIX,
+    backlog_row,
+    content_error_candidates,
+    held_for_irreplaceable_units,
+)
 from shelfhold.ops.ports import PausedQueue, WaitingItem
 
 __all__ = [
@@ -88,6 +93,12 @@ _TEMPLATES = {
     "pending_pairing": (
         "shelfhold adopt pair --series {subject} (--source-key <key> --remote-id <id> | --decline)"
     ),
+    # L25: the bin past 30 days keeps what became irreplaceable; the exit is the restore (or the
+    # purge, which asks for the word)
+    "bin_held_irreplaceable": (
+        "POST /api/v1/units/{subject}/restore (a fresh admin session), "
+        "or shelfhold purge --now --unit {subject}"
+    ),
     "awaiting_shelf": (
         "shelfhold shelf create <name> --max-age 18+ --target <target> --subpath <folder>"
     ),
@@ -131,7 +142,20 @@ def collect(connection: Connection) -> list[WaitingItem]:
     found += _integrity_blocked(connection)
     found += _to_rate(connection)
     found += _safeguard_backlog(connection)
+    found += _held_bins(connection)
     return found
+
+
+def _held_bins(connection: Connection) -> list[WaitingItem]:
+    return [
+        _item(
+            "bin_held_irreplaceable",
+            "library",
+            unit,
+            f"{count} bin entries kept because the Unit is irreplaceable",
+        )
+        for unit, count in sorted(held_for_irreplaceable_units(connection).items())
+    ]
 
 
 def _safeguard_backlog(connection: Connection) -> list[WaitingItem]:

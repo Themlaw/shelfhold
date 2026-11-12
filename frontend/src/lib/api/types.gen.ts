@@ -387,6 +387,44 @@ export type CsrfToken = {
 };
 
 /**
+ * DeletionIn
+ */
+export type DeletionIn = {
+    /**
+     * Level
+     */
+    level: 'unfollow' | 'remove_destinations' | 'delete_content';
+    /**
+     * Typed
+     */
+    typed?: {
+        [key: string]: string;
+    };
+    /**
+     * Unit Ids
+     */
+    unit_ids: Array<string>;
+    /**
+     * Version
+     */
+    version: string;
+};
+
+/**
+ * DeletionPreviewIn
+ */
+export type DeletionPreviewIn = {
+    /**
+     * Level
+     */
+    level: 'unfollow' | 'remove_destinations' | 'delete_content';
+    /**
+     * Unit Ids
+     */
+    unit_ids: Array<string>;
+};
+
+/**
  * DestinationIn
  */
 export type DestinationIn = {
@@ -1915,16 +1953,6 @@ export type ResplitProposedOut = {
 };
 
 /**
- * RestoreIn
- */
-export type RestoreIn = {
-    /**
-     * Confirm Deletion
-     */
-    confirm_deletion?: boolean;
-};
-
-/**
  * RevisionOut
  */
 export type RevisionOut = {
@@ -2715,6 +2743,20 @@ export type ShelfholdInterfacesHttpApiIntentsResolveIn = {
 };
 
 /**
+ * RestoreIn
+ */
+export type ShelfholdInterfacesHttpApiLibraryRestoreIn = {
+    /**
+     * Deletion Id
+     */
+    deletion_id?: string | null;
+    /**
+     * Partial
+     */
+    partial?: boolean;
+};
+
+/**
  * ResolveIn
  */
 export type ShelfholdInterfacesHttpApiOpsResolveIn = {
@@ -2722,6 +2764,16 @@ export type ShelfholdInterfacesHttpApiOpsResolveIn = {
      * Action
      */
     action: string;
+};
+
+/**
+ * RestoreIn
+ */
+export type ShelfholdInterfacesHttpApiOpsRestoreIn = {
+    /**
+     * Confirm Deletion
+     */
+    confirm_deletion?: boolean;
 };
 
 /**
@@ -3682,6 +3734,80 @@ export type ResplitProposeResponses = {
 };
 
 export type ResplitProposeResponse = ResplitProposeResponses[keyof ResplitProposeResponses];
+
+export type DeletionApplyData = {
+    body: DeletionIn;
+    path?: never;
+    query?: never;
+    url: '/api/v1/deletions';
+};
+
+export type DeletionApplyErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type DeletionApplyError = DeletionApplyErrors[keyof DeletionApplyErrors];
+
+export type DeletionApplyResponses = {
+    /**
+     * Response Deletion Apply
+     *
+     * Successful Response
+     */
+    200: {
+        [key: string]: unknown;
+    };
+};
+
+export type DeletionApplyResponse = DeletionApplyResponses[keyof DeletionApplyResponses];
+
+export type DeletionPreviewData = {
+    body: DeletionPreviewIn;
+    path?: never;
+    query?: never;
+    url: '/api/v1/deletions/preview';
+};
+
+export type DeletionPreviewErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type DeletionPreviewError = DeletionPreviewErrors[keyof DeletionPreviewErrors];
+
+export type DeletionPreviewResponses = {
+    /**
+     * Response Deletion Preview
+     *
+     * Successful Response
+     */
+    200: {
+        [key: string]: unknown;
+    };
+};
+
+export type DeletionPreviewResponse = DeletionPreviewResponses[keyof DeletionPreviewResponses];
 
 export type RestoreUpstreamData = {
     body: DetachIn;
@@ -4927,7 +5053,7 @@ export type ProbeResponses = {
 export type ProbeResponse = ProbeResponses[keyof ProbeResponses];
 
 export type RestoreAdoptData = {
-    body: RestoreIn;
+    body: ShelfholdInterfacesHttpApiOpsRestoreIn;
     path?: never;
     query?: never;
     url: '/api/v1/reconcile/adopt-after-restore';
@@ -6578,6 +6704,51 @@ export type PurgeUnitResponses = {
 };
 
 export type PurgeUnitResponse = PurgeUnitResponses[keyof PurgeUnitResponses];
+
+export type DeletionRestoreData = {
+    /**
+     * Body
+     */
+    body?: ShelfholdInterfacesHttpApiLibraryRestoreIn | null;
+    path: {
+        /**
+         * Unit Id
+         */
+        unit_id: string;
+    };
+    query?: never;
+    url: '/api/v1/units/{unit_id}/restore';
+};
+
+export type DeletionRestoreErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type DeletionRestoreError = DeletionRestoreErrors[keyof DeletionRestoreErrors];
+
+export type DeletionRestoreResponses = {
+    /**
+     * Response Deletion Restore
+     *
+     * Successful Response
+     */
+    200: {
+        [key: string]: unknown;
+    };
+};
+
+export type DeletionRestoreResponse = DeletionRestoreResponses[keyof DeletionRestoreResponses];
 
 export type RateBatchData = {
     body: RateBatchIn;

@@ -143,6 +143,18 @@ def require_deletion_allowed(
     return DeletionAuthorization(unit_id, principal.actor_id, irreplaceable)
 
 
+def require_reserved_deletion(
+    *, principal: Principal, now: datetime, fresh_auth_s: int = 900
+) -> None:
+    """The first two levels of a deletion (stop following, take out of the destinations) are
+    reserved too, but ask for no typed word: no original of a Unit goes with them."""
+    verdict = authorize_reserved(
+        principal, RESERVED_ACTIONS["unit.delete"], now=now, fresh_auth_s=fresh_auth_s
+    )
+    if not isinstance(verdict, Allowed):
+        raise DeletionRefusedError(verdict)
+
+
 def safe_to_clean(connection: Connection, unit_ids: Sequence[str]) -> tuple[list[str], list[str]]:
     """(the Units a retention policy or a clean-up may touch, the ones it must keep and flag)."""
     allowed: list[str] = []

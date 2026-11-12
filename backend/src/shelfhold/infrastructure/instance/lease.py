@@ -20,11 +20,11 @@ import json
 import re
 import uuid
 from collections.abc import Callable, Iterator
-from contextlib import contextmanager, suppress
+from contextlib import AbstractContextManager, contextmanager, suppress
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Any, Final, Literal
+from typing import Any, BinaryIO, Final, Literal
 
 import structlog
 
@@ -387,9 +387,16 @@ class WriteSession:
         self._guard(src, dst)
         self._fsops.rename(src, dst, replace=replace)
 
-    def recycle(self, local: str) -> str:
+    def recycle(self, local: str, *, entry: str | None = None) -> str:
         self._guard(local)
-        return self._fsops.recycle(local)
+        return self._fsops.recycle(local, entry=entry)
+
+    def restore_from_bin(self, local: str, path: str) -> None:
+        self._guard(local)
+        self._fsops.restore_from_bin(local, path)
+
+    def open_bin_entry(self, target: str, path: str) -> AbstractContextManager[BinaryIO]:
+        return self._fsops.open_bin_entry(target, path)
 
     def copy_across(
         self, src: str, dst: str, *, parents: bool = False, replace: bool = False

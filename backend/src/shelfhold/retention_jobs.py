@@ -13,6 +13,7 @@ Both stand outside the freeze: the scheduler does not run a job while the instan
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Final
 
 import structlog
@@ -22,6 +23,7 @@ from shelfhold.export.application.intents import IntentJournal
 from shelfhold.export.application.recycle_sweep import RecycleReport, RecycleSweeper
 from shelfhold.jobs.public import JobContext, JobPools
 from shelfhold.jobs.retention import RetentionPolicy, expire_audit, expire_events_and_jobs
+from shelfhold.ops.backup.report import retained_since
 
 __all__ = [
     "RECYCLE_KIND",
@@ -40,10 +42,18 @@ RECYCLE_CRON: Final = "50 3 * * *"  # inside the default window; clamped into an
 
 
 def sweep_recycle(comp: Composition) -> RecycleReport:
-    """Remove the bin entries that are 30 days old, under an intention each."""
+    """Remove the bin entries that are 30 days old, under an intention each. A copy of /store that
+    a retained integrated backup may still look for stays (EF-BIB-021)."""
+    backups = None
+    folder = comp.settings.backup_dir
+    if folder is not None:
+
+        def backups(since: datetime) -> list[tuple[str, datetime]]:
+            return retained_since(comp.engine, folder, since)
+
     with comp.write_context() as w:
         journal = IntentJournal(comp.engine, w.fsops, clock=comp.clock)
-        return RecycleSweeper(w.fsops, journal, w.writable_roots).sweep()
+        return RecycleSweeper(w.fsops, journal, w.writable_roots, backups=backups).sweep()
 
 
 def register_retention_jobs(pools: JobPools, comp: Composition) -> None:
@@ -61,7 +71,12 @@ def register_retention_jobs(pools: JobPools, comp: Composition) -> None:
         except (NoLibraryError, KeyringUnavailableError) as error:
             context.record(skipped=type(error).__name__)
             return
-        context.record(removed=report.removed, kept=report.kept, failed=report.failed)
+        context.record(
+            removed=report.removed,
+            kept=report.kept,
+            failed=report.failed,
+            held_irreplaceable=report.held_irreplaceable,
+        )
 
     pools.register(RETENTION_KIND, pool="maint", handler=expire, writes=False)
     pools.scheduler.add(RETENTION_KIND, RETENTION_CRON, jitter_s=300)

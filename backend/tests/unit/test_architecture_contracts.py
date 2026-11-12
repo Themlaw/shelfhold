@@ -470,6 +470,7 @@ def _opens_for_writing(node: ast.Call) -> bool:
 # Modules that may call the sanctioned writer, and only through a `self._x` attribute declared with
 # one of these types (a receiver *name* proves nothing: `disk = Path(x)` is a name too).
 FSOPS_CALLERS = (
+    "shelfhold/export/application/deletion.py",  # the empty folders after a deletion (EF-BIB-021)
     "shelfhold/export/application/intents.py",
     "shelfhold/export/application/recycle_sweep.py",  # the bin retention (ENF-OPS-009)
     "shelfhold/infrastructure/instance/lease.py",

@@ -159,6 +159,10 @@ _OTHER: Mapping[str, str] = MappingProxyType(
         "shelfhold/library/adapters/safeguard_job.py::UpstreamPurge.release_for_purge": (
             "purge.now"
         ),
+        # Deletion at three levels (L25, EF-BIB-021): the empty series folders of a destination
+        # Shelfhold wrote, after the scan, by the application of a deletion that passed the
+        # reserved action (`unit.delete`); `rmdir` itself refuses a folder that holds anything.
+        f"{_EXPORT_APP}/deletion.py::DeletionService.remove_empty_folders": "unit.delete",
         # The recycle bins past 30 days (ENF-OPS-009): the daily sweep, under an intention; fsops
         # reads the age of the entry from the file system and refuses a younger one.
         f"{_EXPORT_APP}/recycle_sweep.py::RecycleSweeper.sweep": "trash_retention_purge",

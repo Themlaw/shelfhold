@@ -119,6 +119,7 @@ ROOT_FREEZE_STATES: dict[str, RootState] = {
 
 # The token of a same-path replacement: the ULID of its `upgrade` intent (EF-EXP-016).
 _TOKEN = re.compile(r"[0-9A-HJKMNP-TV-Z]{26}\Z")
+_BIN_ENTRY = re.compile(r"[0-9a-f]{32}\Z")
 # Not the staging area: the boot empties it before the intents are settled, and the staged file of
 # an interrupted replacement is the new version (before the swap) or the old one (after it).
 SAME_PATH_DIR = f"{RESERVED_DIR}/upgrade"  # `<root>/.shelfhold/upgrade/<token>`
@@ -1150,11 +1151,15 @@ class Fsops:
                 root.rmdir(old_rel)
             return moved, left
 
-    def recycle(self, local: str) -> str:
-        """Move into the same root's `.shelfhold/recycle`; returns where it went."""
+    def recycle(self, local: str, *, entry: str | None = None) -> str:
+        """Move into the same root's `.shelfhold/recycle`; returns where it went. `entry` names the
+        bin folder (32 hexadecimal digits) when the caller recorded it before the move (a deletion
+        that a restore must find again); never a path."""
+        if entry is not None and _BIN_ENTRY.fullmatch(entry) is None:
+            raise ValueError("a bin entry is named by 32 hexadecimal digits")
         located = self._locate(local)
         with self._gated(located) as root:
-            folder = f"{RECYCLE_DIR}/{uuid.uuid4().hex}"
+            folder = f"{RECYCLE_DIR}/{entry or uuid.uuid4().hex}"
             target = f"{folder}/{located.rel}"
             try:
                 root.mkdir(target.rpartition("/")[0], parents=True, exist_ok=True, durable=False)
@@ -1164,6 +1169,26 @@ class Fsops:
                     root.remove_tree(folder)  # only empty folders made just above
                 raise
             return f"{root.path}/{target}"
+
+    def restore_from_bin(self, local: str, path: str) -> None:
+        """Put a file of the bin back at `local` (the way it left: one rename inside its root, the
+        same inode). `path` is the one the bin index recorded (`<entry>/<rel at the time>`). An
+        existing target is `FileExistsError`: nothing is ever replaced."""
+        located = self._locate(local)
+        if located.read_only:
+            raise ReadOnlyRootError(f"{located.root_path} is an adoption root: never written")
+        if not path or path.startswith("/") or ".." in path.split("/"):
+            raise OutsidePathMapError(f"{path!r} is not a path inside a bin")
+        source = f"{RECYCLE_DIR}/{path}"
+        with self._gated(located) as root:
+            if root.lstat_kind(source) != "file":
+                raise FileNotFoundError(path)
+            if root.lstat_kind(located.rel) is not None:
+                raise FileExistsError(located.rel)
+            parent = located.rel.rpartition("/")[0]
+            if parent:
+                root.mkdir(parent, parents=True, exist_ok=True, durable=False)
+            root.rename(source, located.rel, replace=False)
 
     # -- same-path replacement (EF-EXP-016) -------------------------------------------------
     #

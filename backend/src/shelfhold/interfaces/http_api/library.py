@@ -21,6 +21,7 @@ from shelfhold.ops import OpsServices
 __all__ = ["build_library_router"]
 
 _PURGE = reserved_action(RESERVED_ACTIONS["purge.now"])
+_DELETE = reserved_action(RESERVED_ACTIONS["unit.delete"])
 Admin = Annotated[Principal, Depends(require_admin)]
 Body = dict[str, Any]
 
@@ -51,6 +52,21 @@ class DetachIn(BaseModel):
 
 class PurgeIn(BaseModel):
     typed: str = Field(min_length=1)
+
+
+class DeletionPreviewIn(BaseModel):
+    level: Literal["unfollow", "remove_destinations", "delete_content"]
+    unit_ids: list[str] = Field(min_length=1, max_length=500)
+
+
+class DeletionIn(DeletionPreviewIn):
+    version: str = Field(min_length=1)  # the `version` of the preview that was read
+    typed: dict[str, str] = Field(default_factory=dict)  # unit id -> the identifier typed
+
+
+class RestoreIn(BaseModel):
+    deletion_id: str | None = None  # one deletion (the latest when absent)
+    partial: bool = False  # the files that can go back do, the others stay in the bin
 
 
 class ProbeIn(BaseModel):
@@ -119,6 +135,34 @@ def build_library_router(get_ops: Callable[[], OpsServices]) -> APIRouter:
         with refusals():
             return get_ops().library.purge(
                 kind="work", anchor_id=work_id, typed=body.typed, principal=principal,
+            )  # fmt: skip
+
+    @router.post("/deletions/preview", response_model=Body)
+    def deletion_preview(
+        body: DeletionPreviewIn, _principal: Annotated[Principal, Depends(_DELETE)]
+    ) -> Body:
+        with refusals():
+            return get_ops().library.delete_preview(level=body.level, unit_ids=body.unit_ids)
+
+    @router.post("/deletions", response_model=Body)
+    def deletion_apply(body: DeletionIn, principal: Annotated[Principal, Depends(_DELETE)]) -> Body:
+        with refusals():
+            return get_ops().library.delete_apply(
+                level=body.level, unit_ids=body.unit_ids, if_match=body.version,
+                typed=body.typed, principal=principal,
+            )  # fmt: skip
+
+    @router.post("/units/{unit_id}/restore", response_model=Body)
+    def deletion_restore(
+        unit_id: str,
+        principal: Annotated[Principal, Depends(_DELETE)],
+        body: RestoreIn | None = None,
+    ) -> Body:
+        asked = body or RestoreIn()
+        with refusals():
+            return get_ops().library.delete_restore(
+                unit_id=unit_id, principal=principal,
+                deletion_id=asked.deletion_id, partial=asked.partial,
             )  # fmt: skip
 
     @router.post("/probe", response_model=Body)

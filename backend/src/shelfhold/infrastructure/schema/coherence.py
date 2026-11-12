@@ -16,7 +16,7 @@ from shelfhold.infrastructure.schema._base import (
 
 INTENT_OPS = (
     "rename", "upgrade", "recycle", "delete", "purge_upstream", "safeguard", "rmdir",
-    "copy_cross_root", "unlink", "tombstone_rekey", "write",
+    "copy_cross_root", "unlink", "tombstone_rekey", "write", "unbin",
 )  # fmt: skip
 # `stale_from_backup`: an intention that came back with a restored snapshot; never replayed
 # (EF-INT-026).

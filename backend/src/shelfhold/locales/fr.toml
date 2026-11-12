@@ -1582,6 +1582,10 @@ action = "Choisissez un autre nom ou alignez le plafond d'âge et le sous-dossie
 title = "Suwayomi ne répond pas à cette adresse."
 action = "Vérifiez l'adresse et que le serveur tourne ; rien n'a été enregistré."
 
+[errors."deletion.blocked"]
+title = "Cette suppression est refusée : elle emporterait ce qu'elle ne doit pas emporter."
+action = "Relisez l'aperçu : il dit pour chaque chapitre ce qui l'empêche (dernière copie indépendante, fichier adopté, fichier qui couvre d'autres chapitres, opération en cours). Seul « supprimer le contenu » peut retirer une dernière copie, après confirmation."
+
 [errors."ops.not_waiting"]
 title = "Rien n'attend ici : l'élément n'est pas dans l'état que cette commande fait quitter."
 action = "Vérifiez avec « shelfhold status » ; rien n'a été modifié."
