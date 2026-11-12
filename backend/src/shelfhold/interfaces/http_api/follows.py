@@ -38,6 +38,10 @@ class FollowOut(BaseModel):
     sent: bool  # false: nothing was sent to the service (already followed, or on its way)
 
 
+class CheckOut(BaseModel):
+    queued: int  # follow jobs queued (or joined) for the services this series comes through
+
+
 def build_follows_router(get_ops: Callable[[], OpsServices]) -> APIRouter:
     router = APIRouter(prefix="/api/v1", tags=["follows"])
 
@@ -57,5 +61,12 @@ def build_follows_router(get_ops: Callable[[], OpsServices]) -> APIRouter:
                 remove_upstream=body.remove_upstream, confirm=body.confirm,
             )  # fmt: skip
         return FollowOut(state=answer["state"], sent=answer["sent"])
+
+    @router.post("/editions/{edition_id}/check")
+    def follow_check(edition_id: str, _admin: Admin) -> CheckOut:
+        """ "Check now" (EF-SRC-038): looked at at the next pass, in the news class."""
+        with refusals():
+            answer = get_ops().follows.check(edition_id)
+        return CheckOut(**answer)
 
     return router

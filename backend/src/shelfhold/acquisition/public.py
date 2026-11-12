@@ -10,6 +10,13 @@ from shelfhold.acquisition.application.acquire import (
     acquire_dedupe_key,
 )
 from shelfhold.acquisition.application.backfill import Backfill, BackfillConfirmationRequired
+from shelfhold.acquisition.application.cadence import (
+    CadencedFollowCycle,
+    CadencePolicy,
+    SeriesPausedError,
+    UnknownSeriesError,
+    request_check_job,
+)
 from shelfhold.acquisition.application.discovery import decline_pairing
 from shelfhold.acquisition.application.failures import FailureLedger, Pause
 from shelfhold.acquisition.application.follow import (
@@ -95,6 +102,8 @@ __all__ = [
     "Backfill",
     "BackfillConfirmationRequired",
     "BackfillEstimate",
+    "CadencePolicy",
+    "CadencedFollowCycle",
     "CycleAbandoned",
     "DetachReport",
     "DetachScope",
@@ -122,6 +131,7 @@ __all__ = [
     "Receiver",
     "RequestBudget",
     "SeriesBinding",
+    "SeriesPausedError",
     "ServiceLink",
     "ServiceNotConnectedError",
     "SnapshotRefusedError",
@@ -133,6 +143,7 @@ __all__ = [
     "TeamStats",
     "TicketReport",
     "TreeTargets",
+    "UnknownSeriesError",
     "UpstreamSnapshots",
     "Watermark",
     "acquire_dedupe_key",
@@ -154,6 +165,7 @@ __all__ = [
     "present_in",
     "series_key",
     "source_suggestion",
+    "request_check_job",
     "stale_series",
     "stale_threshold",
     "submit_follow",

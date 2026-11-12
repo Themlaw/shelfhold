@@ -1,7 +1,7 @@
 """EF-SRC-038 (M2 L29): the adaptive check cadence in the piloted follow cycle, "check now", and
 the always-on mode where the cadence only feeds `series.stale`."""
 
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -20,10 +20,6 @@ from tests.follow_env import Bench, follow_bench
 DAY = timedelta(days=1)
 
 
-def _piloted() -> object:
-    return follow_bench(check_mode="piloted", cycle_class=CadencedFollowCycle)
-
-
 def _weekly(bench: Bench) -> None:
     """Three discoveries a week apart, the last one now; one look done, so the cadence is known."""
     bench.run()
@@ -32,12 +28,11 @@ def _weekly(bench: Bench) -> None:
     bench.run()
 
 
-def _expected(bench: Bench, binding_id: str | None = None) -> object:
-    row = bench.rows(
+def _expected(bench: Bench, binding_id: str | None = None) -> dict[str, str]:
+    return bench.rows(
         "SELECT next_expected, check_cron FROM source_binding WHERE id = :b",
         b=binding_id or bench.binding_id,
     )[0]
-    return row
 
 
 @pytest.mark.req("EF-SRC-038")
@@ -51,11 +46,8 @@ def test_adaptive_check_interval_from_observed_cadence() -> None:
         assert wait >= 6 * DAY  # a weekly series: around the next week, not tomorrow
 
 
-def _expected_at(row: object):  # type: ignore[no-untyped-def]
-    from datetime import UTC
-
-    value = row["next_expected"]  # type: ignore[index]
-    return value.replace(tzinfo=UTC) if value.tzinfo is None else value
+def _expected_at(row: dict[str, str]) -> datetime:
+    return datetime.fromisoformat(row["next_expected"]).replace(tzinfo=UTC)
 
 
 @pytest.mark.req("EF-SRC-038")
@@ -116,15 +108,24 @@ def test_paused_series_is_never_checked_not_even_now() -> None:
 @pytest.mark.req("EF-SRC-038", "EF-SRC-009")
 def test_check_now_respects_limit_key() -> None:
     with follow_bench(check_mode="piloted", cycle_class=CadencedFollowCycle) as bench:
-        bench.add_binding("suwayomi:7001", "/series-beta")  # same upstream source as alpha
-        other = bench.add_binding("suwayomi:7002", "/series-gamma")  # another one
+        twin = {**bench.alpha(), "id": 190, "url": "/series-delta", "title": "Series Delta"}
+        twin["chapters"] = []
+        bench.server.state["mangas"].append(twin)  # a second series of the same upstream source
+        bench.add_binding("suwayomi:7001", "/series-delta")
+        bench.add_binding("suwayomi:7002", "/series-beta")  # another source
         bench.run()
         bench.sleeps.clear()
         asked = len(bench.server.refreshed)
         bench.clock.advance(hours=2)
         bench.run()
         assert len(bench.server.refreshed) == asked  # nothing is due yet
-        editions = [r["edition_id"] for r in bench.rows("SELECT edition_id FROM source_binding")]
+        editions = [
+            r["edition_id"]
+            for r in bench.rows(
+                "SELECT b.edition_id FROM source_binding b "
+                "JOIN series_follow f ON f.edition_id = b.edition_id"
+            )
+        ]
         with bench.lib.engine.begin() as c:
             for edition in editions:
                 check_now(c, edition, bench.clock.now())
@@ -132,7 +133,6 @@ def test_check_now_respects_limit_key() -> None:
         assert len(bench.server.refreshed) == asked + 3  # all three were asked
         spaced = [s for s in bench.sleeps if s >= REFRESH_SPACING]
         assert len(spaced) == 1  # the second series of the same source waited its spacing
-        assert other
 
 
 @pytest.mark.req("EF-SRC-038")
@@ -164,9 +164,12 @@ def test_check_now_on_a_finished_series_checks_once_and_returns_to_the_rare_pace
 
 @pytest.mark.req("EF-SRC-038")
 def test_check_now_of_an_unknown_series_is_refused() -> None:
-    with follow_bench(check_mode="piloted", cycle_class=CadencedFollowCycle) as bench:
-        with bench.lib.engine.begin() as c, pytest.raises(UnknownSeriesError):
-            check_now(c, "01NOSUCHEDITION00000000000", bench.clock.now())
+    with (
+        follow_bench(check_mode="piloted", cycle_class=CadencedFollowCycle) as bench,
+        bench.lib.engine.begin() as c,
+        pytest.raises(UnknownSeriesError),
+    ):
+        check_now(c, "01NOSUCHEDITION00000000000", bench.clock.now())
 
 
 @pytest.mark.req("EF-SRC-038")
@@ -174,7 +177,9 @@ def test_always_on_mode_cadence_only_feeds_series_stale() -> None:
     with follow_bench(check_mode="always_on", cycle_class=CadencedFollowCycle) as bench:
         _weekly(bench)
         with bench.lib.engine.begin() as c:
-            check_now(c, bench.edition_id, bench.clock.now())  # even asked, Shelfhold refreshes nothing
+            check_now(
+                c, bench.edition_id, bench.clock.now()
+            )  # even asked, Shelfhold refreshes nothing
         bench.clock.advance(days=8)
         bench.run()
         assert bench.server.refreshed == []
@@ -193,6 +198,7 @@ def test_check_now_job_is_of_the_news_class(tmp_path: Path) -> None:
     with follow_bench(check_mode="piloted", cycle_class=CadencedFollowCycle) as bench:
         (tmp_path / "data").mkdir(exist_ok=True)
         pools = JobPools(tmp_path / "data", engine=bench.lib.engine, clock=bench.clock, seed="c")
+        pools.register(FOLLOW_JOB_KIND, pool="io", handler=lambda _context: None)
         request_check_job(bench.lib.engine, bench.clock, pools, bench.edition_id)
         jobs = bench.rows("SELECT kind, priority_class FROM job_view")
         assert jobs == [{"kind": FOLLOW_JOB_KIND, "priority_class": "new"}]

@@ -1,28 +1,41 @@
 """EF-SRC-038 (M2 L29): `shelfhold follow check <series>` and `POST /api/v1/editions/{id}/check`,
-the real command and the real route over a real instance."""
+the real command and the real route over a real instance (its queue, its database)."""
 
 from pathlib import Path
-from typing import Any
 
 import pytest
+import sqlalchemy as sa
 
 from shelfhold.config import Settings
-from tests.l51_env import live
-from tests.l54_env import Bench54, bench54
+from shelfhold.infrastructure.schema import acquisition
+from tests.auth_env import run_cli
+from tests.l51_env import Live, live
 
 
-class RecordingPools:
-    slots = None
+def _follow(api: Live, *, override: str | None = None) -> str:
+    """The seeded series is followed (the seed binds it without a `series_follow` row)."""
+    with api.env.inst.engine.begin() as connection:
+        connection.execute(
+            sa.insert(acquisition.series_follow).values(
+                edition_id=api.series.edition_id,
+                work_id=api.series.work_id,
+                check_override=override,
+            )
+        )
+    return str(api.series.edition_id)
 
-    def __init__(self) -> None:
-        self.submitted: list[dict[str, Any]] = []
 
-    def submit(self, kind: str, **kwargs: Any) -> None:
-        self.submitted.append({"kind": kind, **kwargs})
+def _jobs(api: Live) -> list[dict[str, object]]:
+    with api.env.inst.engine.connect() as connection:
+        rows = connection.execute(
+            sa.text("SELECT kind, priority_class FROM job_view WHERE kind = 'follow.cycle'")
+        ).mappings()
+        return [dict(r) for r in rows]
 
 
-def _edition(b: Bench54) -> str:
-    return str(b.rows("SELECT edition_id FROM source_binding")[0]["edition_id"])
+def _next_expected(api: Live) -> object:
+    with api.env.inst.engine.connect() as connection:
+        return connection.execute(sa.text("SELECT next_expected FROM source_binding")).scalar()
 
 
 @pytest.mark.req("EF-SRC-038")
@@ -32,17 +45,13 @@ def test_cli_follow_check_queues_a_news_class_job(
     settings: Settings,
     tmp_path: Path,
 ) -> None:
-    with bench54(monkeypatch, settings, tmp_path) as b:
-        b.follow()
-        pools = RecordingPools()
-        b.env.inst.comp.pools = lambda: pools  # type: ignore[method-assign]
+    with live(monkeypatch, settings, tmp_path, chapters=()) as api:
+        edition = _follow(api)
         capsys.readouterr()
-        assert b.cli("follow", "check", _edition(b)) == 0
-        assert "vérification" in capsys.readouterr().out
-        (job,) = pools.submitted
-        assert job["kind"] == "follow.cycle" and job["priority_class"] == "new"
-        row = b.rows("SELECT next_expected FROM source_binding")[0]
-        assert row["next_expected"] is not None  # the series is due at the next look
+        assert run_cli(monkeypatch, settings, "follow", "check", edition) == 0
+        assert "Vérification demandée" in capsys.readouterr().out
+        assert {"kind": "follow.cycle", "priority_class": "new"} in _jobs(api)
+        assert _next_expected(api) is not None  # due at the next look
 
 
 @pytest.mark.req("EF-SRC-038")
@@ -52,20 +61,16 @@ def test_cli_follow_check_refuses_what_it_cannot_check(
     settings: Settings,
     tmp_path: Path,
 ) -> None:
-    with bench54(monkeypatch, settings, tmp_path) as b:
-        b.follow()
-        pools = RecordingPools()
-        b.env.inst.comp.pools = lambda: pools  # type: ignore[method-assign]
-        assert b.cli("follow", "check", "no-such-edition") != 0
-        assert b.cli("follow", "check") == 2  # the series is missing
-        b.rows("SELECT 1")
-        with b.engine.begin() as connection:
-            import sqlalchemy as sa
-
-            connection.execute(sa.text("UPDATE series_follow SET check_override = 'paused'"))
-        assert b.cli("follow", "check", _edition(b)) != 0  # paused: not even now
-        assert pools.submitted == []
-        assert b.rows("SELECT next_expected FROM source_binding")[0]["next_expected"] is None
+    with live(monkeypatch, settings, tmp_path, chapters=()) as api:
+        edition = _follow(api, override="paused")
+        before = len(_jobs(api))
+        assert run_cli(monkeypatch, settings, "follow", "check", "no-such-edition") == 1
+        assert "ops.unknown_subject" in capsys.readouterr().err
+        assert run_cli(monkeypatch, settings, "follow", "check", edition) == 1  # paused: not now
+        assert "ops.invalid_choice" in capsys.readouterr().err
+        assert len(_jobs(api)) == before  # nothing was queued
+        assert _next_expected(api) is None  # and the series was not made due
+        assert run_cli(monkeypatch, settings, "follow", "check", edition, "3") == 2  # a stray one
 
 
 @pytest.mark.req("EF-SRC-038", "ENF-SEC-010")
@@ -73,18 +78,18 @@ def test_check_route_needs_a_session_the_csrf_token_and_the_admin(
     monkeypatch: pytest.MonkeyPatch, settings: Settings, tmp_path: Path
 ) -> None:
     with live(monkeypatch, settings, tmp_path, chapters=()) as api:
-        pools = RecordingPools()
-        api.env.inst.comp.pools = lambda: pools  # type: ignore[method-assign]
-        client = api.client
-        import sqlalchemy as sa
-
-        with api.env.inst.engine.connect() as connection:
-            edition = connection.execute(sa.text("SELECT id FROM edition LIMIT 1")).scalar_one()
+        edition = _follow(api)
+        before = len(_jobs(api))
         url = f"/api/v1/editions/{edition}/check"
-        assert client.post(url).status_code == 403  # no CSRF token on a session
+        assert api.client.post(url).status_code == 403  # no CSRF token on a session
         anonymous = api.api.other_client("203.0.113.9")
         assert anonymous.post(url).status_code in (401, 403)
-        assert pools.submitted == []
+        assert len(_jobs(api)) == before and _next_expected(api) is None
+
         missing = api.api.post("/api/v1/editions/01NOSUCHEDITION00000000000/check")
         assert missing.status_code == 404
-        assert pools.submitted == []
+        done = api.api.post(url)
+        assert done.status_code == 200, done.text
+        assert done.json() == {"queued": 1}
+        assert {"kind": "follow.cycle", "priority_class": "new"} in _jobs(api)
+        assert _next_expected(api) is not None

@@ -20,7 +20,10 @@ from shelfhold.acquisition.public import (
     FollowOutcome,
     FollowRefused,
     FollowRequests,
+    SeriesPausedError,
     ServiceNotConnectedError,
+    UnknownSeriesError,
+    request_check_job,
 )
 from shelfhold.infrastructure.schema import acquisition
 from shelfhold.ops.errors import (
@@ -82,6 +85,20 @@ class FollowOps:
                 actor_id=actor_id, now=self._comp.clock.now(),
             )  # fmt: skip
         return {"changed": changed, "undone": False}
+
+    def check(self, edition_id: str) -> dict[str, Any]:
+        """`follow check`: look at this series at the next look, as a job of the news class
+        (EF-SRC-038). The spacing by upstream source applies as for any look."""
+        pools = self._comp.pools()
+        if pools is None:
+            raise ExitUnavailableError("the job queue is not running")
+        try:
+            plugins = request_check_job(self._comp.engine, self._comp.clock, pools, edition_id)
+        except UnknownSeriesError:
+            raise UnknownSubjectError("no followed series has this identifier") from None
+        except SeriesPausedError:
+            raise InvalidChoiceError("a series that is not paused") from None
+        return {"queued": len(plugins)}
 
     def follow(
         self, source_key: str, remote_id: str, *, requester_user_id: str | None

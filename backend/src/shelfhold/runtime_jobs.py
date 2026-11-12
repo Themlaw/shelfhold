@@ -40,6 +40,8 @@ from structlog.contextvars import bound_contextvars
 from shelfhold.acquisition.public import (
     ACQUIRE_JOB_KIND,
     FOLLOW_JOB_KIND,
+    CadencedFollowCycle,
+    CadencePolicy,
     FollowCycle,
     FollowReport,
     LeasedReceiver,
@@ -291,7 +293,7 @@ def follow_handler(comp: Composition, pools: JobPools) -> Callable[[JobContext],
                 keeper = RangedKeeper(comp.settings.data_dir)
                 keeper.sweep(comp.engine)  # files of a transaction that did not commit
                 for position, link in enumerate(links):
-                    cycle = FollowCycle(
+                    cycle = CadencedFollowCycle(
                         comp.engine, comp.bus, comp.clock, link.service, link.fetcher,
                         store=cast("PassthroughStore", _LazyStore(comp, lazy)),
                         receive=LeasedReceiver(
@@ -310,6 +312,7 @@ def follow_handler(comp: Composition, pools: JobPools) -> Callable[[JobContext],
                         min_page_ratio=comp.settings.revision_min_page_ratio,
                         fallback_return=comp.settings.follow_fallback_return,
                         upgrader=_LazyUpgrader(comp, lazy),
+                        policy=CadencePolicy.from_settings(comp.settings),
                     )  # fmt: skip
                     prefix = "" if position == 0 else f"{link.service.manifest.key}_"
 
