@@ -139,7 +139,25 @@ def test_real_reserved_routes_follow_the_table_for_a_fresh_then_a_stale_admin(
                 )  # answers before auth
                 db.commit()
         own = 1 if action in SELF_AUDITED else 0  # the route writes its own line, on a disclosure
-        assert len(written) in ((0, 1) if action in SERVICE_AUDITED else (1 - own,))
+        if action in SERVICE_AUDITED:
+            refused_by_service = "/jobs/" in path  # a job that does not exist: the service refuses
+            if refused_by_service:
+                # unknown job (404), or an empty body the route rejects before the service (422)
+                assert fresh.status_code in (404, 422), (path, fresh.status_code)
+                assert written == []
+            else:  # a change made: exactly one line, and it says what was changed
+                assert len(written) == 1, (path, written)
+                targets = [
+                    t
+                    for (t,) in db_rows(
+                        api.settings, "SELECT target FROM audit WHERE action = ?", action
+                    )
+                ]
+                assert targets[before] and targets[before].startswith(path.rsplit("/", 1)[-1]), (
+                    targets
+                )
+        else:
+            assert len(written) == 1 - own
         for line in written:
             assert line[0] and line[1]  # EF-USR-022 (3): on every action, fresh or not
         api.clock.advance(timedelta(minutes=20))  # beyond the 900 s of P3
