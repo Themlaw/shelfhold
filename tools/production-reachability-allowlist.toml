@@ -50,14 +50,6 @@ symbols = [
 ]
 
 [[allow]]
-category = "unwired-m2-derivative"
-reason = "A canonical derivative of a CBZ is declared by a source that descrambles, a Processor (OCR, upscaling) or the SVG rasterizer (EF-BIB-006, M2 L10): none exists yet, so nothing calls `declare_derivative`. The EPUB neutralizer (M2 L03) does not go through it: it never lets the original reach /library, not even for the time of a replacement, so its derivative is written by `UntrustedEpubStore`. The mechanism is proved by its test."
-until = "M2"
-symbols = [
-  "shelfhold.library.adapters.storage:KeepCopier.declare_derivative",
-]
-
-[[allow]]
 category = "unwired-m2"
 reason = "Consumers arrive with the content and plugin features of M2: image decode worker and caps (B1), CBZ writer from pages, EPUB/OPF dates, and the per-key limits of the Source contract (Suwayomi downloads through tickets)."
 until = "M2"

@@ -77,6 +77,7 @@ from shelfhold.library.adapters.storage import (
     UnitGoneError,
     WorkBusyError,
 )
+from shelfhold.library.adapters.svg_derivative import draw_svg, svg_derivative_of
 from shelfhold.library.domain.content_hash import FILE_HASH_BY
 from shelfhold.library.domain.failures import (
     EpubRefusedError,
@@ -281,7 +282,10 @@ def make_precheck(tombstones: Any, limits: ArchiveLimits = DEFAULT_LIMITS) -> Pr
         try:
             if kind == "cbz":
                 with safe_open_archive(staged, name="import.cbz", limits=limits) as archive:
-                    check_cbz_entries(archive)
+                    svgs = check_cbz_entries(archive, allow_svg=True).svgs
+                if svgs:  # EF-BIB-051 (6): drawn once here, so a hostile page leaves no Unit
+                    with svg_derivative_of(staged, staged.parent, draw_svg):
+                        pass
             elif kind == "epub" and trust != "publisher":
                 with tempfile.TemporaryFile(dir=staged.parent) as sink:
                     neutralize_epub(staged, sink, name="import.epub", limits=limits)

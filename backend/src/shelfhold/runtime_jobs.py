@@ -102,7 +102,13 @@ from shelfhold.infrastructure.schema import coherence, export
 from shelfhold.infrastructure.wake import WakeDeferred
 from shelfhold.integrations.apprise import NotificationDispatcher, register_notification_job
 from shelfhold.jobs.public import JobContext, JobFailedError, JobPools
-from shelfhold.library.public import PassthroughStore, RangedKeeper, UntrustedEpubStore
+from shelfhold.library.public import (
+    KeepCopier,
+    PassthroughStore,
+    RangedKeeper,
+    SvgCbzStore,
+    UntrustedEpubStore,
+)
 from shelfhold.ops.acquire import AcquireOps
 from shelfhold.ops.errors import ExitUnavailableError
 from shelfhold.ops.events import BusTargetEvents
@@ -231,7 +237,14 @@ class _LazyStore:
             tombstones=w.tombstones, hold_work=work_holder(self._comp),
             min_page_ratio=self._comp.settings.revision_min_page_ratio,
         )  # fmt: skip
-        return store.ingest(**arguments)
+        keeper = KeepCopier(
+            self._comp.engine, w.fsops, w.loaded.locate, str(self._comp.settings.store_dir),
+            self._comp.settings.data_dir,
+            IntentJournal(self._comp.engine, w.fsops, clock=self._comp.clock),
+            hold_work=work_holder(self._comp),
+        )  # fmt: skip
+        # EF-BIB-051 (6): an untrusted CBZ with SVG pages is drawn to PNG and declared a derivative
+        return SvgCbzStore(store, keeper, self._comp.settings.data_dir).ingest(**arguments)
 
 
 def acquire_handler(comp: Composition, pools: JobPools) -> Callable[[JobContext], None]:

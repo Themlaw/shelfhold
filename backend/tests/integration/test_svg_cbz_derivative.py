@@ -9,15 +9,14 @@ import sqlalchemy as sa
 
 from shelfhold.export.application.intents import IntentJournal
 from shelfhold.infrastructure.archives import safe_open_archive
-from shelfhold.infrastructure.imaging import rasterize_svg
 from shelfhold.infrastructure.schema import platform, storage
 from shelfhold.library.public import (
     KeepCopier,
     PassthroughStore,
-    SafeguardFailedError,
+    SvgCbzStore,
     UntrustedEntryError,
+    draw_svg,
     independent_copies,
-    rasterize_svg_pages,
 )
 from tests.library_env import PNG, LibEnv, cbz_bytes, lib_env
 from tests.locks_env import work_lock
@@ -66,19 +65,15 @@ def test_rasterized_cbz_is_declared_derivative_counted_by_independent_copies() -
         unit, variant = env.chain["unit"], env.chain["variant"]
         dest = env.manga / "Dr Stone" / "Dr Stone - 1.cbz"
         staged = env.stage(original)
-        with pytest.raises(UntrustedEntryError):  # closed unless the caller opts in
+        with pytest.raises(UntrustedEntryError):  # the plain store stays closed to SVG
             store.ingest(unit_id=unit, variant_id=variant, staged=staged, dest=str(dest))
-        store.ingest(
-            unit_id=unit, variant_id=variant, staged=staged, dest=str(dest), allow_svg_pages=True
+        SvgCbzStore(store, keeper, env.tmp, draw_svg).ingest(
+            unit_id=unit, variant_id=variant, staged=staged, dest=str(dest)
         )
-        derived = rasterize_svg_pages(
-            keeper, unit, dest, env.tmp, lambda data: rasterize_svg(data).png
-        )
-        assert derived.original_sha256 == sha(original)
         (stored,) = env.files_under(env.store)
         assert stored.read_bytes() == original  # the bytes as received, in /store
         served = dest.read_bytes()
-        assert sha(served) == derived.derived_sha256 and served != original
+        assert served != original
         with safe_open_archive(io.BytesIO(served), name="x.cbz") as archive:
             assert [e.name for e in archive.entries if not e.is_dir][:2] == ["001.png", "002.png"]
         with env.engine.connect() as c:
@@ -89,7 +84,7 @@ def test_rasterized_cbz_is_declared_derivative_counted_by_independent_copies() -
 
 
 @pytest.mark.req("EF-BIB-051")
-def test_a_refused_svg_leaves_library_untouched_and_declares_nothing() -> None:
+def test_a_refused_svg_stores_nothing_and_declares_nothing() -> None:
     original = cbz_bytes(
         (("001.png", PNG), ("002.svg", b'<svg xmlns="http://www.w3.org/2000/svg"><script/></svg>'))
     )
@@ -97,16 +92,27 @@ def test_a_refused_svg_leaves_library_untouched_and_declares_nothing() -> None:
         store, keeper = stores(env)
         unit, variant = env.chain["unit"], env.chain["variant"]
         dest = env.manga / "Dr Stone" / "Dr Stone - 1.cbz"
-        store.ingest(
-            unit_id=unit,
-            variant_id=variant,
-            staged=env.stage(original),
-            dest=str(dest),
-            allow_svg_pages=True,
+        staged = env.stage(original)
+        with pytest.raises(UntrustedEntryError):  # drawn before anything is stored
+            SvgCbzStore(store, keeper, env.tmp, draw_svg).ingest(
+                unit_id=unit, variant_id=variant, staged=staged, dest=str(dest)
+            )
+        assert not dest.exists() and env.files_under(env.store) == []
+        assert staged.read_bytes() == original
+        with env.engine.connect() as c:
+            assert (
+                c.execute(sa.select(sa.func.count()).select_from(storage.content)).scalar_one() == 0
+            )
+
+
+@pytest.mark.req("EF-BIB-051")
+def test_a_cbz_without_svg_goes_through_the_plain_store() -> None:
+    with lib_env() as env:
+        store, keeper = stores(env)
+        unit, variant = env.chain["unit"], env.chain["variant"]
+        dest = env.manga / "Dr Stone" / "Dr Stone - 1.cbz"
+        SvgCbzStore(store, keeper, env.tmp, draw_svg).ingest(
+            unit_id=unit, variant_id=variant, staged=env.stage(cbz_bytes()), dest=str(dest)
         )
-        with pytest.raises(SafeguardFailedError):
-            rasterize_svg_pages(keeper, unit, dest, env.tmp, lambda data: rasterize_svg(data).png)
-        assert dest.read_bytes() == original
-        assert env.files_under(env.store) == []
         with env.engine.connect() as c:
             assert c.execute(sa.select(storage.content.c.derived_hash)).scalar_one() is None
