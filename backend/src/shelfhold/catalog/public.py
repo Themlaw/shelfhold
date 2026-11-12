@@ -46,6 +46,7 @@ from shelfhold.catalog.application.coverage import (
     verify_item,
 )
 from shelfhold.catalog.application.dating import period_start, stored_date
+from shelfhold.catalog.application.dedup import open_suggestions, suggest_duplicates
 from shelfhold.catalog.application.dto import (
     BindingRef,
     EditionRef,
@@ -59,7 +60,6 @@ from shelfhold.catalog.application.enrich import (
     EnrichReport,
     EnrichService,
     UnknownTargetError,
-    is_age_field,
 )
 from shelfhold.catalog.application.external_ids import (
     ExternalIdConflictError,
@@ -70,7 +70,9 @@ from shelfhold.catalog.application.external_ids import (
     renumber_external_id,
 )
 from shelfhold.catalog.application.fields import (
+    AgeFieldError,
     FieldReport,
+    edit_field,
     lock_current,
     lock_field,
     propose_fields,
@@ -167,7 +169,7 @@ from shelfhold.catalog.domain.normalizers import (
 )
 from shelfhold.catalog.domain.numbering import NumberError, parse_number
 from shelfhold.catalog.domain.placement import IngestOutcome, VariantFacts, place_of
-from shelfhold.catalog.domain.provenance import FieldKey
+from shelfhold.catalog.domain.provenance import FieldKey, is_age_field
 from shelfhold.catalog.domain.public_domain import Verdict
 from shelfhold.catalog.domain.revisions import DEFAULT_MIN_PAGE_RATIO, suspect_reason
 from shelfhold.catalog.domain.sort_key import sort_key
@@ -352,6 +354,7 @@ __all__ = [
     "TEXT_VERSION_LABELS",
     "WRITER",
     "Admission",
+    "AgeFieldError",
     "ApplyReport",
     "Arrival",
     "AttachPlan",
@@ -440,6 +443,7 @@ __all__ = [
     "check_coverage",
     "content_warning_age",
     "default_registry",
+    "edit_field",
     "edition_key_lang",
     "effective_age",
     "external_ids_of",
@@ -453,6 +457,7 @@ __all__ = [
     "lock_field",
     "normalize_external_id",
     "numbered_mark",
+    "open_suggestions",
     "parse_age",
     "parse_number",
     "parse_partial_date",
@@ -472,6 +477,7 @@ __all__ = [
     "stored_bounds",
     "stored_date",
     "suggest_age",
+    "suggest_duplicates",
     "suspect_reason",
     "translation_discriminant",
     "translation_type_for",

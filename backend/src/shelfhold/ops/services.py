@@ -43,6 +43,7 @@ from shelfhold.ops.attach import AttachOps
 from shelfhold.ops.backfill import BackfillOps
 from shelfhold.ops.content import ContentOps
 from shelfhold.ops.contributors import ContributorOps
+from shelfhold.ops.dedup import DedupOps
 from shelfhold.ops.edition_merge import EditionMergeOps
 from shelfhold.ops.editions import EditionOps
 from shelfhold.ops.errors import (
@@ -198,6 +199,7 @@ class OpsServices:
         attach: AttachOps | None = None,
         edition_merge: EditionMergeOps | None = None,
         editions: EditionOps | None = None,
+        dedup: DedupOps | None = None,
         resplit: ResplitOps | None = None,
         contributors: ContributorOps | None = None,
         export_items: ExportItemOps | None = None,
@@ -229,6 +231,7 @@ class OpsServices:
         self._attach = attach
         self._edition_merge = edition_merge
         self._editions = editions
+        self._dedup = dedup
         self._resplit = resplit
         self._contributors = contributors
         self._export_items = export_items
@@ -695,6 +698,13 @@ class OpsServices:
         if self._edition_merge is None:
             raise ExitUnavailableError("the merge of Editions is not connected")
         return self._edition_merge
+
+    @property
+    def dedup(self) -> DedupOps:
+        """The suggestions of duplicate Works: scan and list, never a merge (EF-BIB-004)."""
+        if self._dedup is None:
+            raise ExitUnavailableError("the duplicate suggestions are not connected")
+        return self._dedup
 
     @property
     def editions(self) -> EditionOps:

@@ -104,6 +104,22 @@ class ResplitAppliedOut(BaseModel):
     added: int
 
 
+class SuggestionOut(BaseModel):
+    id: str
+    a: str
+    b: str
+    reason: str
+    state: str
+
+
+class SuggestionsOut(BaseModel):
+    items: list[SuggestionOut]
+
+
+class ScanOut(BaseModel):
+    created: list[str]  # the suggestions opened now; no Work was merged
+
+
 class ExportItemOut(BaseModel):
     id: str
     edition_id: str
@@ -171,6 +187,17 @@ def build_catalog_admin_router(get_ops: Callable[[], OpsServices]) -> APIRouter:
                 principal=principal,
             )  # fmt: skip
         return ResplitAppliedOut(**done)
+
+    @router.get("/merge-suggestions/works")
+    def work_suggestions(_admin: Admin) -> SuggestionsOut:
+        with refusals():
+            rows = get_ops().dedup.suggestions()
+        return SuggestionsOut(items=[SuggestionOut(**r) for r in rows])
+
+    @router.post("/merge-suggestions/works/scan")
+    def work_suggestions_scan(_admin: Admin) -> ScanOut:
+        with refusals():
+            return ScanOut(**get_ops().dedup.scan())
 
     @router.get("/export-items/{item_id}")
     def export_item(item_id: str, _admin: Admin) -> ExportItemOut:

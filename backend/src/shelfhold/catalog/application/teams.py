@@ -40,3 +40,13 @@ def set_team_priority(store: TeamStore, edition_id: str, team_ids: list[str]) ->
     if len(set(team_ids)) != len(team_ids):
         raise ValueError("a team appears twice in the priority list")
     store.set_priority(edition_id, team_ids)
+
+
+def prefer_team(store: TeamStore, edition_id: str, team_id: str) -> None:
+    """Make `team_id` the preferred team of the Edition (EF-BIB-005): first of its priority list,
+    the others keep their order. A team of another Edition is refused. The files already served
+    are replaced by `switch_to_preferred_team` (an upgrade, under intent), never here."""
+    current = store.priority(edition_id)
+    if team_id not in current and not store.has_team(edition_id, team_id):
+        raise ValueError("not a team of this edition")
+    store.set_priority(edition_id, [team_id, *(t for t in current if t != team_id)])

@@ -225,6 +225,15 @@ class SqlTeamStore:
             self._editions[binding_id] = str(found)
         return self._editions[binding_id]
 
+    def has_team(self, edition_id: str, team_id: str) -> bool:
+        t = catalog.team.c
+        return (
+            self._c.execute(
+                sa.select(t.id).where(t.edition_id == edition_id, t.id == team_id)
+            ).first()
+            is not None
+        )
+
     def find(self, edition_id: str, label: str) -> str | None:
         t = catalog.team.c
         return self._c.execute(

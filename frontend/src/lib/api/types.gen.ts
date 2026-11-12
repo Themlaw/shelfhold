@@ -1895,6 +1895,16 @@ export type RotateIn = {
 };
 
 /**
+ * ScanOut
+ */
+export type ScanOut = {
+    /**
+     * Created
+     */
+    created: Array<string>;
+};
+
+/**
  * SearchOut
  */
 export type SearchOut = {
@@ -2208,6 +2218,42 @@ export type StoredOut = {
      * State
      */
     state: string;
+};
+
+/**
+ * SuggestionOut
+ */
+export type SuggestionOut = {
+    /**
+     * A
+     */
+    a: string;
+    /**
+     * B
+     */
+    b: string;
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Reason
+     */
+    reason: string;
+    /**
+     * State
+     */
+    state: string;
+};
+
+/**
+ * SuggestionsOut
+ */
+export type SuggestionsOut = {
+    /**
+     * Items
+     */
+    items: Array<SuggestionOut>;
 };
 
 /**
@@ -4177,6 +4223,72 @@ export type JobsRetryResponses = {
 };
 
 export type JobsRetryResponse = JobsRetryResponses[keyof JobsRetryResponses];
+
+export type WorkSuggestionsData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/merge-suggestions/works';
+};
+
+export type WorkSuggestionsErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type WorkSuggestionsError = WorkSuggestionsErrors[keyof WorkSuggestionsErrors];
+
+export type WorkSuggestionsResponses = {
+    /**
+     * Successful Response
+     */
+    200: SuggestionsOut;
+};
+
+export type WorkSuggestionsResponse = WorkSuggestionsResponses[keyof WorkSuggestionsResponses];
+
+export type WorkSuggestionsScanData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/merge-suggestions/works/scan';
+};
+
+export type WorkSuggestionsScanErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type WorkSuggestionsScanError = WorkSuggestionsScanErrors[keyof WorkSuggestionsScanErrors];
+
+export type WorkSuggestionsScanResponses = {
+    /**
+     * Successful Response
+     */
+    200: ScanOut;
+};
+
+export type WorkSuggestionsScanResponse = WorkSuggestionsScanResponses[keyof WorkSuggestionsScanResponses];
 
 export type MissingResolveData = {
     body: ShelfholdInterfacesHttpApiOpsResolveIn;
