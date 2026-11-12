@@ -3609,6 +3609,17 @@
       },
       "WithdrawIn": {
         "properties": {
+          "destination_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Destination Id"
+          },
           "if_match": {
             "title": "If Match",
             "type": "string"
@@ -7787,7 +7798,7 @@
     },
     "/api/v1/shelves/withdrawals": {
       "get": {
-        "description": "What the admission refuses on the shelves below 18+; nothing moves.",
+        "description": "What the admission refuses on the shelves below 18+ (or, with `destination_id`, the\nunrated files of an adopted child library); nothing moves.",
         "operationId": "withdrawal_plan",
         "parameters": [
           {
@@ -7804,6 +7815,22 @@
                 }
               ],
               "title": "Shelf Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "destination_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Destination Id"
             }
           }
         ],
@@ -10631,6 +10658,10 @@
       "code": "shelf.library_not_dedicated",
       "status": 409
     },
+    "/api/v1/problems/shelf.not-child-library": {
+      "code": "shelf.not_child_library",
+      "status": 409
+    },
     "/api/v1/problems/shelf.rating-required": {
       "code": "shelf.rating_required",
       "status": 422
@@ -10638,6 +10669,10 @@
     "/api/v1/problems/shelf.suggestion-above": {
       "code": "shelf.suggestion_above",
       "status": 422
+    },
+    "/api/v1/problems/shelf.withdrawal-root-read-only": {
+      "code": "shelf.withdrawal_root_read_only",
+      "status": 409
     },
     "/api/v1/problems/source.auth-expired": {
       "code": "source.auth_expired",

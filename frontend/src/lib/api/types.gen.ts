@@ -2294,6 +2294,10 @@ export type WaitingOut = {
  */
 export type WithdrawIn = {
     /**
+     * Destination Id
+     */
+    destination_id?: string | null;
+    /**
      * If Match
      */
     if_match: string;
@@ -4716,6 +4720,10 @@ export type WithdrawalPlanData = {
          * Shelf Id
          */
         shelf_id?: string | null;
+        /**
+         * Destination Id
+         */
+        destination_id?: string | null;
     };
     url: '/api/v1/shelves/withdrawals';
 };

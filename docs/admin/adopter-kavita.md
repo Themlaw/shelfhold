@@ -33,6 +33,31 @@ shelfhold adopt --destination <id> --confirm <empreinte>
 Si quoi que ce soit a changé depuis l'aperçu, la confirmation est refusée
 (`adopt.preview_stale`) : refaites l'aperçu. Sans `--dry-run` ni `--confirm`, rien n'est lu.
 
+## Bibliothèque lisible par des enfants : plan de retrait
+
+Si des enfants peuvent lire la bibliothèque (étagère sous 18+ ou comptes restreints), l'aperçu liste les
+Œuvres non classées et **propose un plan de retrait** de leurs fichiers. L'adoption elle-même ne déplace toujours
+aucun fichier. La **version** à confirmer lie les éléments d'export et les octets, qui n'existent qu'après
+l'adoption : relisez le plan alors, puis confirmez, comme pour `shelf withdraw` :
+
+```sh
+shelfhold shelf withdraw --adopted <destination>                      # relit le plan et sa version
+shelfhold shelf withdraw --adopted <destination> --apply --confirm <version>
+```
+
+**Les fichiers adoptés sont les seuls exemplaires** : avant tout déplacement, Shelfhold en fait une copie
+indépendante vérifiée (empreinte relue) dans `/store`, puis déplace le fichier vers la corbeille de sa racine
+(`.shelfhold/recycle`, restaurable) ; la base ne change qu'après chaque déplacement réussi, et un fichier qui
+ne peut être ni copié ni déplacé reste en place (listé « en attente »). Le balayage de 30 jours **ne supprime
+jamais** un original adopté sans copie vérifiée dans `/store`. Sur une racine **en lecture seule** (`adopt-ro`)
+Shelfhold ne déplace rien : le plan et l'application sont **refusés** (`shelf.withdrawal_root_read_only`) ;
+montez le dossier en lecture-écriture (mode `adopt`) ou retirez vous-même les fichiers, puis relancez un
+scan. Un dossier qui n'est pas une bibliothèque lisible par des enfants n'a pas de plan
+(`shelf.not_child_library`). Kavita est invité à analyser les dossiers. C'est une action réservée (session administrateur récente ou console de l'hôte, jamais
+une clé d'API). Si une Œuvre a été classée ou si un fichier a changé depuis la lecture, la version ne correspond
+plus (`plan.stale`) : relisez. Classer l'Œuvre (`shelfhold rate`) la sort du plan. Dans l'API :
+`GET /api/v1/withdrawals?destination_id=…` puis `POST /api/v1/withdrawals` avec `destination_id` et `if_match`.
+
 ## Ce que l'adoption écrit
 
 - En base : un enregistrement `adopted` par fichier (chemin relatif, empreinte, taille, date), et

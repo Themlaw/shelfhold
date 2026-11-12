@@ -83,9 +83,11 @@ from shelfhold.export.application.restore import RestoredBehindError
 from shelfhold.export.application.shelves import ShelfService
 from shelfhold.export.application.snapshot import load_context
 from shelfhold.export.application.withdrawal import (
+    NotChildLibraryError,
     WithdrawalBusyError,
     WithdrawalPlan,
     WithdrawalRefusedError,
+    WithdrawalRootReadOnlyError,
     WithdrawalService,
 )
 from shelfhold.export.domain.path_map import PathMapError
@@ -972,14 +974,41 @@ class LibraryOps:
     # -- the removal plan of the family shelves (L10, EF-BIB-037) --------------------------------
 
     @_refused
-    def withdraw_plan(self, shelf_id: str | None = None) -> dict[str, Any]:
-        fsops, _loaded, _tombstones = self._comp.read_context()
-        plan = WithdrawalService(self._comp.engine, fsops, clock=self._comp.clock).plan(shelf_id)
+    def withdraw_plan(
+        self, shelf_id: str | None = None, destination_id: str | None = None
+    ) -> dict[str, Any]:
+        """`destination_id`: the unrated files an adopted child library left readable (owner
+        decision 2026-11-12), instead of what the family shelves refuse."""
+        fsops, loaded, _tombstones = self._comp.read_context()
+        service = WithdrawalService(
+            self._comp.engine,
+            fsops,
+            clock=self._comp.clock,
+            locate=loaded.locate,
+            store_dir=str(self._comp.settings.store_dir),
+        )
+        try:
+            plan = (
+                service.adopted_unrated_plan(destination_id)
+                if destination_id is not None
+                else service.plan(shelf_id)
+            )
+        except LookupError:
+            raise CodedRefusal("not_found", "no such destination") from None
+        except WithdrawalRootReadOnlyError as error:
+            raise CodedRefusal("shelf.withdrawal_root_read_only", str(error)) from None
+        except NotChildLibraryError as error:
+            raise CodedRefusal("shelf.not_child_library", str(error)) from None
         return _withdrawal_plan(plan)
 
     @_refused
     def withdraw_apply(
-        self, *, if_match: str, principal: Principal, shelf_id: str | None = None
+        self,
+        *,
+        if_match: str,
+        principal: Principal,
+        shelf_id: str | None = None,
+        destination_id: str | None = None,
     ) -> dict[str, Any]:
         """Take out of the library of the children what the plan read lists, then ask Kavita to scan
         the folders the files left. The reserved check is the service's own."""
@@ -989,16 +1018,21 @@ class LibraryOps:
                 self._comp.engine, w.fsops, clock=self._comp.clock, request_scan=asked.append,
                 fresh_auth_s=self._comp.settings.fresh_auth_s,
                 restricted_profile_exists=self._restricted_profile_exists,
+                locate=w.loaded.locate, store_dir=str(self._comp.settings.store_dir),
             )  # fmt: skip
             try:
                 report = service.apply(
                     if_match=if_match, principal=principal, now=self._comp.clock.now(),
-                    shelf_id=shelf_id,
+                    shelf_id=shelf_id, destination_id=destination_id,
                 )  # fmt: skip
             except WithdrawalRefusedError as error:
                 raise CodedRefusal("forbidden", str(error)) from None
             except WithdrawalBusyError as error:
                 raise CodedRefusal("job.busy", str(error)) from None
+            except WithdrawalRootReadOnlyError as error:
+                raise CodedRefusal("shelf.withdrawal_root_read_only", str(error)) from None
+            except NotChildLibraryError as error:
+                raise CodedRefusal("shelf.not_child_library", str(error)) from None
         self._scan_everywhere(asked)
         return {
             "withdrawn": list(report.withdrawn),

@@ -604,7 +604,8 @@ export const createShelf = <ThrowOnError extends boolean = false>(options: Optio
 /**
  * Withdrawal Plan
  *
- * What the admission refuses on the shelves below 18+; nothing moves.
+ * What the admission refuses on the shelves below 18+ (or, with `destination_id`, the
+ * unrated files of an adopted child library); nothing moves.
  */
 export const withdrawalPlan = <ThrowOnError extends boolean = false>(options?: Options<WithdrawalPlanData, ThrowOnError>): RequestResult<WithdrawalPlanResponses, WithdrawalPlanErrors, ThrowOnError> => (options?.client ?? client).get<WithdrawalPlanResponses, WithdrawalPlanErrors, ThrowOnError>({ url: '/api/v1/shelves/withdrawals', ...options });
 

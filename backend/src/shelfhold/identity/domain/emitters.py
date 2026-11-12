@@ -190,6 +190,10 @@ REPLACEMENT_SITES: Mapping[str, str] = MappingProxyType(
         "shelfhold/library/adapters/safeguard.py::Safeguard._verify_and_write": (
             "the safeguard writes into /store, never /library, once the payload verifies"
         ),
+        "shelfhold/export/application/withdrawal.py::WithdrawalService._keep_copy": (
+            "the copy to /store of an adopted original before it leaves the library, read back "
+            "against its hash, a new path of its own (never /library, never over another file)"
+        ),
         "shelfhold/library/adapters/store_index.py::StoreIndex.rewrite": (
             "store/INDEX.jsonl, a projection rewritten whole"
         ),

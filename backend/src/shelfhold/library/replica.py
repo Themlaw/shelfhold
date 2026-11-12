@@ -28,9 +28,11 @@ __all__ = [
     "LibraryCopy",
     "StoreCopy",
     "StoreProof",
+    "adopted_original_unprotected",
     "demote_shared_inodes",
     "distrust_root_copies",
     "erase_replicas",
+    "has_independent_store_copy",
     "has_readable_copy",
     "independent_copies",
     "kept_file_hashes",
@@ -783,3 +785,30 @@ def demote_shared_inodes(connection: Connection, unit_ids: Collection[str]) -> i
                         )
                         changed += 1
     return changed
+
+
+def has_independent_store_copy(connection: Connection, file_hash: str) -> bool:
+    """A verified copy of exactly these bytes lives in /store (a distinct inode, `independent`)."""
+    return (
+        connection.execute(
+            sa.select(replica_table.c.id).where(
+                replica_table.c.location == "store",
+                replica_table.c.independent.is_(True),
+                replica_table.c.file_hash == file_hash,
+            )
+        ).first()
+        is not None
+    )
+
+
+def adopted_original_unprotected(connection: Connection, file_hash: str) -> bool:
+    """These bytes are a file adopted in place (`adopted_ref`: Shelfhold has no copy of its own)
+    and no verified independent copy of them is in /store: a bin holding them holds the only
+    ones, so the 30-day sweep must keep them (EF-BIB-021, EF-BIB-030)."""
+    adopted = connection.execute(
+        sa.select(storage.content.c.id).where(
+            storage.content.c.retention == "adopted_ref",
+            storage.content.c.original_sha256 == file_hash,
+        )
+    ).first()
+    return adopted is not None and not has_independent_store_copy(connection, file_hash)

@@ -23,7 +23,7 @@ from shelfhold.export.application.intents import IntentJournal, open_intent_ids
 from shelfhold.export.domain.physical_roots import RECYCLE_DIR
 from shelfhold.infrastructure.fsops import Fsops
 from shelfhold.infrastructure.fsops.errors import EmitterConditionError, FsopsError
-from shelfhold.library.public import forget_binned_export_files
+from shelfhold.library.public import adopted_original_unprotected, forget_binned_export_files
 
 log = structlog.get_logger(__name__)
 
@@ -40,6 +40,30 @@ class RecycleSweeper:
         self._fsops: Fsops = fsops
         self._journal = journal
         self._roots = tuple(roots)
+
+    def _files(self, path: str) -> list[str]:
+        try:
+            listed = self._fsops.list_dir(path, host=True)
+        except NotADirectoryError:
+            return [path]
+        found: list[str] = []
+        for name, kind in sorted(listed.items()):
+            found += self._files(f"{path}/{name}") if str(kind) != "file" else [f"{path}/{name}"]
+        return found
+
+    def _holds_only_copy(self, entry: str) -> bool:
+        """The entry holds a file adopted in place (`adopted_ref`, no copy of Shelfhold's own) that
+        has no independent, verified copy in /store: the bin may hold the only bytes there are
+        (EF-BIB-021, EF-BIB-030). A file this does not recognise is not held."""
+        for local in self._files(entry):
+            try:
+                digest = self._fsops.sha256_of(local, host=True)
+            except (FsopsError, OSError):
+                return True  # unreadable: it cannot be shown to be safe, so it is not swept
+            with self._journal.engine.connect() as connection:
+                if adopted_original_unprotected(connection, digest):
+                    return True
+        return False
 
     def sweep(self) -> RecycleReport:
         removed = kept = failed = 0
@@ -59,6 +83,10 @@ class RecycleSweeper:
                     continue
                 if not self._fsops.trash_expired(entry):
                     kept += 1  # younger than the retention: no intention for nothing
+                    continue
+                if self._holds_only_copy(entry):
+                    kept += 1  # an adopted original with no verified copy in /store: never swept
+                    log.warning("retention.recycle_held_adopted_original", entry=name)
                     continue
                 intent = self._journal.record(op="delete", src=entry)
                 self._journal.mark_applying(intent)
