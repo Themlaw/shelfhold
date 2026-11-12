@@ -84,3 +84,29 @@ configurez `/store` pour que l'import puisse le retirer.
 
 Un dossier d'import qui contient, ou est contenu dans, `/library`, `/store` ou `/data` est refusé :
 Shelfhold reprendrait ce qu'il a exporté.
+
+## Importer un arbre de téléchargements Suwayomi existant
+
+`shelfhold import tree <chemin> [--dry-run]` crée les Unités d'un ancien dossier de
+téléchargements Suwayomi (`mangas/<source>/<série>/<chapitre>`, un chapitre étant un CBZ ou un
+dossier d'images), **sans rien retélécharger**. Donnez le chemin absolu du dossier qui contient
+`mangas` (ou `mangas` lui-même).
+
+- L'arbre est **lu seulement** : rien n'y est retiré ni écrit, même pas le sous-dossier de
+  quarantaine du dossier d'import. Il reste donc utilisable par Suwayomi.
+- Un chapitre est rattaché à la liaison Suwayomi **existante** de sa série, trouvée par le titre.
+  Une série sans liaison est ignorée et dite (`import.tree_no_series`) : aucune Œuvre n'est créée
+  d'après un nom de dossier, donc une Œuvre purgée ne revient jamais par cette voie. Suivez
+  d'abord la série, puis relancez la commande.
+- Un chapitre que le suivi connaissait déjà sans fichier reçoit le fichier dans sa propre Variante.
+  Un numéro déjà rangé est un doublon : il est ignoré, jamais rangé en double.
+- Les pierres tombales s'appliquent : une série ou un contenu purgé est refusé
+  (`import.tombstoned`).
+- Un dossier d'images est empaqueté en CBZ : les pages sont renommées dans l'ordre de lecture
+  d'après ce que leurs octets montrent (jamais d'après leur nom), un seul `ComicInfo.xml` termine
+  l'archive, et le résultat passe la liste blanche des CBZ (images reconnues par leurs octets)
+  avant tout rangement. Une page qui n'est pas une image refuse tout le chapitre.
+- Tout est `untrusted`, comme pour le dossier d'import. Liens symboliques, liens physiques,
+  fichiers spéciaux, autre disque, noms piégés et fichiers encore en cours d'écriture sont
+  refusés ou mis en attente comme pour le dossier d'import ; un fichier protégé reste en place
+  avec son message.

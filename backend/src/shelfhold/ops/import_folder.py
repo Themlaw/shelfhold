@@ -14,17 +14,19 @@ from contextlib import contextmanager
 from pathlib import Path, PurePath
 from typing import TYPE_CHECKING, Any
 
-from shelfhold.acquisition.public import ImportTargets
+from shelfhold.acquisition.public import ImportTargets, TreeTargets
 from shelfhold.export.application.locks import work_lock_for
 from shelfhold.i18n import t
 from shelfhold.library.public import (
     ImportFolder,
+    ImportFolderOverlapError,
     PassthroughStore,
     PdfStore,
     UntrustedEpubStore,
     make_precheck,
 )
 from shelfhold.ops.errors import CodedRefusal
+from shelfhold.plugin_host.adapters.meta.suwayomi.tree_import import SuwayomiTree
 from shelfhold.plugin_host.adapters.native.import_folder import build_manifest
 from shelfhold.work_locks import work_holder
 
@@ -34,9 +36,10 @@ if TYPE_CHECKING:
 __all__ = ["ImportOps"]
 
 OFF = "import.not_configured"
+TREE_BAD = "import.tree_unreadable"
 
 
-class _Router:
+class StoreRouter:
     """The store of each kind, by the extension the bytes were filed under (never the name)."""
 
     def __init__(self, comp: Composition, w: WriteContext) -> None:
@@ -81,7 +84,7 @@ class ImportOps:
         targets = ImportTargets(comp.engine, comp.clock)
         settings = comp.settings
         yield ImportFolder(
-            folder, engine=comp.engine, fsops=w.fsops, store=_Router(comp, w),
+            folder, engine=comp.engine, fsops=w.fsops, store=StoreRouter(comp, w),
             staging_dir=settings.data_dir / "tmp", target=targets,
             place=lambda _unit, variant, extension: w.received_path(variant, extension),
             keep_apart=(settings.data_dir, settings.store_dir, settings.library_dir),
@@ -100,6 +103,42 @@ class ImportOps:
                 return _report(scan, [], dry_run=True)
             scan, outcomes = folder.run(declared_purchase=declared_purchase)
             return _report(scan, outcomes, dry_run=False)
+
+    def tree(self, path: str, *, dry_run: bool = False) -> dict[str, Any]:
+        """`import tree <path>` (EF-INT-009): the Units of an existing Suwayomi download tree,
+        from the files already on the disk. The tree is read and never changed."""
+        comp = self._comp
+        root = Path(path)
+        if not root.is_absolute() or not root.is_dir() or root.is_symlink():
+            raise CodedRefusal(TREE_BAD, t("errors.import.tree_unreadable.title"))
+        settings = comp.settings
+        with comp.write_context() as w:
+            tombstones = comp.read_context()[2]
+            try:
+                folder = SuwayomiTree(
+                    root, targets=TreeTargets(comp.engine, comp.clock, tombstones),
+                    engine=comp.engine, fsops=w.fsops, store=StoreRouter(comp, w),
+                    staging_dir=settings.data_dir / "tmp",
+                    place=lambda _unit, variant, extension: w.received_path(variant, extension),
+                    keep_apart=(
+                        settings.data_dir, settings.store_dir, settings.library_dir,
+                        *(Path(e.path) for e in w.loaded.expected),
+                    ),
+                    max_bytes=settings.received_cbz_max_bytes,
+                    precheck=make_precheck(w.tombstones),
+                )  # fmt: skip
+            except ImportFolderOverlapError:
+                raise CodedRefusal(TREE_BAD, t("errors.import.tree_unreadable.title")) from None
+            report = folder.import_tree(dry_run=dry_run)
+        return {
+            "dry_run": dry_run, "ready": list(report.ready),
+            "waiting": [{"path": v.rel, "code": v.code} for v in report.waiting],
+            "refused": [{"path": v.rel, "code": v.code} for v in report.refused],
+            "outcomes": [
+                {"path": o.rel, "state": o.state, "code": o.code, "kind": o.kind}
+                for o in report.outcomes
+            ],
+        }  # fmt: skip
 
 
 def _report(scan: Any, outcomes: list[Any], *, dry_run: bool) -> dict[str, Any]:
