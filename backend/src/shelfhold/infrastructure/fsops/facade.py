@@ -731,9 +731,13 @@ class Fsops:
                     found[name] = kind
             return found
 
-    def sha256_of(self, local: str) -> str:
-        """`sha256:<hex>` of a regular file, streamed."""
-        located = self._locate(local, read_mirror=True)
+    def is_read_only(self, local: str) -> bool:
+        """`local` is under an adoption root (`ADOPT_RO`): nothing is written or moved there."""
+        return self._locate(local).read_only
+
+    def sha256_of(self, local: str, *, host: bool = False) -> str:
+        """`sha256:<hex>` of a regular file, streamed. `host`: the reserved area (a bin)."""
+        located = self._locate(local, read_mirror=True, host=host)
         with self._root(located.root_path) as root:
             fd = root.open_file(located.rel, os.O_RDONLY)
             digest = hashlib.sha256()

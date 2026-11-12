@@ -83,9 +83,11 @@ from shelfhold.export.application.restore import RestoredBehindError
 from shelfhold.export.application.shelves import ShelfService
 from shelfhold.export.application.snapshot import load_context
 from shelfhold.export.application.withdrawal import (
+    NotChildLibraryError,
     WithdrawalBusyError,
     WithdrawalPlan,
     WithdrawalRefusedError,
+    WithdrawalRootReadOnlyError,
     WithdrawalService,
 )
 from shelfhold.export.domain.path_map import PathMapError
@@ -977,8 +979,14 @@ class LibraryOps:
     ) -> dict[str, Any]:
         """`destination_id`: the unrated files an adopted child library left readable (owner
         decision 2026-11-12), instead of what the family shelves refuse."""
-        fsops, _loaded, _tombstones = self._comp.read_context()
-        service = WithdrawalService(self._comp.engine, fsops, clock=self._comp.clock)
+        fsops, loaded, _tombstones = self._comp.read_context()
+        service = WithdrawalService(
+            self._comp.engine,
+            fsops,
+            clock=self._comp.clock,
+            locate=loaded.locate,
+            store_dir=str(self._comp.settings.store_dir),
+        )
         try:
             plan = (
                 service.adopted_unrated_plan(destination_id)
@@ -987,6 +995,10 @@ class LibraryOps:
             )
         except LookupError:
             raise CodedRefusal("not_found", "no such destination") from None
+        except WithdrawalRootReadOnlyError as error:
+            raise CodedRefusal("shelf.withdrawal_root_read_only", str(error)) from None
+        except NotChildLibraryError as error:
+            raise CodedRefusal("shelf.not_child_library", str(error)) from None
         return _withdrawal_plan(plan)
 
     @_refused
@@ -1006,6 +1018,7 @@ class LibraryOps:
                 self._comp.engine, w.fsops, clock=self._comp.clock, request_scan=asked.append,
                 fresh_auth_s=self._comp.settings.fresh_auth_s,
                 restricted_profile_exists=self._restricted_profile_exists,
+                locate=w.loaded.locate, store_dir=str(self._comp.settings.store_dir),
             )  # fmt: skip
             try:
                 report = service.apply(
@@ -1016,6 +1029,10 @@ class LibraryOps:
                 raise CodedRefusal("forbidden", str(error)) from None
             except WithdrawalBusyError as error:
                 raise CodedRefusal("job.busy", str(error)) from None
+            except WithdrawalRootReadOnlyError as error:
+                raise CodedRefusal("shelf.withdrawal_root_read_only", str(error)) from None
+            except NotChildLibraryError as error:
+                raise CodedRefusal("shelf.not_child_library", str(error)) from None
         self._scan_everywhere(asked)
         return {
             "withdrawn": list(report.withdrawn),

@@ -47,14 +47,17 @@ from shelfhold.identity.public import (
 from shelfhold.infrastructure.clock import Clock
 from shelfhold.infrastructure.fsops import Fsops
 from shelfhold.infrastructure.ids import new_ulid
-from shelfhold.infrastructure.schema import catalog, export
+from shelfhold.infrastructure.schema import catalog, export, storage
+from shelfhold.library.public import has_independent_store_copy, record_replica
 
 __all__ = [
+    "NotChildLibraryError",
     "WithdrawalBusyError",
     "WithdrawalItem",
     "WithdrawalPlan",
     "WithdrawalRefusedError",
     "WithdrawalReport",
+    "WithdrawalRootReadOnlyError",
     "WithdrawalService",
     "WithdrawnFile",
     "adopted_unrated_plan",
@@ -73,6 +76,14 @@ class WithdrawalBusyError(Exception):
     code = "lock.busy"
 
 
+class NotChildLibraryError(Exception):
+    """The destination is not a library the children can read: there is nothing to withdraw."""
+
+
+class WithdrawalRootReadOnlyError(Exception):
+    """The files sit under a read-only adoption root (`ADOPT_RO`): Shelfhold never moves them."""
+
+
 class WithdrawalRefusedError(Exception):
     """The caller may not apply a removal plan (the verdict of `authorize_reserved`)."""
 
@@ -82,6 +93,7 @@ class WithdrawnFile:
     destination_id: str
     export_item_id: str
     rel_path: str
+    sha256: str = ""  # adopted files: the bytes the plan was read for
 
 
 @dataclass(frozen=True)
@@ -146,10 +158,10 @@ def build_plan(
     return WithdrawalPlan(tuple(items), hashlib.sha256(material.encode()).digest()[:16].hex())
 
 
-def plan_version(files: Iterable[tuple[str, str]]) -> str:
-    """The version of a plan of the unrated adopted files, from `(destination_id, rel_path)` alone:
-    the preview of the adoption (nothing is stored yet) and the plan read afterwards compute the
-    same one while nothing moved, and any rating, any new file or any missing one changes it."""
+def plan_version(files: Iterable[tuple[str, str, str, str]]) -> str:
+    """The version of a plan of the unrated adopted files, from `(destination_id, export_item_id,
+    rel_path, sha256)`: any rating, any new or missing file, any other item and any other bytes
+    change it."""
     material = json.dumps(sorted(set(files)), separators=(",", ":"))
     return hashlib.sha256(material.encode()).digest()[:16].hex()
 
@@ -165,9 +177,13 @@ def adopted_unrated_plan(connection: Connection, destination_id: str) -> Withdra
     ).scalar_one_or_none()
     if shelf_id is None:
         raise LookupError(f"no such destination: {destination_id}")
-    suspended = connection.execute(
-        sa.select(export.shelf.c.follow_suspended).where(export.shelf.c.id == shelf_id)
-    ).scalar_one()
+    suspended, ceiling = connection.execute(
+        sa.select(export.shelf.c.follow_suspended, export.shelf.c.max_age_rating).where(
+            export.shelf.c.id == shelf_id
+        )
+    ).one()
+    if not (is_family(ceiling) or suspended):
+        raise NotChildLibraryError(f"{destination_id} is not a library the children can read")
     works = [str(w) for w in (suspended or [])]
     editions = (
         connection.execute(
@@ -183,14 +199,29 @@ def adopted_unrated_plan(connection: Connection, destination_id: str) -> Withdra
         for edition_id in editions
         if (
             files := tuple(
-                f
+                _with_bytes(connection, f)
                 for f in _files(connection, edition_id, shelf_id)
                 if f.destination_id == destination_id
             )
         )
     ]
-    version = plan_version((f.destination_id, f.rel_path) for i in items for f in i.files)
+    version = plan_version(
+        (f.destination_id, f.export_item_id, f.rel_path, f.sha256) for i in items for f in i.files
+    )
     return WithdrawalPlan(tuple(items), version)
+
+
+def _with_bytes(connection: Connection, file: WithdrawnFile) -> WithdrawnFile:
+    digest = connection.execute(
+        sa.select(storage.content.c.original_sha256)
+        .select_from(
+            export.export_item.join(
+                storage.content, storage.content.c.id == export.export_item.c.content_id
+            )
+        )
+        .where(export.export_item.c.id == file.export_item_id)
+    ).scalar_one_or_none()
+    return WithdrawnFile(file.destination_id, file.export_item_id, file.rel_path, digest or "")
 
 
 def _files(connection: Connection, edition_id: str, shelf_id: str) -> tuple[WithdrawnFile, ...]:
@@ -226,7 +257,11 @@ class WithdrawalService:
         fresh_auth_s: int = 900,
         restricted_profile_exists: Callable[[], bool] = lambda: False,
         lock_wait: float = 5.0,
+        store_dir: str | None = None,
+        locate: Callable[[str], tuple[str, str]] | None = None,
     ) -> None:
+        self._store = store_dir.rstrip("/") if store_dir else None
+        self._locate = locate
         self._engine = engine
         self._fsops = fsops
         self._clock = clock
@@ -244,9 +279,23 @@ class WithdrawalService:
             return self._plan(connection, shelf_id)
 
     def adopted_unrated_plan(self, destination_id: str) -> WithdrawalPlan:
-        """The plan of the unrated Works of an adopted child library; nothing moves."""
+        """The plan of the unrated Works of an adopted child library; nothing moves. Refused on a
+        read-only adoption root: Shelfhold never moves a file there, so the admin must do it."""
         with self._engine.connect() as connection:
-            return adopted_unrated_plan(connection, destination_id)
+            plan = adopted_unrated_plan(connection, destination_id)
+            self._refuse_read_only(connection, plan)
+            return plan
+
+    def _refuse_read_only(self, connection: Connection, plan: WithdrawalPlan) -> None:
+        for item in plan.items:
+            for file in item.files:
+                local = load_context(connection, file.destination_id).local(file.rel_path)
+                if self._fsops.is_read_only(local):
+                    raise WithdrawalRootReadOnlyError(
+                        f"{local} is under a read-only adoption root: Shelfhold never moves it. "
+                        "Mount the folder read-write (mode adopt, not adopt-ro) or take the files "
+                        "out of the library yourself, then scan again."
+                    )
 
     def _plan(self, connection: Connection, shelf_id: str | None) -> WithdrawalPlan:
         return build_plan(connection, self._rating, shelf_id)
@@ -290,6 +339,8 @@ class WithdrawalService:
                 current = self._read(shelf_id, destination_id)
                 if current.version != if_match:
                     raise StalePlanError("a file arrived while the locks were taken: read again")
+                if destination_id is not None:
+                    return self._apply_adopted(current, principal, now)
                 return self._apply_locked(current, principal, now)
         except LockBusyError as busy:
             raise WithdrawalBusyError(str(busy)) from None
@@ -325,6 +376,125 @@ class WithdrawalService:
                     pending.append(local)
             self._scan_folders(item)
         return WithdrawalReport(tuple(withdrawn), moved, tuple(pending))
+
+    # -- adopted files: the only copy there is --------------------------------------------------
+
+    def _apply_adopted(
+        self, plan: WithdrawalPlan, principal: Principal, now: datetime
+    ) -> WithdrawalReport:
+        """An adopted file has no copy of Shelfhold's own: each gets a verified independent copy in
+        /store before it is moved, and the database changes only after its move succeeded. A file
+        that cannot be kept or moved stays where it is: record `adopted`, Edition shelved."""
+        if self._store is None or self._locate is None:
+            raise WithdrawalRootReadOnlyError("no /store: the originals could not be kept")
+        journal = IntentJournal(self._engine, self._fsops, clock=self._clock)
+        withdrawn: list[str] = []
+        moved = 0
+        pending: list[str] = []
+        for item in plan.items:
+            done_all = True
+            for file in item.files:
+                with self._engine.connect() as connection:
+                    local = load_context(connection, file.destination_id).local(file.rel_path)
+                if not self._keep_then_move(journal, file, local):
+                    done_all = False
+                    pending.append(local)
+                    continue
+                moved += 1
+                with self._engine.begin() as connection:
+                    connection.execute(
+                        sa.update(export.export_record)
+                        .where(
+                            export.export_record.c.shelf_destination_id == file.destination_id,
+                            export.export_record.c.export_item_id == file.export_item_id,
+                        )
+                        .values(state="recycled")
+                    )
+            if done_all:
+                self._unshelve(item, principal, now)
+                withdrawn.append(item.edition_id)
+            self._scan_folders(item)
+        return WithdrawalReport(tuple(withdrawn), moved, tuple(pending))
+
+    def _keep_then_move(self, journal: IntentJournal, file: WithdrawnFile, local: str) -> bool:
+        observed = self._fsops.observe(local)
+        if observed is None or observed[0] != "file":
+            return True  # already gone from the library: nothing to move, the record may close
+        try:
+            if not self._keep_copy(file, local):
+                return False
+            with self._engine.begin() as connection:
+                intent = journal.record(
+                    op="recycle", src=local, within=connection,
+                    expected_sha256=file.sha256 or self._fsops.sha256_of(local),
+                    expected_file_id=observed[1],
+                )  # fmt: skip
+        except Exception:
+            log.warning("withdrawal.keep_failed", export_item_id=file.export_item_id)
+            return False
+        return self._move(journal, local, intent)
+
+    def _keep_copy(self, file: WithdrawnFile, local: str) -> bool:
+        """A verified, independent copy in /store (a distinct inode, never a link), recorded."""
+        if self._store is None or self._locate is None:
+            return False
+        digest = self._fsops.sha256_of(local)
+        if file.sha256 and digest != file.sha256:
+            return False  # changed since the plan was read: it is not the file that was shown
+        with self._engine.connect() as connection:
+            if has_independent_store_copy(connection, digest):
+                return True
+            unit_id = connection.execute(
+                sa.select(storage.content.c.unit_id)
+                .select_from(
+                    export.export_item.join(
+                        storage.content, storage.content.c.id == export.export_item.c.content_id
+                    )
+                )
+                .where(export.export_item.c.id == file.export_item_id)
+            ).scalar_one_or_none()
+        hexdigest = digest.removeprefix("sha256:")
+        target = f"{self._store}/adopted/{hexdigest[:2]}/{file.export_item_id}.cbz"
+        with self._fsops.open_read(local) as stream:
+            self._fsops.write_atomic(
+                target, stream, parents=True, replace=True,
+                verify_digest=lambda: hexdigest,
+            )  # fmt: skip
+        if self._fsops.sha256_of(target) != digest:
+            return False
+        observed = self._fsops.observe(target)
+        if observed is None:
+            return False
+        root_id, root_rel = self._locate(target)
+        with self._engine.begin() as connection:
+            record_replica(
+                connection, unit_id=unit_id, export_item_id=file.export_item_id, location="store",
+                content_hash=digest, file_hash=digest, independent=True, physical_root_id=root_id,
+                rel_path=root_rel, dev=self._fsops.device_of(target), ino=observed[1].ino,
+                size=observed[1].size, mtime_ns=observed[1].mtime_ns,
+                verified_at=self._clock.now(),
+            )  # fmt: skip
+        return True
+
+    def _unshelve(self, item: WithdrawalItem, principal: Principal, now: datetime) -> None:
+        with self._engine.begin() as connection:
+            connection.execute(
+                sa.update(catalog.edition)
+                .where(
+                    catalog.edition.c.id == item.edition_id,
+                    catalog.edition.c.shelf_id == item.shelf_id,
+                )
+                .values(shelf_id=None)
+            )
+            connection.execute(
+                audit_insert(
+                    AuditEntry(
+                        actor_id=principal.actor_id, action="shelf.withdraw", at=now,
+                        target=f"edition:{item.edition_id};shelf:{item.shelf_id};{item.reason}",
+                        session_id=principal.session_id, auth_time=principal.auth_time,
+                    )
+                )
+            )  # fmt: skip
 
     def _move(self, journal: IntentJournal, local: str, intent_id: str) -> bool:
         """The file leaves; a failure is replayed at once through the intent (the same resolver as

@@ -198,9 +198,11 @@ from shelfhold.library.domain.volume_policy import (
     volume_slices,
 )
 from shelfhold.library.replica import (
+    adopted_original_unprotected,
     demote_shared_inodes,
     destination_identities,
     distrust_root_copies,
+    has_independent_store_copy,
     has_readable_copy,
     independent_copies,
     median_unit_bytes,
@@ -355,6 +357,7 @@ __all__ = [
     "WorkHolder",
     "WorkRef",
     "absorb_echo",
+    "adopted_original_unprotected",
     "backlog_row",
     "binding_warning",
     "binned_export_file",
@@ -383,6 +386,7 @@ __all__ = [
     "forget_binned_export_files",
     "has_active_content",
     "has_epub",
+    "has_independent_store_copy",
     "has_readable_copy",
     "independent_copies",
     "irreplaceability",

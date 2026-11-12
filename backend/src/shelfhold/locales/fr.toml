@@ -1209,6 +1209,14 @@ action = "Conservez les copies de l'étagère, ou liez aussi une destination en 
 title = "Kavita n'a pas la fonction attendue."
 action = "Mettez Kavita à jour, puis lancez « shelfhold target recheck »."
 
+[errors."shelf.withdrawal_root_read_only"]
+title = "Ces fichiers sont sur une racine en lecture seule : Shelfhold ne les déplace jamais."
+action = "Montez le dossier en lecture-écriture (mode adopt) ou retirez vous-même les fichiers, puis relancez un scan."
+
+[errors."shelf.not_child_library"]
+title = "Ce dossier n'est pas une bibliothèque lisible par des enfants."
+action = "Aucun plan de retrait : seules les bibliothèques adoptées lisibles par des enfants en ont un."
+
 [errors."shelf.destination_exists"]
 title = "Cette étagère a déjà une destination."
 action = "Une seule destination par étagère pour l'instant ; plusieurs viendront avec la version suivante."
@@ -1418,9 +1426,9 @@ duplicate_line = "Doublon de même numéro dans {series} (conservé) : n° {numb
 refused = "Des comptes plus restreints que le plafond de l'étagère lisent cette bibliothèque, adoption refusée : {accounts}"
 child_accounts = "Comptes restreints qui la lisent : {accounts}"
 child_library = "Bibliothèque lisible par des enfants : {count} Œuvre(s) non classée(s) iront dans « À classer », leur suivi suspendu ; le reste de l'étagère continue."
-child_plan_header = "Plan de retrait proposé (version {version}) : {count} fichier(s) d'Œuvres non classées, lisibles par les enfants. Rien n'est retiré par l'adoption."
+child_plan_header = "Plan de retrait proposé : {count} fichier(s) d'Œuvres non classées, lisibles par les enfants. Rien n'est retiré par l'adoption."
 child_plan_series = "  à retirer : {name} ({files} fichier(s))"
-child_plan_next = "Après l'adoption, relisez puis confirmez : shelfhold shelf withdraw --adopted {destination} --apply --confirm {version}"
+child_plan_next = "Après l'adoption, relisez le plan (sa version lie les octets) : shelfhold shelf withdraw --adopted {destination}"
 child_library_files = "Aucun fichier n'est déplacé, masqué ni réécrit : ceux qui sont déjà là restent lisibles tant que vous ne classez pas l'Œuvre (shelfhold rate) ou ne la retirez pas (shelfhold shelf withdraw)."
 to_rate_line = "À classer : {name}"
 done = "{done} fichier(s) adopté(s), {skipped} déjà connu(s)."

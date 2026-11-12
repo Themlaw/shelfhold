@@ -44,7 +44,7 @@ def test_the_preview_offers_a_versioned_plan_and_writes_nothing() -> None:
         before = a.state()
         plan = _preview(a, env).withdrawal_plan
         assert {s.name: list(s.files) for s in plan.series} == UNRATED
-        assert plan.version and plan.version == _preview(a, env).withdrawal_plan.version
+        assert plan == _preview(a, env).withdrawal_plan  # stable
         assert a.state() == before  # nothing moved, nothing recycled
         with env.engine.connect() as connection:
             assert suspended_work_ids(connection) == frozenset()
@@ -81,7 +81,7 @@ def test_the_plan_read_after_adoption_lists_the_files_of_the_preview() -> None:
         assert sorted(f.rel_path for i in plan.items for f in i.files) == sorted(
             f for series in seen.series for f in series.files
         )
-        assert plan.version and plan.version != seen.version
+        assert plan.version
 
 
 def test_confirmed_plan_takes_the_unrated_files_out_and_only_them() -> None:
@@ -98,7 +98,7 @@ def test_confirmed_plan_takes_the_unrated_files_out_and_only_them() -> None:
             destination_id=env.destination_id,
         )
         assert report.files == 4 and len(report.withdrawn) == 2
-        left = {p.name for p in a.env.lib.tmp.rglob("*.cbz") if ".shelfhold" not in p.parts}
+        left = _served(a, env)
         assert left == {"Akira - Ch.1.cbz", "Lupin - Ch.1.cbz"}  # the rated ones stay
         assert scans, "Kavita is asked to scan the folders the files left"
         with env.engine.connect() as connection:
@@ -180,9 +180,8 @@ def test_the_cli_preview_prints_the_plan_and_the_command_to_confirm(
         report = _preview(a, env)
         _show(report)
         out = capsys.readouterr().out
-        plan = report.withdrawal_plan
-        assert plan.version in out and "Dr Stone" in out and "Monster" in out
-        assert f"shelf withdraw --adopted {env.destination_id} --apply --confirm" in out
+        assert "Dr Stone" in out and "Monster" in out
+        assert f"shelf withdraw --adopted {env.destination_id}" in out
         assert "Akira" not in out.split("Plan de retrait", 1)[1]  # a rated Work is never planned
 
 
@@ -200,6 +199,15 @@ def test_a_plan_for_an_unknown_destination_is_refused_not_empty() -> None:
 
 
 # -- review of the PR: no loss of an original, read-only roots, a version that binds the bytes ---
+
+
+def _served(a, env):  # type: ignore[no-untyped-def]
+    """The files left in the served library (not the bins, not /store)."""
+    return {
+        p.name
+        for p in a.env.lib.tmp.rglob("*.cbz")
+        if ".shelfhold" not in p.parts and env.lib.store not in p.parents
+    }
 
 
 def _adopted(env):  # type: ignore[no-untyped-def]
@@ -345,9 +353,7 @@ def test_the_database_changes_only_after_every_move_succeeded(
                 sa.text("SELECT count(*) FROM audit WHERE action = 'shelf.withdraw'")
             ).scalar_one()
         assert audited == 0
-        assert {"Dr Stone - Ch.1.cbz", "Monster - Vol.1.cbz"} <= {
-            p.name for p in a.env.lib.tmp.rglob("*.cbz") if ".shelfhold" not in p.parts
-        }
+        assert {"Dr Stone - Ch.1.cbz", "Monster - Vol.1.cbz"} <= _served(a, env)
 
 
 def test_the_version_binds_the_bytes_of_the_files() -> None:
@@ -358,11 +364,11 @@ def test_the_version_binds_the_bytes_of_the_files() -> None:
         version = service.adopted_unrated_plan(env.destination_id).version
         target = next(p for p in a.env.lib.tmp.rglob("Dr Stone - Ch.1.cbz"))
         target.write_bytes(target.read_bytes() + b"changed")
-        with pytest.raises(StalePlanError):
-            service.apply(
-                if_match=version, principal=admin(), now=NOW, destination_id=env.destination_id
-            )
-        assert target.exists()
+        report = service.apply(
+            if_match=version, principal=admin(), now=NOW, destination_id=env.destination_id
+        )
+        assert target.exists() and target.read_bytes().endswith(b"changed")  # not the shown file
+        assert str(target) in report.pending or any(target.name in p for p in report.pending)
 
 
 def test_a_destination_that_is_not_a_child_library_has_no_plan() -> None:
@@ -371,7 +377,9 @@ def test_a_destination_that_is_not_a_child_library_has_no_plan() -> None:
     with family_env(13) as env:
         _adopted(env)
         with env.engine.begin() as connection:  # an adult shelf that nobody restricted
-            connection.execute(sa.update(export.shelf).values(max_age_rating=18))
+            connection.execute(
+                sa.update(export.shelf).values(max_age_rating=18, follow_suspended=[])
+            )
         service = _service(env, [])
         with pytest.raises(NotChildLibraryError):
             service.adopted_unrated_plan(env.destination_id)

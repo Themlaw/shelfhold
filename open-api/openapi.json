@@ -10658,6 +10658,10 @@
       "code": "shelf.library_not_dedicated",
       "status": 409
     },
+    "/api/v1/problems/shelf.not-child-library": {
+      "code": "shelf.not_child_library",
+      "status": 409
+    },
     "/api/v1/problems/shelf.rating-required": {
       "code": "shelf.rating_required",
       "status": 422
@@ -10665,6 +10669,10 @@
     "/api/v1/problems/shelf.suggestion-above": {
       "code": "shelf.suggestion_above",
       "status": 422
+    },
+    "/api/v1/problems/shelf.withdrawal-root-read-only": {
+      "code": "shelf.withdrawal_root_read_only",
+      "status": 409
     },
     "/api/v1/problems/source.auth-expired": {
       "code": "source.auth_expired",
