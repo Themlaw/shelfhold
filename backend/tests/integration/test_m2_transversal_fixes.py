@@ -24,9 +24,12 @@ from shelfhold.catalog.public import (
     Catalog,
     EditionSpec,
     ExternalId,
+    RatingService,
     add_external_id,
     content_warning_age,
 )
+from shelfhold.export.application.withdrawal import build_plan
+from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.sdk.age import X_MIN_AGE, AgeRating
 from shelfhold.sdk.refs import SeriesRef
 from tests.acquire_env import BOOK, KEY, Bench, NativeBooks, acquire_bench
@@ -168,10 +171,32 @@ def test_a_source_without_identifiers_needs_no_screen() -> None:
 # -- 2. the age gate of a book that joins a rated Edition -----------------------------------------
 
 
-def rated_work_then_book(bench: Bench, shelf: str, *, age: int = 10) -> Any:
-    """A Work the source's key names, rated by an admin, with its one Edition (an adopted file, no
-    binding yet) rated and filed on the family shelf; a book of the source then joins that very
-    Edition."""
+def bind_to_other_source(connection: sa.Connection, work_id: str, edition_id: str, n: int) -> None:
+    """The Edition is already bound to `n` other sources (priorities 1..n)."""
+    for rank in range(1, n + 1):
+        item_id, binding_id = new_ulid(), new_ulid()
+        connection.execute(
+            sa.text(
+                "INSERT INTO source_item (id, plugin_id, source_key, remote_id)"
+                " VALUES (:i, 'other-source', 'other-source', :r)"
+            ),
+            {"i": item_id, "r": f"x{rank}"},
+        )
+        connection.execute(
+            sa.text(
+                "INSERT INTO source_binding (id, work_id, edition_id, source_item_id, priority,"
+                " active, content_trust) VALUES (:b, :w, :e, :i, :p, 1, 'untrusted')"
+            ),
+            {"b": binding_id, "w": work_id, "e": edition_id, "i": item_id, "p": rank},
+        )
+
+
+def rated_work_then_book(
+    bench: Bench, shelf: str | None, *, age: int = 10, bound: int = 1, ceiling_shelf: str = ""
+) -> Any:
+    """A Work the source's key names, rated by an admin, whose one Edition is rated, filed on
+    `shelf` (`None`: unfiled) and already bound to another source; a book of this source then
+    joins that very Edition."""
     now = datetime.now(UTC)
     with bench.lib.engine.begin() as connection:
         books = Catalog(connection)
@@ -189,7 +214,8 @@ def rated_work_then_book(bench: Bench, shelf: str, *, age: int = 10) -> Any:
         connection.execute(
             sa.text("UPDATE edition SET rated_at = :t, shelf_id = :s"), {"t": now, "s": shelf}
         )
-    joined = prepare(bench, OTHER, shelf_id=shelf)
+        bind_to_other_source(connection, work_id, edition.id, bound)
+    joined = prepare(bench, OTHER, shelf_id=ceiling_shelf or shelf)
     assert (joined.work_id, joined.edition_id) == (work_id, edition.id)
     return joined
 
@@ -206,28 +232,79 @@ def suggestions(bench: Bench) -> list[tuple[int, int, str]]:
     ]
 
 
+def priorities(bench: Bench) -> list[int]:
+    return [
+        r["priority"] for r in bench.rows("SELECT priority FROM source_binding ORDER BY priority")
+    ]
+
+
+def pending_withdrawals(bench: Bench) -> list[str]:
+    """What `status` shows as `withdrawal_pending`: the plan of `shelf withdraw`."""
+    with bench.lib.engine.connect() as connection:
+        return [i.edition_id for i in build_plan(connection, RatingService()).items]
+
+
+def admission(bench: Bench, edition_id: str, shelf: str) -> str:
+    with bench.lib.engine.connect() as connection:
+        return RatingService().admission_of(connection, edition_id, shelf_id=shelf).value
+
+
 @pytest.mark.req("EF-BIB-055", "EF-BIB-037")
 @pytest.mark.parametrize(
     ("warning", "expected"),
     [("mixed", (18, 0, "sub_source")), ("nsfw", (18, 1, "sub_source"))],
 )
-def test_a_book_joining_a_rated_edition_is_held_when_its_source_warns(
+def test_a_book_joining_an_edition_on_the_family_shelf_leaves_it_there_and_waits(
     warning: str, expected: tuple[int, int, str]
 ) -> None:
+    """No automatic withdrawal (M1b L10, decision 9): the Edition and its files stay where they
+    are; the suggestion is posed, `status` shows `withdrawal_pending` (`shelf withdraw`), and the
+    export refuses the Edition, so the new file does not reach the shelf."""
     with acquire_bench(NativeBooks(work_key="novel", content_warning=warning)) as bench:
         shelf = add_adult_shelf(bench.lib, max_age_rating=13)
-        rated_work_then_book(bench, shelf)
+        joined = rated_work_then_book(bench, shelf)
         assert expected in suggestions(bench)
-        assert shelf_of_edition(bench) is None  # "À classer", never on the family shelf
+        assert shelf_of_edition(bench) == shelf  # nothing moved on its own
+        assert pending_withdrawals(bench) == [joined.edition_id]
+        assert admission(bench, joined.edition_id, shelf) == "suggestion_above"
 
 
 @pytest.mark.req("EF-BIB-055", "EF-BIB-037")
-def test_a_book_of_a_safe_source_joining_a_rated_edition_is_filed() -> None:
+def test_a_book_joining_an_unfiled_rated_edition_is_held_a_classer() -> None:
+    with acquire_bench(NativeBooks(work_key="novel", content_warning="mixed")) as bench:
+        shelf = add_adult_shelf(bench.lib, max_age_rating=13)
+        rated_work_then_book(bench, None, ceiling_shelf=shelf)
+        assert (18, 0, "sub_source") in suggestions(bench)
+        assert shelf_of_edition(bench) is None  # never put on the family shelf
+
+
+@pytest.mark.req("EF-BIB-055", "EF-BIB-037")
+def test_a_book_of_a_safe_source_joining_an_edition_on_the_family_shelf_changes_nothing() -> None:
     with acquire_bench(NativeBooks(work_key="novel", content_warning="safe")) as bench:
         shelf = add_adult_shelf(bench.lib, max_age_rating=13)
         rated_work_then_book(bench, shelf)
         assert suggestions(bench) == []
         assert shelf_of_edition(bench) == shelf
+        assert pending_withdrawals(bench) == []
+
+
+@pytest.mark.req("EF-SRC-015")
+@pytest.mark.parametrize("bound", [1, 2, 4])
+def test_a_second_binding_to_a_bound_edition_takes_the_next_free_priority(bound: int) -> None:
+    """The acquisition did not crash on `UNIQUE (edition_id, priority)`: priority 1 was fixed."""
+    with acquire_bench(NativeBooks(work_key="novel")) as bench:
+        rated_work_then_book(bench, None, bound=bound)
+        assert priorities(bench) == [*range(1, bound + 1), bound + 1]
+
+
+@pytest.mark.req("EF-SRC-015")
+def test_the_next_priority_follows_the_highest_one_not_the_count() -> None:
+    with acquire_bench(NativeBooks(work_key="novel")) as bench:
+        rated_work_then_book(bench, None, bound=3)
+        with bench.lib.engine.begin() as connection:
+            connection.execute(sa.text("DELETE FROM source_binding WHERE priority = 1"))
+        prepare(bench, "book/44")
+        assert priorities(bench) == [2, 3, 4, 5]
 
 
 @pytest.mark.req("EF-BIB-055", "EF-BIB-037")
