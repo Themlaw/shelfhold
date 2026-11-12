@@ -37,6 +37,7 @@ from shelfhold.ops.dedup import DedupOps
 from shelfhold.ops.edition_merge import EditionMergeOps
 from shelfhold.ops.editions import EditionOps
 from shelfhold.ops.events import BusTargetEvents
+from shelfhold.ops.export_all import ExportAllOps
 from shelfhold.ops.export_item import ExportItemOps
 from shelfhold.ops.follows import FollowOps
 from shelfhold.ops.import_folder import ImportOps
@@ -153,7 +154,7 @@ def open_ops(
         edition_merge=EditionMergeOps(composition), editions=EditionOps(composition),
         dedup=DedupOps(engine, CatalogScreens(composition)),
         resplit=ResplitOps(composition), contributors=ContributorOps(composition),
-        export_items=ExportItemOps(composition),
+        export_items=ExportItemOps(composition), export_all=ExportAllOps(composition),
         follows=FollowOps(composition), acquire=AcquireOps(composition), roots=RootOps(composition),
         window=MaintenanceWindow.from_text(
             settings.maintenance_window_start, settings.maintenance_window_end, settings.timezone

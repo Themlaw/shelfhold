@@ -72,6 +72,11 @@ class Effect(StrEnum):
     # rights warning of a book shows (EF-SRC-024). Nothing is removed or exposed, but a wrong
     # answer hides a warning, so it is reserved and fresh like the other decisions of the admin
     RECORDS_LEGAL_FACT = "records_legal_fact"
+    # `export-all` and `import-all` (M3 L37, EF-INT-016): the whole library with every profile's
+    # reading state and requests goes out of the instance, or a whole instance comes in. Nothing
+    # is removed, but it is the one action that carries all of it away, so it is the admin's
+    # alone and fresh like the other decisions that reveal what a library holds
+    MOVES_INSTANCE_DATA = "moves_instance_data"
 
 
 # P3 (inverted by the PR #43 review): freshness applies by default, so a new `Effect` that nobody

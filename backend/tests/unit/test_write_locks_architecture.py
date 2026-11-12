@@ -57,6 +57,7 @@ WRITES = ("write_atomic", "copy_independent")
 NOT_UNDER_STORE = {
     "ExportPipeline": "writes the export targets, under the export locks (L-EXP)",
     "Safeguard": "restores /library from a verified copy, under the intent journal",
+    "_Target": "import-all into a fresh instance (no Work yet), under the write lease",
     "UntrustedEpubStore": "received/ writer of #129, which takes the Work lock there",
 }
 
