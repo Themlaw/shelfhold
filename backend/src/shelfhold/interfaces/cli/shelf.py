@@ -69,10 +69,6 @@ def run_purge_upstream(args: argparse.Namespace, channel: OpsChannel) -> int:
     return 0
 
 
-def _scope(args: argparse.Namespace) -> str:
-    return f" --adopted {args.adopted}" if args.adopted else ""
-
-
 @ops_command
 def run_withdraw(args: argparse.Namespace, channel: OpsChannel) -> int:
     plan = channel.call("ops.withdraw_plan", shelf_id=args.shelf, destination_id=args.adopted)
@@ -85,7 +81,11 @@ def run_withdraw(args: argparse.Namespace, channel: OpsChannel) -> int:
         if not plan["items"]:
             print(t("cli.shelf_withdraw_nothing"))
             return 0
-        print(t("cli.shelf_withdraw_next", version=plan["version"], scope=_scope(args)))
+        if args.adopted:
+            print(t("cli.shelf_withdraw_next_adopted", version=plan["version"],
+                    destination=args.adopted))  # fmt: skip
+        else:
+            print(t("cli.shelf_withdraw_next", version=plan["version"]))
         return 0
     if args.confirm != plan["version"]:  # typed from the plan that was read, never assumed
         print(t("cli.shelf_withdraw_needs_confirm", version=plan["version"]), file=sys.stderr)
