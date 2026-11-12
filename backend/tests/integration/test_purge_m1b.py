@@ -357,6 +357,25 @@ def test_purge_leaves_no_readable_title_anywhere(tmp_path: Path) -> None:
                     assert TITLE.encode() not in path.read_bytes(), path.name
 
 
+@pytest.mark.req("EF-BIB-010")
+def test_purge_work_removes_it_from_the_search_index_at_once(tmp_path: Path) -> None:
+    """EF-BIB-010: indexed, then purged: not found, with no restart and no `sync`."""
+    from shelfhold.catalog.public import search_works, sync_search_index
+
+    with export_env() as env:
+        service = FakeService(tmp_path)
+        series = env.new_series(TITLE)
+        spread(env, series)
+        purge = make_m1b_env(env, service)
+        with env.engine.begin() as connection:
+            sync_search_index(connection)
+            assert [h.work_id for h in search_works(connection, "stone")] == [series.work_id]
+        assert run_work(purge, series.work_id).complete
+        with env.engine.connect() as connection:
+            assert search_works(connection, "stone") == []
+            assert search_works(connection, TITLE) == []
+
+
 # -- the migration: what the purges of M1a left upstream ----------------------------------------
 
 
