@@ -26,6 +26,7 @@ from shelfhold.catalog.domain.provenance import (
     StoredField,
     decide,
     encode_value,
+    is_age_field,
 )
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import catalog
@@ -34,7 +35,10 @@ from shelfhold.sdk.metadata import FieldProposal
 
 __all__ = [
     "ADMIN_PROVIDER",
+    "MAX_MANUAL_VALUE",
+    "AgeFieldError",
     "FieldReport",
+    "edit_field",
     "lock_current",
     "lock_field",
     "propose_fields",
@@ -45,6 +49,11 @@ __all__ = [
 ]
 
 ADMIN_PROVIDER = "admin"  # the provider of a value an admin typed
+MAX_MANUAL_VALUE = 4096
+
+
+class AgeFieldError(ValueError):
+    """An age is not a field to type or to lock: it is rated (EF-BIB-036, EF-BIB-055)."""
 
 
 @dataclass(frozen=True)
@@ -177,6 +186,16 @@ def lock_field(connection: Connection, key: FieldKey, value: object, *, now: dat
     _write(
         connection, key, StoredField(encode_value(value), ADMIN_PROVIDER, "manual", None, True, now)
     )
+
+
+def edit_field(connection: Connection, key: FieldKey, value: str, *, now: datetime) -> None:
+    """A field typed by hand (EF-BIB-011): stored as `manual` and locked, whoever gave the value
+    before. An age field is refused whatever its spelling (the lock of M2 does not pin an age)."""
+    if is_age_field(key.field):
+        raise AgeFieldError("the age rating is not edited as a field")
+    if not value.strip() or len(value) > MAX_MANUAL_VALUE or "\x00" in value:
+        raise ValueError(f"a value is text of 1 to {MAX_MANUAL_VALUE} characters")
+    lock_field(connection, key, value, now=now)
 
 
 def lock_current(connection: Connection, key: FieldKey) -> bool:

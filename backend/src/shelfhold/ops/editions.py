@@ -24,10 +24,10 @@ from shelfhold.catalog.public import (
     ExternalIdConflictError,
     ExternalIdError,
     FieldKey,
+    edit_field,
     holder_of,
     is_age_field,
     lock_current,
-    lock_field,
     normalize_external_id,
     renumber_external_id,
     sort_key,
@@ -109,7 +109,7 @@ class EditionOps:
                 if not lock_current(connection, key):
                     raise InvalidChoiceError("nothing is stored for that field: give a value")
             else:
-                lock_field(connection, key, value, now=self._comp.clock.now())
+                edit_field(connection, key, value, now=self._comp.clock.now())
         return {"edition_id": edition_id, "field": name, "lang": lang, "on": on, "locked": True,
                 "kept": value is None}  # fmt: skip
 

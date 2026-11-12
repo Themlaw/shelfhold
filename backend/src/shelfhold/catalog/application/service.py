@@ -102,6 +102,10 @@ class CatalogService:
     def set_team_priority(self, edition_id: str, team_ids: list[str]) -> None:
         teams.set_team_priority(self._teams, edition_id, team_ids)
 
+    def prefer_team(self, edition_id: str, team_id: str) -> None:
+        """The preferred team of the Edition: first of its priority list (EF-BIB-005)."""
+        teams.prefer_team(self._teams, edition_id, team_id)
+
     def team_priority(self, edition_id: str) -> list[str]:
         return self._teams.priority(edition_id)
 

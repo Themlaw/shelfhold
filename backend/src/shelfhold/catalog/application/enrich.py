@@ -24,7 +24,6 @@ the transaction opens, never inside it.
 from __future__ import annotations
 
 import asyncio
-import re
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -37,7 +36,7 @@ from shelfhold.catalog.application.external_ids import external_ids_of, holder_o
 from shelfhold.catalog.application.fields import keys_of, propose_fields, read_field, suggest_age
 from shelfhold.catalog.application.rating import RatingService, Withdrawal
 from shelfhold.catalog.domain.external_ids import ExternalId, ExternalIdError, normalize_external_id
-from shelfhold.catalog.domain.provenance import FieldKey, StoredField
+from shelfhold.catalog.domain.provenance import FieldKey, StoredField, is_age_field
 from shelfhold.infrastructure.clock import Clock
 from shelfhold.infrastructure.cover_store import CoverStore
 from shelfhold.infrastructure.fetcher.client import is_identifiable
@@ -87,7 +86,6 @@ DOWN_NOTICE_INTERVAL: Final = timedelta(hours=1)
 COVER_MAX_EDGE: Final = 1200
 PROVIDER_DOWN: Final = "metadata.provider_down"
 _REASONS: Final = frozenset({"unreachable", "timeout", "http_503", "schema_mismatch"})
-_AGE_WORDS: Final = frozenset({"age", "rating", "maturity", "x"})
 _ISBN_SCHEMES: Final = (("isbn13", 13), ("isbn10", 10))
 
 
@@ -119,10 +117,6 @@ class EnrichReport:
     cover_rejected: str | None = None  # the code of the image the worker refused
     attribution: str | None = None
     source_url: str | None = None
-
-
-def is_age_field(name: str) -> bool:
-    return bool(_AGE_WORDS & set(re.split(r"[^a-z0-9]+", name.lower())))
 
 
 def _down_reason(error: Exception) -> str:

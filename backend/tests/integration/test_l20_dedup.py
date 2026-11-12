@@ -16,7 +16,6 @@ from shelfhold.acquisition.application.team_switch import switch_to_preferred_te
 from shelfhold.catalog.application.dedup import REASON, open_suggestions, suggest_duplicates
 from shelfhold.catalog.application.external_ids import add_external_id
 from shelfhold.catalog.application.fields import AgeFieldError, edit_field, propose_fields
-from shelfhold.catalog.application.teams import prefer_team
 from shelfhold.catalog.domain.external_ids import ExternalId
 from shelfhold.catalog.domain.provenance import FieldKey
 from shelfhold.catalog.public import Catalog, IncomingUnit
@@ -184,7 +183,7 @@ def test_dedup_never_touches_a_pair_it_did_not_suggest(h: Harness) -> None:
 
 def proposal(value: str, provider: str = "openlibrary") -> FieldProposal:
     return FieldProposal(
-        entity_type="edition", field="publisher", value=value,
+        entity_type="edition", field="publisher", value=value, confidence=0.9,
         provenance=Provenance(provider=provider, fetched_at=NOW),
     )  # fmt: skip
 
@@ -241,7 +240,7 @@ def two_teams(h: Harness) -> tuple[Any, str, str, str, dict[str, str], dict[str,
         result = catalog.ingest(
             IncomingUnit(
                 binding=binding, remote_unit_id=f"r-{label}", raw_number="1",
-                seen_at=at(minute), team_label=label, page_count=20, content_hash=label,
+                seen_at=at(minute), team_label=label, page_count=20, content_hash=digest(label),
             )
         )  # fmt: skip
         unit_id, variants[label] = result.unit_id, result.variant_id
@@ -255,13 +254,17 @@ def two_teams(h: Harness) -> tuple[Any, str, str, str, dict[str, str], dict[str,
         h.connection.execute(
             sa.insert(storage.content).values(
                 id=contents[label], unit_id=unit_id, variant_id=variants[label], kind="images",
-                media_type="application/vnd.comicbook+zip", format="cbz", retention="keep",
-                original_sha256=label, store_provenance="received", size=1,
+                media_type="application/vnd.comicbook+zip", format="cbz", retention="passthrough",
+                original_sha256=digest(label), store_provenance="received", size=1,
             )
         )  # fmt: skip
     teams = {r["label"]: r["team_id"] for r in h.rows("SELECT team_id, label FROM team_alias")}
     catalog.set_preferred(unit_id, variants["Team A"])
     return edition, unit_id, teams["Team A"], teams["Team B"], variants, contents
+
+
+def digest(label: str) -> str:
+    return "sha256:" + label.encode().hex().ljust(64, "0")
 
 
 class Upgrader:
@@ -280,7 +283,7 @@ def preferred(h: Harness, unit_id: str) -> str:
 @pytest.mark.req("EF-BIB-005")
 def test_preferred_team_policy(h: Harness) -> None:
     edition, unit_id, team_a, team_b, variants, contents = two_teams(h)
-    prefer_team(Catalog(h.connection), edition.id, team_b)
+    Catalog(h.connection).prefer_team(edition.id, team_b)
     assert Catalog(h.connection).team_priority(edition.id)[0] == team_b
     upgrader = Upgrader("upgraded")
     report = switch_to_preferred_team(h.connection, edition.id, upgrader=upgrader)
@@ -296,7 +299,7 @@ def test_preferred_team_policy(h: Harness) -> None:
 @pytest.mark.parametrize("outcome", ["skipped_read", "needs_confirmation", "root_frozen", "busy"])
 def test_a_refused_upgrade_keeps_the_exported_team(h: Harness, outcome: str) -> None:
     edition, unit_id, _a, team_b, variants, _contents = two_teams(h)
-    prefer_team(Catalog(h.connection), edition.id, team_b)
+    Catalog(h.connection).prefer_team(edition.id, team_b)
     report = switch_to_preferred_team(h.connection, edition.id, upgrader=Upgrader(outcome))
     assert preferred(h, unit_id) == variants["Team A"]  # the served file and the flag agree
     assert report.switched == () and report.blocked == {unit_id: (outcome,)}
@@ -306,8 +309,6 @@ def test_a_refused_upgrade_keeps_the_exported_team(h: Harness, outcome: str) -> 
 def test_a_team_of_another_edition_is_never_preferred(h: Harness) -> None:
     edition, _unit, _a, _b, _variants, _contents = two_teams(h)
     other = h.edition()
-    foreign = Catalog(h.connection).resolve_team(
-        h.binding(other), "Team Z", at(9)
-    ).id
+    foreign = Catalog(h.connection).resolve_team(h.binding(other), "Team Z", at(9)).id
     with pytest.raises(ValueError, match="not a team of this edition"):
-        prefer_team(Catalog(h.connection), edition.id, foreign)
+        Catalog(h.connection).prefer_team(edition.id, foreign)

@@ -6,13 +6,20 @@ the locked value keeps its provenance. Pure: no storage here.
 """
 
 import json
+import re
 from dataclasses import dataclass
 from datetime import datetime
 from enum import StrEnum
 
-__all__ = ["FieldDecision", "FieldKey", "StoredField", "decide", "encode_value"]
+__all__ = ["FieldDecision", "FieldKey", "StoredField", "decide", "encode_value", "is_age_field"]
 
 UNDETERMINED_LANG = "und"
+_AGE_WORDS = frozenset({"age", "rating", "maturity", "x"})
+
+
+def is_age_field(name: str) -> bool:
+    """An age is never a field: it has its own safeguards (EF-BIB-036, EF-BIB-055)."""
+    return bool(_AGE_WORDS & set(re.split(r"[^a-z0-9]+", name.lower())))
 
 
 @dataclass(frozen=True)
