@@ -521,6 +521,83 @@ jobs:
           SHARD: ${{ matrix.shard }}/${{ needs.changes.outputs.e2e_shard_total }}
         run: npx playwright test --shard="$SHARD" --pass-with-no-tests
 
+  # Workshop harness (M3 L02): the SPA served by the API on a synthetic base, played on a desktop
+  # window and on 360x780 (projects workshop-desktop and workshop-mobile), axe blocking on serious
+  # and critical. No outbound network: the base is synthetic and the API runs on the runner.
+  frontend-e2e:
+    name: frontend-e2e (${{ matrix.shard }}/${{ needs.changes.outputs.e2e_shard_total }})
+    needs: changes
+    if: needs.changes.outputs.e2e == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: ${{ fromJSON(needs.changes.outputs.e2e_shards) }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          version: "0.12.x"
+          enable-cache: true
+          cache-dependency-glob: backend/uv.lock
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: |
+            frontend/package-lock.json
+            e2e/package-lock.json
+      - run: uv sync --project backend --locked
+      - run: npm ci
+        working-directory: frontend
+      - run: npm run build
+        working-directory: frontend
+      - run: npm ci
+        working-directory: e2e
+      - name: Playwright browser
+        working-directory: e2e
+        run: |
+          timeout 180 npx playwright install --with-deps chromium && exit 0
+          echo "::warning::playwright --with-deps failed; installing the browser alone"
+          npx playwright install chromium
+      - name: Workshop projects (shard)
+        working-directory: e2e
+        env:
+          SHELFHOLD_E2E_SUITE: workshop
+          SHARD: ${{ matrix.shard }}/${{ needs.changes.outputs.e2e_shard_total }}
+        run: npx playwright test --shard="$SHARD"
+
+  # The typed client is regenerated and must not differ from what is committed (EF-INT-001).
+  client-drift:
+    needs: changes
+    if: needs.changes.outputs.openapi == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          version: "0.12.x"
+          enable-cache: true
+          cache-dependency-glob: backend/uv.lock
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: uv sync --project backend --locked
+      - run: npm ci
+        working-directory: frontend
+      - name: regenerate the schema and the client
+        run: ./open-api/generate.sh
+      - name: no diff, no uncommitted generated file
+        run: python3 tools/client_drift.py
+
   # Image: two callers so that packages: write never reaches a pull_request run (including
   # branches of this repository). The reusable workflows narrow the token further.
   # On a pull request the image (amd64 only) is built only when something it contains changed.
@@ -627,7 +704,7 @@ jobs:
 
   ci-success:
     if: always()
-    needs: [changes, lint, denylist, dco, conventional-title, traceability, backend-unit, backend-integration, backend-suites, backend-bench, coverage, fixtures, frontend, openapi, e2e-front, image-pr, image-main, image-publish, scan]
+    needs: [changes, lint, denylist, dco, conventional-title, traceability, backend-unit, backend-integration, backend-suites, backend-bench, coverage, fixtures, frontend, openapi, e2e-front, frontend-e2e, client-drift, image-pr, image-main, image-publish, scan]
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions: {}
@@ -658,6 +735,8 @@ jobs:
           OPENAPI_CHANGED: ${{ needs.changes.outputs.openapi }}
           E2E: ${{ needs.e2e-front.result }}
           E2E_CHANGED: ${{ needs.changes.outputs.e2e }}
+          FRONTEND_E2E: ${{ needs.frontend-e2e.result }}
+          CLIENT_DRIFT: ${{ needs.client-drift.result }}
         run: |
           echo "dco=${DCO} conventional-title=${TITLE} traceability=${TRACEABILITY} (image changed=${IMAGE_CHANGED})"
           echo "changes=${CHANGES} lint=${LINT} denylist=${DENYLIST} fixtures=${FIXTURES} image-pr=${IMAGE_PR} image-main=${IMAGE_MAIN} image-publish=${IMAGE_PUBLISH} scan=${SCAN} (informational)"
@@ -682,6 +761,8 @@ jobs:
           check_filtered "$FRONTEND" "$FRONTEND_CHANGED"
           check_filtered "$OPENAPI" "$OPENAPI_CHANGED"
           check_filtered "$E2E" "$E2E_CHANGED"
+          check_filtered "$FRONTEND_E2E" "$E2E_CHANGED"
+          check_filtered "$CLIENT_DRIFT" "$OPENAPI_CHANGED"
           # Exactly one image path per event: pull request -> image-pr, push -> image-main + image-publish.
           # dco and conventional-title only run on pull requests.
           if [ "$EVENT" = "pull_request" ]; then

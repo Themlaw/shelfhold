@@ -38,3 +38,4 @@ playwright-report/
 spikes/**/*.err
 spikes/**/err.txt
 docs/traceability/
+e2e/.tmp-workshop/
