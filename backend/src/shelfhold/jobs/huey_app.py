@@ -52,6 +52,7 @@ from shelfhold.jobs.scheduler import ScanReport, Scheduler
 from shelfhold.jobs.slots import RETRY_DELAY_S, DomainSlots
 from shelfhold.jobs.window import (
     DEFAULT_WINDOW,
+    WINDOW_JOB_ORDER,
     MaintenanceWindow,
     StoreOrigin,
     WindowRun,
@@ -396,8 +397,11 @@ class JobPools:
             return f"unrouted:{job.job_id}"
         pool = route[0]
         priority = CLASS_PRIORITY.get(job.priority_class, CLASS_PRIORITY["new"])
-        if traits_of(job.kind).security_repair:
-            priority = REPAIR_PRIORITY  # above every class a user can pick (EF-INT-017)
+        if traits_of(job.kind).security_repair and job.kind not in WINDOW_JOB_ORDER:
+            # above every class a user can pick (EF-INT-017). A kind the night window ranks
+            # (`WINDOW_JOB_ORDER`, ENF-OPS-014) keeps its class: the window decides its place among
+            # the nightly checks, and a long verification must not jump ahead of the shorter ones
+            priority = REPAIR_PRIORITY
         task = self._run_job[pool].s(job.job_id, priority=priority)
         self._hueys[pool].enqueue(task)
         log.debug(

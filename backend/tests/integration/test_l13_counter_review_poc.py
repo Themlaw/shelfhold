@@ -42,10 +42,10 @@ def test_counter_poc_an_http_pause_keeps_its_scope_in_the_audit(api: AuthEnv) ->
     does (`pause:<source>`). `reserved_action(..., audit=False)` on the route, with the service's
     line kept, is what `reserved_action` documents for a route that writes its own line."""
     api.login()
-    answer = api.post("/api/v1/queue/pause", json={"source": "mangadex"})
+    answer = api.post("/api/v1/queue/pause", json={"source": "source-a"})
     assert answer.status_code == 200, answer.text
     with closing(sqlite3.connect(api.settings.database_path)) as db:
         targets = [
             row[0] for row in db.execute("SELECT target FROM audit WHERE action = 'queue.control'")
         ]
-    assert targets == ["pause:mangadex"], targets
+    assert targets == ["pause:source-a"], targets
