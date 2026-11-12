@@ -19,7 +19,7 @@ describe('footer with the source link (AGPL section 13)', () => {
   // req: ENF-LEG-012
   it('the root layout renders the footer under every screen', () => {
     const page = createRawSnippet(() => ({ render: () => '<main><h1>Un écran</h1></main>' }));
-    render(Layout, { children: page, data: { sourceUrl: SOURCE, appearance: null } } as never);
+    render(Layout, { children: page, data: { sourceUrl: SOURCE, appearance: null, nav: [] } } as never);
     expect(screen.getByRole('heading', { name: 'Un écran' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Code source' })).toHaveAttribute('href', SOURCE);
   });
@@ -27,7 +27,7 @@ describe('footer with the source link (AGPL section 13)', () => {
   // req: ENF-LEG-012
   it('the root layout still renders the footer when the page is empty', () => {
     const page = createRawSnippet(() => ({ render: () => '<span></span>' }));
-    render(Layout, { children: page, data: { sourceUrl: SOURCE, appearance: null } } as never);
+    render(Layout, { children: page, data: { sourceUrl: SOURCE, appearance: null, nav: [] } } as never);
     expect(screen.getByRole('contentinfo')).toBeInTheDocument();
   });
 

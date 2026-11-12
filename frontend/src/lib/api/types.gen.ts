@@ -1188,6 +1188,28 @@ export type LoginRequest = {
 };
 
 /**
+ * MeOut
+ */
+export type MeOut = {
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Nav
+     */
+    nav: Array<string>;
+    /**
+     * Role
+     */
+    role: string;
+    /**
+     * Username
+     */
+    username: string;
+};
+
+/**
  * MigrationIn
  */
 export type MigrationIn = {
@@ -1655,6 +1677,10 @@ export type Problem = {
      */
     action: string;
     /**
+     * Cause
+     */
+    cause: string;
+    /**
      * Code
      */
     code: string;
@@ -1937,6 +1963,10 @@ export type ReauthRequiredProblem = {
      * Auth Age S
      */
     auth_age_s: number;
+    /**
+     * Cause
+     */
+    cause: string;
     /**
      * Code
      */
@@ -4997,6 +5027,39 @@ export type JobsRetryResponses = {
 };
 
 export type JobsRetryResponse = JobsRetryResponses[keyof JobsRetryResponses];
+
+export type MeData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/me';
+};
+
+export type MeErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type MeError = MeErrors[keyof MeErrors];
+
+export type MeResponses = {
+    /**
+     * Successful Response
+     */
+    200: MeOut;
+};
+
+export type MeResponse = MeResponses[keyof MeResponses];
 
 export type GetPreferencesData = {
     body?: never;

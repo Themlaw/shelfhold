@@ -775,6 +775,7 @@ action = "Vérifiez la destination de sauvegarde et la planification, puis lance
 [errors."bad_request"]
 title = "Requête incorrecte."
 action = "Corrigez la requête puis recommencez."
+cause = "La requête est mal formée ou incomplète."
 
 [errors."content.untrusted_entry"]
 title = "Un fichier reçu contient une entrée non autorisée : il n'a pas été rangé."
@@ -783,6 +784,7 @@ action = "Le chapitre est écarté et ne sera pas redemandé ; seules les images
 [errors."credential_not_allowed"]
 title = "Cette action est réservée à une session."
 action = "Effectuez l'action depuis l'interface après connexion ; les clés d'API et les jetons d'appareil sont refusés."
+cause = "Cette action est réservée à une session ouverte par une personne, pas à une clé ni à un jeton."
 
 [errors."csrf_failed"]
 title = "La requête n'a pas été reconnue comme venant de cette page."
@@ -935,6 +937,7 @@ action = "Utilisez directement l'adresse finale du service."
 [errors."forbidden"]
 title = "Action non autorisée pour ce compte."
 action = "Demandez à un administrateur de vous accorder le droit nécessaire."
+cause = "Votre profil n'a pas le droit d'effectuer cette action."
 
 [errors."idempotency_in_progress"]
 title = "Une requête avec cette clé est déjà en cours."
@@ -963,6 +966,7 @@ action = "Lancez « shelfhold reconcile --adopt-after-restore » pour rapprocher
 [errors."internal_error"]
 title = "Erreur interne de Shelfhold."
 action = "Réessayez ; si l'erreur persiste, relevez l'identifiant de requête et consultez les journaux."
+cause = "Shelfhold a rencontré une erreur inattendue."
 
 [errors."remember_needs_confirmation"]
 title = "Le profil durci demande de confirmer « se souvenir de moi »."
@@ -979,6 +983,7 @@ action = "Vérifiez l'identifiant et le mot de passe, puis recommencez."
 [errors."invalid_cursor"]
 title = "Le curseur de pagination est invalide."
 action = "Repartez de la première page, sans curseur."
+cause = "Le curseur de pagination n'est plus valable."
 
 [errors."job.dead_lettered"]
 title = "Des tâches ont définitivement échoué."
@@ -991,6 +996,7 @@ action = "Aucune action immédiate : l'enrichissement reprend quand le fournisse
 [errors."method_not_allowed"]
 title = "Méthode non autorisée sur cette adresse."
 action = "Utilisez l'une des méthodes indiquées dans l'en-tête Allow."
+cause = "Cette adresse n'accepte pas cette méthode."
 
 [errors."mount.sentinel_missing"]
 title = "Un disque monté est absent ou différent de celui attendu."
@@ -1008,9 +1014,14 @@ action = "L'unité reste en conflit de numérotation tant que le test nocturne c
 title = "Kavita déduirait un tome du nom de cette série."
 action = "Définissez un nom de série exporté sans marqueur de tome ou de saison (S2, T1, v3, Vol.3, 第2巻, 시즌2), puis relancez l'aperçu."
 
+[errors."cause_default"]
+user = "La demande n'a pas pu être menée à bien."
+admin = "Une dépendance ou la configuration empêche l'opération."
+
 [errors."not_found"]
 title = "Ressource introuvable."
 action = "Vérifiez l'adresse ou l'identifiant demandé."
+cause = "L'élément demandé n'existe pas ou vous n'avez pas le droit de le voir."
 
 [errors."notify.failed"]
 title = "Les notifications n'ont pas pu être envoyées."
@@ -1023,6 +1034,7 @@ action = "Recalculez l'aperçu, vérifiez-le, puis appliquez-le."
 [errors."precondition_failed"]
 title = "La ressource a changé depuis votre lecture."
 action = "Relisez la ressource pour obtenir son ETag actuel, puis recommencez."
+cause = "L'élément a changé depuis que vous l'avez lu."
 
 [errors."precondition_required"]
 title = "L'en-tête If-Match est obligatoire pour cette action."
@@ -1063,6 +1075,7 @@ action = "Une date envoyée ne peut pas dépasser l'heure du serveur de plus de 
 [errors."reauth_required"]
 title = "Confirmez votre mot de passe pour continuer."
 action = "Saisissez de nouveau votre mot de passe, puis recommencez l'action."
+cause = "Votre dernière saisie du mot de passe est trop ancienne pour cette action."
 
 [errors."reconcile.drift"]
 title = "Les fichiers ne correspondent plus à la base."
@@ -1071,10 +1084,12 @@ action = "Lancez la réconciliation, puis ré-adoptez ou re-téléchargez les é
 [errors."request_too_large"]
 title = "La requête est trop volumineuse pour une clé d'idempotence."
 action = "Réduisez la taille de la requête ou retirez l'en-tête Idempotency-Key."
+cause = "La requête dépasse la taille acceptée."
 
 [errors."resync_required"]
 title = "Le jeton de synchronisation est trop ancien."
 action = "Rechargez la liste complète puis repartez du nouveau jeton."
+cause = "Le jeton de reprise est trop ancien pour être rejoué."
 
 [errors."secret.undecryptable"]
 title = "Un secret n'a pas pu être déchiffré."
@@ -1403,6 +1418,7 @@ action = "La progression Kavita est conservée ; sur KOReader, la position de le
 [errors."validation_failed"]
 title = "Des champs de la requête sont invalides."
 action = "Corrigez les champs listés puis recommencez."
+cause = "Une valeur envoyée ne respecte pas le format attendu."
 
 [errors."wake.deferred"]
 title = "Le service est resté endormi : des lots sont différés."

@@ -25,6 +25,22 @@ describe('root layout load', () => {
     expect(data).toMatchObject({ sourceUrl: 'https://example.org/src', appearance: null });
   });
 
+  // req: EF-UX-005
+  it('reads the navigation of the signed-in role from /api/v1/me, and none for nobody', async () => {
+    const signedIn = fetcher({
+      '/api/v1/source': () => json({ source_url: 'https://example.org/src' }),
+      '/api/v1/me/preferences': () => json({}, 401),
+      '/api/v1/me': () => json({ role: 'member', nav: ['home', 'search', 7, 'requests'] })
+    });
+    expect((await load({ fetch: signedIn } as never)).nav).toEqual(['home', 'search', 'requests']);
+    const nobody = fetcher({
+      '/api/v1/source': () => json({}, 200),
+      '/api/v1/me/preferences': () => json({}, 401),
+      '/api/v1/me': () => json({ status: 401 }, 401)
+    });
+    expect((await load({ fetch: nobody } as never)).nav).toEqual([]);
+  });
+
   // req: ENF-LEG-012
   it('does not fail the screen when the address cannot be read', async () => {
     const fetch = fetcher({

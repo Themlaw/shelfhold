@@ -62,5 +62,16 @@
   "rights.us_public_domain_note": "Libre de droits aux États-Unis ne veut pas dire libre de droits partout : la protection dépend du pays de l'instance.",
   "rights.may_be_protected": "Peut-être encore protégé dans votre pays ({country}). Ce calcul est indicatif et ne bloque rien.",
   "rights.translation_may_be_protected": "La traduction peut être encore protégée dans votre pays ({country}). Ce calcul est indicatif et ne bloque rien.",
-  "rights.no_information": "Aucune information sur les droits dans votre pays."
+  "rights.no_information": "Aucune information sur les droits dans votre pays.",
+  "nav.label": "Navigation principale",
+  "nav.home": "Accueil",
+  "nav.search": "Chercher",
+  "nav.requests": "Mes demandes",
+  "nav.activity": "Activité",
+  "nav.settings": "Réglages",
+  "problem.generic": "Une erreur est survenue.",
+  "problem.code": "Code",
+  "problem.cause": "Cause",
+  "problem.action": "Que faire",
+  "problem.request_id": "Identifiant de requête"
 }

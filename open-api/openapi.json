@@ -1911,6 +1911,37 @@
         "title": "LoginRequest",
         "type": "object"
       },
+      "MeOut": {
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "nav": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Nav",
+            "type": "array"
+          },
+          "role": {
+            "title": "Role",
+            "type": "string"
+          },
+          "username": {
+            "title": "Username",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "username",
+          "role",
+          "nav"
+        ],
+        "title": "MeOut",
+        "type": "object"
+      },
       "MigrationIn": {
         "properties": {
           "fingerprint": {
@@ -2639,6 +2670,10 @@
             "title": "Action",
             "type": "string"
           },
+          "cause": {
+            "title": "Cause",
+            "type": "string"
+          },
           "code": {
             "title": "Code",
             "type": "string"
@@ -2683,7 +2718,8 @@
           "title",
           "status",
           "code",
-          "action"
+          "action",
+          "cause"
         ],
         "title": "Problem",
         "type": "object"
@@ -3103,6 +3139,10 @@
             "title": "Auth Age S",
             "type": "integer"
           },
+          "cause": {
+            "title": "Cause",
+            "type": "string"
+          },
           "code": {
             "title": "Code",
             "type": "string"
@@ -3174,6 +3214,7 @@
           "status",
           "code",
           "action",
+          "cause",
           "auth_age_s",
           "max_age_s"
         ],
@@ -8205,6 +8246,57 @@
         "summary": "Jobs Retry",
         "tags": [
           "operations"
+        ]
+      }
+    },
+    "/api/v1/me": {
+      "get": {
+        "operationId": "me",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Connexion requise, ou mot de passe à confirmer (reauth-required)."
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée)."
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Détail du problème (RFC 9457)."
+          }
+        },
+        "summary": "Me",
+        "tags": [
+          "me"
         ]
       }
     },

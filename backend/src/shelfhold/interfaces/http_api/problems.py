@@ -1,8 +1,9 @@
 """RFC 9457 problem details: one shape for every error the API returns (EF-INT-001).
 
-The `type` is the stable URI of the catalog code (EF-UX-003), `title` and `action` come from the
-French catalog. `detail` is written by the raising code, never taken from an exception message:
-nothing internal (path, SQL, trace) can reach a client. The request payload is never echoed.
+The `type` is the stable URI of the catalog code (EF-UX-003); `title`, `cause` and `action`
+come from the French catalog. `detail` is written by the raising code, never taken from an
+exception message: nothing internal (path, SQL, trace) can reach a client. The request payload is
+never echoed.
 """
 
 from collections.abc import Mapping, Sequence
@@ -17,7 +18,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.requests import Request
 
 from shelfhold.error_catalog import ErrorCode
-from shelfhold.i18n import t
+from shelfhold.i18n import load_catalog, t
 from shelfhold.infrastructure.http_headers import apply_security_headers
 from shelfhold.infrastructure.logging import mask_known_secrets
 from shelfhold.interfaces.http_api.catalog import all_error_codes, error_code
@@ -43,6 +44,7 @@ class Problem(BaseModel):
     status: int
     code: str
     action: str
+    cause: str
     detail: str | None = None
     request_id: str | None = None
 
@@ -54,6 +56,7 @@ class ReauthRequiredProblem(Problem):
     auth_age_s: int
     max_age_s: int
     action: str
+    cause: str
     reauth_method: str | None = None
     reauth_methods: list[str] = []
 
@@ -87,6 +90,16 @@ def _request_id(request: Request) -> str | None:
     return value if isinstance(value, str) else None
 
 
+def cause_of(spec: ErrorCode) -> str:
+    """The probable cause (EF-UX-003): a sentence of the catalog, never a runtime value. The
+    code's own sentence when it has one, else the one of its audience: a closed vocabulary, so no
+    path, host name or secret can ride on it, whatever `detail` says."""
+    catalog = load_catalog()
+    return t(
+        spec.cause_key if spec.cause_key in catalog else f"errors.cause_default.{spec.audience}"
+    )
+
+
 def problem_body(
     spec: ErrorCode,
     *,
@@ -101,6 +114,7 @@ def problem_body(
         "status": status or spec.status,
         "code": spec.code,
         "action": t(spec.action_key),
+        "cause": cause_of(spec),
     }
     if detail:
         body["detail"] = mask_known_secrets(detail)  # a quoted upstream answer may hold one

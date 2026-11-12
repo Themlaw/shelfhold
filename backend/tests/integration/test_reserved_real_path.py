@@ -35,7 +35,7 @@ from tests.support.users import with_ceiling
 
 KEY = re.compile(r"shk_([0-9a-f]{8})_[A-Za-z0-9_-]{43}")
 PROBLEM_FIELDS = {
-    "type", "title", "status", "code", "action", "detail", "request_id", "instance",
+    "type", "title", "status", "code", "action", "cause", "detail", "request_id", "instance",
     "auth_age_s", "max_age_s", "reauth_method", "reauth_methods",
 }  # fmt: skip
 ULID_MEMBER = "01HZZZZZZZZZZZZZZZZZZZZZZM"

@@ -59,6 +59,9 @@ def test_ui_strings_extracted_no_hardcoded_text() -> None:
                 used.add(str(node.args[0].value))
     # Error texts are looked up by code (EF-UX-003): the declarations are the usages.
     used |= {key for spec in all_error_codes() for key in (spec.title_key, spec.action_key)}
+    # The cause is the code's own sentence when it has one, else its audience's (EF-UX-003).
+    used |= {spec.cause_key for spec in all_error_codes() if spec.cause_key in catalog}
+    used |= {f"errors.cause_default.{audience}" for audience in ("admin", "user")}
     assert used - set(catalog) == set(), "keys missing from the catalog"
     assert set(catalog) - used == set(), "catalog keys never used"
 
