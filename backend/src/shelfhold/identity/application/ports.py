@@ -192,8 +192,9 @@ class IdentityStore(Protocol):
         max_admins: int,
         now: datetime,
         actor_id: str | None = None,
-    ) -> None:
-        """One transaction: `ProfileError` `changed_meanwhile` (the role moved since it was read),
+    ) -> ProfileRecord:
+        """One transaction, answering with what it wrote: `ProfileError` `changed_meanwhile` (the
+        role moved since it was read),
         `last_admin`, `too_many_admins`; the same `changed_meanwhile` when the ceiling or the
         right to classify differ from what was read. `actor_id`: an admin caller is re-read under
         the lock (`not_allowed`). A change of role closes the sessions and keys of the profile and
@@ -209,8 +210,15 @@ class IdentityStore(Protocol):
         *,
         now: datetime,
         actor_id: str | None = None,
-    ) -> None:
-        """Role and family mark re-read under the lock: `ProfileError` of the rule that refuses."""
+    ) -> SourcePolicyRecord:
+        """Role and family mark re-read under the lock: `ProfileError` of the rule that refuses.
+        Answers with the row written."""
+        ...
+
+    def source_policy_state(
+        self, user_id: str, source_key: str
+    ) -> tuple[str, str | None, bool] | None:
+        """`(role, stored policy, family)` read in one statement; None: no such profile."""
         ...
 
     def stored_source_policies(self, user_id: str) -> Mapping[str, str]: ...

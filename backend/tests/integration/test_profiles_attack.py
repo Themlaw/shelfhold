@@ -580,3 +580,34 @@ def test_add_directly_for_a_child_is_the_admins_choice_on_a_family_source_only(
     refused = _send(api, "PUT", f"{path}/{OTHER}", {"policy": "add_directly"})
     assert refused.status_code == 422 and refused.json()["reason"] == "child_source_not_family"
     assert _auth(api).effective_source_policy(kid, OTHER) == "forbidden"
+
+
+@pytest.mark.req("EF-USR-005", "EF-USR-014")
+@pytest.mark.parametrize("policy", ["add_directly", "request"])
+@pytest.mark.parametrize("source", [OTHER, "never-configured"])
+def test_the_store_itself_refuses_a_child_policy_off_a_family_source(
+    api: AuthEnv, policy: str, source: str
+) -> None:
+    kid = _add(api, "kid", "child", max_age_rating=9)
+    _family_source(api, OTHER, family=False)
+    store = _store(api)
+    with pytest.raises(ProfileError) as refused:  # no service in front: the store decides alone
+        store.set_source_policy(kid, source, policy, now=api.clock.now())
+    assert refused.value.code == "child_source_not_family"
+    assert db_rows(api.settings, "SELECT * FROM profile_source_policy") == []
+    written = store.set_source_policy(kid, source, "forbidden", now=api.clock.now())
+    assert (written.policy, written.effective) == ("forbidden", "forbidden")
+
+
+@pytest.mark.req("EF-USR-005")
+def test_the_answers_are_what_the_transactions_wrote(api: AuthEnv) -> None:
+    mum = _add(api, "mum", "member")
+    kid = _add(api, "kid", "child", max_age_rating=9)
+    _family_source(api, FAMILY, family=True)
+    api.login()
+    done = _send(api, "PUT", f"{PROFILES}/{kid}/source-policies/{FAMILY}", {"policy": "request"})
+    assert done.json() == {"source_key": FAMILY, "policy": "request", "effective": "request"}
+    patched = _send(api, "PATCH", f"{PROFILES}/{mum}", {"role": "child", "max_age_rating": 6})
+    assert patched.json()["role"] == "child" and patched.json()["max_age_rating"] == 6
+    assert _auth(api).effective_source_policy(mum, FAMILY) == "request"
+    assert _auth(api).effective_source_policy("01HZZZZZZZZZZZZZZZZZZZZZZZ", FAMILY) == "forbidden"

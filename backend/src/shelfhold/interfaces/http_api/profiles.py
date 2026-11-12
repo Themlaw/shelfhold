@@ -21,6 +21,7 @@ from shelfhold.identity.public import (
     Principal,
     ProfileError,
     ProfileRecord,
+    SourcePolicyRecord,
 )
 from shelfhold.interfaces.http_api.auth import gate_of, require_principal, reserved_action
 from shelfhold.interfaces.http_api.problems import ProblemError
@@ -180,9 +181,12 @@ def build_profiles_router() -> APIRouter:
         principal: Annotated[Principal, Depends(_POLICY)],
     ) -> Any:
         def put(auth: Any) -> PolicyOut:
-            auth.profile_policy_set(profile_id, source_key, body.policy, by=principal)
-            effective = auth.effective_source_policy(profile_id, source_key)
-            return PolicyOut(source_key=source_key, policy=body.policy, effective=effective)
+            written: SourcePolicyRecord = auth.profile_policy_set(
+                profile_id, source_key, body.policy, by=principal
+            )  # the row the store wrote, with the policy that holds
+            return PolicyOut(
+                source_key=written.source_key, policy=written.policy, effective=written.effective
+            )
 
         return run(request, put)
 

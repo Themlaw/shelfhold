@@ -164,14 +164,14 @@ class ProfileService:
             return current
         if ceiling is not None:
             check_child_ceiling(self._creator_ceiling(by), ceiling)
-        self._store.update_profile(
+        written = self._store.update_profile(
             profile_id, expected_role=current.role,
             expected_max_age_rating=current.max_age_rating, expected_can_rate=current.can_rate,
             role=new_role, max_age_rating=ceiling, can_rate=rate, max_admins=MAX_ADMINS,
             now=self._now(), actor_id=self._actor_id(by),
         )  # fmt: skip
         self._audit("profile.updated", by, profile_id)
-        return self._existing(profile_id)
+        return written
 
     def remove(self, profile_id: str, *, by: Principal | None = None) -> None:
         """Delete a profile; its traces in the audit stay, under a pseudonym (EF-USR-013)."""
@@ -190,16 +190,17 @@ class ProfileService:
 
     def set_source_policy(
         self, profile_id: str, source_key: str, policy: str, *, by: Principal | None = None
-    ) -> None:
+    ) -> SourcePolicyRecord:
         self._manager(by)
         profile = self._existing(profile_id)
         if not source_key or len(source_key) > MAX_SOURCE_KEY:
             raise ProfileError("invalid_policy")
         check_source_policy(profile.role, policy, family=self._store.source_family(source_key))
-        self._store.set_source_policy(
+        written = self._store.set_source_policy(
             profile_id, source_key, policy, now=self._now(), actor_id=self._actor_id(by)
         )
         self._audit("profile.policy_set", by, f"{profile_id}|{source_key}|{policy}")
+        return written
 
     def source_policies(
         self, profile_id: str, *, by: Principal | None = None
@@ -221,10 +222,8 @@ class ProfileService:
     def effective_source_policy(self, profile_id: str, source_key: str) -> str:
         """What `profile_id` may do with a source now: for the callers that decide whether an
         addition is direct, a request, or refused. An unknown profile has nothing."""
-        profile = self._store.profile(profile_id)
-        if profile is None:
+        state = self._store.source_policy_state(profile_id, source_key)
+        if state is None:
             return "forbidden"
-        stored = self._store.stored_source_policies(profile_id).get(source_key)
-        return effective_source_policy(
-            profile.role, stored, family=self._store.source_family(source_key)
-        )
+        role, stored, family = state
+        return effective_source_policy(role, stored, family=family)

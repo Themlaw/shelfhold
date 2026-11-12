@@ -22,9 +22,10 @@ from shelfhold.identity.application.ports import (
     PasskeyRecord,
     ProfileRecord,
     SessionRecord,
+    SourcePolicyRecord,
     UserRecord,
 )
-from shelfhold.identity.domain.policy import check_source_policy
+from shelfhold.identity.domain.policy import check_source_policy, effective_source_policy
 from shelfhold.identity.domain.roles import ProfileError
 from shelfhold.infrastructure.identity_counter import DAMAGED, IdentityCounter
 from shelfhold.infrastructure.ids import new_ulid
@@ -380,7 +381,7 @@ class SqlIdentityStore:
         self, user_id: str, *, expected_role: str, expected_max_age_rating: int | None,
         expected_can_rate: bool, role: str, max_age_rating: int | None, can_rate: bool,
         max_admins: int, now: datetime, actor_id: str | None = None,
-    ) -> None:  # fmt: skip
+    ) -> ProfileRecord:  # fmt: skip
         with self._changing(immediate=True) as conn:
             _require_admin_caller(conn, actor_id)
             row = conn.execute(
@@ -420,6 +421,11 @@ class SqlIdentityStore:
                     .where(_key.c.user_id == user_id, _key.c.revoked_at.is_(None))
                     .values(revoked_at=now)
                 )
+            written = conn.execute(
+                sa.select(_user.c.id, _user.c.username, _user.c.role, _user.c.max_age_rating,
+                          _user.c.can_rate).where(_user.c.id == user_id)
+            ).one()  # fmt: skip
+            return self._profile_of(written)  # what this transaction wrote, never a later read
 
     def source_family(self, source_key: str) -> bool:
         config = acquisition.source_config
@@ -432,7 +438,7 @@ class SqlIdentityStore:
     def set_source_policy(
         self, user_id: str, source_key: str, policy: str, *, now: datetime,
         actor_id: str | None = None,
-    ) -> None:  # fmt: skip
+    ) -> SourcePolicyRecord:  # fmt: skip
         """The role and the family mark are read under the lock that writes the row: the rule of
         a child (nothing but "forbidden" off a family source) holds at the moment of writing."""
         table = identity.profile_source_policy
@@ -454,6 +460,31 @@ class SqlIdentityStore:
                     user_id=user_id, source_key=source_key, policy=policy, updated_at=now
                 )
             )
+            return SourcePolicyRecord(
+                source_key=source_key,
+                policy=policy,
+                effective=effective_source_policy(role, policy, family=bool(family)),
+            )  # the row written, read from this transaction
+
+    def source_policy_state(
+        self, user_id: str, source_key: str
+    ) -> tuple[str, str | None, bool] | None:
+        """`(role, stored policy, family mark)` of a profile for a source in ONE statement: a
+        child just demoted never meets the default of a member. None: no such profile."""
+        table = identity.profile_source_policy
+        config = acquisition.source_config
+        query = (
+            sa.select(_user.c.role, table.c.policy, config.c.family_safe)
+            .select_from(_user)
+            .outerjoin(
+                table, sa.and_(table.c.user_id == _user.c.id, table.c.source_key == source_key)
+            )
+            .outerjoin(config, config.c.plugin_id == source_key)
+            .where(_user.c.id == user_id)
+        )
+        with self._engine.connect() as conn:
+            row = conn.execute(query).first()
+        return None if row is None else (row[0], row[1], bool(row[2]))
 
     def stored_source_policies(self, user_id: str) -> dict[str, str]:
         table = identity.profile_source_policy

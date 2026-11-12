@@ -421,8 +421,8 @@ class LocalAuth:
 
     def profile_policy_set(
         self, profile_id: str, source_key: str, policy: str, *, by: Principal | None = None
-    ) -> None:
-        self._profiles.set_source_policy(profile_id, source_key, policy, by=by)
+    ) -> SourcePolicyRecord:
+        return self._profiles.set_source_policy(profile_id, source_key, policy, by=by)
 
     def profile_policies(
         self, profile_id: str, *, by: Principal | None = None
