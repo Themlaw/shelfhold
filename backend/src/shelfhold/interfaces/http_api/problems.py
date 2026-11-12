@@ -1,8 +1,9 @@
 """RFC 9457 problem details: one shape for every error the API returns (EF-INT-001).
 
-The `type` is the stable URI of the catalog code (EF-UX-003), `title` and `action` come from the
-French catalog. `detail` is written by the raising code, never taken from an exception message:
-nothing internal (path, SQL, trace) can reach a client. The request payload is never echoed.
+The `type` is the stable URI of the catalog code (EF-UX-003); `title`, `cause` and `action`
+come from the French catalog. `detail` is written by the raising code, never taken from an
+exception message: nothing internal (path, SQL, trace) can reach a client. The request payload is
+never echoed.
 """
 
 from collections.abc import Mapping, Sequence
@@ -17,7 +18,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.requests import Request
 
 from shelfhold.error_catalog import ErrorCode
-from shelfhold.i18n import t
+from shelfhold.i18n import load_catalog, t
 from shelfhold.infrastructure.http_headers import apply_security_headers
 from shelfhold.infrastructure.logging import mask_known_secrets
 from shelfhold.interfaces.http_api.catalog import all_error_codes, error_code
@@ -73,7 +74,6 @@ class ProblemError(Exception):
         *,
         status: int | None = None,
         detail: str | None = None,
-        cause: str | None = None,
         extensions: Mapping[str, Any] | None = None,
         headers: Mapping[str, str] | None = None,
     ) -> None:
@@ -81,7 +81,6 @@ class ProblemError(Exception):
         self.spec: ErrorCode = error_code(code)
         self.status = status or self.spec.status
         self.detail = detail
-        self.cause = cause if cause is not None else detail
         self.extensions = dict(extensions or {})
         self.headers = dict(headers or {})
 
@@ -91,12 +90,21 @@ def _request_id(request: Request) -> str | None:
     return value if isinstance(value, str) else None
 
 
+def cause_of(spec: ErrorCode) -> str:
+    """The probable cause (EF-UX-003): a sentence of the catalog, never a runtime value. The
+    code's own sentence when it has one, else the one of its audience: a closed vocabulary, so no
+    path, host name or secret can ride on it, whatever `detail` says."""
+    catalog = load_catalog()
+    return t(
+        spec.cause_key if spec.cause_key in catalog else f"errors.cause_default.{spec.audience}"
+    )
+
+
 def problem_body(
     spec: ErrorCode,
     *,
     status: int | None = None,
     detail: str | None = None,
-    cause: str | None = None,
     request_id: str | None = None,
     extensions: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
@@ -106,11 +114,8 @@ def problem_body(
         "status": status or spec.status,
         "code": spec.code,
         "action": t(spec.action_key),
+        "cause": cause_of(spec),
     }
-    resolved_cause = cause if cause is not None else detail
-    body["cause"] = (
-        mask_known_secrets(resolved_cause) if resolved_cause else body["title"]
-    )  # always present (EF-UX-003); a quoted upstream answer may hold one
     if detail:
         body["detail"] = mask_known_secrets(detail)  # a quoted upstream answer may hold one
     if request_id:
@@ -128,18 +133,12 @@ def build_problem_response(
     request_id: str | None,
     status: int | None = None,
     detail: str | None = None,
-    cause: str | None = None,
     extensions: Mapping[str, Any] | None = None,
     headers: Mapping[str, str] | None = None,
 ) -> JSONResponse:
     """A complete problem response, discretion headers included (usable outside the app stack)."""
     body = problem_body(
-        spec,
-        status=status,
-        detail=detail,
-        cause=cause,
-        request_id=request_id,
-        extensions=extensions,
+        spec, status=status, detail=detail, request_id=request_id, extensions=extensions
     )
     response = JSONResponse(
         body, status_code=body["status"], media_type=PROBLEM_MEDIA_TYPE, headers=dict(headers or {})
@@ -156,7 +155,6 @@ def problem_response(request: Request, error: ProblemError) -> JSONResponse:
         request_id=_request_id(request),
         status=error.status,
         detail=error.detail,
-        cause=error.cause,
         extensions=error.extensions,
         headers=error.headers,
     )

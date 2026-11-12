@@ -1,5 +1,6 @@
 <script lang="ts">
   import Footer from '#lib/components/Footer.svelte';
+  import Nav from '#lib/components/Nav.svelte';
   import { applyAppearance } from '#lib/themes/index.ts';
   import '#lib/themes/base.css';
   import '#lib/themes/themes.css';
@@ -15,6 +16,7 @@
 </script>
 
 <div class="page">
+  <Nav ids={data.nav ?? []} />
   <div class="screen">{@render children()}</div>
   <Footer sourceUrl={data.sourceUrl} />
 </div>

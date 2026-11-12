@@ -1,55 +1,39 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
-  import { navByRole, type NavItem } from '#lib/nav.ts';
+  // EF-UX-005: the tabs the server offered to the signed-in role (see `nav.ts`).
+  import { navItems } from '#lib/nav.ts';
+  import { t } from '#lib/i18n/index.ts';
 
-  let {
-    role = null as string | null,
-    items = null as NavItem[] | null,
-    currentPath = null as string | null,
-    reduced = false,
-    options = undefined as unknown
-  } = $props();
+  let { ids, current = null }: { ids: readonly string[]; current?: string | null } = $props();
 
-  let resolvedRole = $state<string | null>(role);
-  let fetchedItems = $state<NavItem[] | null>(null);
-
-  onMount(async () => {
-    if (role === null && items === null) {
-      try {
-        const response = await fetch('/api/v1/me');
-        if (response.ok) {
-          const data = (await response.json()) as { role?: string; roles?: string[] };
-          resolvedRole = data.role ?? data.roles?.[0] ?? null;
-        }
-      } catch {
-        resolvedRole = null;
-      }
-    }
-  });
-
-  const resolvedItems = $derived(
-    items !== null
-      ? items
-      : navByRole(resolvedRole, reduced ? true : options)
-  );
+  const items = $derived(navItems(ids));
 </script>
 
-<nav aria-label="Navigation">
-  <ul>
-    {#each resolvedItems as item (item.id)}
-      <li>
-        <a href={item.href} aria-current={currentPath === item.href ? 'page' : undefined}>
-          {item.label}
-        </a>
-      </li>
-    {/each}
-  </ul>
-</nav>
+{#if items.length > 0}
+  <nav aria-label={t('nav.label')}>
+    <ul>
+      {#each items as item (item.id)}
+        <li>
+          <!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- the app is served at the root of its origin -->
+          <a href={item.href} aria-current={current === item.href ? 'page' : undefined}>
+            {t(item.labelKey)}
+          </a>
+        </li>
+      {/each}
+    </ul>
+  </nav>
+{/if}
 
 <style>
-  nav ul {
+  nav {
+    max-width: 42rem;
+    margin: 0 auto;
+    padding: 0.75rem 1rem;
+    border-bottom: 1px solid var(--color-rule);
+  }
+  ul {
     display: flex;
-    gap: 0.5rem;
+    flex-wrap: wrap;
+    gap: 1rem;
     list-style: none;
     margin: 0;
     padding: 0;

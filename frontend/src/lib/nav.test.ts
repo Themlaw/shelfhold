@@ -1,23 +1,40 @@
 import { describe, expect, it } from 'vitest';
-import { navByRole } from './nav';
+import { navItems } from './nav';
 
-function labels(items: { label: string }[]): string[] {
-  return items.map((i) => i.label);
-}
+const FAMILY = ['home', 'search', 'requests'];
+const ids = (list: { id: string }[]) => list.map((i) => i.id);
 
-describe('navByRole (EF-UX-005)', () => {
-  it('test_nav_by_role: family sees Accueil, Chercher, Mes demandes', () => {
-    const family = navByRole('member');
-    expect(labels(family)).toEqual(['Accueil', 'Chercher', 'Mes demandes']);
+describe('navigation by role (EF-UX-005)', () => {
+  // req: EF-UX-005
+  it('test_nav_by_role: the tabs are the ids the server answered, in its order', () => {
+    expect(ids(navItems(FAMILY))).toEqual(FAMILY);
+    expect(ids(navItems([...FAMILY, 'activity', 'settings']))).toEqual([
+      ...FAMILY,
+      'activity',
+      'settings'
+    ]);
   });
 
-  it('admin sees the family tabs plus Activité and Réglages', () => {
-    const admin = navByRole('admin');
-    expect(labels(admin)).toEqual(['Accueil', 'Chercher', 'Mes demandes', 'Activité', 'Réglages']);
+  // req: EF-UX-005
+  it('offers nothing of its own: no ids from the server, no tabs', () => {
+    expect(navItems([])).toEqual([]);
   });
 
-  it('in M3-lite the family navigation shrinks to two tabs by a single setting', () => {
-    const lite = navByRole('member', { reduced: true });
-    expect(labels(lite)).toEqual(['Accueil', 'Mes demandes']);
+  // req: EF-UX-005
+  it('drops an unknown id, a duplicate and anything that is not a destination of this client', () => {
+    expect(ids(navItems(['home', 'home', 'admin', '__proto__', 'constructor', 'toString']))).toEqual([
+      'home'
+    ]);
+  });
+
+  // req: EF-UX-005
+  it('M3-lite: one setting shrinks the family navigation to Accueil and Chercher', () => {
+    expect(ids(navItems(FAMILY, true))).toEqual(['home', 'search']);
+    expect(ids(navItems([...FAMILY, 'activity', 'settings'], true))).toEqual([
+      'home',
+      'search',
+      'activity',
+      'settings'
+    ]);
   });
 });

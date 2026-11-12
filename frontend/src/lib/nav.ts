@@ -1,63 +1,43 @@
-// Navigation by role (EF-UX-005). The tabs a person sees depend only on their role, read from
-// `GET /api/v1/me`. In M3-lite the family navigation shrinks to two tabs through a single
-// setting (`reduced` / a search flag); the shape of the items stays the same.
+// Navigation by role (EF-UX-005). The server decides what a role is offered: `GET /api/v1/me`
+// answers a list of destination ids (`nav`), and the screen only maps them to a label and a link.
+// An id this client does not know is dropped; the screen never adds a destination of its own, so
+// the admin tabs cannot appear for someone the server did not give them to (the routes behind them
+// are refused to other roles by the server in any case).
+import type { MessageKey } from '#lib/i18n/index.ts';
 
-export type NavRole = string;
+export type NavId = 'home' | 'search' | 'requests' | 'activity' | 'settings';
 
 export interface NavItem {
-  id: string;
-  key: string;
-  label: string;
+  id: NavId;
   href: string;
-  path: string;
-  roles: string[];
+  labelKey: MessageKey;
 }
 
-const ITEM = (id: string, label: string, href: string): NavItem => ({
-  id,
-  key: id,
-  label,
-  href,
-  path: href,
-  roles: []
-});
+const DESTINATIONS: Record<NavId, NavItem> = {
+  home: { id: 'home', href: '/', labelKey: 'nav.home' },
+  search: { id: 'search', href: '/chercher', labelKey: 'nav.search' },
+  requests: { id: 'requests', href: '/mes-demandes', labelKey: 'nav.requests' },
+  activity: { id: 'activity', href: '/activite', labelKey: 'nav.activity' },
+  settings: { id: 'settings', href: '/reglages', labelKey: 'nav.settings' }
+};
 
-const ACCUEIL = ITEM('home', 'Accueil', '/');
-const CHERCHER = ITEM('search', 'Chercher', '/chercher');
-const MES_DEMANDES = ITEM('requests', 'Mes demandes', '/mes-demandes');
-const ACTIVITE = ITEM('activity', 'Activité', '/activite');
-const REGLAGES = ITEM('settings', 'Réglages', '/reglages');
+/** M3-lite (plan, D1): the one setting that shrinks the family navigation to two tabs, Accueil and
+ * Chercher. The admin tabs are not affected. */
+export const FAMILY_NAV_LITE = false;
+const LITE_HIDDEN: readonly NavId[] = ['requests'];
 
-export function isAdminRole(role: NavRole | null | undefined): boolean {
-  const value = String(role ?? '').toLowerCase();
-  return value === 'admin' || value === 'administrator' || value === 'root';
+function isNavId(id: string): id is NavId {
+  return Object.hasOwn(DESTINATIONS, id);
 }
 
-function isReduced(options: unknown): boolean {
-  if (options === true) return true;
-  if (!options || typeof options !== 'object') return false;
-  const o = options as Record<string, unknown>;
-  if (o.reduced === true || o.lite === true || o.m3Lite === true || o.m3_lite === true) return true;
-  if (o.familyNavReduced === true || o.family_nav_reduced === true) return true;
-  if (o.search === false || o.showSearch === false || o.searchEnabled === false) return true;
-  if (o.familySearch === false || o.family_search === false) return true;
-  return false;
+/** The tabs of `ids` (as answered by the server), in the server's order, without duplicates. */
+export function navItems(ids: readonly string[], lite: boolean = FAMILY_NAV_LITE): NavItem[] {
+  const seen = new Set<NavId>();
+  const items: NavItem[] = [];
+  for (const id of ids) {
+    if (!isNavId(id) || seen.has(id) || (lite && LITE_HIDDEN.includes(id))) continue;
+    seen.add(id);
+    items.push(DESTINATIONS[id]);
+  }
+  return items;
 }
-
-export function navByRole(role: NavRole | null | undefined, options?: unknown): NavItem[] {
-  const reduced = isReduced(options);
-  const family: NavItem[] = reduced
-    ? [ACCUEIL, MES_DEMANDES]
-    : [ACCUEIL, CHERCHER, MES_DEMANDES];
-  if (isAdminRole(role)) return [...family, ACTIVITE, REGLAGES];
-  return family;
-}
-
-// Aliases: the hidden tests and the components may use any of these names.
-export const navItemsByRole = navByRole;
-export const navItems = navByRole;
-export const getNavItems = navByRole;
-export const navForRole = navByRole;
-export const itemsForRole = navByRole;
-
-export default navByRole;

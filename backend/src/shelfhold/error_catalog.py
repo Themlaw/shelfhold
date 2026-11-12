@@ -31,3 +31,8 @@ class ErrorCode:
     @property
     def action_key(self) -> str:
         return f"errors.{self.code}.action"
+
+    @property
+    def cause_key(self) -> str:
+        """Optional: a code without it gets the generic cause of its audience."""
+        return f"errors.{self.code}.cause"

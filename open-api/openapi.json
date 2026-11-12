@@ -1912,11 +1912,17 @@
         "type": "object"
       },
       "MeOut": {
-        "description": "Who the signed-in person is, including their role (EF-UX-005): the family/admin\nnavigation of the UI is derived from it.",
         "properties": {
           "id": {
             "title": "Id",
             "type": "string"
+          },
+          "nav": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Nav",
+            "type": "array"
           },
           "role": {
             "title": "Role",
@@ -1930,7 +1936,8 @@
         "required": [
           "id",
           "username",
-          "role"
+          "role",
+          "nav"
         ],
         "title": "MeOut",
         "type": "object"
@@ -3207,9 +3214,9 @@
           "status",
           "code",
           "action",
+          "cause",
           "auth_age_s",
-          "max_age_s",
-          "cause"
+          "max_age_s"
         ],
         "title": "ReauthRequiredProblem",
         "type": "object"
@@ -8287,7 +8294,10 @@
             "description": "Détail du problème (RFC 9457)."
           }
         },
-        "summary": "Me"
+        "summary": "Me",
+        "tags": [
+          "me"
+        ]
       }
     },
     "/api/v1/me/preferences": {

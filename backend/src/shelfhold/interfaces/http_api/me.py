@@ -1,4 +1,5 @@
-"""`/api/v1/me`: the state of the signed-in user (EF-USR-007) and their languages (EF-BIB-022).
+"""`/api/v1/me`: who is signed in and the navigation their role gets (EF-UX-005), the state of the
+user (EF-USR-007) and their languages (EF-BIB-022).
 
 There is no `{user_id}` anywhere: the user is the one of the session, so nobody can name another
 (IDOR, ENF-SEC-010). Keys and device tokens are refused (`require_session`). A Work above a child's
@@ -27,6 +28,24 @@ from shelfhold.interfaces.http_api.problems import ProblemError
 __all__ = ["build_me_router"]
 
 Session = Annotated[Principal, Depends(require_session)]
+
+
+def navigation_for(role: str) -> list[str]:
+    """The destinations a role is offered (EF-UX-005), decided here and not by the screen: the
+    admin ones go to the `admin` role only, and a role this code does not know gets none."""
+    family = ["home", "search", "requests"]
+    if role == "admin":
+        return [*family, "activity", "settings"]
+    if role in ("member", "child"):
+        return family
+    return []
+
+
+class MeOut(BaseModel):
+    id: str
+    username: str
+    role: str
+    nav: list[str]  # destination ids, in display order (the screen maps them to labels)
 
 
 class StateIn(BaseModel):
@@ -91,6 +110,15 @@ def build_me_router(get_service: Callable[[], UserStateService]) -> APIRouter:
             return call(get_service())
         except UserStateError as error:
             raise _problem(error) from None
+
+    @router.get("", response_model=MeOut)
+    def me(principal: Session) -> MeOut:
+        return MeOut(
+            id=principal.user_id,
+            username=principal.username,
+            role=principal.role,
+            nav=navigation_for(principal.role),
+        )
 
     @router.get("/state", response_model=StateList)
     def list_state(principal: Session) -> Any:
