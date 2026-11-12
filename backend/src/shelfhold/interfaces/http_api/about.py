@@ -3,6 +3,8 @@
 `/about` is for any principal and lists no action; the schema, which names every route, is the
 admin's."""
 
+import os
+import re
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Request
@@ -15,9 +17,22 @@ from shelfhold.interfaces.http_api.stats import require_admin
 SOURCE_REPOSITORY = "https://github.com/Themlaw/shelfhold"
 
 
-def default_source_url(version: str) -> str:
-    """The repository at the tag of the running version; a fork sets `source_url` instead."""
+def default_source_url(version: str, *, revision: str | None = None, release: bool = True) -> str:
+    """The code that is really served (AGPL section 13): the tag of the version for a release
+    build, the commit for any other build (a version number there names code that differs).
+    A fork sets `source_url` instead."""
+    if not release and revision and re.fullmatch(r"[0-9a-f]{40}", revision):
+        return f"{SOURCE_REPOSITORY}/tree/{revision}"
     return f"{SOURCE_REPOSITORY}/tree/v{version}"
+
+
+def build_source_url(version: str) -> str:
+    """`default_source_url` with what the image build recorded (`SHELFHOLD_BUILD_*`)."""
+    return default_source_url(
+        version,
+        revision=os.environ.get("SHELFHOLD_BUILD_REVISION"),
+        release=os.environ.get("SHELFHOLD_BUILD_RELEASE", "true") == "true",
+    )
 
 
 class About(BaseModel):

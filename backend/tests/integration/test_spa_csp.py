@@ -4,7 +4,7 @@ the build did not hash, a CSP that loosens itself, a route that escapes the head
 
 import base64
 import hashlib
-import re
+from html.parser import HTMLParser
 from pathlib import Path
 
 import pytest
@@ -48,6 +48,33 @@ def _build(tmp_path: Path, index: str) -> Path:
     return build
 
 
+class _Scripts(HTMLParser):
+    """The test's own reading of a page, apart from the code under test."""
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=False)
+        self.bodies: list[str] = []
+        self._in = False
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        self._in = tag == "script" and not any(name == "src" for name, _ in attrs)
+        if self._in:
+            self.bodies.append("")
+
+    def handle_data(self, data: str) -> None:
+        if self._in:
+            self.bodies[-1] += data
+
+    def handle_endtag(self, tag: str) -> None:
+        self._in = False
+
+
+def _inline_scripts(html: str) -> list[str]:
+    reader = _Scripts()
+    reader.feed(html)
+    return reader.bodies
+
+
 def _directive(csp: str, name: str) -> list[str]:
     for part in csp.split(";"):
         words = part.split()
@@ -82,7 +109,7 @@ def test_spa_csp_hash_covers_boot_script_no_unsafe_inline(
     assert "nonce-" not in csp  # a static SPA: no random nonce, the hash is fixed at build
     assert _directive(csp, "style-src") == ["'self'"]
     # every inline script of the page that is served is covered by a hash of the header
-    for body in re.findall(r"<script>(.*?)</script>", response.text, re.DOTALL):
+    for body in _inline_scripts(response.text):
         assert f"'{sha(body)}'" in scripts
 
 
@@ -141,17 +168,60 @@ def test_a_build_csp_that_loosens_scripts_or_styles_is_refused(
 
 
 @pytest.mark.req("ENF-SEC-004")
-def test_a_build_without_meta_csp_is_still_served_under_a_hash_csp(
+def test_a_build_without_meta_csp_is_refused_not_served_under_a_fallback(
     settings: Settings, tmp_path: Path
 ) -> None:
     build = _build(tmp_path, _page(None))
+    migrate(settings)
+    with pytest.raises(RuntimeError, match="CSP"):
+        create_app(settings.model_copy(update={"frontend_dir": build}))
+
+
+@pytest.mark.req("ENF-SEC-004")
+@pytest.mark.parametrize(
+    "markup",
+    [
+        f"<script>{INJECTED}</SCRIPT>",
+        f"<script>{INJECTED}</script >",
+        f"<ScRiPt>{INJECTED}</sCrIpT\t>",
+        f'<script type="module">{INJECTED}</script>',
+    ],
+)
+def test_an_unhashed_inline_script_is_found_whatever_its_tag_spelling(
+    settings: Settings, tmp_path: Path, markup: str
+) -> None:
+    """A regex on tags misses these spellings; the parser does not, and the mount refuses."""
+    page = _page(_csp(script=sha(BOOT))).replace("</head>", f"{markup}</head>")
+    build = _build(tmp_path, page)
+    migrate(settings)
+    with pytest.raises(RuntimeError, match="inline script"):
+        create_app(settings.model_copy(update={"frontend_dir": build}))
+
+
+@pytest.mark.req("ENF-SEC-004")
+def test_a_script_inside_an_html_comment_is_not_a_script(
+    settings: Settings, tmp_path: Path
+) -> None:
+    page = _page(_csp(script=sha(BOOT))).replace(
+        "</head>", f"<!-- <script>{INJECTED}</script> --></head>"
+    )
+    build = _build(tmp_path, page)
     with _client(settings, build) as client:
-        csp = client.get("/").headers["content-security-policy"]
-    assert f"'{sha(BOOT)}'" in _directive(csp, "script-src")
-    assert "'unsafe-inline'" not in csp
-    assert _directive(csp, "style-src") == ["'self'"]
-    assert _directive(csp, "object-src") == ["'none'"]
-    assert _directive(csp, "base-uri") == ["'none'"]
+        response = client.get("/")
+    assert f"'{sha(INJECTED)}'" not in response.headers["content-security-policy"]
+    assert f"'{sha(BOOT)}'" in response.headers["content-security-policy"]
+
+
+@pytest.mark.req("ENF-SEC-004")
+def test_json_and_problem_answers_load_nothing(settings: Settings, tmp_path: Path) -> None:
+    build = _build(tmp_path, _page(_csp(script=sha(BOOT))))
+    with _client(settings, build) as client:
+        health = client.get("/healthz")
+        problem = client.get("/api/v1/nope")
+    for response in (health, problem):
+        assert "default-src 'none'" in response.headers["content-security-policy"]
+        assert "frame-ancestors 'none'" in response.headers["content-security-policy"]
+    assert problem.headers["content-type"].startswith("application/problem+json")
 
 
 @pytest.mark.req("ENF-SEC-004")

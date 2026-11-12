@@ -23,6 +23,7 @@ from pydantic import (
     model_validator,
 )
 
+from shelfhold.infrastructure.http_headers import require_web_url
 from shelfhold.jobs.window import parse_clock, parse_zone
 
 ENV_PREFIX = "SHELFHOLD_"
@@ -155,6 +156,11 @@ class Settings(BaseModel):
     # at OpenLibrary instead of 1). Never a default, never an address of the maintainer; never
     # logged: it is an address of the owner.
     metadata_contact: str | None = None
+
+    @field_validator("source_url")
+    @classmethod
+    def _source_url_is_web(cls, value: str | None) -> str | None:
+        return None if value is None else require_web_url(value)
 
     @field_validator("metadata_contact")
     @classmethod

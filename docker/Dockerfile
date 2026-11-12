@@ -51,6 +51,7 @@ FROM frontend-${WITH_FRONTEND} AS frontend
 FROM python-base AS runtime
 ARG VERSION=0.0.0
 ARG REVISION=unknown
+ARG RELEASE=false
 LABEL org.opencontainers.image.title="Shelfhold" \
       org.opencontainers.image.description="Shelfhold, the household library workshop for Kavita" \
       org.opencontainers.image.source="https://github.com/Themlaw/shelfhold" \
@@ -69,6 +70,8 @@ COPY docker/healthcheck.py /usr/local/bin/shelfhold-healthcheck
 
 ENV PATH="/opt/venv/bin:$PATH" \
     PYTHONUNBUFFERED=1 \
+    SHELFHOLD_BUILD_REVISION="${REVISION}" \
+    SHELFHOLD_BUILD_RELEASE="${RELEASE}" \
     PYTHONDONTWRITEBYTECODE=1 \
     MALLOC_ARENA_MAX=2 \
     SHELFHOLD_HOST=0.0.0.0 \

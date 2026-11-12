@@ -2,12 +2,28 @@ import { createHash } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { parse } from 'parse5';
 import { describe, expect, it } from 'vitest';
-import { bootScript, kitCsp, scriptHash } from './csp.ts';
+import { bootScript, inlineScripts, kitCsp, scriptHash } from './csp.ts';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const appHtml = readFileSync(join(root, 'src', 'app.html'), 'utf8');
 const sha = (text: string) => `sha256-${createHash('sha256').update(text).digest('base64')}`;
+
+function cspOfMeta(html: string): string | null {
+  const find = (node: { nodeName: string; attrs?: { name: string; value: string }[]; childNodes?: unknown[] }): string | null => {
+    if (node.nodeName === 'meta') {
+      const attr = (n: string) => node.attrs?.find((a) => a.name === n)?.value;
+      if (attr('http-equiv')?.toLowerCase() === 'content-security-policy') return attr('content') ?? '';
+    }
+    for (const child of (node.childNodes ?? []) as (typeof node)[]) {
+      const hit = find(child);
+      if (hit !== null) return hit;
+    }
+    return null;
+  };
+  return find(parse(html) as never);
+}
 
 describe('SPA CSP', () => {
   // req: ENF-SEC-004
@@ -52,6 +68,29 @@ describe('SPA CSP', () => {
   });
 
   // req: ENF-SEC-004
+  it.each([
+    ['</SCRIPT>', '<script>a()</SCRIPT>'],
+    ['</script >', '<script>a()</script >'],
+    ['a tab before >', '<script>a()</script\t>'],
+    ['mixed case open tag', '<ScRiPt>a()</sCrIpT>']
+  ])('reads an inline script closed by %s', (_name, markup) => {
+    expect(inlineScripts(`<!doctype html><head>${markup}</head>`)).toEqual(['a()']);
+  });
+
+  // req: ENF-SEC-004
+  it('does not take a script inside an HTML comment for one, nor miss the one after it', () => {
+    const html = '<!doctype html><head><!-- <script>evil()</script> --><script>real()</script></head>';
+    expect(inlineScripts(html)).toEqual(['real()']);
+    expect(() => bootScript('<!doctype html><head><!-- <script>x()</script> --></head>')).toThrow();
+  });
+
+  // req: ENF-SEC-004
+  it('leaves out a script with a src, keeps one with attributes', () => {
+    const html = '<head><script src="/a.js"></script><script type="module">m()</script></head>';
+    expect(inlineScripts(html)).toEqual(['m()']);
+  });
+
+  // req: ENF-SEC-004
   it('the vite config takes its CSP from kitCsp, not from a literal', () => {
     const config = readFileSync(join(root, 'vite.config.ts'), 'utf8');
     expect(config).toContain('kitCsp(');
@@ -63,12 +102,11 @@ describe('SPA CSP', () => {
     'the built index.html carries the hash of the script it serves',
     () => {
       const built = readFileSync(join(root, 'build', 'index.html'), 'utf8');
-      const meta = /http-equiv="content-security-policy"\s+content="([^"]*)"/i.exec(built);
-      expect(meta, 'a CSP meta in the build').not.toBeNull();
-      const csp = meta![1];
+      const csp = cspOfMeta(built);
+      expect(csp, 'a CSP meta in the build').not.toBeNull();
       expect(csp).not.toContain('unsafe-inline');
-      for (const match of built.matchAll(/<script>([\s\S]*?)<\/script>/g)) {
-        const body = match[1] ?? '';
+      expect(inlineScripts(built).length).toBeGreaterThan(0);
+      for (const body of inlineScripts(built)) {
         expect(csp, `inline script ${body.slice(0, 30)}`).toContain(`'${sha(body)}'`);
       }
     }

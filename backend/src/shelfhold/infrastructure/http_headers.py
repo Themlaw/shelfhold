@@ -7,6 +7,7 @@ code adds `Content-Security-Policy`, `Cache-Control` or a sandbox, never the res
 import base64
 import hashlib
 import re
+from html.parser import HTMLParser
 from typing import Protocol
 from urllib.parse import quote
 
@@ -17,13 +18,11 @@ REFERRER_POLICY = "no-referrer"
 ROBOTS_TAG = "noindex, nofollow"
 FRAME_OPTIONS = "DENY"
 FRAME_ANCESTORS = "frame-ancestors 'none'"
+DATA_CSP = "default-src 'none'"
 CSP_SANDBOX = "sandbox"
 ROBOTS_TXT = "User-agent: *\nDisallow: /\n"
 BEARER_CHALLENGE = 'Bearer realm="api"'
-_INLINE = {
-    "script-src": re.compile(r"<script>(.*?)</script>", re.DOTALL),
-    "style-src": re.compile(r"<style>(.*?)</style>", re.DOTALL),
-}
+_INLINE = {"script-src": "script", "style-src": "style"}
 
 _FRAME_ANCESTORS_DIRECTIVE = re.compile(r"frame-ancestors[^;]*", re.IGNORECASE)
 
@@ -54,9 +53,11 @@ def apply_security_headers(headers: HeaderBag) -> None:
     """Fix the discretion headers; extend (never replace) a CSP set by the route."""
     for name, value in _DEFAULTS.items():
         headers[name] = value
-    headers["Content-Security-Policy"] = with_frame_ancestors(
-        headers.get("Content-Security-Policy", "")
-    )
+    csp = headers.get("Content-Security-Policy", "")
+    media_type = headers.get("Content-Type", "").split(";")[0].strip().lower()
+    if not csp and (media_type == "application/json" or media_type.endswith("+json")):
+        csp = DATA_CSP  # a JSON or problem+json answer loads nothing, whatever it is made to hold
+    headers["Content-Security-Policy"] = with_frame_ancestors(csp)
 
 
 def attachment_disposition(filename: str) -> str:
@@ -75,8 +76,9 @@ def hash_csp(html: str) -> str:
     """CSP of a served page: nothing by default, its inline scripts and styles by hash only
     (ENF-SEC-004, no `unsafe-inline`); `frame-ancestors` is added by the middleware."""
     directives = ["default-src 'none'"]
-    for directive, pattern in _INLINE.items():
-        hashes = sorted({source_hash(body) for body in pattern.findall(html)})
+    page = _Page(html)
+    for directive, element in _INLINE.items():
+        hashes = sorted({source_hash(body) for body in page.inline[element]})
         if hashes:
             directives.append(f"{directive} {' '.join(hashes)}")
     directives += ["connect-src 'self'", "form-action 'self'", "base-uri 'none'"]
@@ -89,10 +91,43 @@ def allow_own_scripts(csp: str) -> str:
     return csp.replace("script-src ", "script-src 'self' ", 1)
 
 
-CSP_META = re.compile(
-    r'<meta\s+http-equiv="content-security-policy"\s+content="([^"]*)"', re.IGNORECASE
-)
-INLINE_SCRIPT = re.compile(r"<script\b([^>]*)>(.*?)</script>", re.IGNORECASE | re.DOTALL)
+class _Page(HTMLParser):
+    """What a page carries itself, read by a real HTML parser (a regex on tags is bypassed by
+    `</script >`, case, attributes or a comment): its inline script and style bodies, and the CSP
+    of its `<meta http-equiv>`. Comments and CDATA are the parser's, never taken for elements."""
+
+    def __init__(self, html: str) -> None:
+        super().__init__(convert_charrefs=False)
+        self.inline: dict[str, list[str]] = {"script": [], "style": []}
+        self.meta_csp: str | None = None
+        self._open: str | None = None
+        self._text: list[str] = []
+        self.feed(html)
+        self.close()
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        values = {name: value or "" for name, value in attrs}
+        if tag == "meta" and values.get("http-equiv", "").lower() == "content-security-policy":
+            if self.meta_csp is None:
+                self.meta_csp = values.get("content", "")
+        elif tag in self.inline and "src" not in values:
+            self._open, self._text = tag, []
+
+    def handle_data(self, data: str) -> None:
+        if self._open:
+            self._text.append(data)
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag == self._open:
+            self.inline[tag].append("".join(self._text))
+            self._open = None
+
+
+def meta_csp(html: str) -> str | None:
+    """The CSP the build carries in its `<meta http-equiv>`, if any."""
+    return _Page(html).meta_csp
+
+
 _LOOSE_SOURCES = ("'unsafe-inline'", "'unsafe-eval'", "*", "https:", "http:", "data:", "blob:")
 _GUARDED = ("default-src", "script-src", "style-src")
 
@@ -107,15 +142,7 @@ def _directive(csp: str, name: str) -> list[str]:
 
 def _inline_scripts(html: str) -> list[str]:
     """The body of every script the page carries itself, which a CSP by hash must name."""
-    return [body for attrs, body in INLINE_SCRIPT.findall(html) if "src=" not in attrs.lower()]
-
-
-def _fallback_csp(html: str) -> str:
-    """A build that carries no CSP of its own is still served under one by hash (ENF-SEC-004)."""
-    hashes = " ".join(sorted({source_hash(body) for body in _inline_scripts(html)}))
-    scripts = f"script-src 'self' {hashes}".strip()
-    directives = ["default-src 'self'", scripts, "style-src 'self'", "object-src 'none'"]
-    return "; ".join([*directives, "base-uri 'none'", "form-action 'self'"])
+    return _Page(html).inline["script"]
 
 
 def spa_csp(html: str) -> str:
@@ -123,10 +150,9 @@ def spa_csp(html: str) -> str:
     middleware adds `frame-ancestors`), checked before a byte is served. A build that loosens a
     script or style source, or whose inline script no hash covers, is refused at start-up: that
     page was not the one audited."""
-    match = CSP_META.search(html)
-    if match is None:
-        return _fallback_csp(html)
-    csp = match.group(1)
+    csp = meta_csp(html)
+    if csp is None:
+        raise RuntimeError("the SPA build carries no CSP meta: refusing to serve it")
     for name in _GUARDED:
         loose = [v for v in _directive(csp, name) if v.lower() in _LOOSE_SOURCES]
         if loose:
@@ -138,3 +164,13 @@ def spa_csp(html: str) -> str:
                 f"the SPA build has an inline script its CSP does not hash: {body[:40]!r}"
             )
     return csp
+
+
+_WEB_URL = re.compile(r"https?://[^\s<>\"'`]+", re.IGNORECASE)
+
+
+def require_web_url(url: str) -> str:
+    """`source_url` ends in an `href` of every screen: http(s) only, no space, quote or bracket."""
+    if _WEB_URL.fullmatch(url) is None:
+        raise ValueError("the source address must be an http(s) URL")
+    return url

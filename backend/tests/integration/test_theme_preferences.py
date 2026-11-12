@@ -157,3 +157,61 @@ def test_source_link_follows_the_configured_fork(
     fork = "https://example.org/fork/shelfhold"
     with auth_env(monkeypatch, settings.model_copy(update={"source_url": fork})) as env:
         assert env.client.get(SOURCE).json() == {"source_url": fork}
+
+
+@pytest.mark.req("EF-UX-012", "ENF-SEC-004")
+def test_patch_preferences_without_csrf_token_is_refused(api: AuthEnv) -> None:
+    assert api.login().status_code == 200
+    forged = api.client.patch(PREFERENCES, json={"color_scheme": "dark"})  # cookie, no header
+    assert forged.status_code == 403
+    assert forged.json()["code"] == "csrf_failed"
+    wrong = api.client.patch(
+        PREFERENCES, json={"color_scheme": "dark"}, headers={CSRF_HEADER: "not-the-token"}
+    )
+    assert wrong.status_code == 403
+    assert _theme_columns(api, "admin") == (None, "auto")
+
+
+@pytest.mark.req("ENF-LEG-012")
+@pytest.mark.parametrize(
+    "url",
+    ["javascript:alert(1)", "ftp://example.org/x", "//example.org", '"><script>x</script>',
+     "https://example.org/a b", "https://example.org/\"onmouseover=\"x"],
+)  # fmt: skip
+def test_a_source_address_that_is_not_http_is_refused_at_start(url: str) -> None:
+    with pytest.raises(ValueError, match="http"):
+        Settings(source_url=url)  # type: ignore[call-arg]
+    from shelfhold.interfaces.http_api.app import create_http_app
+
+    with pytest.raises(ValueError, match="http"):
+        create_http_app(
+            health=None,  # type: ignore[arg-type]
+            on_startup=lambda: None,
+            version="1.0.0",
+            source_url=url,
+        )
+
+
+@pytest.mark.req("ENF-LEG-012")
+def test_source_link_names_the_code_that_is_served() -> None:
+    from shelfhold.interfaces.http_api.about import default_source_url
+
+    sha = "0123456789abcdef0123456789abcdef01234567"
+    repo = "https://github.com/Themlaw/shelfhold/tree"
+    assert default_source_url("1.0.0", revision=sha, release=True) == f"{repo}/v1.0.0"
+    assert default_source_url("1.0.0", revision=sha, release=False) == f"{repo}/{sha}"
+    # a revision that is not a commit hash never reaches the link
+    assert default_source_url("1.0.0", revision="unknown", release=False) == f"{repo}/v1.0.0"
+    assert default_source_url("1.0.0", revision='x"><script>', release=False) == f"{repo}/v1.0.0"
+
+
+@pytest.mark.req("ENF-LEG-012")
+def test_build_source_url_reads_what_the_image_recorded(monkeypatch: pytest.MonkeyPatch) -> None:
+    from shelfhold.interfaces.http_api.about import build_source_url
+
+    sha = "fedcba9876543210fedcba9876543210fedcba98"
+    monkeypatch.setenv("SHELFHOLD_BUILD_REVISION", sha)
+    monkeypatch.setenv("SHELFHOLD_BUILD_RELEASE", "false")
+    assert build_source_url("1.0.0").endswith(f"/tree/{sha}")
+    monkeypatch.setenv("SHELFHOLD_BUILD_RELEASE", "true")
+    assert build_source_url("1.0.0").endswith("/tree/v1.0.0")

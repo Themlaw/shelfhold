@@ -74,6 +74,7 @@ jobs:
             WITH_FRONTEND=${{ steps.frontend.outputs.present }}
             VERSION=${{ steps.version.outputs.version }}
             REVISION=${{ github.sha }}
+            RELEASE=${{ github.ref_type == 'tag' }}
           cache-from: ${{ steps.cache.outputs.present == 'true' && format('type=registry,ref={0}-cache:{1}', env.IMAGE, matrix.arch) || '' }}
           cache-to: ${{ inputs.cache-write && format('type=registry,ref={0}-cache:{1},mode=max', env.IMAGE, matrix.arch) || '' }}
       - name: Image size (ENF-PERF-002)
