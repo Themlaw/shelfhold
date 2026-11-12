@@ -27,11 +27,11 @@ from shelfhold.catalog.public import (
     removed_ids,
     window,
 )
+from shelfhold.events.since_key import SinceKey
 from shelfhold.export.application.shelves import list_shelves
 from shelfhold.identity.public import Principal, reader_scope
 from shelfhold.interfaces.http_api.auth import require_principal
 from shelfhold.interfaces.http_api.lists import (
-    SinceKey,
     decode_since,
     encode_since,
     since_param,

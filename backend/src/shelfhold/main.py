@@ -18,6 +18,7 @@ from shelfhold.catalog.public import ensure_search_tables, sync_search_index
 from shelfhold.composition import Composition, Network
 from shelfhold.config import Settings, load_settings
 from shelfhold.events.bus import EventBus
+from shelfhold.events.since_key import SinceKey
 from shelfhold.export.application.pipeline import ExportPipeline
 from shelfhold.export.application.shelves import ShelfService
 from shelfhold.export.application.wiring import open_pipeline, roots_signature
@@ -57,7 +58,6 @@ from shelfhold.interfaces.http_api.identity import build_identity_router
 from shelfhold.interfaces.http_api.intents import build_intents_router
 from shelfhold.interfaces.http_api.jobs import build_jobs_router
 from shelfhold.interfaces.http_api.library import build_library_router
-from shelfhold.interfaces.http_api.lists import SinceKey
 from shelfhold.interfaces.http_api.maintenance import build_maintenance_router
 from shelfhold.interfaces.http_api.me import build_me_router
 from shelfhold.interfaces.http_api.ops import build_ops_router

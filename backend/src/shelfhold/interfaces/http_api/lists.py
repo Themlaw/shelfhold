@@ -14,28 +14,22 @@ carried to another list or minted by a client. A token older than the event rete
 
 import base64
 import binascii
-import contextlib
 import hashlib
 import hmac
 import json
-import secrets
-import threading
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Any
 
 from fastapi import Query
 from starlette.requests import Request
 from starlette.responses import Response
 
-from shelfhold.infrastructure.secrets.atomic import write_private
 from shelfhold.interfaces.http_api.problems import ProblemError
 
 _PREFIX = "s2."
 MAX_TOKEN_CHARS = 96
 _MAC_BYTES = 16
 _MAX_SEQ = 2**63 - 1
-KEY_FILE = "since-token.key"
 
 
 @dataclass(frozen=True)
@@ -46,24 +40,6 @@ class Since:
         """The events after the token must still exist: otherwise the client reloads the list."""
         if self.seq < retention_floor_seq:
             raise ProblemError("resync_required")
-
-
-class SinceKey:
-    """The signing key of the tokens of an instance: 32 random bytes, kept in the data directory
-    (`0600`, created on first use, never logged)."""
-
-    def __init__(self, data_dir: Path) -> None:
-        self._path = data_dir / KEY_FILE
-        self._key: bytes | None = None
-        self._lock = threading.Lock()
-
-    def value(self) -> bytes:
-        with self._lock:
-            if self._key is None:
-                with contextlib.suppress(FileExistsError):  # another process made it first
-                    write_private(self._path, secrets.token_bytes(32), overwrite=False)
-                self._key = self._path.read_bytes()
-            return self._key
 
 
 def _b64(raw: bytes) -> str:

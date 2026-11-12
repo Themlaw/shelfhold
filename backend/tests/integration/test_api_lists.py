@@ -5,7 +5,8 @@ Since M3 L11 a token is signed: `s2.<sequence>.<signature>`."""
 
 import pytest
 
-from shelfhold.interfaces.http_api.lists import SinceKey, decode_since, encode_since
+from shelfhold.events.since_key import SinceKey
+from shelfhold.interfaces.http_api.lists import decode_since, encode_since
 from shelfhold.interfaces.http_api.problems import ProblemError
 
 RETENTION_FLOOR = 40  # events up to this sequence number have been purged

@@ -198,7 +198,7 @@ def test_a_token_newer_than_what_the_purge_took_stays_good(world: World) -> None
 
 @pytest.mark.req("EF-INT-001")
 def test_a_token_from_the_future_is_a_restore_and_asks_for_a_resync(world: World) -> None:
-    from shelfhold.interfaces.http_api.lists import SinceKey
+    from shelfhold.events.since_key import SinceKey
 
     key = SinceKey(world.env.settings.data_dir).value()
     ahead = encode_since(
