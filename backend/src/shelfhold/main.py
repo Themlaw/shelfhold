@@ -262,7 +262,9 @@ def create_app(
         build_sources_router(ops_services),  # EF-SRC-015, EF-SRC-004: search, acquire, a URL
         build_me_router(cache(lambda: user_state_service(engine, clock))),  # EF-USR-007, EF-BIB-022
         build_activity_router(lambda: engine),  # EF-USR-016: `activity_view`, unmask audited
-        build_search_router(lambda: engine),  # EF-BIB-010: admin only until the barrier (L09)
+        build_search_router(
+            lambda: engine, ops_services
+        ),  # EF-BIB-010, EF-SRC-005: admin only (L09)
         build_identity_router(
             lambda: PreferencesService(SqlPreferencesStore(engine))
         ),  # EF-UX-012: theme and colour scheme per user

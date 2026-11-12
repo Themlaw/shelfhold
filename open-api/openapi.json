@@ -805,6 +805,34 @@
         "title": "EditionLineOut",
         "type": "object"
       },
+      "EditionOut": {
+        "properties": {
+          "format": {
+            "title": "Format",
+            "type": "string"
+          },
+          "remote_id": {
+            "title": "Remote Id",
+            "type": "string"
+          },
+          "source_key": {
+            "title": "Source Key",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source_key",
+          "remote_id",
+          "title",
+          "format"
+        ],
+        "title": "EditionOut",
+        "type": "object"
+      },
       "EditionShelfIn": {
         "properties": {
           "shelf_id": {
@@ -971,6 +999,92 @@
           "kept_problem"
         ],
         "title": "ExportItemOut",
+        "type": "object"
+      },
+      "ExternalIdOut": {
+        "properties": {
+          "provider": {
+            "title": "Provider",
+            "type": "string"
+          },
+          "value": {
+            "title": "Value",
+            "type": "string"
+          }
+        },
+        "required": [
+          "provider",
+          "value"
+        ],
+        "title": "ExternalIdOut",
+        "type": "object"
+      },
+      "FederatedOut": {
+        "properties": {
+          "action": {
+            "anyOf": [
+              {
+                "const": "request",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Action"
+          },
+          "formats": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Formats",
+            "type": "array"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/WorkOut"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          },
+          "searched_in": {
+            "items": {
+              "$ref": "#/components/schemas/SearchedInOut"
+            },
+            "title": "Searched In",
+            "type": "array"
+          },
+          "state": {
+            "enum": [
+              "results",
+              "empty",
+              "unavailable",
+              "no_sources"
+            ],
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "items",
+          "searched_in",
+          "state",
+          "action",
+          "formats",
+          "next_cursor"
+        ],
+        "title": "FederatedOut",
         "type": "object"
       },
       "FieldIn": {
@@ -3599,6 +3713,67 @@
         "title": "SearchHitOut",
         "type": "object"
       },
+      "SearchedInOut": {
+        "description": "One line of \"Searched in...\": a source that was asked, by key and name (never an address).",
+        "properties": {
+          "code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Code"
+          },
+          "format": {
+            "title": "Format",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "returned": {
+            "title": "Returned",
+            "type": "integer"
+          },
+          "source_key": {
+            "title": "Source Key",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "ok",
+              "error"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "trust": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TrustCardOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "source_key",
+          "name",
+          "format",
+          "status",
+          "code",
+          "returned",
+          "trust"
+        ],
+        "title": "SearchedInOut",
+        "type": "object"
+      },
       "SecretStateOut": {
         "properties": {
           "fingerprint": {
@@ -4521,6 +4696,60 @@
         "title": "ToShelveOut",
         "type": "object"
       },
+      "TrustCardOut": {
+        "properties": {
+          "level": {
+            "enum": [
+              "official",
+              "community",
+              "unknown"
+            ],
+            "title": "Level",
+            "type": "string"
+          },
+          "lines": {
+            "items": {
+              "$ref": "#/components/schemas/TrustLineOut"
+            },
+            "title": "Lines",
+            "type": "array"
+          }
+        },
+        "required": [
+          "level",
+          "lines"
+        ],
+        "title": "TrustCardOut",
+        "type": "object"
+      },
+      "TrustLineOut": {
+        "properties": {
+          "current": {
+            "title": "Current",
+            "type": "boolean"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "level": {
+            "enum": [
+              "official",
+              "community",
+              "unknown"
+            ],
+            "title": "Level",
+            "type": "string"
+          }
+        },
+        "required": [
+          "level",
+          "label",
+          "current"
+        ],
+        "title": "TrustLineOut",
+        "type": "object"
+      },
       "UnfollowIn": {
         "properties": {
           "confirm": {
@@ -4690,6 +4919,57 @@
           "reason"
         ],
         "title": "WithdrawalOut",
+        "type": "object"
+      },
+      "WorkOut": {
+        "description": "A Work as the sources name it; `appended`: it was shown before, these Editions are new.",
+        "properties": {
+          "appended": {
+            "title": "Appended",
+            "type": "boolean"
+          },
+          "editions": {
+            "items": {
+              "$ref": "#/components/schemas/EditionOut"
+            },
+            "title": "Editions",
+            "type": "array"
+          },
+          "editions_by_format": {
+            "additionalProperties": {
+              "items": {
+                "$ref": "#/components/schemas/EditionOut"
+              },
+              "type": "array"
+            },
+            "title": "Editions By Format",
+            "type": "object"
+          },
+          "external_ids": {
+            "items": {
+              "$ref": "#/components/schemas/ExternalIdOut"
+            },
+            "title": "External Ids",
+            "type": "array"
+          },
+          "group_id": {
+            "title": "Group Id",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "group_id",
+          "title",
+          "appended",
+          "editions",
+          "editions_by_format",
+          "external_ids"
+        ],
+        "title": "WorkOut",
         "type": "object"
       },
       "shelfhold__interfaces__http_api__intents__ResolveIn": {
@@ -9991,6 +10271,37 @@
               "title": "Offset",
               "type": "integer"
             }
+          },
+          {
+            "in": "query",
+            "name": "scope",
+            "required": false,
+            "schema": {
+              "default": "local",
+              "enum": [
+                "local",
+                "all"
+              ],
+              "title": "Scope",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 128,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
           }
         ],
         "responses": {
@@ -9998,7 +10309,15 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/shelfhold__interfaces__http_api__search__SearchOut"
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/shelfhold__interfaces__http_api__search__SearchOut"
+                    },
+                    {
+                      "$ref": "#/components/schemas/FederatedOut"
+                    }
+                  ],
+                  "title": "Response Search"
                 }
               }
             },

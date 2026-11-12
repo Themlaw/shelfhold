@@ -515,6 +515,28 @@ export type EditionLineOut = {
 };
 
 /**
+ * EditionOut
+ */
+export type EditionOut = {
+    /**
+     * Format
+     */
+    format: string;
+    /**
+     * Remote Id
+     */
+    remote_id: string;
+    /**
+     * Source Key
+     */
+    source_key: string;
+    /**
+     * Title
+     */
+    title: string;
+};
+
+/**
  * EditionShelfIn
  */
 export type EditionShelfIn = {
@@ -621,6 +643,50 @@ export type ExportItemOut = {
      * Units
      */
     units: number;
+};
+
+/**
+ * ExternalIdOut
+ */
+export type ExternalIdOut = {
+    /**
+     * Provider
+     */
+    provider: string;
+    /**
+     * Value
+     */
+    value: string;
+};
+
+/**
+ * FederatedOut
+ */
+export type FederatedOut = {
+    /**
+     * Action
+     */
+    action: 'request' | null;
+    /**
+     * Formats
+     */
+    formats: Array<string>;
+    /**
+     * Items
+     */
+    items: Array<WorkOut>;
+    /**
+     * Next Cursor
+     */
+    next_cursor: string | null;
+    /**
+     * Searched In
+     */
+    searched_in: Array<SearchedInOut>;
+    /**
+     * State
+     */
+    state: 'results' | 'empty' | 'unavailable' | 'no_sources';
 };
 
 /**
@@ -2260,6 +2326,39 @@ export type SearchHitOut = {
 };
 
 /**
+ * SearchedInOut
+ *
+ * One line of "Searched in...": a source that was asked, by key and name (never an address).
+ */
+export type SearchedInOut = {
+    /**
+     * Code
+     */
+    code: string | null;
+    /**
+     * Format
+     */
+    format: string;
+    /**
+     * Name
+     */
+    name: string;
+    /**
+     * Returned
+     */
+    returned: number;
+    /**
+     * Source Key
+     */
+    source_key: string;
+    /**
+     * Status
+     */
+    status: 'ok' | 'error';
+    trust: TrustCardOut | null;
+};
+
+/**
  * SecretStateOut
  */
 export type SecretStateOut = {
@@ -2827,6 +2926,38 @@ export type ToShelveOut = {
 };
 
 /**
+ * TrustCardOut
+ */
+export type TrustCardOut = {
+    /**
+     * Level
+     */
+    level: 'official' | 'community' | 'unknown';
+    /**
+     * Lines
+     */
+    lines: Array<TrustLineOut>;
+};
+
+/**
+ * TrustLineOut
+ */
+export type TrustLineOut = {
+    /**
+     * Current
+     */
+    current: boolean;
+    /**
+     * Label
+     */
+    label: string;
+    /**
+     * Level
+     */
+    level: 'official' | 'community' | 'unknown';
+};
+
+/**
  * UnfollowIn
  */
 export type UnfollowIn = {
@@ -2940,6 +3071,40 @@ export type WithdrawalOut = {
      * Shelf Id
      */
     shelf_id: string;
+};
+
+/**
+ * WorkOut
+ *
+ * A Work as the sources name it; `appended`: it was shown before, these Editions are new.
+ */
+export type WorkOut = {
+    /**
+     * Appended
+     */
+    appended: boolean;
+    /**
+     * Editions
+     */
+    editions: Array<EditionOut>;
+    /**
+     * Editions By Format
+     */
+    editions_by_format: {
+        [key: string]: Array<EditionOut>;
+    };
+    /**
+     * External Ids
+     */
+    external_ids: Array<ExternalIdOut>;
+    /**
+     * Group Id
+     */
+    group_id: string;
+    /**
+     * Title
+     */
+    title: string;
 };
 
 /**
@@ -6029,6 +6194,14 @@ export type SearchData = {
          * Offset
          */
         offset?: number;
+        /**
+         * Scope
+         */
+        scope?: 'local' | 'all';
+        /**
+         * Cursor
+         */
+        cursor?: string | null;
     };
     url: '/api/v1/search';
 };
@@ -6052,9 +6225,11 @@ export type SearchError = SearchErrors[keyof SearchErrors];
 
 export type SearchResponses = {
     /**
+     * Response Search
+     *
      * Successful Response
      */
-    200: ShelfholdInterfacesHttpApiSearchSearchOut;
+    200: ShelfholdInterfacesHttpApiSearchSearchOut | FederatedOut;
 };
 
 export type SearchResponse = SearchResponses[keyof SearchResponses];
