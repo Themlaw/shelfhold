@@ -251,6 +251,40 @@ def _served(connection: Connection, destination_id: str, export_item_id: str) ->
     )  # fmt: skip
 
 
+def place_under_intent(
+    journal: IntentJournal,
+    fsops: Fsops,
+    target: str,
+    *,
+    mark: UpgradeMark,
+    new_hash: str,
+    data: BinaryIO,
+) -> str:
+    """The one place a served file is replaced at its own path: the intent is recorded and marked
+    before the first step, the new bytes are staged and checked against `new_hash`, then swapped
+    in and the old file goes to the root's bin. Returns the intent, still open: the caller
+    settles it with its bookkeeping (`mark_done`, in the same transaction)."""
+    intent = journal.record(
+        op="upgrade", src=target, dst=target, expected_sha256=new_hash, expected_file_id=mark
+    )
+    journal.mark_applying(intent)
+    try:
+        fsops.same_path_stage(
+            target, intent, data, verify_digest=lambda: new_hash.removeprefix("sha256:")
+        )
+    except BaseException:
+        # the served file was not touched: what was staged goes, the intent is closed
+        try:
+            fsops.same_path_discard(target, intent)
+        finally:
+            journal.cancel(intent)
+        raise
+    # From here an error leaves the intent open: the boot (or `intents resolve`) settles it.
+    fsops.same_path_swap(target, intent)
+    fsops.same_path_recycle_old(target, intent)
+    return intent
+
+
 class SamePathUpgrade:
     def __init__(
         self,
@@ -290,7 +324,14 @@ class SamePathUpgrade:
                 raise LookupError(f"no file served for {request.export_item_id}")
             if len(served.unit_ids) != 1:  # a volume is rewritten whole, by `replace_volume`
                 raise LookupError(f"{request.export_item_id} covers several Units: not a chapter")
-            refused = self._refusal(connection, served, request.typed, check_read=True)
+            # a repair replaces a broken file: the read Unit is repaired too, KOReader's position is
+            # reset and said (EF-BIB-012)
+            refused = self._refusal(
+                connection,
+                served,
+                request.typed,
+                check_read=request.reason != "integrity_reacquire",
+            )
             if refused is not None:
                 return UpgradeResult(refused)
             source = upgrade_source(connection, served.unit_id, request.content_id)
@@ -372,7 +413,9 @@ class SamePathUpgrade:
             served, new, reason="better_version", automatic=True, restores=None
         )
 
-    def upgrade_unit(self, unit_id: str, content_id: str) -> list[UpgradeResult]:
+    def upgrade_unit(
+        self, unit_id: str, content_id: str, *, reason: str = "better_version"
+    ) -> list[UpgradeResult]:
         """The door of a better copy received for a Unit (EF-SRC-037, a better rank listed late):
         every file served for the Unit, in every destination, goes through `upgrade` and so
         through every guard of it (read Unit, suspect revision, irreplaceable Unit, frozen root).
@@ -410,9 +453,7 @@ class SamePathUpgrade:
             ).all()
         return [
             self.upgrade(
-                UpgradeRequest(
-                    row.shelf_destination_id, row.export_item_id, content_id, "better_version"
-                )
+                UpgradeRequest(row.shelf_destination_id, row.export_item_id, content_id, reason)
             )
             for row in served
         ]
@@ -564,26 +605,9 @@ class SamePathUpgrade:
                 ("spine_count", new.spine_count),
             ),
         )  # fmt: skip
-        intent = self._journal.record(
-            op="upgrade", src=target, dst=target, expected_sha256=new.file_hash,
-            expected_file_id=mark,
-        )  # fmt: skip
-        self._journal.mark_applying(intent)
-        try:
-            self._fsops.same_path_stage(
-                target, intent, new.data,
-                verify_digest=lambda: new.file_hash.removeprefix("sha256:"),
-            )  # fmt: skip
-        except BaseException:
-            # the served file was not touched: what was staged goes, the intent is closed
-            try:
-                self._fsops.same_path_discard(target, intent)
-            finally:
-                self._journal.cancel(intent)
-            raise
-        # From here an error leaves the intent open: the boot (or `intents resolve`) settles it.
-        self._fsops.same_path_swap(target, intent)
-        self._fsops.same_path_recycle_old(target, intent)
+        intent = place_under_intent(
+            self._journal, self._fsops, target, mark=mark, new_hash=new.file_hash, data=new.data
+        )
         with self._engine.begin() as connection:
             upgrade_id, event = self._complete(connection, intent, mark.to_json())
             self._journal.mark_done(intent, within=connection)

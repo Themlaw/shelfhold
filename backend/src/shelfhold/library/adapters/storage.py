@@ -43,6 +43,7 @@ from shelfhold.library.domain.content_hash import CONTENT_HASH_BY, FILE_HASH_BY,
 from shelfhold.library.domain.copies import CopyFacts, is_independent
 from shelfhold.library.domain.failures import (
     ReceivedTooLargeError,
+    RepairRefusedError,
     SafeguardFailedError,
     TombstonedContentError,
     VariantAlreadyStoredError,
@@ -121,6 +122,30 @@ def sha256_file(path: Path) -> str:
         while chunk := stream.read(1 << 20):
             digest.update(chunk)
     return "sha256:" + digest.hexdigest()
+
+
+def audit_repair_archive(
+    engine: Engine, variant_id: str, staged: Path, *, limits: ArchiveLimits = DEFAULT_LIMITS
+) -> str:
+    """The fresh bytes of a Variant whose archive is damaged (EF-BIB-012), audited like any
+    received archive: through the archive guard and the allowlist, and they must carry the payload
+    the content records (a different one is a new revision, the revision guard's business).
+    Returns the SHA-256 of the file; `RepairRefusedError` otherwise, nothing was changed."""
+    with safe_open_archive(staged, name="repair.cbz", limits=limits) as archive:
+        check_cbz_entries(archive, allow_svg=True)
+        payload_hash = content_hash(archive)
+    with engine.connect() as connection:
+        recorded = connection.execute(
+            sa.select(storage.content.c.content_hash).where(
+                storage.content.c.variant_id == variant_id,
+                storage.content.c.media_type == CBZ_MEDIA_TYPE,
+            )
+        ).scalar_one_or_none()
+    if recorded is None:
+        raise RepairRefusedError("the Variant has no archive to repair")
+    if recorded != payload_hash:
+        raise RepairRefusedError("the fresh archive is not the payload the content records")
+    return sha256_file(staged)
 
 
 class PassthroughStore:

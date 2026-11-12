@@ -445,7 +445,7 @@ class UpstreamPurge:
             copies = [
                 c
                 for c in library_copies(connection, candidate.unit_id)
-                if c.content_hash == content_hash
+                if c.content_hash == content_hash and not c.damaged
             ]
         return any(self._holds(c.local, c.file_hash) for c in copies)
 

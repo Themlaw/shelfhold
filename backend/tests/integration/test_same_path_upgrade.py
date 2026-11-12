@@ -103,7 +103,8 @@ def test_auto_upgrade_logs_koreader_reset() -> None:
         assert [entry["unit_id"] for entry in listed] == [exported.unit_id]  # `status` (D21)
 
 
-@pytest.mark.parametrize("reason", sorted(UPGRADE_REASONS))
+# a repair (EF-BIB-012) replaces a broken file: it is the one reason a read Unit is not skipped
+@pytest.mark.parametrize("reason", sorted(UPGRADE_REASONS - {"integrity_reacquire"}))
 def test_skip_upgrade_of_read_units_by_default(reason: str) -> None:
     with export_env() as env:
         exported = export_one(env)

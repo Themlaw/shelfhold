@@ -31,19 +31,23 @@ __all__ = [
     "StoreCopy",
     "StoreProof",
     "adopted_original_unprotected",
+    "damaged_library_copies",
     "demote_shared_inodes",
     "distrust_root_copies",
     "erase_replicas",
+    "fresh_repair_content",
     "has_independent_store_copy",
     "has_readable_copy",
     "independent_copies",
     "kept_file_hashes",
     "library_copies",
     "manifest_file_hashes",
+    "mark_damaged",
     "median_unit_bytes",
     "paths_under",
     "readable_unit_ids",
     "record_library_rewrite",
+    "record_repaired_copy",
     "record_replica",
     "record_store_observation",
     "reference_content_hash",
@@ -128,6 +132,7 @@ def independent_copies(connection: Connection, unit_id: str) -> int:
         sa.select(replica_table.c.id, replica_table.c.dev, replica_table.c.ino).where(
             replica_table.c.unit_id == unit_id,
             replica_table.c.independent,
+            replica_table.c.damaged_at.is_(None),  # a copy found damaged counts for nothing
             sa.or_(same, readable),
             # the origin is a copy only while it still lists the Unit: decided here, at counting
             # time, not by a row someone must remember to update
@@ -138,6 +143,70 @@ def independent_copies(connection: Connection, unit_id: str) -> int:
         (r.dev, r.ino) if r.dev is not None and r.ino is not None else ("row", r.id) for r in rows
     }
     return len(keys)
+
+
+def fresh_repair_content(
+    connection: Connection, unit_id: str, since: datetime | None
+) -> str | None:
+    """The content of an independent `/library` copy of the Unit filed after `since` (a repair
+    copy that arrived), None when no new copy has: the nightly pass reads nothing for nothing."""
+    content = storage.content
+    query = (
+        sa.select(content.c.id)
+        .select_from(
+            content.join(replica_table, replica_table.c.content_hash == content.c.content_hash)
+        )
+        .where(
+            content.c.unit_id == unit_id,
+            content.c.format == "cbz",
+            replica_table.c.unit_id == unit_id,
+            replica_table.c.location == "library",
+            replica_table.c.independent,
+        )
+        .order_by(replica_table.c.verified_at.desc())
+        .limit(1)
+    )
+    if since is not None:
+        query = query.where(replica_table.c.verified_at > since)
+    return connection.execute(query).scalar()
+
+
+def damaged_library_copies(connection: Connection, unit_id: str) -> "list[LibraryCopy]":
+    return [c for c in library_copies(connection, unit_id) if c.damaged]
+
+
+def record_repaired_copy(
+    connection: Connection,
+    replica_id: str,
+    *,
+    file_hash: str,
+    dev: int | None,
+    ino: int | None,
+    size: int,
+    mtime_ns: int,
+    verified_at: datetime,
+) -> None:
+    """A damaged library file was replaced at its path by verified bytes (EF-BIB-012): the row
+    names the file that is there now and is an independent copy again."""
+    connection.execute(
+        sa.update(replica_table)
+        .where(replica_table.c.id == replica_id)
+        .values(
+            file_hash=file_hash, dev=dev, ino=ino, size=size, mtime_ns=mtime_ns,
+            independent=True, verified_at=verified_at, damaged_at=None,
+        )
+    )  # fmt: skip
+
+
+def mark_damaged(connection: Connection, replica_id: str, at: datetime) -> None:
+    """The integrity check read this file and it is damaged (EF-BIB-012): it is no longer an
+    independent copy, so it is counted by nothing (`independent_copies`, irreplaceability) and no
+    reader picks it. The file itself is left where it is; nothing is deleted here."""
+    connection.execute(
+        sa.update(replica_table)
+        .where(replica_table.c.id == replica_id)
+        .values(independent=False, damaged_at=at)
+    )
 
 
 def record_replica(
@@ -279,6 +348,7 @@ class LibraryCopy:
     local: str  # absolute local path: the physical root's path plus the relative one
     file_hash: str | None  # what the manifest says
     content_hash: str | None
+    damaged: bool = False  # the integrity check read it and it failed (`damaged_at`)
 
 
 def library_copies(connection: Connection, unit_id: str) -> Sequence[LibraryCopy]:
@@ -290,13 +360,21 @@ def library_copies(connection: Connection, unit_id: str) -> Sequence[LibraryCopy
             replica_table.c.file_hash,
             replica_table.c.content_hash,
             root.c.path_entry,
+            replica_table.c.independent,
+            replica_table.c.damaged_at,
         )
         .join(root, root.c.root_id == replica_table.c.physical_root_id)
         .where(replica_table.c.unit_id == unit_id, replica_table.c.location == "library")
         .order_by(replica_table.c.id)
     )
     return [
-        LibraryCopy(r.id, f"{r.path_entry.rstrip('/')}/{r.rel_path}", r.file_hash, r.content_hash)
+        LibraryCopy(
+            r.id,
+            f"{r.path_entry.rstrip('/')}/{r.rel_path}",
+            r.file_hash,
+            r.content_hash,
+            r.damaged_at is not None,
+        )
         for r in rows
     ]
 
@@ -306,6 +384,7 @@ class StoreCopy:
     replica_id: str
     local: str
     file_hash: str | None  # the bytes that were put in /store
+    damaged: bool = False
 
 
 def store_copies(
@@ -322,13 +401,16 @@ def store_copies(
             replica_table.c.rel_path,
             replica_table.c.file_hash,
             root.c.path_entry,
+            replica_table.c.damaged_at,
         )
         .join(root, root.c.root_id == replica_table.c.physical_root_id)
         .where(replica_table.c.unit_id == unit_id, replica_table.c.location == "store")
         .order_by(replica_table.c.id)
     )
     return [
-        StoreCopy(r.id, f"{r.path_entry.rstrip('/')}/{r.rel_path}", r.file_hash)
+        StoreCopy(
+            r.id, f"{r.path_entry.rstrip('/')}/{r.rel_path}", r.file_hash, r.damaged_at is not None
+        )
         for r in rows
         if include_untrusted or not r.rel_path.startswith("untrusted/")
     ]
@@ -365,6 +447,7 @@ def store_proofs(connection: Connection, unit_id: str) -> list[StoreProof]:
             replica_table.c.unit_id == unit_id,
             replica_table.c.location == "store",
             replica_table.c.independent,
+            replica_table.c.damaged_at.is_(None),
             replica_table.c.file_hash.is_not(None),
             replica_table.c.content_hash.is_not(None),
             replica_table.c.dev.is_not(None),
@@ -547,7 +630,9 @@ def _readable_rows() -> sa.Select[tuple[str]]:
     referenced where it is, as a copy of the destination, and counts as long as it is not gone."""
     coverage, item = export.unit_coverage, export.export_item
     own = sa.select(replica_table.c.unit_id.label("unit_id")).where(
-        replica_table.c.location.in_(_READABLE_PLACES), replica_table.c.unit_id.is_not(None)
+        replica_table.c.location.in_(_READABLE_PLACES),
+        replica_table.c.unit_id.is_not(None),
+        replica_table.c.damaged_at.is_(None),
     )
     record = export.export_record
     adopted_item = (
@@ -884,6 +969,7 @@ def has_independent_store_copy(
             replica_table.c.location == "store",
             replica_table.c.file_hash == file_hash,
             replica_table.c.rel_path.is_not(None),
+            replica_table.c.damaged_at.is_(None),
         )
     ).all()
     for row in rows:

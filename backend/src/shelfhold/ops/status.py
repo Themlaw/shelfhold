@@ -15,6 +15,7 @@ from sqlalchemy import Connection
 
 from shelfhold.acquisition.public import stale_series
 from shelfhold.catalog.public import RatingService, RightsService
+from shelfhold.export.application.library_repair import barrier_closed_for
 from shelfhold.export.application.target_health import TargetHealth
 from shelfhold.export.application.to_rate import to_rate
 from shelfhold.export.application.withdrawal import build_plan
@@ -127,6 +128,7 @@ def collect(connection: Connection) -> list[WaitingItem]:
     found += _languages(connection)
     found += _discovery(connection)
     found += _withdrawals(connection)
+    found += _integrity_blocked(connection)
     found += _to_rate(connection)
     found += _safeguard_backlog(connection)
     return found
@@ -164,6 +166,31 @@ def _withdrawals(connection: Connection) -> list[WaitingItem]:
         _item("withdrawal_pending", "export", i.edition_id, f"{i.reason}: {len(i.files)} file(s)")
         for i in plan.items
     ]
+
+
+def _integrity_blocked(connection: Connection) -> list[WaitingItem]:
+    """A Unit whose served file is damaged and whose repair waits because the barrier of its shelf
+    is closed (the Edition is no longer admitted, EF-BIB-037): replacing the file would make it
+    readable again. The exit is the withdrawal (`shelf withdraw`, a reserved action); the fresh
+    bytes wait outside the library (EF-BIB-012)."""
+    unit = catalog.unit
+    found: list[WaitingItem] = []
+    for row in connection.execute(
+        sa.select(unit.c.id, unit.c.edition_id)
+        .where(unit.c.integrity_state == "corrupt")
+        .order_by(unit.c.id)
+    ):
+        why = barrier_closed_for(connection, row.id)
+        if why is not None:
+            found.append(
+                _item(
+                    "withdrawal_pending",
+                    "export",
+                    row.edition_id,
+                    f"integrity_blocked_by_{why}: unit {row.id}",
+                )
+            )
+    return found
 
 
 def _series(connection: Connection) -> list[WaitingItem]:
@@ -397,7 +424,7 @@ def koreader_reset_report(connection: Connection, since: datetime) -> list[dict[
         .where(table.c.koreader_reset.is_(True), table.c.created_at >= since)
         .order_by(table.c.created_at.desc(), table.c.id.desc())
     )
-    return [
+    found = [
         {
             "unit_id": r.unit_id,
             "reason": r.reason,
@@ -406,6 +433,27 @@ def koreader_reset_report(connection: Connection, since: datetime) -> list[dict[
         }
         for r in rows
     ]
+    # a damaged library file replaced at its path (EF-BIB-012) has no exported item: the event
+    # is the entry
+    event = platform.event
+    repairs = connection.execute(
+        sa.select(event.c.payload, event.c.occurred_at).where(
+            event.c.type == "unit.upgraded",
+            event.c.occurred_at >= since,
+            sa.func.json_extract(event.c.payload, "$.upgrade_id").is_(None),
+            sa.func.json_extract(event.c.payload, "$.koreader_reset") == 1,
+        )
+    )
+    found += [
+        {
+            "unit_id": r.payload["unit_id"],
+            "reason": r.payload["reason"],
+            "automatic": bool(r.payload.get("automatic")),
+            "at": r.occurred_at.isoformat(),
+        }
+        for r in repairs
+    ]
+    return sorted(found, key=lambda item: str(item["at"]), reverse=True)
 
 
 def rights_report(connection: Connection, today: date) -> list[dict[str, object]]:

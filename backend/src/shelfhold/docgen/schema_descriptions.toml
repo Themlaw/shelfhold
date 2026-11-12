@@ -897,6 +897,7 @@ independent = "An inode distinct from every other copy is established."
 mutable_by_third_party = "Another program (Kavita, KOReader, the user) may change the file."
 fidelity = "How faithful the copy is to the original."
 verified_at = "When the copy was last verified (UTC)."
+damaged_at = "When the integrity check found the copy damaged (UTC); NULL for a healthy copy. A damaged copy is never counted, exported or used for a purge."
 
 [tables.alembic_version]
 description = "Alembic bookkeeping: the revision the database is at."

@@ -12,7 +12,7 @@ to the cycle, which pauses the whole service.
 import hashlib
 from collections import deque
 from collections.abc import Awaitable, Callable, Mapping
-from contextlib import AbstractAsyncContextManager, suppress
+from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path, PurePath
@@ -185,6 +185,13 @@ class OpenRequest:
     updated_at: datetime | None = None  # the last (re)submission: the clock of the next requeue
 
 
+class Repairer(Protocol):
+    """Fresh bytes of a Unit whose archive is damaged, put in the place of the damaged file:
+    `(unit_id, variant_id, staged file, its sha256)`, True when a file was replaced."""
+
+    def __call__(self, unit_id: str, variant_id: str, staged: Path, sha256: str) -> bool: ...
+
+
 Blocked = Callable[[OpenRequest], bool]  # a tombstone covers the chapter or its series
 
 
@@ -211,6 +218,7 @@ class DownloadTickets:
         queue_empty: QueueEmpty | None = None,
         blocked: Blocked | None = None,
         filtered: Blocked | None = None,
+        repairer: Repairer | None = None,
     ) -> None:
         self._engine = engine
         self._clock = clock
@@ -231,6 +239,7 @@ class DownloadTickets:
         self._queue_empty = queue_empty  # None: the service cannot say, nothing is asked again
         self._blocked = blocked
         self._filtered = filtered  # a download filter refuses it now (EF-SRC-039)
+        self._repairer = repairer  # puts fresh bytes in the place of a damaged file (EF-BIB-012)
         self._queue_checked: bool | None = None  # read once per cycle, when first needed
         self.unloaded: frozenset[str] = frozenset()  # sources the probe found unusable this cycle
 
@@ -398,9 +407,42 @@ class DownloadTickets:
             ),
         )
         ticket = await from_service(self._service.request(self._fetcher, target))
+        self._hand_over(request, ticket.token)
         self._update(request.id, ticket=ticket.token)  # the token itself is never logged
         log.debug("follow.ticket_requested", request_id=request.id, unit_id=request.unit_id)
         return ticket.token
+
+    def _hand_over(self, request: OpenRequest, token: str) -> None:
+        """The service names a chapter's download by one token, whoever asks (the reacquisition of
+        a corrupt Unit asks again for what a finished request already holds): the token follows
+        the live request, the finished one lets go of it (the key is unique per binding)."""
+        table = acquisition.download_request
+        with self._engine.begin() as connection:
+            connection.execute(
+                sa.update(table)
+                .where(
+                    table.c.source_binding_id == request.binding_id,
+                    table.c.ticket == token,
+                    table.c.id != request.id,
+                    table.c.state == "fetched",  # a purge's closed request keeps its own
+                )
+                .values(ticket=None)
+            )
+
+    def _corrupt(self, unit_id: str) -> bool:
+        with self._engine.connect() as connection:
+            return (
+                connection.execute(
+                    sa.select(catalog.unit.c.integrity_state).where(catalog.unit.c.id == unit_id)
+                ).scalar_one_or_none()
+                == "corrupt"
+            )
+
+    def _repair(self, request: OpenRequest, staged: Path, sha256: str) -> None:
+        if self._repairer is None:
+            log.warning("integrity.repair_unavailable", unit_id=request.unit_id)
+            return
+        self._repairer(request.unit_id, request.variant_id, staged, sha256)
 
     async def _fetch(self, request: OpenRequest, ticket: Ticket, report: TicketReport) -> None:
         payload = await from_service(self._service.fetch(self._fetcher, ticket))
@@ -422,13 +464,18 @@ class DownloadTickets:
             if echo is not None:
                 report.echoed += 1
                 return
-            with suppress(VariantAlreadyStoredError):  # a replay after a crash: already there
+            dest = self._place(request.unit_id, request.variant_id, oriented)
+            try:
                 self._store.ingest(
                     unit_id=request.unit_id, variant_id=request.variant_id,
                     staged=received.path, expected_sha256=received.sha256,
-                    dest=self._place(request.unit_id, request.variant_id, oriented),
-                    upstream_ref=request.remote_unit_id,
+                    dest=dest, upstream_ref=request.remote_unit_id,
                 )  # fmt: skip
+            except VariantAlreadyStoredError:
+                # a replay after a crash is a no-op; the reacquisition of a corrupt Unit
+                # (EF-BIB-012) puts the fresh bytes in the place of the damaged file
+                if self._corrupt(request.unit_id):
+                    self._repair(request, received.path, received.sha256)
         now = self._clock.now()
         with self._engine.begin() as connection:
             connection.execute(

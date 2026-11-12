@@ -147,4 +147,6 @@ def test_store_copies_has_an_allowlist_of_callers() -> None:
         "shelfhold/library/adapters/storage.py",
         "shelfhold/library/adapters/epub_derivative.py",
         "shelfhold/library/adapters/import_scan.py",  # the read-back of a stored copy (EF-SRC-012)
+        # the integrity check reads every kept copy, /store included, through the registry
+        "shelfhold/library/application/integrity.py",
     }

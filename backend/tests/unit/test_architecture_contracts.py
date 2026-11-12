@@ -428,6 +428,7 @@ WRITERS_ALLOWED = (
     "shelfhold/infrastructure/fsops/",
     "shelfhold/infrastructure/migrate.py",
     "shelfhold/infrastructure/volumes.py",
+    "shelfhold/infrastructure/held_files.py",  # /data/integrity/held: a repair's working copy
     "shelfhold/infrastructure/secrets/atomic.py",  # keyring and export file, owner-only
     "shelfhold/infrastructure/cover_store.py",  # /data/covers: covers the decode worker re-encoded
     "shelfhold/plugin_host/install.py",  # /data/plugins: staging, site-packages, state file
