@@ -349,7 +349,7 @@ class FederatedSearch:
         for (key, held), answer in zip(asked, answers, strict=True):  # in source order, always
             if isinstance(answer, _Failed):
                 held.status, held.code, held.done = "error", answer.code, True
-                log.info("federated_search.source_failed", source=key, code=answer.code)
+                log.info("federated_search.source_failed", plugin_id=key, code=answer.code)
                 continue
             items = answer.items[:MAX_ITEMS_PER_SOURCE_PAGE]
             token = answer.next.token if answer.next else None
