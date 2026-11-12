@@ -169,7 +169,7 @@ def test_spa_csp_hash_is_kept_and_extended_with_frame_ancestors(tmp_path: Path) 
         api = client.get("/healthz")
     assert response.headers["content-security-policy"] == f"{CSP}; frame-ancestors 'none'"
     assert response.headers["cache-control"] == "no-cache"
-    assert api.headers["content-security-policy"] == "frame-ancestors 'none'"
+    assert api.headers["content-security-policy"] == "default-src 'none'; frame-ancestors 'none'"
     assert response.headers.get_list("x-content-type-options") == ["nosniff"]
 
 

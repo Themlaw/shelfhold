@@ -1,7 +1,7 @@
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { AA_TEXT, contrastRatio, failingPairs, pairsOf, themesDir } from './contrast.ts';
+import { AA_TEXT, checkAll, contrastRatio, failingPairs, pairsOf, themesDir } from './contrast.ts';
 
 // req-file: ENF-A11Y-001
 describe('contrast', () => {
@@ -21,6 +21,26 @@ describe('contrast', () => {
         expect(pairsOf(tokens[scheme]).length, `${theme.name}/${scheme}`).toBeGreaterThan(8);
       }
       expect(failingPairs(tokens), theme.name).toEqual([]);
+    }
+  });
+
+  // req: EF-UX-012
+  it('test_every_theme_tokens_pass_wcag_aa', () => {
+    const themes = readdirSync(themesDir, { withFileTypes: true }).filter((e) => e.isDirectory());
+    expect(themes.map((e) => e.name)).toContain('bibliotheque'); // theme A is the one that ships
+    for (const theme of themes) {
+      const tokens = JSON.parse(readFileSync(join(themesDir, theme.name, 'tokens.json'), 'utf8'));
+      expect(tokens.dark, `${theme.name} has a dark scheme`).toBeDefined();
+      expect(checkAll(), theme.name).toEqual([]);
+      for (const scheme of ['light', 'dark'] as const) {
+        const { names } = pairsOf(tokens[scheme]).reduce(
+          (acc, p) => ({ names: [...acc.names, p.names] }),
+          { names: [] as string[] }
+        );
+        expect(names, `${theme.name}/${scheme} checks the label of the accent button`).toContain(
+          'on-accent/accent'
+        );
+      }
     }
   });
 

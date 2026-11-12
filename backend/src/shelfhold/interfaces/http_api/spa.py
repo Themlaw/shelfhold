@@ -1,27 +1,17 @@
 """Serves the statically built SPA (SvelteKit adapter-static, `fallback: index.html`)."""
 
-import re
 from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.responses import FileResponse, Response
 from starlette.requests import Request
 
-from shelfhold.infrastructure.http_headers import IMMUTABLE_CACHE, NO_CACHE
+from shelfhold.infrastructure.http_headers import IMMUTABLE_CACHE, NO_CACHE, spa_csp
 from shelfhold.interfaces.http_api.catalog import error_code
 from shelfhold.interfaces.http_api.problems import build_problem_response
 
 API_SEGMENTS = frozenset({"api", "healthz", "readyz", "openapi.json"})
 IMMUTABLE_PREFIX = "_app/immutable/"
-CSP_META = re.compile(
-    r'<meta\s+http-equiv="content-security-policy"\s+content="([^"]*)"', re.IGNORECASE
-)
-
-
-def _header_csp(index: Path) -> str | None:
-    """The build's CSP (hashes change with each build); the middleware adds `frame-ancestors`."""
-    match = CSP_META.search(index.read_text(encoding="utf-8"))
-    return match.group(1) if match else None
 
 
 def mount_spa(app: FastAPI, build_dir: Path) -> bool:
@@ -30,12 +20,12 @@ def mount_spa(app: FastAPI, build_dir: Path) -> bool:
     index = root / "index.html"
     if not index.is_file():
         return False
-    csp = _header_csp(index)
+    csp = spa_csp(index.read_text(encoding="utf-8"))
 
     def respond(file: Path, cache: str) -> Response:
         response = FileResponse(file)
         response.headers["Cache-Control"] = cache
-        if csp is not None and file == index:
+        if file == index:
             response.headers["Content-Security-Policy"] = csp
         return response
 

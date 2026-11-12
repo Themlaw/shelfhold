@@ -112,3 +112,10 @@ Retrait possible le 2026-11-15, quand les deux versions ont plus de 14 jours : s
   d'accessibilité bloquant (`serious` et `critical`) joué par les projets `workshop-desktop` et
   `workshop-mobile`. Il tourne dans le navigateur de test, sur l'API locale : aucun accès réseau.
   `frontend/package.json` ne change pas : le script de contraste n'a pas de dépendance.
+
+## Calcul du hash de la CSP (M3 L03)
+
+- **parse5** `^8` (devDependency de `frontend/`, MIT, déjà présente via jsdom) : lit `app.html` pour
+  en extraire le script de démarrage et calculer son hash au build. Un analyseur HTML remplace
+  l'expression régulière sur les balises (`</script >`, casse, commentaires). Build seulement,
+  rien n'est livré dans l'image.

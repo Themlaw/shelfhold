@@ -1,24 +1,18 @@
 import adapter from '@sveltejs/adapter-static';
 import { sveltekit } from '@sveltejs/kit/vite';
 import { svelteTesting } from '@testing-library/svelte/vite';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'vitest/config';
+import { kitCsp } from './scripts/csp.ts';
+
+const appHtml = fileURLToPath(new URL('./src/app.html', import.meta.url));
 
 export default defineConfig({
   plugins: [
     sveltekit({
       adapter: adapter({ fallback: 'index.html' }),
-      csp: {
-        mode: 'hash',
-        directives: {
-          'default-src': ['self'],
-          'script-src': ['self'],
-          'base-uri': ['none'],
-          'form-action': ['self'],
-          'object-src': ['none'],
-          // SvelteKit's route announcer carries a style attribute; allow only that hash.
-          'style-src-attr': ['unsafe-hashes', 'sha256-S8qMpvofolR8Mpjy4kQvEm7m1q8clzU4dfDH0AmvZjo=']
-        }
-      }
+      csp: { mode: 'hash', directives: kitCsp(readFileSync(appHtml, 'utf8')) }
     }),
     svelteTesting()
   ],

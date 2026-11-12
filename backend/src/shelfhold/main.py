@@ -23,6 +23,8 @@ from shelfhold.export.application.shelves import ShelfService
 from shelfhold.export.application.wiring import open_pipeline, roots_signature
 from shelfhold.headless import HeadlessAdmin, wiring
 from shelfhold.headless.applied import record_applied_public_url
+from shelfhold.identity.adapters.preferences import SqlPreferencesStore
+from shelfhold.identity.application.preferences import PreferencesService
 from shelfhold.identity.public import PasskeyRecord, local_auth, reconcile_identity_counter
 from shelfhold.infrastructure.clock import Clock, SystemClock
 from shelfhold.infrastructure.db import create_db_engine
@@ -49,6 +51,7 @@ from shelfhold.interfaces.http_api.catalog_admin import build_catalog_admin_rout
 from shelfhold.interfaces.http_api.follows import build_follows_router
 from shelfhold.interfaces.http_api.headless import build_headless_router
 from shelfhold.interfaces.http_api.health import build_health_page_router
+from shelfhold.interfaces.http_api.identity import build_identity_router
 from shelfhold.interfaces.http_api.intents import build_intents_router
 from shelfhold.interfaces.http_api.jobs import build_jobs_router
 from shelfhold.interfaces.http_api.library import build_library_router
@@ -257,6 +260,9 @@ def create_app(
         build_sources_router(ops_services),  # EF-SRC-015, EF-SRC-004: search, acquire, a URL
         build_activity_router(lambda: engine),  # EF-USR-016: `activity_view`, unmask audited
         build_search_router(lambda: engine),  # EF-BIB-010: admin only until the barrier (L09)
+        build_identity_router(
+            lambda: PreferencesService(SqlPreferencesStore(engine))
+        ),  # EF-UX-012: theme and colour scheme per user
         build_stats_router(lambda: engine, clock.now),  # EF-INT-025: admin only, local only
         build_status_router(ops_services),  # EF-INT-023: what waits, with the command
         build_health_page_router(lambda: engine, resolved, clock.now),  # M3 L15: admin only

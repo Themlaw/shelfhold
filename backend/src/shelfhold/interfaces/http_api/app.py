@@ -8,9 +8,9 @@ from fastapi import APIRouter, FastAPI
 from fastapi.responses import PlainTextResponse, Response
 from fastapi.routing import APIRoute
 
-from shelfhold.infrastructure.http_headers import ROBOTS_TXT
+from shelfhold.infrastructure.http_headers import ROBOTS_TXT, require_web_url
 from shelfhold.infrastructure.idempotency_store import IdempotencyStore
-from shelfhold.interfaces.http_api.about import build_about_router, default_source_url
+from shelfhold.interfaces.http_api.about import build_about_router, build_source_url
 from shelfhold.interfaces.http_api.auth import (
     ANONYMOUS_JSON_PATHS,
     AuthGate,
@@ -110,7 +110,7 @@ def create_http_app(
         return PlainTextResponse(ROBOTS_TXT)
 
     app.include_router(build_health_router(health, version=version))
-    resolved_source = source_url or default_source_url(version)
+    resolved_source = require_web_url(source_url or build_source_url(version))
     app.include_router(build_login_router(resolved_source))
     app.include_router(build_passkeys_router())
     app.include_router(build_about_router(version=version, source_url=resolved_source))

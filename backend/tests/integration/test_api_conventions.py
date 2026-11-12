@@ -164,7 +164,12 @@ def test_invalid_cursor_is_a_400_problem(api: AuthEnv, cursor: str) -> None:
 def _spa(tmp_path: Path) -> Path:
     build = tmp_path / "build"
     build.mkdir()
-    (build / "index.html").write_text("<!doctype html><title>Shelfhold</title>", encoding="utf-8")
+    csp = "default-src 'self'; script-src 'self'; style-src 'self'; object-src 'none'"
+    page = (
+        f'<!doctype html><meta http-equiv="content-security-policy" content="{csp}">'
+        "<title>Shelfhold</title>"
+    )
+    (build / "index.html").write_text(page, encoding="utf-8")  # a valid build: it carries its CSP
     return build
 
 
