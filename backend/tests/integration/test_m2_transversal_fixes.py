@@ -29,12 +29,15 @@ from shelfhold.catalog.public import (
     content_warning_age,
 )
 from shelfhold.export.application.withdrawal import build_plan
+from shelfhold.infrastructure.binding_priority import next_binding_priority
 from shelfhold.infrastructure.ids import new_ulid
+from shelfhold.library.public import CatalogScreenAdapter, WorkRef
 from shelfhold.sdk.age import X_MIN_AGE, AgeRating
 from shelfhold.sdk.refs import SeriesRef
 from tests.acquire_env import BOOK, KEY, Bench, NativeBooks, acquire_bench
 from tests.follow_env import Bench as FollowBench
 from tests.follow_env import add_adult_shelf, follow_bench
+from tests.purge_env import make_purge_env
 
 EIGHTEEN = AgeRating(X_MIN_AGE)
 X = AgeRating(X_MIN_AGE, x=True)
@@ -423,3 +426,72 @@ def test_the_stored_warning_of_an_unknown_nsfw_is_mixed() -> None:
             r["content_warning"] for r in bench.rows("SELECT content_warning FROM sub_source")
         }
         assert warnings == {"mixed"}
+
+
+# -- 1 bis. the real screen, and identifiers written another way ----------------------------------
+
+
+@pytest.mark.req("EF-BIB-053")
+@pytest.mark.parametrize(
+    ("tombstoned", "carried"),
+    [
+        (("anilist", "Q42"), ("anilist", "q42")),
+        (("anilist", "q42"), ("anilist", " Q42 ")),
+        (("openlibrary", "OL1W"), ("openlibrary", "/works/OL1W")),
+        (("openlibrary", "/works/OL1W"), ("openlibrary", "OL1W")),
+        (("kitsu", "30013"), ("kitsu", "030013")),
+    ],
+)
+def test_the_real_screen_blocks_an_identifier_written_another_way(
+    tombstoned: tuple[str, str], carried: tuple[str, str]
+) -> None:
+    plugin = NativeBooks(external_ids={carried[0]: carried[1]})
+    with acquire_bench(plugin, work_screen=None) as bench:
+        purge = make_purge_env(bench.lib)
+        purge.tombstones.record(WorkRef(*tombstoned), purge.roots, reason="purge_work")
+        bench.acquirer._work_screen = lambda: CatalogScreenAdapter(purge.tombstones)
+        with pytest.raises(AcquireRefused) as refused:
+            prepare(bench, OTHER)
+        assert refused.value.code == "acquire.work_tombstoned"
+        nothing_written(bench)
+
+
+@pytest.mark.req("EF-BIB-053")
+def test_the_real_screen_lets_an_identifier_nobody_purged_through() -> None:
+    plugin = NativeBooks(external_ids={"anilist": "q43"})
+    with acquire_bench(plugin, work_screen=None) as bench:
+        purge = make_purge_env(bench.lib)
+        purge.tombstones.record(WorkRef("anilist", "Q42"), purge.roots, reason="purge_work")
+        bench.acquirer._work_screen = lambda: CatalogScreenAdapter(purge.tombstones)
+        assert prepare(bench, OTHER).created
+
+
+# -- 4. the priority of a binding is never fixed --------------------------------------------------
+
+
+@pytest.mark.req("EF-SRC-015")
+def test_no_writer_of_a_binding_fixes_its_priority() -> None:
+    from pathlib import Path
+
+    import shelfhold
+
+    root = Path(shelfhold.__file__).parent
+    for rel in (
+        "acquisition/application/acquire.py",
+        "acquisition/application/discovery.py",
+        "acquisition/application/import_target.py",
+        "export/application/pairing.py",
+    ):
+        source = (root / rel).read_text()
+        assert "priority=1" not in source, rel
+        assert "next_binding_priority" in source, rel
+
+
+@pytest.mark.req("EF-SRC-015")
+def test_the_next_binding_priority_is_the_highest_plus_one() -> None:
+    with acquire_bench(NativeBooks(work_key="novel")) as bench:
+        rated_work_then_book(bench, None, bound=2)
+        (edition,) = bench.rows("SELECT id FROM edition")
+        with bench.lib.engine.connect() as connection:
+            assert next_binding_priority(connection, edition["id"]) == 4
+            assert next_binding_priority(connection, "01J00000000000000000000000") == 1

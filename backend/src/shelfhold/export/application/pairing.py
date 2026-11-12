@@ -33,6 +33,7 @@ from shelfhold.export.application.coverage import adopted_volumes, flag_unknown_
 from shelfhold.export.application.migration_detect import SwitchoverGate
 from shelfhold.export.application.preflight import PermissionPreflight, ProbeResult
 from shelfhold.export.domain.naming import normalize_series_name
+from shelfhold.infrastructure.binding_priority import next_binding_priority
 from shelfhold.infrastructure.clock import Clock
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import acquisition, catalog, export
@@ -494,7 +495,8 @@ class Pairing:
         connection.execute(
             sa.insert(acquisition.source_binding).values(
                 id=binding_id, work_id=item.work_id, edition_id=item.edition_id,
-                source_item_id=item_id, priority=1, active=True, linked_from_adoption=True,
+                source_item_id=item_id, active=True, linked_from_adoption=True,
+                priority=next_binding_priority(connection, item.edition_id),
             )
         )  # fmt: skip
         follow = acquisition.series_follow

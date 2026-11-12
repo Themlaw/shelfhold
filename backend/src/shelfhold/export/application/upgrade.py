@@ -52,14 +52,14 @@ from shelfhold.export.application.intents import (
 from shelfhold.export.application.locks import ResourceLocks
 from shelfhold.export.application.mirror import ProvenanceMirror
 from shelfhold.export.application.rendering import CbzRenderer, comicinfo_xml
-from shelfhold.export.application.snapshot import DestinationContext, load_context
+from shelfhold.export.application.snapshot import DestinationContext, barrier_holds, load_context
 from shelfhold.export.domain.physical_roots import RootState
 from shelfhold.identity.public import Allowed
 from shelfhold.infrastructure.clock import Clock
 from shelfhold.infrastructure.fsops import FileIdentity, Fsops
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.logging import escaped
-from shelfhold.infrastructure.schema import export
+from shelfhold.infrastructure.schema import catalog, export
 from shelfhold.infrastructure.schema.export import UPGRADE_REASONS as REASONS
 from shelfhold.library.public import (
     RootLocator,
@@ -481,6 +481,9 @@ class SamePathUpgrade:
         ):  # frozen, or blocked by its sentinel or its lease: nothing, not even the intent
             log.warning("upgrade.root_frozen", root_id=root_id)
             return UpgradeOutcome.ROOT_FROZEN
+        if not self._admitted(connection, served):
+            log.info("upgrade.refused_age", unit_id=served.unit_id)
+            return UpgradeOutcome.REFUSED_AGE
         if check_read and served.skip_read and _is_read(connection, served.unit_ids):
             log.info("upgrade.skipped_read", unit_id=served.unit_id)
             return UpgradeOutcome.SKIPPED_READ
@@ -493,6 +496,19 @@ class SamePathUpgrade:
         if target in open_intent_paths(connection):
             return UpgradeOutcome.BUSY
         return None
+
+    @staticmethod
+    def _admitted(connection: Connection, served: _Served) -> bool:
+        """The barrier of the export, read again now: a file already served is not replaced when
+        the shelf below 18+ no longer admits its Edition (a suggested age above the rating, a
+        rating raised, an Edition withdrawn). The very look the planner takes before a write."""
+        unit = catalog.unit
+        editions = connection.execute(
+            sa.select(unit.c.edition_id).where(unit.c.id.in_(served.unit_ids)).distinct()
+        ).scalars()
+        return all(
+            barrier_holds(connection, served.ctx.destination_id, edition) for edition in editions
+        )
 
     # -- the replacement --------------------------------------------------------------------
 

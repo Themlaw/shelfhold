@@ -61,6 +61,7 @@ from shelfhold.catalog.public import (
     translation_type_for,
 )
 from shelfhold.events.bus import EventBus, PublishedEvent
+from shelfhold.infrastructure.binding_priority import next_binding_priority
 from shelfhold.infrastructure.clock import Clock
 from shelfhold.infrastructure.content_trust import (
     Destination,
@@ -582,7 +583,7 @@ class NativeAcquirer:
         connection.execute(
             sa.insert(binding).values(
                 id=binding_id, work_id=work_id, edition_id=edition_id, source_item_id=item_id,
-                priority=_next_priority(connection, edition_id), active=True,
+                priority=next_binding_priority(connection, edition_id), active=True,
                 # as the manifest stands now: a third-party plugin's value only after attestation
                 content_trust=manifest.content_trust,
             )
@@ -875,16 +876,6 @@ def _filed(connection: Connection, edition_id: str) -> bool:
         ).scalar()
         is not None
     )
-
-
-def _next_priority(connection: Connection, edition_id: str) -> int:
-    """The next free priority of an Edition's sources (`UNIQUE (edition_id, priority)`): a book
-    that joins an Edition already bound to another source comes after it."""
-    table = acquisition.source_binding
-    top = connection.execute(
-        sa.select(sa.func.max(table.c.priority)).where(table.c.edition_id == edition_id)
-    ).scalar()
-    return int(top or 0) + 1
 
 
 def _shelf(connection: Connection) -> str | None:

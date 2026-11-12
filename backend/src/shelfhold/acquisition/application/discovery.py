@@ -34,6 +34,7 @@ from shelfhold.catalog.public import (
     translation_type_for,
 )
 from shelfhold.export.public import forget_coverage_unknown, pending_pairing
+from shelfhold.infrastructure.binding_priority import next_binding_priority
 from shelfhold.infrastructure.clock import Clock
 from shelfhold.infrastructure.content_trust import Destination, sanitize_upstream_text
 from shelfhold.infrastructure.ids import new_ulid
@@ -379,7 +380,8 @@ class SeriesDiscovery:
                 connection.execute(
                     sa.insert(acquisition.source_binding).values(
                         id=binding_id, work_id=work_id, edition_id=edition_id,
-                        source_item_id=item_id, priority=1, active=True,
+                        source_item_id=item_id, active=True,
+                        priority=next_binding_priority(connection, edition_id),
                     )
                 )  # fmt: skip
                 follow = acquisition.series_follow
