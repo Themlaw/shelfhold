@@ -230,6 +230,8 @@ class AdoptionReport:
                     volume, first, last = comicinfo_range(info) or ("", "", "")
                     found.append(f"{f.rel_path}: volume {volume}, chapters {first}-{last}")
         return tuple(found)
+
+    @property
     def withdrawal_plan(self) -> AdoptionWithdrawalPlan:
         """The removal plan of the unrated Works of a child library; empty for any other."""
         if not self.child_library:
