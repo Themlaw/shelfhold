@@ -246,8 +246,13 @@ def run_forget_root(args: argparse.Namespace, resolved: ResolvedSettings) -> int
         print(t("reconcile.instance_running"), file=sys.stderr)
         return BLOCKED
     except ForgetRootRefusedError as refused:
-        print(t(f"reconcile.forget_root_{refused.reason}", root=args.forget_root, phrase=phrase),
-              file=sys.stderr)  # fmt: skip
+        if refused.reason == "unknown_root":
+            message = t("reconcile.forget_root_unknown_root", root=args.forget_root)
+        elif refused.reason == "still_readable":
+            message = t("reconcile.forget_root_still_readable", root=args.forget_root)
+        else:
+            message = t("reconcile.forget_root_phrase_mismatch", phrase=phrase)
+        print(message, file=sys.stderr)
         return REFUSED
     except DeletionRefusedError:
         print(t("reconcile.deletion_refused"), file=sys.stderr)
