@@ -46,6 +46,7 @@ from tests.null_tombstones import NONE_PURGED
 KEY = "gutenberg"
 CATALOG_HOST = "catalog.example.org"
 MIRROR_HOST = "mirror.example.net"
+OFFICIAL_MIRROR_HOST = "aleph.gutenberg.org"  # on the frozen list of official mirrors
 SITE_HOSTS = ("www.gutenberg.org", "gutenberg.org")
 PUBLIC = "93.184.216.34"
 CATALOG_URL = f"https://{CATALOG_HOST}/cache/epub/feeds/pg_catalog.csv"
@@ -156,7 +157,7 @@ class Wire:
             if request.headers.get("if-none-match") == self.etag:
                 return httpx2.Response(304, headers={"etag": self.etag})
             return httpx2.Response(200, content=self.catalog, headers={"etag": self.etag})
-        if host == MIRROR_HOST and path.startswith("/gutenberg/cache/epub/"):
+        if host in (MIRROR_HOST, OFFICIAL_MIRROR_HOST) and path.startswith("/gutenberg/cache/epub/"):
             if self.redirect_files_to is not None:
                 return httpx2.Response(302, headers={"location": self.redirect_files_to})
             if path in self.files:
@@ -281,7 +282,7 @@ def gutenberg_bench(
         served = Wire(recorder, files=dict(files or {}), **(wire or {}))
         served.now = fake.clock
         holder.append(served)
-        hosts = (CATALOG_HOST, MIRROR_HOST, *SITE_HOSTS)
+        hosts = (CATALOG_HOST, MIRROR_HOST, OFFICIAL_MIRROR_HOST, *SITE_HOSTS)
         network = Network(
             resolver=FakeResolver({h: [PUBLIC] for h in hosts}), transport=recorder.transport
         )

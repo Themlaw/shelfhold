@@ -199,7 +199,7 @@ def test_a_mirror_that_redirects_to_the_website_is_refused_at_the_hop(on_site_fe
         "https://m.gutenberg.org/files",
         "https://gutenberg.net/",
         "https://www.gutenberg.net/x",
-        "https://aleph.gutenberg.org/",
+        "https://aleph.gutenberg.org.example.net@www.gutenberg.org/",
         "mirror.example.net/gutenberg",
         "",
     ],
