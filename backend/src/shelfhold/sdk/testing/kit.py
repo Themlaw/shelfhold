@@ -15,6 +15,7 @@ from typing import Any, cast
 from pydantic import BaseModel
 
 from shelfhold.sdk.connected import ConnectedCapability, ConnectedService
+from shelfhold.sdk.events import PluginEventError, plugin_event_type
 from shelfhold.sdk.fetcher import Fetcher
 from shelfhold.sdk.io_guard import ForbiddenIOError, GuardedPlugin, IoViolation, unwrap
 from shelfhold.sdk.metadata import (
@@ -26,7 +27,7 @@ from shelfhold.sdk.metadata import (
     MetadataProvider,
     ProviderCapability,
 )
-from shelfhold.sdk.models import API_VERSION, sdk_supports
+from shelfhold.sdk.models import API_VERSION, WAITING_EXITS, sdk_supports
 from shelfhold.sdk.refs import (
     RangedPayload,
     RangeRef,
@@ -47,7 +48,6 @@ _REQUIRED_BY_CAPABILITY: dict[Capability, tuple[str, ...]] = {
     Capability.LOGIN: ("login", "refresh"),
     Capability.FILTERS: ("filters",),
     Capability.SUB_SOURCES: ("sub_sources",),
-    Capability.RANGED_CONTENT: ("fetch_range",),
 }
 _REQUIRED_BY_CONNECTED: dict[ConnectedCapability, tuple[str, ...]] = {
     ConnectedCapability.CATEGORIES: ("followed_series", "set_follow"),
@@ -88,6 +88,25 @@ class ConformanceReport:
     def add(self, name: str, ok: bool, detail: str = "") -> None:
         self.checks.append(CheckResult(name, ok, detail))
 
+    def add_waiting_states(self, manifest: Any) -> None:
+        """Every waiting state a plugin declares names its way out (EF-INT-023), and its event
+        stays in the space of the plugin."""
+        problems = []
+        key = str(getattr(manifest, "key", ""))
+        seen: set[str] = set()
+        for state in getattr(manifest, "waiting_states", None) or []:
+            name = getattr(state, "name", None)
+            if getattr(state, "exit", None) not in WAITING_EXITS:
+                problems.append(f"{name!r} declares no exit among {', '.join(WAITING_EXITS)}")
+            try:
+                plugin_event_type(key, str(name))
+            except PluginEventError:
+                problems.append(f"{name!r} has no event in the space of the plugin")
+            if name in seen:
+                problems.append(f"{name!r} is declared twice")
+            seen.add(str(name))
+        self.add("waiting_states_declare_exit", not problems, "; ".join(problems))
+
     def assert_ok(self) -> None:
         """AssertionError on any failure; ForbiddenIOError first when the plugin did direct I/O."""
         if self.io_violations:
@@ -107,7 +126,10 @@ class _Discovery:
 
 
 def _roundtrips(model: BaseModel) -> bool:
-    return type(model).model_validate_json(model.model_dump_json()) == model
+    try:
+        return type(model).model_validate_json(model.model_dump_json()) == model
+    except ValueError:  # includes pydantic's ValidationError: what was dumped cannot be read back
+        return False
 
 
 def _leaks_secret(value: str) -> bool:
@@ -138,9 +160,19 @@ def _missing_methods(source: Source) -> list[str]:
     for cap, names in _REQUIRED_BY_CAPABILITY.items():
         if cap in caps:
             missing += [n for n in names if not callable(getattr(source, n, None))]
-    if Capability.RANGED_CONTENT not in caps and not callable(getattr(source, "fetch_unit", None)):
-        missing.append("fetch_unit")
+    # `fetch_range` is optional from SDK 1.3 (D10): a ranged source delivers through the ticket of
+    # its connected service, or, written for 1.2, through either method.
     connected = getattr(source, "connected", None)
+    queue = (
+        isinstance(connected, ConnectedCapability) and ConnectedCapability.SERVER_QUEUE in connected
+    )
+    has_unit = callable(getattr(source, "fetch_unit", None))
+    if Capability.RANGED_CONTENT in caps:
+        delivers = queue or has_unit or callable(getattr(source, "fetch_range", None))
+    else:
+        delivers = has_unit
+    if not delivers:
+        missing.append("fetch_unit")
     if isinstance(connected, ConnectedCapability):
         for ccap, cnames in _REQUIRED_BY_CONNECTED.items():
             if ccap in connected:
@@ -194,6 +226,7 @@ async def run_source_conformance(
     report.add("manifest", valid, "" if valid else "manifest is not a valid SourceManifest")
     api_ok = manifest.api in (API_VERSION, API_VERSION - 1)
     report.add("api_compatible", api_ok, "" if api_ok else f"api {manifest.api} is not N or N-1")
+    report.add_waiting_states(manifest)
     missing = _missing_methods(source)
     report.add(
         "capabilities_implemented", not missing, f"missing: {', '.join(missing)}" if missing else ""
@@ -250,6 +283,20 @@ async def run_source_conformance(
     return report
 
 
+def _range_problems(payload: RangedPayload, window: list[UnitInfo]) -> list[str]:
+    covered = [u.remote_unit_id for u in window]
+    problems = []
+    if not payload.covers or any(c not in covered for c in payload.covers):
+        problems.append("covers must be a non-empty subset of the requested units")
+    if payload.covers != [c for c in covered if c in payload.covers]:
+        problems.append("covers must follow the source order")
+    if any(k not in payload.covers for k in payload.bounds):
+        problems.append("bounds name a unit that is not covered")
+    if not payload.asset.mime:
+        problems.append("asset invalid")
+    return problems
+
+
 async def _check_payloads(
     source: Source,
     f: Fetcher,
@@ -267,20 +314,6 @@ async def _check_payloads(
 
     def range_target() -> RangeRef:
         return RangeRef(series=d.series, first=window[0], last=window[-1])
-
-    async def ranged() -> None:
-        payload = await source.fetch_range(f, range_target())
-        covered = [u.remote_unit_id for u in window]
-        problems = []
-        if not payload.covers or any(c not in covered for c in payload.covers):
-            problems.append("covers must be a non-empty subset of the requested units")
-        if payload.covers != [c for c in covered if c in payload.covers]:
-            problems.append("covers must follow the source order")
-        if any(k not in payload.covers for k in payload.bounds):
-            problems.append("bounds name a unit that is not covered")
-        if not payload.asset.mime or not _roundtrips(payload):
-            problems.append("asset or payload invalid")
-        report.add("ranged_content", not problems, "; ".join(problems))
 
     async def single() -> None:
         payload = await source.fetch_unit(f, d.series, units[0])
@@ -318,6 +351,8 @@ async def _check_payloads(
                 )
             if not _roundtrips(payload):
                 problems.append("fetched payload does not round-trip")
+            if isinstance(payload, RangedPayload) and isinstance(target, RangeRef):
+                problems += _range_problems(payload, window)
         await service.cancel(f, tickets[0])
         report.add("server_queue", not problems, "; ".join(problems))
 
@@ -328,9 +363,9 @@ async def _check_payloads(
     if not units:
         report.add("units_present", False, "the synthetic fixtures must yield units")
         return
-    if Capability.RANGED_CONTENT in caps:
-        await guarded("ranged_content", ranged)
-    else:
+    if not (Capability.RANGED_CONTENT in caps and queue) and callable(
+        getattr(source, "fetch_unit", None)
+    ):
         await guarded("fetch_unit", single)
     if queue:
         await guarded("server_queue", queued)

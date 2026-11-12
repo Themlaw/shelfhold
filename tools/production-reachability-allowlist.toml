@@ -173,11 +173,3 @@ symbols = [
   "shelfhold.infrastructure.imaging.client:diagnose_worker",
   "shelfhold.infrastructure.imaging.client:probe_image",
 ]
-
-[[allow]]
-category = "unwired-m2-l25-sync-range"
-reason = "2026-11-12 (M2 L31): `fetch_range` is the synchronous case of the two steps of a request (ask, wait a bounded time, receive): the `Source` contract requires it (`sdk/source.py`) and the conformance kit calls it, but the follow cycle drives the same service through the persisted ticket (`request`, `poll`, `fetch`), which is the production path and is proved by its own tests. Nothing in production waits inside one call: it is neither wired nor deletable (the contract and the kit need it), so it is written down for M3, when the contract may drop the synchronous step."
-until = "M3"
-symbols = [
-  "shelfhold.plugin_host.adapters.meta.lncrawl.service:LncrawlService.fetch_range",
-]

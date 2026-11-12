@@ -155,8 +155,11 @@ class Source(Protocol):
 
     async def fetch_unit(self, f: Fetcher, ref: SeriesRef, u: UnitInfo) -> UnitPayload: ...
 
-    # RANGED_CONTENT: the synchronous case of the RangeRef target of EF-SRC-034.
-    async def fetch_range(self, f: Fetcher, target: RangeRef) -> RangedPayload: ...
+    # RANGED_CONTENT: the synchronous case of the RangeRef target of EF-SRC-034. Optional from
+    # SDK 1.3 (D10): production goes through the ticket (`request`, `poll`, `fetch`), and the kit
+    # no longer calls it. A plugin written for 1.2 that implements it keeps working.
+    async def fetch_range(self, f: Fetcher, target: RangeRef) -> RangedPayload:
+        raise NotImplementedError("fetch_range is optional: use the ticket of a connected service")
 
     async def resolve_page(self, f: Fetcher, u: UnitInfo, p: PageRef) -> ImageRequest: ...
 

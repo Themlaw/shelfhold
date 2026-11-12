@@ -300,12 +300,12 @@ def test_lncrawl_poisoned_poll_answer_is_a_source_change_not_a_state(
 
 
 @pytest.mark.req("EF-SRC-033")
-def test_lncrawl_fetch_range_gives_up_on_a_job_that_never_ends() -> None:
+def test_lncrawl_fetch_gives_up_on_a_job_that_never_ends() -> None:
     service, f, server = make()
     server.stuck = True
     ref, units = alpha(service, f)
     with pytest.raises(TemporarilyUnavailable):
-        run(service.fetch_range(f, volume_target(ref, units, "Vol.1")))
+        run(service.fetch(f, run(service.request(f, volume_target(ref, units, "Vol.1")))))
     assert len(server.requests_to("/jobs/job-1")) <= 60  # bounded: it does not spin forever
 
 

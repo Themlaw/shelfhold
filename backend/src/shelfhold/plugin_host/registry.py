@@ -43,7 +43,7 @@ from importlib import metadata
 from importlib.machinery import ModuleSpec
 from pathlib import Path
 from types import CodeType
-from typing import Any, Final
+from typing import Any, Final, Protocol
 from urllib.parse import urlsplit
 
 import structlog
@@ -57,6 +57,7 @@ from shelfhold.plugin_host.attestation import retain
 from shelfhold.plugin_host.audit_hook import allow_code_root, audited, host_io, importing
 from shelfhold.plugin_host.errors import NoSourceForUrl
 from shelfhold.plugin_host.settings import SettingsSchemaError, parse_settings_schema
+from shelfhold.sdk.events import check_plugin_event, plugin_event_type
 from shelfhold.sdk.models import API_VERSION, PluginKind, PluginManifest
 from shelfhold.sdk.refs import SeriesRef, UnitInfo
 from shelfhold.sdk.source import Capability, SourceManifest
@@ -374,6 +375,29 @@ def compile_url_pattern(pattern: str) -> UrlPattern:
 class UrlResolution:
     key: str  # the plugin that recognised the URL
     ref: SeriesRef | UnitInfo
+
+
+class EventPublisher(Protocol):
+    """What `events.bus.EventBus` offers; named here so that the host gate needs no import of it."""
+
+    def publish(
+        self, connection: Any, event_type: str, payload: Mapping[str, object] | None = None
+    ) -> Any: ...
+
+
+def publish_plugin_event(
+    bus: EventPublisher,
+    connection: Any,
+    key: str,
+    name: str,
+    payload: Mapping[str, object] | None = None,
+) -> Any:
+    """The only way a plugin's event reaches the bus (ENF-OBS-003): the host builds the type from
+    the key it loaded the plugin under, so a plugin cannot speak for the core or another plugin.
+    `PluginEventError` otherwise, before anything is published. The bus checks the payload."""
+    event_type = plugin_event_type(key, name)
+    check_plugin_event(key, event_type)
+    return bus.publish(connection, event_type, payload)
 
 
 class PluginRegistry:

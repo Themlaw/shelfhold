@@ -150,9 +150,9 @@ def test_auth_declared_requires_login_and_refresh() -> None:
 @pytest.mark.req("EF-BIB-013")
 def test_sdk_1_2_is_compatible_with_n_minus_1() -> None:
     """D16: MetadataProvider is an addition (SDK 1.2); a 1.1 plugin keeps working."""
-    assert SDK_VERSION == "1.2"
-    assert sdk_supports("1.1") and sdk_supports("1.2")
-    assert not sdk_supports("1.3") and not sdk_supports("2.0")
+    assert SDK_VERSION == "1.3"  # the freeze (L34) is the next minor; 1.2 plugins still load
+    assert sdk_supports("1.1") and sdk_supports("1.2") and sdk_supports("1.3")
+    assert not sdk_supports("1.4") and not sdk_supports("2.0")
     manifest = FakeMetadataProvider().manifest
     assert manifest.kind is PluginKind.METADATA and manifest.api == 1 and manifest.min_sdk == "1.2"
     # a manifest written by a later 1.x (unknown field) still loads: additions are optional

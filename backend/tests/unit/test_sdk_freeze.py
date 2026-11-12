@@ -117,7 +117,7 @@ RESERVED = [
     ".shelfhold ",
     ".shelfhold-mount-id",
     ".shelfhold-probe-1",
-    ".ſhelfhold",  # long s: folds to "s"
+    ".\u017fhelfhold",  # long s: folds to "s"
     "\uff0eshelfhold",  # full-width full stop
     unicodedata.normalize("NFD", ".shelfhold"),
     unicodedata.normalize("NFC", ".shelfhold") + "/x",
@@ -207,12 +207,12 @@ def test_sdk_1_3_frozen_surface() -> None:
 def test_plugin_events_namespaced() -> None:
     assert plugin_event_type("acme", "sync_done") == "plugin.acme.sync_done"
     check_plugin_event("acme", "plugin.acme.sync_done")
-    check_plugin_event("acme", "plugin.acme.a.b")
     for outside in (
         "plugin.other.sync_done",  # another plugin's space
         "plugin.acmeevil.x",  # a prefix of the key is not the key
         "plugin.acme",  # the space itself
         "plugin.acme.",
+        "plugin.acme.a.b",
         "job.failed",  # a core event
         "ops.anything",
         "target.forbidden",
