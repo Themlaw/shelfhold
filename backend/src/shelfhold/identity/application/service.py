@@ -34,9 +34,12 @@ from shelfhold.identity.application.ports import (
     PasskeyGoneError,
     PasskeyRecord,
     PasswordHasherPort,
+    ProfileRecord,
     ReauthMethod,
+    SourcePolicyRecord,
     UserRecord,
 )
+from shelfhold.identity.application.profiles import ProfileService
 from shelfhold.identity.domain.credentials import (
     HARDENED_KEY_MAX_AGE,
     MAX_PASSWORD_LENGTH,
@@ -60,6 +63,7 @@ from shelfhold.identity.domain.reserved import (
     Verdict,
     authorize_reserved,
 )
+from shelfhold.identity.domain.roles import ProfileError
 from shelfhold.identity.domain.throttle import LoginThrottle
 from shelfhold.identity.domain.tokens import (
     new_api_key,
@@ -268,6 +272,12 @@ class LocalAuth:
         if passkeys is not None and passkeys.available:  # the method exists in a secure context
             methods.append(PasskeyReauth(passkeys, store.restore_notice_active))
         self._reauth = {method.name: method for method in methods}
+        self._profiles = ProfileService(
+            store,
+            hasher,
+            clock.now,
+            lambda action, by, target: self._audit(action, by, target=target),
+        )
 
     @property
     def reauth_method_names(self) -> tuple[str, ...]:
@@ -334,7 +344,10 @@ class LocalAuth:
             raise UnknownUserError
         if user.role == ADMIN_ROLE and len(self._store.admins()) <= 1:
             raise LastAdminError
-        pseudonym = self._store.delete_user(user.id)
+        try:
+            pseudonym = self._store.delete_user(user.id, keep_one_admin=True)
+        except ProfileError:  # the last admin, decided in the transaction that deletes
+            raise LastAdminError from None
         if pseudonym is None:
             raise UnknownUserError
         self._audit("user.deleted", by, target=pseudonym)
@@ -356,6 +369,68 @@ class LocalAuth:
         if revoked:
             self._audit("user.passkeys_revoked", by, target=user.id)
         return closed
+
+    # --- household profiles (M3 L05): see `profiles.py` --------------------------------------
+
+    def profile_add(
+        self,
+        username: str,
+        password: str,
+        role: str,
+        *,
+        max_age_rating: int | None = None,
+        can_rate: bool | None = None,
+        by: Principal | None = None,
+    ) -> str:
+        return self._profiles.add(
+            username, password, role, max_age_rating=max_age_rating, can_rate=can_rate, by=by
+        )
+
+    def profile_add_record(
+        self,
+        username: str,
+        password: str,
+        role: str,
+        *,
+        max_age_rating: int | None = None,
+        can_rate: bool | None = None,
+        by: Principal | None = None,
+    ) -> ProfileRecord:
+        return self._profiles.add_profile(
+            username, password, role, max_age_rating=max_age_rating, can_rate=can_rate, by=by
+        )
+
+    def profile_list(self, *, by: Principal | None = None) -> Sequence[ProfileRecord]:
+        return self._profiles.list(by=by)
+
+    def profile_set(
+        self,
+        profile_id: str,
+        *,
+        role: str | None = None,
+        max_age_rating: int | None = None,
+        can_rate: bool | None = None,
+        by: Principal | None = None,
+    ) -> ProfileRecord:
+        return self._profiles.set(
+            profile_id, role=role, max_age_rating=max_age_rating, can_rate=can_rate, by=by
+        )
+
+    def profile_remove(self, profile_id: str, *, by: Principal | None = None) -> None:
+        self._profiles.remove(profile_id, by=by)
+
+    def profile_policy_set(
+        self, profile_id: str, source_key: str, policy: str, *, by: Principal | None = None
+    ) -> SourcePolicyRecord:
+        return self._profiles.set_source_policy(profile_id, source_key, policy, by=by)
+
+    def profile_policies(
+        self, profile_id: str, *, by: Principal | None = None
+    ) -> Sequence[SourcePolicyRecord]:
+        return self._profiles.source_policies(profile_id, by=by)
+
+    def effective_source_policy(self, profile_id: str, source_key: str) -> str:
+        return self._profiles.effective_source_policy(profile_id, source_key)
 
     # --- sessions ----------------------------------------------------------------------------
 

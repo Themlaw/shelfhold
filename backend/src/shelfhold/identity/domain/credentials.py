@@ -45,6 +45,11 @@ class Principal:
                 return f"{self.credential.value}:{self.user_id}"
 
     @property
+    def is_host(self) -> bool:
+        """The host CLI over its socket (not a session, a key or a token)."""
+        return self.credential is Credential.LOCAL_CLI
+
+    @property
     def may_write(self) -> bool:
         if self.read_only:
             return False

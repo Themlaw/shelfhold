@@ -22,6 +22,8 @@ from shelfhold.identity.public import (
     CreatedApiKey,
     LocalAuth,
     Principal,
+    ProfileError,
+    ProfileRecord,
     UnknownUserError,
     audit_actor,
     authorize_reserved,
@@ -148,6 +150,70 @@ def _keys_list(auth: LocalAuth, _by: Principal, _params: Params) -> object:
     ]
 
 
+def _optional_int(params: Params, name: str) -> int | None:
+    value = params.get(name)
+    if value is None:
+        return None
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise _invalid(name, "integer")
+    return value
+
+
+def _optional_flag(params: Params, name: str) -> bool | None:
+    value = params.get(name)
+    if value is not None and not isinstance(value, bool):
+        raise _invalid(name, "boolean")
+    return value
+
+
+def _profile_view(record: ProfileRecord) -> dict[str, object]:
+    return {
+        "id": record.id, "username": record.username, "role": record.role,
+        "max_age_rating": record.max_age_rating, "can_rate": record.can_rate,
+    }  # fmt: skip
+
+
+def _profile_add(auth: LocalAuth, by: Principal, params: Params) -> object:
+    return auth.profile_add(
+        str(_text(params, "username")),
+        str(_text(params, "password")),
+        str(_text(params, "role")),
+        max_age_rating=_optional_int(params, "max_age_rating"),
+        can_rate=_optional_flag(params, "can_rate"),
+        by=by,
+    )
+
+
+def _profile_list(auth: LocalAuth, by: Principal, _params: Params) -> object:
+    return [_profile_view(p) for p in auth.profile_list(by=by)]
+
+
+def _profile_set(auth: LocalAuth, by: Principal, params: Params) -> object:
+    auth.profile_set(
+        str(_text(params, "profile_id")),
+        role=_text(params, "role", required=False),
+        max_age_rating=_optional_int(params, "max_age_rating"),
+        can_rate=_optional_flag(params, "can_rate"),
+        by=by,
+    )
+    return None
+
+
+def _profile_remove(auth: LocalAuth, by: Principal, params: Params) -> object:
+    auth.profile_remove(str(_text(params, "profile_id")), by=by)
+    return None
+
+
+def _profile_policy(auth: LocalAuth, by: Principal, params: Params) -> object:
+    auth.profile_policy_set(
+        str(_text(params, "profile_id")),
+        str(_text(params, "source_key")),
+        str(_text(params, "policy")),
+        by=by,
+    )
+    return None
+
+
 # method -> (implementation, the reserved action it is, if any). A key is a credential: managing
 # credentials is reserved (EF-USR-024), and `local_cli` is one of the two channels allowed to.
 METHODS: Mapping[str, tuple[Method, str | None]] = {
@@ -160,6 +226,11 @@ METHODS: Mapping[str, tuple[Method, str | None]] = {
     "identity.keys_rotate": (_keys_rotate, "keys.rotate"),
     "identity.keys_revoke": (_keys_revoke, "keys.revoke"),
     "identity.keys_list": (_keys_list, None),
+    "identity.profile_add": (_profile_add, "profile.create"),
+    "identity.profile_list": (_profile_list, None),
+    "identity.profile_set": (_profile_set, "profile.update"),
+    "identity.profile_remove": (_profile_remove, "profile.remove"),
+    "identity.profile_policy": (_profile_policy, "profile.source_policy"),
 }
 
 
@@ -372,6 +443,8 @@ class IdentityDispatcher:
             ) from None
         except AdminExistsError:
             raise RpcError(APPLICATION_ERROR, t("admin.exists"), {"code": "admin_exists"}) from None
+        except ProfileError as error:  # the rule that refused, by its code: the CLI words it
+            raise RpcError(APPLICATION_ERROR, error.code, {"code": error.code}) from None
         except ValueError as error:
             if str(error) in _PASSWORD_REASONS:
                 raise RpcError(APPLICATION_ERROR, str(error), {"code": str(error)}) from None

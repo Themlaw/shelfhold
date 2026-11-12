@@ -35,6 +35,7 @@ from shelfhold.interfaces.http_api.problems import (
     install_problem_handlers,
     install_problem_openapi,
 )
+from shelfhold.interfaces.http_api.profiles import build_profiles_router
 from shelfhold.interfaces.http_api.spa import mount_spa
 
 HttpApplication = FastAPI
@@ -113,6 +114,7 @@ def create_http_app(
     resolved_source = require_web_url(source_url or build_source_url(version))
     app.include_router(build_login_router(resolved_source))
     app.include_router(build_passkeys_router())
+    app.include_router(build_profiles_router())
     app.include_router(build_about_router(version=version, source_url=resolved_source))
     for router in routers:
         app.include_router(router)

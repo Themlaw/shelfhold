@@ -50,6 +50,7 @@ P3 = {
     "records_legal_fact",  # `contributor set-died-for-france`: hides or shows a warning (L15b)
     "rates_content",  # fresh session in every profile (porteur, 2026-11-11): a stolen session
     "enrols_passkey",  # must not file adult content as "0" nor add a passkey that outlives it
+    "manages_profiles",  # M3 L05: a stolen session makes no admin, lifts no child's ceiling
 }
 
 
@@ -282,6 +283,10 @@ FRESHNESS_LINE = {
             "shelf.purge_upstream",
             "rate",  # porteur 2026-11-11: fresh in every profile
             "passkey.register",  # same: a stolen session adds no passkey that outlives it
+            "profile.create",  # M3 L05: fresh in every profile (EF-USR-022), not only with a child
+            "profile.update",
+            "profile.remove",
+            "profile.source_policy",
         ),
         "p3",
     ),

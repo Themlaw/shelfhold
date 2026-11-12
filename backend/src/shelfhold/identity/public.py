@@ -16,7 +16,9 @@ from shelfhold.identity.application.ports import (
     ApiKeyRecord,
     AuditEntry,
     PasskeyRecord,
+    ProfileRecord,
     ReauthMethod,
+    SourcePolicyRecord,
     UserRecord,
 )
 from shelfhold.identity.application.service import (
@@ -64,6 +66,7 @@ from shelfhold.identity.domain.emitters import (
 )
 from shelfhold.identity.domain.passkeys import CHALLENGE_TTL, RelyingParty, relying_party
 from shelfhold.identity.domain.passkeys import MAX_NAME as PASSKEY_NAME_MAX
+from shelfhold.identity.domain.policy import SOURCE_POLICIES
 from shelfhold.identity.domain.reserved import (
     DEFAULT_FRESH_AUTH_S,
     DEFAULT_RESERVED_ROLES,
@@ -82,8 +85,10 @@ from shelfhold.identity.domain.reserved import (
 from shelfhold.identity.domain.roles import (
     INTEGRATION_ROLE,
     KNOWN_ROLES,
+    PROFILE_ERRORS,
     RATE_ROLES,
     TABLE_ROLES,
+    ProfileError,
     holds_rate_right,
 )
 from shelfhold.identity.domain.throttle import LoginThrottle
@@ -107,11 +112,13 @@ __all__ = [
     "OWN_SCRATCH",
     "PASSKEY_NAME_MAX",
     "PRIMITIVE",
+    "PROFILE_ERRORS",
     "RATE_ROLES",
     "REPLACEMENT_SITES",
     "REPLAY",
     "RESERVED_ACTIONS",
     "RESTORE",
+    "SOURCE_POLICIES",
     "SYSTEM_EMITTERS",
     "TABLE_ROLES",
     "ActionNotDeclared",
@@ -138,6 +145,8 @@ __all__ = [
     "PasskeyUnavailableError",
     "PasswordLoginSuspendedError",
     "Principal",
+    "ProfileError",
+    "ProfileRecord",
     "ReauthMethod",
     "ReauthRequired",
     "RelyingParty",
@@ -146,6 +155,7 @@ __all__ = [
     "RoleNotAllowed",
     "SessionAuth",
     "SessionPolicy",
+    "SourcePolicyRecord",
     "ThrottledError",
     "TruthRow",
     "UnknownPasskeyError",

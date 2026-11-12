@@ -74,6 +74,12 @@ _DECLARED = (
     _action("target.recheck_child_exposure", Effect.PARENTAL_CONTROL),
     _action("shelf.choose_family", Effect.PARENTAL_CONTROL),  # EF-BIB-036: file on a family shelf
     _action("shelf.withdraw", Effect.PARENTAL_CONTROL),  # EF-BIB-037: apply a removal plan
+    # Household profiles (M3 L05, EF-USR-001, EF-USR-005): the role, the ceiling, the right to
+    # classify and the per-source policy; a fresh session in every profile, never a key
+    _action("profile.create", Effect.MANAGES_PROFILES),
+    _action("profile.update", Effect.MANAGES_PROFILES),
+    _action("profile.remove", Effect.MANAGES_PROFILES),
+    _action("profile.source_policy", Effect.MANAGES_PROFILES),
     # Classing needs a fresh session in every profile (porteur, 2026-11-11), and is refused to
     # every key and token
     _action("rate", Effect.RATES_CONTENT),

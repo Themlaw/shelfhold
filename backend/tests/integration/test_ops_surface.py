@@ -18,11 +18,11 @@ from shelfhold.infrastructure.db import create_db_engine
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.local_socket import call
 from shelfhold.infrastructure.migrate import migrate
-from shelfhold.infrastructure.schema import acquisition, export
+from shelfhold.infrastructure.schema import acquisition, export, platform
 from shelfhold.interfaces.cli import _ops as cli_ops
 from shelfhold.interfaces.local_cli import IdentityDispatcher
 from shelfhold.ops import endpoint_of
-from tests.auth_env import AuthEnv, auth_env, run_cli
+from tests.auth_env import PASSWORD, AuthEnv, auth_env, run_cli
 from tests.export_env import ExportEnv, export_env
 from tests.kavita_export_env import wire
 from tests.local_socket_env import serving
@@ -109,60 +109,38 @@ def test_healthz_exposes_paused_queues(api: AuthEnv) -> None:
     }
 
 
-class _Probe:
-    def migration_progress(self) -> None:
-        return None
-
-    def readiness(self) -> dict[str, bool]:
-        return {}
-
-
-def _healthz_as(env: ExportEnv, role: str | None) -> dict[str, Any]:
-    """`/healthz` over the services of `env`, called by a principal of `role` (None: anonymous)."""
-    from types import SimpleNamespace
-
-    from fastapi import FastAPI
-    from fastapi.testclient import TestClient
-
-    from shelfhold.interfaces.http_api.health import build_health_router
-    from shelfhold.ops.health import OpsHealth
-
-    app = FastAPI()
-    app.include_router(
-        build_health_router(OpsHealth(_Probe(), lambda: make_ops(env)), version="1.0.0")  # type: ignore[arg-type]
-    )
-
-    @app.middleware("http")
-    async def principal(request, call_next):  # type: ignore[no-untyped-def]
-        request.scope.setdefault("state", {})["principal"] = (
-            SimpleNamespace(role=role) if role else None
-        )
-        return await call_next(request)
-
-    body = TestClient(app).get("/healthz").json()
-    assert isinstance(body, dict)
-    return body
-
-
-def test_healthz_reasons_are_for_administrators_and_never_carry_a_title() -> None:
-    with export_env() as env:
-        series = env.new_series("Dr Stone Secret Title")
-        env.pipeline.run(env.destination_id, job_id=new_ulid())
-        with env.engine.begin() as connection:
-            connection.execute(sa.update(export.export_record).values(state="missing"))
-        add_job(env.engine, kind="export.run", status="paused", code="window.preempted")
-        assert series.edition_id
-
-        admin = _healthz_as(env, "admin")
-        member = _healthz_as(env, "member")
-        anonymous = _healthz_as(env, None)
-
-        assert admin["paused"] == [{"queue": "export.run", "reason": "window.preempted"}]
-        assert member["paused_queues"] == ["export.run"]  # the names, for every signed-in caller
-        assert "paused" not in member  # the reason is for administrators
-        assert anonymous == {"state": "ok"}
-        for body in (admin, member, anonymous):
-            assert "Secret Title" not in json.dumps(body)  # no title, whoever asks
+@pytest.mark.req("ENF-OPS-011", "EF-USR-005")
+def test_healthz_reasons_are_for_administrators_and_never_carry_a_title(api: AuthEnv) -> None:
+    """M3 L05: the three answers on the real application, with a real member session."""
+    dead = _seed_waiting(api.settings)
+    engine = create_db_engine(api.settings.database_path)
+    try:
+        with engine.begin() as connection:  # a title in the one text a reason could leak
+            connection.execute(
+                sa.update(platform.job_view)
+                .where(platform.job_view.c.id == dead)
+                .values(last_error="Dr Stone Secret Title")
+            )
+    finally:
+        engine.dispose()
+    service = api.app.state.auth_gate.auth  # type: ignore[attr-defined]
+    service.profile_add("mum", PASSWORD, "member", by=None)
+    anonymous = api.client.get("/healthz").json()
+    api.login()
+    admin = api.client.get("/healthz").json()
+    api.client.cookies.clear()
+    assert api.login("mum").status_code == 200
+    member = api.client.get("/healthz").json()
+    assert {p["queue"]: p["reason"] for p in admin["paused"]} == {
+        "follow": "auth_expired",
+        "export.run": "window.preempted",
+        "library.safeguard": "dead_letter",
+    }
+    assert member["paused_queues"] == ["export.run", "follow", "library.safeguard"]
+    assert "paused" not in member  # the reason is for administrators
+    assert anonymous == {"state": "ok"}
+    for body in (admin, member, anonymous):
+        assert "Secret Title" not in json.dumps(body)  # no title, whoever asks
 
 
 # -- the commands -----------------------------------------------------------------------------------
