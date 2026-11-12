@@ -4,13 +4,20 @@ Anonymous callers get the state only (O12, A7). A session or an API key also get
 the paused queues on `/healthz`, and the check names on `/readyz` (L05).
 """
 
-from collections.abc import Mapping
-from typing import Literal, Protocol
+from collections.abc import Callable, Mapping
+from datetime import datetime
+from typing import Annotated, Any, Literal, Protocol
 
 import structlog
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
+from sqlalchemy import Engine
+
+from shelfhold.config import Settings
+from shelfhold.identity.public import Principal
+from shelfhold.interfaces.http_api.stats import require_admin
+from shelfhold.ops.health import build_health_page
 
 
 class MigrationProgress(BaseModel):
@@ -113,5 +120,48 @@ def build_health_router(health: HealthPort, *, version: str | None = None) -> AP
         if _authenticated(request):
             body["checks"] = checks
         return JSONResponse(body, status_code=200 if ready else 503)
+
+    return router
+
+
+class ActionOut(BaseModel):
+    command: str  # a command of the CLI that exists
+    reserved: bool
+    text: str
+
+
+class SourceHealthOut(BaseModel):
+    plugin_id: str
+    state: Literal["ok", "paused", "degraded"]
+    code: str | None  # stable; None when the source is well
+    since: str | None
+    action: ActionOut | None
+
+
+class HealthPageOut(BaseModel):
+    """The Health page (EF-SRC-014, EF-BIB-031, EF-BIB-051, EF-INT-015, EF-INT-025). The nested
+    documents are typed by the code of their entries; none holds a secret, a phrase or a path."""
+
+    generated_at: str
+    sources: list[SourceHealthOut]
+    irreplaceable: dict[str, Any]
+    lost_originals: list[dict[str, Any]]
+    withdrawal_pending: dict[str, Any]
+    kavita_audit: list[dict[str, Any]]
+    jurisdiction: dict[str, Any] | None
+    backup: dict[str, Any]
+    stats: dict[str, Any]
+
+
+def build_health_page_router(
+    get_engine: Callable[[], Engine], settings: Settings, now: Callable[[], datetime]
+) -> APIRouter:
+    """`GET /api/v1/health/page`: for the administrator alone (a member, a child or a key of
+    either is refused before anything is read). Read only, from the database."""
+    router = APIRouter(prefix="/api/v1", tags=["health"])
+
+    @router.get("/health/page", response_model=HealthPageOut)
+    def health_page(_admin: Annotated[Principal, Depends(require_admin)]) -> HealthPageOut:
+        return HealthPageOut.model_validate(build_health_page(get_engine(), settings, now()))
 
     return router

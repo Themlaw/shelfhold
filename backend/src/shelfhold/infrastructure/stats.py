@@ -14,7 +14,14 @@ import sqlalchemy as sa
 from sqlalchemy import Engine
 
 from shelfhold.events.operating import WAITING_STATE_EVENT
-from shelfhold.infrastructure.schema import acquisition, catalog, export, platform, storage
+from shelfhold.infrastructure.schema import (
+    acquisition,
+    catalog,
+    export,
+    identity,
+    platform,
+    storage,
+)
 
 MAX_SINCE_DAYS = 3650
 DEFAULT_SINCE = "30d"
@@ -26,6 +33,7 @@ VISIBLE_STATE = "resolved"
 AWAITED_STATES = ("written", "scanned")  # waiting for the arrival polling to see them
 SENTINEL_EVENTS = ("mount.sentinel_missing",)
 FOREIGN_WRITER_EVENTS = ("target.foreign_writer_detected",)
+DELIVERED_REQUESTS = ("downloaded", "fetched")  # the file came back from the source
 _WAITING_EVENTS = tuple(sorted(set(WAITING_STATE_EVENT.values())))
 
 
@@ -49,6 +57,9 @@ class Stats:
     median_detection_to_visible_s: int | None
     arrivals_pending: int  # written, not yet seen in the destination's index
     guards_triggered: dict[str, int]
+    # M3: who asked for what, and the share that came back (EF-INT-025); never a requester that
+    # is no profile (an operation of the administrator has none)
+    requests_by_profile: list[dict[str, object]]
 
     def as_dict(self) -> dict[str, object]:
         return asdict(self)
@@ -101,6 +112,30 @@ def _median_delay(connection: sa.Connection, since: datetime) -> int | None:
     return round(float(sum(middle) / len(middle)))
 
 
+def _requests_by_profile(connection: sa.Connection, since: datetime) -> list[dict[str, object]]:
+    """Requests of the window per profile, with the delivered ones (`fetched`: the file is in the
+    library) and their share in whole percent. Most requests first, then by name."""
+    request, user = acquisition.download_request, identity.user
+    delivered = sa.func.sum(sa.case((request.c.state.in_(DELIVERED_REQUESTS), 1), else_=0))
+    rows = connection.execute(
+        sa.select(user.c.id, user.c.username, sa.func.count().label("n"), delivered.label("ok"))
+        .select_from(request.join(user, user.c.id == request.c.requester_user_id))
+        .where(request.c.requested_at >= since)
+        .group_by(user.c.id, user.c.username)
+        .order_by(sa.func.count().desc(), user.c.username)
+    )
+    return [
+        {
+            "profile_id": r.id,
+            "username": r.username,
+            "requested": int(r.n),
+            "delivered": int(r.ok or 0),
+            "delivered_share_percent": round(100 * int(r.ok or 0) / int(r.n)),
+        }
+        for r in rows
+    ]
+
+
 def compute_stats(engine: Engine, *, now: datetime, since_days: int) -> Stats:
     since = now - timedelta(days=since_days)
     record = export.export_record
@@ -133,4 +168,5 @@ def compute_stats(engine: Engine, *, now: datetime, since_days: int) -> Stats:
                 "sentinel": _events(connection, SENTINEL_EVENTS, since),
                 "foreign_writer": _events(connection, FOREIGN_WRITER_EVENTS, since),
             },
+            requests_by_profile=_requests_by_profile(connection, since),
         )

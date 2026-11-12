@@ -35,6 +35,14 @@ class GuardsTriggered(BaseModel):
     foreign_writer: int
 
 
+class ProfileRequests(BaseModel):
+    profile_id: str
+    username: str
+    requested: int
+    delivered: int
+    delivered_share_percent: int
+
+
 class StatsOut(BaseModel):
     since_days: int
     human_interventions: HumanInterventions
@@ -42,6 +50,7 @@ class StatsOut(BaseModel):
     median_detection_to_visible_s: int | None
     arrivals_pending: int
     guards_triggered: GuardsTriggered
+    requests_by_profile: list[ProfileRequests]
 
 
 def require_admin(principal: Annotated[Principal, Depends(require_principal)]) -> Principal:
