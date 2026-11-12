@@ -26,12 +26,19 @@ import os
 import re
 import stat
 import tempfile
+import unicodedata
 from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, BinaryIO, Final, cast
 
-from shelfhold.acquisition.public import SeriesBinding, TreeTargets, chapter_number, series_key
+from shelfhold.acquisition.public import (
+    SeriesBinding,
+    TreeTargets,
+    chapter_number,
+    fold,
+    series_key,
+)
 from shelfhold.infrastructure.archives import UnsafeArchiveError, safe_open_archive
 from shelfhold.infrastructure.content_trust import (
     UntrustedEntryError,
@@ -79,8 +86,16 @@ _EXTENSION: Final = {"jpeg": "jpg", "png": "png", "webp": "webp", "gif": "gif", 
 _DIGITS = re.compile(r"(\d+)")
 
 
+def _suggested_age(text: str | None) -> AgeRating:
+    """One `AgeRating` tag as a suggestion. A tag that is there and that nothing recognises (empty,
+    `Adult`, `M18`, `18+`, `Unknown`...) is not "no suggestion": it counts for 18+."""
+    known = from_comicinfo(unicodedata.normalize("NFKC", text or "")) if text else None
+    return known if known is not None else AgeRating(X_MIN_AGE)
+
+
 def _file_age(staged: Path) -> AgeRating | None:
-    """The `AgeRating` of the ComicInfo of a CBZ, as a suggestion only (never a rating)."""
+    """The `AgeRating` of the ComicInfo of a CBZ, as a suggestion only (never a rating). No tag:
+    nothing. Tags in any case or namespace: each one counts and the highest age is kept."""
     try:
         with safe_open_archive(staged, name="import.cbz") as archive:
             name = check_cbz_entries(archive).comicinfo
@@ -89,8 +104,12 @@ def _file_age(staged: Path) -> AgeRating | None:
             root = safe_parse_xml(archive.read(name, max_bytes=1024 * 1024))
     except (UnsafeArchiveError, UntrustedEntryError, UnsafeXmlError):
         return None  # the allowlist says why; here nothing is suggested
-    node = root.find("AgeRating")
-    return from_comicinfo(node.text) if node is not None and node.text else None
+    ages = [
+        _suggested_age(node.text)
+        for node in root.iter()
+        if isinstance(node.tag, str) and node.tag.rsplit("}", 1)[-1].casefold() == "agerating"
+    ]
+    return max(ages, default=None)
 
 
 def _natural(name: str) -> list[Any]:
@@ -444,7 +463,7 @@ class SuwayomiTree(ImportFolder):
         candidates = series_of.get(series_key(chapter.series), [])
         # the `<source>` folder must be the source of the binding: the same title under another
         # source is another series, and may be one of another age
-        source = series_key(chapter.source)
+        source = fold(chapter.source)
         matches = [b for b in candidates if source in b.folders]
         if candidates and not matches:
             return ImportOutcome(shown, "skipped", WRONG_SOURCE)

@@ -59,7 +59,7 @@ class Gate:
         return self.content
 
 
-def seed_source(engine: Any, *, warning: str = "safe") -> None:
+def seed_source(engine: Any, *, warning: str | None = "safe") -> None:
     """The sub-source the bench's binding belongs to: its folder is `Source (EN)`."""
     table = acquisition.sub_source
     with engine.begin() as connection:
@@ -232,17 +232,89 @@ def test_a_source_that_suggests_an_age_above_the_work_holds_the_chapter_to_rate(
         assert states(tree.import_tree()) == [("stored", None)] * 2
 
 
+HELD_TAGS = [
+    "<AgeRating>Adults Only 18+</AgeRating>",
+    "<AgeRating>X18+</AgeRating>",
+    "<AgeRating>R18+</AgeRating>",
+    "<AgeRating>Mature 17+</AgeRating>",
+    "<AgeRating>Adult</AgeRating>",
+    "<AgeRating>M18</AgeRating>",
+    "<AgeRating>18+</AgeRating>",
+    "<AgeRating>Unknown</AgeRating>",
+    "<AgeRating>Rating Pending</AgeRating>",
+    "<AgeRating></AgeRating>",
+    "<AgeRating/>",
+    "<AgeRating>\u00a0</AgeRating>",
+    "<AgeRating>Adults\u00a0Only 18+</AgeRating>",
+    "<agerating>X18+</agerating>",
+    "<AGERATING>Adults Only 18+</AGERATING>",
+    "<AgeRating>Garbage</AgeRating>",
+    '<c:AgeRating xmlns:c="urn:x">Adult</c:AgeRating>',
+    "<AgeRating>Everyone</AgeRating><AgeRating>Adults Only 18+</AgeRating>",
+    "<AgeRating>Everyone</AgeRating><AgeRating>whatever</AgeRating>",
+    "<AgeRating>Adults Only 18+</AgeRating><AgeRating>Everyone</AgeRating>",
+    "<AgeRating>Everyone</AgeRating><agerating>M18</agerating>",
+]
+
+
 @pytest.mark.req("EF-INT-009", "EF-BIB-055")
-@pytest.mark.parametrize("label", ["Adults Only 18+", "X18+", "R18+", "Mature 17+"])
-def test_a_comicinfo_age_above_the_work_holds_the_chapter_to_rate(label: str) -> None:
-    info = f"<ComicInfo><AgeRating>{label}</AgeRating></ComicInfo>".encode()
+@pytest.mark.parametrize("tags", HELD_TAGS)
+def test_a_comicinfo_age_above_or_unrecognised_holds_the_chapter_to_rate(tags: str) -> None:
+    info = f"<ComicInfo>{tags}</ComicInfo>".encode()
     with import_env() as env:
         env.drop(f"{CH}/Chapter 7.cbz", cbz_bytes(comicinfo=info))
         with env.lib.engine.begin() as c:
             c.execute(sa.update(catalog.work).values(age_rating=6))
         report = tree_of(env).import_tree()
-        assert states(report) == [("refused", "import.tree_needs_rating")]
+        assert states(report) == [("refused", "import.tree_needs_rating")], tags
         assert env.contents() == [] and env.entries() == {}
+
+
+@pytest.mark.req("EF-INT-009", "EF-BIB-055")
+@pytest.mark.parametrize(
+    "warning", [None, "", "NSFW", "nsfw", "Mixed", "mixed", "unknown", "adult", "nsfw\u00a0", "n/a"]
+)
+def test_a_source_warning_that_is_not_safe_holds_the_chapter_to_rate(warning: str | None) -> None:
+    """NULL, another case, a value outside `safe`/`mixed`/`nsfw`: none is known to be safe."""
+    with import_env() as env:
+        env.drop(f"{CH}/Chapter 7.cbz", CBZ)
+        page_folder(env, "Chapter 8", {"1.png": PAGE_A})
+        with env.lib.engine.begin() as c:
+            c.execute(sa.update(catalog.work).values(age_rating=6))
+        tree = tree_of(env)
+        seed_source(env.lib.engine, warning=warning)
+        assert states(tree.import_tree()) == [("refused", "import.tree_needs_rating")] * 2
+        assert env.contents() == [] and env.entries() == {}
+
+
+@pytest.mark.req("EF-INT-009", "EF-BIB-055")
+@pytest.mark.parametrize("warning", ["safe", "SAFE", " Safe "])
+def test_a_safe_source_without_an_age_is_stored_as_the_follow_does(warning: str) -> None:
+    """The follow cycle files a chapter of a rated series from a `safe` source with no age
+    check (`content_warning_age("safe")` is no suggestion): the tree does the same."""
+    with import_env() as env:
+        env.drop(f"{CH}/Chapter 7.cbz", CBZ)
+        with env.lib.engine.begin() as c:
+            c.execute(sa.update(catalog.work).values(age_rating=6))
+        tree = tree_of(env)
+        seed_source(env.lib.engine, warning=warning)
+        assert states(tree.import_tree()) == [("stored", None)]
+
+
+@pytest.mark.req("EF-INT-009")
+@pytest.mark.parametrize("folder", ["S.ource (EN)", "Sou rce (EN)", "Source-(EN)", "Sourc (EN)"])
+def test_a_source_folder_is_compared_without_dropping_characters(folder: str) -> None:
+    with import_env() as env:
+        env.drop(f"mangas/{folder}/{SERIES}/Chapter 7.cbz", CBZ)
+        assert states(tree_of(env).import_tree()) == [("skipped", "import.tree_wrong_source")]
+
+
+@pytest.mark.req("EF-INT-009")
+@pytest.mark.parametrize("folder", ["source (en)", "SOURCE (EN)", "Source  (EN)", "Source"])
+def test_a_source_folder_in_another_case_or_spacing_still_matches(folder: str) -> None:
+    with import_env() as env:
+        env.drop(f"mangas/{folder}/{SERIES}/Chapter 7.cbz", CBZ)
+        assert states(tree_of(env).import_tree()) == [("stored", None)]
 
 
 @pytest.mark.req("EF-INT-009", "EF-BIB-055")

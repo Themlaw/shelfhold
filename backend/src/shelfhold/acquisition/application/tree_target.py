@@ -34,9 +34,18 @@ from shelfhold.infrastructure.schema import acquisition, catalog, storage
 from shelfhold.library.public import SeriesBindingRef, TombstoneGate
 from shelfhold.sdk.age import X_MIN_AGE, AgeRating
 
-__all__ = ["SUWAYOMI_PLUGIN", "SeriesBinding", "TreeTargets", "chapter_number", "series_key"]
+__all__ = [
+    "SUWAYOMI_PLUGIN",
+    "SeriesBinding",
+    "TreeTargets",
+    "chapter_number",
+    "fold",
+    "series_key",
+    "source_suggestion",
+]
 
 SUWAYOMI_PLUGIN = "suwayomi"
+_KNOWN_WARNINGS = frozenset({"safe", "mixed", "nsfw"})
 _NUMBER = re.compile(
     r"(?:(?<![^\W_])(?:ch(?:apter|\.)?|chap\.?|ep(?:isode|\.)?|#)\s*)(\d{1,5}(?:\.\d{1,2})?)\b",
     re.IGNORECASE,
@@ -64,12 +73,29 @@ def _age(minimum: int | None, x: bool) -> AgeRating | None:
     return None if minimum is None else AgeRating(minimum)
 
 
+def fold(text: str) -> str:
+    """NFKC, case-folded, spaces reduced to one: no letter or digit is dropped (`S.ource` is not
+    `Source`)."""
+    return " ".join(unicodedata.normalize("NFKC", text).casefold().split())
+
+
 def _folders(name: str | None, lang: str | None) -> frozenset[str]:
     """How Suwayomi names the folder of a source: `Name (LANG)`, or the name alone."""
-    if not name:
+    if not name or not fold(name):
         return frozenset()
     spellings = [name, f"{name} ({lang})" if lang else name]
-    return frozenset(series_key(x) for x in spellings if series_key(x))
+    return frozenset(fold(x) for x in spellings)
+
+
+def source_suggestion(warning: str | None) -> AgeRating | None:
+    """The age a sub-source's `content_warning` suggests, by the very rule of the follow cycle
+    (`content_warning_age`: `safe` nothing, `mixed` 18+, `nsfw` X). Case and spaces are
+    normalised; a value outside that domain, or none, is not known to be safe: it counts for
+    18+."""
+    word = fold(warning or "")
+    if word not in _KNOWN_WARNINGS:
+        return AgeRating(X_MIN_AGE)
+    return content_warning_age(word)
 
 
 @dataclass(frozen=True)
@@ -139,7 +165,7 @@ class TreeTargets:
                     row.title,
                     folders=_folders(row.s_name, row.s_lang),
                     age=effective_age(_age(row.age_rating, row.age_x), [_age(row.e_age, row.e_x)]),
-                    suggested=content_warning_age(warning) if warning else None,
+                    suggested=source_suggestion(warning),
                 )
             )
         return found

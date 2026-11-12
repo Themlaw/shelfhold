@@ -62,7 +62,9 @@ from shelfhold.acquisition.application.tree_target import (
     SeriesBinding,
     TreeTargets,
     chapter_number,
+    fold,
     series_key,
+    source_suggestion,
 )
 from shelfhold.acquisition.application.unit_follow import suppress_follow
 from shelfhold.acquisition.application.upstream import (
@@ -142,6 +144,7 @@ __all__ = [
     "decline_pairing",
     "disposition_of",
     "epub_only",
+    "fold",
     "follow_dedupe_key",
     "follow_job",
     "is_stale",
@@ -150,6 +153,7 @@ __all__ = [
     "present_for_acquisition",
     "present_in",
     "series_key",
+    "source_suggestion",
     "stale_series",
     "stale_threshold",
     "submit_follow",
