@@ -10,7 +10,7 @@ SRC = Path(__file__).resolve().parents[2] / "src" / "shelfhold"
 # a rename on a kernel without renameat2, the capability probe that asks the file system whether
 # it could link (EF-EXP-015, M2), and the private-file writer of the keyring (not a library file).
 ALLOWED = {
-    "infrastructure/fsops/confined.py": {"_rename_noreplace", "link", "link_to"},
+    "infrastructure/fsops/confined.py": {"_rename_noreplace", "link", "link_to", "link_fd"},
     "infrastructure/secrets/atomic.py": {"write_private"},
     "ops/backup/store.py": {"write"},  # the archive is linked into place without replacing
 }
@@ -65,7 +65,7 @@ def test_the_write_path_of_a_copy_places_by_rename_not_by_link() -> None:
 # EF-EXP-015 (M2 L18): the one road on which a file may get a second name. A hard link is made by
 # a method call (`link`, `link_to`) of a confined root; nothing else may call them, and only the
 # road of the option may call `link_replaceable`.
-LINK_METHODS = {"link", "link_to"}
+LINK_METHODS = {"link", "link_to", "link_fd", "hardlink_to"}
 LINK_CALLERS = {
     "infrastructure/fsops/facade.py": {"_claim_lease"},  # the lease of a root: a host file
     "infrastructure/fsops/capabilities.py": {"_hardlink"},  # the probe: a name made and removed
@@ -112,6 +112,57 @@ def offenders_of(names: set[str], allowed: dict[str, set[str]]) -> list[str]:
             if function not in allowed.get(rel, set()):
                 bad.append(f"{rel}:{line} in {function}")
     return bad
+
+
+def evasions(path: Path) -> list[tuple[str, int]]:
+    """The ways to reach `os.link` / `os.symlink` that the attribute guards do not see: a name
+    imported from `os`, `getattr(os, ...)`, `Path.hardlink_to`, any `symlink`."""
+    found = []
+    for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
+        if isinstance(node, ast.ImportFrom) and node.module in {"os", "posix", "pathlib"}:
+            for alias in node.names:
+                if alias.name in {"link", "symlink", "linkat", "hardlink_to", "symlink_to"}:
+                    found.append((f"import {alias.name}", node.lineno))
+        elif isinstance(node, ast.Call) and getattr(node.func, "id", "") in {
+            "getattr",
+            "__import__",
+        }:
+            first = node.args[0] if node.args else None
+            name = node.args[1] if len(node.args) > 1 else None
+            constant = isinstance(name, ast.Constant) and isinstance(name.value, str)
+            safe = constant and name.value not in {"link", "symlink", "linkat"}  # type: ignore[union-attr]
+            if node.func.id == "__import__" or (
+                getattr(first, "id", "") in {"os", "posix"} and not safe
+            ):  # type: ignore[union-attr]
+                found.append((node.func.id, node.lineno))  # type: ignore[union-attr]
+        elif isinstance(node, ast.Attribute) and node.attr in {
+            "hardlink_to",
+            "symlink_to",
+            "symlink",
+        }:
+            found.append((node.attr, node.lineno))
+    return found
+
+
+@pytest.mark.req("EF-BIB-027", "EF-EXP-015")
+def test_no_way_round_the_link_guards() -> None:
+    offenders = [
+        f"{p.relative_to(SRC).as_posix()}:{line} {what}"
+        for p in sorted(SRC.rglob("*.py"))
+        for what, line in evasions(p)
+    ]
+    assert offenders == []
+
+
+@pytest.mark.req("EF-BIB-027", "EF-EXP-015")
+def test_the_evasion_scan_sees_what_the_poc_used(tmp_path: Path) -> None:
+    evil = tmp_path / "evil.py"
+    evil.write_text(
+        "import os\nfrom os import link as L\nfrom pathlib import Path\n"
+        "def a(x, y):\n    getattr(os, 'li' + 'nk')(x, y)\n    Path(y).hardlink_to(x)\n"
+        "    os.symlink(x, y)\n"
+    )
+    assert {w for w, _ in evasions(evil)} == {"import link", "getattr", "hardlink_to", "symlink"}
 
 
 @pytest.mark.req("EF-BIB-027", "EF-EXP-015")

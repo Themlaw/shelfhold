@@ -190,13 +190,20 @@ def link_replaceable(
             target.mkdir("/".join(parts[:-1]), parents=True, exist_ok=True)
         staged = f"{STAGING_DIR}/{uuid.uuid4().hex}"
         try:
-            source.link_to(target, src, staged)
+            target.link_fd(fd, staged)  # the open inode, not the name `src` has now
         except OSError as error:
             if error.errno in _NO_LINK:
                 raise LinkUnavailableError(_NO_LINK[error.errno]) from error
+            if error.errno == errno.ENOENT and not os.path.exists(f"/proc/self/fd/{fd}"):
+                raise LinkUnavailableError("unsupported") from error  # no /proc here
             raise
         after = os.fstat(fd)
-        if after.st_nlink != 2 or after.st_ino != before.st_ino:
+        made = target.stat(staged)
+        if (
+            after.st_nlink != 2
+            or (made.st_dev, made.st_ino) != (before.st_dev, before.st_ino)
+            or not stat.S_ISREG(made.st_mode)
+        ):
             raise LinkUnavailableError("unverified")
         if not verify_copy(fd, expected_sha256):
             raise CopyVerificationError("link verification failed: nothing was put in place")

@@ -6,6 +6,8 @@ import errno
 import hashlib
 import os
 import stat
+from contextlib import suppress
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -373,3 +375,125 @@ def test_cli_shelf_link_mode(
     with pytest.raises(SystemExit):  # argparse refuses anything but the two modes
         cli.main(["shelf", "link-mode", "Manga", "--link-mode", "symlink"])
     assert OPS_METHODS["ops.shelf_link_mode"][1] is None  # not a deletion: no reserved action
+
+
+def _owe(env: LibEnv, case: str) -> None:
+    """The three ways a linked Unit comes to owe a copy of its own."""
+    if case == "removed":
+        make_irreplaceable(env)
+    elif case == "variants_removed":
+        with env.engine.begin() as c:
+            c.execute(
+                sa.update(catalog.unit_variant).values(removed_at=datetime(2026, 11, 1, tzinfo=UTC))
+            )
+    else:  # two content errors in a row on the binding
+        with env.engine.begin() as c:
+            binding, key = c.execute(
+                sa.select(
+                    acquisition.source_binding.c.id, acquisition.source_item.c.source_key
+                ).select_from(
+                    acquisition.source_binding.join(
+                        acquisition.source_item,
+                        acquisition.source_item.c.id == acquisition.source_binding.c.source_item_id,
+                    )
+                )
+            ).one()
+            c.execute(
+                sa.insert(acquisition.source_failure).values(
+                    source_binding_id=binding, limit_key=key, failure_class="content",
+                    consecutive_content_errors=2, last_error_code="bad_archive",
+                )
+            )  # fmt: skip
+
+
+@pytest.mark.parametrize("case", ["removed", "variants_removed", "content_errors"])
+def test_a_linked_unit_that_comes_to_owe_a_copy_is_made_independent_by_the_cycle(
+    case: str,
+) -> None:
+    """The safeguard cycle itself (plan, then steps) picks a Unit whose kept copy is a link, and
+    leaves it with a copy of its own (review of #171: the selection once asked for passthrough)."""
+    from shelfhold.library.public import CycleReport, SafeguardCycle, SafeguardInventory
+    from tests.fakes_clock import ManualClock
+    from tests.null_tombstones import NONE_PURGED
+    from tests.safeguard_env import NOW, ROOMY
+
+    with lib_env() as env:
+        unit, library, data = filed(env)
+        linking(env).keep(unit)
+        assert stored(env).stat().st_nlink == 2
+        _owe(env, case)
+        assert unit in [c.unit_id for c in SafeguardInventory(env.engine).owed_candidates()]
+        cycle = SafeguardCycle(
+            env.engine, env.fsops, keeper(env), NONE_PURGED, lambda: ROOMY,
+            lambda connection, event, payload: None, ManualClock(NOW),
+        )  # fmt: skip
+        report = CycleReport()
+        for step in cycle.steps(cycle.plan(report), report):
+            step()
+        assert (report.kept, report.failed) == (1, 0)
+        assert stored(env).stat().st_ino != library.stat().st_ino
+        assert stored(env).stat().st_nlink == 1 == library.stat().st_nlink
+        assert stored(env).read_bytes() == data == library.read_bytes()
+        with env.engine.connect() as c:
+            assert independent_copies(c, unit) == 2
+        again = CycleReport()
+        assert cycle.plan(again) == []  # nothing is owed any more
+
+
+def test_a_linked_unit_that_stays_replaceable_is_not_picked() -> None:
+    from shelfhold.library.public import SafeguardInventory
+
+    with lib_env() as env:
+        unit, _, _ = filed(env)
+        linking(env).keep(unit)
+        assert SafeguardInventory(env.engine).owed_candidates() == []
+
+
+def test_the_link_is_made_on_the_inode_that_was_checked_not_on_the_name(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A third party swaps the library name for a symbolic link while the link is being made: the
+    store gets the inode that was opened, or nothing, never the link (review of #171)."""
+    from shelfhold.infrastructure.fsops.confined import ConfinedRoot
+
+    with lib_env() as env:
+        unit, library, _data = filed(env)
+        real = ConfinedRoot.link_fd
+
+        def racing(self: ConfinedRoot, fd: int, dst: str) -> None:
+            swap = library.with_name("swapped")
+            swap.symlink_to("/etc/hostname")
+            os.replace(swap, library)
+            real(self, fd, dst)
+
+        monkeypatch.setattr(ConfinedRoot, "link_fd", racing)
+        with suppress(Exception):
+            linking(env).keep(unit)
+        assert [p for p in env.store.rglob("*") if p.is_symlink()] == []
+        assert list((env.store / ".shelfhold" / "staging").glob("*")) == []
+        for p in env.files_under(env.store):  # whatever is there is regular and is not /etc
+            assert (
+                stat.S_ISREG(p.lstat().st_mode)
+                and p.read_bytes() != Path("/etc/hostname").read_bytes()
+            )
+
+
+def test_a_name_that_is_not_the_checked_inode_is_discarded(monkeypatch: pytest.MonkeyPatch) -> None:
+    from shelfhold.infrastructure.fsops.confined import ConfinedRoot
+
+    with lib_env() as env:
+        unit, _library, data = filed(env)
+        real = ConfinedRoot.link_fd
+
+        def wrong(self: ConfinedRoot, fd: int, dst: str) -> None:
+            real(self, fd, dst)
+            parent = Path(self.path) / dst
+            other = parent.with_name("other")
+            other.write_bytes(b"x")
+            os.replace(other, parent)  # the staged name is not the inode that was linked
+
+        monkeypatch.setattr(ConfinedRoot, "link_fd", wrong)
+        kept = linking(env).keep(unit)
+        assert kept.method in {"reflink", "copy"}  # `unverified`: nothing placed, the copy is made
+        assert stored(env).read_bytes() == data
+        assert list((env.store / ".shelfhold" / "staging").glob("*")) == []

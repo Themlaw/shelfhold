@@ -104,6 +104,24 @@ def record_backlog(connection: Connection, *, units: int, size: int, now: dateti
     )
 
 
+def _kept_as_a_link(content: sa.Table) -> sa.ColumnElement[bool]:
+    """A kept copy (`retention = keep`) whose `/store` file is one inode with a name in the library
+    (the option of EF-EXP-015): it is no copy of its own, so a Unit that is owed still owes one."""
+    store, library = storage.replica.alias("s"), storage.replica.alias("l")
+    return sa.and_(
+        content.c.retention == "keep",
+        sa.exists().where(
+            store.c.unit_id == content.c.unit_id,
+            store.c.location == "store",
+            sa.not_(store.c.independent),
+            library.c.unit_id == store.c.unit_id,
+            library.c.location == "library",
+            library.c.dev == store.c.dev,
+            library.c.ino == store.c.ino,
+        ),
+    )
+
+
 class SafeguardInventory:
     def __init__(self, engine: Engine) -> None:
         self._engine = engine
@@ -117,7 +135,7 @@ class SafeguardInventory:
             rows = connection.execute(
                 sa.select(content.c.unit_id, content.c.size, content.c.id)
                 .where(
-                    content.c.retention == "passthrough",
+                    sa.or_(content.c.retention == "passthrough", _kept_as_a_link(content)),
                     content.c.unit_id.in_(owed),
                     sa.exists().where(catalog.unit_variant.c.unit_id == content.c.unit_id),
                 )
