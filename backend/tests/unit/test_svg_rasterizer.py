@@ -313,3 +313,39 @@ def test_svg_rasterizer_reads_no_file_while_drawing(tmp_path: Any) -> None:
     assert env["cwd_is_empty_dir"] is True and set(env["env_keys"]) <= {"LC_CTYPE"}
     drawn = rasterize_svg(svg('<text x="1" y="8" font-family="Arial">hi</text>'), limits=LIMITS)
     assert drawn.png.startswith(b"\x89PNG")
+
+
+@pytest.mark.req("EF-BIB-051")
+def test_a_renderer_panic_is_a_refusal_with_its_exact_reason(monkeypatch: Any) -> None:
+    """pyo3's PanicException derives from BaseException: it must not escape the worker."""
+    import resvg_py
+
+    from shelfhold.infrastructure.imaging import worker
+
+    class PanicException(BaseException):
+        pass
+
+    def boom(**_k: Any) -> bytes:
+        raise PanicException("boom")
+
+    monkeypatch.setattr(resvg_py, "svg_to_bytes", boom)
+    args = {"max_pixels": 1_000_000, "max_bytes": 1_000_000, "max_nodes": 1000}
+    with pytest.raises(worker._Reject) as caught:
+        worker._svg_rasterize(GOOD, args)
+    assert caught.value.code == "image.decode_failed"
+    assert caught.value.reason == "renderer_PanicException"
+
+
+@pytest.mark.req("EF-BIB-051")
+def test_a_page_drawn_twice_is_drawn_once_by_the_worker(monkeypatch: Any) -> None:
+    from shelfhold.library.adapters import svg_derivative
+
+    calls: list[int] = []
+
+    def fake(data: bytes, **_k: Any) -> Any:
+        calls.append(1)
+        return type("R", (), {"png": b"\x89PNG\r\n\x1a\n"})()
+
+    monkeypatch.setattr(svg_derivative, "rasterize_svg", fake)
+    cache = svg_derivative._DrawCache()
+    assert cache(GOOD) == cache(GOOD) and calls == [1]

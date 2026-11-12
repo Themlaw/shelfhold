@@ -296,3 +296,75 @@ def test_import_folder_rasterizes_svg_pages_into_a_declared_derivative(
         with zipfile.ZipFile(served[0]) as archive:
             names = archive.namelist()
         assert "002.png" in names and "002.svg" not in names
+
+
+def _scan_with_declaration_busy_once(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    settings: Settings,
+    tmp_path: Path,
+    *,
+    stay_busy: bool,
+) -> tuple[Path, Any, Any, Seeded]:
+    from shelfhold.library.adapters.storage import KeepCopier
+    from shelfhold.library.domain.failures import SafeguardFailedError
+
+    folder = folder_for(tmp_path)
+    monkeypatch.setenv("SHELFHOLD_IMPORT_DIR", str(folder))
+    good = cbz_bytes((("001.png", PNG), ("002.svg", SVG_PAGE)))
+    real = KeepCopier.declare_derivative
+
+    def busy(*_a: Any, **_k: Any) -> Any:
+        raise SafeguardFailedError("work_busy", "held")
+
+    cm = seeded(settings, tmp_path / "inst")
+    env = cm.__enter__()
+    source = drop(folder, "good.cbz", good)
+    monkeypatch.setattr(KeepCopier, "declare_derivative", busy)
+    run_cli(monkeypatch, settings, "import", "scan")
+    assert source.exists()  # the first pass failed: the source is kept
+    if not stay_busy:
+        monkeypatch.setattr(KeepCopier, "declare_derivative", real)  # the Work is free again
+    run_cli(monkeypatch, settings, "import", "scan")
+    capsys.readouterr()
+    with env.inst.engine.connect() as connection:
+        row = connection.execute(sa.select(storage.content)).one()
+    return source, row, cm, env
+
+
+@pytest.mark.req("EF-BIB-051")
+def test_replay_after_a_busy_work_finishes_the_derivative_before_removing_the_source(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    settings: Settings,
+    tmp_path: Path,
+) -> None:
+    source, row, cm, env = _scan_with_declaration_busy_once(
+        monkeypatch, capsys, settings, tmp_path, stay_busy=False
+    )
+    try:
+        assert row.derived_hash is not None and row.derived_by == "svg-rasterizer@v1"
+        assert not source.exists()  # removed only once the derivative exists
+        kept = list(Path(env.inst.settings.store_dir).rglob("*.cbz"))
+        assert [sha256_file(p) for p in kept] == [row.original_sha256]
+        with zipfile.ZipFile(next(env.inst.library.rglob("*.cbz"))) as archive:
+            assert "002.png" in archive.namelist()
+    finally:
+        cm.__exit__(None, None, None)
+
+
+@pytest.mark.req("EF-BIB-051")
+def test_the_source_with_svg_pages_is_never_removed_while_its_derivative_is_missing(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    settings: Settings,
+    tmp_path: Path,
+) -> None:
+    source, row, cm, _env = _scan_with_declaration_busy_once(
+        monkeypatch, capsys, settings, tmp_path, stay_busy=True
+    )
+    try:
+        assert row.derived_hash is None
+        assert source.exists()  # still there, to be tried again
+    finally:
+        cm.__exit__(None, None, None)

@@ -408,8 +408,10 @@ def _svg_rasterize(data: bytes, args: dict[str, Any]) -> tuple[dict[str, Any], b
         )
     except MemoryError as exc:
         raise _Reject("image.decode_failed", "memory", "decode") from exc
-    except (Exception, RecursionError) as exc:  # the renderer's own error type is not public
-        raise _Reject("image.decode_failed", type(exc).__name__, "decode") from exc
+    except BaseException as exc:
+        raise _Reject(
+            "image.decode_failed", f"renderer_{type(exc).__name__}"[:40], "decode"
+        ) from exc
     if not png.startswith(b"\x89PNG\r\n\x1a\n"):
         raise _Reject("image.decode_failed", "not_png", "decode")
     return {"format": "PNG", "width": facts.width, "height": facts.height}, png
