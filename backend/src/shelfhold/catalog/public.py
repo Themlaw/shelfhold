@@ -136,6 +136,7 @@ from shelfhold.catalog.application.search import (
     ensure_tables as ensure_search_tables,
 )
 from shelfhold.catalog.application.search import rebuild as _rebuild_search
+from shelfhold.catalog.application.search import remove_works as remove_from_search_index
 from shelfhold.catalog.application.search import sync as sync_search_index
 from shelfhold.catalog.application.series import SeriesAlreadyAttachedError
 from shelfhold.catalog.application.service import CatalogService
@@ -494,6 +495,7 @@ __all__ = [
     "relate_works",
     "relations_of",
     "relink_isolated",
+    "remove_from_search_index",
     "renumber_external_id",
     "search_capability",
     "search_works",

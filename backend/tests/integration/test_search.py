@@ -341,3 +341,25 @@ def test_search_rebuild_cli(
     assert run_cli(monkeypatch, api.settings, "search", "rebuild", "--json") == 0
     assert json.loads(capsys.readouterr().out) == {"indexed": 1, "mode": "fts5", "trigram": True}
     assert run_cli(monkeypatch, api.settings, "search", "rebuild") == 0
+
+
+@pytest.mark.req("EF-BIB-010", "EF-BIB-053")
+def test_purged_work_leaves_the_index_in_the_same_transaction(h: Harness) -> None:
+    from shelfhold.catalog.public import remove_from_search_index
+
+    gone, kept = h.work(title="Zanzibar Chronicles"), h.work(title="Zanzibar Garden")
+    credit(h, gone, ("Quentin Zanzibar", "en", "display"))
+    sync_search_index(h.connection)
+    assert set(_ids(h, "zanzibar")) == {gone, kept}
+    h.connection.execute(sa.text("DELETE FROM work WHERE id = :i"), {"i": gone})
+    remove_from_search_index(h.connection, [gone])  # what the purge and the merge call
+    assert _ids(h, "zanzibar") == [kept]  # no restart, no sync
+    assert _ids(h, "Chronicles") == []
+    for table in ("search_fts", "search_trigram"):
+        assert (
+            h.connection.execute(
+                sa.text(f"SELECT count(*) FROM {table} WHERE entity_id = :i"),  # noqa: S608
+                {"i": gone},
+            ).scalar_one()
+            == 0
+        )

@@ -16,7 +16,7 @@ from shelfhold.catalog.application.search.romanize import romanized
 from shelfhold.catalog.application.search.tables import fts_tables
 from shelfhold.infrastructure.schema import catalog
 
-__all__ = ["Document", "documents", "index_work", "rebuild", "sync"]
+__all__ = ["Document", "documents", "index_work", "rebuild", "remove_works", "sync"]
 
 ENTITY = "work"
 _TABLES = (fts_tables.FTS_TABLE, fts_tables.TRIGRAM_TABLE)
@@ -148,3 +148,13 @@ def rebuild(connection: sa.Connection) -> tuple[int, SearchCapability]:
         for table in present:
             _write(connection, table, document)
     return len(docs), capability
+
+
+def remove_works(connection: sa.Connection, work_ids: list[str]) -> None:
+    """The Works leave the index in the transaction that removes them (a purge, a merge): a
+    tombstoned Work is not found, and its text does not linger in the index's pages (`optimize`
+    merges the segments that held it)."""
+    tables = _present(connection)
+    _delete(connection, work_ids, tables)
+    for table in tables:
+        connection.execute(sa.text(f"INSERT INTO {table} ({table}) VALUES ('optimize')"))  # noqa: S608
