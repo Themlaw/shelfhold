@@ -206,15 +206,13 @@ class ProfileService:
         self, profile_id: str, *, by: Principal | None = None
     ) -> Sequence[SourcePolicyRecord]:
         self._manager(by)
-        profile = self._existing(profile_id)
+        self._existing(profile_id)
         stored: Mapping[str, str] = self._store.stored_source_policies(profile_id)
         return [
             SourcePolicyRecord(
                 source_key=key,
                 policy=policy,
-                effective=effective_source_policy(
-                    profile.role, policy, family=self._store.source_family(key)
-                ),
+                effective=self.effective_source_policy(profile_id, key),  # one statement each
             )
             for key, policy in stored.items()
         ]
