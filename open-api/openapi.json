@@ -2285,6 +2285,71 @@
         "title": "PrecreatedOut",
         "type": "object"
       },
+      "PreferencesIn": {
+        "additionalProperties": false,
+        "description": "Only what is named is changed; `theme: null` goes back to the instance default.",
+        "properties": {
+          "color_scheme": {
+            "default": "auto",
+            "enum": [
+              "auto",
+              "light",
+              "dark"
+            ],
+            "title": "Color Scheme",
+            "type": "string"
+          },
+          "theme": {
+            "anyOf": [
+              {
+                "const": "bibliotheque",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Theme"
+          }
+        },
+        "title": "PreferencesIn",
+        "type": "object"
+      },
+      "PreferencesOut": {
+        "properties": {
+          "chosen_theme": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Chosen Theme"
+          },
+          "color_scheme": {
+            "enum": [
+              "auto",
+              "light",
+              "dark"
+            ],
+            "title": "Color Scheme",
+            "type": "string"
+          },
+          "theme": {
+            "title": "Theme",
+            "type": "string"
+          }
+        },
+        "required": [
+          "theme",
+          "chosen_theme",
+          "color_scheme"
+        ],
+        "title": "PreferencesOut",
+        "type": "object"
+      },
       "ProbeIn": {
         "properties": {
           "folder": {
@@ -3588,6 +3653,19 @@
           "skip_read_upgrades"
         ],
         "title": "SkipReadUpgradesIn",
+        "type": "object"
+      },
+      "Source": {
+        "properties": {
+          "source_url": {
+            "title": "Source Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source_url"
+        ],
+        "title": "Source",
         "type": "object"
       },
       "SourceHealthOut": {
@@ -7252,6 +7330,110 @@
         ]
       }
     },
+    "/api/v1/me/preferences": {
+      "get": {
+        "operationId": "get_preferences",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PreferencesOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Connexion requise, ou mot de passe à confirmer (reauth-required)."
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée)."
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Détail du problème (RFC 9457)."
+          }
+        },
+        "summary": "Get Preferences"
+      },
+      "patch": {
+        "operationId": "patch_preferences",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PreferencesIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PreferencesOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Connexion requise, ou mot de passe à confirmer (reauth-required)."
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée)."
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Détail du problème (RFC 9457)."
+          }
+        },
+        "summary": "Patch Preferences"
+      }
+    },
     "/api/v1/merge-suggestions/works": {
       "get": {
         "operationId": "work_suggestions",
@@ -9212,6 +9394,55 @@
         "tags": [
           "shelves"
         ]
+      }
+    },
+    "/api/v1/source": {
+      "get": {
+        "description": "Offered to anyone who reaches the instance, signed in or not (AGPL section 13): the\nfooter of every screen links to it. The address only, nothing of the instance.",
+        "operationId": "source",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Source"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Connexion requise, ou mot de passe à confirmer (reauth-required)."
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée)."
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Détail du problème (RFC 9457)."
+          }
+        },
+        "summary": "Source"
       }
     },
     "/api/v1/sources": {

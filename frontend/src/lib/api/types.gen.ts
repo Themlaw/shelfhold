@@ -1439,6 +1439,40 @@ export type PrecreatedOut = {
 };
 
 /**
+ * PreferencesIn
+ *
+ * Only what is named is changed; `theme: null` goes back to the instance default.
+ */
+export type PreferencesIn = {
+    /**
+     * Color Scheme
+     */
+    color_scheme?: 'auto' | 'light' | 'dark';
+    /**
+     * Theme
+     */
+    theme?: 'bibliotheque' | null;
+};
+
+/**
+ * PreferencesOut
+ */
+export type PreferencesOut = {
+    /**
+     * Chosen Theme
+     */
+    chosen_theme: string | null;
+    /**
+     * Color Scheme
+     */
+    color_scheme: 'auto' | 'light' | 'dark';
+    /**
+     * Theme
+     */
+    theme: string;
+};
+
+/**
  * ProbeIn
  */
 export type ProbeIn = {
@@ -2289,6 +2323,16 @@ export type SkipReadUpgradesIn = {
      * Skip Read Upgrades
      */
     skip_read_upgrades: boolean;
+};
+
+/**
+ * Source
+ */
+export type Source = {
+    /**
+     * Source Url
+     */
+    source_url: string;
 };
 
 /**
@@ -4449,6 +4493,72 @@ export type JobsRetryResponses = {
 
 export type JobsRetryResponse = JobsRetryResponses[keyof JobsRetryResponses];
 
+export type GetPreferencesData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/me/preferences';
+};
+
+export type GetPreferencesErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type GetPreferencesError = GetPreferencesErrors[keyof GetPreferencesErrors];
+
+export type GetPreferencesResponses = {
+    /**
+     * Successful Response
+     */
+    200: PreferencesOut;
+};
+
+export type GetPreferencesResponse = GetPreferencesResponses[keyof GetPreferencesResponses];
+
+export type PatchPreferencesData = {
+    body: PreferencesIn;
+    path?: never;
+    query?: never;
+    url: '/api/v1/me/preferences';
+};
+
+export type PatchPreferencesErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type PatchPreferencesError = PatchPreferencesErrors[keyof PatchPreferencesErrors];
+
+export type PatchPreferencesResponses = {
+    /**
+     * Successful Response
+     */
+    200: PreferencesOut;
+};
+
+export type PatchPreferencesResponse = PatchPreferencesResponses[keyof PatchPreferencesResponses];
+
 export type WorkSuggestionsData = {
     body?: never;
     path?: never;
@@ -5549,6 +5659,39 @@ export type SetSkipReadUpgradesResponses = {
 };
 
 export type SetSkipReadUpgradesResponse = SetSkipReadUpgradesResponses[keyof SetSkipReadUpgradesResponses];
+
+export type SourceData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/source';
+};
+
+export type SourceErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type SourceError = SourceErrors[keyof SourceErrors];
+
+export type SourceResponses = {
+    /**
+     * Successful Response
+     */
+    200: Source;
+};
+
+export type SourceResponse = SourceResponses[keyof SourceResponses];
 
 export type AddSourceData = {
     body: SourceIn;
