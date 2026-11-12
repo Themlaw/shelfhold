@@ -41,9 +41,10 @@ from shelfhold.export.application.snapshot import barrier_closed_by
 from shelfhold.export.application.upgrade import UpgradeMark, place_under_intent
 from shelfhold.infrastructure.clock import Clock
 from shelfhold.infrastructure.fsops import Fsops
+from shelfhold.infrastructure.held_files import remove_held_file
 from shelfhold.infrastructure.logging import escaped
 from shelfhold.infrastructure.schema import catalog, export
-from shelfhold.infrastructure.volumes import remove_data_file, write_data_file
+from shelfhold.infrastructure.volumes import write_data_file
 from shelfhold.library.public import (
     RepairRefusedError,
     audit_repair_archive,
@@ -147,7 +148,7 @@ class LibraryRepair:
         sha = "sha256:" + hashlib.sha256(kept.read_bytes()).hexdigest()
         outcome = self._apply(unit_id, str(variant), kept, sha)
         if outcome in ("replaced", "refused", "none"):
-            remove_data_file(held_path(self._data_dir, unit_id))  # our own working data
+            remove_held_file(held_path(self._data_dir, unit_id))  # our own working data
         return outcome == "replaced"
 
     def _hold(self, unit_id: str, staged: Path) -> None:

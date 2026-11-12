@@ -77,7 +77,7 @@ CLOSED_SITES: Mapping[str, frozenset[str]] = MappingProxyType(
                 f"{_FSOPS}/facade.py::Fsops.same_path_discard",
                 # EF-BIB-012: fresh bytes of a repair kept in /data/integrity/held while a barrier
                 # was closed, removed once installed or refused; working data, never served
-                "shelfhold/infrastructure/volumes.py::remove_data_file",
+                "shelfhold/infrastructure/held_files.py::remove_held_file",
                 "shelfhold/infrastructure/migrate.py::MigrationStateFile.clear",
                 "shelfhold/infrastructure/secrets/atomic.py::write_private",
                 # the CLI socket this process bound (and its staging directory), in /data

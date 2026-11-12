@@ -166,7 +166,7 @@ EXPECTED_CLOSED = {
     "database_rows": {"shelfhold/acquisition/application/instance.py::_purge_orphans"},
     "own_scratch": {
         f"{FSOPS}/facade.py::_claim_lease",
-        "shelfhold/infrastructure/volumes.py::remove_data_file",
+        "shelfhold/infrastructure/held_files.py::remove_held_file",
         "shelfhold/infrastructure/migrate.py::MigrationStateFile.clear",
         "shelfhold/infrastructure/secrets/atomic.py::write_private",
         "shelfhold/infrastructure/local_socket/server.py::LocalSocketServer._remove_socket",
