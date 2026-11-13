@@ -81,9 +81,21 @@ export type ActivityOut = {
      */
     event_id: number | string;
     /**
+     * Family State
+     */
+    family_state: 'preparing' | 'available' | 'waiting' | null;
+    /**
+     * Koreader Reset
+     */
+    koreader_reset: boolean;
+    /**
      * Occurred At
      */
     occurred_at: string;
+    /**
+     * Open Url
+     */
+    open_url: string | null;
     /**
      * Payload
      */
@@ -2592,9 +2604,17 @@ export type RequestOut = {
      */
     created_at: string;
     /**
+     * Family State
+     */
+    family_state: 'preparing' | 'available' | 'waiting' | null;
+    /**
      * Id
      */
     id: string;
+    /**
+     * Open Url
+     */
+    open_url: string | null;
     /**
      * Reject Reason
      */
@@ -10104,6 +10124,10 @@ export type ListWorksData = {
          * Offset
          */
         offset?: number;
+        /**
+         * Sort
+         */
+        sort?: 'title' | 'recent';
         /**
          * Since
          */

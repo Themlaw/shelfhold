@@ -260,17 +260,24 @@ def count_visible_works(connection: sa.Connection, scope: ReaderScope) -> int:
 
 
 def list_visible_works(
-    connection: sa.Connection, scope: ReaderScope, *, limit: int, offset: int
+    connection: sa.Connection,
+    scope: ReaderScope,
+    *,
+    limit: int,
+    offset: int,
+    recent: bool = False,
 ) -> list[VisibleWork]:
-    """A page of the Works this reader may see, in title order. A negative offset or limit is no
-    page; a page is never longer than `MAX_PAGE`."""
+    """A page of the Works this reader may see, in title order, or newest first (`recent`: the
+    order of creation; the same filter, so the pages of a child hold no hidden Work). A negative
+    offset or limit is no page; a page is never longer than `MAX_PAGE`."""
     if limit <= 0 or offset < 0:
         return []
     work = catalog.work.c
+    order = (work.created_seq.desc(), work.id.desc()) if recent else (work.sort_title, work.id)
     rows = connection.execute(
         sa.select(work.id, work.title, work.kind)
         .where(visible_works_clause(scope))
-        .order_by(work.sort_title, work.id)
+        .order_by(*order)
         .limit(min(limit, MAX_PAGE))
         .offset(offset)
     )

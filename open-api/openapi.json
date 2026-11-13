@@ -124,10 +124,41 @@
             ],
             "title": "Event Id"
           },
+          "family_state": {
+            "anyOf": [
+              {
+                "enum": [
+                  "preparing",
+                  "available",
+                  "waiting"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Family State"
+          },
+          "koreader_reset": {
+            "title": "Koreader Reset",
+            "type": "boolean"
+          },
           "occurred_at": {
             "format": "date-time",
             "title": "Occurred At",
             "type": "string"
+          },
+          "open_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Open Url"
           },
           "payload": {
             "additionalProperties": true,
@@ -165,7 +196,10 @@
           "payload",
           "occurred_at",
           "title",
-          "title_masked"
+          "title_masked",
+          "family_state",
+          "open_url",
+          "koreader_reset"
         ],
         "title": "ActivityOut",
         "type": "object"
@@ -4183,9 +4217,36 @@
             "title": "Created At",
             "type": "string"
           },
+          "family_state": {
+            "anyOf": [
+              {
+                "enum": [
+                  "preparing",
+                  "available",
+                  "waiting"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Family State"
+          },
           "id": {
             "title": "Id",
             "type": "string"
+          },
+          "open_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Open Url"
           },
           "reject_reason": {
             "anyOf": [
@@ -4225,7 +4286,9 @@
           "title",
           "reject_reason",
           "created_at",
-          "updated_at"
+          "updated_at",
+          "family_state",
+          "open_url"
         ],
         "title": "RequestOut",
         "type": "object"
@@ -16902,6 +16965,20 @@
               "minimum": 0,
               "title": "Offset",
               "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "sort",
+            "required": false,
+            "schema": {
+              "default": "title",
+              "enum": [
+                "title",
+                "recent"
+              ],
+              "title": "Sort",
+              "type": "string"
             }
           },
           {

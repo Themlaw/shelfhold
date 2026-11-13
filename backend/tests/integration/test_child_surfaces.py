@@ -700,6 +700,14 @@ def _surface_works_since(world: World) -> None:
     }
     assert first.json()["total"] == len(VISIBLE_FOR_CEILING_10)
     assert world.kid.get("/api/v1/works", params={"limit": 200, "offset": 3}).json()["items"] == []
+    # M3 L41, "Arrivé récemment": the newest-first order is the same view, never a wider one
+    recent = world.kid.get("/api/v1/works", params={"limit": 200, "sort": "recent"})
+    assert recent.status_code == 200
+    world.clean(recent.text)
+    assert {i["title"] for i in recent.json()["items"]} == {
+        world.seed.title_of(k) for k in VISIBLE_FOR_CEILING_10
+    }
+    assert recent.json()["total"] == len(VISIBLE_FOR_CEILING_10)
     key = (
         local_auth(world.seed.engine, world.env.settings)
         .create_api_key(name="kidkey2", username="kid", read_only=True)
