@@ -76,7 +76,8 @@ def still_blocking[V](
     """What still blocks. Events with an identifier are read in the order of their identifiers and
     a lift takes out exactly the purge it names, whatever the order the lines were met in; a purge
     laid after the lift stays. Lines from before the identifiers keep their old rule: a lift takes
-    out the earlier ones of the same values and versions."""
+    out the earlier ones of the same values and versions, and so does a lift that has its own
+    identifier but names no purge (`LEGACY_TARGET`): the lift of such a line."""
     legacy = [e for e in entries if event_of(e[1]) is None]
     events = sorted(
         (e for e in entries if event_of(e[1]) is not None), key=lambda e: e[1][EVENT_KEY]
@@ -89,6 +90,10 @@ def still_blocking[V](
             active = [a for a in active if (a[0], versions_of(a[1])) != (values, base)]
         else:
             active.append((values, cited))
+    for values, cited in events:  # the lift of a pose from before the identifiers
+        if cited.get(LIFT_MARK) == LEGACY_TARGET:
+            base = versions_of(cited)
+            active = [a for a in active if (a[0], versions_of(a[1])) != (values, base)]
     active += [e for e in events if LIFT_MARK not in e[1] and e[1][EVENT_KEY] not in lifted]
     return active
 

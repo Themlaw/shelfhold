@@ -251,3 +251,66 @@ def test_the_hash_of_an_unchanged_file_of_a_bin_is_not_computed_twice() -> None:
         for entry in entries:
             sweeper._holds_only_copy(entry)
         assert first > 0 and len(calls) == first  # the second look read nothing again
+
+
+# -- second pass: a lift of a pose from before the identifiers, the volumes an addition writes to --
+
+
+def test_the_lift_of_an_old_tombstone_is_listed_and_survives_the_loss_of_the_table(
+    tmp_path: Path,
+) -> None:
+    """The second pass's R1, by the journals alone: the old pose (no identifier) and its lift (an
+    identifier, no named purge) are replayed from a lost table, in a restart, twice over."""
+    env = make_tomb_env(tmp_path)
+    service = env.service()
+    service.replay(env.roots)
+    old = service._record(VARIANT, env.roots, reason=None, cited=service.cited_now(VARIANT))
+    _lift(service, env, old.seq)
+    with env.engine.begin() as connection:
+        connection.execute(sa.delete(coherence.content_tombstone))
+    for _ in range(2):
+        again = env.service()
+        again.replay(env.roots)
+        assert not again.check(VARIANT, root_id=env.library.root_id).blocked
+        assert again.listing() == []
+    new = again.record(
+        VARIANT, env.roots
+    )  # a purge after the lift blocks, and stays after a replay
+    assert again.check(VARIANT, root_id=None).blocked
+    last = env.service()
+    last.replay(env.roots)
+    assert last.check(VARIANT, root_id=None).blocked and [r.seq for r in last.listing()] != []
+    assert new.seq > old.seq
+
+
+def test_a_read_only_adoption_root_is_never_measured_by_the_space_gate(
+    monkeypatch: pytest.MonkeyPatch, settings: Settings, tmp_path: Path
+) -> None:
+    """An adopted root in read-only mode is never written to by an addition: its volume, full, does
+    not refuse anything. The writable root's volume still does."""
+    from shelfhold.infrastructure.ids import new_ulid
+    from shelfhold.infrastructure.schema import platform
+
+    adopted = tmp_path / "adopted"
+    adopted.mkdir()
+    with instance(settings, tmp_path) as inst:
+        inst.comp.settings = inst.comp.settings.model_copy(update=MARKS)
+        inst.configure()
+        with inst.engine.begin() as connection:
+            connection.execute(
+                sa.insert(platform.physical_root).values(
+                    root_id=new_ulid(), path_entry=str(adopted), mode="adopt_ro"
+                )
+            )
+        measured: list[str] = []
+
+        def usage(folder: object) -> Usage:
+            measured.append(str(folder))
+            if str(folder).startswith(str(adopted)):
+                return Usage(100 * GIB, 1 * GIB)  # a full volume, that nothing writes to
+            return Usage(100 * GIB, 80 * GIB)
+
+        monkeypatch.setattr(reclaim, "disk_usage", usage)
+        reclaim.require_space(inst.comp, 1 * GIB)  # fits: the adopted volume does not count
+        assert not any(m.startswith(str(adopted)) for m in measured)
+        assert any(m.startswith(str(tmp_path / "library")) for m in measured)  # the rw root is
