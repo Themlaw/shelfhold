@@ -1,4 +1,4 @@
-"""PoC de revue PR #224 (M3 L32) : doivent être ROUGES sur la branche."""
+"""Review PoCs of PR #224 (M3 L32): they were committed RED on the branch."""
 
 from __future__ import annotations
 
@@ -33,7 +33,7 @@ RS = "\x1e"
 def test_poc_window_end_stops_the_full_pass(
     settings: Settings, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """ENF-OPS-014 : la fenêtre est close, aucun SIGTERM. Le hachage complet doit s'arrêter."""
+    """ENF-OPS-014: the window is over, no SIGTERM. The full hash pass must stop."""
     seen: list[bool] = []
 
     class Scanner:
@@ -56,8 +56,8 @@ def test_poc_window_end_stops_the_full_pass(
 
 @pytest.mark.req("EF-EXP-034")
 def test_poc_event_from_another_kavita_polls_this_destination_with_the_wrong_client() -> None:
-    """remote_ref n'est unique que par cible : la bibliothèque 7 d'un autre serveur Kavita
-    déclenche un poll de NOTRE destination avec le client de l'AUTRE serveur, qui confirme."""
+    """`remote_ref` is unique per target only: library 7 of another Kavita server must not
+    make a poll of OUR destination with the OTHER server's client, which would confirm."""
     with export_env() as env:
         w = wire(env)  # destination of target A, library 7
         (rel,) = w.written()
