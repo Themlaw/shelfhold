@@ -91,6 +91,7 @@ OPEN = {
     "PUT /api/v1/me/state/{work_id}": "me_state_put",
     "GET /api/v1/me/works/{work_id}/title": "me_title",
     "GET /api/v1/search": "search",
+    "GET /api/v1/works": "works_since",  # M3 L11: the list of Works and its `?since=` removals
 }
 CLOSED = (
     "GET /api/v1/openapi.json",
@@ -170,6 +171,7 @@ CLOSED = (
     "POST /api/v1/series/{export_series_id}/resume",
     "POST /api/v1/shelves",
     "POST /api/v1/shelves/precreate",
+    "GET /api/v1/shelves",  # M3 L11: the list of shelves and its `?since=` removals
     "GET /api/v1/shelves/withdrawals",
     "POST /api/v1/shelves/withdrawals",
     "POST /api/v1/shelves/{shelf_id}/allowed-profiles",
@@ -228,7 +230,7 @@ PENDING_SURFACES = {
 
 SURFACES = (
     "search", "search_pages", "search_key", "federated", "me_state_get", "me_state_put",
-    "me_state_list", "me_title", "activity", "notification",
+    "me_state_list", "me_title", "activity", "notification", "works_since",
 )  # fmt: skip
 METHODS = ("get", "post", "put", "patch", "delete")
 HIDDEN_FROM_CEILING_10 = {*HIDDEN_TITLES, "twelve"}
@@ -669,6 +671,42 @@ def _surface_activity(world: World) -> None:
     world.clean(answer.text)
     shown = {i["payload"]["work_id"] for i in answer.json()}
     assert shown == {world.seed.works[k] for k in VISIBLE_FOR_CEILING_10}
+
+
+def _surface_works_since(world: World) -> None:
+    """The list of Works and its removals are the child's own view: a page of visible Works, and
+    a removal only for a Work she saw at the token. By session and by key, never the creator's."""
+    first = world.kid.get("/api/v1/works", params={"limit": 200})
+    assert first.status_code == 200
+    world.clean(first.text)
+    assert {i["title"] for i in first.json()["items"]} == {
+        world.seed.title_of(k) for k in VISIBLE_FOR_CEILING_10
+    }
+    assert first.json()["total"] == len(VISIBLE_FOR_CEILING_10)
+    assert world.kid.get("/api/v1/works", params={"limit": 200, "offset": 3}).json()["items"] == []
+    key = (
+        local_auth(world.seed.engine, world.env.settings)
+        .create_api_key(name="kidkey2", username="kid", read_only=True)
+        .value
+    )
+    by_key = world.env.other_client("10.0.0.57").get(
+        "/api/v1/works", params={"limit": 200}, headers={"Authorization": f"Bearer {key}"}
+    )
+    assert by_key.status_code == 200
+    world.clean(by_key.text)
+    assert {i["work_id"] for i in by_key.json()["items"]} == {
+        i["work_id"] for i in first.json()["items"]
+    }
+    from shelfhold.catalog.application import changes
+
+    token = first.json()["since"]
+    with world.seed.engine.begin() as connection:  # hidden Works leave: she never saw them
+        for key_name in ("above", "x", "unrated", "flagged"):
+            changes.record_work_removed(connection, world.seed.works[key_name])
+    answer = world.kid.get("/api/v1/works", params={"since": token, "limit": 200})
+    assert answer.status_code == 200
+    assert answer.json()["removed"] == []
+    world.clean(answer.text)
 
 
 def _surface_notification(world: World) -> None:

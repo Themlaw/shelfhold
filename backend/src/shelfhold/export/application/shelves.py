@@ -670,3 +670,20 @@ def resolve_folder(path: str | None) -> tuple[str | None, tuple[int, int] | None
     except FileNotFoundError:
         return real, None
     return real, (observed.st_dev, observed.st_ino)
+
+
+@dataclass(frozen=True)
+class ShelfSummary:
+    id: str
+    name: str
+    max_age_rating: int | None
+
+
+def list_shelves(connection: Connection) -> list[ShelfSummary]:
+    """The shelves, in name order: what `GET /shelves` lists (the admin's, M3 L11). No allowed
+    profile, no path, no phrase: the list says a shelf exists and under which ceiling."""
+    shelf = export.shelf.c
+    rows = connection.execute(
+        sa.select(shelf.id, shelf.name, shelf.max_age_rating).order_by(shelf.name, shelf.id)
+    )
+    return [ShelfSummary(r.id, r.name, r.max_age_rating) for r in rows]

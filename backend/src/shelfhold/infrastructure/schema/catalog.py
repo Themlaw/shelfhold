@@ -161,6 +161,10 @@ work = sa.Table(
     bool_column("is_adult", default=False),
     sa.Column("reading_direction", sa.String(), nullable=True),  # null: the kind's default
     sa.Column("locked_fields", sa.JSON(), nullable=False, server_default="[]"),
+    # The sequence of the `event` table when the Work was created (a trigger sets it and moves the
+    # sequence by one, so that every token issued before has a lower value): `?since=` never reports
+    # a removal of a Work created after the token (M3 L11). 0: older than any token.
+    sa.Column("created_seq", sa.Integer(), nullable=False, server_default="0"),
     now_column(),
     ulid_check("id"),
     in_check("status", WORK_STATUSES),
@@ -168,6 +172,17 @@ work = sa.Table(
     partial_date_check("first_published", "date_precision"),
     in_check("reading_direction", READING_DIRECTIONS),
     sa.Index("ix_work_kind", "kind"),
+)
+
+add_trigger(
+    work,
+    "work_created_seq",
+    "AFTER INSERT ON work BEGIN "
+    "INSERT INTO sqlite_sequence (name, seq) SELECT 'event', 0 WHERE NOT EXISTS "
+    "(SELECT 1 FROM sqlite_sequence WHERE name = 'event'); "
+    "UPDATE sqlite_sequence SET seq = seq + 1 WHERE name = 'event'; "
+    "UPDATE work SET created_seq = (SELECT seq FROM sqlite_sequence WHERE name = 'event') "
+    "WHERE id = NEW.id; END",
 )
 
 series_member = sa.Table(

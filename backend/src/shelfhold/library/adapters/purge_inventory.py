@@ -17,6 +17,7 @@ import sqlalchemy as sa
 from sqlalchemy import Connection
 
 from shelfhold.catalog.public import remove_from_search_index
+from shelfhold.infrastructure.event_sequence import invalidate_tokens
 from shelfhold.infrastructure.ids import is_ulid
 from shelfhold.infrastructure.schema import (
     acquisition,
@@ -479,6 +480,7 @@ def erase_work_rows(connection: Connection, work_id: str) -> None:
             .where(catalog.edition.c.work_id == work_id)
         ).scalars()
     )  # the series folder a destination named after the Work: its name is the title
+    invalidate_tokens(connection)  # no removal can be told without naming it: clients resync
     _erase_with_dependents(connection, catalog.work, catalog.work.c.id == work_id, ())
     remove_from_search_index(connection, [work_id])  # EF-BIB-010: not found after the purge
     _erase_with_dependents(

@@ -45,6 +45,9 @@ instance = sa.Table(
     sa.Column("lease_heartbeat_at", UtcDateTime(), nullable=True),
     sa.Column("restore_epoch", sa.Integer(), nullable=False, server_default="0"),
     sa.Column("restore_epoch_at", UtcDateTime(), nullable=True),
+    # The highest `event.id` the retention purged: a `?since=` token under it cannot be answered
+    # (`resync_required`, M3 L11). 0 until the first purge.
+    sa.Column("events_purged_through", sa.Integer(), nullable=False, server_default="0"),
     sa.Column("restore_generation", sa.Integer(), nullable=False, server_default="0"),
     # Truncation detection of the tombstone journal (EF-BIB-054, 02 section 3.12; used from M1b).
     sa.Column("tombstone_count", sa.Integer(), nullable=True),
