@@ -1110,6 +1110,8 @@ class SqlIdentityStore:
                     read_only=key.read_only,
                     created_at=key.now,
                     expires_at=key.expires_at,
+                    subject_user_id=key.subject_user_id,
+                    issued_by=key.issued_by,
                 )
             )
 
@@ -1119,9 +1121,15 @@ class SqlIdentityStore:
             query = query.where(where)
         with self._engine.connect() as conn:
             rows = conn.execute(query.order_by(_key.c.created_at, _key.c.id)).all()
+        subjects = {
+            sid: self.user_by_id(sid)
+            for sid in {r.subject_user_id for r in rows if r.subject_user_id}
+        }
         return [
             ApiKeyRecord(
                 id=row.id,
+                subject=subjects.get(row.subject_user_id),
+                issued_by=row.issued_by,
                 user=_user_of(row),
                 name=row.name,
                 prefix=row.prefix,
@@ -1177,6 +1185,8 @@ class SqlIdentityStore:
                         read_only=new.read_only,
                         created_at=new.now,
                         expires_at=new.expires_at,
+                        subject_user_id=new.subject_user_id,
+                        issued_by=new.issued_by,
                     )
                 )
                 conn.execute(self._audit_insert(audit))

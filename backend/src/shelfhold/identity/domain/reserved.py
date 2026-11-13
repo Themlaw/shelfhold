@@ -198,6 +198,10 @@ def authorize_reserved(
         return CredentialNotAllowed(credential)
     if credential is Credential.LOCAL_CLI:
         return Allowed()
+    if (
+        principal.via_forward
+    ):  # EF-USR-024 (5): a login by proxy is never enough, whatever the action
+        return ReauthRequired(auth_age_s=-1, max_age_s=fresh_auth_s)
     if not action.needs_fresh_auth(
         restricted_profile_exists=restricted_profile_exists, hardened=hardened
     ):

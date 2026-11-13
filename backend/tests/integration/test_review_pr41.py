@@ -82,23 +82,18 @@ def test_tunnel_identity_header_without_forward_auth_rejected(
 
 
 @pytest.mark.req("ENF-SEC-008")
-def test_identity_headers_kept_only_from_the_forward_auth_networks(
+def test_identity_headers_never_reach_the_routes_even_from_the_forward_auth_networks(
     monkeypatch: pytest.MonkeyPatch, settings: Settings
 ) -> None:
-    configured = settings.model_copy(update={"forward_auth_trusted_cidrs": ("10.0.0.0/8",)})
+    """L06: a believed proxy hands the name on through the authentication, not as a header."""
+    configured = settings.model_copy(
+        update={"auth_forward_enabled": True, "http_trusted_proxies": ("10.0.0.0/8",)}
+    )
     with auth_env(monkeypatch, configured, routers=[_router([])]) as env:
-        proxy = env.other_client("10.1.2.3")
-        assert (
-            "remote-user"
-            in proxy.get("/api/v1/review/headers", headers={"Remote-User": ADMIN}).json()["names"]
-        )
-        outsider = env.other_client("192.0.2.9")
-        assert (
-            "remote-user"
-            not in outsider.get("/api/v1/review/headers", headers={"Remote-User": ADMIN}).json()[
-                "names"
-            ]
-        )
+        for ip in ("10.1.2.3", "192.0.2.9"):
+            client = env.other_client(ip)
+            seen = client.get("/api/v1/review/headers", headers={"Remote-User": ADMIN})
+            assert "remote-user" not in seen.json()["names"]
 
 
 # --- Blocking 2: idempotent replay must not bypass the reserved-action checks -----------------
@@ -209,7 +204,7 @@ def test_known_browser_escapes_third_party_account_lockout(
 
 
 @pytest.mark.req("ENF-SEC-008")
-def test_serve_ignores_forwarded_headers_until_m3(
+def test_serve_never_lets_uvicorn_rewrite_the_peer(
     monkeypatch: pytest.MonkeyPatch, settings: Settings
 ) -> None:
     import uvicorn
@@ -239,7 +234,7 @@ def test_forwarded_for_does_not_change_the_throttled_address(
             json={"username": ADMIN, "password": WRONG},
             headers={"X-Forwarded-For": "9.9.9.9"},
         )
-        assert moved.status_code == 429
+        assert moved.status_code == 429  # no trusted proxy: the header is only a claim
 
 
 # --- Minor 6: CSRF cookie slides with the session ---------------------------------------------

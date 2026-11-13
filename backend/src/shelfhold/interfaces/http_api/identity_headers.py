@@ -1,22 +1,36 @@
-"""Proxy identity headers are never believed outside forward-auth (P5, review PR #41).
+"""Proxy identity headers: believed only from a configured proxy, in the one way (P5, EF-USR-002).
 
 "Refused" means "never trusted", not "request rejected": a tunnel such as `tailscale serve` adds
 `Tailscale-User-Login` to every request, and rejecting those would break the instance (P1). So the
-outermost middleware **removes** them from `scope["headers"]` before any other code (present or
-future) can read them, unless forward-auth is configured (`forward_auth_trusted_cidrs`) **and** the
-socket peer is inside one of those networks. Forward-auth itself (reading the headers) is M3; until
-then a configured CIDR only keeps the headers for it.
+outermost middleware **removes** every identity header from `scope["headers"]` before any other
+code (present or future) can read them. Only when forward-auth is switched on
+(`auth_forward_enabled`) **and** the socket peer is inside `http.trusted_proxies` **and** the
+shared secret matches (constant time; when one is configured) is the name in `Remote-User`
+handed on, not as a header but as `scope["state"]["forward_user"]`, for the authentication
+to look up.
 
-Each header name is logged once per process and recorded in the audit, which `shelfhold status`
-turns into a warning.
+Never `X-Forwarded-For` here, never a header written by the caller: the peer is the socket's.
+
+A believed proxy that sends an identity to a route with its own credentials (`/opds`, `/kosync`,
+`/kobo`) is refused (403) and audited once per route: that is a mistake of configuration, not
+something to guess around. `/healthz` and `/readyz` simply never take an identity.
+
+Each header name stripped from a stranger is logged once per process and recorded in the audit,
+which `shelfhold status` turns into a warning.
 """
 
 import ipaddress
 from collections.abc import Callable, Iterable
+from dataclasses import dataclass
 
 import structlog
 from starlette.concurrency import run_in_threadpool
+from starlette.datastructures import Headers
 from starlette.types import ASGIApp, Receive, Scope, Send
+
+from shelfhold.identity.public import same_secret
+from shelfhold.interfaces.http_api.catalog import error_code
+from shelfhold.interfaces.http_api.problems import build_problem_response
 
 IpNetwork = ipaddress.IPv4Network | ipaddress.IPv6Network
 
@@ -52,15 +66,54 @@ def parse_networks(cidrs: Iterable[str]) -> tuple[IpNetwork, ...]:
     return tuple(ipaddress.ip_network(cidr, strict=False) for cidr in cidrs)
 
 
+def normalize_ip(value: str | None) -> ipaddress.IPv4Address | ipaddress.IPv6Address | None:
+    """An address, or None. An IPv4-mapped IPv6 address is the IPv4 address it wraps, so that a
+    network written in one form matches a peer seen in the other."""
+    if not value:
+        return None
+    try:
+        address = ipaddress.ip_address(value.strip())
+    except ValueError:
+        return None
+    if isinstance(address, ipaddress.IPv6Address) and address.ipv4_mapped is not None:
+        return address.ipv4_mapped
+    return address
+
+
 def _peer_trusted(scope: Scope, trusted: tuple[IpNetwork, ...]) -> bool:
     client = scope.get("client")
-    if not trusted or not client:
-        return False
-    try:
-        address = ipaddress.ip_address(client[0])
-    except ValueError:
+    address = normalize_ip(client[0]) if client else None
+    if not trusted or address is None:
         return False
     return any(address in network for network in trusted)
+
+
+SECRET_HEADER = "x-shelfhold-proxy-secret"  # noqa: S105 (a header name)
+USER_HEADER = "remote-user"
+# Routes with a credential of their own: an identity from a proxy is a mistake there.
+OWN_CREDENTIAL_PREFIXES = ("/opds", "/kosync", "/kobo")
+NO_IDENTITY_PATHS = frozenset({"/healthz", "/readyz"})
+
+
+def _under(path: str, prefix: str) -> bool:
+    return path == prefix or path.startswith(prefix + "/")
+
+
+def _single_identity(headers: Headers) -> str:
+    """The name of the caller, or "" when there is not exactly one line with exactly one name: a
+    proxy that appends its line after the caller's (or forwards the caller's) leaves two, and a
+    comma is how servers fold two into one. Ambiguity names nobody (review PR #232)."""
+    lines = headers.getlist(USER_HEADER)
+    if len(lines) != 1 or "," in lines[0]:
+        return ""
+    return lines[0].strip()
+
+
+@dataclass(frozen=True)
+class ForwardAuth:
+    """Forward-auth as configured. `secret` None: none is required (the network alone decides)."""
+
+    secret: str | None = None
 
 
 class IdentityHeaderFilter:
@@ -69,30 +122,75 @@ class IdentityHeaderFilter:
         app: ASGIApp,
         *,
         trusted: tuple[IpNetwork, ...] = (),
+        forward: ForwardAuth | None = None,
         on_first_strip: Callable[[str], None] | None = None,
+        on_rejected_route: Callable[[str], None] | None = None,
     ) -> None:
         self.app = app
         self.trusted = trusted
+        self.forward = forward
         self.on_first_strip = on_first_strip
+        self.on_rejected_route = on_rejected_route
         self._seen: set[str] = set()
+        self._rejected: set[str] = set()
+
+    def _believed(self, scope: Scope, headers: Headers) -> bool:
+        if self.forward is None or not _peer_trusted(scope, self.trusted):
+            return False
+        wanted = self.forward.secret
+        if not wanted:
+            return True
+        # one line only (a second one is an ambiguity, and ambiguity is refused); an empty or
+        # absent one never equals a real secret
+        lines = headers.getlist(SECRET_HEADER)
+        return len(lines) == 1 and bool(lines[0]) and same_secret(lines[0], wanted)
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
-        if scope["type"] in {"http", "websocket"} and not _peer_trusted(scope, self.trusted):
-            kept: list[tuple[bytes, bytes]] = []
-            stripped: set[str] = set()
-            for name, value in scope["headers"]:
-                if is_identity_header(name):
-                    stripped.add(name.decode("latin-1").lower())
-                else:
-                    kept.append((name, value))
-            if stripped:
-                scope["headers"] = kept
-                for name in sorted(stripped - self._seen):
-                    self._seen.add(name)
-                    structlog.get_logger().warning("auth.identity_header_stripped", header=name)
-                    if self.on_first_strip is not None:
-                        try:
-                            await run_in_threadpool(self.on_first_strip, name)
-                        except Exception:
-                            structlog.get_logger().exception("auth.identity_header_audit_failed")
+        if scope["type"] not in {"http", "websocket"}:
+            await self.app(scope, receive, send)
+            return
+        headers = Headers(scope=scope)
+        believed = self._believed(scope, headers)
+        identity = _single_identity(headers) if believed else ""
+        kept: list[tuple[bytes, bytes]] = []
+        stripped: set[str] = set()
+        for name, value in scope["headers"]:
+            if is_identity_header(name):
+                stripped.add(name.decode("latin-1").lower())
+            else:
+                kept.append((name, value))
+        if stripped:
+            scope["headers"] = kept
+        if believed:
+            path = str(scope.get("path", ""))
+            if identity and scope["type"] == "http":
+                prefix = next((p for p in OWN_CREDENTIAL_PREFIXES if _under(path, p)), None)
+                if prefix is not None:
+                    await self._reject_route(scope, receive, send, prefix)
+                    return
+                if path not in NO_IDENTITY_PATHS:
+                    scope.setdefault("state", {})["forward_user"] = identity
+        elif stripped:
+            for name in sorted(stripped - self._seen):
+                self._seen.add(name)
+                structlog.get_logger().warning("auth.identity_header_stripped", header=name)
+                if self.on_first_strip is not None:
+                    try:
+                        await run_in_threadpool(self.on_first_strip, name)
+                    except Exception:
+                        structlog.get_logger().exception("auth.identity_header_audit_failed")
         await self.app(scope, receive, send)
+
+    async def _reject_route(self, scope: Scope, receive: Receive, send: Send, prefix: str) -> None:
+        if prefix not in self._rejected:
+            self._rejected.add(prefix)
+            structlog.get_logger().warning(
+                "auth.forward_identity_on_own_credential_route", route=prefix
+            )
+            if self.on_rejected_route is not None:
+                try:
+                    await run_in_threadpool(self.on_rejected_route, prefix)
+                except Exception:
+                    structlog.get_logger().exception("auth.forward_reject_audit_failed")
+        response = build_problem_response(error_code("forbidden"), request_id=None)
+        await response(scope, receive, send)

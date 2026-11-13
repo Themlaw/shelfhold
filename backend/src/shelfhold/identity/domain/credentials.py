@@ -31,12 +31,17 @@ class Principal:
     scopes: tuple[str, ...] = ()
     read_only: bool = False
     can_rate: bool = False  # the right to classify (EF-BIB-036); closed unless the user holds it
+    via_forward: bool = (
+        False  # named by a believed proxy: never fresh, no reserved action (EF-USR-024)
+    )
 
     @property
     def actor_id(self) -> str:
         """`<credential>:<id>`: one session, one key or one device token, never a whole user
         (review PR #41): two sessions of one account never share an idempotency key."""
         match self.credential:
+            case Credential.SESSION if self.via_forward:
+                return f"forward:{self.user_id}"
             case Credential.SESSION:
                 return f"session:{self.session_id}"
             case Credential.API_KEY | Credential.DEVICE_TOKEN:
@@ -75,8 +80,10 @@ def credential_axis(principal: Principal, *, now: datetime, fresh_auth_s: int) -
     """The label of a principal on the axis. A key holds one scope in practice; the widest wins."""
     match principal.credential:
         case Credential.SESSION:
-            fresh = principal.auth_time is not None and (
-                0 <= (now - principal.auth_time).total_seconds() <= fresh_auth_s
+            fresh = (
+                not principal.via_forward
+                and principal.auth_time is not None
+                and (0 <= (now - principal.auth_time).total_seconds() <= fresh_auth_s)
             )
             return "fresh_session" if fresh else "session"
         case Credential.API_KEY:

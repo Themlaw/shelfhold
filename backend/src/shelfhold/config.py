@@ -27,6 +27,7 @@ from shelfhold.infrastructure.http_headers import require_web_url
 from shelfhold.jobs.window import parse_clock, parse_zone
 
 ENV_PREFIX = "SHELFHOLD_"
+MIN_FORWARD_SECRET_LENGTH = 32  # a shared secret is generated, not chosen
 FILE_SUFFIX = "_FILE"
 CONFIG_FILE_NAME = "config.toml"
 CONFIG_SCHEMA_VERSION = "1.0"  # "major.minor", ADR-0039
@@ -99,9 +100,22 @@ class Settings(BaseModel):
     # naming golden (one Kavita series per segment) is confirmed by the nightly against a real
     # Kavita (L40). Leave it false; the lot that records the confirmation flips the default.
     naming_segment_policy_confirmed: bool = False
-    # P5: forward-auth is off while this is empty. Proxy identity headers (Remote-User,
-    # Tailscale-User-*...) are removed from every request whose peer is outside these networks.
-    forward_auth_trusted_cidrs: tuple[str, ...] = ()
+    # D15: the proxies whose `X-Forwarded-For` is read (the real address of a caller, for the rate
+    # limits) and, when forward-auth is switched on, whose identity headers are believed. A request
+    # whose socket peer is outside these networks is only ever what its peer is.
+    http_trusted_proxies: tuple[str, ...] = ()
+    # P5, EF-USR-002: forward-auth is off by default. Switched on, it needs `http_trusted_proxies`
+    # and, when `auth_forward_secret` is set, the same value in `X-Shelfhold-Proxy-Secret`
+    # (constant-time comparison). Proxy identity headers (Remote-User, Tailscale-User-*...) are
+    # removed from every other request: never believed, never an error of their own.
+    auth_forward_enabled: bool = False
+    auth_forward_secret: SecretStr | None = None
+    # ENF-SEC-008: requests per minute and per real address on the public routes (login page,
+    # sign-in, anything an anonymous caller may reach). Failures of sign-in have their own limits.
+    http_public_rate_per_minute: int = Field(default=120, ge=10, le=100_000)
+    # ENF-SEC-008: the routes that keep their own credentials (`/opds`, `/kosync`, `/kobo`: a device
+    # token or Basic) are limited per credential, not per address, and not by the figure above.
+    http_device_rate_per_minute: int = Field(default=600, ge=10, le=100_000)
     # EF-USR-024 (GAP-13-07): the local CLI socket refuses a peer outside the PID namespace of the
     # container (the host, another container that mounts /data) unless this is set. The uid of
     # Shelfhold on the host is then as powerful as an admin.
@@ -194,13 +208,13 @@ class Settings(BaseModel):
             raise ValueError("umask must mask 'others write' (0o002 set), e.g. 0022 or 0002")
         return value
 
-    @field_validator("forward_auth_trusted_cidrs")
+    @field_validator("http_trusted_proxies")
     @classmethod
     def _cidrs(cls, value: tuple[str, ...]) -> tuple[str, ...]:
         return tuple(str(ipaddress.ip_network(cidr, strict=False)) for cidr in value)
 
     @field_validator(
-        "plugin_repos", "active_sources", "forward_auth_trusted_cidrs", "wake_suwayomi",
+        "plugin_repos", "active_sources", "http_trusted_proxies", "wake_suwayomi",
         "wake_kavita", mode="before",
     )  # fmt: skip
     @classmethod
@@ -220,6 +234,31 @@ class Settings(BaseModel):
     def _zone(cls, value: str) -> str:
         parse_zone(value)
         return value
+
+    @model_validator(mode="after")
+    def _forward_auth_needs_a_network(self) -> Self:
+        networks = [ipaddress.ip_network(cidr) for cidr in self.http_trusted_proxies]
+        if any(network.prefixlen == 0 for network in networks):
+            # every address is "a proxy": any caller names herself, or is any visitor's address
+            raise ValueError("http_trusted_proxies must not hold every address (/0)")
+        if self.auth_forward_enabled and not networks:
+            raise ValueError("forward-auth needs http_trusted_proxies (the network of the proxy)")
+        wide = any(n.prefixlen < n.max_prefixlen for n in networks)
+        secret = self.auth_forward_secret
+        if (
+            self.auth_forward_enabled
+            and secret is not None
+            and 0 < len(secret.get_secret_value()) < MIN_FORWARD_SECRET_LENGTH
+        ):
+            raise ValueError(
+                f"auth_forward_secret must hold at least {MIN_FORWARD_SECRET_LENGTH} characters"
+            )
+        if self.auth_forward_enabled and wide and (secret is None or not secret.get_secret_value()):
+            # a network is many hosts, and one of them is not the proxy: only the secret tells
+            raise ValueError(
+                "forward-auth on a network wider than one host needs auth_forward_secret"
+            )
+        return self
 
     @model_validator(mode="after")
     def _window_not_empty(self) -> Self:

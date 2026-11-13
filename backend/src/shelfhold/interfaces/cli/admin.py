@@ -110,6 +110,10 @@ def register(commands: argparse._SubParsersAction[argparse.ArgumentParser]) -> N
     create.add_argument(
         "--expires-days", type=int, metavar="DAYS", help=t("cli.admin_key_expires_help")
     )
+    create.add_argument(
+        "--scope", choices=("read", "request", "admin"), help=t("cli.admin_key_scope_help")
+    )
+    create.add_argument("--subject", metavar="USERNAME", help=t("cli.admin_key_subject_help"))
     create.set_defaults(handler=run_keys_create, configure_logging=False)
     listing = key_actions.add_parser("list", help=t("cli.admin_keys_list_help"))
     listing.add_argument("--json", action="store_true", help=t("cli.json_help"))
@@ -299,13 +303,18 @@ def run_sessions_revoke(args: argparse.Namespace, auth: IdentityCommands) -> int
 
 @_command
 def run_keys_create(args: argparse.Namespace, auth: IdentityCommands) -> int:
+    if args.scope == "request" and not args.subject:
+        return _fail(t("admin.key_subject_required"))  # a request key acts as someone: name her
     try:
         created = auth.create_api_key(
-            name=args.name, read_only=args.read_only, expires_days=args.expires_days
-        )
+            name=args.name, read_only=args.read_only, expires_days=args.expires_days,
+            scope=args.scope, subject_username=args.subject,
+        )  # fmt: skip
     except UnknownUserError:
-        return _fail(t("admin.unknown_user", username="admin"))
-    except ValueError:
+        return _fail(t("admin.unknown_user", username=args.subject or "admin"))
+    except ValueError as error:
+        if str(error) in {"invalid_scope", "scope_requires_admin", "subject_not_allowed"}:
+            return _fail(t("admin.key_scope_refused"))
         return _fail(t("cli.admin_key_expires_help"))
     print(t("admin.key_created", prefix=created.prefix), file=sys.stderr)
     print(created.value)  # stdout carries the secret alone, once

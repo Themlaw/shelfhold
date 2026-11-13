@@ -35,6 +35,7 @@ from shelfhold.identity.application.recovery_kit import (
     render_recovery_kit,
 )
 from shelfhold.identity.application.service import (
+    FORWARD_REJECTED_AUDIT,
     IDENTITY_HEADER_AUDIT,
     AdminExistsError,
     AuthError,
@@ -111,7 +112,7 @@ from shelfhold.identity.domain.roles import (
     ProfileError,
     holds_rate_right,
 )
-from shelfhold.identity.domain.throttle import LoginThrottle
+from shelfhold.identity.domain.throttle import LoginThrottle, address_key
 from shelfhold.identity.domain.tokens import same_secret
 from shelfhold.identity.domain.truth_table import TruthRow, truth_table
 from shelfhold.identity.domain.visibility import (
@@ -133,6 +134,7 @@ __all__ = [
     "DEFAULT_RESERVED_ROLES",
     "DELETION_SITES",
     "EXIT_ROUTES",
+    "FORWARD_REJECTED_AUDIT",
     "IDENTITY_HEADER_AUDIT",
     "INTEGRATION_ROLE",
     "KEYRING_EXPORT_NAME",
@@ -202,6 +204,7 @@ __all__ = [
     "Verdict",
     "ViewerScope",
     "add_directly_refusal",
+    "address_key",
     "audit_actor",
     "audit_insert",
     "authorize_reserved",

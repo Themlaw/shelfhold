@@ -81,6 +81,14 @@ from shelfhold.infrastructure.ids import new_ulid
 
 ADMIN_ROLE = "admin"
 IDENTITY_HEADER_AUDIT = "auth.identity_header_stripped"  # read back by `shelfhold status`
+FORWARD_REJECTED_AUDIT = (
+    "auth.forward_rejected_route"  # EF-USR-002: identity on a route with its own credentials
+)
+KEY_SCOPES = (
+    "read",
+    "request",
+    "admin",
+)  # `destructive` is reserved, not implemented (EF-USR-024 (6))
 API_KEY_TOUCH_INTERVAL = timedelta(minutes=1)
 OPTIONS_PER_MINUTE = 30  # passkey sign-in options per address
 
@@ -903,8 +911,15 @@ class LocalAuth:
         read_only: bool = False,
         expires_days: int | None = None,
         username: str | None = None,
+        scope: str | None = None,
+        subject_username: str | None = None,
         by: Principal | None = None,
     ) -> CreatedApiKey:
+        """`scope`: `read`, `request` or `admin` (default: `read` when `read_only`, else `admin`).
+
+        EF-USR-024 (4): the key acts as its **subject** (default: the one who holds it). An adult
+        issues `read` or `request` for herself; for a profile it takes an admin. The `admin` scope
+        is an admin's own, for herself, never for a subject; `destructive` stays unimplemented."""
         if username is not None:
             owner = self._store.user_by_name(username)
         else:
@@ -912,8 +927,28 @@ class LocalAuth:
             owner = admins[0] if admins else None
         if owner is None:
             raise UnknownUserError
-        if not read_only and owner.role != "admin":  # the `admin` scope is an admin's alone
+        scope = scope or ("read" if read_only else "admin")
+        if scope == "request" and subject_username is None:
+            raise ValueError("subject_required")  # a request key acts as someone: she is named
+        if scope not in KEY_SCOPES:
+            raise ValueError("invalid_scope")
+        if scope == "admin" and owner.role != "admin":  # the `admin` scope is an admin's alone
             raise ValueError("scope_requires_admin")
+        subject = owner
+        if subject_username is not None:
+            found = self._store.user_by_name(subject_username)
+            if found is None:
+                raise UnknownUserError
+            subject = found
+        if subject.id != owner.id and scope == "admin":
+            raise ValueError("subject_not_allowed")
+        if (
+            by is not None
+            and by.role != "admin"
+            and (subject.id != by.user_id or owner.id != by.user_id)
+        ):
+            raise ValueError("subject_not_allowed")
+        read_only = scope == "read"
         now = self.now()
         if expires_days is not None and expires_days < 1:
             raise ValueError("invalid_expiry")
@@ -929,10 +964,16 @@ class LocalAuth:
                 name=name,
                 prefix=secret.prefix,
                 hash=secret.digest,
-                scopes=("read",) if read_only else ("admin",),
+                scopes=(scope,),
                 read_only=read_only,
                 now=now,
                 expires_at=expires_at,
+                subject_user_id=subject.id,
+                # who issued it, when it is an account; NULL for the host operator, whose line
+                # in the audit is `local_cli:<uid>` (the column is a foreign key to a user)
+                issued_by=by.user_id
+                if by is not None and by.credential is Credential.SESSION
+                else None,
             )
         )
         self._audit("api_key.created", by, target=_by_host_user(secret.prefix, by))
@@ -974,6 +1015,8 @@ class LocalAuth:
                 read_only=old.read_only,
                 now=now,
                 expires_at=expires_at,
+                subject_user_id=old.subject.id if old.subject is not None else None,
+                issued_by=old.issued_by,
             )
             audit = AuditEntry(
                 actor_id=audit_actor(by),
@@ -1012,15 +1055,34 @@ class LocalAuth:
             return None
         if record.last_used_at is None or now - record.last_used_at >= API_KEY_TOUCH_INTERVAL:
             self._store.touch_api_key(record.id, now=now)
+        # EF-USR-024 (4): every right and every filter is the subject's, never the issuer's
+        acts_as = record.subject or record.user
         return Principal(
-            user_id=record.user.id,
-            username=record.user.username,
-            role=record.user.role,
+            user_id=acts_as.id,
+            username=acts_as.username,
+            role=acts_as.role,
             credential=Credential.API_KEY,
             key_id=record.id,
             scopes=record.scopes,
             read_only=record.read_only,
-            can_rate=record.user.can_rate,
+            can_rate=acts_as.can_rate and "admin" in record.scopes,
+        )
+
+    def authenticate_forward(self, username: str) -> Principal | None:
+        """The account a believed proxy named, or None: nobody is created from a header.
+
+        Never fresh (`auth_time` None) and flagged: every reserved action asks for the local
+        password again (EF-USR-024 (5)), and an unsafe request must show its own origin."""
+        user = self._store.user_by_name(username) if 0 < len(username) <= 256 else None
+        if user is None:
+            return None
+        return Principal(
+            user_id=user.id,
+            username=user.username,
+            role=user.role,
+            credential=Credential.SESSION,
+            via_forward=True,
+            can_rate=user.can_rate,
         )
 
     # --- reserved actions --------------------------------------------------------------------

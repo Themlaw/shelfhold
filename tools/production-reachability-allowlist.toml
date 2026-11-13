@@ -63,7 +63,7 @@ reason = "Proves a generic mechanic of the HTTP stack (identity headers, idempot
 until = "permanent"
 tests = [
   "backend/tests/integration/test_review_pr41.py::test_tunnel_identity_header_without_forward_auth_rejected",
-  "backend/tests/integration/test_review_pr41.py::test_identity_headers_kept_only_from_the_forward_auth_networks",
+  "backend/tests/integration/test_review_pr41.py::test_identity_headers_never_reach_the_routes_even_from_the_forward_auth_networks",
   "backend/tests/integration/test_review_pr41.py::test_idempotent_replay_never_skips_fresh_auth",
   "backend/tests/integration/test_review_pr41.py::test_idempotency_actor_is_one_credential",
   "backend/tests/unit/test_logging.py::test_unhandled_http_exception_and_library_logs_are_json_with_request_id",
@@ -194,4 +194,13 @@ symbols = [
   "shelfhold.export.targets.kavita.events:HubSession",
   "shelfhold.export.targets.kavita.events:ScanEvent",
   "shelfhold.export.targets.kavita.events:parse_hub_frames",
+]
+
+[[allow]]
+category = "m3-l06-device-credentials"
+reason = "2026-11-13: the routes with a credential of their own (`/opds`, `/kosync`, `/kobo`) are not in the application yet; the ceiling of an unaccepted credential (the address budget) is in force and tested through the middleware. The routes will call `recognise_device_credential` once they accept a credential, which is what gives it a budget of its own (review PR #232)."
+until = "M5"
+symbols = [
+  "shelfhold.interfaces.http_api.ratelimit:RecognisedCredentials.add_raw",
+  "shelfhold.interfaces.http_api.ratelimit:recognise_device_credential",
 ]

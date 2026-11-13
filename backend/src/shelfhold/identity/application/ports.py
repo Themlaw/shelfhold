@@ -89,6 +89,8 @@ class ApiKeyRecord:
     expires_at: datetime | None
     last_used_at: datetime | None
     revoked_at: datetime | None
+    subject: UserRecord | None = None  # who the key acts as; None: its owner (EF-USR-024 (4))
+    issued_by: str | None = None
 
 
 @dataclass(frozen=True)
@@ -102,6 +104,8 @@ class NewApiKey:
     read_only: bool
     now: datetime
     expires_at: datetime | None
+    subject_user_id: str | None = None
+    issued_by: str | None = None
 
 
 @dataclass(frozen=True)

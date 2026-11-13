@@ -45,6 +45,7 @@ ACTOR = "_actor"  # the audit `Actor` of the peer, written by the dispatcher ove
 _PASSWORD_REASONS = frozenset(
     {
         "invalid_username", "password_too_short", "password_too_long", "invalid_expiry",
+        "invalid_scope", "scope_requires_admin", "subject_not_allowed", "subject_required",
         "unknown_reference",  # `admin acknowledge-passkeys --through`: nothing waits under it
     }
 )  # fmt: skip
@@ -114,11 +115,17 @@ def _sessions_revoke(auth: LocalAuth, by: Principal, params: Params) -> object:
 
 
 def _keys_create(auth: LocalAuth, by: Principal, params: Params) -> object:
+    if _text(params, "scope", required=False) == "request" and not _text(
+        params, "subject", required=False
+    ):
+        raise ValueError("subject_required")  # a request key acts as someone: she is named
     return _key(
         auth.create_api_key(
             name=_text(params, "name", required=False),
             read_only=_flag(params, "read_only"),
             expires_days=_days(params),
+            scope=_text(params, "scope", required=False),
+            subject_username=_text(params, "subject", required=False),
             by=by,
         )
     )

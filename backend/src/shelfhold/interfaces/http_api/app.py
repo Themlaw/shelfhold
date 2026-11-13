@@ -23,7 +23,11 @@ from shelfhold.interfaces.http_api.idempotency import (
     ActorOf,
     IdempotencyMiddleware,
 )
-from shelfhold.interfaces.http_api.identity_headers import IdentityHeaderFilter, parse_networks
+from shelfhold.interfaces.http_api.identity_headers import (
+    ForwardAuth,
+    IdentityHeaderFilter,
+    parse_networks,
+)
 from shelfhold.interfaces.http_api.login import build_login_router
 from shelfhold.interfaces.http_api.maintenance import MaintenanceGuard
 from shelfhold.interfaces.http_api.middleware import (
@@ -39,6 +43,11 @@ from shelfhold.interfaces.http_api.problems import (
 from shelfhold.interfaces.http_api.profiles import (
     build_own_visibility_router,
     build_profiles_router,
+)
+from shelfhold.interfaces.http_api.ratelimit import (
+    ClientIpMiddleware,
+    PublicRateLimit,
+    RecognisedCredentials,
 )
 from shelfhold.interfaces.http_api.sessions import build_sessions_router
 from shelfhold.interfaces.http_api.spa import mount_spa
@@ -64,7 +73,10 @@ def create_http_app(
     actor_of: ActorOf | None = None,
     auth: AuthGate | None = None,
     source_url: str | None = None,
-    forward_auth_trusted_cidrs: Sequence[str] = (),
+    trusted_proxies: Sequence[str] = (),  # D15: whose X-Forwarded-For and identity are read
+    forward_auth: ForwardAuth | None = None,  # EF-USR-002: None = off (the default)
+    public_rate_per_minute: int | None = None,  # ENF-SEC-008; None: no limit (bare tests)
+    device_rate_per_minute: int = 600,
     maintenance_active: Callable[[], bool | None] | None = None,
 ) -> FastAPI:
     """Without `auth` (offline schema export, protocol tests) the authentication routes are still
@@ -102,16 +114,28 @@ def create_http_app(
         if actor_of is None:  # a ledger without actors would share keys between users
             raise ValueError("idempotency_requires_actor_of")
         app.add_middleware(IdempotencyMiddleware, store=idempotency, actor_of=actor_of)
+    if auth is not None and public_rate_per_minute is not None:
+        app.state.recognised_devices = RecognisedCredentials()
+        app.add_middleware(  # inside auth
+            PublicRateLimit,
+            per_minute=public_rate_per_minute,
+            per_credential=device_rate_per_minute,
+            recognised=app.state.recognised_devices,
+        )
     if auth is not None:
         app.add_middleware(AuthMiddleware, gate=auth)  # outside the ledger: the real actor
     if maintenance_active is not None:  # EF-INT-018: inside the request context, outside auth
         app.add_middleware(MaintenanceGuard, active=maintenance_active)
     app.add_middleware(RequestContextMiddleware)
     app.add_middleware(SecurityHeadersMiddleware)  # wraps every response
+    networks = parse_networks(trusted_proxies)
+    app.add_middleware(ClientIpMiddleware, trusted=networks)  # the real address, for the limits
     app.add_middleware(  # outermost: nothing below ever sees a proxy identity header (P5)
         IdentityHeaderFilter,
-        trusted=parse_networks(forward_auth_trusted_cidrs),
+        trusted=networks,
+        forward=forward_auth,
         on_first_strip=auth.record_stripped_header if auth is not None else None,
+        on_rejected_route=auth.record_forward_rejection if auth is not None else None,
     )
 
     @app.api_route("/robots.txt", methods=["GET", "HEAD"], include_in_schema=False)
