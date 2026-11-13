@@ -8,7 +8,7 @@ without one the header is simply absent.
 
 from collections.abc import Callable
 from contextlib import suppress
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, Request, Response
 from pydantic import BaseModel, Field
@@ -40,6 +40,9 @@ class ConfigRow(BaseModel):
     default: Any = None
     overridden_by: str | None = None
     warning: str | None = None  # accepted but not acting yet (EF-SRC-025)
+    level: Literal["essential", "advanced", "expert"]  # the screen's level (EF-UX-009)
+    locked: bool  # the screen greys it: fixed by this release or set by the environment
+    secret: bool  # no value is answered for it
 
 
 class ConfigOut(BaseModel):
@@ -88,8 +91,10 @@ def build_headless_router(
     def rows(values: list[Any]) -> ConfigOut:
         return ConfigOut(
             items=[
-                ConfigRow(key=v.key, value=v.value, source=v.source, default=v.default,
-                          overridden_by=v.overridden_by, warning=v.warning)
+                ConfigRow(key=v.key, value=None if v.secret else v.value, source=v.source,
+                          default=None if v.secret else v.default,
+                          overridden_by=v.overridden_by, warning=v.warning,
+                          level=v.level, locked=v.locked, secret=v.secret)
                 for v in values
             ]
         )  # fmt: skip
@@ -117,6 +122,10 @@ def build_headless_router(
             _PATH_MAP(request)  # which folders are written: a reserved action, fresh session (P3)
         admin = get_admin()
         try:
+            # a field the environment sets is refused here too, whatever the screen greys, and
+            # before anything is written: a batch is applied whole or not at all (EF-UX-009)
+            if any(admin.get(key).locked for key in body.values):
+                raise ProblemError("config.key_readonly")
             for key, value in body.values.items():
                 admin.set(key, value)
         except HeadlessError as error:

@@ -68,7 +68,13 @@ from shelfhold.headless.errors import (
     UnknownConfigKey,
     UnknownTarget,
 )
-from shelfhold.headless.keys import KEYS, PATH_MAP_PREFIX, effective_check_mode, warning_of
+from shelfhold.headless.keys import (
+    KEYS,
+    PATH_MAP_LEVEL,
+    PATH_MAP_PREFIX,
+    effective_check_mode,
+    warning_of,
+)
 from shelfhold.headless.ports import (
     ChannelValidator,
     KavitaKeyExchange,
@@ -107,6 +113,9 @@ class ConfigValue:
     default: object = None
     overridden_by: str | None = None
     warning: str | None = None  # a value that is accepted but does not act yet (EF-SRC-025)
+    level: str = "expert"  # essential | advanced | expert: the settings screen (EF-UX-009)
+    locked: bool = False  # not writable here: fixed by this release or set by a higher layer
+    secret: bool = False  # its value is never shown on a screen
 
 
 ConfigValues = list[ConfigValue]
@@ -354,18 +363,24 @@ class HeadlessAdmin:
         spec = KEYS.get(key)
         if spec is None:
             raise UnknownConfigKey(f"unknown key {key!r}")
+        level, secret = spec.level, spec.secret
         if spec.readonly:
-            return ConfigValue(key, spec.default, "fixed", spec.default)
+            return ConfigValue(key, spec.default, "fixed", spec.default, None, None, level,
+                               locked=True, secret=secret)  # fmt: skip
         if key == "notify.urls":
             with self._engine.connect() as connection:
-                return ConfigValue(key, sorted(self._store.urls(connection)), "db", [])
+                names = sorted(self._store.urls(connection))
+            return ConfigValue(key, names, "db", [], level=level, secret=secret)
         stored = self._setting(key)
+        overridden = self._overridden_by(key)
         if stored is not None:
-            overridden = self._overridden_by(key)
-            return ConfigValue(key, stored, "db", spec.default, overridden, warning_of(key, stored))
+            return ConfigValue(
+                key, stored, "db", spec.default, overridden, warning_of(key, stored), level,
+                locked=overridden is not None, secret=secret,
+            )  # fmt: skip
         return ConfigValue(
             key, self._effective_default(key, spec.default), "default", spec.default,
-            self._overridden_by(key),
+            overridden, None, level, locked=overridden is not None, secret=secret,
         )  # fmt: skip
 
     def _effective_default(self, key: str, default: object) -> object:
@@ -446,7 +461,8 @@ class HeadlessAdmin:
     def _get_path_map(self, key: str) -> ConfigValue:
         with self._engine.connect() as connection:
             row = self._target_row(connection, key.removeprefix(PATH_MAP_PREFIX))
-        return ConfigValue(key, _normalise_path_map(list(row.path_map)), "db", [])
+        return ConfigValue(key, _normalise_path_map(list(row.path_map)), "db", [],
+                           level=PATH_MAP_LEVEL)  # fmt: skip
 
     def _set_path_map(self, key: str, value: str) -> ConfigValue:
         try:

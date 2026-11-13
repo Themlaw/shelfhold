@@ -1,11 +1,17 @@
 <script lang="ts">
+  // The color scheme of the signed-in person (EF-UX-012): saved by the server, then the root layout
+  // reads the preferences again and applies them (only it knows the theme mechanism, I51).
+  import { invalidateAll } from '$app/navigation';
   import { onMount } from 'svelte';
   import { getPreferences, patchPreferences } from '#lib/api/index.ts';
   import type { PreferencesOut } from '#lib/api/types.gen.ts';
+  import { t } from '#lib/i18n/index.ts';
   import { csrfToken } from '#lib/passkeys.ts';
 
   let prefs = $state<PreferencesOut | null>(null);
-  let colorScheme = $state<'auto' | 'light' | 'dark'>('auto');
+  const SCHEMES: PreferencesOut['color_scheme'][] = ['auto', 'light', 'dark'];
+
+  let colorScheme = $state<PreferencesOut['color_scheme']>('auto');
   let failed = $state(false);
   let message = $state('');
 
@@ -18,7 +24,7 @@
       colorScheme = data.color_scheme;
     } catch {
       failed = true;
-      message = 'Erreur de chargement.';
+      message = t('appearance.error');
     }
   }
 
@@ -35,36 +41,49 @@
         throwOnError: true
       });
       prefs = data;
-      message = 'Enregistré.';
+      message = t('appearance.saved');
+      await invalidateAll();
     } catch {
       failed = true;
-      message = 'Action refusée.';
+      message = t('appearance.refused');
     }
   }
 </script>
 
 <svelte:head>
-  <title>Apparence</title>
+  <title>{t('appearance.title')}</title>
 </svelte:head>
 
 <main>
-  <h1>Apparence</h1>
-  <form onsubmit={save}>
-    <label for="color-scheme">Schéma de couleurs</label>
-    <select id="color-scheme" bind:value={colorScheme}>
-      <option value="auto">auto</option>
-      <option value="light">light</option>
-      <option value="dark">dark</option>
-    </select>
-    <button type="submit">Enregistrer</button>
-  </form>
+  <h1>{t('appearance.title')}</h1>
+  {#if prefs}
+    <form onsubmit={save}>
+      <label for="color-scheme">{t('appearance.scheme')}</label>
+      <select id="color-scheme" bind:value={colorScheme}>
+        {#each SCHEMES as scheme (scheme)}
+          <option value={scheme}>{t(`appearance.scheme.${scheme}`)}</option>
+        {/each}
+      </select>
+      <button type="submit">{t('appearance.save')}</button>
+    </form>
+  {/if}
   {#if message}
     <p role={failed ? 'alert' : 'status'} class:err={failed}>{message}</p>
   {/if}
 </main>
 
 <style>
-  main { max-width: 48rem; margin: 0 auto; padding: 2rem 1rem; }
-  form { display: grid; gap: 0.5rem; max-width: 24rem; }
-  .err { color: var(--color-err, #b00); }
+  main {
+    max-width: 48rem;
+    margin: 0 auto;
+    padding: 2rem 1rem;
+  }
+  form {
+    display: grid;
+    gap: 0.5rem;
+    max-width: 24rem;
+  }
+  .err {
+    color: var(--color-err);
+  }
 </style>

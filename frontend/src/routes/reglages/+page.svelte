@@ -1,26 +1,19 @@
 <script lang="ts">
+  // Settings in three levels (EF-UX-009). The server decides what each row is: its level, whether
+  // it is locked (set by the environment or fixed by this release) and whether it is secret. The
+  // screen draws that and decides nothing, so a new setting needs no change here.
   import { onMount } from 'svelte';
   import { readConfig, patchConfig } from '#lib/api/index.ts';
   import type { ConfigRow } from '#lib/api/types.gen.ts';
-  import { t } from '#lib/i18n/index.ts';
-  import { needsReauth, problemOf } from '#lib/triage.ts';
+  import { hasMessage, t } from '#lib/i18n/index.ts';
+  import { isForbidden, needsReauth, problemOf } from '#lib/triage.ts';
   import { csrfToken } from '#lib/passkeys.ts';
   import ReauthPrompt from '#lib/components/ReauthPrompt.svelte';
 
-  // Levels (EF-UX-009): at most 15 fields on the essential screen.
-  const ESSENTIAL_KEYS = new Set([
-    'public_url',
-    'source.check_mode',
-    'instance.jurisdiction',
-    'maintenance.window'
-  ]);
-  const ADVANCED_KEYS = new Set([
-    'export.missing_floor',
-    'export.missing_ratio',
-    'export.missing_ceiling'
-  ]);
+  const LEVELS = ['essential', 'advanced', 'expert'] as const;
 
   let items = $state<ConfigRow[]>([]);
+  let adminOnly = $state(false);
   let failed = $state(false);
   let message = $state('');
   let reauthMethods = $state<string[] | null>(null);
@@ -28,31 +21,26 @@
 
   const headers = () => ({ 'X-CSRF-Token': csrfToken() });
 
-  function levelOf(key: string): 'essential' | 'advanced' | 'expert' {
-    if (ESSENTIAL_KEYS.has(key)) return 'essential';
-    if (ADVANCED_KEYS.has(key)) return 'advanced';
-    return 'expert';
-  }
-
-  function isSecret(key: string): boolean {
-    return key === 'notify.urls';
-  }
-
-  function isGreyed(row: ConfigRow): boolean {
-    return !!row.overridden_by || row.source === 'env' || row.source === 'fixed' || row.source === 'toml';
-  }
-
-  function originOf(row: ConfigRow): string {
-    return row.overridden_by ?? row.source;
-  }
+  const originOf = (row: ConfigRow): string => row.overridden_by ?? row.source;
+  const originText = (row: ConfigRow): string => {
+    const key = `settings.origin.${originOf(row)}`;
+    return t('settings.origin', { origin: hasMessage(key) ? t(key) : originOf(row) });
+  };
+  const helpOf = (row: ConfigRow): string | null => {
+    const key = `settings.help.${row.key}`;
+    return hasMessage(key) ? t(key) : null;
+  };
+  const shown = (value: unknown): string =>
+    typeof value === 'string' ? value : JSON.stringify(value ?? '');
 
   async function load(): Promise<void> {
     try {
       const { data } = await readConfig({ throwOnError: true });
       items = data.items;
-    } catch {
+    } catch (error) {
       failed = true;
-      message = 'Erreur de chargement.';
+      if (isForbidden(error)) adminOnly = true;
+      message = isForbidden(error) ? t('settings.admin_only') : t('settings.error');
     }
   }
 
@@ -61,31 +49,25 @@
   async function save(key: string, value: string): Promise<void> {
     failed = false;
     message = '';
-    const again = async () => {
-      try {
-        const { data } = await patchConfig({
-          headers: headers(),
-          body: { values: { [key]: value } },
-          throwOnError: true
-        });
-        items = data.items;
-      } catch (error) {
-        if (!needsReauth(error)) {
-          failed = true;
-          message = 'Erreur de chargement.';
-        }
-      }
-    };
     try {
-      await again();
+      const { data } = await patchConfig({
+        headers: headers(),
+        body: { values: { [key]: value } },
+        throwOnError: true
+      });
+      items = data.items;
+      message = t('settings.saved');
     } catch (error) {
       if (needsReauth(error)) {
-        retry = again;
+        retry = () => save(key, value);
         reauthMethods = problemOf(error).reauth_methods ?? ['password'];
-      } else {
-        failed = true;
-        message = 'Erreur de chargement.';
+        return;
       }
+      failed = true;
+      message =
+        problemOf(error).code === 'config.key_readonly'
+          ? t('settings.locked_refused')
+          : t('settings.refused');
     }
   }
 
@@ -102,62 +84,70 @@
   }
 
   const groups = $derived.by(() => {
-    const g: Record<'essential' | 'advanced' | 'expert', ConfigRow[]> = {
+    const grouped: Record<ConfigRow['level'], ConfigRow[]> = {
       essential: [],
       advanced: [],
       expert: []
     };
-    for (const row of items) g[levelOf(row.key)].push(row);
-    return g;
+    for (const row of items) grouped[row.level].push(row);
+    return grouped;
   });
 </script>
 
 <svelte:head>
-  <title>Réglages</title>
+  <title>{t('settings.title')}</title>
 </svelte:head>
 
 <main>
-  <h1>Réglages</h1>
+  <h1>{t('settings.title')}</h1>
 
-  {#each (['essential', 'advanced', 'expert'] as const) as level (level)}
-    <section data-level={level} aria-labelledby={`level-${level}`}>
-      <h2 id={`level-${level}`}>
-        {level === 'essential' ? 'Essentiel' : level === 'advanced' ? 'Avancé' : 'Expert'}
-      </h2>
-      {#each groups[level] as row (row.key)}
-        <div class="field" data-testid="setting-field" data-key={row.key}>
-          <label for={row.key}>{row.key}</label>
-          {#if isSecret(row.key)}
-            <input
-              id={row.key}
-              type="password"
-              value=""
-              placeholder="••••••••"
-              disabled
-              aria-disabled="true"
-            />
-          {:else}
-            <input
-              id={row.key}
-              type="text"
-              value={String(row.value ?? '')}
-              disabled={isGreyed(row)}
-              aria-disabled={isGreyed(row)}
-              onchange={(e) => save(row.key, (e.target as HTMLInputElement).value)}
-            />
-          {/if}
-          {#if isGreyed(row)}
-            <span class="origin" data-origin={originOf(row)}>
-              Origine : {originOf(row)}
-            </span>
-          {/if}
-          {#if row.warning}
-            <span class="warn">{row.warning}</span>
-          {/if}
-        </div>
-      {/each}
-    </section>
-  {/each}
+  {#if !adminOnly}
+    {#each LEVELS as level (level)}
+      <section data-level={level} aria-labelledby={`level-${level}`}>
+        <h2 id={`level-${level}`}>{t(`settings.level.${level}`)}</h2>
+        {#each groups[level] as row (row.key)}
+          <div class="field" data-testid="setting-field" data-key={row.key}>
+            {#if row.secret}
+              <span class="label">{row.key}</span>
+              <span class="origin">{t('settings.secret')}</span>
+            {:else}
+              <label for={row.key}>{row.key}</label>
+              <input
+                id={row.key}
+                type="text"
+                value={shown(row.value)}
+                disabled={row.locked}
+                onchange={(e) => save(row.key, (e.target as HTMLInputElement).value)}
+              />
+              {#if row.locked}
+                <span class="origin" data-origin={originOf(row)}>{originText(row)}</span>
+              {/if}
+            {/if}
+            {#if helpOf(row)}
+              <span class="help">{helpOf(row)}</span>
+            {/if}
+            {#if row.warning}
+              <span class="warn">{row.warning}</span>
+            {/if}
+          </div>
+        {/each}
+      </section>
+    {/each}
+  {/if}
+
+  <nav aria-label={t('settings.mine')}>
+    <h2>{t('settings.mine')}</h2>
+    <ul>
+      {#if !adminOnly}
+        <!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- the app is served at the root of its origin -->
+        <li><a href="/reglages/profils">{t('settings.link.profiles')}</a></li>
+      {/if}
+      <!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- the app is served at the root of its origin -->
+      <li><a href="/reglages/notifications">{t('settings.link.notifications')}</a></li>
+      <!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- the app is served at the root of its origin -->
+      <li><a href="/reglages/apparence">{t('settings.link.appearance')}</a></li>
+    </ul>
+  </nav>
 
   {#if reauthMethods}
     <ReauthPrompt methods={reauthMethods} ondone={afterReauth} oncancel={cancelReauth} />
@@ -184,13 +174,13 @@
   }
   input:disabled {
     opacity: 0.6;
-    background: var(--color-surface, #eee);
   }
-  .origin {
-    color: var(--color-muted, #666);
+  .origin,
+  .help {
+    color: var(--color-muted);
     font-size: 0.875rem;
   }
   .err {
-    color: var(--color-err, #b00);
+    color: var(--color-err);
   }
 </style>

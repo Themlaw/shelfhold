@@ -16,3 +16,8 @@ export function t(key: MessageKey, values?: Values): string {
   }
   return String(message.format(values));
 }
+
+/** Whether `key` names a catalogue message: a key built from data (a setting name) may have none. */
+export function hasMessage(key: string): key is MessageKey {
+  return Object.hasOwn(fr, key);
+}

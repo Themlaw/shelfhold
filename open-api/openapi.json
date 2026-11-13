@@ -771,6 +771,19 @@
             "title": "Key",
             "type": "string"
           },
+          "level": {
+            "enum": [
+              "essential",
+              "advanced",
+              "expert"
+            ],
+            "title": "Level",
+            "type": "string"
+          },
+          "locked": {
+            "title": "Locked",
+            "type": "boolean"
+          },
           "overridden_by": {
             "anyOf": [
               {
@@ -781,6 +794,10 @@
               }
             ],
             "title": "Overridden By"
+          },
+          "secret": {
+            "title": "Secret",
+            "type": "boolean"
           },
           "source": {
             "title": "Source",
@@ -804,7 +821,10 @@
         "required": [
           "key",
           "value",
-          "source"
+          "source",
+          "level",
+          "locked",
+          "secret"
         ],
         "title": "ConfigRow",
         "type": "object"
