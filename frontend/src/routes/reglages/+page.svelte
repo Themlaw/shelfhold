@@ -141,6 +141,8 @@
       {#if !adminOnly}
         <!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- the app is served at the root of its origin -->
         <li><a href="/reglages/profils">{t('settings.link.profiles')}</a></li>
+        <!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- the app is served at the root of its origin -->
+        <li><a href="/activite/file">{t('settings.link.queue')}</a></li>
       {/if}
       <!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- the app is served at the root of its origin -->
       <li><a href="/reglages/notifications">{t('settings.link.notifications')}</a></li>

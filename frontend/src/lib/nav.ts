@@ -5,7 +5,7 @@
 // are refused to other roles by the server in any case).
 import type { MessageKey } from '#lib/i18n/index.ts';
 
-export type NavId = 'home' | 'search' | 'requests' | 'activity' | 'settings';
+export type NavId = 'home' | 'search' | 'requests' | 'approve' | 'activity' | 'settings';
 
 export interface NavItem {
   id: NavId;
@@ -17,6 +17,7 @@ const DESTINATIONS: Record<NavId, NavItem> = {
   home: { id: 'home', href: '/', labelKey: 'nav.home' },
   search: { id: 'search', href: '/chercher', labelKey: 'nav.search' },
   requests: { id: 'requests', href: '/mes-demandes', labelKey: 'nav.requests' },
+  approve: { id: 'approve', href: '/a-approuver', labelKey: 'nav.approve' },
   activity: { id: 'activity', href: '/activite', labelKey: 'nav.activity' },
   settings: { id: 'settings', href: '/reglages', labelKey: 'nav.settings' }
 };

@@ -63,6 +63,11 @@ _DECLARED = (
     # `edition merge`: one Edition takes the Units of another (EF-BIB-049); it also decides the
     # age and the filing of what it takes, so it is a parental decision too
     _action("edition.merge", Effect.MIGRATES_IDENTITY, Effect.PARENTAL_CONTROL),
+    # M3 L22 (EF-BIB-019): merging two Works and "Séparer" decide the age of what they move, so
+    # they are parental decisions too; the plan that moves an exported series changes only links
+    _action("work.merge", Effect.MIGRATES_IDENTITY, Effect.PARENTAL_CONTROL),
+    _action("work.separate", Effect.MIGRATES_IDENTITY, Effect.PARENTAL_CONTROL),
+    _action("series.reassign", Effect.MIGRATES_IDENTITY),
     # `coverage resplit propose|apply`: a re-cut chapter is covered by its old Unit (EF-BIB-044)
     _action("coverage.resplit", Effect.CHANGES_COVERAGE),
     # `contributor set-died-for-france --yes|--no|--unknown` (M2 L15b, EF-SRC-024)

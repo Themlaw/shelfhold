@@ -16,9 +16,9 @@ describe('Nav (EF-UX-005)', () => {
   });
 
   // req: EF-UX-005
-  it('an admin also sees Activité and Réglages', () => {
-    render(Nav, { ids: ['home', 'search', 'requests', 'activity', 'settings'] });
-    expect(links()).toEqual(['Accueil', 'Chercher', 'Mes demandes', 'Activité', 'Réglages']);
+  it('an admin also sees À approuver, Activité and Réglages', () => {
+    render(Nav, { ids: ['home', 'search', 'requests', 'approve', 'activity', 'settings'] });
+    expect(links()).toEqual(['Accueil', 'Chercher', 'Mes demandes', 'À approuver', 'Activité', 'Réglages']);
   });
 
   // req: EF-UX-005

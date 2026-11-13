@@ -151,6 +151,14 @@ CLOSED = (
     "GET /api/v1/jobs/{job_id}",
     "POST /api/v1/jobs/{job_id}/retry",
     "GET /api/v1/merge-suggestions/works",
+    # M3 L22: merging Works, "Séparer", the exported-series plan, the Edition merge plan and what
+    # a merge of contributors proposes: reserved to a fresh admin session
+    "POST /api/v1/works/merge",
+    "POST /api/v1/works/merges/{merge_id}/separate",
+    "POST /api/v1/series-reassignments",
+    "POST /api/v1/works/{work_id}/series",
+    "POST /api/v1/editions/merge",
+    "POST /api/v1/contributors/merge-proposals",
     "POST /api/v1/merge-suggestions/works/scan",
     "POST /api/v1/missing/{destination_id}/{export_item_id}/resolve",
     "POST /api/v1/plans",
@@ -249,6 +257,7 @@ PENDING_SURFACES = {
 SURFACES = (
     "search", "search_pages", "search_key", "federated", "me_state_get", "me_state_put",
     "me_state_list", "me_title", "activity", "notification", "works_since", "sse", "thumbnail",
+    "work_redirect",
 )  # fmt: skip
 METHODS = ("get", "post", "put", "patch", "delete")
 HIDDEN_FROM_CEILING_10 = {*HIDDEN_TITLES, "twelve"}
@@ -635,6 +644,55 @@ def _call(world: World, method: str, path: str, body: Any) -> Any:
 def _surface_me_state_get(world: World) -> None:
     _gone(world, "GET", lambda w: f"{ME}/state/{w}")
     assert world.kid.get(f"{ME}/state/{world.seed.works['ok']}").status_code == 200
+
+
+def _surface_work_redirect(world: World) -> None:
+    """M3 L22: a merge makes the old identifier lead to the survivor, and the survivor takes the
+    strictest age and the unrated barrier: an identifier that now leads to a Work she may not see
+    is exactly an absent one (no 404 that differs, no title, no write)."""
+    from datetime import UTC, datetime
+
+    from shelfhold.catalog.public import apply_work_merge, plan_work_merge, separate_works
+
+    works, engine = world.seed.works, world.seed.engine
+    with engine.begin() as connection:  # the editions of the two Works would share a key
+        connection.execute(
+            sa.text("UPDATE edition SET lang = 'de' WHERE work_id = :w"),
+            {"w": works["adult_shelf"]},
+        )
+    merges = []
+    for keep, drop in (("above", "adult_shelf"), ("ok", "unrated")):
+        with engine.connect() as connection:
+            plan = plan_work_merge(connection, works[keep], works[drop])
+        assert plan.mergeable, plan.blockers
+        with engine.begin() as connection:
+            merges.append(apply_work_merge(
+                connection, works[keep], works[drop], confirm=plan.fingerprint,
+                now=datetime(2026, 11, 8, tzinfo=UTC),
+            ).merge_id)  # fmt: skip
+    for key in ("above", "adult_shelf", "ok", "unrated"):
+        for method, path, body in (
+            ("GET", f"{ME}/state/{works[key]}", None),
+            ("PUT", f"{ME}/state/{works[key]}", {"followed": True}),
+            ("GET", f"{ME}/works/{works[key]}/title", None),
+        ):
+            absent = _call(world, method, path.replace(works[key], MISSING), body)
+            answer = _call(world, method, path, body)
+            assert answer.status_code == 404 and _shape(answer) == _shape(absent), (key, method)
+            world.clean(answer.text)
+    rows = engine.connect().execute(sa.text("SELECT work_id FROM user_state")).all()
+    assert rows == []  # nothing was written for a Work she may not see, even by its old identifier
+    # after « Séparer »: an age is never lowered by an undo, and a half that the merge left unrated
+    # stays unrated, so all four answer as an absent Work until the admin rates them by hand
+    for merge_id in reversed(merges):
+        with engine.begin() as connection:
+            separate_works(connection, merge_id, now=datetime(2026, 11, 9, tzinfo=UTC))
+    for key in ("above", "adult_shelf", "ok", "unrated"):
+        path = f"{ME}/state/{works[key]}"
+        absent = _call(world, "GET", path.replace(works[key], MISSING), None)
+        answer = _call(world, "GET", path, None)
+        assert answer.status_code == 404 and _shape(answer) == _shape(absent), key
+        world.clean(answer.text)
 
 
 def _surface_me_state_put(world: World) -> None:

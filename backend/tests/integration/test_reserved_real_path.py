@@ -113,7 +113,12 @@ SELF_AUDITED = {"request.unmask", "reconcile.forget_root", "request.approve"}
 SERVICE_AUDITED = {"queue.control"}
 # M3 L07: the session revocations leave one line per session closed, by the service, and none when
 # nothing was (the calls below close nothing: an id that does not exist, no other session)
-WHEN_CLOSED_AUDITED = {"session.revoke_other", "session.revoke_others"}
+# M3 L22: the merge routes leave their line (target, session) to the service, in the transaction
+# that acts; the empty body below is a 422 or an unknown merge: nothing done, no line (#209)
+WHEN_CLOSED_AUDITED = {
+    "session.revoke_other", "session.revoke_others",
+    "work.merge", "work.separate", "series.reassign", "edition.merge",
+}  # fmt: skip
 # any role may do it on its own account (the guard names KNOWN_ROLES): the role loop skips it
 EVERY_ROLE_OWN_ACCOUNT = {"session.revoke_others"}
 

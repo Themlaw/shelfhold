@@ -16,4 +16,10 @@ CODES: tuple[ErrorCode, ...] = (
     ErrorCode("revisions.confirmation_required", 409, "admin"),
     # a merge of Editions that a tombstone, another Work or a dependent row stops (EF-BIB-049)
     ErrorCode("edition.merge_refused", 409, "admin"),
+    # M3 L22 (EF-BIB-019): a merge of Works that its plan refuses, and "Séparer" refused
+    ErrorCode("work.merge_refused", 409, "admin"),
+    ErrorCode("merge.expired", 409, "admin"),
+    ErrorCode("merge.already_undone", 409, "admin"),
+    ErrorCode("merge.survivor_gone", 409, "admin"),
+    ErrorCode("series.already_attached", 409, "admin"),  # EF-BIB-025: one Series at most
 )

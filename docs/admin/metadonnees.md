@@ -74,6 +74,37 @@ vous confirmez. Une Édition nouvelle reste **non classée** tant que vous ne l'
 étagère famille ([famille.md](famille.md)). Fusionner deux Éditions : `shelfhold edition merge` (plan par défaut,
 `--apply` avec son empreinte) ; les pierres tombales sont consultées avant toute fusion ([purge.md](purge.md)).
 
+## Fusionner deux œuvres, séparer une fusion erronée
+
+Les routes suivantes sont des actions réservées : une session administrateur récente, jamais une clé, jamais un
+membre ni un enfant.
+
+- `POST /api/v1/works/merge` : sans `confirm`, le plan (ce qui bouge, ce qui bloque, l'âge retenu) ; avec
+  l'empreinte du plan, la fusion. Elle est refusée pour deux types d'œuvre différents, deux éditions de même clé
+  (fusionnez-les d'abord, avec leur propre plan : `POST /api/v1/editions/merge`) ou deux séries différentes.
+- L'âge ne baisse jamais : l'œuvre restante prend le plus strict des deux, et elle redevient « non classée » si l'une
+  des deux l'était. Une étagère famille qui n'admet plus une édition la signale (`waiting`), sans la vider : le retrait
+  reste `shelf.withdraw`.
+- `POST /api/v1/works/merges/{merge_id}/separate` (« Séparer ») : pendant 30 jours, les deux œuvres
+  reviennent avec leurs éditions, leur place en série, l'état de chaque lecteur, les demandes, les crédits et les
+  champs. **Une séparation n'abaisse jamais un âge** : chaque moitié prend le plus strict de son âge d'avant la
+  fusion et de l'âge actuel de l'œuvre fusionnée, l'indicateur adulte est l'union, et une moitié qui n'était pas
+  classée avant la fusion (ou que l'œuvre fusionnée ne classe plus) reste non classée. Pour abaisser un âge après
+  une séparation, reclassez l'œuvre à la main : c'est une action auditée. Les suggestions d'âge ne sont jamais
+  réglées par une fusion ni par une séparation : deux suggestions identiques se replient dans l'état le plus
+  protecteur. L'ancien identifiant mène à l'œuvre restante tant que la fusion dure. La réponse donne l'âge de chaque
+  moitié et le plan de série exportée de l'œuvre rendue.
+- `POST /api/v1/series-reassignments` : après une fusion ou un rattachement tardif à une série
+  (`POST /api/v1/works/{work_id}/series`), le plan qui regroupe les éditions d'une œuvre dans une seule série
+  exportée par bibliothèque. Seul le lien change, jamais un fichier ; une série adoptée (figée) n'est jamais quittée ;
+  `path_changes` compte les dossiers déjà écrits dont le chemin diffère ensuite. Après une séparation, le même plan
+  sort l'œuvre rendue de la série de l'autre vers une série à son nom. Le rattachement tardif à une série crée
+  le bloqueur « séries différentes » d'une fusion future et change la série que nommera un nouvel export.
+- Chaque fusion, séparation ou plan appliqué laisse une ligne d'audit avec sa cible ; un plan simplement lu n'en
+  laisse aucune.
+- `POST /api/v1/contributors/merge-proposals` : les plans de fusion d'éditions qu'une fusion de contributeurs
+  appellerait. Rien n'est appliqué.
+
 ## Contrôler les projections
 
 `shelfhold meta check` liste les fichiers de projection (`unit.json`, `work.json`, miroir de provenance) qui
