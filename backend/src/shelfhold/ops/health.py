@@ -82,6 +82,7 @@ class OpsHealth:
         self._value: list[PausedQueue] | None = None
         self._at = 0.0
         self._flight: threading.Event | None = None  # set while one caller reads
+        self._threads: list[threading.Thread] = []  # the background reads, joined by `close`
 
     def migration_progress(self) -> tuple[int, int] | None:
         return self._probe.migration_progress()
@@ -146,15 +147,27 @@ class OpsHealth:
             if refresh:
                 flight = self._flight = threading.Event()
         if refresh:
-            threading.Thread(
-                target=self._lead_quietly, args=(flight,), daemon=True, name="health-refresh"
-            ).start()
+            self._spawn(self._lead_quietly, "health-refresh", flight)
         return list(value)
 
     def prime(self) -> None:
         """Read the status once in the background, so that the first probe is not the one that
         pays for it."""
-        threading.Thread(target=self.queues, daemon=True, name="health-prime").start()
+        self._spawn(self.queues, "health-prime")
+
+    def _spawn(self, target: Callable[..., object], name: str, *args: object) -> None:
+        thread = threading.Thread(target=target, args=args, daemon=True, name=name)
+        with self._mutex:
+            self._threads = [t for t in self._threads if t.is_alive()] + [thread]
+        thread.start()
+
+    def close(self) -> None:
+        """At shutdown, before the engine is disposed: no read of the status is left running to
+        open a connection after it."""
+        with self._mutex:
+            threads = list(self._threads)
+        for thread in threads:
+            thread.join(10)
 
     def paused_queues(self) -> list[str]:
         return [queue.queue for queue in self.queues()]

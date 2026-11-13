@@ -345,6 +345,7 @@ def create_app(
     def on_shutdown() -> None:
         runtime.shutdown()  # SIGTERM: stop claiming, checkpoint, free the locks (ENF-OPS-007)
         runtime.stop()
+        health.close()  # a read of the status still running would open a connection after
         engine.dispose()
 
     def start_owned() -> None:

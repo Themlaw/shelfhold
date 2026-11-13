@@ -248,3 +248,14 @@ def test_prime_reads_the_status_before_the_first_probe(ops: _Ops) -> None:
     time.sleep(0.05)
     assert [q.queue for q in health.queues()] == ["export.scan"]
     assert ops.calls == 1, "the first probe read the status again"
+
+
+def test_close_waits_for_the_background_read_before_the_engine_goes(ops: _Ops) -> None:
+    """A read of the status still running at shutdown would open a connection after the engine
+    is disposed, and leave descriptors behind."""
+    ops.delay = 0.5
+    health = _health(ops)
+    health.prime()
+    health.close()
+    assert ops.calls == 1
+    assert not any(t.name == "health-prime" and t.is_alive() for t in threading.enumerate())
