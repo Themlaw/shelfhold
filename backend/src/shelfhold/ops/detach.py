@@ -1,0 +1,228 @@
+"""`target remove` and `detach --full` over the services of the export context (M3 L30,
+EF-EXP-031): the preview that says what would be lost, the removal of a destination (keep the
+files or take them away) and the full detachment of a Kavita target.
+
+Both are reserved actions (the service checks them again, here and not only at the door): a fresh
+admin session or the host CLI, never a key, a member or a child, with the phrase typed. The
+refusals leave as catalog codes (`removal.refused`, `detach.refused`) whose message is a closed
+word, never a path or a name.
+
+The roots are read when a command runs (`target add` registers one while the server runs). The
+exported files are never opened here: `Fsops` is the only door to the disk, the journal the only
+way to a deletion.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import contextlib
+from collections.abc import Callable
+from typing import TYPE_CHECKING, Any
+
+from shelfhold.export.application.detach import (
+    DetachRefusedError,
+    DetachReport,
+    FullDetacher,
+    RootRef,
+)
+from shelfhold.export.application.intents import IntentJournal
+from shelfhold.export.application.locks import ResourceLocks
+from shelfhold.export.application.remove_destination import (
+    RemovalMode,
+    RemovalRefusedError,
+    RemovalReport,
+    RemoveDestination,
+)
+from shelfhold.export.targets.kavita.errors import TargetError
+from shelfhold.identity.public import Principal
+from shelfhold.infrastructure.fsops import Fsops
+from shelfhold.ops.errors import CodedRefusal, InvalidChoiceError
+
+if TYPE_CHECKING:
+    from shelfhold.composition import Composition
+    from shelfhold.export.application.roots import LoadedRoots
+    from shelfhold.ops.ports import HeadlessOps
+
+__all__ = ["DetachOps"]
+
+_MODES = {m.value: m for m in RemovalMode}
+
+
+class _Revoker:
+    """The account's door: Kavita revokes the key for a login, so the password comes with it."""
+
+    def __init__(self, headless: HeadlessOps) -> None:
+        self._headless = headless
+
+    def revoke(self, target_id: str, *, credential: str | None) -> bool:
+        return self._headless.target_revoke_key(target=target_id, password=credential)
+
+
+class DetachOps:
+    def __init__(self, comp: Composition, headless: HeadlessOps) -> None:
+        self._comp = comp
+        self._headless = headless
+
+    # -- the pieces -----------------------------------------------------------------------------
+
+    def _context(self) -> tuple[Fsops, LoadedRoots, IntentJournal]:
+        fsops, loaded, _tombstones = self._comp.read_context()
+        return fsops, loaded, IntentJournal(self._comp.engine, fsops, clock=self._comp.clock)
+
+    def _remover(
+        self, fsops: Fsops, journal: IntentJournal, scan: Callable[[str], None] | None
+    ) -> RemoveDestination:
+        comp = self._comp
+        return RemoveDestination(
+            comp.engine, fsops, journal, clock=comp.clock,
+            locks=ResourceLocks(comp.engine, clock=comp.clock), request_scan=scan,
+            fresh_auth_s=comp.settings.fresh_auth_s,
+        )  # fmt: skip
+
+    def _scan_of(self, destination_id: str) -> Callable[[str], None] | None:
+        """One scan of the folder once its files are gone: best effort, Kavita may be asleep."""
+        import sqlalchemy as sa
+
+        from shelfhold.infrastructure.schema import export
+
+        with self._comp.engine.connect() as conn:
+            target = conn.execute(
+                sa.select(export.shelf_destination.c.target_id).where(
+                    export.shelf_destination.c.id == destination_id
+                )
+            ).scalar()
+        if target is None or str(target) not in self._comp.kavita_targets():
+            return None
+        client = self._comp.kavita_client(str(target))
+
+        def scan(remote_folder: str) -> None:
+            with contextlib.suppress(TargetError):  # the periodic scan finds the change anyway
+                asyncio.run(client.scan_folder(remote_folder))
+
+        return scan
+
+    # -- remove a destination -------------------------------------------------------------------
+
+    def remove_preview(self, *, destination_id: str, mode: str) -> dict[str, Any]:
+        fsops, _loaded, journal = self._context()
+        try:
+            preview = self._remover(fsops, journal, None).preview(destination_id, _mode(mode))
+        except RemovalRefusedError as error:
+            raise _removal(error) from None
+        return {
+            "destination_id": preview.destination_id, "mode": preview.mode.value,
+            "phrase": preview.phrase,
+            "warnings": [{"code": w.code, "count": w.count} for w in preview.warnings],
+        }  # fmt: skip
+
+    def remove(
+        self, *, destination_id: str, mode: str, typed: str | None, give_up: bool,
+        principal: Principal,
+    ) -> dict[str, Any]:  # fmt: skip
+        fsops, _loaded, journal = self._context()
+        service = self._remover(fsops, journal, self._scan_of(destination_id))
+        try:
+            if give_up:
+                report = service.settle(destination_id, resume=False, principal=principal)
+            else:
+                report = service.apply(
+                    destination_id, _mode(mode), principal=principal, typed=typed
+                )
+        except RemovalRefusedError as error:
+            raise _removal(error) from None
+        return _removal_report(report)
+
+    # -- detach a target ------------------------------------------------------------------------
+
+    def _detacher(self, fsops: Fsops, loaded: LoadedRoots, journal: IntentJournal) -> FullDetacher:
+        comp = self._comp
+        rows = {r.root_id: r for r in loaded.roots}
+
+        def roots(local: str) -> RootRef | None:
+            root_id = loaded.root_id_for(local)
+            return None if root_id is None else RootRef(root_id, rows[root_id].path)
+
+        return FullDetacher(
+            comp.engine, fsops, journal, clock=comp.clock, roots=roots,
+            locks=ResourceLocks(comp.engine, clock=comp.clock),
+            store_path=str(comp.settings.store_dir), run=comp.run,
+            fresh_auth_s=comp.settings.fresh_auth_s,
+        )  # fmt: skip
+
+    def detach_preview(self, *, target_id: str) -> dict[str, Any]:
+        fsops, loaded, journal = self._context()
+        try:
+            preview = self._detacher(fsops, loaded, journal).preview(target_id)
+        except DetachRefusedError as error:
+            raise _detach(error) from None
+        return {
+            "target_id": preview.target_id, "phrase": preview.phrase,
+            "warnings": [{"code": w.code, "count": w.count} for w in preview.warnings],
+        }  # fmt: skip
+
+    def detach(
+        self, *, target_id: str, typed: str | None, credential: str | None,
+        discard_hidden_data: bool, give_up: bool, principal: Principal,
+    ) -> dict[str, Any]:  # fmt: skip
+        fsops, loaded, journal = self._context()
+        detacher = self._detacher(fsops, loaded, journal)
+        client = (
+            self._comp.kavita_client(target_id)
+            if target_id in self._comp.kavita_targets()
+            else None
+        )
+        try:
+            if give_up:
+                report = detacher.settle(target_id, resume=False, principal=principal)
+            else:
+                report = detacher.apply(
+                    target_id, principal=principal, typed=typed, client=client,
+                    revoker=_Revoker(self._headless), credential=credential,
+                    discard_hidden_data=discard_hidden_data,
+                )  # fmt: skip
+        except DetachRefusedError as error:
+            raise _detach(error) from None
+        self._comp.roots_changed()  # the roots demoted are no longer expected stamped
+        return _detach_report(report)
+
+
+def _mode(value: str) -> RemovalMode:
+    if value not in _MODES:
+        raise InvalidChoiceError("choose `keep_files` or `delete_files`")
+    return _MODES[value]
+
+
+def _removal(error: RemovalRefusedError) -> CodedRefusal:
+    if error.reason == "not_allowed":
+        return CodedRefusal("forbidden", type(error.verdict).__name__)
+    return CodedRefusal("removal.refused", error.reason)
+
+
+def _detach(error: DetachRefusedError) -> CodedRefusal:
+    if error.reason == "not_allowed":
+        return CodedRefusal("forbidden", type(error.verdict).__name__)
+    return CodedRefusal("detach.refused", error.reason)
+
+
+def _removal_report(report: RemovalReport) -> dict[str, Any]:
+    return {
+        "deleted": report.deleted, "forgotten": report.forgotten, "cancelled": report.cancelled,
+        "complete": report.complete,
+        "left": [{"code": line.code, "path": line.path} for line in report.left],
+    }  # fmt: skip
+
+
+def _detach_report(report: DetachReport) -> dict[str, Any]:
+    return {
+        "target_id": report.target_id, "complete": report.complete,
+        "hidden_removed": len(report.hidden_removed), "key_revoked": report.key_revoked,
+        "forgotten": report.forgotten, "cancelled": report.cancelled,
+        "settings": [
+            {
+                "exclude_patterns_restored": s.exclude_patterns_restored,
+                "type_unchanged": s.type_unchanged,
+            }
+            for s in report.settings
+        ],
+        "leftovers": [{"code": line.code, "count": line.count} for line in report.leftovers],
+    }  # fmt: skip

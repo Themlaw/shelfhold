@@ -38,6 +38,7 @@ from shelfhold.ops.backfill import BackfillOps
 from shelfhold.ops.content import ContentOps
 from shelfhold.ops.contributors import ContributorOps
 from shelfhold.ops.dedup import DedupOps
+from shelfhold.ops.detach import DetachOps
 from shelfhold.ops.edition_merge import EditionMergeOps
 from shelfhold.ops.editions import EditionOps
 from shelfhold.ops.events import BusTargetEvents
@@ -81,6 +82,9 @@ class _LazyHeadless:
 
     def target_rotate_key(self, *, target: str, password: str) -> object:
         return self._admin().target_rotate_key(target=target, password=password)
+
+    def target_revoke_key(self, *, target: str, password: str | None) -> bool:
+        return self._admin().target_revoke_key(target=target, password=password)
 
     def source_set_secret(self, secret: str) -> object:
         return self._admin().source_set_secret(secret)
@@ -147,12 +151,13 @@ def open_ops(
         return _fsops(engine, settings.umask)
 
     library = LibraryOps(composition)
+    lazy_headless = _LazyHeadless(settings)
     window = MaintenanceWindow.from_text(
         settings.maintenance_window_start, settings.maintenance_window_end, settings.timezone
     )
     return OpsServices(
         engine, clock=clock, bus=bus, fsops=live, targets=targets,
-        headless=_LazyHeadless(settings),
+        headless=lazy_headless,
         keyring=TombstoneKeyringExit(settings, engine, clock, composition),
         restore=RestoreGuardExit(engine, read_only, clock, bus),
         credentials=RestoreCredentialsExit(engine, clock),
@@ -186,5 +191,6 @@ def open_ops(
             window=window,
             control=QueueControl(revoke=revoke),
         ),
+        detach=DetachOps(composition, lazy_headless),
         window=window,
     )  # fmt: skip

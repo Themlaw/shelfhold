@@ -69,4 +69,8 @@ CODES: tuple[ErrorCode, ...] = (
     # makes readers of Kavita lose their progress and was not confirmed
     ErrorCode("rename.refused", 409, "admin"),
     ErrorCode("rename.confirmation_required", 409, "admin"),
+    # M3 L30 (EF-EXP-031): removing a destination and the full detachment, refused with nothing
+    # changed (the reason is a closed word: the phrase not typed, an open file operation, a lock)
+    ErrorCode("removal.refused", 409, "admin"),
+    ErrorCode("detach.refused", 409, "admin"),
 )

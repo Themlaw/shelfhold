@@ -11,7 +11,7 @@ from typing import Any
 import pytest
 import sqlalchemy as sa
 
-from shelfhold.export.application.detach import DetachRefusedError, detach_phrase
+from shelfhold.export.application.detach import DetachRefusedError, full_detach_phrase
 from shelfhold.infrastructure.fsops import Fsops
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import coherence, export, platform
@@ -35,7 +35,7 @@ def d() -> Iterator[DetachEnv]:
 def _run(d: DetachEnv, *, who: Any = None, **kw: Any) -> Any:
     target = d.env.target_id
     return d.detacher.apply(
-        target, principal=who or ADMIN, typed=kw.pop("typed", detach_phrase(target)),
+        target, principal=who or ADMIN, typed=kw.pop("typed", full_detach_phrase(target)),
         client=d.wired.client, revoker=d.revoker, credential="the account password", **kw,
     )  # fmt: skip
 
@@ -141,7 +141,7 @@ def test_detach_works_for_a_fresh_admin_session(d: DetachEnv) -> None:
 def test_detach_preview_warns_and_writes_nothing(d: DetachEnv) -> None:
     before = _before(d)
     preview = d.detacher.preview(d.env.target_id)
-    assert preview.phrase == detach_phrase(d.env.target_id)
+    assert preview.phrase == full_detach_phrase(d.env.target_id)
     assert {"files_kept", "hidden_erased", "key_revoked"} <= {w.code for w in preview.warnings}
     assert _before(d) == before
 

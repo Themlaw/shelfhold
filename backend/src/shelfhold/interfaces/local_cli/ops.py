@@ -115,6 +115,32 @@ def _target_recheck(ops: OpsServices, _by: Principal, p: Params) -> object:
     return {"cleared": list(outcome.cleared), "denied": list(outcome.denied)}
 
 
+def _target_remove_preview(ops: OpsServices, _by: Principal, p: Params) -> object:
+    return ops.detach.remove_preview(
+        destination_id=_text(p, "destination_id"), mode=_text(p, "mode")
+    )
+
+
+def _target_remove(ops: OpsServices, by: Principal, p: Params) -> object:
+    return ops.detach.remove(
+        destination_id=_text(p, "destination_id"), mode=_text(p, "mode", required=False),
+        typed=_optional(p, "typed"), give_up=_flag(p, "give_up"), principal=by,
+    )  # fmt: skip
+
+
+def _detach_full_preview(ops: OpsServices, _by: Principal, p: Params) -> object:
+    return ops.detach.detach_preview(target_id=_text(p, "target_id"))
+
+
+def _detach_full(ops: OpsServices, by: Principal, p: Params) -> object:
+    return ops.detach.detach(
+        target_id=_text(p, "target_id"), typed=_optional(p, "typed"),
+        credential=_optional(p, "credential"),
+        discard_hidden_data=_flag(p, "discard_hidden_data"), give_up=_flag(p, "give_up"),
+        principal=by,
+    )  # fmt: skip
+
+
 def _target_reconnect(ops: OpsServices, _by: Principal, p: Params) -> object:
     ops.target_reconnect(_text(p, "target_id"))
     return {"ok": True}
@@ -677,6 +703,10 @@ OPS_METHODS: Mapping[str, tuple[OpsMethod, str | None]] = {
     "ops.repatriate_apply": (_repatriate_apply, None),
     "ops.repatriate_check": (_repatriate_check, None),
     "ops.detach_restore_upstream": (_give_back, None),
+    "ops.target_remove_preview": (_target_remove_preview, None),
+    "ops.target_remove": (_target_remove, "destination.remove_all"),
+    "ops.detach_full_preview": (_detach_full_preview, None),
+    "ops.detach_full": (_detach_full, "detach.full"),
     "ops.purge": (_purge, "purge.now"),
     "ops.kept_ack": (_kept_ack, "purge.now"),
     "ops.purge_checkpoint": (_settle_log, None),
@@ -760,6 +790,7 @@ READS = frozenset(
         "ops.intents_list", "ops.withdraw_plan", "ops.backfill_estimate", "ops.meta_check",
         "ops.rate_pending", "ops.attach_list", "ops.source_search", "ops.source_filters",
         "ops.edition_list", "ops.export_item_show", "ops.maintenance_status",
+        "ops.target_remove_preview", "ops.detach_full_preview",
     }
 )  # fmt: skip
 MAINTENANCE_OPEN = READS | {"ops.maintenance_off"}

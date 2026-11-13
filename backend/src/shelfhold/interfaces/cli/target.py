@@ -13,6 +13,7 @@ import sys
 from shelfhold.config import ResolvedSettings
 from shelfhold.headless import AdminRiskNotAccepted
 from shelfhold.i18n import t
+from shelfhold.interfaces.cli._detach_ops import run_remove
 from shelfhold.interfaces.cli._headless import (
     fail,
     headless_command,
@@ -44,6 +45,14 @@ def register(commands: argparse._SubParsersAction[argparse.ArgumentParser]) -> N
         leaf = actions.add_parser(name, help=help_text, allow_abbrev=False)
         leaf.add_argument("target_id")
         leaf.set_defaults(handler=handler, configure_logging=False)
+    remove = actions.add_parser("remove", help=t("removal.help"), allow_abbrev=False)
+    remove.add_argument("destination_id", help=t("removal.destination_help"))
+    mode = remove.add_mutually_exclusive_group(required=True)
+    mode.add_argument("--keep-files", action="store_true", help=t("removal.keep_help"))
+    mode.add_argument("--delete-files", action="store_true", help=t("removal.delete_help"))
+    remove.add_argument("--confirm", default=None, help=t("removal.confirm_help"))
+    remove.add_argument("--give-up", action="store_true", help=t("removal.give_up_help"))
+    remove.set_defaults(handler=run_remove, configure_logging=False)
     rotate = actions.add_parser("rotate-key", help=t("ops.help_target_rotate_key"),
                                 allow_abbrev=False)  # fmt: skip
     rotate.add_argument("target_id")

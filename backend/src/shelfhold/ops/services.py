@@ -46,6 +46,7 @@ from shelfhold.ops.backfill import BackfillOps
 from shelfhold.ops.content import ContentOps
 from shelfhold.ops.contributors import ContributorOps
 from shelfhold.ops.dedup import DedupOps
+from shelfhold.ops.detach import DetachOps
 from shelfhold.ops.edition_merge import EditionMergeOps
 from shelfhold.ops.editions import EditionOps
 from shelfhold.ops.errors import (
@@ -229,6 +230,7 @@ class OpsServices:
         roots: RootOps | None = None,
         maintenance: MaintenanceOps | None = None,
         kavita_accounts: KavitaAccountsOps | None = None,
+        detach: DetachOps | None = None,
         window: MaintenanceWindow | None = None,
     ) -> None:
         self._window = window or DEFAULT_WINDOW
@@ -269,6 +271,7 @@ class OpsServices:
         self._roots = roots
         self._maintenance = maintenance
         self._kavita_accounts = kavita_accounts
+        self._detach = detach
 
     @property
     def _fsops(self) -> Fsops | None:
@@ -795,6 +798,14 @@ class OpsServices:
         if self._kavita_accounts is None:
             raise ExitUnavailableError("the Kavita accounts audit is not connected")
         return self._kavita_accounts
+
+    @property
+    def detach(self) -> DetachOps:
+        """`target remove` and `detach --full`: the removal of a destination and the detachment of
+        a Kavita target, reserved and typed (M3 L30, EF-EXP-031)."""
+        if self._detach is None:
+            raise ExitUnavailableError("the removal and the detachment are not connected")
+        return self._detach
 
     @property
     def maintenance(self) -> MaintenanceOps:

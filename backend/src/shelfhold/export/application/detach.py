@@ -87,7 +87,7 @@ __all__ = [
     "KeyRevoker",
     "Leftover",
     "RootRef",
-    "detach_phrase",
+    "full_detach_phrase",
 ]
 
 log = structlog.get_logger()
@@ -96,7 +96,7 @@ DETACH_SCOPE = "hidden_area"  # what the intention of the erasure of a root says
 _ACTION = "detach.full"
 
 
-def detach_phrase(target_id: str) -> str:
+def full_detach_phrase(target_id: str) -> str:
     """What the admin types: the id, so that a pasted command names its target."""
     return f"detach {target_id}"
 
@@ -220,7 +220,7 @@ class FullDetacher:
             warnings.append(DetachWarning("follows_active", following))
         if any(self._has_tombstone_journal(r) for r in erase):
             warnings.append(DetachWarning("tombstone_journal_erased", 1))
-        return DetachPreview(target_id, tuple(warnings), detach_phrase(target_id))
+        return DetachPreview(target_id, tuple(warnings), full_detach_phrase(target_id))
 
     # -- the detachment -------------------------------------------------------------------------
 
@@ -238,7 +238,7 @@ class FullDetacher:
     ) -> DetachReport:
         self._authorize(principal)
         if typed is None or not hmac.compare_digest(
-            typed.strip().encode(), detach_phrase(target_id).encode()
+            typed.strip().encode(), full_detach_phrase(target_id).encode()
         ):
             raise DetachRefusedError("confirmation_required")
         with self._engine.connect() as conn:

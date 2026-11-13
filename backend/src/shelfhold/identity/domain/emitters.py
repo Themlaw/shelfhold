@@ -137,7 +137,7 @@ _OTHER: Mapping[str, str] = MappingProxyType(
         # Removing a destination (L30, EF-EXP-031): "tout retirer" unlinks the files Shelfhold wrote
         # there, one journaled intention each, after the reserved action `destination.remove_all`
         # (fresh session or host CLI, never a key) and the typed phrase.
-        f"{_EXPORT_APP}/remove_destination.py::RemoveDestination._remove": "destination.remove_all",
+        f"{_EXPORT_APP}/remove_destination.py::RemoveDestination._record": "destination.remove_all",
         # The full detachment (L30): the one erasure of a root's reserved folder, one journaled
         # intention per root, after the reserved action `detach.full` and the typed phrase.
         f"{_EXPORT_APP}/detach.py::FullDetacher._erase_hidden": "detach.full",
