@@ -9,7 +9,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Protocol
+from typing import Any, Protocol
 
 from shelfhold.headless import (
     ConfigValue,
@@ -83,6 +83,7 @@ class IdentityCommands(Protocol):
         can_rate: bool | None = None,
     ) -> object: ...  # fmt: skip
     def profile_remove(self, profile_id: str) -> None: ...
+    def profile_export(self, profile_id: str) -> dict[str, Any]: ...
     def profile_policy_set(self, profile_id: str, source_key: str, policy: str) -> object: ...
 
 
@@ -222,6 +223,12 @@ class SocketIdentity:
 
     def profile_remove(self, profile_id: str) -> None:
         self._call("identity.profile_remove", profile_id=profile_id)
+
+    def profile_export(self, profile_id: str) -> dict[str, Any]:
+        document = self._call("identity.profile_export", profile_id=profile_id)
+        if not isinstance(document, dict):
+            raise ValueError("malformed_reply")
+        return document
 
     def profile_policy_set(self, profile_id: str, source_key: str, policy: str) -> None:
         self._call(

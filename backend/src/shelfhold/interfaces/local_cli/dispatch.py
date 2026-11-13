@@ -204,6 +204,10 @@ def _profile_remove(auth: LocalAuth, by: Principal, params: Params) -> object:
     return None
 
 
+def _profile_export(auth: LocalAuth, by: Principal, params: Params) -> object:
+    return auth.profile_export(str(_text(params, "profile_id")), by=by)
+
+
 def _profile_policy(auth: LocalAuth, by: Principal, params: Params) -> object:
     auth.profile_policy_set(
         str(_text(params, "profile_id")),
@@ -230,6 +234,7 @@ METHODS: Mapping[str, tuple[Method, str | None]] = {
     "identity.profile_list": (_profile_list, None),
     "identity.profile_set": (_profile_set, "profile.update"),
     "identity.profile_remove": (_profile_remove, "profile.remove"),
+    "identity.profile_export": (_profile_export, "profile.export"),
     "identity.profile_policy": (_profile_policy, "profile.source_policy"),
 }
 

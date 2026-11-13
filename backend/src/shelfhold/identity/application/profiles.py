@@ -20,6 +20,7 @@ from typing import Any
 
 import structlog
 
+from shelfhold.identity.application.delete_user import build_export
 from shelfhold.identity.application.ports import (
     AuditEntry,
     IdentityStore,
@@ -192,6 +193,19 @@ class ProfileService:
         if pseudonym is None:
             raise ProfileError("not_found")
         self._audit("profile.removed", by, pseudonym)
+
+    def export(self, profile_id: str, *, by: Principal | None = None) -> dict[str, Any]:
+        """Everything that is hers, as one document (EF-USR-013): a profile management action (an
+        admin session or the host, never a key, never the person herself nor a child). The audit
+        line names the profile, never what the document holds."""
+        self._manager(by)
+        profile = self._existing(profile_id)
+        rows = self._store.export_rows(profile_id)
+        if rows is None:  # removed between the two reads
+            raise ProfileError("not_found")
+        document = build_export(profile, rows)
+        self._audit("profile.exported", by, profile_id)
+        return document
 
     # --- the visibility of a profile (EF-USR-016) -----------------------------------------------
 

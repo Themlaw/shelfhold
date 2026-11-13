@@ -66,6 +66,10 @@ def register(commands: argparse._SubParsersAction[argparse.ArgumentParser]) -> N
     remove.add_argument("username", help=t("cli.profile_username_help"))
     remove.set_defaults(handler=run_remove)
 
+    export = actions.add_parser("export", help=t("cli.profile_export_help"), allow_abbrev=False)
+    export.add_argument("username", help=t("cli.profile_username_help"))
+    export.set_defaults(handler=run_export, configure_logging=False)  # stdout is the document
+
 
 def _fail(message: str) -> int:
     print(message, file=sys.stderr)
@@ -184,4 +188,19 @@ def run_remove(args: argparse.Namespace, auth: IdentityCommands) -> int:
     except ProfileError as error:
         return _refusal(error)
     print(t("profiles.removed", username=profile.username))
+    return 0
+
+
+@_command
+def run_export(args: argparse.Namespace, auth: IdentityCommands) -> int:
+    """The data of one profile as JSON on the standard output (nothing is written to a file: the
+    host chooses where it goes)."""
+    try:
+        profile = _profile(auth, args.username)
+        if profile is None:
+            return _fail(t("profiles.unknown", username=args.username))
+        document = auth.profile_export(profile.id)
+    except ProfileError as error:
+        return _refusal(error)
+    print(json.dumps(document, ensure_ascii=False, indent=2))
     return 0

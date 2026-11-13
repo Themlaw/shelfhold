@@ -380,7 +380,7 @@ def test_a_stale_admin_session_must_prove_again_to_export_or_delete(api: AuthEnv
 @pytest.mark.req("EF-USR-013", "EF-USR-024")
 def test_export_is_a_declared_reserved_action_and_a_route_of_the_openapi(api: AuthEnv) -> None:
     assert RESERVED_ACTIONS["profile.export"].effects
-    paths = api.client.get("/openapi.json").json()["paths"]
+    paths = api.app.openapi()["paths"]
     assert "get" in paths["/api/v1/profiles/{profile_id}/export"]
     assert "delete" in paths["/api/v1/profiles/{profile_id}"]
 

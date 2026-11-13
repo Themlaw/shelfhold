@@ -18,6 +18,7 @@ own, session only: a key or a token is a program, it has no visibility to choose
 from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends, Request, Response
+from fastapi.responses import JSONResponse
 from pydantic import (
     BaseModel,
     ConfigDict,
@@ -42,6 +43,7 @@ from shelfhold.identity.public import (
     SourcePolicyRecord,
     effective_visibility,
 )
+from shelfhold.infrastructure.http_headers import attachment_disposition
 from shelfhold.interfaces.http_api.auth import (
     gate_of,
     require_principal,
@@ -54,6 +56,7 @@ PROFILES_PATH = "/api/v1/profiles"
 _CREATE = reserved_action(RESERVED_ACTIONS["profile.create"])
 _UPDATE = reserved_action(RESERVED_ACTIONS["profile.update"])
 _REMOVE = reserved_action(RESERVED_ACTIONS["profile.remove"])
+_EXPORT = reserved_action(RESERVED_ACTIONS["profile.export"])
 _POLICY = reserved_action(RESERVED_ACTIONS["profile.source_policy"])
 _CONFLICTS = frozenset(
     {
@@ -141,6 +144,24 @@ class PolicyOut(BaseModel):
 
 class PolicyList(BaseModel):
     items: list[PolicyOut]
+
+
+class UserExportOut(BaseModel):
+    """One person's data (EF-USR-013). Nothing that proves or opens something is in it, and a Work
+    is named by its identifier, never by a title."""
+
+    format: Literal["shelfhold-user-export"]
+    version: int
+    profile: dict[str, Any]
+    preferences: dict[str, Any]
+    source_policies: list[dict[str, Any]]
+    user_state: list[dict[str, Any]]
+    requests: list[dict[str, Any]]
+    reading_positions: list[dict[str, Any]]
+    sessions: list[dict[str, Any]]
+    api_keys: list[dict[str, Any]]
+    passkeys: list[dict[str, Any]]
+    audit: list[dict[str, Any]]
 
 
 def _out(record: ProfileRecord) -> ProfileOut:
@@ -255,6 +276,21 @@ def build_profiles_router() -> APIRouter:
     ) -> Response:
         run(request, lambda auth: auth.profile_remove(profile_id, by=principal))
         return Response(status_code=204)
+
+    @router.get("/{profile_id}/export", response_model=UserExportOut)
+    def export_profile(
+        request: Request, profile_id: str, principal: Annotated[Principal, Depends(_EXPORT)]
+    ) -> Response:
+        """The reserved action guards first, so that who may not export cannot tell a real id from
+        an invented one; the answer is a file, never cached."""
+        document = run(request, lambda auth: auth.profile_export(profile_id, by=principal))
+        return JSONResponse(
+            document,
+            headers={
+                "Cache-Control": "no-store",
+                "Content-Disposition": attachment_disposition(f"user-export-{profile_id}.json"),
+            },
+        )
 
     @router.get("/{profile_id}/source-policies", response_model=PolicyList)
     def source_policies(

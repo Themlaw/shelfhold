@@ -13,6 +13,7 @@ import os
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from datetime import datetime, timedelta
+from typing import Any
 
 import structlog
 
@@ -434,6 +435,9 @@ class LocalAuth:
 
     def profile_remove(self, profile_id: str, *, by: Principal | None = None) -> None:
         self._profiles.remove(profile_id, by=by)
+
+    def profile_export(self, profile_id: str, *, by: Principal | None = None) -> dict[str, Any]:
+        return self._profiles.export(profile_id, by=by)
 
     def profile_policy_set(
         self, profile_id: str, source_key: str, policy: str, *, by: Principal | None = None

@@ -30,6 +30,7 @@ from shelfhold.identity.application.sessions import SessionView
 from shelfhold.identity.domain.policy import check_source_policy, effective_source_policy
 from shelfhold.identity.domain.roles import ProfileError
 from shelfhold.identity.domain.visibility import check_visibility, effective_visibility
+from shelfhold.infrastructure.event_sequence import invalidate_tokens
 from shelfhold.infrastructure.identity_counter import DAMAGED, IdentityCounter
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.restore_notice import (
@@ -38,7 +39,7 @@ from shelfhold.infrastructure.restore_notice import (
     read_notice,
     write_notice,
 )
-from shelfhold.infrastructure.schema import acquisition, identity
+from shelfhold.infrastructure.schema import acquisition, identity, platform, reading
 
 _user = identity.user
 _session = identity.session
@@ -339,7 +340,101 @@ class SqlIdentityStore:
             )
             keys = identity.idempotency_key  # 24 hours of replayable answers: not a trace to keep
             conn.execute(sa.delete(keys).where(keys.c.actor_id == user_id))
+            self._unname(conn, user_id, pseudonym)
         return pseudonym
+
+    @staticmethod
+    def _unname(conn: sa.Connection, user_id: str, pseudonym: str) -> None:
+        """What the foreign keys do not reach: the columns that name a user without being one
+        (EF-USR-013: after a deletion no row outside the audit carries the id).
+
+        - the decision of an admin on a request keeps the pseudonym (who decided stays one
+          person, not a name);
+        - a ticket of a download or a follow request stays for the admin (its outcome still
+          matters) but belongs to nobody: an operation (`ops`, the admin alone), never `private`
+          of an id that is gone, never `household`;
+        - the events that name her as the actor are erased (the table is append-only for UPDATE,
+          its DELETE is the retention's): no event may name her, and the removals that this
+          cannot tell are told by cutting every `?since=` token (L11).
+        """
+        request = identity.request
+        conn.execute(
+            sa.update(request).where(request.c.decided_by == user_id).values(decided_by=pseudonym)
+        )
+        for table in (acquisition.download_request, acquisition.follow_request):
+            conn.execute(
+                sa.update(table)
+                .where(table.c.requester_user_id == user_id)
+                .values(requester_user_id=None, visibility="ops")
+            )
+        event = platform.event
+        if conn.execute(sa.delete(event).where(event.c.actor_id == user_id)).rowcount:
+            invalidate_tokens(conn)
+
+    def export_rows(self, user_id: str) -> dict[str, Any] | None:
+        """Everything that is hers and that the export holds, as rows of plain values (EF-USR-013).
+
+        Chosen column by column, so that what proves or opens something is never read: no password
+        hash, no session token or secret, no key hash, no passkey material. The titles are not
+        read either: a Work is named by its identifier, so a child's export cannot carry a title
+        that she may not see."""
+
+        def rows(conn: sa.Connection, table: sa.Table, where: Any, *names: str) -> list[Any]:
+            columns = [table.c[name] for name in names]
+            found = conn.execute(sa.select(*columns).where(where).order_by(columns[0])).all()
+            return [dict(zip(names, row, strict=True)) for row in found]
+
+        with self._engine.connect() as conn:
+            user = conn.execute(
+                sa.select(
+                    _user.c.created_at, _user.c.locale, _user.c.timezone, _user.c.title_lang_pref,
+                    _user.c.theme, _user.c.color_scheme, _user.c.notify_mode, _user.c.quiet_start,
+                    _user.c.quiet_end, _user.c.kavita_username,
+                ).where(_user.c.id == user_id)
+            ).first()  # fmt: skip
+            if user is None:
+                return None
+            state, request = identity.user_state, identity.request
+            audit, positions = identity.audit, reading.reading_position
+            return {
+                "account": dict(user._mapping),
+                "source_policies": rows(
+                    conn, identity.profile_source_policy,
+                    identity.profile_source_policy.c.user_id == user_id,
+                    "source_key", "policy", "updated_at",
+                ),
+                "user_state": rows(
+                    conn, state, state.c.user_id == user_id,
+                    "work_id", "followed", "favorite", "read_at", "stamp",
+                ),
+                "requests": rows(
+                    conn, request, request.c.requester_user_id == user_id,
+                    "id", "target_kind", "target_value", "state", "reject_reason", "visibility",
+                    "work_id", "edition_id", "decided_at", "arrived_at", "created_at",
+                    "updated_at",
+                ),
+                "reading_positions": rows(
+                    conn, positions, positions.c.user_id == user_id,
+                    "id", "carrier_type", "carrier_id", "content_hash", "locator", "percent",
+                    "client_ts", "server_ts", "device_id",
+                ),
+                "sessions": rows(
+                    conn, _session, _session.c.user_id == user_id,
+                    "id", "created_at", "last_seen_at", "auth_time", "absolute_expiry",
+                    "user_agent_label", "ip", "revoked_at",
+                ),
+                "api_keys": rows(
+                    conn, _key,
+                    sa.or_(_key.c.user_id == user_id, _key.c.subject_user_id == user_id),
+                    "id", "name", "prefix", "scopes", "read_only", "created_at", "expires_at",
+                    "last_used_at", "revoked_at",
+                ),
+                "passkeys": rows(
+                    conn, _passkey, _passkey.c.user_id == user_id,
+                    "id", "name", "created_at", "last_used_at", "revoked_at",
+                ),
+                "audit": rows(conn, audit, audit.c.actor_id == user_id, "at", "action", "target"),
+            }  # fmt: skip
 
     # --- household profiles (M3 L05, EF-USR-001, EF-USR-005) ---------------------------------
 

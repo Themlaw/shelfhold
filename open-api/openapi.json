@@ -6054,6 +6054,110 @@
         "title": "UnmaskedOut",
         "type": "object"
       },
+      "UserExportOut": {
+        "description": "One person's data (EF-USR-013). Nothing that proves or opens something is in it, and a Work\nis named by its identifier, never by a title.",
+        "properties": {
+          "api_keys": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Api Keys",
+            "type": "array"
+          },
+          "audit": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Audit",
+            "type": "array"
+          },
+          "format": {
+            "const": "shelfhold-user-export",
+            "title": "Format",
+            "type": "string"
+          },
+          "passkeys": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Passkeys",
+            "type": "array"
+          },
+          "preferences": {
+            "additionalProperties": true,
+            "title": "Preferences",
+            "type": "object"
+          },
+          "profile": {
+            "additionalProperties": true,
+            "title": "Profile",
+            "type": "object"
+          },
+          "reading_positions": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Reading Positions",
+            "type": "array"
+          },
+          "requests": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Requests",
+            "type": "array"
+          },
+          "sessions": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Sessions",
+            "type": "array"
+          },
+          "source_policies": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Source Policies",
+            "type": "array"
+          },
+          "user_state": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "User State",
+            "type": "array"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "format",
+          "version",
+          "profile",
+          "preferences",
+          "source_policies",
+          "user_state",
+          "requests",
+          "reading_positions",
+          "sessions",
+          "api_keys",
+          "passkeys",
+          "audit"
+        ],
+        "title": "UserExportOut",
+        "type": "object"
+      },
       "VisibilityIn": {
         "additionalProperties": false,
         "properties": {
@@ -12447,6 +12551,69 @@
           }
         },
         "summary": "Update Profile",
+        "tags": [
+          "profiles"
+        ]
+      }
+    },
+    "/api/v1/profiles/{profile_id}/export": {
+      "get": {
+        "description": "The reserved action guards first, so that who may not export cannot tell a real id from\nan invented one; the answer is a file, never cached.",
+        "operationId": "export_profile",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "profile_id",
+            "required": true,
+            "schema": {
+              "title": "Profile Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserExportOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Connexion requise, ou mot de passe à confirmer (reauth-required)."
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée)."
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Détail du problème (RFC 9457)."
+          }
+        },
+        "summary": "Export Profile",
         "tags": [
           "profiles"
         ]
