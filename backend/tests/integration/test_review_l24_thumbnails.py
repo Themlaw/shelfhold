@@ -97,6 +97,30 @@ def test_review_uncached_screen_does_not_stall_the_api(
     assert waited < 0.3, f"/healthz waited {waited:.1f} s behind the thumbnail decodes"
 
 
+@pytest.fixture
+def one_connection(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The database pool reduced to a single connection that nobody waits long for: whatever asks
+    a second one while it holds the first is caught at once, not after the pool's 30 s."""
+    real = sa.create_engine
+    monkeypatch.setattr(
+        "shelfhold.infrastructure.db.create_engine",
+        lambda *args, **kwargs: real(*args, pool_size=1, max_overflow=0, pool_timeout=2, **kwargs),
+    )
+
+
+@pytest.mark.req("EF-BIB-020", "ENF-OPS-003")
+def test_review_healthz_never_holds_a_connection_while_asking_for_another(
+    one_connection: None, world: World
+) -> None:
+    """`/healthz` of a session read the queues with one connection held and the readers of the
+    waits opening a second one: sixteen probes at once (the pool is 5 + 10) emptied the pool and
+    every one of them, with the thumbnails behind them, waited for the pool's timeout."""
+    started = time.perf_counter()
+    probe = world.admin.get("/healthz")
+    assert probe.status_code == 200, probe.text
+    assert time.perf_counter() - started < 1.5, "/healthz waited for a connection of its own pool"
+
+
 @pytest.mark.req("EF-BIB-020", "ENF-SEC-003")
 def test_review_uncached_screen_holds_only_a_few_request_threads(
     rig: Rig, monkeypatch: pytest.MonkeyPatch

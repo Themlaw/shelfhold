@@ -273,17 +273,23 @@ class OpsServices:
         status` that are not waits (they cost a few reads per followed series)."""
         if self._roots is not None:
             self._roots.refresh()  # before the rest reads the marks: one view of the roots
-        with self._engine.connect() as connection:
-            items = collect(connection)
+        # The ports read the database on their own connections: asked while one is held here, a
+        # burst of `/healthz` (one connection held, a second awaited) empties the pool and every
+        # request waits for the others until the pool's timeout.
+        waiting = [
+            dress(item)
             for port in (
                 self._restore,
                 self._credentials,
                 self._keyring,
                 self._adoption,
                 self._roots,
-            ):
-                if port is not None:
-                    items += [dress(item) for item in port.waiting()]
+            )
+            if port is not None
+            for item in port.waiting()
+        ]
+        with self._engine.connect() as connection:
+            items = collect(connection) + waiting
             if not full:
                 return StatusReport(items, queues_of(connection, items))
             now = self._clock.now()
