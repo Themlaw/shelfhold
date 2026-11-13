@@ -8,7 +8,7 @@ a session needs its CSRF token like every state-changing route. Not reserved act
 """
 
 from collections.abc import Callable
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
@@ -44,6 +44,13 @@ class CheckOut(BaseModel):
     message: str
 
 
+class GapAckIn(BaseModel):
+    number: str
+    track: str = "main"
+    segment: str = "1"
+    undo: bool = False
+
+
 def build_follows_router(get_ops: Callable[[], OpsServices]) -> APIRouter:
     router = APIRouter(prefix="/api/v1", tags=["follows"])
 
@@ -70,5 +77,13 @@ def build_follows_router(get_ops: Callable[[], OpsServices]) -> APIRouter:
         with refusals():
             answer = get_ops().follows.check(edition_id)
         return CheckOut(**answer)
+
+    @router.post("/editions/{edition_id}/gaps/ack")
+    def gap_ack(edition_id: str, body: GapAckIn, admin: Admin) -> dict[str, Any]:
+        with refusals():
+            return get_ops().follows.gap_ack(
+                edition_id, number=body.number, track=body.track, segment=body.segment,
+                undo=body.undo, actor_id=user_of(admin),
+            )  # fmt: skip
 
     return router
