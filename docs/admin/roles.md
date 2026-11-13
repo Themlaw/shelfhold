@@ -84,3 +84,7 @@ HTTP ([restauration.md](restauration.md)).
 
 Une clé d'API est affichée une seule fois et stockée hachée. `reset-password` change le mot de passe, ferme
 toutes les sessions du compte et révoque toutes ses passkeys ([passkeys.md](passkeys.md)).
+
+## Migration d'identifiants après la mise à jour d'un plugin
+
+Lorsqu'un plugin change le schéma d'identifiants d'une source, lancez `shelfhold source migrate-ids <source> --from-scheme … --to-scheme … --preview`, puis `--apply --confirm <empreinte>`, **dès la mise à jour**. Entre la mise à jour et la migration, les nouvelles formes des séries effacées ne sont pas encore scellées : une série effacée peut revenir sous son nouvel identifiant. Si l'aperçu annonce « nouvelles formes à sceller », appliquez-le : l'application scelle ces formes (pierres tombales) même quand aucune série ne change. Une coupure pendant l'application se rattrape de la même façon : relancez l'aperçu, puis appliquez avec sa nouvelle empreinte.

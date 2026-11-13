@@ -1875,6 +1875,10 @@ export type MigrateIdsOut = {
      */
     migrate: Array<MigrationRowOut>;
     /**
+     * New Forms
+     */
+    new_forms: number;
+    /**
      * Source Key
      */
     source_key: string;

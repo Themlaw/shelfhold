@@ -3054,6 +3054,10 @@
             "title": "Migrate",
             "type": "array"
           },
+          "new_forms": {
+            "title": "New Forms",
+            "type": "integer"
+          },
           "source_key": {
             "title": "Source Key",
             "type": "string"
@@ -3077,6 +3081,7 @@
           "migrate",
           "blocked",
           "unresolved",
+          "new_forms",
           "fingerprint",
           "applied"
         ],

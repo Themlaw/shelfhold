@@ -39,6 +39,7 @@ from shelfhold.library.public import EmptyRefError, fold_ref, safe_fold
 __all__ = [
     "AliasChain",
     "AliasPlan",
+    "ErasedPlugins",
     "ErasedRefs",
     "Family",
     "MigrateRef",
@@ -55,6 +56,7 @@ Family = tuple[tuple[str, str, str], ...]  # (plugin_id, source_key, remote_id),
 Screen = Callable[[Sequence[tuple[str, Family]]], set[str]]  # row id -> blocked by a tombstone
 MigrateRef = Callable[[str, str, str], Ref | None]  # (plugin_id, source_key, remote_id) -> new
 ErasedRefs = Callable[[str, str], Sequence[str]]  # (plugin_id, source_key) -> erased series refs
+ErasedPlugins = Callable[[str], Sequence[str]]  # source_key -> plugins with an erased series
 
 MAX_CHAIN = 16
 _PLAN_VERSION = 1
@@ -206,15 +208,22 @@ def plan_alias_migration(
     migrate_ref: MigrateRef | None,
     screen: Screen,
     erased_refs: ErasedRefs | None = None,
+    erased_plugins: ErasedPlugins | None = None,
 ) -> AliasPlan:
     """The migration of every series of `source_key`, and what holds each one back. Reads only."""
     item = acquisition.source_item
     rows: list[PlannedRow] = []
     candidate_forms: list[tuple[str, str, str]] = []
     pending: list[tuple[PlannedRow, set[Ref]]] = []  # candidates, with their family
-    plugins = connection.execute(
-        sa.select(item.c.plugin_id).where(item.c.source_key == source_key).distinct()
-    ).scalars()
+    plugins = set(
+        connection.execute(
+            sa.select(item.c.plugin_id).where(item.c.source_key == source_key).distinct()
+        ).scalars()
+    )
+    # A source whose series were all erased has no live row left: its plugins are read from the
+    # tombstones, so that the new form of each erased series is still asked for and sealed.
+    if erased_plugins is not None:
+        plugins.update(erased_plugins(source_key))
     for plugin_id in sorted(plugins):
         aliases = _alias_rows(connection, plugin_id, to_scheme)
         if erased_refs is not None and migrate_ref is not None:
@@ -365,7 +374,10 @@ def apply_alias_migration(
             _remember_alias(connection, row.plugin_id, row.old, row.new, plan.to_scheme)
     held = len(plan.rows) - moved
     migration_id = new_ulid()
-    counts = {"moved": moved, "held": held, "new_forms": len(plan.new_forms)}
+    # `sealed` is the durable intent: written with the rows, it stays False until the caller has
+    # sealed the new forms (a cut in between is seen by the next preview and by `/healthz`).
+    counts = {"moved": moved, "held": held, "new_forms": len(plan.new_forms),
+              "sealed": not plan.new_forms}  # fmt: skip
     connection.execute(
         sa.insert(acquisition.source_alias_migration).values(
             id=migration_id, source_key=plan.source_key, from_scheme=plan.from_scheme,

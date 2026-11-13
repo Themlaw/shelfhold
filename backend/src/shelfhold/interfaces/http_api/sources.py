@@ -89,6 +89,7 @@ class MigrateIdsOut(BaseModel):
     migrate: list[MigrationRowOut]
     blocked: list[MigrationRowOut]
     unresolved: list[MigrationRowOut]
+    new_forms: int  # forms of erased series still to seal (a number, never a value)
     fingerprint: str
     applied: int | None  # None for a preview
 

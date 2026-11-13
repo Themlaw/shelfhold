@@ -209,11 +209,17 @@ def run_migrate_ids(args: argparse.Namespace, channel: OpsChannel) -> int:
         print(t("ops.migrate_ids_preview_stale"), file=sys.stderr)
         return STALE_PREVIEW
     held = done["migrate"] + done["blocked"] + done["unresolved"]
-    if not held:
+    forms = done["new_forms"]
+    if not held and not forms:
         print(t("ops.migrate_ids_nothing"))
         return 0
     print(t("ops.migrate_ids_header", migrate=len(done["migrate"]), blocked=len(done["blocked"]),
             unresolved=len(done["unresolved"])))  # fmt: skip
+    if forms:
+        if done["applied"] is None:
+            print(t("ops.migrate_ids_forms_to_seal", forms=forms))
+        else:
+            print(t("ops.migrate_ids_forms_sealed", forms=forms))
     for outcome in ("migrate", "blocked", "unresolved"):
         for row in done[outcome]:
             print(t("ops.migrate_ids_row", outcome=outcome, id=row["id"], old=row["old"],

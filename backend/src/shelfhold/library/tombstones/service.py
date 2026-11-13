@@ -116,7 +116,7 @@ INERT_REASONS: Final = frozenset(
     {"authentication_failed", "kid_unregistered", "lost_keyring", "malformed"}
 )
 # `content_tombstone.reason`: a closed list, never free text (it could carry a title, I36).
-REASONS: Final = frozenset({"purge_unit", "purge_work", "replayed"})
+REASONS: Final = frozenset({"purge_unit", "purge_work", "replayed", "new_form"})
 _LOST_KEYRING_ACTION = RESERVED_ACTIONS["tombstone.accept_lost_keyring"]
 _SET_ASIDE_ACTION = RESERVED_ACTIONS["tombstone.set_aside_journal"]
 _REKEY_ACTION = RESERVED_ACTIONS["tombstone.rekey"]
@@ -978,6 +978,12 @@ class TombstoneService:
         if self._index is None:
             raise NotReplayedError("replay the tombstones before any migration")
         return self._index.series_refs(plugin_id, source_key)
+
+    def erased_series_plugins(self, source_key: str) -> list[str]:
+        """The plugins that have an erased series on this source (read in memory, never written)."""
+        if self._index is None:
+            raise NotReplayedError("replay the tombstones before any migration")
+        return self._index.series_plugins(source_key)
 
     def screen_refs(
         self,

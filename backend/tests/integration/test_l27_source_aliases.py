@@ -29,8 +29,9 @@ from shelfhold.identity.public import (
     authorize_reserved,
 )
 from shelfhold.infrastructure.ids import new_ulid
-from shelfhold.infrastructure.schema import acquisition, catalog, identity, platform
-from shelfhold.library.public import SeriesBindingRef, VariantRef
+from shelfhold.infrastructure.schema import acquisition, catalog, coherence, identity, platform
+from shelfhold.library.public import SeriesBindingRef, TombstoneService, VariantRef
+from shelfhold.ops import source_migration
 from shelfhold.ops.errors import CodedRefusal, StalePreviewError
 from shelfhold.ops.source_migration import SourceMigrationOps
 from tests.auth_env import db_dump, run_cli
@@ -672,10 +673,29 @@ def clear_text_hits(env: Seeded, settings: Settings, needles: tuple[str, ...]) -
         connection.close()
     for root in (settings.data_dir, env.inst.library):
         for path in root.rglob("*"):
-            if path.is_file() and not path.name.startswith(settings.database_path.name):
+            if path.is_file():  # the database file and its -wal too: the raw bytes
                 data = path.read_bytes().decode("latin-1").lower()
                 found += [f"file:{path.name}" for n in needles if n in data]
     return found
+
+
+def test_the_sweep_sees_a_reference_written_in_clear(
+    monkeypatch: pytest.MonkeyPatch, settings: Settings, tmp_path: Path
+) -> None:
+    """Positive witness: the sweep fails when a reference is written in clear in a table."""
+    with seeded(settings, tmp_path / "inst") as env:
+        live(env, "old-1")
+        assert clear_text_hits(env, settings, ("witness-ref",)) == []
+        with env.inst.engine.begin() as connection:
+            connection.execute(
+                sa.insert(acquisition.source_alias).values(
+                    plugin_id=PLUGIN, old_source_key=SOURCE, old_remote_id="witness-ref",
+                    new_source_key=SOURCE, new_remote_id="elsewhere", id_scheme="legacy",
+                )
+            )  # fmt: skip
+        assert any(
+            "source_alias" in hit for hit in clear_text_hits(env, settings, ("witness-ref",))
+        )
 
 
 def test_no_table_holds_an_erased_reference_in_clear_after_the_migration(
@@ -698,7 +718,7 @@ def test_no_table_holds_an_erased_reference_in_clear_after_the_migration(
             assert gate.check(SeriesBindingRef(PLUGIN, SOURCE, ref), root_id=None).blocked, ref
         assert not gate.check(SeriesBindingRef(PLUGIN, SOURCE, "gone-other"), root_id=None).blocked
         record = env.rows(acquisition.source_alias_migration)[0].preview
-        assert record == {"moved": 1, "held": 0, "new_forms": 1}  # numbers, never values
+        assert record == {"moved": 1, "held": 0, "new_forms": 1, "sealed": True}  # never values
         # a rerun has nothing left to seal: no second tombstone for a form already held
         again = plan(ops)
         assert not again["migrate"]
@@ -729,3 +749,97 @@ def test_a_blocked_row_seals_the_new_form_the_plugin_gave_and_writes_no_alias(
             _gate(env).check(SeriesBindingRef(PLUGIN, SOURCE, "elsewhere-1"), root_id=None).blocked
         )
         assert env.rows(acquisition.source_alias_migration)[0].preview["new_forms"] == 1
+
+
+def _new_form_stones(env: Seeded) -> int:
+    """The tombstones laid for a new form: they carry their own closed reason, never a value."""
+    return sum(1 for r in env.rows(coherence.content_tombstone) if r.reason == "new_form")
+
+
+def test_a_cut_before_the_commit_changes_nothing_and_the_rerun_is_the_same_plan(
+    monkeypatch: pytest.MonkeyPatch, settings: Settings, tmp_path: Path
+) -> None:
+    with seeded(settings, tmp_path / "inst") as env:
+        erased = live(env, GONE)
+        erase(env, monkeypatch, settings, erased)
+        clean = live(env, "old-1")
+        ops = make_ops(env, {GONE: "gone-new", "old-1": "new-1"})
+        first = plan(ops)
+
+        def cut(*_args: object, **_kwargs: object) -> int:
+            raise RuntimeError("cut")  # the process dies before the rows are written
+
+        with monkeypatch.context() as patched:
+            patched.setattr(source_migration, "apply_alias_migration", cut)
+            with pytest.raises(RuntimeError):
+                plan(ops, first["fingerprint"])
+        assert item_ref(env, clean) == "old-1" and _new_form_stones(env) == 0
+        assert not env.rows(acquisition.source_alias_migration)  # no intent without the rows
+        again = plan(ops)
+        assert again["fingerprint"] == first["fingerprint"]
+        assert plan(ops, again["fingerprint"])["applied"] == 1
+        assert _new_form_stones(env) == 1
+
+
+def test_a_cut_between_the_commit_and_the_seal_is_seen_and_finished_by_a_rerun(
+    monkeypatch: pytest.MonkeyPatch, settings: Settings, tmp_path: Path
+) -> None:
+    with seeded(settings, tmp_path / "inst") as env:
+        erased = live(env, GONE)
+        erase(env, monkeypatch, settings, erased)
+        live(env, "old-1")
+        ops = make_ops(env, {GONE: "gone-new", "old-1": "new-1"})
+        fingerprint = plan(ops)["fingerprint"]
+
+        def cut(self: SourceMigrationOps, _plan: object) -> None:
+            raise RuntimeError("cut")
+
+        with monkeypatch.context() as patched:
+            patched.setattr(SourceMigrationOps, "_seal", cut)
+            with pytest.raises(RuntimeError):
+                plan(ops, fingerprint)
+        intent = env.rows(acquisition.source_alias_migration)[0].preview
+        assert intent["sealed"] is False and intent["new_forms"] == 1  # the durable intent
+        assert _new_form_stones(env) == 0
+        assert (
+            not _gate(env).check(SeriesBindingRef(PLUGIN, SOURCE, "gone-new"), root_id=None).blocked
+        )
+        again = plan(ops)  # the preview says what is still to seal
+        assert again["new_forms"] == 1 and not again["migrate"]
+        assert plan(ops, again["fingerprint"])["new_forms"] == 1  # the rerun seals it
+        assert _new_form_stones(env) == 1
+        assert _gate(env).check(SeriesBindingRef(PLUGIN, SOURCE, "gone-new"), root_id=None).blocked
+        assert all(r.preview["sealed"] for r in env.rows(acquisition.source_alias_migration)[:1])
+        assert plan(ops)["new_forms"] == 0  # nothing is left to seal
+
+
+def test_a_cut_in_the_middle_of_the_seal_finishes_without_a_second_stone(
+    monkeypatch: pytest.MonkeyPatch, settings: Settings, tmp_path: Path
+) -> None:
+    with seeded(settings, tmp_path / "inst") as env:
+        first, second = live(env, GONE), live(env, "gone-2")
+        erase(env, monkeypatch, settings, first)
+        erase(env, monkeypatch, settings, second)
+        ops = make_ops(env, {GONE: "gone-new", "gone-2": "gone-new-2"})
+        fingerprint = plan(ops)["fingerprint"]
+        real = TombstoneService.record
+        calls: list[int] = []
+
+        def flaky(self: TombstoneService, *args: Any, **kwargs: Any) -> Any:
+            if kwargs.get("reason") == "new_form":
+                calls.append(1)
+                if len(calls) == 2:
+                    raise RuntimeError("cut")  # dies after the first stone, before the second
+            return real(self, *args, **kwargs)
+
+        with monkeypatch.context() as patched:
+            patched.setattr(TombstoneService, "record", flaky)
+            with pytest.raises(RuntimeError):
+                plan(ops, fingerprint)
+        assert _new_form_stones(env) == 1
+        again = plan(ops)
+        assert again["new_forms"] == 1  # only the one left
+        plan(ops, again["fingerprint"])
+        assert _new_form_stones(env) == 2  # no stone twice
+        for ref in ("gone-new", "gone-new-2"):
+            assert _gate(env).check(SeriesBindingRef(PLUGIN, SOURCE, ref), root_id=None).blocked

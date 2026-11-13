@@ -38,7 +38,7 @@ class _SourceMigration:
     ) -> dict[str, Any]:  # fmt: skip
         self.calls.append((source_key, from_scheme, to_scheme, confirm, principal.credential.value))
         return {"source_key": source_key, "from_scheme": from_scheme, "to_scheme": to_scheme,
-                "migrate": [], "blocked": [], "unresolved": [], "fingerprint": FP,
+                "migrate": [], "blocked": [], "unresolved": [], "new_forms": 0, "fingerprint": FP,
                 "applied": None if confirm is None else 0}  # fmt: skip
 
 

@@ -221,6 +221,20 @@ class MembershipIndex:
                 found.add(flat["series_ref"])
         return sorted(found)
 
+    def series_plugins(self, source_key: str) -> list[str]:
+        """The plugin ids (as received) with a `series_binding` tombstone on this source key: the
+        plugins a migration must ask even when no live series of the source is left."""
+        wanted = folded_fields("series_binding", {
+            "source_key": "x", "sub_source": source_key, "series_ref": "x"})  # fmt: skip
+        if wanted is None:
+            return []
+        found: set[str] = set()
+        for scope, flat, _cited in self._entries:
+            held = folded_fields(scope, flat)
+            if scope == "series_binding" and held is not None and held[1] == wanted[1]:
+                found.add(flat["source_key"])
+        return sorted(found)
+
     def contains(self, candidate: TombstoneValues, *, hash_with: HashWith | None = None) -> bool:
         """True when the candidate matches a tombstone of its scope."""
         return self.contains_values(candidate) or self.contains_content(

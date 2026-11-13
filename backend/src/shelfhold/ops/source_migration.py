@@ -38,7 +38,7 @@ from shelfhold.export.domain.path_map import PathMode
 from shelfhold.export.domain.physical_roots import RootState
 from shelfhold.identity.public import RESERVED_ACTIONS, Allowed, Principal, authorize_reserved
 from shelfhold.infrastructure.ids import new_ulid
-from shelfhold.infrastructure.schema import identity
+from shelfhold.infrastructure.schema import acquisition, identity
 from shelfhold.library.public import (
     SeriesBindingRef,
     TombstoneRoot,
@@ -90,6 +90,7 @@ class SourceMigrationOps:
             return plan_alias_migration(
                 connection, source_key=source_key, from_scheme=from_scheme, to_scheme=to_scheme,
                 migrate_ref=migrate_ref, screen=screen, erased_refs=service.erased_series_refs,
+                erased_plugins=service.erased_series_plugins,
             )  # fmt: skip
 
         if confirm is None:  # a preview: a read, on the tombstones' index, that writes nothing
@@ -111,6 +112,7 @@ class SourceMigrationOps:
         # of erased series are sealed, and the hits told. A cut in between leaves the plan to be
         # made again: the forms still to seal are the same ones, so a rerun finishes the job.
         self._seal(plan)
+        self._mark_sealed(plan)
         if plan.of(Outcome.BLOCKED):
             service.announce_hits(["series_binding"])
         return self._report(plan, applied)
@@ -131,7 +133,17 @@ class SourceMigrationOps:
             for plugin_id, source_key, remote_id in plan.new_forms:
                 values = SeriesBindingRef(plugin_id, source_key, remote_id)
                 if not w.tombstones.has_values(values):
-                    w.tombstones.record(values, roots, reason="purge_work")
+                    w.tombstones.record(values, roots, reason="new_form")
+
+    def _mark_sealed(self, plan: AliasPlan) -> None:
+        """The durable intent is done: every new form is sealed (a number, never a value)."""
+        record = acquisition.source_alias_migration
+        with self._comp.engine.begin() as connection:
+            connection.execute(
+                sa.update(record)
+                .where(record.c.source_key == plan.source_key, record.c.state == "applied")
+                .values(preview=sa.func.json_set(record.c.preview, "$.sealed", sa.true()))
+            )  # fmt: skip
 
     @staticmethod
     def _check_schemes(source_key: str, from_scheme: str, to_scheme: str) -> None:
@@ -226,6 +238,7 @@ class SourceMigrationOps:
             "migrate": rows(Outcome.MIGRATE),
             "blocked": rows(Outcome.BLOCKED),
             "unresolved": rows(Outcome.UNRESOLVED),
+            "new_forms": len(plan.new_forms),  # erased forms still to seal: a number only
             "fingerprint": plan.fingerprint,
             "applied": applied,
         }
