@@ -10,6 +10,7 @@ from shelfhold.identity.adapters.reader_scope import (
 )
 from shelfhold.identity.adapters.store import (
     audit_insert,
+    child_kavita_accounts,
     reconcile_identity_counter,
     revoke_all_credentials,
 )
@@ -22,6 +23,7 @@ from shelfhold.identity.application.passkeys import (
 from shelfhold.identity.application.ports import (
     ApiKeyRecord,
     AuditEntry,
+    ChildKavitaAccount,
     PasskeyRecord,
     ProfileRecord,
     ReauthMethod,
@@ -156,6 +158,7 @@ __all__ = [
     "ApiKeyRecord",
     "AuditEntry",
     "AuthError",
+    "ChildKavitaAccount",
     "CreatedApiKey",
     "Credential",
     "CredentialNotAllowed",
@@ -203,6 +206,7 @@ __all__ = [
     "audit_insert",
     "authorize_reserved",
     "check_visibility",
+    "child_kavita_accounts",
     "credential_axis",
     "credential_is_live",
     "default_visibility",

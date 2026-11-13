@@ -19,6 +19,22 @@
         "title": "About",
         "type": "object"
       },
+      "AccountsAuditOut": {
+        "properties": {
+          "targets": {
+            "items": {
+              "$ref": "#/components/schemas/TargetAuditOut"
+            },
+            "title": "Targets",
+            "type": "array"
+          }
+        },
+        "required": [
+          "targets"
+        ],
+        "title": "AccountsAuditOut",
+        "type": "object"
+      },
       "AcknowledgedOut": {
         "properties": {
           "ok": {
@@ -790,6 +806,32 @@
           "message"
         ],
         "title": "CheckOut",
+        "type": "object"
+      },
+      "ChildAuditOut": {
+        "properties": {
+          "findings": {
+            "items": {
+              "$ref": "#/components/schemas/FindingOut"
+            },
+            "title": "Findings",
+            "type": "array"
+          },
+          "profile_id": {
+            "title": "Profile Id",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "profile_id",
+          "status",
+          "findings"
+        ],
+        "title": "ChildAuditOut",
         "type": "object"
       },
       "CollisionOut": {
@@ -1824,6 +1866,31 @@
         "title": "FiledOut",
         "type": "object"
       },
+      "FindingOut": {
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "library": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Library"
+          }
+        },
+        "required": [
+          "code",
+          "library"
+        ],
+        "title": "FindingOut",
+        "type": "object"
+      },
       "FlushOut": {
         "properties": {
           "still_owed": {
@@ -2473,6 +2540,53 @@
           "items"
         ],
         "title": "JobsOut",
+        "type": "object"
+      },
+      "KavitaAccountIn": {
+        "additionalProperties": false,
+        "description": "The name of the Kavita account of a child, or null to clear it. Nothing else is accepted:\nno token, no key, no password (EF-USR-017: the mapping is declarative).",
+        "properties": {
+          "kavita_username": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Kavita Username"
+          }
+        },
+        "required": [
+          "kavita_username"
+        ],
+        "title": "KavitaAccountIn",
+        "type": "object"
+      },
+      "KavitaAccountOut": {
+        "properties": {
+          "kavita_username": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Kavita Username"
+          },
+          "profile_id": {
+            "title": "Profile Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "profile_id",
+          "kavita_username"
+        ],
+        "title": "KavitaAccountOut",
         "type": "object"
       },
       "KeyringExportIn": {
@@ -6210,6 +6324,53 @@
         "title": "SuggestionsOut",
         "type": "object"
       },
+      "TargetAuditOut": {
+        "properties": {
+          "alerts": {
+            "default": 0,
+            "title": "Alerts",
+            "type": "integer"
+          },
+          "audited_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Audited At"
+          },
+          "children": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/ChildAuditOut"
+            },
+            "title": "Children",
+            "type": "array"
+          },
+          "state": {
+            "title": "State",
+            "type": "string"
+          },
+          "target_id": {
+            "title": "Target Id",
+            "type": "string"
+          },
+          "unmapped": {
+            "default": 0,
+            "title": "Unmapped",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "target_id",
+          "state"
+        ],
+        "title": "TargetAuditOut",
+        "type": "object"
+      },
       "TargetIn": {
         "properties": {
           "accept_admin_risk": {
@@ -8693,6 +8854,106 @@
         "summary": "Repatriate",
         "tags": [
           "library"
+        ]
+      }
+    },
+    "/api/v1/audit/kavita-accounts": {
+      "get": {
+        "operationId": "last_audit",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccountsAuditOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Connexion requise, ou mot de passe à confirmer (reauth-required)."
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée)."
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Détail du problème (RFC 9457)."
+          }
+        },
+        "summary": "Last Audit",
+        "tags": [
+          "audit"
+        ]
+      },
+      "post": {
+        "operationId": "audit_now",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccountsAuditOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Connexion requise, ou mot de passe à confirmer (reauth-required)."
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée)."
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Détail du problème (RFC 9457)."
+          }
+        },
+        "summary": "Audit Now",
+        "tags": [
+          "audit"
         ]
       }
     },
@@ -13455,6 +13716,79 @@
           }
         },
         "summary": "Set Family Search",
+        "tags": [
+          "profiles"
+        ]
+      }
+    },
+    "/api/v1/profiles/{profile_id}/kavita-account": {
+      "put": {
+        "description": "Name the Kavita account of a child (reserved: a fresh admin session, never a key).\nThe guard answers before the identifier is looked at: a caller who may not map cannot\ntell a real profile from an invented one.",
+        "operationId": "set_kavita_account",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "profile_id",
+            "required": true,
+            "schema": {
+              "title": "Profile Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/KavitaAccountIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KavitaAccountOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Connexion requise, ou mot de passe à confirmer (reauth-required)."
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée)."
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Détail du problème (RFC 9457)."
+          }
+        },
+        "summary": "Set Kavita Account",
         "tags": [
           "profiles"
         ]
@@ -19002,6 +19336,10 @@
       "code": "job.unknown_kind",
       "status": 500
     },
+    "/api/v1/problems/kavita.account-audit": {
+      "code": "kavita.account_audit",
+      "status": 409
+    },
     "/api/v1/problems/last-login-factor": {
       "code": "last_login_factor",
       "status": 409
@@ -19045,6 +19383,10 @@
     "/api/v1/problems/notify.failed": {
       "code": "notify.failed",
       "status": 502
+    },
+    "/api/v1/problems/ops.audit-running": {
+      "code": "ops.audit_running",
+      "status": 409
     },
     "/api/v1/problems/ops.exit-unavailable": {
       "code": "ops.exit_unavailable",

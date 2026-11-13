@@ -58,10 +58,11 @@ _UPDATE = reserved_action(RESERVED_ACTIONS["profile.update"])
 _REMOVE = reserved_action(RESERVED_ACTIONS["profile.remove"])
 _EXPORT = reserved_action(RESERVED_ACTIONS["profile.export"])
 _POLICY = reserved_action(RESERVED_ACTIONS["profile.source_policy"])
+_KAVITA_MAPPING = reserved_action(RESERVED_ACTIONS["profile.kavita_mapping"])  # EF-USR-017
 _CONFLICTS = frozenset(
     {
         "username_taken", "too_many_admins", "last_admin", "cannot_remove_self",
-        "cannot_change_own_role", "changed_meanwhile",
+        "cannot_change_own_role", "changed_meanwhile", "kavita_username_taken",
     }
 )  # fmt: skip
 
@@ -90,6 +91,19 @@ class PolicyIn(BaseModel):
 class VisibilityIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
     visibility: Literal["private", "household"]
+
+
+class KavitaAccountIn(BaseModel):
+    """The name of the Kavita account of a child, or null to clear it. Nothing else is accepted:
+    no token, no key, no password (EF-USR-017: the mapping is declarative)."""
+
+    model_config = ConfigDict(extra="forbid")
+    kavita_username: str | None
+
+
+class KavitaAccountOut(BaseModel):
+    profile_id: str
+    kavita_username: str | None
 
 
 class FamilySearchIn(BaseModel):
@@ -256,6 +270,24 @@ def build_profiles_router() -> APIRouter:
             lambda auth: auth.profile_set_visibility(profile_id, body.visibility, by=principal),
         )
         return VisibilityOut(visibility=chosen)
+
+    @router.put("/{profile_id}/kavita-account", response_model=KavitaAccountOut)
+    def set_kavita_account(
+        request: Request,
+        profile_id: str,
+        body: KavitaAccountIn,
+        principal: Annotated[Principal, Depends(_KAVITA_MAPPING)],
+    ) -> Any:
+        """Name the Kavita account of a child (reserved: a fresh admin session, never a key).
+        The guard answers before the identifier is looked at: a caller who may not map cannot
+        tell a real profile from an invented one."""
+        chosen = run(
+            request,
+            lambda auth: auth.profile_set_kavita_username(
+                profile_id, body.kavita_username, by=principal
+            ),
+        )
+        return KavitaAccountOut(profile_id=profile_id, kavita_username=chosen)
 
     @router.put("/{profile_id}/family-search", response_model=FamilySearchOut)
     def set_family_search(

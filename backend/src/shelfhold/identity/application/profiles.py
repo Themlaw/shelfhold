@@ -23,12 +23,14 @@ import structlog
 from shelfhold.identity.application.delete_user import MAX_EXPORT_ROWS, build_export
 from shelfhold.identity.application.ports import (
     AuditEntry,
+    ChildKavitaAccount,
     IdentityStore,
     PasswordHasherPort,
     ProfileRecord,
     SourcePolicyRecord,
 )
 from shelfhold.identity.domain.credentials import Credential, Principal, check_password_shape
+from shelfhold.identity.domain.kavita_mapping import check_kavita_username
 from shelfhold.identity.domain.policy import check_source_policy, effective_source_policy
 from shelfhold.identity.domain.roles import (
     MAX_ADMINS,
@@ -275,6 +277,38 @@ class ProfileService:
         ):
             self._log("profile.family_search_set", by)
         return after
+
+    def set_kavita_username(
+        self, profile_id: str, name: object, *, by: Principal | None = None
+    ) -> str | None:
+        """Name (or clear with `None`) the Kavita account of a child (EF-USR-017): a parental
+        control decision, so a profile management action (an admin session or the host, never a
+        key). The audit entry holds the profile and `none`/`set` before and after, never the name.
+        Returns the name that holds now."""
+        self._manager(by)
+        chosen = check_kavita_username(name)
+        self._existing(profile_id)
+
+        written: list[str] = []  # the store calls the trace only when something changes
+
+        def trace(was: bool, now: bool) -> AuditEntry | None:
+            if self._entry is None:
+                return None
+            states = f"{'set' if was else 'none'}>{'set' if now else 'none'}"
+            written.append(states)
+            return self._entry("profile.kavita_mapping_set", by, f"{profile_id}|{states}")
+
+        self._store.set_kavita_username(
+            profile_id, chosen, actor_id=self._actor_id(by), audit=trace
+        )
+        if written:
+            self._log("profile.kavita_mapping_set", by)
+        return chosen
+
+    def child_kavita_accounts(self, *, by: Principal | None = None) -> Sequence[ChildKavitaAccount]:
+        """The children and the account each one declared, for the audit (read only)."""
+        self._manager(by)
+        return self._store.child_kavita_accounts()
 
     def set_own_visibility(self, by: Principal, visibility: object) -> str:
         """A person changes their own visibility: theirs to do, so no audit of "someone else's".

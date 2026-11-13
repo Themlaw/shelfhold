@@ -49,6 +49,8 @@ class Wired:
 
 def wire(env: ExportEnv, *, version: str = "0.9.1.4", **fake_options: Any) -> Wired:
     fake = FakeKavita(version=version, **fake_options)
+    if "libraries" not in fake_options:  # the first library holds the shelf's folder and nothing
+        fake.libraries[0]["folders"] = [REMOTE_ROOT]  # else: a family library is a dedicated one
     events = RecordingEvents()
     with env.engine.begin() as connection:  # the remote id of the library is the one of Kavita
         connection.execute(sa.update(export.remote_library).values(remote_ref=str(LIBRARY_ID)))

@@ -19,6 +19,16 @@ export type About = {
 };
 
 /**
+ * AccountsAuditOut
+ */
+export type AccountsAuditOut = {
+    /**
+     * Targets
+     */
+    targets: Array<TargetAuditOut>;
+};
+
+/**
  * AcknowledgedOut
  */
 export type AcknowledgedOut = {
@@ -486,6 +496,24 @@ export type CheckOut = {
      * Refresh
      */
     refresh: boolean;
+};
+
+/**
+ * ChildAuditOut
+ */
+export type ChildAuditOut = {
+    /**
+     * Findings
+     */
+    findings: Array<FindingOut>;
+    /**
+     * Profile Id
+     */
+    profile_id: string;
+    /**
+     * Status
+     */
+    status: string;
 };
 
 /**
@@ -1135,6 +1163,20 @@ export type FiledOut = {
 };
 
 /**
+ * FindingOut
+ */
+export type FindingOut = {
+    /**
+     * Code
+     */
+    code: string;
+    /**
+     * Library
+     */
+    library: string | null;
+};
+
+/**
  * FlushOut
  */
 export type FlushOut = {
@@ -1502,6 +1544,33 @@ export type JobsOut = {
      * Next Cursor
      */
     next_cursor?: string | null;
+};
+
+/**
+ * KavitaAccountIn
+ *
+ * The name of the Kavita account of a child, or null to clear it. Nothing else is accepted:
+ * no token, no key, no password (EF-USR-017: the mapping is declarative).
+ */
+export type KavitaAccountIn = {
+    /**
+     * Kavita Username
+     */
+    kavita_username: string | null;
+};
+
+/**
+ * KavitaAccountOut
+ */
+export type KavitaAccountOut = {
+    /**
+     * Kavita Username
+     */
+    kavita_username: string | null;
+    /**
+     * Profile Id
+     */
+    profile_id: string;
 };
 
 /**
@@ -3812,6 +3881,36 @@ export type SuggestionsOut = {
 };
 
 /**
+ * TargetAuditOut
+ */
+export type TargetAuditOut = {
+    /**
+     * Alerts
+     */
+    alerts?: number;
+    /**
+     * Audited At
+     */
+    audited_at?: string | null;
+    /**
+     * Children
+     */
+    children?: Array<ChildAuditOut>;
+    /**
+     * State
+     */
+    state: string;
+    /**
+     * Target Id
+     */
+    target_id: string;
+    /**
+     * Unmapped
+     */
+    unmapped?: number;
+};
+
+/**
  * TargetIn
  */
 export type TargetIn = {
@@ -5349,6 +5448,72 @@ export type RepatriateResponses = {
 };
 
 export type RepatriateResponse = RepatriateResponses[keyof RepatriateResponses];
+
+export type LastAuditData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/audit/kavita-accounts';
+};
+
+export type LastAuditErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type LastAuditError = LastAuditErrors[keyof LastAuditErrors];
+
+export type LastAuditResponses = {
+    /**
+     * Successful Response
+     */
+    200: AccountsAuditOut;
+};
+
+export type LastAuditResponse = LastAuditResponses[keyof LastAuditResponses];
+
+export type AuditNowData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/audit/kavita-accounts';
+};
+
+export type AuditNowErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type AuditNowError = AuditNowErrors[keyof AuditNowErrors];
+
+export type AuditNowResponses = {
+    /**
+     * Successful Response
+     */
+    200: AccountsAuditOut;
+};
+
+export type AuditNowResponse = AuditNowResponses[keyof AuditNowResponses];
 
 export type LoginData = {
     body: LoginRequest;
@@ -8166,6 +8331,44 @@ export type SetFamilySearchResponses = {
 };
 
 export type SetFamilySearchResponse = SetFamilySearchResponses[keyof SetFamilySearchResponses];
+
+export type SetKavitaAccountData = {
+    body: KavitaAccountIn;
+    path: {
+        /**
+         * Profile Id
+         */
+        profile_id: string;
+    };
+    query?: never;
+    url: '/api/v1/profiles/{profile_id}/kavita-account';
+};
+
+export type SetKavitaAccountErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type SetKavitaAccountError = SetKavitaAccountErrors[keyof SetKavitaAccountErrors];
+
+export type SetKavitaAccountResponses = {
+    /**
+     * Successful Response
+     */
+    200: KavitaAccountOut;
+};
+
+export type SetKavitaAccountResponse = SetKavitaAccountResponses[keyof SetKavitaAccountResponses];
 
 export type SourcePoliciesData = {
     body?: never;

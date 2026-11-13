@@ -85,6 +85,7 @@ class IdentityCommands(Protocol):
     def profile_remove(self, profile_id: str) -> None: ...
     def profile_export(self, profile_id: str) -> dict[str, Any]: ...
     def profile_policy_set(self, profile_id: str, source_key: str, policy: str) -> object: ...
+    def profile_set_kavita_username(self, profile_id: str, name: str | None) -> object: ...
 
 
 @dataclass(frozen=True)
@@ -234,6 +235,9 @@ class SocketIdentity:
         self._call(
             "identity.profile_policy", profile_id=profile_id, source_key=source_key, policy=policy
         )
+
+    def profile_set_kavita_username(self, profile_id: str, name: str | None) -> None:
+        self._call("identity.profile_kavita", profile_id=profile_id, kavita_username=name)
 
 
 # -- headless configuration ---------------------------------------------------------------------

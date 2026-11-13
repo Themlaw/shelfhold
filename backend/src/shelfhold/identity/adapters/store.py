@@ -14,6 +14,7 @@ from sqlalchemy import Engine
 from shelfhold.identity.application.ports import (
     ApiKeyRecord,
     AuditEntry,
+    ChildKavitaAccount,
     KeyConflictError,
     NewApiKey,
     NewPasskey,
@@ -27,6 +28,7 @@ from shelfhold.identity.application.ports import (
     UserRecord,
 )
 from shelfhold.identity.application.sessions import SessionView
+from shelfhold.identity.domain.kavita_mapping import same_kavita_username
 from shelfhold.identity.domain.policy import check_source_policy, effective_source_policy
 from shelfhold.identity.domain.roles import ProfileError
 from shelfhold.identity.domain.visibility import check_visibility, effective_visibility
@@ -213,6 +215,11 @@ def _admin_count(conn: sa.Connection) -> int:
 
 class _NoLiveKeyError(Exception):
     pass
+
+
+def child_kavita_accounts(engine: Engine) -> Sequence[ChildKavitaAccount]:
+    """The children and the account each declared, for the audit of Kavita (read only)."""
+    return SqlIdentityStore(engine).child_kavita_accounts()
 
 
 class SqlIdentityStore:
@@ -574,6 +581,10 @@ class SqlIdentityStore:
                     .where(_user.c.id == user_id)
                     .values(hide_unrated_remote=True, subject_filter=[])
                 )
+                if role != "child":  # only a child is audited by her Kavita account (M3 L10)
+                    conn.execute(
+                        sa.update(_user).where(_user.c.id == user_id).values(kavita_username=None)
+                    )
                 conn.execute(
                     sa.update(_session)
                     .where(_session.c.user_id == user_id, _session.c.revoked_at.is_(None))
@@ -702,6 +713,60 @@ class SqlIdentityStore:
             if entry is not None:
                 conn.execute(self._audit_insert(entry))
         return before, after
+
+    def set_kavita_username(
+        self, user_id: str, name: str | None, *, actor_id: str | None = None,
+        audit: Callable[[bool, bool], AuditEntry | None] | None = None,
+    ) -> tuple[bool, bool]:  # fmt: skip
+        """Name (or clear) the Kavita account of a child: `(was mapped, is mapped)`.
+
+        The caller is re-read as an admin under the lock that writes, the role of the profile is
+        read there too, and no other profile may hold the same name (Kavita does not tell "Lea"
+        from "lea"). The change and its audit entry stand or fall together; naming what is
+        already named writes nothing."""
+        immediate = self._engine.execution_options(shelfhold_begin="BEGIN IMMEDIATE")
+        with immediate.begin() as conn:
+            _require_admin_caller(conn, actor_id)
+            row = conn.execute(
+                sa.select(_user.c.role, _user.c.kavita_username).where(_user.c.id == user_id)
+            ).first()
+            if row is None:
+                raise ProfileError("not_found")
+            if row.role != "child":  # the audit is of children: an adult has nothing to compare
+                raise ProfileError("not_a_child")
+            was = row.kavita_username is not None
+            if row.kavita_username == name:
+                return was, was
+            if name is not None:
+                held = conn.execute(
+                    sa.select(_user.c.kavita_username).where(
+                        _user.c.id != user_id, _user.c.kavita_username.is_not(None)
+                    )
+                ).scalars()
+                if any(same_kavita_username(other, name) for other in held):
+                    raise ProfileError("kavita_username_taken")
+            conn.execute(sa.update(_user).where(_user.c.id == user_id).values(kavita_username=name))
+            entry = None if audit is None else audit(was, name is not None)
+            if entry is not None:
+                conn.execute(self._audit_insert(entry))
+        return was, name is not None
+
+    def child_kavita_accounts(self) -> Sequence[ChildKavitaAccount]:
+        with self._engine.connect() as conn:
+            rows = conn.execute(
+                sa.select(_user.c.id, _user.c.max_age_rating, _user.c.kavita_username)
+                .where(_user.c.role == "child")
+                .order_by(_user.c.id)
+            )
+            return [
+                ChildKavitaAccount(
+                    profile_id=row.id,
+                    # a child with no readable ceiling is audited as the strictest, never as free
+                    max_age=0 if row.max_age_rating is None else int(row.max_age_rating),
+                    kavita_username=row.kavita_username,
+                )
+                for row in rows
+            ]
 
     def source_policy_state(
         self, user_id: str, source_key: str

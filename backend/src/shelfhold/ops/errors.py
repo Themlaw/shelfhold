@@ -9,6 +9,7 @@ CODES: tuple[ErrorCode, ...] = (
     ),  # L25: a Unit that may not be deleted at this level
     ErrorCode("ops.not_waiting", 409, "admin"),
     ErrorCode("ops.unknown_subject", 404, "admin"),
+    ErrorCode("ops.audit_running", 409, "admin"),  # M3 L10: one accounts audit at a time
     ErrorCode("ops.exit_unavailable", 503, "admin"),
     ErrorCode("ops.invalid_choice", 422, "admin"),
     ErrorCode("ops.language_refused", 422, "admin"),
@@ -49,6 +50,12 @@ class ExitUnavailableError(OpsError):
     or the instance has no such component)."""
 
     code = "ops.exit_unavailable"
+
+
+class AuditRunningError(OpsError):
+    """An audit of the Kavita accounts is already running: nothing was started."""
+
+    code = "ops.audit_running"
 
 
 class InvalidChoiceError(OpsError):
