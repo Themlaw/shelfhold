@@ -64,9 +64,9 @@ def build_thumbnails_router(
         "/thumbnails/{content_hash}/{size}",
         response_class=Response,
         responses={
-            200: {"content": {"image/webp": {}}, "description": "The thumbnail, WebP."},
-            304: {"description": "The reader holds this thumbnail (the tag matches)."},
-            404: {"description": "Not found: hidden, unknown, or no such size."},
+            200: {"content": {"image/webp": {}}, "description": "webp"},
+            304: {"description": "not-modified"},
+            404: {"description": "not-found"},
         },
     )
     def thumbnail(

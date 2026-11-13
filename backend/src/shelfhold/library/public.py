@@ -147,14 +147,15 @@ from shelfhold.library.application.reneutralize import (
     StalePlanError,
 )
 from shelfhold.library.application.thumbnails import (
-    SIZES as THUMBNAIL_SIZES,
-)
-from shelfhold.library.application.thumbnails import (
+    CACHE_CONTROL,
     Collected,
     Thumb,
     ThumbnailService,
     cover_hash,
     etag_of,
+)
+from shelfhold.library.application.thumbnails import (
+    SIZES as THUMBNAIL_SIZES,
 )
 from shelfhold.library.domain.content_hash import (
     CONTENT_HASH_BY,
@@ -278,6 +279,7 @@ from shelfhold.library.tombstones.screen import CatalogScreenAdapter
 
 __all__ = [
     "BIN_DAYS",
+    "CACHE_CONTROL",
     "CANDIDATE_AFTER",
     "CONFIRMATION_CODE",
     "CONTENT_HASH_BY",

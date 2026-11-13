@@ -9881,7 +9881,7 @@ export type ThumbnailErrors = {
      */
     403: Problem;
     /**
-     * Not found: hidden, unknown, or no such size.
+     * not-found
      */
     404: unknown;
     /**
@@ -9894,7 +9894,7 @@ export type ThumbnailError = ThumbnailErrors[keyof ThumbnailErrors];
 
 export type ThumbnailResponses = {
     /**
-     * The thumbnail, WebP.
+     * webp
      */
     200: unknown;
 };
