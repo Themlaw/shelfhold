@@ -17,7 +17,7 @@ from shelfhold.export.application.intents import IntentJournal
 from shelfhold.export.application.reclaim import BinReclaimer
 from shelfhold.export.application.recycle_sweep import BackupsSince
 from shelfhold.export.domain.path_map import PathMode
-from shelfhold.export.domain.physical_roots import RootState
+from shelfhold.export.domain.physical_roots import RECYCLE_DIR, RootState
 from shelfhold.identity.public import Principal
 from shelfhold.infrastructure.observability.disk_guard import disk_usage
 from shelfhold.infrastructure.observability.wiring import thresholds_of
@@ -58,7 +58,35 @@ def backups_of(comp: Composition) -> BackupsSince | None:
     return since
 
 
+def _bins_hold_something(comp: Composition) -> bool:
+    """Whether any bin of a writable root has an entry, looked at without the lease (reading
+    moves no generation and rewrites no sentinel)."""
+    fsops, loaded, _tombstones = comp.read_context()
+    for root in loaded.expected:
+        try:
+            if fsops.list_dir(f"{root.path}/{RECYCLE_DIR}", host=True):
+                return True
+        except (FileNotFoundError, NotADirectoryError):
+            continue  # no bin yet: nothing was ever recycled here
+    return False
+
+
 def trash_empty(comp: Composition, *, typed: str | None, principal: Principal) -> dict[str, Any]:
+    if not _bins_hold_something(comp):
+        # nothing to remove: the right and the word are still checked, but no root is opened for
+        # writing (no lease: the generation and the sentinels stay as they are)
+        fsops, _loaded, _tombstones = comp.read_context()
+        journal = IntentJournal(comp.engine, fsops, clock=comp.clock)
+        idle = BinReclaimer(
+            fsops, journal, [], clock=comp.clock, fresh_auth_s=comp.settings.fresh_auth_s,
+            hardened=comp.settings.auth_hardened, backups=backups_of(comp),
+        )  # fmt: skip
+        report = idle.empty_trash(principal=principal, typed=typed)
+        return {
+            "removed": report.removed, "kept": report.kept,
+            "held_irreplaceable": report.held_irreplaceable, "held_other": report.held_other,
+            "failed": report.failed,
+        }  # fmt: skip
     with comp.write_context() as w:
         journal = IntentJournal(comp.engine, w.fsops, clock=comp.clock)
         reclaimer = BinReclaimer(
