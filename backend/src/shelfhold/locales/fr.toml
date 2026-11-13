@@ -1729,6 +1729,36 @@ title = "Cette fusion d'éditions est refusée : rien n'a été modifié ni supp
 action = "Relisez le plan avec « shelfhold edition merge » : une pierre tombale (une place ou un identifiant d'œuvre purgés), une autre œuvre, une place déjà occupée ou une liaison que la fusion ne sait pas déplacer l'arrête."
 cause = "Une pierre tombale, un verrou ou une différence d'identité empêche de fusionner ces Éditions sans rien perdre."
 
+[errors."work.merge_refused"]
+title = "Cette fusion d'œuvres est refusée : rien n'a été modifié."
+action = "Relisez le plan avec « shelfhold work merge » : un autre type d'œuvre, deux éditions de même clé (fusionnez-les d'abord, avec leur propre plan) ou deux séries différentes l'arrêtent."
+cause = "Les deux œuvres ne sont pas du même type, portent deux éditions de même clé ou appartiennent à deux séries différentes."
+
+[errors."merge.expired"]
+title = "Cette fusion date de plus de 30 jours : elle ne peut plus être défaite."
+action = "Au-delà de 30 jours, la fusion reste. Pour séparer deux œuvres, recréez-les à la main."
+cause = "La fenêtre de 30 jours pendant laquelle une fusion peut être défaite est passée."
+
+[errors."merge.already_undone"]
+title = "Cette fusion a déjà été séparée."
+action = "Consultez les œuvres : les deux existent de nouveau."
+cause = "Cette fusion a déjà été défaite par une séparation précédente."
+
+[errors."merge.survivor_gone"]
+title = "L'œuvre qui avait absorbé l'autre a elle-même été fusionnée depuis."
+action = "Séparez d'abord la fusion la plus récente, puis celle-ci."
+cause = "L'œuvre qui avait absorbé l'autre a été fusionnée dans une troisième depuis."
+
+[errors."series.already_attached"]
+title = "Cette œuvre appartient déjà à une série."
+action = "Une œuvre n'appartient qu'à une série : pour la changer, séparez-la d'abord ou fusionnez les œuvres."
+cause = "L'œuvre est déjà rattachée à une série, et une œuvre n'en a qu'une."
+
+[errors."export.series_reassignment_refused"]
+title = "Le plan de réaffectation des séries exportées est périmé ou refusé : rien n'a été modifié."
+action = "Relisez le plan : une série adoptée (figée) ou une série liée à autre chose que ses éditions l'arrête. Un plan relu après un changement a une autre empreinte."
+cause = "Le plan ne correspond plus à l'état actuel, ou une série adoptée ou liée à autre chose l'empêche."
+
 [errors."tombstone.journal_truncated"]
 title = "Le journal d'effacement d'une racine a été tronqué."
 action = "Rien n'a été supprimé, mais la racine est bloquée (rapprochement et réacquisition) : « shelfhold tombstone set-aside-journal » met le fichier de côté et le réécrit depuis la base."

@@ -98,6 +98,7 @@ from shelfhold.ops.status import (
     wal_pending_report,
 )
 from shelfhold.ops.wizard import WizardOps
+from shelfhold.ops.work_merge import WorkMergeOps
 
 __all__ = ["JobRow", "OpsServices", "RecheckOutcome", "StatusReport", "user_of"]
 
@@ -203,6 +204,7 @@ class OpsServices:
         rating: RatingOps | None = None,
         attach: AttachOps | None = None,
         edition_merge: EditionMergeOps | None = None,
+        work_merge: WorkMergeOps | None = None,
         editions: EditionOps | None = None,
         dedup: DedupOps | None = None,
         resplit: ResplitOps | None = None,
@@ -239,6 +241,7 @@ class OpsServices:
         self._rating = rating
         self._attach = attach
         self._edition_merge = edition_merge
+        self._work_merge = work_merge
         self._editions = editions
         self._dedup = dedup
         self._resplit = resplit
@@ -704,6 +707,13 @@ class OpsServices:
         if self._edition_merge is None:
             raise ExitUnavailableError("the merge of Editions is not connected")
         return self._edition_merge
+
+    @property
+    def work_merge(self) -> WorkMergeOps:
+        """Merging Works, « Séparer » and the exported-series plan (M3 L22, EF-BIB-019)."""
+        if self._work_merge is None:
+            raise ExitUnavailableError("the merge of Works is not connected")
+        return self._work_merge
 
     @property
     def dedup(self) -> DedupOps:

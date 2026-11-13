@@ -36,6 +36,9 @@ NOT_FOUND = "not_found"  # absent, above the ceiling and unrated-for-a-child loo
 Admits = Callable[[str, Collection[str]], set[str]]
 # The Work's own title and its `(lang, kind, title)` rows: also the catalog's, read after `Admits`.
 TitlesOf = Callable[[str], tuple[str, Sequence[tuple[str, str, str]]]]
+# Where an old identifier leads after a merge of Works (M3 L22): asked before the visibility, so
+# an identifier that leads to a Work she may not see is exactly an absent one.
+Resolve = Callable[[str], str]
 
 
 @dataclass(frozen=True)
@@ -74,8 +77,14 @@ class UserStateStore(Protocol):
 
 class UserStateService:
     def __init__(
-        self, store: UserStateStore, clock: Clock, admits: Admits, titles_of: TitlesOf
+        self,
+        store: UserStateStore,
+        clock: Clock,
+        admits: Admits,
+        titles_of: TitlesOf,
+        resolve: Resolve = lambda work_id: work_id,
     ) -> None:
+        self._resolve = resolve
         self._store = store
         self._titles_of = titles_of
         self._clock = clock
@@ -93,6 +102,7 @@ class UserStateService:
 
     def get(self, principal: Principal, work_id: str) -> WorkState:
         user_id = self._owner(principal)
+        work_id = self._resolve(work_id)
         self._visible(user_id, work_id)
         return WorkState(work_id, self._store.get(user_id, work_id))
 
@@ -113,6 +123,7 @@ class UserStateService:
         client_ts: datetime | None = None,
     ) -> WorkState:
         user_id = self._owner(principal)
+        work_id = self._resolve(work_id)
         self._visible(user_id, work_id)
 
         def apply(current: Stamped[UserFlags] | None) -> Stamped[UserFlags]:
@@ -146,6 +157,7 @@ class UserStateService:
         """The title in the caller's language, of a Work the caller may see: the visibility
         check comes first, so a hidden Work yields no title in any language."""
         user_id = self._owner(principal)
+        work_id = self._resolve(work_id)
         self._visible(user_id, work_id)
         own, titles = self._titles_of(work_id)
         title, lang = pick_title(self._store.languages(user_id), own, titles)

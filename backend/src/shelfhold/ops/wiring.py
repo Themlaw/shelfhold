@@ -58,6 +58,7 @@ from shelfhold.ops.roots import RootOps
 from shelfhold.ops.services import OpsServices
 from shelfhold.ops.tombstone_screens import CatalogScreens
 from shelfhold.ops.wizard import WizardOps
+from shelfhold.ops.work_merge import WorkMergeOps
 
 __all__ = ["open_ops"]
 
@@ -159,7 +160,8 @@ def open_ops(
             engine, clock, bus, fresh_auth_s=settings.fresh_auth_s,
             screens=CatalogScreens(composition),
         ),
-        edition_merge=EditionMergeOps(composition), editions=EditionOps(composition),
+        edition_merge=EditionMergeOps(composition), work_merge=WorkMergeOps(composition),
+        editions=EditionOps(composition),
         dedup=DedupOps(engine, CatalogScreens(composition)),
         resplit=ResplitOps(composition), contributors=ContributorOps(composition),
         export_items=ExportItemOps(composition), export_all=ExportAllOps(composition),

@@ -312,6 +312,39 @@ export type ApproveIn = {
 };
 
 /**
+ * AttachSeriesIn
+ */
+export type AttachSeriesIn = {
+    /**
+     * Position
+     */
+    position: string;
+    /**
+     * Series Id
+     */
+    series_id: string;
+};
+
+/**
+ * AttachSeriesOut
+ */
+export type AttachSeriesOut = {
+    /**
+     * Position
+     */
+    position: string;
+    reassignment: SeriesReassignOut;
+    /**
+     * Series Id
+     */
+    series_id: string;
+    /**
+     * Work Id
+     */
+    work_id: string;
+};
+
+/**
  * AttestationIn
  */
 export type AttestationIn = {
@@ -534,6 +567,20 @@ export type ConfigRow = {
 };
 
 /**
+ * ContributorsIn
+ */
+export type ContributorsIn = {
+    /**
+     * Drop Id
+     */
+    drop_id: string;
+    /**
+     * Keep Id
+     */
+    keep_id: string;
+};
+
+/**
  * CookiesIn
  */
 export type CookiesIn = {
@@ -691,6 +738,86 @@ export type EditionLineOut = {
      * Work Id
      */
     work_id: string;
+};
+
+/**
+ * EditionMergeOut
+ */
+export type EditionMergeOut = {
+    /**
+     * Applied
+     */
+    applied: boolean;
+    /**
+     * Bindings
+     */
+    bindings: Array<string>;
+    /**
+     * Blockers
+     */
+    blockers: Array<string>;
+    /**
+     * Drop Age
+     */
+    drop_age: string | null;
+    /**
+     * Drop Id
+     */
+    drop_id: string;
+    /**
+     * Fingerprint
+     */
+    fingerprint: string;
+    /**
+     * Keep Age
+     */
+    keep_age: string | null;
+    /**
+     * Keep Id
+     */
+    keep_id: string;
+    /**
+     * Mergeable
+     */
+    mergeable: boolean;
+    /**
+     * Merged Age
+     */
+    merged_age: string | null;
+    /**
+     * Tombstoned Ids
+     */
+    tombstoned_ids: number;
+    /**
+     * Tombstoned Units
+     */
+    tombstoned_units: number;
+    /**
+     * Units
+     */
+    units: Array<string>;
+    /**
+     * Unrated After
+     */
+    unrated_after: boolean;
+    /**
+     * Volumes
+     */
+    volumes: Array<string>;
+    /**
+     * Work Id
+     */
+    work_id: string;
+};
+
+/**
+ * EditionMergeProposalsOut
+ */
+export type EditionMergeProposalsOut = {
+    /**
+     * Items
+     */
+    items: Array<EditionMergeOut>;
 };
 
 /**
@@ -1500,6 +1627,24 @@ export type MeOut = {
      * Username
      */
     username: string;
+};
+
+/**
+ * MergeIn
+ */
+export type MergeIn = {
+    /**
+     * Confirm
+     */
+    confirm?: string | null;
+    /**
+     * Drop Id
+     */
+    drop_id: string;
+    /**
+     * Keep Id
+     */
+    keep_id: string;
 };
 
 /**
@@ -3013,6 +3158,78 @@ export type SecretsImportOut = {
 };
 
 /**
+ * SeparateIn
+ */
+export type SeparateIn = {
+    [key: string]: never;
+};
+
+/**
+ * SeparateOut
+ */
+export type SeparateOut = {
+    /**
+     * Merge Id
+     */
+    merge_id: string;
+    /**
+     * Restored Age
+     */
+    restored_age: string | null;
+    /**
+     * Restored Id
+     */
+    restored_id: string;
+    series_plan: SeriesReassignOut;
+    /**
+     * Shelves
+     */
+    shelves: {
+        [key: string]: string | null;
+    };
+    /**
+     * Survivor Age
+     */
+    survivor_age: string | null;
+    /**
+     * Survivor Id
+     */
+    survivor_id: string;
+    /**
+     * Waiting
+     */
+    waiting: {
+        [key: string]: string;
+    };
+};
+
+/**
+ * SeriesMoveOut
+ */
+export type SeriesMoveOut = {
+    /**
+     * Edition Id
+     */
+    edition_id: string;
+    /**
+     * From Series Id
+     */
+    from_series_id: string;
+    /**
+     * New Name
+     */
+    new_name?: string | null;
+    /**
+     * Remote Library Id
+     */
+    remote_library_id: string;
+    /**
+     * To Series Id
+     */
+    to_series_id: string | null;
+};
+
+/**
  * SeriesNameIn
  */
 export type SeriesNameIn = {
@@ -3052,6 +3269,58 @@ export type SeriesOut = {
      * Title
      */
     title: string;
+};
+
+/**
+ * SeriesReassignIn
+ */
+export type SeriesReassignIn = {
+    /**
+     * Confirm
+     */
+    confirm?: string | null;
+    /**
+     * Work Id
+     */
+    work_id: string;
+};
+
+/**
+ * SeriesReassignOut
+ */
+export type SeriesReassignOut = {
+    /**
+     * Applied
+     */
+    applied: boolean;
+    /**
+     * Blockers
+     */
+    blockers: Array<string>;
+    /**
+     * Emptied
+     */
+    emptied: Array<string>;
+    /**
+     * Fingerprint
+     */
+    fingerprint: string;
+    /**
+     * Mergeable
+     */
+    mergeable: boolean;
+    /**
+     * Moves
+     */
+    moves: Array<SeriesMoveOut>;
+    /**
+     * Path Changes
+     */
+    path_changes: number;
+    /**
+     * Work Id
+     */
+    work_id: string;
 };
 
 /**
@@ -4193,6 +4462,61 @@ export type WorkItemOut = {
      * Work Id
      */
     work_id: string;
+};
+
+/**
+ * WorkMergeOut
+ */
+export type WorkMergeOut = {
+    /**
+     * Applied
+     */
+    applied: boolean;
+    /**
+     * Blockers
+     */
+    blockers: Array<string>;
+    /**
+     * Drop Age
+     */
+    drop_age: string | null;
+    /**
+     * Drop Id
+     */
+    drop_id: string;
+    /**
+     * Editions
+     */
+    editions: Array<string>;
+    /**
+     * Fingerprint
+     */
+    fingerprint: string;
+    /**
+     * Keep Age
+     */
+    keep_age: string | null;
+    /**
+     * Keep Id
+     */
+    keep_id: string;
+    /**
+     * Merge Id
+     */
+    merge_id: string | null;
+    /**
+     * Mergeable
+     */
+    mergeable: boolean;
+    /**
+     * Merged Age
+     */
+    merged_age: string | null;
+    series_plan?: SeriesReassignOut | null;
+    /**
+     * Unrated After
+     */
+    unrated_after: boolean;
 };
 
 /**
@@ -5432,6 +5756,39 @@ export type PatchConfigResponses = {
 
 export type PatchConfigResponse = PatchConfigResponses[keyof PatchConfigResponses];
 
+export type ContributorsMergeProposalsData = {
+    body: ContributorsIn;
+    path?: never;
+    query?: never;
+    url: '/api/v1/contributors/merge-proposals';
+};
+
+export type ContributorsMergeProposalsErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type ContributorsMergeProposalsError = ContributorsMergeProposalsErrors[keyof ContributorsMergeProposalsErrors];
+
+export type ContributorsMergeProposalsResponses = {
+    /**
+     * Successful Response
+     */
+    200: EditionMergeProposalsOut;
+};
+
+export type ContributorsMergeProposalsResponse = ContributorsMergeProposalsResponses[keyof ContributorsMergeProposalsResponses];
+
 export type ResplitApplyData = {
     body: ResplitApplyIn;
     path?: never;
@@ -5654,6 +6011,39 @@ export type EditionsListResponses = {
 };
 
 export type EditionsListResponse = EditionsListResponses[keyof EditionsListResponses];
+
+export type EditionsMergeData = {
+    body: MergeIn;
+    path?: never;
+    query?: never;
+    url: '/api/v1/editions/merge';
+};
+
+export type EditionsMergeErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type EditionsMergeError = EditionsMergeErrors[keyof EditionsMergeErrors];
+
+export type EditionsMergeResponses = {
+    /**
+     * Successful Response
+     */
+    200: EditionMergeOut;
+};
+
+export type EditionsMergeResponse = EditionsMergeResponses[keyof EditionsMergeResponses];
 
 export type AddDirectlyData = {
     body: AddDirectlyIn;
@@ -8536,6 +8926,39 @@ export type SecretsImportResponses = {
 
 export type SecretsImportResponse = SecretsImportResponses[keyof SecretsImportResponses];
 
+export type SeriesReassignmentsData = {
+    body: SeriesReassignIn;
+    path?: never;
+    query?: never;
+    url: '/api/v1/series-reassignments';
+};
+
+export type SeriesReassignmentsErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type SeriesReassignmentsError = SeriesReassignmentsErrors[keyof SeriesReassignmentsErrors];
+
+export type SeriesReassignmentsResponses = {
+    /**
+     * Successful Response
+     */
+    200: SeriesReassignOut;
+};
+
+export type SeriesReassignmentsResponse = SeriesReassignmentsResponses[keyof SeriesReassignmentsResponses];
+
 export type SeriesResumeData = {
     body?: never;
     path: {
@@ -10206,6 +10629,80 @@ export type ListWorksResponses = {
 
 export type ListWorksResponse = ListWorksResponses[keyof ListWorksResponses];
 
+export type WorksMergeData = {
+    body: MergeIn;
+    path?: never;
+    query?: never;
+    url: '/api/v1/works/merge';
+};
+
+export type WorksMergeErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type WorksMergeError = WorksMergeErrors[keyof WorksMergeErrors];
+
+export type WorksMergeResponses = {
+    /**
+     * Successful Response
+     */
+    200: WorkMergeOut;
+};
+
+export type WorksMergeResponse = WorksMergeResponses[keyof WorksMergeResponses];
+
+export type WorksSeparateData = {
+    /**
+     * Body
+     */
+    body?: SeparateIn | null;
+    path: {
+        /**
+         * Merge Id
+         */
+        merge_id: string;
+    };
+    query?: never;
+    url: '/api/v1/works/merges/{merge_id}/separate';
+};
+
+export type WorksSeparateErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type WorksSeparateError = WorksSeparateErrors[keyof WorksSeparateErrors];
+
+export type WorksSeparateResponses = {
+    /**
+     * Successful Response
+     */
+    200: SeparateOut;
+};
+
+export type WorksSeparateResponse = WorksSeparateResponses[keyof WorksSeparateResponses];
+
 export type RateBatchData = {
     body: RateBatchIn;
     path?: never;
@@ -10318,6 +10815,44 @@ export type RateWorkResponses = {
 };
 
 export type RateWorkResponse = RateWorkResponses[keyof RateWorkResponses];
+
+export type WorksAttachSeriesData = {
+    body: AttachSeriesIn;
+    path: {
+        /**
+         * Work Id
+         */
+        work_id: string;
+    };
+    query?: never;
+    url: '/api/v1/works/{work_id}/series';
+};
+
+export type WorksAttachSeriesErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type WorksAttachSeriesError = WorksAttachSeriesErrors[keyof WorksAttachSeriesErrors];
+
+export type WorksAttachSeriesResponses = {
+    /**
+     * Successful Response
+     */
+    200: AttachSeriesOut;
+};
+
+export type WorksAttachSeriesResponse = WorksAttachSeriesResponses[keyof WorksAttachSeriesResponses];
 
 export type HealthzData = {
     body?: never;
