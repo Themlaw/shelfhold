@@ -195,3 +195,23 @@ def test_keys_for_a_deleted_subject_stop_working_and_a_child_key_cannot_hold_adm
         finally:
             connection.close()
         assert api.client.get(REQUESTS, headers=bearer(key)).status_code == 401
+
+
+@pytest.mark.req("EF-USR-024")
+def test_cli_issues_a_request_key_for_a_profile_and_refuses_an_admin_one(
+    monkeypatch: pytest.MonkeyPatch, settings: Settings, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from tests.auth_env import run_cli
+
+    with instance(monkeypatch, settings, alpha()) as api:
+        capsys.readouterr()
+        assert run_cli(monkeypatch, api.settings, "admin", "keys", "create", "--scope", "request",
+                       "--subject", "member") == 0  # fmt: skip
+        key = capsys.readouterr().out.strip().splitlines()[-1]
+        assert api.client.post(REQUESTS, json=FREE, headers=bearer(key)).status_code == 201
+        assert db_rows(api.settings, "SELECT requester_user_id FROM request") == [(MEMBER_ID,)]
+        # the `admin` scope is an admin's for herself: never for another account
+        assert run_cli(monkeypatch, api.settings, "admin", "keys", "create", "--scope", "admin",
+                       "--subject", "member") == 1  # fmt: skip
+        assert run_cli(monkeypatch, api.settings, "admin", "keys", "create", "--scope", "request",
+                       "--subject", "nobody") == 1  # fmt: skip
