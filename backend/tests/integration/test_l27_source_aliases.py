@@ -29,6 +29,7 @@ from shelfhold.identity.public import (
 )
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import acquisition, catalog, identity, platform
+from shelfhold.library.public import SeriesBindingRef, VariantRef
 from shelfhold.ops.errors import CodedRefusal, StalePreviewError
 from shelfhold.ops.source_migration import SourceMigrationOps
 from tests.auth_env import db_dump, run_cli
@@ -324,8 +325,14 @@ def test_migrate_ref_of_a_plugin_cannot_bring_an_erased_series_back(
             applied = plan(ops, report["fingerprint"])
             assert applied["applied"] == 0
             assert item_ref(env, victim) == "old-5"
-        with env.inst.engine.connect() as connection:  # and no alias was recorded for it
-            assert not connection.execute(sa.select(acquisition.source_alias)).all()
+        with env.inst.engine.connect() as connection:
+            # the blocked row keeps its place, but the alias is recorded: the form the plugin gave
+            # stays known as the erased series (the tombstone check follows every alias)
+            rows = connection.execute(sa.select(acquisition.source_alias)).all()
+        # one alias per old reference: the first answer stays
+        assert [(r.old_remote_id, r.new_remote_id) for r in rows] == [("old-5", GONE)]
+        service = SourceMigrationOps(env.inst.comp)._service()
+        assert service.check(SeriesBindingRef(PLUGIN, SOURCE, "gone%2D1"), root_id=None).blocked
 
 
 def test_alias_inverse_checked_for_membership(
@@ -561,3 +568,87 @@ def test_migrate_ids_refuses_what_it_cannot_read(
         assert run_cli(monkeypatch, settings, *base, "--preview", "--confirm", "f" * 64) == 2
         assert run_cli(monkeypatch, settings, *base, "--preview") == 0
         assert "Aucune série" in capsys.readouterr().out
+
+
+def _gate(env: Seeded) -> Any:
+    return SourceMigrationOps(env.inst.comp)._service()
+
+
+def test_a_target_that_differs_from_a_live_series_only_by_case_is_not_a_new_series(
+    monkeypatch: pytest.MonkeyPatch, settings: Settings, tmp_path: Path
+) -> None:
+    with seeded(settings, tmp_path / "inst") as env:
+        occupant = live(env, "Series-One")
+        mover, twin_a, twin_b = live(env, "old-1"), live(env, "old-a"), live(env, "old-b")
+        alias(env, "old-1", "series-one")  # the same series as the occupant, in lower case
+        alias(env, "old-a", "Twin-1")
+        alias(env, "old-b", "TWIN-1/")  # two series that fold to one
+        renamed = live(env, "Case-Only")
+        alias(env, "Case-Only", "case-only")  # only the spelling of its own reference changes
+        report = plan(make_ops(env))
+        assert ids(report, "unresolved") == {iid(env, mover), iid(env, twin_a), iid(env, twin_b)}
+        assert ids(report, "migrate") == {iid(env, renamed)}
+        plan(make_ops(env), report["fingerprint"])
+        assert item_ref(env, occupant) == "Series-One" and item_ref(env, mover) == "old-1"
+        assert item_ref(env, renamed) == "case-only"
+
+
+def test_a_target_with_nothing_left_after_the_fold_is_refused(
+    monkeypatch: pytest.MonkeyPatch, settings: Settings, tmp_path: Path
+) -> None:
+    with seeded(settings, tmp_path / "inst") as env:
+        series = live(env, "old-1")
+        report = plan(make_ops(env, {"old-1": "/?"}))
+        assert ids(report, "unresolved") == {iid(env, series)} and not report["migrate"]
+        assert report["unresolved"][0]["reason"] == "empty_ref"
+
+
+def test_an_erased_unit_stays_erased_after_its_source_key_moves(
+    monkeypatch: pytest.MonkeyPatch, settings: Settings, tmp_path: Path
+) -> None:
+    """The `variant` tombstone is asked through the same central check: the Unit reference under
+    another source key that an alias ties to the old one, or under another spelling, is erased."""
+    with seeded(settings, tmp_path / "inst") as env:
+        erased = live(env, GONE, chapters=("1",))
+        with env.inst.engine.connect() as connection:
+            remote_unit = connection.execute(
+                sa.select(catalog.unit_variant.c.remote_unit_id)
+            ).scalar_one()
+        erase(env, monkeypatch, settings, erased)
+        alias(env, GONE, "gone-new", new_key="source-b")  # the source key moves too
+        gate = _gate(env)
+        for key, unit in ((SOURCE, remote_unit), ("source-b", remote_unit),
+                          ("SOURCE-B", remote_unit.upper())):  # fmt: skip
+            assert gate.check(VariantRef(PLUGIN, key, unit), root_id=None).blocked, (key, unit)
+        assert gate.check(SeriesBindingRef(PLUGIN, "source-b", "gone-new"), root_id=None).blocked
+        assert not gate.check(VariantRef(PLUGIN, "source-b", "unit-other"), root_id=None).blocked
+        assert not gate.check(SeriesBindingRef(PLUGIN, "source-b", "fresh"), root_id=None).blocked
+
+
+def test_the_central_check_follows_aliases_of_every_scheme_in_both_directions(
+    monkeypatch: pytest.MonkeyPatch, settings: Settings, tmp_path: Path
+) -> None:
+    with seeded(settings, tmp_path / "inst") as env:
+        erased = live(env, GONE)
+        erase(env, monkeypatch, settings, erased)
+        with env.inst.engine.begin() as connection:
+            for old, new, scheme in (("mid-1", GONE, "legacy"), ("front-1", "mid-1", None)):
+                connection.execute(
+                    sa.insert(acquisition.source_alias).values(
+                        plugin_id=PLUGIN, old_source_key=SOURCE, old_remote_id=old,
+                        new_source_key=SOURCE, new_remote_id=new, id_scheme=scheme,
+                    )
+                )  # fmt: skip
+            connection.execute(  # a cycle somewhere in the graph ends
+                sa.insert(acquisition.source_alias).values(
+                    plugin_id=PLUGIN, old_source_key=SOURCE, old_remote_id=GONE,
+                    new_source_key=SOURCE, new_remote_id="front-1", id_scheme="cycle",
+                )
+            )  # fmt: skip
+        gate = _gate(env)
+        for ref in (GONE, "mid-1", "FRONT-1", "front-1/"):
+            assert gate.check(SeriesBindingRef(PLUGIN, SOURCE, ref), root_id=None).blocked, ref
+        assert not gate.check(SeriesBindingRef(PLUGIN, SOURCE, "other"), root_id=None).blocked
+        assert gate.check(SeriesBindingRef(PLUGIN, SOURCE, "/?"), root_id=None).blocked  # refused
+        other = SeriesBindingRef("plugin-b", SOURCE, "mid-1")  # aliases are per plugin
+        assert not gate.check(other, root_id=None).blocked

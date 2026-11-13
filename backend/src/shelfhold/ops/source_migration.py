@@ -82,7 +82,7 @@ class SourceMigrationOps:
         def make_plan(connection: Connection) -> AliasPlan:
             return plan_alias_migration(
                 connection, source_key=source_key, from_scheme=from_scheme, to_scheme=to_scheme,
-                migrate_ref=migrate_ref, screen=screen,
+                migrate_ref=migrate_ref, screen=screen, erased_refs=service.erased_series_refs,
             )  # fmt: skip
 
         if confirm is None:  # a preview: a read, on the tombstones' index, that writes nothing
@@ -181,7 +181,12 @@ class SourceMigrationOps:
 
         def rows(outcome: Outcome) -> list[dict[str, str]]:
             return [
-                {"id": r.id, "old": r.old[1], "new": shown(r.new), "reason": r.reason}
+                {
+                    "id": r.id,
+                    "old": r.old[1],
+                    "new": shown(r.new) if r.outcome is Outcome.MIGRATE else "",
+                    "reason": r.reason,
+                }
                 for r in plan.of(outcome)
             ]  # a blocked row never names where it would have gone
 

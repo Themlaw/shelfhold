@@ -261,6 +261,7 @@ from shelfhold.library.replica import (
 from shelfhold.library.tombstones import (
     EDITION_KEY_COLUMNS,
     ContentHash,
+    EmptyRefError,
     Normalizers,
     PlaceRef,
     ReplayReport,
@@ -274,6 +275,7 @@ from shelfhold.library.tombstones import (
     VariantRef,
     Verdict,
     WorkRef,
+    fold_ref,
     normalizers_of,
 )
 from shelfhold.library.tombstones.screen import CatalogScreenAdapter
@@ -327,6 +329,7 @@ __all__ = [
     "Derivative",
     "DownloadTicket",
     "EchoOfOwnExport",
+    "EmptyRefError",
     "EpubIngested",
     "EpubRefusedError",
     "ExportDecision",
@@ -450,6 +453,7 @@ __all__ = [
     "erase_work_rows",
     "etag_of",
     "export_sources",
+    "fold_ref",
     "forget_bin_rows",
     "forget_binned_export_files",
     "fresh_repair_content",

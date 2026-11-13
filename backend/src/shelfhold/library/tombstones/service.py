@@ -58,7 +58,7 @@ from shelfhold.identity.public import (
     authorize_reserved,
 )
 from shelfhold.infrastructure.ids import new_ulid
-from shelfhold.infrastructure.schema import coherence, identity, platform
+from shelfhold.infrastructure.schema import acquisition, coherence, identity, platform
 from shelfhold.infrastructure.secrets import registry as key_registry
 from shelfhold.infrastructure.secrets.errors import EnvelopeError
 from shelfhold.infrastructure.secrets.keyring import Key, Keyring
@@ -90,6 +90,7 @@ from shelfhold.library.tombstones.journal import (
     parse_line,
     parse_lines_ignoring_header,
 )
+from shelfhold.library.tombstones.scopes import EmptyRefError, alias_family, fold_ref
 from shelfhold.library.tombstones.state import TombstoneState
 from shelfhold.library.tombstones.values import (
     ContentHash,
@@ -264,6 +265,8 @@ class TombstoneService:
         self._bus = bus
         self._normalizers = normalizers or default_normalizers()
         self._index: MembershipIndex | None = None
+        self._alias_signature: tuple[Any, ...] | None = None
+        self._alias_cache: dict[str, list[tuple[str, str, str, str]]] = {}
         self._report = ReplayReport()
         self._sentinel_kids: dict[str, frozenset[str]] = {}  # authenticated entries only
         self._state = TombstoneState(engine)
@@ -840,7 +843,76 @@ class TombstoneService:
         for where, scope in report.key_unknown:
             if scope == candidate.scope and where in (DB_ROOT, root_id):
                 return Verdict(True, "key_unknown")
+        if isinstance(candidate, (SeriesBindingRef, VariantRef)):
+            return self._check_reference(candidate, hash_with)
         if self._index.contains(candidate, hash_with=hash_with):
+            return Verdict(True, "tombstoned")
+        return Verdict(False)
+
+    # -- the one place an upstream reference meets the tombstones (EF-SRC-022, EF-BIB-054 (4)) --
+
+    def _alias_edges(self, plugin_id: str) -> list[tuple[str, str, str, str]]:
+        """`source_alias` of the plugin, every scheme. Cached by the table's own signature (count
+        and last id: an alias is only ever added), so a check costs one small query."""
+        table = acquisition.source_alias
+        with self._engine.connect() as connection:
+            signature = tuple(
+                connection.execute(sa.select(sa.func.count(), sa.func.max(table.c.id))).one()
+            )
+            if signature != self._alias_signature:
+                rows = connection.execute(
+                    sa.select(table.c.plugin_id, table.c.old_source_key, table.c.old_remote_id,
+                              table.c.new_source_key, table.c.new_remote_id)
+                )  # fmt: skip
+                grouped: dict[str, list[tuple[str, str, str, str]]] = {}
+                for plugin, old_key, old_id, new_key, new_id in rows:
+                    grouped.setdefault(plugin, []).append((old_key, old_id, new_key, new_id))
+                self._alias_cache, self._alias_signature = grouped, signature
+        return self._alias_cache.get(plugin_id, [])
+
+    def _reference_family(
+        self, candidate: SeriesBindingRef | VariantRef
+    ) -> list[SeriesBindingRef | VariantRef] | None:
+        """The candidate and every other form it has: for a series, each reference of its
+        connected component in the alias graph (every scheme, both directions, cycle-safe); for a
+        Unit, the same remote id under each source key the aliases tie to its own. None when the
+        graph is too large to follow: the caller blocks."""
+        edges = self._alias_edges(candidate.source_key)  # `source_key` holds the plugin id
+        if isinstance(candidate, SeriesBindingRef):
+            nodes = alias_family(edges, (candidate.sub_source, candidate.series_ref))
+            if nodes is None:
+                return None
+            return [SeriesBindingRef(candidate.source_key, key, ref) for key, ref in nodes]
+        keys = alias_family(
+            [(ok, "", nk, "") for ok, _oi, nk, _ni in edges], (candidate.sub_source, "")
+        )
+        if keys is None:
+            return None
+        return [VariantRef(candidate.source_key, key, candidate.remote_unit_id) for key, _ in keys]
+
+    def _check_reference(
+        self, candidate: SeriesBindingRef | VariantRef, hash_with: HashWith | None
+    ) -> Verdict:
+        """Every door asks this (`check`): the reference as received, its spellings and its other
+        forms through the aliases. A form that meets a tombstone, whatever the way it got here
+        (an alias, a case, a chain, another scheme, `migrate_ref`), is the erased reference."""
+        if self._index is None:
+            raise NotReplayedError("replay the tombstones before any reacquisition")
+        try:
+            for part in (candidate.sub_source, candidate.source_key):
+                fold_ref(part)
+            fold_ref(
+                candidate.series_ref if isinstance(candidate, SeriesBindingRef)
+                else candidate.remote_unit_id
+            )  # fmt: skip
+        except EmptyRefError:
+            return Verdict(True, "empty_ref")  # names nothing: refused, never compared
+        if self._index.contains(candidate, hash_with=hash_with):
+            return Verdict(True, "tombstoned")
+        family = self._reference_family(candidate)
+        if family is None:
+            return Verdict(True, "alias_graph_too_large")
+        if any(self._index.contains_folded(form) for form in [candidate, *family]):
             return Verdict(True, "tombstoned")
         return Verdict(False)
 
@@ -893,19 +965,19 @@ class TombstoneService:
     def check_refs(
         self, refs: Iterable[SeriesBindingRef | VariantRef], *, root_id: str | None = None
     ) -> Verdict:
-        """The references of one alias family (the old one, the new one, every link of a chain,
-        every alias that leads to them): blocked when any of them is a tombstoned reference, as
-        received **or** under another spelling (`scopes.fold_ref`: case, separators, encoding,
-        wide forms). A spelling of a purged reference is the purged reference (EF-BIB-054 (4))."""
-        if self._index is None:
-            raise NotReplayedError("replay the tombstones before any migration")
+        """Blocked when any of the references is (`check` already follows aliases and spellings)."""
         for ref in refs:
             verdict = self.check(ref, root_id=root_id)
             if verdict.blocked:
                 return verdict
-            if self._index.contains_folded(ref):
-                return Verdict(True, "tombstoned")
         return Verdict(False)
+
+    def erased_series_refs(self, plugin_id: str, source_key: str) -> list[str]:
+        """The series of this source that were erased (the references as received), for a migration
+        that must learn their new form so that it stays erased. Read in memory, never written."""
+        if self._index is None:
+            raise NotReplayedError("replay the tombstones before any migration")
+        return self._index.series_refs(plugin_id, source_key)
 
     def screen_refs(
         self,
