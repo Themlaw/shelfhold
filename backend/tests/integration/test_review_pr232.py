@@ -119,3 +119,30 @@ def test_pr232_wrong_api_keys_share_the_budget_of_the_ipv6_prefix(
                 env.other_client(f"2001:db8:9:9::{last}").get(SESSION, headers=guess).status_code
             )
         assert 429 in codes, codes
+
+
+# -- M2 (contre-relecture): a made-up credential buys a fresh budget on the device routes -------
+
+
+@pytest.mark.req("ENF-SEC-008")
+def test_pr232_a_made_up_device_credential_never_escapes_the_address_budget(
+    monkeypatch: pytest.MonkeyPatch, settings: Settings
+) -> None:
+    """`PublicRateLimit` counts a request to `/opds`, `/kosync` or `/kobo` that carries any
+    credential by the digest of that credential alone, before anything checks it. One address
+    that changes its `Authorization` (or the Kobo token of its path) at each request is never
+    limited: guessing device tokens or Basic passwords escapes the per-address limit."""
+    update = {"http_public_rate_per_minute": 10, "http_device_rate_per_minute": 30}
+    with auth_env(monkeypatch, settings.model_copy(update=update)) as env:
+        guesser = env.other_client("192.0.2.60")
+        basic = [
+            guesser.get(
+                "/opds/catalog", headers={"Authorization": f"Basic guess{n:04d}"}
+            ).status_code
+            for n in range(40)
+        ]
+        kobo = [
+            env.other_client("192.0.2.61").get(f"/kobo/guess{n:04d}/v1/initialization").status_code
+            for n in range(40)
+        ]
+        assert 429 in basic and 429 in kobo, (basic, kobo)
