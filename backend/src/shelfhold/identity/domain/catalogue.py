@@ -89,6 +89,10 @@ _DECLARED = (
     _action("profile.update", Effect.MANAGES_PROFILES),
     _action("profile.remove", Effect.MANAGES_PROFILES),
     _action("profile.source_policy", Effect.MANAGES_PROFILES),
+    # M3 L40 (D13): the sources a child's search may reach are marked "family" by the admin, once
+    # in the wizard and again from the settings; it is parental control and it is refused to a
+    # stale session in every profile
+    _action("source.mark_family", Effect.PARENTAL_CONTROL, Effect.MANAGES_PROFILES),
     # Classing needs a fresh session in every profile (porteur, 2026-11-11), and is refused to
     # every key and token
     _action("rate", Effect.RATES_CONTENT),

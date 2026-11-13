@@ -2190,6 +2190,22 @@
         "title": "JobsOut",
         "type": "object"
       },
+      "KeyringExportIn": {
+        "additionalProperties": false,
+        "properties": {
+          "passphrase": {
+            "maxLength": 1024,
+            "minLength": 1,
+            "title": "Passphrase",
+            "type": "string"
+          }
+        },
+        "required": [
+          "passphrase"
+        ],
+        "title": "KeyringExportIn",
+        "type": "object"
+      },
       "KeyringIn": {
         "properties": {
           "confirmation": {
@@ -5213,6 +5229,40 @@
         "title": "Source",
         "type": "object"
       },
+      "SourceFamilyIn": {
+        "additionalProperties": false,
+        "properties": {
+          "source_keys": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 16,
+            "title": "Source Keys",
+            "type": "array"
+          }
+        },
+        "required": [
+          "source_keys"
+        ],
+        "title": "SourceFamilyIn",
+        "type": "object"
+      },
+      "SourceFamilyOut": {
+        "properties": {
+          "family": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Family",
+            "type": "array"
+          }
+        },
+        "required": [
+          "family"
+        ],
+        "title": "SourceFamilyOut",
+        "type": "object"
+      },
       "SourceHealthOut": {
         "properties": {
           "action": {
@@ -6225,6 +6275,24 @@
         "title": "WizardDestinationOut",
         "type": "object"
       },
+      "WizardJurisdictionOut": {
+        "properties": {
+          "confirmed": {
+            "title": "Confirmed",
+            "type": "boolean"
+          },
+          "country": {
+            "title": "Country",
+            "type": "string"
+          }
+        },
+        "required": [
+          "country",
+          "confirmed"
+        ],
+        "title": "WizardJurisdictionOut",
+        "type": "object"
+      },
       "WizardLibraryIn": {
         "properties": {
           "destination_id": {
@@ -6427,6 +6495,47 @@
         "title": "WizardRootOut",
         "type": "object"
       },
+      "WizardShelfOut": {
+        "properties": {
+          "created": {
+            "title": "Created",
+            "type": "boolean"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "phrase": {
+            "title": "Phrase",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "phrase",
+          "created"
+        ],
+        "title": "WizardShelfOut",
+        "type": "object"
+      },
+      "WizardSourceOut": {
+        "properties": {
+          "family": {
+            "title": "Family",
+            "type": "boolean"
+          },
+          "key": {
+            "title": "Key",
+            "type": "string"
+          }
+        },
+        "required": [
+          "key",
+          "family"
+        ],
+        "title": "WizardSourceOut",
+        "type": "object"
+      },
       "WizardStateOut": {
         "properties": {
           "destinations": {
@@ -6440,6 +6549,27 @@
             "title": "First Run",
             "type": "boolean"
           },
+          "jurisdiction": {
+            "$ref": "#/components/schemas/WizardJurisdictionOut"
+          },
+          "keyring_exported": {
+            "title": "Keyring Exported",
+            "type": "boolean"
+          },
+          "shelves": {
+            "items": {
+              "$ref": "#/components/schemas/WizardShelfOut"
+            },
+            "title": "Shelves",
+            "type": "array"
+          },
+          "sources": {
+            "items": {
+              "$ref": "#/components/schemas/WizardSourceOut"
+            },
+            "title": "Sources",
+            "type": "array"
+          },
           "targets": {
             "items": {
               "$ref": "#/components/schemas/WizardTargetOut"
@@ -6451,7 +6581,11 @@
         "required": [
           "targets",
           "destinations",
-          "first_run"
+          "first_run",
+          "shelves",
+          "sources",
+          "keyring_exported",
+          "jurisdiction"
         ],
         "title": "WizardStateOut",
         "type": "object"
@@ -14146,6 +14280,68 @@
         ]
       }
     },
+    "/api/v1/setup/keyring-export": {
+      "post": {
+        "description": "The keyring as an age file under the passphrase, once, as a download (Q25). Neither\nkept nor replayed: the route is a reserved action, so its answer is never stored.",
+        "operationId": "wizard_keyring_export",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/KeyringExportIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Connexion requise, ou mot de passe à confirmer (reauth-required)."
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée)."
+          },
+          "default": {
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Détail du problème (RFC 9457)."
+          }
+        },
+        "summary": "Wizard Keyring Export",
+        "tags": [
+          "setup"
+        ]
+      }
+    },
     "/api/v1/setup/library": {
       "post": {
         "operationId": "wizard_new_library",
@@ -14263,6 +14459,67 @@
           }
         },
         "summary": "Wizard Probe",
+        "tags": [
+          "setup"
+        ]
+      }
+    },
+    "/api/v1/setup/sources/family": {
+      "put": {
+        "operationId": "wizard_mark_family",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SourceFamilyIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SourceFamilyOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Connexion requise, ou mot de passe à confirmer (reauth-required)."
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée)."
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Détail du problème (RFC 9457)."
+          }
+        },
+        "summary": "Wizard Mark Family",
         "tags": [
           "setup"
         ]
