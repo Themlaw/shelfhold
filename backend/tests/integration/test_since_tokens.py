@@ -475,10 +475,11 @@ def test_need_of_a_work_is_exactly_the_one_filter(world: World) -> None:
 @pytest.mark.req("EF-INT-001")
 def test_since_token_round_trip_is_sealed_and_scoped() -> None:
     marker = bytes(range(6))
-    token = encode_since(42, key=KEY, kind="works", epoch=3, marker=marker, scope=10)
-    assert token.startswith("s3.") and "42" not in token  # opaque, not a readable number
+    seq = 918_374_650_273  # twelve digits: they cannot turn up by chance in the random token
+    token = encode_since(seq, key=KEY, kind="works", epoch=3, marker=marker, scope=10)
+    assert token.startswith("s3.") and str(seq) not in token  # opaque, not a readable number
     opened = decode_since(token, key=KEY, kind="works")
-    assert (opened.seq, opened.epoch, opened.marker, opened.scope) == (42, 3, marker, 10)
+    assert (opened.seq, opened.epoch, opened.marker, opened.scope) == (seq, 3, marker, 10)
     for key, kind in ((bytes(32), "works"), (KEY, "shelves")):
         with pytest.raises(ProblemError) as caught:
             decode_since(token, key=key, kind=kind)
