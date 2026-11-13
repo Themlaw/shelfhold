@@ -14,7 +14,9 @@ from typing import Any
 import pytest
 
 from shelfhold.acquisition.application.follow_request import FollowRequests
+from shelfhold.acquisition.application.requests import RequestService
 from shelfhold.config import Settings
+from shelfhold.identity.domain.credentials import Credential, Principal
 from shelfhold.infrastructure.db import create_db_engine
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.jobs.control import QueueControl
@@ -209,7 +211,7 @@ def test_poc_export_holds_her_follow_and_download_tickets(api: AuthEnv) -> None:
     assert ticket in exported.text  # red
 
 
-# -- Contre-relecture : M2 n'a fermé que deux des écrivains sans clé étrangère ----------------------
+# -- Contre-relecture : M2 n'a fermé que deux des écrivains sans clé étrangère ---------------------
 
 
 @pytest.mark.req("EF-USR-013")
@@ -218,10 +220,7 @@ def test_counter_poc_decision_after_the_admins_deletion_writes_her_id(api: AuthE
     `reject` and `mark_not_found`) writes `request.decided_by = principal.user_id` (no foreign key)
     without `still_a_user`: the admin's decision was authenticated, another admin deleted her, then
     the decision commits. `_unname` already ran: her id stays on the member's request for ever.
-    (Same shape: `_claim` of an approval, `QueueControl.pause` `by`, the waiver of a lost keyring.)"""
-    from shelfhold.acquisition.application.requests import RequestService
-    from shelfhold.identity.domain.credentials import Credential, Principal
-
+    (Same shape: `_claim` of an approval, `QueueControl.pause` `by`, the lost-keyring waiver.)"""
     mum = _seed(api, "mum")
     nan = _auth(api).profile_add("nan", PASSWORD, "admin")
     request_id = new_ulid()
