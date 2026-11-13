@@ -99,7 +99,7 @@ def audit(d: Deletion, action: str) -> list[tuple[object, ...]]:
     return d.rows("SELECT actor_id, target, session_id FROM audit WHERE action = :a", a=action)
 
 
-# -- « Vider la corbeille maintenant » ---------------------------------------------------------
+# -- « Vider la corbeille » ---------------------------------------------------------
 
 
 def test_empty_trash_now() -> None:

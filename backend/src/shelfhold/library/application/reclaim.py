@@ -1,4 +1,4 @@
-"""The rules of « Récupérer de l'espace » (EF-BIB-030) that need no disk and no database.
+"""The rules of « Récupérer de la place » (EF-BIB-030) that need no disk and no database.
 
 - The word typed to empty the trash (a reserved action: the server compares it, whatever the door).
 - The order of the early purge: oldest first, and which entries may be taken at all.

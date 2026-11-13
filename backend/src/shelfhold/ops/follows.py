@@ -34,7 +34,7 @@ from shelfhold.ops.errors import (
     InvalidChoiceError,
     UnknownSubjectError,
 )
-from shelfhold.ops.reclaim import require_space
+from shelfhold.ops.reclaim import estimate_units, require_space
 from shelfhold.sdk.refs import SeriesRef
 from shelfhold.sdk.source import SourceError
 
@@ -116,9 +116,10 @@ class FollowOps:
 
     def follow(
         self, source_key: str, remote_id: str, *, requester_user_id: str | None,
-        visibility: str = "ops",
+        visibility: str = "ops", units: int | None = None,
     ) -> dict[str, Any]:  # fmt: skip
-        require_space(self._comp)  # a followed series is a series that will be written
+        # a followed series is a series that will be written
+        require_space(self._comp, estimate_units(self._comp, units))
         ref = self._ref(source_key, remote_id)
         outcome = self._run(
             lambda requests: requests.follow(

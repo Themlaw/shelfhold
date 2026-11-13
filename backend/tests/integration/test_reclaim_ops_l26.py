@@ -3,7 +3,9 @@ the two reserved actions and the size check, with the real keyring, database and
 
 import os
 import time
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from typing import Any
 
 import pytest
 import sqlalchemy as sa
@@ -12,6 +14,8 @@ from shelfhold.composition import Gates
 from shelfhold.config import Settings
 from shelfhold.export.application.reclaim import TrashEmptyRefusedError
 from shelfhold.identity.public import Credential, Principal
+from shelfhold.infrastructure.ids import new_ulid
+from shelfhold.infrastructure.schema import storage
 from shelfhold.library.public import AddSpaceRefusedError, TrashConfirmationError
 from shelfhold.library.tombstones import TombstoneRoot, VariantRef
 from shelfhold.library.tombstones.lift import lift_phrase
@@ -22,6 +26,26 @@ from tests.l41_env import instance
 from tests.purge_env import ADMIN, KEY
 
 pytestmark = pytest.mark.req("EF-BIB-030", "EF-BIB-054")
+
+
+def known_entry(inst: Any, name: str, age_days: int) -> Path:
+    """A bin entry the index knows (a deletion wrote its row and its term), as a real one is."""
+    entry = make_bin_entry(inst.library, name, age_days)
+    now = datetime.now(UTC)
+    with inst.engine.begin() as connection:
+        connection.execute(
+            sa.insert(storage.trash_item).values(
+                id=new_ulid(),
+                kind="work",
+                ref=new_ulid(),
+                path=f"{name}/chapter.cbz",
+                deleted_at=now - timedelta(days=age_days),
+                purge_after=now + timedelta(days=30 - age_days),
+                snapshot={"place": "library"},
+                level="delete_content",
+            )
+        )
+    return entry
 
 
 def _bins(library: Path) -> list[str]:
@@ -44,9 +68,9 @@ def test_the_early_purge_job_takes_the_old_entries_under_pressure_and_only_those
     with instance(settings, tmp_path) as inst:
         inst.configure()
         inst.comp.gates = Gates(disk_pressure=lambda _root: True)
-        make_bin_entry(inst.library, "a" * 32, 40)
-        make_bin_entry(inst.library, "b" * 32, 10)
-        make_bin_entry(inst.library, "c" * 32, 3)  # under the minimum age: never
+        known_entry(inst, "a" * 32, 40)
+        known_entry(inst, "b" * 32, 10)
+        known_entry(inst, "c" * 32, 3)  # under the minimum age: never
 
         report = early_purge_trash(inst.comp)
 
@@ -69,7 +93,7 @@ def test_the_early_purge_job_ends_with_the_pressure(settings: Settings, tmp_path
 
         inst.comp.gates = Gates(disk_pressure=pressure)
         for name in ("a", "b", "c", "d", "e", "f"):
-            make_bin_entry(inst.library, name * 32, 30)
+            known_entry(inst, name * 32, 30)
 
         early_purge_trash(inst.comp)
 
@@ -79,8 +103,8 @@ def test_the_early_purge_job_ends_with_the_pressure(settings: Settings, tmp_path
 def test_trash_empty_over_a_real_composition(settings: Settings, tmp_path: Path) -> None:
     with instance(settings, tmp_path) as inst:
         inst.configure()
-        make_bin_entry(inst.library, "a" * 32, 1)
-        make_bin_entry(inst.library, "b" * 32, 40)
+        known_entry(inst, "a" * 32, 1)
+        known_entry(inst, "b" * 32, 40)
 
         with pytest.raises(TrashConfirmationError):
             reclaim.trash_empty(inst.comp, typed="nope", principal=ADMIN)
@@ -136,7 +160,7 @@ def test_the_early_purge_never_follows_a_link_out_of_the_bin(
         keep = tmp_path / "elsewhere"
         keep.mkdir()
         (keep / "mine.txt").write_text("mine")
-        entry = make_bin_entry(inst.library, "a" * 32, 40)
+        entry = known_entry(inst, "a" * 32, 40)
         (entry / "link").symlink_to(keep)
         old = time.time() - 40 * 86400
         os.utime(entry, (old, old))
@@ -144,3 +168,22 @@ def test_the_early_purge_never_follows_a_link_out_of_the_bin(
         early_purge_trash(inst.comp)
 
         assert (keep / "mine.txt").read_text() == "mine" and _bins(inst.library) == []
+
+
+def test_an_entry_the_index_does_not_know_is_kept_by_the_emptying_and_the_early_purge(
+    settings: Settings, tmp_path: Path
+) -> None:
+    """A database restored from before the deletion (or an old version of an upgrade) leaves a bin
+    entry with no row: nothing says it is a copy, so neither the manual emptying nor the early
+    purge takes it, whatever its age. It is counted, and said (the 30-day sweep decides)."""
+    with instance(settings, tmp_path) as inst:
+        inst.configure()
+        inst.comp.gates = Gates(disk_pressure=lambda _root: True)
+        stray = make_bin_entry(inst.library, "a" * 32, 40)  # no trash_item row
+        known = known_entry(inst, "b" * 32, 40)
+
+        early = early_purge_trash(inst.comp)
+        assert early.removed == 1 and stray.exists() and not known.exists()
+
+        done = reclaim.trash_empty(inst.comp, typed="empty-trash", principal=ADMIN)
+        assert done["removed"] == 0 and done["held_other"] == 1 and stray.exists()

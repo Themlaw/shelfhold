@@ -76,7 +76,6 @@ from shelfhold.infrastructure.secrets.tombstone_aead import (
 from shelfhold.library.tombstones.chain import EMPTY, ChainState, judge, tag_of, tip_of
 from shelfhold.library.tombstones.cited import default_normalizers
 from shelfhold.library.tombstones.index import (
-    LIFT_MARK,
     NORMALIZED_FIELDS,
     HashWith,
     MembershipIndex,
@@ -94,12 +93,17 @@ from shelfhold.library.tombstones.journal import (
 )
 from shelfhold.library.tombstones.scopes import EmptyRefError, alias_family, fold_ref
 from shelfhold.library.tombstones.lift import (
+    EVENT_KEY,
     LIFT_REASON,
     LiftConfirmationError,
     LiftRefusedError,
     TombstoneRow,
     UnknownTombstoneError,
+    event_of,
+    lift_cited,
     lift_phrase,
+    new_event_id,
+    still_blocking,
 )
 from shelfhold.library.tombstones.state import TombstoneState
 from shelfhold.library.tombstones.values import (
@@ -265,22 +269,12 @@ class LostKeyringRefusedError(PermissionError):
 
 
 def _identity(values: TombstoneValues, cited: Mapping[str, str]) -> tuple[object, ...]:
+    """What makes two lines the same line. An event is itself (its identifier): two purges of the
+    same content are two events. A line from before the identifiers is its values and versions."""
+    event = event_of(cited)
+    if event is not None:
+        return ("event", event)
     return (values, tuple(sorted(cited.items())))
-
-
-def _not_lifted(
-    entries: Sequence[tuple[TombstoneValues, dict[str, str]]],
-) -> list[tuple[TombstoneValues, dict[str, str]]]:
-    """What still blocks: the entries in order, a lift taking out the earlier entries of the same
-    values and cited versions (a purge laid after the lift is back in)."""
-    active: list[tuple[TombstoneValues, dict[str, str]]] = []
-    for values, cited in entries:
-        if LIFT_MARK in cited:
-            base = {k: v for k, v in cited.items() if k != LIFT_MARK}
-            active = [item for item in active if item != (values, base)]
-        else:
-            active.append((values, cited))
-    return active
 
 
 class TombstoneService:
@@ -397,7 +391,8 @@ class TombstoneService:
         *,
         reason: str | None = None,
     ) -> Recorded:
-        return self._record(values, roots, reason=reason, cited=self.cited_now(values))
+        cited = {**self.cited_now(values), EVENT_KEY: new_event_id()}
+        return self._record(values, roots, reason=reason, cited=cited)
 
     def _record(
         self,
@@ -414,7 +409,7 @@ class TombstoneService:
         `within` runs in the transaction that writes the row (the audit of a lift)."""
         if reason is not None and reason not in REASONS:
             raise ValueError(f"reason is one of {sorted(REASONS)}")
-        stored = {**cited, LIFT_MARK: "1"} if lifting else dict(cited)
+        stored = lift_cited(cited) if lifting else dict(cited)
         plaintext = encode_plaintext(values, stored)
         kid = self._keyring.active.kid
         with self._engine.begin() as connection:
@@ -449,7 +444,7 @@ class TombstoneService:
     def _active(self, connection: Connection) -> dict[int, tuple[TombstoneValues, dict[str, str]]]:
         """The tombstones of the table that are not lifted: `seq -> (values, cited)`, read in
         order, a lift taking out what it names (a purge laid after it counts again)."""
-        active: dict[int, tuple[TombstoneValues, dict[str, str]]] = {}
+        found: list[tuple[int, TombstoneValues, dict[str, str]]] = []
         rows = connection.execute(
             sa.select(_tomb.c.scope, _tomb.c.seq, _tomb.c.kid, _tomb.c.nonce, _tomb.c.ct).order_by(
                 _tomb.c.seq
@@ -462,11 +457,11 @@ class TombstoneService:
                 values, cited = self._open(scope, kid, bytes(nonce), bytes(ct), DB_ROOT, seq)
             except (EnvelopeError, TombstoneValueError):
                 continue
-            if LIFT_MARK in cited:
-                base = {k: v for k, v in cited.items() if k != LIFT_MARK}
-                for other in [n for n, item in active.items() if item == (values, base)]:
-                    del active[other]
-            else:
+            found.append((seq, values, cited))
+        blocking = {(id(v), id(c)) for v, c in still_blocking([(v, c) for _s, v, c in found])}
+        active: dict[int, tuple[TombstoneValues, dict[str, str]]] = {}
+        for seq, values, cited in found:
+            if (id(values), id(cited)) in blocking:
                 active[seq] = (values, cited)
         return active
 
@@ -810,7 +805,7 @@ class TombstoneService:
             published = self._announce(connection, report)
         self._bus.deliver(published)
         index = MembershipIndex(self._normalizers)
-        index.add_all(_not_lifted(entries))
+        index.add_all(still_blocking(entries))
         self._index, self._report = index, report
         return report
 

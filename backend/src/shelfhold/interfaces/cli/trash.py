@@ -1,4 +1,4 @@
-"""``shelfhold trash empty --confirm empty-trash``: « Vider la corbeille maintenant » (EF-BIB-030,
+"""``shelfhold trash empty --confirm empty-trash``: « Vider la corbeille » (EF-BIB-030,
 EF-INT-014). A reserved action: the host CLI only (never an API key). Every bin of the library
 roots goes at once, whatever its age, except what a hold keeps (an irreplaceable Unit, an open
 intent, a retained backup, an adopted original with no verified copy), which is counted and said.

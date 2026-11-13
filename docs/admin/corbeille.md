@@ -52,6 +52,10 @@ Quand la taille est inconnue, l'ajout est compté pour un octet : il passe tant 
 place au-dessus de la réserve, et il est refusé quand le volume est déjà à la réserve. La tâche
 d'import programmée attend alors que la place revienne (`space_insufficient`), elle n'échoue pas.
 
+Une entrée de corbeille que la base ne connaît pas (base restaurée d'avant la suppression) n'est
+ni vidée ni purgée par anticipation : elle est comptée parmi les entrées gardées, et le balayage
+à 30 jours la retire. La purge anticipée ne touche qu'aux entrées de plus de 7 jours.
+
 ## Lever une pierre tombale
 
 Pour choisir le numéro :

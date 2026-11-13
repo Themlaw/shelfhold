@@ -944,11 +944,11 @@ class LibraryOps:
             "out_of_reach": list(report.out_of_reach),
         }
 
-    # -- « Récupérer de l'espace » and the lift (M3 L26) -----------------------------------------
+    # -- « Récupérer de la place » and the lift (M3 L26) -----------------------------------------
 
     @_refused
     def trash_empty(self, *, typed: str | None, principal: Principal) -> dict[str, Any]:
-        """« Vider la corbeille maintenant » (reserved): the bins of every writable root, minus
+        """« Vider la corbeille » (reserved): the bins of every writable root, minus
         what the holds keep; the same method for the route and the host command."""
         return reclaim.trash_empty(self._comp, typed=typed, principal=principal)
 

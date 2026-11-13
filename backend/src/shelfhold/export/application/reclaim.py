@@ -1,4 +1,4 @@
-"""« Récupérer de l'espace » (EF-BIB-030): the trash emptied now, and the trash purged early when
+"""« Récupérer de la place » (EF-BIB-030): the trash emptied now, and the trash purged early when
 the disk is under its mark. The bins are `<root>/.shelfhold/recycle/<entry>`; nothing else is ever
 removed here.
 
@@ -28,7 +28,7 @@ from datetime import datetime
 import sqlalchemy as sa
 import structlog
 
-from shelfhold.export.application.intents import IntentJournal
+from shelfhold.export.application.intents import BIN_LOCK, IntentJournal
 from shelfhold.export.application.recycle_sweep import BackupsSince, RecycleSweeper
 from shelfhold.export.domain.physical_roots import RECYCLE_DIR
 from shelfhold.identity.public import RESERVED_ACTIONS, Allowed, Principal, authorize_reserved
@@ -143,7 +143,7 @@ class BinReclaimer:
                 )
             )  # fmt: skip
 
-    # -- « Vider la corbeille maintenant » ---------------------------------------------------
+    # -- « Vider la corbeille » ---------------------------------------------------
 
     def empty_trash(self, *, principal: Principal, typed: str | None) -> ReclaimReport:
         verdict = authorize_reserved(
@@ -161,12 +161,25 @@ class BinReclaimer:
                     if kind != "dir":  # a link or a stray file is not an entry: left alone
                         counts["kept"] += 1
                         continue
-                    if self._held(counts, self._holds.holds(name, entry)):
-                        continue
-                    self._empty_trash_entry(name, entry, counts)
+                    with (
+                        BIN_LOCK
+                    ):  # a restore of this entry is not between the check and the removal
+                        if self._held(counts, self._holds.holds(name, entry)):
+                            continue
+                        if self._intent_opened_since(counts, name, entry):
+                            continue
+                        self._empty_trash_entry(name, entry, counts)
         self._audit("trash.emptied", counts["removed"], principal)
         log.info("trash.emptied", removed=counts["removed"], kept=counts["kept"])
         return _report(counts)
+
+    def _intent_opened_since(self, counts: dict[str, int], name: str, entry: str) -> bool:
+        """The last look, right before the removal: an intent that was opened after the holds were
+        asked (a restore that committed in between) keeps the entry."""
+        if not self._holds.intent_open(name, entry):
+            return False
+        counts["kept"] += 1
+        return True
 
     def _empty_trash_entry(self, name: str, entry: str, counts: dict[str, int]) -> None:
         intent = self._journal.record(op="delete", src=entry)
@@ -210,9 +223,13 @@ class BinReclaimer:
                 if not self._fsops.early_purge_allowed(entry):
                     counts["kept"] += 1  # younger than the minimum, or its volume is fine
                     continue
-                if self._held(counts, self._holds.holds(candidate.name, entry)):
-                    continue
-                if self._remove_under_pressure(candidate.name, entry, counts) and after_each:
+                with BIN_LOCK:
+                    if self._held(counts, self._holds.holds(candidate.name, entry)):
+                        continue
+                    if self._intent_opened_since(counts, candidate.name, entry):
+                        continue
+                    removed = self._remove_under_pressure(candidate.name, entry, counts)
+                if removed and after_each:
                     after_each()
         if counts["removed"] or counts["irreplaceable"]:
             self._audit("trash.early_purged", counts["removed"], None)
