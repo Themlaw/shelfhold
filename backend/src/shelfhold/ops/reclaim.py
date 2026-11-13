@@ -1,4 +1,4 @@
-"""The operating side of « Récupérer de l'espace » and of the lift (M3 L26): what the three doors
+"""The operating side of « Récupérer de la place » and of the lift (M3 L26): what the three doors
 (the HTTP route, the socket method of the host CLI) hand to the services, in one place.
 
 Nothing here decides: the reserved-action rule, the typed word, the holds and the perimeters are
@@ -8,8 +8,11 @@ in `BinReclaimer`, `TombstoneService.lift` and fsops; this module builds them ov
 from __future__ import annotations
 
 from datetime import datetime
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from shelfhold.acquisition.domain.backfill import DEFAULT_UNIT_BYTES
+from shelfhold.composition_errors import NoLibraryError
 from shelfhold.export.application.intents import IntentJournal
 from shelfhold.export.application.reclaim import BinReclaimer
 from shelfhold.export.application.recycle_sweep import BackupsSince
@@ -18,7 +21,12 @@ from shelfhold.export.domain.physical_roots import RootState
 from shelfhold.identity.public import Principal
 from shelfhold.infrastructure.observability.disk_guard import disk_usage
 from shelfhold.infrastructure.observability.wiring import thresholds_of
-from shelfhold.library.public import AddSpaceRefusedError, check_add_fits, reserve_for
+from shelfhold.library.public import (
+    AddSpaceRefusedError,
+    check_add_fits,
+    median_unit_bytes,
+    reserve_for,
+)
 from shelfhold.library.tombstones import TombstoneRoot
 from shelfhold.ops.backup.report import retained_since
 from shelfhold.ops.errors import CodedRefusal
@@ -28,6 +36,7 @@ if TYPE_CHECKING:
 
 __all__ = [
     "backups_of",
+    "estimate_units",
     "lift_tombstone",
     "list_tombstones",
     "require_space",
@@ -106,6 +115,20 @@ def list_tombstones(comp: Composition) -> dict[str, Any]:
     }
 
 
+def _volumes(comp: Composition) -> list[Path]:
+    """Every volume an addition may write to: `/store`, `/data` and the library roots it files
+    into (often another disk: the one the disk guard watches as `library`)."""
+    settings = comp.settings
+    folders = [settings.store_dir, settings.data_dir]
+    try:
+        loaded = comp.load_roots()
+    except (OSError, NoLibraryError):
+        loaded = None  # no library yet: the addition has no root to write to
+    if loaded is not None:
+        folders += [Path(root.path) for root in loaded.expected]
+    return folders
+
+
 def space_check(comp: Composition, *, estimated_bytes: int) -> dict[str, Any]:
     """The « Ajouter » sheet: does the estimated size fit in the tightest volume an addition
     writes to (`/store` and `/data`), less the reserve of the disk guard? Refused, with the
@@ -113,7 +136,7 @@ def space_check(comp: Composition, *, estimated_bytes: int) -> dict[str, Any]:
     settings = comp.settings
     marks = thresholds_of(settings)
     tightest: tuple[int, int, int] | None = None  # (usable, free, reserve) of the tightest volume
-    for folder in (settings.store_dir, settings.data_dir):
+    for folder in _volumes(comp):
         try:
             usage = disk_usage(folder)
         except OSError:
@@ -124,6 +147,19 @@ def space_check(comp: Composition, *, estimated_bytes: int) -> dict[str, Any]:
     free, reserve = (tightest[1], tightest[2]) if tightest else (0, 0)  # unknown: refused
     checked = check_add_fits(estimated_bytes, free_bytes=free, reserve_bytes=reserve)
     return {"fits": True, **checked.as_dict()}
+
+
+def estimate_units(comp: Composition, units: int | None, edition_id: str | None = None) -> int:
+    """What `units` chapters are expected to weigh: the median of what the series already holds,
+    else `DEFAULT_UNIT_BYTES` (30 MiB, a chapter archive; the same figure as `backfill`). Zero
+    when the count is not known (the gate then counts one byte)."""
+    if not units:
+        return 0
+    each = DEFAULT_UNIT_BYTES
+    if edition_id is not None:
+        with comp.engine.connect() as connection:
+            each = median_unit_bytes(connection, edition_id) or DEFAULT_UNIT_BYTES
+    return units * each
 
 
 def require_space(comp: Composition, estimated_bytes: int = 0) -> None:

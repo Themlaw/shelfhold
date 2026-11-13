@@ -39,7 +39,7 @@ import sqlalchemy as sa
 import structlog
 from sqlalchemy import Connection, Engine
 
-from shelfhold.export.application.intents import IntentJournal, open_intent_paths
+from shelfhold.export.application.intents import BIN_LOCK, IntentJournal, open_intent_paths
 from shelfhold.export.application.locks import ResourceLocks, path_resource, work_resource
 from shelfhold.export.application.plans import StalePlanError
 from shelfhold.export.application.snapshot import DestinationContext, load_context
@@ -755,9 +755,12 @@ class DeletionService:
             raise DeletionUnknownError(f"unknown Unit: {unit_id}")
         if not found:
             raise RestoreBlockedError("nothing_to_restore")
-        with self._locks.hold_resources(
-            new_ulid(), [work_resource(str(work))], timeout=self._lock_wait
-        ):
+        with (
+            self._locks.hold_resources(
+                new_ulid(), [work_resource(str(work))], timeout=self._lock_wait
+            ),
+            BIN_LOCK,
+        ):  # no emptying of the bin between the check of the files and the moves
             return self._restore_locked(unit_id, found, principal, now, partial)
 
     def _restore_locked(

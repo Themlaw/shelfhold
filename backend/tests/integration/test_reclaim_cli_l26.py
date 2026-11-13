@@ -4,12 +4,15 @@ purge, real tombstone service, real roots): `trash empty --confirm`, `tombstone 
 of what was erased (EF-BIB-054)."""
 
 import json
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
 import sqlalchemy as sa
 
 from shelfhold.config import Settings
+from shelfhold.infrastructure.ids import new_ulid
+from shelfhold.infrastructure.schema import storage
 from tests.auth_env import run_cli
 from tests.l50_env import Seeded, seeded
 
@@ -25,6 +28,24 @@ def _purge(monkeypatch: pytest.MonkeyPatch, env: Seeded, title: str) -> str:
     return unit
 
 
+def known_row(env: Seeded, name: str) -> None:
+    """The index knows this entry (a deletion wrote its row): an entry it does not know is kept."""
+    now = datetime.now(UTC)
+    with env.inst.engine.begin() as connection:
+        connection.execute(
+            sa.insert(storage.trash_item).values(
+                id=new_ulid(),
+                kind="work",
+                ref=new_ulid(),
+                path=f"{name}/x/page.png",
+                deleted_at=now,
+                purge_after=now + timedelta(days=30),
+                snapshot={"place": "library"},
+                level="delete_content",
+            )
+        )
+
+
 def test_trash_empty_from_the_cli_needs_its_word_and_empties_the_bins(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
@@ -36,6 +57,7 @@ def test_trash_empty_from_the_cli_needs_its_word_and_empties_the_bins(
         entry = bin_dir / ("a" * 32)
         (entry / "x").mkdir(parents=True)
         (entry / "x" / "page.png").write_bytes(b"png")
+        known_row(env, "a" * 32)
         capsys.readouterr()
 
         assert run_cli(monkeypatch, settings, "trash", "empty") == 2  # no word: nothing sent

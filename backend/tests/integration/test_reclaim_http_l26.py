@@ -127,7 +127,7 @@ def test_the_new_routes_are_found_behind_their_reserved_action(api: AuthEnv) -> 
 
 
 def test_purge_now_ui_requires_typed_confirmation(api: AuthEnv, effects: list[str]) -> None:
-    """« Effacer maintenant » by HTTP: a reserved action, a typed word in the body (without it,
+    """« Effacer » by HTTP: a reserved action, a typed word in the body (without it,
     nothing reaches the service), the same service method as `purge --now`."""
     api.login()
     assert api.post(PURGE, json={}).status_code == 422

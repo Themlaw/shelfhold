@@ -57,6 +57,7 @@ class _Ports:
         self._comp = comp
         self._shelves = ShelfService(comp.engine, clock=comp.clock)
         self._rating = RatingService(fresh_auth_s=comp.settings.fresh_auth_s)
+        self._counted: dict[tuple[str, str], int] = {}  # what `estimate` just asked the source
 
     def kind_of(self, source_key: str) -> str:
         if source_key.partition(":")[0] == CONNECTED:
@@ -70,13 +71,19 @@ class _Ports:
         return "novel"
 
     def estimate(self, source_key: str, remote_id: str) -> Estimate:
-        return Estimate(AcquireOps(self._comp).unit_count(source_key, remote_id), None)
+        units = AcquireOps(self._comp).unit_count(source_key, remote_id)
+        self._counted[(source_key, remote_id)] = units  # the space gate of the approval reuses it
+        return Estimate(units, None)
 
     def follow(
         self, source_key: str, remote_id: str, *, requester_user_id: str | None, visibility: str
     ) -> None:
         FollowOps(self._comp).follow(
-            source_key, remote_id, requester_user_id=requester_user_id, visibility=visibility
+            source_key,
+            remote_id,
+            requester_user_id=requester_user_id,
+            visibility=visibility,
+            units=self._counted.get((source_key, remote_id)),
         )
 
     def prepare(
@@ -85,6 +92,7 @@ class _Ports:
         prepared = AcquireOps(self._comp).prepare(
             url=None, source_key=source_key, remote_id=remote_id, unit=None,
             requester_user_id=requester_user_id, visibility=visibility,
+            units=self._counted.get((source_key, remote_id)),
         )  # fmt: skip
         return PreparedAcquisition(prepared.work_id, prepared.edition_id, prepared.request_id)
 

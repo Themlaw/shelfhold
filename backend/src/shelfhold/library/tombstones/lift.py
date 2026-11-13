@@ -16,23 +16,81 @@ The lift moves the `?since=` floor like the purges do (`invalidate_tokens`): a c
 token from before resynchronises.
 """
 
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Final
 
+from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.library.tombstones.index import LIFT_MARK
 
 __all__ = [
+    "EVENT_KEY",
+    "LEGACY_TARGET",
     "LIFT_MARK",
     "LIFT_REASON",
     "LiftConfirmationError",
     "LiftRefusedError",
     "TombstoneRow",
     "UnknownTombstoneError",
+    "lift_cited",
     "lift_phrase",
+    "new_event_id",
+    "still_blocking",
+    "versions_of",
 ]
 
 LIFT_REASON: Final = "lifted"
+
+# Every event (a purge, a lift) carries its own identifier in the sealed `cited` of its line: unique
+# and ordered (a ULID), written in the table and in every journal. A replay merges by it, never by
+# the values: two purges of the same content are two events, and a lift names the one it lifts.
+EVENT_KEY: Final = "ev"
+LEGACY_TARGET: Final = "1"  # a lift of a tombstone laid before events had an identifier
+
+
+def new_event_id() -> str:
+    return new_ulid()
+
+
+def event_of(cited: Mapping[str, str]) -> str | None:
+    return cited.get(EVENT_KEY)
+
+
+def versions_of(cited: Mapping[str, str]) -> dict[str, str]:
+    """The cited normalizer versions alone (what the index keys on), without the event marks."""
+    return {k: v for k, v in cited.items() if k not in (EVENT_KEY, LIFT_MARK)}
+
+
+def lift_cited(target: Mapping[str, str]) -> dict[str, str]:
+    """The `cited` of the line that lifts `target`: its versions, a new event, and its target."""
+    return {
+        **versions_of(target), EVENT_KEY: new_event_id(),
+        LIFT_MARK: event_of(target) or LEGACY_TARGET,
+    }  # fmt: skip
+
+
+def still_blocking[V](
+    entries: Sequence[tuple[V, dict[str, str]]],
+) -> list[tuple[V, dict[str, str]]]:
+    """What still blocks. Events with an identifier are read in the order of their identifiers and
+    a lift takes out exactly the purge it names, whatever the order the lines were met in; a purge
+    laid after the lift stays. Lines from before the identifiers keep their old rule: a lift takes
+    out the earlier ones of the same values and versions."""
+    legacy = [e for e in entries if event_of(e[1]) is None]
+    events = sorted(
+        (e for e in entries if event_of(e[1]) is not None), key=lambda e: e[1][EVENT_KEY]
+    )
+    lifted = {e[1][LIFT_MARK] for e in events if LIFT_MARK in e[1]}
+    active: list[tuple[V, dict[str, str]]] = []
+    for values, cited in legacy:
+        if LIFT_MARK in cited:
+            base = versions_of(cited)
+            active = [a for a in active if (a[0], versions_of(a[1])) != (values, base)]
+        else:
+            active.append((values, cited))
+    active += [e for e in events if LIFT_MARK not in e[1] and e[1][EVENT_KEY] not in lifted]
+    return active
 
 
 def lift_phrase(seq: int) -> str:

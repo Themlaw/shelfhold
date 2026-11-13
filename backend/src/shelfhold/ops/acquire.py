@@ -41,7 +41,7 @@ from shelfhold.identity.public import family_profile, family_search_mode, family
 from shelfhold.infrastructure.fetcher import FetchError
 from shelfhold.infrastructure.schema import acquisition, catalog
 from shelfhold.ops.errors import CodedRefusal, ExitUnavailableError
-from shelfhold.ops.reclaim import require_space
+from shelfhold.ops.reclaim import estimate_units, require_space
 from shelfhold.ops.tombstone_screens import CatalogScreens
 from shelfhold.plugin_host.errors import NoSourceForUrl, RefHasSecret
 from shelfhold.plugin_host.settings import SourceSettings
@@ -279,12 +279,15 @@ class AcquireOps:
         unit: str | None,
         requester_user_id: str | None,
         visibility: str = "ops",
+        units: int | None = None,
     ) -> Any:
         """Record what an acquisition names (the Work, its Edition, the request for the file)
         without queueing the download: nothing is fetched until `enqueue`."""
         if (url is None) == (source_key is None or remote_id is None):
             raise CodedRefusal("validation_failed", "give a URL, or a source and a series")
-        require_space(self._comp)  # before the first write, whichever door it came by
+        # before the first write, whichever door it came by; the count of chapters, when the door
+        # knows it (an approval), gives the estimate
+        require_space(self._comp, estimate_units(self._comp, units))
         if self._comp.pools() is None:
             raise ExitUnavailableError("the job queue is not running")
         acquirer = self.acquirer()

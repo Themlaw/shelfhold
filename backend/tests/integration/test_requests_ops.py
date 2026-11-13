@@ -100,7 +100,7 @@ def test_ports_delegate_to_follow_acquire_and_the_unit_count(
         assert (prepared.work_id, prepared.edition_id, prepared.handle) == ("W", "E", "R")
         ports.start(prepared.handle)
     assert [c[0] for c in calls] == ["count", "follow", "prepare", "enqueue"]
-    assert calls[1][2] == {"requester_user_id": MEMBER_ID, "visibility": "private"}
+    assert calls[1][2] == {"requester_user_id": MEMBER_ID, "visibility": "private", "units": 7}
     assert calls[2][2]["url"] is None and calls[2][2]["visibility"] == "private"
     assert calls[3][1] == ("R",)
 

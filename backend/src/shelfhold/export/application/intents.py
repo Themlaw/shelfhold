@@ -18,6 +18,7 @@ Paths under an open intent are invisible to reconciliation and planning (I9, `sk
 import contextlib
 import hashlib
 import re
+import threading
 from collections.abc import Callable, Iterable
 from contextlib import AbstractContextManager, nullcontext
 from dataclasses import dataclass, field
@@ -42,6 +43,7 @@ OPEN_STATES = ("pending", "applying")
 STORE_INDEX = "INDEX.jsonl"  # `library.adapters.store_index.INDEX_NAME` (no import: a cycle)
 
 __all__ = [
+    "BIN_LOCK",
     "INTENT_SCHEMA_VERSION",
     "IntentJournal",
     "MoveDirStep",
@@ -54,6 +56,13 @@ __all__ = [
     "open_intent_paths",
     "within_any",
 ]
+
+
+# A restore of a Unit and the removal of a bin entry (the manual emptying, the early purge) meet in
+# the same entries: one at a time, in this process (the instance lock keeps the others out). The
+# restore holds it from the check of its files to the end of its moves; a removal holds it from
+# the last reading of the intents to the end of the removal.
+BIN_LOCK = threading.RLock()
 
 
 class DiskPort(Protocol):

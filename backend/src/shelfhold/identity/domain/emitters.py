@@ -181,7 +181,7 @@ _OTHER: Mapping[str, str] = MappingProxyType(
         # The recycle bins past 30 days (ENF-OPS-009): the daily sweep, under an intention; fsops
         # reads the age of the entry from the file system and refuses a younger one.
         f"{_EXPORT_APP}/recycle_sweep.py::RecycleSweeper.sweep": "trash_retention_purge",
-        # « Vider la corbeille maintenant » (M3 L26, EF-BIB-030): a reserved action (a fresh
+        # « Vider la corbeille » (M3 L26, EF-BIB-030): a reserved action (a fresh
         # session or the host CLI, a typed word); it removes entries of the bins, nothing else
         f"{_EXPORT_APP}/reclaim.py::BinReclaimer.empty_trash": "trash.empty",
         f"{_EXPORT_APP}/reclaim.py::BinReclaimer._empty_trash_entry": "trash.empty",
