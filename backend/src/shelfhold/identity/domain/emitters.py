@@ -163,6 +163,9 @@ _OTHER: Mapping[str, str] = MappingProxyType(
         # Shelfhold wrote, after the scan, by the application of a deletion that passed the
         # reserved action (`unit.delete`); `rmdir` itself refuses a folder that holds anything.
         f"{_EXPORT_APP}/deletion.py::DeletionService.remove_empty_folders": "unit.delete",
+        # A rename plan (L29, EF-EXP-030) removes the managed folder a batch emptied, after the
+        # reserved action `plan.apply_rename`; `rmdir` refuses a folder that holds anything.
+        f"{_EXPORT_APP}/rename_plan.py::RenameBook._remove_emptied": "plan.apply_rename",
         # The recycle bins past 30 days (ENF-OPS-009): the daily sweep, under an intention; fsops
         # reads the age of the entry from the file system and refuses a younger one.
         f"{_EXPORT_APP}/recycle_sweep.py::RecycleSweeper.sweep": "trash_retention_purge",

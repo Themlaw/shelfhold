@@ -13,6 +13,7 @@ import os
 from collections.abc import Callable, Iterable
 from contextlib import AbstractContextManager, nullcontext
 from dataclasses import dataclass
+from typing import Any
 
 import sqlalchemy as sa
 from sqlalchemy import Engine
@@ -34,7 +35,8 @@ class PlanOp:
     op: str
     src: str | None = None
     dst: str | None = None
-    payload: dict[str, object] | None = None
+    payload: dict[str, Any] | None = None
+    batch: int = 1  # a rename plan has one batch per series folder (EF-EXP-030)
 
 
 @dataclass(frozen=True)
@@ -99,7 +101,7 @@ class PlanStore:
                 {
                     "id": new_ulid(),
                     "plan_id": record.plan_id,
-                    "batch": 1,
+                    "batch": op.batch,
                     "position": position,
                     "op": op.op,
                     "src_path": op.src,
@@ -165,7 +167,7 @@ class PlanStore:
             if self._step_version() != baseline:
                 self._set_plan(plan_id, "stale", only_from="applying")
                 raise StalePlanError("the data changed while the plan was being applied")
-            op = PlanOp(row.op, row.src_path, row.dst_path, row.payload)
+            op = PlanOp(row.op, row.src_path, row.dst_path, row.payload, row.batch)
             try:
                 run(op)
             except BaseException:
@@ -174,6 +176,43 @@ class PlanStore:
                 raise
             self._set_op(row.id, "done")
         self._set_plan(plan_id, "done", only_from="applying")
+
+    def resume(
+        self,
+        plan_id: str,
+        *,
+        run: Callable[[PlanOp], None],
+        lock: AbstractContextManager[object] | None = None,
+    ) -> None:
+        """Go on with a plan a stop left `applying`: the operations that are not `done` run, in
+        order, and the plan closes. Whatever the stop left open in the intent journal has been
+        settled by the caller first; `run` must be idempotent (it looks at what is done)."""
+        with lock if lock is not None else nullcontext():
+            plan_table, op_table = coherence.export_plan, coherence.export_op
+            with self._engine.connect() as conn:
+                status = conn.execute(
+                    sa.select(plan_table.c.status).where(plan_table.c.plan_id == plan_id)
+                ).scalar_one()
+                rows = conn.execute(
+                    sa.select(op_table)
+                    .where(op_table.c.plan_id == plan_id, op_table.c.status != "done")
+                    .order_by(op_table.c.batch, op_table.c.position)
+                ).all()
+            if status != "applying":
+                raise StalePlanError("the plan is not being applied")
+            baseline = self._step_version()
+            for row in rows:
+                if self._step_version() != baseline:
+                    self._set_plan(plan_id, "stale", only_from="applying")
+                    raise StalePlanError("the data changed while the plan was being applied")
+                try:
+                    run(PlanOp(row.op, row.src_path, row.dst_path, row.payload, row.batch))
+                except BaseException:
+                    self._set_op(row.id, "failed")
+                    self._set_plan(plan_id, "failed", only_from="applying")
+                    raise
+                self._set_op(row.id, "done")
+            self._set_plan(plan_id, "done", only_from="applying")
 
     def _set_plan(self, plan_id: str, status: str, *, only_from: str) -> None:
         table = coherence.export_plan

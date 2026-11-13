@@ -364,29 +364,6 @@
         "title": "AppliedOut",
         "type": "object"
       },
-      "ApplyIn": {
-        "additionalProperties": false,
-        "properties": {
-          "confirm": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Confirm"
-          },
-          "include_read": {
-            "default": false,
-            "title": "Include Read",
-            "type": "boolean"
-          }
-        },
-        "title": "ApplyIn",
-        "type": "object"
-      },
       "ApprovalOut": {
         "properties": {
           "confirmation_required": {
@@ -2453,6 +2430,29 @@
           "items"
         ],
         "title": "IntentsOut",
+        "type": "object"
+      },
+      "ItemMoveIn": {
+        "additionalProperties": false,
+        "properties": {
+          "export_item_id": {
+            "maxLength": 26,
+            "minLength": 26,
+            "title": "Export Item Id",
+            "type": "string"
+          },
+          "new_rel_path": {
+            "maxLength": 2048,
+            "minLength": 1,
+            "title": "New Rel Path",
+            "type": "string"
+          }
+        },
+        "required": [
+          "export_item_id",
+          "new_rel_path"
+        ],
+        "title": "ItemMoveIn",
         "type": "object"
       },
       "JobAccepted": {
@@ -4749,6 +4749,137 @@
           "reason"
         ],
         "title": "RejectIn",
+        "type": "object"
+      },
+      "RenamePlanIn": {
+        "additionalProperties": false,
+        "description": "Either a template (the fields given are the candidate's, the rest the default's) or a list\nof moves (reshelving, binding migration): one of the two, never both, never neither.",
+        "properties": {
+          "moves": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/ItemMoveIn"
+                },
+                "maxItems": 5000,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Moves"
+          },
+          "shelf_destination_id": {
+            "title": "Shelf Destination Id",
+            "type": "string"
+          },
+          "template": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/NamingTemplateIn"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "shelf_destination_id"
+        ],
+        "title": "RenamePlanIn",
+        "type": "object"
+      },
+      "RenamePlanOut": {
+        "properties": {
+          "base_version": {
+            "title": "Base Version",
+            "type": "string"
+          },
+          "batches": {
+            "title": "Batches",
+            "type": "integer"
+          },
+          "blocked": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Blocked",
+            "type": "array"
+          },
+          "plan_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Plan Id"
+          },
+          "steps": {
+            "items": {
+              "$ref": "#/components/schemas/RenameStepOut"
+            },
+            "title": "Steps",
+            "type": "array"
+          },
+          "warnings": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Warnings",
+            "type": "array"
+          }
+        },
+        "required": [
+          "plan_id",
+          "base_version",
+          "steps",
+          "batches",
+          "blocked",
+          "warnings"
+        ],
+        "title": "RenamePlanOut",
+        "type": "object"
+      },
+      "RenameStepOut": {
+        "properties": {
+          "dst": {
+            "title": "Dst",
+            "type": "string"
+          },
+          "export_item_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Export Item Id"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "src": {
+            "title": "Src",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "src",
+          "dst",
+          "export_item_id"
+        ],
+        "title": "RenameStepOut",
         "type": "object"
       },
       "RenumberIn": {
@@ -8685,6 +8816,19 @@
         "title": "SecretIn",
         "type": "object"
       },
+      "shelfhold__interfaces__http_api__plans__ApplyIn": {
+        "additionalProperties": false,
+        "description": "The confirmation that readers lose their progress (EF-EXP-037); nothing else.",
+        "properties": {
+          "confirm_progress_loss": {
+            "default": false,
+            "title": "Confirm Progress Loss",
+            "type": "boolean"
+          }
+        },
+        "title": "ApplyIn",
+        "type": "object"
+      },
       "shelfhold__interfaces__http_api__plugins__SecretIn": {
         "properties": {
           "value": {
@@ -8713,6 +8857,29 @@
           "items"
         ],
         "title": "QueueOut",
+        "type": "object"
+      },
+      "shelfhold__interfaces__http_api__revisions__ApplyIn": {
+        "additionalProperties": false,
+        "properties": {
+          "confirm": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Confirm"
+          },
+          "include_read": {
+            "default": false,
+            "title": "Include Read",
+            "type": "boolean"
+          }
+        },
+        "title": "ApplyIn",
         "type": "object"
       },
       "shelfhold__interfaces__http_api__search__SearchOut": {
@@ -14341,6 +14508,68 @@
         ]
       }
     },
+    "/api/v1/plans/renames": {
+      "post": {
+        "description": "The plan of renames a template change, a reshelving or a binding migration makes, with\n\"the Kavita progress of N readers will be lost\" when it applies (EF-EXP-030, EF-EXP-037).\nThe count is for the admin who asks: nobody else reaches this door.",
+        "operationId": "rename_preview",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RenamePlanIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RenamePlanOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Connexion requise, ou mot de passe à confirmer (reauth-required)."
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée)."
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Détail du problème (RFC 9457)."
+          }
+        },
+        "summary": "Rename Preview",
+        "tags": [
+          "plans"
+        ]
+      }
+    },
     "/api/v1/plans/{plan_id}/apply": {
       "post": {
         "operationId": "apply",
@@ -14355,6 +14584,23 @@
             }
           }
         ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/shelfhold__interfaces__http_api__plans__ApplyIn"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
         "responses": {
           "202": {
             "content": {
@@ -16234,7 +16480,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/ApplyIn"
+                "$ref": "#/components/schemas/shelfhold__interfaces__http_api__revisions__ApplyIn"
               }
             }
           },
@@ -20963,6 +21209,14 @@
     "/api/v1/problems/remember-needs-confirmation": {
       "code": "remember_needs_confirmation",
       "status": 422
+    },
+    "/api/v1/problems/rename.confirmation-required": {
+      "code": "rename.confirmation_required",
+      "status": 409
+    },
+    "/api/v1/problems/rename.refused": {
+      "code": "rename.refused",
+      "status": 409
     },
     "/api/v1/problems/repatriate.blocked": {
       "code": "repatriate.blocked",

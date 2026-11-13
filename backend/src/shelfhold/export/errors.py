@@ -63,4 +63,8 @@ CODES: tuple[ErrorCode, ...] = (
     ErrorCode("export.awaiting_series_age", 409, "admin"),
     ErrorCode("target.library_type_mismatch", 409, "admin"),
     ErrorCode("export.series_age_stale", 409, "admin"),
+    # M3 L29 (EF-EXP-030, EF-EXP-037): a rename plan that cannot be made or run, and one that
+    # makes readers of Kavita lose their progress and was not confirmed
+    ErrorCode("rename.refused", 409, "admin"),
+    ErrorCode("rename.confirmation_required", 409, "admin"),
 )

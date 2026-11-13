@@ -70,6 +70,8 @@ _DECLARED = (
     _action("work.merge", Effect.MIGRATES_IDENTITY, Effect.PARENTAL_CONTROL),
     _action("work.separate", Effect.MIGRATES_IDENTITY, Effect.PARENTAL_CONTROL),
     _action("series.reassign", Effect.MIGRATES_IDENTITY),
+    # a plan of renames (template change, reshelving, binding migration): M3 L29, EF-EXP-030
+    _action("plan.apply_rename", Effect.RENAMES_EXPORTED_FILES),
     # `coverage resplit propose|apply`: a re-cut chapter is covered by its old Unit (EF-BIB-044)
     _action("coverage.resplit", Effect.CHANGES_COVERAGE),
     # `contributor set-died-for-france --yes|--no|--unknown` (M2 L15b, EF-SRC-024)

@@ -14,7 +14,7 @@ from dataclasses import asdict, replace
 from typing import Any, Protocol
 
 from fastapi import APIRouter, Depends, Request, Response
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field, StrictBool
 
 from shelfhold.export.application.export_items import SeriesCollisionError
 from shelfhold.export.application.naming_preview import NamingPreview
@@ -24,12 +24,19 @@ from shelfhold.export.application.pipeline import (
     UnverifiedParseError,
 )
 from shelfhold.export.application.plans import StalePlanError
+from shelfhold.export.application.rename_plan import (
+    ItemMove,
+    RenameConfirmationRequiredError,
+    RenamePreview,
+    RenameRefusedError,
+)
 from shelfhold.export.application.restore import RestoredBehindError
 from shelfhold.export.application.target_state import DestinationPausedError
 from shelfhold.export.domain.naming import DEFAULT_TEMPLATE, NamingTemplate
+from shelfhold.identity.domain.catalogue import RESERVED_ACTIONS
 from shelfhold.identity.public import Credential, Principal
 from shelfhold.interfaces.http_api.accepted import JobAccepted, accepted_job
-from shelfhold.interfaces.http_api.auth import require_principal
+from shelfhold.interfaces.http_api.auth import require_principal, reserved_action
 from shelfhold.interfaces.http_api.preconditions import etag_for_version
 from shelfhold.interfaces.http_api.problems import ProblemError
 from shelfhold.ops import OpsError
@@ -42,7 +49,20 @@ class PlanPipeline(Protocol):
     def naming_preview(
         self, shelf_destination_id: str, template: NamingTemplate | None
     ) -> NamingPreview: ...
-    def queue_apply(self, plan_id: str, *, if_match: str) -> str:
+    def kind_of(self, plan_id: str) -> str:
+        """`export`, `rename_plan`...; `UnknownPlanError` for a plan that is not there."""
+        ...
+
+    def rename_preview(
+        self,
+        destination_id: str,
+        *,
+        template: NamingTemplate | None = None,
+        moves: tuple[ItemMove, ...] = (),
+    ) -> RenamePreview: ...
+    def queue_apply(
+        self, plan_id: str, *, if_match: str, confirm_progress_loss: bool = False
+    ) -> str:
         """Queue the application of a stored plan; returns the identifier of the job."""
         ...
 
@@ -112,6 +132,45 @@ def _candidate(body: NamingTemplateIn | None) -> NamingTemplate | None:
     return replace(DEFAULT_TEMPLATE, template_id="preview", version=1, **fields)
 
 
+class ItemMoveIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    export_item_id: str = Field(min_length=26, max_length=26)
+    new_rel_path: str = Field(min_length=1, max_length=2048)
+
+
+class RenamePlanIn(BaseModel):
+    """Either a template (the fields given are the candidate's, the rest the default's) or a list
+    of moves (reshelving, binding migration): one of the two, never both, never neither."""
+
+    model_config = ConfigDict(extra="forbid")
+    shelf_destination_id: str
+    template: NamingTemplateIn | None = None
+    moves: list[ItemMoveIn] | None = Field(default=None, max_length=5000)
+
+
+class ApplyIn(BaseModel):
+    """The confirmation that readers lose their progress (EF-EXP-037); nothing else."""
+
+    model_config = ConfigDict(extra="forbid")
+    confirm_progress_loss: StrictBool = False
+
+
+class RenameStepOut(BaseModel):
+    kind: str
+    src: str
+    dst: str
+    export_item_id: str | None
+
+
+class RenamePlanOut(BaseModel):
+    plan_id: str | None
+    base_version: str
+    steps: list[RenameStepOut]
+    batches: int
+    blocked: list[dict[str, Any]]
+    warnings: list[dict[str, Any]]
+
+
 class PlanOut(BaseModel):
     plan_id: str
     base_version: str
@@ -149,6 +208,9 @@ def require_admin(request: Request) -> Principal:
     return principal
 
 
+_RENAME_APPLY = reserved_action(RESERVED_ACTIONS["plan.apply_rename"])
+
+
 def build_plans_router(get_pipeline: Callable[[], PlanPipeline]) -> APIRouter:
     router = APIRouter(prefix="/api/v1/plans", tags=["plans"])
 
@@ -169,6 +231,38 @@ def build_plans_router(get_pipeline: Callable[[], PlanPipeline]) -> APIRouter:
             checks=list(result.checks),
         )
 
+    @router.post("/renames", status_code=200)
+    def rename_preview(
+        body: RenamePlanIn,
+        response: Response,
+        _principal: Principal = Depends(require_admin),  # noqa: B008
+    ) -> RenamePlanOut:
+        """The plan of renames a template change, a reshelving or a binding migration makes, with
+        "the Kavita progress of N readers will be lost" when it applies (EF-EXP-030, EF-EXP-037).
+        The count is for the admin who asks: nobody else reaches this door."""
+        if (body.template is None) == (not body.moves):
+            raise ProblemError("validation_failed")
+        template = _candidate(body.template)
+        moves = tuple(ItemMove(m.export_item_id, m.new_rel_path) for m in body.moves or ())
+        try:
+            result = get_pipeline().rename_preview(
+                body.shelf_destination_id, template=template, moves=moves
+            )
+        except RenameRefusedError as error:
+            raise ProblemError(error.code, extensions={"reason": error.reason}) from None
+        except (DestinationPausedError, RestoredBehindError, OpsError) as error:
+            raise ProblemError(error.code) from None
+        if result.plan_id is not None:
+            response.headers["ETag"] = etag_for_version(result.base_version)
+        return RenamePlanOut(
+            plan_id=result.plan_id,
+            base_version=result.base_version,
+            steps=[RenameStepOut(**asdict(s)) for s in result.steps],
+            batches=result.batches,
+            blocked=list(result.blocked),
+            warnings=[asdict(w) for w in result.warnings],
+        )
+
     @router.post("/naming-preview", status_code=200)
     def naming_preview(
         body: NamingPreviewIn,
@@ -187,11 +281,31 @@ def build_plans_router(get_pipeline: Callable[[], PlanPipeline]) -> APIRouter:
     def apply(
         plan_id: str,
         request: Request,
+        body: ApplyIn | None = None,
         _principal: Principal = Depends(require_admin),  # noqa: B008
     ) -> Response:
-        if_match = _if_match_version(request.headers.get("if-match"))
+        pipeline = get_pipeline()
         try:
-            job_id = get_pipeline().queue_apply(plan_id, if_match=if_match)
+            kind = pipeline.kind_of(plan_id)
+        except UnknownPlanError:
+            raise ProblemError("not_found") from None
+        if kind == "rename_plan":
+            _RENAME_APPLY(request)  # a fresh admin session; never a key, a member or a child
+        if_match = _if_match_version(request.headers.get("if-match"))
+        confirmed = body is not None and body.confirm_progress_loss
+        try:
+            if kind == "rename_plan":
+                job_id = pipeline.queue_apply(
+                    plan_id, if_match=if_match, confirm_progress_loss=confirmed
+                )
+            else:
+                job_id = pipeline.queue_apply(plan_id, if_match=if_match)
+        except RenameConfirmationRequiredError as error:
+            raise ProblemError(
+                error.code, extensions={"readers": error.readers, "exact": error.exact}
+            ) from None
+        except RenameRefusedError as error:
+            raise ProblemError(error.code, extensions={"reason": error.reason}) from None
         except StalePlanError:
             raise ProblemError("plan.stale") from None
         except UnknownPlanError:

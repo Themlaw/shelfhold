@@ -29,7 +29,7 @@ import asyncio
 import contextlib
 import threading
 import time
-from collections.abc import Callable, Iterable, Iterator
+from collections.abc import Callable, Iterable, Iterator, Sequence
 from contextlib import ExitStack, contextmanager
 from dataclasses import dataclass
 from datetime import timedelta
@@ -77,6 +77,12 @@ from shelfhold.export.application.preflight import PermissionPreflight
 from shelfhold.export.application.ranged_export import RangedExporter
 from shelfhold.export.application.reconcile import Reconciler
 from shelfhold.export.application.reconcile_full import FullReconciler
+from shelfhold.export.application.rename_plan import (
+    ItemMove,
+    ReaderCount,
+    ReaderCounter,
+    RenamePreview,
+)
 from shelfhold.export.application.restore import RestoredBehindError
 from shelfhold.export.application.snapshot import load_context
 from shelfhold.export.application.upgrade import SamePathUpgrade
@@ -536,9 +542,10 @@ async def _export_one(
     destination: Destination,
     scans: ScanRelay,
     context: JobContext,
-    apply: tuple[str, str] | None = None,
+    apply: tuple[str, str, bool] | None = None,
 ) -> int:
-    """`apply`: a stored plan and the validator of its preview, instead of a plan made now.
+    """`apply`: a stored plan, the validator of its preview and the confirmation of a rename plan,
+    instead of a plan made now.
     Returns the number of operations applied (for the counters of `job.finished`)."""
 
     with bound_contextvars(target_id=destination.target_id, destination_id=destination.id):
@@ -561,7 +568,7 @@ async def _export_bound(
     destination: Destination,
     scans: ScanRelay,
     context: JobContext,
-    apply: tuple[str, str] | None,
+    apply: tuple[str, str, bool] | None,
 ) -> int:
     from shelfhold.export.application.target_state import DestinationPausedError
 
@@ -587,6 +594,9 @@ async def _export_bound(
                 client, destination.target_id
             )
             pipeline, _fsops = disks.get()
+            if apply is not None and pipeline.kind_of(apply[0]) == "rename_plan":
+                pipeline.bind_readers(reader_counter(comp, destination))  # EF-EXP-037
+                names = []  # a rename plan names nothing: the files exist, only their place moves
             bulk = await BulkParse.fetch(client, names, library_type_named(kind))
             pipeline.bind_parse(bulk, verified=True)
             # EPUB series (EF-EXP-040): the ages due pushed, then read back locked, before any
@@ -603,9 +613,13 @@ async def _export_bound(
             if apply is None:
                 report = pipeline.run(destination.id, job_id=context.job_id)
             else:
-                plan_id, version = apply
-                pipeline.require_names_checked(plan_id)
-                report = pipeline.apply(plan_id, if_match=version, job_id=context.job_id)
+                plan_id, version, confirmed = apply
+                if pipeline.kind_of(plan_id) != "rename_plan":
+                    pipeline.require_names_checked(plan_id)
+                report = pipeline.apply(
+                    plan_id, if_match=version, job_id=context.job_id,
+                    confirm_progress_loss=confirmed,
+                )  # fmt: skip
             applied = len(report.ops)
     except RootBlockedError as error:  # the mount is not the one Shelfhold wrote (EF-EXP-029)
         if error.state is not RootState.RESTORED_BEHIND:  # that one is `restored_behind`
@@ -704,15 +718,51 @@ async def settle_arrival(
 # -- export.apply ---------------------------------------------------------------
 
 
-def apply_key(plan_id: str, if_match: str) -> str:
-    """The dedupe key of the job: the plan and the validator of its preview. Two requests for the
-    same plan share one job while it is active; a plan applied once is `done` and refused."""
-    return f"{APPLY_JOB_KIND}:{plan_id}:{if_match}"
+def apply_key(plan_id: str, if_match: str, *, confirmed: bool = False) -> str:
+    """The dedupe key of the job: the plan, the validator of its preview and, for a rename plan,
+    the confirmation that readers lose their progress (EF-EXP-037). Two requests for the same plan
+    share one job while it is active; a plan applied once is `done` and refused."""
+    return f"{APPLY_JOB_KIND}:{plan_id}:{if_match}" + (":confirmed" if confirmed else "")
 
 
-def _plan_of(dedupe_key: str) -> tuple[str, str]:
-    _kind, plan_id, version = dedupe_key.split(":", 2)
-    return plan_id, version
+def _plan_of(dedupe_key: str) -> tuple[str, str, bool]:
+    _kind, plan_id, rest = dedupe_key.split(":", 2)
+    version, _, flag = rest.partition(":")
+    return plan_id, version, flag == "confirmed"
+
+
+def reader_counter(comp: Composition, destination: Destination) -> ReaderCounter:
+    """The readers of Kavita in some folders of a destination (EF-EXP-037), asked now. The call
+    runs its own event loop in its own thread: the plan code is synchronous, and the job that
+    applies it already runs inside a loop."""
+    from concurrent.futures import ThreadPoolExecutor
+
+    from shelfhold.export.targets.kavita.readers import count_readers
+
+    def count(folders: Sequence[str]) -> ReaderCount:
+        try:
+            library = _remote_library_id(comp, destination.id)
+            client = comp.kavita_client(destination.target_id)
+        except (KeyringUnavailableError, KeyError, sa.exc.NoResultFound, ValueError):
+            return ReaderCount(0, exact=False)
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            return pool.submit(
+                lambda: asyncio.run(count_readers(client, library, list(folders)))
+            ).result()
+
+    return count
+
+
+def _remote_library_id(comp: Composition, destination_id: str) -> int:
+    link, library = export.shelf_destination_remote_library, export.remote_library
+    with comp.engine.connect() as connection:
+        ref = connection.execute(
+            sa.select(library.c.remote_ref)
+            .join(link, link.c.remote_library_id == library.c.id)
+            .where(link.c.shelf_destination_id == destination_id)
+            .limit(1)
+        ).scalar_one()
+    return int(ref)
 
 
 def _destination_of(comp: Composition, destination_id: str) -> Destination:
@@ -726,7 +776,7 @@ def _destination_of(comp: Composition, destination_id: str) -> Destination:
 
 def apply_handler(comp: Composition) -> Callable[[JobContext], None]:
     def run(context: JobContext) -> None:
-        plan_id, version = _plan_of(context.dedupe_key)
+        plan_id, version, confirmed = _plan_of(context.dedupe_key)
         plan = export_plan_destination(comp, plan_id)
         destination = _destination_of(comp, plan)
         scans = ScanRelay()
@@ -740,7 +790,13 @@ def apply_handler(comp: Composition) -> Callable[[JobContext], None]:
             context.add(
                 ops_applied=asyncio.run(
                     _export_one(
-                        comp, disks, client, destination, scans, context, (plan_id, version)
+                        comp,
+                        disks,
+                        client,
+                        destination,
+                        scans,
+                        context,
+                        (plan_id, version, confirmed),
                     )
                 )
             )
@@ -843,16 +899,47 @@ class PlanService:
                     items, candidate, parse=None, verified=False, existing=existing
                 )
 
-    def queue_apply(self, plan_id: str, *, if_match: str) -> str:
-        """The 412 and the pauses are answered now; what needs the disks and Kavita is the job's."""
+    def kind_of(self, plan_id: str) -> str:
+        return self._pipeline().kind_of(plan_id)
+
+    def rename_preview(
+        self,
+        destination_id: str,
+        *,
+        template: NamingTemplate | None = None,
+        moves: Sequence[ItemMove] = (),
+    ) -> RenamePreview:
+        """The renames a template change, a reshelving or a binding migration makes, with the
+        readers of Kavita who would lose their progress (EF-EXP-030, EF-EXP-037)."""
+        pipeline = self._pipeline()
+        with self._lock:
+            pipeline.bind_readers(
+                reader_counter(self._comp, _destination_of(self._comp, destination_id))
+            )
+            return pipeline.rename_preview(destination_id, template=template, moves=moves)
+
+    def queue_apply(
+        self, plan_id: str, *, if_match: str, confirm_progress_loss: bool = False
+    ) -> str:
+        """The 412, the pauses and the confirmation of a rename plan are answered now; what
+        needs the disks and Kavita is the job's."""
         if self._comp.gates.writable is not None:
             self._comp.gates.writable()  # restored_behind: no application until the adoption
-        ensure_applicable(self._comp.engine, plan_id, if_match=if_match)
+        destination_id = ensure_applicable(self._comp.engine, plan_id, if_match=if_match)
+        pipeline = self._pipeline()
+        if pipeline.kind_of(plan_id) == "rename_plan":
+            with self._lock:
+                pipeline.bind_readers(
+                    reader_counter(self._comp, _destination_of(self._comp, destination_id))
+                )
+                pipeline.require_confirmation(plan_id, confirmed=confirm_progress_loss)
         pools = self._pools()
         if pools is None:
             raise ExitUnavailableError("the job queue is not running")
         created = pools.submit(
-            APPLY_JOB_KIND, dedupe_key=apply_key(plan_id, if_match), priority_class="request"
+            APPLY_JOB_KIND,
+            dedupe_key=apply_key(plan_id, if_match, confirmed=confirm_progress_loss),
+            priority_class="request",
         )
         return created.job_id
 

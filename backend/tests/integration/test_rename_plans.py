@@ -75,7 +75,8 @@ def _apply(env: ExportEnv, preview: Any, *, confirm: bool = False) -> None:
 
 def _move_series(env: ExportEnv, folder: str, new_folder: str) -> list[ItemMove]:
     return [
-        ItemMove(item_id, f"{new_folder}/{name}") for name, item_id in item_ids_of(env, folder).items()
+        ItemMove(item_id, f"{new_folder}/{name}")
+        for name, item_id in item_ids_of(env, folder).items()
     ]
 
 
@@ -98,10 +99,22 @@ def test_template_change_is_rename_plan_not_recreate(
         "Dr Stone/Dr Stone - Chapter 3.cbz",
     ]
     with env.engine.connect() as conn:  # the stored plan says what the preview says: renames only
-        kinds = set(conn.execute(sa.select(coherence.export_op.c.op)).scalars())
-        plan_kind = conn.execute(sa.select(coherence.export_plan.c.kind)).scalar_one()
+        kinds = set(
+            conn.execute(
+                sa.select(coherence.export_op.c.op).where(
+                    coherence.export_op.c.plan_id == preview.plan_id
+                )
+            ).scalars()
+        )
+        plan_kind = conn.execute(
+            sa.select(coherence.export_plan.c.kind).where(
+                coherence.export_plan.c.plan_id == preview.plan_id
+            )
+        ).scalar_one()
     assert kinds == {"rename"} and plan_kind == "rename_plan"
-    assert tree(env) == [f"Dr Stone/Dr Stone - Ch.{n}.cbz" for n in "123"]  # a dry run moves nothing
+    assert tree(env) == [
+        f"Dr Stone/Dr Stone - Ch.{n}.cbz" for n in "123"
+    ]  # a dry run moves nothing
     _apply(env, preview)
     assert tree(env) == [f"Dr Stone/Dr Stone - Chapter {n}.cbz" for n in "123"]
     assert sorted(_inodes(env).values()) == sorted(before.values())  # the same files, renamed
@@ -124,7 +137,8 @@ def test_rename_before_m4_warns_progress_loss_with_reader_count(env: ExportEnv) 
     preview = env.pipeline.rename_preview(env.destination_id, template=LONGER)
     (warning,) = preview.warnings
     assert warning.code == "progress_loss" and warning.readers == 2 and warning.exact is True
-    assert readers.asked == [("Dr Stone",)]  # the folders the plan touches, nothing else
+    assert len(readers.asked) == 1 and len(readers.asked[0]) == 1  # the folders the plan touches
+    assert readers.asked[0][0].endswith("/Dr Stone")  # as Kavita sees them, nothing else
     before = tree(env)
     with pytest.raises(RenameConfirmationRequiredError) as refused:
         _apply(env, preview)  # nothing is applied without the confirmation
@@ -166,6 +180,12 @@ def test_rename_batch_moves_series_dir_atomically(
 ) -> None:
     export_chapters(env, "Dr Stone", ["1", "2", "3"])
     export_chapters(env, "Blue Box", ["1", "2"])
+    with env.engine.begin() as conn:  # an adopted series keeps the folder it was found in
+        series = export.export_series
+        conn.execute(
+            sa.update(series).values(series_dir=sa.case(
+                (series.c.name_raw == "Dr Stone", "Dr Stone"), else_="Blue Box"))
+        )  # fmt: skip
     before = _inodes(env)
     spy = Spy(env, monkeypatch)
     moves = _move_series(env, "Dr Stone", "Dr Stone (2019)") + _move_series(
@@ -344,9 +364,9 @@ def test_symlink_planted_during_the_move_is_never_followed(
     with pytest.raises(RenameRefusedError) as refused:
         _apply(env, preview)
     assert refused.value.reason == "not_a_folder"
-    assert (outside / "keep.txt").read_text() == "not ours" and [p.name for p in outside.iterdir()] == [
-        "keep.txt"
-    ]
+    assert (outside / "keep.txt").read_text() == "not ours" and [
+        p.name for p in outside.iterdir()
+    ] == ["keep.txt"]
     assert not (env.root / "Dr Stone (2019)").exists()  # the link was not carried anywhere
     assert open_intents(env) == 0  # the intent is closed, not left to be replayed on the link
     assert plan_status(env, preview.plan_id) == "failed"
@@ -382,7 +402,8 @@ def test_series_folder_outside_the_managed_root_is_refused(env: ExportEnv, targe
     assert refused.value.reason in {"outside_root", "reserved", "invalid_path"}
     assert tree(env) == before
     with env.engine.connect() as conn:  # nothing was stored for a refused plan
-        assert conn.execute(sa.select(sa.func.count()).select_from(coherence.export_plan)).scalar() == 0
+        stored = sa.select(sa.func.count()).where(coherence.export_plan.c.kind == "rename_plan")
+        assert conn.execute(stored).scalar() == 0
 
 
 @pytest.mark.req("EF-EXP-030")

@@ -1799,6 +1799,16 @@ title = "Le plan de réaffectation des séries exportées est périmé ou refus�
 action = "Relisez le plan : une série adoptée (figée) ou une série liée à autre chose que ses éditions l'arrête. Un plan relu après un changement a une autre empreinte."
 cause = "Le plan ne correspond plus à l'état actuel, ou une série adoptée ou liée à autre chose l'empêche."
 
+[errors."rename.refused"]
+title = "Le plan de renommage est refusé : rien n'a été déplacé."
+action = "Lisez la raison : un chemin hors de la racine ou réservé, un nom déjà pris, un lien à la place d'un dossier ou une opération en cours l'arrêtent. Corrigez puis relisez l'aperçu."
+cause = "Un nom visé est pris, un chemin sort de la racine gérée, un lien est à la place d'un dossier, ou une opération sur ces fichiers est encore ouverte."
+
+[errors."rename.confirmation_required"]
+title = "Ce plan de renommage fait perdre leur progression Kavita à des lecteurs : il faut le confirmer."
+action = "Relisez le nombre de lecteurs de l'aperçu, puis appliquez le plan en confirmant la perte de progression."
+cause = "Avant la version qui conserve la progression, un renommage de dossier ou de fichier fait perdre la progression Kavita des lecteurs de la série."
+
 [errors."tombstone.journal_truncated"]
 title = "Le journal d'effacement d'une racine a été tronqué."
 action = "Rien n'a été supprimé, mais la racine est bloquée (rapprochement et réacquisition) : « shelfhold tombstone set-aside-journal » met le fichier de côté et le réécrit depuis la base."
