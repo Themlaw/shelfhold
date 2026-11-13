@@ -60,6 +60,7 @@ from shelfhold.ops.revisions import RevisionOps
 from shelfhold.ops.roots import RootOps
 from shelfhold.ops.services import OpsServices
 from shelfhold.ops.sheet import SheetOps
+from shelfhold.ops.source_migration import SourceMigrationOps
 from shelfhold.ops.tombstone_screens import CatalogScreens
 from shelfhold.ops.wizard import WizardOps
 from shelfhold.ops.work_merge import WorkMergeOps
@@ -157,7 +158,8 @@ def open_ops(
         library=library, adoption=LibraryAdoptionExit(engine, library),
         intents=IntentOps(composition), revisions=RevisionOps(composition),
         backfill=BackfillOps(composition), import_folder=ImportOps(composition),
-        normalize=NormalizeOps(composition), meta=MetaOps(composition),
+        normalize=NormalizeOps(composition),
+        source_migration=SourceMigrationOps(composition), meta=MetaOps(composition),
         content=ContentOps(composition),
         rating=RatingOps(engine, clock, fresh_auth_s=settings.fresh_auth_s),
         attach=AttachOps(

@@ -94,8 +94,10 @@ from shelfhold.library.tombstones.state import TombstoneState
 from shelfhold.library.tombstones.values import (
     ContentHash,
     Scope,
+    SeriesBindingRef,
     TombstoneValueError,
     TombstoneValues,
+    VariantRef,
     decode_plaintext,
     encode_plaintext,
 )
@@ -885,14 +887,60 @@ class TombstoneService:
             if self.check(candidate, root_id=root_id).blocked:
                 blocked.add(row_id)
                 scopes.add(candidate.scope)
-        if scopes:
-            with self._engine.begin() as connection:
-                published = [
-                    self._bus.publish(connection, "tombstone.migration_hit", {"scope": scope})
-                    for scope in sorted(scopes)
-                ]
-            self._bus.deliver(published)
+        self._tell_hits(scopes)
         return blocked
+
+    def check_refs(
+        self, refs: Iterable[SeriesBindingRef | VariantRef], *, root_id: str | None = None
+    ) -> Verdict:
+        """The references of one alias family (the old one, the new one, every link of a chain,
+        every alias that leads to them): blocked when any of them is a tombstoned reference, as
+        received **or** under another spelling (`scopes.fold_ref`: case, separators, encoding,
+        wide forms). A spelling of a purged reference is the purged reference (EF-BIB-054 (4))."""
+        if self._index is None:
+            raise NotReplayedError("replay the tombstones before any migration")
+        for ref in refs:
+            verdict = self.check(ref, root_id=root_id)
+            if verdict.blocked:
+                return verdict
+            if self._index.contains_folded(ref):
+                return Verdict(True, "tombstoned")
+        return Verdict(False)
+
+    def screen_refs(
+        self,
+        rows: Iterable[tuple[str, Sequence[SeriesBindingRef | VariantRef]]],
+        *,
+        announce: bool = True,
+        root_id: str | None = None,
+    ) -> set[str]:
+        """`screen_migration` for alias families: the row ids with a tombstoned member. With
+        `announce=False` nothing is written (a preview, or a caller that holds the write lock
+        and tells the hits itself with `announce_hits`)."""
+        blocked: set[str] = set()
+        scopes: set[Scope] = set()
+        for row_id, family in rows:
+            verdict = self.check_refs(family, root_id=root_id)
+            if verdict.blocked:
+                blocked.add(row_id)
+                scopes.update(ref.scope for ref in family)
+        if announce:
+            self._tell_hits(scopes)
+        return blocked
+
+    def announce_hits(self, scopes: Iterable[Scope]) -> None:
+        """Tell the hits of a migration that was applied, once per scope (the scope only)."""
+        self._tell_hits(set(scopes))
+
+    def _tell_hits(self, scopes: set[Scope]) -> None:
+        if not scopes:
+            return
+        with self._engine.begin() as connection:
+            published = [
+                self._bus.publish(connection, "tombstone.migration_hit", {"scope": scope})
+                for scope in sorted(scopes)
+            ]
+        self._bus.deliver(published)
 
     # -- the "lost keyring" waiver (R62) ----------------------------------------------------
 

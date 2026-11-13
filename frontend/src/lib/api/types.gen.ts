@@ -1833,6 +1833,62 @@ export type MergeIn = {
 };
 
 /**
+ * MigrateIdsIn
+ */
+export type MigrateIdsIn = {
+    /**
+     * Confirm
+     */
+    confirm?: string | null;
+    /**
+     * From Scheme
+     */
+    from_scheme: string;
+    /**
+     * To Scheme
+     */
+    to_scheme: string;
+};
+
+/**
+ * MigrateIdsOut
+ */
+export type MigrateIdsOut = {
+    /**
+     * Applied
+     */
+    applied: number | null;
+    /**
+     * Blocked
+     */
+    blocked: Array<MigrationRowOut>;
+    /**
+     * Fingerprint
+     */
+    fingerprint: string;
+    /**
+     * From Scheme
+     */
+    from_scheme: string;
+    /**
+     * Migrate
+     */
+    migrate: Array<MigrationRowOut>;
+    /**
+     * Source Key
+     */
+    source_key: string;
+    /**
+     * To Scheme
+     */
+    to_scheme: string;
+    /**
+     * Unresolved
+     */
+    unresolved: Array<MigrationRowOut>;
+};
+
+/**
  * MigrationIn
  */
 export type MigrationIn = {
@@ -1854,6 +1910,28 @@ export type MigrationProgress = {
      * Total
      */
     total: number;
+};
+
+/**
+ * MigrationRowOut
+ */
+export type MigrationRowOut = {
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * New
+     */
+    new: string;
+    /**
+     * Old
+     */
+    old: string;
+    /**
+     * Reason
+     */
+    reason: string;
 };
 
 /**
@@ -11021,6 +11099,44 @@ export type FiltersResponses = {
 };
 
 export type FiltersResponse = FiltersResponses[keyof FiltersResponses];
+
+export type MigrateIdsData = {
+    body: MigrateIdsIn;
+    path: {
+        /**
+         * Source Key
+         */
+        source_key: string;
+    };
+    query?: never;
+    url: '/api/v1/sources/{source_key}/migrate-ids';
+};
+
+export type MigrateIdsErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type MigrateIdsError = MigrateIdsErrors[keyof MigrateIdsErrors];
+
+export type MigrateIdsResponses = {
+    /**
+     * Successful Response
+     */
+    200: MigrateIdsOut;
+};
+
+export type MigrateIdsResponse = MigrateIdsResponses[keyof MigrateIdsResponses];
 
 export type Search2Data = {
     body?: never;

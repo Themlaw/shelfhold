@@ -2983,6 +2983,106 @@
         "title": "MergeIn",
         "type": "object"
       },
+      "MigrateIdsIn": {
+        "additionalProperties": false,
+        "properties": {
+          "confirm": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Confirm"
+          },
+          "from_scheme": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "From Scheme",
+            "type": "string"
+          },
+          "to_scheme": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "To Scheme",
+            "type": "string"
+          }
+        },
+        "required": [
+          "from_scheme",
+          "to_scheme"
+        ],
+        "title": "MigrateIdsIn",
+        "type": "object"
+      },
+      "MigrateIdsOut": {
+        "properties": {
+          "applied": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Applied"
+          },
+          "blocked": {
+            "items": {
+              "$ref": "#/components/schemas/MigrationRowOut"
+            },
+            "title": "Blocked",
+            "type": "array"
+          },
+          "fingerprint": {
+            "title": "Fingerprint",
+            "type": "string"
+          },
+          "from_scheme": {
+            "title": "From Scheme",
+            "type": "string"
+          },
+          "migrate": {
+            "items": {
+              "$ref": "#/components/schemas/MigrationRowOut"
+            },
+            "title": "Migrate",
+            "type": "array"
+          },
+          "source_key": {
+            "title": "Source Key",
+            "type": "string"
+          },
+          "to_scheme": {
+            "title": "To Scheme",
+            "type": "string"
+          },
+          "unresolved": {
+            "items": {
+              "$ref": "#/components/schemas/MigrationRowOut"
+            },
+            "title": "Unresolved",
+            "type": "array"
+          }
+        },
+        "required": [
+          "source_key",
+          "from_scheme",
+          "to_scheme",
+          "migrate",
+          "blocked",
+          "unresolved",
+          "fingerprint",
+          "applied"
+        ],
+        "title": "MigrateIdsOut",
+        "type": "object"
+      },
       "MigrationIn": {
         "properties": {
           "fingerprint": {
@@ -3013,6 +3113,34 @@
           "total"
         ],
         "title": "MigrationProgress",
+        "type": "object"
+      },
+      "MigrationRowOut": {
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "new": {
+            "title": "New",
+            "type": "string"
+          },
+          "old": {
+            "title": "Old",
+            "type": "string"
+          },
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "old",
+          "new",
+          "reason"
+        ],
+        "title": "MigrationRowOut",
         "type": "object"
       },
       "ModeOut": {
@@ -18453,6 +18581,78 @@
           }
         },
         "summary": "Filters",
+        "tags": [
+          "sources"
+        ]
+      }
+    },
+    "/api/v1/sources/{source_key}/migrate-ids": {
+      "post": {
+        "operationId": "migrate_ids",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "source_key",
+            "required": true,
+            "schema": {
+              "title": "Source Key",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MigrateIdsIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MigrateIdsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Connexion requise, ou mot de passe à confirmer (reauth-required)."
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée)."
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Détail du problème (RFC 9457)."
+          }
+        },
+        "summary": "Migrate Ids",
         "tags": [
           "sources"
         ]

@@ -7,11 +7,12 @@ The secret (``user:password``) is read from a file or stdin, never from argv.
 from __future__ import annotations
 
 import argparse
+import sys
 
 from shelfhold.i18n import t
 from shelfhold.interfaces.cli._headless import fail, headless_command, read_secret
 from shelfhold.interfaces.cli._ops import ops_command
-from shelfhold.interfaces.local_cli import HeadlessCommands, OpsChannel
+from shelfhold.interfaces.local_cli import HeadlessCommands, OpsChannel, OpsRefusal
 
 
 def register(commands: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
@@ -55,6 +56,18 @@ def register(commands: argparse._SubParsersAction[argparse.ArgumentParser]) -> N
     acquire.add_argument("remote_id")
     acquire.add_argument("--unit", help=t("ops.help_acquire_unit"))
     acquire.set_defaults(handler=run_acquire, configure_logging=False)
+    # EF-SRC-022: the bulk migration of the identity of a source's series (a reserved action)
+    migrate = actions.add_parser("migrate-ids", help=t("ops.help_source_migrate_ids"),
+                                 allow_abbrev=False)  # fmt: skip
+    migrate.add_argument("source_key")
+    migrate.add_argument("--from-scheme", required=True, help=t("ops.help_migrate_from_scheme"))
+    migrate.add_argument("--to-scheme", required=True, help=t("ops.help_migrate_to_scheme"))
+    mode = migrate.add_mutually_exclusive_group(required=True)
+    mode.add_argument("--preview", action="store_true", help=t("ops.help_migrate_preview"))
+    mode.add_argument("--apply", action="store_true", help=t("ops.help_migrate_apply"))
+    migrate.add_argument("--confirm", metavar="FINGERPRINT", default=None,
+                         help=t("ops.help_migrate_confirm"))  # fmt: skip
+    migrate.set_defaults(handler=run_migrate_ids, configure_logging=False)
     by_url = commands.add_parser("acquire", help=t("ops.help_acquire_url"), allow_abbrev=False)
     by_url.add_argument("url")
     by_url.add_argument("--unit", help=t("ops.help_acquire_unit"))
@@ -168,3 +181,47 @@ def run_acquire_url(args: argparse.Namespace, channel: OpsChannel) -> int:
     if args.unit:
         params["unit"] = args.unit
     return _acquired(channel.call("ops.acquire", **params))
+
+
+STALE_PREVIEW = 4
+
+
+@ops_command
+def run_migrate_ids(args: argparse.Namespace, channel: OpsChannel) -> int:
+    """`--preview` reads and writes nothing; `--apply` needs the fingerprint of a preview."""
+    if args.apply and not args.confirm:
+        print(t("ops.migrate_ids_needs_confirm"), file=sys.stderr)
+        return 2
+    if args.preview and args.confirm:
+        print(t("ops.migrate_ids_preview_has_no_confirm"), file=sys.stderr)
+        return 2
+    params: dict[str, object] = {
+        "source_key": args.source_key, "from_scheme": args.from_scheme,
+        "to_scheme": args.to_scheme,
+    }  # fmt: skip
+    if args.apply:
+        params["confirm"] = args.confirm
+    try:
+        done = channel.call("ops.source_migrate_ids", **params)
+    except OpsRefusal as refusal:
+        if refusal.code != "ops.preview_stale":
+            raise
+        print(t("ops.migrate_ids_preview_stale"), file=sys.stderr)
+        return STALE_PREVIEW
+    held = done["migrate"] + done["blocked"] + done["unresolved"]
+    if not held:
+        print(t("ops.migrate_ids_nothing"))
+        return 0
+    print(t("ops.migrate_ids_header", migrate=len(done["migrate"]), blocked=len(done["blocked"]),
+            unresolved=len(done["unresolved"])))  # fmt: skip
+    for outcome in ("migrate", "blocked", "unresolved"):
+        for row in done[outcome]:
+            print(t("ops.migrate_ids_row", outcome=outcome, id=row["id"], old=row["old"],
+                    new=row["new"] or "-", reason=row["reason"]))  # fmt: skip
+    if done["blocked"]:
+        print(t("ops.migrate_ids_blocked_hint"))
+    if done["applied"] is None:
+        print(t("ops.migrate_ids_fingerprint", fingerprint=done["fingerprint"]))
+    else:
+        print(t("ops.migrate_ids_applied", applied=done["applied"]))
+    return 0

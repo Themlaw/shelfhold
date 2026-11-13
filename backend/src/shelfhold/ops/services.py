@@ -82,6 +82,7 @@ from shelfhold.ops.resplit import ResplitOps
 from shelfhold.ops.revisions import RevisionOps
 from shelfhold.ops.roots import RootOps
 from shelfhold.ops.sheet import SheetOps
+from shelfhold.ops.source_migration import SourceMigrationOps
 from shelfhold.ops.status import (
     UNKNOWN_LANGUAGE,
     candidate_report,
@@ -204,6 +205,7 @@ class OpsServices:
         backfill: BackfillOps | None = None,
         import_folder: ImportOps | None = None,
         normalize: NormalizeOps | None = None,
+        source_migration: SourceMigrationOps | None = None,
         meta: MetaOps | None = None,
         content: ContentOps | None = None,
         rating: RatingOps | None = None,
@@ -243,6 +245,7 @@ class OpsServices:
         self._backfill = backfill
         self._import_folder = import_folder
         self._normalize = normalize
+        self._source_migration = source_migration
         self._meta = meta
         self._content = content
         self._rating = rating
@@ -867,6 +870,13 @@ class OpsServices:
         if self._normalize is None:
             raise ExitUnavailableError("normalizer migration is not connected")
         return self._normalize
+
+    @property
+    def source_migration(self) -> SourceMigrationOps:
+        """`source migrate-ids` (EF-SRC-022, EF-BIB-054)."""
+        if self._source_migration is None:
+            raise ExitUnavailableError("the identity migration of a source is not connected")
+        return self._source_migration
 
     @property
     def meta(self) -> MetaOps:

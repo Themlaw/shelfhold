@@ -55,7 +55,7 @@ plus `SHELFHOLD_FRESH_AUTH_S` secondes (900 par défaut), sinon 401 `reauth-requ
 - les pierres tombales : lever, lister, accepter la perte du trousseau, mettre le journal de côté,
   `tombstone rekey` ;
 - les racines : `root takeover|reinit`, `store takeover|reinit`, `config set path_map` ;
-- `shelf purge-upstream`, `intents resolve`, `normalize migrate`, les révisions (`revisions apply|force`),
+- `shelf purge-upstream`, `intents resolve`, `normalize migrate`, `source migrate-ids` (aperçu compris : il ouvre les pierres tombales), les révisions (`revisions apply|force`),
   fusionner des Éditions, couvrir un chapitre re-découpé (`coverage resplit`), accepter le risque d'un
   Kavita ouvert (`--accept-admin-risk`).
 

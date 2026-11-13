@@ -17,6 +17,7 @@ from dataclasses import dataclass
 from itertools import product
 from typing import Final, Protocol
 
+from shelfhold.library.tombstones.scopes import folded_fields
 from shelfhold.library.tombstones.values import (
     ContentHash,
     PlaceRef,
@@ -192,6 +193,18 @@ class MembershipIndex:
             if self._key(projected, assignment) in keys:
                 return True
         return False
+
+    def contains_folded(self, candidate: TombstoneValues) -> bool:
+        """The candidate's reference, folded (case, separators, encoding, wide forms), is one a
+        tombstone of its scope holds: a spelling of a purged reference is the purged reference
+        (EF-BIB-054 (4), `scopes.fold_ref`). Only the scopes that cite an upstream reference."""
+        wanted = folded_fields(candidate.scope, flatten(candidate))
+        if wanted is None:
+            return False
+        return any(
+            scope == candidate.scope and folded_fields(scope, flat) == wanted
+            for scope, flat, _cited in self._entries
+        )
 
     def contains(self, candidate: TombstoneValues, *, hash_with: HashWith | None = None) -> bool:
         """True when the candidate matches a tombstone of its scope."""

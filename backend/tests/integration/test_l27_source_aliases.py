@@ -12,13 +12,12 @@ import json
 import re
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 
 import pytest
 import sqlalchemy as sa
-from shelfhold.acquisition.application.alias_migration import resolve_alias_chain
-from shelfhold.ops.source_migration import SourceMigrationOps
 
+from shelfhold.acquisition.application.alias_migration import resolve_alias_chain
 from shelfhold.config import Settings
 from shelfhold.identity.public import (
     RESERVED_ACTIONS,
@@ -31,6 +30,7 @@ from shelfhold.identity.public import (
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import acquisition, catalog, identity, platform
 from shelfhold.ops.errors import CodedRefusal, StalePreviewError
+from shelfhold.ops.source_migration import SourceMigrationOps
 from tests.auth_env import db_dump, run_cli
 from tests.integration.test_schema_catalog import add_binding, add_edition, add_work
 from tests.l50_env import Seeded, Series, seeded
@@ -85,6 +85,16 @@ def item_ref(env: Seeded, series: Series) -> str:
         ).scalar_one()
 
 
+def iid(env: Seeded, series: Series) -> str:
+    """The `source_item` row of a series: what a plan names (never a title, never a reference)."""
+    with env.inst.engine.connect() as connection:
+        return connection.execute(
+            sa.select(acquisition.source_binding.c.source_item_id).where(
+                acquisition.source_binding.c.id == series.binding_id
+            )
+        ).scalar_one()
+
+
 def tree(root: Path, skip: str) -> list[tuple[str, int, int]]:
     return sorted(
         (str(p.relative_to(root)), p.stat().st_size, p.stat().st_mtime_ns)
@@ -96,7 +106,7 @@ def tree(root: Path, skip: str) -> list[tuple[str, int, int]]:
 def everything(env: Seeded, settings: Settings) -> tuple[Any, ...]:
     """The whole state: the database, the data directory and every root, byte for byte."""
     return (
-        db_dump(settings),
+        db_dump(settings).splitlines(),
         tree(settings.data_dir, settings.database_path.name),
         tree(env.inst.library, "\0"),
     )
@@ -193,7 +203,7 @@ def test_source_alias_resolution_and_bulk_migration_dry_run(
         events = env.rows(platform.event)
 
         report = plan(ops)  # the preview lists the correspondences...
-        assert ids(report, "migrate") == {mine.binding_id, other.binding_id}
+        assert ids(report, "migrate") == {iid(env, mine), iid(env, other)}
         olds = {row["old"]: row["new"] for row in report["migrate"]}
         assert olds == {"old-2": "new-2", "old-3": "new-3"}
         assert report["applied"] is None and len(report["fingerprint"]) == 64
@@ -203,7 +213,7 @@ def test_source_alias_resolution_and_bulk_migration_dry_run(
         capsys.readouterr()
         assert run_cli(monkeypatch, settings, "source", "migrate-ids", SOURCE, "--from-scheme",
                        FROM, "--to-scheme", TO, "--preview") == 0  # fmt: skip
-        assert "old-2" in capsys.readouterr().out
+        assert "old-3" in capsys.readouterr().out  # the host CLI sees the aliases of the table
         assert everything(env, settings) == before
         assert item_ref(env, mine) == "old-2" and item_ref(env, other) == "old-3"
 
@@ -258,7 +268,7 @@ def test_audit_and_events_hold_no_readable_value(
                 for r in (
                     *audit,
                     *[e for e in env.rows(platform.event) if e.id not in known],
-                    *env.rows(acquisition.source_alias_migration),
+                    *[(r.id, r.preview) for r in env.rows(acquisition.source_alias_migration)],
                 )
             ]
         ).lower()
@@ -277,12 +287,12 @@ def test_identity_migration_consults_tombstones(
         ops = make_ops(env)
         report = plan(ops)
         # by an alias, a case, a trailing slash, a wide form, an encoding, a chain: blocked
-        held = {name: s.binding_id for name, s in world.hits.items()}
+        held = {name: iid(env, s) for name, s in world.hits.items()}
         for name in ("hit-exact", "hit-case", "hit-slash", "hit-wide", "hit-quoted", "hit-chain",
                      "hit-middle"):  # fmt: skip
             assert held[name] in ids(report, "blocked"), name
             assert held[name] not in ids(report, "migrate"), name
-        assert ids(report, "migrate") == {world.clean.binding_id}
+        assert ids(report, "migrate") == {iid(env, world.clean)}
         assert world.before == everything(env, settings)  # the preview wrote nothing
         assert not [e for e in env.rows(platform.event) if e.type == "tombstone.migration_hit"]
 
@@ -304,11 +314,11 @@ def test_migrate_ref_of_a_plugin_cannot_bring_an_erased_series_back(
         erased = live(env, GONE)
         erase(env, monkeypatch, settings, erased)
         victim = live(env, "old-5")
-        before = everything(env, settings)
         for said in (GONE, "Gone-1", "gone-1/", "gone%2D1"):  # the plugin names the erased series
             ops = make_ops(env, {"old-5": said})
+            before = everything(env, settings)  # (an apply below leaves its record)
             report = plan(ops)
-            assert victim.binding_id in ids(report, "blocked"), said
+            assert iid(env, victim) in ids(report, "blocked"), said
             assert not report["migrate"]
             assert everything(env, settings) == before  # the preview wrote nothing
             applied = plan(ops, report["fingerprint"])
@@ -334,8 +344,8 @@ def test_alias_inverse_checked_for_membership(
         alias(env, "fine-1", "target-2")
         ops = make_ops(env)
         report = plan(ops)
-        assert ids(report, "blocked") == {back.binding_id}
-        assert ids(report, "migrate") == {fine.binding_id}
+        assert ids(report, "blocked") == {iid(env, back)}
+        assert ids(report, "migrate") == {iid(env, fine)}
         plan(ops, report["fingerprint"])
         assert item_ref(env, back) == "back-1" and item_ref(env, fine) == "target-2"
 
@@ -355,7 +365,7 @@ def test_a_migration_never_duplicates_an_existing_series(
         alias(env, "old-b", "same-1")  # two series that would land on one reference
         ops = make_ops(env)
         report = plan(ops)
-        assert ids(report, "unresolved") == {mover.binding_id, first.binding_id, second.binding_id}
+        assert ids(report, "unresolved") == {iid(env, mover), iid(env, first), iid(env, second)}
         assert not report["migrate"]
         assert plan(ops, report["fingerprint"])["applied"] == 0
         assert item_ref(env, occupant) == "new-1" and item_ref(env, mover) == "old-1"
@@ -369,7 +379,7 @@ def test_a_cycle_of_aliases_is_unresolved_never_applied(
         alias(env, "loop-a", "loop-b")
         alias(env, "loop-b", "loop-a")
         report = plan(make_ops(env))
-        assert ids(report, "unresolved") == {series.binding_id} and not report["migrate"]
+        assert ids(report, "unresolved") == {iid(env, series)} and not report["migrate"]
 
 
 def test_migration_is_all_or_nothing_and_resumes_after_an_interruption(
@@ -462,7 +472,8 @@ def test_cli_apply_needs_the_fingerprint_and_a_stale_one_exits_4(
         base = ("source", "migrate-ids", SOURCE, "--from-scheme", FROM, "--to-scheme", TO)
         assert run_cli(monkeypatch, settings, *base, "--apply") != 0  # no fingerprint
         assert run_cli(monkeypatch, settings, *base, "--apply", "--confirm", "0" * 64) == 4
-        assert run_cli(monkeypatch, settings, *base) != 0  # neither --preview nor --apply
+        with pytest.raises(SystemExit):  # neither --preview nor --apply
+            run_cli(monkeypatch, settings, *base)
         assert everything(env, settings) == before
         capsys.readouterr()
         assert run_cli(monkeypatch, settings, *base, "--preview") == 0
@@ -471,3 +482,82 @@ def test_cli_apply_needs_the_fingerprint_and_a_stale_one_exits_4(
         assert found, out
         assert run_cli(monkeypatch, settings, *base, "--apply", "--confirm", found.group(0)) == 0
         assert item_ref(env, series) == "new-1"
+
+
+class _Record:
+    def __init__(self, instance: object) -> None:
+        self.instance = instance
+
+
+class _Registry:
+    def __init__(self, records: dict[str, _Record]) -> None:
+        self._records = records
+
+    def get(self, key: str) -> _Record | None:
+        return self._records.get(key)
+
+
+def test_loaded_plugin_migrate_ref_is_untrusted_and_screened(
+    monkeypatch: pytest.MonkeyPatch, settings: Settings, tmp_path: Path
+) -> None:
+    class Plugin:
+        answers: ClassVar[dict[str, object]] = {}
+
+        def migrate_ref(self, key: str, remote_id: str) -> object:
+            answer = self.answers[remote_id]
+            if isinstance(answer, Exception):
+                raise answer
+            return answer
+
+    with seeded(settings, tmp_path / "inst") as env:
+        erased = live(env, GONE)
+        erase(env, monkeypatch, settings, erased)
+        fine, boom, junk, empty, back = (live(env, n) for n in ("f-1", "b-1", "j-1", "e-1", "r-1"))
+        Plugin.answers = {
+            "f-1": (SOURCE, "f-2"), "b-1": RuntimeError("plugin failure"),
+            "j-1": ["not", "a", "tuple"], "e-1": (SOURCE, ""), "r-1": (SOURCE, "GONE-1/"),
+        }  # fmt: skip
+        monkeypatch.setattr(
+            env.inst.comp, "plugins", lambda: _Registry({PLUGIN: _Record(Plugin())})
+        )
+        report = SourceMigrationOps(env.inst.comp).migrate_ids(
+            SOURCE, from_scheme=FROM, to_scheme=TO, confirm=None, principal=ADMIN
+        )
+        assert ids(report, "migrate") == {
+            iid(env, fine)
+        }  # a failing or malformed plugin says nothing
+        assert ids(report, "blocked") == {iid(env, back)}  # an erased series is not brought back
+        assert {iid(env, boom), iid(env, junk), iid(env, empty)}.isdisjoint(
+            ids(report, "migrate") | ids(report, "blocked")
+        )
+        monkeypatch.setattr(
+            env.inst.comp, "plugins", lambda: _Registry({})
+        )  # no plugin: no mapping
+        again = SourceMigrationOps(env.inst.comp).migrate_ids(
+            SOURCE, from_scheme=FROM, to_scheme=TO, confirm=None, principal=ADMIN
+        )
+        assert not again["migrate"]
+        monkeypatch.setattr(env.inst.comp, "plugins", lambda: None)  # the server is not running
+        assert not SourceMigrationOps(env.inst.comp).migrate_ids(
+            SOURCE, from_scheme=FROM, to_scheme=TO, confirm=None, principal=ADMIN
+        )["migrate"]
+
+
+def test_migrate_ids_refuses_what_it_cannot_read(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    settings: Settings,
+    tmp_path: Path,
+) -> None:
+    from shelfhold.ops.errors import InvalidChoiceError
+
+    with seeded(settings, tmp_path / "inst") as env:
+        ops = make_ops(env)
+        for source, a, b in ((SOURCE, FROM, FROM), (SOURCE, "", TO), ("", FROM, TO),
+                             (SOURCE, "x" * 65, TO)):  # fmt: skip
+            with pytest.raises(InvalidChoiceError):
+                ops.migrate_ids(source, from_scheme=a, to_scheme=b, confirm=None, principal=ADMIN)
+        base = ("source", "migrate-ids", SOURCE, "--from-scheme", FROM, "--to-scheme", TO)
+        assert run_cli(monkeypatch, settings, *base, "--preview", "--confirm", "f" * 64) == 2
+        assert run_cli(monkeypatch, settings, *base, "--preview") == 0
+        assert "Aucune série" in capsys.readouterr().out
