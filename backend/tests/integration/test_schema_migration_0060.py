@@ -1,7 +1,7 @@
 """Migration 0060 (M3 L08, EF-USR-013): what a deletion of a user must reach.
 
-Two triggers on the ticket tables (a `requester_user_id` that names no user becomes NULL) and the
-one rewrite that `tombstone_lost_kid` allows (`actor_id` takes a `deleted:` token)."""
+The one rewrite that `tombstone_lost_kid` allows (`actor_id` takes a `deleted:` token). No trigger
+names the `user` table: it would break the batch rebuild of that table."""
 
 import sqlite3
 from contextlib import closing
@@ -23,44 +23,21 @@ def _previous() -> str:
     return down
 
 
-def _triggers(db: sqlite3.Connection) -> set[str]:
-    return {r[0] for r in db.execute("SELECT name FROM sqlite_master WHERE type = 'trigger'")}
-
-
-def test_upgrade_adds_the_ticket_triggers_and_downgrade_restores_the_closed_waiver(
-    settings: Settings,
-) -> None:
+def test_upgrade_opens_the_one_rewrite_and_downgrade_closes_it_again(settings: Settings) -> None:
     database = settings.database_path
     settings.data_dir.mkdir(parents=True, exist_ok=True)
     command.upgrade(alembic_config(database), _previous())
+    sql = "SELECT sql FROM sqlite_master WHERE name = 'tombstone_lost_kid_no_update'"
     with closing(sqlite3.connect(database)) as db:
-        assert "follow_request_requester_exists" not in _triggers(db)
-        before = db.execute(
-            "SELECT sql FROM sqlite_master WHERE name = 'tombstone_lost_kid_no_update'"
-        ).fetchone()[0]
+        before = db.execute(sql).fetchone()[0]
         assert "WHEN" not in before
     assert "0060" in migrate(settings).applied
     with closing(sqlite3.connect(database)) as db:
-        names = _triggers(db)
-        assert {"follow_request_requester_exists", "download_request_requester_exists"} <= names
-        after = db.execute(
-            "SELECT sql FROM sqlite_master WHERE name = 'tombstone_lost_kid_no_update'"
-        ).fetchone()[0]
-        assert "deleted:%" in after
-        db.execute(
-            "INSERT INTO follow_request (id, source_key, remote_id, state, visibility, "
-            "requester_user_id) VALUES ('01J00000000000000000000001', 'source-a', 'r', "
-            "'approved', 'private', '01J00000000000000000000009')"
-        )
-        assert db.execute(
-            "SELECT requester_user_id, visibility FROM follow_request"
-        ).fetchone() == (None, "private")
+        assert "deleted:%" in db.execute(sql).fetchone()[0]
+        mentioning_user = db.execute(
+            "SELECT name FROM sqlite_master WHERE type = 'trigger' AND sql LIKE '%\"user\"%'"
+        ).fetchall()
+        assert mentioning_user == []  # a trigger on `user` would break its batch rebuild
     command.downgrade(alembic_config(database), _previous())
     with closing(sqlite3.connect(database)) as db:
-        names = _triggers(db)
-        assert "follow_request_requester_exists" not in names
-        assert "download_request_requester_exists" not in names
-        restored = db.execute(
-            "SELECT sql FROM sqlite_master WHERE name = 'tombstone_lost_kid_no_update'"
-        ).fetchone()[0]
-        assert restored == before
+        assert db.execute(sql).fetchone()[0] == before

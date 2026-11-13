@@ -140,7 +140,7 @@ def test_a_deleted_users_ticket_keeps_its_visibility_for_the_other_profiles(api:
 
 
 @pytest.mark.req("EF-USR-013")
-def test_a_ticket_for_a_missing_user_is_written_for_nobody_by_the_database(api: AuthEnv) -> None:
+def test_a_ticket_for_a_missing_user_is_written_for_nobody(api: AuthEnv) -> None:
     mum = _seed(api, "mum")
     ghost = new_ulid()
     engine = create_db_engine(api.settings.database_path)

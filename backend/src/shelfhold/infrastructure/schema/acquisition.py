@@ -11,7 +11,6 @@ from sqlalchemy.sql.schema import SchemaItem
 
 from shelfhold.infrastructure.schema._base import (
     UtcDateTime,
-    add_trigger,
     bool_column,
     in_check,
     json_shape_check,
@@ -331,20 +330,6 @@ follow_request = sa.Table(
     in_check("visibility", ("private", "household", "ops")),
     sa.UniqueConstraint("source_key", "remote_id"),
 )
-
-# A ticket never names a user that is gone (M3 L08, EF-USR-013): `requester_user_id` has no foreign
-# key, so a request authenticated before a deletion and written after it would keep the id for
-# ever. The trigger runs in the transaction that writes, under the write lock the deletion also
-# takes: either the user is still there, or the ticket belongs to nobody (its visibility stays).
-for _ticket in (download_request, follow_request):
-    add_trigger(
-        _ticket,
-        f"{_ticket.name}_requester_exists",
-        f"AFTER INSERT ON {_ticket.name} "  # noqa: S608
-        "WHEN NEW.requester_user_id IS NOT NULL "
-        'AND NOT EXISTS (SELECT 1 FROM "user" WHERE id = NEW.requester_user_id) '
-        f"BEGIN UPDATE {_ticket.name} SET requester_user_id = NULL WHERE id = NEW.id; END",
-    )
 
 # The Units a ticket covers; the per-cycle cap of EF-EXP-053 counts these.
 download_request_unit = sa.Table(
