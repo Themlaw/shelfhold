@@ -38,6 +38,8 @@ def register(commands: argparse._SubParsersAction[argparse.ArgumentParser]) -> N
     lift.add_argument("--seq", type=int, required=True, help=t("ops.help_lift_seq"))
     lift.add_argument("--confirm", default=None, help=t("ops.help_lift_confirm"))
     lift.set_defaults(handler=run_lift, configure_logging=False)
+    listing = actions.add_parser("list", help=t("ops.help_tombstone_list"), allow_abbrev=False)
+    listing.set_defaults(handler=run_list, configure_logging=False)
     flush = actions.add_parser("flush", help=t("ops.help_tombstone_flush"), allow_abbrev=False)
     flush.set_defaults(handler=run_flush, configure_logging=False)
 
@@ -85,6 +87,24 @@ def _lift(args: argparse.Namespace, channel: OpsChannel) -> int:
     print(t("ops.tombstone_lifted", seq=done["seq"]))
     if done["pending"]:
         print(t("ops.tombstone_lift_owed", roots=done["pending"]), file=sys.stderr)
+    return 0
+
+
+@ops_command
+def run_list(_args: argparse.Namespace, channel: OpsChannel) -> int:
+    rows = channel.call("ops.tombstone_list")["tombstones"]
+    for row in rows:
+        print(
+            t(
+                "ops.tombstone_row",
+                seq=row["seq"],
+                day=str(row["created_at"])[:10],
+                scope=row["scope"],
+                reason=row["reason"] or "-",
+            )
+        )
+    if not rows:
+        print(t("ops.tombstone_none"))
     return 0
 
 

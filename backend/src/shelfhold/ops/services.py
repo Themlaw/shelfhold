@@ -720,6 +720,10 @@ class OpsServices:
         that sequence no longer blocks; nothing is restored (M3 L26, 06 Q54)."""
         return self.library.tombstone_lift(seq=seq, typed=typed, principal=principal)
 
+    def tombstone_list(self) -> dict[str, Any]:
+        """`tombstone list`: the sequence, day, scope and reason of the tombstones that block."""
+        return self.library.tombstone_list()
+
     def trash_empty(self, *, typed: str | None, principal: Principal) -> dict[str, Any]:
         """`trash empty` (reserved): the bins now, minus what the holds keep (M3 L26)."""
         return self.library.trash_empty(typed=typed, principal=principal)

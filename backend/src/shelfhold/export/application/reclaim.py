@@ -131,13 +131,13 @@ class BinReclaimer:
             self._journal.mark_done(intent, within=connection)
             forget_binned_export_files(connection, name)  # the index follows the bin
 
-    def _audit(
-        self, action: str, actor: str | None, removed: int, principal: Principal | None
-    ) -> None:
+    def _audit(self, action: str, removed: int, principal: Principal | None) -> None:
         with self._journal.engine.begin() as connection:
             connection.execute(
                 sa.insert(identity.audit).values(
-                    id=new_ulid(), actor_id=actor, action=action, target=f"entries:{removed}",
+                    id=new_ulid(), action=action,
+                    actor_id=principal.actor_id if principal else SYSTEM_ACTOR,
+                    target=f"entries:{removed}",
                     session_id=principal.session_id if principal else None,
                     auth_time=principal.auth_time if principal else None,
                 )
@@ -164,7 +164,7 @@ class BinReclaimer:
                     if self._held(counts, self._holds.holds(name, entry)):
                         continue
                     self._empty_trash_entry(name, entry, counts)
-        self._audit("trash.emptied", principal.actor_id, counts["removed"], principal)
+        self._audit("trash.emptied", counts["removed"], principal)
         log.info("trash.emptied", removed=counts["removed"], kept=counts["kept"])
         return _report(counts)
 
@@ -215,7 +215,7 @@ class BinReclaimer:
                 if self._remove_under_pressure(candidate.name, entry, counts) and after_each:
                     after_each()
         if counts["removed"] or counts["irreplaceable"]:
-            self._audit("trash.early_purged", SYSTEM_ACTOR, counts["removed"], None)
+            self._audit("trash.early_purged", counts["removed"], None)
             log.warning("trash.early_purged", removed=counts["removed"],
                         held_irreplaceable=counts["irreplaceable"])  # fmt: skip
         return _report(counts)

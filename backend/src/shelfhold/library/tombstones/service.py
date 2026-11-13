@@ -97,6 +97,7 @@ from shelfhold.library.tombstones.lift import (
     LIFT_REASON,
     LiftConfirmationError,
     LiftRefusedError,
+    TombstoneRow,
     UnknownTombstoneError,
     lift_phrase,
 )
@@ -468,6 +469,24 @@ class TombstoneService:
             else:
                 active[seq] = (values, cited)
         return active
+
+    def listing(self) -> list[TombstoneRow]:
+        """What the admin needs to choose a sequence to lift: the number, the day, the scope and
+        the reason, of the tombstones that still block. Read from the clear columns of the table:
+        no sealed value is opened for the answer (the variant, the place, the title and the path
+        are not stored anywhere else, and this lists none)."""
+        with self._engine.connect() as connection:
+            alive = set(self._active(connection))
+            rows = connection.execute(
+                sa.select(_tomb.c.seq, _tomb.c.created_at, _tomb.c.scope, _tomb.c.reason).order_by(
+                    _tomb.c.seq
+                )
+            ).all()
+        return [
+            TombstoneRow(seq, made, scope, reason)
+            for seq, made, scope, reason in rows
+            if seq in alive
+        ]
 
     def lift(
         self,

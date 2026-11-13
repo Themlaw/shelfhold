@@ -41,6 +41,7 @@ from shelfhold.identity.public import family_profile, family_search_mode, family
 from shelfhold.infrastructure.fetcher import FetchError
 from shelfhold.infrastructure.schema import acquisition, catalog
 from shelfhold.ops.errors import CodedRefusal, ExitUnavailableError
+from shelfhold.ops.reclaim import require_space
 from shelfhold.ops.tombstone_screens import CatalogScreens
 from shelfhold.plugin_host.errors import NoSourceForUrl, RefHasSecret
 from shelfhold.plugin_host.settings import SourceSettings
@@ -283,6 +284,7 @@ class AcquireOps:
         without queueing the download: nothing is fetched until `enqueue`."""
         if (url is None) == (source_key is None or remote_id is None):
             raise CodedRefusal("validation_failed", "give a URL, or a source and a series")
+        require_space(self._comp)  # before the first write, whichever door it came by
         if self._comp.pools() is None:
             raise ExitUnavailableError("the job queue is not running")
         acquirer = self.acquirer()
@@ -303,6 +305,8 @@ class AcquireOps:
 
     def enqueue(self, request_id: str | None) -> dict[str, Any]:
         """Queue the download of a prepared request (the class of a person's request)."""
+        if request_id is not None:
+            require_space(self._comp)  # a download queued on a full volume is refused, not started
         pools = self._comp.pools()
         if pools is None:
             raise ExitUnavailableError("the job queue is not running")

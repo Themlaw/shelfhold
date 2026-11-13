@@ -214,6 +214,10 @@ def _tombstone_lift(ops: OpsServices, by: Principal, p: Params) -> object:
     return ops.tombstone_lift(seq=seq, typed=_text(p, "typed"), principal=by)
 
 
+def _tombstone_list(ops: OpsServices, _by: Principal, _p: Params) -> object:
+    return ops.tombstone_list()
+
+
 def _empty_trash(ops: OpsServices, by: Principal, p: Params) -> object:
     return ops.trash_empty(typed=_text(p, "typed"), principal=by)
 
@@ -705,6 +709,7 @@ OPS_METHODS: Mapping[str, tuple[OpsMethod, str | None]] = {
     "ops.tombstone_flush": (_tombstone_flush, None),
     "ops.tombstone_lift": (_tombstone_lift, "tombstone.lift"),
     "ops.trash_empty": (_empty_trash, "trash.empty"),
+    "ops.tombstone_list": (_tombstone_list, None),
     "ops.adopt_set_follow_from": (_set_follow_from, None),
     "ops.adopt_set_coverage": (_set_coverage, None),
     "ops.adopt_confirm_migration": (_confirm_migration, None),

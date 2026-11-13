@@ -11799,6 +11799,43 @@ export type ToShelveListResponses = {
 
 export type ToShelveListResponse = ToShelveListResponses[keyof ToShelveListResponses];
 
+export type ListTombstonesData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/tombstones';
+};
+
+export type ListTombstonesErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type ListTombstonesError = ListTombstonesErrors[keyof ListTombstonesErrors];
+
+export type ListTombstonesResponses = {
+    /**
+     * Response List Tombstones
+     *
+     * Successful Response
+     */
+    200: {
+        [key: string]: unknown;
+    };
+};
+
+export type ListTombstonesResponse = ListTombstonesResponses[keyof ListTombstonesResponses];
+
 export type AcceptLostKeyringData = {
     body: KeyringIn;
     path?: never;

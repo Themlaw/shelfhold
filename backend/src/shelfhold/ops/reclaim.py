@@ -18,14 +18,22 @@ from shelfhold.export.domain.physical_roots import RootState
 from shelfhold.identity.public import Principal
 from shelfhold.infrastructure.observability.disk_guard import disk_usage
 from shelfhold.infrastructure.observability.wiring import thresholds_of
-from shelfhold.library.public import check_add_fits, reserve_for
+from shelfhold.library.public import AddSpaceRefusedError, check_add_fits, reserve_for
 from shelfhold.library.tombstones import TombstoneRoot
 from shelfhold.ops.backup.report import retained_since
+from shelfhold.ops.errors import CodedRefusal
 
 if TYPE_CHECKING:
     from shelfhold.composition import Composition
 
-__all__ = ["backups_of", "lift_tombstone", "space_check", "trash_empty"]
+__all__ = [
+    "backups_of",
+    "lift_tombstone",
+    "list_tombstones",
+    "require_space",
+    "space_check",
+    "trash_empty",
+]
 
 
 def backups_of(comp: Composition) -> BackupsSince | None:
@@ -80,6 +88,24 @@ def lift_tombstone(
     return {"seq": done.seq, "written": len(done.written), "pending": len(done.pending)}
 
 
+def list_tombstones(comp: Composition) -> dict[str, Any]:
+    """`tombstone list`: the sequence, the day, the scope and the reason of each tombstone that
+    still blocks, from the shared service: nothing a tombstone stands for is read or shown."""
+    with comp.write_context() as w:
+        rows = w.tombstones.listing()
+    return {
+        "tombstones": [
+            {
+                "seq": r.seq,
+                "created_at": r.created_at.isoformat(),
+                "scope": r.scope,
+                "reason": r.reason,
+            }
+            for r in rows
+        ]
+    }
+
+
 def space_check(comp: Composition, *, estimated_bytes: int) -> dict[str, Any]:
     """The « Ajouter » sheet: does the estimated size fit in the tightest volume an addition
     writes to (`/store` and `/data`), less the reserve of the disk guard? Refused, with the
@@ -98,3 +124,18 @@ def space_check(comp: Composition, *, estimated_bytes: int) -> dict[str, Any]:
     free, reserve = (tightest[1], tightest[2]) if tightest else (0, 0)  # unknown: refused
     checked = check_add_fits(estimated_bytes, free_bytes=free, reserve_bytes=reserve)
     return {"fits": True, **checked.as_dict()}
+
+
+def require_space(comp: Composition, estimated_bytes: int = 0) -> None:
+    """The gate of every door that adds something to /data or /store, on the server and before
+    any write: a coded refusal (409 `library.space_insufficient`) with the figures. An addition
+    whose size is not known is estimated at one byte (it writes something): it is refused when
+    the volume is already at its reserve, and fits otherwise."""
+    try:
+        space_check(comp, estimated_bytes=max(estimated_bytes, 1))
+    except AddSpaceRefusedError as refused:
+        raise CodedRefusal(
+            refused.code,
+            str(refused),
+            extensions={**refused.figures.as_dict(), "reclaim_action": refused.reclaim_action},
+        ) from None

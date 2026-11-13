@@ -179,9 +179,16 @@ def build_library_router(get_ops: Callable[[], OpsServices]) -> APIRouter:
 
     @router.post("/trash/empty", response_model=Body)
     def empty_trash(body: TypedIn, principal: Annotated[Principal, Depends(_EMPTY)]) -> Body:
-        """« Vider la corbeille maintenant »: the same method as `shelfhold trash empty`."""
+        """« Vider la corbeille »: the same method as `shelfhold trash empty`."""
         with refusals():
             return get_ops().library.trash_empty(typed=body.typed, principal=principal)
+
+    @router.get("/tombstones", response_model=Body)
+    def list_tombstones(_admin: Admin) -> Body:
+        """The tombstones that still block: the number to lift by, the day, the scope, the
+        reason. Never what was erased: the table does not hold a title or a path."""
+        with refusals():
+            return get_ops().library.tombstone_list()
 
     @router.post("/tombstones/{seq}/lift", response_model=Body)
     def lift_tombstone(
