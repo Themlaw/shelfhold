@@ -188,7 +188,7 @@ class WorkMergeOut(BaseModel):
     fingerprint: str
     applied: bool
     merge_id: str | None
-    series_plan: "SeriesReassignOut | None" = None  # what the merge proposes for the exports
+    series_plan: SeriesReassignOut | None = None  # what the merge proposes for the exports
 
 
 class SeparateIn(BaseModel):
