@@ -140,9 +140,7 @@ class OpsHealth:
         others get the last value (the first call of all waits for it)."""
         with self._mutex:
             value = self._value
-            if self._closed or (
-                value is not None and self._clock() - self._at < HEALTH_CACHE_TTL
-            ):
+            if self._closed or (value is not None and self._clock() - self._at < HEALTH_CACHE_TTL):
                 return list(value or [])
             flight = self._flight
             leader = flight is None
