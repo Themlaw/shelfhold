@@ -613,6 +613,7 @@
   "headless.suwayomi_settings_fix_failed",
   "headless.target_added",
   "headless.target_key_rotated",
+  "health.refresh_failed",
   "http.call",
   "http.failed",
   "http.refused",

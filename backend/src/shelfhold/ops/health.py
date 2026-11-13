@@ -73,11 +73,11 @@ class OpsHealth:
         probe: HealthProbe,
         ops: Callable[[], OpsServices],
         *,
-        clock: Callable[[], float] = time.monotonic,
+        clock: Callable[[], float] | None = None,
     ) -> None:
         self._probe = probe
         self._ops = ops
-        self._clock = clock
+        self._clock = clock or time.monotonic
         self._mutex = threading.Lock()
         self._value: list[PausedQueue] | None = None
         self._at = 0.0

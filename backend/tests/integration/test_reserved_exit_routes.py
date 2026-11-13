@@ -106,6 +106,10 @@ class _Ops:
         return {}
 
     @staticmethod
+    def paused_queues() -> list[object]:
+        return []  # read by `/healthz` (its startup read), not an operation of a route
+
+    @staticmethod
     def maintenance_active() -> bool:
         return False  # asked by the gate of the socket methods, not an operation of a route
 

@@ -3,28 +3,30 @@ restore, the keyring...) is computed by one caller at a time and kept for `HEALT
 seconds; what depends on the caller (the version, the reason of each queue) is never cached.
 
 Visibility of a change of state (maintenance, restore, keyring): at most `HEALTH_CACHE_TTL`
-seconds later, the time the shared value lives.
+seconds later, the time the shared value lives. The HTTP tests run `create_app()` as composed.
 """
 
 from __future__ import annotations
 
-import inspect
+import asyncio
 import threading
 import time
+from collections.abc import Callable, Iterator
 from types import SimpleNamespace
 from typing import Any
 
-import anyio
-import anyio.to_thread
 import pytest
-from fastapi import FastAPI, Request
-from fastapi.testclient import TestClient
 
-from shelfhold.interfaces.http_api.health import build_health_router
+from shelfhold.config import Settings
+from shelfhold.ops import health as health_module
 from shelfhold.ops.health import HEALTH_CACHE_TTL, OpsHealth
 from shelfhold.ops.ports import PausedQueue
+from tests.auth_env import AuthEnv, auth_env
+from tests.visibility_env import add_profile
 
 pytestmark = pytest.mark.req("ENF-OPS-003")
+
+RESTORE = PausedQueue("export.scan", "restore_pending", "shelfhold restore")
 
 
 class _Probe:
@@ -36,12 +38,13 @@ class _Probe:
 
 
 class _Ops:
-    """The heavy status: counts its runs, can be slowed down and changed."""
+    """The heavy status: counts its runs, can be slowed down and changed. Anything else that the
+    composition asks of the operating services is a no-op."""
 
     def __init__(self) -> None:
         self.calls = 0
         self.delay = 0.0
-        self.queues = [PausedQueue("export.scan", "restore_pending", "shelfhold restore")]
+        self.queues = [RESTORE]
         self._lock = threading.Lock()
 
     def paused_queues(self) -> list[PausedQueue]:
@@ -49,6 +52,9 @@ class _Ops:
             self.calls += 1
         time.sleep(self.delay)
         return list(self.queues)
+
+    def __getattr__(self, name: str) -> Callable[..., None]:
+        return lambda *_a, **_k: None
 
 
 class _Clock:
@@ -59,42 +65,54 @@ class _Clock:
         return self.now
 
 
-def _health(ops: _Ops, clock: _Clock | None = None) -> OpsHealth:
-    return OpsHealth(_Probe(), lambda: ops, clock=clock or time.monotonic)  # type: ignore[arg-type]
-
-
-def _client(health: OpsHealth) -> TestClient:
-    app = FastAPI()
-
-    @app.middleware("http")
-    async def principal(request: Request, call_next: Any) -> Any:
-        role = request.headers.get("x-role")
-        if role:
-            request.scope["state"] = {"principal": SimpleNamespace(role=role)}
-        return await call_next(request)
-
-    app.include_router(build_health_router(health, version="9.9"))
-    return TestClient(app)
-
-
 @pytest.fixture
 def ops() -> _Ops:
     return _Ops()
 
 
-def test_healthz_runs_the_heavy_status_once_for_many_probes(ops: _Ops) -> None:
-    client = _client(_health(ops))
+def _health(ops: _Ops, clock: _Clock | None = None) -> OpsHealth:
+    return OpsHealth(_Probe(), lambda: ops, clock=clock)  # type: ignore[arg-type]
+
+
+def _primed(ops: _Ops) -> None:
+    """The startup read of the composition, awaited: the counts below start from it."""
+    deadline = time.monotonic() + 10
+    while ops.calls == 0 and time.monotonic() < deadline:
+        time.sleep(0.01)
+    time.sleep(0.05)
+
+
+@pytest.fixture
+def clock(monkeypatch: pytest.MonkeyPatch) -> _Clock:
+    fake = _Clock()
+    monkeypatch.setattr(health_module, "time", SimpleNamespace(monotonic=fake))
+    return fake
+
+
+@pytest.fixture
+def api(monkeypatch: pytest.MonkeyPatch, settings: Settings, ops: _Ops) -> Iterator[AuthEnv]:
+    with auth_env(monkeypatch, settings, ops_services=ops) as env:
+        _primed(ops)
+        yield env
+
+
+def _probe_as(env: AuthEnv, role: str) -> Any:
+    if role == "admin":
+        assert env.login().status_code == 200
+        return env.client
+    if role == "anonymous":
+        return env.other_client("10.0.0.9")
+    if role == "child":
+        return add_profile(env, role, role, "10.0.0.2", max_age_rating=10)
+    return add_profile(env, role, role, "10.0.0.3")
+
+
+def test_healthz_runs_the_heavy_status_once_for_many_probes(api: AuthEnv, ops: _Ops) -> None:
+    admin = _probe_as(api, "admin")
     for _ in range(40):
-        assert client.get("/healthz", headers={"x-role": "admin"}).status_code == 200
-    assert ops.calls == 1
-
-
-def test_healthz_head_and_get_share_the_value(ops: _Ops) -> None:
-    client = _client(_health(ops))
-    client.get("/healthz", headers={"x-role": "admin"})
-    client.head("/healthz", headers={"x-role": "admin"})
-    client.get("/healthz", headers={"x-role": "member"})
-    assert ops.calls == 1
+        assert admin.get("/healthz").status_code == 200
+    assert admin.head("/healthz").status_code == 200
+    assert ops.calls == 1  # the startup read, and nothing more
 
 
 def test_concurrent_probes_are_one_flight(ops: _Ops) -> None:
@@ -136,19 +154,19 @@ def test_probe_during_a_slow_refresh_is_not_held(ops: _Ops) -> None:
     leader.join(10)
 
 
-def test_a_change_of_state_is_visible_within_the_ttl(ops: _Ops) -> None:
-    clock = _Clock()
-    client = _client(_health(ops, clock))
-    admin = {"x-role": "admin"}
-    assert client.get("/healthz", headers=admin).json()["paused_queues"] == ["export.scan"]
+def test_a_change_of_state_is_visible_within_the_ttl(
+    clock: _Clock, api: AuthEnv, ops: _Ops
+) -> None:
+    admin = _probe_as(api, "admin")
+    assert admin.get("/healthz").json()["paused_queues"] == ["export.scan"]
     ops.queues = []  # the restore ends, the maintenance mode is left, the keyring is unlocked
     clock.now += HEALTH_CACHE_TTL - 0.1
-    assert client.get("/healthz", headers=admin).json()["paused_queues"] == ["export.scan"]
+    assert admin.get("/healthz").json()["paused_queues"] == ["export.scan"]
     clock.now += 0.2  # past the TTL: the next probe refreshes (the last value may be served once)
     deadline = time.monotonic() + 5
     body: dict[str, Any] = {}
     while time.monotonic() < deadline:
-        body = client.get("/healthz", headers=admin).json()
+        body = admin.get("/healthz").json()
         if body["paused_queues"] == []:
             break
         time.sleep(0.05)
@@ -157,56 +175,66 @@ def test_a_change_of_state_is_visible_within_the_ttl(ops: _Ops) -> None:
 
 @pytest.mark.parametrize("role", ["child", "member"])
 def test_a_non_admin_never_sees_what_an_admin_sees_even_from_the_cache(
-    ops: _Ops, role: str
+    api: AuthEnv, role: str
 ) -> None:
-    client = _client(_health(ops))
-    admin = client.get("/healthz", headers={"x-role": "admin"}).json()
+    admin = _probe_as(api, "admin").get("/healthz").json()
     assert admin["paused"] == [{"queue": "export.scan", "reason": "restore_pending"}]
-    other = client.get("/healthz", headers={"x-role": role}).json()
+    other = _probe_as(api, role).get("/healthz").json()
     assert "paused" not in other
+    assert other["paused_queues"] == ["export.scan"]  # the names are for any session
     assert "shelfhold restore" not in str(other)
     assert "restore_pending" not in str(other)
 
 
 def test_an_anonymous_never_sees_what_an_authenticated_caller_sees_from_the_cache(
-    ops: _Ops,
+    api: AuthEnv,
 ) -> None:
-    client = _client(_health(ops))
-    client.get("/healthz", headers={"x-role": "admin"})
-    assert client.get("/healthz").json() == {"state": "ok"}
-    assert client.head("/healthz").status_code == 200
+    _probe_as(api, "admin").get("/healthz")  # the cache is warm, for an admin
+    anonymous = _probe_as(api, "anonymous")
+    assert anonymous.get("/healthz").json() == {"state": "ok"}
+    assert anonymous.head("/healthz").status_code == 200
 
 
 def test_the_cache_holds_no_principal(ops: _Ops) -> None:
-    """What is kept is the common part only: nothing of the response is keyed or filled by who
-    asked first."""
+    """What is kept is the common list only, never a response or what depends on the caller."""
     health = _health(ops)
-    client = _client(health)
-    client.get("/healthz", headers={"x-role": "admin"})
-    kept = repr(vars(health))
-    assert "principal" not in kept and "admin" not in kept and "9.9" not in kept
+    health.queues()
+    kept = {name: type(value).__name__ for name, value in vars(health).items()}
+    assert "list" in kept.values() and not {"dict", "JSONResponse", "Principal"} & set(
+        kept.values()
+    )
 
 
-def test_healthz_is_a_coroutine_that_does_not_take_a_pool_thread(ops: _Ops) -> None:
-    router = build_health_router(_health(ops))
-    route = next(r for r in router.routes if getattr(r, "path", "") == "/healthz")
-    assert inspect.iscoroutinefunction(route.endpoint)  # type: ignore[attr-defined]
+def test_healthz_runs_on_the_event_loop_not_in_a_pool_thread(
+    api: AuthEnv, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    seen: list[bool] = []
+
+    def progress(_self: OpsHealth) -> None:
+        try:
+            asyncio.get_running_loop()
+            seen.append(True)  # called from the loop: the route is a coroutine
+        except RuntimeError:
+            seen.append(False)  # called from a worker thread of the pool
+
+    monkeypatch.setattr(OpsHealth, "migration_progress", progress)
+    assert api.other_client("10.0.0.9").get("/healthz").status_code == 200
+    assert seen == [True]
 
 
 def test_a_cached_probe_takes_no_thread_of_the_pool(
-    ops: _Ops, monkeypatch: pytest.MonkeyPatch
+    api: AuthEnv, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """With the value cached, a probe needs no thread of the server's pool (the pool may be
-    full of decodes): the pool is closed to it, and it still answers."""
-    health = _health(ops)
-    client = _client(health)
-    assert client.get("/healthz", headers={"x-role": "admin"}).status_code == 200  # warm
+    """With the value cached, the probe needs no thread of the server's pool (the pool may be
+    full of decodes): the route's own door to the pool is closed to it, and it still answers."""
+    admin = _probe_as(api, "admin")
+    assert admin.get("/healthz").status_code == 200  # warm
 
-    async def refused(*args: Any, **kwargs: Any) -> Any:
+    async def refused(*_a: Any, **_k: Any) -> Any:
         raise AssertionError("a cached /healthz asked for a thread of the pool")
 
-    monkeypatch.setattr(anyio.to_thread, "run_sync", refused)
-    response = client.get("/healthz", headers={"x-role": "admin"})
+    monkeypatch.setattr("shelfhold.interfaces.http_api.health.run_in_threadpool", refused)
+    response = admin.get("/healthz")
     assert response.status_code == 200
     assert response.json()["paused_queues"] == ["export.scan"]
 
@@ -218,6 +246,5 @@ def test_prime_reads_the_status_before_the_first_probe(ops: _Ops) -> None:
     while ops.calls == 0 and time.monotonic() < deadline:
         time.sleep(0.01)
     time.sleep(0.05)
-    client = _client(health)
-    assert client.get("/healthz", headers={"x-role": "admin"}).status_code == 200
+    assert [q.queue for q in health.queues()] == ["export.scan"]
     assert ops.calls == 1, "the first probe read the status again"
