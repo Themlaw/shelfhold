@@ -121,7 +121,7 @@ describe('ApproveSheet', () => {
     answer(preview({ needs_age: false }));
     const onapproved = vi.fn();
     render(ApproveSheet, { item: item({ needs_age: false, requester_role: 'member' }), onapproved });
-    await screen.findByText(/3\sunités/);
+    await screen.findByText(/3\svolumes/);
     expect(screen.queryByRole('group')).toBeNull();
     await userEvent.setup().click(approveButton());
     await vi.waitFor(() => expect(onapproved).toHaveBeenCalledOnce());
@@ -132,7 +132,7 @@ describe('ApproveSheet', () => {
   it('shows the size summary, and says when more will follow', async () => {
     answer(preview({ needs_age: false, units: 1, size_bytes: 1000, units_minimum: true }));
     render(ApproveSheet, { item: item({ needs_age: false }), onapproved: vi.fn() });
-    expect(await screen.findByText(/1\sunité,\s1\s000\soctets/)).toBeInTheDocument();
+    expect(await screen.findByText(/1\svolume,\s1\s000\soctets/)).toBeInTheDocument();
     expect(screen.getByText(/d’autres suivront|d'autres suivront/)).toBeInTheDocument();
   });
 

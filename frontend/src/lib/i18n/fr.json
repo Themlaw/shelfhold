@@ -253,7 +253,7 @@
   "approve.approve": "Approuver",
   "approve.choose_age": "Choisissez un âge pour pouvoir approuver.",
   "approve.age_for_child": "Âge pour cette demande",
-  "approve.size_summary": "{units, plural, one {# unité} other {# unités}}, {bytes} octets",
+  "approve.size_summary": "{units, plural, one {# volume} other {# volumes}}, {bytes} octets",
   "approve.more_to_come": "d'autres suivront",
   "approve.confirm_size": "Je confirme la taille",
   "approve.sheet": "Approuver une demande",
