@@ -27,6 +27,7 @@ from shelfhold.identity.application.passkeys import (
 from shelfhold.identity.application.ports import (
     ApiKeyRecord,
     AuditEntry,
+    ChildKavitaAccount,
     DeviceProofPort,
     IdentityStore,
     KeyConflictError,
@@ -471,6 +472,14 @@ class LocalAuth:
         return self._profiles.set_family_search(
             profile_id, hide_unrated_remote, subject_filter, by=by
         )
+
+    def profile_set_kavita_username(
+        self, profile_id: str, name: object, *, by: Principal | None = None
+    ) -> str | None:
+        return self._profiles.set_kavita_username(profile_id, name, by=by)
+
+    def child_kavita_accounts(self, *, by: Principal | None = None) -> Sequence[ChildKavitaAccount]:
+        return self._profiles.child_kavita_accounts(by=by)
 
     def set_own_visibility(self, by: Principal, visibility: object) -> str:
         return self._profiles.set_own_visibility(by, visibility)

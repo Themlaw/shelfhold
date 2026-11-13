@@ -11,17 +11,24 @@ from typing import Any
 import pytest
 import sqlalchemy as sa
 
+from shelfhold.config import Settings
 from shelfhold.export.targets.kavita.accounts_audit import (
     ChildAccount,
     ChildAccountsAuditor,
     health_entry,
 )
+from shelfhold.identity.public import local_auth
 from shelfhold.infrastructure.ids import new_ulid
-from shelfhold.infrastructure.schema import export
+from shelfhold.infrastructure.schema import export, platform
+from shelfhold.ops.kavita_accounts import KavitaAccountsOps
+from shelfhold.ops.wiring import open_ops
+from shelfhold.runtime_jobs import access_audit
+from tests.auth_env import PASSWORD
 from tests.export_env import export_env
 from tests.fakes.kavita import member
 from tests.kavita_env import run
 from tests.kavita_export_env import LIBRARY_ID, Wired, wire
+from tests.l41_env import instance
 
 OTHER_LIBRARY = 8  # the second library of the simulated server: no shelf points at it
 ADULT_ONLY = 18
@@ -41,7 +48,7 @@ def _codes(report: Any, index: int = 0) -> set[str]:
 
 
 def _sound_account() -> dict[str, Any]:
-    """What a well set up child account looks like: one family library, a tier of 10, no unknowns."""
+    """A well set up child account: one family library, a tier of 10, no unknowns."""
     return member("kid", libraries=(LIBRARY_ID,), age_rating=5, include_unknowns=False)
 
 
@@ -166,9 +173,28 @@ def test_account_audit_that_cannot_read_kavita_fails_visibly_not_clean() -> None
         w.fake.missing.add(("GET", "/api/users"))
         report = _audit(w, _child(10))
         assert report.failed and report.children == ()  # no child is reported "ok" unread
-        assert w.events.codes() == [] and w.fake.writes == []
+        assert "kavita.account_audit" not in w.events.codes() and w.fake.writes == []
         entry = health_entry(env.engine, env.target_id)
         assert entry["state"] == "unverified"
+
+
+@pytest.mark.req("EF-EXP-036")
+def test_a_target_without_a_usable_client_is_unverified_never_clean() -> None:
+    with export_env(max_age_rating=10) as env:
+        w = wire(env)
+        w.fake.users.append(_sound_account())
+        auditor = ChildAccountsAuditor(env.engine, env.clock, w.events)
+
+        def no_key(_target_id: str) -> Any:
+            raise KeyError("sealed key")
+
+        ops = KavitaAccountsOps(
+            env.engine, auditor, targets=lambda: [env.target_id], client_for=no_key,
+            children=lambda: [],
+        )  # fmt: skip
+        (entry,) = ops.run()
+        assert entry["state"] == "unverified" and entry["alerts"] == 0
+        assert w.fake.requests == []  # nothing was asked of anyone
 
 
 @pytest.mark.req("EF-EXP-036")
@@ -185,3 +211,34 @@ def test_health_entry_for_the_health_page() -> None:
         w.fake.users[-1] = _sound_account()
         _audit(w, _child(10))
         assert health_entry(env.engine, env.target_id)["state"] == "ok"
+
+
+@pytest.mark.req("EF-EXP-036", "EF-USR-017")
+def test_the_daily_job_and_the_ops_audit_children_through_the_connected_targets(
+    settings: Settings, tmp_path: Any
+) -> None:
+    with instance(settings, tmp_path) as inst:
+        inst.configure()
+        auth = local_auth(inst.engine, settings)
+        kid = auth.profile_add("kid", PASSWORD, "child", max_age_rating=10)
+        auth.profile_set_kavita_username(kid, "kid.k")
+        auth.profile_add("tiny", PASSWORD, "child", max_age_rating=5)  # nobody declared an account
+        everything = tuple(int(lib["id"]) for lib in inst.kavita.libraries)
+        inst.kavita.users.append(member("kid.k", libraries=everything))
+        written = len(inst.kavita.writes)
+        access_audit(inst.comp)()
+        access_audit(inst.comp)()  # the next day: the same gap is not said twice
+        with inst.engine.connect() as connection:
+            rows = connection.execute(
+                sa.select(platform.event.c.payload).where(
+                    platform.event.c.type == "kavita.account_audit"
+                )
+            ).all()
+        assert [set(r.payload) for r in rows] == [{"target_id", "children", "alerts"}]
+        assert rows[0].payload["children"] == 2 and rows[0].payload["alerts"] == 1
+        ops = open_ops(settings, engine=inst.engine, composition=inst.comp)
+        (entry,) = ops.kavita_accounts.run()
+        assert entry["state"] == "alert" and entry["alerts"] == 1 and entry["unmapped"] == 1
+        codes = {f["code"] for c in entry["children"] for f in c["findings"]}
+        assert {"non_family_library", "no_family_library", "unrestricted"} <= codes
+        assert "kid.k" not in repr(entry) and len(inst.kavita.writes) == written  # read only

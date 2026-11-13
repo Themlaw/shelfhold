@@ -4,6 +4,7 @@ from shelfhold.error_catalog import ErrorCode
 
 CODES: tuple[ErrorCode, ...] = (
     ErrorCode("auth.passkey_registered", 409, "admin", event=True),
+    ErrorCode("kavita.account_audit", 409, "admin", event=True),
     ErrorCode("backup.failed", 503, "admin", event=True),
     ErrorCode("backup.stale", 503, "admin", event=True),
     ErrorCode("disk.low", 503, "admin", event=True),

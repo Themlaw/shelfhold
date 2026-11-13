@@ -85,6 +85,7 @@ from shelfhold.export.application.wiring import NoRemoteParse
 from shelfhold.export.domain.naming import DEFAULT_TEMPLATE, NamingTemplate
 from shelfhold.export.domain.path_map import PathMapError
 from shelfhold.export.domain.physical_roots import RootState
+from shelfhold.export.targets.kavita.accounts_audit import ChildAccountsAuditor
 from shelfhold.export.targets.kavita.adopt import BulkParse, library_type_named
 from shelfhold.export.targets.kavita.audit import AccessAuditor
 from shelfhold.export.targets.kavita.client import KavitaClient
@@ -106,6 +107,7 @@ from shelfhold.export.targets.kavita.series import (
     refresh_foreign_names,
     refresh_names,
 )
+from shelfhold.identity.public import child_kavita_accounts
 from shelfhold.import_jobs import register_import_job
 from shelfhold.infrastructure.fsops import Fsops
 from shelfhold.infrastructure.fsops.errors import RootBlockedError
@@ -128,6 +130,7 @@ from shelfhold.library.public import (
 from shelfhold.ops.acquire import AcquireOps
 from shelfhold.ops.errors import ExitUnavailableError
 from shelfhold.ops.events import BusTargetEvents
+from shelfhold.ops.kavita_accounts import declared_children
 from shelfhold.ops.notifications import LazyNotificationSweep
 from shelfhold.retention_jobs import register_retention_jobs
 from shelfhold.safeguard_jobs import register_safeguard_job
@@ -906,8 +909,22 @@ def connected_clients(comp: Composition) -> Callable[[], Iterable[tuple[str, Kav
 
 
 def access_audit(comp: Composition) -> Callable[[], None]:
-    auditor = AccessAuditor(comp.engine, comp.clock, BusTargetEvents(comp.engine, comp.bus))
-    return daily_access_audit(auditor, connected_clients(comp))
+    """The daily audit: the libraries' side (pauses a shelf) and the children's side (tells the
+    admin, once, when the Kavita account of a child reaches too much, M3 L10). Both read only."""
+    events = BusTargetEvents(comp.engine, comp.bus)
+    libraries_side = daily_access_audit(
+        AccessAuditor(comp.engine, comp.clock, events), connected_clients(comp)
+    )
+    accounts = ChildAccountsAuditor(comp.engine, comp.clock, events)
+    clients = connected_clients(comp)
+
+    def run() -> None:
+        libraries_side()
+        children = declared_children(child_kavita_accounts(comp.engine))
+        for target_id, client in clients():
+            asyncio.run(accounts.audit(client, target_id, children))  # fails visibly, not clean
+
+    return run
 
 
 def key_expiry(comp: Composition) -> Callable[[], None]:

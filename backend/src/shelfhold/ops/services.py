@@ -62,6 +62,7 @@ from shelfhold.ops.export_item import ExportItemOps
 from shelfhold.ops.follows import FollowOps
 from shelfhold.ops.import_folder import ImportOps
 from shelfhold.ops.intents import IntentOps
+from shelfhold.ops.kavita_accounts import KavitaAccountsOps
 from shelfhold.ops.library import LibraryOps
 from shelfhold.ops.maintenance import MaintenanceOps
 from shelfhold.ops.meta import MetaOps
@@ -220,6 +221,7 @@ class OpsServices:
         requests: RequestService | None = None,
         roots: RootOps | None = None,
         maintenance: MaintenanceOps | None = None,
+        kavita_accounts: KavitaAccountsOps | None = None,
         window: MaintenanceWindow | None = None,
     ) -> None:
         self._window = window or DEFAULT_WINDOW
@@ -257,6 +259,7 @@ class OpsServices:
         self._requests = requests
         self._roots = roots
         self._maintenance = maintenance
+        self._kavita_accounts = kavita_accounts
 
     @property
     def _fsops(self) -> Fsops | None:
@@ -738,6 +741,13 @@ class OpsServices:
         if self._resplit is None:
             raise ExitUnavailableError("the re-cut chapters are not connected")
         return self._resplit
+
+    @property
+    def kavita_accounts(self) -> KavitaAccountsOps:
+        """The audit of the Kavita accounts of the children, read only (EF-EXP-036)."""
+        if self._kavita_accounts is None:
+            raise ExitUnavailableError("the Kavita accounts audit is not connected")
+        return self._kavita_accounts
 
     @property
     def maintenance(self) -> MaintenanceOps:

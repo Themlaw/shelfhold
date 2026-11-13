@@ -137,7 +137,7 @@ class AccessAuditor:
         shared_library = False  # a family library that holds more than its own folder
         now = self._clock.now()
         with self._engine.begin() as connection:
-            for row in self._links(connection, target_id):
+            for row in self.links(connection, target_id):
                 ctx = load_context(connection, row.destination_id)
                 root = ctx.remote_folder(ctx.root_local) if ctx.root_local else None
                 # every library over the folders of the shelf, by path, never by the cached id
@@ -210,7 +210,7 @@ class AccessAuditor:
     # -- the database --------------------------------------------------------------------------
 
     @staticmethod
-    def _links(connection: sa.Connection, target_id: str) -> list[sa.Row[tuple[str, str, str]]]:
+    def links(connection: sa.Connection, target_id: str) -> list[sa.Row[tuple[str, str, str]]]:
         d, link, lib = (
             export.shelf_destination,
             export.shelf_destination_remote_library,

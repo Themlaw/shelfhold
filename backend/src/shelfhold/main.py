@@ -48,6 +48,7 @@ from shelfhold.infrastructure.settings_store import load_db_settings
 from shelfhold.infrastructure.volumes import ensure_volumes
 from shelfhold.interfaces.http_api.activity import build_activity_router
 from shelfhold.interfaces.http_api.app import HttpApplication, Routers, create_http_app
+from shelfhold.interfaces.http_api.audit import build_audit_router
 from shelfhold.interfaces.http_api.auth import AuthGate
 from shelfhold.interfaces.http_api.backfill import build_backfill_router
 from shelfhold.interfaces.http_api.catalog_admin import build_catalog_admin_router
@@ -279,6 +280,7 @@ def create_app(
         build_setup_router(ops_services),  # L39: the first-run wizard, screens 2 and 3
         build_plans_router(plans),
         build_jobs_router(ops_services),  # EF-INT-001: the URL of a 202
+        build_audit_router(ops_services),  # EF-EXP-036: the Kavita accounts of the children
         build_maintenance_router(ops_services),  # EF-INT-018, EF-INT-017: mode and queue control
         build_intents_router(ops_services),  # EF-INT-014: the open intents and their settlement
         build_revisions_router(ops_services),  # EF-BIB-043: the queue of pending revisions

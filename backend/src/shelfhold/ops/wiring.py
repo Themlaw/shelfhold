@@ -18,10 +18,12 @@ from shelfhold.config import Settings
 from shelfhold.events.bus import EventBus
 from shelfhold.export.application.roots import load_roots
 from shelfhold.export.domain.path_map import PathMap
+from shelfhold.export.targets.kavita.accounts_audit import ChildAccountsAuditor
 from shelfhold.export.targets.kavita.audit import AccessAuditor
 from shelfhold.export.targets.kavita.reinstall import InstanceService
 from shelfhold.headless import HeadlessAdmin
 from shelfhold.headless import wiring as headless_wiring
+from shelfhold.identity.public import child_kavita_accounts
 from shelfhold.infrastructure.clock import Clock
 from shelfhold.infrastructure.db import create_db_engine
 from shelfhold.infrastructure.fsops import Fsops
@@ -44,6 +46,7 @@ from shelfhold.ops.follows import FollowOps
 from shelfhold.ops.import_folder import ImportOps
 from shelfhold.ops.intents import IntentOps
 from shelfhold.ops.kavita import KavitaTargetOps
+from shelfhold.ops.kavita_accounts import KavitaAccountsOps
 from shelfhold.ops.keyring import TombstoneKeyringExit
 from shelfhold.ops.library import LibraryOps
 from shelfhold.ops.maintenance import MaintenanceOps
@@ -168,6 +171,11 @@ def open_ops(
         wizard=WizardOps(composition),
         follows=FollowOps(composition), acquire=AcquireOps(composition),
         requests=build_service(composition), roots=RootOps(composition),
+        kavita_accounts=KavitaAccountsOps(
+            engine, ChildAccountsAuditor(engine, clock, events),
+            targets=composition.kavita_targets, client_for=composition.kavita_client,
+            children=lambda: child_kavita_accounts(engine),
+        ),
         maintenance=MaintenanceOps(
             engine, clock, fresh_auth_s=settings.fresh_auth_s, hardened=settings.auth_hardened,
             window=window,

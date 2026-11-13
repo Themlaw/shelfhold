@@ -218,6 +218,14 @@ def _profile_policy(auth: LocalAuth, by: Principal, params: Params) -> object:
     return None
 
 
+def _profile_kavita(auth: LocalAuth, by: Principal, params: Params) -> object:
+    name = params.get("kavita_username")
+    if name is not None and not isinstance(name, str):
+        raise _invalid("kavita_username", "text")
+    auth.profile_set_kavita_username(str(_text(params, "profile_id")), name, by=by)
+    return None
+
+
 # method -> (implementation, the reserved action it is, if any). A key is a credential: managing
 # credentials is reserved (EF-USR-024), and `local_cli` is one of the two channels allowed to.
 METHODS: Mapping[str, tuple[Method, str | None]] = {
@@ -236,6 +244,7 @@ METHODS: Mapping[str, tuple[Method, str | None]] = {
     "identity.profile_remove": (_profile_remove, "profile.remove"),
     "identity.profile_export": (_profile_export, "profile.export"),
     "identity.profile_policy": (_profile_policy, "profile.source_policy"),
+    "identity.profile_kavita": (_profile_kavita, "profile.kavita_mapping"),  # EF-USR-017
 }
 
 

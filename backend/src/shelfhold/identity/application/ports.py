@@ -32,6 +32,16 @@ class ProfileRecord:
 
 
 @dataclass(frozen=True)
+class ChildKavitaAccount:
+    """What the audit of the Kavita accounts needs of a child (EF-USR-017): the profile, the age
+    ceiling, and the name of the account the admin declared, if any. No title, no password."""
+
+    profile_id: str
+    max_age: int
+    kavita_username: str | None
+
+
+@dataclass(frozen=True)
 class SourcePolicyRecord:
     source_key: str
     policy: str  # the stored choice
@@ -254,6 +264,21 @@ class IdentityStore(Protocol):
         (`not_allowed`); `not_found` for a profile that is not there."""
         ...
 
+    def set_kavita_username(
+        self,
+        user_id: str,
+        name: str | None,
+        *,
+        actor_id: str | None = None,
+        audit: Callable[[bool, bool], AuditEntry | None] | None = None,
+    ) -> tuple[bool, bool]:
+        """Name or clear the Kavita account of a child in one transaction with its audit entry:
+        `(was mapped, is mapped)`. The admin caller and the role are re-read under the lock
+        (`not_allowed`, `not_found`, `not_a_child`); a name held by another profile is
+        `kavita_username_taken`."""
+        ...
+
+    def child_kavita_accounts(self) -> Sequence[ChildKavitaAccount]: ...
     def source_family(self, source_key: str) -> bool: ...
     def set_source_policy(
         self,

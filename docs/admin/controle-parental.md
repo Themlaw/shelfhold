@@ -108,3 +108,65 @@ Shelfhold ne modifie jamais une bibliothèque Kavita existante ; `shelf create` 
 `light_novel` ou `ebook` doit viser une bibliothèque Kavita de type **Book**, déclarée par l'admin.
 Sinon, le plan affiche l'avertissement `target.library_type_mismatch`. Ne mélangez pas EPUB et CBZ
 dans une même étagère.
+
+## Le compte Kavita d'un profil enfant (EF-USR-017, EF-EXP-036)
+
+La barrière d'un enfant est la **bibliothèque** Kavita : tant qu'un compte Kavita y a accès, Kavita
+la lui sert, quoi qu'en pense Shelfhold. Shelfhold ne peut pas régler les comptes de Kavita (il n'écrit
+jamais dans Kavita) ; il peut en revanche **vérifier** que le compte de chaque enfant est réglé comme
+il faut, une fois que vous lui avez dit quel compte est celui de quel enfant.
+
+### Dire quel compte est celui de l'enfant
+
+```
+shelfhold profile map-kavita lea --kavita-user lea.k    # nomme le compte
+shelfhold profile map-kavita lea --clear                # retire la correspondance
+```
+
+L'équivalent HTTP est `PUT /api/v1/profiles/{id}/kavita-account`. C'est une **action réservée** : une
+session d'administrateur de moins de 15 minutes, ou la CLI de l'hôte ; jamais une clé d'API (portée
+`admin` comprise), un jeton d'appareil, un membre ni un enfant. On y saisit un **nom**, jamais un jeton
+ni un mot de passe : Shelfhold ne se connecte pas à Kavita en tant qu'enfant. Kavita ne distingue pas
+« Lea » de « lea » ; un même compte ne peut être associé qu'à un seul profil. Seul un profil enfant peut
+être associé. Chaque changement est journalisé (le profil, `none`/`set`, jamais le nom).
+
+### Ce que l'audit vérifie
+
+Pour chaque profil enfant associé, la lecture seule de Kavita (`GET /api/Users` et la liste des
+bibliothèques) est comparée à l'âge maximal de l'enfant. Le classement d'une bibliothèque est le plus
+haut âge maximal des étagères qui l'alimentent ; une bibliothèque qu'aucune étagère n'alimente, ou
+qu'alimente une étagère 18+, n'est **pas** une bibliothèque famille.
+
+| Constat | Sens |
+|---|---|
+| `account_not_found` | aucun compte Kavita ne porte ce nom |
+| `account_is_admin` | le compte est administrateur de Kavita : il atteint tout |
+| `non_family_library` | le compte atteint une bibliothèque qui n'est pas famille |
+| `library_above_max_age` | une bibliothèque famille atteinte monte plus haut que l'âge de l'enfant |
+| `no_family_library` | le compte n'atteint **aucune** bibliothèque famille |
+| `unrestricted` | le compte n'a aucune restriction d'âge |
+| `restriction_above_max_age` | la restriction du compte est au-dessus de l'âge de l'enfant |
+| `includes_unknowns` | « inclure les inconnus » est actif |
+
+Un enfant sans compte associé est `unmapped` : Shelfhold ne devine jamais un compte par son nom.
+L'audit se rejoue chaque jour (tâche `target.access_audit`) et à la demande :
+`GET /api/v1/audit/kavita-accounts` donne le dernier résultat, `POST` le relance. Un constat nouveau
+ou modifié est annoncé **une fois** par `kavita.account_audit` (notifiable par défaut) ; le message ne
+nomme aucun compte. Une lecture qui échoue laisse l'état `unverified` : un enfant n'est jamais déclaré
+conforme sur une lecture qui n'a pas eu lieu. **Rien n'est modifié dans Kavita ni suspendu** : corrigez
+le compte dans Kavita.
+
+### Checklist OPDS avec un compte restreint
+
+Le flux OPDS de Kavita ne passe pas par Shelfhold : il applique les réglages du compte qui s'y
+connecte. Avant de donner l'adresse à une liseuse d'enfant :
+
+1. Créez dans Kavita un compte **propre à l'enfant**, sans rôle d'administrateur.
+2. Limitez-le aux **seules bibliothèques famille** dont l'âge est au plus celui de l'enfant.
+3. Réglez une **restriction d'âge** au plus égale à l'âge de l'enfant, et laissez « inclure les inconnus »
+   **désactivé**.
+4. Associez ce compte au profil (`shelfhold profile map-kavita`), puis lancez l'audit : il doit répondre
+   `ok`.
+5. Ouvrez le flux OPDS de ce compte (clé d'API du compte, jamais celle de l'administrateur) : seules les
+   bibliothèques famille apparaissent ; une série non classée n'apparaît pas.
+6. Rejouez l'audit après chaque modification des bibliothèques ou des comptes dans Kavita.

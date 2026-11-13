@@ -133,6 +133,9 @@ profile_username_help = "Identifiant du profil."
 profile_role_help = "Rôle : member (défaut), child ou admin (deux au plus)."
 profile_max_age_help = "Âge maximal d'un enfant (0 à 99, obligatoire pour un enfant)."
 profile_can_rate_help = "Droit de classer (jamais pour un enfant)."
+profile_map_kavita_help = "Nomme le compte Kavita d'un profil enfant, pour l'audit en lecture seule (action réservée ; un nom, jamais un jeton)."
+profile_kavita_user_help = "Nom du compte dans Kavita (Kavita ne distingue pas les majuscules)."
+profile_kavita_clear_help = "Retire la correspondance : le profil n'est plus audité par son compte Kavita."
 profile_source_policy_help = "Politique pour une source, SOURCE=add_directly|request|forbidden (répétable)."
 admin_help = "Administre les comptes locaux, les sessions et les clés d'API."
 admin_create_help = "Crée le compte administrateur local (mot de passe haché en argon2id)."
@@ -673,6 +676,11 @@ cannot_remove_self = "Un profil ne se supprime pas lui-même."
 cannot_change_own_role = "Un profil ne change pas son propre rôle."
 changed_meanwhile = "Le profil a changé entre-temps : relisez-le puis recommencez."
 invalid_visibility = "La visibilité doit être « private » ou « household »."
+not_a_child = "Seul un profil enfant a un compte Kavita à auditer."
+invalid_kavita_username = "Le nom du compte Kavita doit tenir sur une ligne (1 à 128 caractères)."
+kavita_username_taken = "Ce compte Kavita est déjà associé à un autre profil."
+kavita_mapped = "Le profil « {username} » est associé à un compte Kavita."
+kavita_cleared = "Le profil « {username} » n'est plus associé à un compte Kavita."
 child_visibility_household = "Un profil enfant reste visible des parents : seule « household » est possible."
 source_policy_format = "attendu : SOURCE=add_directly|request|forbidden"
 
@@ -1469,6 +1477,11 @@ cause = "La version du service de la source est hors de celles que Shelfhold a t
 title = "Adresse refusée par la protection contre les requêtes internes."
 action = "Si l'adresse est un service de votre réseau, déclarez-la explicitement (hôte et port) dans les réglages."
 cause = "L'adresse désigne une machine du réseau interne, de la machine locale ou un point d'accès réservé : Shelfhold ne s'adresse pas à elles sans que vous l'ayez déclaré."
+
+[errors."kavita.account_audit"]
+title = "Le compte Kavita d'un profil enfant donne accès à plus que son âge ne le permet."
+cause = "Un compte Kavita associé à un profil enfant atteint une bibliothèque qui n'est pas famille, n'a pas de restriction d'âge, inclut les inconnus ou n'atteint aucune bibliothèque famille."
+action = "Lisez le détail dans `GET /api/v1/audit/kavita-accounts` ou dans la page Santé, puis corrigez le compte dans Kavita (bibliothèques, restriction d'âge, « inclure les inconnus »). Shelfhold ne modifie rien dans Kavita ; l'audit se rejoue chaque jour."
 
 [errors."target.child_exposure"]
 title = "Une bibliothèque Kavita est accessible à un compte enfant."

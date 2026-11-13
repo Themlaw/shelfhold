@@ -62,6 +62,15 @@ def register(commands: argparse._SubParsersAction[argparse.ArgumentParser]) -> N
     )  # fmt: skip
     change.set_defaults(handler=run_set)
 
+    mapping = actions.add_parser(
+        "map-kavita", help=t("cli.profile_map_kavita_help"), allow_abbrev=False
+    )
+    mapping.add_argument("username", help=t("cli.profile_username_help"))
+    which = mapping.add_mutually_exclusive_group(required=True)
+    which.add_argument("--kavita-user", help=t("cli.profile_kavita_user_help"))
+    which.add_argument("--clear", action="store_true", help=t("cli.profile_kavita_clear_help"))
+    mapping.set_defaults(handler=run_map_kavita)
+
     remove = actions.add_parser("remove", help=t("cli.profile_remove_help"), allow_abbrev=False)
     remove.add_argument("username", help=t("cli.profile_username_help"))
     remove.set_defaults(handler=run_remove)
@@ -96,6 +105,9 @@ _REFUSALS: dict[str, Callable[[], str]] = {
     "changed_meanwhile": lambda: t("profiles.changed_meanwhile"),
     "invalid_visibility": lambda: t("profiles.invalid_visibility"),
     "child_visibility_household": lambda: t("profiles.child_visibility_household"),
+    "not_a_child": lambda: t("profiles.not_a_child"),
+    "invalid_kavita_username": lambda: t("profiles.invalid_kavita_username"),
+    "kavita_username_taken": lambda: t("profiles.kavita_username_taken"),
 }
 
 
@@ -175,6 +187,23 @@ def run_set(args: argparse.Namespace, auth: IdentityCommands) -> int:
     except ProfileError as error:
         return _refusal(error)
     print(t("profiles.updated", username=profile.username))
+    return 0
+
+
+@_command
+def run_map_kavita(args: argparse.Namespace, auth: IdentityCommands) -> int:
+    """Name the Kavita account of a child, or clear it (EF-USR-017). A name, never a token."""
+    try:
+        profile = _profile(auth, args.username)
+        if profile is None:
+            return _fail(t("profiles.unknown", username=args.username))
+        auth.profile_set_kavita_username(profile.id, None if args.clear else args.kavita_user)
+    except ProfileError as error:
+        return _refusal(error)
+    if args.clear:
+        print(t("profiles.kavita_cleared", username=profile.username))
+    else:
+        print(t("profiles.kavita_mapped", username=profile.username))
     return 0
 
 

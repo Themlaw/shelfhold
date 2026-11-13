@@ -26,6 +26,7 @@ KEY = re.compile(r"shk_([0-9a-f]{8})_[A-Za-z0-9_-]{43}")
 @pytest.fixture
 def api(monkeypatch: pytest.MonkeyPatch, settings: Settings) -> Iterator[AuthEnv]:
     with auth_env(monkeypatch, settings) as env:
+        assert env.login(ADMIN).status_code == 200
         yield env
 
 
@@ -183,11 +184,10 @@ def test_cli_map_kavita_through_the_socket_and_stopped(
     capsys.readouterr()
     assert run_cli(monkeypatch, s, "profile", "map-kavita", "mum", "--kavita-user", "x") == 1
     assert run_cli(monkeypatch, s, "profile", "map-kavita", "nobody", "--kavita-user", "x") == 1
-    assert run_cli(monkeypatch, s, "profile", "map-kavita", "kid") == 2  # a name or --clear
-    assert (
+    with pytest.raises(SystemExit):  # a name or --clear, one of the two
+        run_cli(monkeypatch, s, "profile", "map-kavita", "kid")
+    with pytest.raises(SystemExit):  # not both
         run_cli(monkeypatch, s, "profile", "map-kavita", "kid", "--kavita-user", "a", "--clear")
-        == 2
-    )
     assert run_cli(monkeypatch, s, "profile", "map-kavita", "kid", "--clear") == 0
     assert _mapped(api)[1] == ("kid", None)
     lines = _audit_lines(api)
@@ -222,5 +222,7 @@ def test_audit_route_is_the_admins_and_names_no_account(api: AuthEnv) -> None:
     assert done.status_code == 200
     body = done.json()
     assert body["targets"] == [] and "lea" not in done.text
+    now = _send(api, "POST", AUDIT)  # no Kavita target: nothing to read, nothing to say
+    assert now.status_code == 200 and now.json() == {"targets": []}
     api.client.cookies.clear()
     assert api.client.get(AUDIT).status_code == 401  # nobody signed in

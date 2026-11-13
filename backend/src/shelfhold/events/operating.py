@@ -31,6 +31,7 @@ OPERATING_EVENTS: frozenset[str] = frozenset(
         "instance.lease_conflict",
         "instance.restored_behind",
         "job.dead_lettered",
+        "kavita.account_audit",  # M3 L10 (EF-EXP-036): a child's Kavita account reaches too much
         "metadata.provider_down",
         "mount.sentinel_missing",
         "notify.failed",
