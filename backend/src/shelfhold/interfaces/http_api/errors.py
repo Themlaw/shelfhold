@@ -9,6 +9,7 @@ CODES: tuple[ErrorCode, ...] = (
     ErrorCode("method_not_allowed", 405, "user"),
     ErrorCode("invalid_cursor", 400, "user"),
     ErrorCode("resync_required", 410, "user"),
+    ErrorCode("too_many_streams", 429, "user"),
     ErrorCode("precondition_failed", 412, "user"),
     ErrorCode("precondition_required", 428, "user"),
     ErrorCode("idempotency_key_invalid", 400, "user"),

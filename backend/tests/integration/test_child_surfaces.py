@@ -93,6 +93,7 @@ OWN = (
 )
 OPEN = {
     "GET /api/v1/activity": "activity",
+    "GET /api/v1/events": "sse",
     "GET /api/v1/me/state": "me_state_list",
     "GET /api/v1/me/state/{work_id}": "me_state_get",
     "PUT /api/v1/me/state/{work_id}": "me_state_put",
@@ -238,7 +239,6 @@ BODIES = {"POST /api/v1/reconcile/forget-root": {"root_id": "x", "confirm": "x"}
 # list is where the suite notices that the surface has arrived (the meta-test fails when a path
 # with that word shows up in the OpenAPI document).
 PENDING_SURFACES = {
-    "sse": ("L12", ("stream", "events")),
     "thumbnails": ("L24", ("thumb", "thumbs", "thumbnail", "thumbnails")),
     "covers": ("L24", ("cover", "covers")),
     "opds": ("M5", ("opds",)),
@@ -246,7 +246,7 @@ PENDING_SURFACES = {
 
 SURFACES = (
     "search", "search_pages", "search_key", "federated", "me_state_get", "me_state_put",
-    "me_state_list", "me_title", "activity", "notification", "works_since",
+    "me_state_list", "me_title", "activity", "notification", "works_since", "sse",
 )  # fmt: skip
 METHODS = ("get", "post", "put", "patch", "delete")
 HIDDEN_FROM_CEILING_10 = {*HIDDEN_TITLES, "twelve"}
@@ -723,6 +723,36 @@ def _surface_works_since(world: World) -> None:
     assert answer.status_code == 200
     assert answer.json()["removed"] == []
     world.clean(answer.text)
+
+
+def _surface_sse(world: World) -> None:
+    """The stream is a projection like any other: the rows are the child's own household entries
+    about every Work of the catalogue, and what the stream sends is what the filter lets through
+    (the attacks on the stream itself are in `test_l12_events_sse.py`)."""
+    from datetime import timedelta
+
+    from tests.sse_env import cookie_header, open_stream
+
+    def write() -> None:
+        with world.seed.engine.begin() as connection:
+            for work_id in world.seed.works.values():
+                connection.execute(
+                    sa.insert(platform.event).values(
+                        type="work.updated", schema_version=1, payload={"work_id": work_id},
+                        occurred_at=world.env.clock.now() - timedelta(seconds=1),
+                        actor_id=world.kid_id, visibility="household",
+                    )
+                )  # fmt: skip
+
+    with pytest.MonkeyPatch.context() as patch:
+        received = open_stream(
+            world.env.app, world.env.clock, patch, cookie=cookie_header(world.kid),
+            script=[write], until=lambda r: len(r.heartbeats()) >= 1,
+        )  # fmt: skip
+    assert received.status == 200
+    world.clean("\n".join(received.frames))
+    shown = {event["payload"]["work_id"] for _, event in received.events()}
+    assert shown == {world.seed.works[k] for k in VISIBLE_FOR_CEILING_10}
 
 
 def _surface_notification(world: World) -> None:

@@ -492,9 +492,21 @@ export type ConfigRow = {
      */
     key: string;
     /**
+     * Level
+     */
+    level: 'essential' | 'advanced' | 'expert';
+    /**
+     * Locked
+     */
+    locked: boolean;
+    /**
      * Overridden By
      */
     overridden_by?: string | null;
+    /**
+     * Secret
+     */
+    secret: boolean;
     /**
      * Source
      */

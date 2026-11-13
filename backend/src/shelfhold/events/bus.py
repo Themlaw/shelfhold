@@ -15,6 +15,7 @@ the ULID (PLAN-M1a L13, 02 section 11).
 
 from __future__ import annotations
 
+import contextlib
 import re
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
@@ -224,11 +225,22 @@ class EventBus:
         self._channels = channels
         self._subscribers: list[tuple[str | None, Subscriber]] = []
 
-    def subscribe(self, handler: Subscriber, *, event_type: str | None = None) -> None:
-        """`handler` runs in `deliver`, after the publisher's commit, never in its transaction."""
+    def subscribe(
+        self, handler: Subscriber, *, event_type: str | None = None
+    ) -> Callable[[], None]:
+        """`handler` runs in `deliver`, after the publisher's commit, never in its transaction.
+
+        Returns a function that removes the subscription; calling it twice is a no-op.
+        """
         if event_type is not None:
             check_event_type(event_type)
         self._subscribers.append((event_type, handler))
+
+        def unsubscribe() -> None:
+            with contextlib.suppress(ValueError):
+                self._subscribers.remove((event_type, handler))
+
+        return unsubscribe
 
     def publish(
         self,
@@ -273,7 +285,7 @@ class EventBus:
     def deliver(self, events: Sequence[PublishedEvent]) -> None:
         """Hand committed events to in-process subscribers; one failing handler stops no other."""
         for published in events:
-            for wanted, handler in self._subscribers:
+            for wanted, handler in tuple(self._subscribers):  # a stream may leave meanwhile
                 if wanted is None or wanted == published.type:
                     try:
                         handler(published)

@@ -137,6 +137,10 @@ class Settings(BaseModel):
     # recycle bins of the library keep 30 days, a floor that fsops enforces whatever is set here.
     retention_events_days: int = Field(default=90, ge=7, le=3650)
     retention_audit_days: int = Field(default=365, ge=90, le=3650)
+    # M3 L12: how many event streams (SSE) one profile may hold open at once, across its sessions
+    # and keys. Each stream holds a subscription and a read on every event; beyond the cap a new
+    # one is refused (429) until another closes.
+    stream_max_per_profile: int = Field(default=4, ge=1, le=64)
 
     # EF-INT-015 (D2): the integrated backup. `backup_dir` is a mounted folder outside `/data` and
     # `/store`; `backup_passphrase_file` names the file that holds the passphrase (a path, never
