@@ -85,6 +85,8 @@ def run_lift(args: argparse.Namespace, resolved: object) -> int:
 def _lift(args: argparse.Namespace, channel: OpsChannel) -> int:
     done = channel.call("ops.tombstone_lift", seq=args.seq, typed=args.confirm)
     print(t("ops.tombstone_lifted", seq=done["seq"]))
+    if done.get("linked"):
+        print(t("ops.tombstone_lifted_linked", seqs=", ".join(str(n) for n in done["linked"])))
     if done["pending"]:
         print(t("ops.tombstone_lift_owed", roots=done["pending"]), file=sys.stderr)
     return 0
@@ -101,6 +103,11 @@ def run_list(_args: argparse.Namespace, channel: OpsChannel) -> int:
                 day=str(row["created_at"])[:10],
                 scope=row["scope"],
                 reason=row["reason"] or "-",
+            )
+            + (
+                t("ops.tombstone_row_from", seqs=", ".join(str(n) for n in row["linked_to"]))
+                if row.get("linked_to")
+                else ""
             )
         )
     if not rows:

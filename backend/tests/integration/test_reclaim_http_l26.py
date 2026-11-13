@@ -47,7 +47,7 @@ class _Library:
     def tombstone_list(self) -> dict[str, Any]:
         self.effects.append("list")
         return {"tombstones": [{"seq": 3, "created_at": "2026-11-13T10:00:00", "scope": "place",
-                                "reason": "purge_unit"}]}  # fmt: skip
+                                "reason": "purge_unit", "linked_to": []}]}  # fmt: skip
 
     def space_check(self, *, estimated_bytes: int) -> dict[str, Any]:
         figures = check_add_fits(estimated_bytes, free_bytes=40 * GIB, reserve_bytes=10 * GIB)
@@ -61,7 +61,10 @@ class _Services:
 
     def tombstone_lift(self, *, seq: int, typed: str, principal: Principal) -> dict[str, Any]:
         self.effects.append(f"lift:{seq}:{typed}:{principal.credential}")
-        return {"seq": seq}
+        return {"seq": seq, "linked": []}
+
+    def paused_queues(self) -> list[str]:
+        return []  # the health probe of the process asks for it
 
 
 @pytest.fixture
@@ -154,7 +157,13 @@ def test_tombstone_list_over_http_is_the_admins_and_shows_no_title(
     listed = api.client.get(LIST)
     assert listed.status_code == 200
     [row] = listed.json()["tombstones"]
-    assert set(row) == {"seq", "created_at", "scope", "reason"}  # a number to lift by, no value
+    assert set(row) == {
+        "seq",
+        "created_at",
+        "scope",
+        "reason",
+        "linked_to",
+    }  # a number to lift by, no value
     assert effects == ["list"]
     assert OPS_METHODS["ops.tombstone_list"][1] is None  # a read: no reserved action
 
