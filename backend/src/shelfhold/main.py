@@ -75,6 +75,7 @@ from shelfhold.interfaces.http_api.shelves import build_edition_shelf_router, bu
 from shelfhold.interfaces.http_api.sources import build_sources_router
 from shelfhold.interfaces.http_api.stats import build_stats_router
 from shelfhold.interfaces.http_api.status import build_status_router
+from shelfhold.interfaces.http_api.stream import build_stream_router
 from shelfhold.interfaces.http_api.triage import build_triage_router
 from shelfhold.interfaces.local_cli import IdentityDispatcher
 from shelfhold.jobs.mode import MaintenanceMode
@@ -265,6 +266,8 @@ def create_app(
     def plans() -> PlanService:
         return PlanService(composition, pipeline, lambda: runtime.pools)
 
+    since_key = SinceKey(composition.keyring)  # `?since=` tokens and SSE cursors: one key
+
     export_routers = (
         build_shelves_router(lambda: ShelfService(engine, clock=clock), ops_services),
         build_edition_shelf_router(lambda: ShelfService(engine, clock=clock)),
@@ -286,9 +289,10 @@ def create_app(
         build_sources_router(ops_services),  # EF-SRC-015, EF-SRC-004: search, acquire, a URL
         build_me_router(cache(lambda: user_state_service(engine, clock))),  # EF-USR-007, EF-BIB-022
         build_activity_router(lambda: engine),  # EF-USR-016: `activity_view`, unmask audited
-        build_catalog_lists_router(
-            lambda: engine, SinceKey(composition.keyring)
-        ),  # M3 L11: `?since=`
+        build_catalog_lists_router(lambda: engine, since_key),  # M3 L11: `?since=`
+        build_stream_router(
+            lambda: engine, lambda: composition.bus, clock, since_key
+        ),  # M3 L12 (EF-INT-002): typed SSE, one filter per reader
         build_search_router(
             lambda: engine, ops_services
         ),  # EF-BIB-010, EF-SRC-005: admin only (L09)

@@ -38,7 +38,7 @@ from shelfhold.infrastructure.schema import acquisition, catalog, identity, plat
 from shelfhold.interfaces.http_api.auth import gate_of, require_principal, reserved_action
 from shelfhold.interfaces.http_api.problems import ProblemError
 
-__all__ = ["build_activity_router"]
+__all__ = ["activity_event_of", "build_activity_router", "viewer_of"]
 
 MAX_LIMIT = 100
 _UNMASK = RESERVED_ACTIONS["request.unmask"]
@@ -118,11 +118,16 @@ def _owner_role(connection: Connection, user_id: str | None) -> tuple[str | None
     return (user_id, str(role)) if role is not None else (None, None)
 
 
-def _activity_event(connection: Connection, row: Any) -> ActivityEvent:
+def activity_event_of(
+    connection: Connection, row: Any, payload: Mapping[str, object] | None = None
+) -> ActivityEvent:
+    """`payload`: the row's own, unless a reader of an older row has moved it to the current
+    version (the SSE stream)."""
+    body = row.payload or {} if payload is None else payload
     owner_id, owner_role = _owner_role(connection, row.actor_id)
     return ActivityEvent(
-        id=row.id, type=row.type, visibility=row.visibility, payload=row.payload or {},
-        owner_id=owner_id, owner_role=owner_role, title=_title_of(connection, row.payload or {}),
+        id=row.id, type=row.type, visibility=row.visibility, payload=body,
+        owner_id=owner_id, owner_role=owner_role, title=_title_of(connection, body),
     )  # fmt: skip
 
 
@@ -163,7 +168,7 @@ def build_activity_router(get_engine: Callable[[], Engine]) -> APIRouter:
                 sa.select(platform.event).order_by(platform.event.c.id.desc()).limit(limit * 4)
             )
             for row in events:  # the projection decides: a hidden entry leaves no trace
-                item = project_event(connection, viewer, scope, _activity_event(connection, row))
+                item = project_event(connection, viewer, scope, activity_event_of(connection, row))
                 if item is not None:
                     found.append(_out(item, row.occurred_at))
             requests = connection.execute(
@@ -213,7 +218,7 @@ def _entry(connection: Connection, ref: str) -> ActivityEvent | None:
         row = connection.execute(
             sa.select(platform.event).where(platform.event.c.id == int(ref))
         ).first()
-        return _activity_event(connection, row) if row is not None else None
+        return activity_event_of(connection, row) if row is not None else None
     request = connection.execute(
         sa.select(acquisition.download_request).where(acquisition.download_request.c.id == ref)
     ).first()
