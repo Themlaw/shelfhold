@@ -191,6 +191,6 @@ def open_ops(
             window=window,
             control=QueueControl(revoke=revoke),
         ),
-        detach=DetachOps(composition, lazy_headless),
+        teardown=DetachOps(composition, lazy_headless),
         window=window,
     )  # fmt: skip

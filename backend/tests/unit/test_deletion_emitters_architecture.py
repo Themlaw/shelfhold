@@ -155,6 +155,7 @@ EXPECTED_CLOSED = {
         f"{FSOPS}/facade.py::Fsops.relocate_inbox",
         f"{FSOPS}/facade.py::Fsops.purge_remove_tree",
         f"{FSOPS}/facade.py::Fsops.purge_unlink",
+        f"{FSOPS}/facade.py::Fsops.erase_host_area",
         f"{FSOPS}/facade.py::Fsops.recycle",
         f"{FSOPS}/facade.py::Fsops.rmdir",
         f"{FSOPS}/facade.py::Fsops.system_remove_tree",

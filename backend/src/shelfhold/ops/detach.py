@@ -134,7 +134,9 @@ class DetachOps:
 
     # -- detach a target ------------------------------------------------------------------------
 
-    def _detacher(self, fsops: Fsops, loaded: LoadedRoots, journal: IntentJournal) -> FullDetacher:
+    def _full_detacher(
+        self, fsops: Fsops, loaded: LoadedRoots, journal: IntentJournal
+    ) -> FullDetacher:
         comp = self._comp
         rows = {r.root_id: r for r in loaded.roots}
 
@@ -149,23 +151,23 @@ class DetachOps:
             fresh_auth_s=comp.settings.fresh_auth_s,
         )  # fmt: skip
 
-    def detach_preview(self, *, target_id: str) -> dict[str, Any]:
+    def full_preview(self, *, target_id: str) -> dict[str, Any]:
         fsops, loaded, journal = self._context()
         try:
-            preview = self._detacher(fsops, loaded, journal).preview(target_id)
+            preview = self._full_detacher(fsops, loaded, journal).preview(target_id)
         except DetachRefusedError as error:
-            raise _detach(error) from None
+            raise _full_refusal(error) from None
         return {
             "target_id": preview.target_id, "phrase": preview.phrase,
             "warnings": [{"code": w.code, "count": w.count} for w in preview.warnings],
         }  # fmt: skip
 
-    def detach(
+    def full(
         self, *, target_id: str, typed: str | None, credential: str | None,
         discard_hidden_data: bool, give_up: bool, principal: Principal,
     ) -> dict[str, Any]:  # fmt: skip
         fsops, loaded, journal = self._context()
-        detacher = self._detacher(fsops, loaded, journal)
+        detacher = self._full_detacher(fsops, loaded, journal)
         client = (
             self._comp.kavita_client(target_id)
             if target_id in self._comp.kavita_targets()
@@ -181,9 +183,9 @@ class DetachOps:
                     discard_hidden_data=discard_hidden_data,
                 )  # fmt: skip
         except DetachRefusedError as error:
-            raise _detach(error) from None
+            raise _full_refusal(error) from None
         self._comp.roots_changed()  # the roots demoted are no longer expected stamped
-        return _detach_report(report)
+        return _full_report(report)
 
 
 def _mode(value: str) -> RemovalMode:
@@ -198,7 +200,7 @@ def _removal(error: RemovalRefusedError) -> CodedRefusal:
     return CodedRefusal("removal.refused", error.reason)
 
 
-def _detach(error: DetachRefusedError) -> CodedRefusal:
+def _full_refusal(error: DetachRefusedError) -> CodedRefusal:
     if error.reason == "not_allowed":
         return CodedRefusal("forbidden", type(error.verdict).__name__)
     return CodedRefusal("detach.refused", error.reason)
@@ -212,11 +214,14 @@ def _removal_report(report: RemovalReport) -> dict[str, Any]:
     }  # fmt: skip
 
 
-def _detach_report(report: DetachReport) -> dict[str, Any]:
+def _full_report(report: DetachReport) -> dict[str, Any]:
     return {
         "target_id": report.target_id, "complete": report.complete,
         "hidden_removed": len(report.hidden_removed), "key_revoked": report.key_revoked,
         "forgotten": report.forgotten, "cancelled": report.cancelled,
+        "settings_restored": bool(
+            report.settings_restored and report.settings_restored.exclude_patterns_restored
+        ),
         "settings": [
             {
                 "exclude_patterns_restored": s.exclude_patterns_restored,

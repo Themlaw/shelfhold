@@ -116,24 +116,24 @@ def _target_recheck(ops: OpsServices, _by: Principal, p: Params) -> object:
 
 
 def _target_remove_preview(ops: OpsServices, _by: Principal, p: Params) -> object:
-    return ops.detach.remove_preview(
+    return ops.teardown.remove_preview(
         destination_id=_text(p, "destination_id"), mode=_text(p, "mode")
     )
 
 
 def _target_remove(ops: OpsServices, by: Principal, p: Params) -> object:
-    return ops.detach.remove(
+    return ops.teardown.remove(
         destination_id=_text(p, "destination_id"), mode=_text(p, "mode", required=False),
         typed=_optional(p, "typed"), give_up=_flag(p, "give_up"), principal=by,
     )  # fmt: skip
 
 
-def _detach_full_preview(ops: OpsServices, _by: Principal, p: Params) -> object:
-    return ops.detach.detach_preview(target_id=_text(p, "target_id"))
+def _full_detach_preview(ops: OpsServices, _by: Principal, p: Params) -> object:
+    return ops.teardown.full_preview(target_id=_text(p, "target_id"))
 
 
-def _detach_full(ops: OpsServices, by: Principal, p: Params) -> object:
-    return ops.detach.detach(
+def _full_detach(ops: OpsServices, by: Principal, p: Params) -> object:
+    return ops.teardown.full(
         target_id=_text(p, "target_id"), typed=_optional(p, "typed"),
         credential=_optional(p, "credential"),
         discard_hidden_data=_flag(p, "discard_hidden_data"), give_up=_flag(p, "give_up"),
@@ -705,8 +705,8 @@ OPS_METHODS: Mapping[str, tuple[OpsMethod, str | None]] = {
     "ops.detach_restore_upstream": (_give_back, None),
     "ops.target_remove_preview": (_target_remove_preview, None),
     "ops.target_remove": (_target_remove, "destination.remove_all"),
-    "ops.detach_full_preview": (_detach_full_preview, None),
-    "ops.detach_full": (_detach_full, "detach.full"),
+    "ops.detach_full_preview": (_full_detach_preview, None),
+    "ops.detach_full": (_full_detach, "detach.full"),
     "ops.purge": (_purge, "purge.now"),
     "ops.kept_ack": (_kept_ack, "purge.now"),
     "ops.purge_checkpoint": (_settle_log, None),

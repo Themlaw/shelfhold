@@ -230,7 +230,7 @@ class OpsServices:
         roots: RootOps | None = None,
         maintenance: MaintenanceOps | None = None,
         kavita_accounts: KavitaAccountsOps | None = None,
-        detach: DetachOps | None = None,
+        teardown: DetachOps | None = None,
         window: MaintenanceWindow | None = None,
     ) -> None:
         self._window = window or DEFAULT_WINDOW
@@ -271,7 +271,7 @@ class OpsServices:
         self._roots = roots
         self._maintenance = maintenance
         self._kavita_accounts = kavita_accounts
-        self._detach = detach
+        self._teardown = teardown
 
     @property
     def _fsops(self) -> Fsops | None:
@@ -800,12 +800,12 @@ class OpsServices:
         return self._kavita_accounts
 
     @property
-    def detach(self) -> DetachOps:
+    def teardown(self) -> DetachOps:
         """`target remove` and `detach --full`: the removal of a destination and the detachment of
         a Kavita target, reserved and typed (M3 L30, EF-EXP-031)."""
-        if self._detach is None:
+        if self._teardown is None:
             raise ExitUnavailableError("the removal and the detachment are not connected")
-        return self._detach
+        return self._teardown
 
     @property
     def maintenance(self) -> MaintenanceOps:

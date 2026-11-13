@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+from collections.abc import Callable
 
 from shelfhold.i18n import t
 from shelfhold.interfaces.cli._headless import fail, read_secret
@@ -22,9 +23,38 @@ NEEDS_CONFIRMATION = 2
 UNFINISHED = 3
 
 
+_WARNINGS: dict[str, Callable[[object], str]] = {
+    "removal:files_kept": lambda n: t("removal.warning_files_kept", count=n),
+    "removal:manifest_forgotten": lambda n: t("removal.warning_manifest_forgotten", count=n),
+    "removal:files_deleted": lambda n: t("removal.warning_files_deleted", count=n),
+    "removal:past_the_bin": lambda n: t("removal.warning_past_the_bin", count=n),
+    "removal:adopted_kept": lambda n: t("removal.warning_adopted_kept", count=n),
+    "detach:files_kept": lambda n: t("detach.warning_files_kept", count=n),
+    "detach:hidden_erased": lambda n: t("detach.warning_hidden_erased", count=n),
+    "detach:key_revoked": lambda n: t("detach.warning_key_revoked", count=n),
+    "detach:manifest_forgotten": lambda n: t("detach.warning_manifest_forgotten", count=n),
+    "detach:hidden_data_present": lambda n: t("detach.warning_hidden_data_present", count=n),
+    "detach:root_shared": lambda n: t("detach.warning_root_shared", count=n),
+    "detach:follows_active": lambda n: t("detach.warning_follows_active", count=n),
+    "detach:tombstone_journal_erased": lambda n: t(
+        "detach.warning_tombstone_journal_erased", count=n
+    ),
+}
+_LEFTOVERS: dict[str, Callable[[object], str]] = {
+    "suwayomi_downloads": lambda n: t("detach.leftover_suwayomi_downloads", count=n),
+    "kavita_accounts": lambda n: t("detach.leftover_kavita_accounts", count=n),
+    "store": lambda n: t("detach.leftover_store", count=n),
+    "root_shared": lambda n: t("detach.leftover_root_shared", count=n),
+    "hidden_not_erased": lambda n: t("detach.leftover_hidden_not_erased", count=n),
+    "settings_not_restored": lambda n: t("detach.leftover_settings_not_restored", count=n),
+    "key_not_revoked": lambda n: t("detach.leftover_key_not_revoked", count=n),
+    "library_type_changed": lambda n: t("detach.leftover_library_type_changed", count=n),
+}
+
+
 def _print_warnings(prefix: str, warnings: list[dict[str, object]]) -> None:
     for warning in warnings:
-        print(t(f"{prefix}.warning_{warning['code']}", count=warning["count"]))
+        print(_WARNINGS[f"{prefix}:{warning['code']}"](warning["count"]))
 
 
 @ops_command
@@ -78,7 +108,7 @@ def run_detach_full(args: argparse.Namespace, channel: OpsChannel) -> int:
     )  # fmt: skip
     if report["hidden_removed"]:
         print(t("detach.hidden_removed", count=report["hidden_removed"]))
-    if any(s["exclude_patterns_restored"] for s in report["settings"]):
+    if report["settings_restored"]:
         print(t("detach.settings_restored"))
     print(t("detach.key_revoked") if report["key_revoked"] else t("detach.key_kept"))
     for line in report["leftovers"]:
@@ -87,6 +117,6 @@ def run_detach_full(args: argparse.Namespace, channel: OpsChannel) -> int:
             if line["code"].endswith(("_not_erased", "_not_restored", "_not_revoked"))
             else sys.stdout
         )
-        print(t(f"detach.leftover_{line['code']}", count=line["count"]), file=stream)
+        print(_LEFTOVERS[line["code"]](line["count"]), file=stream)
     print(t("detach.done_complete") if report["complete"] else t("detach.done_incomplete"))
     return 0 if report["complete"] else UNFINISHED

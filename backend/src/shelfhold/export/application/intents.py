@@ -140,6 +140,11 @@ class ResolveReport:
 
 ManifestHook = Callable[[Connection, OpenIntent], None]
 
+# what the intentions of the removal of a destination say about themselves
+# (`remove_destination.REMOVAL_SCOPE`); those of the full detachment (`detach.DETACH_SCOPE`, the
+# reserved folder, read through the host door only) stay open for `detach --full` to settle
+_GONE_SCOPES = frozenset({"remove_destination"})
+
 
 def _intent_from(row: sa.Row[tuple[object, ...]]) -> OpenIntent:
     file_id = row.expected_file_id
@@ -529,6 +534,8 @@ class IntentJournal:
                 self._resolve_rmdir(intent, report, on_done)
             elif intent.op == "delete" and intent.src and f"/{RECYCLE_DIR}/" in intent.src:
                 self._resolve_expired_bin_entry(intent, report, on_done)
+            elif intent.src and intent.payload.get("scope") in _GONE_SCOPES:
+                self._resolve_gone(intent, report, on_done)
             elif intent.op == "recycle" and intent.src:
                 self._resolve_recycle(intent, report, on_done)
             elif intent.op == "unbin" and intent.src and intent.dst:
@@ -804,6 +811,19 @@ class IntentJournal:
             report.abandoned.append(intent.id)
             return
         self._drift(intent, report, "an upstream purge may have reached the service")
+
+    def _resolve_gone(
+        self, intent: OpenIntent, report: ResolveReport, on_done: ManifestHook | None
+    ) -> None:
+        """A deletion of the removal of a destination (L30): the boot closes it only when its file
+        is gone. Anything still there is left open (drift): the admin's command, run again,
+        finishes it (a deletion is never replayed by the boot)."""
+        found = self._disk.observe(intent.src) if intent.src else ()
+        if found is None:
+            self._finish(intent, on_done)
+            report.completed.append(intent.id)
+        else:
+            self._drift(intent, report, "the deletion is not finished: run the command again")
 
     def _resolve_rmdir(
         self, intent: OpenIntent, report: ResolveReport, on_done: ManifestHook | None
