@@ -18,6 +18,7 @@
     color: var(--color-accent);
     text-decoration: underline;
     min-height: 2.75rem;
+    min-width: 2.75rem;
     display: inline-flex;
     align-items: center;
   }

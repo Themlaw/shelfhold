@@ -36,10 +36,12 @@
     font-size: 0.875rem;
   }
   label {
+    position: relative;
     display: inline-flex;
     align-items: center;
     gap: 0.25rem;
-    min-height: 2rem;
+    min-height: 2.75rem;
+    min-width: 2.75rem;
     padding: 0 0.625rem;
     border: 1px solid var(--color-rule);
     border-radius: var(--radius-cover);
@@ -54,9 +56,11 @@
   input {
     /* hidden by its look, not by display:none: it stays focusable and in the tab order */
     position: absolute;
+    inset: 0;
     opacity: 0;
-    width: 1px;
-    height: 1px;
+    width: 100%;
+    height: 100%;
+    margin: 0;
   }
   label:has(input:focus-visible) {
     outline: 2px solid var(--color-accent);

@@ -196,7 +196,7 @@
         {#if exportedNow}<p role="status">{t('admin.wizard.fin.keyring_exported')}</p>{/if}
         <p>{t('admin.wizard.fin.recovery_kit_help')}</p>
         <!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- a page of the server, in its own tab -->
-        <a href={RECOVERY_KIT} target="_blank" rel="noopener">{t('admin.wizard.fin.recovery_kit')}</a>
+        <a class="standalone" href={RECOVERY_KIT} target="_blank" rel="noopener">{t('admin.wizard.fin.recovery_kit')}</a>
       </section>
 
       <section aria-labelledby="fin-admin">

@@ -80,6 +80,12 @@
     align-items: center;
     gap: 1rem;
   }
+  /* ENF-A11Y-004: the title is the target of the cover, at least 44 px high */
+  a {
+    display: inline-flex;
+    align-items: center;
+    min-height: 2.75rem;
+  }
   img,
   .blank {
     width: 100%;

@@ -41,6 +41,10 @@
   a {
     color: var(--color-accent);
     text-decoration: none;
+    min-height: 2.75rem;
+    min-width: 2.75rem;
+    display: inline-flex;
+    align-items: center;
   }
   a[aria-current='page'] {
     font-weight: 600;
