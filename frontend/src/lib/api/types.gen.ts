@@ -1302,15 +1302,19 @@ export type JobOut = {
     /**
      * Priority Class
      */
-    priority_class?: string | null;
+    priority_class: string;
+    /**
+     * Progress
+     */
+    progress: number | null;
     /**
      * Request Id
      */
-    request_id?: string | null;
+    request_id: string | null;
     /**
      * Source Key
      */
-    source_key?: string | null;
+    source_key: string | null;
     /**
      * Status
      */

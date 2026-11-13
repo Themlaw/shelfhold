@@ -2091,15 +2091,8 @@
             "title": "Last Error"
           },
           "priority_class": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Priority Class"
+            "title": "Priority Class",
+            "type": "string"
           },
           "progress": {
             "anyOf": [
@@ -2145,7 +2138,11 @@
           "status",
           "error_code",
           "last_error",
-          "attempts"
+          "attempts",
+          "request_id",
+          "priority_class",
+          "source_key",
+          "progress"
         ],
         "title": "JobOut",
         "type": "object"

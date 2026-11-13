@@ -164,7 +164,7 @@ class JobRow:
     finished_at: datetime | None = None
     progress: float | None = None
     request_id: str | None = None
-    priority_class: str | None = None
+    priority_class: str = "new"
     source_key: str | None = None
 
 
@@ -177,8 +177,7 @@ class RecheckOutcome:
 def _job_row(r: sa.Row[tuple[object, ...]]) -> JobRow:
     return JobRow(
         r.id, r.kind, r.status, r.error_code, r.last_error, r.attempts, r.created_at,
-        r.started_at, r.finished_at, r.progress, getattr(r, "request_id", None),
-        getattr(r, "priority_class", None), getattr(r, "source_key", None),
+        r.started_at, r.finished_at, r.progress, r.request_id, r.priority_class, r.source_key,
     )  # fmt: skip
 
 
