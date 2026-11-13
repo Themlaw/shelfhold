@@ -8,11 +8,13 @@ Only the write probe: the check that Kavita reads the probe file is a documented
 
 import contextlib
 import errno
+import io
 import os
-from collections.abc import Mapping
+from collections.abc import Iterator, Mapping
 from dataclasses import dataclass, field
 from typing import Protocol
 
+from shelfhold.infrastructure.archives import ArchiveWriter
 from shelfhold.infrastructure.fsops.emitters import PROBE_NAME, new_probe_name
 
 STEPS = ("write", "rename", "mkdir")
@@ -123,6 +125,51 @@ def probe_folder(disk: ProbeDisk, folder: str) -> ProbeReport:
 def make_folder(disk: ProbeDisk, folder: str) -> None:
     """The folder of a destination, made by the sole writer (the probe and Kavita need it)."""
     disk.mkdir(folder, parents=True, exist_ok=True)
+
+
+def probe_epub() -> bytes:
+    """A small, valid EPUB: the file Kavita is asked to read from the shared folder. Written by
+    the one archive writer (`mimetype` first and stored, as the format wants)."""
+    out = io.BytesIO()
+    with ArchiveWriter(out) as book:
+        book.add("mimetype", b"application/epub+zip")
+        book.add(
+            "META-INF/container.xml",
+            b'<?xml version="1.0"?><container version="1.0" '
+            b'xmlns="urn:oasis:names:tc:opendocument:xmlns:container"><rootfiles>'
+            b'<rootfile full-path="content.opf" media-type="application/oebps-package+xml"/>'
+            b"</rootfiles></container>",
+            compress=True,
+        )
+        book.add(
+            "content.opf",
+            b'<?xml version="1.0"?><package xmlns="http://www.idpf.org/2007/opf" version="3.0" '
+            b'unique-identifier="id"><metadata xmlns:dc="http://purl.org/dc/elements/1.1/">'
+            b'<dc:identifier id="id">shelfhold-probe</dc:identifier><dc:title>probe</dc:title>'
+            b"<dc:language>en</dc:language></metadata><manifest>"
+            b'<item id="p" href="p.xhtml" media-type="application/xhtml+xml"/></manifest>'
+            b'<spine><itemref idref="p"/></spine></package>',
+            compress=True,
+        )
+        book.add(
+            "p.xhtml",
+            b'<?xml version="1.0"?><html xmlns="http://www.w3.org/1999/xhtml"><head><title>p'
+            b"</title></head><body><p>probe</p></body></html>",
+            compress=True,
+        )
+    return out.getvalue()
+
+
+@contextlib.contextmanager
+def readable_probe(disk: ProbeDisk, folder: str) -> Iterator[str]:
+    """The file Kavita is asked to read: written by fsops into `folder` (never over a file that
+    is there), removed when the block ends, whatever the block did (EF-UX-002)."""
+    path = f"{folder.rstrip('/')}/{new_probe_name(epub=True)}"
+    disk.write_atomic(path, probe_epub(), replace=False)
+    try:
+        yield path
+    finally:
+        _remove_probe_file(disk, path)
 
 
 def sweep_probe_files(disk: ProbeDisk, folder: str) -> int:

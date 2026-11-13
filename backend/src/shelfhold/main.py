@@ -66,6 +66,7 @@ from shelfhold.interfaces.http_api.plugins import build_plugins_router
 from shelfhold.interfaces.http_api.requests import build_requests_router
 from shelfhold.interfaces.http_api.revisions import build_revisions_router
 from shelfhold.interfaces.http_api.search import build_search_router
+from shelfhold.interfaces.http_api.setup import build_setup_router
 from shelfhold.interfaces.http_api.shelves import build_edition_shelf_router, build_shelves_router
 from shelfhold.interfaces.http_api.sources import build_sources_router
 from shelfhold.interfaces.http_api.stats import build_stats_router
@@ -262,6 +263,7 @@ def create_app(
         build_shelves_router(lambda: ShelfService(engine, clock=clock), ops_services),
         build_edition_shelf_router(lambda: ShelfService(engine, clock=clock)),
         build_headless_router(headless_admin, lambda: resolved.public_url),
+        build_setup_router(ops_services),  # L39: the first-run wizard, screens 2 and 3
         build_plans_router(plans),
         build_jobs_router(ops_services),  # EF-INT-001: the URL of a 202
         build_maintenance_router(ops_services),  # EF-INT-018, EF-INT-017: mode and queue control

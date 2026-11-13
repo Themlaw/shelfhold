@@ -72,8 +72,8 @@ def test_kavita_screen_warns_that_an_administrator_account_is_required() -> None
     """The warning is a text of the catalog, shown before the credentials are typed."""
     page = (SCREENS / "kavita" / "+page.svelte").read_text("utf-8")
     catalog = json.loads((SCREENS.parents[1] / "lib" / "i18n" / "fr.json").read_text("utf-8"))
-    assert "wizard.kavita.adminWarning" in page
-    assert "administrateur" in catalog["wizard.kavita.adminWarning"].lower()
+    assert "admin.wizard.kavita.admin_warning" in page
+    assert "administrateur" in catalog["admin.wizard.kavita.admin_warning"].lower()
 
 
 # -- the world ---------------------------------------------------------------------------------
@@ -150,8 +150,10 @@ def test_mount_probe_read_by_kavita_and_yaml_hint_on_failure(
     assert ok.status_code == 200, ok.text
     assert ok.json()["ok"] is True and ok.json()["kavita_read"] is True
     assert ok.json()["yaml_hint"] is None
-    assert world.inst.kavita.scans == [REMOTE_FOLDER]
+    # one scan to be read, one more after the file is gone: Kavita forgets the probe
+    assert world.inst.kavita.scans == [REMOTE_FOLDER, REMOTE_FOLDER]
 
+    world.inst.kavita.series.clear()  # what Kavita knew of the first probe is gone
     world.inst.kavita.never_indexed.add(REMOTE_FOLDER)  # Kavita does not see the folder
     world.inst.kavita.index_after_scans(
         "probe-2", REMOTE_FOLDER, [f"{REMOTE_FOLDER}/{PROBE_NAME}"], library_id=7

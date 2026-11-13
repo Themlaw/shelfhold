@@ -5829,6 +5829,437 @@
         "title": "WithdrawalOut",
         "type": "object"
       },
+      "WizardAdoptIn": {
+        "properties": {
+          "destination_id": {
+            "minLength": 1,
+            "title": "Destination Id",
+            "type": "string"
+          },
+          "fingerprint": {
+            "minLength": 1,
+            "title": "Fingerprint",
+            "type": "string"
+          },
+          "library_ref": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Library Ref"
+          }
+        },
+        "required": [
+          "destination_id",
+          "fingerprint"
+        ],
+        "title": "WizardAdoptIn",
+        "type": "object"
+      },
+      "WizardAdoptOut": {
+        "properties": {
+          "adopted_files": {
+            "title": "Adopted Files",
+            "type": "integer"
+          },
+          "already_adopted": {
+            "title": "Already Adopted",
+            "type": "integer"
+          },
+          "library_ref": {
+            "title": "Library Ref",
+            "type": "string"
+          },
+          "linked": {
+            "title": "Linked",
+            "type": "boolean"
+          },
+          "series": {
+            "title": "Series",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "adopted_files",
+          "already_adopted",
+          "series",
+          "library_ref",
+          "linked"
+        ],
+        "title": "WizardAdoptOut",
+        "type": "object"
+      },
+      "WizardDestinationIn": {
+        "properties": {
+          "destination_id": {
+            "minLength": 1,
+            "title": "Destination Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "destination_id"
+        ],
+        "title": "WizardDestinationIn",
+        "type": "object"
+      },
+      "WizardDestinationOut": {
+        "properties": {
+          "adopted": {
+            "title": "Adopted",
+            "type": "boolean"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "linked": {
+            "title": "Linked",
+            "type": "boolean"
+          },
+          "target_id": {
+            "title": "Target Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "target_id",
+          "adopted",
+          "linked"
+        ],
+        "title": "WizardDestinationOut",
+        "type": "object"
+      },
+      "WizardLibraryIn": {
+        "properties": {
+          "destination_id": {
+            "minLength": 1,
+            "title": "Destination Id",
+            "type": "string"
+          },
+          "library_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Library Type"
+          },
+          "name": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "destination_id",
+          "name"
+        ],
+        "title": "WizardLibraryIn",
+        "type": "object"
+      },
+      "WizardLibraryOut": {
+        "properties": {
+          "library_ref": {
+            "title": "Library Ref",
+            "type": "string"
+          },
+          "linked": {
+            "title": "Linked",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "library_ref",
+          "linked"
+        ],
+        "title": "WizardLibraryOut",
+        "type": "object"
+      },
+      "WizardPreviewIn": {
+        "properties": {
+          "destination_id": {
+            "minLength": 1,
+            "title": "Destination Id",
+            "type": "string"
+          },
+          "download_dir": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Download Dir"
+          },
+          "library_ref": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Library Ref"
+          }
+        },
+        "required": [
+          "destination_id"
+        ],
+        "title": "WizardPreviewIn",
+        "type": "object"
+      },
+      "WizardPreviewOut": {
+        "properties": {
+          "child_library": {
+            "title": "Child Library",
+            "type": "boolean"
+          },
+          "download_dir": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WizardVerdictOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "files": {
+            "title": "Files",
+            "type": "integer"
+          },
+          "fingerprint": {
+            "title": "Fingerprint",
+            "type": "string"
+          },
+          "library_ref": {
+            "title": "Library Ref",
+            "type": "string"
+          },
+          "roots": {
+            "items": {
+              "$ref": "#/components/schemas/WizardRootOut"
+            },
+            "title": "Roots",
+            "type": "array"
+          },
+          "series": {
+            "title": "Series",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "fingerprint",
+          "library_ref",
+          "series",
+          "files",
+          "child_library",
+          "download_dir",
+          "roots"
+        ],
+        "title": "WizardPreviewOut",
+        "type": "object"
+      },
+      "WizardProbeOut": {
+        "properties": {
+          "kavita_read": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "const": "no_library",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Kavita Read"
+          },
+          "ok": {
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "write": {
+            "$ref": "#/components/schemas/WizardWriteProbeOut"
+          },
+          "yaml_hint": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Yaml Hint"
+          }
+        },
+        "required": [
+          "ok",
+          "write",
+          "kavita_read",
+          "yaml_hint"
+        ],
+        "title": "WizardProbeOut",
+        "type": "object"
+      },
+      "WizardRootOut": {
+        "properties": {
+          "path": {
+            "title": "Path",
+            "type": "string"
+          },
+          "present": {
+            "title": "Present",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "path",
+          "present"
+        ],
+        "title": "WizardRootOut",
+        "type": "object"
+      },
+      "WizardStateOut": {
+        "properties": {
+          "destinations": {
+            "items": {
+              "$ref": "#/components/schemas/WizardDestinationOut"
+            },
+            "title": "Destinations",
+            "type": "array"
+          },
+          "first_run": {
+            "title": "First Run",
+            "type": "boolean"
+          },
+          "targets": {
+            "items": {
+              "$ref": "#/components/schemas/WizardTargetOut"
+            },
+            "title": "Targets",
+            "type": "array"
+          }
+        },
+        "required": [
+          "targets",
+          "destinations",
+          "first_run"
+        ],
+        "title": "WizardStateOut",
+        "type": "object"
+      },
+      "WizardTargetOut": {
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "key_expires_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Key Expires At"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "key_expires_at"
+        ],
+        "title": "WizardTargetOut",
+        "type": "object"
+      },
+      "WizardVerdictOut": {
+        "properties": {
+          "action": {
+            "title": "Action",
+            "type": "string"
+          },
+          "copy_needed": {
+            "title": "Copy Needed",
+            "type": "boolean"
+          },
+          "kind": {
+            "enum": [
+              "under_library",
+              "outside_library"
+            ],
+            "title": "Kind",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "copy_needed",
+          "action"
+        ],
+        "title": "WizardVerdictOut",
+        "type": "object"
+      },
+      "WizardWriteProbeOut": {
+        "properties": {
+          "cause": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cause"
+          },
+          "failed_step": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Failed Step"
+          },
+          "ok": {
+            "title": "Ok",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "ok",
+          "cause",
+          "failed_step"
+        ],
+        "title": "WizardWriteProbeOut",
+        "type": "object"
+      },
       "WorkItemOut": {
         "properties": {
           "kind": {
@@ -12894,6 +13325,301 @@
         "summary": "Series Resume",
         "tags": [
           "operations"
+        ]
+      }
+    },
+    "/api/v1/setup/adoption/confirm": {
+      "post": {
+        "operationId": "wizard_adoption_confirm",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WizardAdoptIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WizardAdoptOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Connexion requise, ou mot de passe à confirmer (reauth-required)."
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée)."
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Détail du problème (RFC 9457)."
+          }
+        },
+        "summary": "Wizard Adoption Confirm",
+        "tags": [
+          "setup"
+        ]
+      }
+    },
+    "/api/v1/setup/adoption/preview": {
+      "post": {
+        "operationId": "wizard_adoption_preview",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WizardPreviewIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WizardPreviewOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Connexion requise, ou mot de passe à confirmer (reauth-required)."
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée)."
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Détail du problème (RFC 9457)."
+          }
+        },
+        "summary": "Wizard Adoption Preview",
+        "tags": [
+          "setup"
+        ]
+      }
+    },
+    "/api/v1/setup/library": {
+      "post": {
+        "operationId": "wizard_new_library",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WizardLibraryIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WizardLibraryOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Connexion requise, ou mot de passe à confirmer (reauth-required)."
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée)."
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Détail du problème (RFC 9457)."
+          }
+        },
+        "summary": "Wizard New Library",
+        "tags": [
+          "setup"
+        ]
+      }
+    },
+    "/api/v1/setup/probe": {
+      "post": {
+        "operationId": "wizard_probe",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WizardDestinationIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WizardProbeOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Connexion requise, ou mot de passe à confirmer (reauth-required)."
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée)."
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Détail du problème (RFC 9457)."
+          }
+        },
+        "summary": "Wizard Probe",
+        "tags": [
+          "setup"
+        ]
+      }
+    },
+    "/api/v1/setup/state": {
+      "get": {
+        "operationId": "wizard_state",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WizardStateOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Connexion requise, ou mot de passe à confirmer (reauth-required)."
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée)."
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Détail du problème (RFC 9457)."
+          }
+        },
+        "summary": "Wizard State",
+        "tags": [
+          "setup"
         ]
       }
     },

@@ -16,13 +16,15 @@ from shelfhold.export.domain.physical_roots import RECYCLE_DIR, STAGING_DIR, is_
 from shelfhold.infrastructure.fsops.errors import EmitterPerimeterError
 
 PROBE_PREFIX = ".shelfhold-probe-"
-PROBE_NAME = re.compile(r"\.shelfhold-probe-[0-9a-f]{16}")  # exactly what `new_probe_name` draws
+PROBE_EPUB = ".epub"  # the suffix of the probe Kavita is asked to read (EF-UX-002)
+PROBE_NAME = re.compile(r"\.shelfhold-probe-[0-9a-f]{16}(\.epub)?")  # exactly what is drawn
 TRASH_RETENTION_S = 30 * 86400  # ENF-OPS-009
 
 
-def new_probe_name() -> str:
-    """The only name the probe creates, and so the only one its cleanup may remove."""
-    return PROBE_PREFIX + secrets.token_hex(8)
+def new_probe_name(*, epub: bool = False) -> str:
+    """The only name the probe creates, and so the only one its cleanup may remove. `epub`: the
+    file Kavita is asked to read, which it only indexes under the extension of a book."""
+    return PROBE_PREFIX + secrets.token_hex(8) + (PROBE_EPUB if epub else "")
 
 
 @dataclass(frozen=True)

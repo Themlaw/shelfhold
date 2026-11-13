@@ -101,14 +101,11 @@ tests = [
 
 [[allow]]
 category = "deferred-l31-adoption-and-preview"
-reason = "M1a features whose production caller is a screen or a command that does not exist yet: the journaled rename of a series folder (EF-EXP-041, `apply_rename`), the adoption of a foreign library (EF-EXP-044, EF-EXP-051, EF-EXP-055: download folder verdict, library link, bulk parse), and the discovery of physical roots (EF-EXP-059). Wiring any of them adds a check or a refusal to the export path."
+reason = "M1a features whose production caller is a screen or a command that does not exist yet: the journaled rename of a series folder (EF-EXP-041, `apply_rename`) and the series resolver of its renames. The adoption symbols (download folder verdict, library link, physical roots) left this list when the first-run wizard (M3 L39) called them."
 until = "M3"
 symbols = [
   "shelfhold.export.application.intents:IntentJournal.apply_rename",
   "shelfhold.export.application.intents:RenameStep",
-  "shelfhold.export.application.migration_detect:SwitchoverDetector.classify_download_dir",
-  "shelfhold.export.domain.physical_roots:discover_physical_roots",
-  "shelfhold.export.targets.kavita.adopt:Adopter.link_library",
   "shelfhold.export.targets.kavita.series:Resolution.renamed",
   "shelfhold.export.targets.kavita.series:SeriesResolver",
 ]
