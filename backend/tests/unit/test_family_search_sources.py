@@ -74,9 +74,10 @@ def test_the_catalogue_subjects_column_is_read() -> None:
 def test_a_reference_is_bound_to_its_child_and_expires() -> None:
     clock = [datetime(2026, 11, 12, tzinfo=UTC)]
     refs = FamilyRefs(lambda: clock[0])
-    stands_for = FamilyRef("src", "r1", {"entry": "e"})
+    # long names: a short one ("src") turns up by chance in the random base64 of the token
+    stands_for = FamilyRef("source-alpha-tale", "remote-ref-0042", {"entry": "e"})
     token = refs.issue("kid", stands_for)
-    assert "src" not in token and "r1" not in token
+    assert "source-alpha-tale" not in token and "remote-ref-0042" not in token
     assert refs.resolve(token, owner="kid") == stands_for
     for owner, forged in (("sister", token), ("kid", token[:-1]), ("kid", "x" * 500), ("kid", "")):
         with pytest.raises(InvalidFamilyRefError):
