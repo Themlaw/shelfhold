@@ -41,7 +41,8 @@ const workshopConfig = defineConfig({
   testMatch: '**/*.spec.ts',
   reporter: 'list',
   fullyParallel: true,
-  use: { baseURL: workshopUrl },
+  // the interface follows the browser language (ENF-I18N-001): the screens are asserted in French
+  use: { baseURL: workshopUrl, locale: 'fr-FR' },
   projects: [
     { name: 'workshop-desktop', use: { viewport: { width: 1280, height: 800 } } },
     {
@@ -60,7 +61,7 @@ const workshopConfig = defineConfig({
 export default workshop ? workshopConfig : defineConfig({
   testDir: 'tests',
   reporter: 'list',
-  use: { baseURL: `http://127.0.0.1:${PORT}` },
+  use: { baseURL: `http://127.0.0.1:${PORT}`, locale: 'fr-FR' },
   webServer: {
     command: `rm -rf .tmp && mkdir -p .tmp/data .tmp/store && ${env} ${shelfhold} migrate && (umask 077; echo ${ADMIN_PASSWORD} > .tmp/admin.pw) && ${env} ${shelfhold} admin create --username admin --password-file .tmp/admin.pw && ${env} ${shelfhold} serve`,
     url: `http://127.0.0.1:${PORT}/healthz`,
