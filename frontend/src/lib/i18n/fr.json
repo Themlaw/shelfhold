@@ -246,5 +246,13 @@
   "request.state.rejected": "Refusée",
   "request.state.not_found": "Introuvable",
   "request.state.cancelled": "Annulée",
-  "request.reason": "Motif : {reason}"
+  "request.reason": "Motif : {reason}",
+  "request.cancel": "Annuler",
+  "approve.title": "À approuver",
+  "approve.approve": "Approuver",
+  "approve.choose_age": "Choisir un âge",
+  "approve.age_for_child": "Âge pour cette demande",
+  "approve.size_summary": "{units, plural, one {# unité} other {# unités}}, {bytes} octets",
+  "approve.more_to_come": "d'autres suivront",
+  "approve.confirm_size": "Je confirme la taille"
 }
