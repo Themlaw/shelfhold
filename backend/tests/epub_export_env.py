@@ -14,7 +14,7 @@ import sqlalchemy as sa
 from shelfhold.export.application.locks import work_lock_for
 from shelfhold.export.domain.physical_roots import RECEIVED_DIR
 from shelfhold.export.targets.kavita import AdminKey, KavitaClient
-from shelfhold.export.targets.kavita.arrival import ArrivalPoller
+from shelfhold.export.targets.kavita.polling import ArrivalPoller
 from shelfhold.export.targets.kavita.series import (
     SeriesAgeGate,
     blocking_age_reader,

@@ -15,7 +15,7 @@ import sqlalchemy as sa
 from shelfhold.config import Settings
 from shelfhold.export.application.pipeline import ExportPipeline
 from shelfhold.export.targets.kavita import AdminKey, KavitaClient
-from shelfhold.export.targets.kavita.arrival import ArrivalPoller, ArrivalReport
+from shelfhold.export.targets.kavita.polling import ArrivalPoller, ArrivalReport
 from shelfhold.infrastructure.db import create_db_engine
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import acquisition, export, platform

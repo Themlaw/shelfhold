@@ -19,8 +19,8 @@ from shelfhold.export.application.target_state import (
     target_write_guard,
 )
 from shelfhold.export.domain.field_owner import FieldAction, effective_age
-from shelfhold.export.targets.kavita.arrival import ArrivalPoller
 from shelfhold.export.targets.kavita.audit import AccessAuditor
+from shelfhold.export.targets.kavita.polling import ArrivalPoller
 from shelfhold.export.targets.kavita.reinstall import InstanceService
 from shelfhold.export.targets.kavita.series import SeriesResolver
 from shelfhold.infrastructure.ids import new_ulid

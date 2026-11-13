@@ -76,6 +76,7 @@ from shelfhold.export.application.plans import StalePlanError
 from shelfhold.export.application.preflight import PermissionPreflight
 from shelfhold.export.application.ranged_export import RangedExporter
 from shelfhold.export.application.reconcile import Reconciler
+from shelfhold.export.application.reconcile_full import FullReconciler
 from shelfhold.export.application.restore import RestoredBehindError
 from shelfhold.export.application.snapshot import load_context
 from shelfhold.export.application.upgrade import SamePathUpgrade
@@ -85,7 +86,6 @@ from shelfhold.export.domain.naming import DEFAULT_TEMPLATE, NamingTemplate
 from shelfhold.export.domain.path_map import PathMapError
 from shelfhold.export.domain.physical_roots import RootState
 from shelfhold.export.targets.kavita.adopt import BulkParse, library_type_named
-from shelfhold.export.targets.kavita.arrival import ArrivalPoller
 from shelfhold.export.targets.kavita.audit import AccessAuditor
 from shelfhold.export.targets.kavita.client import KavitaClient
 from shelfhold.export.targets.kavita.cover import SeriesCovers
@@ -97,6 +97,7 @@ from shelfhold.export.targets.kavita.errors import (
     TargetUnreachable,
 )
 from shelfhold.export.targets.kavita.library_type import LibraryTypeService
+from shelfhold.export.targets.kavita.polling import ArrivalPoller
 from shelfhold.export.targets.kavita.series import (
     SeriesAgeGate,
     SeriesAges,
@@ -857,24 +858,29 @@ class PlanService:
 
 
 def reconcile_handler(comp: Composition, *, in_window: bool) -> Callable[[JobContext], None]:
-    """The verification of the tree, then the mirrors projected again if one is lost: both read
-    the disks, so both are window jobs (ENF-OPS-014)."""
+    """The verification of the tree (in the hash window: the full inventory of drift, orphans,
+    duplicates and links, EF-EXP-018), then the mirrors projected again if one is lost: all read
+    the disks, so all are window jobs (ENF-OPS-014)."""
 
     def run(context: JobContext) -> None:
         destinations = tree_destinations(comp)
         if not destinations:
             return
         try:
-            pipeline, reconciler, _fsops = build_pipeline(comp)
+            pipeline, reconciler, fsops = build_pipeline(comp)
         except (NoLibraryError, KeyringUnavailableError):
             return
+        inventory = FullReconciler(comp.engine, fsops, clock=comp.clock, bus=comp.bus)
         for destination in destinations:
             if context.stop_requested:
                 return
             if in_window:  # it looks at the tree anyway: what a pass learned of it is stale
                 blocked_memo.forget(comp.engine, destination.id)
             reconciler.reconcile(destination.id, in_window=in_window)
-            if in_window:
+            if in_window:  # the full pass reads the hashes: only where files may be hashed
+                inventory.scan(
+                    destination.id, in_window=True, should_stop=lambda: context.stop_requested
+                )
                 pipeline.heal_mirror(destination.id)
 
     return run

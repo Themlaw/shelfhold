@@ -26,7 +26,7 @@ from shelfhold.export.domain.planner import (
     UnitFacts,
     plan_destination,
 )
-from shelfhold.export.targets.kavita.arrival import ArrivalPoller
+from shelfhold.export.targets.kavita.polling import ArrivalPoller
 from shelfhold.infrastructure.schema import catalog, export
 from shelfhold.library.adapters.origin_opf import origin_opf_rel
 from tests.epub_export_env import (

@@ -11,12 +11,18 @@ import hashlib
 import json
 import os
 import shutil
+import sys
+from collections.abc import Callable
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
 import pytest
 import sqlalchemy as sa
+
+import shelfhold.runtime_jobs as rj
+from shelfhold.config import Settings
+from shelfhold.events.bus import EventBus
 from shelfhold.export.application.reconcile_full import FullReconciler, InventoryReport
 from shelfhold.export.targets.kavita.events import (
     ArrivalEventWatcher,
@@ -25,10 +31,6 @@ from shelfhold.export.targets.kavita.events import (
     parse_hub_frames,
 )
 from shelfhold.export.targets.kavita.polling import ArrivalPoller
-
-import shelfhold.runtime_jobs as rj
-from shelfhold.config import Settings
-from shelfhold.events.bus import EventBus
 from shelfhold.infrastructure.fsops import Fsops
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import export, platform
@@ -133,8 +135,6 @@ def test_full_reconcile_clean_tree_reports_nothing() -> None:
 def test_full_reconcile_leaves_the_admin_files_and_the_reserved_area_alone() -> None:
     with export_env() as env:
         _exported(env, 1)
-        reserved = [p.name for p in env.root.iterdir() if p.name.startswith(".shelfhold")]
-        assert reserved  # the sentinel is there
         (env.root / ".shelfhold").mkdir(exist_ok=True)
         (env.root / ".shelfhold" / "bin.cbz").write_bytes(b"in the bin")
         before = _snapshot(env.root)
@@ -165,17 +165,23 @@ def test_a_symbolic_link_is_reported_as_a_link_never_followed(tmp_path: Path) ->
 
 @pytest.mark.req("EF-EXP-018")
 def test_the_walk_goes_through_fsops_and_the_declared_root(monkeypatch: pytest.MonkeyPatch) -> None:
-    def boom(*_: object, **__: object) -> None:
-        raise AssertionError("a path built by hand reached the disk")
+    def watched(real: Callable[..., Any]) -> Callable[..., Any]:
+        def call(*args: Any, **kwargs: Any) -> Any:
+            caller = sys._getframe(1).f_globals["__name__"]
+            assert caller != "shelfhold.export.application.reconcile_full", "a path built by hand"
+            return real(*args, **kwargs)
+
+        return call
 
     with export_env() as env:
         _exported(env, 1)
         (env.root / "orphan.cbz").write_bytes(b"x")
-        for name in ("walk", "scandir"):
-            monkeypatch.setattr(os, name, boom)
-        monkeypatch.setattr(os.path, "islink", boom)
-        monkeypatch.setattr(Path, "iterdir", boom)
-        assert _scanner(env).scan(env.destination_id, in_window=True).orphans == ("orphan.cbz",)
+        for name in ("walk", "scandir", "listdir", "lstat", "stat"):
+            monkeypatch.setattr(os, name, watched(getattr(os, name)))
+        monkeypatch.setattr(os.path, "islink", watched(os.path.islink))
+        monkeypatch.setattr(Path, "iterdir", watched(Path.iterdir))
+        report = _scanner(env).scan(env.destination_id, in_window=True)
+        assert report.orphans == ("orphan.cbz",)
 
 
 @pytest.mark.req("EF-EXP-018")
@@ -256,7 +262,9 @@ def test_a_blocked_root_is_not_inventoried() -> None:
     with export_env() as env:
         _exported(env, 1)
         (env.root / "orphan.cbz").write_bytes(b"x")
-        for sentinel in env.root.glob(".shelfhold-mount-id"):
+        sentinels = list(env.lib.library.glob(".shelfhold-mount-id"))
+        assert sentinels  # the sentinel of the physical root
+        for sentinel in sentinels:
             sentinel.unlink()  # an unmounted disk, a restored backup: nothing may be concluded
         report = _scanner(env).scan(env.destination_id, in_window=True)
         assert report.blocked == "sentinel"
@@ -316,7 +324,7 @@ def test_the_new_kinds_are_accepted_by_the_real_bus() -> None:
         _scanner(env).scan(env.destination_id, in_window=True)
         with env.engine.connect() as connection:
             kinds = {
-                json.loads(row.payload).get("kind")
+                row.payload.get("kind")
                 for row in connection.execute(
                     sa.select(platform.event.c.payload).where(
                         platform.event.c.type == "reconcile.drift"
@@ -378,7 +386,7 @@ def _hub() -> HubSession:
 
 
 def _watcher(w: Wired, **options: Any) -> ArrivalEventWatcher:
-    return ArrivalEventWatcher(w.env.engine, w.env.clock, _poller(w), **options)
+    return ArrivalEventWatcher(w.env.clock, _poller(w), **options)
 
 
 def _state(env: ExportEnv) -> str:
