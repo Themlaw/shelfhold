@@ -33,6 +33,12 @@ export function needsReauth(error: unknown): boolean {
   return problem.code === 'reauth_required' || /reauth-required$/.test(problem.type ?? '');
 }
 
+/** 403: signed in, but the server does not give this screen to this role. */
+export function isForbidden(error: unknown): boolean {
+  const problem = problemOf(error);
+  return problem.status === 403 || problem.code === 'forbidden';
+}
+
 /** 401 otherwise: no session at all. */
 export function needsSession(error: unknown): boolean {
   return problemOf(error).status === 401 && !needsReauth(error);
