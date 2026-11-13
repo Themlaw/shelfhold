@@ -45,6 +45,7 @@ __all__ = [
     "kept_in_service_report",
     "known_bad_report",
     "koreader_reset_report",
+    "pending_withdrawal_count",
     "queues_of",
     "rights_report",
     "stale_report",
@@ -599,3 +600,9 @@ def unverifiable_download_dirs(connection: Connection) -> list[dict[str, object]
              "path": detail.get("path", "")}
         )  # fmt: skip
     return found
+
+
+def pending_withdrawal_count(connection: Connection) -> int:
+    """How many `withdrawal_pending` waits are open (for the daily reminder of the admin, which
+    only reads this number: the exit is `shelf withdraw`, a reserved action)."""
+    return len(_withdrawals(connection)) + len(_integrity_blocked(connection))

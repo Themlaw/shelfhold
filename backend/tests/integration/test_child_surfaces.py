@@ -33,6 +33,7 @@ from shelfhold.config import Settings
 from shelfhold.events.activity import ActivityEvent, Viewer
 from shelfhold.events.projection import project_event
 from shelfhold.identity.public import local_auth, reader_scope, scope_of
+from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import platform
 from tests.auth_env import CSRF_HEADER, AuthEnv, auth_env, run_cli
 from tests.visibility_env import HIDDEN_TITLES, VISIBLE_TITLES, Seed, add_profile, seed_catalogue
@@ -77,6 +78,9 @@ OWN = (
     "PATCH /api/v1/me/preferences",
     "GET /api/v1/me/title-languages",
     "PUT /api/v1/me/title-languages",
+    # M3 L14: how she wants to be told, her own row only (no identifier names another profile)
+    "GET /api/v1/me/notifications",
+    "PUT /api/v1/me/notifications",
     "GET /api/v1/me/visibility",
     "PUT /api/v1/me/visibility",
     # M3 L35: her own requests, titled by what she was shown; a child asks by her reference only
@@ -235,7 +239,6 @@ PENDING_SURFACES = {
     "sse": ("L12", ("stream", "events")),
     "thumbnails": ("L24", ("thumb", "thumbs", "thumbnail", "thumbnails")),
     "covers": ("L24", ("cover", "covers")),
-    "notifications": ("L14", ("notification", "notifications")),
     "opds": ("M5", ("opds",)),
 }
 
@@ -753,6 +756,56 @@ def _surface_notification(world: World) -> None:
             ActivityEvent(4, "work.updated", "ops", {"work_id": world.seed.works["unrated"]}),
         )  # fmt: skip
         assert admin is not None
+    _notification_built_for_a_child(world)
+
+
+def _notification_built_for_a_child(world: World) -> None:
+    """L14: the real router and sender, in the shape of production: ONE shared channel that
+    everybody reads. The child follows every Work of the catalogue, and so does an adult (who
+    sees the hidden ones). What leaves on the whole channel, for anyone, names no title, no
+    series, no identifier of a hidden Work; the child's own notice counts only what is hers."""
+    from shelfhold.events.bus import EventBus
+    from shelfhold.infrastructure.schema import identity
+    from shelfhold.integrations.notify import NotificationRouter, NotificationSender
+    from tests.auth_env import ManualClock
+
+    engine, clock = world.seed.engine, ManualClock()
+    sent: list[tuple[str, str]] = []
+
+    def deliver(user_id: str, message: Any) -> bool:
+        sent.append((user_id, f"{message.title}\n{message.body}"))
+        return True
+
+    bus = EventBus(clock)
+    NotificationRouter(engine, clock).subscribe(bus)
+    with engine.begin() as connection:
+        adult = connection.execute(
+            sa.select(identity.user.c.id).where(identity.user.c.role == "admin")
+        ).scalar_one()
+        connection.execute(sa.update(identity.user).values(notify_mode="immediate"))
+        for who in (world.kid_id, adult):
+            for work_id in world.seed.works.values():
+                connection.execute(
+                    sa.insert(identity.user_state).values(
+                        user_id=who, work_id=work_id, followed=True
+                    )
+                )
+    for work_id in world.seed.works.values():
+        with engine.begin() as connection:
+            published = bus.publish(
+                connection, "unit.stored",
+                {"unit_id": new_ulid(), "edition_id": new_ulid(), "work_id": work_id},
+            )  # fmt: skip
+        bus.deliver([published])
+    NotificationSender(engine, clock, deliver=deliver, pending_withdrawals=lambda _c: 0).run_once()
+    channel = "\n".join(t for _u, t in sent)  # everything, whoever it was for
+    world.clean(channel)
+    for key in (*VISIBLE_FOR_CEILING_10, *HIDDEN_FROM_CEILING_10):
+        assert world.seed.title_of(key) not in channel, key
+    kid = "\n".join(t for u, t in sent if u == world.kid_id)
+    mine = "\n".join(t for u, t in sent if u == adult)
+    assert f"{len(VISIBLE_FOR_CEILING_10)} new chapter" in kid  # the control: hers, counted
+    assert f"{len(world.seed.works)} new chapter" in mine  # the adult is not narrowed
 
 
 @pytest.mark.req("EF-USR-006", "ENF-SEC-010", "EF-USR-014")

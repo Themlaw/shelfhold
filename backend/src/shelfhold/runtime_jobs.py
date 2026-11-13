@@ -113,6 +113,7 @@ from shelfhold.infrastructure.schema import coherence, export
 from shelfhold.infrastructure.wake import WakeDeferred
 from shelfhold.integrations.apprise import NotificationDispatcher, register_notification_job
 from shelfhold.jobs.daily_checks import library_type_check, major_update_replay
+from shelfhold.jobs.digest_job import register_digest_job
 from shelfhold.jobs.integrity_job import register_integrity_job
 from shelfhold.jobs.public import JobContext, JobFailedError, JobPools
 from shelfhold.library.public import (
@@ -125,6 +126,7 @@ from shelfhold.library.public import (
 from shelfhold.ops.acquire import AcquireOps
 from shelfhold.ops.errors import ExitUnavailableError
 from shelfhold.ops.events import BusTargetEvents
+from shelfhold.ops.notifications import LazyNotificationSweep
 from shelfhold.retention_jobs import register_retention_jobs
 from shelfhold.safeguard_jobs import register_safeguard_job
 from shelfhold.store_jobs import register_store_jobs
@@ -988,6 +990,7 @@ def register_runtime_jobs(pools: JobPools, comp: Composition) -> None:
     pools.register(INTENT_PRUNE_KIND, pool="maint", handler=run_prune, writes=False)
     pools.scheduler.add(INTENT_PRUNE_KIND, INTENT_PRUNE_CRON, jitter_s=300)
     register_notification_job(pools, LazyDispatcher(comp))  # type: ignore[arg-type]
+    register_digest_job(pools, LazyNotificationSweep(comp))  # EF-INT-021: per-person notices
     register_store_jobs(pools, comp)  # the window jobs of /store (L14)
     register_safeguard_job(pools, comp)  # "Mettre à l'abri" and the optional purge (L16)
     register_integrity_job(pools, comp)  # the rolling integrity check (M3 L23)
