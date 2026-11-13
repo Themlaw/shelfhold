@@ -1,6 +1,7 @@
 """What the interfaces and the composition root may use from the identity context."""
 
 from shelfhold.identity.adapters.factory import local_auth
+from shelfhold.identity.adapters.liveness import credential_is_live
 from shelfhold.identity.adapters.reader_scope import (
     FamilyProfile,
     family_profile,
@@ -203,6 +204,7 @@ __all__ = [
     "authorize_reserved",
     "check_visibility",
     "credential_axis",
+    "credential_is_live",
     "default_visibility",
     "device_label",
     "device_token",

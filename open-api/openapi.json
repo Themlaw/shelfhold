@@ -17901,6 +17901,10 @@
       "code": "too_many_attempts",
       "status": 429
     },
+    "/api/v1/problems/too-many-streams": {
+      "code": "too_many_streams",
+      "status": 429
+    },
     "/api/v1/problems/unauthenticated": {
       "code": "unauthenticated",
       "status": 401

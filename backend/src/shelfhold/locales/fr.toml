@@ -1136,6 +1136,11 @@ title = "Le jeton de synchronisation est trop ancien."
 action = "Rechargez la liste complète puis repartez du nouveau jeton."
 cause = "Le jeton de reprise est trop ancien pour être rejoué."
 
+[errors."too_many_streams"]
+title = "Trop de flux d'événements ouverts pour ce profil."
+action = "Fermez un onglet ou une application qui suit les événements, puis réessayez."
+cause = "Le profil a atteint le nombre de flux ouverts en même temps que l'instance autorise."
+
 [errors."secret.undecryptable"]
 title = "Un secret n'a pas pu être déchiffré."
 action = "Restaurez le trousseau de clés depuis son export (« shelfhold secrets import --passphrase-file <fichier> --in <fichier> »), puis redémarrez Shelfhold."
