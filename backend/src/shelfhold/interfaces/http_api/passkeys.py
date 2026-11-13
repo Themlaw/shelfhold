@@ -226,6 +226,7 @@ def build_passkeys_router() -> APIRouter:
                 remember=body.remember,
                 confirm_remember=body.confirm_remember,
                 presented_token=request.cookies.get(names.session),
+                user_agent=request.headers.get("user-agent"),
             )
         except PasskeyUnavailableError as error:
             raise _unavailable(error) from None

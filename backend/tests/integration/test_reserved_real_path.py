@@ -111,6 +111,11 @@ def audit_rows(env: AuthEnv, action: str) -> list[tuple[object, ...]]:
 # one for a change made, none for a refusal or a job that does not exist
 SELF_AUDITED = {"request.unmask", "reconcile.forget_root", "request.approve"}
 SERVICE_AUDITED = {"queue.control"}
+# M3 L07: the session revocations leave one line per session closed, by the service, and none when
+# nothing was (the calls below close nothing: an id that does not exist, no other session)
+WHEN_CLOSED_AUDITED = {"session.revoke_other", "session.revoke_others"}
+# any role may do it on its own account (the guard names KNOWN_ROLES): the role loop skips it
+EVERY_ROLE_OWN_ACCOUNT = {"session.revoke_others"}
 
 
 @pytest.mark.req("EF-USR-022", "EF-USR-024", "ENF-SEC-010")
@@ -139,7 +144,10 @@ def test_real_reserved_routes_follow_the_table_for_a_fresh_then_a_stale_admin(
                 )  # answers before auth
                 db.commit()
         own = 1 if action in SELF_AUDITED else 0  # the route writes its own line, on a disclosure
-        if action in SERVICE_AUDITED:
+        if action in WHEN_CLOSED_AUDITED:
+            assert written == [], (path, written)
+            own = len(written)  # the stale call below is checked against the same count
+        elif action in SERVICE_AUDITED:
             refused_by_service = "/jobs/" in path  # a job that does not exist: the service refuses
             if refused_by_service:
                 # unknown job (404), or an empty body the route rejects before the service (422)
@@ -156,7 +164,7 @@ def test_real_reserved_routes_follow_the_table_for_a_fresh_then_a_stale_admin(
                 assert targets[before] and targets[before].startswith(path.rsplit("/", 1)[-1]), (
                     targets
                 )
-        else:
+        elif action not in WHEN_CLOSED_AUDITED:
             assert len(written) == 1 - own
         for line in written:
             assert line[0] and line[1]  # EF-USR-022 (3): on every action, fresh or not
@@ -165,7 +173,10 @@ def test_real_reserved_routes_follow_the_table_for_a_fresh_then_a_stale_admin(
         if needs:
             assert stale.status_code == 401, (path, action)
             assert stale.json()["type"] == "/api/v1/problems/reauth-required"
-            assert len(audit_rows(api, action)) == before + 1 - own  # the refusal wrote no entry
+            lines = len(audit_rows(api, action))
+            assert lines == before + (
+                0 if action in WHEN_CLOSED_AUDITED else 1 - own
+            )  # none for a refusal
         else:
             assert stale.status_code not in (401, 403), (path, action)
 
@@ -189,6 +200,8 @@ def test_real_reserved_routes_refuse_keys_and_non_admin_roles(
         username = add_user(api, role, can_rate=True)  # the flag set by hand changes nothing
         assert api.login(username).status_code == 200
         for method, path, action in real_reserved_routes(api):
+            if action in EVERY_ROLE_OWN_ACCOUNT:
+                continue
             refused = call(api, method, path)
             assert refused.status_code == 403, (role, path, action)
             body = refused.json()

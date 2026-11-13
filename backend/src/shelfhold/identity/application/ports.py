@@ -5,6 +5,8 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Protocol
 
+from shelfhold.identity.application.sessions import SessionView
+
 
 @dataclass(frozen=True)
 class UserRecord:
@@ -60,6 +62,8 @@ class NewSession:
     remember: bool
     ip: str | None
     passkey_id: str | None = None  # the passkey that opened it: revoking that passkey closes it
+    password_hash: str | None = None  # the hash the sign-in checked: re-read under the lock
+    device: str | None = None  # the coarse label of the device (`device_label`), never the header
 
 
 @dataclass(frozen=True)
@@ -130,7 +134,12 @@ class NewPasskey:
     rp_id: str | None = None
 
 
-class PasskeyGoneError(Exception):
+class ProofWithdrawnError(Exception):
+    """The proof a session was being opened on (a password, a passkey) was withdrawn meanwhile:
+    nothing was written."""
+
+
+class PasskeyGoneError(ProofWithdrawnError):
     """The passkey behind a session being opened was revoked meanwhile: nothing was written."""
 
 
@@ -155,7 +164,11 @@ class IdentityStore(Protocol):
         now: datetime,
         max_age_rating: int | None = None,
     ) -> None: ...
-    def set_password_hash(self, user_id: str, password_hash: str) -> None: ...
+    def replace_password_hash(self, user_id: str, expected: str, password_hash: str) -> bool:
+        """The new hash of the SAME password, written only while the stored one is still
+        `expected`: False when a reset (or anything else) changed it meanwhile, nothing written."""
+        ...
+
     def delete_user(
         self, user_id: str, *, keep_one_admin: bool = False, actor_id: str | None = None
     ) -> str | None:
@@ -274,6 +287,13 @@ class IdentityStore(Protocol):
     def revoke_sessions(
         self, *, now: datetime, user_id: str | None = None, session_id: str | None = None
     ) -> int: ...
+    def live_sessions(self, *, now: datetime, user_id: str | None = None) -> Sequence[SessionView]:
+        """The sessions neither revoked nor expired, most recently active first."""
+        ...
+
+    def revoke_session_of(self, user_id: str, session_id: str, *, now: datetime) -> bool:
+        """One statement on (owner, id): a session of someone else is False, like an unknown one."""
+        ...
 
     def insert_api_key(self, key: NewApiKey) -> None: ...
     def api_key_by_prefix(self, prefix: str) -> ApiKeyRecord | None: ...
@@ -319,9 +339,9 @@ class IdentityStore(Protocol):
 
     def reset_credentials(
         self, user_id: str, password_hash: str, *, now: datetime
-    ) -> tuple[int, int]:
-        """New password, every session closed, every passkey revoked: one transaction. Returns
-        (sessions closed, passkeys revoked)."""
+    ) -> tuple[int, int, int]:
+        """New password, every session closed, every passkey and API key revoked: one
+        transaction. Returns (sessions closed, passkeys revoked, API keys revoked)."""
         ...
 
     def audit(self, entry: AuditEntry) -> None: ...

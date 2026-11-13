@@ -1,0 +1,175 @@
+"""Sessions and the recovery kit (M3 L07, EF-USR-011, EF-USR-023).
+
+- `/auth/sessions`: the caller's OWN live sessions, closed one by one or all but the current one.
+  Only a session credential: a key or a device token is refused. The owner is the principal's,
+  never a request's, so a session of another profile answers like an id that does not exist.
+- `/admin/sessions`: every profile's sessions and the closing of any, a reserved action (admin
+  session, fresh in the hardened profile, never a key, a token or a member).
+- `/admin/recovery-kit`: the printable page, no secret in it. There is NO route that creates,
+  accepts or lists a recovery code: the way back in is `admin reset-password` on the host.
+"""
+
+from datetime import datetime
+from typing import Annotated, Any
+
+from fastapi import APIRouter, Depends, Request
+from fastapi.responses import HTMLResponse, Response
+from pydantic import BaseModel
+
+from shelfhold.identity.public import (
+    KNOWN_ROLES,
+    RESERVED_ACTIONS,
+    NotAllowedError,
+    Principal,
+    SessionView,
+    UnknownSessionError,
+    render_recovery_kit,
+)
+from shelfhold.infrastructure.http_headers import hash_csp
+from shelfhold.interfaces.http_api.auth import gate_of, require_session, reserved_action
+from shelfhold.interfaces.http_api.problems import ProblemError
+
+SESSIONS_PATH = "/api/v1/auth/sessions"
+ADMIN_SESSIONS_PATH = "/api/v1/admin/sessions"
+REVOKE_OTHERS_PATH = f"{SESSIONS_PATH}/revoke-others"
+RECOVERY_KIT_PATH = "/api/v1/admin/recovery-kit"
+
+_LIST_ALL = reserved_action(RESERVED_ACTIONS["session.list_all"])
+# the service writes the line of a revocation, with the account and only when one was closed
+_REVOKE_OTHER = reserved_action(RESERVED_ACTIONS["session.revoke_other"], audit=False)
+# any role, on its own account; fresh in every profile; one audit line per session, by the service
+_REVOKE_OTHERS = reserved_action(
+    RESERVED_ACTIONS["session.revoke_others"], roles=KNOWN_ROLES, audit=False
+)
+_KIT = reserved_action(RESERVED_ACTIONS["recovery_kit.read"])
+
+KIT_PAGE = render_recovery_kit()  # static: the same bytes every time
+KIT_CSP = hash_csp(KIT_PAGE)  # its one inline style by hash, nothing else (ENF-SEC-004)
+
+
+class SessionBase(BaseModel):
+    id: str
+    device: str | None
+    created_at: datetime
+    auth_time: datetime
+    last_seen_at: datetime
+    remember: bool
+    current: bool
+
+
+class SessionItem(SessionBase):
+    ip: str | None  # her own addresses: how she recognises a device that is not hers
+
+
+class AdminSessionItem(SessionBase):
+    """EF-USR-011 asks for the device, `auth_time` and the last activity of every profile, not for
+    where its members and children connect from: no address in the admin's view (review m3)."""
+
+    user_id: str
+    username: str
+
+
+class SessionList(BaseModel):
+    items: list[SessionItem]
+
+
+class AdminSessionList(BaseModel):
+    items: list[AdminSessionItem]
+
+
+class Revoked(BaseModel):
+    revoked: int
+
+
+def _base(view: SessionView, current_id: str | None) -> dict[str, Any]:
+    return dict(
+        id=view.id,
+        device=view.device,
+        created_at=view.created_at,
+        auth_time=view.auth_time,
+        last_seen_at=view.last_seen_at,
+        remember=view.remember,
+        current=view.id == current_id,
+    )
+
+
+def _item(view: SessionView, current_id: str | None) -> SessionItem:
+    return SessionItem(
+        id=view.id,
+        device=view.device,
+        ip=view.ip,
+        created_at=view.created_at,
+        auth_time=view.auth_time,
+        last_seen_at=view.last_seen_at,
+        remember=view.remember,
+        current=view.id == current_id,
+    )
+
+
+def build_sessions_router() -> APIRouter:
+    router = APIRouter()
+
+    @router.get(SESSIONS_PATH, response_model=SessionList)
+    def sessions_list(
+        request: Request, principal: Annotated[Principal, Depends(require_session)]
+    ) -> SessionList:
+        views = gate_of(request).auth.sessions_list(principal)
+        return SessionList(items=[_item(v, principal.session_id) for v in views])
+
+    @router.post(REVOKE_OTHERS_PATH, response_model=Revoked)
+    def sessions_revoke_others(
+        request: Request, principal: Annotated[Principal, Depends(_REVOKE_OTHERS)]
+    ) -> Revoked:
+        return Revoked(revoked=gate_of(request).auth.sessions_revoke_others(principal))
+
+    @router.delete(f"{SESSIONS_PATH}/{{session_id}}", status_code=204)
+    def session_revoke(
+        session_id: str,
+        request: Request,
+        principal: Annotated[Principal, Depends(require_session)],
+    ) -> Response:
+        try:
+            gate_of(request).auth.session_revoke(principal, session_id)
+        except UnknownSessionError:
+            raise ProblemError("session_not_found") from None
+        return Response(status_code=204)
+
+    @router.get(ADMIN_SESSIONS_PATH, response_model=AdminSessionList)
+    def admin_sessions_list(
+        request: Request, principal: Annotated[Principal, Depends(_LIST_ALL)]
+    ) -> AdminSessionList:
+        try:
+            views = gate_of(request).auth.sessions_list_all(principal)
+        except NotAllowedError:
+            raise ProblemError("forbidden") from None
+        return AdminSessionList(
+            items=[
+                AdminSessionItem(
+                    **_base(v, principal.session_id), user_id=v.user_id, username=v.username
+                )
+                for v in views
+            ]
+        )
+
+    @router.delete(f"{ADMIN_SESSIONS_PATH}/{{session_id}}", status_code=204)
+    def admin_session_revoke(
+        session_id: str,
+        request: Request,
+        principal: Annotated[Principal, Depends(_REVOKE_OTHER)],
+    ) -> Response:
+        try:
+            gate_of(request).auth.session_revoke_of_other(principal, session_id)
+        except NotAllowedError:
+            raise ProblemError("forbidden") from None
+        except UnknownSessionError:
+            raise ProblemError("session_not_found") from None
+        return Response(status_code=204)
+
+    @router.get(RECOVERY_KIT_PATH, response_class=HTMLResponse)
+    def recovery_kit(_principal: Annotated[Principal, Depends(_KIT)]) -> HTMLResponse:
+        return HTMLResponse(
+            KIT_PAGE,
+            headers={"Content-Security-Policy": KIT_CSP, "Cache-Control": "no-store"},
+        )
+
+    return router

@@ -144,6 +144,7 @@ def test_reauth_list_is_the_irreversible_or_secret_revealing_effects() -> None:
                 Effect.RATES_CONTENT,  # porteur 2026-11-11: classing needs a fresh session
                 Effect.ENROLS_PASSKEY,  # porteur 2026-11-11: so does adding a passkey
                 Effect.MANAGES_PROFILES,  # M3 L05: a stolen session makes no admin
+                Effect.ENDS_OWN_SESSIONS,  # M3 L07: nor locks the owner out of the rest
             }
         )
         == set(Effect) - NO_REAUTH_EFFECTS

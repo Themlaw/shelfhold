@@ -44,6 +44,7 @@ P3 = {
     "accepts_admin_risk",  # the admin password of Kavita goes through it (L38)
     "settles_fs_intent",  # `intents resolve` frees the paths of an interrupted operation (L51)
     "migrates_identity",  # `normalize migrate` rewrites the identity keys of live rows (L55)
+    "ends_own_sessions",  # M3 L07: `revoke-others`, fresh in every profile
     "acknowledges_restore",  # `restore acknowledge`: passkey logins come back with it
     "rewrites_exported_files",  # `revisions apply|force`: KOReader positions reset (M2 L17)
     "changes_coverage",  # `coverage resplit apply`: says which chapters a file carries (M2 L26)
@@ -296,6 +297,7 @@ FRESHNESS_LINE = {
             "maintenance.enter",  # M3 L13: a stolen session freezes every write of the instance
             "maintenance.exit",
             "queue.cancel_repair",  # M3 L13: a stolen session stops what protects the library
+            "session.revoke_others",  # M3 L07: a stolen session must not lock the owner out
         ),
         "p3",
     ),
@@ -321,6 +323,9 @@ FRESHNESS_LINE = {
             "passkey.revoke",
             "plugin.attest",  # D15: freshness only in the hardened profile
             "queue.control",  # M3 L13: reversible; freshness only in the hardened profile
+            "session.list_all",  # M3 L07: a read of every profile's sessions
+            "session.revoke_other",  # M3 L07: undone by signing in again; hardened profile only
+            "recovery_kit.read",  # M3 L07: a page with no secret in it
         ),
         "none",
     ),

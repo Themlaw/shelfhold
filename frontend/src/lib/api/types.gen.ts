@@ -119,6 +119,61 @@ export type AddDirectlyIn = {
 };
 
 /**
+ * AdminSessionItem
+ *
+ * EF-USR-011 asks for the device, `auth_time` and the last activity of every profile, not for
+ * where its members and children connect from: no address in the admin's view (review m3).
+ */
+export type AdminSessionItem = {
+    /**
+     * Auth Time
+     */
+    auth_time: string;
+    /**
+     * Created At
+     */
+    created_at: string;
+    /**
+     * Current
+     */
+    current: boolean;
+    /**
+     * Device
+     */
+    device: string | null;
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Last Seen At
+     */
+    last_seen_at: string;
+    /**
+     * Remember
+     */
+    remember: boolean;
+    /**
+     * User Id
+     */
+    user_id: string;
+    /**
+     * Username
+     */
+    username: string;
+};
+
+/**
+ * AdminSessionList
+ */
+export type AdminSessionList = {
+    /**
+     * Items
+     */
+    items: Array<AdminSessionItem>;
+};
+
+/**
  * AdoptedLibraryIn
  */
 export type AdoptedLibraryIn = {
@@ -2655,6 +2710,16 @@ export type RevisionsOut = {
 };
 
 /**
+ * Revoked
+ */
+export type Revoked = {
+    /**
+     * Revoked
+     */
+    revoked: number;
+};
+
+/**
  * RootIn
  *
  * `path`: a folder the database does not know yet (`foreign_root` found by the start-up),
@@ -2921,6 +2986,54 @@ export type SessionInfo = {
      * Username
      */
     username: string;
+};
+
+/**
+ * SessionItem
+ */
+export type SessionItem = {
+    /**
+     * Auth Time
+     */
+    auth_time: string;
+    /**
+     * Created At
+     */
+    created_at: string;
+    /**
+     * Current
+     */
+    current: boolean;
+    /**
+     * Device
+     */
+    device: string | null;
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Ip
+     */
+    ip: string | null;
+    /**
+     * Last Seen At
+     */
+    last_seen_at: string;
+    /**
+     * Remember
+     */
+    remember: boolean;
+};
+
+/**
+ * SessionList
+ */
+export type SessionList = {
+    /**
+     * Items
+     */
+    items: Array<SessionItem>;
 };
 
 /**
@@ -4237,6 +4350,110 @@ export type UnmaskResponses = {
 
 export type UnmaskResponse = UnmaskResponses[keyof UnmaskResponses];
 
+export type RecoveryKitData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/admin/recovery-kit';
+};
+
+export type RecoveryKitErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type RecoveryKitError = RecoveryKitErrors[keyof RecoveryKitErrors];
+
+export type RecoveryKitResponses = {
+    /**
+     * Successful Response
+     */
+    200: string;
+};
+
+export type RecoveryKitResponse = RecoveryKitResponses[keyof RecoveryKitResponses];
+
+export type AdminSessionsListData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/admin/sessions';
+};
+
+export type AdminSessionsListErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type AdminSessionsListError = AdminSessionsListErrors[keyof AdminSessionsListErrors];
+
+export type AdminSessionsListResponses = {
+    /**
+     * Successful Response
+     */
+    200: AdminSessionList;
+};
+
+export type AdminSessionsListResponse = AdminSessionsListResponses[keyof AdminSessionsListResponses];
+
+export type AdminSessionRevokeData = {
+    body?: never;
+    path: {
+        /**
+         * Session Id
+         */
+        session_id: string;
+    };
+    query?: never;
+    url: '/api/v1/admin/sessions/{session_id}';
+};
+
+export type AdminSessionRevokeErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type AdminSessionRevokeError = AdminSessionRevokeErrors[keyof AdminSessionRevokeErrors];
+
+export type AdminSessionRevokeResponses = {
+    /**
+     * Successful Response
+     */
+    204: void;
+};
+
+export type AdminSessionRevokeResponse = AdminSessionRevokeResponses[keyof AdminSessionRevokeResponses];
+
 export type AdoptConfirmMigrationData = {
     body: MigrationIn;
     path: {
@@ -4873,6 +5090,110 @@ export type SessionResponses = {
 };
 
 export type SessionResponse = SessionResponses[keyof SessionResponses];
+
+export type SessionsListData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/auth/sessions';
+};
+
+export type SessionsListErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type SessionsListError = SessionsListErrors[keyof SessionsListErrors];
+
+export type SessionsListResponses = {
+    /**
+     * Successful Response
+     */
+    200: SessionList;
+};
+
+export type SessionsListResponse = SessionsListResponses[keyof SessionsListResponses];
+
+export type SessionsRevokeOthersData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/auth/sessions/revoke-others';
+};
+
+export type SessionsRevokeOthersErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type SessionsRevokeOthersError = SessionsRevokeOthersErrors[keyof SessionsRevokeOthersErrors];
+
+export type SessionsRevokeOthersResponses = {
+    /**
+     * Successful Response
+     */
+    200: Revoked;
+};
+
+export type SessionsRevokeOthersResponse = SessionsRevokeOthersResponses[keyof SessionsRevokeOthersResponses];
+
+export type SessionRevokeData = {
+    body?: never;
+    path: {
+        /**
+         * Session Id
+         */
+        session_id: string;
+    };
+    query?: never;
+    url: '/api/v1/auth/sessions/{session_id}';
+};
+
+export type SessionRevokeErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type SessionRevokeError = SessionRevokeErrors[keyof SessionRevokeErrors];
+
+export type SessionRevokeResponses = {
+    /**
+     * Successful Response
+     */
+    204: void;
+};
+
+export type SessionRevokeResponse = SessionRevokeResponses[keyof SessionRevokeResponses];
 
 export type ReadConfigData = {
     body?: never;

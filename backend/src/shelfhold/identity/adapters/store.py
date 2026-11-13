@@ -21,10 +21,12 @@ from shelfhold.identity.application.ports import (
     PasskeyGoneError,
     PasskeyRecord,
     ProfileRecord,
+    ProofWithdrawnError,
     SessionRecord,
     SourcePolicyRecord,
     UserRecord,
 )
+from shelfhold.identity.application.sessions import SessionView
 from shelfhold.identity.domain.policy import check_source_policy, effective_source_policy
 from shelfhold.identity.domain.roles import ProfileError
 from shelfhold.identity.domain.visibility import check_visibility, effective_visibility
@@ -587,10 +589,15 @@ class SqlIdentityStore:
             ).all()
         return {row.source_key: row.policy for row in rows}
 
-    def set_password_hash(self, user_id: str, password_hash: str) -> None:
+    def replace_password_hash(self, user_id: str, expected: str, password_hash: str) -> bool:
         with self._changing() as conn:
-            conn.execute(
-                sa.update(_user).where(_user.c.id == user_id).values(password_hash=password_hash)
+            return (
+                conn.execute(
+                    sa.update(_user)
+                    .where(_user.c.id == user_id, _user.c.password_hash == expected)
+                    .values(password_hash=password_hash)
+                ).rowcount
+                > 0
             )
 
     # --- passkeys (EF-USR-025) ---------------------------------------------------------------
@@ -715,7 +722,8 @@ class SqlIdentityStore:
 
     def reset_credentials(
         self, user_id: str, password_hash: str, *, now: datetime
-    ) -> tuple[int, int]:
+    ) -> tuple[int, int, int]:
+        """`(sessions, passkeys, api keys)` closed with the new password, in one transaction."""
         with self._changing(immediate=True) as conn:
             conn.execute(
                 sa.update(_user).where(_user.c.id == user_id).values(password_hash=password_hash)
@@ -730,17 +738,31 @@ class SqlIdentityStore:
                 .where(_session.c.user_id == user_id, _session.c.revoked_at.is_(None))
                 .values(revoked_at=now)
             ).rowcount
-        return int(sessions), int(passkeys)
+            keys = conn.execute(
+                sa.update(_key)
+                .where(_key.c.user_id == user_id, _key.c.revoked_at.is_(None))
+                .values(revoked_at=now)
+            ).rowcount
+        return int(sessions), int(passkeys), int(keys)
 
     # --- sessions ----------------------------------------------------------------------------
 
     def insert_session(self, session: NewSession) -> None:
+        # the write lock is taken first whenever the proof can be withdrawn meanwhile: a passkey
+        # revoked or a password reset between the check and the insert must not leave a session
+        guarded = session.passkey_id is not None or session.password_hash is not None
         engine = (
             self._engine.execution_options(shelfhold_begin="BEGIN IMMEDIATE")
-            if session.passkey_id
+            if guarded
             else self._engine
         )
         with engine.begin() as conn:
+            if session.password_hash is not None:
+                stored = conn.execute(
+                    sa.select(_user.c.password_hash).where(_user.c.id == session.user_id)
+                ).scalar()
+                if stored != session.password_hash:  # reset (or removed) since it was checked
+                    raise ProofWithdrawnError
             if session.passkey_id:  # the write lock is held: no revocation can come in between
                 live = conn.execute(
                     sa.select(_passkey.c.id).where(
@@ -761,6 +783,7 @@ class SqlIdentityStore:
                     absolute_expiry=session.absolute_expiry,
                     remember=session.remember,
                     ip=session.ip,
+                    user_agent_label=session.device,
                     passkey_id=session.passkey_id,
                 )
             )
@@ -825,6 +848,43 @@ class SqlIdentityStore:
             query = query.where(_session.c.id == session_id)
         with self._changing() as conn:
             return conn.execute(query.values(revoked_at=now)).rowcount
+
+    def live_sessions(self, *, now: datetime, user_id: str | None = None) -> Sequence[SessionView]:
+        query = (
+            sa.select(_session, _user.c.username.label("u_username"), _user.c.role.label("u_role"))
+            .join(_user, _user.c.id == _session.c.user_id)
+            .where(_session.c.revoked_at.is_(None), _session.c.absolute_expiry > now)
+            .order_by(_session.c.last_seen_at.desc(), _session.c.id)
+        )
+        if user_id is not None:
+            query = query.where(_session.c.user_id == user_id)
+        with self._engine.connect() as conn:
+            rows = conn.execute(query).all()
+        return [
+            SessionView(
+                id=row.id,
+                user_id=row.user_id,
+                username=row.u_username,
+                role=row.u_role,
+                device=row.user_agent_label,
+                ip=row.ip,
+                created_at=row.created_at,
+                auth_time=row.auth_time,
+                last_seen_at=row.last_seen_at,
+                absolute_expiry=row.absolute_expiry,
+                remember=row.remember,
+            )
+            for row in rows
+        ]
+
+    def revoke_session_of(self, user_id: str, session_id: str, *, now: datetime) -> bool:
+        query = sa.update(_session).where(
+            _session.c.id == session_id,
+            _session.c.user_id == user_id,
+            _session.c.revoked_at.is_(None),
+        )
+        with self._changing() as conn:
+            return conn.execute(query.values(revoked_at=now)).rowcount > 0
 
     # --- API keys ----------------------------------------------------------------------------
 

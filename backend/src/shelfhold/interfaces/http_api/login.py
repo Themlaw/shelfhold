@@ -185,6 +185,7 @@ def build_login_router(source_url: str) -> APIRouter:
                 confirm_remember=body.confirm_remember,
                 presented_token=request.cookies.get(names.session),
                 device_proof=request.cookies.get(names.device),
+                user_agent=request.headers.get("user-agent"),
             )
         except ThrottledError as error:
             raise _throttled(error) from None
