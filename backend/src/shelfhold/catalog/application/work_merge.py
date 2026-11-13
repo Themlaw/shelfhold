@@ -219,13 +219,16 @@ def move_editions(connection: Connection, edition_ids: list[str], work_id: str) 
             )
 
 
-def _reopen_twin(
+_PROTECTION = {"rejected": 0, "accepted": 1, "open": 2}  # the more protective, the higher
+
+
+def _settle_twin(
     connection: Connection, table: sa.Table, data: dict[str, Any], keep_id: str
 ) -> None:
-    """A suggested age that is still open never disappears in a merge: the survivor holds the same
-    suggestion (the key does not carry the state) that somebody already settled, so the survivor's
-    row is opened again (EF-BIB-055: nobody has looked at it for the absorbed Work). Its earlier
-    state is kept in the snapshot, to put back on « Séparer »."""
+    """A suggested age is never lost in a merge. Two suggestions of the same key (the key does not
+    carry the state) become one row, the survivor's, in the **most protective** state of the two
+    (open before accepted before rejected), and the snapshot notes what was folded into it. An
+    undo never puts it back in a less protective state than it has then."""
     twin = connection.execute(
         sa.select(table.c.id, table.c.state).where(
             table.c.entity_type == "work",
@@ -235,9 +238,13 @@ def _reopen_twin(
             table.c.provenance == data["provenance"],
         )
     ).first()
-    if twin is not None and twin.state != "open":
-        connection.execute(sa.update(table).where(table.c.id == twin.id).values(state="open"))
-        data["_reopened"] = {"id": twin.id, "state": twin.state}
+    if twin is None:
+        return
+    if _PROTECTION[data["state"]] > _PROTECTION[twin.state]:
+        connection.execute(
+            sa.update(table).where(table.c.id == twin.id).values(state=data["state"])
+        )
+    data["_folded_into"] = {"id": twin.id, "state_before": twin.state}
 
 
 def _move_entity_rows(connection: Connection, drop_id: str, keep_id: str) -> dict[str, Any]:
@@ -262,8 +269,8 @@ def _move_entity_rows(connection: Connection, drop_id: str, keep_id: str) -> dic
                     )
                 data["_moved"] = True
             except exc.IntegrityError:
-                if name == "age_suggestion" and data.get("state") == "open":
-                    _reopen_twin(connection, table, data, keep_id)
+                if name == "age_suggestion":
+                    _settle_twin(connection, table, data, keep_id)
                 connection.execute(
                     sa.delete(table).where(*(table.c[k] == v for k, v in pk.items()))
                 )

@@ -221,9 +221,12 @@ def test_separate_recomputes_effective_age_and_shelves(env: ExportEnv) -> None:
     assert filed == env.shelf_id  # a withdrawal is the admin's (`shelf.withdraw`), never silent
     with env.engine.begin() as c:
         done = separate_works(c, merged.merge_id, now=NOW)
-    assert _effective(env, keep.work_id) == low  # the survivor is the age it was
-    assert _effective(env, drop.work_id) == AgeRating(16)  # and the other is back at 16+
+    # a separation never lowers an age: the survivor keeps the 16 the merge gave it
+    assert _effective(env, keep.work_id) == AgeRating(16)
+    assert _effective(env, drop.work_id) == AgeRating(16)
     assert done.shelves[keep.edition_id] == env.shelf_id  # the 0+ Edition stays on its shelf
+    rate(env, keep, 0)  # lowering is the admin's own, audited, rating
+    assert _effective(env, keep.work_id) == low
 
 
 def test_separate_never_lowers_an_age_the_admin_raised_since(env: ExportEnv) -> None:
@@ -493,10 +496,11 @@ def test_a_half_that_was_unrated_is_unrated_again_after_the_undo(env: ExportEnv)
         separate_works(c, merged.merge_id, now=NOW)
     with env.engine.connect() as c:
         rated = dict(c.execute(sa.select(catalog.work.c.id, catalog.work.c.rated_at)).all())
-    assert rated[keep.work_id] is None and rated[drop.work_id] is not None
+    assert rated[keep.work_id] is None  # nobody rated K alone
+    assert rated[drop.work_id] is not None  # D was rated before and the merged Work is rated now
 
 
-def test_the_open_suggestion_comes_back_settled_as_it_was(env: ExportEnv) -> None:
+def test_an_undo_never_settles_a_suggestion_a_merge_opened(env: ExportEnv) -> None:
     keep, drop = _pair(env)
     for work, state in ((keep.work_id, "rejected"), (drop.work_id, "open")):
         with env.engine.begin() as c:
@@ -515,7 +519,8 @@ def test_the_open_suggestion_comes_back_settled_as_it_was(env: ExportEnv) -> Non
     assert states() == [(keep.work_id, "open")]  # nothing that hid a Work is lost
     with env.engine.begin() as c:
         separate_works(c, merged.merge_id, now=NOW)
-    assert states() == sorted([(keep.work_id, "rejected"), (drop.work_id, "open")])
+    # the survivor's row stays as protective as it is: an undo never settles a suggestion
+    assert states() == sorted([(keep.work_id, "open"), (drop.work_id, "open")])
 
 
 def test_an_edition_with_its_own_age_does_not_raise_the_others(env: ExportEnv) -> None:

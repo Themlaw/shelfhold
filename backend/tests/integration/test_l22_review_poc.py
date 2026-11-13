@@ -186,7 +186,7 @@ def test_review_poc_a_session_merge_and_separation_are_audited_with_their_target
         inst = env.inst
         ops = WorkMergeOps(inst.comp)
         session = Principal(
-            "u", "admin", "admin", Credential.SESSION, session_id="s",
+            "u", "admin", "admin", Credential.SESSION, session_id=new_ulid(),
             auth_time=inst.comp.clock.now(),
         )  # fmt: skip
         keep, drop = env.new_series("Un roman"), env.new_series("Un roman (bis)")

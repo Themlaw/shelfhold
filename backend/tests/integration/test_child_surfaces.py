@@ -681,19 +681,17 @@ def _surface_work_redirect(world: World) -> None:
             world.clean(answer.text)
     rows = engine.connect().execute(sa.text("SELECT work_id FROM user_state")).all()
     assert rows == []  # nothing was written for a Work she may not see, even by its old identifier
-    # after « Séparer » (M3 L22 review): each half has its own age back, never a lower one, and a
-    # half that was unrated is unrated again; what stays hidden answers as an absent Work
+    # after « Séparer »: an age is never lowered by an undo, and a half that the merge left unrated
+    # stays unrated, so all four answer as an absent Work until the admin rates them by hand
     for merge_id in reversed(merges):
         with engine.begin() as connection:
             separate_works(connection, merge_id, now=datetime(2026, 11, 9, tzinfo=UTC))
-    for key in ("above", "unrated"):
+    for key in ("above", "adult_shelf", "ok", "unrated"):
         path = f"{ME}/state/{works[key]}"
         absent = _call(world, "GET", path.replace(works[key], MISSING), None)
         answer = _call(world, "GET", path, None)
         assert answer.status_code == 404 and _shape(answer) == _shape(absent), key
         world.clean(answer.text)
-    for key in ("ok", "adult_shelf"):  # rated 6 before, and nobody changed them
-        assert _call(world, "GET", f"{ME}/state/{works[key]}", None).status_code == 200, key
 
 
 def _surface_me_state_put(world: World) -> None:

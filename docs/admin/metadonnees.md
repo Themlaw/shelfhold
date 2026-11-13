@@ -85,13 +85,15 @@ membre ni un enfant.
 - L'âge ne baisse jamais : l'œuvre restante prend le plus strict des deux, et elle redevient « non classée » si l'une
   des deux l'était. Une étagère famille qui n'admet plus une édition la signale (`waiting`), sans la vider : le retrait
   reste `shelf.withdraw`.
-- `POST /api/v1/works/merges/{merge_id}/separate` (« Séparer ») : pendant 30 jours, les deux œuvres reviennent avec
-  leurs éditions, leur place en série, l'état de chaque lecteur et l'âge d'origine, sauf si vous avez reclassé l'œuvre
-  fusionnée depuis (un âge relevé n'est jamais abaissé par un défaire). L'ancien identifiant mène à l'œuvre restante
-  tant que la fusion dure. L'historique décide : si l'œuvre fusionnée a été reclassée, ou si une fusion plus récente
-  l'a reçue, chaque moitié prend le plus strict de son âge d'avant et de l'âge actuel. Une moitié qui n'était pas
-  classée avant la fusion ne l'est toujours pas après : classer l'ensemble n'est pas classer une moitié. La réponse
-  donne l'âge de chaque moitié et le plan de série exportée de l'œuvre rendue.
+- `POST /api/v1/works/merges/{merge_id}/separate` (« Séparer ») : pendant 30 jours, les deux œuvres
+  reviennent avec leurs éditions, leur place en série, l'état de chaque lecteur, les demandes, les crédits et les
+  champs. **Une séparation n'abaisse jamais un âge** : chaque moitié prend le plus strict de son âge d'avant la
+  fusion et de l'âge actuel de l'œuvre fusionnée, l'indicateur adulte est l'union, et une moitié qui n'était pas
+  classée avant la fusion (ou que l'œuvre fusionnée ne classe plus) reste non classée. Pour abaisser un âge après
+  une séparation, reclassez l'œuvre à la main : c'est une action auditée. Les suggestions d'âge ne sont jamais
+  réglées par une fusion ni par une séparation : deux suggestions identiques se replient dans l'état le plus
+  protecteur. L'ancien identifiant mène à l'œuvre restante tant que la fusion dure. La réponse donne l'âge de chaque
+  moitié et le plan de série exportée de l'œuvre rendue.
 - `POST /api/v1/series-reassignments` : après une fusion ou un rattachement tardif à une série
   (`POST /api/v1/works/{work_id}/series`), le plan qui regroupe les éditions d'une œuvre dans une seule série
   exportée par bibliothèque. Seul le lien change, jamais un fichier ; une série adoptée (figée) n'est jamais quittée ;

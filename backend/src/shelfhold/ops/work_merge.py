@@ -10,7 +10,6 @@ within 30 days (`merge_log`).
 
 from __future__ import annotations
 
-import re
 from typing import TYPE_CHECKING, Any
 
 import sqlalchemy as sa
@@ -82,14 +81,6 @@ def _series_report(plan: SeriesReassignmentPlan, applied: bool) -> dict[str, Any
     }  # fmt: skip
 
 
-_ULID = re.compile(r"^[0-9A-HJKMNP-TV-Z]{26}$")
-
-
-def _ulid_or_none(value: str | None) -> str | None:
-    """The session behind a line, when it is a session identifier (the column checks the shape)."""
-    return value if value is not None and _ULID.match(value) else None
-
-
 def _age_label(age: Any) -> str | None:
     if age is None:
         return None
@@ -117,7 +108,7 @@ class WorkMergeOps:
         connection.execute(
             sa.insert(identity.audit).values(
                 id=new_ulid(), actor_id=principal.actor_id, action=action, target=target,
-                session_id=_ulid_or_none(principal.session_id), auth_time=principal.auth_time,
+                session_id=principal.session_id, auth_time=principal.auth_time,
             )
         )  # fmt: skip
 
