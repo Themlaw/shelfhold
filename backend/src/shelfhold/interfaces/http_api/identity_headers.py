@@ -99,6 +99,16 @@ def _under(path: str, prefix: str) -> bool:
     return path == prefix or path.startswith(prefix + "/")
 
 
+def _single_identity(headers: Headers) -> str:
+    """The name of the caller, or "" when there is not exactly one line with exactly one name: a
+    proxy that appends its line after the caller's (or forwards the caller's) leaves two, and a
+    comma is how servers fold two into one. Ambiguity names nobody (review PR #232)."""
+    lines = headers.getlist(USER_HEADER)
+    if len(lines) != 1 or "," in lines[0]:
+        return ""
+    return lines[0].strip()
+
+
 @dataclass(frozen=True)
 class ForwardAuth:
     """Forward-auth as configured. `secret` None: none is required (the network alone decides)."""
@@ -130,9 +140,10 @@ class IdentityHeaderFilter:
         wanted = self.forward.secret
         if not wanted:
             return True
-        # `get`: the first of several lines; an empty or absent one never equals a real secret
-        presented = headers.get(SECRET_HEADER, "")
-        return bool(presented) and same_secret(presented, wanted)
+        # one line only (a second one is an ambiguity, and ambiguity is refused); an empty or
+        # absent one never equals a real secret
+        lines = headers.getlist(SECRET_HEADER)
+        return len(lines) == 1 and bool(lines[0]) and same_secret(lines[0], wanted)
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         if scope["type"] not in {"http", "websocket"}:
@@ -140,7 +151,7 @@ class IdentityHeaderFilter:
             return
         headers = Headers(scope=scope)
         believed = self._believed(scope, headers)
-        identity = headers.get(USER_HEADER, "").strip() if believed else ""
+        identity = _single_identity(headers) if believed else ""
         kept: list[tuple[bytes, bytes]] = []
         stripped: set[str] = set()
         for name, value in scope["headers"]:

@@ -122,7 +122,8 @@ def test_forward_auth_secret_is_optional_but_the_network_is_not(
     monkeypatch: pytest.MonkeyPatch, settings: Settings
 ) -> None:
     for position, update in enumerate(({"auth_forward_secret": None}, {"auth_forward_secret": ""})):
-        with forward_env(monkeypatch, settings, again=position > 0, **update) as env:
+        host = {"http_trusted_proxies": (f"{PROXY}/32",)}  # no secret: one host only
+        with forward_env(monkeypatch, settings, again=position > 0, **host, **update) as env:
             bare = {"Remote-User": ADMIN}
             assert env.other_client(PROXY).get(SESSION, headers=bare).status_code == 200
             assert env.other_client("192.0.2.9").get(SESSION, headers=bare).status_code == 401

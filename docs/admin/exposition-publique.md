@@ -29,16 +29,26 @@ Si un proxy d'authentification (Authelia, Authentik…) identifie déjà vos lec
 lui faire confiance, à des conditions strictes. Rien de cela n'est actif tant que vous ne l'avez
 pas écrit :
 
-1. `SHELFHOLD_HTTP_TRUSTED_PROXIES` : l'adresse du proxy, en `/32` (un réseau dédié si possible).
-   Obligatoire : `SHELFHOLD_AUTH_FORWARD_ENABLED=true` sans elle refuse de démarrer.
-2. `SHELFHOLD_AUTH_FORWARD_SECRET` : un secret que le proxy envoie dans `X-Shelfhold-Proxy-Secret`.
-   Facultatif, mais sans lui n'importe quel processus qui parle depuis cette adresse se fait passer
-   pour n'importe quel compte. Il se compare en temps constant.
+1. `SHELFHOLD_HTTP_TRUSTED_PROXIES` : l'adresse du proxy, en `/32` (IPv6 : `/128`). Obligatoire :
+   `SHELFHOLD_AUTH_FORWARD_ENABLED=true` sans elle refuse de démarrer. Un réseau `/0` (IPv4 ou IPv6)
+   est **toujours refusé** : il ferait de n'importe quel appelant un proxy.
+2. `SHELFHOLD_AUTH_FORWARD_SECRET` : un secret que le proxy envoie dans `X-Shelfhold-Proxy-Secret`
+   (une seule ligne ; deux lignes ne sont jamais crues). Il est **obligatoire dès que le réseau est
+   plus large qu'un seul hôte** (réseau Docker, `/24`…) : tout autre hôte du réseau pourrait sinon se
+   faire passer pour n'importe quel compte ; le démarrage est refusé sans lui. Seul un proxy unique
+   (`/32` ou `/128`) peut s'en passer, et l'adresse est alors sa seule garantie. Comparaison en
+   temps constant.
 3. `SHELFHOLD_AUTH_FORWARD_ENABLED=true`.
 
-Alors `Remote-User` désigne un compte **qui existe déjà** (rien n'est créé depuis un en-tête). Un
+`Remote-User` doit porter **exactement un nom** : plusieurs lignes, ou une valeur avec une virgule,
+ne désignent personne. Il désigne un compte **qui existe déjà** (rien n'est créé depuis un en-tête). Un
 en-tête d'identité qui n'arrive pas d'un proxy de confiance avec le bon secret est retiré, sans
 erreur : l'instance reste utilisable par un tunnel qui en ajoute à toutes les requêtes.
+
+Le nom est comparé **sans tenir compte de la casse** (`Admin` ouvre `admin`), ce qui est sûr parce
+que les noms d'utilisateur de Shelfhold sont uniques sans casse : deux comptes ne diffèrent jamais
+par la casse. Vérifiez que votre fournisseur d'identité ne distingue pas non plus deux noms par la
+casse.
 
 Ce que cette connexion ne permet jamais :
 

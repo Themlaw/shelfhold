@@ -12,6 +12,7 @@
 State is in memory: one process per instance (`/data/.lock`); a restart forgets it.
 """
 
+import hashlib
 import threading
 import time
 from collections import OrderedDict, deque
@@ -108,6 +109,29 @@ class SlidingWindowLimiter:
             return wait
 
 
+# The routes with a credential of their own (device token in the path, or Basic): never counted
+# as anonymous callers when they carry one (the routes themselves answer a wrong one).
+DEVICE_PREFIXES = ("/opds", "/kosync", "/kobo")
+
+
+def device_credential(scope: Scope) -> str | None:
+    """A digest of the credential of a request to a device route, or None (no credential, or not
+    a device route). `/kobo/<token>/…` carries it in the path; OPDS and KOSync in `Authorization`
+    (or KOSync's `x-auth-key`)."""
+    path = str(scope.get("path", ""))
+    prefix = next((p for p in DEVICE_PREFIXES if path == p or path.startswith(p + "/")), None)
+    if prefix is None:
+        return None
+    headers = Headers(scope=scope)
+    raw = headers.get("authorization") or headers.get("x-auth-key") or ""
+    if not raw and prefix == "/kobo":
+        parts = path.split("/")
+        raw = parts[2] if len(parts) > 2 else ""
+    if not raw:
+        return None
+    return "cred:" + hashlib.sha256(raw.encode()).hexdigest()[:24]
+
+
 class ClientIpMiddleware:
     """Puts the real address in `scope["state"]["client_ip"]` for everything below."""
 
@@ -157,11 +181,15 @@ class PublicRateLimit:
         app: ASGIApp,
         *,
         per_minute: int,
+        per_credential: int = 600,
         max_keys: int = DEFAULT_MAX_KEYS,
         clock: Callable[[], float] = time.monotonic,
     ) -> None:
         self.app = app
         self._limiter = SlidingWindowLimiter(limit=per_minute, window_s=60.0, max_keys=max_keys)
+        self._by_credential = SlidingWindowLimiter(
+            limit=per_credential, window_s=60.0, max_keys=max_keys
+        )
         self._clock = clock
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
@@ -171,7 +199,11 @@ class PublicRateLimit:
         if isinstance(scope.get("state", {}).get("principal"), Principal):
             await self.app(scope, receive, send)
             return
-        wait = self._limiter.hit(address_key(client_ip_of(scope)), now=self._clock())
+        label = device_credential(scope)
+        if label is not None:  # its own budget: a sync of a whole library is many requests
+            wait = self._by_credential.hit(label, now=self._clock())
+        else:
+            wait = self._limiter.hit(address_key(client_ip_of(scope)), now=self._clock())
         if wait is not None:
             await refuse_too_many(scope, receive, send, wait)
             return

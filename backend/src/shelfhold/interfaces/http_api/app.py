@@ -72,6 +72,7 @@ def create_http_app(
     trusted_proxies: Sequence[str] = (),  # D15: whose X-Forwarded-For and identity are read
     forward_auth: ForwardAuth | None = None,  # EF-USR-002: None = off (the default)
     public_rate_per_minute: int | None = None,  # ENF-SEC-008; None: no limit (bare tests)
+    device_rate_per_minute: int = 600,
     maintenance_active: Callable[[], bool | None] | None = None,
 ) -> FastAPI:
     """Without `auth` (offline schema export, protocol tests) the authentication routes are still
@@ -110,7 +111,11 @@ def create_http_app(
             raise ValueError("idempotency_requires_actor_of")
         app.add_middleware(IdempotencyMiddleware, store=idempotency, actor_of=actor_of)
     if auth is not None and public_rate_per_minute is not None:
-        app.add_middleware(PublicRateLimit, per_minute=public_rate_per_minute)  # inside auth
+        app.add_middleware(
+            PublicRateLimit,
+            per_minute=public_rate_per_minute,
+            per_credential=device_rate_per_minute,
+        )  # inside auth
     if auth is not None:
         app.add_middleware(AuthMiddleware, gate=auth)  # outside the ledger: the real actor
     if maintenance_active is not None:  # EF-INT-018: inside the request context, outside auth

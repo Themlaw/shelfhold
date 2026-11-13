@@ -18,6 +18,7 @@ cookie is set without it and without the prefix; HTTPS is decided by the request
 """
 
 import hashlib
+import re
 import time
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
@@ -46,6 +47,7 @@ from shelfhold.identity.public import (
     ReservedAction,
     RoleNotAllowed,
     SessionAuth,
+    address_key,
     same_secret,
 )
 from shelfhold.infrastructure.http_headers import BEARER_CHALLENGE
@@ -203,6 +205,31 @@ def _bearer(headers: Headers) -> str | None:
     return None
 
 
+# EF-USR-024 (4): what a key of scope `request` may reach, in one place. Everything else answers
+# 403 `credential_not_allowed` before any route or guard runs, so that no guard that looks at the
+# role or at `may_write` alone (there are many) can let such a key in. `/queue` is the route of
+# the parents' side and is not an `{id}`.
+REQUEST_KEY_ROUTES = (
+    ("GET", re.compile(r"/api/v1/requests")),
+    ("POST", re.compile(r"/api/v1/requests")),
+    ("GET", re.compile(r"/api/v1/requests/(?!queue$)[^/]+")),
+    ("POST", re.compile(r"/api/v1/requests/(?!queue$)[^/]+/cancel")),
+)
+
+
+def request_key_may_reach(method: str, path: str) -> bool:
+    return any(m == method and pattern.fullmatch(path) for m, pattern in REQUEST_KEY_ROUTES)
+
+
+def is_request_key(principal: Principal | None) -> bool:
+    return (
+        principal is not None
+        and principal.credential is Credential.API_KEY
+        and "request" in principal.scopes
+        and "admin" not in principal.scopes
+    )
+
+
 class AuthMiddleware:
     def __init__(self, app: ASGIApp, gate: AuthGate) -> None:
         self.app = app
@@ -230,6 +257,11 @@ class AuthMiddleware:
             return
         principal, session = await self._resolve(headers, names, state.get("forward_user"))
         state["principal"] = principal
+        if is_request_key(principal) and not request_key_may_reach(
+            scope["method"], str(scope["path"])
+        ):
+            await self._problem(scope, receive, send, "credential_not_allowed")
+            return
         if principal is None and _bearer(headers) is not None:
             self._count_failed_key(scope, headers)
 
@@ -287,7 +319,7 @@ class AuthMiddleware:
             return None
         now = self.gate.clock()
         waits = (
-            self.gate.by_address.retry_after(client_ip_of(scope), now=now),
+            self.gate.by_address.retry_after(address_key(client_ip_of(scope)), now=now),
             self.gate.by_key.retry_after(self._key_label(headers), now=now),
         )
         found = [w for w in waits if w is not None]
@@ -295,7 +327,7 @@ class AuthMiddleware:
 
     def _count_failed_key(self, scope: Scope, headers: Headers) -> None:
         now = self.gate.clock()
-        self.gate.by_address.record(client_ip_of(scope), now=now)
+        self.gate.by_address.record(address_key(client_ip_of(scope)), now=now)
         self.gate.by_key.record(self._key_label(headers), now=now)
 
     @staticmethod

@@ -967,7 +967,11 @@ class LocalAuth:
                 now=now,
                 expires_at=expires_at,
                 subject_user_id=subject.id,
-                issued_by=owner.id,
+                # who issued it, when it is an account; NULL for the host operator, whose line
+                # in the audit is `local_cli:<uid>` (the column is a foreign key to a user)
+                issued_by=by.user_id
+                if by is not None and by.credential is Credential.SESSION
+                else None,
             )
         )
         self._audit("api_key.created", by, target=_by_host_user(secret.prefix, by))

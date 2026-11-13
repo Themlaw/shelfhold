@@ -35,6 +35,7 @@ _VALUE_ERRORS = frozenset(
     {
         "invalid_username", "password_too_short", "password_too_long", "invalid_expiry",
         "unknown_reference", "invalid_scope", "scope_requires_admin", "subject_not_allowed",
+        "subject_required",
     }
 )  # fmt: skip
 

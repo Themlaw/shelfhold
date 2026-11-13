@@ -112,6 +112,9 @@ class Settings(BaseModel):
     # ENF-SEC-008: requests per minute and per real address on the public routes (login page,
     # sign-in, anything an anonymous caller may reach). Failures of sign-in have their own limits.
     http_public_rate_per_minute: int = Field(default=120, ge=10, le=100_000)
+    # ENF-SEC-008: the routes that keep their own credentials (`/opds`, `/kosync`, `/kobo`: a device
+    # token or Basic) are limited per credential, not per address, and not by the figure above.
+    http_device_rate_per_minute: int = Field(default=600, ge=10, le=100_000)
     # EF-USR-024 (GAP-13-07): the local CLI socket refuses a peer outside the PID namespace of the
     # container (the host, another container that mounts /data) unless this is set. The uid of
     # Shelfhold on the host is then as powerful as an admin.
@@ -233,8 +236,19 @@ class Settings(BaseModel):
 
     @model_validator(mode="after")
     def _forward_auth_needs_a_network(self) -> Self:
-        if self.auth_forward_enabled and not self.http_trusted_proxies:
+        networks = [ipaddress.ip_network(cidr) for cidr in self.http_trusted_proxies]
+        if any(network.prefixlen == 0 for network in networks):
+            # every address is "a proxy": any caller names herself, or is any visitor's address
+            raise ValueError("http_trusted_proxies must not hold every address (/0)")
+        if self.auth_forward_enabled and not networks:
             raise ValueError("forward-auth needs http_trusted_proxies (the network of the proxy)")
+        wide = any(n.prefixlen < n.max_prefixlen for n in networks)
+        secret = self.auth_forward_secret
+        if self.auth_forward_enabled and wide and (secret is None or not secret.get_secret_value()):
+            # a network is many hosts, and one of them is not the proxy: only the secret tells
+            raise ValueError(
+                "forward-auth on a network wider than one host needs auth_forward_secret"
+            )
         return self
 
     @model_validator(mode="after")

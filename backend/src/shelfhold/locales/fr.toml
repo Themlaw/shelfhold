@@ -701,6 +701,7 @@ password_reset = "Mot de passe changé ; {count, plural, one {# session fermée}
 sessions_revoked = "{count, plural, one {# session fermée} other {# sessions fermées}}."
 key_created = "Clé créée (préfixe {prefix}). Elle ne sera plus jamais affichée :"
 key_expires = "Expire le {date}."
+key_subject_required = "Une clé de portée request agit au nom d'un compte : indiquez-le avec --subject."
 key_scope_refused = "Portée ou compte refusé : la portée admin est celle d'un administrateur, pour lui-même."
 key_never_expires = "Sans expiration (recommandé : --expires-days 90)."
 key_rotated = "Clé {old} remplacée (nouveau préfixe {prefix}) et révoquée. La nouvelle clé ne sera plus jamais affichée :"

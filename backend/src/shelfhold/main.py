@@ -162,7 +162,8 @@ LOGGED_SETTINGS: dict[str, str] = {
     "secret_key_file": "trousseau_path",  # where the keyring is: a path, not the keyring
     "http_trusted_proxies": "proxy_trusted_cidrs",
     "auth_forward_enabled": "proxy_identity_enabled",  # a switch
-    "http_public_rate_per_minute": "public_rate_per_minute",  # networks, not credentials
+    "http_public_rate_per_minute": "public_rate_per_minute",
+    "http_device_rate_per_minute": "device_rate_per_minute",  # networks, not credentials
     "maintenance_window_start": "maintenance_window_start",
     "maintenance_window_end": "maintenance_window_end", "timezone": "timezone",
     "retention_events_days": "retention_events_days",
@@ -473,6 +474,7 @@ def create_app(
             else None
         ),
         public_rate_per_minute=resolved.http_public_rate_per_minute,
+        device_rate_per_minute=resolved.http_device_rate_per_minute,
         maintenance_active=MaintenanceMode(engine, clock).probe,  # EF-INT-018
     )
 

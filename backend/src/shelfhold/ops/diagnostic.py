@@ -110,7 +110,7 @@ _AS_IS = (
     "follow_check_min_s", "follow_check_max_s", "follow_check_finished_s",
     "naming_segment_policy_confirmed", "cli_allow_host", "allow_network_data_dir",
     "disk_pause_percent", "disk_pause_gib", "disk_resume_percent", "disk_resume_gib",
-    "auth_forward_enabled", "http_public_rate_per_minute",
+    "auth_forward_enabled", "http_public_rate_per_minute", "http_device_rate_per_minute",
     "wake_timeout_s", "wake_session_s", "maintenance_window_start", "maintenance_window_end",
     "timezone", "retention_events_days", "retention_audit_days", "backup_retention",
     "stream_max_per_profile",

@@ -38,6 +38,7 @@ Version du schéma de `config.toml` : `1.0`. Précédence : variable d'environne
 | `SHELFHOLD_AUTH_FORWARD_ENABLED` | `auth_forward_enabled` | bool | `false` |  | `SHELFHOLD_AUTH_FORWARD_ENABLED_FILE` en lit la valeur dans un fichier |
 | `SHELFHOLD_AUTH_FORWARD_SECRET` | `auth_forward_secret` | secret (optionnel) | aucun |  | secret, masqué partout; `SHELFHOLD_AUTH_FORWARD_SECRET_FILE` en lit la valeur dans un fichier |
 | `SHELFHOLD_HTTP_PUBLIC_RATE_PER_MINUTE` | `http_public_rate_per_minute` | int | `120` | >= 10, <= 100000 | `SHELFHOLD_HTTP_PUBLIC_RATE_PER_MINUTE_FILE` en lit la valeur dans un fichier |
+| `SHELFHOLD_HTTP_DEVICE_RATE_PER_MINUTE` | `http_device_rate_per_minute` | int | `600` | >= 10, <= 100000 | `SHELFHOLD_HTTP_DEVICE_RATE_PER_MINUTE_FILE` en lit la valeur dans un fichier |
 | `SHELFHOLD_CLI_ALLOW_HOST` | `cli_allow_host` | bool | `false` |  | `SHELFHOLD_CLI_ALLOW_HOST_FILE` en lit la valeur dans un fichier |
 | `SHELFHOLD_ALLOW_NETWORK_DATA_DIR` | `allow_network_data_dir` | bool | `false` |  | `SHELFHOLD_ALLOW_NETWORK_DATA_DIR_FILE` en lit la valeur dans un fichier |
 | `SHELFHOLD_DISK_PAUSE_PERCENT` | `disk_pause_percent` | float | `5.0` | >= 0, <= 50 | `SHELFHOLD_DISK_PAUSE_PERCENT_FILE` en lit la valeur dans un fichier |

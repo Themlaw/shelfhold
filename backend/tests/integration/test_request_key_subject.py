@@ -54,7 +54,7 @@ def test_request_key_acts_as_subject_user(
         rows = db_rows(api.settings, "SELECT requester_user_id, visibility FROM request")
         assert rows == [(MEMBER_ID, "private")]  # the subject's, and private like hers
         row = db_rows(api.settings, "SELECT subject_user_id, issued_by FROM api_key")[0]
-        assert row[0] == MEMBER_ID and row[1] == MEMBER_ID
+        assert row == (MEMBER_ID, None)  # NULL: the host operator (the audit names the uid)
         mine = api.client.get(REQUESTS, headers=bearer(key)).json()["items"]
         assert [i["id"] for i in mine] == [answer.json()["id"]]
         # the admin who reads the queue never sees a private request's title

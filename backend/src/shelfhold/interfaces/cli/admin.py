@@ -303,6 +303,8 @@ def run_sessions_revoke(args: argparse.Namespace, auth: IdentityCommands) -> int
 
 @_command
 def run_keys_create(args: argparse.Namespace, auth: IdentityCommands) -> int:
+    if args.scope == "request" and not args.subject:
+        return _fail(t("admin.key_subject_required"))  # a request key acts as someone: name her
     try:
         created = auth.create_api_key(
             name=args.name, read_only=args.read_only, expires_days=args.expires_days,
