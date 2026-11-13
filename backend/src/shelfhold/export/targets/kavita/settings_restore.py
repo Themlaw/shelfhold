@@ -15,9 +15,9 @@ Idempotent: run again after an interruption, it finds the settings restored and 
 """
 
 from collections.abc import Mapping
-from dataclasses import dataclass
 from typing import Any
 
+from shelfhold.export.application.library_settings import SettingsRestored
 from shelfhold.export.targets.kavita.client import KavitaClient
 from shelfhold.export.targets.kavita.dto import HIDDEN_DIR_PATTERNS, LibraryType
 from shelfhold.export.targets.kavita.errors import ProtocolError
@@ -32,16 +32,6 @@ __all__ = [
 
 class LibraryGoneError(ProtocolError):
     """The library is no longer in Kavita: there is nothing to give back."""
-
-
-@dataclass(frozen=True)
-class SettingsRestored:
-    library_ref: str
-    exclude_patterns_restored: bool  # something was written (False: already as it should be)
-    patterns_now: tuple[str, ...]
-    library_type_before: str | None
-    library_type_now: str
-    type_unchanged: bool  # True when no "before" was recorded: nothing to compare
 
 
 def patterns_after_detach(current: tuple[str, ...], before: tuple[str, ...] | None) -> list[str]:

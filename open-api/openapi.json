@@ -20702,6 +20702,10 @@
       "code": "deletion.blocked",
       "status": 409
     },
+    "/api/v1/problems/detach.refused": {
+      "code": "detach.refused",
+      "status": 409
+    },
     "/api/v1/problems/disk.low": {
       "code": "disk.low",
       "status": 503
@@ -21213,6 +21217,10 @@
     "/api/v1/problems/remember-needs-confirmation": {
       "code": "remember_needs_confirmation",
       "status": 422
+    },
+    "/api/v1/problems/removal.refused": {
+      "code": "removal.refused",
+      "status": 409
     },
     "/api/v1/problems/rename.confirmation-required": {
       "code": "rename.confirmation_required",

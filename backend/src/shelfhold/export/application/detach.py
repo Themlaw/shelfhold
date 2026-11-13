@@ -48,6 +48,7 @@ from shelfhold.export.application.intents import (
     open_intent_paths,
     within_any,
 )
+from shelfhold.export.application.library_settings import RestoreSettings, SettingsRestored
 from shelfhold.export.application.locks import LockBusyError, ResourceLocks, path_resource
 from shelfhold.export.application.remove_destination import forget_destination
 from shelfhold.export.application.snapshot import DestinationContext, load_context
@@ -58,11 +59,6 @@ from shelfhold.export.domain.physical_roots import (
     RESERVED_DIR,
     SENTINEL_FILE,
     TOMBSTONE_JOURNAL,
-)
-from shelfhold.export.targets.kavita.client import KavitaClient
-from shelfhold.export.targets.kavita.settings_restore import (
-    SettingsRestored,
-    restore_library_settings,
 )
 from shelfhold.identity.public import (
     RESERVED_ACTIONS,
@@ -181,12 +177,14 @@ class FullDetacher:
         *,
         clock: Clock,
         roots: RootDirectory,
+        restore: RestoreSettings,
         locks: ResourceLocks | None = None,
         store_path: str | None = None,
         run: Callable[[Coroutine[Any, Any, Any]], Any] = asyncio.run,
         fresh_auth_s: int = 900,
     ) -> None:
         self._engine = engine
+        self._restore = restore
         self._fsops = fsops
         self._journal = journal
         self._clock = clock
@@ -230,7 +228,7 @@ class FullDetacher:
         *,
         principal: Principal,
         typed: str | None,
-        client: KavitaClient | None,
+        client: object | None,
         revoker: KeyRevoker,
         credential: str | None = None,
         discard_hidden_data: bool = False,
@@ -305,7 +303,7 @@ class FullDetacher:
     def _restore_settings(
         self,
         contexts: list[DestinationContext],
-        client: KavitaClient | None,
+        client: object | None,
         report: DetachReport,
         left: list[Leftover],
     ) -> None:
@@ -331,9 +329,7 @@ class FullDetacher:
                 continue
             seen.add(ref)
             try:
-                restored.append(
-                    self._run(restore_library_settings(client, ref, before[ctx.destination_id]))
-                )
+                restored.append(self._run(self._restore(client, ref, before[ctx.destination_id])))
             except Exception as error:  # Kavita unreachable, library gone: said, never hidden
                 log.warning("detach.settings_failed", error=type(error).__name__)
                 left.append(Leftover("settings_not_restored", 1))

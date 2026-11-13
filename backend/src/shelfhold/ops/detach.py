@@ -34,6 +34,7 @@ from shelfhold.export.application.remove_destination import (
     RemoveDestination,
 )
 from shelfhold.export.targets.kavita.errors import TargetError
+from shelfhold.export.targets.kavita.settings_restore import restore_library_settings
 from shelfhold.identity.public import Principal
 from shelfhold.infrastructure.fsops import Fsops
 from shelfhold.ops.errors import CodedRefusal, InvalidChoiceError
@@ -146,7 +147,7 @@ class DetachOps:
 
         return FullDetacher(
             comp.engine, fsops, journal, clock=comp.clock, roots=roots,
-            locks=ResourceLocks(comp.engine, clock=comp.clock),
+            restore=restore_library_settings, locks=ResourceLocks(comp.engine, clock=comp.clock),
             store_path=str(comp.settings.store_dir), run=comp.run,
             fresh_auth_s=comp.settings.fresh_auth_s,
         )  # fmt: skip

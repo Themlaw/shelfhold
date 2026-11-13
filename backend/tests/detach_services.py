@@ -10,6 +10,7 @@ def build_services(env: ExportEnv, wired: Wired) -> DetachEnv:
     from shelfhold.export.application.detach import FullDetacher, RootRef
     from shelfhold.export.application.intents import IntentJournal
     from shelfhold.export.application.remove_destination import RemoveDestination
+    from shelfhold.export.targets.kavita.settings_restore import restore_library_settings
 
     journal = IntentJournal(env.engine, env.lib.fsops, clock=env.clock)
     remover = RemoveDestination(
@@ -27,6 +28,6 @@ def build_services(env: ExportEnv, wired: Wired) -> DetachEnv:
 
     detacher = FullDetacher(
         env.engine, env.lib.fsops, journal, clock=env.clock, roots=roots,
-        store_path=str(env.lib.store),
+        restore=restore_library_settings, store_path=str(env.lib.store),
     )  # fmt: skip
     return DetachEnv(env, wired, journal, remover, detacher, Revoker())
