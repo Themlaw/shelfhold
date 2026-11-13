@@ -1,11 +1,11 @@
-"""Contradicteur de la #241 : le suivi de génération ne doit jamais lever un gel que la base tient.
+"""Review of #241: the generation follow must never lift a freeze the database holds.
 
-L'export ouvre son `Fsops` avec une copie du gel (`loaded.freeze.fork()`), lue à son ouverture.
-Pendant qu'il attend son scan, une autre tâche avance la génération, puis un autre écrivain trouve
-la base en retard et persiste le gel de l'instance (`instance.restore_generation`, EF-INT-026).
-Avant la #241, la sentinelle en avance sur la copie tenue refusait le scan (`restored_behind`).
-Avec le suivi, `Fsops` relit la génération en base, la trouve égale et laisse passer le scan,
-alors que la base dit `restored_behind` : aucune écriture, suppression ni scan (ADR-0044)."""
+The export opens its `Fsops` with a snapshot of the freeze (`loaded.freeze.fork()`), read when it
+opened. While it waits for its scan, another task moves the generation, then another writer finds
+the database behind and persists the instance freeze (`instance.restore_generation`, EF-INT-026).
+Before #241 the sentinel ahead of the held snapshot refused the scan (`restored_behind`). With the
+follow, `Fsops` reads the generation again, finds it equal and lets the scan through although the
+database says `restored_behind`: no write, deletion or scan (ADR-0044)."""
 
 from pathlib import Path
 

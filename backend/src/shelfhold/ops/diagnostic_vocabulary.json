@@ -1299,6 +1299,7 @@
   "shelfhold.infrastructure.fsops.mirror",
   "shelfhold.infrastructure.fsops.openat2",
   "shelfhold.infrastructure.fsops.probe",
+  "shelfhold.infrastructure.fsops.reading",
   "shelfhold.infrastructure.fsops.sentinel",
   "shelfhold.infrastructure.fsops.tombstone_journal",
   "shelfhold.infrastructure.fsops.writer",
