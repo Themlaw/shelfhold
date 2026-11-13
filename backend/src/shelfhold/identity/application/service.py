@@ -928,6 +928,8 @@ class LocalAuth:
         if owner is None:
             raise UnknownUserError
         scope = scope or ("read" if read_only else "admin")
+        if scope == "request" and subject_username is None:
+            raise ValueError("subject_required")  # a request key acts as someone: she is named
         if scope not in KEY_SCOPES:
             raise ValueError("invalid_scope")
         if scope == "admin" and owner.role != "admin":  # the `admin` scope is an admin's alone

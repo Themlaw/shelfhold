@@ -33,7 +33,8 @@ pas écrit :
    `SHELFHOLD_AUTH_FORWARD_ENABLED=true` sans elle refuse de démarrer. Un réseau `/0` (IPv4 ou IPv6)
    est **toujours refusé** : il ferait de n'importe quel appelant un proxy.
 2. `SHELFHOLD_AUTH_FORWARD_SECRET` : un secret que le proxy envoie dans `X-Shelfhold-Proxy-Secret`
-   (une seule ligne ; deux lignes ne sont jamais crues). Il est **obligatoire dès que le réseau est
+   (une seule ligne ; deux lignes ne sont jamais crues). **32 caractères au minimum** (le démarrage
+   est refusé sinon) : générez-le (`openssl rand -hex 32`), ne le choisissez pas. Il est **obligatoire dès que le réseau est
    plus large qu'un seul hôte** (réseau Docker, `/24`…) : tout autre hôte du réseau pourrait sinon se
    faire passer pour n'importe quel compte ; le démarrage est refusé sans lui. Seul un proxy unique
    (`/32` ou `/128`) peut s'en passer, et l'adresse est alors sa seule garantie. Comparaison en

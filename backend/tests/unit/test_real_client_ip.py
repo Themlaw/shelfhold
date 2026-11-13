@@ -71,3 +71,34 @@ def test_a_flood_of_new_keys_cannot_free_a_key_that_is_being_limited_for_long() 
     for n in range(40):  # fewer new keys than the table holds: the target keeps its place
         limiter.hit(f"other:{n}", now=2.0)
     assert limiter.hit("target", now=3.0) is not None
+
+
+@pytest.mark.req("ENF-SEC-008")
+def test_a_device_route_recognises_the_credential_it_accepted() -> None:
+    from types import SimpleNamespace
+
+    from shelfhold.interfaces.http_api.ratelimit import (
+        RecognisedCredentials,
+        credential_label,
+        device_credential,
+        recognise_device_credential,
+    )
+
+    known = RecognisedCredentials(max_keys=2)
+    app = SimpleNamespace(state=SimpleNamespace(recognised_devices=known))
+    basic = {
+        "type": "http",
+        "path": "/opds/x",
+        "app": app,
+        "headers": [(b"authorization", b"Basic a")],
+    }
+    kobo = {"type": "http", "path": "/kobo/tok1/v1/x", "app": app, "headers": []}
+    anonymous = {"type": "http", "path": "/opds/x", "app": app, "headers": []}
+    for scope in (basic, kobo, anonymous):
+        recognise_device_credential(scope)  # type: ignore[arg-type]
+    assert device_credential(basic) in known and device_credential(kobo) in known  # type: ignore[arg-type]
+    assert device_credential(anonymous) is None  # type: ignore[arg-type]
+    assert credential_label("Basic zzz") not in known
+    known.add_raw("third")  # bounded: the least recently seen goes first
+    assert len(known) == 2 and device_credential(basic) not in known  # type: ignore[arg-type]
+    recognise_device_credential({"type": "http", "path": "/opds", "headers": []})  # no app: no-op

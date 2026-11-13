@@ -29,6 +29,8 @@ FREE = {"target_kind": "free_text", "target_value": "A book I heard of"}
 
 def issue(api: AuthEnv, owner: str, *, scope: str, subject: str | None = None) -> str:
     engine = create_db_engine(api.settings.database_path)
+    if scope == "request" and subject is None:
+        subject = owner  # a request key names its subject: here, the one who holds it
     try:
         return (
             local_auth(engine, api.settings)

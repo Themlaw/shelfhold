@@ -27,6 +27,7 @@ from shelfhold.infrastructure.http_headers import require_web_url
 from shelfhold.jobs.window import parse_clock, parse_zone
 
 ENV_PREFIX = "SHELFHOLD_"
+MIN_FORWARD_SECRET_LENGTH = 32  # a shared secret is generated, not chosen
 FILE_SUFFIX = "_FILE"
 CONFIG_FILE_NAME = "config.toml"
 CONFIG_SCHEMA_VERSION = "1.0"  # "major.minor", ADR-0039
@@ -244,6 +245,14 @@ class Settings(BaseModel):
             raise ValueError("forward-auth needs http_trusted_proxies (the network of the proxy)")
         wide = any(n.prefixlen < n.max_prefixlen for n in networks)
         secret = self.auth_forward_secret
+        if (
+            self.auth_forward_enabled
+            and secret is not None
+            and 0 < len(secret.get_secret_value()) < MIN_FORWARD_SECRET_LENGTH
+        ):
+            raise ValueError(
+                f"auth_forward_secret must hold at least {MIN_FORWARD_SECRET_LENGTH} characters"
+            )
         if self.auth_forward_enabled and wide and (secret is None or not secret.get_secret_value()):
             # a network is many hosts, and one of them is not the proxy: only the secret tells
             raise ValueError(

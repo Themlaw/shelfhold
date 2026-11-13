@@ -196,3 +196,11 @@ symbols = [
   "shelfhold.export.targets.kavita.events:ScanEvent",
   "shelfhold.export.targets.kavita.events:parse_hub_frames",
 ]
+
+[[allow]]
+category = "m3-l06-device-credentials"
+reason = "2026-11-13: the routes with a credential of their own (`/opds`, `/kosync`, `/kobo`) are not in the application yet; the ceiling of an unaccepted credential (the address budget) is in force and tested through the middleware. The routes will call `recognise_device_credential` once they accept a credential, which is what gives it a budget of its own (review PR #232)."
+until = "M5"
+symbols = [
+  "shelfhold.interfaces.http_api.ratelimit:RecognisedCredentials.add_raw",
+]

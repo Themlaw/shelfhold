@@ -127,9 +127,55 @@ def device_credential(scope: Scope) -> str | None:
     if not raw and prefix == "/kobo":
         parts = path.split("/")
         raw = parts[2] if len(parts) > 2 else ""
-    if not raw:
-        return None
+    return credential_label(raw) if raw else None
+
+
+def credential_label(raw: str) -> str:
     return "cred:" + hashlib.sha256(raw.encode()).hexdigest()[:24]
+
+
+class RecognisedCredentials:
+    """The device credentials a route has **accepted** (a token it issued, a Basic it checked).
+
+    Only those buy a budget of their own: a credential nobody accepted is a guess, and a guess
+    is counted against the address like any other anonymous request, so that changing it at each
+    request never escapes the limit (review PR #232). The set is bounded (least recently seen
+    goes first) and forgets on restart, which only sends a device back to the address budget
+    until its next accepted request."""
+
+    def __init__(self, max_keys: int = DEFAULT_MAX_KEYS) -> None:
+        self._max = max_keys
+        self._seen: OrderedDict[str, None] = OrderedDict()
+        self._lock = threading.Lock()
+
+    def add_raw(self, raw: str) -> None:
+        label = credential_label(raw)
+        with self._lock:
+            self._seen[label] = None
+            self._seen.move_to_end(label)
+            while len(self._seen) > self._max:
+                self._seen.popitem(last=False)
+
+    def __contains__(self, label: str) -> bool:
+        with self._lock:
+            return label in self._seen
+
+    def __len__(self) -> int:
+        return len(self._seen)
+
+
+def recognise_device_credential(scope: Scope) -> None:
+    """To call from the authentication of a device route once it has accepted the credential of
+    this request (`/opds`, `/kosync`, `/kobo`)."""
+    registry = scope.get("app")
+    known = getattr(getattr(registry, "state", None), "recognised_devices", None)
+    headers = Headers(scope=scope)
+    raw = headers.get("authorization") or headers.get("x-auth-key") or ""
+    if not raw:
+        parts = str(scope.get("path", "")).split("/")
+        raw = parts[2] if len(parts) > 2 and parts[1] == "kobo" else ""
+    if isinstance(known, RecognisedCredentials) and raw:
+        known.add_raw(raw)
 
 
 class ClientIpMiddleware:
@@ -182,6 +228,7 @@ class PublicRateLimit:
         *,
         per_minute: int,
         per_credential: int = 600,
+        recognised: RecognisedCredentials | None = None,
         max_keys: int = DEFAULT_MAX_KEYS,
         clock: Callable[[], float] = time.monotonic,
     ) -> None:
@@ -190,6 +237,11 @@ class PublicRateLimit:
         self._by_credential = SlidingWindowLimiter(
             limit=per_credential, window_s=60.0, max_keys=max_keys
         )
+        # accepted credentials: their own budget, and a ceiling per address ten times higher
+        self._by_device_address = SlidingWindowLimiter(
+            limit=per_minute * 10, window_s=60.0, max_keys=max_keys
+        )
+        self._recognised = recognised if recognised is not None else RecognisedCredentials()
         self._clock = clock
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
@@ -200,10 +252,16 @@ class PublicRateLimit:
             await self.app(scope, receive, send)
             return
         label = device_credential(scope)
-        if label is not None:  # its own budget: a sync of a whole library is many requests
-            wait = self._by_credential.hit(label, now=self._clock())
-        else:
-            wait = self._limiter.hit(address_key(client_ip_of(scope)), now=self._clock())
+        now = self._clock()
+        address = address_key(client_ip_of(scope))
+        if label is not None and label in self._recognised:
+            # accepted before: its own budget (a sync of a whole library is many requests),
+            # and a higher ceiling for the address
+            wait = self._by_credential.hit(label, now=now)
+            if wait is None:
+                wait = self._by_device_address.hit(address, now=now)
+        else:  # no credential, or one nobody accepted: an anonymous caller
+            wait = self._limiter.hit(address, now=now)
         if wait is not None:
             await refuse_too_many(scope, receive, send, wait)
             return

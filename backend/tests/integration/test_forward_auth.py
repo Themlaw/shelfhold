@@ -20,7 +20,7 @@ from pydantic import SecretStr
 from shelfhold.config import Settings
 from tests.auth_env import ADMIN, PASSWORD, WRONG, AuthEnv, auth_env, db_rows
 
-SECRET = "proxy-shared-value-0123456789"  # noqa: S105 (test fixture)
+SECRET = "proxy-shared-value-0123456789abcdef"  # noqa: S105 (test fixture)
 PROXY = "10.1.2.3"
 SESSION = "/api/v1/auth/session"
 

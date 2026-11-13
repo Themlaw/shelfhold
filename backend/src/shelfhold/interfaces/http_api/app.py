@@ -44,7 +44,11 @@ from shelfhold.interfaces.http_api.profiles import (
     build_own_visibility_router,
     build_profiles_router,
 )
-from shelfhold.interfaces.http_api.ratelimit import ClientIpMiddleware, PublicRateLimit
+from shelfhold.interfaces.http_api.ratelimit import (
+    ClientIpMiddleware,
+    PublicRateLimit,
+    RecognisedCredentials,
+)
 from shelfhold.interfaces.http_api.sessions import build_sessions_router
 from shelfhold.interfaces.http_api.spa import mount_spa
 
@@ -111,11 +115,13 @@ def create_http_app(
             raise ValueError("idempotency_requires_actor_of")
         app.add_middleware(IdempotencyMiddleware, store=idempotency, actor_of=actor_of)
     if auth is not None and public_rate_per_minute is not None:
-        app.add_middleware(
+        app.state.recognised_devices = RecognisedCredentials()
+        app.add_middleware(  # inside auth
             PublicRateLimit,
             per_minute=public_rate_per_minute,
             per_credential=device_rate_per_minute,
-        )  # inside auth
+            recognised=app.state.recognised_devices,
+        )
     if auth is not None:
         app.add_middleware(AuthMiddleware, gate=auth)  # outside the ledger: the real actor
     if maintenance_active is not None:  # EF-INT-018: inside the request context, outside auth

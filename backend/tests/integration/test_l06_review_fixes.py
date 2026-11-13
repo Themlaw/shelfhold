@@ -118,7 +118,7 @@ def test_forward_auth_on_a_network_needs_the_secret_and_a_single_host_does_not(
         settings,
         **on,
         http_trusted_proxies=("10.0.0.0/8",),
-        auth_forward_secret=SecretStr("x" * 24),
+        auth_forward_secret=SecretStr("x" * 32),
     )
     assert wide_with_secret.auth_forward_enabled
     # a network that is only read for X-Forwarded-For needs no secret, but never `/0`
@@ -217,28 +217,78 @@ def test_forward_name_ignores_case_because_usernames_are_unique_without_case(
 
 
 @pytest.mark.req("ENF-SEC-008")
-def test_device_routes_are_limited_per_credential_not_by_the_anonymous_budget(
+def test_device_routes_give_a_budget_of_its_own_only_to_an_accepted_credential(
     monkeypatch: pytest.MonkeyPatch, settings: Settings
 ) -> None:
     update = {"http_public_rate_per_minute": 10, "http_device_rate_per_minute": 30}
     with auth_env(monkeypatch, settings.model_copy(update=update)) as env:
-        device = env.other_client("192.0.2.40")
+        known = env.app.state.recognised_devices  # type: ignore[attr-defined]
         basic = {"Authorization": "Basic Zm9vOmJhcg=="}
-        # 25 requests of one device: far above the anonymous budget of 10, and none is refused
+        known.add_raw(basic["Authorization"])  # what a device route does once it accepted it
+        device = env.other_client("192.0.2.40")
+        # 25 requests of an accepted device: far above the anonymous budget of 10
         codes = [device.get("/opds/catalog", headers=basic).status_code for _ in range(25)]
         assert 429 not in codes, codes
-        # the same device is refused only at its own limit (30), and another keeps its own
+        # refused only at its own limit (30)
         more = [device.get("/opds/catalog", headers=basic).status_code for _ in range(10)]
         assert more[-1] == 429 and 429 not in more[:5], more
-        other = {"Authorization": "Basic YmFyOmZvbw=="}
-        assert device.get("/opds/catalog", headers=other).status_code != 429
-        # a Kobo token travels in the path, KOSync's key in a header: each is its own credential
-        assert device.get("/kobo/tokenone/v1/initialization").status_code != 429
-        assert (
-            device.get("/kosync/syncs/progress/x", headers={"x-auth-key": "k"}).status_code != 429
-        )
-        # nothing of this used the anonymous budget of the address
+        # an unaccepted credential is an anonymous request of the address: budget of 10
+        guess = {"Authorization": "Basic YmFyOmZvbw=="}
+        other = env.other_client("192.0.2.43")
+        tried = [other.get("/opds/catalog", headers=guess).status_code for _ in range(12)]
+        assert tried[9] != 429 and tried[-1] == 429, tried
+        # a Kobo token travels in the path: accepted once, it counts for itself
+        known.add_raw("tokenone")
+        kobo = env.other_client("192.0.2.44")
+        assert all(kobo.get("/kobo/tokenone/v1/initialization").status_code != 429
+                   for _ in range(15))  # fmt: skip
+        # the accepted devices did not use the anonymous budget of their address
         assert all(device.get("/login").status_code == 200 for _ in range(9))
-        # and a device route with no credential at all is an anonymous caller
-        bare = [env.other_client("192.0.2.41").get("/opds/catalog").status_code for _ in range(12)]
-        assert bare[-1] == 429
+
+
+@pytest.mark.req("ENF-SEC-008")
+def test_accepted_credentials_of_one_address_have_a_ceiling_ten_times_higher(
+    monkeypatch: pytest.MonkeyPatch, settings: Settings
+) -> None:
+    update = {"http_public_rate_per_minute": 10, "http_device_rate_per_minute": 10_000}
+    with auth_env(monkeypatch, settings.model_copy(update=update)) as env:
+        known = env.app.state.recognised_devices  # type: ignore[attr-defined]
+        device = env.other_client("192.0.2.50")
+        codes = []
+        for n in range(105):  # a hundred devices behind one address, each accepted
+            known.add_raw(f"Basic dev{n}")
+            codes.append(
+                device.get("/opds/c", headers={"Authorization": f"Basic dev{n}"}).status_code
+            )
+        assert 429 not in codes[:100] and codes[-1] == 429, codes[95:]
+
+
+@pytest.mark.req("EF-USR-024")
+def test_the_service_refuses_a_request_key_without_a_subject(
+    monkeypatch: pytest.MonkeyPatch, settings: Settings
+) -> None:
+    from shelfhold.identity.public import local_auth
+    from shelfhold.infrastructure.db import create_db_engine
+
+    with instance(monkeypatch, settings, alpha()) as api:
+        engine = create_db_engine(api.settings.database_path)
+        try:
+            auth = local_auth(engine, api.settings)
+            with pytest.raises(ValueError, match="subject_required"):
+                auth.create_api_key(name="k", username="admin", scope="request")
+            assert auth.create_api_key(
+                name="k", username="admin", scope="request", subject_username="admin"
+            ).value
+        finally:
+            engine.dispose()
+        assert db_rows(api.settings, "SELECT count(*) FROM api_key") == [(1,)]
+
+
+@pytest.mark.req("EF-USR-002")
+def test_the_forward_auth_secret_holds_at_least_32_characters(settings: Settings) -> None:
+    on = {"auth_forward_enabled": True, "http_trusted_proxies": ("10.1.2.3/32",)}
+    for short in ("x", "x" * 31, "proxy-shared-value-0123456789"):
+        with pytest.raises(ValidationError, match="32"):
+            validated(settings, **on, auth_forward_secret=SecretStr(short))
+    assert validated(settings, **on, auth_forward_secret=SecretStr("x" * 32)).auth_forward_enabled
+    assert validated(settings, **on, auth_forward_secret=SecretStr("")).auth_forward_enabled

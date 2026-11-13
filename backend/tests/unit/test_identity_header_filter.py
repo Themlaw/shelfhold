@@ -13,7 +13,7 @@ from shelfhold.interfaces.http_api.identity_headers import (
     parse_networks,
 )
 
-SECRET = "proxy-shared-value-0123456789"  # noqa: S105 (test fixture)
+SECRET = "proxy-shared-value-0123456789abcdef"  # noqa: S105 (test fixture)
 TRUSTED = parse_networks(["10.0.0.0/8"])
 
 
