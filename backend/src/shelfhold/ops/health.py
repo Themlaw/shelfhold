@@ -91,7 +91,8 @@ class OpsHealth:
         self._flight: threading.Event | None = None  # set while one caller reads
         self._threads: list[threading.Thread] = []  # the background reads, joined by `close`
         self._closed = False  # after `close` nothing reads the status any more
-        self._first: concurrent.futures.Future[None] = concurrent.futures.Future()  # first read ends
+        # set when the first read has ended, for the probe that comes before any value
+        self._first: concurrent.futures.Future[None] = concurrent.futures.Future()
 
     def migration_progress(self) -> tuple[int, int] | None:
         return self._probe.migration_progress()
