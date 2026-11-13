@@ -421,6 +421,7 @@ def test_healthz_exposes_paused_queues(monkeypatch: pytest.MonkeyPatch, settings
         )
         connection.commit()
         connection.close()
+        env.app.state.health.refresh()  # a row written behind the instance's back: read it now
         anonymous = env.client.get("/healthz")
         assert anonymous.json() == {"state": "ok"}
         env.login()

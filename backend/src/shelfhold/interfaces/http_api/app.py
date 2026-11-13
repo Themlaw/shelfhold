@@ -31,6 +31,7 @@ from shelfhold.interfaces.http_api.identity_headers import (
 from shelfhold.interfaces.http_api.login import build_login_router
 from shelfhold.interfaces.http_api.maintenance import MaintenanceGuard
 from shelfhold.interfaces.http_api.middleware import (
+    HealthRefreshMiddleware,
     RequestContextMiddleware,
     SecurityHeadersMiddleware,
 )
@@ -108,6 +109,10 @@ def create_http_app(
     install_problem_handlers(app)
     install_problem_openapi(app, public_paths=ANONYMOUS_JSON_PATHS)
     install_auth(app, auth)
+    app.state.health = health
+    refresh = getattr(health, "refresh", None)
+    if callable(refresh):  # innermost: only a request that went through to a route
+        app.add_middleware(HealthRefreshMiddleware, refresh=refresh)
     if auth is not None:
         actor_of = actor_of or principal_actor
     if idempotency is not None:
