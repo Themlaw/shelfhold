@@ -5,6 +5,7 @@ shared runner does not fail a bench, while a start that is really slow does.
 """
 
 import json
+import math
 import os
 import socket
 import statistics
@@ -40,6 +41,21 @@ def median_seconds(samples: Sequence[float]) -> float:
     if not samples:
         raise ValueError("no sample")
     return statistics.median(samples)
+
+
+def percentile(samples: Sequence[float], fraction: float) -> float:
+    """Nearest-rank percentile: the smallest sample that at least `fraction` of the samples do not
+    exceed. Never an average of two samples, so a slow request is never smoothed away."""
+    if not samples:
+        raise ValueError("no sample")
+    if not 0 < fraction <= 1:
+        raise ValueError("fraction must be in (0, 1]")
+    ordered = sorted(samples)
+    return ordered[math.ceil(fraction * len(ordered)) - 1]
+
+
+def p95(samples: Sequence[float]) -> float:
+    return percentile(samples, 0.95)
 
 
 def seed_reference_catalog(settings: Settings) -> None:

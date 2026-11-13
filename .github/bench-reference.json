@@ -13,7 +13,15 @@
       "integrity_rolling": 7200
     },
     "new_chapters_check_s": 1200,
-    "regression_tolerance_pct": 20
+    "regression_tolerance_pct": 20,
+    "api": {
+      "list_p95_ms": 300,
+      "search_p95_ms": 200,
+      "contention_max_factor": 2,
+      "export_chapters": 500,
+      "screen_covers": 60,
+      "screen_max_bytes": 1572864
+    }
   },
   "manifest": {
     "profile": "ci",

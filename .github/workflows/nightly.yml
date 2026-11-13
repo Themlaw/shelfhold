@@ -151,3 +151,39 @@ jobs:
       - name: Peak RSS bench
         working-directory: backend
         run: uv run --locked pytest -m nightly tests/nightly/test_bench_rss_heavy.py -v --no-cov
+
+  bench-perf:
+    # The API benches of M3 on the reference profile (ENF-PERF-004, -005, -007): the library list
+    # and the search (p95), and the latency of the API while 500 chapters are exported. Too
+    # sensitive to a busy runner for a pull request, so planned and manual only, never required
+    # (tools/traceability-exceptions.toml). Every row and file is generated and no bench opens a
+    # connection out of the runner; no Docker. The measures are kept as an artifact, for the release.
+    name: bench (API, reference profile)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    permissions:
+      contents: read
+    env:
+      SHELFHOLD_BENCH_RESULTS: ${{ github.workspace }}/bench-results.json
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          version: "0.12.x"
+          enable-cache: false
+      - name: Install dependencies
+        run: uv sync --project backend --locked
+      - name: API benches, in one process so that no timing is shared
+        working-directory: backend
+        run: >-
+          uv run --locked pytest -m nightly -v --no-cov -p no:cacheprovider
+          tests/bench/bench_library.py tests/bench/bench_search.py tests/bench/bench_contention.py
+      - name: Keep the measures
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: bench-results
+          path: bench-results.json
+          if-no-files-found: warn

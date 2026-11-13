@@ -7,13 +7,19 @@ The export context never opens the storage tables or the registry of copies; it 
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime, timedelta
+from typing import Any
 
 import sqlalchemy as sa
 from sqlalchemy import Connection
 
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import catalog, storage
-from shelfhold.library.replica import forget_destination_copies, library_copies, record_replica
+from shelfhold.library.replica import (
+    forget_destination_copies,
+    library_copies,
+    library_copies_of,
+    record_replica,
+)
 
 BIN_RETENTION = timedelta(days=30)  # ENF-OPS-009: what the bin of a root keeps
 
@@ -62,11 +68,13 @@ def export_sources(
             content.c.unit_id, sa.func.coalesce(variant.c.preferred, False).desc(), content.c.id
         )
     )
-    found: dict[str, ExportSource] = {}
+    preferred: dict[str, Any] = {}
     for row in rows:
-        if row.unit_id in found:
-            continue
-        copies = [c for c in library_copies(connection, row.unit_id) if not c.damaged]
+        preferred.setdefault(row.unit_id, row)
+    copies_of = library_copies_of(connection, list(preferred))
+    found: dict[str, ExportSource] = {}
+    for row in preferred.values():
+        copies = [c for c in copies_of.get(row.unit_id, []) if not c.damaged]
         found[row.unit_id] = ExportSource(
             row.unit_id,
             row.content_id,
