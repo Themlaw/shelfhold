@@ -1,5 +1,5 @@
 <script lang="ts">
-  // "Mes demandes" (EF-UX-010): one state per request, in the family's words, and the link that
+  // "My requests" (EF-UX-010): one state per request, in the family's words, and the link that
   // opens Kavita when it is there. A request that was refused, not found or withdrawn says so, and
   // gives the reason the admin wrote.
   import type { RequestOut } from '#lib/api/types.gen.ts';

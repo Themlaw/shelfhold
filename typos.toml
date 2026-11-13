@@ -1,12 +1,11 @@
 # The repository is written in French: typos only checks code, config and workflows.
 # French message catalogs, the French doc generator, docs-checking tests and the traceability exceptions are excluded for the same reason.
 [files]
-extend-exclude = ["*.md", "docs/", "backend/uv.lock", "backend/tests/unit/vectors/", "backend/src/shelfhold/locales/", "frontend/src/lib/i18n/", "frontend/src/lib/nav.ts", "frontend/src/lib/components/Nav.test.ts", "spikes/", "tools/traceability-exceptions.toml", "backend/tests/unit/test_traceability.py", "backend/tests/unit/test_governance_docs.py", "backend/tests/unit/test_admin_docs.py", "backend/src/shelfhold/docgen/", ".github/ISSUE_TEMPLATE/", "LICENSE", "backend/src/shelfhold/sdk/LICENSE"]
+extend-exclude = ["*.md", "docs/", "backend/uv.lock", "backend/tests/unit/vectors/", "backend/src/shelfhold/locales/", "frontend/src/lib/i18n/", "frontend/src/lib/nav.ts", "frontend/src/lib/components/Nav.test.ts", "frontend/src/routes/page.test.ts", "spikes/", "tools/traceability-exceptions.toml", "backend/tests/unit/test_traceability.py", "backend/tests/unit/test_governance_docs.py", "backend/tests/unit/test_admin_docs.py", "backend/src/shelfhold/docgen/", ".github/ISSUE_TEMPLATE/", "LICENSE", "backend/src/shelfhold/sdk/LICENSE"]
 
 # French words in UI strings asserted by the frontend tests, and the EPUB package document (OPF).
 [default.extend-words]
 cours = "cours"
-demandes = "demandes"
 sur = "sur"
 opf = "opf"
 

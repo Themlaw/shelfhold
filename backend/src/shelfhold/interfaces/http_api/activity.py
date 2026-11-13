@@ -23,15 +23,6 @@ from shelfhold.events.activity import (
     Viewer,
     unmask_title,
 )
-from shelfhold.events.activity_feed import (
-    activity_event_of,
-    entry_of,
-    kavita_open_url,
-    recent_events,
-    recent_requests,
-    request_edition,
-    request_event,
-)
 from shelfhold.events.family_state import (
     FamilyState,
     download_family_state,
@@ -47,6 +38,15 @@ from shelfhold.identity.public import (
 )
 from shelfhold.interfaces.http_api.auth import gate_of, require_principal, reserved_action
 from shelfhold.interfaces.http_api.problems import ProblemError
+from shelfhold.ops.activity_feed import (
+    activity_event_of,
+    entry_of,
+    kavita_open_url,
+    recent_events,
+    recent_requests,
+    request_edition,
+    request_event,
+)
 
 __all__ = ["activity_event_of", "build_activity_router", "family_payload", "viewer_of"]
 

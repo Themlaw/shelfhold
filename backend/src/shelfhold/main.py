@@ -17,7 +17,6 @@ from shelfhold import __version__
 from shelfhold.catalog.public import ensure_search_tables, sync_search_index
 from shelfhold.composition import Composition, Network
 from shelfhold.config import Settings, load_settings
-from shelfhold.events.activity_feed import kavita_open_url_of
 from shelfhold.events.bus import EventBus
 from shelfhold.events.since_key import SinceKey
 from shelfhold.export.application.pipeline import ExportPipeline
@@ -81,6 +80,7 @@ from shelfhold.interfaces.http_api.triage import build_triage_router
 from shelfhold.interfaces.local_cli import IdentityDispatcher
 from shelfhold.jobs.mode import MaintenanceMode
 from shelfhold.ops import OpsServices
+from shelfhold.ops.activity_feed import kavita_open_url_of
 from shelfhold.ops.health import OpsHealth
 from shelfhold.ops.notifications import subscribe_notifications
 from shelfhold.ops.requests import build_service, resolve_request_ref, subscribe_arrivals
