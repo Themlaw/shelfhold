@@ -33,6 +33,7 @@ from shelfhold.identity.domain.visibility import check_visibility, effective_vis
 from shelfhold.infrastructure.event_sequence import invalidate_tokens
 from shelfhold.infrastructure.identity_counter import DAMAGED, IdentityCounter
 from shelfhold.infrastructure.ids import new_ulid
+from shelfhold.infrastructure.requesters import live_actor
 from shelfhold.infrastructure.restore_notice import (
     RestoreNoticeData,
     notice_active,
@@ -164,7 +165,7 @@ def audit_insert(entry: AuditEntry) -> sa.Insert:
     the action and its trace commit or fail together (EF-USR-016)."""
     return sa.insert(identity.audit).values(
         id=new_ulid(),
-        actor_id=entry.actor_id,
+        actor_id=live_actor(entry.actor_id),  # a user deleted since: a fresh token, never her id
         action=entry.action,
         target=entry.target,
         at=entry.at,

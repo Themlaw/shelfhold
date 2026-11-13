@@ -93,3 +93,64 @@ def test_the_event_bus_reads_the_actor_and_the_declared_user_fields_before_it_wr
     assert any(
         isinstance(n, ast.Name) and n.id == "USER_FIELDS" for n in ast.walk(publish)
     )  # the declared fields of the type
+
+
+# -- the audit: `actor_id` is written through `live_actor` (review of #218, the open point) --------
+
+ACTOR_EXEMPT = {
+    "shelfhold/identity/adapters/store.py::SqlIdentityStore.delete_user":
+        "the deletion: it writes the token",
+    "shelfhold/identity/adapters/store.py::SqlIdentityStore._unname":
+        "the deletion: it writes the token",
+    "shelfhold/events/bus.py::EventBus.publish":
+        "the actor is read by `still_a_user` first (test above)",
+    "shelfhold/library/tombstones/service.py::TombstoneService.accept_lost_keyring":
+        "`principal.actor_id`: a `session:<id>` label, never a user id",
+    "shelfhold/infrastructure/idempotency_store.py::IdempotencyStore.begin":
+        "`principal.actor_id`: a label; the line is erased with the user",
+}  # fmt: skip
+
+
+def _actor_writers() -> dict[str, bool]:
+    """Every `values(actor_id=X)` of the package and whether X is safe: nothing, a literal, a label
+    (`principal.actor_id`, `.actor`) or a call to `live_actor`."""
+    found: dict[str, bool] = {}
+    for path in sorted(SRC.rglob("*.py")):
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        name = path.relative_to(SRC).as_posix()
+
+        def visit(node: ast.AST, stack: list[str], name: str = name) -> None:
+            if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef):
+                stack = [*stack, node.name]
+            if isinstance(node, ast.Call) and getattr(node.func, "attr", "") == "values":
+                for k in node.keywords:
+                    if k.arg != "actor_id":
+                        continue
+                    v = k.value
+                    safe = (
+                        isinstance(v, ast.Constant | ast.JoinedStr)
+                        or (isinstance(v, ast.Attribute) and v.attr in ("actor_id", "actor"))
+                        or (isinstance(v, ast.IfExp) and "actor_id" in ast.unparse(v))
+                        or (isinstance(v, ast.Call) and getattr(v.func, "id", "") == "live_actor")
+                    )
+                    key = f"{name}::{'.'.join(stack)}"
+                    found[key] = found.get(key, True) and safe
+            for child in ast.iter_child_nodes(node):
+                visit(child, stack)
+
+        visit(tree, [])
+    return found
+
+
+@pytest.mark.req("EF-USR-013")
+def test_every_audit_writer_names_its_actor_through_the_guard_or_a_label() -> None:
+    writers = _actor_writers()
+    assert len(writers) >= 15  # the scan sees the real writers
+    unsafe = sorted(w for w, safe in writers.items() if not safe and w not in ACTOR_EXEMPT)
+    assert unsafe == [], f"write the actor through live_actor(...): {unsafe}"
+    assert sorted(set(ACTOR_EXEMPT) - set(writers)) == []  # a stale exemption
+    for guarded in (
+        "shelfhold/identity/adapters/store.py::audit_insert",  # the identity service's door
+        "shelfhold/headless/records.py::insert_audit",
+    ):
+        assert writers[guarded] is True, guarded

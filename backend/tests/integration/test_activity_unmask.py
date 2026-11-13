@@ -24,7 +24,12 @@ TITLE = "Un titre"
 @pytest.fixture
 def engine(settings: Settings) -> sa.Engine:
     migrate(settings)
-    return sa.create_engine(f"sqlite:///{settings.database_path}")
+    engine = sa.create_engine(f"sqlite:///{settings.database_path}")
+    with engine.begin() as connection:  # the audit guard only keeps the id of a live user
+        connection.execute(
+            sa.insert(identity.user).values(id=ADMIN, username="admin", role="admin", can_rate=True)
+        )
+    return engine
 
 
 def private_adult_request() -> ActivityEvent:
