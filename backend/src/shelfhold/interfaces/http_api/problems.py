@@ -18,7 +18,8 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.requests import Request
 
 from shelfhold.error_catalog import ErrorCode
-from shelfhold.i18n import load_catalog, t
+from shelfhold.i18n import DEFAULT_LANGUAGE, load_catalog, negotiate, t, t_lang
+from shelfhold.identity.domain.credentials import Principal
 from shelfhold.infrastructure.http_headers import apply_security_headers
 from shelfhold.infrastructure.logging import mask_known_secrets
 from shelfhold.interfaces.http_api.catalog import all_error_codes, error_code
@@ -90,13 +91,30 @@ def _request_id(request: Request) -> str | None:
     return value if isinstance(value, str) else None
 
 
-def cause_of(spec: ErrorCode) -> str:
+def language_of(request: Request) -> str:
+    """The language of the answer (ENF-I18N-001): the profile preference of the signed-in person
+    wins over the `Accept-Language` of the request; nobody signed in: the header, else French."""
+    principal = request.scope.get("state", {}).get("principal")
+    if isinstance(principal, Principal) and principal.locale in ("fr", "en"):
+        return principal.locale
+    return negotiate(request.headers.get("accept-language"))
+
+
+def language_from_headers(headers: Mapping[str, str], principal: object = None) -> str:
+    """Same choice, from plain headers and an optional principal (outside a `Request`)."""
+    if isinstance(principal, Principal) and principal.locale in ("fr", "en"):
+        return principal.locale
+    return negotiate(headers.get("accept-language"))
+
+
+def cause_of(spec: ErrorCode, *, language: str = DEFAULT_LANGUAGE) -> str:
     """The probable cause (EF-UX-003): a sentence of the catalog, never a runtime value. The
     code's own sentence when it has one, else the one of its audience: a closed vocabulary, so no
     path, host name or secret can ride on it, whatever `detail` says."""
-    catalog = load_catalog()
-    return t(
-        spec.cause_key if spec.cause_key in catalog else f"errors.cause_default.{spec.audience}"
+    catalog = load_catalog(language)
+    return t_lang(
+        spec.cause_key if spec.cause_key in catalog else f"errors.cause_default.{spec.audience}",
+        language=language,
     )
 
 
@@ -107,14 +125,15 @@ def problem_body(
     detail: str | None = None,
     request_id: str | None = None,
     extensions: Mapping[str, Any] | None = None,
+    language: str = DEFAULT_LANGUAGE,
 ) -> dict[str, Any]:
     body: dict[str, Any] = {
         "type": spec.type_uri,
-        "title": t(spec.title_key),
+        "title": t_lang(spec.title_key, language=language),
         "status": status or spec.status,
         "code": spec.code,
-        "action": t(spec.action_key),
-        "cause": cause_of(spec),
+        "action": t_lang(spec.action_key, language=language),
+        "cause": cause_of(spec, language=language),
     }
     if detail:
         body["detail"] = mask_known_secrets(detail)  # a quoted upstream answer may hold one
@@ -135,10 +154,16 @@ def build_problem_response(
     detail: str | None = None,
     extensions: Mapping[str, Any] | None = None,
     headers: Mapping[str, str] | None = None,
+    language: str = DEFAULT_LANGUAGE,
 ) -> JSONResponse:
     """A complete problem response, discretion headers included (usable outside the app stack)."""
     body = problem_body(
-        spec, status=status, detail=detail, request_id=request_id, extensions=extensions
+        spec,
+        status=status,
+        detail=detail,
+        request_id=request_id,
+        extensions=extensions,
+        language=language,
     )
     response = JSONResponse(
         body, status_code=body["status"], media_type=PROBLEM_MEDIA_TYPE, headers=dict(headers or {})
@@ -157,6 +182,7 @@ def problem_response(request: Request, error: ProblemError) -> JSONResponse:
         detail=error.detail,
         extensions=error.extensions,
         headers=error.headers,
+        language=language_of(request),
     )
 
 

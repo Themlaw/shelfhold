@@ -17,7 +17,7 @@ from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse, JSONResponse, Response
 from pydantic import BaseModel, Field
 
-from shelfhold.i18n import t
+from shelfhold.i18n import negotiate, t_lang
 from shelfhold.identity.public import (
     MAX_PASSWORD_LENGTH,
     InvalidCredentialsError,
@@ -73,26 +73,28 @@ LOGIN_CSP = hash_csp(_TEMPLATE.template)
 PASSKEY_LOGIN_CSP = allow_own_scripts(LOGIN_CSP)
 
 
-def login_page_html(source_url: str, *, passkeys: bool = False) -> str:
+def login_page_html(source_url: str, *, passkeys: bool = False, language: str = "fr") -> str:
     """Only `$` placeholders outside the script and the style: their hashes never change.
-    `passkeys`: the button and the same-origin script are there only in a secure context."""
+    `passkeys`: the button and the same-origin script are there only in a secure context.
+    `language`: the language of the request (ENF-I18N-001); the page is anonymous, so the
+    `Accept-Language` of the browser picks it."""
     button = script = ""
     if passkeys:
         button = _BUTTON.substitute(
             options=PASSKEY_LOGIN_OPTIONS_PATH,
             login=PASSKEY_LOGIN_PATH,
-            error=escape(t("login.error")),
-            label=escape(t("login.passkey")),
+            error=escape(t_lang("login.error", language=language)),
+            label=escape(t_lang("login.passkey", language=language)),
         )
         script = _SCRIPT_TAG.substitute(src=PASSKEY_SCRIPT_PATH)
     values = {
-        "title": t("login.title"),
-        "username": t("login.username"),
-        "password": t("login.password"),
-        "remember": t("login.remember"),
-        "submit": t("login.submit"),
-        "error": t("login.error"),
-        "source": t("login.source"),
+        "title": t_lang("login.title", language=language),
+        "username": t_lang("login.username", language=language),
+        "password": t_lang("login.password", language=language),
+        "remember": t_lang("login.remember", language=language),
+        "submit": t_lang("login.submit", language=language),
+        "error": t_lang("login.error", language=language),
+        "source": t_lang("login.source", language=language),
         "source_url": source_url,
         "endpoint": LOGIN_PATH,
         "max_password": str(MAX_PASSWORD_LENGTH),
@@ -160,14 +162,17 @@ def _throttled(error: ThrottledError) -> ProblemError:
 
 def build_login_router(source_url: str) -> APIRouter:
     router = APIRouter()
-    page = cache(lambda passkeys: login_page_html(source_url, passkeys=passkeys))
+    page = cache(
+        lambda passkeys, language: login_page_html(source_url, passkeys=passkeys, language=language)
+    )
 
     @router.get(LOGIN_PAGE, include_in_schema=False)
     def login_page(request: Request) -> HTMLResponse:
         gate = getattr(request.app.state, "auth_gate", None)
         passkeys = gate is not None and gate.auth.passkeys_available
+        language = negotiate(request.headers.get("accept-language"))
         return HTMLResponse(
-            page(passkeys),
+            page(passkeys, language),
             headers={
                 "Content-Security-Policy": PASSKEY_LOGIN_CSP if passkeys else LOGIN_CSP,
                 "Cache-Control": "no-store",

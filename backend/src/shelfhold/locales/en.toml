@@ -1,0 +1,2327 @@
+# English catalog (ENF-I18N-001). Every visible string goes through shelfhold.i18n.t();
+# the keys are the French catalog's, one to one (tools/i18n_parity.py fails otherwise).
+
+[cli]
+  description = "Shelfhold: the workshop for your home's personal library."
+  migrate_help = "Applies database migrations (previous backup, refusal of a more recent schema)."
+  serve_help = "Starts the HTTP server."
+  config_help = "View the configuration."
+  config_show_help = "Shows each field with its origin (env, toml, db, default)."
+  config_get_help = "Displays the value of a configuration key."
+  config_list_help = "Lists the configuration keys with their value and origin."
+  config_set_help = "Writes a configuration key (database layer)."
+  config_key_help = "Key name (public_url, source.check_mode, path_map.<target>, notify.urls...)."
+  config_value_help = "Value (never for a secret key: use --value-file)."
+  config_value_file_help = "File containing the value; “-” for standard input."
+  config_apply_help = "Imports a declarative (idempotent) configuration file."
+  config_file_help = "shelfhold.toml file to apply (free name, distinct from config.toml)."
+  config_dry_run_help = "Shows the differences without writing, probing or exchanging anything."
+  target_help = "Export Destinations (Kavita)."
+  target_add_help = "Adds a destination."
+  target_add_kavita_help = "Adds a Kavita: Exchanges the account for a named key upon expiration."
+  target_url_help = "Kavita server address (http(s)://host[:port])."
+  target_user_help = "Dedicated Kavita account (administrator)."
+  target_password_file_help = "File containing the password; “-” for standard input (never as an argument)."
+  target_name_help = "Destination name (default: kavita)."
+  target_path_map_help = "Path table in JSON: [{{\"local\": \"/library/manga\", \"remote\": \"/manga\"}}]."
+  target_accept_risk_help = "Recognizes that the key is that of a Kavita administrator account."
+  source_help = "Connected Sources (Suwayomi)."
+  source_add_help = "Add a source."
+  source_add_suwayomi_help = "Adds Suwayomi: reads its authentication mode (none, basic_auth or ui_login)."
+  source_confirm_roles_help = "Confirms that the Suwayomi service account (ui_login) has minimum rights, when the server does not expose its roles."
+  source_url_help = "Suwayomi server address (http(s)://host[:port])."
+  source_fix_suwayomi_settings_help = "Confirms that Shelfhold deactivates the two global update exclusions in Suwayomi (only writing in its settings, logged)."
+  source_secret_file_help = "File containing “user:password”; “-” for standard input."
+  shelf_help = "Shelves."
+  shelf_withdraw_help = "Shows (then, with --apply --confirm, applies) the withdrawal of Editions that the family shelf no longer admits."
+  shelf_withdraw_shelf_help = "Limits the plan to this shelf (id)."
+  shelf_withdraw_adopted_help = "Limits the map to the Unclassified Works files of an adopted child library (destination identifier)."
+  shelf_withdraw_apply_help = "Apply the plan: the files come out of the children's library (root trash)."
+  shelf_withdraw_confirm_help = "Version of the plan read, given by the command without --apply."
+  shelf_withdraw_item = "Edition {edition} (shelf {shelf}): {reason}, {files, plural, one {# file} other {# files}}."
+  shelf_withdraw_nothing = "No Edition to remove."
+  shelf_withdraw_next = "To apply: shelfhold shelf withdraw --apply --confirm {version}"
+  shelf_withdraw_next_adopted = "To apply: shelfhold shelf withdraw --adopted {destination} --apply --confirm {version}"
+  shelf_withdraw_needs_confirm = "Give the version of the plan read: --confirm {version} (the plan may have changed)."
+  shelf_withdraw_done = "{editions, plural, one {# Edition withdrawn} other {# Editions withdrawn}}, {files, plural, one {# file} other {# files}} put in the trash; Kavita is asked to analyze."
+  shelf_withdraw_pending = "{count, plural, one {# file remains to be moved} other {# files remain to be moved}}: the intention remains open until the next start."
+  shelf_purge_upstream_help = "Authorizes (--on) or not (--off) the deletion of the download from the connected service, after a verified export. Reserved Action: Fresh session or host console."
+  shelf_purge_upstream_shelf_help = "Shelf (name or identifier)."
+  shelf_purge_upstream_on_help = "Allows pre-delete, only once the copy of Kavita and that of /store are verified."
+  shelf_purge_upstream_off_help = "Removes authorization (default state)."
+  shelf_link_mode_help = "Chooses how the retained copy of a shelf is made: independent copy (default) or hard link, for replaceable content on the same mount only."
+  shelf_link_mode_choice_help = "copy (default) or hardlink. Never a symbolic link; an irreplaceable Unit or shelter always receives an independent copy."
+  shelf_link_mode_done = "Shelf {shelf}: keep copy mode {mode}."
+  shelf_purge_upstream_on = "Shelf {shelf}: upstream erasure is authorized, subject to storage."
+  shelf_purge_upstream_off = "Shelf {shelf}: Backward clearing is disabled."
+  shelf_create_help = "Creates a shelf (family if the ceiling is under 18+) and links it to a destination."
+  shelf_name_help = "Shelf name."
+  shelf_max_age_help = "Age ceiling: 0, 10+, 12+, 13+, 16+, 18+ or X (under 18+, it's a family shelf)."
+  shelf_target_help = "Destination name."
+  shelf_subpath_help = "Subfolder of the destination root."
+  shelf_phrase_help = "Label displayed (default: name)."
+  json_help = "Output in JSON format."
+  export_help = "Calculates exports to a destination (preview, without writing)."
+  export_dry_run_help = "Display the plan without writing anything."
+  export_destination_help = "Destination identifier (shelf x server)."
+  content_help = "Content of received files: regenerates neutralized derivatives of EPUBs from untrusted sources."
+  content_reneutralize_help = "Preview, then regeneration of the derivatives after a security update of the neutralizer (starts from the original, otherwise from the stored derivative)."
+  content_confirm_help = "Fingerprint given by the preview: regenerates exactly what was shown, without deleting anything."
+  meta_help = "Base projections (unit.json, work.json, provenance mirror): regenerates or checks."
+  meta_rebuild_help = "Rewrites divergent, missing or illegible projections from the base; The unexplained lines of the mirror remain “unresolved”."
+  meta_enrich_help = "Ask OpenLibrary what it knows about an Edition: the proposed values ​​keep their origin, no locked or manually entered fields are replaced, an age is never applied."
+  meta_target_help = "An ISBN (10 or 13 digits) or the identifier of an Edition."
+  meta_lock_help = "Locks a field of an Edition: with a value, yours (typed by hand); without one, the one already recorded. No provider replaces it afterwards."
+  meta_unlock_help = "Lifts the lock on a field: the value and its origin remain; a value entered by hand is never overwritten by a provider."
+  meta_edition_help = "The Edition ID."
+  meta_field_help = "The name of the field (lowercase letters, numbers and _: title, publisher, description, etc.)."
+  meta_value_help = "The value to save and lock (text, 4096 characters at most)."
+  meta_lang_help = "The language of the value (BCP 47 label), “und” by default."
+  meta_on_help = "On which entity the field is kept: the Edition (default) or its Work."
+  export_item_help = "The exported media: a file, its chapters and the file kept under /data/ranged."
+  export_item_show_help = "Shows a support: the volume, the chapters it contains, if it is closed and where its file is kept."
+  export_item_id_help = "The identifier of the exported media."
+  meta_check_help = "Lists the projections which diverge from the base, without writing anything (code 1 if there is any)."
+  meta_unit_help = "Limited to one chapter (identification)."
+  plugin_help = "Third-party plugins: local installation, confirmed activation, status (disabled by default)."
+  plugin_install_help = "Installs a local wheel file (sha256 required, no dependencies, no networking)."
+  plugin_wheel_help = "Plugin .whl file."
+  plugin_sha256_help = "Expected sha256 fingerprint of the file (64 hex digits)."
+  plugin_enable_help = "Activates an installed plugin (environment variable and typed confirmation)."
+  plugin_disable_help = "Remove confirmation from a plugin."
+  plugin_remove_help = "Uninstall a plugin."
+  plugin_name_help = "Name of the plugin distribution."
+  plugin_list_help = "Lists installed third-party plugins and why they are inactive."
+  plugin_load_help = "Loads authorized plugins, as on startup, and shows the result."
+  plugin_key_help = "Plugin key (that of its manifest)."
+  plugin_attest_help = "Attests to a trust value declared by a third-party plugin, for its installed version (audited)."
+  plugin_attest_value_help = "Attested value: publisher, library, user or household depending on the field."
+  plugin_withdraw_help = "Withdraws a certificate (audited): the safe value applies again."
+  plugin_settings_help = "Shows the settings of a source; of a secret, only whether it is defined and its fingerprint."
+  plugin_set_help = "Rule for non-secret values ​​of a source (NAME=JSON)."
+  plugin_field_help = "Name of the secret field, as declared in the source's settings_schema."
+  plugin_set_secret_help = "Sets a secret from a source, read from a file or from standard input (audited)."
+  plugin_set_cookies_help = "Replaces a source's cookies with a name → value JSON object (audited; an empty object clears them)."
+  plugin_cookies_file_help = "Cookie JSON file, or - for standard input."
+  secrets_help = "Manages encrypted secrets at rest: export, rotation, keychain status."
+  secrets_export_help = "Exports the keychain to a passphrase-protected age file."
+  secrets_import_help = "Merges the keys from an export age into the keychain, then replays the pending tombstones (action reserved)."
+  secrets_in_help = "Export file produced by “shelfhold secrets export”."
+  secrets_passphrase_file_help = "File containing the passphrase (never as a command line argument)."
+  secrets_out_help = "Output file; “-” for standard output."
+  secrets_rotate_help = "Rotates the secrets key (resumes an interrupted rotation)."
+  secrets_retire_help = "Removes an old key from the keychain (refused if it is active, used or cited by a tombstone)."
+  secrets_status_help = "Shows warnings on the keychain."
+  status_help = "Shows warnings for the instance."
+  access_table_help = "Displays the truth table of reserved actions (role, credential, freshness)."
+  access_restricted_help = "Assumes a restricted profile exists (parental controls then require a fresh session)."
+  search_help = "Local Search: Rebuilds the search index."
+  search_rebuild_help = "Redoes the search index from the base alone (it is a projection)."
+  stats_help = "Value indicators, calculated on the instance only (no telemetry)."
+  diagnostic_help = "Local diagnosis of the instance (no outgoing connection)."
+  diagnostic_bundle_help = "Writes a diagnostic package with no secrets, no content or watermarked files, hidden sources."
+  diagnostic_out_help = "File to write (zip); it must not exist."
+  diagnostic_exclude_help = "Section to leave out of the package; repeatable. Useful when a running title causes a section to be refused."
+  diagnostic_log_file_help = "Log to include, once reduced to its authorized fields (e.g. docker compose logs output); repeatable."
+  stats_since_help = "Observation window, in days: 30d by default."
+  profile_help = "Manages the household profiles (members, children, right to classify, policy by source)."
+  profile_add_help = "Creates a profile (password comes from a file or standard input)."
+  profile_list_help = "List the profiles."
+  profile_set_help = "Changes the role, the maximum age, the right to classify, or the policy of a source."
+  profile_remove_help = "Deletes a profile (its audit trails remain, pseudonymised)."
+  profile_export_help = "Writes profile data to standard output, in JSON (without any secrets)."
+  profile_username_help = "Profile ID."
+  profile_role_help = "Role: member (default), child or admin (two at most)."
+  profile_max_age_help = "Maximum age of a child (0 to 99, mandatory for a child)."
+  profile_can_rate_help = "Right to classify (never for a child)."
+  profile_map_kavita_help = "Name the Kavita account of a child profile, for read-only auditing (reserved action; a name, never a token)."
+  profile_kavita_user_help = "Account name in Kavita (Kavita is not case sensitive)."
+  profile_kavita_clear_help = "Remove the correspondence: the profile is no longer audited by their Kavita account."
+  profile_source_policy_help = "Policy for one source, SOURCE=add_directly|request|forbidden (repeatable)."
+  admin_help = "Administers local accounts, sessions and API keys."
+  admin_create_help = "Creates the local administrator account (password hashed in argon2id)."
+  admin_acknowledge_through_help = "Reference displayed by “status”: acknowledges the recordings up to this one, not those which arrived after."
+  admin_acknowledge_passkeys_help = "Acknowledges passkey records reported by “status” (host action, logged)."
+  admin_reset_help = "Changes an account's password and closes all its sessions."
+  admin_username_help = "Account ID."
+  admin_password_file_help = "File containing the password; “-” for standard input (never as an argument)."
+  admin_sessions_help = "Manages open sessions."
+  admin_sessions_revoke_help = "Closes sessions: all (--all), those of an account (--user) or just one."
+  admin_session_id_help = "Identifier of the session to close."
+  admin_all_help = "All sessions."
+  admin_user_help = "Sessions for this account."
+  admin_keys_help = "Manages API keys (stored hashed, displayed only once)."
+  admin_keys_create_help = "Creates an API key and displays it once."
+  admin_keys_list_help = "Lists the keys (prefix, name, expiry, last use), never their secret."
+  admin_keys_revoke_help = "Revokes a key by its prefix; refused from the next request."
+  admin_keys_rotate_help = "Replaces a key: the new one is displayed only once, the old one is revoked in the same operation."
+  admin_key_rotate_expires_help = "Validity period of the new key in days (optional; by default that of the old key)."
+  admin_key_name_help = "Key name (what it is used for)."
+  admin_key_scope_help = "Scope: read (read-only), request (its own requests) or admin (default)."
+  admin_key_subject_help = "Account the key acts for (profile); by default, its holder."
+  admin_key_read_only_help = "Read-only key (any request that modifies is refused)."
+  admin_key_expires_help = "Validity period in days (optional; capped at 90 by the hardened profile)."
+  admin_key_prefix_help = "Key prefix (8 hexadecimal characters)."
+
+[migrate]
+  up_to_date = "The database is already up to date."
+  applied = "{count, plural, one {# migration applied} other {# migrations applied}}; the database is at revision {revision}."
+  backup = "Prior backup: {path}"
+  failed = "Migration {revision} failed: {detail}. The base has been restored to its previous state."
+  in_progress = "Another migration is already underway: abandonment."
+  instance_running = "An instance of Shelfhold is running on these volumes: stop it, then restart the migration."
+  open_intents = "{count, plural, one {# file intent still open} other {# file intentions still open}}: Boot the current version once to resolve them, then restart the migration."
+  schema_too_new = "The base is at revision {revision}, more recent than this version of Shelfhold: startup refused."
+
+[config]
+  secret_file_world_readable = "Warning: the secret file {path} is readable by everyone; limit your rights (chmod 600)."
+  invalid = "Invalid configuration: {detail}"
+  row = "{name} = {value} [{source}]"
+  row_readonly = "{name} = {value} [{source}] (read-only, set by environment)"
+
+[plugin]
+  use_readback = "Please note: this address is that of an active destination. Use “readback”: Shelfhold does not reimport its own exports."
+  no_database = "The database does not exist: first run “shelfhold migrate”."
+  audit_failed = "The audit log is not written ({detail}): nothing is modified."
+  install_refused = "Installation refused ({code}): {detail}"
+  installed = "Plugin {name} {version} installed, without running its code."
+  disabled_by_default = "It remains disabled: “shelfhold plugin enable” and SHELFHOLD_ALLOW_UNSANDBOXED_PLUGINS=1 are required."
+  env_required = "Refused: {variable}=1 must be defined in the environment."
+  warning = "A third-party plugin runs in the Shelfhold process with the same rights as it, without a sandbox. To continue, type: {phrase}"
+  confirmation_mismatch = "Incorrect confirmation: the plugin is not activated."
+  enable_refused = "Refused ({code}): {detail}"
+  enabled = "Plugin {name} confirmed. It is loaded on next boot if SHELFHOLD_ALLOW_UNSANDBOXED_PLUGINS=1 is set."
+  disabled = "Confirmation of {name} removed."
+  removed = "Plugin {name} uninstalled."
+  none = "No third-party plugins installed."
+  row = "{name} {version} {status}"
+  row_loaded = "{plugin} {status} {reason}"
+  status_ready = "ready"
+  status_disabled = "disabled: {reason}"
+  attested = "{plugin}: {field}={value} attested for version {version}. Another version will have to be attested again."
+  attest_refused = "Certificate refused: {detail}"
+  withdrawn = "Certificate of {plugin} withdrawn: the safe value applies."
+  nothing_attested = "Nothing was attested for {plugin} on this field."
+  keyring_unreadable = "Unreadable keychain: {detail}"
+  setting_row = "{name} {value}"
+  secret_set = "defined (fingerprint {fingerprint})"
+  secret_unset = "undefined"
+  setting_refused = "Setting refused ({field}): {reason}"
+  assignment_invalid = "“{name}” does not have the form NAME=VALUE."
+  cookies_unreadable = "Cookies must be a name → value, readable JSON object."
+
+[secrets]
+  exported = "Exported keychain (age, scrypt): {path}"
+  keyring_generated = "Keychain created: {path}. Export it and store the export somewhere other than this host."
+  out_exists = "The {path} file already exists: choose another name or delete it (one export never overwrites another)."
+  export_failed = "Export impossible: {detail}"
+  export_not_recorded = "Warning: the export is done, but the keychain was unable to keep the date (read-only keychain?)."
+  write_failed = "Impossible to write: {detail}"
+  keyring_error = "Unusable keychain: {detail}"
+  no_database = "The database does not exist: first run “shelfhold migrate”."
+  rotated = "Rotation completed: new key {kid}, {count, plural, one {# reencrypted secret} other {# secrets reencrypted}}."
+  rotation_resumed = "Rotation resumed and completed: key {kid}, {count, plural, one {# reencrypted secret} other {# secrets reencrypted}} this time."
+  rotation_in_progress = "The lock is held by an instance of Shelfhold or by another operation on the secrets: stop Shelfhold, then rerun the command (procedure in docs/admin/secrets.md)."
+  rotation_incomplete = "Interrupted rotation: {remaining, plural, one {# secret is still under an old key} other {# secrets are still under an old key}}. Run “shelfhold secrets rotate” again."
+  rotation_failed = "Rotation impossible: {detail}"
+  imported = "Merged Keychain: {added, plural, one {# key added as removed} other {# keys added as removed}}, {present, plural, one {# already present} other {# already present}}."
+  import_replayed = "Replayed tombstones: {count, plural, one {# line} other {# lines}}."
+  import_deferred = "The instance is read-only (restored_behind): tombstones will be replayed by \"shelfhold reconcile --adopt-after-restore\", which is now unlocked."
+  import_replay_failed = "The keys are imported, but the replay of the tombstones was not successful: rerun the same command."
+  export_again = "Export the keychain again: “shelfhold secrets export”."
+  retired = "Key {kid} removed from keychain."
+  retire_refused_unknown = "The key {kid} does not exist in the keychain."
+  retire_refused_active = "The {kid} key is the active key: it is never removed."
+  retire_refused_in_use = "The {kid} key still protects secrets: complete the rotation first."
+  retire_refused_cited_by_tombstone = "The key {kid} is cited by a tombstone: it is never removed."
+  retire_refused_root_unavailable = "The {kid} key is not removed: a library root is unmounted or its sentinel is unreadable, and it could cite it. Pull up all the roots and try again."
+  status_ok = "Keychain: no warnings."
+  warning_key_in_data = "The master key is in /data ({detail}): a copy of /data contains the key alongside the secrets. Place it outside of /data with SHELFHOLD_SECRET_KEY_FILE."
+  warning_rows_on_retired_key = "{detail, plural, one {# secret is still sealed under a removed key} other {# secrets are still sealed under a removed key}} (process remained on the old keychain, rotation unfinished): relaunch “shelfhold secrets rotate” then restart Shelfhold."
+  warning_keyring_world_readable = "The {detail} keychain file is readable by everyone: limit it to the Shelfhold user (chmod 640 or 600, or mode 0400 of the Docker secret)."
+  warning_keyring_absent = "No keychain at {detail}: it is created at first startup."
+  warning_rotation_incomplete = "A rotation is unfinished: relaunch “shelfhold secrets rotate”."
+  warning_never_exported = "The keychain was never exported: “shelfhold secrets export --passphrase-file … --out …”."
+  warning_export_older_than_rotation = "The last export is before the last rotation: export the keychain again."
+  warning_tombstones_not_exported = "Tombstones exist and the trousseau has not been exported since the first: without it, they can no longer be read. Export it with “shelfhold secrets export”."
+  warning_key_compromised = "Keys marked compromised: {detail}. They remain in the keychain to read old backups but are no longer worth anything: keep them out of reach and do not restore an encrypted backup under them without running “shelfhold tombstone rekey”."
+  warning_tombstone_kids_lost = "{detail, plural, one {# headstone key has been reported lost} other {# tombstone keys reported lost}} (\"tombstone accept-lost-keyring\"): Rows they were protecting are inert and purged content may revert to reacquire or re-adopt. Finding the keychain does not negate this declaration."
+  warning_tombstone_kid_missing = "{detail, plural, one {# key cited by tombstones missing from keychain} other {# keys cited by tombstones are missing from the keychain}}: reimport the last export (“shelfhold secrets import --passphrase-file <file> --in <file>”)."
+  boot_keyring_unreadable = "Startup refused: the keychain is unreadable for this user ({detail})."
+  boot_keyring_corrupt = "Startup refused: unusable keychain ({detail})."
+  boot_keyring_permissions = "Startup refused: keychain {path} is non-compliant (rights too open, unexpected owner, or modifiable by others). Correct: chmod 600 {path} (and chown to the account that launches Shelfhold)."
+  boot_keyring_missing = "Startup refused: keychain missing ({detail}). Creating another one would make existing secrets unreadable."
+
+[api]
+  problem_description = "Problem details (RFC 9457)."
+  problem_401 = "Login required, or password to be confirmed (reauth-required)."
+  problem_403 = "Action denied to this session or key (CSRF, read-only key, reserved action)."
+
+[login]
+  title = "Connection"
+  username = "Identifier"
+  password = "Password"
+  remember = "Remember me"
+  submit = "Log in"
+  passkey = "Log in with a passkey"
+  error = "Unable to connect."
+  source = "Source code"
+
+[passkeys]
+
+  [passkeys.unavailable]
+    restore_pending = "A restore has just happened: passkey login is suspended for every account until it is confirmed."
+    no_public_url = "Access keys require that the public address (public_url) be set to https:// or http://localhost."
+    invalid_url = "The public address (public_url) is not a valid web address: the passkeys are unavailable."
+    insecure_context = "The passkeys require HTTPS, or http://localhost: they are unavailable on this address in http://."
+    ip_host = "A passkey is tied to a domain name, not an IP address: use a name (https:// or http://localhost)."
+
+[backup]
+  help = "Built-in backup: launch, check, restore."
+  run_help = "Creates an encrypted backup (base, config, meta, full keychain, schema.sql, dictionary) in SHELFHOLD_BACKUP_DIR."
+  verify_help = "Decrypts a backup and verifies each member (fingerprints, database integrity, keychain), without restoring anything."
+  restore_help = "Restores a backup to another folder (empty or nonexistent)."
+  colocated_help = "Accepts a passphrase stored in the saved tree (logged, lasting warning in “shelfhold status”)."
+  manifests_help = "Adds the library root provenance mirrors (wakes up their disks; the scheduled task does not)."
+  file_help = "Checks this file rather than the most recent backup of the destination folder."
+  from_help = "Backup file (.tar.age)."
+  to_help = "Destination folder: non-existent or empty, different from the data folder in use."
+  passphrase_file_help = "File containing the passphrase (by default SHELFHOLD_BACKUP_PASSPHRASE_FILE; never as an argument)."
+  no_database = "The database does not exist or is not up to date: first run “shelfhold migrate”."
+  done = "Backup made: {name} ({size} bytes, {members} members)."
+  pruned = "Old save removed (retention): {name}"
+  verified = "Backup verified: {name} ({members} members, created {created}, schema {revision})."
+  too_costly = "Unopened backup: it requires a derivation cost (scrypt) higher than what Shelfhold accepts (2^20). This is not a passphrase error; the file was not produced by Shelfhold, or it is forged."
+  damaged = "Backup refused: the file is damaged or altered, or the passphrase is incorrect."
+  passphrase_refused = "Passphrase refused: the file is unreadable, too short (at least 12 characters), or its rights are too open (0600 expected)."
+  restored = "Restoration done under {path} ({files} files)."
+  credentials_revoked = "{sessions, plural, one {# session revoked} other {# sessions revoked}} And {keys, plural, one {# API key revoked} other {# revoked API keys}} in the restored base (they recreate themselves). Passkeys and passwords changed since the backup have returned to their then state: recheck them, then run “shelfhold restore acknowledge” (“status” reminds them by then)."
+  next_steps = "Next steps: start Shelfhold with SHELFHOLD_DATA_DIR={path} (it starts in “restored_behind” if the library is ahead of the database), then run “shelfhold reconcile --adopt-after-restore”."
+  restore_incomplete = "Restore aborted (archive changed during writing, or writing failed): {path} is incomplete and unusable. Nothing has been deleted: empty this folder yourself, then start again."
+  destination_not_empty = "{path} exists and is not an empty folder (or it is a link): choose a non-existent or empty folder."
+  destination_is_live_data = "{path} is or is in the current data folder: restore to another path."
+  destination_unusable = "{path} cannot be created."
+  failed_passphrase_missing = "Backup impossible: passphrase missing (SHELFHOLD_BACKUP_PASSPHRASE_FILE). Nothing was written."
+  failed_passphrase_invalid = "Cannot save: the passphrase file is unreadable, too permissive or too short (at least 12 characters)."
+  failed_passphrase_colocated = "Backup refused: The passphrase file is in the backed up tree (or next to the archives), so the backup would not protect anything. Store it elsewhere, or accept the risk with --accept-colocated-passphrase."
+  failed_destination_missing = "Backup not possible: SHELFHOLD_BACKUP_DIR is not defined."
+  failed_destination_unavailable = "Backup impossible: the destination folder is missing or cannot be written."
+  failed_destination_not_distinct = "Backup refused: destination must be outside of /data and /store (and not contain them)."
+  failed_no_room = "Backup impossible: twice the size of the database in free space is required at the destination."
+  failed_too_large = "Unable to save: the game exceeds the maximum supported size (1 GiB)."
+  failed_interrupted = "Backup interrupted: A previous execution stopped before completion (hard stop or restart). It will be redone at the next deadline."
+  keyring_external = "The keyring was not recreated in this folder: this instance reads it from SHELFHOLD_SECRET_KEY_FILE. If lost, “shelfhold secrets import”."
+  failed_locked = "Backup impossible: another backup is already in progress (scheduled task or “shelfhold backup run”). Try again when it is finished."
+  failed_busy = "Backup impossible: a VACUUM is in progress. It will resume at the next execution."
+  failed_keyring_unavailable = "Backup impossible: the keychain is unreadable or missing."
+  failed_database_error = "Backup impossible: the copy of the database has failed or is not complete."
+  failed_write_failed = "Cannot save: writing to destination failed."
+  failed_verify_failed = "Backup canceled: The written file did not pass verification and was removed."
+
+[status]
+  public_url_restart = "public_url has changed since the server was started: restart it for it to take this into account."
+  roles_unverified = "The Suwayomi service account (ui_login) could not be verified: the server does not expose its roles, Shelfhold cannot ensure that it cannot administer Suwayomi or install extensions. Use an account with minimum rights, then confirm with “shelfhold source confirm-roles”."
+  passkey_registered = "{count, plural, one {# saved passkey} other {# saved passkeys}} since the last acknowledgment: {items}. {count, plural, one {Check that it is expected (revoke it if it is unknown)} other {Check that they are expected (revoke the unknowns)}}, then acknowledge what you saw with “shelfhold admin acknowledge-passkeys --through {through}”."
+  passkey_item = "“{name}” ({user})"
+  passkey_items_separator = ","
+  passkey_rp_changed = "Access keys are linked to {old}, which is no longer the domain of public_url: they no longer work. The password remains in fallback; revoke them and then register new ones."
+  waiting_line = "Waiting ({state}): {reason}. Command: {command}"
+  no_warning = "No warning."
+  warning_line = "Warning: {message}"
+  search_like_fallback = "Local search falls back to LIKE: SQLite does not offer FTS5 or its trigram tokenizer (3.34 or higher), or the lookup tables are missing. It works, without folding accents or fast substrings. Fix SQLite, then run “shelfhold search rebuild”."
+  database_not_migrated = "database missing or not up to date: launch “shelfhold migrate”."
+  data_dir_writable_by_others = "{path} is modifiable by the group or others: they could replace the local CLI socket. Do “chmod 750” on this folder."
+  data_dir_on_network_filesystem = "{path} is on a network file system ({kind}) and SHELFHOLD_ALLOW_NETWORK_DATA_DIR is enabled: SQLite database and instance lock may be corrupted or bypassed. Move /data to a local disk."
+  cli_allow_host = "SHELFHOLD_CLI_ALLOW_HOST is enabled: A host process (outside the container PID space) under the Shelfhold user or root is an administrator."
+  root_sentinel_mismatch = "the sentinel of {path} is unreadable, foreign or out of bounds (epoch or generation beyond 2^31): the root is left as is, without freezing. Correct the .shelfhold-mount-id file (copy it first, then put back the values ​​that the database knows); the “shelfhold root takeover” (or “root reinit”) command restamps the root, without deleting anything."
+  keyring_unreadable = "the keychain is unreadable or corrupt: “shelfhold secrets status” says why."
+  backup_not_configured = "no backup is configured (SHELFHOLD_BACKUP_DIR and SHELFHOLD_BACKUP_PASSPHRASE_FILE): a lost disk takes everything. See docs/admin/sauvegarde.md."
+  backup_incomplete = "the backup is half configured: it requires both SHELFHOLD_BACKUP_DIR and SHELFHOLD_BACKUP_PASSPHRASE_FILE."
+  backup_passphrase_colocated = "the backup passphrase is stored in the saved tree or next to the archives (accepted on {detail}): whoever steals the backup also has the phrase. Store it somewhere else."
+  backup_same_device = "the backup destination is on the same disk as /data (noted on {detail}): a disk failure loses both."
+  backup_stale = "the last successful backup is too old or missing ({detail}): “shelfhold backup run”."
+  unknown = "unknown"
+  list_separator = ","
+  yes = "Yes"
+  no = "No"
+  stale_series_line = "Silent series: “{title}” has not received any chapters for {silent_days} days (threshold: {threshold_days} days). Check the source or pause tracking."
+  irreplaceable_candidate_line = "Irreplaceable candidate: unit {unit_id} (source “{source_key}”, {errors} subsequent content errors, independent copies: {independent_copies}). Nothing is copied or deleted yet."
+  wal_pending_line = "Deletion to be finalized from {since}: the database log is still kept by a reader. Run “shelfhold purge --checkpoint” (or stop the server)."
+  kept_in_service_line = "Download left in Suwayomi by a purge (request {request}, from {since}): delete it in Suwayomi, then “shelfhold purge --kept-ack”."
+  tombstoned_upstream_line = "Purged series still present in Suwayomi: “{title}”. Shelfhold ignores it; remove it manually in Suwayomi."
+  capabilities_line = "Root {root} ({filesystem}): reflink {reflink}; hard link to /store {link}; stable inodes {inodes}{fallback}"
+  capabilities_unprobed = "Root {root}: capabilities not probed at startup ({why}). They will be there at the next startup, once the root is ready for writing."
+  link_yes = "Yes"
+  link_no = "No"
+  link_not_applicable = "not applicable ({reason})"
+  copy_fallback = "; fallback: copy"
+  known_bad_line = "Kavita: minimum version {minimum}; list of vulnerable versions of {listed_on} ({age} days)."
+  service_url_refused = "Address refused for {service} ({url}): {reason}. No request goes there; correct it with `shelfhold source add suwayomi --url <address>`."
+  download_dir_unverifiable = "Switchover cannot be verified for destination {destination}: the download folder that Suwayomi announces ({path}) is empty, relative or specific to its container; Shelfhold does not know how to reconcile it with /library (no match on the source side). Check by hand that it is not mounted in a Kavita folder: docs/admin/migration-depuis-scripts.md."
+  known_bad_outdated = "Kavita: minimum version {minimum}; the list of vulnerable versions dates from {listed_on} ({age} days): it is old, update Shelfhold."
+  known_bad_target = "Target {name} (Kavita {version}): version reported vulnerable ({advisories}). Update Kavita."
+  restored_behind = "the database is older than the files (restoration or backtracking): read only. Run “{command}”."
+  jurisdiction_unconfirmed = "The country of the instance ({country}) is inferred from the system language and has never been confirmed: the \"public domain\" warnings rely on it. Confirm it with “shelfhold config set instance.jurisdiction <country>” (two-letter code)."
+  koreader_reset_line = "Chapter {unit_id} was replaced in the same location on {at}: Kavita progress retained, KOReader position reset."
+  rights_may_be_protected = "Edition {edition_id} may still be protected in the country of the instance: public domain in the United States does not mean public domain everywhere. Indication only: it blocks nothing."
+  rights_translation_may_be_protected = "The translation of the {edition_id} Edition may still be protected in the country of the instance (translator's own rights). Indication only: it prevents nothing."
+  identity_header_stripped = "of requests carry identity header \"{header}\", removed and never believed (forward-auth not configured or proxy outside trusted CIDRs). Remove it at the proxy or tunnel level, or configure forward-auth (M3)."
+
+[ops]
+  refused = "Refused ({code}): {detail}"
+  done = "Do."
+  nothing_missing = "No missing files."
+  missing_line = "Missing: {item} ({reason})"
+  choose_one = "Choose only one option: --reexport or --unfollow."
+  job_line = "{id} {kind} {status} {code} tests: {attempts}"
+  language_set = "Registered language: {lang}."
+  series_name_set = "Saved exported series name: “{name}” ({series} series). The next pass resumes the export."
+  series_cleared = "Series {series}: writable again."
+  series_denied = "Series {series}: write rights still refused (see correction command)."
+  key_rotated = "New key created and saved; the old one expires on its own."
+  help_root = "Outputs from an incorrect physical root (foreign sentinel, disk replaced, older copy)."
+  help_root_takeover = "Stamps the root as ours while keeping its identifier and its predecessors; does not delete anything (reserved action)."
+  help_root_reinit = "Stamp the root and pass its elements to “missing”; proposes re-export without applying anything; does not delete anything (reserved action)."
+  help_root_restored = "Root put back from an older copy: reschedules what is missing for the next export, through the pipeline."
+  help_root_arg = "Root identifier (the one shown by “shelfhold status”) or absolute folder path."
+  help_store = "The /store folder (kept copies)."
+  help_restore = "After a restore: credentials revoked."
+  help_restore_acknowledge = "Confirms that passkeys and passwords changed since backup have been rechecked (action reserved); remove the status warning."
+  restore_acknowledged = "Noted: the restore warning is lifted, the passkey connection is reestablished."
+  restore_passkey_change = "Passkey changed since the backup: {change}"
+  help_store_reinit = "Stamp /store; the chapters whose copy was kept there go to “store_missing” (reserved action)."
+  root_done = "{command}: root {root} ({path}), left state: {previous}. No files have been deleted."
+  root_predecessors = "{count, plural, one {# previous identity retained} other {# previous identities retained}} (the tombstones remain legible)."
+  root_missing = "{count, plural, one {# element missing} other {# elements missing}} in “missing”: “shelfhold missing resolve --reexport” {count, plural, one {puts it back} other {puts them back}} on export, “--unfollow” stops {count, plural, one {following it} other {following them}}."
+  root_planned = "{count, plural, one {# rescheduled item} other {# rescheduled items}}: the next export {count, plural, one {the writing} other {writes them}}."
+  store_units_missing = "{count, plural, one {# chapter} other {# chapters}} in “store_missing”: their stored copy cannot be found."
+  root_ignored_claim = "Claim of the sentry ignored, for lack of proof by the keychain: {claim}."
+  keyring_waived = "Lost keychain accepted: {count, plural, one {# key id abandoned} other {# abandoned key identifiers}}."
+  journal_set_aside = "Root {root}: log set aside under “{name}”; it will be rewritten from the ground up."
+  journal_nothing_to_set_aside = "No illegible or garbled logs to put aside."
+  tombstone_rekeyed = "Tombstones re-encrypted under the active key: {rows, plural, one {# line} other {# lines}} from the base, {roots, plural, one {# rewritten diary} other {# rewritten journals}}."
+  tombstone_rekey_owed = "Root {root}: log to be rewritten as soon as it is uploaded (no other writing is accepted until then)."
+  lines_flushed = "All due lines have been written."
+  lines_still_owed = "{count, plural, one {# root still has lines (unmounted, or refusing writes)} other {# roots still have lines (unmounted, or refusing writes)}}: restart when they are ready."
+  help_missing = "Files missing from destination."
+  help_missing_list = "List missing files."
+  help_missing_resolve = "Decides the fate of a missing file."
+  help_reexport = "Re-export the file."
+  help_unfollow = "Unfollow this chapter."
+  help_series = "Series on hiatus."
+  help_series_resume = "Resumes a paused series (another writer, writing rights)."
+  help_jobs = "Failed tasks."
+  help_jobs_list = "List the tasks."
+  help_jobs_status = "Only list this status (e.g. dead_letter)."
+  help_jobs_retry = "Returns an abandoned task to the queue, or restarts the indexing of a file."
+  help_jobs_cancel = "Cancels a task: immediately if it is waiting, at its next step if it is running (reserved action)."
+  help_jobs_replay = "Replays a failed, canceled or abandoned task: only once, even if the command is repeated (reserved action)."
+  help_jobs_priority = "Changes the priority class of a pending task: new, request or backfill; a safety repair keeps its place (action reserved)."
+  help_jobs_class = "The class: new (new features), request (approved requests) or backfill (catch-up)."
+  help_queue = "The task queue: pause and resume, global or by source."
+  help_queue_pause = "Pauses the queue (or a source): tasks wait without failing (reserved action)."
+  help_queue_resume = "Resumes the paused queue (or source) (reserved action)."
+  help_queue_source = "Aim only at this source; without this option, the whole queue."
+  queue_paused = "Queue paused ({scope}): {parked, plural, one {# task on hold} other {# tasks on hold}}."
+  queue_resumed = "Resume file ({scope}): {resumed, plural, one {# task requeued} other {# tasks requeued}}."
+  job_cancelled = "Task {id} canceled."
+  job_too_late = "Task {id}: it does not know how to stop halfway, it goes to the end; nothing was interrupted."
+  job_cancelling = "Task {id}: cancellation requested, it stops at its next step."
+  job_replayed = "Task {id} re-queued."
+  job_not_replayed = "Task {id}: already in queue or already resumed under another identifier, nothing more."
+  job_priority_set = "Task {id}: priority {priority}."
+  help_maintenance = "Maintenance mode: freezes all writing (acquisitions, exports, planned tasks); reading and /healthz remain open."
+  help_maintenance_on = "Enters maintenance mode (reserved action); current tasks finish, nothing else starts."
+  help_maintenance_off = "Exits maintenance mode (reserved action); the tasks placed on hold restart."
+  help_maintenance_status = "Tells if the mode has been active, since when, and shows maintenance windows in UTC and local time."
+  maintenance_entered = "Maintenance mode active: no more writing.{running, plural, one {# current task finishes first} other {# current tasks finish first}}."
+  maintenance_already = "Maintenance mode was already active; nothing has changed."
+  maintenance_left = "Maintenance mode lifted: pending tasks restart."
+  maintenance_not_active = "Maintenance mode was not active; nothing has changed."
+  maintenance_state_on = "Maintenance: ACTIVE since {since} ({running, plural, one {# stain} other {# tasks}} in progress)."
+  maintenance_state_off = "Maintenance: inactive."
+  maintenance_window_line = "Window {timezone} {start}-{end}: next {start_utc} → {end_utc} UTC ({start_local} → {end_local}, {hours} h)."
+  help_jobs_run = "Launches a periodic task from the next time the scheduler passes (one minute at most), for example follow.cycle or export.run."
+  help_edition = "Editions."
+  help_edition_set_lang = "Gives a language to an unknown language edition."
+  help_edition_attachments = "Lists edition attachments by external identifier."
+  help_edition_detach = "Undoes a connection by external identifier (Separate)."
+  help_edition_attach_confirm = "Displays the removal plan for a suggested attachment, then applies it with its token."
+  help_edition_attach_token = "The token displayed with the plan: confirms the connection."
+  help_edition_attach_decline = "Rejects a suggested attachment."
+  help_edition_merge = "Merges two Editions of a Work: shows the plan (--plan, by default), applies it with its fingerprint (--apply)."
+  help_edition_merge_keep = "The remaining edition."
+  help_edition_merge_drop = "The edition merged into the first, which disappears."
+  help_edition_merge_plan = "Displays the plan and its footprint without modifying anything (default)."
+  help_edition_merge_apply = "Apply the plan whose footprint is given."
+  help_edition_merge_proposals = "Displays the edition merge plans that would require merging two contributors, without applying anything."
+  help_edition_renumber_id = "A provider renumbered an identifier: the new one is added, the old one is marked replaced, nothing is overwritten or deleted."
+  help_edition_renumber_provider = "The provider's key (anilist, mangaupdates, isbn, etc.)."
+  help_edition_renumber_old = "The old identifier, one of those from this Edition."
+  help_edition_renumber_new = "The new identifier."
+  help_edition_renumber_scheme = "The provider's identifier scheme, if it advertises one."
+  help_edition_list = "Lists the Editions, sorted by title without the article at the beginning, according to the language of the Edition."
+  help_edition_list_sort = "Sorting: title (only known sorting)."
+  help_edition_list_limit = "The number of Editions to display (1 to 1000)."
+  help_edition_list_offset = "The number of Editions to pass."
+  help_coverage = "What a support covers."
+  help_contributor = "Contributors: what the catalog knows about a credited person."
+  help_contributor_set_died_for_france = "Said if a contributor died for France (30 more years in France); unknown, the rights warning is displayed for a war death."
+  help_contributor_id = "Contributor ID."
+  help_died_yes = "Death for France."
+  help_died_no = "Not dead for France."
+  help_died_unknown = "Unknown (default): read with caution."
+  choose_one_answer = "Say exactly one answer: --yes, --no or --unknown."
+  died_for_france_set = "Contributor {contributor}: death for France = {answer}."
+  help_coverage_resplit = "A chapter that the source has re-divided (10 into 10.1 and 10.2)."
+  help_coverage_resplit_propose = "Proposes coverage of the new chapters by the old one: writes nothing, displays the confirmation code."
+  help_coverage_resplit_apply = "Apply the proposition confirmed by its code: nothing is removed, and the code is only used once."
+  help_coverage_parent = "The ID of the old chapter."
+  help_coverage_children = "The identifiers of the chapters that it has become (its sub-numbers)."
+  help_coverage_confirm = "The code displayed by “proposes”."
+  id_renumbered = "Edition {edition}: identifier {provider} {new} added, marked {old} replaced; nothing is overwritten."
+  edition_line = "{edition} {lang} {title}"
+  resplit_proposed = "The chapter {parent} would be covered as re-cut in {count, plural, one {# chapter} other {# chapters}}; nothing is written, no chapter is removed."
+  resplit_confirm_with = "To apply it only once: shelfhold coverage resplit apply {parent} {children} --confirm {code}"
+  resplit_needs_confirm = "A confirmation is necessary: ​​relaunch with --confirm followed by the “propose” code."
+  resplit_applied = "Chapter {parent}: {added, plural, one {# re-cut chapter covered} other {# re-cut chapters covered}}; nothing is removed."
+  resplit_nothing = "Chapter {parent}: already covered, nothing changes."
+  help_edition_merge_contributor_keep = "The remaining contributor."
+  help_edition_merge_contributor_drop = "The contributor merged into the first."
+  merge_header = "Merge of the {drop} Edition into {keep}: {units} units, {volumes} volumes, {bindings} bindings."
+  merge_age = "Age: {keep} and {drop}, the guarded edition takes the strictest: {merged}."
+  merge_unrated = "The kept edition returns to “classification”: one of the two was not classified."
+  merge_blocker = "Blocked: {reason}."
+  merge_tombstoned_units = "{count} units would take the place of a deleted unit: fusion blocked, nothing is deleted."
+  merge_tombstoned_ids = "{count} identifiers of the Work are under tombstone: merge blocked, nothing is deleted."
+  merge_fingerprint = "Plan fingerprint: {fingerprint} (apply with --apply)."
+  merge_applied = "Edition {drop} merged into {keep}."
+  merge_plan_stale = "The plan is no longer that of the data: relaunch without --apply, reread it, then confirm."
+  merge_not_mergeable = "This plan cannot be implemented."
+  merge_proposals_none = "No merge of Editions is to be proposed."
+  merge_proposed = "Proposed merge of {drop} into {keep} (never applied without confirmation)."
+  attach_none = "No connection by external identifier."
+  attach_line = "{attach}: edition {edition} → work {work} (from {origin}), {state}"
+  attach_detached = "Separated: edition {edition} returned to work {work}."
+  attach_to_rate = "It waits for a classification (“To be classified”) before entering a family shelf."
+  attach_kept = "Field modified since attachment, left as is: {field}"
+  attach_refile = "Removed by reattachment, admitted again: Edition {edition} in shelf {shelf}"
+  attach_pending_id = "Identifier provided, not recorded: {provider} {value}"
+  attach_confirm_with = "To attach, run again: shelfhold edition attach-confirm {attach} --confirm {token}"
+  attach_confirmed = "Related: edition {edition} belongs to work {work}."
+  attach_withdraw_next = "Apply the withdrawal plan with “shelfhold shelf withdraw”."
+  attach_declined = "Attachment {attach} refused."
+  help_lang = "BCP 47 label (e.g. fr, ja, pt-BR)."
+  help_edition_set_series_name = "Sets the series name exported from an edition whose name is already taken from the library."
+  help_series_name = "The name of the series in the server library (distinct from those that exist)."
+  help_tombstone = "Tombstones."
+  help_accept_lost_keyring = "Accept the loss of the keychain (reserved action)."
+  help_set_aside_journal = "Sets aside, under a time-stamped name, an illegible or truncated tombstone log (nothing is deleted) then rewrites it from the base (reserved action)."
+  help_aside_root = "Root identifier (default: all those whose log is unreadable or truncated)."
+  help_tombstone_rekey = "After a key leak: marks the given keys as compromised then rewrites the database and tombstone logs under the active key (action reserved; do \"shelfhold secrets rotate\" first)."
+  help_rekey_kid = "Identifier of the compromised key (repeatable); never the active key."
+  help_tombstone_flush = "Writes the tombstone lines that a root still owes to its log."
+  help_confirm_phrase = "The confirmation sentence, identically."
+  help_target_recheck = "Double-checks a destination: writing rights, routes, exposure."
+  help_target_reconnect = "Unpause a destination (rights restored, Kavita reinstalled)."
+  help_target_rotate_key = "Creates a new named key (reserved action)."
+  help_source_set_secret = "Registers a new source secret (reserved action)."
+  help_source_recheck = "Double-check the source and resume tracking."
+  help_source_reconnect = "Resumes monitoring after reinstalling the source: the new installation becomes the reference."
+  help_intents = "File intents left open after an interruption."
+  help_intents_list = "List open intentions (operation, state, paths)."
+  help_intents_resolve = "Sets an open intention: replays or completes the operation if the disk corresponds exactly to a known step, otherwise leaves it open (reserved action)."
+  help_intent_id = "Intent identifier (see `intents list`)."
+  help_intents_abandon = "Give up the intention without touching the disk: its paths are no longer protected ( --confirm request)."
+  help_intents_confirm = "With --abandon: the identifier of the intention, entered again."
+  intents_none = "No overt intention."
+  help_revisions = "File saved revisions without overwriting files."
+  help_revisions_list = "Lists pending revisions, estimated impact on KOReader, and batch token."
+  help_revisions_apply = "Pushes through the Kavita API only metadata revisions; with --confirm, requests rewriting of the others (reserved action)."
+  help_revisions_confirm = "The batch token displayed by `revisions list`."
+  help_revisions_include_read = "Includes Units already read (their KOReader position would start from the beginning)."
+  help_revisions_force = "Accepts the quarantined revision named by this ID (separate reserved action, one revision at a time, repeatable)."
+  revision_line = "{id} unit {unit} revision {revision} {nature} {flags}"
+  revision_suspect_mark = "[suspicious: {reason}]"
+  revision_flag_sep = " "
+  revision_read_mark = "[already read: KOReader position would start from the beginning]"
+  revisions_none = "No pending reviews."
+  revisions_impact = "KOReader positions that would be reset: {count}."
+  revisions_token = "To rewrite this batch: shelfhold revisions apply --confirm {token}"
+  revisions_needs_confirm = "Nothing has been rewritten: confirm the batch with --confirm {token}."
+  revisions_applied = "Metadata pushed by the API: {api}; rewrites requested: {requested}; ignored (already read): {read}; ignored (suspicious): {suspect}."
+  intent_line = "{id} {op} {state} {dst} (from {created}){stale}"
+  intent_stale_mark = "[from a save: never replayed]"
+  intent_resolved = "Intent {id}: {outcome}."
+  intent_needs_confirm = "Renouncing an intent requires --confirm with its identifier."
+  intent_still_open = "Intent {id}: always open ({code}: {detail}). Nothing was touched. To give up without touching the disk: shelfhold intents resolve {id} --abandon --confirm {id}"
+  help_relink = "Connects the new connection of a moved series to a work that already exists."
+  help_relink_work = "Work identifier."
+  help_relink_source_key = "Key to the source under which Suwayomi now follows the series."
+  help_relink_remote_id = "Identifier of the series at this source."
+  help_relink_replaces = "Identifier of the old connection, removed in favor of the new one."
+  help_relink_lang = "Language of the edition to create; without it, the edition of the old connection."
+  relinked = "Bound series: edition {edition}, binding {binding}."
+  relink_missing = "{count, plural, one {# missing number} other {# missing numbers}}, that the next monitoring cycle will require: {numbers}."
+  relink_nothing_missing = "Nothing is missing: no chapter will be re-downloaded."
+  relink_to_rate = "The {edition} Edition is new for a classified Work: it waits in “To classify” and enters no shelf under 18 until an admin classifies it."
+  help_backfill = "Catch up on chapters under the watermark (holes) or the entire history of a tracked edition."
+  help_backfill_edition = "Identifier of the edition followed."
+  help_backfill_gaps = "Fill in the missing numbers below the watermark."
+  help_backfill_all = "Bring back all the history."
+  help_backfill_dry_run = "Displays the estimate without launching anything."
+  help_backfill_confirm_units = "Beyond 100 chapters or 5 GiB: the number of chapters of the estimated view."
+  help_backfill_confirm_bytes = "Beyond 100 chapters or 5 GiB: the size in bytes of the estimated view."
+  backfill_estimate = "Catch-up “{mode}”: {units, plural, one {# chapter} other {# chapters}}, {size, plural, one {# byte} other {# bytes}} to download, {free, plural, one {# free byte} other {# free bytes}}."
+  backfill_started = "Catch-up launched: monitoring will request these chapters in its ceilings per cycle."
+  backfill_needs_confirmation = "This estimate exceeds 100 chapters or 5 GiB. To confirm it: shelfhold backfill --{mode} {edition} --confirm-units {units} --confirm-bytes {size}"
+  help_import = "The import file: your own CBZ, EPUB and PDF."
+  help_import_scan = "Examine the import file and put away what is ready; a rejected file remains in place with its message."
+  help_import_dry_run = "Shows what the file contains and what would be taken, without putting anything away or removing it."
+  help_import_purchase = "Also takes the “purchases” subfolder as a declared purchase: not rewritten, watermarked. The rest of the file remains unreliable."
+  import_ready = "Ready to be stored: {path}"
+  import_waiting = "Waiting: {path} ({message})"
+  import_refused = "Refused and left in place: {path}: {message}"
+  import_stored = "Row: {path} ({kind}){removed}"
+  import_removed = ", removed from the file"
+  import_kept = ", left in the folder: {message}"
+  import_watermark = "; tattooed flag placed ({origin})"
+  help_import_tree = "Imports an existing Suwayomi download tree (CBZ or image folders) without re-downloading anything; the tree is never modified."
+  help_import_tree_path = "Absolute path of the tree (the folder that contains “manga”)."
+  import_tree_skipped = "Ignored: {path} ({message})"
+  import_tree_stored = "Row: {path} ({kind}), the tree is left in place"
+  import_tree_summary = "{stored, plural, one {# tidy} other {# stored}}, {skipped, plural, one {# ignored} other {# ignored}}, {refused, plural, one {# denied} other {# refused}}, {waiting} on hold."
+  import_summary = "{stored, plural, one {# tidy} other {# stored}}, {refused, plural, one {# denied} other {# refused}}, {waiting} on hold."
+  backfill_choose_mode = "Choose --gaps or --all."
+  backfill_confirm_pair = "--confirm-units and --confirm-bytes go together."
+  help_follow_series = "Follows a series of the service connected from Shelfhold: a single entry in its library, category “Shelfhold”, without automatic download."
+  help_unfollow_series = "No longer follows a series: it remains in the connected service, except with --remove-upstream and --confirm."
+  help_follow_source_key = "Key to the source of the series, as the service gives it (for example suwayomi:7001)."
+  help_follow_remote_id = "Identifier of the series at the source (its relative address)."
+  help_unfollow_remove_upstream = "Also removes the series from the connected service's library (no files are deleted)."
+  help_gap_ack_number = "With “gap-ack”: the entire number which does not exist (the first argument is then “gap-ack”, the second the identifier of the edition)."
+  help_gap_ack_track = "With “gap-ack”: the number track (main by default)."
+  help_gap_ack_segment = "With “gap-ack”: the numbering segment (empty: the main one)."
+  help_gap_ack_undo = "With “gap-ack”: resumes acknowledgment, the gap will be signaled again."
+  gap_ack_done = "Acknowledged hole: this number does not exist, it is no longer reported."
+  gap_ack_already = "Hole already cleared: nothing has changed."
+  gap_ack_undone = "Acknowledgment resumed: the hole will be signaled again."
+  gap_ack_nothing_to_undo = "This number was not acknowledged: nothing has changed."
+  gap_ack_needs_number = "Specify the number: shelfhold follow gap-ack <edit> <number>."
+  follow_extra_argument = "A number only makes sense with “follow gap-ack”."
+  follow_needs_remote_id = "Specify the series ID: shelfhold follow <source> <series>."
+  help_export_format = "With “export”: the output format, opml or csv (opml by default)."
+  follow_check_recent = "Source interviewed less than an hour ago: request ignored, nothing was provided."
+  follow_check_always_on = "“Always active” mode: no source is queried by Shelfhold, monitoring will only read back what the service knows."
+  follow_check_queued = "Verification requested: the series will be watched on the next pass, at the pace permitted by its source."
+  help_unfollow_confirm = "Confirms removal of the library from the connected service."
+  help_source_search = "Search for a series or book in a source (read only)."
+  help_source_filters = "Lists the search filters that the source declares."
+  help_source_acquire = "Request a book from a source: a file, stored in the library."
+  help_acquire_url = "Ask what a pasted address describes: the first active source that recognizes it provides it."
+  help_search_query = "Words searched (empty: everything the source lists)."
+  help_search_filter = "Key=value filter, repeatable (see “source filters”)."
+  help_search_cursor = "Token of the next page, given by the previous search."
+  help_acquire_unit = "Identifier of the desired element, when the source offers several."
+  search_item = "{source_key} {remote_id} {title}"
+  search_next = "Next page: --cursor {cursor}"
+  search_nothing = "No results."
+  filters_item = "{name} ({kind}) {label}"
+  filters_none = "This source does not declare any filters."
+  acquire_queued = "Request recorded: the book will be stored as soon as it is downloaded (task {job})."
+  acquire_stored = "This book is already stored: nothing to download."
+  follow_done = "Followed series: an entry in the service library."
+  follow_already = "Series already followed: nothing has been added."
+  follow_in_progress = "Another follow-up of this series is in progress: nothing has been sent."
+  unfollow_done = "Series not followed: it remains in the connected service."
+  unfollow_removed = "Series not followed and removed from the library of the connected service."
+  unfollow_needs_confirmation = "Removing the series from the connected service library requires confirmation. To confirm it: shelfhold unfollow --remove-upstream --confirm {source_key} {remote_id}"
+  help_normalize = "Versioned normalizers: explicit migration of identity keys (ENF-OPS-021)."
+  help_normalize_migrate = "Notices the migration of a normalizer to its current version (merges, lines blocked by a tombstone), or applies it with --confirm (reserved action)."
+  help_normalizer = "Name of the normalizer to migrate."
+  help_normalize_confirm = "Preview Footprint: Applies exactly what was shown, and nothing else."
+  normalize_header = "Normalizer {target}: {migrate, plural, one {# line} other {# lines}} to migrate, {merge} to merge (human decision), {blocked, plural, one {# blocked} other {# blocked}} by a tombstone, {unresolved, plural, one {# refused} other {# refused}}."
+  normalize_up_to_date = "Normalizer {target}: all lines are already at this version, nothing to migrate."
+  normalize_row = "{outcome}: {id} ({old} -> {new}) {reason}"
+  normalize_collision = "Same place targeted by: {ids}"
+  normalize_fingerprint = "Preview fingerprint: {fingerprint}"
+  normalize_blocked_hint = "A line blocked by a tombstone remains as is; “shelfhold tombstone lift” or a purge decides."
+  normalize_applied = "{applied, plural, one {# migrated line} other {# migrated lines}} towards {target}. The others are unchanged."
+  normalize_preview_stale = "This is no longer the preview you saw: rerun without --confirm, reread, then confirm with the new fingerprint. Nothing has been changed."
+
+[local_cli]
+  maintenance_active = "maintenance mode is active: only reading passes. Run “shelfhold maintenance off” to resume."
+  restored_behind = "restored_behind: run “shelfhold reconcile --adopt-after-restore”; nothing else writes as long as the database is older than the files."
+  param_invalid = "Invalid “{name}” parameter: {expected} expected."
+  unknown_method = "Unknown method: {method}."
+  not_allowed = "Action denied to this channel."
+
+[profiles]
+  created = "Profile “{username}” created."
+  updated = "Profile “{username}” updated."
+  removed = "Profile “{username}” deleted."
+  policy_set = "“{username}” policy for source {source}: {policy}."
+  none = "No profile."
+  line = "{username} {role} max age: {ceiling} class: {rate}"
+  unknown = "Unknown profile: {username}."
+  not_allowed = "This person does not have the right to manage profiles."
+  not_found = "Unknown profile."
+  invalid_role = "Unknown role: administrator, member or child."
+  invalid_policy = "Unknown policy: add_directly, request or forbidden."
+  child_requires_max_age = "A child always has a maximum age (0 to 99): add --max-age."
+  max_age_only_for_child = "Only one child has a maximum age."
+  child_cannot_rate = "A child never has the right to classify."
+  child_source_not_family = "A child can only add or request on a source marked “family”."
+  ceiling_above_creator = "The maximum age cannot exceed that of the person giving it."
+  username_taken = "This name is already taken."
+  too_many_admins = "Two administrators at most."
+  last_admin = "This is the last administrator: the instance cannot do without them."
+  cannot_remove_self = "A profile does not delete itself."
+  cannot_change_own_role = "A profile does not change its own role."
+  changed_meanwhile = "The profile has changed in the meantime: reread it and then start again."
+  invalid_visibility = "Visibility must be “private” or “household”."
+  not_a_child = "Only a child profile has a Kavita account to audit."
+  invalid_kavita_username = "The Kavita account name must fit on one line (1 to 128 characters)."
+  kavita_username_taken = "This Kavita account is already associated with another profile."
+  kavita_mapped = "The profile “{username}” is associated with a Kavita account."
+  kavita_cleared = "The profile “{username}” is no longer associated with a Kavita account."
+  child_visibility_household = "A child profile remains visible to parents: only “household” is possible."
+  source_policy_format = "expected: SOURCE=add_directly|request|forbidden"
+
+[admin]
+  passkeys_unknown_reference = "No pending records have the reference {through}: reread “shelfhold status”."
+  passkeys_acknowledged = "{count, plural, one {# acknowledged passkey record} other {# acknowledged passkey records}}."
+  created = "Administrator account “{username}” created."
+  exists = "An administrator already exists: a single local account in M1a. To change your password: “shelfhold admin reset-password”."
+  unknown_user = "Unknown account: {username}."
+  password_rejected = "Password refused: {reason}."
+  password_too_short = "at least 10 characters"
+  password_too_long = "1024 characters at most"
+  password_unreadable = "Unable to read password: {detail}."
+  invalid_username = "Invalid identifier (1 to 128 characters)."
+  password_reset = "Password changed; {count, plural, one {# session closed} other {# closed sessions}}."
+  sessions_revoked = "{count, plural, one {# session closed} other {# closed sessions}}."
+  key_created = "Key created (prefix {prefix}). It will never be displayed again:"
+  key_expires = "Expires on {date}."
+  key_subject_required = "A key with the request scope acts for an account: name it with --subject."
+  key_scope_refused = "Scope or account refused: the admin scope belongs to an administrator, for themselves."
+  key_never_expires = "Without expiration (recommended: --expires-days 90)."
+  key_rotated = "Key {old} replaced (new prefix {prefix}) and revoked. The new key will never be displayed again:"
+  key_rotation_failed = "Rotation failed; the old key is unchanged."
+  key_revoked = "Key {prefix} revoked."
+  key_unknown = "No active key with prefix {prefix}."
+  no_keys = "No API key."
+  key_line = "{prefix} {name} {scopes} {state}"
+  database_missing = "Database missing or not up to date: first run “shelfhold migrate”."
+  socket_refused = "The running server refused this command: {detail}."
+  socket_untrusted = "Unreliable local socket, nothing was sent: {detail}."
+  instance_without_socket = "A server holds the /data lock but its local socket does not respond: only revocation (sessions, keys) is possible in this state. Stop the server for this command."
+  migration_running = "A migration is in progress: try again when it is finished."
+  lock_is_link = "The lock /data/.lock is a symbolic link: reject. {detail}"
+  socket_failed = "Failed to connect to the server via its local socket: {detail}."
+
+[export]
+  apply_needs_the_instance = "Applying a plan goes through the running instance (API or local socket): use --dry-run here."
+  destination_required = "--destination is required (or “shelfhold export item show <id>”)."
+  item_header = "Support {id} ({kind}) of Edition {edition}"
+  item_volume = "Volume: {label}"
+  item_state = " {state}; {units, plural, one {# ported chapter} other {# ported chapters}}"
+  item_closed = "closed (frozen: the file no longer changes)"
+  item_open = "in progress"
+  item_kept = "File kept: {path}"
+  item_kept_problem = "File kept: not found or refused ({code})"
+  plan_header = "Plan {plan}: {ops, plural, one {# operation} other {# operations}}, {blocked, plural, one {# blocked} other {# blocked}}."
+  op_line = "{kind} {path}"
+  blocked_line = "Blocked ({code}): chapter {unit}"
+  warning_line = "Warning ({code}): chapter {unit}"
+
+[exportall]
+  export_help = "Exports the entire library in open shelfhold-export/1 format (versioned JSON and file tree), without tombstone or secrets. Reserved for admin, logged."
+  folder_help = "Destination folder, new or empty (never /data, /store or library), named by absolute path."
+  import_help = "Imports a shelfhold-export/1 into a new instance: refused if the instance already contains something. Reserved for admin, logged."
+  import_folder_help = "File produced by “shelfhold export-all”."
+  exported = "Export written in {folder}: {rows, plural, one {# line} other {# lines}} In {tables, plural, one {# table} other {# tables}}, {files, plural, one {# file} other {# files}}."
+  withheld = "Left out of the export, because a tombstone covers it: {units, plural, one {# chapter} other {# chapters}}, {works, plural, one {# Work} other {# Works}}."
+  files_warning = "Attention: {missing, plural, one {# file known to registry not found} other {# files known to registry not found}} on the disk, {altered, plural, one {# copy that no longer matches} other {# copies that no longer match}} to the registry fingerprint (see manifest.json)."
+  imported = "Import completed: {rows, plural, one {# line} other {# lines}} In {tables, plural, one {# table} other {# tables}}, {files, plural, one {# file} other {# files}}."
+  next_steps = "Next: “shelfhold admin reset-password” for each profile (no password is exported), “shelfhold search rebuild” for the search index, then “shelfhold reconcile” for the instance to list the restored files."
+
+[diagnostic]
+  out_dir_missing = "The folder for the requested file does not exist."
+  out_exists = "The requested file already exists: a diagnostic package never overwrites anything."
+  out_in_content_area = "A diagnostic package is not written in /store, nor in the library, nor under a physical root: choose another folder (for example /data)."
+  input_refused = "Log no. {index} refused ({reason}): a package does not accept any content, archive, source mirror file, /store or library file."
+  leak_refused = "Unwritten packet: a value from category {category} would be output in {member}. Nothing was written."
+  leak_exclude = "A title or an instance name can be written as a code word (“Error”, “Status”): restart with {options} to get a packet without these sections. If the refusal persists, report this defect (without the package)."
+  leak_report = "Report this defect (without the package)."
+  written = "Diagnostic package written: {members} files, {kept} log lines kept, {dropped} discarded."
+
+[trust_card]
+  official = "Official"
+  community = "Community"
+  unknown = "Unknown"
+
+[search]
+  rebuilt = "Search index rebuilt: {count, plural, one {# Work} other {# Works}}, mode {mode}."
+
+[health]
+  original_lost_action = "The original is lost, the derivative is kept: “shelfhold content reneutralize” starts from the derivative."
+  withdrawal_action = "Files no longer have their place on a family shelf: “shelfhold shelf withdraw” (reserved action) removes them, nothing is done alone."
+  kavita_audit_action = "A Kavita account sees more than the shelf allows: fix it in Kavita, then run the check again."
+  jurisdiction_action = "Jurisdiction is not confirmed: “shelfhold config set instance.jurisdiction <country>”."
+  backup_not_configured = "No backup is configured: “shelfhold config set” (folder and passphrase)."
+  backup_incomplete = "The backup is half configured: “shelfhold config set” for folder and passphrase."
+  backup_passphrase_colocated = "The passphrase is stored in /data: store it elsewhere, then “shelfhold backup run”."
+  backup_same_device = "The destination is on the /data disk: “shelfhold config set” to another disk."
+  backup_stale = "The last backup is too old: “shelfhold backup run”."
+
+[stats]
+  invalid_since = "Invalid window: {value} (expected: a number of days, for example 30d)."
+  header = "Indicators for the last {days} days (calculated on this instance, no outgoing requests)."
+  waiting_states = "Human interventions, waiting states: {count}"
+  replays = "Human interventions, replays “To be verified”: {count}"
+  units_exported = "Exported units: {count}"
+  arrivals_pending = "Pending arrivals in Kavita: {count}"
+  median_delay = "Median delay between detection and visibility in Kavita (seconds): {value}"
+  guards = "Guards triggered: sentry {sentinel}, other writer {writer}"
+  requests_profile = "Requests for “{username}”: {requested}, delivered: {delivered} ({share}%)"
+
+[content]
+  preview_stale = "This is not the plan that was shown: relaunch the preview (no files were affected)."
+  up_to_date = "All derivatives are already produced by {target}: nothing to regenerate."
+  header = "{count, plural, one {# derivative} other {# derivatives}} to regenerate with {target}."
+  row = "Unit {unit} (produced by {old}): leaves from {source} ({reason})."
+  fingerprint = "Plan fingerprint: {fingerprint} (restart with --confirm)."
+  applied = "{regenerated, plural, one {# regenerated derivative} other {# regenerated derivatives}}, {blocked, plural, one {# blocked} other {# blocked}}, {failed} in failure; the old file is kept where the regeneration failed."
+
+[meta]
+  rebuilt = "{written, plural, one {# unit.json file} other {# unit.json files}}, {works, plural, one {# work.json} other {# work.json}} And {mirror, plural, one {# provenance mirror file} other {# provenance mirror files}} rewritten from the ground up."
+  drift = "unit.json diverges from base: {unit}"
+  work_drift = "work.json diverges from base: {work}"
+  mirror_drift = "The source mirror diverges from the base: {name}"
+  newer_format = "unit.json of a newer format, left as is (read-only): {unit}"
+  work_newer_format = "work.json of a newer format, left as is (read only): {work}"
+  mirror_skipped = "Mirror file left as is (unreadable, link or newer format): {name}"
+  run_rebuild = "Run “shelfhold meta rebuild” to regenerate them."
+  enriched = "Edition {edition}: {count, plural, one {# field proposed by the supplier and recorded} other {# fields offered by the supplier and recorded}} with their provenance."
+  enrich_field = "- {field}"
+  enrich_age_x = "X"
+  enrich_kept = "Retained value (locked or entered manually): {field}"
+  enrich_age_suggested = "Age suggested by the supplier, never applied: {age} (to be confirmed with “shelfhold rate”)."
+  enrich_cover_rejected = "Coverage refused by the decoder ({code}): it is not recorded."
+  enrich_attribution = "Source: {text} {url}"
+  enrich_not_found = "OpenLibrary does not know this book: nothing is recorded."
+  enrich_provider_down = "OpenLibrary is unavailable ({reason}): the administrator is notified, nothing is recorded. Try again later."
+  enrich_robots_disallowed = "OpenLibrary's robots.txt refuses this reading: nothing is requested."
+  enrich_quota = "OpenLibrary's daily limit has been reached: nothing is requested until tomorrow."
+  locked = "Edition {edition}: field {field} ({lang}, on {on}) is locked, the value entered is yours."
+  locked_kept = "Edition {edition}: field {field} ({lang}, on {on}) is locked, the recorded value is kept with its origin."
+  unlocked = "Edition {edition}: the lock of field {field} ({lang}, on {on}) is lifted, the value remains."
+
+[errors]
+
+  [errors."backup.failed"]
+    title = "The backup failed."
+    action = "Verify that the backup destination is present and writable, then try the backup again."
+    cause = "The backup destination is missing, full, or refuses writing."
+
+  [errors."backup.stale"]
+    title = "The last backup is too old."
+    action = "Check the backup destination and schedule, then initiate a backup."
+    cause = "No backups have succeeded for longer than the expected frequency."
+
+  [errors.bad_request]
+    title = "Incorrect query."
+    action = "Correct the query and try again."
+    cause = "The query is malformed or incomplete."
+
+  [errors."content.untrusted_entry"]
+    title = "A received file contains an unauthorized entry: it has not been stored."
+    action = "The chapter is discarded and will not be requested again; only images (JPEG, PNG, WebP, GIF, AVIF, JPEG XL) and ComicInfo.xml are allowed. Remove it from the source or wait for vector support."
+    cause = "The archive received contains a file which is neither an accepted image nor a ComicInfo.xml: Shelfhold does not store anything that it cannot read without risk."
+
+  [errors.credential_not_allowed]
+    title = "This action is reserved for one session."
+    action = "Perform the action from the interface after connection; API keys and device tokens are denied."
+    cause = "This action is reserved for a session opened by a person, not for a key or a token."
+
+  [errors.csrf_failed]
+    title = "The request was not recognized as coming from this page."
+    action = "Reload the page then start again; a script uses an API key rather than a session."
+    cause = "The request does not carry proof of origin of the page: expired session, page opened from another site or missing token."
+
+  [errors."auth.passkey_registered"]
+    title = "A passkey has just been registered on an account."
+    action = "Check in `shelfhold status` that it is expected (account, name), then acknowledge with `shelfhold admin acknowledge-passkeys --through <reference>` from the host. An unknown passkey is revoked in the account passkeys page, or by `shelfhold admin reset-password`."
+    cause = "A passkey was added to an account and nobody acknowledged it yet: that is the signal of a possible takeover."
+
+  [errors."disk.low"]
+    title = "Disk space almost exhausted."
+    action = "Free up space (empty the trash, delete unnecessary copies); the lines resume by themselves."
+    cause = "The volume carrying the data falls below the expected free space threshold."
+
+  [errors."export.destination_occupied"]
+    title = "A file already occupies the intended location."
+    action = "Nothing is overwritten: move or reattach this file, then recalculate the preview."
+    cause = "A file that is not Shelfhold's is already in the export location: Shelfhold never overwrites a file that it did not write."
+
+  [errors."export.no_remote_library"]
+    title = "No remote libraries are linked to this destination."
+    action = "Link the destination to a server library, then recalculate the preview."
+    cause = "The Kavita destination is not linked to any library on the server: Shelfhold does not know where to store the export."
+
+  [errors."export.series_name_collision"]
+    title = "Two series would have the same name in this library."
+    action = "Set a separate exported series name for one of the two Editions, then recalculate the preview."
+    cause = "The names of two series give the same name when normalized for Kavita (capitals, accents, punctuation)."
+
+  [errors."pairing.switchover_unconfirmed"]
+    title = "This shelf is powered directly by Suwayomi: tracking awaits the switchover procedure."
+    action = "Follow docs/admin/migration-from-scripts.md (adopt, pair, repatriate, remove direct mounts, disable scripts), then confirm each step."
+    cause = "The connected service still writes directly to the folders of this shelf: as long as the switch is not confirmed, two programs would share the files."
+
+  [errors."pairing.switchover_stale"]
+    title = "The switchover report has changed since you read it."
+    action = "Reread the detection report, then confirm the steps with its new fingerprint."
+    cause = "The detection report has been recalculated since your reading: the given fingerprint no longer corresponds to the current state."
+
+  [errors."pairing.not_writable"]
+    title = "Shelfhold cannot write to this series' folder: the pairing is refused."
+    action = "Apply the displayed fix command (ACL, group_add, or umask), then retry the pairing."
+    cause = "The account that runs Shelfhold does not have the right to write to the series folder."
+
+  [errors."pairing.already_paired"]
+    title = "This series is already paired with a follow-up Suwayomi."
+    action = "A second pairing would create a duplicate: detach the first one first if you want to replace it."
+    cause = "A monitoring of the connected service is already linked to this series; adding a second one would cause each chapter to download twice."
+
+  [errors."root.blocked"]
+    title = "A physical root is absent or does not carry the expected sentinel: nothing is written there."
+    action = "Verify that the volume is mounted, then run \"shelfhold status\" to see the correct root and output."
+    cause = "The mounted disk is not the one that Shelfhold recorded: volume not mounted, incorrectly mounted or replaced, sentinel file missing."
+
+  [errors."root.unauthenticated"]
+    title = "The sentinel of this root claims an identity that the keychain does not confirm: nothing is taken from the file."
+    action = "Import the shelfhold secrets import, then rerun the command; the root has not been modified."
+    cause = "The root sentinel file designates an identity that the keyring for that instance does not recognize, most often after a restore without the keyring."
+
+  [errors."ops.audit_running"]
+    title = "An audit of Kavita accounts is already underway: nothing has been restarted."
+    action = "Wait for the current audit to complete, then reread the result with `GET /api/v1/audit/kavita-accounts`."
+    cause = "Only one execution at a time: Kavita is read, not requested in parallel."
+
+  [errors."root.busy"]
+    title = "An export or a cycle uses this root: the command has not changed anything."
+    action = "Reissue the command when the current export or cycle is finished."
+    cause = "An export or a work cycle has this root: two writes at the same time could risk corrupting it."
+
+  [errors."rebaseline.refused"]
+    title = "The update of file identities is refused: nothing has been modified."
+    action = "If a fingerprint differs, a file has been modified and not moved: check it; If the mirror is missing, restore the .shelfhold/manifest folder from the original copy."
+    cause = "The fingerprint of a file no longer corresponds to that which is recorded, or the mirror of origin which allows it to be recognized is missing."
+
+  [errors."purge.collateral"]
+    title = "A file of this Unit also carries other Units: deleting it would erase them."
+    action = "Delete all Units from the file together, or keep it."
+    cause = "The same file serves several Units: deleting it for one would delete it for the others."
+
+  [errors."purge.busy"]
+    title = "A file or Work to be deleted is held by another work: nothing has been deleted."
+    action = "Reissue the command in a moment, when the current work (copy, import) is finished."
+    cause = "A copy, import or other work holds the file or Work to be erased; Shelfhold does not erase a work in progress underfoot."
+
+  [errors."purge.wal_busy"]
+    title = "The deletion is done, but the server still keeps the database log: it can keep a title until its next dump."
+    action = "Run “shelfhold purge --checkpoint” when the server is inactive (or stop it): it only flushes the log again. It is also every night and at startup."
+    cause = "The server keeps the database log open: a deleted title can remain readable until the next emptying."
+
+  [errors."pairing.batch_stale"]
+    title = "The confirmed batch of matches is no longer the one that was proposed."
+    action = "Run \"shelfhold adopt --pair-auto\" again, reread the report, then confirm with the new fingerprint."
+    cause = "The series or their followings changed between the proposal and your confirmation: the fingerprint of the batch is no longer the right one."
+
+  [errors."repatriate.dry_run_required"]
+    title = "Repatriation requires a prior dry run."
+    action = "Run \"shelfhold adopt --repatriate --dry-run\", reread the report, then confirm with its fingerprint."
+    cause = "Repatriation moves files: Shelfhold first requires a dry run, the report of which you have read."
+
+  [errors."repatriate.stale"]
+    title = "The files have changed since the repatriation dry-run."
+    action = "Run the dry-run again, re-read the report, then confirm with the new print. Nothing was copied."
+    cause = "Files have been added, removed or modified since the dry run: the confirmed fingerprint describes a state that no longer exists."
+
+  [errors."repatriate.blocked"]
+    title = "An adopted file cannot be repatriated as is: it is missing from the source, has changed since adoption, or another file already occupies its place."
+    action = "The report lists each affected file. No files have been copied, moved or overwritten; correct, then restart the dry-run."
+    cause = "At least one adopted file has disappeared from the source, has changed since its adoption or has already found its place taken."
+
+  [errors."repatriate.no_space"]
+    title = "There is not enough free space to repatriate the files."
+    action = "Free up space under /library (the dry-run gives the required space), then run the dry-run again."
+    cause = "The destination volume does not have enough free space to accommodate all files."
+
+  [errors."export.source_missing"]
+    title = "The received archive of this chapter could not be found."
+    action = "Recalculate the preview; If the file is missing, try downloading the chapter again."
+    cause = "The chapter file is no longer where Shelfhold had stored it: deleted by hand or volume replaced."
+
+  [errors."export.transport_unsupported"]
+    title = "This destination type is not yet supported."
+    action = "Use a tree destination; other transports arrive later."
+    cause = "This version of Shelfhold only writes to a folder tree; other delivery methods are not yet written."
+
+  [errors."export.watermarked_external_egress"]
+    title = "A watermarked file never leaves for a destination outside the home."
+    action = "Keep this file on a household destination, or remove it from the shelf linked to this destination."
+    cause = "The file has a tattoo that identifies the household: sending it outside the household would cause it to be traced back to you."
+
+  [errors."fetch.dns_failed"]
+    title = "The domain name could not be resolved."
+    action = "Check the entered address and the DNS of the server."
+    cause = "The name server has no response for this name: typo, server DNS down, or non-existent domain."
+
+  [errors."fetch.error"]
+    title = "The request to an external service failed."
+    action = "Try again later; If the problem persists, check the logs."
+    cause = "The remote service responded with an error or the connection was cut midway."
+
+  [errors."fetch.invalid_url"]
+    title = "The address is invalid."
+    action = "Correct the address: http or https scheme, without identifiers in the URL."
+    cause = "The address is not a full http or https web address, or it contains identifiers."
+
+  [errors."fetch.robots_disallowed"]
+    title = "The site asks robots not to read this page."
+    action = "Shelfhold respects the robots.txt file of the source; open the page from a browser."
+    cause = "The site's robots.txt file prohibits robots from reading this page, and Shelfhold respects it."
+
+  [errors."fetch.robots_unavailable"]
+    title = "The site's robots.txt file cannot be read at this time."
+    action = "Nothing is asked of the site until it is readable; the operation will be resumed later."
+    cause = "The site did not respond clearly to the request for its robots.txt file: out of caution, Shelfhold is not asking it anything."
+
+  [errors."fetch.quota_exceeded"]
+    title = "Today's cap for this metadata provider has been reached."
+    action = "Nothing is sent by tomorrow; values ​​already received are retained."
+    cause = "The metadata provider limits the number of requests per day and Shelfhold has reached its cap."
+
+  [errors."fetch.user_agent_not_identifiable"]
+    title = "The agent of the request does not say who makes it; it is not sent."
+    action = "Configure a valid contact (SHELFHOLD_METADATA_CONTACT) or leave the default agent."
+    cause = "The contact setting, which allows the service to contact the operator, is empty or invalid: Shelfhold does not send an anonymous request."
+
+  [errors."fetch.timeout"]
+    title = "The external service took too long to respond."
+    action = "Try again later or verify that the service is running."
+    cause = "The remote service did not respond within the specified time limit: it is slow, overloaded, or stopped."
+
+  [errors."fetch.too_large"]
+    title = "The response exceeds the allowed size."
+    action = "Check that the address designates the expected content."
+    cause = "The response exceeds the maximum size that Shelfhold accepts to read for this type of request."
+
+  [errors."fetch.too_many_redirects"]
+    title = "Too many redirects."
+    action = "Use the final address of the service directly."
+    cause = "The service returns from address to address, endlessly or beyond the number of referrals allowed."
+
+  [errors."fetch.unreachable"]
+    title = "The external service cannot be reached."
+    action = "Verify that the service is running and reachable from Shelfhold."
+    cause = "No connection could be established: service stopped, firewall or network cut."
+
+  [errors."fetch.unsafe_redirect"]
+    title = "Redirect refused out of caution."
+    action = "Use the final address of the service directly."
+    cause = "The service referred to an address that would fall outside the authorized framework (another scheme, internal address or identifiers)."
+
+  [errors.forbidden]
+    title = "Action not authorized for this account."
+    action = "Ask an administrator to grant you the necessary permission."
+    cause = "Your profile does not have the right to perform this action."
+
+  [errors.idempotency_in_progress]
+    title = "A query with this key is already in progress."
+    action = "Wait and then resend the same request with the same key."
+    cause = "The first request with this key did not finish: replaying it now would risk doing the action twice."
+
+  [errors.idempotency_key_invalid]
+    title = "The idempotence key is invalid."
+    action = "Use a key of 1 to 255 printable ASCII characters, without spaces."
+    cause = "The idempotency key is empty, too long, or contains non-printing characters."
+
+  [errors.idempotency_key_reused]
+    title = "This idempotence key has already been used for another query."
+    action = "Generate a new key for each new query."
+    cause = "This key has already been used with different content: it can only designate one query."
+
+  [errors."instance.lease_conflict"]
+    title = "Another instance of Shelfhold writes to this data."
+    action = "Stop the other instance; only one instance should use these volumes."
+    cause = "Another Shelfhold process holds the write lease on these volumes: two instances writing together would corrupt the database."
+
+  [errors."instance.starting"]
+    title = "Shelfhold starts: a migration still holds the data."
+    action = "Wait: the instance resumes itself when the migration is finished."
+    cause = "The startup still applies a database migration: the writes wait until it is finished."
+
+  [errors."instance.restored_behind"]
+    title = "The database is behind on the files: read only."
+    action = "Run “shelfhold reconcile --adopt-after-restore” to reconcile the database and the files."
+    cause = "The database was restored from a backup older than the files on the disk."
+
+  [errors.internal_error]
+    title = "Internal Shelfhold error."
+    action = "Try again; If the error persists, note the request id and check the logs."
+    cause = "Shelfhold encountered an unexpected error."
+
+  [errors.remember_needs_confirmation]
+    title = "The hardened profile asks to confirm “remember me”."
+    action = "Uncheck “remember me” for a browser session, or confirm it explicitly (confirm_remember): the session will then last for the duration of the hardened profile."
+    cause = "The hardened profile refuses to keep a long session without you explicitly requesting it."
+
+  [errors.password_login_suspended]
+    title = "The password connection is suspended: a restoration may have brought back old passwords."
+    action = "On the host machine: “shelfhold admin reset-password” for each account, then “shelfhold restore acknowledge”."
+    cause = "A restore may have brought back old passwords: the password connection remains closed until they have been changed."
+
+  [errors.invalid_credentials]
+    title = "Incorrect username or password."
+    action = "Check the username and password, then try again."
+    cause = "The username or password does not correspond to any account; Shelfhold does not say which of the two is false."
+
+  [errors.invalid_cursor]
+    title = "The pagination cursor is invalid."
+    action = "Start from the first page, without a cursor."
+    cause = "The pagination cursor is no longer valid."
+
+  [errors."job.dead_lettered"]
+    title = "Tasks definitely failed."
+    action = "Open the Activity, view the failed tasks and then restart or abort them."
+    cause = "Tasks have exhausted retries without success and have been shelved."
+
+  [errors."metadata.provider_down"]
+    title = "The metadata provider is no longer responding."
+    action = "No immediate action: enrichment resumes when the supplier returns."
+    cause = "The metadata provider becomes unresponsive or repeatedly returns errors."
+
+  [errors.method_not_allowed]
+    title = "Method not allowed on this address."
+    action = "Use one of the methods given in the Allow header."
+    cause = "This address does not support this method."
+
+  [errors."mount.sentinel_missing"]
+    title = "A mounted disk is missing or different than expected."
+    action = "Mount the correct disk, then run “shelfhold target recheck”."
+    cause = "The expected sentinel file on a mounted disk was not found: disk unmounted, replaced or mounted in the wrong location."
+
+  [errors."export.name_misread_number"]
+    title = "Kavita would read another chapter number in this file name."
+    action = "Set an exported series name that doesn't look like a chapter marker, then run the preview again."
+    cause = "Kavita reads a number in the file name and would mistake it for the chapter number, putting it in the wrong place."
+
+  [errors."export.segment_policy_unconfirmed"]
+    title = "The naming of the segment numbered series is not yet confirmed."
+    action = "The unit remains in a numbering conflict until the night test against a real Kavita confirms the naming; do not change the naming_segment_policy_confirmed setting before."
+    cause = "The night test against a real Kavita has not yet confirmed how it reads numbered series in segments."
+
+  [errors."export.series_name_yields_volume"]
+    title = "Kavita would infer a volume from the name of this series."
+    action = "Set an exported series name without a volume or season marker (S2, T1, v3, Vol.3, 第2巻, 시즌2), then run the preview again."
+    cause = "The name of the series contains a motif that Kavita interprets as a volume or a season."
+
+  [errors.cause_default]
+    user = "The request could not be completed."
+    admin = "A dependency or configuration prevents the operation."
+
+  [errors.not_found]
+    title = "Resource not found."
+    action = "Verify the requested address or ID."
+    cause = "The requested item does not exist or you do not have the right to view it."
+
+  [errors."notify.failed"]
+    title = "Notifications could not be sent."
+    action = "Check the notification address in the settings, then send a test notification."
+    cause = "The notification address is invalid, or the courier does not respond or refuses delivery."
+
+  [errors."plan.stale"]
+    title = "The preview has changed since it was calculated."
+    action = "Recalculate the preview, verify it, and then apply it."
+    cause = "The state of the files or the database has changed since the preview was calculated: applying it would do something other than what you have read."
+
+  [errors.precondition_failed]
+    title = "The resource has changed since you read it."
+    action = "Reread the resource to get its current ETag, then start again."
+    cause = "The item has changed since you read it."
+
+  [errors.precondition_required]
+    title = "The If-Match header is required for this action."
+    action = "Reread the resource and send its ETag in If-Match."
+    cause = "The action modifies a shared resource: without the If-Match header, there is no proof that you have seen its latest version."
+
+  [errors.passkey_unavailable]
+    title = "Access keys are not available here."
+    action = "Set public_url to https:// (or use http://localhost), restart Shelfhold, then reopen the page."
+    cause = "Access keys require a public address in https (or localhost); Shelfhold's is not one of them."
+
+  [errors.passkey_refused]
+    title = "The passkey could not be saved."
+    action = "Start again from the passkeys page, with the device and gesture (fingerprint, face, code) requested."
+    cause = "The browser or device canceled the gesture, or the response did not match the request."
+
+  [errors.passkey_not_found]
+    title = "This passkey does not exist or is already revoked."
+    action = "Refresh the passkey list."
+    cause = "This passkey was already revoked, or the displayed list is older than the actual state."
+
+  [errors.last_login_factor]
+    title = "It’s your last means of connection."
+    action = "Register another passkey before revoking this one."
+    cause = "Revoking it would leave you without any means of logging in."
+
+  [errors.profile_conflict]
+    title = "This change of profile is in conflict with the state of the home."
+    action = "Read the reason given (name already taken, last administrator, two administrators at most, profile being modified), then start again."
+    cause = "The change violates a household rule: name already taken, last administrator, too many administrators or profile in use."
+
+  [errors.profile_not_found]
+    title = "This profile does not exist."
+    action = "Refresh the profile list."
+    cause = "The profile has been deleted, or the ID does not match any profile."
+
+  [errors.profile_refused]
+    title = "This profile does not follow household rules."
+    action = "A child always has a maximum age and never the right to classify; an adult has no maximum age; a child can only add or request from a “family” source."
+    cause = "The requested settings violate a profile rule: a child has a maximum age and does not classify, an adult has no maximum age."
+
+  [errors.user_state_refused]
+    title = "This value is not accepted."
+    action = "A sent date cannot exceed the server time by more than a few minutes; a title language is a code like \"ja\" or \"en-US\", eight at most, without \"und\" or \"mul\"."
+    cause = "The value sent is outside the accepted limits (date in the future, unknown language or invalid format)."
+
+  [errors.notification_prefs_refused]
+    title = "These notification settings are not supported."
+    action = "Choose “summary” or “immediate” mode, two quiet times in HH:MM format (or none), and a time zone like “Europe/Paris”."
+    cause = "The mode, quiet hours or time zone sent are outside the accepted values: unknown mode, incorrectly written time or non-existent zone."
+
+  [errors.reauth_required]
+    title = "Confirm your password to continue."
+    action = "Re-enter your password, then repeat the action."
+    cause = "Your last password entry is too old for this action."
+
+  [errors."reconcile.drift"]
+    title = "Drift between the database and the stored copies."
+    action = "Run “shelfhold reconcile --dry-run” and read the report; nothing is changed without your confirmation."
+    cause = "The reconciliation found a difference between what the database records and what the volumes hold."
+
+  [errors.request_too_large]
+    title = "The query is too large for an idempotence key."
+    action = "Reduce the request size or remove the Idempotency-Key header."
+    cause = "The request exceeds the accepted size."
+
+  [errors.resync_required]
+    title = "The sync token is too old."
+    action = "Reload the entire list then start from the new token."
+    cause = "The recovery token is too old to be replayed."
+
+  [errors.too_many_streams]
+    title = "Too many event streams open for this profile."
+    action = "Close a tab or app that's tracking events, and then try again."
+    cause = "The profile has reached the number of streams open at the same time that the instance allows."
+
+  [errors."secret.undecryptable"]
+    title = "A secret could not be deciphered."
+    action = "Restore the keyring from its export (\"shelfhold secrets import --passphrase-file <file> --in <file>\"), then restart Shelfhold."
+    cause = "The keyring for this instance does not contain the key that encrypted this secret, most often after a restore without the keyring."
+
+  [errors."series.stale"]
+    title = "Series are no longer updated."
+    action = "Check the status of the source, then start tracing again."
+    cause = "The source hasn't delivered any new chapters or answers for longer than expected."
+
+  [errors."series.awaiting_shelf"]
+    title = "Series from the Suwayomi library await an adult shelf to be stored."
+    action = "Create the shelf: shelfhold shelf create <name> --max-age 18+ --target <target> --subpath <folder>."
+    cause = "These series are rated for adults and no adult shelves exist to accommodate them."
+
+  [errors."series.removed_upstream"]
+    title = "The series has been removed from the source."
+    action = "Decide whether to keep it or remove it from the library."
+    cause = "The source no longer offers this series: it has been removed from its catalog."
+
+  [errors."series.tombstoned_upstream"]
+    title = "A purged series is still in the Suwayomi library: it is ignored."
+    action = "Manually remove it from the Suwayomi library."
+    cause = "You have purged this series from Shelfhold, but it is still in the connected service's library."
+
+  [errors."shelf.ceiling_invalid"]
+    title = "This age ceiling is not a step on the scale."
+    action = "Choose 0+, 10+, 12+, 13+, 16+, 18+, X, or no cap."
+    cause = "The value is not one of the age levels on the scale (0+, 10+, 12+, 13+, 16+, 18+, X)."
+
+  [errors."shelf.family_ceiling_too_high"]
+    title = "The “Family” shelf cannot exceed 13+."
+    action = "Choose 13+ or less for Family, or create another shelf for older content."
+    cause = "A family shelf is readable by children: its ceiling cannot exceed 13+."
+
+  [errors."shelf.rating_required"]
+    title = "This Edition is not classified: it cannot fit on a family shelf."
+    action = "Shelfhold rate: only an administrator approves content for children."
+    cause = "An Ageless Edition cannot be deemed suitable for children: only an administrator approves it."
+
+  [errors."shelf.above_ceiling"]
+    title = "The age of this edition exceeds the maximum shelf life."
+    action = "Choose a suitable shelf, or classify a Children's Edition at an age below the maximum."
+    cause = "The age of the Edition is greater than the ceiling of this shelf."
+
+  [errors."shelf.suggestion_above"]
+    title = "An age suggested by a file, source or provider exceeds the rating."
+    action = "Classify the Work again: the administrator decides, with full knowledge of the facts."
+    cause = "A file, source or provider announces an age greater than that chosen for the Work."
+
+  [errors."shelf.destination_not_partitioned"]
+    title = "A shelf under 18+ requires a destination that partitions access."
+    action = "Link it to a dedicated Kavita library, or to a destination declared and certified as partitioned."
+    cause = "There is no guarantee that the destination reserves access only to the people concerned: a child could read older content there."
+
+  [errors."shelf.library_not_dedicated"]
+    title = "The Kavita library on this family shelf also holds other files."
+    action = "Create a library in Kavita that only looks at the family shelf folder."
+    cause = "The Kavita library looks at other folders than that of the family shelf: older content could be found there."
+
+  [errors."target.remote_folder_shared"]
+    title = "Two shelves would write to the same server folder."
+    action = "Give each shelf its folder."
+    cause = "Two shelves designate the same folder on the remote server: their files and their ages would mix up."
+
+  [errors."job.busy"]
+    title = "An export of this Work is in progress."
+    action = "Try again in a moment: nothing has changed."
+    cause = "Another export of this Work already holds the working lock."
+
+  [errors."export.series_other_shelf"]
+    title = "This Remote Library series belongs on another shelf."
+    action = "A Kavita series only has one shelf: remove the Edition from the other shelf or rename the series."
+    cause = "In Kavita, the series is already attached to another shelf, and a series only has one."
+
+  [errors."export.age_tier_mix"]
+    title = "Several age groups share this remote library."
+    action = "A family library serves only one family shelf: link each shelf to its library."
+    cause = "Several age levels share the same remote library: a higher age level would be visible to a younger account."
+
+  [errors."export.awaiting_series_age"]
+    title = "This book waits for Kavita to show the age of its series, locked."
+    action = "Nothing is lost: the export resumes as soon as Kavita responds and keeps the lock. A preview does not contact Kavita: it therefore always displays this expectation for these books, only the export lifts it. Check “shelfhold target status”."
+    cause = "Kavita has not answered yet with the age of the series, and Shelfhold exports nothing until it can lock it."
+
+  [errors."export.series_age_stale"]
+    title = "Kavita shows an age lower than its classification for this series."
+    action = "The series no longer receives anything. The next export pushes back the age and rereads it; if it still fails, check Kavita with “shelfhold target recheck”."
+    cause = "Kavita's age rating for the series is lower than Shelfhold's rating, because it was either changed in Kavita or not written."
+
+  [errors."target.library_type_mismatch"]
+    title = "This shelf points at a Kavita library that is not of the Books type."
+    action = "Link the shelf to a Kavita library of the “Books” type; Shelfhold never changes the type of a library."
+    cause = "The Kavita library targeted is of a different type than Books: Kavita would read EPUBs there as series of images."
+
+  [errors."source.auth_expired"]
+    title = "The connection to the source has timed out."
+    action = "Renew the credentials with “shelfhold source set-secret”."
+    cause = "The connected service refused the registered credentials: changed password, session or expired token."
+
+  [errors."source.auth_mode_unsupported"]
+    title = "Source authentication mode is not supported."
+    action = "Change the service authentication mode, then run “shelfhold source recheck”."
+    cause = "The connected service requests a connection mode that this version of Shelfhold cannot use."
+
+  [errors."source.update_filters_blocking"]
+    title = "Suwayomi global update excludes tracked series."
+    action = "Disable the exclusion of unread or unstarted series in Suwayomi, or confirm the disabling with Shelfhold (--fix-suwayomi-settings, or fix_suwayomi_settings in the API), then reissue the command."
+    cause = "Two Suwayomi settings exclude certain series from its global update: followed series no longer receive new chapters."
+
+  [errors."source.auth_required"]
+    title = "The source requests a connection."
+    action = "Register the source IDs with “shelfhold source set-secret”."
+    cause = "The source answers that it requires a login and Shelfhold has no credential to present to it."
+
+  [errors."source.broken"]
+    title = "The source no longer works correctly."
+    action = "Check the source; the following resumes as soon as it answers."
+    cause = "The source responds inconsistently or in error: its extension is often outdated or the site has changed."
+
+  [errors."source.changed"]
+    title = "The source has changed format."
+    action = "Update the source extension."
+    cause = "The format of the source's pages or responses no longer corresponds to what its extension can read."
+
+  [errors."source.content_removed"]
+    title = "Content has been removed from the source."
+    action = "No action: the copy already kept is kept."
+    cause = "The source has removed this content from its catalog; it's not a breakdown."
+
+  [errors."source.dns_blocked"]
+    title = "The household DNS resolver blocks this source."
+    action = "Allow the source domain in the DNS blocker (whitelist), then relaunch."
+    cause = "The household name server (ad blocker or filter) refuses to resolve the source domain."
+
+  [errors."source.domain_not_allowed"]
+    title = "A source asked for a domain that it did not declare."
+    action = "The request is refused. Check the address set for the source; if it is correct, update the source or disable it."
+    cause = "The request targeted a domain that was missing from the list that the source had declared: the extension or setting was modified."
+
+  [errors."source.downloads_dropped"]
+    title = "The source has abandoned downloads."
+    action = "Restart abandoned downloads from Activity."
+    cause = "The connected service has abandoned downloads in progress, due to restart, lack of space or source error."
+
+  [errors."source.error"]
+    title = "The source reported an error."
+    action = "Check the source status on the Sources page."
+    cause = "The source responded with an error, the precise cause of which Shelfhold does not know."
+
+  [errors."source.forbidden_io"]
+    title = "A source attempted to access the network, disk, or program alone."
+    action = "Access is denied and logged. The source violates the contract: deactivate it or update it."
+    cause = "The source extension tried to open a connection, file, or program without going through Shelfhold, which the sources contract prohibits."
+
+  [errors."source.instance_changed"]
+    title = "The source service appears to have been reinstalled."
+    action = "Confirm with “shelfhold source reconnect”; nothing is deleted in the meantime."
+    cause = "The identity of the connected service is no longer the one that was recorded: reinstallation, restoration or change of address."
+
+  [errors."source.not_configured"]
+    title = "This source is not configured: a mandatory setting is missing, or the catalog address is missing or refused."
+    action = "Enter its settings (for example the address of the catalog and that of the mirror) with “shelfhold plugin set”, then rerun the request."
+    cause = "A mandatory source setting is empty, or its catalog address is missing or refused."
+
+  [errors."source.filter_invalid"]
+    title = "This source does not offer this filter."
+    action = "Remove the filter, or request a list of those that the source states."
+    cause = "The requested filter is not in the list of those that this source declares."
+
+  [errors."acquire.unsupported_file"]
+    title = "The source does not provide a file that Shelfhold stores."
+    action = "Only EPUB books and image archives (CBZ) are stored; a PDF goes through the import folder."
+    cause = "The proposed file is neither an EPUB nor a CBZ image archive, the only two formats that Shelfhold stores from a source."
+
+  [errors."source.credential_origin"]
+    title = "A link pointed somewhere other than the catalog: the identifiers are not sent."
+    action = "No action: the file was not requested. Check the catalog address if this repeats."
+    cause = "A link in the catalog led to a domain other than that of the source: sending your identifiers there would have delivered them to a third party."
+
+  [errors."acquire.unit_required"]
+    title = "The source offers several elements: say which one to take."
+    action = "Resubmit the request, specifying the identifier of the desired element."
+    cause = "The source offers several books behind this address and Shelfhold can't guess which one you want."
+
+  [errors."acquire.series_tombstoned"]
+    title = "This series was deliberately deleted: it is not recreated."
+    action = "Raise the series' tombstone if you want it again."
+    cause = "You erased this series by asking that it not be redeemed or recreated: the tombstone prevents this."
+
+  [errors."acquire.work_tombstoned"]
+    title = "This work was deleted voluntarily: it does not return by an identifier that it carried."
+    action = "Raise the tombstone of the work if you want it again."
+    cause = "You erased this Work by asking that it not return, even under another identifier: the tombstone remembers it."
+
+  [errors."acquire.tombstones_unavailable"]
+    title = "Tombstones cannot be read here: nothing is added."
+    action = "Check the mounted library and keychain, then try again."
+    cause = "The deletion log is unreadable here: library not mounted or set of keys missing."
+
+  [errors."unit.stored"]
+    title = "The requested book is stored in the library."
+    action = "It will be exported on the next pass to the relevant shelves."
+    cause = "This chapter is already in the library: there is nothing more to download."
+
+  [errors."source.no_match"]
+    title = "No source recognizes this address."
+    action = "Check the pasted address, or activate the source that publishes it."
+    cause = "None of the enabled sources publish this type of address, or the source that publishes it is disabled."
+
+  [errors."source.setting_invalid"]
+    title = "This source setting is refused."
+    action = "Correct the named field; a secret is regulated separately, by set-secret, never as a value."
+    cause = "The value of a setting does not follow the format expected by this source, or a secret was entered like a regular setting."
+
+  [errors."plugin.unknown"]
+    title = "No loaded or installed plugin carries this key."
+    action = "Check the key with “shelfhold plugin list”."
+    cause = "The given key does not correspond to any loaded or installed plugin: typo or removed plugin."
+
+  [errors."plugin.attestation_invalid"]
+    title = "This value is not confirmed."
+    action = "Only content_trust=publisher, access_partitioning=library|user and egress=home of an installed third-party plugin are verified."
+    cause = "The value is not one that a third-party plugin can declare on itself."
+
+  [errors."plugin.attestation_not_needed"]
+    title = "This plugin is first-party: its values ​​apply as is."
+    action = "Nothing to attest."
+    cause = "A plugin provided with Shelfhold is already deemed secure: its values ​​do not need attestation."
+
+  [errors."source.not_loaded"]
+    title = "A source is not loaded."
+    action = "Check the source extension in the service and then run it again."
+    cause = "The source extension is not loaded in the connected service: disabled, removed, or failed on startup."
+
+  [errors."source.rate_limited"]
+    title = "The source limits the number of requests."
+    action = "No action: Shelfhold tries again after the delay requested by the source."
+    cause = "The source answered that it is sent too many requests and asks to space the next ones out."
+
+  [errors."source.ref_has_secret"]
+    title = "A reference rendered by the source contains a secret."
+    action = "The source violates the contract: update it or deactivate it. No reference containing a secret is kept."
+    cause = "The source returned a reference that contains a password or token, which Shelfhold should never keep."
+
+  [errors."source.temporarily_unavailable"]
+    title = "The source is temporarily unavailable."
+    action = "No action: the queue is paused and resumes by itself."
+    cause = "The source responds that it is under maintenance or overloaded, with no return date."
+
+  [errors."source.version_unsupported"]
+    title = "The source version is not supported."
+    action = "Update the source service to a supported version."
+    cause = "The version of the source service is outside of those that Shelfhold has tested."
+
+  [errors."ssrf.blocked"]
+    title = "Address denied by internal query protection."
+    action = "If the address is a service on your network, declare it explicitly (host and port) in the settings."
+    cause = "The address designates a machine on the internal network, the local machine or a reserved access point: Shelfhold does not address them without you having declared it."
+
+  [errors."kavita.account_audit"]
+    title = "A child profile's Kavita account gives access to more than their age allows."
+    cause = "A Kavita account associated with a child profile reaches a library that is not family, has no age restriction, includes unknowns, or does not reach any family libraries."
+    action = "Read the details in `GET /api/v1/audit/kavita-accounts` or in the Health page, then correct the account in Kavita (libraries, age restriction, “include unknowns”). Shelfhold does not modify anything in Kavita; the audit is replayed every day."
+
+  [errors."target.child_exposure"]
+    title = "A Kavita library is accessible to a child account."
+    action = "Remove the child account's access to this library in Kavita, then run \"shelfhold target recheck\"."
+    cause = "A Kavita child account has access to a library that contains adult content."
+
+  [errors."target.forbidden"]
+    title = "The Kavita account no longer has the necessary rights."
+    action = "Give the dedicated account its administrator rights in Kavita."
+    cause = "Kavita now denies Shelfhold key actions: the account has lost its admin role or the key has been revoked."
+
+  [errors."target.foreign_writer_detected"]
+    title = "Another program written in a folder managed by Shelfhold."
+    action = "Remove foreign files or exclude this folder from the other program, then try the export again."
+    cause = "Another program, an old script for example, creates or modifies files in a folder that Shelfhold manages alone."
+
+  [errors."target.instance_changed"]
+    title = "Kavita appears to have been reinstalled."
+    action = "Confirm with “shelfhold target reconnect”; nothing is recreated until you do it."
+    cause = "The identity of the Kavita server is no longer the one that was recorded: reinstallation, restoration or change of address."
+
+  [errors."target.key_expiring"]
+    title = "Kavita API key expires soon."
+    action = "Generate a new key in Kavita and save it to Shelfhold."
+    cause = "The API key Shelfhold uses is nearing its expiration date."
+
+  [errors."target.library_type_changed"]
+    title = "The type of a Kavita library has changed."
+    action = "The shelf is paused and nothing is renamed. Return the original type in Kavita, then run “shelfhold target reconnect”."
+    cause = "The library type has been changed in Kavita since the last run: its files would be read differently."
+
+  [errors."target.not_indexed"]
+    title = "The written file does not appear in Kavita."
+    action = "Check folder exclusion, library type and folder monitoring in Kavita."
+    cause = "Kavita did not see the file written: folder excluded, folder scanning disabled, or library of another type."
+
+  [errors."target.permission_denied"]
+    title = "Shelfhold cannot write to this folder."
+    action = "Correct the rights of the series folder, then run “shelfhold target recheck”."
+    cause = "The account that runs Shelfhold does not have the right to write to the series folder."
+
+  [errors."target.pull_needs_readable_copy"]
+    title = "This on-demand destination has no readable copy to serve."
+    action = "Keep copies of the shelf, or also link a tree destination."
+    cause = "An on-demand destination serves its files from a stored copy, and the shelf does not keep any that can be read."
+
+  [errors."target.route_missing"]
+    title = "Kavita does not have the expected function."
+    action = "Update Kavita, then run “shelfhold target recheck”."
+    cause = "The installed version of Kavita does not provide a feature that Shelfhold needs."
+
+  [errors."shelf.withdrawal_root_read_only"]
+    title = "These files are on a read-only root: Shelfhold never moves them."
+    action = "Mount the folder in read-write mode (adopt mode) or remove the files yourself, then run a scan again."
+    cause = "The root that carries these files is mounted read-only: Shelfhold never removes a file that it cannot put back."
+
+  [errors."shelf.not_child_library"]
+    title = "This folder is not a child-readable library."
+    action = "No withdrawal plan: only adopted child-readable libraries have one."
+    cause = "This file is not that of an adopted library readable by children: the withdrawal plan only exists for these libraries."
+
+  [errors."shelf.destination_exists"]
+    title = "This shelf already has a purpose."
+    action = "Only one destination per shelf for now; many will come with the next version."
+    cause = "This version only accepts one destination per shelf, and this one already has one."
+
+  [errors."target.tree_overlap"]
+    title = "Two write destinations overlap."
+    action = "Choose separate folders: two indexers do not yet share the same tree."
+    cause = "A folder in one of the write destinations contains or overlaps that of another: two programs would write there at the same time."
+
+  [errors."target.unreachable"]
+    title = "Kavita doesn’t answer."
+    action = "Check that the Kavita container is running, or reconnect it with “shelfhold target reconnect”."
+    cause = "The Kavita server is not responding: container stopped, address changed or network cut."
+
+  [errors."target.version_unsupported"]
+    title = "Kavita version is not supported."
+    action = "Update Kavita to a supported version (see release notes)."
+    cause = "The version of Kavita is outside the ones Shelfhold tested: its answers may differ."
+
+  [errors."tombstone.key_unknown"]
+    title = "A key cited by a headstone is unknown."
+    action = "Import the keyring (“shelfhold secrets import --passphrase-file <file> --in <file>”) or accept the loss with “shelfhold tombstone accept-lost-keyring”."
+    cause = "A tombstone was encrypted with a key that is not in the keychain of this instance: keychain lost or restored without it."
+
+  [errors."ops.preview_stale"]
+    title = "The confirmed preview is no longer that of the instance."
+    action = "Run the command again without confirming, read the preview again, then confirm with the new fingerprint."
+    cause = "The state of the instance has changed between the preview and your confirmation: the given fingerprint no longer matches."
+
+  [errors."tombstone.migration_hit"]
+    title = "A migration encountered erased content."
+    action = "Review the relevant content; nothing was reacquired."
+    cause = "Content that you had deleted was present in the migrated data: the tombstone blocked its return."
+
+  [errors."tombstone.root_mismatch"]
+    title = "The erase log belongs to another root."
+    action = "Check the report: the rows were applied to the known root, nothing was deleted."
+    cause = "The erase log was written for a root other than the one mounted: volume replaced or log copied from elsewhere."
+
+  [errors."tombstone.unverified"]
+    title = "One tombstone could not be verified."
+    action = "Examine the line reported on the report and decide whether to keep it or discard it."
+    cause = "The signature or key of a line in the deletion log is not verified: file modified, truncated or unknown key."
+
+  [errors.too_many_attempts]
+    title = "Too many connection attempts."
+    action = "Wait a minute before trying again; the administrator can also act from the host command line."
+    cause = "Too many wrong credentials have been tried from this address in a short time: Shelfhold slows down attempts to prevent password guessing."
+
+  [errors.unauthenticated]
+    title = "Login required."
+    action = "Log in, or provide a valid API key."
+    cause = "The request contains neither a valid session nor an API key: session expired, disconnected or key missing."
+
+  [errors."unit.safeguard_backlog"]
+    title = "The shelter line is full."
+    action = "Let the line empty or increase the shelter quota."
+    cause = "More chapters are waiting for their copy in the shelter than the quota allows to process at a time."
+
+  [errors."unit.confirmation_required"]
+    title = "This chapter is irreplaceable: deletion requires confirmation."
+    action = "Type the chapter ID to confirm. No copies will be deleted without this."
+    cause = "This chapter no longer exists anywhere else: deleting it would lose it forever, so Shelfhold requires explicit confirmation."
+
+  [errors."unit.safeguard_failed"]
+    title = "Safeguarding a chapter failed."
+    action = "Consult the Activity and restart the chapter's sheltering."
+    cause = "Copying chapter to /store failed: volume full, missing, or read-only."
+
+  [errors."unit.revision_suspect"]
+    title = "A new version of a chapter is much smaller than the stored one: it is in quarantine."
+    action = "The old version remains exported. If the news is good, `shelfhold revisions list` shows it and `revisions apply --force-suspect` (reserved action) accepts it."
+    cause = "The new version is much smaller than the stored one, as if it is truncated or empty."
+
+  [errors."revisions.confirmation_required"]
+    title = "The “to rewrite” queue is confirmed in batches."
+    action = "Run `shelfhold revisions list`, read back the number of KOReader positions hit, then give the token shown with `--confirm`."
+    cause = "Rewriting chapters moves the reading position on some devices: Shelfhold requires confirmation that says how many are affected."
+
+  [errors."unit.upgraded"]
+    title = "A chapter was replaced with a better version, in the same location."
+    action = "The Kavita progression is preserved; on KOReader, the reading position starts from the beginning. The old version remains in the trash for 30 days."
+    cause = "The source posted a better version of this chapter and Shelfhold put it in place of the old one."
+
+  [errors.validation_failed]
+    title = "Fields in the query are invalid."
+    action = "Correct the fields listed and then start again."
+    cause = "A value sent does not respect the expected format."
+
+  [errors."wake.deferred"]
+    title = "The service remained dormant: batches were delayed."
+    action = "Check whether the service wakes up automatically or start it manually."
+    cause = "The connected service was sleeping at the time of the request, so its batches were pushed back."
+
+  [errors."source.fallback"]
+    title = "A fallback source has taken over."
+    action = "Check the primary source; Shelfhold returns to it as soon as it works."
+    cause = "The top source did not respond or failed, so the next ranked source was queried."
+
+  [errors."backfill.confirmation_required"]
+    title = "The catch-up exceeds 100 chapters or 5 GiB: it requires confirmation."
+    action = "Check the estimate (number, size, free space), then confirm to start the catch-up."
+    cause = "The catch-up exceeds 100 chapters or 5 GiB: Shelfhold does not launch a download of this size without you confirming it."
+
+  [errors."follow.service_paused"]
+    title = "The connected service is paused: nothing has been monitored."
+    action = "Unpause the service with the command indicated by \"shelfhold status\", then start again."
+    cause = "The connected service is paused: it does not respond to any monitoring requests until it is restarted."
+
+  [errors."follow.confirmation_required"]
+    title = "Removing the series from the service's library requires confirmation."
+    action = "Unfollowing keeps the series in the service; to remove it too, confirm explicitly."
+    cause = "Removing the series from the service library is irreversible from Shelfhold: it requires explicit confirmation."
+
+  [errors."request.not_found"]
+    title = "This request does not exist."
+    action = "Open “My Requests” to see the ones you have made."
+    cause = "The identifier does not correspond to any of your requests: request withdrawn, or made from another profile."
+
+  [errors."request.not_pending"]
+    title = "This request has already been answered or canceled."
+    action = "Refresh the list: the request status has changed."
+    cause = "Someone has already responded to this request, or the author has canceled it."
+
+  [errors."request.not_allowed"]
+    title = "You cannot decide on this request."
+    action = "Only an administrator whose session is recent, and who has the right to classify, approves a request."
+    cause = "Approving a request asks for a recent login and the right to classify, which this profile does not have."
+
+  [errors."request.kind_not_allowed"]
+    title = "This profile can only request a title from its search results."
+    action = "Search for the title, then choose “Ask” on the result."
+    cause = "A child profile cannot type a title or an address: it asks only among the results its search shows."
+
+  [errors."request.invalid_ref"]
+    title = "This result is no longer available for a request."
+    action = "Run the search again, then choose “Ask” on the result."
+    cause = "The chosen result is no longer in the search: it has been redone or has since expired."
+
+  [errors."request.invalid_target"]
+    title = "The request does not designate a valid title."
+    action = "Provide a work ID, valid ISBN or plain text title."
+    cause = "The text is neither a work identifier, nor a valid ISBN, nor a plain text title."
+
+  [errors."request.too_many_pending"]
+    title = "Too many requests are already pending for this profile."
+    action = "Wait for a response, or cancel a request, before making another."
+    cause = "This profile has already reached the maximum number of pending requests."
+
+  [errors."request.invalid_reason"]
+    title = "The refusal reason is empty, too long or holds invisible characters."
+    action = "Write a short reason in plain text."
+    cause = "The reason is empty, longer than allowed, or holds invisible characters."
+
+  [errors."request.choose_age"]
+    title = "Choosing an age: classifying the book means approving a child's request."
+    action = "Choose the minimum age of the book, then approve."
+    cause = "A child's request concerns an ageless book: approving it amounts to deciding that this book is suitable for a child."
+
+  [errors."request.confirmation_required"]
+    title = "The request exceeds 100 units or 5 GiB: it requires confirmation."
+    action = "Check the size summary, then confirm to approve."
+    cause = "Approval would initiate a download larger than 100 units or 5 GiB, which Shelfhold does not start without confirmation."
+
+  [errors."request.unresolved"]
+    title = "This text or ISBN does not correspond to any work in the library."
+    action = "Mark the request \"not found\", or add the book by a source."
+    cause = "The text or ISBN entered does not appear in the library or in any of the sources queried."
+
+  [errors."request.shelf_refused"]
+    title = "The chosen shelf refuses this edition."
+    action = "Choose another shelf, or classify the Edition first."
+    cause = "The age of the edition exceeds the ceiling of the chosen shelf, or the edition is not classified."
+
+  [errors."series.gap"]
+    title = "There are missing chapters in the series."
+    action = "Consult the series and start searching for missing chapters."
+    cause = "The source did not publish, or Shelfhold did not receive, certain issues between the first and last chapters."
+
+  [errors."edition.auto_attached"]
+    title = "An edition has been attached to the work that has the same external identifier."
+    action = "Check the attachment with “shelfhold edition attachments”; “shelfhold edition detach” undoes it. The edition remains off the family shelves until it is classified."
+    cause = "Two editions bear the same external identifier (ISBN, for example): Shelfhold concludes that they are the same Work."
+
+  [errors."edition.attach_suggested"]
+    title = "An attachment by external identifier waits for your confirmation: it would raise the age of the Work."
+    action = "Read the withdrawal plan with \"shelfhold edition attach-confirm\", then confirm it with the displayed token, or decline it with \"shelfhold edition attach-decline\"."
+    cause = "The attachment would move the Work to a higher age: Shelfhold is waiting for your confirmation before removing files from a child."
+
+  [errors."edition.attach_refused"]
+    title = "This attachment cannot be undone or confirmed in its current state."
+    action = "Check its status with “shelfhold edition attachments”: it has already been undone, refused, or the edition has since changed."
+    cause = "The attachment has already been undone or confirmed, or the Editions have since changed."
+
+  [errors."edition.merge_refused"]
+    title = "This merge of Editions is refused: nothing was modified or deleted."
+    action = "Reread the plan with “shelfhold edition merge”: a tombstone (a purged place or work identifier), another work, a place already occupied or a connection that the merge does not know how to move stops it."
+    cause = "A tombstone, a lock or a difference of identity prevents these Editions from being merged without losing anything."
+
+  [errors."work.merge_refused"]
+    title = "This merge of Works is refused: nothing was modified."
+    action = "Reread the plan with “shelfhold work merge”: another type of work, two editions of the same key (merge them first, with their own plan) or two different series stops it."
+    cause = "The two works are not of the same type, have two editions with the same key or belong to two different series."
+
+  [errors."merge.expired"]
+    title = "This merge is older than 30 days: it can no longer be undone."
+    action = "Past 30 days, the merge stays. To separate two Works, recreate them by hand."
+    cause = "The 30-day window during which a merge can be undone has passed."
+
+  [errors."merge.already_undone"]
+    title = "This merge has already been separated."
+    action = "Consult the works: both exist again."
+    cause = "This merge has already been undone by a previous separation."
+
+  [errors."merge.survivor_gone"]
+    title = "The Work that had absorbed the other was itself merged since."
+    action = "Separate the most recent merge first, then this one."
+    cause = "The Work that had absorbed the other was merged into a third one since."
+
+  [errors."series.already_attached"]
+    title = "This work already belongs to a series."
+    action = "A work only belongs to one series: to change it, separate it first or merge the works."
+    cause = "The work is already attached to a series, and a work only has one."
+
+  [errors."export.series_reassignment_refused"]
+    title = "The reallocation plan for the exported series is outdated or refused: nothing has been modified."
+    action = "Reread the plan: an adopted (frozen) series or a series linked to something other than its Editions stops it. A plan reread after a change has another fingerprint."
+    cause = "The plan no longer corresponds to the current state, or a series adopted or linked to something else prevents it."
+
+  [errors."tombstone.journal_truncated"]
+    title = "The erase log of a root was truncated."
+    action = "Nothing was deleted, but the root is blocked (reconcile and reacquire): “shelfhold tombstone set-aside-journal” sets the file aside and rewrites it from the database."
+    cause = "The erase log of the root is shorter than what the database recorded: file truncated, restored or replaced."
+
+  [errors."job.unknown_kind"]
+    title = "A task of an unknown type has been skipped."
+    action = "Update Shelfhold or remove the task from the Activity."
+    cause = "The type of this task is not known for this version: it comes from a more recent version or a removed extension."
+
+  [errors."job.failed"]
+    title = "A task has failed."
+    action = "Open the Activity, check the task error and then relaunch it."
+    cause = "The task encountered an error that it cannot resolve on its own."
+
+  [errors."window.preempted"]
+    title = "A maintenance task was interrupted at the end of the window."
+    action = "No action: it will resume at the next maintenance window."
+    cause = "The maintenance window ended while the task was running: it was interrupted so that it does not overrun the window."
+
+  [errors."maintenance.active"]
+    title = "Maintenance mode is active: no writes are accepted."
+    action = "Browse freely; to resume, run “shelfhold maintenance off” (or, in the interface, leave maintenance mode with a fresh session)."
+    cause = "An administrator has activated maintenance mode: Shelfhold refuses writes to keep data stable."
+
+  [errors."db.busy"]
+    title = "The database is busy: the request could not be processed."
+    action = "Try again in a moment; it is not maintenance mode."
+    cause = "Another job is holding the database and the timeout has expired."
+
+  [errors."queue.priority_locked"]
+    title = "This priority cannot be changed: a safety repair always comes before other tasks."
+    action = "Choose a priority from new, request, or backfill, on a task that is not a security repair."
+    cause = "This task is a security repair: it always comes first, regardless of the priority chosen."
+
+  [errors."image.too_large"]
+    title = "The image exceeds the ceilings of size or dimensions."
+    action = "Use a smaller image; the ceilings by type are in the configuration reference."
+    cause = "The image exceeds the size in bytes or pixels that Shelfhold is willing to decode."
+
+  [errors."image.format_refused"]
+    title = "The image format is not accepted."
+    action = "Provide a JPEG, PNG, WebP, GIF, AVIF, or JPEG XL image."
+    cause = "The image content is not in any of the formats that Shelfhold accepts: JPEG, PNG, WebP, GIF, AVIF or JPEG XL."
+
+  [errors."image.decode_failed"]
+    title = "The image is unreadable or corrupted."
+    action = "Download the file again or choose a different image."
+    cause = "The image is truncated, damaged or does not respect its format."
+
+  [errors."image.worker_failed"]
+    title = "The image decoding process failed."
+    action = "Check the logs; if it repeats, check the memory available to the container."
+    cause = "The isolated process that decodes the images has stopped: out of memory, crash, or timeout."
+
+  [errors."target.admin_risk_not_accepted"]
+    title = "The Kavita key is that of an administrator account."
+    action = "Confirm with --accept-admin-risk (or accept_admin_risk = true) after reading the warning."
+    cause = "Kavita only gives a key with an administrator account: Shelfhold does not record it without you recognizing this risk."
+
+  [errors."target.exchange_failed"]
+    title = "Exchanging the Kavita account for a named key failed."
+    action = "Check the address, account (administrator) and password; nothing was recorded."
+    cause = "Kavita refused the exchange: incorrect address, account that is not an administrator or incorrect password."
+
+  [errors."target.conflict"]
+    title = "A destination with this name exists with another address."
+    action = "Choose another name or correct the address in the file."
+    cause = "A destination of the same name is already registered with another address; Shelfhold does not overwrite it."
+
+  [errors."target.unknown"]
+    title = "This destination does not exist."
+    action = "Add it first with “shelfhold target add”."
+    cause = "No destination is registered under this name."
+
+  [errors."config.unknown_key"]
+    title = "Unknown configuration key."
+    action = "List the keys with “shelfhold config list”."
+    cause = "This key does not exist in the configuration: typing error or setting of another version."
+
+  [errors."config.invalid_value"]
+    title = "Invalid configuration value."
+    action = "Correct the value; nothing was written."
+    cause = "The value does not have the type or format that this key expects."
+
+  [errors."config.key_readonly"]
+    title = "This key cannot be modified in this version."
+    action = "Remove it from the file; the maintenance window is fixed in M1a."
+    cause = "This version fixes this setting: it cannot be modified."
+
+  [errors."config.file_invalid"]
+    title = "The configuration file is invalid."
+    action = "Correct the file (TOML, known keys, secrets per file) then relaunch."
+    cause = "The file is not valid TOML, contains an unknown key, or carries a plaintext secret."
+
+  [errors."source.conflict"]
+    title = "A source exists with another configuration."
+    action = "Correct the address or use “shelfhold source set-secret”."
+    cause = "A source of this name already exists with another configuration; Shelfhold does not overwrite its settings."
+
+  [errors."shelf.conflict"]
+    title = "A shelf of this name exists with other settings."
+    action = "Choose another name or align the age limit and subfolder."
+    cause = "A shelf of this name already exists with another age limit or another subfolder."
+
+  [errors."source.unreachable"]
+    title = "Suwayomi does not respond to this address."
+    action = "Check the address and that the server is running; nothing was recorded."
+    cause = "The service does not respond to this address: wrong address, service stopped or network cut."
+
+  [errors."deletion.blocked"]
+    title = "This deletion is refused: it would take away what it should not take away."
+    action = "Reread the preview: it says for each chapter what is preventing it (last independent copy, file adopted, file which covers other chapters, operation in progress). Only “delete content” can remove a last copy, after confirmation."
+    cause = "Deleting this chapter would remove its last independent copy or a file that another chapter is using."
+
+  [errors."ops.not_waiting"]
+    title = "Nothing is waiting here: the element is not in the state that this command leaves."
+    action = "Check with “shelfhold status”; nothing has been changed."
+    cause = "The element is not in the waiting state that this command leaves: it has already been processed, or it is waiting for something else."
+
+  [errors."ops.unknown_subject"]
+    title = "This item does not exist."
+    action = "Use the identifier displayed by “shelfhold status”."
+    cause = "The identifier does not match any element: typo or element already deleted."
+
+  [errors."ops.exit_unavailable"]
+    title = "This output is not plugged into this instance."
+    action = "The component concerned is not connected (see the administration documentation)."
+    cause = "The component that this output should call is not plugged into this instance."
+
+  [errors."ops.invalid_choice"]
+    title = "Invalid choice."
+    action = "Choose one of the options provided."
+    cause = "The choice given is not one of the options this command accepts."
+
+  [errors."ops.language_refused"]
+    title = "Language refused."
+    action = "Give a real BCP 47 tag (not “und”), that no other Edition of the Work uses."
+    cause = "The tag is not a real BCP 47 language, or another Edition of the Work already uses it."
+
+  [errors."ops.still_waiting"]
+    title = "The cause of the wait is still there."
+    action = "Correct the cause (account rights, server unreachable) then rerun the command."
+    cause = "The condition which blocked the element is not lifted: insufficient account rights or server still unreachable."
+
+  [errors."import.protected"]
+    title = "Protected file, not supported."
+    action = "Shelfhold does not remove any protection: the file remains in the import folder, intact. Submit an unprotected version that you have the right to use."
+    cause = "The file is encrypted or locked by a protection device: Shelfhold does not remove any protection and cannot read it."
+
+  [errors."import.protected_licence"]
+    title = "File protected by a loan or purchase license, not supported."
+    action = "Read it in the application provided for its license, borrow it from the media library or buy a version without protection. The file remains in the import folder, intact."
+    cause = "The file is only readable with a loan or purchase license linked to an account or device."
+
+  [errors."import.audio_unsupported"]
+    title = "Audio file refused: Audiobooks are not yet supported."
+    action = "The file remains in the import folder. It can be imported when the audio editions are available."
+    cause = "The file is an audiobook, a format that this version of Shelfhold does not yet store."
+
+  [errors."import.unsupported_file"]
+    title = "Unrecognized file: only CBZ, EPUB and PDF are imported."
+    action = "The type of a file is read in its content, not in its name. The file remains in the import folder."
+    cause = "The content of the file is neither a CBZ, nor an EPUB, nor a PDF, regardless of its extension."
+
+  [errors."import.too_large"]
+    title = "File too large to import."
+    action = "The file remains in the import folder. Raise the reception limit or cut it."
+    cause = "The file exceeds the maximum size accepted for import."
+
+  [errors."import.archive_refused"]
+    title = "The archive is not safe to open, or contains unauthorized entry."
+    action = "The file remains in the import folder and has not been stored."
+    cause = "The archive contains a path outside its folder, a link, an unauthorized entry, or an abnormal size."
+
+  [errors."import.link_refused"]
+    title = "Symbolic link, hard link or mount point refused in the import folder."
+    action = "Drop the file itself, without a link, into the import folder."
+    cause = "A symbolic link, hard link, or mount point could lead outside the import folder: Shelfhold doesn't follow any of them."
+
+  [errors."import.unsafe_name"]
+    title = "File name refused: control character, “..”, space or period, or name too long."
+    action = "Rename the file. It remains in the import folder."
+    cause = "The file name contains a control character or “..”, ends with a space or period, or exceeds the allowed length."
+
+  [errors."import.name_collision"]
+    title = "Two files have the same name once normalized (capital letters or accents)."
+    action = "Rename one of them. Both remain in the import folder."
+    cause = "Once put in lowercase and without accents, the two names are identical: they would be confused on certain file systems."
+
+  [errors."import.not_ready"]
+    title = "File not yet ready: it is still being written or has just been uploaded."
+    action = "Nothing to do: Shelfhold reads it again when its size and date have stopped changing."
+    cause = "The size or date of the file has changed again the last time it was read: it is probably being copied."
+
+  [errors."import.pdf_refused"]
+    title = "Unsupported PDF: It could not be verified, or it contains attached files or an envelope."
+    action = "It remains in the import folder, intact. Re-export it as a simple PDF, without attachments."
+    cause = "The PDF could not be checked completely, or it contains attachments or an envelope which may hide code."
+
+  [errors."import.left_in_quarantine"]
+    title = "A file was shelved in '.shelfhold-removing' and could not be put back."
+    action = "Don't overwrite it: retrieve it by hand in this subfolder of the import folder."
+    cause = "The file was put aside during the import, then the operation failed before returning it to its place."
+
+  [errors."import.purchase_pending"]
+    title = "File from the “purchases” folder: it is only taken if you declare a purchase."
+    action = "Run “shelfhold import scan --purchase”; otherwise it stays where it is."
+    cause = "The purchases file is only read when you declare the purchase: its origin is thus known."
+
+  [errors."import.changed_while_reading"]
+    title = "The file changed while reading: it was not put away."
+    action = "Nothing to do: it will be reread on the next pass."
+    cause = "The size or the date of the file changed while Shelfhold was reading it: its copy may be incomplete."
+
+  [errors."import.hash_mismatch"]
+    title = "The stored copy does not have the same footprint as the original file."
+    action = "The file remains in the import folder and is not removed. Check the disk then restart the import."
+    cause = "The footprint of the stored copy differs from that of the original file: faulty writing, damaged disk or file modified en route."
+
+  [errors."import.disk_full"]
+    title = "Disk full: the file could not be stored."
+    action = "The file remains in the import folder. Free up space then restart the import."
+    cause = "The storage volume no longer has enough free space for copying."
+
+  [errors."import.not_stored"]
+    title = "The file could not be put away."
+    action = "The file remains in the import folder. Consult the diagnosis then restart the import."
+    cause = "An unexpected error interrupted the file storage; the diagnosis gives the details."
+
+  [errors."import.tombstoned"]
+    title = "This content was purged: it is not stored again."
+    action = "The file remains in the import folder. Remove it yourself if you don't want it anymore."
+    cause = "You have purged this content by requesting that it not return: the tombstone prevents it from being put away again."
+
+  [errors."import.own_export"]
+    title = "This file is an export from Shelfhold itself: it is noted as a replica, not stored again."
+    action = "The file remains in the import folder. Remove it yourself if you don't want it anymore."
+    cause = "The fingerprint of the file is that of an export Shelfhold itself wrote: storing it would create a duplicate of its own copy."
+
+  [errors."import.original_not_kept"]
+    title = "File stored in its neutralized form only: the original is not kept anywhere."
+    action = "The file remains in the import folder, as it would otherwise be lost. Configure /store to keep the originals."
+    cause = "The file was only kept in its neutralized form: putting it away would cause the only copy of the original to disappear."
+
+  [errors."import.tree_unreadable"]
+    title = "The tree to import is not readable."
+    action = "Give the absolute path of an actual folder (not a link), distinct from /library, /store and /data."
+    cause = "The given path is not a readable folder: not found, link, or location reserved for Shelfhold."
+
+  [errors."import.tree_no_series"]
+    title = "No Suwayomi link matches this series folder."
+    action = "The tree is not modified. First follow the series (“shelfhold follow”), then restart the import."
+    cause = "The series folder does not correspond to any series tracked in the connected service."
+
+  [errors."import.tree_ambiguous_series"]
+    title = "Several Suwayomi connections carry this series title."
+    action = "The tree is not modified. Nothing is guessed: remove the duplicate binding, then rerun the import."
+    cause = "Several followed series bear this title: Shelfhold does not choose for you where to store the chapters."
+
+  [errors."import.tree_unnumbered"]
+    title = "The number of this chapter is not readable in its name."
+    action = "The tree is not modified. Rename the chapter to “Chapter N” or download it again."
+    cause = "The folder or file name does not contain a chapter number that Shelfhold can read."
+
+  [errors."import.tree_duplicate"]
+    title = "This chapter is already put away."
+    action = "Nothing needs to be done: the existing copy is kept and the tree is not modified."
+    cause = "A chapter with the same identity and number is already in the library."
+
+  [errors."import.tree_wrong_source"]
+    title = "The source folder for this chapter is not the link for this series."
+    action = "The tree is not modified. A series of the same title under another source is not the same series: follow it from that source."
+    cause = "The chapter comes from a different source folder than the one linked to this series: importing it would mix it with another series of the same title."
+
+  [errors."import.tree_needs_rating"]
+    title = "To be classified: the age suggested by the file or source exceeds the classification of the Work."
+    action = "Nothing is stored and the tree is not modified. Classify the Work (\"shelfhold rate\"), then restart the import."
+    cause = "The Work is classified for an age lower than that which the file or source announces."
+
+  [errors."content.untrusted_pdf"]
+    title = "PDF stored as is, not exported: its origin is not declared."
+    action = "A PDF can hold code that the reader of a destination would run. Declare it as a purchase at import to have it exported."
+    cause = "A PDF can embed code that the destination reader would execute: without a declared provenance, Shelfhold does not export it."
+
+  [errors."import.not_configured"]
+    title = "No import folder is configured."
+    action = "Set SHELFHOLD_IMPORT_DIR (a folder separate from /library, /store and /data), then relaunch."
+    cause = "The Import Folder setting is missing or points to a location reserved for Shelfhold."
+
+  [errors.session_not_found]
+    title = "This session does not exist or is already closed."
+    action = "Refresh the session list."
+    cause = "The session has already been closed, or the displayed list is older than the actual state."
+
+[reconcile]
+  help = "Reconcile the database and files after a restoration (preview, fingerprint, confirmation)."
+  adopt_after_restore_help = "Exits the “restored_behind” state: readopts the files present from the provenance mirror, does not delete anything, then restamps the sentinels."
+  dry_run_help = "Shows the preview and the fingerprint without writing anything."
+  forget_root_help = "Forget a root which will not return (dead disk, target removed after backup): it becomes read-only, nothing is deleted (action reserved; to be confirmed with --confirm)."
+  forget_root_cost = "Forget the root {root}: it will no longer be written or verified, its copies remain recorded but Shelfhold will only find them if you re-adopt it (“root takeover”). No files are deleted. If the root returns later, it remains read-only: we recover it with “shelfhold root takeover”. To confirm, type again: --confirm \"{phrase}\"."
+  forget_root_done = "Root {root} forgotten (read only). Run “shelfhold reconcile --adopt-after-restore” again."
+  forget_root_unknown_root = "Root {root} unknown: nothing has been modified."
+  forget_root_still_readable = "The root {root} has a sentinel (readable or not): it is judged by adoption, not forgotten."
+  forget_root_phrase_mismatch = "Incorrect confirmation phrase: retype --confirm \"{phrase}\". Nothing has been changed."
+  store_missing = "{count, plural, one {# Unit whose copy kept is not under /store passes} other {# Units whose kept copy is not under /store pass}} in “store_missing”: nothing is deleted; restore /store from the host tool, or “store reinit”."
+  store_lost = "/store is missing or is not the expected volume (no .shelfhold-mount-id file): {count, plural, one {# Unit depends on it} other {# Units depend on it}} and nothing is marked or deleted. Mount /store, or “shelfhold store reinit” if lost."
+  store_restored = "{count, plural, one {# Unit finds its copy kept under /store (same fingerprint) and returns} other {# Units find their copy kept under /store (same fingerprint) and return}} to “stored”."
+  confirm_help = "Preview Fingerprint: Confirms exactly what was shown."
+  confirm_deletion_help = "Also confirms the deletion of files that the tombstone log covers (reserved action; without this option, nothing is deleted)."
+  confirm_unit_help = "Identifier of an irreplaceable chapter that deletion would erase (to be retyped for each, with --confirm-deletion; repeatable)."
+  irreplaceable_line = "Irreplaceable chapter that deletion would erase: {unit}"
+  irreplaceable_missing = "Identifier to retype: {unit}"
+  irreplaceable_needs_typing = "Deletion deletes irreplaceable chapters (no source can return them): retype the identifier of each with --confirm-unit <identifier>, in addition to --confirm-deletion. Nothing has been changed."
+  needs_flag = "No action requested: use --adopt-after-restore or --rebaseline-inodes."
+  one_action = "Choose a single action: --adopt-after-restore or --rebaseline-inodes."
+  rebaseline_help = "After moving disks (rsync, dates preserved): updates (dev, ino) files whose size, date and fingerprint match, confirmed by the source mirror. Without series break; refused if the fingerprint of a file differs."
+  destination_help = "Limits --rebaseline-inodes to a destination."
+  rebaseline_line = "New registered identity: {path}"
+  rebaseline_skipped = "Left as is ({reason}): {path}"
+  rebaseline_done = "{updated, plural, one {# file updated} other {# files updated}}, {unchanged, plural, one {# already up to date} other {# already up to date}}, {skipped, plural, one {# left as is} other {# left as is}}, {demoted, plural, one {# copy that no longer counts as independent} other {# copies that no longer count as independent}}. No series has been paused."
+  rebaseline_refused = "Refused, nothing has been changed: {detail}"
+  not_behind = "The database is not behind on the files: nothing to compare."
+  needs_confirmation = "The reconciliation is not confirmed: read the preview again, then restart with --confirm <fingerprint>."
+  instance_running = "Shelfhold is running on these volumes: stop it, run this command, then restart it."
+  fingerprint_line = "Preview fingerprint: {fingerprint}"
+  header = "{roots, plural, one {# root} other {# roots}} late; {files, plural, one {# file} other {# files}} to readopt from the mirror; {stale, plural, one {# intention came from save, never replayed} other {# intentions from save, never replayed}}. Nothing will be deleted."
+  readopt_line = "Readopted as exported: {path}"
+  unresolved_line = "Left as is (unresolved mirror line, reason {reason}): {path}"
+  modified_line = "Different from its mirror line, nothing is granted: {path}"
+  relocated_line = "Paired move (same file, attached to the manifest after confirmation): {old}->{new}"
+  unknown_line = "Unknown base and mirror file (reported, never touched): {path}"
+  missing_line = "In the base but missing from the disk: {path}"
+  drift_line = "Upstream drift: the series {series} of {source} is in Suwayomi but not in the restored base."
+  proposal_remove_category = "Without an upstream reading, the default restoration removes these series from the Suwayomi Shelfhold category."
+  deletion_line = "Covered by a tombstone ({scope}), never readopted; deletion subject to --confirm-deletion: {path}"
+  unverified_line = "{count, plural, one {# line} other {# lines}} from the log of inert (unverified) tombstones."
+  blocked_line = "Root {root} blocked: {reason}."
+  blocked = "Root {root} blocked ({reason}). Unreadable log: “shelfhold tombstone set-aside-journal” sets it aside (nothing is deleted) and rewrites it from the ground up. Unknown key: restore the keyring since its export, or accept the loss with “shelfhold tombstone accept-lost-keyring”. Then start again."
+  preview_stale = "The instance has changed since preview: relaunch, reread, then confirm with the new fingerprint."
+  deletion_refused = "Unconfirmed deletion: It requires a reserved action and a purge executor; nothing has been changed."
+  by_hand_line = "Not deleted: {path}"
+  by_hand = "The deletion is incomplete: the instance stays read-only. Delete the files above by hand (or correct the cause), then run \"shelfhold reconcile --adopt-after-restore --dry-run\", read it again and confirm with --confirm <fingerprint> --confirm-deletion."
+  pending_line = "To delete (tombstone): {path}"
+  pending_exit = "The instance remains read-only as long as these files exist: relaunch with --confirm <fingerprint> --confirm-deletion to delete them, or delete them manually then rerun the command."
+  done = "{files, plural, one {# re-adopted file} other {# re-adopted files}}, {pending, plural, one {# deletion} other {# deletions}} waiting for your confirmation, {deleted, plural, one {# deleted} other {# deleted}}."
+
+[adopt]
+  shelf_refused = "Adoption refused ({code}): the shelf cannot host this library."
+  help = "Adopts an existing Kavita library: preview, then register after confirmation."
+  dry_run_help = "Shows what adoption would do, without writing anything (neither base, nor disk, nor Kavita)."
+  confirm_help = "Thumbprint given by --dry-run: confirms adoption of what was shown, registers existing files, without modifying or moving them."
+  destination_help = "Destination identifier (shelf x server)."
+  library_help = "Identifier of the Kavita library (by default, the one already linked to the destination)."
+  needs_confirmation = "Adoption is not confirmed: run --dry-run, replay the preview, then run again with --confirm <fingerprint>."
+  fingerprint_line = "Preview fingerprint: {fingerprint}"
+  preview_stale = "The library has changed since the preview: run --dry-run again, reread, then confirm with the new fingerprint."
+  header = "{series, plural, one {# series} other {# series}}, {files, plural, one {# existing file} other {# existing files}}; none will be modified, moved or copied."
+  series_line = "Series {name}: {files, plural, one {# file} other {# files}}"
+  volume_only_line = "Series {name}: volumes only, chapter range unknown (no automatic tracking)."
+  rename_line = "Proposed renaming (never applied): {from_path}->{to_path}"
+  active_content_line = "Active content (scripts, handlers or remote resources) in the EPUB: {path} (adopted as is, never used or rewritten by Shelfhold)."
+  duplicate_line = "Duplicate of same number in {series} (kept): no.{number}: {files}"
+  refused = "Accounts smaller than the ceiling of the shelf read this library, adoption refused: {accounts}"
+  child_accounts = "Restricted accounts reading it: {accounts}"
+  child_library = "Library readable by children: {count, plural, one {# Unclassified work will go} other {# Unclassified works will go}} in “To be classified”, their follow-up suspended; the rest of the shelf continues."
+  child_plan_header = "Proposed withdrawal plan: {count, plural, one {# file} other {# files}} Unclassified works, readable by children. Nothing is taken away by adoption."
+  child_plan_series = "to remove: {name} ({files, plural, one {# file} other {# files}})"
+  child_plan_next = "After adoption, reread the plan (its version binds the bytes): shelfhold shelf withdraw --adopted {destination}"
+  child_library_files = "No files are moved, hidden or rewritten: those that are already there remain readable as long as you do not classify the Work (shelfhold rate) or remove it (shelfhold shelf withdraw)."
+  to_rate_line = "To classify: {name}"
+  done = "{done, plural, one {# adopted file} other {# adopted files}}, {skipped, plural, one {# already known} other {# already known}}."
+  needs_destination = "Specify the destination with --destination."
+  check_help = "With --repatriate: asks Kavita to scan, then compares its series, files and reading positions with what Shelfhold holds."
+  repatriate_help = "Repatriates adopted files from a read-only volume to the writable root, before unmounting it (previewed with --dry-run, then --confirm)."
+  source_help = "Read-only root to copy from (by default, the only one that exists)."
+  pair_auto_help = "Proposes the batch matching of the adopted series with those that Suwayomi follows; --confirm <fingerprint> applies it all at once."
+  min_score_help = "Minimum score (0 to 1) of a batch match."
+  confirm_migration_help = "Confirms the failover steps from an existing automation, for the report that was viewed (--confirm <fingerprint>)."
+  pair_help = "Matches an adopted series to a series followed by Suwayomi (without --series: lists the propositions)."
+  pair_series_help = "Identifier of the exported series to match."
+  pair_source_key_help = "Source key of the chosen Suwayomi series."
+  pair_remote_id_help = "Remote identifier of the chosen Suwayomi series."
+  pair_decline_help = "Said that this adopted series does not have a twin in Suwayomi: the series which resembles it will be placed separately in the next cycle."
+  pair_follow_from_help = "Chapter to follow from (by default, after the last adopted chapter)."
+  set_follow_from_help = "Gives the hand the chapter from which to follow a series whose cover is unknown."
+  set_coverage_help = "Tells which chapters an adopted volume carries (covered chapters are not re-requested by \"backfill --gaps\")."
+  coverage_volume_help = "Volume number adopted."
+  coverage_first_help = "First chapter of the volume."
+  coverage_last_help = "Last chapter of the volume."
+  coverage_set = "Tome {volume}: chapters {first} has {last} cutlery ({added} added)."
+
+[headless]
+  roles_confirmed = "Service account confirmed: The roles_unverified warning is raised."
+  roles_nothing_to_confirm = "Nothing to confirm."
+  refused = "Refused ({code}): {detail}"
+  admin_risk_warning = "PLEASE NOTE: the Kavita key is that of an administrator account; it gives all power over Kavita (accounts, libraries, files read). Relaunch with --accept-admin-risk to confirm."
+  auth_mode_unsupported = "Suwayomi uses the authentication mode “{mode}”: mode not supported in this version. Switch Suwayomi to “basic_auth”, “ui_login” (service account) or without authentication, then rerun the command."
+  update_filters_blocking = "Suwayomi global update settings ({settings}) exclude unread or unstarted series: Suwayomi would never refresh followed series. Disable them in Suwayomi (Settings, Library, global update), or ask Shelfhold to disable them with --fix-suwayomi-settings (only Shelfhold write in Suwayomi settings, logged), then run the command again."
+  secret_unreadable = "Impossible to read the secret: {detail}."
+  secret_file_world_readable = "The file {path} is readable by everyone: restrict it (chmod 600)."
+  secret_key_needs_file = "{name} is a secret: provide it with --value-file (file or “-”), never as an argument."
+  value_or_file = "Give a value or --value-file, not both."
+  path_map_invalid = "The path table is not valid JSON."
+  file_unreadable = "Unable to read file: {detail}."
+  target_added = "Destination “{name}” added (named key created, never shown)."
+  target_exists = "Destination “{name}” already present: nothing to do."
+  key_expires = "The key expires on {date}."
+  source_added = "Source added (authentication: {mode})."
+  source_updated = "Updated source (authentication: {mode})."
+  shelf_created = "Shelf “{name}” created and linked."
+  shelf_exists = "Shelf “{name}” already present: nothing to do."
+  config_line = "{name}={value} ({source})"
+  config_set = "{name} writing."
+  config_overridden = "Attention: {name} is also defined by the layer {layer}, who wins."
+  nothing_to_apply = "No difference."
+  dry_run_done = "Simulation: nothing has been written."
+  apply_done = "Configuration applied."
+
+[pair]
+  where = "{source} {remote} ({score:.2f})"
+  line = "[{state}]{id} {name}->{where}"
+  command = "order: {command}"
+  needs_source = "Give the chosen Suwayomi series: --source-key and --remote-id."
+  coverage_unknown = "Unknown cover: no adopted chapter gives the starting point. Order: {command}"
+  declined = "Series {id} without a twin: the discovery will put the Suwayomi series which resembles it in the next cycle."
+  paired = "Series {id} paired; followed from chapter {follow_from}."
+  fingerprint = "Lot fingerprint: {fingerprint}"
+  batch_header = "{ready, plural, one {# pairing} other {# pairings}} without ambiguity, {held} to decide one by one."
+  batch_confirm_hint = "To apply the batch: shelfhold adopt --pair-auto --confirm <footprint>."
+  refused = "Series {id}: pairing refused ({reason}); no batch matching was done."
+
+[migration]
+  fingerprint = "Report Footprint: {fingerprint}"
+  none_detected = "No series fed directly by Suwayomi was detected."
+  series_line = "Series {id} In {dir} (clues: {signals})"
+  steps = "Steps to take, in order:"
+  step = "-{step}"
+  confirm_hint = "When it's done: shelfhold adopt --confirm-migration --confirm <footprint>."
+
+[repatriate]
+  needs_dry_run = "Repatriation requires a preview: run --repatriate --dry-run, reread, then --repatriate --confirm <fingerprint>."
+  fingerprint = "Preview fingerprint: {fingerprint}"
+  header = "{series, plural, one {# series} other {# series}}, {chapters, plural, one {# chapter} other {# chapters}}, {files, plural, one {# file} other {# files}}; {size, plural, one {# byte} other {# bytes}} to copy, {free, plural, one {# free byte} other {# free bytes}}."
+  problem = "Blocked: {path} ({status})"
+  ready = "Ready: nothing is deleted or moved, files are copied then checked."
+  not_ready = "Not ready: Fix the blocked points above."
+  done = "{copied, plural, one {# copied file} other {# copied files}}, {present} already in place."
+  check_problem = "Control: {path}"
+  safe = "Check passed: The read-only volume can be unmounted."
+  unsafe = "Check failed: Do not unmount the volume."
+  kavita_counts = "Kavita: {after_series, plural, one {# series} other {# series}} And {after_files, plural, one {# file} other {# files}} NOW, {before_series} And {before_files} before copying."
+  kavita_problem = "Kavita: {kind}: {what}"
+  kavita_no_baseline = "Kavita: no state before the copy is saved, nothing is checked. Run --repatriate --dry-run then --confirm while the old volume is mounted."
+  kavita_unreachable = "Kavita does not respond or refuses the reading: nothing is verified."
+  kavita_no_library = "Kavita: the destination is not linked to any library, nothing is checked."
+  kavita_baseline_incomplete = "Kavita: the state before the copy does not cover the adopted files (the key account does not see everything, or a scan was in progress): nothing is checked."
+  kavita_incomplete = "Kavita: the list of series is too long to read in full, nothing is verified."
+  kavita_scan_refused = "Kavita: The library mount does not have the expected sentinel, the scan is not sent and nothing is checked. Raise the correct volume, then run the control again."
+  kavita_not_asked = "Kavita was not questioned, nothing is verified."
+
+[detach]
+  help = "Detach Shelfhold: returns Suwayomi to its original settings, without touching the files."
+  restore_help = "Returns Suwayomi to its pre-matching categories and update strategy."
+  shelf_help = "Only detach this shelf."
+  series_help = "Only detach this series (Edition ID)."
+  needs_restore_upstream = "Specify what the detach does: --restore-upstream."
+  line = "Connection {binding}: rendered settings ({source}): {ok}"
+  ok = "do"
+  managed = "File managed by Shelfhold: {folder} ({count, plural, one {# file} other {# files}}); your old scripts should leave it alone."
+  files_kept = "No files have been deleted or moved."
+  exclusion_kept = "Connection {binding}: the series remains excluded from Suwayomi updates by a category that is not yours to be removed by Shelfhold ({names}): Remove it yourself if you want Suwayomi to update it."
+
+[purge]
+  help = "Erases a Unit or Work for good (reserved action)."
+  now_help = "Confirms that the erase should take place now, without Recycle Bin."
+  unit_help = "Identifier of the Unit to be deleted."
+  work_help = "Identifier of the Work to be deleted (all its Units)."
+  confirm_help = "The identifier, retyped identically."
+  needs_now = "Specify --now: deletion is permanent."
+  needs_confirmation = "Retype the identifier with --confirm to clear."
+  done = "{units, plural, one {# Unit concerned} other {# Units concerned}}, {erased, plural, one {# file deleted} other {# deleted files}}."
+  root_pending = "Root {root}: its tombstone will be written when it comes back; nothing else will be written there before."
+  alert = "To do by hand: {alert}"
+  upstream = "Service: {released, plural, one {# download released} other {# downloads released}}, {kept, plural, one {# guard} other {# kept}} by another account, {unfollowed, plural, one {# series withdrawn} other {# withdrawn series}} of the library."
+  retained_backup = "Backup kept which still contains this data (to be discarded by hand, never rewritten): {name}"
+  checkpoint_help = "Only redoes the emptying of the database log, after a deletion of which the log was kept."
+  checkpoint_done = "Log emptied: deletion is finalized."
+  kept_ack_help = "Clears the mark of downloads left in the service (to be done after deleting them in Suwayomi)."
+  kept_ack_done = "{count, plural, one {# mark deleted} other {# marks erased}}."
+  leftovers_help = "Proposes to release, in the service, the downloads left by the purges of the previous version (plan, then --confirm)."
+  leftovers_not_connected = "No connected service: nothing to offer."
+  leftovers_plan = "{downloads, plural, one {# download still held} other {# downloads still held}} by the service, {dead, plural, one {# forgotten ticket} other {# forgotten tickets}} by the service, {series, plural, one {# purged series} other {# purged series}} still in its library. Nothing was erased."
+  leftovers_series_unknown = "The service was unable to list its library: the purged series are not offered this time."
+  leftovers_confirm = "To release these downloads: shelfhold purge --leftovers --confirm {version}"
+  leftovers_done = "{released, plural, one {# download released} other {# downloads released}}, {forgotten, plural, one {# forgotten ticket} other {# forgotten tickets}}, {unfollowed, plural, one {# series withdrawn} other {# withdrawn series}} of the library."
+  out_of_reach = "Out of scope of deletion:"
+  out_of_reach_item = "-{item}"
+
+[probe]
+  help = "Verifies that you can write, rename and create a folder in a shared folder."
+  ok = "{folder}: writing, renaming and folder creation possible."
+  failed = "Failed at step “{step}”: {cause}. Block compound to apply:"
+
+[rate]
+  help = "Classify a Work (or an Edition), or all those waiting in “To be classified”: the only door which fixes an age."
+  age_help = "Age: 0, 10+, 12+, 13+, 16+, 18+ or X."
+  work_help = "Identifier of the Work to be classified."
+  edition_help = "Identifier of an Edition to be classified alone (adaptation of an adult Work, for example)."
+  pending_help = "Classify all the Works at once as “To be classified”; asks you to retype the displayed confirmation."
+  confirm_help = "With --pending: the confirmation displayed by the command without --confirm."
+  choose_one = "Specify --work, --edition, or --pending (only one)."
+  done = "{target} class {age}."
+  withdrawals_plan = "{count, plural, one {# Edition no longer holds} other {# Editions no longer hold}} in a family shelf; nothing was removed. Run “shelfhold shelf withdraw” to see the plan and confirm it:"
+  withdrawal_line = "Edition {edition} (shelf {shelf}): {reason}"
+  suggestions_open = "{count, plural, one {# higher suggested age remains open: it blocks its Edition} other {# higher suggested ages remain open: they block their Edition}} as long as it is not classified (shelfhold rate AGE --edition ID):"
+  suggestion_line = "Edition {edition}: {age} suggested ({provenance})"
+  pending_line = " {work} {title} ({state})"
+  pending_none = "No Work is waiting in “To be filed”."
+  pending_header = "{count, plural, one {# Work would be classified} other {# Works would be classified}} {age}:"
+  pending_confirm = "To sort them all, retype the confirmation: shelfhold rate {age}--pending --confirm {token}"
+  pending_needs_confirm = "The confirmation does not match the list read ({token}): reread the list then retype it."
+  batch_done = "{count, plural, one {# Classified work} other {# Classified works}} {age} (one audit entry per Work)."
+
+[recovery_kit]
+  title = "Home emergency kit"
+  intro = "Print and store away from the device. This kit contains no passwords, no passphrases and no keys: it tells you where to look and what to type."
+  passphrase_title = "Where is the passphrase"
+  passphrase_body = "The keychain export passphrase is chosen by you. It is not in this kit. Note below where it is located (password manager, vault, envelope), never next to the export file."
+  reset_title = "Regain control of an account"
+  reset_body = "No recovery code exists on the web: recovery goes through the host. From the machine hosting Shelfhold, run the command below (the password comes from the file or standard input, never from the command line). Sessions, passkeys, and API keys for this account are closed."
+  sessions_title = "Close all sessions"
+  sessions_body = "If a device is lost or stolen, close all sessions from the host, without shutting down the server."
+  kavita_title = "Continue reading without Shelfhold"
+  kavita_body = "Your files are already stored in Kavita's libraries: open Kavita directly with its own account, Shelfhold is not necessary to read."
+  follows_title = "Suspend tracking"
+  follows_body = "So that nothing is written or downloaded while you are repairing: activate maintenance mode, then release it with “shelfhold maintenance off”."
+  keyring_title = "The keychain"
+  keyring_body = "The keychain export file, which the documentation calls {export}: If you saved it under another name (the --out option), note that name below. It is encrypted by the passphrase, it is kept off the host, in a location other than the passphrase. Without it, after a loss of /data, the deletion log no longer protects anything."
+  rotation = "Redo the export of the keychain, and reprint this kit, after each rotation of the keychain."
+  no_secret = "This kit contains no secrets."

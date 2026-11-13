@@ -15,13 +15,15 @@ class SqlPreferencesStore:
     def __init__(self, engine: Engine) -> None:
         self._engine = engine
 
-    def read(self, user_id: str) -> tuple[str | None, str]:
+    def read(self, user_id: str) -> tuple[str | None, str, str]:
         user = identity.user
         with self._engine.connect() as connection:
-            theme, scheme = connection.execute(
-                sa.select(user.c.theme, user.c.color_scheme).where(user.c.id == user_id)
+            theme, scheme, locale = connection.execute(
+                sa.select(user.c.theme, user.c.color_scheme, user.c.locale).where(
+                    user.c.id == user_id
+                )
             ).one()
-        return theme, scheme
+        return theme, scheme, locale
 
     def instance_default_theme(self) -> str | None:
         setting = platform.app_setting
@@ -31,9 +33,13 @@ class SqlPreferencesStore:
             ).scalar_one_or_none()
 
     def update(self, user_id: str, changes: Mapping[str, str | None]) -> None:
+        # the application names the choice `language`, the column of the user row is `locale`
+        values = {
+            "locale" if name == "language" else name: value for name, value in changes.items()
+        }
         user = identity.user
         with self._engine.begin() as connection:
-            connection.execute(sa.update(user).where(user.c.id == user_id).values(**changes))
+            connection.execute(sa.update(user).where(user.c.id == user_id).values(**values))
 
 
 class SqlNotificationPrefsStore:

@@ -11,8 +11,8 @@ vi.mock('$app/navigation', () => ({ invalidateAll }));
 
 const BASE = 'http://shelfhold.test';
 const server = setupServer();
-const prefs = (scheme: string) => ({
-  theme: 'bibliotheque', chosen_theme: null, color_scheme: scheme
+const prefs = (scheme: string, language: string = 'fr') => ({
+  theme: 'bibliotheque', chosen_theme: null, color_scheme: scheme, language
 });
 
 beforeAll(() => {
@@ -44,5 +44,21 @@ describe('Appearance screen', () => {
     expect(await screen.findByText('Enregistré.')).toBeTruthy();
     expect(patched).toEqual({ color_scheme: 'dark' });
     expect(invalidateAll).toHaveBeenCalledOnce(); // the layout applies it: no screen touches the theme
+  });
+
+  // req: ENF-I18N-001
+  it('saves the interface language and applies it at once', async () => {
+    let patched: unknown = null;
+    server.use(
+      http.get(`${BASE}/api/v1/me/preferences`, () => HttpResponse.json(prefs('auto'))),
+      http.patch(`${BASE}/api/v1/me/preferences`, async ({ request }) => {
+        patched = await request.json();
+        return HttpResponse.json(prefs('auto', 'en'));
+      })
+    );
+    render(Page);
+    await userEvent.setup().selectOptions(await screen.findByLabelText("Langue de l'interface"), 'English');
+    expect(patched).toEqual({ language: 'en' });
+    expect(invalidateAll).toHaveBeenCalledOnce(); // the layout reads the preference again
   });
 });

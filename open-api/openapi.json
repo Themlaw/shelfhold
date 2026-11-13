@@ -3769,7 +3769,7 @@
       },
       "PreferencesIn": {
         "additionalProperties": false,
-        "description": "Only what is named is changed; `theme: null` goes back to the instance default.",
+        "description": "Only what is named is changed; `theme: null` goes back to the instance default. An\nexplicit `language: null` is refused: a language is a choice, the default is already the\nprofile's (ENF-I18N-001).",
         "properties": {
           "color_scheme": {
             "default": "auto",
@@ -3779,6 +3779,15 @@
               "dark"
             ],
             "title": "Color Scheme",
+            "type": "string"
+          },
+          "language": {
+            "default": "fr",
+            "enum": [
+              "fr",
+              "en"
+            ],
+            "title": "Language",
             "type": "string"
           },
           "theme": {
@@ -3819,6 +3828,14 @@
             "title": "Color Scheme",
             "type": "string"
           },
+          "language": {
+            "enum": [
+              "fr",
+              "en"
+            ],
+            "title": "Language",
+            "type": "string"
+          },
           "theme": {
             "title": "Theme",
             "type": "string"
@@ -3827,7 +3844,8 @@
         "required": [
           "theme",
           "chosen_theme",
-          "color_scheme"
+          "color_scheme",
+          "language"
         ],
         "title": "PreferencesOut",
         "type": "object"

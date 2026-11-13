@@ -53,7 +53,11 @@ from shelfhold.identity.public import (
 from shelfhold.infrastructure.http_headers import BEARER_CHALLENGE
 from shelfhold.interfaces.http_api.catalog import error_code
 from shelfhold.interfaces.http_api.idempotency import NEVER_STORE
-from shelfhold.interfaces.http_api.problems import ProblemError, build_problem_response
+from shelfhold.interfaces.http_api.problems import (
+    ProblemError,
+    build_problem_response,
+    language_from_headers,
+)
 from shelfhold.interfaces.http_api.ratelimit import (
     SlidingWindowLimiter,
     client_ip_of,
@@ -366,7 +370,14 @@ class AuthMiddleware:
     @staticmethod
     async def _problem(scope: Scope, receive: Receive, send: Send, code: str) -> None:
         request_id = scope.get("state", {}).get("request_id")
-        response = build_problem_response(error_code(code), request_id=request_id)
+        headers = Headers(scope=scope)
+        language = language_from_headers(
+            {"accept-language": headers.get("accept-language", "")},
+            scope.get("state", {}).get("principal"),
+        )
+        response = build_problem_response(
+            error_code(code), request_id=request_id, language=language
+        )
         await response(scope, receive, send)
 
 

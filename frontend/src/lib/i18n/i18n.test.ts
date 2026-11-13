@@ -1,7 +1,8 @@
 import { IntlMessageFormat } from 'intl-messageformat';
 import { describe, expect, it } from 'vitest';
 import fr from './fr.json';
-import { t } from './index';
+import en from './en.json';
+import { detectLanguage, setUiLanguage, t } from './index';
 
 const NNBSP = '\u202f';
 const NBSP = '\u00a0';
@@ -60,5 +61,33 @@ describe('i18n', () => {
   // req: ENF-I18N-003
   it('does not retypeset what the user or a source gave as a value', () => {
     expect(t('toRate.rated', { title: 'Quoi : ça ?', age: '12+' })).toContain('« Quoi : ça ? »');
+  });
+
+  // req: ENF-I18N-001
+  it('speaks English once the language is set, with English plurals and formats, then French again', () => {
+    try {
+      setUiLanguage('en');
+      expect(t('library.total', { count: 1 })).toBe('1 Work');
+      expect(t('library.total', { count: 2 })).toBe('2 Works');
+      expect(t('library.total', { count: 0 })).toBe('No Works');
+      expect(t('sheet.bindings.rank', { rank: 1234 })).toBe('Rank 1,234');
+    } finally {
+      setUiLanguage('fr');
+    }
+    expect(t('library.total', { count: 2 })).toBe('2 Œuvres');
+  });
+
+  // req: ENF-I18N-001
+  it('carries the same keys in both catalogs, none empty', () => {
+    expect(Object.keys(en).sort()).toEqual(Object.keys(fr).sort());
+    expect(Object.entries(en).filter(([key, value]) => !value.trim() && fr[key as keyof typeof fr].trim())).toEqual([]);
+  });
+
+  // req: ENF-I18N-001
+  it('picks the first browser language the catalogs speak, French when none', () => {
+    expect(detectLanguage(['en-GB', 'fr'])).toBe('en');
+    expect(detectLanguage(['de', 'fr-CA', 'en'])).toBe('fr');
+    expect(detectLanguage(['de', 'es'])).toBe('fr');
+    expect(detectLanguage(undefined)).toBe('fr');
   });
 });

@@ -52,7 +52,7 @@ def test_ui_strings_extracted_no_hardcoded_text() -> None:
             if (
                 isinstance(node, ast.Call)
                 and isinstance(node.func, ast.Name)
-                and node.func.id == "t"
+                and node.func.id in ("t", "t_lang")  # `t_lang` is `t` in the language of a request
                 and node.args
                 and isinstance(node.args[0], ast.Constant)
             ):

@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Protocol
 
+from shelfhold.i18n import DEFAULT_LANGUAGE
 from shelfhold.identity.application.sessions import SessionView
 
 
@@ -15,6 +16,7 @@ class UserRecord:
     role: str
     password_hash: str | None
     can_rate: bool = False
+    locale: str = DEFAULT_LANGUAGE
 
 
 @dataclass(frozen=True)

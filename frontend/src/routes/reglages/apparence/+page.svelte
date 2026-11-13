@@ -1,17 +1,21 @@
 <script lang="ts">
-  // The color scheme of the signed-in person (EF-UX-012): saved by the server, then the root layout
-  // reads the preferences again and applies them (only it knows the theme mechanism, I51).
+  // The color scheme and the language of the signed-in person (EF-UX-012, ENF-I18N-001): saved by
+  // the server, then the root layout reads the preferences again and applies them (only it knows
+  // the theme mechanism, I51).
   import { invalidateAll } from '$app/navigation';
   import { onMount } from 'svelte';
   import { getPreferences, patchPreferences } from '#lib/api/index.ts';
   import type { PreferencesOut } from '#lib/api/types.gen.ts';
-  import { t } from '#lib/i18n/index.ts';
+  import { setUiLanguage, t } from '#lib/i18n/index.ts';
   import { csrfToken } from '#lib/passkeys.ts';
 
   let prefs = $state<PreferencesOut | null>(null);
   const SCHEMES: PreferencesOut['color_scheme'][] = ['auto', 'light', 'dark'];
+  // the options speak their own language: the choice of one is readable whatever the interface says
+  const LANGUAGES: PreferencesOut['language'][] = ['fr', 'en'];
 
   let colorScheme = $state<PreferencesOut['color_scheme']>('auto');
+  let language = $state<PreferencesOut['language']>('fr');
   let failed = $state(false);
   let message = $state('');
 
@@ -22,6 +26,8 @@
       const { data } = await getPreferences({ throwOnError: true });
       prefs = data;
       colorScheme = data.color_scheme;
+      language = data.language;
+      setUiLanguage(data.language);
     } catch {
       failed = true;
       message = t('appearance.error');
@@ -38,6 +44,27 @@
       const { data } = await patchPreferences({
         headers: headers(),
         body: { color_scheme: colorScheme },
+        throwOnError: true
+      });
+      prefs = data;
+      message = t('appearance.saved');
+      await invalidateAll();
+    } catch {
+      failed = true;
+      message = t('appearance.refused');
+    }
+  }
+
+  // The language applies at once (the screen re-renders in it), then the layout reads the
+  // preference again like it does for the theme.
+  async function changeLanguage(): Promise<void> {
+    failed = false;
+    message = '';
+    setUiLanguage(language);
+    try {
+      const { data } = await patchPreferences({
+        headers: headers(),
+        body: { language },
         throwOnError: true
       });
       prefs = data;
@@ -65,6 +92,14 @@
         {/each}
       </select>
       <button type="submit">{t('appearance.save')}</button>
+    </form>
+    <form onsubmit={(event) => event.preventDefault()}>
+      <label for="language">{t('appearance.language')}</label>
+      <select id="language" bind:value={language} onchange={changeLanguage}>
+        {#each LANGUAGES as value (value)}
+          <option value={value}>{value === 'fr' ? 'Français' : 'English'}</option>
+        {/each}
+      </select>
     </form>
   {/if}
   {#if message}

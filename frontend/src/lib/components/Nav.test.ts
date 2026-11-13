@@ -40,7 +40,7 @@ describe('Nav (EF-UX-005)', () => {
     } as never);
     expect(links()).toEqual(['Accueil', 'Activité']);
     unmount();
-    render(Layout, { children: page, data: { sourceUrl: null, appearance: null, nav: [] } } as never);
+    render(Layout, { children: page, data: { sourceUrl: null, appearance: null, nav: [], language: 'fr' } } as never);
     expect(screen.queryByRole('navigation')).toBeNull();
   });
 });

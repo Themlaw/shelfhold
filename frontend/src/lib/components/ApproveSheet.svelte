@@ -87,7 +87,7 @@
   {#if preview}
     <p class="summary">
       {t('approve.size_summary', {
-        units: preview.units,
+        volumes: preview.units,
         bytes: formatNumber(preview.size_bytes ?? 0)
       })}
       {#if preview.units_minimum}({t('approve.more_to_come')}){/if}

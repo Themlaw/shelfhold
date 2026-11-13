@@ -57,6 +57,7 @@ def _user_of(row: Any) -> UserRecord:
         role=row.u_role,
         password_hash=row.u_password_hash,
         can_rate=bool(row.u_can_rate),
+        locale=row.u_locale,
     )
 
 
@@ -67,6 +68,7 @@ _USER_COLUMNS = (
     _user.c.role.label("u_role"),
     _user.c.password_hash.label("u_password_hash"),
     _user.c.can_rate.label("u_can_rate"),
+    _user.c.locale.label("u_locale"),
 )
 
 
