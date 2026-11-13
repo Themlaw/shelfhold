@@ -88,10 +88,12 @@ tests = [
 
 [[allow]]
 category = "deferred-l31-adoption-and-preview"
-reason = "2026-11-13 (M3 L29): `apply_rename`, `RenameStep` and `SeriesResolver` left this list: the rename plans (template change, reshelving, binding migration) apply through them and the reader count resolves the series of its folders. `Resolution.renamed` stays: it tells that Kavita shows another name than the one Shelfhold froze, which the re-resolution after a move (`resolve_remote`, with the progress carried over) reads in M4; before M4 a rename plan only warns (EF-EXP-037)."
+reason = "2026-11-13 (M3 L29): `apply_rename`, `RenameStep` and `SeriesResolver` left this list: the rename plans (template change, reshelving, binding migration) apply through them and the reader count resolves the series of its folders. `Resolution.renamed` and `SeriesResolver.collision` stay (the planner's collision check of a renamed series is M4's, with the progress carried over), and so does `ExportPipeline.resume_rename`: a rename plan cut short is resumed in production by the apply job (`_apply_rename` goes on with a plan left `applying`), the direct door is the one the kill tests drive. `Resolution.renamed`: it tells that Kavita shows another name than the one Shelfhold froze, which the re-resolution after a move (`resolve_remote`, with the progress carried over) reads in M4; before M4 a rename plan only warns (EF-EXP-037)."
 until = "M4"
 symbols = [
+  "shelfhold.export.application.pipeline:ExportPipeline.resume_rename",
   "shelfhold.export.targets.kavita.series:Resolution.renamed",
+  "shelfhold.export.targets.kavita.series:SeriesResolver.collision",
 ]
 
 [[allow]]
