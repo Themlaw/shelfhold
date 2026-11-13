@@ -11,6 +11,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+import structlog
+
 from shelfhold.export.domain.bindings import BindingError
 from shelfhold.headless import HeadlessAdmin, HeadlessError, Plan
 from shelfhold.headless.actor import Actor
@@ -417,10 +419,12 @@ class IdentityDispatcher:
         auth: LocalAuth,
         headless: HeadlessAdmin | None = None,
         ops: OpsServices | None = None,
+        on_change: Callable[[], object] | None = None,
     ) -> None:
         self._auth = auth
         self._headless = headless
         self._ops = ops
+        self._on_change = on_change  # the state `/healthz` shows may have changed: read it again
 
     def _authorize(self, principal: Principal, reserved: str | None) -> None:
         if reserved is None:
@@ -463,7 +467,10 @@ class IdentityDispatcher:
         if operating is not None and self._ops is not None:  # EF-INT-023
             principal = principal_for_peer(peer)
             self._authorize(principal, operating[1])
-            return await asyncio.to_thread(run_ops_method, self._ops, principal, method, params)
+            try:
+                return await asyncio.to_thread(run_ops_method, self._ops, principal, method, params)
+            finally:
+                await self._changed()
         headless = HEADLESS_METHODS.get(method)
         if headless is not None and self._headless is not None:
             self._refuse_while_frozen(method)
@@ -472,7 +479,10 @@ class IdentityDispatcher:
             audited = {**params, ACTOR: _actor_of(principal)}  # whatever the peer sent is replaced
             if method == "config.apply" and not _flag(params, "dry_run"):
                 await self._authorize_new_targets(self._headless, principal, audited)
-            return await self._run_headless(headless[0], self._headless, audited)
+            try:
+                return await self._run_headless(headless[0], self._headless, audited)
+            finally:
+                await self._changed()
         entry = METHODS.get(method)
         if entry is None:
             raise RpcError(METHOD_NOT_FOUND, t("local_cli.unknown_method", method=method))
@@ -504,6 +514,13 @@ class IdentityDispatcher:
                     {"code": "key_rotation_failed"},
                 ) from None
             raise
+
+    async def _changed(self) -> None:
+        if self._on_change is not None:
+            try:
+                await asyncio.to_thread(self._on_change)
+            except Exception:
+                structlog.get_logger().warning("health.refresh_failed")
 
     @staticmethod
     async def _run_headless(

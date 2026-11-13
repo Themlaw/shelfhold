@@ -408,7 +408,12 @@ def create_app(
             structlog.get_logger().warning("local_cli.allow_host_enabled")
         server = LocalSocketServer(
             resolved.data_dir / SOCKET_NAME,
-            IdentityDispatcher(auth, headless=headless_admin(), ops=ops_services()),
+            IdentityDispatcher(
+                auth,
+                headless=headless_admin(),
+                ops=ops_services(),
+                on_change=health.refresh,
+            ),
             allow_host=resolved.cli_allow_host,
         )
         bound: LocalSocketServer | None = server

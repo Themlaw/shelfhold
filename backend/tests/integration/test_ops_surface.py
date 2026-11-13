@@ -4,7 +4,6 @@ that leave the waiting states, with the reserved ones refused to every key."""
 
 import json
 import re
-import time
 from datetime import timedelta
 from pathlib import Path
 from types import SimpleNamespace
@@ -24,7 +23,6 @@ from shelfhold.infrastructure.schema import acquisition, export, platform
 from shelfhold.interfaces.cli import _ops as cli_ops
 from shelfhold.interfaces.local_cli import IdentityDispatcher
 from shelfhold.ops import endpoint_of
-from shelfhold.ops.health import HEALTH_CACHE_TTL
 from tests.auth_env import PASSWORD, AuthEnv, auth_env, run_cli
 from tests.export_env import ExportEnv, export_env
 from tests.kavita_export_env import wire
@@ -98,6 +96,7 @@ def test_healthz_exposes_paused_queues(api: AuthEnv) -> None:
     """A7: anonymous callers get the state only; a session or a key also gets the paused queues
     with their reason, and the version."""
     _seed_waiting(api.settings)
+    api.app.state.health.refresh()  # rows written behind the instance's back: read them now
     anonymous = api.client.get("/healthz").json()
     assert anonymous == {"state": "ok"}  # no name, no version
     api.login()
@@ -126,17 +125,12 @@ def test_healthz_reasons_are_for_administrators_and_never_carry_a_title(api: Aut
             )
     finally:
         engine.dispose()
+    api.app.state.health.refresh()  # rows written behind the instance's back: read them now
     service = api.app.state.auth_gate.auth  # type: ignore[attr-defined]
     service.profile_add("mum", PASSWORD, "member", by=None)
     anonymous = api.client.get("/healthz").json()
     api.login()
     admin = api.client.get("/healthz").json()
-    deadline = time.monotonic() + HEALTH_CACHE_TTL + 5
-    while not admin.get("paused") and time.monotonic() < deadline:
-        # the shared status was read at startup, before the rows above: it is renewed within
-        # HEALTH_CACHE_TTL (the last value is served meanwhile)
-        time.sleep(0.25)
-        admin = api.client.get("/healthz").json()
     api.client.cookies.clear()
     assert api.login("mum").status_code == 200
     member = api.client.get("/healthz").json()

@@ -2,8 +2,9 @@
 restore, the keyring...) is computed by one caller at a time and kept for `HEALTH_CACHE_TTL`
 seconds; what depends on the caller (the version, the reason of each queue) is never cached.
 
-Visibility of a change of state (maintenance, restore, keyring): at most `HEALTH_CACHE_TTL`
-seconds later, the time the shared value lives. The HTTP tests run `create_app()` as composed.
+A change made by the instance (a queue paused or resumed, a restore or keyring exit, maintenance)
+refreshes the shared value at once; one made from outside shows at most `HEALTH_CACHE_TTL` seconds
+later, the time the shared value lives. The HTTP tests run `create_app()` as composed.
 """
 
 from __future__ import annotations
@@ -18,10 +19,12 @@ from typing import Any
 import pytest
 
 from shelfhold.config import Settings
+from shelfhold.infrastructure.db import create_db_engine
 from shelfhold.ops import health as health_module
 from shelfhold.ops.health import HEALTH_CACHE_TTL, OpsHealth
 from shelfhold.ops.ports import PausedQueue
 from tests.auth_env import AuthEnv, auth_env
+from tests.ops_env import add_job
 from tests.visibility_env import add_profile
 
 pytestmark = pytest.mark.req("ENF-OPS-003")
@@ -259,3 +262,84 @@ def test_close_waits_for_the_background_read_before_the_engine_goes(ops: _Ops) -
     health.close()
     assert ops.calls == 1
     assert not any(t.name == "health-prime" and t.is_alive() for t in threading.enumerate())
+
+
+# -- a change made by the instance is visible at once ---------------------------------------------
+
+
+def _queued_job(settings: Settings, kind: str) -> None:
+    engine = create_db_engine(settings.database_path)
+    try:
+        add_job(engine, kind=kind, status="queued")
+    finally:
+        engine.dispose()
+
+
+def test_pausing_then_resuming_a_queue_shows_on_healthz_without_waiting_for_the_ttl(
+    monkeypatch: pytest.MonkeyPatch, settings: Settings
+) -> None:
+    with auth_env(monkeypatch, settings) as env:  # the real services; the cache is warm and idle
+        env.login()
+        _queued_job(settings, "export.scan")
+        assert env.client.get("/healthz").json()["paused_queues"] == []  # cached, empty
+        assert env.post("/api/v1/queue/pause", json={}).status_code == 200
+        paused = env.client.get("/healthz").json()  # the very next probe: no TTL, no clock moved
+        assert paused["paused_queues"] == ["export.scan"]
+        assert [p["queue"] for p in paused["paused"]] == ["export.scan"]
+        assert env.post("/api/v1/queue/resume", json={}).status_code == 200
+        assert env.client.get("/healthz").json()["paused_queues"] == []
+
+
+def test_a_probe_after_a_mutation_asks_for_no_thread_of_the_pool(
+    monkeypatch: pytest.MonkeyPatch, settings: Settings
+) -> None:
+    """The refresh is paid by the mutation: the probe still answers from the cache alone."""
+    with auth_env(monkeypatch, settings) as env:
+        env.login()
+        _queued_job(settings, "export.scan")
+        assert env.post("/api/v1/queue/pause", json={}).status_code == 200
+
+        async def refused(*_a: Any, **_k: Any) -> Any:
+            raise AssertionError("/healthz asked for a thread of the pool")
+
+        monkeypatch.setattr("shelfhold.interfaces.http_api.health.run_in_threadpool", refused)
+        assert env.client.get("/healthz").json()["paused_queues"] == ["export.scan"]
+
+
+def test_an_anonymous_mutation_triggers_no_refresh(
+    monkeypatch: pytest.MonkeyPatch, settings: Settings, ops: _Ops
+) -> None:
+    with auth_env(monkeypatch, settings, ops_services=ops) as env:
+        _primed(ops)
+        before = ops.calls
+        anonymous = env.other_client("10.0.0.9")
+        assert anonymous.post("/api/v1/queue/pause", json={}).status_code in (401, 403)
+        assert ops.calls == before, "a caller with no session made the instance read its status"
+
+
+def test_refresh_waits_for_a_read_in_flight_and_reads_again(ops: _Ops) -> None:
+    """A read that began before the change may carry the old state: `refresh` reads once more."""
+    health = _health(ops)
+    health.queues()
+    ops.delay = 0.3
+    ops.queues = []
+    lead = threading.Thread(target=health.refresh)
+    lead.start()
+    time.sleep(0.1)  # the first refresh is inside the status
+    ops.queues = [RESTORE]  # the change lands while it reads
+    health.refresh()
+    lead.join(10)
+    assert [q.queue for q in health.queues()] == ["export.scan"]
+    assert ops.calls == 3
+
+
+def test_refresh_keeps_the_last_value_when_the_status_cannot_be_read(ops: _Ops) -> None:
+    health = _health(ops)
+    assert [q.queue for q in health.queues()] == ["export.scan"]
+
+    def broken() -> list[PausedQueue]:
+        raise RuntimeError("boom")
+
+    ops.paused_queues = broken  # type: ignore[method-assign]
+    health.refresh()  # logged, never raised
+    assert [q.queue for q in health.queues()] == ["export.scan"]

@@ -3,8 +3,10 @@
 import re
 import time
 import uuid
+from collections.abc import Callable
 
 import structlog
+from starlette.concurrency import run_in_threadpool
 from starlette.datastructures import Headers, MutableHeaders
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
@@ -73,3 +75,36 @@ class SecurityHeadersMiddleware:
             await send(message)
 
         await self.app(scope, receive, send_with_headers)
+
+
+_SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
+
+
+class HealthRefreshMiddleware:
+    """A signed-in caller changed something (`POST`, `PUT`, `PATCH`, `DELETE`) that `/healthz` may
+    show (a queue paused or resumed, maintenance, an exit of the restore): the shared status is
+    read again before the answer leaves, so the next probe sees the change. Nobody anonymous pays
+    for a read, and `/healthz` itself never waits for it: the cost is the mutation's."""
+
+    def __init__(self, app: ASGIApp, *, refresh: Callable[[], object]) -> None:
+        self.app = app
+        self._refresh = refresh
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http" or scope["method"] in _SAFE_METHODS:
+            await self.app(scope, receive, send)
+            return
+
+        async def refreshing_send(message: Message) -> None:
+            if (
+                message["type"] == "http.response.start"
+                and message["status"] < 500
+                and scope.get("state", {}).get("principal") is not None
+            ):
+                try:
+                    await run_in_threadpool(self._refresh)
+                except Exception:
+                    structlog.get_logger().warning("health.refresh_failed")
+            await send(message)
+
+        await self.app(scope, receive, refreshing_send)

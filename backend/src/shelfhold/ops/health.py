@@ -43,7 +43,8 @@ __all__ = ["HEALTH_CACHE_TTL", "Action", "OpsHealth", "action_of", "build_health
 STORE_BACKUP_KEY = "store.backup_declared_at"  # what the host's own backup tool declared
 LOST_ORIGINAL = "content.original_lost"  # stable code of the entry (EF-BIB-051)
 # How long the shared part of `/healthz` (the paused queues, read through the roots, the restore,
-# the keyring...) is kept. A change of state (maintenance, restore under way, keyring) shows on
+# the keyring...) is kept. A change made by the instance itself refreshes it at once
+# (`OpsHealth.refresh`); one made from outside (a restore, a keyring file, the host's disk) shows on
 # `/healthz` at most this many seconds later: the probe is a liveness check, not a transaction.
 HEALTH_CACHE_TTL = 5.0
 KAVITA_AUDIT_STATES = ("child_exposure", "permission_denied", "target_forbidden")
@@ -149,6 +150,25 @@ class OpsHealth:
         if refresh:
             self._spawn(self._lead_quietly, "health-refresh", flight)
         return list(value)
+
+    def refresh(self) -> None:
+        """Read the status now and keep it: called by what changes a state `/healthz` shows (a
+        queue paused or resumed, a restore or a keyring exit, maintenance), so that the change is
+        visible at once and not `HEALTH_CACHE_TTL` seconds later. It is the caller of the change
+        that pays for the read, never a probe. A read already in flight began before the change:
+        it is waited for, then the status is read again. A database that cannot be read keeps the
+        last value (the next probe retries)."""
+        while True:
+            with self._mutex:
+                flight = self._flight
+                if flight is None:
+                    flight = self._flight = threading.Event()
+                    break
+            flight.wait()
+        try:
+            self._lead(flight)
+        except Exception:
+            structlog.get_logger().warning("health.refresh_failed")
 
     def prime(self) -> None:
         """Read the status once in the background, so that the first probe is not the one that
