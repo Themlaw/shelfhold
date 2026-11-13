@@ -93,7 +93,16 @@ class KavitaClient:
         self._unreachable_announced = False
         self._key_revoked = False  # the pause is the revocation of the key (401)
         self._write_guard: Callable[[], None] | None = None
+        self._target_id: str | None = None  # whose client this is, set where it is opened
         self._wake = wake  # EF-INT-022: a Kavita behind Sablier is woken before it is called
+
+    @property
+    def target_id(self) -> str | None:
+        """The export target this client speaks to (None: not bound, so not vouched for)."""
+        return self._target_id
+
+    def bind_target(self, target_id: str) -> None:
+        self._target_id = target_id
 
     def set_write_guard(self, guard: Callable[[], None] | None) -> None:
         """Called before every write route: raises while the destination is paused."""

@@ -10,8 +10,8 @@ import sqlalchemy as sa
 
 from shelfhold.export.application.target_state import FieldRegistry
 from shelfhold.export.application.withdrawal import WithdrawalService
-from shelfhold.export.targets.kavita.arrival import ArrivalPoller
 from shelfhold.export.targets.kavita.audit import AccessAuditor
+from shelfhold.export.targets.kavita.polling import ArrivalPoller
 from shelfhold.export.targets.kavita.reinstall import InstanceService
 from shelfhold.export.targets.kavita.series import SeriesAges
 from shelfhold.infrastructure.ids import new_ulid

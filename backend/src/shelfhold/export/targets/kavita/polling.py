@@ -69,6 +69,38 @@ class ArrivalPoller:
             return False
         return True
 
+    def waiting_destinations(self, target_id: str, library_id: int) -> list[str]:
+        """The destinations of the target `target_id`, in its remote library `library_id`, that
+        hold a written record Kavita has not been seen to index yet: the only ones an event of that
+        library is worth a look for (EF-EXP-034). Read from the database, no request."""
+        t, destination, library, link = (
+            export.export_record, export.shelf_destination, export.remote_library,
+            export.shelf_destination_remote_library,
+        )  # fmt: skip
+        with self._engine.connect() as connection:
+            return list(
+                connection.execute(
+                    sa.select(destination.c.id)
+                    .select_from(
+                        destination.join(
+                            link, link.c.shelf_destination_id == destination.c.id
+                        ).join(library, library.c.id == link.c.remote_library_id)
+                    )
+                    .where(
+                        destination.c.target_id == target_id,
+                        library.c.export_target_id == target_id,
+                        library.c.remote_ref == str(library_id),
+                        sa.exists().where(
+                            t.c.shelf_destination_id == destination.c.id,
+                            t.c.locator_type == "path",
+                            t.c.state.in_(("written", "scanned")),
+                            sa.or_(t.c.error_code.is_(None), t.c.error_code != NOT_INDEXED),
+                        ),
+                    )
+                    .order_by(destination.c.id)
+                ).scalars()
+            )
+
     async def poll(self, client: KavitaClient, destination_id: str) -> ArrivalReport:
         report = ArrivalReport()
         with self._engine.connect() as connection:

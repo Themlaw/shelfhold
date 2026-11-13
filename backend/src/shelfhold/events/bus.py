@@ -75,6 +75,10 @@ PAYLOAD_ENUMS: Final[dict[str, dict[str, frozenset[str]]]] = {
         "kind": frozenset(
             {
                 "unknown_file",
+                "modified_file",
+                "orphan_file",
+                "duplicate_file",
+                "symlink",
                 "adopted_missing",
                 "unsettled_intent",
                 "store_missing",

@@ -62,6 +62,7 @@ from shelfhold.infrastructure.fsops.errors import (
     EmitterConditionError,
     EmitterPerimeterError,
     FsopsError,
+    HashInterrupted,
     JournalChangedError,
     LeaseRaceError,
     NotRegularFileError,
@@ -738,8 +739,12 @@ class Fsops:
         """`local` is under an adoption root (`ADOPT_RO`): nothing is written or moved there."""
         return self._locate(local).read_only
 
-    def sha256_of(self, local: str, *, host: bool = False) -> str:
-        """`sha256:<hex>` of a regular file, streamed. `host`: the reserved area (a bin)."""
+    def sha256_of(
+        self, local: str, *, host: bool = False, should_stop: Callable[[], bool] | None = None
+    ) -> str:
+        """`sha256:<hex>` of a regular file, streamed. `host`: the reserved area (a bin).
+        `should_stop` is asked after each 1 MiB block: a stop raises `HashInterrupted`, so a
+        window that closes does not wait for a large file to be read to the end."""
         located = self._locate(local, read_mirror=True, host=host)
         with self._root(located.root_path) as root:
             fd = root.open_file(located.rel, os.O_RDONLY)
@@ -747,6 +752,8 @@ class Fsops:
             with os.fdopen(fd, "rb") as stream:
                 while chunk := stream.read(1 << 20):
                     digest.update(chunk)
+                    if should_stop is not None and should_stop():
+                        raise HashInterrupted
         return "sha256:" + digest.hexdigest()
 
     def hash_and_identity(self, local: str) -> tuple[str, FileIdentity, int] | None:

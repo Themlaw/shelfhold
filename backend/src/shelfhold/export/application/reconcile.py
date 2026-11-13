@@ -52,7 +52,7 @@ from shelfhold.library.public import (
     refresh_destination_identity,
 )
 
-__all__ = ["ReconcileReport", "Reconciler"]
+__all__ = ["ReconcileReport", "Reconciler", "managed_files"]
 
 FOREIGN_WRITER = "foreign_writer"
 RESERVED_NAMES = frozenset({SENTINEL_FILE, RESERVED_DIR})
@@ -71,6 +71,11 @@ class ReconcileReport:
     paused: tuple[str, ...] = ()  # export series ids paused by this pass
     suspect: tuple[str, ...] = ()  # mtime changed outside the window: the hash waits for it
     busy: tuple[str, ...] = ()  # folders skipped because an export holds them
+
+
+def managed_files(connection: Connection, destination_id: str) -> list[ManagedFile]:
+    """What the manifest says Shelfhold put on `destination_id` (a recycled line holds nothing)."""
+    return Reconciler._managed(connection, destination_id)
 
 
 def _found_something(report: ReconcileReport) -> bool:
