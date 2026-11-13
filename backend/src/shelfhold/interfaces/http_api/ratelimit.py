@@ -12,7 +12,8 @@
 State is in memory: one process per instance (`/data/.lock`); a restart forgets it.
 """
 
-import hashlib
+import hmac
+import secrets
 import threading
 import time
 from collections import OrderedDict, deque
@@ -130,8 +131,13 @@ def device_credential(scope: Scope) -> str | None:
     return credential_label(raw) if raw else None
 
 
+_LABEL_KEY = secrets.token_bytes(32)  # per process: a label cannot be recomputed from a guess
+
+
 def credential_label(raw: str) -> str:
-    return "cred:" + hashlib.sha256(raw.encode()).hexdigest()[:24]
+    """A keyed digest of a credential, only ever compared in memory (a Basic carries a password:
+    it is never kept, logged or hashed for storage, so no password-hashing cost applies)."""
+    return "cred:" + hmac.new(_LABEL_KEY, raw.encode(), "sha256").hexdigest()[:24]
 
 
 class RecognisedCredentials:
