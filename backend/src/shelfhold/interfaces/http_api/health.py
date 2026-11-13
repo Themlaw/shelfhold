@@ -13,6 +13,7 @@ from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from sqlalchemy import Engine
+from starlette.concurrency import run_in_threadpool
 
 from shelfhold.config import Settings
 from shelfhold.identity.public import Principal
@@ -56,6 +57,32 @@ def _authenticated(request: Request) -> bool:
     return request.scope.get("state", {}).get("principal") is not None
 
 
+async def _paused_state(
+    health: HealthPort,
+) -> tuple[list[str], dict[str, str], list[dict[str, str]]]:
+    """Names, reasons by job kind and queues with their reason, the same for every caller (the
+    route chooses what each one sees). The shared list comes from the cache of the port without
+    a thread of the pool; only the first read, or a port without a cache, goes through one."""
+    nowait = getattr(health, "queues_nowait", None)
+    queues = nowait() if callable(nowait) else None
+    if queues is None and callable(getattr(health, "queues", None)):
+        queues = await run_in_threadpool(health.queues)  # type: ignore[attr-defined]
+    if queues is not None:
+        names = sorted(q.queue for q in queues)
+        paused = [{"queue": q.queue, "reason": q.reason} for q in queues]
+    else:
+        names = await run_in_threadpool(_paused_queues, health)
+        paused = await run_in_threadpool(_paused, health)
+    reasons = (
+        await run_in_threadpool(_paused_reasons, health) if _has(health, "paused_reasons") else {}
+    )
+    return names, reasons, paused
+
+
+def _has(health: HealthPort, name: str) -> bool:
+    return callable(getattr(health, name, None))
+
+
 def _paused_queues(health: HealthPort) -> list[str]:
     probe = getattr(health, "paused_queues", None)
     return sorted(probe()) if callable(probe) else []
@@ -85,8 +112,8 @@ def build_health_router(health: HealthPort, *, version: str | None = None) -> AP
         response_model=HealthzResponse,
         response_model_exclude_none=True,
     )
-    def healthz(request: Request) -> JSONResponse:
-        progress = health.migration_progress()
+    async def healthz(request: Request) -> JSONResponse:
+        progress = health.migration_progress()  # a small file: no thread of the pool
         if progress is not None:
             body: dict[str, object] = {
                 "state": "migrating",
@@ -96,11 +123,14 @@ def build_health_router(health: HealthPort, *, version: str | None = None) -> AP
             body = {"state": "ok"}
         structlog.get_logger().debug("liveness.checked", migrating=progress is not None)
         if _authenticated(request):
+            names, reasons, paused = (
+                await _paused_state(health) if progress is None else ([], {}, [])
+            )
             body["version"] = version
-            body["paused_queues"] = _paused_queues(health) if progress is None else []
-            body["paused_reasons"] = _paused_reasons(health) if progress is None else {}
+            body["paused_queues"] = names
+            body["paused_reasons"] = reasons
             if _is_admin(request):  # the reason of each queue is for administrators (D11)
-                body["paused"] = _paused(health) if progress is None else []
+                body["paused"] = paused
         return JSONResponse(body)
 
     @router.head("/readyz", include_in_schema=False)

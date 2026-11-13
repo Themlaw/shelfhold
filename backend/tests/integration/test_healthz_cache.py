@@ -8,7 +8,6 @@ seconds later, the time the shared value lives.
 
 from __future__ import annotations
 
-import asyncio
 import inspect
 import threading
 import time
@@ -17,7 +16,6 @@ from typing import Any
 
 import anyio
 import anyio.to_thread
-import httpx
 import pytest
 from fastapi import FastAPI, Request
 from fastapi.testclient import TestClient
@@ -195,31 +193,31 @@ def test_healthz_is_a_coroutine_that_does_not_take_a_pool_thread(ops: _Ops) -> N
     assert inspect.iscoroutinefunction(route.endpoint)  # type: ignore[attr-defined]
 
 
-def test_healthz_answers_while_the_thread_pool_is_taken(ops: _Ops) -> None:
-    """With the value cached, a probe needs no thread of the server's pool."""
+def test_a_cached_probe_takes_no_thread_of_the_pool(
+    ops: _Ops, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """With the value cached, a probe needs no thread of the server's pool (the pool may be
+    full of decodes): the pool is closed to it, and it still answers."""
     health = _health(ops)
-    app = FastAPI()
-    app.include_router(build_health_router(health))
-    health.queues()  # warm
+    client = _client(health)
+    assert client.get("/healthz", headers={"x-role": "admin"}).status_code == 200  # warm
 
-    async def scenario() -> float:
-        release = threading.Event()
-        limiter = anyio.to_thread.current_default_thread_limiter()
+    async def refused(*args: Any, **kwargs: Any) -> Any:
+        raise AssertionError("a cached /healthz asked for a thread of the pool")
 
-        async def hold() -> None:
-            await anyio.to_thread.run_sync(release.wait)
+    monkeypatch.setattr(anyio.to_thread, "run_sync", refused)
+    response = client.get("/healthz", headers={"x-role": "admin"})
+    assert response.status_code == 200
+    assert response.json()["paused_queues"] == ["export.scan"]
 
-        async with anyio.create_task_group() as group:
-            for _ in range(int(limiter.total_tokens)):
-                group.start_soon(hold)
-            await anyio.sleep(0.2)
-            transport = httpx.ASGITransport(app=app)
-            async with httpx.AsyncClient(transport=transport, base_url="http://t") as http:
-                started = time.perf_counter()
-                response = await asyncio.wait_for(http.get("/healthz"), 5)
-                took = time.perf_counter() - started
-            assert response.status_code == 200
-            release.set()
-        return took
 
-    assert asyncio.run(scenario()) < 0.3
+def test_prime_reads_the_status_before_the_first_probe(ops: _Ops) -> None:
+    health = _health(ops)
+    health.prime()
+    deadline = time.monotonic() + 5
+    while ops.calls == 0 and time.monotonic() < deadline:
+        time.sleep(0.01)
+    time.sleep(0.05)
+    client = _client(health)
+    assert client.get("/healthz", headers={"x-role": "admin"}).status_code == 200
+    assert ops.calls == 1, "the first probe read the status again"

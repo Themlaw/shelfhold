@@ -14,12 +14,15 @@ content.
 
 from __future__ import annotations
 
+import threading
+import time
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from typing import Any
 
 import sqlalchemy as sa
+import structlog
 from sqlalchemy import Connection, Engine
 
 from shelfhold.acquisition.application.follow import OUTAGE_CYCLES
@@ -35,10 +38,14 @@ from shelfhold.ops.services import OpsServices
 from shelfhold.ops.status import collect, command_for, jurisdiction_report
 from shelfhold.plugin_host.health import TypedState, typed_for_code
 
-__all__ = ["Action", "OpsHealth", "action_of", "build_health_page"]
+__all__ = ["HEALTH_CACHE_TTL", "Action", "OpsHealth", "action_of", "build_health_page"]
 
 STORE_BACKUP_KEY = "store.backup_declared_at"  # what the host's own backup tool declared
 LOST_ORIGINAL = "content.original_lost"  # stable code of the entry (EF-BIB-051)
+# How long the shared part of `/healthz` (the paused queues, read through the roots, the restore,
+# the keyring...) is kept. A change of state (maintenance, restore under way, keyring) shows on
+# `/healthz` at most this many seconds later: the probe is a liveness check, not a transaction.
+HEALTH_CACHE_TTL = 5.0
 KAVITA_AUDIT_STATES = ("child_exposure", "permission_denied", "target_forbidden")
 
 
@@ -54,11 +61,27 @@ class Action:
 
 class OpsHealth:
     """The probe of the instance, plus what waits: the names for `paused_queues`, the reason of
-    each for `paused`. Read only; an unreadable database is an empty list (`/readyz` says why)."""
+    each for `paused`. Read only; an unreadable database is an empty list (`/readyz` says why).
 
-    def __init__(self, probe: HealthProbe, ops: Callable[[], OpsServices]) -> None:
+    The heavy status is the same for every caller, so it is computed by one caller at a time
+    (single flight) and kept `HEALTH_CACHE_TTL` seconds; the others are served the last value
+    meanwhile. Only that common list is kept: what depends on who asks (the version, the reasons
+    for the administrator) is cut out of it by the route, at each request."""
+
+    def __init__(
+        self,
+        probe: HealthProbe,
+        ops: Callable[[], OpsServices],
+        *,
+        clock: Callable[[], float] = time.monotonic,
+    ) -> None:
         self._probe = probe
         self._ops = ops
+        self._clock = clock
+        self._mutex = threading.Lock()
+        self._value: list[PausedQueue] | None = None
+        self._at = 0.0
+        self._flight: threading.Event | None = None  # set while one caller reads
 
     def migration_progress(self) -> tuple[int, int] | None:
         return self._probe.migration_progress()
@@ -66,17 +89,78 @@ class OpsHealth:
     def readiness(self) -> Mapping[str, bool]:
         return self._probe.readiness()
 
-    def _queues(self) -> list[PausedQueue]:
+    def _read(self) -> list[PausedQueue]:
         try:
             return self._ops().paused_queues()
         except sa.exc.SQLAlchemyError:
             return []
 
+    def _lead(self, flight: threading.Event) -> list[PausedQueue]:
+        """Read the status as the one caller in flight, keep it, release the ones that wait."""
+        try:
+            value = self._read()
+        except BaseException:
+            with self._mutex:
+                self._flight = None
+            flight.set()
+            raise
+        with self._mutex:
+            self._value, self._at, self._flight = value, self._clock(), None
+        flight.set()
+        return list(value)
+
+    def _lead_quietly(self, flight: threading.Event) -> None:
+        try:
+            self._lead(flight)
+        except Exception:
+            structlog.get_logger().warning("health.refresh_failed")
+
+    def queues(self) -> list[PausedQueue]:
+        """The paused queues, blocking: the value if it is fresh; else one caller reads it while the
+        others get the last value (the first call of all waits for it)."""
+        with self._mutex:
+            value = self._value
+            if value is not None and self._clock() - self._at < HEALTH_CACHE_TTL:
+                return list(value)
+            flight = self._flight
+            leader = flight is None
+            if leader:
+                flight = self._flight = threading.Event()
+        assert flight is not None  # noqa: S101 - narrowing for the checker
+        if leader:
+            return self._lead(flight)
+        if value is not None:
+            return list(value)
+        flight.wait()
+        with self._mutex:
+            return list(self._value or [])
+
+    def queues_nowait(self) -> list[PausedQueue] | None:
+        """The last value without waiting, or None before the first one. A stale value starts a
+        refresh in the background (one at a time): a probe never waits for the heavy read."""
+        with self._mutex:
+            value = self._value
+            if value is None:
+                return None
+            refresh = self._clock() - self._at >= HEALTH_CACHE_TTL and self._flight is None
+            if refresh:
+                flight = self._flight = threading.Event()
+        if refresh:
+            threading.Thread(
+                target=self._lead_quietly, args=(flight,), daemon=True, name="health-refresh"
+            ).start()
+        return list(value)
+
+    def prime(self) -> None:
+        """Read the status once in the background, so that the first probe is not the one that
+        pays for it."""
+        threading.Thread(target=self.queues, daemon=True, name="health-prime").start()
+
     def paused_queues(self) -> list[str]:
-        return [queue.queue for queue in self._queues()]
+        return [queue.queue for queue in self.queues()]
 
     def paused(self) -> list[dict[str, str]]:
-        return [{"queue": q.queue, "reason": q.reason} for q in self._queues()]
+        return [{"queue": q.queue, "reason": q.reason} for q in self.queues()]
 
 
 # -- the page -------------------------------------------------------------------------------------

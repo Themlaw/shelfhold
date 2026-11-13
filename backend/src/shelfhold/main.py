@@ -382,6 +382,8 @@ def create_app(
         except sa.exc.SQLAlchemyError as error:
             structlog.get_logger().warning("search.sync_failed", error=type(error).__name__)
 
+    health = OpsHealth(HealthProbe(resolved), ops_services)
+
     def on_startup() -> None:
         log_effective_config(resolved)
         ensure_volumes(resolved)
@@ -392,6 +394,8 @@ def create_app(
             load_plugins()
             start_owned()
             ready.set(runtime.owns_volumes)  # waiting for a migration's lock: not ready yet
+            if runtime.owns_volumes:
+                health.prime()  # the first `/healthz` finds the shared status already read
         except BaseException:
             runtime.stop()
             raise
@@ -455,7 +459,7 @@ def create_app(
                 await server.stop()
 
     return create_http_app(
-        health=OpsHealth(HealthProbe(resolved), ops_services),
+        health=health,
         on_startup=on_startup,
         on_shutdown=on_shutdown,
         background=local_cli_socket,
