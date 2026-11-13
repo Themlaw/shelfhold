@@ -100,6 +100,8 @@ OPEN = {
     "GET /api/v1/me/works/{work_id}/title": "me_title",
     "GET /api/v1/search": "search",
     "GET /api/v1/works": "works_since",  # M3 L11: the list of Works and its `?since=` removals
+    # M3 L24: a cover's thumbnail, by session only; hers when an Edition she may see points at it
+    "GET /api/v1/thumbnails/{content_hash}/{size}": "thumbnail",
 }
 CLOSED = (
     "GET /api/v1/openapi.json",
@@ -239,14 +241,13 @@ BODIES = {"POST /api/v1/reconcile/forget-root": {"root_id": "x", "confirm": "x"}
 # list is where the suite notices that the surface has arrived (the meta-test fails when a path
 # with that word shows up in the OpenAPI document).
 PENDING_SURFACES = {
-    "thumbnails": ("L24", ("thumb", "thumbs", "thumbnail", "thumbnails")),
     "covers": ("L24", ("cover", "covers")),
     "opds": ("M5", ("opds",)),
 }
 
 SURFACES = (
     "search", "search_pages", "search_key", "federated", "me_state_get", "me_state_put",
-    "me_state_list", "me_title", "activity", "notification", "works_since", "sse",
+    "me_state_list", "me_title", "activity", "notification", "works_since", "sse", "thumbnail",
 )  # fmt: skip
 METHODS = ("get", "post", "put", "patch", "delete")
 HIDDEN_FROM_CEILING_10 = {*HIDDEN_TITLES, "twelve"}
@@ -761,6 +762,41 @@ def _surface_sse(world: World) -> None:
     world.clean("\n".join(received.frames))
     shown = {event["payload"]["work_id"] for _, event in received.events()}
     assert shown == {world.seed.works[k] for k in VISIBLE_FOR_CEILING_10}
+
+
+def _surface_thumbnail(world: World) -> None:
+    """L24: the thumbnail of a cover is a projection like any other. The route asks the same
+    filter whether an Edition she may see points at the cover: hidden, absent and unreferenced
+    are one 404, by session; her key is refused; nothing is made for what is not hers."""
+    from tests.thumbnail_env import put_cover, thumbnail_files
+
+    data, seed = world.env.settings.data_dir, world.seed
+    digests: dict[str, str] = {}
+    with seed.engine.begin() as connection:
+        for index, key in enumerate(
+            ("ok", "mixed_rated", *("above", "adult_edition", "mixed_new"))
+        ):
+            digests[key] = put_cover(data, connection, seed.editions[key], (index * 40, 9, 9))
+    absent = world.kid.get(f"/api/v1/thumbnails/{'cd' * 32}/160")
+    assert absent.status_code == 404
+    for key, digest in digests.items():
+        got = world.kid.get(f"/api/v1/thumbnails/{digest}/160")
+        world.clean(got.text)
+        if key in ("ok", "mixed_rated"):
+            assert got.status_code == 200
+        else:
+            assert _shape(got) == _shape(absent), key
+    assert len(thumbnail_files(data)) == 2  # only the two covers she may see were ever made
+    key = (
+        local_auth(seed.engine, world.env.settings)
+        .create_api_key(name="kidkey3", username="kid", read_only=True)
+        .value
+    )
+    by_key = world.env.other_client("10.0.0.58").get(
+        f"/api/v1/thumbnails/{digests['ok']}/160", headers={"Authorization": f"Bearer {key}"}
+    )
+    assert by_key.status_code == 403
+    world.clean(by_key.text)
 
 
 def _surface_notification(world: World) -> None:
