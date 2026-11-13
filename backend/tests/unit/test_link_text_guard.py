@@ -118,6 +118,7 @@ SAFE_USES: dict[str, dict[str, int]] = {
         "if stat.S_ISDIR(os.stat(child, dir_fd=fd, follow_symlinks=False).st_mode):": 1,
         "mode = os.stat(name, dir_fd=parent, follow_symlinks=False).st_mode": 1,
         "return stat.S_ISREG(os.stat(name, dir_fd=self._fd, follow_symlinks=False).st_mode)": 1,
+        "return os.stat(name, dir_fd=self._fd, follow_symlinks=False)": 1,
     },
     "interfaces/cli/access.py": {
         "print(json.dumps([vars(row) for row in rows], sort_keys=True))": 1

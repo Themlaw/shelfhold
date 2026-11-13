@@ -76,9 +76,11 @@ from shelfhold.interfaces.http_api.sources import build_sources_router
 from shelfhold.interfaces.http_api.stats import build_stats_router
 from shelfhold.interfaces.http_api.status import build_status_router
 from shelfhold.interfaces.http_api.stream import build_stream_router
+from shelfhold.interfaces.http_api.thumbnails import build_thumbnails_router
 from shelfhold.interfaces.http_api.triage import build_triage_router
 from shelfhold.interfaces.local_cli import IdentityDispatcher
 from shelfhold.jobs.mode import MaintenanceMode
+from shelfhold.library.public import ThumbnailService
 from shelfhold.ops import OpsServices
 from shelfhold.ops.activity_feed import kavita_open_url_of
 from shelfhold.ops.health import OpsHealth
@@ -300,6 +302,9 @@ def create_app(
             since_key,
             max_per_profile=resolved.stream_max_per_profile,
         ),  # M3 L12 (EF-INT-002): typed SSE, one filter per reader
+        build_thumbnails_router(  # M3 L24: a cover at 160/320/640, session only, authorised first
+            lambda: engine, cache(lambda: ThumbnailService(engine, resolved.data_dir, clock))
+        ),
         build_search_router(
             lambda: engine, ops_services
         ),  # EF-BIB-010, EF-SRC-005: admin only (L09)

@@ -40,6 +40,8 @@ DECLARED: Final[dict[str, KindTraits]] = {
     "target.access_audit": KindTraits(security_repair=True),  # EF-EXP-055; registered by L26/L37
     "export.run": _STEPS,
     "vacuum_monthly": _STEPS,
+    "thumbnail_gc": _STEPS,  # stops between two files when the window closes (L24)
+    "thumbnail_catchup": _STEPS,
 }
 
 

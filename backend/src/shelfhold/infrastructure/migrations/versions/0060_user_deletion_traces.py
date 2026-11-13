@@ -11,7 +11,7 @@ breaks the batch rebuild of that table. The writers check the requester in their
 from alembic import op
 
 revision = "0060"
-down_revision = "0059"
+down_revision = "0062"
 branch_labels = None
 depends_on = None
 

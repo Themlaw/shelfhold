@@ -140,6 +140,16 @@ class DataFolder:
     def names(self) -> list[str]:
         return os.listdir(self._fd)
 
+    def stat_of(self, name: str) -> os.stat_result | None:
+        """What `name` of the folder is, a link taken as a link (never followed); None when it is
+        not there or is not a plain name."""
+        if not name or "/" in name or name in (".", ".."):
+            return None
+        try:
+            return os.stat(name, dir_fd=self._fd, follow_symlinks=False)
+        except OSError:
+            return None
+
     def is_regular(self, name: str) -> bool:
         """`name` is a regular file of the folder, not a link, a folder or a special file (nothing
         is opened or read)."""

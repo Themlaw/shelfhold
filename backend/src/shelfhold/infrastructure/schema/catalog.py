@@ -794,6 +794,12 @@ metadata_field = sa.Table(
         '"confidence" IS NULL OR "confidence" BETWEEN 0 AND 1', name="confidence_range"
     ),
     sa.Index("ix_metadata_field_entity", "entity_type", "entity_id"),
+    # the cover filter of a thumbnail (M3 L24): the Editions' `cover` values only
+    sa.Index(
+        "ix_metadata_field_edition_cover",
+        "value",
+        sqlite_where=sa.text("\"entity_type\" = 'edition' AND \"field\" = 'cover'"),
+    ),
 )
 
 # The journal of attaches by external identifier (EF-BIB-003, EF-BIB-037, L12): what an attach
