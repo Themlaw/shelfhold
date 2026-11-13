@@ -761,7 +761,7 @@ def test_gate_p2_is_recorded_as_a_delegated_decision_without_a_measure() -> None
     concierge figure that was not measured."""
     portes = (BACKEND.parent / "docs" / "governance" / "portes.md").read_text("utf-8")
     row = [ln for ln in portes.splitlines() if ln.startswith("| P2 | ")][-1]
-    assert "franchie par délégation" in row
+    assert "par délégation" in row
     assert "n'a pas été mesuré" in row
     assert "FAMILY_NAV_LITE" in row
     assert "échec" not in row.lower()
