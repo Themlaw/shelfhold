@@ -14,6 +14,8 @@ import sqlalchemy as sa
 
 from shelfhold.infrastructure.db import create_db_engine
 
+pytestmark = pytest.mark.req("ENF-OPS-003")
+
 
 def _pair(tmp_path: Path) -> tuple[sa.Engine, sa.Engine]:
     path = tmp_path / "lock.db"
