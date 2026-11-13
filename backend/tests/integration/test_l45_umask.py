@@ -125,7 +125,7 @@ def test_host_area_stays_owner_only_whatever_the_library_umask() -> None:
         with env.engine.connect() as connection:
             paths = [r.path_entry for r in connection.execute(sa.select(platform.physical_root))]
             loaded = load_roots(connection, PathMap.same_path(paths))
-        fsops = open_fsops(loaded, umask=0o002)
+        fsops = open_fsops(loaded, umask=0o002, generation_source=None)
         library = str(env.lib.library)
         fsops.update_lease(library, lambda _current: b"lease")
         fsops.write_atomic(f"{library}/.shelfhold/received/x.cbz", b"x", parents=True)

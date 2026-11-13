@@ -108,7 +108,9 @@ def open_restore(resolved: ResolvedSettings) -> Iterator[tuple[RestoreAdopter, R
         with engine.connect() as connection:
             paths = [r.path_entry for r in connection.execute(sa.select(platform.physical_root))]
             loaded = load_roots(connection, PathMap.same_path(paths))
-        fsops = open_fsops(loaded, umask=settings.umask)
+        fsops = open_fsops(
+            loaded, umask=settings.umask, generation_source=GenerationCounter(engine).read
+        )
         clock = SystemClock()
         bus = operating_bus(clock)
         guard = RestoreGuard(
@@ -214,7 +216,12 @@ def _mark_store_missing(resolved: ResolvedSettings) -> StoreOutcome:
         with engine.connect() as connection:
             paths = [r.path_entry for r in connection.execute(sa.select(platform.physical_root))]
             loaded = load_roots(connection, PathMap.same_path(paths))
-        lost = store_is_lost(open_fsops(loaded, umask=settings.umask), settings.store_dir)
+        lost = store_is_lost(
+            open_fsops(
+                loaded, umask=settings.umask, generation_source=GenerationCounter(engine).read
+            ),
+            settings.store_dir,
+        )
         return mark_store_missing(
             engine, settings.store_dir, operating_bus(SystemClock()), store_lost=lost
         )

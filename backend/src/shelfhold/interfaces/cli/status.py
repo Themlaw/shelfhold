@@ -28,6 +28,7 @@ from shelfhold.identity.public import (
 )
 from shelfhold.infrastructure.clock import SystemClock
 from shelfhold.infrastructure.db import create_db_engine
+from shelfhold.infrastructure.instance.generation import GenerationCounter
 from shelfhold.infrastructure.migrate import current_revision, head_revision
 from shelfhold.infrastructure.observability.network_fs import REFUSED_KINDS, filesystem_kind
 from shelfhold.infrastructure.schema import acquisition, platform
@@ -89,7 +90,9 @@ def _restore_status(resolved: ResolvedSettings) -> RestoreStatus | None:
             if not paths:
                 return None
             loaded = load_roots(connection, PathMap.same_path(paths))
-        fsops = open_fsops(loaded, umask=settings.umask)
+        fsops = open_fsops(
+            loaded, umask=settings.umask, generation_source=GenerationCounter(engine).read
+        )
         return RestoreGuard(
             engine, fsops, clock=SystemClock(), bus=operating_bus(SystemClock())
         ).assess()

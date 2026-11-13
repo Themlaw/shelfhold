@@ -28,6 +28,7 @@ from shelfhold.infrastructure.clock import Clock
 from shelfhold.infrastructure.freeze import FreezeState
 from shelfhold.infrastructure.fsops.tombstone_journal import journal_kid_names, sentinel_kid_tags
 from shelfhold.infrastructure.ids import new_ulid
+from shelfhold.infrastructure.instance.generation import GenerationCounter
 from shelfhold.infrastructure.logging import register_secret_value
 from shelfhold.infrastructure.schema import coherence, identity, platform
 from shelfhold.infrastructure.secrets import diagnostics, registry
@@ -177,7 +178,10 @@ class TombstoneKeyringExit:
         with self._engine.connect() as connection:
             paths = [r.path_entry for r in connection.execute(sa.select(platform.physical_root))]
             loaded = load_roots(connection, PathMap.same_path(paths))
-        fsops = open_fsops(loaded, umask=self._settings.umask)
+        fsops = open_fsops(
+            loaded, umask=self._settings.umask,
+            generation_source=GenerationCounter(self._engine).read,
+        )  # fmt: skip
         if freeze:
             fsops.freeze()
         service = TombstoneService(self._engine, keyring, fsops, operating_bus(self._clock))
