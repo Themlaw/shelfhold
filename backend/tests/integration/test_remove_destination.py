@@ -34,23 +34,24 @@ def d() -> Iterator[DetachEnv]:
 
 
 def _adopt_one(d: DetachEnv) -> str:
-    """A file the admin already had: adopted, never Shelfhold's, so never removed."""
-    path = d.env.root / "Old Series" / "Old Series v01.cbz"
-    path.parent.mkdir()
-    path.write_bytes(b"the admin's own volume" * 100)
+    """One file stands for a volume the admin already had: adopted, so never Shelfhold's to
+    delete. Returns its path (relative to the destination)."""
+    record = export.export_record
     with d.env.engine.begin() as conn:
-        item = conn.execute(sa.select(export.export_record.c.export_item_id).limit(1)).scalar_one()
+        first = conn.execute(sa.select(record).order_by(record.c.rel_path).limit(1)).one()
         conn.execute(
-            sa.update(export.export_record)
-            .where(export.export_record.c.export_item_id == item)
-            .values(state="adopted", rel_path="Old Series/Old Series v01.cbz")
+            sa.update(record)
+            .where(record.c.export_item_id == first.export_item_id)
+            .values(state="adopted")
         )
-    # the adopted line stands for the file above; the other chapters stay Shelfhold's
-    return "Old Series/Old Series v01.cbz"
+    return str(first.rel_path)
 
 
 def _state(d: DetachEnv) -> tuple[Any, ...]:
-    return (d.tree_digest(), d.count(export.export_record), d.count(export.shelf_destination))
+    return (
+        d.tree_digest(), d.count(export.export_record), d.count(export.shelf_destination),
+        d.intent_ids(),
+    )  # fmt: skip
 
 
 @pytest.mark.req("EF-EXP-031")
@@ -64,7 +65,6 @@ def test_remove_destination_keep_or_delete_files_warns(d: DetachEnv) -> None:
     assert next(w for w in every.warnings if w.code == "files_deleted").count == 3
     assert keep.phrase == every.phrase == removal_phrase(dest)
     assert _state(d) == untouched  # a preview writes nothing
-    assert d.intents() == []
     # keep the files: the tree is exactly as it was, the manifest and the destination are gone
     before = d.tree_digest()
     report = d.remover.apply(
@@ -85,11 +85,11 @@ def test_remove_destination_delete_files_takes_only_what_shelfhold_wrote(d: Deta
     report = d.remover.apply(
         dest, RemovalMode.DELETE_FILES, principal=fresh_admin(d.env), typed=removal_phrase(dest)
     )
-    assert report.deleted == 2
+    assert report.deleted == 2, report.left
     assert [str(p.relative_to(d.env.root)) for p in d.env.files()] == [adopted]  # the admin's own
     assert d.count(export.shelf_destination) == 0
-    done = d.intents("done")
-    assert len(done) == 2 and {i.op for i in done} == {"unlink"}  # one journaled deed per file
+    done = [i for i in d.intents("done") if i.op == "unlink"]
+    assert len(done) == 2  # one journaled deed per file, and only for those
 
 
 @pytest.mark.req("EF-EXP-031")
@@ -129,7 +129,7 @@ def test_remove_destination_refused_to_key_member_child_stale_session(
     before = _state(d)
     with pytest.raises(RemovalRefusedError):
         d.remover.apply(dest, mode, principal=OTHERS[who], typed=removal_phrase(dest))
-    assert _state(d) == before and d.intents() == []
+    assert _state(d) == before
 
 
 @pytest.mark.req("EF-EXP-031")
@@ -141,7 +141,7 @@ def test_remove_destination_needs_the_typed_phrase(d: DetachEnv, typed: str | No
             d.env.destination_id, RemovalMode.DELETE_FILES, principal=ADMIN, typed=typed
         )
     assert refused.value.reason == "confirmation_required"
-    assert _state(d) == before and d.intents() == []
+    assert _state(d) == before
 
 
 @pytest.mark.req("EF-EXP-031")
@@ -152,6 +152,7 @@ def test_remove_destination_never_leaves_the_managed_root(d: DetachEnv) -> None:
     outside.write_bytes(b"not Shelfhold's")
     with d.env.engine.begin() as conn:
         records = list(conn.execute(sa.select(export.export_record)))
+        conn.execute(sa.text("PRAGMA ignore_check_constraints = ON"))  # a database edited by hand
         conn.execute(
             sa.update(export.export_record)
             .where(export.export_record.c.export_item_id == records[0].export_item_id)
@@ -188,7 +189,7 @@ def test_remove_destination_interrupted_resumes_to_the_end(
     real = getattr(owner, name)
 
     def die(*a: Any, **k: Any) -> Any:
-        result = real(*a, **k)
+        real(*a, **k)
         raise Killed
 
     monkeypatch.setattr(owner, name, die)

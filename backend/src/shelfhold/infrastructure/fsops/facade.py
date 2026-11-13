@@ -35,6 +35,7 @@ from shelfhold.export.domain.physical_roots import (
     LEASE_FILE,
     RECYCLE_DIR,
     RESERVED_DIR,
+    SENTINEL_FILE,
     STAGING_DIR,
     ExpectedRoot,
     RootState,
@@ -49,6 +50,7 @@ from shelfhold.infrastructure.freeze import FreezeState
 from shelfhold.infrastructure.fsops.capabilities import RootCapabilities, probe_root
 from shelfhold.infrastructure.fsops.confined import ConfinedRoot, Kind, Strategy
 from shelfhold.infrastructure.fsops.emitters import (
+    PROBE_PREFIX,
     TRASH_RETENTION_S,
     Perimeter,
     perimeter_of,
@@ -1087,6 +1089,27 @@ class Fsops:
             if root.lstat_kind(located.rel) != "dir":
                 raise NotRegularFileError(f"{local!r} is not a bin entry")
             root.remove_tree(located.rel)
+
+    def erase_host_area(self, root_path: str) -> None:
+        """The full detachment's one erasure of a root (EF-EXP-031): the reserved folder
+        (`.shelfhold/`, with what it holds), the sentinel and the probe files that stayed, all at
+        the top of the root. The caller has passed the reserved action, has checked that nothing
+        in the folder is user data, and has written the intent; this adds what only fsops can
+        check: the root is a writable one with the right sentinel, and the reserved folder is a
+        real folder, never a link (a link is left alone, not followed, and refused)."""
+        log.debug("fsops.erase_host_area", root=root_path)
+        located = self._host_root(root_path)
+        with self._gated(located, lease=False, tombstone=True) as root:
+            kind = root.lstat_kind(RESERVED_DIR)
+            if kind not in (None, "dir"):
+                raise NotRegularFileError(f"{RESERVED_DIR} of {root_path!r} is not a folder")
+            if kind == "dir":
+                root.remove_tree(RESERVED_DIR)
+            for name in root.listdir("."):
+                if (name == SENTINEL_FILE or name.startswith(PROBE_PREFIX)) and (
+                    root.lstat_kind(name) == "file"
+                ):
+                    root.unlink(name)
 
     @staticmethod
     def _require_purgeable(rel: str) -> None:

@@ -46,12 +46,12 @@ class Revoker:
     raises: BaseException | None = None
     seen_before: Callable[[], Any] | None = None  # looked at when the key is asked to go
 
-    def revoke(self, target_id: str, *, secret: str | None) -> bool:
+    def revoke(self, target_id: str, *, credential: str | None) -> bool:
         if self.seen_before is not None:
             self.seen_before()
         if self.raises is not None:
             raise self.raises
-        self.calls.append((target_id, secret))
+        self.calls.append((target_id, credential))
         return self.answer
 
 
@@ -89,6 +89,10 @@ class DetachEnv:
             if states:
                 stmt = stmt.where(coherence.fs_intent.c.state.in_(states))
             return list(conn.execute(stmt))
+
+    def intent_ids(self) -> list[str]:
+        """Every intention in the journal, whatever its state: a refusal adds none."""
+        return sorted(str(i.id) for i in self.intents())
 
     def count(self, table: sa.Table) -> int:
         with self.env.engine.connect() as conn:

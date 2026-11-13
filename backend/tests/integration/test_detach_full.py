@@ -13,6 +13,7 @@ import sqlalchemy as sa
 
 from shelfhold.export.application.detach import DetachRefusedError, detach_phrase
 from shelfhold.infrastructure.fsops import Fsops
+from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import coherence, export, platform
 from tests.detach_env import ADMIN, OTHERS, PRE_ADOPTION, DetachEnv, detach_env, fresh_admin
 from tests.rename_env import export_chapters
@@ -35,7 +36,7 @@ def _run(d: DetachEnv, *, who: Any = None, **kw: Any) -> Any:
     target = d.env.target_id
     return d.detacher.apply(
         target, principal=who or ADMIN, typed=kw.pop("typed", detach_phrase(target)),
-        client=d.wired.client, revoker=d.revoker, secret="the account password", **kw,
+        client=d.wired.client, revoker=d.revoker, credential="the account password", **kw,
     )  # fmt: skip
 
 
@@ -44,10 +45,14 @@ def _clean_bins(d: DetachEnv) -> None:
     detachment could destroy (no bin entry, no archive waiting for its export)."""
     for name in ("recycle", "received"):
         shutil.rmtree(d.root / ".shelfhold" / name, ignore_errors=True)
+    shutil.rmtree(d.env.lib.manga / ".shelfhold", ignore_errors=True)  # the fixture's own inbox
 
 
 def _before(d: DetachEnv) -> tuple[Any, ...]:
-    return (d.hidden(), d.tree_digest(), d.kavita_patterns(), d.count(export.shelf_destination))
+    return (
+        d.hidden(), d.tree_digest(), d.kavita_patterns(), d.count(export.shelf_destination),
+        d.intent_ids(),
+    )  # fmt: skip
 
 
 @pytest.mark.req("EF-EXP-031")
@@ -76,15 +81,14 @@ def test_detach_restores_pre_adoption_settings_and_revokes_key(d: DetachEnv) -> 
     assert d.kavita_patterns() != PRE_ADOPTION["exclude_patterns"]
     report = _run(d)
     assert d.kavita_patterns() == PRE_ADOPTION["exclude_patterns"]  # `*.tmp`, as before
-    assert report.settings is not None and report.settings.exclude_patterns_restored
+    assert report.settings_restored is not None
+    assert report.settings_restored.exclude_patterns_restored
     assert d.wired.fake.libraries[0]["type"] == 0  # the type is still the manga one of before
     assert d.revoker.calls == [(d.env.target_id, "the account password")]
     assert report.key_revoked
     # the order is the safety: the hidden folder is gone, then the patterns, then the key
     assert order == ["revoke:patterns=['*.tmp']:hidden=False"]
-    with d.env.engine.connect() as conn:  # the sealed key is forgotten with the revocation
-        row = conn.execute(sa.select(export.export_target.c.secret_ct)).one()
-    assert row.secret_ct is None
+    assert d.count(export.export_target) == 0  # nothing keeps the key or the target any more
 
 
 @pytest.mark.req("EF-EXP-031")
@@ -114,7 +118,7 @@ def test_detach_refused_to_key_member_child_stale_session(d: DetachEnv, who: int
     before = _before(d)
     with pytest.raises(DetachRefusedError):
         _run(d, who=OTHERS[who])
-    assert _before(d) == before and d.revoker.calls == [] and d.intents() == []
+    assert _before(d) == before and d.revoker.calls == []
 
 
 @pytest.mark.req("EF-EXP-031")
@@ -139,13 +143,14 @@ def test_detach_preview_warns_and_writes_nothing(d: DetachEnv) -> None:
     preview = d.detacher.preview(d.env.target_id)
     assert preview.phrase == detach_phrase(d.env.target_id)
     assert {"files_kept", "hidden_erased", "key_revoked"} <= {w.code for w in preview.warnings}
-    assert _before(d) == before and d.intents() == []
+    assert _before(d) == before
 
 
 @pytest.mark.req("EF-EXP-031")
 def test_detach_refuses_to_destroy_what_the_bin_and_the_inbox_hold(d: DetachEnv) -> None:
     """The reserved folder is not only metadata: a bin entry is a deleted book still recoverable
     and a received archive is a book not yet exported. Neither goes without being asked for."""
+    shutil.rmtree(d.env.lib.manga / ".shelfhold", ignore_errors=True)  # the fixture's own inbox
     (d.root / ".shelfhold" / "recycle" / "entry").mkdir(parents=True, exist_ok=True)
     (d.root / ".shelfhold" / "recycle" / "entry" / "Ch.9.cbz").write_bytes(b"a deleted book")
     before = _before(d)
@@ -177,7 +182,7 @@ def test_detach_never_follows_a_link_out_of_the_root(d: DetachEnv, tmp_path: Pat
 def test_detach_skips_a_root_another_target_still_uses(d: DetachEnv) -> None:
     _clean_bins(d)
     with d.env.engine.begin() as conn:
-        other = "01J000000000000000000OTHER"
+        other = new_ulid()
         conn.execute(
             sa.insert(export.export_target).values(
                 id=other, kind="folder", name="Another", path_map=[

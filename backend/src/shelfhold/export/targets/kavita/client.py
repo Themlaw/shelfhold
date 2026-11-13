@@ -461,6 +461,25 @@ class KavitaClient:
         await self._send(routes.LIBRARY_UPDATE, body=body)
         return dto.LibraryUpdate(library_id, True, before)
 
+    async def replace_exclude_patterns(
+        self, library_id: int, patterns: Sequence[str]
+    ) -> dto.LibraryUpdate:
+        """GET then faithful update with exactly these patterns (the detachment gives a library
+        its own back, EF-EXP-031); nothing else of the library changes."""
+        library_id = int(library_id)
+        current = next(
+            (lib for lib in await self.list_libraries() if lib.get("id") == library_id), None
+        )
+        if current is None:
+            raise ProtocolError(f"library {library_id} is not in Kavita")
+        before = tuple(current.get("excludePatterns") or ())
+        if tuple(patterns) == before:
+            return dto.LibraryUpdate(library_id, False, before)
+        await self._send(
+            routes.LIBRARY_UPDATE, body=dto.update_dto(current, exclude_patterns=patterns)
+        )
+        return dto.LibraryUpdate(library_id, True, before)
+
     async def scan_folder(self, remote_path: str) -> None:
         for call in self._destination.scan_calls([remote_path]):
             await self.execute(call)

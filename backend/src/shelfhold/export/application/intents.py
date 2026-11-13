@@ -149,7 +149,7 @@ def _intent_from(row: sa.Row[tuple[object, ...]]) -> OpenIntent:
         src=row.src_path,
         dst=row.dst_path,
         expected_sha256=row.expected_sha256,
-        expected_file_id=FileIdentity.from_json(file_id) if file_id else None,
+        expected_file_id=FileIdentity.from_json(file_id) if file_id and "ino" in file_id else None,
         state=row.state,
         epoch=row.epoch,
         schema_version=row.intent_schema_version,

@@ -59,6 +59,7 @@ CLOSED_SITES: Mapping[str, frozenset[str]] = MappingProxyType(
                 f"{_FSOPS}/facade.py::Fsops.rmdir",
                 f"{_FSOPS}/facade.py::Fsops.purge_remove_tree",  # L34: bin entries only
                 f"{_FSOPS}/facade.py::Fsops.purge_unlink",  # L34: one regular file, never reserved
+                f"{_FSOPS}/facade.py::Fsops.erase_host_area",  # L30: the detachment's one erasure
                 f"{_FSOPS}/facade.py::Fsops.recycle",  # empty folders it just made
                 f"{_FSOPS}/facade.py::Fsops.relocate_inbox",  # the emptied legacy inbox folder only
                 f"{_FSOPS}/facade.py::Fsops.system_unlink",  # perimeter and condition checked
@@ -133,6 +134,13 @@ _OTHER: Mapping[str, str] = MappingProxyType(
         "shelfhold/export/application/purge.py::PurgeService.purge_work": "purge.now",
         "shelfhold/infrastructure/volumes.py::erase_data_path": "purge.now",
         "shelfhold/infrastructure/volumes.py::_remove_tree_at": "purge.now",
+        # Removing a destination (L30, EF-EXP-031): "tout retirer" unlinks the files Shelfhold wrote
+        # there, one journaled intention each, after the reserved action `destination.remove_all`
+        # (fresh session or host CLI, never a key) and the typed phrase.
+        f"{_EXPORT_APP}/remove_destination.py::RemoveDestination._remove": "destination.remove_all",
+        # The full detachment (L30): the one erasure of a root's reserved folder, one journaled
+        # intention per root, after the reserved action `detach.full` and the typed phrase.
+        f"{_EXPORT_APP}/detach.py::FullDetacher._erase_hidden": "detach.full",
         # `purge --now` doors (L41): the CLI command, the socket method, the two routes (a reserved
         # action: a fresh session, never a key) and the service-less glue they share
         "shelfhold/interfaces/cli/purge.py::_purge": "purge.now",

@@ -12,7 +12,9 @@ def build_services(env: ExportEnv, wired: Wired) -> DetachEnv:
     from shelfhold.export.application.remove_destination import RemoveDestination
 
     journal = IntentJournal(env.engine, env.lib.fsops, clock=env.clock)
-    remover = RemoveDestination(env.engine, env.lib.fsops, journal, clock=env.clock)
+    remover = RemoveDestination(
+        env.engine, env.lib.fsops, journal, clock=env.clock, request_scan=env.scans.append
+    )
 
     def roots(local: str) -> RootRef | None:
         for root_id, base in (
@@ -24,7 +26,7 @@ def build_services(env: ExportEnv, wired: Wired) -> DetachEnv:
         return None
 
     detacher = FullDetacher(
-        env.engine, env.lib.fsops, journal, remover, clock=env.clock, roots=roots,
+        env.engine, env.lib.fsops, journal, clock=env.clock, roots=roots,
         store_path=str(env.lib.store),
     )  # fmt: skip
     return DetachEnv(env, wired, journal, remover, detacher, Revoker())
