@@ -476,6 +476,7 @@ FSOPS_CALLERS = (
     "shelfhold/export/application/deletion.py",  # the empty folders after a deletion (EF-BIB-021)
     "shelfhold/export/application/intents.py",
     "shelfhold/export/application/recycle_sweep.py",  # the bin retention (ENF-OPS-009)
+    "shelfhold/export/application/rename_plan.py",  # the folders a rename plan makes and empties
     "shelfhold/infrastructure/instance/lease.py",
 )
 WRITE_NAMES = {*PATH_WRITE_METHODS, *OS_WRITE_FUNCTIONS, *LIBRARY_ONLY}

@@ -40,6 +40,9 @@ class FakePipeline:
         entry = NameEntry("u1", "A/A Ch 1.cbz", template_ref="t@1", status="unverified", flags=())
         return NamingPreview(verified=False, entries=(entry,), collisions=())
 
+    def kind_of(self, plan_id: str) -> str:
+        return "export"
+
     def queue_apply(self, plan_id: str, *, if_match: str) -> str:
         if self.paused:
             raise DestinationPausedError(self.paused)

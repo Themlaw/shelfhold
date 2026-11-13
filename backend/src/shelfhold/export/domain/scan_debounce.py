@@ -32,6 +32,10 @@ class ScanDebouncer:
     def take_due(self) -> list[str]:
         if not self._paths or self._last is None or self._clock.now() - self._last < self._quiet:
             return []
+        return self.take_all()
+
+    def take_all(self) -> list[str]:
+        """What was asked, now, without waiting for the quiet moment (the end of a batch)."""
         paths, self._paths, self._last = self._paths, set(), None
         kept = [
             p for p in paths if not any(p != o and p.startswith(o.rstrip("/") + "/") for o in paths)

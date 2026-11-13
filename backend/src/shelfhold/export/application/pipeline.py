@@ -9,7 +9,7 @@ nothing is written.
 """
 
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from contextlib import AbstractContextManager, nullcontext
 from dataclasses import asdict, dataclass, replace
 from pathlib import Path, PurePosixPath
@@ -33,6 +33,16 @@ from shelfhold.export.application.ranged_export import (
     PreparedRange,
     RangedExporter,
     RangedExportError,
+)
+from shelfhold.export.application.rename_plan import (
+    PLAN_KIND as RENAME_KIND,
+)
+from shelfhold.export.application.rename_plan import (
+    ItemMove,
+    ReaderCounter,
+    RenameBook,
+    RenameConfirmationRequiredError,
+    RenamePreview,
 )
 from shelfhold.export.application.rendering import (
     CbzRenderer,
@@ -61,7 +71,7 @@ from shelfhold.export.application.snapshot import (
 from shelfhold.export.application.target_state import FieldRegistry, ensure_active
 from shelfhold.export.application.upgrade import SamePathUpgrade, UpgradeOutcome
 from shelfhold.export.domain.field_owner import AGE_RATING
-from shelfhold.export.domain.naming import FrozenAttrs, Parsed
+from shelfhold.export.domain.naming import FrozenAttrs, NamingTemplate, Parsed
 from shelfhold.export.domain.planner import (
     GATE_CLOSED,
     AgeGateFacts,
@@ -151,6 +161,8 @@ def ensure_applicable(engine: Engine, plan_id: str, *, if_match: str) -> str:
             raise UnknownPlanError(plan_id)
         ensure_active(connection, plan.shelf_destination_id)  # reinstalled Kavita, child exposure
         ctx = load_context(connection, plan.shelf_destination_id)
+        if plan.kind == RENAME_KIND and plan.status == "applying" and if_match == plan.base_version:
+            return str(plan.shelf_destination_id)  # a rename plan cut short goes on (EF-EXP-041)
         if (
             plan.status != "planned"
             or if_match != plan.base_version
@@ -333,6 +345,107 @@ class ExportPipeline:
         self._gate = gate  # raises while the instance is `restored_behind` (EF-INT-026)
         self._preflight: Preflight | None = None
         self._switchover: SwitchoverCheck | None = None
+        self._renames = RenameBook(
+            engine, fsops, locate=locate, clock=clock, locks=self._locks, request_scan=request_scan
+        )
+
+    def bind_readers(self, counter: ReaderCounter | None) -> None:
+        """Who reads a folder in Kavita, for the warning of a rename (EF-EXP-037)."""
+        self._renames.bind_readers(counter)
+
+    def bind_scan_drain(self, drain: Callable[[], None] | None) -> None:
+        """What sends the scans asked so far: a rename plan calls it at the end of each batch."""
+        self._renames.bind_scan_drain(drain)
+
+    def rename_preview(
+        self,
+        destination_id: str,
+        *,
+        template: NamingTemplate | None = None,
+        moves: Sequence[ItemMove] = (),
+    ) -> RenamePreview:
+        """The plan of renames a new template, a reshelving or a binding migration makes: the
+        files already exported are renamed, never deleted and written again (EF-EXP-030)."""
+        self._require_writable()
+        return self._renames.preview(destination_id, template=template, moves=moves)
+
+    def kind_of(self, plan_id: str) -> str:
+        with self._engine.connect() as connection:
+            kind = connection.execute(
+                sa.select(coherence.export_plan.c.kind).where(
+                    coherence.export_plan.c.plan_id == plan_id
+                )
+            ).scalar()
+        if kind is None:
+            raise UnknownPlanError(plan_id)
+        return str(kind)
+
+    def require_confirmation(self, plan_id: str, *, confirmed: bool) -> None:
+        """The refusals of a rename plan that need no disk write, asked before a job exists. A
+        confirmation that passes is kept with the plan: the job relies on it (EF-EXP-037)."""
+        if self.kind_of(plan_id) == RENAME_KIND:
+            try:
+                self._renames.require_confirmation(plan_id, confirmed=confirmed)
+            except RenameConfirmationRequiredError as error:
+                # the answer tells the admin this count: confirming it is what comes next
+                self._renames.announce(plan_id, error.readers, exact=error.exact)
+                raise
+            if confirmed:
+                self._renames.record_confirmation(plan_id)
+
+    def require_not_applying(self, plan_id: str) -> None:
+        """409 `plan.applying`: a job is applying this plan now; a second request leaves it be."""
+        if self.kind_of(plan_id) == RENAME_KIND and self._renames.is_applying(plan_id):
+            raise StalePlanError("the plan is being applied", busy=True)
+
+    def _versions(self, ctx: DestinationContext) -> tuple[Callable[[], str], Callable[[], str]]:
+        def current() -> str:
+            with self._engine.connect() as connection:
+                return version_of(connection, ctx)
+
+        def inputs() -> str:
+            with self._engine.connect() as connection:
+                return inputs_version_of(connection, ctx)
+
+        return current, inputs
+
+    def _settle_renames(self, destination_id: str) -> int:
+        """The intents a stop left open for the steps of rename plans of this destination."""
+        journal = IntentJournal(self._engine, self._fsops, clock=self._clock)
+        hook = self._renames.settle_hook()
+        settled = 0
+        for intent in journal.open_intents():
+            ours = intent.op == "rename" and (
+                intent.payload.get("destination_id") == destination_id
+                and intent.payload.get("scope") in ("file", "series_dir")
+            )
+            report = journal.resolve_one(intent.id, on_done=hook) if ours else None
+            if report is not None:
+                settled += len(report.replayed) + len(report.completed)
+        return settled
+
+    def _apply_rename(
+        self, plan_id: str, *, if_match: str, job_id: str, confirm_progress_loss: bool
+    ) -> ApplyReport:
+        with self._engine.connect() as connection:
+            plan = connection.execute(
+                sa.select(coherence.export_plan).where(coherence.export_plan.c.plan_id == plan_id)
+            ).one()
+            ensure_active(connection, plan.shelf_destination_id)
+            ctx = load_context(connection, plan.shelf_destination_id)
+        versions = self._versions(ctx)
+        if plan.status == "applying" and if_match == plan.base_version:
+            self._renames.resume(
+                plan_id, job_id=job_id, versions=versions,
+                settle=lambda: self._settle_renames(ctx.destination_id),
+            )  # fmt: skip
+        else:
+            self._renames.apply(
+                plan_id, if_match=if_match, job_id=job_id, versions=versions,
+                confirm_progress_loss=confirm_progress_loss,
+            )  # fmt: skip
+        self.heal_mirror(ctx.destination_id)
+        return ApplyReport(plan_id, ())
 
     def use_switchover(self, gate: SwitchoverCheck) -> None:
         """Refuse to export a shelf fed directly by Suwayomi until the procedure is confirmed
@@ -561,10 +674,17 @@ class ExportPipeline:
             for blocked in plan.blocked:
                 log.debug("export.plan_blocked", code=blocked.code, unit_id=blocked.unit_id)
 
-    def apply(self, plan_id: str, *, if_match: str, job_id: str) -> ApplyReport:
+    def apply(
+        self, plan_id: str, *, if_match: str, job_id: str, confirm_progress_loss: bool = False
+    ) -> ApplyReport:
         """Apply a stored plan once. `StalePlanError` (412) when anything moved since."""
         started = time.perf_counter()
         self._require_writable()
+        if self.kind_of(plan_id) == RENAME_KIND:  # names are not parsed: they exist already
+            return self._apply_rename(
+                plan_id, if_match=if_match, job_id=job_id,
+                confirm_progress_loss=confirm_progress_loss,
+            )  # fmt: skip
         self._require_verified()
         with self._engine.connect() as connection:
             destination_id = connection.execute(

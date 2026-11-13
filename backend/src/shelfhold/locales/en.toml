@@ -1166,6 +1166,11 @@
     action = "Recalculate the preview, verify it, and then apply it."
     cause = "The state of the files or the database has changed since the preview was calculated: applying it would do something other than what you have read."
 
+  [errors."plan.applying"]
+    title = "This plan is already being applied."
+    action = "Wait for the running job to finish (see the jobs), then read the state of the plan again: it has not been touched."
+    cause = "A job is applying this plan right now: a second application at the same time would move the same files twice."
+
   [errors.precondition_failed]
     title = "The resource has changed since you read it."
     action = "Reread the resource to get its current ETag, then start again."
@@ -1800,6 +1805,16 @@
     title = "The reallocation plan for the exported series is outdated or refused: nothing has been modified."
     action = "Reread the plan: an adopted (frozen) series or a series linked to something other than its Editions stops it. A plan reread after a change has another fingerprint."
     cause = "The plan no longer corresponds to the current state, or a series adopted or linked to something else prevents it."
+
+  [errors."rename.refused"]
+    title = "The rename plan is refused: nothing was moved."
+    action = "Read the reason: a path outside the root or reserved, a name already taken, a link in place of a folder or an operation still in progress stops it. Fix it, then read the preview again."
+    cause = "A target name is taken, a path leaves the managed root, a link is in place of a folder, or an operation on these files is still open."
+
+  [errors."rename.confirmation_required"]
+    title = "This rename plan makes readers lose their Kavita progress: it must be confirmed."
+    action = "Read the number of readers in the preview, then apply the plan confirming the loss of progress."
+    cause = "Before the version that keeps progress, renaming a folder or a file makes the readers of the series lose their Kavita progress."
 
   [errors."tombstone.journal_truncated"]
     title = "The erase log of a root was truncated."

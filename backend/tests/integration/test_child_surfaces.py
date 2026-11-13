@@ -171,6 +171,7 @@ CLOSED = (
     "POST /api/v1/missing/{destination_id}/{export_item_id}/resolve",
     "POST /api/v1/plans",
     "POST /api/v1/plans/naming-preview",
+    "POST /api/v1/plans/renames",
     "POST /api/v1/plans/{plan_id}/apply",
     "GET /api/v1/plugins/{key}/attestations",
     "POST /api/v1/plugins/{key}/attestations",

@@ -54,6 +54,7 @@ P3 = {
     "rates_content",  # fresh session in every profile (porteur, 2026-11-11): a stolen session
     "enrols_passkey",  # must not file adult content as "0" nor add a passkey that outlives it
     "manages_profiles",  # M3 L05: a stolen session makes no admin, lifts no child's ceiling
+    "renames_exported_files",  # M3 L29: `plan.apply_rename` moves exported files and folders
 }
 
 
@@ -284,6 +285,7 @@ FRESHNESS_LINE = {
             "work.merge",  # M3 L22: the age and the shelves of what a merge moves
             "work.separate",
             "series.reassign",
+            "plan.apply_rename",  # M3 L29: exported files and series folders change name
             "coverage.resplit",  # M2 L26: which chapters a file carries
             "contributor.set_died_for_france",  # M2 L15b: a legal fact about a person
             "export.all",  # M3 L37: every profile's data leaves the instance

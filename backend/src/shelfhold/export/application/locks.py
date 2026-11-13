@@ -31,6 +31,7 @@ __all__ = [
     "ResourceLocks",
     "library_resource",
     "path_resource",
+    "plan_resource",
     "work_lock_for",
     "work_resource",
 ]
@@ -55,6 +56,11 @@ def work_resource(work_id: str) -> str:
 
 def path_resource(series: str) -> str:
     return f"path:{series}"
+
+
+def plan_resource(plan_id: str) -> str:
+    """One application of one plan at a time (a rename plan, EF-EXP-030)."""
+    return f"plan:{plan_id}"
 
 
 def library_resource(remote_library_id: str, normalized_name: str) -> str:
@@ -186,6 +192,15 @@ class ResourceLocks:
                 )
         except IntegrityError:
             raise LockBusyError(resources[0]) from None
+
+    def is_held(self, resource: str) -> bool:
+        """Some job holds `resource` now (its lease has not run out)."""
+        table = coherence.resource_lock
+        with self._engine.connect() as conn:
+            until = conn.execute(
+                sa.select(table.c.lease_until).where(table.c.resource == resource)
+            ).scalar()
+        return until is not None and until > self._clock.now()
 
     def _renew(self, job_id: str, resources: list[str]) -> int:
         table = coherence.resource_lock

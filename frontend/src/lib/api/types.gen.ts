@@ -232,20 +232,6 @@ export type AppliedOut = {
 };
 
 /**
- * ApplyIn
- */
-export type ApplyIn = {
-    /**
-     * Confirm
-     */
-    confirm?: string | null;
-    /**
-     * Include Read
-     */
-    include_read?: boolean;
-};
-
-/**
  * ApprovalOut
  */
 export type ApprovalOut = {
@@ -1526,6 +1512,20 @@ export type IntentsOut = {
      * Items
      */
     items: Array<IntentOut>;
+};
+
+/**
+ * ItemMoveIn
+ */
+export type ItemMoveIn = {
+    /**
+     * Export Item Id
+     */
+    export_item_id: string;
+    /**
+     * New Rel Path
+     */
+    new_rel_path: string;
 };
 
 /**
@@ -2933,6 +2933,80 @@ export type RejectIn = {
      * Reason
      */
     reason: string;
+};
+
+/**
+ * RenamePlanIn
+ *
+ * Either a template (the fields given are the candidate's, the rest the default's) or a list
+ * of moves (reshelving, binding migration): one of the two, never both, never neither.
+ */
+export type RenamePlanIn = {
+    /**
+     * Moves
+     */
+    moves?: Array<ItemMoveIn> | null;
+    /**
+     * Shelf Destination Id
+     */
+    shelf_destination_id: string;
+    template?: NamingTemplateIn | null;
+};
+
+/**
+ * RenamePlanOut
+ */
+export type RenamePlanOut = {
+    /**
+     * Base Version
+     */
+    base_version: string;
+    /**
+     * Batches
+     */
+    batches: number;
+    /**
+     * Blocked
+     */
+    blocked: Array<{
+        [key: string]: unknown;
+    }>;
+    /**
+     * Plan Id
+     */
+    plan_id: string | null;
+    /**
+     * Steps
+     */
+    steps: Array<RenameStepOut>;
+    /**
+     * Warnings
+     */
+    warnings: Array<{
+        [key: string]: unknown;
+    }>;
+};
+
+/**
+ * RenameStepOut
+ */
+export type RenameStepOut = {
+    /**
+     * Dst
+     */
+    dst: string;
+    /**
+     * Export Item Id
+     */
+    export_item_id: string | null;
+    /**
+     * Kind
+     */
+    kind: string;
+    /**
+     * Src
+     */
+    src: string;
 };
 
 /**
@@ -5360,6 +5434,18 @@ export type ShelfholdInterfacesHttpApiOpsSecretIn = {
 };
 
 /**
+ * ApplyIn
+ *
+ * The confirmation that readers lose their progress (EF-EXP-037); nothing else.
+ */
+export type ShelfholdInterfacesHttpApiPlansApplyIn = {
+    /**
+     * Confirm Progress Loss
+     */
+    confirm_progress_loss?: boolean;
+};
+
+/**
  * SecretIn
  */
 export type ShelfholdInterfacesHttpApiPluginsSecretIn = {
@@ -5377,6 +5463,20 @@ export type ShelfholdInterfacesHttpApiRequestsQueueOut = {
      * Items
      */
     items: Array<QueueItemOut>;
+};
+
+/**
+ * ApplyIn
+ */
+export type ShelfholdInterfacesHttpApiRevisionsApplyIn = {
+    /**
+     * Confirm
+     */
+    confirm?: string | null;
+    /**
+     * Include Read
+     */
+    include_read?: boolean;
 };
 
 /**
@@ -8703,8 +8803,44 @@ export type NamingPreviewResponses = {
 
 export type NamingPreviewResponse = NamingPreviewResponses[keyof NamingPreviewResponses];
 
+export type RenamePreviewData = {
+    body: RenamePlanIn;
+    path?: never;
+    query?: never;
+    url: '/api/v1/plans/renames';
+};
+
+export type RenamePreviewErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type RenamePreviewError = RenamePreviewErrors[keyof RenamePreviewErrors];
+
+export type RenamePreviewResponses = {
+    /**
+     * Successful Response
+     */
+    200: RenamePlanOut;
+};
+
+export type RenamePreviewResponse = RenamePreviewResponses[keyof RenamePreviewResponses];
+
 export type ApplyData = {
-    body?: never;
+    /**
+     * Body
+     */
+    body?: ShelfholdInterfacesHttpApiPlansApplyIn | null;
     path: {
         /**
          * Plan Id
@@ -9796,7 +9932,7 @@ export type RevisionsListResponses = {
 export type RevisionsListResponse = RevisionsListResponses[keyof RevisionsListResponses];
 
 export type RevisionsApplyData = {
-    body: ApplyIn;
+    body: ShelfholdInterfacesHttpApiRevisionsApplyIn;
     path?: never;
     query?: never;
     url: '/api/v1/revisions/apply';

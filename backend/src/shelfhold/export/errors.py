@@ -16,6 +16,8 @@ CODES: tuple[ErrorCode, ...] = (
     ErrorCode("target.library_type_changed", 409, "admin", event=True),  # EF-EXP-049
     # 412, not 409: 409 stays for business conflicts (EF-EXP-042, If-Match semantics)
     ErrorCode("plan.stale", 412, "user"),
+    # a rename plan being applied by a job is left to it: a second request is refused (EF-EXP-030)
+    ErrorCode("plan.applying", 409, "user"),
     # EF-EXP-045: a name `plugin/parse` would misread is refused, never written
     ErrorCode("export.series_name_yields_volume", 422, "user"),
     ErrorCode("export.name_misread_number", 422, "user"),
@@ -63,4 +65,8 @@ CODES: tuple[ErrorCode, ...] = (
     ErrorCode("export.awaiting_series_age", 409, "admin"),
     ErrorCode("target.library_type_mismatch", 409, "admin"),
     ErrorCode("export.series_age_stale", 409, "admin"),
+    # M3 L29 (EF-EXP-030, EF-EXP-037): a rename plan that cannot be made or run, and one that
+    # makes readers of Kavita lose their progress and was not confirmed
+    ErrorCode("rename.refused", 409, "admin"),
+    ErrorCode("rename.confirmation_required", 409, "admin"),
 )

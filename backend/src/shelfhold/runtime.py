@@ -25,6 +25,7 @@ from shelfhold.export.application.intents import IntentJournal, OpenIntent, Reso
 from shelfhold.export.application.library_repair import LibraryRepair
 from shelfhold.export.application.locks import ResourceLocks
 from shelfhold.export.application.manifest_write import adopt_written_hook
+from shelfhold.export.application.rename_plan import RenameBook
 from shelfhold.export.application.restore import RestoredBehindError, RestoreGuard
 from shelfhold.export.application.root_bootstrap import (
     RootPolicy,
@@ -250,8 +251,15 @@ class InstanceRuntime:
                     engine, fsops, loaded.locate, clock, hold_work=no_lock, bus=bus,
                 ).settle_hook()  # fmt: skip
 
+                renamed = RenameBook(  # a rename cut short: the manifest it owes (EF-EXP-030)
+                    engine, fsops, locate=loaded.locate, clock=clock, locks=ResourceLocks(
+                        engine, clock=clock
+                    ),
+                ).settle_hook()  # fmt: skip
+
                 def hook(connection: sa.Connection, intent: OpenIntent) -> None:
                     adopt(connection, intent)
+                    renamed(connection, intent)
                     upgraded(connection, intent)
                     repaired(connection, intent)
                     if intent.op == "copy_cross_root" and intent.dst is not None:

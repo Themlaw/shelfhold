@@ -1164,6 +1164,11 @@ title = "L'aperçu a changé depuis son calcul."
 action = "Recalculez l'aperçu, vérifiez-le, puis appliquez-le."
 cause = "L'état des fichiers ou de la base a changé depuis le calcul de l'aperçu : l'appliquer ferait autre chose que ce que vous avez lu."
 
+[errors."plan.applying"]
+title = "Ce plan est déjà en cours d'application."
+action = "Attendez la fin de la tâche en cours (voir les tâches), puis relisez l'état du plan : il n'a pas été touché."
+cause = "Une tâche applique ce plan en ce moment : une deuxième application en même temps déplacerait les mêmes fichiers deux fois."
+
 [errors."precondition_failed"]
 title = "La ressource a changé depuis votre lecture."
 action = "Relisez la ressource pour obtenir son ETag actuel, puis recommencez."
@@ -1798,6 +1803,16 @@ cause = "L'œuvre est déjà rattachée à une série, et une œuvre n'en a qu'u
 title = "Le plan de réaffectation des séries exportées est périmé ou refusé : rien n'a été modifié."
 action = "Relisez le plan : une série adoptée (figée) ou une série liée à autre chose que ses éditions l'arrête. Un plan relu après un changement a une autre empreinte."
 cause = "Le plan ne correspond plus à l'état actuel, ou une série adoptée ou liée à autre chose l'empêche."
+
+[errors."rename.refused"]
+title = "Le plan de renommage est refusé : rien n'a été déplacé."
+action = "Lisez la raison : un chemin hors de la racine ou réservé, un nom déjà pris, un lien à la place d'un dossier ou une opération en cours l'arrêtent. Corrigez puis relisez l'aperçu."
+cause = "Un nom visé est pris, un chemin sort de la racine gérée, un lien est à la place d'un dossier, ou une opération sur ces fichiers est encore ouverte."
+
+[errors."rename.confirmation_required"]
+title = "Ce plan de renommage fait perdre leur progression Kavita à des lecteurs : il faut le confirmer."
+action = "Relisez le nombre de lecteurs de l'aperçu, puis appliquez le plan en confirmant la perte de progression."
+cause = "Avant la version qui conserve la progression, un renommage de dossier ou de fichier fait perdre la progression Kavita des lecteurs de la série."
 
 [errors."tombstone.journal_truncated"]
 title = "Le journal d'effacement d'une racine a été tronqué."

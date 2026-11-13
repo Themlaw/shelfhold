@@ -63,6 +63,9 @@ class Effect(StrEnum):
     # (the "to rewrite" queue, EF-BIB-043), or that the suspect-revision guard be lifted for one
     # (EF-BIB-024): KOReader positions are reset and the old version only survives in the bin
     REWRITES_EXPORTED_FILES = "rewrites_exported_files"
+    # `POST /plans/{id}/apply` of a rename plan (M3 L29, EF-EXP-030): exported files and series
+    # folders change name, and before M4 the Kavita progress of the readers is lost (EF-EXP-037)
+    RENAMES_EXPORTED_FILES = "renames_exported_files"
     # `coverage resplit apply`: says that chapters re-cut from a covered one are carried by its
     # file, which is what presence (I20) reads: no follow cycle or backfill asks for them after it
     # (EF-BIB-044). Nothing is removed, but a wrong answer hides a missing chapter, so it is

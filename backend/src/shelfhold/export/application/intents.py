@@ -44,10 +44,13 @@ STORE_INDEX = "INDEX.jsonl"  # `library.adapters.store_index.INDEX_NAME` (no imp
 __all__ = [
     "INTENT_SCHEMA_VERSION",
     "IntentJournal",
+    "MoveDirStep",
+    "MoveRefusedError",
     "OpenIntent",
     "RenameStep",
     "ResolveReport",
     "SamePathDisk",
+    "holds_any",
     "open_intent_paths",
     "within_any",
 ]
@@ -102,6 +105,26 @@ class RenameStep:
     src: str
     dst: str
     sha256: str | None = None  # `sha256:<hex>` when the manifest knows it
+    # what the operation writes about itself in its intent (a rename plan: the destination and
+    # the item, so that the bookkeeping can be completed after a crash)
+    payload: dict[str, Any] | None = field(default=None, compare=False)
+
+
+@dataclass(frozen=True)
+class MoveDirStep:
+    """A whole series folder moved by one rename (EF-EXP-030): atomic, never file by file."""
+
+    src: str
+    dst: str
+
+
+class MoveRefusedError(Exception):
+    """What was to be moved is not what the plan saw (a link planted in its place, a folder that
+    went away): the intent is closed, nothing is moved."""
+
+    def __init__(self, reason: str) -> None:
+        super().__init__(reason)
+        self.reason = reason
 
 
 @dataclass
@@ -159,6 +182,13 @@ def within_any(path: str, bases: Iterable[str]) -> bool:
     return any(path == b or path.startswith(b.rstrip("/") + "/") for b in bases)
 
 
+def holds_any(path: str, bases: Iterable[str]) -> bool:
+    """The other way of `within_any` (I9): an open intent lies under `path`. A folder that is to be
+    moved whole carries away what a write in flight holds in it."""
+    prefix = path.rstrip("/") + "/"
+    return any(b == path or b.startswith(prefix) for b in bases)
+
+
 class IntentJournal:
     def __init__(
         self,
@@ -196,10 +226,17 @@ class IntentJournal:
         expected_file_id: FileIdentity | None = None,
         plan_id: str | None = None,
         within: Connection | None = None,
+        extra: dict[str, Any] | None = None,
     ) -> str:
         """Step 1: the intent, `pending`, committed before anything touches the disk. `within`:
-        the transaction of the rows it goes with (a withdrawal), so that both exist or neither."""
+        the transaction of the rows it goes with (a withdrawal), so that both exist or neither.
+        `extra`: what the operation writes about itself next to the identity of its file."""
         intent_id = new_ulid()
+        written = (
+            {**(expected_file_id.to_json() if expected_file_id else {}), **extra}
+            if extra
+            else (expected_file_id.to_json() if expected_file_id else None)
+        )
         with nullcontext(within) if within is not None else self._engine.begin() as conn:
             epoch = conn.execute(sa.select(platform.instance.c.restore_epoch)).scalar_one()
             conn.execute(
@@ -210,7 +247,7 @@ class IntentJournal:
                     src_path=src,
                     dst_path=dst,
                     expected_sha256=expected_sha256,
-                    expected_file_id=expected_file_id.to_json() if expected_file_id else None,
+                    expected_file_id=written,
                     plan_id=plan_id,
                     state="pending",
                     epoch=epoch,
@@ -263,7 +300,15 @@ class IntentJournal:
             ).all()
         return [(r.id, r.state, dict(r.expected_file_id or {})) for r in rows]
 
-    def apply_rename(self, step: RenameStep, *, on_done: ManifestHook | None = None) -> None:
+    def apply_rename(
+        self,
+        step: RenameStep,
+        *,
+        on_done: ManifestHook | None = None,
+        cancel_on_refusal: bool = False,
+    ) -> None:
+        """`cancel_on_refusal`: a disk that refuses the rename (the file is where it was, nothing
+        moved) closes the intent `cancelled` and the error goes on: nothing is left to replay."""
         observed = self._disk.observe(step.src)
         if observed is None or observed[0] != "file":
             raise FileNotFoundError(step.src)
@@ -275,12 +320,60 @@ class IntentJournal:
             dst=step.dst,
             expected_sha256=sha256,
             expected_file_id=file_id,
+            extra=step.payload,
         )
         self.mark_applying(intent_id)
-        self._disk.rename(step.src, step.dst)
+        try:
+            self._disk.rename(step.src, step.dst)
+        except (OSError, FsopsError):
+            if cancel_on_refusal:
+                self.cancel(intent_id)
+            raise
         intent = OpenIntent(
             intent_id, "rename", step.src, step.dst, sha256, file_id, "applying",
-            0, INTENT_SCHEMA_VERSION,
+            0, INTENT_SCHEMA_VERSION, payload=dict(step.payload or {}),
+        )  # fmt: skip
+        with self._engine.begin() as conn:
+            self.mark_done(intent_id, within=conn)
+            if on_done is not None:
+                on_done(conn, intent)
+
+    def apply_move_dir(
+        self,
+        step: MoveDirStep,
+        *,
+        payload: dict[str, Any] | None = None,
+        plan_id: str | None = None,
+        on_done: ManifestHook | None = None,
+    ) -> None:
+        """One rename of a folder (an intent `rename` of kind `dir`): the intent first, the folder
+        looked at again once the intent is `applying` (a link planted in its place is refused,
+        the intent closed, and nothing is moved), then the rename, then `done` with the
+        bookkeeping."""
+        observed = self._disk.observe(step.src)
+        if observed is None or observed[0] != "dir":
+            raise MoveRefusedError("not_a_folder")
+        identity = observed[1]
+        intent_id = self.record(
+            op="rename", src=step.src, dst=step.dst, expected_file_id=identity,
+            extra={**(payload or {}), "kind": "dir"}, plan_id=plan_id,
+        )  # fmt: skip
+        self.mark_applying(intent_id)
+        again = self._disk.observe(step.src)
+        if again is None or again[0] != "dir" or again[1].ino != identity.ino:
+            self.cancel(intent_id)
+            raise MoveRefusedError("not_a_folder")
+        try:
+            self._disk.rename(step.src, step.dst)
+        except FileExistsError:
+            self.cancel(intent_id)
+            raise MoveRefusedError("destination_taken") from None
+        except (OSError, FsopsError):  # EXDEV, EBUSY, EACCES...: the folder did not move
+            self.cancel(intent_id)
+            raise MoveRefusedError("refused_by_the_disk") from None
+        intent = OpenIntent(
+            intent_id, "rename", step.src, step.dst, None, identity, "applying",
+            0, INTENT_SCHEMA_VERSION, plan_id, {**(payload or {}), "kind": "dir"},
         )  # fmt: skip
         with self._engine.begin() as conn:
             self.mark_done(intent_id, within=conn)
@@ -428,7 +521,10 @@ class IntentJournal:
     ) -> None:
         try:
             if intent.op == "rename" and intent.src and intent.dst:
-                self._resolve_rename(intent, report, on_done)
+                if intent.payload.get("kind") == "dir":  # a series folder moved by one rename
+                    self._resolve_rename_dir(intent, report, on_done)
+                else:
+                    self._resolve_rename(intent, report, on_done)
             elif intent.op == "rmdir" and intent.src:
                 self._resolve_rmdir(intent, report, on_done)
             elif intent.op == "delete" and intent.src and f"/{RECYCLE_DIR}/" in intent.src:
@@ -490,6 +586,31 @@ class IntentJournal:
             report.completed.append(intent.id)
         else:
             self._drift(intent, report, "neither one source-only nor one target-only state")
+
+    def _resolve_rename_dir(
+        self, intent: OpenIntent, report: ResolveReport, on_done: ManifestHook | None
+    ) -> None:
+        """A folder moved by one rename: the folder is at the source (the very one, by its inode:
+        it goes now) or at the target with the source gone (it went before the crash). A link or
+        a file in either place, or both places taken, is drift: nothing is touched."""
+        if intent.src is None or intent.dst is None or intent.expected_file_id is None:
+            return self._drift(intent, report, "a folder move needs both paths and its identity")
+        at_src = self._disk.observe(intent.src)
+        at_dst = self._disk.observe(intent.dst)
+        wanted = intent.expected_file_id.ino
+        if at_src is not None and at_src[0] == "dir" and at_dst is None:
+            if at_src[1].ino != wanted:
+                return self._drift(intent, report, "source is not the expected folder")
+            self._disk.rename(intent.src, intent.dst)
+            self._finish(intent, on_done)
+            report.replayed.append(intent.id)
+        elif at_dst is not None and at_dst[0] == "dir" and at_src is None:
+            if at_dst[1].ino != wanted:
+                return self._drift(intent, report, "target is not provably the expected folder")
+            self._finish(intent, on_done)
+            report.completed.append(intent.id)
+        else:
+            self._drift(intent, report, "neither one source-only nor one target-only folder")
 
     def _resolve_recycle(
         self, intent: OpenIntent, report: ResolveReport, on_done: ManifestHook | None
