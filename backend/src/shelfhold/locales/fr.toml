@@ -517,6 +517,13 @@ help_set_aside_journal = "Met de côté, sous un nom horodaté, un journal de pi
 help_aside_root = "Identifiant de la racine (par défaut : toutes celles dont le journal est illisible ou tronqué)."
 help_tombstone_rekey = "Après une fuite de clé : marque les clés données comme compromises puis réécrit la base et les journaux de pierres tombales sous la clé active (action réservée ; faites d'abord « shelfhold secrets rotate »)."
 help_rekey_kid = "Identifiant de la clé compromise (répétable) ; jamais la clé active."
+help_tombstone_lift = "Lève une pierre tombale : elle ne bloque plus rien, rien n'est restauré (action réservée)."
+help_lift_seq = "Le numéro de la pierre tombale (positif)."
+help_lift_confirm = "La phrase « lift » suivie du numéro, retapée à l'identique."
+lift_seq_invalid = "Le numéro de la pierre tombale est un entier positif."
+lift_needs_confirmation = "Indiquez --confirm \"lift {seq}\" : la pierre tombale cessera de bloquer."
+tombstone_lifted = "Pierre tombale {seq} levée. Rien n'a été restauré."
+tombstone_lift_owed = "{roots} racine(s) absente(s) : la ligne leur sera écrite à leur retour."
 help_tombstone_flush = "Écrit les lignes de pierres tombales qu'une racine doit encore à son journal."
 help_confirm_phrase = "La phrase de confirmation, à l'identique."
 help_target_recheck = "Revérifie une destination : droits d'écriture, routes, exposition."
@@ -1605,6 +1612,16 @@ title = "L'aperçu confirmé n'est plus celui de l'instance."
 action = "Relancez la commande sans confirmation, relisez l'aperçu, puis confirmez avec la nouvelle empreinte."
 cause = "L'état de l'instance a changé entre l'aperçu et votre confirmation : l'empreinte donnée ne correspond plus."
 
+[errors."tombstone.confirmation_required"]
+title = "La phrase de confirmation n'est pas celle de cette pierre tombale."
+action = "Retapez exactement la phrase demandée (« lift » suivi du numéro). Rien n'a été levé."
+cause = "Lever une pierre tombale laisse revenir le contenu qu'elle bloquait : Shelfhold demande de taper la phrase qui nomme ce numéro."
+
+[errors."tombstone.unknown"]
+title = "Aucune pierre tombale à lever sous ce numéro."
+action = "Vérifiez le numéro. Une pierre tombale déjà levée, ou la ligne qui en lève une, ne se lève pas de nouveau."
+cause = "Ce numéro ne désigne aucune pierre tombale encore en vigueur."
+
 [errors."tombstone.migration_hit"]
 title = "Une migration a rencontré un contenu effacé."
 action = "Examinez le contenu concerné ; rien n'a été réacquis."
@@ -1634,6 +1651,16 @@ cause = "La requête ne porte ni session valide ni clé d'API : session expirée
 title = "La file de mise à l'abri est saturée."
 action = "Laissez la file se vider ou augmentez le quota de mise à l'abri."
 cause = "Plus de chapitres attendent leur copie à l'abri que le quota ne permet d'en traiter à la fois."
+
+[errors."library.space_insufficient"]
+title = "L'ajout ne tient pas dans l'espace libre."
+action = "Libérez de la place : « Vider la corbeille » rend l'espace des fichiers effacés depuis moins de 30 jours. Rien n'a été écrit."
+cause = "La taille estimée de l'ajout dépasse l'espace libre une fois la réserve du disque mise de côté."
+
+[errors."trash.confirmation_required"]
+title = "La phrase de confirmation n'est pas la bonne."
+action = "Tapez exactement « empty-trash » pour vider la corbeille. Rien n'a été effacé."
+cause = "Vider la corbeille efface pour de bon des fichiers que l'on pouvait encore restaurer : la phrase est comparée par le serveur."
 
 [errors."unit.confirmation_required"]
 title = "Ce chapitre est irremplaçable : la suppression demande une confirmation."
@@ -2206,6 +2233,15 @@ type_phrase = "Pour continuer, relancez la même commande avec --confirm \"{phra
 done = "Destination retirée : {deleted} fichiers supprimés, {forgotten} lignes de manifeste oubliées."
 left = "Laissé en place ({code}) : {path}"
 given_up = "Abandonné : {count, plural, one {# opération interrompue annulée} other {# opérations interrompues annulées}}."
+
+[trash]
+help = "La corbeille des racines de la bibliothèque (action réservée)."
+empty_help = "Vide la corbeille maintenant, sans attendre les 30 jours (action réservée)."
+confirm_help = "La phrase « empty-trash », retapée à l'identique."
+needs_confirmation = "Indiquez --confirm empty-trash : les fichiers de la corbeille seront effacés pour de bon."
+done = "Corbeille vidée : {removed} entrée(s) effacée(s), {kept} laissée(s)."
+held_irreplaceable = "{count} entrée(s) gardée(s) : l'Unité est devenue irremplaçable (EF-BIB-031)."
+held_other = "{count} entrée(s) gardée(s) : une opération en cours, une sauvegarde retenue ou un original adopté sans copie vérifiée."
 
 [purge]
 help = "Efface pour de bon une Unité ou une Œuvre (action réservée)."

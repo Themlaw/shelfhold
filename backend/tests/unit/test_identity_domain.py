@@ -207,6 +207,7 @@ def test_system_emitters_closed_list() -> None:
                 "staging_orphan_cleanup",
                 "probe_file_cleanup",
                 "trash_retention_purge",
+                "disk_guard_purge",
             }
         )
         == SYSTEM_EMITTERS

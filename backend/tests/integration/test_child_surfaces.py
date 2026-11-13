@@ -128,6 +128,11 @@ CLOSED = (
     "POST /api/v1/coverage/resplit/propose",
     "POST /api/v1/deletions",
     "POST /api/v1/deletions/preview",
+    # M3 L26: the reclaim actions and the lift are the admin's (reserved: a fresh session or the
+    # host CLI); the sheet's size check shows the free space of the host, which is not hers either
+    "POST /api/v1/trash/empty",
+    "POST /api/v1/tombstones/{seq}/lift",
+    "POST /api/v1/library/space-check",
     "POST /api/v1/detach",
     "GET /api/v1/diagnostic/bundle",  # M3 L46: the bundle is the admin's alone
     "GET /api/v1/editions",

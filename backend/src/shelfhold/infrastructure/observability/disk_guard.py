@@ -146,6 +146,24 @@ class DiskGuard:
         if self._low:
             raise DiskLowError(self.low()[0])
 
+    def triggered(self, path: Path, *, fresh: bool = False) -> bool:
+        """The volume that holds `path` is under its mark (the early purge of the trash asks,
+        EF-BIB-030): the hysteresis of `_low` applies, so it stays true until the resume mark.
+        `fresh` measures again whatever the age of the last measure (the purge asks again after
+        each entry it removes)."""
+        with self._mutex:
+            stale = (
+                self._measured_at is None or self._monotonic() - self._measured_at >= self._ttl_s
+            )
+            if fresh or stale:
+                self._measure()
+            low = [self._volumes[name] for name in self._low if name in self._volumes]
+        try:
+            device = os.stat(path).st_dev
+            return any(os.stat(volume).st_dev == device for volume in low)
+        except OSError:
+            return False
+
     def has_room_for_vacuum(self, *, database_bytes: int, volume: str) -> bool:
         """`VACUUM INTO` needs twice the size of the database free (ENF-OPS-006)."""
         return self._usage(self._volumes[volume]).free >= 2 * database_bytes

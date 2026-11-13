@@ -40,7 +40,7 @@ so a line recorded meanwhile is in the new file.
 
 import hashlib
 import threading
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Final, Protocol
@@ -57,6 +57,7 @@ from shelfhold.identity.public import (
     Principal,
     authorize_reserved,
 )
+from shelfhold.infrastructure.event_sequence import invalidate_tokens
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import acquisition, coherence, identity, platform
 from shelfhold.infrastructure.secrets import registry as key_registry
@@ -75,6 +76,7 @@ from shelfhold.infrastructure.secrets.tombstone_aead import (
 from shelfhold.library.tombstones.chain import EMPTY, ChainState, judge, tag_of, tip_of
 from shelfhold.library.tombstones.cited import default_normalizers
 from shelfhold.library.tombstones.index import (
+    LIFT_MARK,
     NORMALIZED_FIELDS,
     HashWith,
     MembershipIndex,
@@ -91,6 +93,13 @@ from shelfhold.library.tombstones.journal import (
     parse_lines_ignoring_header,
 )
 from shelfhold.library.tombstones.scopes import EmptyRefError, alias_family, fold_ref
+from shelfhold.library.tombstones.lift import (
+    LIFT_REASON,
+    LiftConfirmationError,
+    LiftRefusedError,
+    UnknownTombstoneError,
+    lift_phrase,
+)
 from shelfhold.library.tombstones.state import TombstoneState
 from shelfhold.library.tombstones.values import (
     ContentHash,
@@ -116,10 +125,11 @@ INERT_REASONS: Final = frozenset(
     {"authentication_failed", "kid_unregistered", "lost_keyring", "malformed"}
 )
 # `content_tombstone.reason`: a closed list, never free text (it could carry a title, I36).
-REASONS: Final = frozenset({"purge_unit", "purge_work", "replayed", "new_form"})
+REASONS: Final = frozenset({"purge_unit", "purge_work", "replayed", "new_form", "lifted"})
 _LOST_KEYRING_ACTION = RESERVED_ACTIONS["tombstone.accept_lost_keyring"]
 _SET_ASIDE_ACTION = RESERVED_ACTIONS["tombstone.set_aside_journal"]
 _REKEY_ACTION = RESERVED_ACTIONS["tombstone.rekey"]
+_LIFT_ACTION = RESERVED_ACTIONS["tombstone.lift"]
 # One lock for every write of a journal and of the label that follows it: an append never
 # interleaves with a rewrite (`tombstone rekey`), whichever service object makes it. It excludes
 # THREADS of one process only. Between processes the exclusion is the `flock` on `/data/.lock`
@@ -190,6 +200,14 @@ class Recorded:
 
 
 @dataclass(frozen=True)
+class Lifted:
+    seq: int  # the tombstone that was lifted
+    line_seq: int  # the line that lifts it
+    written: tuple[str, ...]
+    pending: tuple[str, ...]
+
+
+@dataclass(frozen=True)
 class InertLine:
     root_id: str  # `db` for a row of the table
     seq: int | None  # None when the line did not even parse
@@ -247,6 +265,21 @@ class LostKeyringRefusedError(PermissionError):
 
 def _identity(values: TombstoneValues, cited: Mapping[str, str]) -> tuple[object, ...]:
     return (values, tuple(sorted(cited.items())))
+
+
+def _not_lifted(
+    entries: Sequence[tuple[TombstoneValues, dict[str, str]]],
+) -> list[tuple[TombstoneValues, dict[str, str]]]:
+    """What still blocks: the entries in order, a lift taking out the earlier entries of the same
+    values and cited versions (a purge laid after the lift is back in)."""
+    active: list[tuple[TombstoneValues, dict[str, str]]] = []
+    for values, cited in entries:
+        if LIFT_MARK in cited:
+            base = {k: v for k, v in cited.items() if k != LIFT_MARK}
+            active = [item for item in active if item != (values, base)]
+        else:
+            active.append((values, cited))
+    return active
 
 
 class TombstoneService:
@@ -363,10 +396,25 @@ class TombstoneService:
         *,
         reason: str | None = None,
     ) -> Recorded:
+        return self._record(values, roots, reason=reason, cited=self.cited_now(values))
+
+    def _record(
+        self,
+        values: TombstoneValues,
+        roots: Sequence[TombstoneRoot],
+        *,
+        reason: str | None,
+        cited: Mapping[str, str],
+        lifting: bool = False,
+        within: Callable[[Connection], None] | None = None,
+    ) -> Recorded:
+        """A tombstone, or (`lifting`) the line that lifts the tombstone of the same values and
+        cited versions: the same row, the same line in every journal, the mark in `cited`.
+        `within` runs in the transaction that writes the row (the audit of a lift)."""
         if reason is not None and reason not in REASONS:
             raise ValueError(f"reason is one of {sorted(REASONS)}")
-        cited = self.cited_now(values)
-        plaintext = encode_plaintext(values, cited)
+        stored = {**cited, LIFT_MARK: "1"} if lifting else dict(cited)
+        plaintext = encode_plaintext(values, stored)
         kid = self._keyring.active.kid
         with self._engine.begin() as connection:
             seq = self._insert_row(connection, plaintext, values.scope, reason=reason)
@@ -378,8 +426,13 @@ class TombstoneService:
                 connection.execute(
                     sa.insert(_pending).values(root_id=root_id, seq=seq, line=line.decode("ascii"))
                 )
-        if self._index is not None:  # the row is committed: it blocks now, whatever the disk does
-            self._index.add_all([(values, cited)])
+            if within is not None:
+                within(connection)
+        if self._index is not None:  # the row is committed: it blocks (or frees) now
+            if lifting:
+                self._index.remove(values, cited)
+            else:
+                self._index.add_all([(values, dict(cited))])
         written: list[str] = []
         for root in roots:
             if root.mounted and self._write_line(root, seq, kid, lines[root.root_id]):
@@ -387,8 +440,76 @@ class TombstoneService:
         pending = tuple(r.root_id for r in roots if r.root_id not in written)
         # the scope and the counts: the values are sealed in the table and must never be logged
         log.debug("tombstone.recorded", scope=values.scope, seq=seq, written=len(written),
-                  pending=len(pending))  # fmt: skip
+                  pending=len(pending), lifting=lifting)  # fmt: skip
         return Recorded(seq, kid, tuple(written), pending)
+
+    # -- `tombstone lift` (06 Q54): see `lift.py` -------------------------------------------
+
+    def _active(self, connection: Connection) -> dict[int, tuple[TombstoneValues, dict[str, str]]]:
+        """The tombstones of the table that are not lifted: `seq -> (values, cited)`, read in
+        order, a lift taking out what it names (a purge laid after it counts again)."""
+        active: dict[int, tuple[TombstoneValues, dict[str, str]]] = {}
+        rows = connection.execute(
+            sa.select(_tomb.c.scope, _tomb.c.seq, _tomb.c.kid, _tomb.c.nonce, _tomb.c.ct).order_by(
+                _tomb.c.seq
+            )
+        ).all()
+        for scope, seq, kid, nonce, ct in rows:
+            if self._keyring.find(kid) is None:
+                continue  # inert or unknown: not a tombstone that can be lifted here
+            try:
+                values, cited = self._open(scope, kid, bytes(nonce), bytes(ct), DB_ROOT, seq)
+            except (EnvelopeError, TombstoneValueError):
+                continue
+            if LIFT_MARK in cited:
+                base = {k: v for k, v in cited.items() if k != LIFT_MARK}
+                for other in [n for n, item in active.items() if item == (values, base)]:
+                    del active[other]
+            else:
+                active[seq] = (values, cited)
+        return active
+
+    def lift(
+        self,
+        roots: Sequence[TombstoneRoot],
+        *,
+        seq: int,
+        confirmation: str,
+        principal: Principal,
+        now: datetime,
+    ) -> Lifted:
+        """Reserved action (checked here too, not only at the door), typed phrase `lift <seq>`,
+        audited with the actor and the sequence, no value. The tombstone no longer blocks; nothing
+        is restored; the line that lifts it is owed to every root, like a tombstone."""
+        verdict = authorize_reserved(
+            principal, _LIFT_ACTION, now=now, fresh_auth_s=self._fresh_auth_s,
+            hardened=self._hardened,
+        )  # fmt: skip
+        if not isinstance(verdict, Allowed):
+            raise LiftRefusedError(verdict)
+        if confirmation != lift_phrase(seq):
+            raise LiftConfirmationError(f"type the phrase exactly: {lift_phrase(seq)}")
+        with _WRITE_LOCK:  # two lifts of one tombstone at once: the second finds it lifted
+            with self._engine.connect() as connection:
+                target = self._active(connection).get(seq)
+            if target is None:
+                raise UnknownTombstoneError(f"no tombstone to lift at sequence {seq}")
+            values, cited = target
+
+            def audit(connection: Connection) -> None:
+                connection.execute(
+                    sa.insert(identity.audit).values(
+                        id=new_ulid(), actor_id=principal.actor_id, action="tombstone.lifted",
+                        target=f"seq:{seq}", session_id=principal.session_id,
+                        auth_time=principal.auth_time,
+                    )
+                )  # fmt: skip
+                invalidate_tokens(connection)  # no removal is told: the clients resync
+
+            line = self._record(
+                values, roots, reason=LIFT_REASON, cited=cited, lifting=True, within=audit
+            )
+            return Lifted(seq, line.seq, line.written, line.pending)
 
     def _write_line(self, root: TombstoneRoot, seq: int, kid: str, line: bytes) -> bool:
         """Registry of the sentinel first, then the line, then the label that follows it, then the
@@ -630,7 +751,9 @@ class TombstoneService:
             db_kids = set(connection.execute(sa.select(_kid.c.kid)).scalars())
             lost = set(connection.execute(sa.select(_lost.c.kid)).scalars())
             rows = connection.execute(
-                sa.select(_tomb.c.scope, _tomb.c.seq, _tomb.c.kid, _tomb.c.nonce, _tomb.c.ct)
+                sa.select(
+                    _tomb.c.scope, _tomb.c.seq, _tomb.c.kid, _tomb.c.nonce, _tomb.c.ct
+                ).order_by(_tomb.c.seq)  # a lift takes out what came before it, in this order
             ).all()
         entries: list[tuple[TombstoneValues, dict[str, str]]] = []
         in_table: set[tuple[object, ...]] = set()
@@ -668,7 +791,7 @@ class TombstoneService:
             published = self._announce(connection, report)
         self._bus.deliver(published)
         index = MembershipIndex(self._normalizers)
-        index.add_all(entries)
+        index.add_all(_not_lifted(entries))
         self._index, self._report = index, report
         return report
 

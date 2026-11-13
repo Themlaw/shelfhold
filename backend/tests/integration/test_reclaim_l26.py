@@ -14,6 +14,8 @@ from pathlib import Path
 
 import pytest
 import sqlalchemy as sa
+
+from shelfhold.export.application.intents import IntentJournal
 from shelfhold.export.application.reclaim import (
     EARLY_PURGE_MIN_AGE_S,
     EMPTY_TRASH_PHRASE,
@@ -21,8 +23,6 @@ from shelfhold.export.application.reclaim import (
     TrashConfirmationError,
     TrashEmptyRefusedError,
 )
-
-from shelfhold.export.application.intents import IntentJournal
 from shelfhold.identity.public import Credential, Principal
 from shelfhold.infrastructure.fsops.errors import (
     EmitterConditionError,
@@ -112,7 +112,7 @@ def test_empty_trash_now() -> None:
         assert bin_dirs(d), "the deletion put the files in the bin"
         before_tree = {k: v for k, v in outside.items() if ".shelfhold/recycle" not in k}
 
-        report = reclaimer(d).empty_now(principal=ADMIN, typed=EMPTY_TRASH_PHRASE)
+        report = reclaimer(d).empty_trash(principal=ADMIN, typed=EMPTY_TRASH_PHRASE)
 
         assert report.removed >= 1 and bin_dirs(d) == [] and d.binned() == []
         assert d.rows("SELECT count(*) FROM trash_item") == [(0,)]
@@ -134,7 +134,7 @@ def test_empty_trash_refused_without_the_right(who: Principal) -> None:
         before = d.dump()
 
         with pytest.raises(TrashEmptyRefusedError):
-            reclaimer(d).empty_now(principal=who, typed=EMPTY_TRASH_PHRASE)
+            reclaimer(d).empty_trash(principal=who, typed=EMPTY_TRASH_PHRASE)
 
         assert d.dump() == before and bin_dirs(d)  # nothing removed, no audit, no intent
         assert audit(d, "trash.emptied") == []
@@ -148,7 +148,7 @@ def test_empty_trash_needs_the_typed_phrase(typed: str | None) -> None:
         before = d.dump()
 
         with pytest.raises(TrashConfirmationError):
-            reclaimer(d).empty_now(principal=ADMIN, typed=typed)
+            reclaimer(d).empty_trash(principal=ADMIN, typed=typed)
 
         assert d.dump() == before and bin_dirs(d)
 
@@ -160,7 +160,7 @@ def test_empty_trash_never_touches_what_is_not_the_bin(tmp_path: Path) -> None:
         d = make_deletion(env)
         binned_unit(d)
         library, store = env.lib.library, env.lib.store
-        mine = library / "my notes.txt"
+        mine = env.lib.manga / "my notes.txt"
         mine.write_text("the admin's own file")
         outside = tmp_path / "elsewhere"
         outside.mkdir()
@@ -176,7 +176,7 @@ def test_empty_trash_never_touches_what_is_not_the_bin(tmp_path: Path) -> None:
             for p in (library / ".shelfhold-mount-id", store / ".shelfhold-mount-id")
         }
 
-        reclaimer(d).empty_now(principal=ADMIN, typed=EMPTY_TRASH_PHRASE)
+        reclaimer(d).empty_trash(principal=ADMIN, typed=EMPTY_TRASH_PHRASE)
 
         assert mine.read_text() == "the admin's own file"
         assert (outside / "precious.txt").read_text() == "precious"  # a link is never followed
@@ -195,7 +195,7 @@ def test_empty_trash_keeps_what_is_held_and_says_why() -> None:
         unit = binned_unit(d)
         make_irreplaceable(env, unit)
 
-        report = reclaimer(d).empty_now(principal=ADMIN, typed=EMPTY_TRASH_PHRASE)
+        report = reclaimer(d).empty_trash(principal=ADMIN, typed=EMPTY_TRASH_PHRASE)
 
         assert report.removed == 0 and report.held_irreplaceable >= 1 and bin_dirs(d)
         assert d.rows("SELECT count(*) FROM trash_item")[0][0] >= 1
@@ -209,14 +209,15 @@ def test_empty_trash_leaves_an_entry_that_a_restore_is_using() -> None:
         unit = binned_unit(d)
         entry = bin_dirs(d)[0]
         journal = IntentJournal(env.engine, env.lib.fsops, clock=env.clock)
-        intent = journal.record(op="unbin", src=str(entry))  # what a restore opens first
+        intent = journal.record(op="unbin", src="x", dst=f"{entry.name}/x")  # a restore opens this
         journal.mark_applying(intent)
 
-        report = reclaimer(d).empty_now(principal=ADMIN, typed=EMPTY_TRASH_PHRASE)
+        report = reclaimer(d).empty_trash(principal=ADMIN, typed=EMPTY_TRASH_PHRASE)
 
         assert entry.exists() and report.kept >= 1
         journal.cancel(intent)
-        assert d.service.restore(unit, principal=ADMIN, now=d.now).restored == 3
+        # the held entry goes back; the others were emptied, as the admin asked
+        assert d.service.restore(unit, principal=ADMIN, now=d.now).restored == 1
 
 
 def test_two_simultaneous_empties_remove_each_entry_once_and_raise_nothing() -> None:
@@ -232,7 +233,7 @@ def test_two_simultaneous_empties_remove_each_entry_once_and_raise_nothing() -> 
         def run() -> None:
             try:
                 gate.wait(timeout=10)
-                results.append(reclaimer(d).empty_now(principal=ADMIN, typed=EMPTY_TRASH_PHRASE))
+                results.append(reclaimer(d).empty_trash(principal=ADMIN, typed=EMPTY_TRASH_PHRASE))
             except BaseException as error:
                 errors.append(error)
 
@@ -258,7 +259,7 @@ def test_the_cure_is_never_blocked_by_the_disk_guard() -> None:
             raise DiskLowError("library_1")
 
         env.lib.fsops._write_gate = refuse  # type: ignore[attr-defined]
-        report = reclaimer(d).empty_now(principal=ADMIN, typed=EMPTY_TRASH_PHRASE)
+        report = reclaimer(d).empty_trash(principal=ADMIN, typed=EMPTY_TRASH_PHRASE)
         assert report.removed >= 1 and bin_dirs(d) == []
 
 
@@ -325,7 +326,7 @@ def test_early_purge_refuses_a_young_entry_at_the_fsops_level_too() -> None:
         with pytest.raises(EmitterConditionError):  # no pressure
             fsops.system_remove_tree("disk_guard_purge", str(young))
         fsops.on_disk_pressure(lambda _root: True)
-        mine = env.lib.library / "my notes.txt"
+        mine = env.lib.manga / "my notes.txt"
         mine.write_text("mine")
         with pytest.raises(EmitterPerimeterError):  # outside the bin
             fsops.system_remove_tree("disk_guard_purge", str(mine))

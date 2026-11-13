@@ -19,6 +19,10 @@ PROBE_PREFIX = ".shelfhold-probe-"
 PROBE_EPUB = ".epub"  # the suffix of the probe Kavita is asked to read (EF-UX-002)
 PROBE_NAME = re.compile(r"\.shelfhold-probe-[0-9a-f]{16}(\.epub)?")  # exactly what is drawn
 TRASH_RETENTION_S = 30 * 86400  # ENF-OPS-009
+# The early purge (EF-BIB-030, ENF-OPS-006) never takes an entry younger than this, whatever the
+# pressure: a deletion made last week can still be undone (a choice to validate, the card gives no
+# floor). Read from the file system by fsops, like the 30 days.
+EARLY_PURGE_MIN_AGE_S = 7 * 86400
 
 
 def new_probe_name(*, epub: bool = False) -> str:
@@ -64,6 +68,9 @@ EMITTER_PERIMETERS: Mapping[str, Perimeter] = MappingProxyType(
             name=PROBE_NAME, tree=False, needs_file=True, also_in=STAGING_DIR
         ),
         "trash_retention_purge": Perimeter(below=RECYCLE_DIR),
+        # EF-BIB-030: the bin under disk pressure, oldest first (the order is the caller's, the
+        # minimum age and the pressure are fsops's own reading): the same perimeter as the sweep
+        "disk_guard_purge": Perimeter(below=RECYCLE_DIR),
     }
 )
 

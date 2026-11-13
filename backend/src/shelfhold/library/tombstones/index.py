@@ -109,9 +109,13 @@ _Group = tuple[Scope, frozenset[str], tuple[tuple[str, str], ...]]
 _Key = tuple[tuple[str, str], ...]
 
 
+LIFT_MARK: Final = "lift"  # in the `cited` of a line: it lifts the tombstone of the same values
+
+
 class MembershipIndex:
     def __init__(self, normalizers: Normalizers) -> None:
         self._normalizers = normalizers
+        self._items: list[tuple[TombstoneValues, dict[str, str]]] = []
         self._entries: list[tuple[Scope, dict[str, str], dict[str, str]]] = []
         self._hashes: set[tuple[str, str]] = set()
         self._groups: dict[_Group, set[_Key]] = {}
@@ -132,16 +136,29 @@ class MembershipIndex:
 
     def add_all(self, items: Iterable[tuple[TombstoneValues, Mapping[str, str]]]) -> None:
         """Add tombstones and rebuild the groups (a new cited version re-keys every entry)."""
-        added = list(items)
-        missing: list[str] = []
-        for values, cited in added:
+        self._items.extend((values, dict(cited)) for values, cited in items)
+        self._derive()
+
+    def remove(self, values: TombstoneValues, cited: Mapping[str, str]) -> int:
+        """Take a tombstone out (it was lifted): every entry of exactly these values and cited
+        versions. Returns how many went; the rest is rebuilt from what is left."""
+        kept = [item for item in self._items if item != (values, dict(cited))]
+        gone = len(self._items) - len(kept)
+        self._items = kept
+        self._derive()
+        return gone
+
+    def _derive(self) -> None:
+        """Everything the index answers from is a function of the tombstones it holds."""
+        self._entries, self._hashes, self._versions = [], set(), {}
+        for values, cited in self._items:
             for name, version in cited.items():
                 if name in NORMALIZED_FIELDS.values():
                     self._versions.setdefault(name, set()).add(version)
             self._entries.append((values.scope, flatten(values), dict(cited)))
             self._hashes.update((h.by, h.value) for h in _hashes(values))
-        for versions in self._versions.values():
-            missing.extend(v for v in versions if not self._normalizers.known(v))
+        missing = [v for versions in self._versions.values() for v in versions
+                   if not self._normalizers.known(v)]  # fmt: skip
         if missing:
             raise CitedVersionMissingError(missing)
         self._rebuild()

@@ -4257,6 +4257,16 @@ export type SourceIn = {
 };
 
 /**
+ * SpaceCheckIn
+ */
+export type SpaceCheckIn = {
+    /**
+     * Estimated Bytes
+     */
+    estimated_bytes: number;
+};
+
+/**
  * SpanOut
  */
 export type SpanOut = {
@@ -4626,6 +4636,16 @@ export type TrustLineOut = {
      * Level
      */
     level: 'official' | 'community' | 'unknown';
+};
+
+/**
+ * TypedIn
+ */
+export type TypedIn = {
+    /**
+     * Typed
+     */
+    typed: string;
 };
 
 /**
@@ -8122,6 +8142,43 @@ export type JobsRetryResponses = {
 };
 
 export type JobsRetryResponse = JobsRetryResponses[keyof JobsRetryResponses];
+
+export type SpaceCheckData = {
+    body: SpaceCheckIn;
+    path?: never;
+    query?: never;
+    url: '/api/v1/library/space-check';
+};
+
+export type SpaceCheckErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type SpaceCheckError = SpaceCheckErrors[keyof SpaceCheckErrors];
+
+export type SpaceCheckResponses = {
+    /**
+     * Response Space Check
+     *
+     * Successful Response
+     */
+    200: {
+        [key: string]: unknown;
+    };
+};
+
+export type SpaceCheckResponse = SpaceCheckResponses[keyof SpaceCheckResponses];
 
 export type MaintenanceStatusData = {
     body?: never;
@@ -11840,6 +11897,85 @@ export type SetAsideJournalResponses = {
 };
 
 export type SetAsideJournalResponse = SetAsideJournalResponses[keyof SetAsideJournalResponses];
+
+export type LiftTombstoneData = {
+    body: TypedIn;
+    path: {
+        /**
+         * Seq
+         */
+        seq: number;
+    };
+    query?: never;
+    url: '/api/v1/tombstones/{seq}/lift';
+};
+
+export type LiftTombstoneErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type LiftTombstoneError = LiftTombstoneErrors[keyof LiftTombstoneErrors];
+
+export type LiftTombstoneResponses = {
+    /**
+     * Response Lift Tombstone
+     *
+     * Successful Response
+     */
+    200: {
+        [key: string]: unknown;
+    };
+};
+
+export type LiftTombstoneResponse = LiftTombstoneResponses[keyof LiftTombstoneResponses];
+
+export type EmptyTrashData = {
+    body: TypedIn;
+    path?: never;
+    query?: never;
+    url: '/api/v1/trash/empty';
+};
+
+export type EmptyTrashErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type EmptyTrashError = EmptyTrashErrors[keyof EmptyTrashErrors];
+
+export type EmptyTrashResponses = {
+    /**
+     * Response Empty Trash
+     *
+     * Successful Response
+     */
+    200: {
+        [key: string]: unknown;
+    };
+};
+
+export type EmptyTrashResponse = EmptyTrashResponses[keyof EmptyTrashResponses];
 
 export type PurgeUnitData = {
     body: PurgeIn;

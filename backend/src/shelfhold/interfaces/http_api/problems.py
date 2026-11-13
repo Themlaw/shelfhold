@@ -63,7 +63,13 @@ class ReauthRequiredProblem(Problem):
 
 
 # Extension members of a problem type, documented next to its `type` URI in `x-problem-types`.
-PROBLEM_EXTENSIONS: dict[str, tuple[str, ...]] = {"reauth_required": ("auth_age_s", "max_age_s")}
+PROBLEM_EXTENSIONS: dict[str, tuple[str, ...]] = {
+    "reauth_required": ("auth_age_s", "max_age_s"),
+    # M3 L26: the figures of the refused addition (and `reclaim_action`, the action it proposes)
+    "library.space_insufficient": (
+        "estimated_bytes", "free_bytes", "reserve_bytes", "usable_bytes",
+    ),
+}  # fmt: skip
 
 
 class ProblemError(Exception):
