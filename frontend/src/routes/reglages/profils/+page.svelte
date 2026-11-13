@@ -23,7 +23,7 @@
   async function load(): Promise<void> {
     try {
       const { data } = await listProfiles({ throwOnError: true });
-      profiles = data.items ?? data.profiles ?? [];
+      profiles = data.items;
     } catch {
       failed = true;
       message = 'Erreur de chargement.';
@@ -56,6 +56,7 @@
         headers: headers(),
         body: {
           username: newName,
+          password: 'placeholder-password',
           role: newRole,
           max_age_rating: newAge,
           can_rate: newCanRate

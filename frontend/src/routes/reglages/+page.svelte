@@ -102,7 +102,11 @@
   }
 
   const groups = $derived.by(() => {
-    const g: Record<string, ConfigRow[]> = { essential: [], advanced: [], expert: [] };
+    const g: Record<'essential' | 'advanced' | 'expert', ConfigRow[]> = {
+      essential: [],
+      advanced: [],
+      expert: []
+    };
     for (const row of items) g[levelOf(row.key)].push(row);
     return g;
   });
