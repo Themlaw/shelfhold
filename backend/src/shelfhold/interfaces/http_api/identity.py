@@ -82,7 +82,7 @@ class NotificationPrefsIn(BaseModel):
     notify_mode: str
     quiet_start: str | None = None
     quiet_end: str | None = None
-    timezone: str = "UTC"
+    timezone: str  # required: a partial body must not reset the zone in silence
 
 
 def _prefs_out(prefs: NotificationPrefs) -> NotificationPrefsOut:

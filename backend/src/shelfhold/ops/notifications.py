@@ -49,5 +49,5 @@ class LazyNotificationSweep:
             comp.engine, comp.clock,
             deliver=ChannelDelivery(comp.engine, vault, comp.clock),
             pending_withdrawals=pending_withdrawal_count,
-            private_titles=False,  # the instance's channels are read by several people
+            app_url=comp.settings.public_url,  # the channels are shared: no title, a link instead
         ).run_once()  # fmt: skip

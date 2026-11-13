@@ -37,6 +37,11 @@ class Sink:
         self.sent.append((user_id, message))
         return True
 
+    def channel(self) -> str:
+        """Everything that left, whoever it was for: in production every message goes to the same
+        channels, so this is what any reader of them sees."""
+        return "\n".join(f"{m.title}\n{m.body}" for _u, m in self.sent)
+
     def to(self, user_id: str) -> list[Message]:
         return [m for u, m in self.sent if u == user_id]
 
@@ -165,9 +170,7 @@ class Env:
 
 
 @contextmanager
-def world(
-    settings: Settings, *, sink: Sink | None = None, private_titles: bool = True
-) -> Iterator[Env]:
+def world(settings: Settings, *, sink: Sink | None = None) -> Iterator[Env]:
     with rig(settings) as base:
         clock = base.clock
         bus = EventBus(clock)
@@ -180,6 +183,5 @@ def world(
             clock,
             deliver=out,
             pending_withdrawals=lambda _c: withdrawals[0],
-            private_titles=private_titles,
         )
         yield Env(base.engine, clock, bus, router, sender, out, withdrawals)

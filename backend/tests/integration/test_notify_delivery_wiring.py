@@ -24,7 +24,7 @@ from shelfhold.integrations.notify import ChannelDelivery
 from tests.auth_env import AuthEnv
 from tests.federated_env import MEMBER_ID, FakeSource, instance
 from tests.notifications_env import CHANNEL_URL, TOKEN, NotifyEnv, ScriptedSend, notify_env
-from tests.notify_env import ADMIN_ID, OTHER_ID, world
+from tests.notify_env import ADMIN_ID, CHILD_ID, OTHER_ID, world
 
 MESSAGE = Message("Shelfhold - daily digest", "- A Title: 3 new chapter(s)")
 
@@ -42,39 +42,53 @@ def delivery(env: NotifyEnv, send: ScriptedSend) -> ChannelDelivery:
 # -- the shared channel ------------------------------------------------------------------------
 
 
-@pytest.mark.req("EF-INT-021", "EF-USR-016")
-def test_a_shared_channel_never_carries_the_title_of_a_private_item(settings: Settings) -> None:
-    with world(settings, private_titles=False) as ctx:
+@pytest.mark.req("EF-INT-021", "EF-USR-016", "EF-USR-006")
+def test_a_shared_channel_never_carries_a_title_for_anyone(settings: Settings) -> None:
+    """Whoever the message is for, the channel is read by all: no request title, series name or
+    Work title, private, household or adult."""
+    with world(settings) as ctx:
         ctx.at(9)
         work = ctx.work("Whispered Title")
         household = ctx.work("Family Title")
+        adult = ctx.work("Adult Title", age=18)
+        series = ctx.series("A Series Name", [adult])
+        ctx.follow(MEMBER_ID, adult)
+        ctx.chapter(adult)
         ctx.request_arrived(MEMBER_ID, work, visibility="private")
         ctx.request_arrived(MEMBER_ID, household, visibility="household")
+        ctx.at(8, day=6)
         ctx.run()
-        text = ctx.sink.text(MEMBER_ID)
-        assert "Whispered Title" not in text  # theirs alone: the channel may be read by others
-        assert "Family Title" in text  # the household may know
+        text = ctx.sink.channel()
+        assert ctx.sink.sent
+        for name in ("Whispered Title", "Family Title", "Adult Title", "A Series Name", series):
+            assert name not in text
 
 
 @pytest.mark.req("EF-INT-021")
-def test_a_person_owned_channel_may_carry_the_private_title(settings: Settings) -> None:
-    with world(settings, private_titles=True) as ctx:
+def test_a_message_names_the_profile_unless_it_is_a_child_and_may_link_the_app(
+    settings: Settings,
+) -> None:
+    with world(settings) as ctx:
         ctx.at(9)
-        work = ctx.work("Whispered Title")
-        ctx.request_arrived(MEMBER_ID, work, visibility="private")
+        for who in (MEMBER_ID, CHILD_ID):
+            work = ctx.work(f"For {who}", age=6)
+            ctx.request_arrived(who, work, visibility="household")
         ctx.run()
-        assert "Whispered Title" in ctx.sink.text(MEMBER_ID)
+        assert "For member" in ctx.sink.text(MEMBER_ID)
+        child = ctx.sink.text(CHILD_ID)
+        assert "kid" not in child and "For " not in child  # anonymous
+        assert "arrived" in child
 
 
 @pytest.mark.req("EF-INT-021", "ENF-SEC-015")
-def test_a_title_cannot_turn_the_message_into_a_live_link_or_mention(settings: Settings) -> None:
+def test_a_profile_name_cannot_make_the_message_a_live_link_or_mention(settings: Settings) -> None:
     with world(settings) as ctx:
         ctx.at(9)
-        work = ctx.work("@everyone see https://evil.example/x")
+        ctx.profile(OTHER_ID, username="@everyone")
+        work = ctx.work("W", age=6)
         ctx.request_arrived(OTHER_ID, work, visibility="household")
         ctx.run()
-        body = ctx.sink.to(OTHER_ID)[0].body
-        assert "`@everyone`" in body and "`https://evil.example/x`" in body
+        assert "`@everyone`" in ctx.sink.to(OTHER_ID)[0].body
 
 
 # -- ChannelDelivery ---------------------------------------------------------------------------

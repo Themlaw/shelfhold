@@ -3,7 +3,8 @@
 No profile has a destination of its own in the schema, so a message leaves through the instance's
 channels (the same sealed URLs, opened at each send, checked again against the allowlist and the
 SSRF rules of `integrations.apprise.destination`). Several people may read those channels, which is
-why the sender is built with `private_titles=False` in production. No URL, no title and no text of
+why the sender writes no title, series name or request title at all (debt M4: titles in clear
+wait for a destination per profile). No URL, no title and no text of
 an error reaches a log line: a failure is a count and a code.
 """
 

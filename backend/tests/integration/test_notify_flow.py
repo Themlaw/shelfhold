@@ -44,10 +44,12 @@ def test_daily_digest_default_immediate_only_for_request_and_outage(ctx: Env) ->
     ctx.run()
     assert [u for u, _ in ctx.sink.sent] == [MEMBER_ID]
     assert "arrived" in ctx.sink.to(MEMBER_ID)[0].title.lower()
+    assert "Ocean Tales" not in ctx.sink.channel()  # no title in a shared channel
     ctx.at(8, day=6)
     ctx.run()
     assert len(ctx.sink.to(MEMBER_ID)) == 2  # the digest, at 08:00 the next day
-    assert "Ocean Tales" in ctx.sink.to(MEMBER_ID)[1].body
+    assert "1 new chapter" in ctx.sink.to(MEMBER_ID)[1].body
+    assert "Ocean Tales" not in ctx.sink.channel()
 
 
 @pytest.mark.req("EF-INT-021")
@@ -61,8 +63,8 @@ def test_thirty_chapters_one_grouped_digest(ctx: Env) -> None:
     ctx.run()
     messages = ctx.sink.to(MEMBER_ID)
     assert len(messages) == 1  # one message, not thirty
-    assert messages[0].body.count("Grouped Saga") == 1
-    assert "30" in messages[0].body
+    assert "30 new chapter" in messages[0].body
+    assert "Grouped Saga" not in messages[0].body  # no series name in a shared channel
     assert series not in messages[0].body  # an identifier is not text for a person
     assert ctx.pending() == []  # and it is gone once sent
 
@@ -265,9 +267,9 @@ def test_child_is_told_nothing_of_an_unrated_work_she_follows(ctx: Env) -> None:
     ctx.chapter(hidden)
     ctx.chapter(visible)
     ctx.run()
-    text = ctx.sink.text(CHILD_ID)
-    assert "Fine For Kids" in text
-    assert "Hidden Unrated" not in text and hidden not in text
+    text = ctx.sink.channel()
+    assert "1 new chapter" in ctx.sink.to(CHILD_ID)[0].body  # only the visible one is counted
+    assert "Fine For Kids" not in text and "Hidden Unrated" not in text and hidden not in text
 
 
 @pytest.mark.req("EF-INT-021", "EF-USR-006")
@@ -283,7 +285,9 @@ def test_child_is_told_nothing_of_a_work_above_her_ceiling(ctx: Env) -> None:
     ctx.at(8, day=6)
     ctx.run()
     assert ctx.sink.to(CHILD_ID) == [] and ctx.sink.to(SIBLING_ID) == []
-    assert "Too Old For Her" in ctx.sink.text(MEMBER_ID)  # the adult is not narrowed
+    assert "2 new" not in ctx.sink.text(MEMBER_ID)
+    assert "1 new chapter" in ctx.sink.text(MEMBER_ID)  # the adult is not narrowed
+    assert "Too Old For Her" not in ctx.sink.channel()
 
 
 @pytest.mark.req("EF-INT-021", "EF-USR-006")
@@ -301,10 +305,11 @@ def test_series_grouping_does_not_carry_a_hidden_title_to_a_child(ctx: Env) -> N
     ctx.chapter(shown)
     ctx.chapter(plain)
     ctx.run()
-    text = ctx.sink.text(CHILD_ID)
-    assert "Fully Visible Series" in text  # the control: she is told of what is hers
-    assert "Series Holding A Hidden Member" not in text and "Shown Chapter" not in text
-    assert "Spoiler Chapter" not in text
+    text = ctx.sink.channel()
+    # the control: she is told of what is hers (one chapter, the plain series), not the other
+    assert len(ctx.sink.to(CHILD_ID)) == 1 and "1 new chapter" in ctx.sink.to(CHILD_ID)[0].body
+    for hidden_name in ("Series Holding A Hidden Member", "Shown Chapter", "Spoiler Chapter"):
+        assert hidden_name not in text
 
 
 @pytest.mark.req("EF-INT-021", "EF-USR-006")
@@ -320,8 +325,8 @@ def test_a_work_rerated_after_the_event_is_not_sent_to_the_child(ctx: Env) -> No
     ctx.rate(work, 16)  # the admin rated it up
     ctx.at(8, day=6)
     ctx.run()
-    assert "Still Hers" in ctx.sink.text(CHILD_ID)  # the control: the digest does leave
-    assert "Rerated Later" not in ctx.sink.text(CHILD_ID)
+    assert "1 new chapter" in ctx.sink.text(CHILD_ID)  # the control: the digest leaves, one line
+    assert "Rerated Later" not in ctx.sink.channel()
     assert ctx.pending() == []  # dropped, not kept for later
 
 
@@ -336,8 +341,8 @@ def test_a_ceiling_lowered_after_the_event_stops_the_message(ctx: Env) -> None:
     ctx.profile(SIBLING_ID, max_age_rating=6)
     ctx.at(8, day=6)
     ctx.run()
-    assert "Six Plus" in ctx.sink.text(SIBLING_ID)  # the control
-    assert "Ten Plus" not in ctx.sink.text(SIBLING_ID)
+    assert "1 new chapter" in ctx.sink.text(SIBLING_ID)  # the control: only "Six Plus" counts
+    assert "Ten Plus" not in ctx.sink.channel()
 
 
 @pytest.mark.req("EF-INT-021", "EF-USR-016")
@@ -348,7 +353,9 @@ def test_a_request_arrival_goes_to_the_requester_alone(ctx: Env) -> None:
     ctx.request_arrived(MEMBER_ID, work, visibility="private")
     ctx.run()
     assert [u for u, _ in ctx.sink.sent] == [MEMBER_ID]
-    assert "Private Wish" in ctx.sink.text(MEMBER_ID)
+    assert "1 request(s) arrived" in ctx.sink.text(MEMBER_ID)
+    assert "For member" in ctx.sink.text(MEMBER_ID)  # attributable, with no title
+    assert "Private Wish" not in ctx.sink.channel()
 
 
 @pytest.mark.req("EF-INT-021", "EF-USR-016")
@@ -362,8 +369,8 @@ def test_a_private_title_is_never_in_another_persons_digest(ctx: Env) -> None:
     ctx.at(8, day=6)
     ctx.run()
     assert ctx.sink.to(OTHER_ID) == []
-    assert "Quiet Reading" in ctx.sink.text(MEMBER_ID)
-    assert "Quiet Reading" not in ctx.sink.text(ADMIN_ID)  # masked for the admin
+    assert "1 new chapter" in ctx.sink.text(MEMBER_ID)
+    assert "Quiet Reading" not in ctx.sink.channel()  # no title in a shared channel at all
 
 
 @pytest.mark.req("EF-INT-021", "EF-USR-016")
@@ -374,7 +381,9 @@ def test_a_child_request_arrival_goes_to_the_requester_only(ctx: Env) -> None:
     ctx.request_arrived(CHILD_ID, work, visibility="household")
     ctx.run()
     assert [u for u, _ in ctx.sink.sent] == [CHILD_ID]  # the requester, and no one else
-    assert "Kids Pick" in ctx.sink.text(CHILD_ID)
+    assert "1 request(s) arrived" in ctx.sink.text(CHILD_ID)
+    assert "Kids Pick" not in ctx.sink.channel()
+    assert "kid" not in ctx.sink.to(CHILD_ID)[0].body.lower()  # a child is never named
 
 
 @pytest.mark.req("EF-INT-021")
@@ -430,3 +439,25 @@ def test_a_failed_send_keeps_the_row_then_drops_it_without_logging_the_text(
         assert sink.sent == []  # and does not come back
     assert any(entry["event"].startswith("notify.") for entry in logs)  # it did say something
     assert "Secret Plot Title" not in str(logs)
+
+
+@pytest.mark.req("EF-INT-021")
+def test_a_work_purged_between_the_event_and_the_digest_sends_nothing(ctx: Env) -> None:
+    import sqlalchemy as sa
+
+    from shelfhold.infrastructure.schema import catalog, identity
+
+    work = ctx.work("Purged Soon", age=6)
+    other = ctx.work("Kept", age=6)
+    for w in (work, other):
+        ctx.follow(MEMBER_ID, w)
+        ctx.chapter(w)
+    with ctx.engine.begin() as connection:
+        connection.execute(
+            sa.delete(identity.user_state).where(identity.user_state.c.work_id == work)
+        )
+        connection.execute(sa.delete(catalog.edition).where(catalog.edition.c.work_id == work))
+        connection.execute(sa.delete(catalog.work).where(catalog.work.c.id == work))
+    ctx.at(8, day=6)
+    ctx.run()
+    assert "1 new chapter" in ctx.sink.text(MEMBER_ID)  # only the one that still exists

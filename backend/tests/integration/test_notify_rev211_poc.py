@@ -17,7 +17,7 @@ from tests.notify_env import MEMBER_ID, Env, world
 
 @pytest.fixture
 def shared(settings: Settings) -> Any:
-    with world(settings, private_titles=False) as built:  # as wired in production
+    with world(settings) as built:  # the sink is the one shared channel
         built.at(9)
         yield built
 
@@ -61,7 +61,9 @@ def test_poc_a_purged_work_still_sends_a_notice(shared: Env) -> None:
     shared.follow(MEMBER_ID, work)
     shared.chapter(work)
     with shared.engine.begin() as connection:
-        connection.execute(sa.delete(identity.user_state).where(identity.user_state.c.work_id == work))
+        connection.execute(
+            sa.delete(identity.user_state).where(identity.user_state.c.work_id == work)
+        )
         connection.execute(sa.delete(catalog.edition).where(catalog.edition.c.work_id == work))
         connection.execute(sa.delete(catalog.work).where(catalog.work.c.id == work))
     shared.at(8, day=6)

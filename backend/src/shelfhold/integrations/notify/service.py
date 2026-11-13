@@ -17,8 +17,7 @@ for ever, never logged with its text).
 
 from __future__ import annotations
 
-from collections import defaultdict
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any, Final
@@ -69,13 +68,13 @@ class SendReport:
 
 def _recipient(row: Any) -> Recipient:
     return Recipient(
-        user_id=row.id, role=row.role, timezone=row.timezone, notify_mode=row.notify_mode,
-        quiet_start=row.quiet_start, quiet_end=row.quiet_end,
+        user_id=row.id, username=row.username, role=row.role, timezone=row.timezone,
+        notify_mode=row.notify_mode, quiet_start=row.quiet_start, quiet_end=row.quiet_end,
     )  # fmt: skip
 
 
 _PERSON = (
-    identity.user.c.id, identity.user.c.role, identity.user.c.timezone,
+    identity.user.c.id, identity.user.c.username, identity.user.c.role, identity.user.c.timezone,
     identity.user.c.notify_mode, identity.user.c.quiet_start, identity.user.c.quiet_end,
 )  # fmt: skip
 
@@ -270,15 +269,13 @@ class NotificationSender:
         *,
         deliver: Deliver,
         pending_withdrawals: PendingWithdrawals,
-        private_titles: bool = True,
+        app_url: str | None = None,
     ) -> None:
         self._engine = engine
         self._clock = clock
         self._deliver = deliver
         self._withdrawals = pending_withdrawals
-        # False when the way out is a channel several people read (the instance's own): the title
-        # of a `private` item, which only its owner may see, is then left out of the text
-        self._private_titles = private_titles
+        self._app_url = app_url
 
     def run_once(self) -> SendReport:
         now = self._clock.now()
@@ -454,10 +451,14 @@ class NotificationSender:
     # -- the message ----------------------------------------------------------------------------
 
     def _build(self, connection: Connection, person: Recipient, payload: Any) -> Message | None:
-        groups: dict[tuple[str, str, bool], int] = defaultdict(int)
-        arrivals: list[tuple[str | None, bool]] = []
-        outages = 0
+        """The text of a notice. It carries **no title, no series name and no request title**: the
+        only way out is the instance's channels, which several people read (a child included), so
+        a title could reach someone it must not. It says how many news there are, for whom (the
+        profile's name, never a child's) and where to look. Titles in clear wait for a destination
+        per profile (debt, M4)."""
+        chapters = arrivals = outages = 0
         reminders = False
+        alive = self._alive(connection, payload)
         for item in payload.get("items", []):
             kind = item["kind"]
             if kind == "withdrawal_pending":
@@ -465,66 +466,46 @@ class NotificationSender:
                     person.role == "admin" and self._withdrawals(connection) > 0
                 )
                 continue
-            masked = _masked(connection, person, item)
-            if masked is None:
-                continue
-            masked = masked or (item.get("vis") == "private" and not self._private_titles)
+            if _masked(connection, person, item) is None:
+                continue  # not theirs to be told, now
+            if kind in ("chapters", "request_arrived") and item.get("work_id") not in alive:
+                continue  # purged since the event: nothing left to tell
             if kind == "outage":
                 outages += 1
             elif kind == "request_arrived":
-                arrivals.append((item.get("work_id"), masked))
-            elif item.get("series_id"):  # a series is told as one line, whatever its chapters
-                groups[("series", item["series_id"], masked)] += int(item.get("count", 1))
+                arrivals += 1
             else:
-                groups[("work", item["work_id"], masked)] += int(item.get("count", 1))
-        if not (groups or arrivals or outages or reminders):
+                chapters += int(item.get("count", 1))
+        if not (chapters or arrivals or outages or reminders):
             return None
-        titles = self._titles(connection, groups, arrivals)
         lines: list[str] = []
-        for work_id, masked in arrivals:
-            name = "a book" if masked else titles.get(("work", work_id or ""), "a book")
-            lines.append(f"- Your request arrived: {_text(name, masked)}")
-        for (scope, ident, masked), count in sorted(groups.items(), key=lambda g: g[0][1]):
-            name = "a followed title" if masked else titles.get((scope, ident), "a followed title")
-            lines.append(f"- {_text(name, masked)}: {count} new chapter(s)")
+        if person.role != "child" and person.username:  # a child is never named in a shared place
+            lines.append(f"For {neutralize_markdown(person.username)}:")
+        if chapters:
+            lines.append(f"- {chapters} new chapter(s)")
+        if arrivals:
+            lines.append(f"- {arrivals} request(s) arrived")
         if outages:
             lines.append(f"- {outages} outage(s) have lasted over one hour")
         if reminders:
             lines.append("- A withdrawal is still pending: it waits for an admin")
-        only_arrival = arrivals and not (groups or outages or reminders)
+        if self._app_url:
+            lines.append(f"Open Shelfhold: {self._app_url}")
+        only_arrival = arrivals and not (chapters or outages or reminders)
         title = (
-            "Shelfhold - your request arrived" if only_arrival
+            "Shelfhold - a request arrived" if only_arrival
             else "Shelfhold - outage over one hour" if outages
             else "Shelfhold - daily digest"
         )  # fmt: skip
         return Message(title=title, body="\n".join(lines))
 
     @staticmethod
-    def _titles(
-        connection: Connection,
-        groups: Mapping[tuple[str, str, bool], int],
-        arrivals: Sequence[tuple[str | None, bool]],
-    ) -> dict[tuple[str, str], str]:
-        works = {w for w, m in arrivals if w and not m}
-        works |= {i for (s, i, m) in groups if s == "work" and not m}
-        series = {i for (s, i, m) in groups if s == "series" and not m}
-        found: dict[tuple[str, str], str] = {}
-        if works:
-            for r in connection.execute(
-                sa.select(catalog.work.c.id, catalog.work.c.title).where(
-                    catalog.work.c.id.in_(sorted(works))
-                )
-            ):
-                found[("work", r.id)] = r.title
-        if series:
-            for r in connection.execute(
-                sa.select(catalog.series.c.id, catalog.series.c.title).where(
-                    catalog.series.c.id.in_(sorted(series))
-                )
-            ):
-                found[("series", r.id)] = r.title
-        return found
-
-
-def _text(name: str, masked: bool) -> str:
-    return name if masked else neutralize_markdown(name)
+    def _alive(connection: Connection, payload: Any) -> set[str]:
+        """Of the Works the items name, the ones the catalogue still holds."""
+        ids = {i["work_id"] for i in payload.get("items", []) if i.get("work_id")}
+        if not ids:
+            return set()
+        rows = connection.execute(
+            sa.select(catalog.work.c.id).where(catalog.work.c.id.in_(sorted(ids)))
+        )
+        return {r[0] for r in rows}

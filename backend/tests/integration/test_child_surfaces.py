@@ -760,9 +760,10 @@ def _surface_notification(world: World) -> None:
 
 
 def _notification_built_for_a_child(world: World) -> None:
-    """L14: the real router and sender, over every Work of the catalogue that she follows (a row
-    that should not exist, or that predates a rerate). What leaves for her names none of the
-    hidden ones, by their title, their identifier or the series that groups them."""
+    """L14: the real router and sender, in the shape of production: ONE shared channel that
+    everybody reads. The child follows every Work of the catalogue, and so does an adult (who
+    sees the hidden ones). What leaves on the whole channel, for anyone, names no title, no
+    series, no identifier of a hidden Work; the child's own notice counts only what is hers."""
     from shelfhold.events.bus import EventBus
     from shelfhold.infrastructure.schema import identity
     from shelfhold.integrations.notify import NotificationRouter, NotificationSender
@@ -778,17 +779,17 @@ def _notification_built_for_a_child(world: World) -> None:
     bus = EventBus(clock)
     NotificationRouter(engine, clock).subscribe(bus)
     with engine.begin() as connection:
-        connection.execute(
-            sa.update(identity.user)
-            .where(identity.user.c.id == world.kid_id)
-            .values(notify_mode="immediate")
-        )
-        for work_id in world.seed.works.values():
-            connection.execute(
-                sa.insert(identity.user_state).values(
-                    user_id=world.kid_id, work_id=work_id, followed=True
+        adult = connection.execute(
+            sa.select(identity.user.c.id).where(identity.user.c.role == "admin")
+        ).scalar_one()
+        connection.execute(sa.update(identity.user).values(notify_mode="immediate"))
+        for who in (world.kid_id, adult):
+            for work_id in world.seed.works.values():
+                connection.execute(
+                    sa.insert(identity.user_state).values(
+                        user_id=who, work_id=work_id, followed=True
+                    )
                 )
-            )
     for work_id in world.seed.works.values():
         with engine.begin() as connection:
             published = bus.publish(
@@ -797,12 +798,14 @@ def _notification_built_for_a_child(world: World) -> None:
             )  # fmt: skip
         bus.deliver([published])
     NotificationSender(engine, clock, deliver=deliver, pending_withdrawals=lambda _c: 0).run_once()
-    text = "\n".join(t for u, t in sent if u == world.kid_id)
-    world.clean(text)
-    for key in VISIBLE_FOR_CEILING_10:
-        assert world.seed.title_of(key) in text, key  # the control: she is told of what is hers
-    for key in HIDDEN_FROM_CEILING_10:
-        assert world.seed.title_of(key) not in text, key
+    channel = "\n".join(t for _u, t in sent)  # everything, whoever it was for
+    world.clean(channel)
+    for key in (*VISIBLE_FOR_CEILING_10, *HIDDEN_FROM_CEILING_10):
+        assert world.seed.title_of(key) not in channel, key
+    kid = "\n".join(t for u, t in sent if u == world.kid_id)
+    mine = "\n".join(t for u, t in sent if u == adult)
+    assert f"{len(VISIBLE_FOR_CEILING_10)} new chapter" in kid  # the control: hers, counted
+    assert f"{len(world.seed.works)} new chapter" in mine  # the adult is not narrowed
 
 
 @pytest.mark.req("EF-USR-006", "ENF-SEC-010", "EF-USR-014")

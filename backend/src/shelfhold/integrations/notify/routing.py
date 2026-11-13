@@ -41,6 +41,7 @@ class Recipient:
     notify_mode: str
     quiet_start: str | None
     quiet_end: str | None
+    username: str = ""
 
 
 def classify(event_type: str) -> Kind | None:
