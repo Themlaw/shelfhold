@@ -11,6 +11,8 @@ import sqlalchemy as sa
 from sqlalchemy import Engine
 
 from shelfhold.export.domain.path_map import clean_absolute
+from shelfhold.infrastructure.freeze import FreezeState
+from shelfhold.infrastructure.fsops.reading import RootReading
 from shelfhold.infrastructure.schema import platform
 
 __all__ = ["GenerationCounter"]
@@ -44,3 +46,20 @@ class GenerationCounter:
                 sa.select(table.c.generation).where(table.c.path_entry == clean_absolute(root_path))
             ).scalar()
         return None if value is None else int(value)
+
+    def read(self, root_path: str, root_id: str) -> RootReading | None:
+        """The generation, the restore epoch and the freeze the database holds for the root
+        `root_id` registered at `root_path`, from one connection. A root registered at that path
+        under another id (a disk replaced and registered again) is not this root: None."""
+        table = platform.physical_root
+        with self._engine.connect() as connection:
+            generation = connection.execute(
+                sa.select(table.c.generation).where(
+                    table.c.path_entry == clean_absolute(root_path), table.c.root_id == root_id
+                )
+            ).scalar()
+            if generation is None:
+                return None
+            epoch = connection.execute(sa.select(platform.instance.c.restore_epoch)).scalar()
+            frozen = FreezeState.read(connection).frozen_for(root_id)
+        return RootReading(int(generation), int(epoch or 0), frozen)

@@ -230,7 +230,7 @@ class Composition:
             loaded, umask=self.settings.umask,
             write_gate=self.gates.write_gate, stop_gate=self.gates.stop_gate,
             on_blocked=self.root_watcher().note_blocked,
-            generation_source=GenerationCounter(self.engine).current,
+            generation_source=GenerationCounter(self.engine).read,
         )  # fmt: skip
 
     def tombstones(self, fsops: Fsops, loaded: LoadedRoots) -> TombstoneService:

@@ -27,6 +27,7 @@ from shelfhold.identity.public import child_kavita_accounts
 from shelfhold.infrastructure.clock import Clock
 from shelfhold.infrastructure.db import create_db_engine
 from shelfhold.infrastructure.fsops import Fsops
+from shelfhold.infrastructure.instance.generation import GenerationCounter
 from shelfhold.infrastructure.schema import platform
 from shelfhold.jobs.control import QueueControl
 from shelfhold.jobs.window import MaintenanceWindow
@@ -100,7 +101,7 @@ def _fsops(engine: Engine, umask: int) -> Fsops | None:
             loaded = load_roots(connection, PathMap.same_path(paths))
     except sa.exc.OperationalError:  # not migrated yet: nothing is mounted
         return None
-    return open_fsops(loaded, umask=umask)
+    return open_fsops(loaded, umask=umask, generation_source=GenerationCounter(engine).read)
 
 
 def _live_fsops(

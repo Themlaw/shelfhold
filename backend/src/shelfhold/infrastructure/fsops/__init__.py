@@ -34,6 +34,7 @@ from shelfhold.infrastructure.fsops.facade import (
 )
 from shelfhold.infrastructure.fsops.identity import FileIdentity, identity_of
 from shelfhold.infrastructure.fsops.openat2 import openat2_supported
+from shelfhold.infrastructure.fsops.reading import GenerationSource, RootReading
 from shelfhold.infrastructure.fsops.sentinel import create_sentinel, read_sentinel
 
 __all__ = [
@@ -47,6 +48,7 @@ __all__ = [
     "FileIdentity",
     "Fsops",
     "FsopsError",
+    "GenerationSource",
     "IndependentCopy",
     "LeaseRaceError",
     "Link",
@@ -58,6 +60,7 @@ __all__ = [
     "ReservedPathError",
     "RootBlockedError",
     "RootCapabilities",
+    "RootReading",
     "RootState",
     "RootStatus",
     "SamePathState",

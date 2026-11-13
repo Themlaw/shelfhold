@@ -198,7 +198,7 @@ class InstanceRuntime:
                 loaded, umask=self.settings.umask,
                 write_gate=guard.require_space, stop_gate=self.barrier.require_open,
                 freeze=self.freeze_state, on_blocked=watcher.note_blocked,
-                generation_source=GenerationCounter(engine).current,
+                generation_source=GenerationCounter(engine).read,
             )  # fmt: skip
             journal = IntentJournal(engine, fsops, clock=clock)
             # Before anything else: a database older than the disk is read only (EF-INT-026).

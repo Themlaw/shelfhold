@@ -30,6 +30,7 @@ from shelfhold.export.targets.kavita.credentials import AdminKey, load_admin_key
 from shelfhold.infrastructure.clock import Clock, SystemClock
 from shelfhold.infrastructure.db import create_db_engine
 from shelfhold.infrastructure.fetcher import GuardedFetcher, Network, Resolver
+from shelfhold.infrastructure.instance.generation import GenerationCounter
 from shelfhold.infrastructure.schema import export, platform
 from shelfhold.infrastructure.secrets import SecretVault, diagnostics
 from shelfhold.library.public import TombstoneRoot, TombstoneService
@@ -144,7 +145,9 @@ def open_adoption(
         engine, vault, network.integration_fetcher(url), target_id=row.id,
         base_url=url, events=events, clock=clock,
     )  # fmt: skip
-    fsops = open_fsops(loaded, umask=settings.umask)
+    fsops = open_fsops(
+        loaded, umask=settings.umask, generation_source=GenerationCounter(engine).read
+    )
     tombstones = TombstoneService(engine, keyring, fsops, bus)
     tombstones.replay(
         [

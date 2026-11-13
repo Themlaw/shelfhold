@@ -19,6 +19,7 @@ from shelfhold.export.domain.naming import Parsed
 from shelfhold.export.domain.path_map import PathMap
 from shelfhold.infrastructure.clock import SystemClock
 from shelfhold.infrastructure.db import create_db_engine
+from shelfhold.infrastructure.instance.generation import GenerationCounter
 from shelfhold.infrastructure.schema import platform
 
 __all__ = ["open_pipeline", "roots_signature"]
@@ -57,7 +58,10 @@ def open_pipeline(
     with engine.connect() as connection:
         paths = [r.path_entry for r in connection.execute(sa.select(platform.physical_root))]
         loaded = load_roots(connection, PathMap.same_path(paths))
-    fsops = open_fsops(loaded, umask=settings.umask, write_gate=write_gate, stop_gate=stop_gate)
+    fsops = open_fsops(
+        loaded, umask=settings.umask, write_gate=write_gate, stop_gate=stop_gate,
+        generation_source=GenerationCounter(engine).read,
+    )  # fmt: skip
 
     return ExportPipeline(
         engine, fsops, locate=loaded.locate, data_dir=Path(settings.data_dir), clock=SystemClock(),

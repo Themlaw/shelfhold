@@ -16,7 +16,7 @@ from sqlalchemy import Connection
 from shelfhold.export.domain.path_map import PathEntry, PathMap, PathMode, clean_absolute, within
 from shelfhold.export.domain.physical_roots import ExpectedRoot, RootState
 from shelfhold.infrastructure.freeze import FreezeState
-from shelfhold.infrastructure.fsops import Fsops
+from shelfhold.infrastructure.fsops import Fsops, GenerationSource
 from shelfhold.infrastructure.schema import platform
 
 __all__ = ["LoadedRoots", "load_roots", "open_fsops"]
@@ -102,7 +102,7 @@ def open_fsops(
     stop_gate: Callable[[], None] | None = None,
     freeze: FreezeState | None = None,
     on_blocked: Callable[[str, RootState], None] | None = None,
-    generation_source: Callable[[str], int | None] | None = None,
+    generation_source: GenerationSource | None,
 ) -> Fsops:
     """The one way to open the library's `Fsops`: the gates a caller has (disk, stop barrier), the
     restore freeze (`FreezeState`, one copy per writer) and the library umask

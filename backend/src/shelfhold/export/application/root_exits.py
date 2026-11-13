@@ -76,6 +76,7 @@ from shelfhold.infrastructure.freeze import FreezeState
 from shelfhold.infrastructure.fsops import Fsops
 from shelfhold.infrastructure.fsops.errors import FsopsError, SentinelFormatError
 from shelfhold.infrastructure.ids import new_ulid
+from shelfhold.infrastructure.instance.generation import GenerationCounter
 from shelfhold.infrastructure.schema import catalog, export, identity, platform
 from shelfhold.library.public import (
     RootEvidence,
@@ -224,7 +225,9 @@ class RootWatcher:
             if head is None or not paths:
                 return []
             loaded = load_roots(connection, PathMap.same_path(paths))
-        fsops = open_fsops(loaded, umask=self._umask)
+        fsops = open_fsops(
+            loaded, umask=self._umask, generation_source=GenerationCounter(self._engine).read
+        )
         found: list[RootVerdict] = []
         for expected in loaded.expected:
             state, doc = _look(fsops, expected)
@@ -503,7 +506,12 @@ class RootExits:
         expected = next((e for e in expected_roots if e.path == path), None)
         if expected is None:
             raise RootNotWaitingError("no such root")
-        fsops = Fsops.open(path_map, expected_roots, umask=self._umask)
+        fsops = Fsops.open(
+            path_map,
+            expected_roots,
+            umask=self._umask,
+            generation_source=GenerationCounter(self._engine).read,
+        )
         state, found = _look(fsops, expected)
         if state is None:
             raise RootBlockedError(f"{path} is not mounted")
