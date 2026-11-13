@@ -2,20 +2,20 @@
   // The numbers the series skips (EF-BIB-056). "Acquitter" says that a number does not exist: the
   // gap leaves the screen only once the server accepted it, and stays with its error otherwise.
   import { gapAck } from '#lib/api/index.ts';
-  import type { GapOut } from '#lib/api/types.gen.ts';
+  import type { SheetGapOut } from '#lib/api/types.gen.ts';
   import ProblemCard from '#lib/components/ProblemCard.svelte';
   import { t } from '#lib/i18n/index.ts';
   import { csrfToken } from '#lib/passkeys.ts';
   import { problemView, type ProblemView } from '#lib/problems.ts';
 
-  let { gaps, editionId }: { gaps: GapOut[]; editionId: string } = $props();
+  let { gaps, editionId }: { gaps: SheetGapOut[]; editionId: string } = $props();
 
   let done = $state<string[]>([]);
   let problem = $state<ProblemView | null>(null);
-  const key = (g: GapOut): string => `${g.track}|${g.segment}|${g.number}`;
+  const key = (g: SheetGapOut): string => `${g.track}|${g.segment}|${g.number}`;
   const shown = $derived(gaps.filter((g) => !done.includes(key(g))));
 
-  async function acknowledge(gap: GapOut): Promise<void> {
+  async function acknowledge(gap: SheetGapOut): Promise<void> {
     const { error } = await gapAck({
       headers: { 'X-CSRF-Token': csrfToken() },
       path: { edition_id: editionId },

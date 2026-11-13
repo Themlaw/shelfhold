@@ -29,7 +29,7 @@ _ATTACH = reserved_action(RESERVED_ACTIONS["rate"])
 UpstreamStatus = Literal["ongoing", "finished", "paused", "unknown"]
 
 
-class BindingOut(BaseModel):
+class SheetBindingOut(BaseModel):
     id: str
     source_key: str
     rank: int
@@ -39,13 +39,13 @@ class BindingOut(BaseModel):
     next_expected: datetime | None
 
 
-class GapOut(BaseModel):
+class SheetGapOut(BaseModel):
     track: str
     segment: str
     number: str
 
 
-class TeamOut(BaseModel):
+class SheetTeamOut(BaseModel):
     id: str
     label: str
     rank: int | None
@@ -61,19 +61,19 @@ class SheetFieldOut(BaseModel):
     locked: bool
 
 
-class MergeOut(BaseModel):
+class SheetMergeOut(BaseModel):
     merge_id: str
     merged_at: datetime
     undoable_until: datetime
 
 
-class AttachOut(BaseModel):
+class SheetAttachOut(BaseModel):
     attach_id: str
     from_work_id: str
     to_work_id: str
 
 
-class CanOut(BaseModel):
+class SheetCanOut(BaseModel):
     check: bool
     reorder: bool
     acknowledge_gap: bool
@@ -94,50 +94,50 @@ class SheetOut(BaseModel):
     upstream_status: UpstreamStatus
     upstream_status_by: str | None
     followed: bool
-    bindings: list[BindingOut]
-    gaps: list[GapOut]
-    teams: list[TeamOut]
+    bindings: list[SheetBindingOut]
+    gaps: list[SheetGapOut]
+    teams: list[SheetTeamOut]
     fields: list[SheetFieldOut]
-    merges: list[MergeOut]
-    attach: AttachOut | None
-    can: CanOut
+    merges: list[SheetMergeOut]
+    attach: SheetAttachOut | None
+    can: SheetCanOut
 
 
-class OrderIn(BaseModel):
+class BindingOrderIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     binding_ids: list[str] = Field(min_length=1, max_length=64)
 
 
-class OrderOut(BaseModel):
+class BindingOrderOut(BaseModel):
     edition_id: str
     order: list[str]
 
 
-class StatusIn(BaseModel):
+class UpstreamStatusIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     status: UpstreamStatus
 
 
-class StatusOut(BaseModel):
+class UpstreamStatusOut(BaseModel):
     edition_id: str
     upstream_status: UpstreamStatus
     by: str
 
 
-class TeamIn(BaseModel):
+class PreferredTeamIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     team_id: str
 
 
-class TeamChosenOut(BaseModel):
+class PreferredTeamOut(BaseModel):
     edition_id: str
     team_id: str
 
 
-class WithdrawalOut(BaseModel):
+class AttachWithdrawalOut(BaseModel):
     edition_id: str
     shelf_id: str
     reason: str
@@ -148,7 +148,7 @@ class AttachPlanOut(BaseModel):
     edition_id: str
     work_id: str
     token: str
-    withdrawals: list[WithdrawalOut]
+    withdrawals: list[AttachWithdrawalOut]
 
 
 class AttachConfirmIn(BaseModel):
@@ -166,19 +166,19 @@ def build_series_sheet_router(get_ops: Callable[[], OpsServices]) -> APIRouter:
             return SheetOut(**get_ops().sheet.sheet(edition_id))
 
     @router.post("/editions/{edition_id}/bindings/order")
-    def bindings_order(edition_id: str, body: OrderIn, _admin: Admin) -> OrderOut:
+    def bindings_order(edition_id: str, body: BindingOrderIn, _admin: Admin) -> BindingOrderOut:
         with refusals():
-            return OrderOut(**get_ops().sheet.reorder(edition_id, body.binding_ids))
+            return BindingOrderOut(**get_ops().sheet.reorder(edition_id, body.binding_ids))
 
     @router.post("/editions/{edition_id}/upstream-status")
-    def upstream_status_set(edition_id: str, body: StatusIn, _admin: Admin) -> StatusOut:
+    def upstream_status_set(edition_id: str, body: UpstreamStatusIn, _admin: Admin) -> UpstreamStatusOut:
         with refusals():
-            return StatusOut(**get_ops().sheet.set_upstream_status(edition_id, body.status))
+            return UpstreamStatusOut(**get_ops().sheet.set_upstream_status(edition_id, body.status))
 
     @router.post("/editions/{edition_id}/preferred-team")
-    def preferred_team_set(edition_id: str, body: TeamIn, _admin: Admin) -> TeamChosenOut:
+    def preferred_team_set(edition_id: str, body: PreferredTeamIn, _admin: Admin) -> PreferredTeamOut:
         with refusals():
-            return TeamChosenOut(**get_ops().sheet.prefer_team(edition_id, body.team_id))
+            return PreferredTeamOut(**get_ops().sheet.prefer_team(edition_id, body.team_id))
 
     @router.post("/attachments/{attach_id}/plan")
     def attach_plan(

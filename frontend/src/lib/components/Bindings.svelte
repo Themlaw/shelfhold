@@ -4,7 +4,7 @@
   // order is sent whole (every active id) and the server's answer is the order that stays: on a
   // refusal the problem is shown and the server's order is read again.
   import { bindingsOrder } from '#lib/api/index.ts';
-  import type { BindingOut } from '#lib/api/types.gen.ts';
+  import type { SheetBindingOut } from '#lib/api/types.gen.ts';
   import ProblemCard from '#lib/components/ProblemCard.svelte';
   import { formatDateTime, t, type MessageKey } from '#lib/i18n/index.ts';
   import { csrfToken } from '#lib/passkeys.ts';
@@ -16,13 +16,13 @@
     canReorder,
     onreload
   }: {
-    bindings: BindingOut[];
+    bindings: SheetBindingOut[];
     editionId: string;
     canReorder: boolean;
     onreload: () => void | Promise<void>;
   } = $props();
 
-  const REASONS: Record<NonNullable<BindingOut['disabled_reason']>, MessageKey> = {
+  const REASONS: Record<NonNullable<SheetBindingOut['disabled_reason']>, MessageKey> = {
     not_loaded: 'sheet.reason.not_loaded',
     content_failures: 'sheet.reason.content_failures',
     removed_upstream: 'sheet.reason.removed_upstream',
@@ -53,7 +53,7 @@
     await onreload();
   }
 
-  const checked = (b: BindingOut): string =>
+  const checked = (b: SheetBindingOut): string =>
     b.last_checked
       ? t('sheet.bindings.checked', { date: formatDateTime(b.last_checked) })
       : t('sheet.bindings.never');

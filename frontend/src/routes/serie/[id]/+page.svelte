@@ -20,7 +20,7 @@
     SeparateOut,
     SheetFieldOut,
     SheetOut,
-    StatusIn
+    UpstreamStatusIn
   } from '#lib/api/types.gen.ts';
   import Bindings from '#lib/components/Bindings.svelte';
   import Gaps from '#lib/components/Gaps.svelte';
@@ -31,7 +31,7 @@
   import { problemView, type ProblemView } from '#lib/problems.ts';
   import { needsReauth, problemOf } from '#lib/triage.ts';
 
-  type Status = StatusIn['status'];
+  type Status = UpstreamStatusIn['status'];
   const STATUSES: readonly Status[] = ['ongoing', 'finished', 'paused', 'unknown'];
   const STATUS_LABELS: Record<Status, MessageKey> = {
     ongoing: 'sheet.status.ongoing',
