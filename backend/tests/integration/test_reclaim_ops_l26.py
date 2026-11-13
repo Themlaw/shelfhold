@@ -85,11 +85,9 @@ def test_the_early_purge_job_takes_the_old_entries_under_pressure_and_only_those
 def test_the_early_purge_job_ends_with_the_pressure(settings: Settings, tmp_path: Path) -> None:
     with instance(settings, tmp_path) as inst:
         inst.configure()
-        left = {"calls": 0}
 
         def pressure(_root: str) -> bool:
-            left["calls"] += 1
-            return left["calls"] <= 4  # a few measures, then the volume is fine again
+            return len(_bins(inst.library)) > 3  # fine again once three entries are left
 
         inst.comp.gates = Gates(disk_pressure=pressure)
         for name in ("a", "b", "c", "d", "e", "f"):
@@ -97,7 +95,7 @@ def test_the_early_purge_job_ends_with_the_pressure(settings: Settings, tmp_path
 
         early_purge_trash(inst.comp)
 
-        assert 0 < len(_bins(inst.library)) < 6  # it stopped when the pressure was over
+        assert len(_bins(inst.library)) == 3  # it stopped when the pressure was over
 
 
 def test_trash_empty_over_a_real_composition(settings: Settings, tmp_path: Path) -> None:

@@ -68,6 +68,11 @@ def early_purge_trash(comp: Composition) -> ReclaimReport:
     pressure = comp.gates.disk_pressure
     if pressure is None:
         return ReclaimReport()
+    loaded = comp.load_roots()  # the database only: no root is opened, no lease taken
+    if loaded is None:
+        raise NoLibraryError("no physical root is registered")
+    if not any(pressure(root.path) for root in loaded.expected):
+        return ReclaimReport()  # nothing under its mark: the disks are left asleep (ENF-OPS-014)
     with comp.write_context() as w:
         roots = w.writable_roots
         journal = IntentJournal(comp.engine, w.fsops, clock=comp.clock)

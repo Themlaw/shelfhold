@@ -10,6 +10,7 @@ from typing import Any
 import pytest
 import sqlalchemy as sa
 
+from shelfhold.composition import Gates
 from shelfhold.config import Settings
 from shelfhold.export.application.deletion import DeletionService
 from shelfhold.export.application.intents import BIN_LOCK
@@ -314,3 +315,57 @@ def test_a_read_only_adoption_root_is_never_measured_by_the_space_gate(
         reclaim.require_space(inst.comp, 1 * GIB)  # fits: the adopted volume does not count
         assert not any(m.startswith(str(adopted)) for m in measured)
         assert any(m.startswith(str(tmp_path / "library")) for m in measured)  # the rw root is
+
+
+# -- third pass: an idle pass touches nothing --------------------------------------------------
+
+
+def test_idle_passes_leave_the_generation_the_sentinels_and_the_disk_alone(
+    monkeypatch: pytest.MonkeyPatch, settings: Settings, tmp_path: Path
+) -> None:
+    """The early purge with no volume under its mark, the emptying of empty bins and the space
+    check, ten times over: no lease is taken (`write_context` is never entered), the generation
+    of every root and the bytes and mtimes of every sentinel are what they were."""
+    from shelfhold.infrastructure.instance.generation import GenerationCounter
+    from shelfhold.retention_jobs import early_purge_trash
+
+    with instance(settings, tmp_path) as inst:
+        inst.configure()
+        inst.comp.gates = Gates(disk_pressure=lambda _root: False)
+        roots = [e.path for e in inst.comp.load_roots().expected]  # type: ignore[union-attr]
+        counter = GenerationCounter(inst.engine)
+
+        def state() -> tuple[object, ...]:
+            sentinels = [Path(r) / ".shelfhold-mount-id" for r in roots]
+            return (
+                {r: counter.current(r) for r in roots},
+                [(s.read_bytes(), s.stat().st_mtime_ns) for s in sentinels],
+            )
+
+        before = state()
+
+        def no_lease() -> Any:
+            raise AssertionError("an idle pass opened a root for writing")
+
+        monkeypatch.setattr(inst.comp, "write_context", no_lease)
+        for _ in range(10):
+            assert early_purge_trash(inst.comp).removed == 0
+            done = reclaim.trash_empty(inst.comp, typed="empty-trash", principal=ADMIN)
+            assert done["removed"] == 0
+            reclaim.space_check(inst.comp, estimated_bytes=1)
+        assert state() == before
+
+
+def test_the_idle_emptying_still_refuses_a_key_and_a_wrong_word(
+    settings: Settings, tmp_path: Path
+) -> None:
+    from shelfhold.export.application.reclaim import TrashEmptyRefusedError
+    from shelfhold.library.public import TrashConfirmationError
+    from tests.purge_env import KEY
+
+    with instance(settings, tmp_path) as inst:
+        inst.configure()
+        with pytest.raises(TrashEmptyRefusedError):
+            reclaim.trash_empty(inst.comp, typed="empty-trash", principal=KEY)
+        with pytest.raises(TrashConfirmationError):
+            reclaim.trash_empty(inst.comp, typed="nope", principal=ADMIN)
