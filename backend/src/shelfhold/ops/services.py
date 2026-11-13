@@ -81,6 +81,7 @@ from shelfhold.ops.rating import RatingOps
 from shelfhold.ops.resplit import ResplitOps
 from shelfhold.ops.revisions import RevisionOps
 from shelfhold.ops.roots import RootOps
+from shelfhold.ops.sheet import SheetOps
 from shelfhold.ops.status import (
     UNKNOWN_LANGUAGE,
     candidate_report,
@@ -217,6 +218,7 @@ class OpsServices:
         export_all: ExportAllOps | None = None,
         wizard: WizardOps | None = None,
         follows: FollowOps | None = None,
+        sheet: SheetOps | None = None,
         acquire: AcquireOps | None = None,
         requests: RequestService | None = None,
         roots: RootOps | None = None,
@@ -255,6 +257,7 @@ class OpsServices:
         self._export_all = export_all
         self._wizard = wizard
         self._follows = follows
+        self._sheet = sheet
         self._acquire = acquire
         self._requests = requests
         self._roots = roots
@@ -801,6 +804,13 @@ class OpsServices:
         if self._rating is None:
             raise ExitUnavailableError("rating is not connected")
         return self._rating
+
+    @property
+    def sheet(self) -> SheetOps:
+        """The series sheet: one Edition's bindings, gaps, teams, fields and settings (L43)."""
+        if self._sheet is None:
+            raise ExitUnavailableError("the series sheet is not connected")
+        return self._sheet
 
     @property
     def follows(self) -> FollowOps:

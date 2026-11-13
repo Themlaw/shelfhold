@@ -25,6 +25,7 @@ from shelfhold.catalog.public import (
     TooManyRemovalsError,
     count_visible_works,
     history_marker,
+    list_visible_series,
     list_visible_works,
     removed_ids,
     restore_epoch,
@@ -42,6 +43,7 @@ from shelfhold.interfaces.http_api.lists import (
 )
 from shelfhold.interfaces.http_api.problems import ProblemError
 from shelfhold.interfaces.http_api.stats import require_admin
+from shelfhold.library.public import cover_hash
 
 __all__ = ["build_catalog_lists_router"]
 
@@ -53,11 +55,19 @@ class WorkItemOut(BaseModel):
     work_id: str
     title: str
     kind: str
+    edition_id: str | None = None  # the first Edition she may see
+    cover_hash: str | None = None  # the address of its thumbnail (`/thumbnails/{hash}/{size}`)
+
+
+class SeriesChoiceOut(BaseModel):
+    id: str
+    title: str
 
 
 class WorksPageOut(BaseModel):
     items: list[WorkItemOut]
     total: int
+    series: list[SeriesChoiceOut] | None = None  # only with `facets`: series she may filter by
     since: str  # the token to send next time
     removed: list[str]  # Work ids that left this reader's view since the token (empty without one)
 
@@ -119,6 +129,9 @@ def build_catalog_lists_router(get_engine: Callable[[], Engine], key: SinceKey) 
         limit: Annotated[int, Query(ge=1, le=200)] = 50,
         offset: Annotated[int, Query(ge=0)] = 0,
         sort: Annotated[Literal["title", "recent"], Query()] = "title",
+        shelf_id: Annotated[str | None, Query(min_length=26, max_length=26)] = None,
+        series_id: Annotated[str | None, Query(min_length=26, max_length=26)] = None,
+        facets: Annotated[bool, Query()] = False,
     ) -> WorksPageOut:
         with get_engine().connect() as connection:
             scope = reader_scope(connection, principal.user_id)
@@ -127,12 +140,23 @@ def build_catalog_lists_router(get_engine: Callable[[], Engine], key: SinceKey) 
                 lambda seq: removed_ids(connection, scope, seq),
             )  # fmt: skip
             page = list_visible_works(
-                connection, scope, limit=limit, offset=offset, recent=sort == "recent"
-            )
-            total = count_visible_works(connection, scope)
+                connection, scope, limit=limit, offset=offset, recent=sort == "recent",
+                shelf_id=shelf_id, series_id=series_id,
+            )  # fmt: skip
+            total = count_visible_works(connection, scope, shelf_id=shelf_id, series_id=series_id)
+            series = (
+                [SeriesChoiceOut(id=i, title=n) for i, n in list_visible_series(connection, scope)]
+                if facets else None
+            )  # fmt: skip
         return WorksPageOut(
-            items=[WorkItemOut(work_id=w.work_id, title=w.title, kind=w.kind) for w in page],
-            total=total, since=token, removed=removed,
+            items=[
+                WorkItemOut(
+                    work_id=w.work_id, title=w.title, kind=w.kind, edition_id=w.edition_id,
+                    cover_hash=cover_hash(w.cover_ref) if w.cover_ref else None,
+                )
+                for w in page
+            ],
+            total=total, series=series, since=token, removed=removed,
         )  # fmt: skip
 
     @router.get("/shelves", response_model=ShelvesPageOut)

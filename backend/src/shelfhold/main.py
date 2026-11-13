@@ -71,6 +71,7 @@ from shelfhold.interfaces.http_api.plugins import build_plugins_router
 from shelfhold.interfaces.http_api.requests import build_requests_router
 from shelfhold.interfaces.http_api.revisions import build_revisions_router
 from shelfhold.interfaces.http_api.search import build_search_router
+from shelfhold.interfaces.http_api.series_sheet import build_series_sheet_router
 from shelfhold.interfaces.http_api.setup import build_setup_router
 from shelfhold.interfaces.http_api.shelves import build_edition_shelf_router, build_shelves_router
 from shelfhold.interfaces.http_api.sources import build_sources_router
@@ -288,6 +289,7 @@ def create_app(
         # EF-BIB-008, EF-BIB-003, ENF-I18N-003, EF-BIB-044: locks, renumbering, sorted list, resplit
         build_catalog_admin_router(ops_services),
         build_follows_router(ops_services),  # EF-SRC-029: follow, unfollow
+        build_series_sheet_router(ops_services),  # M3 L43: the series sheet and its settings
         build_requests_router(  # EF-USR-010: ask, approve, refuse, follow a request
             lambda: ops_services().requests,
             lambda token, owner: resolve_request_ref(ops_services().acquire, token, owner),

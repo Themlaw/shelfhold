@@ -59,6 +59,7 @@ from shelfhold.ops.restore import RestoreCredentialsExit, RestoreGuardExit
 from shelfhold.ops.revisions import RevisionOps
 from shelfhold.ops.roots import RootOps
 from shelfhold.ops.services import OpsServices
+from shelfhold.ops.sheet import SheetOps
 from shelfhold.ops.tombstone_screens import CatalogScreens
 from shelfhold.ops.wizard import WizardOps
 from shelfhold.ops.work_merge import WorkMergeOps
@@ -169,7 +170,8 @@ def open_ops(
         resplit=ResplitOps(composition), contributors=ContributorOps(composition),
         export_items=ExportItemOps(composition), export_all=ExportAllOps(composition),
         wizard=WizardOps(composition),
-        follows=FollowOps(composition), acquire=AcquireOps(composition),
+        follows=FollowOps(composition), sheet=SheetOps(composition),
+        acquire=AcquireOps(composition),
         requests=build_service(composition), roots=RootOps(composition),
         kavita_accounts=KavitaAccountsOps(
             engine, ChildAccountsAuditor(engine, clock, events), clock=clock,

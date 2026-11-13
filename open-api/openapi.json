@@ -533,6 +533,58 @@
         "title": "ApproveIn",
         "type": "object"
       },
+      "AttachConfirmIn": {
+        "additionalProperties": false,
+        "properties": {
+          "confirm": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Confirm",
+            "type": "string"
+          }
+        },
+        "required": [
+          "confirm"
+        ],
+        "title": "AttachConfirmIn",
+        "type": "object"
+      },
+      "AttachPlanOut": {
+        "properties": {
+          "attach_id": {
+            "title": "Attach Id",
+            "type": "string"
+          },
+          "edition_id": {
+            "title": "Edition Id",
+            "type": "string"
+          },
+          "token": {
+            "title": "Token",
+            "type": "string"
+          },
+          "withdrawals": {
+            "items": {
+              "$ref": "#/components/schemas/AttachWithdrawalOut"
+            },
+            "title": "Withdrawals",
+            "type": "array"
+          },
+          "work_id": {
+            "title": "Work Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "attach_id",
+          "edition_id",
+          "work_id",
+          "token",
+          "withdrawals"
+        ],
+        "title": "AttachPlanOut",
+        "type": "object"
+      },
       "AttachSeriesIn": {
         "additionalProperties": false,
         "properties": {
@@ -581,6 +633,29 @@
           "reassignment"
         ],
         "title": "AttachSeriesOut",
+        "type": "object"
+      },
+      "AttachWithdrawalOut": {
+        "properties": {
+          "edition_id": {
+            "title": "Edition Id",
+            "type": "string"
+          },
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          },
+          "shelf_id": {
+            "title": "Shelf Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "edition_id",
+          "shelf_id",
+          "reason"
+        ],
+        "title": "AttachWithdrawalOut",
         "type": "object"
       },
       "AttestationIn": {
@@ -746,6 +821,46 @@
           "work_id"
         ],
         "title": "BatchRatedOut",
+        "type": "object"
+      },
+      "BindingOrderIn": {
+        "additionalProperties": false,
+        "properties": {
+          "binding_ids": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 64,
+            "minItems": 1,
+            "title": "Binding Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "binding_ids"
+        ],
+        "title": "BindingOrderIn",
+        "type": "object"
+      },
+      "BindingOrderOut": {
+        "properties": {
+          "edition_id": {
+            "title": "Edition Id",
+            "type": "string"
+          },
+          "order": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Order",
+            "type": "array"
+          }
+        },
+        "required": [
+          "edition_id",
+          "order"
+        ],
+        "title": "BindingOrderOut",
         "type": "object"
       },
       "CancelOut": {
@@ -2020,6 +2135,34 @@
           "confirm"
         ],
         "title": "ForgetRootIn",
+        "type": "object"
+      },
+      "GapAckIn": {
+        "properties": {
+          "number": {
+            "title": "Number",
+            "type": "string"
+          },
+          "segment": {
+            "default": "",
+            "title": "Segment",
+            "type": "string"
+          },
+          "track": {
+            "default": "main",
+            "title": "Track",
+            "type": "string"
+          },
+          "undo": {
+            "default": false,
+            "title": "Undo",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "number"
+        ],
+        "title": "GapAckIn",
         "type": "object"
       },
       "GuardsTriggered": {
@@ -3689,6 +3832,38 @@
         "title": "PreferencesOut",
         "type": "object"
       },
+      "PreferredTeamIn": {
+        "additionalProperties": false,
+        "properties": {
+          "team_id": {
+            "title": "Team Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "team_id"
+        ],
+        "title": "PreferredTeamIn",
+        "type": "object"
+      },
+      "PreferredTeamOut": {
+        "properties": {
+          "edition_id": {
+            "title": "Edition Id",
+            "type": "string"
+          },
+          "team_id": {
+            "title": "Team Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "edition_id",
+          "team_id"
+        ],
+        "title": "PreferredTeamOut",
+        "type": "object"
+      },
       "PriorityIn": {
         "properties": {
           "priority_class": {
@@ -5352,6 +5527,24 @@
         "title": "SeparateOut",
         "type": "object"
       },
+      "SeriesChoiceOut": {
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "title"
+        ],
+        "title": "SeriesChoiceOut",
+        "type": "object"
+      },
       "SeriesMoveOut": {
         "properties": {
           "edition_id": {
@@ -5740,6 +5933,409 @@
           "values"
         ],
         "title": "SettingsPatch",
+        "type": "object"
+      },
+      "SheetAttachOut": {
+        "properties": {
+          "attach_id": {
+            "title": "Attach Id",
+            "type": "string"
+          },
+          "from_work_id": {
+            "title": "From Work Id",
+            "type": "string"
+          },
+          "to_work_id": {
+            "title": "To Work Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "attach_id",
+          "from_work_id",
+          "to_work_id"
+        ],
+        "title": "SheetAttachOut",
+        "type": "object"
+      },
+      "SheetBindingOut": {
+        "properties": {
+          "active": {
+            "title": "Active",
+            "type": "boolean"
+          },
+          "disabled_reason": {
+            "anyOf": [
+              {
+                "enum": [
+                  "not_loaded",
+                  "content_failures",
+                  "removed_upstream",
+                  "manual"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Disabled Reason"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "last_checked": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Checked"
+          },
+          "next_expected": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Expected"
+          },
+          "rank": {
+            "title": "Rank",
+            "type": "integer"
+          },
+          "source_key": {
+            "title": "Source Key",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "source_key",
+          "rank",
+          "active",
+          "disabled_reason",
+          "last_checked",
+          "next_expected"
+        ],
+        "title": "SheetBindingOut",
+        "type": "object"
+      },
+      "SheetCanOut": {
+        "properties": {
+          "acknowledge_gap": {
+            "title": "Acknowledge Gap",
+            "type": "boolean"
+          },
+          "check": {
+            "title": "Check",
+            "type": "boolean"
+          },
+          "confirm_attach": {
+            "title": "Confirm Attach",
+            "type": "boolean"
+          },
+          "edit_field": {
+            "title": "Edit Field",
+            "type": "boolean"
+          },
+          "prefer_team": {
+            "title": "Prefer Team",
+            "type": "boolean"
+          },
+          "reorder": {
+            "title": "Reorder",
+            "type": "boolean"
+          },
+          "separate": {
+            "title": "Separate",
+            "type": "boolean"
+          },
+          "set_upstream_status": {
+            "title": "Set Upstream Status",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "check",
+          "reorder",
+          "acknowledge_gap",
+          "set_upstream_status",
+          "prefer_team",
+          "edit_field",
+          "separate",
+          "confirm_attach"
+        ],
+        "title": "SheetCanOut",
+        "type": "object"
+      },
+      "SheetFieldOut": {
+        "properties": {
+          "field": {
+            "title": "Field",
+            "type": "string"
+          },
+          "lang": {
+            "title": "Lang",
+            "type": "string"
+          },
+          "locked": {
+            "title": "Locked",
+            "type": "boolean"
+          },
+          "manual": {
+            "title": "Manual",
+            "type": "boolean"
+          },
+          "on": {
+            "enum": [
+              "edition",
+              "work"
+            ],
+            "title": "On",
+            "type": "string"
+          },
+          "value": {
+            "title": "Value",
+            "type": "string"
+          }
+        },
+        "required": [
+          "on",
+          "field",
+          "lang",
+          "value",
+          "manual",
+          "locked"
+        ],
+        "title": "SheetFieldOut",
+        "type": "object"
+      },
+      "SheetGapOut": {
+        "properties": {
+          "number": {
+            "title": "Number",
+            "type": "string"
+          },
+          "segment": {
+            "title": "Segment",
+            "type": "string"
+          },
+          "track": {
+            "title": "Track",
+            "type": "string"
+          }
+        },
+        "required": [
+          "track",
+          "segment",
+          "number"
+        ],
+        "title": "SheetGapOut",
+        "type": "object"
+      },
+      "SheetMergeOut": {
+        "properties": {
+          "merge_id": {
+            "title": "Merge Id",
+            "type": "string"
+          },
+          "merged_at": {
+            "format": "date-time",
+            "title": "Merged At",
+            "type": "string"
+          },
+          "undoable_until": {
+            "format": "date-time",
+            "title": "Undoable Until",
+            "type": "string"
+          }
+        },
+        "required": [
+          "merge_id",
+          "merged_at",
+          "undoable_until"
+        ],
+        "title": "SheetMergeOut",
+        "type": "object"
+      },
+      "SheetOut": {
+        "properties": {
+          "attach": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SheetAttachOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "bindings": {
+            "items": {
+              "$ref": "#/components/schemas/SheetBindingOut"
+            },
+            "title": "Bindings",
+            "type": "array"
+          },
+          "can": {
+            "$ref": "#/components/schemas/SheetCanOut"
+          },
+          "cover_hash": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cover Hash"
+          },
+          "edition_id": {
+            "title": "Edition Id",
+            "type": "string"
+          },
+          "fields": {
+            "items": {
+              "$ref": "#/components/schemas/SheetFieldOut"
+            },
+            "title": "Fields",
+            "type": "array"
+          },
+          "followed": {
+            "title": "Followed",
+            "type": "boolean"
+          },
+          "gaps": {
+            "items": {
+              "$ref": "#/components/schemas/SheetGapOut"
+            },
+            "title": "Gaps",
+            "type": "array"
+          },
+          "lang": {
+            "title": "Lang",
+            "type": "string"
+          },
+          "merges": {
+            "items": {
+              "$ref": "#/components/schemas/SheetMergeOut"
+            },
+            "title": "Merges",
+            "type": "array"
+          },
+          "shelf_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Shelf Id"
+          },
+          "teams": {
+            "items": {
+              "$ref": "#/components/schemas/SheetTeamOut"
+            },
+            "title": "Teams",
+            "type": "array"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "upstream_status": {
+            "enum": [
+              "ongoing",
+              "finished",
+              "paused",
+              "unknown"
+            ],
+            "title": "Upstream Status",
+            "type": "string"
+          },
+          "upstream_status_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Upstream Status By"
+          },
+          "work_id": {
+            "title": "Work Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "edition_id",
+          "work_id",
+          "title",
+          "lang",
+          "shelf_id",
+          "cover_hash",
+          "upstream_status",
+          "upstream_status_by",
+          "followed",
+          "bindings",
+          "gaps",
+          "teams",
+          "fields",
+          "merges",
+          "attach",
+          "can"
+        ],
+        "title": "SheetOut",
+        "type": "object"
+      },
+      "SheetTeamOut": {
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "preferred": {
+            "title": "Preferred",
+            "type": "boolean"
+          },
+          "rank": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rank"
+          }
+        },
+        "required": [
+          "id",
+          "label",
+          "rank",
+          "preferred"
+        ],
+        "title": "SheetTeamOut",
         "type": "object"
       },
       "ShelfIn": {
@@ -6714,6 +7310,55 @@
         "title": "UnmaskedOut",
         "type": "object"
       },
+      "UpstreamStatusIn": {
+        "additionalProperties": false,
+        "properties": {
+          "status": {
+            "enum": [
+              "ongoing",
+              "finished",
+              "paused",
+              "unknown"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "title": "UpstreamStatusIn",
+        "type": "object"
+      },
+      "UpstreamStatusOut": {
+        "properties": {
+          "by": {
+            "title": "By",
+            "type": "string"
+          },
+          "edition_id": {
+            "title": "Edition Id",
+            "type": "string"
+          },
+          "upstream_status": {
+            "enum": [
+              "ongoing",
+              "finished",
+              "paused",
+              "unknown"
+            ],
+            "title": "Upstream Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "edition_id",
+          "upstream_status",
+          "by"
+        ],
+        "title": "UpstreamStatusOut",
+        "type": "object"
+      },
       "UserExportOut": {
         "description": "One person's data (EF-USR-013). Nothing that proves or opens something is in it, and a Work\nis named by its identifier, never by a title.",
         "properties": {
@@ -7548,6 +8193,28 @@
       },
       "WorkItemOut": {
         "properties": {
+          "cover_hash": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cover Hash"
+          },
+          "edition_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Edition Id"
+          },
           "kind": {
             "title": "Kind",
             "type": "string"
@@ -7747,6 +8414,20 @@
             },
             "title": "Removed",
             "type": "array"
+          },
+          "series": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/SeriesChoiceOut"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Series"
           },
           "since": {
             "title": "Since",
@@ -8854,6 +9535,140 @@
         "summary": "Repatriate",
         "tags": [
           "library"
+        ]
+      }
+    },
+    "/api/v1/attachments/{attach_id}/confirm": {
+      "post": {
+        "operationId": "attach_confirm",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "attach_id",
+            "required": true,
+            "schema": {
+              "title": "Attach Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AttachConfirmIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AttachPlanOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Connexion requise, ou mot de passe à confirmer (reauth-required)."
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée)."
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Détail du problème (RFC 9457)."
+          }
+        },
+        "summary": "Attach Confirm",
+        "tags": [
+          "series-sheet"
+        ]
+      }
+    },
+    "/api/v1/attachments/{attach_id}/plan": {
+      "post": {
+        "operationId": "attach_plan",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "attach_id",
+            "required": true,
+            "schema": {
+              "title": "Attach Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AttachPlanOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Connexion requise, ou mot de passe à confirmer (reauth-required)."
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée)."
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Détail du problème (RFC 9457)."
+          }
+        },
+        "summary": "Attach Plan",
+        "tags": [
+          "series-sheet"
         ]
       }
     },
@@ -10473,6 +11288,78 @@
         ]
       }
     },
+    "/api/v1/editions/{edition_id}/bindings/order": {
+      "post": {
+        "operationId": "bindings_order",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "edition_id",
+            "required": true,
+            "schema": {
+              "title": "Edition Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BindingOrderIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BindingOrderOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Connexion requise, ou mot de passe à confirmer (reauth-required)."
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée)."
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Détail du problème (RFC 9457)."
+          }
+        },
+        "summary": "Bindings Order",
+        "tags": [
+          "series-sheet"
+        ]
+      }
+    },
     "/api/v1/editions/{edition_id}/check": {
       "post": {
         "description": "\"Check now\" (EF-SRC-038): looked at at the next pass, in the news class.",
@@ -10770,6 +11657,80 @@
         ]
       }
     },
+    "/api/v1/editions/{edition_id}/gaps/ack": {
+      "post": {
+        "operationId": "gap_ack",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "edition_id",
+            "required": true,
+            "schema": {
+              "title": "Edition Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GapAckIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Gap Ack",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Connexion requise, ou mot de passe à confirmer (reauth-required)."
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée)."
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Détail du problème (RFC 9457)."
+          }
+        },
+        "summary": "Gap Ack",
+        "tags": [
+          "follows"
+        ]
+      }
+    },
     "/api/v1/editions/{edition_id}/language": {
       "post": {
         "operationId": "edition_set_lang",
@@ -10842,6 +11803,78 @@
         ]
       }
     },
+    "/api/v1/editions/{edition_id}/preferred-team": {
+      "post": {
+        "operationId": "preferred_team_set",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "edition_id",
+            "required": true,
+            "schema": {
+              "title": "Edition Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PreferredTeamIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PreferredTeamOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Connexion requise, ou mot de passe à confirmer (reauth-required)."
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée)."
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Détail du problème (RFC 9457)."
+          }
+        },
+        "summary": "Preferred Team Set",
+        "tags": [
+          "series-sheet"
+        ]
+      }
+    },
     "/api/v1/editions/{edition_id}/series-name": {
       "post": {
         "operationId": "edition_set_series_name",
@@ -10911,6 +11944,68 @@
         "summary": "Edition Set Series Name",
         "tags": [
           "operations"
+        ]
+      }
+    },
+    "/api/v1/editions/{edition_id}/sheet": {
+      "get": {
+        "operationId": "edition_sheet",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "edition_id",
+            "required": true,
+            "schema": {
+              "title": "Edition Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SheetOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Connexion requise, ou mot de passe à confirmer (reauth-required)."
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée)."
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Détail du problème (RFC 9457)."
+          }
+        },
+        "summary": "Edition Sheet",
+        "tags": [
+          "series-sheet"
         ]
       }
     },
@@ -11058,6 +12153,78 @@
         "summary": "Shelf Proposal",
         "tags": [
           "shelves"
+        ]
+      }
+    },
+    "/api/v1/editions/{edition_id}/upstream-status": {
+      "post": {
+        "operationId": "upstream_status_set",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "edition_id",
+            "required": true,
+            "schema": {
+              "title": "Edition Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpstreamStatusIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UpstreamStatusOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Connexion requise, ou mot de passe à confirmer (reauth-required)."
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée)."
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Détail du problème (RFC 9457)."
+          }
+        },
+        "summary": "Upstream Status Set",
+        "tags": [
+          "series-sheet"
         ]
       }
     },
@@ -18383,6 +19550,52 @@
               ],
               "title": "Sort",
               "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "shelf_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 26,
+                  "minLength": 26,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Shelf Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "series_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 26,
+                  "minLength": 26,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Series Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "facets",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Facets",
+              "type": "boolean"
             }
           },
           {
