@@ -27,7 +27,10 @@ même par la ligne de commande, par la socket locale et par l'API.
     ([secrets.md](secrets.md)).
 - `GET /api/v1/status` : même contenu, administrateur seulement.
 - `GET /healthz` : état général ; authentifié, il ajoute la liste des files en pause et leur
-  raison. Anonyme, il ne montre que l'état (`ok` ou `migrating`).
+  raison. Anonyme, il ne montre que l'état (`ok` ou `migrating`). La réponse est tenue 5 s en
+  mémoire et ne touche jamais un disque. Les racines sont jugées par une tâche de fond, une fois
+  par minute : une racine qui disparaît (ou revient) apparaît donc dans `/healthz` au plus **65 s**
+  plus tard (60 s de tâche, 5 s de mémoire). `shelfhold status` les juge à l'instant même.
 - Les événements d'exploitation vont aussi vers vos notifications ([notifications.md](notifications.md)).
 
 Une commande **réservée** exige une session administrateur dont le mot de passe a été saisi il y a

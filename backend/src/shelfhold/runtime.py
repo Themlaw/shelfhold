@@ -68,6 +68,7 @@ from shelfhold.library.public import (
     migrate_received_dirs,
 )
 from shelfhold.ops.backup import BackupService, register_backup_job
+from shelfhold.ops.roots import judge_roots
 from shelfhold.runtime_jobs import access_audit, register_runtime_jobs
 
 RETAKE_INTERVAL_S = 2.0  # how often a process that found `/data/.lock` held looks again
@@ -303,6 +304,7 @@ class InstanceRuntime:
             guard.follow_roots(roots)
             watcher.check()
             composition.flush_owed_tombstones()  # a root that came back pays what it owes
+            judge_roots(composition.root_watcher())  # every minute, not by the probes
 
         # the backup holds it (`backup.run`, and `shelfhold backup run` through the lock file)
         self.maintenance_gate = MaintenanceGate(self.settings.data_dir / ".maintenance.lock")

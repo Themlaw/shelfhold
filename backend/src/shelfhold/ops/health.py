@@ -49,6 +49,9 @@ LOST_ORIGINAL = "content.original_lost"  # stable code of the entry (EF-BIB-051)
 # the keyring...) is kept. A change made by the instance itself refreshes it at once
 # (`OpsHealth.refresh`); one made from outside (a restore, a keyring file, the host's disk) shows on
 # `/healthz` at most this many seconds later: the probe is a liveness check, not a transaction.
+# The roots are not judged by the probes: the `ops.disk_check` job judges them every 60 s and records
+# the marks, which this read lists as recorded. A root that vanishes shows on `/healthz` within
+# 60 s + HEALTH_CACHE_TTL (65 s at most).
 HEALTH_CACHE_TTL = 5.0
 # How long the very first probe waits for the first read of the status (it is started at start-up,
 # in a thread of its own): past it the probe answers with no paused queue rather than hold on.
