@@ -288,7 +288,7 @@ def build_plans_router(get_pipeline: Callable[[], PlanPipeline]) -> APIRouter:
         try:
             kind = pipeline.kind_of(plan_id)
         except UnknownPlanError:
-            raise ProblemError("not_found") from None
+            kind = "unknown"  # the service answers: the gates come first, then the 404
         if kind == "rename_plan":
             _RENAME_APPLY(request)  # a fresh admin session; never a key, a member or a child
         if_match = _if_match_version(request.headers.get("if-match"))

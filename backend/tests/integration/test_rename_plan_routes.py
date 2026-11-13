@@ -63,6 +63,8 @@ class FakePipeline:
         self, plan_id: str, *, if_match: str, confirm_progress_loss: bool = False
     ) -> str:
         self.calls.append(("apply", plan_id, if_match, confirm_progress_loss))
+        if plan_id not in (RENAME, EXPORT):
+            raise UnknownPlanError(plan_id)
         if self.stale or if_match != self.version:
             raise StalePlanError("the preview changed: recompute it")
         if plan_id == RENAME and not confirm_progress_loss:
