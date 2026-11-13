@@ -195,6 +195,8 @@ def test_only_heavy_disk_work_is_a_window_job(settings: Settings, tmp_path: Path
             "library.safeguard",  # "Mettre à l'abri" and the optional upstream purge (L16)
             "retention.recycle",  # the bins of /library
             "integrity_rolling",  # the rolling integrity check of the archives (EF-BIB-012)
+            "thumbnail_gc",  # the orphan thumbnails of /data (L24)
+            "thumbnail_catchup",  # the thumbnails not made yet, decoded in the worker (L24)
             "wal_checkpoint",
             "vacuum_monthly",
         }

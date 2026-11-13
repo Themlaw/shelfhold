@@ -9855,6 +9855,50 @@ export type TargetRotateKeyResponses = {
 
 export type TargetRotateKeyResponse = TargetRotateKeyResponses[keyof TargetRotateKeyResponses];
 
+export type ThumbnailData = {
+    body?: never;
+    path: {
+        /**
+         * Content Hash
+         */
+        content_hash: string;
+        /**
+         * Size
+         */
+        size: string;
+    };
+    query?: never;
+    url: '/api/v1/thumbnails/{content_hash}/{size}';
+};
+
+export type ThumbnailErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * not-found
+     */
+    404: unknown;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type ThumbnailError = ThumbnailErrors[keyof ThumbnailErrors];
+
+export type ThumbnailResponses = {
+    /**
+     * webp
+     */
+    200: unknown;
+};
+
 export type ToRateListData = {
     body?: never;
     path?: never;
