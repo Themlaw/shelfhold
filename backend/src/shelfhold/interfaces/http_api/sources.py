@@ -71,7 +71,7 @@ class MigrateIdsIn(BaseModel):
     @model_validator(mode="after")
     def _schemes_differ(self) -> "MigrateIdsIn":
         if self.from_scheme == self.to_scheme:
-            raise ValueError("the two id schemes must differ")
+            raise ValueError("schemes_must_differ")
         return self
 
 

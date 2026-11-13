@@ -34,7 +34,7 @@ from sqlalchemy import Connection
 
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import acquisition
-from shelfhold.library.tombstones.scopes import EmptyRefError, fold_ref, safe_fold
+from shelfhold.library.public import EmptyRefError, fold_ref, safe_fold
 
 __all__ = [
     "AliasChain",
@@ -136,9 +136,12 @@ def resolve_alias_chain(
     remote_id: str,
     *,
     scheme: str | None = None,
+    aliases: dict[Ref, Ref] | None = None,
 ) -> AliasChain:
-    """Where a reference ended up: the aliases are followed (bounded) and a loop is said."""
-    return _chain(_alias_rows(connection, plugin_id, scheme), (source_key, remote_id))
+    """Where a reference ended up: the aliases are followed (bounded) and a loop is said.
+    `aliases` is the table already read (a plan resolves every series of a source)."""
+    known = aliases if aliases is not None else _alias_rows(connection, plugin_id, scheme)
+    return _chain(known, (source_key, remote_id))
 
 
 def _family(plugin_id: str, refs: set[Ref]) -> Family:
@@ -225,7 +228,9 @@ def plan_alias_migration(
         ).all()
         for row_id, remote_id in found:
             old: Ref = (source_key, remote_id)
-            chain = _chain(aliases, old)
+            chain = resolve_alias_chain(
+                connection, plugin_id, source_key, remote_id, scheme=to_scheme, aliases=aliases
+            )
             if chain.cyclic:
                 rows.append(
                     PlannedRow(row_id, plugin_id, old, None, Outcome.UNRESOLVED, "alias_cycle")

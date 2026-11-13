@@ -277,6 +277,7 @@ from shelfhold.library.tombstones import (
     WorkRef,
     fold_ref,
     normalizers_of,
+    safe_fold,
 )
 from shelfhold.library.tombstones.screen import CatalogScreenAdapter
 
@@ -501,6 +502,7 @@ __all__ = [
     "require_reserved_deletion",
     "require_servable_derivative",
     "restore_replica",
+    "safe_fold",
     "safe_to_clean",
     "servable_epub",
     "sniff_kind",

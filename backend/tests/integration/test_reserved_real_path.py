@@ -118,6 +118,7 @@ SERVICE_AUDITED = {"queue.control"}
 WHEN_CLOSED_AUDITED = {
     "session.revoke_other", "session.revoke_others",
     "work.merge", "work.separate", "series.reassign", "edition.merge",
+    "source.migrate_ids",  # M3 L27: the ops layer writes it, in the transaction that moves the rows
 }  # fmt: skip
 # any role may do it on its own account (the guard names KNOWN_ROLES): the role loop skips it
 EVERY_ROLE_OWN_ACCOUNT = {"session.revoke_others"}

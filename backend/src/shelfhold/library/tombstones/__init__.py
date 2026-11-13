@@ -13,7 +13,7 @@ from shelfhold.library.tombstones.index import (
     MembershipIndex,
     Normalizers,
 )
-from shelfhold.library.tombstones.scopes import EmptyRefError, fold_ref
+from shelfhold.library.tombstones.scopes import EmptyRefError, fold_ref, safe_fold
 from shelfhold.library.tombstones.service import (
     FROZEN_LOST_KEYRING_PHRASE,
     LOST_KEYRING_PHRASE,
@@ -78,4 +78,5 @@ __all__ = [
     "fold_ref",
     "missing_citable",
     "normalizers_of",
+    "safe_fold",
 ]
