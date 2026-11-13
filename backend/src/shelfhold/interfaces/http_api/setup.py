@@ -9,7 +9,7 @@ fingerprint) and the making of a new one.
 
 Every route is the admin's, on a fresh session, never a key (`admin_risk.accept`, the reserved
 action of the Kavita connection itself): the member, the child and a key are refused, and so is
-an admin whose session is stale. The ones that write leave a line in the audit.
+an admin whose session is stale. Each call leaves a line in the audit.
 """
 
 from collections.abc import Callable
@@ -26,8 +26,7 @@ from shelfhold.ops import OpsServices
 __all__ = ["build_setup_router"]
 
 _RISK = RESERVED_ACTIONS["admin_risk.accept"]
-Looking = Annotated[Principal, Depends(reserved_action(_RISK, audit=False))]
-Writing = Annotated[Principal, Depends(reserved_action(_RISK))]
+Admin = Annotated[Principal, Depends(reserved_action(_RISK))]  # one line in the audit per call
 
 
 class WizardTargetOut(BaseModel):
@@ -119,17 +118,17 @@ def build_setup_router(get_ops: Callable[[], OpsServices]) -> APIRouter:
     router = APIRouter(prefix="/api/v1/setup", tags=["setup"])
 
     @router.get("/state")
-    def wizard_state(_admin: Looking) -> WizardStateOut:
+    def wizard_state(_admin: Admin) -> WizardStateOut:
         with refusals():
             return WizardStateOut(**get_ops().wizard.state())
 
     @router.post("/probe")
-    def wizard_probe(body: WizardDestinationIn, _admin: Looking) -> WizardProbeOut:
+    def wizard_probe(body: WizardDestinationIn, _admin: Admin) -> WizardProbeOut:
         with refusals():
             return WizardProbeOut(**get_ops().wizard.probe(body.destination_id))
 
     @router.post("/adoption/preview")
-    def wizard_adoption_preview(body: WizardPreviewIn, _admin: Looking) -> WizardPreviewOut:
+    def wizard_adoption_preview(body: WizardPreviewIn, _admin: Admin) -> WizardPreviewOut:
         with refusals():
             return WizardPreviewOut(
                 **get_ops().wizard.adoption_preview(
@@ -140,7 +139,7 @@ def build_setup_router(get_ops: Callable[[], OpsServices]) -> APIRouter:
             )
 
     @router.post("/adoption/confirm")
-    def wizard_adoption_confirm(body: WizardAdoptIn, _admin: Writing) -> WizardAdoptOut:
+    def wizard_adoption_confirm(body: WizardAdoptIn, _admin: Admin) -> WizardAdoptOut:
         with refusals():
             return WizardAdoptOut(
                 **get_ops().wizard.adopt(
@@ -149,7 +148,7 @@ def build_setup_router(get_ops: Callable[[], OpsServices]) -> APIRouter:
             )
 
     @router.post("/library", status_code=201)
-    def wizard_new_library(body: WizardLibraryIn, _admin: Writing) -> WizardLibraryOut:
+    def wizard_new_library(body: WizardLibraryIn, _admin: Admin) -> WizardLibraryOut:
         with refusals():
             return WizardLibraryOut(
                 **get_ops().wizard.create_library(
