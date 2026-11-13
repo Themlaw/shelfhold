@@ -69,10 +69,10 @@ class ArrivalPoller:
             return False
         return True
 
-    def waiting_destinations(self, library_id: int) -> list[str]:
-        """The destinations of the remote library `library_id` that hold a written record Kavita
-        has not been seen to index yet: the only ones an event of that library is worth a look
-        for (EF-EXP-034). Read from the database, no request."""
+    def waiting_destinations(self, target_id: str, library_id: int) -> list[str]:
+        """The destinations of the target `target_id`, in its remote library `library_id`, that
+        hold a written record Kavita has not been seen to index yet: the only ones an event of that
+        library is worth a look for (EF-EXP-034). Read from the database, no request."""
         t, destination, library, link = (
             export.export_record, export.shelf_destination, export.remote_library,
             export.shelf_destination_remote_library,
@@ -87,6 +87,8 @@ class ArrivalPoller:
                         ).join(library, library.c.id == link.c.remote_library_id)
                     )
                     .where(
+                        destination.c.target_id == target_id,
+                        library.c.export_target_id == target_id,
                         library.c.remote_ref == str(library_id),
                         sa.exists().where(
                             t.c.shelf_destination_id == destination.c.id,

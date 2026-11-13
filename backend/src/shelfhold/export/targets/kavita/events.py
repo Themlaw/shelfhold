@@ -129,10 +129,15 @@ class ArrivalEventWatcher:
 
     async def on_events(self, client: KavitaClient, events: Sequence[ScanEvent]) -> list[str]:
         """The destinations looked at. Confirmation, delay and `target.not_indexed` are the
-        poller's, unchanged."""
+        poller's, unchanged. The events are those of the hub of `client`'s target: only that
+        target's destinations are looked at (a library id means something per server), and a
+        client not bound to a target is not vouched for, so nothing is looked at."""
+        target_id = client.target_id
         looked: list[str] = []
+        if target_id is None:
+            return looked
         for library_id in sorted({event.library_id for event in events}):
-            for destination_id in self._poller.waiting_destinations(library_id):
+            for destination_id in self._poller.waiting_destinations(target_id, library_id):
                 now = self._clock.now()
                 last = self._last.get(destination_id)
                 if last is not None and now - last < self._min_interval:

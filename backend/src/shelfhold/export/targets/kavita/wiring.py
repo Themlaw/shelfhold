@@ -45,6 +45,7 @@ __all__ = [
 
 def guarded_client(client: KavitaClient, engine: Engine, target_id: str) -> KavitaClient:
     client.set_write_guard(target_write_guard(engine, target_id))
+    client.bind_target(target_id)
     return client
 
 

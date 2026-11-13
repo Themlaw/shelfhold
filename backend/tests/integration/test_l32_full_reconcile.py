@@ -7,6 +7,8 @@ administrator's files are not touched, and a forged event never confirms an arri
 
 from __future__ import annotations
 
+import ast
+import builtins
 import hashlib
 import json
 import os
@@ -23,6 +25,7 @@ import sqlalchemy as sa
 import shelfhold.runtime_jobs as rj
 from shelfhold.config import Settings
 from shelfhold.events.bus import EventBus
+from shelfhold.export.application import reconcile_full
 from shelfhold.export.application.reconcile_full import FullReconciler, InventoryReport
 from shelfhold.export.targets.kavita.events import (
     ArrivalEventWatcher,
@@ -37,6 +40,7 @@ from shelfhold.infrastructure.schema import coherence, export, platform
 from tests.export_env import ExportEnv, export_env
 from tests.kavita_env import run
 from tests.kavita_export_env import LIBRARY_ID, REMOTE_ROOT, Wired, wire
+from tests.l32_env import Probe, swap_during_parent_listing
 from tests.l41_env import context, instance
 
 RS = "\x1e"  # the record separator of the SignalR JSON protocol
@@ -135,13 +139,17 @@ def test_full_reconcile_clean_tree_reports_nothing() -> None:
 def test_full_reconcile_leaves_the_admin_files_and_the_reserved_area_alone() -> None:
     with export_env() as env:
         _exported(env, 1)
+        reserved = [p.name for p in env.lib.library.iterdir() if p.name.startswith(".shelfhold")]
+        assert reserved  # the sentinel of the physical root is there, and the walk starts below it
         (env.root / ".shelfhold").mkdir(exist_ok=True)
         (env.root / ".shelfhold" / "bin.cbz").write_bytes(b"in the bin")
+        (env.root / ".shelfhold-mount-id").write_bytes(b"a sentinel-named file")
+        (env.root / "admin-notes.txt").write_bytes(b"the admin's own file")
         before = _snapshot(env.root)
         report = _scanner(env).scan(env.destination_id, in_window=True)
         everything = {*report.drift, *report.orphans, *report.duplicates, *report.symlinks}
         assert not any(p.startswith(".shelfhold") for p in everything)  # reserved: not reported
-        assert _snapshot(env.root) == before
+        assert _snapshot(env.root) == before  # the admin's file is never moved
 
 
 @pytest.mark.req("EF-EXP-018")
@@ -165,6 +173,8 @@ def test_a_symbolic_link_is_reported_as_a_link_never_followed(tmp_path: Path) ->
 
 @pytest.mark.req("EF-EXP-018")
 def test_the_walk_goes_through_fsops_and_the_declared_root(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Any call to `os.*`, `open` or `os.open` made from the module itself fails the test."""
+
     def watched(real: Callable[..., Any]) -> Callable[..., Any]:
         def call(*args: Any, **kwargs: Any) -> Any:
             caller = sys._getframe(1).f_globals["__name__"]
@@ -176,38 +186,52 @@ def test_the_walk_goes_through_fsops_and_the_declared_root(monkeypatch: pytest.M
     with export_env() as env:
         _exported(env, 1)
         (env.root / "orphan.cbz").write_bytes(b"x")
-        for name in ("walk", "scandir", "listdir", "lstat", "stat"):
-            monkeypatch.setattr(os, name, watched(getattr(os, name)))
-        monkeypatch.setattr(os.path, "islink", watched(os.path.islink))
+        for name in dir(os):
+            attribute = getattr(os, name)
+            if callable(attribute) and not name.startswith("_") and not isinstance(attribute, type):
+                monkeypatch.setattr(os, name, watched(attribute))
+        for name in ("islink", "isdir", "isfile", "exists", "realpath", "lexists"):
+            monkeypatch.setattr(os.path, name, watched(getattr(os.path, name)))
+        monkeypatch.setattr(builtins, "open", watched(builtins.open))
         monkeypatch.setattr(Path, "iterdir", watched(Path.iterdir))
         report = _scanner(env).scan(env.destination_id, in_window=True)
         assert report.orphans == ("orphan.cbz",)
 
 
 @pytest.mark.req("EF-EXP-018")
+def test_the_full_reconcile_module_imports_no_disk_access_of_its_own() -> None:
+    tree = ast.parse(Path(reconcile_full.__file__).read_text(encoding="utf-8"))
+    imported = {
+        alias.name.split(".")[0]
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Import)
+        for alias in node.names
+    } | {
+        (node.module or "").split(".")[0]
+        for node in ast.walk(tree)
+        if isinstance(node, ast.ImportFrom)
+    }
+    assert not imported & {"os", "pathlib", "shutil", "glob", "io", "tempfile"}
+    calls = {
+        n.func.id
+        for n in ast.walk(tree)
+        if isinstance(n, ast.Call) and isinstance(n.func, ast.Name)
+    }
+    assert "open" not in calls
+
+
+@pytest.mark.req("EF-EXP-018")
 def test_a_swapped_directory_is_not_followed_during_the_walk(tmp_path: Path) -> None:
-    """A folder replaced by a link between two listings: the pass reads the link, not the target."""
+    """The folder becomes a link *between the listing of its parent and its own listing*, the
+    moment a link-following walk would enter it: nothing behind the link is asked, listed or
+    hashed, and the target is left as it was."""
     with export_env() as env:
         files = _exported(env, 1)
         victim = tmp_path / "victim"
         victim.mkdir()
         (victim / "private.cbz").write_bytes(b"private")
-        folder = files[0].parent
-        real = env.lib.fsops
-        swapped: list[bool] = []
-
-        class Swapper(Spy):
-            def list_dir(self, local: str, **kwargs: Any) -> Any:
-                found = self._real.list_dir(local, **kwargs)
-                if not swapped and local.rstrip("/").endswith(folder.name):
-                    swapped.append(True)
-                    shutil.rmtree(folder)  # the attacker swaps the folder for a link
-                    folder.symlink_to(victim, target_is_directory=True)
-                return found
-
-        report = _scanner(env, Swapper(real)).scan(env.destination_id, in_window=True)
-        assert swapped
-        assert not any("private" in p for p in (*report.orphans, *report.duplicates))
+        report, asked = swap_during_parent_listing(env, files[0].parent, victim, Probe)
+        assert not any("private" in p for p in (*report.orphans, *report.duplicates, *asked))
         assert (victim / "private.cbz").read_bytes() == b"private"
 
 
@@ -374,7 +398,9 @@ def test_the_hash_window_job_runs_the_full_pass_and_the_cycle_job_does_not(
         inst.configure()
         rj.reconcile_handler(inst.comp, in_window=False)(context("reconcile.cycle"))
         assert calls == []  # the cycle reads sizes and mtimes only
-        ctx = SimpleNamespace(stop_requested=False, job_id="j")
+        ctx = SimpleNamespace(
+            stop_requested=False, job_id="j", window_end=None, clock=inst.comp.clock
+        )
         rj.reconcile_handler(inst.comp, in_window=True)(ctx)  # type: ignore[arg-type]
         assert len(calls) == 1 and calls[0]["in_window"] is True
         assert callable(calls[0]["should_stop"])  # the interruption is read by the handler itself
@@ -546,3 +572,42 @@ def test_the_polling_alone_keeps_the_delay_and_not_indexed_when_events_are_silen
         run(watcher.on_events(w.client, _hub().receive(_frame("SeriesAdded"))))
         assert w.events.codes() == ["target.not_indexed"]  # the event path keeps the same ending
         assert len(env.files()) == 1  # nothing exported again
+
+
+@pytest.mark.req("EF-EXP-034")
+def test_an_event_of_another_target_looks_at_nothing_here() -> None:
+    with export_env() as env:
+        w = wire(env)
+        w.written()
+        w.client.bind_target("01H00000000000000000000000")  # the hub of some other server
+        events = _hub().receive(_frame("SeriesAdded"))
+        w.fake.requests.clear()
+        assert run(_watcher(w).on_events(w.client, events)) == []
+        assert w.fake.requests == [] and _state(env) == "written"
+
+
+@pytest.mark.req("EF-EXP-018")
+def test_a_window_that_closes_stops_the_hash_of_a_large_file() -> None:
+    """The stop is read between two blocks of the hash, not only between two files."""
+    with export_env() as env:
+        _exported(env, 1)
+        for name in ("one.cbz", "two.cbz"):  # unknown, same size: both are read for a copy
+            (env.root / name).write_bytes(b"\0" * (3 << 20))  # three blocks: a stop lands inside
+        hashing: list[bool] = []
+
+        class Hasher(Probe):
+            def sha256_of(self, local: str, **kwargs: Any) -> str:
+                hashing.append(True)  # from here on the window is over
+                return super().sha256_of(local, **kwargs)
+
+        probe = Hasher(env.lib.fsops)
+        blocks: list[int] = []
+
+        def over() -> bool:
+            if hashing:
+                blocks.append(1)
+            return bool(hashing)
+
+        report = _scanner(env, probe).scan(env.destination_id, in_window=True, should_stop=over)
+        assert report.interrupted is True
+        assert len(blocks) == 1  # stopped at the first block of the first file, not at its end

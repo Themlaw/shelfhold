@@ -55,4 +55,5 @@ def wire(env: ExportEnv, *, version: str = "0.9.1.4", **fake_options: Any) -> Wi
     client = KavitaClient(
         build_fetcher(fake), BASE_URL, AdminKey(API_KEY), events=events, clock=env.clock
     )
+    client.bind_target(env.target_id)  # as `open_client` does: the events it reads are its target's
     return Wired(env, fake, events, client)

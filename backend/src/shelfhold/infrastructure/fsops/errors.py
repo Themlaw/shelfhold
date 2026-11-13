@@ -10,6 +10,7 @@ __all__ = [
     "EmitterConditionError",
     "EmitterPerimeterError",
     "FsopsError",
+    "HashInterrupted",
     "JournalChangedError",
     "LinkUnavailableError",
     "NotRegularFileError",
@@ -110,3 +111,8 @@ class LinkUnavailableError(FsopsError):
     def __init__(self, reason: str, message: str = "") -> None:
         super().__init__(message or f"no hard link: {reason}", code=errno.EXDEV)
         self.reason = reason
+
+
+class HashInterrupted(Exception):
+    """`sha256_of(..., should_stop=...)` was told to stop between two blocks. Not an `OSError`:
+    a caller that tolerates unreadable files must not take a stop for one."""

@@ -871,16 +871,19 @@ def reconcile_handler(comp: Composition, *, in_window: bool) -> Callable[[JobCon
         except (NoLibraryError, KeyringUnavailableError):
             return
         inventory = FullReconciler(comp.engine, fsops, clock=comp.clock, bus=comp.bus)
+
+        def out_of_time() -> bool:  # the window is over, or SIGTERM (ENF-OPS-014)
+            over = context.window_end is not None and context.clock.now() >= context.window_end
+            return over or context.stop_requested
+
         for destination in destinations:
-            if context.stop_requested:
+            if out_of_time():
                 return
             if in_window:  # it looks at the tree anyway: what a pass learned of it is stale
                 blocked_memo.forget(comp.engine, destination.id)
             reconciler.reconcile(destination.id, in_window=in_window)
             if in_window:  # the full pass reads the hashes: only where files may be hashed
-                inventory.scan(
-                    destination.id, in_window=True, should_stop=lambda: context.stop_requested
-                )
+                inventory.scan(destination.id, in_window=True, should_stop=out_of_time)
                 pipeline.heal_mirror(destination.id)
 
     return run

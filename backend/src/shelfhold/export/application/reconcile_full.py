@@ -34,6 +34,7 @@ from shelfhold.export.domain.reconcile import (
 )
 from shelfhold.infrastructure.clock import Clock
 from shelfhold.infrastructure.fsops import Fsops
+from shelfhold.infrastructure.fsops.errors import HashInterrupted
 
 __all__ = ["FullReconciler", "InventoryReport"]
 
@@ -131,8 +132,8 @@ class FullReconciler:
             local = f"{root}/{rel_dir}" if rel_dir else root
             try:
                 entries = self._fsops.list_dir(local)
-            except (FileNotFoundError, NotADirectoryError):
-                continue  # gone while it was read
+            except OSError:
+                continue  # gone, or swapped for a link, while it was read: never followed
             for name, kind in sorted(entries.items()):
                 if not rel_dir and name in RESERVED_NAMES:
                     continue
@@ -193,7 +194,7 @@ class FullReconciler:
                 found.add(item.rel_path)
             elif in_window and item.file_hash is not None:
                 with contextlib.suppress(OSError):  # unreadable now: not a finding
-                    if self._fsops.sha256_of(local) != item.file_hash:
+                    if self._hash(local, should_stop) != item.file_hash:
                         found.add(item.rel_path)
         return found
 
@@ -223,7 +224,7 @@ class FullReconciler:
             if should_stop():
                 raise _Stopped
             with contextlib.suppress(OSError):  # swapped for something unreadable: skipped
-                by_hash[self._fsops.sha256_of(f"{root}/{rel}")].add(rel)
+                by_hash[self._hash(f"{root}/{rel}", should_stop)].add(rel)
         return {
             rel
             for names in by_hash.values()
@@ -231,6 +232,14 @@ class FullReconciler:
             for rel in names
             if not rel.startswith("managed:")
         }
+
+    def _hash(self, local: str, should_stop: Callable[[], bool]) -> str:
+        """The hash of one file, a stop read between two blocks (a window that closes does not
+        wait for a large file)."""
+        try:
+            return self._fsops.sha256_of(local, should_stop=should_stop)
+        except HashInterrupted:
+            raise _Stopped from None
 
     # -- telling -------------------------------------------------------------------------------
 
