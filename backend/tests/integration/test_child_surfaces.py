@@ -132,6 +132,7 @@ CLOSED = (
     # host CLI); the sheet's size check shows the free space of the host, which is not hers either
     "POST /api/v1/trash/empty",
     "POST /api/v1/tombstones/{seq}/lift",
+    "GET /api/v1/tombstones",
     "POST /api/v1/library/space-check",
     "POST /api/v1/detach",
     "GET /api/v1/editions",

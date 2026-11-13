@@ -213,7 +213,7 @@ def refusals() -> Iterator[None]:
     try:
         yield
     except OpsError as error:
-        raise ProblemError(error.code) from None
+        raise ProblemError(error.code, extensions=getattr(error, "extensions", None)) from None
     except (HeadlessError, BindingError) as error:
         raise ProblemError(error.code) from None
 

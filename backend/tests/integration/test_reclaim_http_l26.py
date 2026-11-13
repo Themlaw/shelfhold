@@ -25,6 +25,7 @@ EMPTY = "/api/v1/trash/empty"
 LIFT = "/api/v1/tombstones/7/lift"
 PURGE = "/api/v1/units/u1/purge"
 SPACE = "/api/v1/library/space-check"
+LIST = "/api/v1/tombstones"
 PHRASE = "empty-trash"
 
 
@@ -42,6 +43,11 @@ class _Library:
             "anchor_id": "u1", "units": ["u1"], "complete": True, "erased": 1,
             "unreachable_roots": [], "pending_roots": [], "alerts": [], "out_of_reach": [],
         }  # fmt: skip
+
+    def tombstone_list(self) -> dict[str, Any]:
+        self.effects.append("list")
+        return {"tombstones": [{"seq": 3, "created_at": "2026-11-13T10:00:00", "scope": "place",
+                                "reason": "purge_unit"}]}  # fmt: skip
 
     def space_check(self, *, estimated_bytes: int) -> dict[str, Any]:
         figures = check_add_fits(estimated_bytes, free_bytes=40 * GIB, reserve_bytes=10 * GIB)
@@ -109,6 +115,7 @@ def test_empty_trash_and_lift_refuse_keys_members_and_children(
         for path in (EMPTY, LIFT, SPACE):
             body = {"estimated_bytes": 1} if path == SPACE else {"typed": "x"}
             assert api.post(path, json=body).status_code == 403, (role, path)
+        assert api.client.get(LIST).status_code == 403, role  # the list is the admin's too
     assert effects == []  # nothing reached a service
 
 
@@ -138,6 +145,18 @@ def test_lift_over_http_names_the_sequence_and_the_word(api: AuthEnv, effects: l
     assert api.post("/api/v1/tombstones/abc/lift", json={"typed": "x"}).status_code == 422
     assert api.post(LIFT, json={"typed": "lift 7"}).status_code == 200
     assert effects == ["lift:7:lift 7:session"]
+
+
+def test_tombstone_list_over_http_is_the_admins_and_shows_no_title(
+    api: AuthEnv, effects: list[str]
+) -> None:
+    api.login()
+    listed = api.client.get(LIST)
+    assert listed.status_code == 200
+    [row] = listed.json()["tombstones"]
+    assert set(row) == {"seq", "created_at", "scope", "reason"}  # a number to lift by, no value
+    assert effects == ["list"]
+    assert OPS_METHODS["ops.tombstone_list"][1] is None  # a read: no reserved action
 
 
 def test_add_refused_when_estimated_size_exceeds_free_space(api: AuthEnv) -> None:

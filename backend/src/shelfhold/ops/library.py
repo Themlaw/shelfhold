@@ -958,6 +958,11 @@ class LibraryOps:
         return reclaim.lift_tombstone(self._comp, seq=seq, typed=typed, principal=principal)
 
     @_refused
+    def tombstone_list(self) -> dict[str, Any]:
+        """`tombstone list` (admin): the numbers to lift by, and nothing of what was erased."""
+        return reclaim.list_tombstones(self._comp)
+
+    @_refused
     def space_check(self, *, estimated_bytes: int) -> dict[str, Any]:
         """The « Ajouter » sheet against the free space less the reserve; nothing is written."""
         return reclaim.space_check(self._comp, estimated_bytes=estimated_bytes)

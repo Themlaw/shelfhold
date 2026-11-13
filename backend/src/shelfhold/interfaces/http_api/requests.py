@@ -148,7 +148,7 @@ def build_requests_router(
         except RequestRefusedError as error:
             raise ProblemError(f"request.{error.code}") from None
         except OpsError as error:
-            raise ProblemError(error.code) from None
+            raise ProblemError(error.code, extensions=getattr(error, "extensions", None)) from None
 
     @router.post("", status_code=201)
     def create(body: RequestIn, principal: RequesterOnly) -> RequestOut:

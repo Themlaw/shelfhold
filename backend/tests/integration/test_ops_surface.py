@@ -606,6 +606,7 @@ def test_the_reserved_column_of_the_socket_table_matches_the_catalogue() -> None
     declared.add(
         "tombstone.rekey"
     )  # M1b L26: reserved; the rewrite after a key leak, no waiting state
+    declared |= {"trash.empty", "tombstone.lift"}  # M3 L26: reserved; no waiting state either
     on_socket = {action for _impl, action in OPS_METHODS.values() if action}
     assert on_socket == declared
     for action in on_socket:  # and every name is a real action of the registry

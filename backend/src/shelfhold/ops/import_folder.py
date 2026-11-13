@@ -30,6 +30,7 @@ from shelfhold.library.public import (
     make_precheck,
 )
 from shelfhold.ops.errors import CodedRefusal
+from shelfhold.ops.reclaim import require_space
 from shelfhold.plugin_host.adapters.meta.suwayomi.tree_import import SuwayomiTree
 from shelfhold.plugin_host.adapters.native.import_folder import build_manifest
 from shelfhold.work_locks import work_holder
@@ -124,6 +125,7 @@ class ImportOps:
             if dry_run:
                 scan = folder.scan()
                 return _report(scan, [], dry_run=True)
+            require_space(comp)  # copied into /data: not under the reserve
             scan, outcomes = folder.run(declared_purchase=declared_purchase)
             return _report(scan, outcomes, dry_run=False)
 
@@ -152,6 +154,8 @@ class ImportOps:
                 )  # fmt: skip
             except ImportFolderOverlapError:
                 raise CodedRefusal(TREE_BAD, t("errors.import.tree_unreadable.title")) from None
+            if not dry_run:
+                require_space(comp)
             report = folder.import_tree(dry_run=dry_run)
         return {
             "dry_run": dry_run, "ready": list(report.ready),

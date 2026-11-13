@@ -16,6 +16,8 @@ The lift moves the `?since=` floor like the purges do (`invalidate_tokens`): a c
 token from before resynchronises.
 """
 
+from dataclasses import dataclass
+from datetime import datetime
 from typing import Final
 
 from shelfhold.library.tombstones.index import LIFT_MARK
@@ -25,6 +27,7 @@ __all__ = [
     "LIFT_REASON",
     "LiftConfirmationError",
     "LiftRefusedError",
+    "TombstoneRow",
     "UnknownTombstoneError",
     "lift_phrase",
 ]
@@ -36,6 +39,16 @@ def lift_phrase(seq: int) -> str:
     """The word to type: it names the sequence, so that a phrase typed for another one, or a
     habit, lifts nothing."""
     return f"lift {seq}"
+
+
+@dataclass(frozen=True)
+class TombstoneRow:
+    """One line of `tombstone list`: a number to lift by, never what the tombstone stands for."""
+
+    seq: int
+    created_at: datetime
+    scope: str
+    reason: str | None
 
 
 class LiftRefusedError(PermissionError):

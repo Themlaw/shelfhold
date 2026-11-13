@@ -43,7 +43,25 @@ pause de la garde disque) : `POST /api/v1/library/space-check` répond 409
 `library.space-insufficient` avec `estimated_bytes`, `free_bytes`, `reserve_bytes` et l'action
 `empty_trash`, **avant toute écriture**.
 
+Ce contrôle n'est pas seulement une route à part : chaque porte qui écrit dans `/data` ou `/store`
+le refait **côté serveur** avant sa première écriture, avec les mêmes chiffres et le même 409 :
+l'acquisition (préparation et mise en file du téléchargement), l'approbation d'une demande (qui
+passe par les mêmes portes), le suivi d'une série, `backfill` (sur sa propre estimation) et
+l'import d'un dossier ou d'un arbre (la simulation `--dry-run` n'écrit rien et reste permise).
+Quand la taille est inconnue, l'ajout est compté pour un octet : il passe tant qu'il reste de la
+place au-dessus de la réserve, et il est refusé quand le volume est déjà à la réserve. La tâche
+d'import programmée attend alors que la place revienne (`space_insufficient`), elle n'échoue pas.
+
 ## Lever une pierre tombale
+
+Pour choisir le numéro :
+
+    shelfhold tombstone list
+
+(route `GET /api/v1/tombstones`, administrateur) affiche, pour chaque pierre qui bloque encore, son
+numéro, son jour, sa portée et son motif. Jamais le titre ni le chemin d'une œuvre effacée : la
+table ne les garde pas, et la liste ne les rouvre pas. Une purge pose plusieurs pierres (une par
+identité effacée) : chacune se lève par son propre numéro.
 
     shelfhold tombstone lift --seq <n> --confirm "lift <n>"
 
