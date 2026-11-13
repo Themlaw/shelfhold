@@ -585,6 +585,7 @@ def test_the_reserved_column_of_the_socket_table_matches_the_catalogue() -> None
     declared.add("purge.now")  # L41: reserved, but not the exit of a waiting state
     declared.add("intents.resolve")  # L51: reserved; the drift it settles is no waiting state
     declared.add("normalize.migrate")  # L55: reserved; no waiting state either
+    declared.add("source.migrate_ids")  # M3 L27: reserved; no waiting state either
     declared |= {"revisions.apply", "revisions.force"}  # M2 L17: the confirmed rewrite batch
     declared.add("contributor.set_died_for_france")  # M2 L15b: no waiting state
     declared |= {

@@ -279,6 +279,7 @@ FRESHNESS_LINE = {
             "revisions.apply",
             "revisions.force",
             "normalize.migrate",
+            "source.migrate_ids",  # M3 L27: the ids of a source's series, in bulk
             "edition.merge",
             "work.merge",  # M3 L22: the age and the shelves of what a merge moves
             "work.separate",

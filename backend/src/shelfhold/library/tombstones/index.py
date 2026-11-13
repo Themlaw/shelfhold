@@ -17,6 +17,7 @@ from dataclasses import dataclass
 from itertools import product
 from typing import Final, Protocol
 
+from shelfhold.library.tombstones.scopes import folded_fields
 from shelfhold.library.tombstones.values import (
     ContentHash,
     PlaceRef,
@@ -192,6 +193,47 @@ class MembershipIndex:
             if self._key(projected, assignment) in keys:
                 return True
         return False
+
+    def contains_folded(self, candidate: TombstoneValues) -> bool:
+        """The candidate's reference, folded (case, separators, encoding, wide forms), is one a
+        tombstone of its scope holds: a spelling of a purged reference is the purged reference
+        (EF-BIB-054 (4), `scopes.fold_ref`). Only the scopes that cite an upstream reference."""
+        wanted = folded_fields(candidate.scope, flatten(candidate))
+        if wanted is None:
+            return False
+        return any(
+            scope == candidate.scope and folded_fields(scope, flat) == wanted
+            for scope, flat, _cited in self._entries
+        )
+
+    def series_refs(self, plugin_id: str, source_key: str) -> list[str]:
+        """The upstream series references (as received) that `series_binding` tombstones hold for
+        this plugin and source key. For a migration that asks the plugin where they went; never
+        shown, never logged."""
+        wanted = folded_fields("series_binding", {
+            "source_key": plugin_id, "sub_source": source_key, "series_ref": "x"})  # fmt: skip
+        if wanted is None:
+            return []
+        found: set[str] = set()
+        for scope, flat, _cited in self._entries:
+            held = folded_fields(scope, flat)
+            if scope == "series_binding" and held is not None and held[:2] == wanted[:2]:
+                found.add(flat["series_ref"])
+        return sorted(found)
+
+    def series_plugins(self, source_key: str) -> list[str]:
+        """The plugin ids (as received) with a `series_binding` tombstone on this source key: the
+        plugins a migration must ask even when no live series of the source is left."""
+        wanted = folded_fields("series_binding", {
+            "source_key": "x", "sub_source": source_key, "series_ref": "x"})  # fmt: skip
+        if wanted is None:
+            return []
+        found: set[str] = set()
+        for scope, flat, _cited in self._entries:
+            held = folded_fields(scope, flat)
+            if scope == "series_binding" and held is not None and held[1] == wanted[1]:
+                found.add(flat["source_key"])
+        return sorted(found)
 
     def contains(self, candidate: TombstoneValues, *, hash_with: HashWith | None = None) -> bool:
         """True when the candidate matches a tombstone of its scope."""

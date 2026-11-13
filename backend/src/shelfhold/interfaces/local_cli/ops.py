@@ -332,6 +332,13 @@ def _normalize_migrate(ops: OpsServices, by: Principal, p: Params) -> object:
     return ops.normalize.migrate(_text(p, "name"), confirm=_optional(p, "confirm"), principal=by)
 
 
+def _source_migrate_ids(ops: OpsServices, by: Principal, p: Params) -> object:
+    return ops.source_migration.migrate_ids(
+        _text(p, "source_key"), from_scheme=_text(p, "from_scheme"),
+        to_scheme=_text(p, "to_scheme"), confirm=_optional(p, "confirm"), principal=by,
+    )  # fmt: skip
+
+
 def _content_reneutralize(ops: OpsServices, _by: Principal, p: Params) -> object:
     return ops.content.reneutralize(confirm=_optional(p, "confirm"))
 
@@ -703,6 +710,7 @@ OPS_METHODS: Mapping[str, tuple[OpsMethod, str | None]] = {
     "ops.revisions_apply": (_revisions_apply, "revisions.apply"),
     "ops.revisions_force": (_revisions_force, "revisions.force"),
     "ops.normalize_migrate": (_normalize_migrate, "normalize.migrate"),
+    "ops.source_migrate_ids": (_source_migrate_ids, "source.migrate_ids"),
     "ops.content_reneutralize": (_content_reneutralize, None),
     "ops.meta_rebuild": (_meta_rebuild, None),
     "ops.meta_check": (_meta_check, None),

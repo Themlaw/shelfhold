@@ -162,6 +162,7 @@ CLOSED = (
     # a merge of contributors proposes: reserved to a fresh admin session
     "POST /api/v1/works/merge",
     "POST /api/v1/works/merges/{merge_id}/separate",
+    "POST /api/v1/sources/{source_key}/migrate-ids",  # M3 L27: reserved
     "POST /api/v1/series-reassignments",
     "POST /api/v1/works/{work_id}/series",
     "POST /api/v1/editions/merge",
