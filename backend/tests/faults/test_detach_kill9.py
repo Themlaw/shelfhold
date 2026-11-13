@@ -14,6 +14,7 @@ import pytest
 from shelfhold.export.application.detach import DETACH_SCOPE, FullDetacher
 from shelfhold.export.application.intents import IntentJournal, open_intent_paths
 from shelfhold.export.domain.physical_roots import RESERVED_DIR, SENTINEL_FILE
+from shelfhold.export.targets.kavita.settings_restore import restore_library_settings
 from shelfhold.infrastructure.fsops import Fsops
 from tests.intents_env import make_intent_env
 from tests.purge_env import ADMIN
@@ -97,8 +98,9 @@ def test_kill9_at_each_stage_of_the_erasure_of_a_reserved_folder(
     journal = IntentJournal(ienv.engine, fsops, clock=ienv.clock)
     journal.resolve_open()
     detacher = FullDetacher(
-        ienv.engine, fsops, journal, clock=ienv.clock, roots=lambda _local: None
-    )
+        ienv.engine, fsops, journal, clock=ienv.clock, roots=lambda _local: None,
+        restore=restore_library_settings,
+    )  # fmt: skip
     report = detacher.settle(TARGET, resume=False, principal=ADMIN)
     with ienv.engine.connect() as conn:
         assert open_intent_paths(conn) == frozenset()  # nothing is left half-done
