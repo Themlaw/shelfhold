@@ -257,3 +257,42 @@ def test_thumbnail_route_is_in_the_openapi_document(world: World) -> None:
     path = document["paths"]["/api/v1/thumbnails/{content_hash}/{size}"]
     assert set(path) == {"get"}
     assert {"200", "304", "404"} <= set(path["get"]["responses"])
+
+
+@pytest.mark.req("EF-BIB-020", "ENF-SEC-003")
+def test_thumbnail_requests_that_give_up_waiting_get_the_cover_uncached(
+    world: World, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Many ask for one uncached thumbnail while the worker is slow: one decode, one answer with
+    the tag and the day of caching, the others the verified cover itself, with no tag and nothing
+    kept, so that no request thread is held for the decode and none is told a half answer."""
+    import threading
+    import time
+
+    from shelfhold.infrastructure import imaging
+
+    real = imaging.make_thumbnail
+    monkeypatch.setattr(
+        "shelfhold.library.application.thumbnails.make_thumbnail",
+        lambda *a, **k: (time.sleep(0.8), real(*a, **k))[1],
+    )
+    digest = world.digests["ok"]
+    answers: list[Any] = []
+
+    def one() -> None:
+        answers.append(world.admin.get(url(digest, 160)))
+
+    threads = [threading.Thread(target=one) for _ in range(5)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(30)
+    assert [a.status_code for a in answers] == [200] * 5
+    made = [a for a in answers if "etag" in a.headers]
+    shown = [a for a in answers if "etag" not in a.headers]
+    assert len(made) == 1 and made[0].headers["cache-control"] == CACHE
+    assert len(shown) == 4
+    source = (world.env.settings.data_dir / "covers" / f"{digest}.webp").read_bytes()
+    assert all(a.content == source and a.headers["cache-control"] == "no-store" for a in shown)
+    assert all("cookie" in a.headers["vary"].lower() for a in shown)
+    assert world.admin.get(url(digest, 160)).headers["etag"] == made[0].headers["etag"]

@@ -296,19 +296,21 @@ def test_gc_deletes_only_inside_the_thumbnail_folder(rig: Rig) -> None:
 def test_gc_removes_stray_files_after_a_grace_and_rows_without_a_file(rig: Rig) -> None:
     digest = rig.cover("ok", (60, 60, 60))
     rig.service.get(digest, 160)
-    folder = rig.data / "thumbnails" / "zz"
-    folder.mkdir(parents=True)
-    old, young = folder / f"{'1' * 64}-160.webp", folder / f"{'2' * 64}-160.webp"
+    old_folder = rig.data / "thumbnails" / "11"
+    young_folder = rig.data / "thumbnails" / "22"
+    old_folder.mkdir(parents=True)
+    young_folder.mkdir(parents=True)
+    old, young = old_folder / f"{'1' * 64}-160.webp", young_folder / f"{'2' * 64}-160.webp"
     old.write_bytes(b"x")
     young.write_bytes(b"x")
     before = (rig.clock.now() - timedelta(days=3)).timestamp()
     os.utime(old, (before, before))
     os.utime(young, None)
-    (rig.data / "thumbnails" / "zz" / "notes.txt").write_text("not a thumbnail")
+    (old_folder / "notes.txt").write_text("not a thumbnail")
     kept = next(p for p in thumbnail_files(rig.data) if digest in p.name)
     kept.unlink()  # the row is left with no file: it is dropped, and made again on demand
     result = rig.service.collect({digest}, closing=lambda: False)
     assert not old.exists() and young.exists()  # a file just written may be a generation in flight
-    assert (folder / "notes.txt").exists()  # a name that is not a thumbnail's is not ours
+    assert (old_folder / "notes.txt").exists()  # a name that is not a thumbnail's is not ours
     assert result.files == 1 and rig.rows() == []
     assert rig.service.get(digest, 160) is not None  # made again

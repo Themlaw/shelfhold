@@ -149,6 +149,7 @@ from shelfhold.library.application.reneutralize import (
 from shelfhold.library.application.thumbnails import (
     CACHE_CONTROL,
     Collected,
+    Pending,
     Thumb,
     ThumbnailService,
     cover_hash,
@@ -350,6 +351,7 @@ __all__ = [
     "OwnExport",
     "PassthroughStore",
     "PdfStore",
+    "Pending",
     "PinnedCopy",
     "PlaceRef",
     "PurgeAuthorization",

@@ -28,7 +28,13 @@ from shelfhold.catalog.public import cover_ref_visible
 from shelfhold.identity.public import Principal, reader_scope
 from shelfhold.interfaces.http_api.auth import require_session
 from shelfhold.interfaces.http_api.problems import ProblemError
-from shelfhold.library.public import CACHE_CONTROL, THUMBNAIL_SIZES, ThumbnailService, etag_of
+from shelfhold.library.public import (
+    CACHE_CONTROL,
+    THUMBNAIL_SIZES,
+    Pending,
+    ThumbnailService,
+    etag_of,
+)
 
 __all__ = ["build_thumbnails_router"]
 
@@ -86,7 +92,18 @@ def build_thumbnails_router(
         tag = etag_of(content_hash, width)
         if _matches(request.headers.get("if-none-match"), tag):
             return Response(status_code=304, headers={**_HEADERS, "ETag": tag})
-        made = get_service().get(content_hash, width)
+        service = get_service()
+        try:
+            made = service.get(content_hash, width)
+        except Pending:  # being made: no thread is held for it. The cover itself, never cached
+            shown = service.fallback(content_hash)
+            if shown is None:
+                raise _absent() from None
+            return Response(
+                shown, media_type="image/webp",
+                headers={"Cache-Control": "no-store", "Vary": "Cookie",
+                         "X-Content-Type-Options": "nosniff"},
+            )  # fmt: skip
         if made is None:
             raise _absent()
         return Response(made.data, media_type="image/webp", headers={**_HEADERS, "ETag": made.etag})

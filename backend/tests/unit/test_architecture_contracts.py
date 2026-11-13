@@ -431,7 +431,6 @@ WRITERS_ALLOWED = (
     "shelfhold/infrastructure/held_files.py",  # /data/integrity/held: a repair's working copy
     "shelfhold/infrastructure/secrets/atomic.py",  # keyring and export file, owner-only
     "shelfhold/infrastructure/cover_store.py",  # /data/covers: covers the decode worker re-encoded
-    "shelfhold/library/application/thumbnails.py",  # /data/thumbnails: derived cache (L24)
     "shelfhold/plugin_host/install.py",  # /data/plugins: staging, site-packages, state file
     "shelfhold/infrastructure/local_socket/server.py",  # the CLI socket (and staging dir), /data
     "shelfhold/docgen/release_assets.py",  # release tooling: two files in a directory it is given

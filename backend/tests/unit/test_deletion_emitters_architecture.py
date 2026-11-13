@@ -173,7 +173,6 @@ EXPECTED_CLOSED = {
         "shelfhold/infrastructure/local_socket/server.py::bind_private",
         "shelfhold/plugin_host/install.py::install_wheel",
         "shelfhold/plugin_host/install.py::remove_plugin",
-        "shelfhold/library/application/thumbnails.py::ThumbnailService._remove",
         "shelfhold/plugin_host/install.py::_undo",
         f"{FSOPS}/probe.py::_remove_probe_dir",
         f"{FSOPS}/facade.py::Fsops.same_path_discard",  # L16: the staged copy, never served

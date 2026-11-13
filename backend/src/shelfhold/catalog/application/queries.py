@@ -215,6 +215,14 @@ def visible_edition_ids(
     return found
 
 
+# Literals, not bound parameters: the partial index `ix_metadata_field_edition_cover` is used only
+# when the planner sees the very condition it was built with.
+_COVER_FIELD_ROWS = (
+    catalog.metadata_field.c.entity_type == sa.literal_column("'edition'"),
+    catalog.metadata_field.c.field == sa.literal_column(f"'{COVER_FIELD}'"),
+)
+
+
 def cover_ref_visible(connection: sa.Connection, scope: ReaderScope, ref: str) -> bool:
     """Whether an Edition this reader may see has `ref` as its cover (the `cover` field). Absent,
     unreferenced and hidden are the same answer: False."""
@@ -226,8 +234,7 @@ def cover_ref_visible(connection: sa.Connection, scope: ReaderScope, ref: str) -
                 catalog.metadata_field.join(catalog.edition, edition.id == field.entity_id)
             )
             .where(
-                field.entity_type == "edition",
-                field.field == COVER_FIELD,
+                *_COVER_FIELD_ROWS,
                 field.value == encode_value(ref),
                 visible_editions_clause(scope),
             )
@@ -244,7 +251,7 @@ def referenced_cover_refs(connection: sa.Connection) -> set[str]:
     rows = connection.execute(
         sa.select(field.value)
         .select_from(catalog.metadata_field.join(catalog.edition, edition.id == field.entity_id))
-        .where(field.entity_type == "edition", field.field == COVER_FIELD)
+        .where(*_COVER_FIELD_ROWS)
         .distinct()
     )
     found: set[str] = set()
