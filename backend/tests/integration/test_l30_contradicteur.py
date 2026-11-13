@@ -111,11 +111,12 @@ def test_remove_destination_refused_while_an_export_holds_a_series_of_it(d: Deta
     locks = ResourceLocks(d.env.engine, clock=d.env.clock)
     d.remover._locks = locks  # le câblage de production (ops/detach.py) en donne un
     dest = d.env.destination_id
-    with locks.hold(new_ulid(), work=new_ulid(), series=f"{dest}/{_series_folder(d)}"):
-        with pytest.raises(RemovalRefusedError) as refused:
-            d.remover.apply(
-                dest, RemovalMode.DELETE_FILES, principal=ADMIN, typed=removal_phrase(dest)
-            )
+    series = f"{dest}/{_series_folder(d)}"
+    with (
+        locks.hold(new_ulid(), work=new_ulid(), series=series),
+        pytest.raises(RemovalRefusedError) as refused,
+    ):
+        d.remover.apply(dest, RemovalMode.DELETE_FILES, principal=ADMIN, typed=removal_phrase(dest))
     assert refused.value.reason == "busy"
 
 
@@ -124,9 +125,12 @@ def test_detach_refused_while_an_export_holds_a_series_of_the_target(d: DetachEn
     locks = ResourceLocks(d.env.engine, clock=d.env.clock)
     d.detacher._locks = locks
     dest = d.env.destination_id
-    with locks.hold(new_ulid(), work=new_ulid(), series=f"{dest}/{_series_folder(d)}"):
-        with pytest.raises(DetachRefusedError) as refused:
-            _detach(d, KavitaLikeRevoker())
+    series = f"{dest}/{_series_folder(d)}"
+    with (
+        locks.hold(new_ulid(), work=new_ulid(), series=series),
+        pytest.raises(DetachRefusedError) as refused,
+    ):
+        _detach(d, KavitaLikeRevoker())
     assert refused.value.reason == "busy"
 
 
