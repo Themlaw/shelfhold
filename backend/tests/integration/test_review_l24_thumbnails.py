@@ -23,6 +23,7 @@ from shelfhold.catalog.public import cover_ref_visible
 from shelfhold.identity.public import reader_scope
 from shelfhold.infrastructure import imaging
 from shelfhold.infrastructure.schema import storage
+from shelfhold.library.application.thumbnails import Pending, ThumbnailService
 from tests.integration import test_thumbnails as service_tests
 from tests.integration import test_thumbnails_http as http_tests
 from tests.integration.test_thumbnails import Rig
@@ -30,6 +31,9 @@ from tests.integration.test_thumbnails_http import World, url
 
 rig = service_tests.rig  # the fixtures of the PR's own tests, reused as they are
 world = http_tests.world
+
+
+MAX_HELD = 8  # threads the decodes may hold of the server's 40: the rest answer at once
 
 
 def _slow_worker(monkeypatch: pytest.MonkeyPatch, delay: float) -> list[int]:
@@ -91,6 +95,77 @@ def test_review_uncached_screen_does_not_stall_the_api(
         thread.join(60)
     assert probe.status_code == 200
     assert waited < 0.3, f"/healthz waited {waited:.1f} s behind the thumbnail decodes"
+
+
+@pytest.fixture
+def one_connection(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The database pool reduced to a single connection that nobody waits long for: whatever asks
+    a second one while it holds the first is caught at once, not after the pool's 30 s."""
+    real = sa.create_engine
+    monkeypatch.setattr(
+        "shelfhold.infrastructure.db.create_engine",
+        lambda *args, **kwargs: real(*args, pool_size=1, max_overflow=0, pool_timeout=2, **kwargs),
+    )
+
+
+@pytest.mark.req("EF-BIB-020", "ENF-OPS-003")
+def test_review_healthz_never_holds_a_connection_while_asking_for_another(
+    one_connection: None, world: World
+) -> None:
+    """`/healthz` of a session read the queues with one connection held and the readers of the
+    waits opening a second one: sixteen probes at once (the pool is 5 + 10) emptied the pool and
+    every one of them, with the thumbnails behind them, waited for the pool's timeout."""
+    started = time.perf_counter()
+    probe = world.admin.get("/healthz")
+    assert probe.status_code == 200, probe.text
+    assert time.perf_counter() - started < 1.5, "/healthz waited for a connection of its own pool"
+
+
+@pytest.mark.req("EF-BIB-020", "ENF-SEC-003")
+def test_review_uncached_screen_holds_only_a_few_request_threads(
+    rig: Rig, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The proof the timing test cannot give on a slow runner: however many requests ask for an
+    uncached cover, only a handful of threads may be held by the decodes (a leader per slot, a few
+    waiters); every other request answers at once. The server's pool is 40 threads shared with the
+    synchronous routes: the probe never waits behind a queue that the decodes keep refilled."""
+    release, entered = threading.Event(), threading.Event()
+    real = imaging.make_thumbnail
+
+    def blocked(*args: Any, **kwargs: Any) -> Any:
+        entered.set()
+        release.wait(30)
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr("shelfhold.library.application.thumbnails.make_thumbnail", blocked)
+    service = ThumbnailService(
+        rig.engine, rig.data, rig.clock, limits=service_tests.LIMITS, wait=30
+    )
+    digest = rig.cover("ok", (30, 70, 10))
+    answers: list[str] = []
+
+    def ask(size: int) -> None:
+        try:
+            service.get(digest, size)
+            answers.append("made")
+        except Pending:
+            answers.append("pending")
+
+    threads = [
+        threading.Thread(target=ask, args=((160, 320, 640)[i % 3],), daemon=True) for i in range(60)
+    ]
+    for thread in threads:
+        thread.start()
+    try:
+        assert entered.wait(10)
+        time.sleep(1.0)  # the requests that answer at once are long gone
+        held = sum(thread.is_alive() for thread in threads)
+        assert held <= MAX_HELD, f"{held} of 60 request threads are held behind the decodes"
+        assert answers.count("pending") >= 60 - MAX_HELD
+    finally:
+        release.set()
+        for thread in threads:
+            thread.join(30)
 
 
 def _outside(made: Rig) -> Path:
