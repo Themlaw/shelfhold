@@ -187,7 +187,7 @@ def test_no_translation_call_in_exporters() -> None:
         for path in (SRC / folder).rglob("*.py"):
             for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
                 call = isinstance(node, ast.Call)
-                if call and isinstance(node.func, ast.Name) and node.func.id == "t":
+                if call and isinstance(node.func, ast.Name) and node.func.id in ("t", "t_lang"):
                     offenders.append(f"{path.name}:{node.lineno}")
     assert offenders == []
 

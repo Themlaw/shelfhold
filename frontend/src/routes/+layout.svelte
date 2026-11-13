@@ -2,6 +2,7 @@
   import Footer from '#lib/components/Footer.svelte';
   import Nav from '#lib/components/Nav.svelte';
   import { applyAppearance } from '#lib/themes/index.ts';
+  import { detectLanguage, setUiLanguage } from '#lib/i18n/index.ts';
   import '#lib/themes/base.css';
   import '#lib/themes/themes.css';
   import './global.css';
@@ -12,6 +13,8 @@
   // server (another device may have changed it) applies here, once the screen has its data.
   $effect(() => {
     if (data.appearance) applyAppearance(document.documentElement, data.appearance);
+    // the language of the interface: the profile preference, else the browser languages
+    setUiLanguage(data.language ?? detectLanguage(navigator.languages));
   });
 </script>
 

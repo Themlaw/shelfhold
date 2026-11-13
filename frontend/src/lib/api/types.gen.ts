@@ -2330,13 +2330,19 @@ export type PrecreatedOut = {
 /**
  * PreferencesIn
  *
- * Only what is named is changed; `theme: null` goes back to the instance default.
+ * Only what is named is changed; `theme: null` goes back to the instance default. An
+ * explicit `language: null` is refused: a language is a choice, the default is already the
+ * profile's (ENF-I18N-001).
  */
 export type PreferencesIn = {
     /**
      * Color Scheme
      */
     color_scheme?: 'auto' | 'light' | 'dark';
+    /**
+     * Language
+     */
+    language?: 'fr' | 'en';
     /**
      * Theme
      */
@@ -2355,6 +2361,10 @@ export type PreferencesOut = {
      * Color Scheme
      */
     color_scheme: 'auto' | 'light' | 'dark';
+    /**
+     * Language
+     */
+    language: 'fr' | 'en';
     /**
      * Theme
      */

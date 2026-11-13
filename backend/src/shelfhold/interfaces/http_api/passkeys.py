@@ -13,7 +13,7 @@ from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel, Field
 
-from shelfhold.i18n import t
+from shelfhold.i18n import t_lang
 from shelfhold.identity.public import (
     CHALLENGE_TTL,
     RESERVED_ACTIONS,
@@ -39,7 +39,7 @@ from shelfhold.interfaces.http_api.auth import (
     set_session_cookies,
 )
 from shelfhold.interfaces.http_api.login import CsrfToken, _client_ip, _throttled, passkey_script
-from shelfhold.interfaces.http_api.problems import ProblemError
+from shelfhold.interfaces.http_api.problems import ProblemError, language_of
 
 # Fresh proof in the hardened profile only (P3, review PR #95); API keys never.
 _REGISTER = reserved_action(RESERVED_ACTIONS["passkey.register"])
@@ -93,19 +93,19 @@ def _item(record: PasskeyRecord) -> PasskeyItem:
     )
 
 
-def _why(reason: str) -> str:
+def _why(reason: str, language: str) -> str:
     messages = {
-        "no_public_url": t("passkeys.unavailable.no_public_url"),
-        "invalid_url": t("passkeys.unavailable.invalid_url"),
-        "insecure_context": t("passkeys.unavailable.insecure_context"),
-        "ip_host": t("passkeys.unavailable.ip_host"),
-        "restore_pending": t("passkeys.unavailable.restore_pending"),
+        "no_public_url": t_lang("passkeys.unavailable.no_public_url", language=language),
+        "invalid_url": t_lang("passkeys.unavailable.invalid_url", language=language),
+        "insecure_context": t_lang("passkeys.unavailable.insecure_context", language=language),
+        "ip_host": t_lang("passkeys.unavailable.ip_host", language=language),
+        "restore_pending": t_lang("passkeys.unavailable.restore_pending", language=language),
     }
     return messages.get(reason, messages["no_public_url"])
 
 
-def _unavailable(error: PasskeyUnavailableError) -> ProblemError:
-    return ProblemError("passkey_unavailable", detail=_why(error.reason))
+def _unavailable(error: PasskeyUnavailableError, language: str) -> ProblemError:
+    return ProblemError("passkey_unavailable", detail=_why(error.reason, language))
 
 
 def build_passkeys_router() -> APIRouter:
@@ -128,7 +128,7 @@ def build_passkeys_router() -> APIRouter:
     ) -> PasskeyList:
         auth = gate_of(request).auth
         status = auth.passkey_status()
-        reason = _why(status.reason) if status.reason else None
+        reason = _why(status.reason, language_of(request)) if status.reason else None
         return PasskeyList(
             available=status.available,
             reason=reason,
@@ -143,7 +143,7 @@ def build_passkeys_router() -> APIRouter:
         try:
             issued = gate_of(request).auth.passkey_registration_options(principal)
         except PasskeyUnavailableError as error:
-            raise _unavailable(error) from None
+            raise _unavailable(error, language_of(request)) from None
         except PasskeyRefusedError:
             raise ProblemError("passkey_refused") from None
         return JSONResponse(
@@ -161,7 +161,7 @@ def build_passkeys_router() -> APIRouter:
                 principal, body.flow, body.credential, body.name
             )
         except PasskeyUnavailableError as error:
-            raise _unavailable(error) from None
+            raise _unavailable(error, language_of(request)) from None
         except PasskeyRefusedError:
             raise ProblemError("passkey_refused") from None
         return _item(record)
@@ -187,7 +187,7 @@ def build_passkeys_router() -> APIRouter:
         try:
             issued = gate_of(request).auth.passkey_reauth_options(principal)
         except PasskeyUnavailableError as error:
-            raise _unavailable(error) from None
+            raise _unavailable(error, language_of(request)) from None
         return JSONResponse(
             {"flow": issued.flow, "options": issued.options}, headers={"Cache-Control": "no-store"}
         )
@@ -198,7 +198,7 @@ def build_passkeys_router() -> APIRouter:
         try:
             issued = gate.auth.passkey_login_options(ip=_client_ip(request))
         except PasskeyUnavailableError as error:
-            raise _unavailable(error) from None
+            raise _unavailable(error, language_of(request)) from None
         except ThrottledError as error:
             raise _throttled(error) from None
         response = JSONResponse(
@@ -229,7 +229,7 @@ def build_passkeys_router() -> APIRouter:
                 user_agent=request.headers.get("user-agent"),
             )
         except PasskeyUnavailableError as error:
-            raise _unavailable(error) from None
+            raise _unavailable(error, language_of(request)) from None
         except ThrottledError as error:
             raise _throttled(error) from None
         except InvalidCredentialsError:

@@ -117,6 +117,9 @@ jobs:
       - name: import-linter
         working-directory: backend
         run: uv run --locked lint-imports --config importlinter.ini
+      - name: i18n parity (missing key = failure, ENF-I18N-001)
+        working-directory: backend
+        run: uv run --locked python ../tools/i18n_parity.py
       - name: typos
         id: typos-first
         continue-on-error: true  # the action downloads its binary from a release: one more try below

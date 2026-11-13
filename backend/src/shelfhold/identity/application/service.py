@@ -531,6 +531,7 @@ class LocalAuth:
             session_id=session_id,
             auth_time=now,
             can_rate=user.can_rate,
+            locale=user.locale,
         )
         return IssuedSession(
             token=token,
@@ -620,6 +621,7 @@ class LocalAuth:
             session_id=record.id,
             auth_time=record.auth_time,
             can_rate=record.user.can_rate,
+            locale=record.user.locale,
         )
         max_age = _seconds(min(policy.idle, expiry - now)) if record.remember else None
         return SessionAuth(
@@ -1066,6 +1068,7 @@ class LocalAuth:
             scopes=record.scopes,
             read_only=record.read_only,
             can_rate=acts_as.can_rate and "admin" in record.scopes,
+            locale=acts_as.locale,
         )
 
     def authenticate_forward(self, username: str) -> Principal | None:
@@ -1083,6 +1086,7 @@ class LocalAuth:
             credential=Credential.SESSION,
             via_forward=True,
             can_rate=user.can_rate,
+            locale=user.locale,
         )
 
     # --- reserved actions --------------------------------------------------------------------

@@ -8,6 +8,8 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from enum import StrEnum
 
+from shelfhold.i18n import DEFAULT_LANGUAGE
+
 
 class Credential(StrEnum):
     """The credential axis of the truth table (EF-USR-024). Freshness is a property of a session,
@@ -34,6 +36,7 @@ class Principal:
     via_forward: bool = (
         False  # named by a believed proxy: never fresh, no reserved action (EF-USR-024)
     )
+    locale: str = DEFAULT_LANGUAGE  # the language of the person's profile (ENF-I18N-001)
 
     @property
     def actor_id(self) -> str:

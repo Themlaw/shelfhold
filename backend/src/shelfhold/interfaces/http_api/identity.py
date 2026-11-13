@@ -1,4 +1,5 @@
-"""`/api/v1/me/preferences`: the theme and the colour scheme of the signed-in person (EF-UX-012).
+"""`/api/v1/me/preferences`: the theme, the colour scheme and the language of the signed-in person
+(EF-UX-012, ENF-I18N-001).
 
 They live on the server, on the `user` row, so that another device shows the same UI. A session
 only: a key or a token is a program, it has no appearance. The rules are the application
@@ -28,15 +29,19 @@ class PreferencesOut(BaseModel):
     theme: str  # the theme in effect: the choice, else the instance default
     chosen_theme: str | None  # null: the person has not chosen, the default applies
     color_scheme: Literal["auto", "light", "dark"]
+    language: Literal["fr", "en"]  # the language of the interface (ENF-I18N-001)
 
 
 class PreferencesIn(BaseModel):
-    """Only what is named is changed; `theme: null` goes back to the instance default."""
+    """Only what is named is changed; `theme: null` goes back to the instance default. An
+    explicit `language: null` is refused: a language is a choice, the default is already the
+    profile's (ENF-I18N-001)."""
 
     model_config = ConfigDict(extra="forbid")
 
     theme: Literal["bibliotheque"] | None = None
     color_scheme: Literal["auto", "light", "dark"] = "auto"
+    language: Literal["fr", "en"] = "fr"
 
 
 def _out(preferences: Preferences) -> PreferencesOut:
@@ -44,6 +49,7 @@ def _out(preferences: Preferences) -> PreferencesOut:
         theme=preferences.theme,
         chosen_theme=preferences.chosen_theme,
         color_scheme=preferences.color_scheme,  # type: ignore[arg-type]
+        language=preferences.language,  # type: ignore[arg-type]
     )
 
 

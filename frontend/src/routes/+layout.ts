@@ -1,5 +1,6 @@
 // Pure SPA served by the backend (ADR-0013): no server rendering, no prerendering.
 import { rememberAppearance, sanitize, type Appearance } from '#lib/themes/index.ts';
+import type { Language } from '#lib/i18n/index.ts';
 
 export const ssr = false;
 export const prerender = false;
@@ -13,6 +14,13 @@ async function read(fetcher: Fetch, path: string): Promise<Record<string, unknow
   } catch {
     return null;
   }
+}
+
+/** The language of the interface is a preference of the profile (ENF-I18N-001); nothing set (nobody
+ * signed in, or an unknown value): the browser languages decide (the `Accept-Language`). */
+function language(preferences: Record<string, unknown> | null): Language | null {
+  const value = preferences?.language;
+  return value === 'fr' || value === 'en' ? value : null;
 }
 
 /** What every screen needs: the address of the source (offered to anyone, ENF-LEG-012) and, for
@@ -32,5 +40,5 @@ export async function load({ fetch: fetcher }: { fetch: Fetch }) {
   }
   // The tabs the server offers to the signed-in role (EF-UX-005); nobody signed in: none.
   const nav = Array.isArray(me?.nav) ? me.nav.filter((id): id is string => typeof id === 'string') : [];
-  return { sourceUrl, appearance, nav };
+  return { sourceUrl, appearance, nav, language: language(preferences) };
 }
