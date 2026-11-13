@@ -8,8 +8,9 @@ describe('navigation by role (EF-UX-005)', () => {
   // req: EF-UX-005
   it('test_nav_by_role: the tabs are the ids the server answered, in its order', () => {
     expect(ids(navItems(FAMILY))).toEqual(FAMILY);
-    expect(ids(navItems([...FAMILY, 'activity', 'settings']))).toEqual([
+    expect(ids(navItems([...FAMILY, 'approve', 'activity', 'settings']))).toEqual([
       ...FAMILY,
+      'approve',
       'activity',
       'settings'
     ]);
