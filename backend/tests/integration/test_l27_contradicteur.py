@@ -127,3 +127,50 @@ def test_poc_spellings_of_an_erased_reference_that_the_fold_lets_through(
         victim = live(env, "old-5")
         report = plan(make_ops(env, {"old-5": spelling}))
         assert iid(env, victim) in ids(report, "blocked"), spelling
+
+
+# -- Contre-relecture après correctifs ----------------------------------------------------------
+
+
+@pytest.mark.req("EF-SRC-022", "EF-BIB-054")
+def test_poc_a_source_whose_series_were_all_erased_seals_no_new_form(
+    monkeypatch: pytest.MonkeyPatch, settings: Settings, tmp_path: Path
+) -> None:
+    """The plan asks for the new form of an erased series only for the plugins that still have a
+    `source_item` on that source. A source whose only series was erased has none left: `migrate_ref`
+    is never asked, nothing is sealed, and the new form passes every door."""
+    with seeded(settings, tmp_path / "inst") as env:
+        erased = live(env, GONE)
+        erase(env, monkeypatch, settings, erased)
+        ops = make_ops(env, {GONE: "gone-new"})
+        report = plan(ops)
+        plan(ops, report["fingerprint"])
+        assert gate(env, "gone-new"), "the only series of the source comes back under its new id"
+
+
+@pytest.mark.req("EF-SRC-022", "EF-BIB-054")
+def test_poc_a_cut_between_the_commit_and_the_seal_leaves_nothing_to_rerun(
+    monkeypatch: pytest.MonkeyPatch, settings: Settings, tmp_path: Path
+) -> None:
+    """The seal comes after the commit, outside the transaction. The author says a rerun finishes
+    the job; but the next preview has nothing left to migrate and does not say that forms are still
+    to be sealed (the report carries no `new_forms`): the CLI prints "nothing to do", with no
+    fingerprint, and the new form stays free."""
+    with seeded(settings, tmp_path / "inst") as env:
+        erased = live(env, GONE)
+        erase(env, monkeypatch, settings, erased)
+        clean = live(env, "old-1")
+        ops = make_ops(env, {GONE: "gone-new", "old-1": "new-1"})
+        fingerprint = plan(ops)["fingerprint"]
+
+        def cut(self: SourceMigrationOps, _plan: object) -> None:
+            raise RuntimeError("cut")  # the process dies right after the commit
+
+        monkeypatch.setattr(SourceMigrationOps, "_seal", cut)
+        with pytest.raises(RuntimeError):
+            plan(ops, fingerprint)
+        monkeypatch.undo()
+        assert item_ref(env, clean) == "new-1"  # the commit went through
+        again = plan(ops)
+        said = again["migrate"] + again["blocked"] + again["unresolved"]
+        assert said or again.get("new_forms"), "the rerun says there is nothing to do"
