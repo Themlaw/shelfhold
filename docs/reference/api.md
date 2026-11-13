@@ -34,7 +34,7 @@ Limites, toutes testées : jamais un identifiant d'Œuvre que le lecteur ne voya
 | Statut | Code | Quand | Que faire |
 |---|---|---|---|
 | 400 | `invalid_cursor` | jeton qui ne s'ouvre pas : modifié, tronqué, d'une autre liste, d'une autre instance, d'un ancien format, trop long | ne pas réessayer ce jeton ; recharger la liste |
-| 410 | `resync_required` | jeton plus ancien que la rétention des événements ; instance restaurée (époque ou historique différents, position pas encore émise) ; portée du lecteur changée (plafond, rôle) ; plus de 1000 retraits | recharger la liste (sans `since`), garder le `since` de cette réponse |
+| 410 | `resync_required` | jeton plus ancien que la rétention des événements ; instance restaurée (époque ou historique différents, position pas encore émise) ; portée du lecteur changée (plafond, rôle) ; purge d'une Œuvre (tous les jetons antérieurs) ; plus de 1000 retraits | recharger la liste (sans `since`), garder le `since` de cette réponse |
 | 401 / 403 | | pas de session ; `/shelves` demandée par un non-administrateur | |
 
 La rétention des événements est de 90 jours par défaut (`retention_events_days`) : un client qui ne se synchronise pas pendant plus longtemps recharge la liste.

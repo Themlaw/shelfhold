@@ -650,3 +650,22 @@ def test_an_age_applied_by_an_approved_request_is_tracked_like_a_rating(world: W
     token = world.token("kid")
     assert world.rate(work_id, "13+").status_code == 200
     assert world.removed("kid", token) == [work_id]
+
+
+@pytest.mark.req("EF-INT-001", "EF-BIB-053")
+def test_cutting_the_tokens_moves_the_floor_and_the_head_together(world: World) -> None:
+    from shelfhold.infrastructure.event_sequence import invalidate_tokens
+
+    before = world.token("kid")
+    with world.seed.engine.begin() as connection:
+        head = invalidate_tokens(connection)
+        assert changes.window(connection).head == head == changes.window(connection).floor
+    assert world.get("kid", since=before).status_code == 410  # every earlier token
+    assert world.get("admin", since=before).status_code == 410
+    after = world.token("kid")  # a token issued after is good
+    assert world.removed("kid", after) == []
+    assert world.event_count() >= 0 and world.change_events() == []  # no event names anything
+    with world.seed.engine.begin() as connection:  # a second cut, and a table with no event row
+        connection.execute(sa.delete(platform.event))
+        assert invalidate_tokens(connection) == head + 1
+    assert world.get("kid", since=after).status_code == 410
