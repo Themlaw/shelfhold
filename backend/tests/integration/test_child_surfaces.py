@@ -176,6 +176,9 @@ CLOSED = (
     "GET /api/v1/profiles/{profile_id}/source-policies",
     "PUT /api/v1/profiles/{profile_id}/source-policies/{source_key}",
     "PUT /api/v1/profiles/{profile_id}/family-search",
+    "PUT /api/v1/profiles/{profile_id}/kavita-account",  # M3 L10: reserved, a name, never a token
+    "GET /api/v1/audit/kavita-accounts",  # M3 L10: the audit of the Kavita accounts, the admin's
+    "POST /api/v1/audit/kavita-accounts",
     "PUT /api/v1/profiles/{profile_id}/visibility",
     "POST /api/v1/reconcile/adopt-after-restore",
     "POST /api/v1/reconcile/forget-root",
