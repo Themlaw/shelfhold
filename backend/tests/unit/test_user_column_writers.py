@@ -26,6 +26,8 @@ EXEMPT = {
         "writes `decided_by = NULL`: no user is named",
     "shelfhold/library/tombstones/values.py::_hashes":
         "a `by` that is the version of a hash, not a person",
+    "shelfhold/ops/sheet.py::SheetOps.set_upstream_status":
+        "a `by` that says where the status came from (`manual`), not a person",
 }  # fmt: skip
 
 
