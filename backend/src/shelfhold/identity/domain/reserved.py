@@ -83,6 +83,10 @@ class Effect(StrEnum):
     # `queue pause|resume|cancel|priority|replay` (EF-INT-017): decides what the workers do.
     # Nothing is erased and each command is undone by another: fresh in the hardened profile only
     CONTROLS_QUEUE = "controls_queue"
+    # `sessions revoke-others` (M3 L07): closes every other session of the caller's own account.
+    # Whoever holds one stolen session could lock the owner out of the rest, so it is fresh in
+    # every profile, though any role may do it on its own account
+    ENDS_OWN_SESSIONS = "ends_own_sessions"
 
 
 # P3 (inverted by the PR #43 review): freshness applies by default, so a new `Effect` that nobody

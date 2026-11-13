@@ -21,6 +21,7 @@ from shelfhold.identity.application.ports import (
     PasskeyGoneError,
     PasskeyRecord,
     ProfileRecord,
+    ProofWithdrawnError,
     SessionRecord,
     SourcePolicyRecord,
     UserRecord,
@@ -716,7 +717,8 @@ class SqlIdentityStore:
 
     def reset_credentials(
         self, user_id: str, password_hash: str, *, now: datetime
-    ) -> tuple[int, int]:
+    ) -> tuple[int, int, int]:
+        """`(sessions, passkeys, api keys)` closed with the new password, in one transaction."""
         with self._changing(immediate=True) as conn:
             conn.execute(
                 sa.update(_user).where(_user.c.id == user_id).values(password_hash=password_hash)
@@ -731,17 +733,31 @@ class SqlIdentityStore:
                 .where(_session.c.user_id == user_id, _session.c.revoked_at.is_(None))
                 .values(revoked_at=now)
             ).rowcount
-        return int(sessions), int(passkeys)
+            keys = conn.execute(
+                sa.update(_key)
+                .where(_key.c.user_id == user_id, _key.c.revoked_at.is_(None))
+                .values(revoked_at=now)
+            ).rowcount
+        return int(sessions), int(passkeys), int(keys)
 
     # --- sessions ----------------------------------------------------------------------------
 
     def insert_session(self, session: NewSession) -> None:
+        # the write lock is taken first whenever the proof can be withdrawn meanwhile: a passkey
+        # revoked or a password reset between the check and the insert must not leave a session
+        guarded = session.passkey_id is not None or session.password_hash is not None
         engine = (
             self._engine.execution_options(shelfhold_begin="BEGIN IMMEDIATE")
-            if session.passkey_id
+            if guarded
             else self._engine
         )
         with engine.begin() as conn:
+            if session.password_hash is not None:
+                stored = conn.execute(
+                    sa.select(_user.c.password_hash).where(_user.c.id == session.user_id)
+                ).scalar()
+                if stored != session.password_hash:  # reset (or removed) since it was checked
+                    raise ProofWithdrawnError
             if session.passkey_id:  # the write lock is held: no revocation can come in between
                 live = conn.execute(
                     sa.select(_passkey.c.id).where(
@@ -830,7 +846,7 @@ class SqlIdentityStore:
 
     def live_sessions(self, *, now: datetime, user_id: str | None = None) -> Sequence[SessionView]:
         query = (
-            sa.select(_session, _user.c.username.label("u_username"))
+            sa.select(_session, _user.c.username.label("u_username"), _user.c.role.label("u_role"))
             .join(_user, _user.c.id == _session.c.user_id)
             .where(_session.c.revoked_at.is_(None), _session.c.absolute_expiry > now)
             .order_by(_session.c.last_seen_at.desc(), _session.c.id)
@@ -844,11 +860,13 @@ class SqlIdentityStore:
                 id=row.id,
                 user_id=row.user_id,
                 username=row.u_username,
+                role=row.u_role,
                 device=row.user_agent_label,
                 ip=row.ip,
                 created_at=row.created_at,
                 auth_time=row.auth_time,
                 last_seen_at=row.last_seen_at,
+                absolute_expiry=row.absolute_expiry,
                 remember=row.remember,
             )
             for row in rows
@@ -862,17 +880,6 @@ class SqlIdentityStore:
         )
         with self._changing() as conn:
             return conn.execute(query.values(revoked_at=now)).rowcount > 0
-
-    def revoke_other_sessions(
-        self, user_id: str, *, keep_session_id: str | None, now: datetime
-    ) -> int:
-        query = sa.update(_session).where(
-            _session.c.user_id == user_id, _session.c.revoked_at.is_(None)
-        )
-        if keep_session_id is not None:
-            query = query.where(_session.c.id != keep_session_id)
-        with self._changing() as conn:
-            return conn.execute(query.values(revoked_at=now)).rowcount
 
     # --- API keys ----------------------------------------------------------------------------
 

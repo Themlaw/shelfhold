@@ -125,9 +125,14 @@ def test_revoke_all_other_sessions_keeps_the_current_one(api: AuthEnv) -> None:
     assert len(laptop.get(SESSIONS).json()["items"]) == 1
     assert laptop.get("/api/v1/me").status_code == 200
     audit = db_rows(
-        api.settings, "SELECT actor_id, target FROM audit WHERE action = ?", "auth.sessions_revoked"
+        api.settings, "SELECT target FROM audit WHERE action = ?", "auth.session_revoked"
     )
-    assert audit and all("*" not in str(row[1]) for row in audit[-1:])
+    assert len(audit) == 2 and all(str(row[0]).startswith("01") for row in audit)  # one per session
+    assert _send(api, laptop, "POST", OTHERS).json() == {"revoked": 0}
+    after = db_rows(
+        api.settings, "SELECT target FROM audit WHERE action = ?", "auth.session_revoked"
+    )
+    assert len(after) == 2  # nothing closed, no line
 
 
 @pytest.mark.req("EF-USR-011", "ENF-SEC-010")

@@ -585,13 +585,16 @@ def test_a_crash_after_the_commit_is_adopted_not_revoked(
         key, _kept, _token = _seed(bench)
         auth = local_auth(bench.engine, bench.settings, bench.clock)
         counter = IdentityCounter(bench.settings.data_dir)
+        # M3 L07 (review M1): a reset closes the keys of ITS account, so the reset that crashes is
+        # another profile's; the point stays that adopting the committed counter revokes nothing
+        auth.profile_add("mum", PASSWORD, "member")
 
         def killed(_self: IdentityCounter, _value: int) -> None:
             raise SystemExit("SIGKILL after the commit")
 
         monkeypatch.setattr(IdentityCounter, "publish", killed)
         with pytest.raises(SystemExit):
-            auth.reset_password("admin", NEW_PASSWORD)
+            auth.reset_password("mum", NEW_PASSWORD)
         monkeypatch.undo()
         with bench.engine.connect() as connection:
             number = IdentityCounter.db_value(connection)

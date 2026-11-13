@@ -120,6 +120,9 @@ export type AddDirectlyIn = {
 
 /**
  * AdminSessionItem
+ *
+ * EF-USR-011 asks for the device, `auth_time` and the last activity of every profile, not for
+ * where its members and children connect from: no address in the admin's view (review m3).
  */
 export type AdminSessionItem = {
     /**
@@ -142,10 +145,6 @@ export type AdminSessionItem = {
      * Id
      */
     id: string;
-    /**
-     * Ip
-     */
-    ip: string | null;
     /**
      * Last Seen At
      */

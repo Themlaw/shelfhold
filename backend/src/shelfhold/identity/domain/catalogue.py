@@ -74,6 +74,7 @@ _DECLARED = (
     # and reading the kit that says how to recover. Own sessions are anyone's own and not here
     _action("session.list_all", Effect.MANAGES_CREDENTIALS),
     _action("session.revoke_other", Effect.MANAGES_CREDENTIALS),
+    _action("session.revoke_others", Effect.ENDS_OWN_SESSIONS),  # the caller's own, any role
     _action("recovery_kit.read", Effect.MANAGES_CREDENTIALS),
     # Parental control
     _action("shelf.max_age_rating", Effect.PARENTAL_CONTROL),

@@ -10,14 +10,16 @@
 """
 
 from datetime import datetime
-from typing import Annotated
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse, Response
 from pydantic import BaseModel
 
 from shelfhold.identity.public import (
+    KNOWN_ROLES,
     RESERVED_ACTIONS,
+    NotAllowedError,
     Principal,
     SessionView,
     UnknownSessionError,
@@ -29,20 +31,25 @@ from shelfhold.interfaces.http_api.problems import ProblemError
 
 SESSIONS_PATH = "/api/v1/auth/sessions"
 ADMIN_SESSIONS_PATH = "/api/v1/admin/sessions"
+REVOKE_OTHERS_PATH = f"{SESSIONS_PATH}/revoke-others"
 RECOVERY_KIT_PATH = "/api/v1/admin/recovery-kit"
 
 _LIST_ALL = reserved_action(RESERVED_ACTIONS["session.list_all"])
-_REVOKE_OTHER = reserved_action(RESERVED_ACTIONS["session.revoke_other"])
+# the service writes the line of a revocation, with the account and only when one was closed
+_REVOKE_OTHER = reserved_action(RESERVED_ACTIONS["session.revoke_other"], audit=False)
+# any role, on its own account; fresh in every profile; one audit line per session, by the service
+_REVOKE_OTHERS = reserved_action(
+    RESERVED_ACTIONS["session.revoke_others"], roles=KNOWN_ROLES, audit=False
+)
 _KIT = reserved_action(RESERVED_ACTIONS["recovery_kit.read"])
 
 KIT_PAGE = render_recovery_kit()  # static: the same bytes every time
 KIT_CSP = hash_csp(KIT_PAGE)  # its one inline style by hash, nothing else (ENF-SEC-004)
 
 
-class SessionItem(BaseModel):
+class SessionBase(BaseModel):
     id: str
     device: str | None
-    ip: str | None
     created_at: datetime
     auth_time: datetime
     last_seen_at: datetime
@@ -50,7 +57,14 @@ class SessionItem(BaseModel):
     current: bool
 
 
-class AdminSessionItem(SessionItem):
+class SessionItem(SessionBase):
+    ip: str | None  # her own addresses: how she recognises a device that is not hers
+
+
+class AdminSessionItem(SessionBase):
+    """EF-USR-011 asks for the device, `auth_time` and the last activity of every profile, not for
+    where its members and children connect from: no address in the admin's view (review m3)."""
+
     user_id: str
     username: str
 
@@ -65,6 +79,18 @@ class AdminSessionList(BaseModel):
 
 class Revoked(BaseModel):
     revoked: int
+
+
+def _base(view: SessionView, current_id: str | None) -> dict[str, Any]:
+    return dict(
+        id=view.id,
+        device=view.device,
+        created_at=view.created_at,
+        auth_time=view.auth_time,
+        last_seen_at=view.last_seen_at,
+        remember=view.remember,
+        current=view.id == current_id,
+    )
 
 
 def _item(view: SessionView, current_id: str | None) -> SessionItem:
@@ -90,9 +116,9 @@ def build_sessions_router() -> APIRouter:
         views = gate_of(request).auth.sessions_list(principal)
         return SessionList(items=[_item(v, principal.session_id) for v in views])
 
-    @router.post(f"{SESSIONS_PATH}/revoke-others", response_model=Revoked)
+    @router.post(REVOKE_OTHERS_PATH, response_model=Revoked)
     def sessions_revoke_others(
-        request: Request, principal: Annotated[Principal, Depends(require_session)]
+        request: Request, principal: Annotated[Principal, Depends(_REVOKE_OTHERS)]
     ) -> Revoked:
         return Revoked(revoked=gate_of(request).auth.sessions_revoke_others(principal))
 
@@ -112,13 +138,14 @@ def build_sessions_router() -> APIRouter:
     def admin_sessions_list(
         request: Request, principal: Annotated[Principal, Depends(_LIST_ALL)]
     ) -> AdminSessionList:
-        views = gate_of(request).auth.sessions_list_all(principal)
+        try:
+            views = gate_of(request).auth.sessions_list_all(principal)
+        except NotAllowedError:
+            raise ProblemError("forbidden") from None
         return AdminSessionList(
             items=[
                 AdminSessionItem(
-                    **_item(v, principal.session_id).model_dump(),
-                    user_id=v.user_id,
-                    username=v.username,
+                    **_base(v, principal.session_id), user_id=v.user_id, username=v.username
                 )
                 for v in views
             ]
@@ -132,6 +159,8 @@ def build_sessions_router() -> APIRouter:
     ) -> Response:
         try:
             gate_of(request).auth.session_revoke_of_other(principal, session_id)
+        except NotAllowedError:
+            raise ProblemError("forbidden") from None
         except UnknownSessionError:
             raise ProblemError("session_not_found") from None
         return Response(status_code=204)

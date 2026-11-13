@@ -15,7 +15,7 @@ docker compose exec shelfhold shelfhold admin reset-password \
 ```
 
 Le mot de passe vient d'un fichier ou de l'entrée standard (`--password-file -`), jamais de la ligne
-de commande. Toutes les sessions et toutes les clés d'accès (passkeys) de ce compte sont fermées ; les
+de commande. Toutes les sessions, toutes les clés d'accès (passkeys) et toutes les clés d'API de ce compte sont fermées (une clé oubliée sur un appareil perdu ne lit plus) ; les
 autres comptes ne changent pas. L'action est journalisée (sans mot de passe). Aucune route web ne
 fait cela.
 
@@ -23,10 +23,10 @@ fait cela.
 
 Chaque profil voit ses **propres** sessions dans son compte : l'appareil (« Firefox · Linux »,
 jamais l'en-tête brut), la date de la dernière saisie du mot de passe (`auth_time`), la dernière
-activité et l'adresse. Il peut en fermer une, ou fermer toutes les autres d'un coup. Une clé d'API
-ou un jeton d'appareil ne peut ni lister ni fermer une session.
+activité et l'adresse. Il peut en fermer une, ou fermer toutes les autres d'un coup (cette dernière action demande une session récente, comme les autres actions sensibles). Une session inactive depuis plus longtemps que la limite de son rôle n'est plus listée. Une clé d'API
+ou un jeton d'appareil ne peut ni lister ni fermer une session. Ces trois fermetures restent possibles pendant le mode maintenance : elles retirent un accès et n'ouvrent rien d'autre.
 
-L'administrateur voit celles de tous les profils (`/api/v1/admin/sessions`) et peut en fermer une :
+L'administrateur voit celles de tous les profils (`/api/v1/admin/sessions`), avec l'appareil et les dates mais sans les adresses de connexion des autres, et peut en fermer une (l'audit nomme le compte) :
 c'est une **action réservée** (session d'administrateur, jamais une clé ; session fraîche dans le
 profil durci). Depuis l'hôte, `shelfhold admin sessions revoke --all` (ou `--user NOM`, ou un
 identifiant) ferme sans arrêter le serveur : c'est le geste d'un appareil volé.
@@ -40,7 +40,7 @@ pour l'impression). **Imprimez-le et rangez-le hors de l'appareil.** Il dit :
 - la commande de reprise (`admin reset-password`) et celle qui ferme toutes les sessions ;
 - comment continuer à lire dans Kavita sans Shelfhold ;
 - comment suspendre les suivis (mode maintenance) pendant la réparation ;
-- le nom du fichier d'export du trousseau (`keyring.age`), sans son contenu.
+- le nom du fichier d'export du trousseau (`keyring.age` dans la documentation), sans son contenu, avec une ligne pour noter le nom que vous avez réellement choisi.
 
 Le kit **ne contient aucun secret** : ni mot de passe, ni phrase de passe, ni clé du trousseau, ni
 jeton. Le fichier d'export du trousseau se garde dans un autre endroit que la phrase de passe qui

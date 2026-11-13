@@ -187,6 +187,7 @@
         "type": "object"
       },
       "AdminSessionItem": {
+        "description": "EF-USR-011 asks for the device, `auth_time` and the last activity of every profile, not for\nwhere its members and children connect from: no address in the admin's view (review m3).",
         "properties": {
           "auth_time": {
             "format": "date-time",
@@ -217,17 +218,6 @@
             "title": "Id",
             "type": "string"
           },
-          "ip": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Ip"
-          },
           "last_seen_at": {
             "format": "date-time",
             "title": "Last Seen At",
@@ -249,7 +239,6 @@
         "required": [
           "id",
           "device",
-          "ip",
           "created_at",
           "auth_time",
           "last_seen_at",
@@ -4838,12 +4827,12 @@
         "required": [
           "id",
           "device",
-          "ip",
           "created_at",
           "auth_time",
           "last_seen_at",
           "remember",
-          "current"
+          "current",
+          "ip"
         ],
         "title": "SessionItem",
         "type": "object"

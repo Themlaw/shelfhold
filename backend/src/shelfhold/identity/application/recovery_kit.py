@@ -65,7 +65,7 @@ def render_recovery_kit(*, keyring_export_name: str = KEYRING_EXPORT_NAME) -> st
             t("recovery_kit.keyring_title"),
             t("recovery_kit.keyring_body", export=export),
             f"shelfhold secrets export --passphrase-file PHRASE.txt --out {export}",
-            False,
+            True,
         ),
     ]
     for title, body, command, blank in section:

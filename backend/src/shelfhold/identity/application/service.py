@@ -35,6 +35,7 @@ from shelfhold.identity.application.ports import (
     PasskeyRecord,
     PasswordHasherPort,
     ProfileRecord,
+    ProofWithdrawnError,
     ReauthMethod,
     SourcePolicyRecord,
     UserRecord,
@@ -122,6 +123,11 @@ class AdminExistsError(AuthError):
 class LastAdminError(AuthError):
     def __init__(self) -> None:
         super().__init__("last_admin")
+
+
+class NotAllowedError(AuthError):
+    def __init__(self) -> None:
+        super().__init__("not allowed")
 
 
 class UnknownSessionError(AuthError):
@@ -361,7 +367,8 @@ class LocalAuth:
         return pseudonym
 
     def reset_password(self, username: str, password: str, *, by: Principal | None = None) -> int:
-        """New password, and every session of the account closed. Returns the closed count."""
+        """New password; every session, passkey and API key of the account closed. Returns the
+        count of sessions closed."""
         check_password_shape(password)
         user = self._store.user_by_name(username)
         if user is None:
@@ -369,12 +376,14 @@ class LocalAuth:
         # One transaction: the password, the sessions and the passkeys change together, so a
         # passkey sign-in cannot slip between the steps (a lost or stolen device is the usual
         # reason for a reset, ADR-0050: its passkeys go too).
-        closed, revoked = self._store.reset_credentials(
+        closed, revoked, keys = self._store.reset_credentials(
             user.id, self._hasher.hash(password), now=self.now()
         )
         self._audit("user.password_reset", by, target=user.id)
         if revoked:
             self._audit("user.passkeys_revoked", by, target=user.id)
+        if keys:  # a key left on a lost device must not read on after the reset
+            self._audit("user.api_keys_revoked", by, target=user.id)
         return closed
 
     # --- household profiles (M3 L05): see `profiles.py` --------------------------------------
@@ -472,6 +481,7 @@ class LocalAuth:
         ip: str | None,
         passkey_id: str | None = None,
         user_agent: str | None = None,
+        password_hash: str | None = None,
     ) -> IssuedSession:
         now = self.now()
         policy = self._policy(user.role)
@@ -488,6 +498,7 @@ class LocalAuth:
                 remember=remember,
                 ip=ip,
                 passkey_id=passkey_id,
+                password_hash=password_hash,
                 device=device_label(user_agent),
             )
         )
@@ -546,11 +557,18 @@ class LocalAuth:
         self._throttle.release(ip=ip, account=username, at=at, skip_account=known_device)
         if remember and not confirm_remember and not self._policy(user.role).remember_default:
             raise RememberNeedsConfirmationError  # the password was right: nothing is opened
+        checked_hash = user.password_hash
         if self._hasher.needs_rehash(user.password_hash):
-            self._store.set_password_hash(user.id, self._hasher.hash(password))
+            checked_hash = self._hasher.hash(password)
+            self._store.set_password_hash(user.id, checked_hash)
         if presented_token:  # whatever the browser held is closed, never adopted
             self._store.revoke_session_by_token_hash(token_digest(presented_token), now=self.now())
-        issued = self._issue(user, remember=remember, ip=ip, user_agent=user_agent)
+        try:  # the hash is read again under the write lock: a reset between the two refuses
+            issued = self._issue(
+                user, remember=remember, ip=ip, user_agent=user_agent, password_hash=checked_hash
+            )
+        except ProofWithdrawnError:
+            raise self._fail(ip=ip) from None
         self._audit("auth.login", issued.principal)
         if self._device_proof is not None:
             issued = replace(issued, device_proof=self._device_proof.issue(username, self.now()))
@@ -611,13 +629,40 @@ class LocalAuth:
         return closed
 
     # --- the list of sessions and their revocation (M3 L07, EF-USR-011) ----------------------
+    def _live(self, views: Sequence[SessionView]) -> list[SessionView]:
+        """Without the sessions a request would already refuse: idle past the limit of the role,
+        past the absolute cap, or expired (the same rule as `authenticate_session`)."""
+        now = self.now()
+        return [
+            v
+            for v in views
+            if not session_expired(
+                SessionTimes(v.created_at, v.last_seen_at, v.absolute_expiry),
+                self._policy(v.role),
+                now,
+            )
+        ]
+
+    def _require_admin(self, principal: Principal) -> None:
+        """The service refuses a second time (L05, decision 2): an admin session that the database
+        still holds as one, or the host. A key, a token, a member, a child: never."""
+        if principal.is_host:
+            if principal.role == "admin":
+                return
+        elif principal.credential is Credential.SESSION and principal.role == "admin":
+            current = self._store.profile(principal.user_id)
+            if current is not None and current.role == "admin":
+                return
+        raise NotAllowedError
+
     def sessions_list(self, principal: Principal) -> Sequence[SessionView]:
         """The caller's own live sessions: the owner comes from the principal, never a request."""
-        return self._store.live_sessions(now=self.now(), user_id=principal.user_id)
+        return self._live(self._store.live_sessions(now=self.now(), user_id=principal.user_id))
 
     def sessions_list_all(self, principal: Principal) -> Sequence[SessionView]:
         """Every profile's live sessions; the route's reserved-action guard writes the audit."""
-        return self._store.live_sessions(now=self.now())
+        self._require_admin(principal)
+        return self._live(self._store.live_sessions(now=self.now()))
 
     def session_revoke(self, principal: Principal, session_id: str) -> None:
         """Close one session of the caller's own; another profile's is `UnknownSessionError`."""
@@ -626,19 +671,29 @@ class LocalAuth:
         self._audit("auth.session_revoked", principal, target=session_id)
 
     def sessions_revoke_others(self, principal: Principal) -> int:
-        """Close the caller's own sessions but the one in use."""
-        closed = self._store.revoke_other_sessions(
-            principal.user_id, keep_session_id=principal.session_id, now=self.now()
-        )
-        self._audit("auth.sessions_revoked", principal, target=f"own:{closed}")
+        """Close the caller's own live sessions but the one in use; one audit line for each
+        session closed, none when nothing was."""
+        closed = 0
+        for view in self.sessions_list(principal):
+            if view.id == principal.session_id:
+                continue
+            if self._store.revoke_session_of(principal.user_id, view.id, now=self.now()):
+                self._audit("auth.session_revoked", principal, target=view.id)
+                closed += 1
         return closed
 
     def session_revoke_of_other(self, principal: Principal, session_id: str) -> None:
-        """Close any session by its id. The route holds the reserved-action guard; the audit line
-        is the guard's (`session.revoke_other`, with the session and its `auth_time`)."""
-        if not self._store.revoke_sessions(now=self.now(), session_id=session_id):
+        """Close any live session by its id. The audit line names the account it belonged to and
+        is written only when a session was closed (`session.revoke_other`, with the caller's
+        session and `auth_time`)."""
+        self._require_admin(principal)
+        owner = next(
+            (v.user_id for v in self._store.live_sessions(now=self.now()) if v.id == session_id),
+            None,
+        )
+        if owner is None or not self._store.revoke_sessions(now=self.now(), session_id=session_id):
             raise UnknownSessionError
-        self._audit("auth.session_revoked", principal, target=session_id)
+        self._audit("session.revoke_other", principal, target=f"user={owner} session={session_id}")
 
     def reauthenticate(
         self, principal: Principal, method: str, payload: Mapping[str, object], *, ip: str

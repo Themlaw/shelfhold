@@ -53,9 +53,11 @@ class SessionView:
     id: str
     user_id: str
     username: str
+    role: str
     device: str | None
     ip: str | None
     created_at: datetime
     auth_time: datetime
     last_seen_at: datetime
+    absolute_expiry: datetime
     remember: bool

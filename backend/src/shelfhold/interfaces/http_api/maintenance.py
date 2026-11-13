@@ -26,6 +26,11 @@ from shelfhold.interfaces.http_api.catalog import error_code
 from shelfhold.interfaces.http_api.ops import refusals
 from shelfhold.interfaces.http_api.passkeys import PASSKEYS_PATH
 from shelfhold.interfaces.http_api.problems import build_problem_response
+from shelfhold.interfaces.http_api.sessions import (
+    ADMIN_SESSIONS_PATH,
+    REVOKE_OTHERS_PATH,
+    SESSIONS_PATH,
+)
 from shelfhold.interfaces.http_api.stats import require_admin
 from shelfhold.jobs.mode import ACTIVE_CODE
 from shelfhold.ops import OpsServices
@@ -36,8 +41,10 @@ EXIT_PATH = "/api/v1/maintenance/exit"
 LOGOUT_PATH = "/api/v1/auth/logout"
 # What takes an access away is not a write of the library: it stays open, or a stolen session would
 # read on until the exit, which reopens every write first. Sign-out and the removal of a passkey.
-OPEN_PATHS = frozenset({EXIT_PATH, LOGOUT_PATH, *ANONYMOUS_JSON_PATHS})
-OPEN_DELETE_PREFIXES = (f"{PASSKEYS_PATH}/",)
+# The three revocations of L07 (one session, the others, one by the admin) are cuts of access too
+# (L13 B2, review of #210): they reduce rights and nothing else opens with them.
+OPEN_PATHS = frozenset({EXIT_PATH, LOGOUT_PATH, REVOKE_OTHERS_PATH, *ANONYMOUS_JSON_PATHS})
+OPEN_DELETE_PREFIXES = (f"{PASSKEYS_PATH}/", f"{SESSIONS_PATH}/", f"{ADMIN_SESSIONS_PATH}/")
 
 
 def _stays_open(method: str, path: str) -> bool:

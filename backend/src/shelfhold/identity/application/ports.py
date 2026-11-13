@@ -62,6 +62,7 @@ class NewSession:
     remember: bool
     ip: str | None
     passkey_id: str | None = None  # the passkey that opened it: revoking that passkey closes it
+    password_hash: str | None = None  # the hash the sign-in checked: re-read under the lock
     device: str | None = None  # the coarse label of the device (`device_label`), never the header
 
 
@@ -133,7 +134,12 @@ class NewPasskey:
     rp_id: str | None = None
 
 
-class PasskeyGoneError(Exception):
+class ProofWithdrawnError(Exception):
+    """The proof a session was being opened on (a password, a passkey) was withdrawn meanwhile:
+    nothing was written."""
+
+
+class PasskeyGoneError(ProofWithdrawnError):
     """The passkey behind a session being opened was revoked meanwhile: nothing was written."""
 
 
@@ -285,12 +291,6 @@ class IdentityStore(Protocol):
         """One statement on (owner, id): a session of someone else is False, like an unknown one."""
         ...
 
-    def revoke_other_sessions(
-        self, user_id: str, *, keep_session_id: str | None, now: datetime
-    ) -> int:
-        """Every live session of this account but `keep_session_id`; no one else's."""
-        ...
-
     def insert_api_key(self, key: NewApiKey) -> None: ...
     def api_key_by_prefix(self, prefix: str) -> ApiKeyRecord | None: ...
     def api_keys(self) -> Sequence[ApiKeyRecord]: ...
@@ -335,9 +335,9 @@ class IdentityStore(Protocol):
 
     def reset_credentials(
         self, user_id: str, password_hash: str, *, now: datetime
-    ) -> tuple[int, int]:
-        """New password, every session closed, every passkey revoked: one transaction. Returns
-        (sessions closed, passkeys revoked)."""
+    ) -> tuple[int, int, int]:
+        """New password, every session closed, every passkey and API key revoked: one
+        transaction. Returns (sessions closed, passkeys revoked, API keys revoked)."""
         ...
 
     def audit(self, entry: AuditEntry) -> None: ...
