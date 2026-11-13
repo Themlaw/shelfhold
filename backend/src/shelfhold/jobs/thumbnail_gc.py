@@ -40,19 +40,14 @@ def _referenced(engine: sa.Engine) -> set[str]:
     return {digest for ref in refs if (digest := cover_hash(ref)) is not None}
 
 
-def _closing(context: JobContext) -> Callable[[], bool]:
-    def closing() -> bool:
-        over = context.window_end is not None and context.clock.now() >= context.window_end
-        return over or context.stop_requested
-
-    return closing
-
-
 def thumbnail_gc_handler(
     comp: Composition, *, limits: WorkerLimits | None = None
 ) -> Callable[[JobContext], None]:
     def run(context: JobContext) -> None:
-        closing = _closing(context)
+        def closing() -> bool:  # the window closed, or a cancel was asked
+            over = context.window_end is not None and context.clock.now() >= context.window_end
+            return over or context.stop_requested
+
         service = ThumbnailService(
             comp.engine, comp.settings.data_dir, context.clock, limits=limits
         )
@@ -67,7 +62,10 @@ def thumbnail_catchup_handler(
     comp: Composition, *, limits: WorkerLimits | None = None
 ) -> Callable[[JobContext], None]:
     def run(context: JobContext) -> None:
-        closing = _closing(context)
+        def closing() -> bool:  # the window closed, or a cancel was asked
+            over = context.window_end is not None and context.clock.now() >= context.window_end
+            return over or context.stop_requested
+
         service = ThumbnailService(
             comp.engine, comp.settings.data_dir, context.clock, limits=limits
         )
