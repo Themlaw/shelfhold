@@ -34,6 +34,7 @@ import sqlalchemy as sa
 from sqlalchemy import Connection
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
+from shelfhold.infrastructure.requesters import still_a_user
 from shelfhold.infrastructure.schema import coherence, platform
 from shelfhold.jobs.kinds import security_repair_kinds, traits_of
 from shelfhold.jobs.ledger import ACTIVE, CANCEL_PREFIX, PAUSE_PREFIX
@@ -96,6 +97,7 @@ class QueueControl:
 
     def pause(self, conn: Connection, *, source: str | None, at: datetime, by: str | None) -> int:
         """The number of jobs parked now; the pause itself is recorded even when it is 0."""
+        by = still_a_user(conn, by)  # the admin may be gone since: the pause is then nobody's
         value = json.dumps({"since": at.isoformat(), "by": by})
         conn.execute(
             sqlite_insert(app_setting)

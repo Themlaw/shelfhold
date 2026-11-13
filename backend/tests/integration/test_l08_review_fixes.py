@@ -101,7 +101,8 @@ def _target_forms() -> list[str]:
             if isinstance(target, ast.JoinedStr):
                 forms.append(
                     "".join(
-                        v.value if isinstance(v, ast.Constant) else "{ID}" for v in target.values
+                        str(v.value) if isinstance(v, ast.Constant) else "{ID}"
+                        for v in target.values
                     )
                 )
     return forms
@@ -156,13 +157,14 @@ def test_a_ticket_for_a_missing_user_is_written_for_nobody(api: AuthEnv) -> None
         )
     finally:
         engine.dispose()
-    found = dict(
-        db_rows(
+    found: dict[object, object] = {
+        row[0]: row[1]
+        for row in db_rows(
             api.settings,
             "SELECT remote_id, requester_user_id FROM follow_request "
             "WHERE remote_id IN ('late', 'here')",
         )
-    )
+    }
     assert found == {
         "late": None,
         "here": mum,

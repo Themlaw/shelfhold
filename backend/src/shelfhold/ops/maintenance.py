@@ -173,7 +173,7 @@ class MaintenanceOps:
         self, source: str | None, *, principal: Principal, audit: bool = True
     ) -> dict[str, Any]:
         self._authorize(principal, QUEUE)
-        with self._engine.begin() as conn:
+        with self._engine.execution_options(shelfhold_begin="BEGIN IMMEDIATE").begin() as conn:
             parked = self.control.pause(
                 conn, source=source, at=self._clock.now(), by=_user(principal)
             )

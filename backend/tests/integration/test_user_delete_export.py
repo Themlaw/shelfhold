@@ -59,7 +59,7 @@ def _id(env: AuthEnv, username: str) -> str:
 
 
 def _count(env: AuthEnv, sql: str, *params: object) -> int:
-    return int(db_rows(env.settings, sql, *params)[0][0])  # type: ignore[call-overload]
+    return int(str(db_rows(env.settings, sql, *params)[0][0]))
 
 
 def _send(env: AuthEnv, method: str, path: str, client: Any = None) -> Any:
@@ -381,7 +381,7 @@ def test_a_stale_admin_session_must_prove_again_to_export_or_delete(api: AuthEnv
 @pytest.mark.req("EF-USR-013", "EF-USR-024")
 def test_export_is_a_declared_reserved_action_and_a_route_of_the_openapi(api: AuthEnv) -> None:
     assert RESERVED_ACTIONS["profile.export"].effects
-    paths = api.app.openapi()["paths"]
+    paths = api.app.openapi()["paths"]  # type: ignore[attr-defined]
     assert "get" in paths["/api/v1/profiles/{profile_id}/export"]
     assert "delete" in paths["/api/v1/profiles/{profile_id}"]
 

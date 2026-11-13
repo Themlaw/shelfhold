@@ -30,6 +30,7 @@ from shelfhold.events.operating import NOT_NOTIFIED, OPERATING_EVENTS
 from shelfhold.events.waiting_state import WaitingState
 from shelfhold.infrastructure.clock import Clock
 from shelfhold.infrastructure.ids import new_ulid
+from shelfhold.infrastructure.requesters import still_a_user
 from shelfhold.infrastructure.schema import platform
 from shelfhold.sdk.events import EVENT_TYPE
 
@@ -267,6 +268,13 @@ class EventBus:
         check_event_type(event_type)
         data = dict(payload or {})
         check_payload(data, event_type)
+        # a user that is gone since the caller read her is named by nobody: no id of a deleted
+        # user is written after the deletion (M3 L08, EF-USR-013)
+        actor_id = still_a_user(connection, actor_id)
+        for field in USER_FIELDS.get(event_type, ()):
+            named = data.get(field)
+            if isinstance(named, str):
+                data[field] = still_a_user(connection, named)
         if visibility not in VISIBILITIES:
             raise ValueError(f"unknown visibility {visibility!r}")
         now = self._clock.now()
