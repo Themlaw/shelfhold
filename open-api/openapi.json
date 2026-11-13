@@ -2613,13 +2613,13 @@
             "title": "Quiet Start"
           },
           "timezone": {
-            "default": "UTC",
             "title": "Timezone",
             "type": "string"
           }
         },
         "required": [
-          "notify_mode"
+          "notify_mode",
+          "timezone"
         ],
         "title": "NotificationPrefsIn",
         "type": "object"

@@ -1616,7 +1616,7 @@ export type NotificationPrefsIn = {
     /**
      * Timezone
      */
-    timezone?: string;
+    timezone: string;
 };
 
 /**
