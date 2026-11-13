@@ -4,6 +4,7 @@ that leave the waiting states, with the reserved ones refused to every key."""
 
 import json
 import re
+import time
 from datetime import timedelta
 from pathlib import Path
 from types import SimpleNamespace
@@ -23,6 +24,7 @@ from shelfhold.infrastructure.schema import acquisition, export, platform
 from shelfhold.interfaces.cli import _ops as cli_ops
 from shelfhold.interfaces.local_cli import IdentityDispatcher
 from shelfhold.ops import endpoint_of
+from shelfhold.ops.health import HEALTH_CACHE_TTL
 from tests.auth_env import PASSWORD, AuthEnv, auth_env, run_cli
 from tests.export_env import ExportEnv, export_env
 from tests.kavita_export_env import wire
@@ -129,6 +131,12 @@ def test_healthz_reasons_are_for_administrators_and_never_carry_a_title(api: Aut
     anonymous = api.client.get("/healthz").json()
     api.login()
     admin = api.client.get("/healthz").json()
+    deadline = time.monotonic() + HEALTH_CACHE_TTL + 5
+    while not admin.get("paused") and time.monotonic() < deadline:
+        # the shared status was read at startup, before the rows above: it is renewed within
+        # HEALTH_CACHE_TTL (the last value is served meanwhile)
+        time.sleep(0.25)
+        admin = api.client.get("/healthz").json()
     api.client.cookies.clear()
     assert api.login("mum").status_code == 200
     member = api.client.get("/healthz").json()
