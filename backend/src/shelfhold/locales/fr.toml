@@ -899,6 +899,11 @@ title = "La sentinelle de cette racine revendique une identité que le trousseau
 action = "Importez le trousseau (« shelfhold secrets import »), puis relancez la commande ; la racine n'a pas été modifiée."
 cause = "Le fichier sentinelle de la racine désigne une identité que le trousseau de clés de cette instance ne reconnaît pas, le plus souvent après une restauration sans le trousseau."
 
+[errors."ops.audit_running"]
+title = "Un audit des comptes Kavita est déjà en cours : rien n'a été relancé."
+action = "Attendez la fin de l'audit en cours, puis relisez le résultat avec `GET /api/v1/audit/kavita-accounts`."
+cause = "Une seule exécution à la fois : Kavita est lu, pas sollicité en parallèle."
+
 [errors."root.busy"]
 title = "Un export ou un cycle utilise cette racine : la commande n'a rien changé."
 action = "Relancez la commande quand l'export ou le cycle en cours est terminé."

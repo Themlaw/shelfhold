@@ -32,11 +32,13 @@ NO_FAMILY_LIBRARY = "no_family_library"
 UNRESTRICTED = "unrestricted"
 RESTRICTION_ABOVE_MAX_AGE = "restriction_above_max_age"
 INCLUDES_UNKNOWNS = "includes_unknowns"
+ACCOUNT_AMBIGUOUS = "account_ambiguous"
 
 FINDING_CODES = frozenset(
     {
         ACCOUNT_NOT_FOUND, ACCOUNT_IS_ADMIN, NON_FAMILY_LIBRARY, LIBRARY_ABOVE_MAX_AGE,
-        NO_FAMILY_LIBRARY, UNRESTRICTED, RESTRICTION_ABOVE_MAX_AGE, INCLUDES_UNKNOWNS,
+        NO_FAMILY_LIBRARY, ACCOUNT_AMBIGUOUS, UNRESTRICTED, RESTRICTION_ABOVE_MAX_AGE,
+        INCLUDES_UNKNOWNS,
     }
 )  # fmt: skip
 
@@ -86,20 +88,44 @@ def library_ceiling(ceilings: Iterable[int | None]) -> int | None:
     return max(value for value in seen if value is not None)
 
 
+def kavita_name_key(name: str) -> str:
+    """How Kavita compares user names: upper case, character by character (the invariant culture),
+    so "ß" stays "ß" where `casefold` makes it "ss" and finds a second account in a first."""
+    return "".join(c.upper() if len(c.upper()) == 1 else c for c in name)
+
+
+def _find_account(name: str, accounts: Sequence[Account]) -> list[Account]:
+    """The account an exact name designates; else every account Kavita's own comparison confuses
+    with it (zero: absent, several: ambiguous, never the first)."""
+    exact = [a for a in accounts if a.username == name]
+    if exact:
+        return exact
+    key = kavita_name_key(name)
+    return [a for a in accounts if kavita_name_key(a.username) == key]
+
+
 def assess_child(
     child: ChildAccount, accounts: Iterable[Account], libraries: Sequence[LibraryClass]
 ) -> ChildReport:
     if child.kavita_username is None:
         return ChildReport(child.profile_id, UNMAPPED)
-    wanted = child.kavita_username.casefold()
-    account = next((a for a in accounts if a.username.casefold() == wanted), None)
-    if account is None:
+    found = _find_account(child.kavita_username, list(accounts))
+    if not found:
         return ChildReport(child.profile_id, ALERT, (Finding(ACCOUNT_NOT_FOUND),))
+    if len(found) > 1:  # which one the child signs in with is not ours to guess
+        return ChildReport(child.profile_id, ALERT, (Finding(ACCOUNT_AMBIGUOUS),))
+    account = found[0]
     findings: list[Finding] = []
     if account.is_admin:
         findings.append(Finding(ACCOUNT_IS_ADMIN))
     reached = [lib for lib in libraries if reaches(account, lib.ref)]
     findings += [Finding(NON_FAMILY_LIBRARY, str(lib.ref)) for lib in reached if not lib.family]
+    listed = {lib.ref for lib in libraries}  # reached but not listed: unknown, so not family
+    findings += [
+        Finding(NON_FAMILY_LIBRARY, str(ref))
+        for ref in sorted(account.library_ids - listed)
+        if not account.is_admin
+    ]
     family = [lib for lib in reached if lib.family]
     findings += [
         Finding(LIBRARY_ABOVE_MAX_AGE, str(lib.ref))

@@ -916,13 +916,20 @@ def access_audit(comp: Composition) -> Callable[[], None]:
         AccessAuditor(comp.engine, comp.clock, events), connected_clients(comp)
     )
     accounts = ChildAccountsAuditor(comp.engine, comp.clock, events)
-    clients = connected_clients(comp)
 
     def run() -> None:
-        libraries_side()
+        try:
+            libraries_side()
+        except Exception as error:  # the libraries' side must not hide the children's side
+            log.warning("target.access_audit_failed", error=type(error).__name__)
         children = declared_children(child_kavita_accounts(comp.engine))
-        for target_id, client in clients():
-            asyncio.run(accounts.audit(client, target_id, children))  # fails visibly, not clean
+        for target_id in comp.kavita_targets():
+            try:
+                client = comp.kavita_client(target_id)
+            except Exception as error:  # a key that cannot be unsealed: unverified, never "ok"
+                accounts.record_failure(target_id, error)
+                continue
+            asyncio.run(accounts.audit(client, target_id, children))
 
     return run
 

@@ -18,6 +18,7 @@ import hashlib
 import json
 from collections.abc import Sequence
 from dataclasses import dataclass
+from datetime import datetime, timedelta
 from typing import Any
 
 import sqlalchemy as sa
@@ -36,7 +37,7 @@ from shelfhold.export.domain.kavita_child_accounts import (
     assess_child,
     library_ceiling,
 )
-from shelfhold.export.domain.kavita_instance import covering_libraries
+from shelfhold.export.domain.kavita_instance import covering_libraries, library_is_dedicated
 from shelfhold.export.targets.kavita.audit import AccessAuditor, account_of
 from shelfhold.export.targets.kavita.client import KavitaClient
 from shelfhold.infrastructure.clock import Clock
@@ -69,6 +70,13 @@ class AccountsReport:
         return sum(1 for child in self.children if child.status == ALERT)
 
 
+def _inputs(children: Sequence[ChildAccount]) -> str:
+    """What the answer was about: profile, age and declared account. Another value later means
+    the kept answer no longer speaks of this child."""
+    rows = sorted((c.profile_id, c.max_age, c.kavita_username or "") for c in children)
+    return hashlib.sha256(json.dumps(rows).encode()).hexdigest()
+
+
 def _digest(children: Sequence[ChildReport]) -> str:
     """What the admin was told: the findings by profile, so that the same gap is said once."""
     rows = sorted((c.profile_id, f.code, f.library or "") for c in children for f in c.findings)
@@ -88,19 +96,19 @@ class ChildAccountsAuditor:
 
         Any error leaves the report `failed`: the previous digest is kept, so that the same gap
         is not announced again when Kavita answers once more."""
-        try:
+        try:  # the reading AND the comparison: nothing escapes, and an old "ok" never survives
             members = await client.list_users()
             libraries = await client.list_libraries()
+            accounts = [account_of(m) for m in members]
+            classes = self._classes(target_id, libraries)
+            report = AccountsReport(
+                children=tuple(assess_child(child, accounts, classes) for child in children)
+            )
+            digest = _digest(report.children)
+            before = self._state(target_id).get("digest", "")
+            self._save(target_id, report, digest=digest, inputs=_inputs(children))
         except Exception as error:
             return self.record_failure(target_id, error)
-        accounts = [account_of(m) for m in members]
-        classes = self._classes(target_id, libraries)
-        report = AccountsReport(
-            children=tuple(assess_child(child, accounts, classes) for child in children)
-        )
-        digest = _digest(report.children)
-        before = self._state(target_id).get("digest", "")
-        self._save(target_id, report, digest=digest)
         if digest and digest != before:
             self._events.emit(
                 ACCOUNT_AUDIT_EVENT, target_id=target_id, children=len(report.children),
@@ -123,8 +131,16 @@ class ChildAccountsAuditor:
                 ctx = load_context(connection, row.destination_id)
                 root = ctx.remote_folder(ctx.root_local) if ctx.root_local else None
                 covering = covering_libraries(libraries, root) if root else []
+                by_id = {int(lib["id"]): lib for lib in libraries}
                 for library_id in covering or [int(row.remote_ref)]:
-                    ceilings.setdefault(library_id, []).append(ctx.max_age_rating)
+                    library = by_id.get(library_id)
+                    # a library that holds more than the folder of the shelf is no family library
+                    shared = (
+                        library is None or root is None or not library_is_dedicated(library, root)
+                    )
+                    ceilings.setdefault(library_id, []).append(
+                        None if shared else ctx.max_age_rating
+                    )
         return [
             LibraryClass(int(lib["id"]), library_ceiling(ceilings.get(int(lib["id"]), [])))
             for lib in libraries
@@ -135,13 +151,17 @@ class ChildAccountsAuditor:
     def _state(self, target_id: str) -> dict[str, Any]:
         return _load(self._engine, target_id)
 
-    def _save(self, target_id: str, report: AccountsReport, *, digest: str | None) -> None:
+    def _save(
+        self, target_id: str, report: AccountsReport, *, digest: str | None,
+        inputs: str | None = None,
+    ) -> None:  # fmt: skip
         previous = self._state(target_id)
         state: dict[str, Any] = {
             "audited_at": self._clock.now().isoformat(),
             "failed": report.failed,
             "error": report.error,
             "digest": previous.get("digest", "") if digest is None else digest,
+            "inputs": previous.get("inputs", "") if inputs is None else inputs,
             "children": [
                 {
                     "profile_id": c.profile_id,
@@ -178,20 +198,32 @@ def _load(engine: Engine, target_id: str) -> dict[str, Any]:
     return loaded if isinstance(loaded, dict) else {}
 
 
-def health_entry(engine: Engine, target_id: str) -> dict[str, Any]:
+MAX_AGE = timedelta(days=2)  # an audit older than this speaks of nothing: it is to redo
+
+
+def health_entry(
+    engine: Engine, target_id: str, *, children: Sequence[ChildAccount] | None = None,
+    now: datetime | None = None,
+) -> dict[str, Any]:  # fmt: skip
     """The entry of the Health page for the accounts audit (L46 shows it): the state, the counts
     and, by profile identifier, the codes found. No account name, no title."""
     state = _load(engine, target_id)
     if not state:
         return {"state": NEVER_AUDITED, "event": ACCOUNT_AUDIT_EVENT, "alerts": 0, "children": []}
-    children = state.get("children", [])
-    alerts = sum(1 for c in children if c.get("status") == ALERT)
-    verdict = UNVERIFIED if state.get("failed") else ALERT if alerts else OK
+    kept = state.get("children", [])
+    alerts = sum(1 for c in kept if c.get("status") == ALERT)
+    stale = children is not None and state.get("inputs") != _inputs(children)  # changed since
+    if now is not None and not stale:
+        try:
+            stale = now - datetime.fromisoformat(str(state.get("audited_at"))) > MAX_AGE
+        except ValueError:
+            stale = True
+    verdict = UNVERIFIED if state.get("failed") or stale else ALERT if alerts else OK
     return {
         "state": verdict,
         "event": ACCOUNT_AUDIT_EVENT,
         "alerts": alerts,
-        "unmapped": sum(1 for c in children if c.get("status") == UNMAPPED),
+        "unmapped": sum(1 for c in kept if c.get("status") == UNMAPPED),
         "audited_at": state.get("audited_at"),
-        "children": children,
+        "children": kept,
     }

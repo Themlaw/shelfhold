@@ -172,7 +172,7 @@ def open_ops(
         follows=FollowOps(composition), acquire=AcquireOps(composition),
         requests=build_service(composition), roots=RootOps(composition),
         kavita_accounts=KavitaAccountsOps(
-            engine, ChildAccountsAuditor(engine, clock, events),
+            engine, ChildAccountsAuditor(engine, clock, events), clock=clock,
             targets=composition.kavita_targets, client_for=composition.kavita_client,
             children=lambda: child_kavita_accounts(engine),
         ),

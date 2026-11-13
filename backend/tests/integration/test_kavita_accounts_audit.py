@@ -34,6 +34,12 @@ OTHER_LIBRARY = 8  # the second library of the simulated server: no shelf points
 ADULT_ONLY = 18
 
 
+def _wire(env: Any) -> Wired:
+    """The simulated Kavita with its first library dedicated to the shelf: a library over `/manga`
+    holds more than the shelf's folder, and is no family library (L10 review, B1)."""
+    return wire(env)
+
+
 def _child(max_age: int = 10, kavita: str | None = "kid") -> ChildAccount:
     return ChildAccount(profile_id=new_ulid(), max_age=max_age, kavita_username=kavita)
 
@@ -55,7 +61,7 @@ def _sound_account() -> dict[str, Any]:
 @pytest.mark.req("EF-EXP-036")
 def test_kavita_accounts_audit_flags_child_with_adult_library() -> None:
     with export_env(max_age_rating=10) as env:
-        w = wire(env)
+        w = _wire(env)
         w.fake.users.append(
             member(
                 "kid", libraries=(LIBRARY_ID, OTHER_LIBRARY), age_rating=5, include_unknowns=False
@@ -78,7 +84,7 @@ def test_kavita_accounts_audit_flags_child_with_adult_library() -> None:
 @pytest.mark.req("EF-USR-017", "EF-EXP-036")
 def test_declarative_kavita_mapping_audit_compares_max_age() -> None:
     with export_env(max_age_rating=13) as env:  # the library holds up to 13
-        w = wire(env)
+        w = _wire(env)
         w.fake.users.append(_sound_account())
         # the library may hold what a 10 year old must not read
         assert "library_above_max_age" in _codes(_audit(w, _child(10)))
@@ -105,7 +111,7 @@ def test_declarative_kavita_mapping_audit_compares_max_age() -> None:
 @pytest.mark.req("EF-EXP-036")
 def test_child_without_family_library_flagged() -> None:
     with export_env(max_age_rating=10) as env:
-        w = wire(env)
+        w = _wire(env)
         w.fake.users.append(
             member("kid", libraries=(OTHER_LIBRARY,), age_rating=5, include_unknowns=False)
         )
@@ -122,7 +128,7 @@ def test_child_without_family_library_flagged() -> None:
 @pytest.mark.req("EF-USR-017")
 def test_child_without_mapping_is_reported_unmapped_and_never_guessed() -> None:
     with export_env(max_age_rating=10) as env:
-        w = wire(env)
+        w = _wire(env)
         w.fake.users.append(member("kid", libraries=(OTHER_LIBRARY,)))  # alarming, but not mapped
         report = _audit(w, _child(10, kavita=None))
         assert report.children[0].status == "unmapped" and report.children[0].findings == ()
@@ -132,7 +138,7 @@ def test_child_without_mapping_is_reported_unmapped_and_never_guessed() -> None:
 @pytest.mark.req("EF-EXP-036")
 def test_audit_never_writes_to_kavita() -> None:
     with export_env(max_age_rating=10) as env:
-        w = wire(env)
+        w = _wire(env)
         w.fake.users.append(member("kid", libraries=(LIBRARY_ID, OTHER_LIBRARY)))
         _audit(w, _child(10), _child(7, "ghost"), _child(7, None))
         _audit(w, _child(10))  # twice: still nothing
@@ -146,7 +152,7 @@ def test_audit_never_writes_to_kavita() -> None:
 @pytest.mark.req("EF-EXP-036")
 def test_account_audit_is_notified_once_and_names_no_one() -> None:
     with export_env(max_age_rating=10) as env:
-        w = wire(env)
+        w = _wire(env)
         w.fake.users.append(member("kid", libraries=(OTHER_LIBRARY,), include_unknowns=False))
         child = _child(10)
         _audit(w, child)
@@ -168,7 +174,7 @@ def test_account_audit_is_notified_once_and_names_no_one() -> None:
 @pytest.mark.req("EF-EXP-036")
 def test_account_audit_that_cannot_read_kavita_fails_visibly_not_clean() -> None:
     with export_env(max_age_rating=10) as env:
-        w = wire(env)
+        w = _wire(env)
         w.fake.users.append(_sound_account())
         w.fake.missing.add(("GET", "/api/users"))
         report = _audit(w, _child(10))
@@ -181,7 +187,7 @@ def test_account_audit_that_cannot_read_kavita_fails_visibly_not_clean() -> None
 @pytest.mark.req("EF-EXP-036")
 def test_a_target_without_a_usable_client_is_unverified_never_clean() -> None:
     with export_env(max_age_rating=10) as env:
-        w = wire(env)
+        w = _wire(env)
         w.fake.users.append(_sound_account())
         auditor = ChildAccountsAuditor(env.engine, env.clock, w.events)
 
@@ -190,6 +196,7 @@ def test_a_target_without_a_usable_client_is_unverified_never_clean() -> None:
 
         ops = KavitaAccountsOps(
             env.engine, auditor, targets=lambda: [env.target_id], client_for=no_key,
+            clock=env.clock,
             children=lambda: [],
         )  # fmt: skip
         (entry,) = ops.run()
@@ -200,7 +207,7 @@ def test_a_target_without_a_usable_client_is_unverified_never_clean() -> None:
 @pytest.mark.req("EF-EXP-036")
 def test_health_entry_for_the_health_page() -> None:
     with export_env(max_age_rating=10) as env:
-        w = wire(env)
+        w = _wire(env)
         assert health_entry(env.engine, env.target_id)["state"] == "never_audited"
         w.fake.users.append(member("kid", libraries=(OTHER_LIBRARY,)))
         _audit(w, _child(10))
@@ -242,3 +249,47 @@ def test_the_daily_job_and_the_ops_audit_children_through_the_connected_targets(
         codes = {f["code"] for c in entry["children"] for f in c["findings"]}
         assert {"non_family_library", "no_family_library", "unrestricted"} <= codes
         assert "kid.k" not in repr(entry) and len(inst.kavita.writes) == written  # read only
+
+
+@pytest.mark.req("EF-EXP-036")
+def test_two_accounts_that_kavita_confuses_are_ambiguous_never_the_first() -> None:
+    with export_env(max_age_rating=10) as env:
+        w = _wire(env)
+        w.fake.users.append(member("Lea", libraries=(LIBRARY_ID,), age_rating=5))
+        w.fake.users.append(member("LEA", admin=True))
+        assert _codes(_audit(w, _child(10, "lea"))) == {"account_ambiguous"}
+        assert _codes(_audit(w, _child(10, "Lea"))) != {"account_ambiguous"}  # an exact name wins
+
+
+@pytest.mark.req("EF-EXP-036")
+def test_one_audit_at_a_time_for_the_route() -> None:
+    from shelfhold.ops.errors import AuditRunningError
+
+    with export_env(max_age_rating=10) as env:
+        w = _wire(env)
+        auditor = ChildAccountsAuditor(env.engine, env.clock, w.events)
+        ops = KavitaAccountsOps(
+            env.engine, auditor, targets=lambda: [env.target_id], client_for=lambda _t: w.client,
+            children=lambda: [], clock=env.clock,
+        )  # fmt: skip
+        assert ops._running.acquire(blocking=False)  # an audit is running
+        with pytest.raises(AuditRunningError):
+            ops.run()
+        assert w.fake.requests == []  # nothing was asked of Kavita
+        ops._running.release()
+        assert ops.run()[0]["state"] == "ok"
+
+
+@pytest.mark.req("EF-EXP-036")
+def test_an_old_answer_is_not_ok_and_an_unreadable_one_is_unverified() -> None:
+    from datetime import timedelta
+
+    with export_env(max_age_rating=10) as env:
+        w = _wire(env)
+        w.fake.users.append(_sound_account())
+        _audit(w, _child(10))
+        now = env.clock.now()
+        assert health_entry(env.engine, env.target_id, now=now)["state"] == "ok"
+        assert health_entry(env.engine, env.target_id, now=now + timedelta(days=3))["state"] == (
+            "unverified"
+        )

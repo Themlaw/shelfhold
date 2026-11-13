@@ -581,6 +581,10 @@ class SqlIdentityStore:
                     .where(_user.c.id == user_id)
                     .values(hide_unrated_remote=True, subject_filter=[])
                 )
+                if role != "child":  # only a child is audited by her Kavita account (M3 L10)
+                    conn.execute(
+                        sa.update(_user).where(_user.c.id == user_id).values(kavita_username=None)
+                    )
                 conn.execute(
                     sa.update(_session)
                     .where(_session.c.user_id == user_id, _session.c.revoked_at.is_(None))

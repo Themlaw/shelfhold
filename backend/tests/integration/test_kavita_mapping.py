@@ -226,3 +226,15 @@ def test_audit_route_is_the_admins_and_names_no_account(api: AuthEnv) -> None:
     assert now.status_code == 200 and now.json() == {"targets": []}
     api.client.cookies.clear()
     assert api.client.get(AUDIT).status_code == 401  # nobody signed in
+
+
+@pytest.mark.req("EF-USR-017")
+def test_a_child_who_becomes_an_adult_loses_the_association(api: AuthEnv) -> None:
+    kid = _add(api, "kid", "child", max_age_rating=10)
+    assert _put(api, kid, "lea").status_code == 200
+    done = _send(api, "PATCH", f"{PROFILES}/{kid}", {"role": "member"})
+    assert done.status_code == 200, done.text
+    assert _mapped(api)[1] == ("kid", None)
+    back = _send(api, "PATCH", f"{PROFILES}/{kid}", {"role": "child", "max_age_rating": 10})
+    assert back.status_code == 200
+    assert _mapped(api)[1] == ("kid", None)  # the old association does not come back by itself

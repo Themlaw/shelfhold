@@ -2,7 +2,7 @@
 
 The mapping is declarative. Shelfhold does not sign in to Kavita as the child and holds no token
 for it; the name is what the read-only audit looks for among the accounts of Kavita. Kavita does
-not tell "Lea" from "lea", so neither does the rule of uniqueness.
+not tell "Lea" from "lea" (it compares in upper case), so neither does the rule of uniqueness.
 """
 
 from typing import Final
@@ -29,5 +29,11 @@ def check_kavita_username(value: object) -> str | None:
     return name
 
 
+def _key(name: str) -> str:
+    """Kavita's comparison: upper case character by character ("ß" stays "ß", unlike `casefold`),
+    the same one the audit uses to find the account."""
+    return "".join(c.upper() if len(c.upper()) == 1 else c for c in name)
+
+
 def same_kavita_username(left: str, right: str) -> bool:
-    return left.casefold() == right.casefold()
+    return _key(left) == _key(right)
