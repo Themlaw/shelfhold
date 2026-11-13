@@ -7,7 +7,8 @@ from dataclasses import dataclass, field
 
 import sqlalchemy as sa
 
-from shelfhold.export.application.rename_plan import ReaderCount
+from shelfhold.export.application.rename_plan import ReaderCount, RenameReport
+from shelfhold.export.application.snapshot import load_context
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import coherence, export
 from tests.export_env import ExportEnv, Series
@@ -71,3 +72,20 @@ def item_ids_of(env: ExportEnv, folder: str) -> dict[str, str]:
         for r in env.rows(export.export_record)
         if r.rel_path and str(r.rel_path).split("/", 1)[0] == folder
     }
+
+
+def resume_plan(env: ExportEnv, plan_id: str) -> RenameReport:
+    """Go on with a plan a stop cut short, as the apply job does when it finds it `applying`,
+    but through the book itself so that the report says what the settle did."""
+    with env.engine.connect() as conn:
+        destination = conn.execute(
+            sa.select(coherence.export_plan.c.shelf_destination_id).where(
+                coherence.export_plan.c.plan_id == plan_id
+            )
+        ).scalar_one()
+        ctx = load_context(conn, destination)
+    pipeline = env.pipeline
+    return pipeline._renames.resume(
+        plan_id, job_id=new_ulid(), versions=pipeline._versions(ctx),
+        settle=lambda: pipeline._settle_renames(destination),
+    )  # fmt: skip

@@ -41,8 +41,8 @@ from shelfhold.export.application.rename_plan import (
     ItemMove,
     ReaderCounter,
     RenameBook,
+    RenameConfirmationRequiredError,
     RenamePreview,
-    RenameReport,
 )
 from shelfhold.export.application.rendering import (
     CbzRenderer,
@@ -384,7 +384,12 @@ class ExportPipeline:
         """The refusals of a rename plan that need no disk write, asked before a job exists. A
         confirmation that passes is kept with the plan: the job relies on it (EF-EXP-037)."""
         if self.kind_of(plan_id) == RENAME_KIND:
-            self._renames.require_confirmation(plan_id, confirmed=confirmed)
+            try:
+                self._renames.require_confirmation(plan_id, confirmed=confirmed)
+            except RenameConfirmationRequiredError as error:
+                # the answer tells the admin this count: confirming it is what comes next
+                self._renames.announce(plan_id, error.readers, exact=error.exact)
+                raise
             if confirmed:
                 self._renames.record_confirmation(plan_id)
 
@@ -418,21 +423,6 @@ class ExportPipeline:
             if report is not None:
                 settled += len(report.replayed) + len(report.completed)
         return settled
-
-    def resume_rename(self, plan_id: str, *, job_id: str) -> RenameReport:
-        """Go on with a rename plan a stop cut short, from what its intents say."""
-        self._require_writable()
-        with self._engine.connect() as connection:
-            destination_id = connection.execute(
-                sa.select(coherence.export_plan.c.shelf_destination_id).where(
-                    coherence.export_plan.c.plan_id == plan_id
-                )
-            ).scalar_one()
-            ctx = load_context(connection, destination_id)
-        return self._renames.resume(
-            plan_id, job_id=job_id, versions=self._versions(ctx),
-            settle=lambda: self._settle_renames(destination_id),
-        )  # fmt: skip
 
     def _apply_rename(
         self, plan_id: str, *, if_match: str, job_id: str, confirm_progress_loss: bool

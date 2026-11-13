@@ -14,12 +14,16 @@ from typing import Any
 import pytest
 import sqlalchemy as sa
 import structlog
+from hypothesis import HealthCheck, given, settings
+from hypothesis import strategies as st
 
 from shelfhold.export.application.intents import IntentJournal
 from shelfhold.export.application.locks import plan_resource
 from shelfhold.export.application.plans import StalePlanError
 from shelfhold.export.application.rename_plan import (
     ItemMove,
+    PlannedRename,
+    RenameBook,
     RenameConfirmationRequiredError,
     RenameRefusedError,
     _fold,
@@ -41,6 +45,7 @@ from tests.rename_env import (
     open_intents,
     plan_status,
     record_paths,
+    resume_plan,
     tree,
 )
 
@@ -362,6 +367,153 @@ def test_each_batch_drains_its_scan_and_the_resume_scans_the_batches_done(env: E
             .values(status="pending")
         )  # fmt: skip
     events.clear()
-    env.pipeline.resume_rename(preview.plan_id or "", job_id=new_ulid())
+    resume_plan(env, preview.plan_id or "")
     scanned = {e for e in events if e != "drain"}
     assert scanned == {"scan Blue Box (2021)", "scan Dr Stone (2019)"}  # the batch done as well
+
+
+# -- 10. any permutation of names ends, in bounded time, without a file replaced -------------------
+
+
+class _NoDisk:
+    """The disk of `_ordered`: nothing exists, so that no temporary name is ever taken."""
+
+    def observe(self, local: str) -> None:
+        return None
+
+
+class _Ctx:
+    @staticmethod
+    def local(rel: str) -> str:
+        return rel
+
+
+@st.composite
+def _renames(draw: st.DrawFn) -> list[PlannedRename]:
+    """Injective renames among `n` files and a few free names: chains, swaps, several cycles."""
+    count = draw(st.integers(min_value=1, max_value=14))
+    pool = [f"d/{i}.cbz" for i in range(count + 3)]
+    sources = draw(st.lists(st.sampled_from(pool[:count]), unique=True, min_size=1))
+    targets = draw(st.permutations(pool))[: len(sources)]
+    return [
+        PlannedRename("file", src, dst, f"ITEM{n:04d}")
+        for n, (src, dst) in enumerate(zip(sources, targets, strict=True))
+        if src != dst
+    ]
+
+
+@pytest.mark.req("EF-EXP-030", "EF-EXP-041")
+@settings(max_examples=400, deadline=2000, suppress_health_check=[HealthCheck.too_slow])
+@given(steps=_renames())
+def test_every_permutation_is_ordered_in_bounded_time_without_replacing_a_file(
+    steps: list[PlannedRename],
+) -> None:
+    book = object.__new__(RenameBook)
+    book._fsops = _NoDisk()  # type: ignore[assignment]
+    ordered = book._ordered(_Ctx(), steps)  # type: ignore[arg-type]
+    assert len(ordered) <= 2 * len(steps)  # at most one temporary name per cycle
+    disk = {s.src for s in steps}  # what exists; the targets are free (or vacated by a step)
+    free_at_start = {s.dst for s in steps} - disk
+    taken = set(disk)
+    for step in ordered:
+        assert step.src in taken and step.dst not in taken, (step, ordered)  # nothing replaced
+        taken.remove(step.src)
+        taken.add(step.dst)
+    assert taken == {s.dst for s in steps} | (disk - {s.src for s in steps})  # the plan, exactly
+    assert free_at_start <= taken and not any(".shelfhold-tmp" in t for t in taken)
+    seen = [(s.src, s.dst) for s in ordered]
+    assert len(seen) == len(set(seen))  # no step twice
+
+
+@pytest.mark.req("EF-EXP-030", "EF-EXP-041")
+def test_two_swaps_and_a_ring_in_one_batch_apply_fully(env: ExportEnv) -> None:
+    export_chapters(env, "Dr Stone", ["1", "2", "3", "4", "5", "6", "7"])
+    ids = item_ids_of(env, "Dr Stone")
+    name = "Dr Stone - Ch.{}.cbz".format
+    target = {1: 2, 2: 1, 3: 4, 4: 3, 5: 6, 6: 7, 7: 5}  # two swaps and a ring of three
+    moves = [ItemMove(ids[name(a)], f"Dr Stone/{name(b)}") for a, b in target.items()]
+    preview = env.pipeline.rename_preview(env.destination_id, moves=moves)
+    _apply(env, preview)
+    assert tree(env) == [f"Dr Stone/{name(n)}" for n in range(1, 8)]
+    assert record_paths(env) == tree(env) and open_intents(env) == 0
+    assert plan_status(env, preview.plan_id or "") == "done"
+
+
+# -- 11. readers that appear after a silent preview can be confirmed -------------------------------
+
+
+@pytest.mark.req("EF-EXP-037")
+def test_the_count_a_refusal_tells_is_the_one_the_next_confirmation_covers(
+    env: ExportEnv,
+) -> None:
+    export_chapters(env, "Dr Stone", ["1"])
+    readers = FakeReaders(count=0)
+    env.pipeline.bind_readers(readers)
+    preview = env.pipeline.rename_preview(
+        env.destination_id, moves=_series_moves(env, "Dr Stone", "Dr Stone (2019)")
+    )
+    plan_id = preview.plan_id or ""
+    assert preview.warnings == ()
+    readers.count = 2
+    with pytest.raises(RenameConfirmationRequiredError) as told:
+        env.pipeline.require_confirmation(plan_id, confirmed=True)  # a flag sent blind: refused
+    assert told.value.readers == 2
+    env.pipeline.require_confirmation(plan_id, confirmed=True)  # the count it told: covered
+    readers.count = 3  # and one more reader is not
+    with pytest.raises(RenameConfirmationRequiredError):
+        env.pipeline.require_confirmation(plan_id, confirmed=True)
+
+
+# -- minor: the emptied folders go by an intent, a batch given back still scans and cleans -------
+
+
+@pytest.mark.req("EF-EXP-030", "EF-EXP-041")
+def test_a_folder_the_batch_empties_goes_by_a_rmdir_intent(
+    env: ExportEnv, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    export_chapters(env, "Dr Stone", ["1", "2"])
+    kinds: list[str] = []
+    real = IntentJournal.record
+
+    def spy(self: IntentJournal, **kwargs: Any) -> str:
+        kinds.append(str(kwargs.get("op")))
+        return real(self, **kwargs)
+
+    monkeypatch.setattr(IntentJournal, "record", spy)
+    ids = item_ids_of(env, "Dr Stone")
+    moves = [  # two folders: not one whole move of the series folder
+        ItemMove(ids["Dr Stone - Ch.1.cbz"], "Alpha/One.cbz"),
+        ItemMove(ids["Dr Stone - Ch.2.cbz"], "Beta/Two.cbz"),
+    ]
+    _apply(env, env.pipeline.rename_preview(env.destination_id, moves=moves))
+    assert not (env.root / "Dr Stone").exists() and "rmdir" in kinds
+    assert open_intents(env) == 0
+
+
+@pytest.mark.req("EF-EXP-030", "EF-EXP-041")
+def test_a_batch_given_back_still_asks_for_its_scan_and_drops_the_folder_it_made(
+    env: ExportEnv, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    export_chapters(env, "Dr Stone", ["1", "2"])
+    ids = item_ids_of(env, "Dr Stone")
+    first, second = sorted(ids)
+    moves = [ItemMove(ids[first], "Alpha/One.cbz"), ItemMove(ids[second], "Beta/Two.cbz")]
+    preview = env.pipeline.rename_preview(env.destination_id, moves=moves)
+    real = env.lib.fsops.rename
+    calls = {"n": 0}
+
+    def second_fails(src: str, dst: str, **kwargs: Any) -> None:
+        calls["n"] += 1
+        if calls["n"] == 2:
+            raise OSError(errno.EACCES, "refused")
+        real(src, dst, **kwargs)
+
+    monkeypatch.setattr(env.lib.fsops, "rename", second_fails)
+    env.scans.clear()
+    with pytest.raises(RenameRefusedError):
+        _apply(env, preview)
+    monkeypatch.setattr(env.lib.fsops, "rename", real)
+    assert tree(env) == [f"Dr Stone/{n}" for n in sorted(ids)]  # given back
+    assert not (env.root / "Alpha").exists()  # the folder made for the step is gone
+    assert env.scans  # Kavita is asked to look again
+    assert open_intents(env) == 0

@@ -24,7 +24,7 @@ doors and nowhere else (no event, no audit line, no log carries it).
 
 import posixpath
 import unicodedata
-from collections import defaultdict
+from collections import defaultdict, deque
 from collections.abc import Callable, Sequence
 from contextlib import AbstractContextManager, ExitStack
 from dataclasses import dataclass, replace
@@ -467,35 +467,43 @@ class RenameBook:
     def _ordered(self, ctx: DestinationContext, steps: list[PlannedRename]) -> list[PlannedRename]:
         """The steps in an order the disk can follow, one rename never replacing anything: a step
         whose target is the source of another goes after it (topological order). A cycle (a swap)
-        is broken by one step through a temporary name in its own folder, taken back at the end."""
+        is broken by one step through a temporary name in its own folder, taken back at the end.
+        The sources are distinct and so are the targets: every step waits for at most one other,
+        the chains and the cycles are disjoint, and the loop places one step per turn (a hard
+        bound of 4n turns turns any bug into an explicit refusal, never into a hang)."""
         by_src = {s.src: s for s in steps}
-        blocker = {s.src: by_src[s.dst].src for s in steps if s.dst in by_src}
-        unblocks: dict[str, list[PlannedRename]] = defaultdict(list)
-        for step in steps:
-            if step.src in blocker:
-                unblocks[blocker[step.src]].append(step)
+        waits_for = {s.src: by_src[s.dst].src for s in steps if s.dst in by_src}
+        unblocks: dict[str, PlannedRename] = {
+            blocker: by_src[waiter] for waiter, blocker in waits_for.items()
+        }
+        ready = deque(s for s in steps if s.src not in waits_for)
+        queued = {s.src for s in ready}
+        placed: set[str] = set()  # sources that are free now (moved, or taken to a temporary name)
         ordered: list[PlannedRename] = []
         deferred: list[PlannedRename] = []
-        ready = [s for s in steps if s.src not in blocker]
-        emitted: set[str] = set()
+        pending = iter(steps)
 
-        def release(step: PlannedRename) -> None:
-            emitted.add(step.src)
-            ready.extend(unblocks[step.src])
+        def free(src: str) -> None:
+            placed.add(src)
+            follower = unblocks.get(src)
+            if follower is not None and follower.src not in placed | queued:
+                queued.add(follower.src)
+                ready.append(follower)
 
-        remaining = iter(steps)
-        while len(emitted) < len(steps):
+        for _turn in range(4 * len(steps) + 4):
+            if len(placed) == len(steps):
+                return ordered + deferred
             if ready:
-                step = ready.pop(0)
+                step = ready.popleft()
                 ordered.append(step)
-                release(step)
+                free(step.src)
                 continue
-            cycle = next(s for s in remaining if s.src not in emitted)  # a swap: break it here
+            cycle = next(s for s in pending if s.src not in placed)  # a swap: break it here
             tmp = self._temp_name(ctx, cycle)
             ordered.append(PlannedRename("file", cycle.src, tmp, cycle.export_item_id))
             deferred.append(PlannedRename("file", tmp, cycle.dst, cycle.export_item_id))
-            release(cycle)
-        return ordered + deferred
+            free(cycle.src)
+        raise RenameRefusedError("unorderable")
 
     def _temp_name(self, ctx: DestinationContext, step: PlannedRename) -> str:
         tmp = posixpath.join(
@@ -604,6 +612,13 @@ class RenameBook:
                 return
         raise RenameConfirmationRequiredError(found.count, exact=found.exact)
 
+    def announce(self, plan_id: str, readers: int, *, exact: bool) -> None:
+        """The count a refusal has just told the admin: the confirmation that follows is for it,
+        and a confirmation given before for another count is not."""
+        self._store().annotate(
+            plan_id, announced={"readers": readers, "exact": exact}, confirmed=False
+        )
+
     def record_confirmation(self, plan_id: str) -> None:
         """The confirmation a fresh admin session gave with its request, kept with the plan: the
         job that applies it later (it has no session) relies on it, never on its own say."""
@@ -696,6 +711,7 @@ class RenameBook:
                     self._step(ctx, journal, hook, plan_id, op, payload)
                 except Exception:  # the batch is given back as it was: the series is not blocked
                     self._undo_batch(journal, hook, plan_id, op.batch)
+                    self._finish_batch(ctx, plan_id, op.batch)  # the scan, the empty folders
                     raise
             done["n"] += 1
             batches_left[op.batch] -= 1
@@ -884,6 +900,7 @@ class RenameBook:
         folders: set[str] = set()
         for src, dst in rows:
             self._remove_emptied(root, posixpath.dirname(src))
+            self._remove_emptied(root, posixpath.dirname(dst))  # a folder made for a step undone
             for path in (src, dst):
                 folders.add(path[len(root) :].split("/", 1)[0])
         if self._request_scan is not None:
@@ -897,6 +914,7 @@ class RenameBook:
         """A managed folder the batch emptied goes; the root and a folder with anything left
         (an unmanaged file, a link) never."""
         base = root.rstrip("/")
+        journal = IntentJournal(self._engine, self._fsops, clock=self._clock)
         while local.startswith(root) and local != base:
             try:
                 seen = self._fsops.observe(local)
@@ -905,7 +923,15 @@ class RenameBook:
                     continue
                 if seen[0] != "dir" or self._fsops.list_dir(local):
                     return
-                self._fsops.rmdir(local)
+                self._fsops.require_delete_allowed(local)
+                intent = journal.record(op="rmdir", src=local)  # a removal is journaled like any
+                journal.mark_applying(intent)
+                try:
+                    self._fsops.rmdir(local)
+                except (FsopsError, OSError):
+                    journal.cancel(intent)  # not empty after all, or refused: nothing to replay
+                    return
+                journal.mark_done(intent)
             except (FsopsError, OSError):
                 return
             local = posixpath.dirname(local)

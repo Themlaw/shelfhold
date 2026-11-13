@@ -30,6 +30,7 @@ from tests.rename_env import (
     open_intents,
     plan_status,
     record_paths,
+    resume_plan,
     tree,
 )
 
@@ -295,7 +296,7 @@ def test_rename_interrupted_resumes_from_intent(
             sa.update(coherence.export_op).where(coherence.export_op.c.status == "failed")
             .values(status="pending")
         )  # fmt: skip
-    resumed = env.pipeline.resume_rename(preview.plan_id, job_id=new_ulid())
+    resumed = resume_plan(env, preview.plan_id)
     assert resumed.settled == (1 if crash != "op" else 0)  # the intent the kill left, replayed
     assert open_intents(env) == 0
     assert tree(env) == sorted(
@@ -306,7 +307,7 @@ def test_rename_interrupted_resumes_from_intent(
     assert sorted(_inodes(env).values()) == sorted(before.values())
     assert plan_status(env, preview.plan_id) == "done"
     with pytest.raises(StalePlanError):  # and it is not applied a second time
-        env.pipeline.resume_rename(preview.plan_id, job_id=new_ulid())
+        resume_plan(env, preview.plan_id)
 
 
 @pytest.mark.req("EF-EXP-030", "EF-EXP-045")
