@@ -19384,6 +19384,10 @@
       "code": "notify.failed",
       "status": 502
     },
+    "/api/v1/problems/ops.audit-running": {
+      "code": "ops.audit_running",
+      "status": 409
+    },
     "/api/v1/problems/ops.exit-unavailable": {
       "code": "ops.exit_unavailable",
       "status": 503
