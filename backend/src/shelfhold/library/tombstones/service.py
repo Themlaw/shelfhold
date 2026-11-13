@@ -486,14 +486,17 @@ class TombstoneService:
                     _tomb.c.seq
                 )
             ).all()
-        token_seq = {origin_token(v, c): n for n, (v, c) in active.items()}
+        holders: dict[str, list[int]] = {}
+        for n, (v, c) in active.items():
+            holders.setdefault(origin_token(v, c), []).append(n)
         return [
             TombstoneRow(
                 seq,
                 made,
                 scope,
                 reason,
-                tuple(sorted(token_seq[t] for t in origins_of(active[seq][1]) if t in token_seq)),
+                # a new form: the origins that still hold it (all of them, not one per token)
+                tuple(sorted(n for t in origins_of(active[seq][1]) for n in holders.get(t, ()))),
             )
             for seq, made, scope, reason in rows
             if seq in active
@@ -542,9 +545,17 @@ class TombstoneService:
             with self._engine.connect() as connection:
                 active = self._active(connection)
             token = origin_token(values, cited)
+            # a tombstone that still bears the same token (two purges of one reference) keeps the
+            # forms that name it: they are lifted with the last one only
+            held = {origin_token(v, c) for n, (v, c) in active.items() if n != seq}
             linked = sorted(
-                n for n, (_v, c) in active.items() if n != seq and token in origins_of(c)
-            )  # the new forms derived from this tombstone (EF-SRC-022): lifted with it
+                n
+                for n, (_v, c) in active.items()
+                if n != seq
+                and token in origins_of(c)
+                and token not in held
+                and not any(t in held for t in origins_of(c) if t != token)
+            )  # the new forms derived from this tombstone (EF-SRC-022), lifted with the last one
 
             def audit_of(number: int, via: int | None = None) -> Callable[[Connection], None]:
                 label = f"seq:{number}" + (f";via:{via}" if via is not None else "")

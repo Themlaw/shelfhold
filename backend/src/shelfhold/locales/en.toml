@@ -676,7 +676,7 @@
   tombstone_lifted_linked = "Lifted with it, its new forms: {seqs}."
   tombstone_none = "No tombstone blocks."
   tombstone_row = "{seq}  {day}  {scope}  {reason}"
-  tombstone_row_from = "  (new form of {seqs})"
+  tombstone_row_from = "  (new form, still held by {seqs})"
 
 [local_cli]
   maintenance_active = "maintenance mode is active: only reading passes. Run “shelfhold maintenance off” to resume."
