@@ -95,6 +95,12 @@ class WorkMerged:
     waiting: dict[str, str]  # the ones the shelf no longer admits (reason): never moved here
 
 
+def _age(age_rating: int | None, age_x: bool) -> AgeRating | None:
+    if age_x:
+        return AgeRating(18, x=True)
+    return None if age_rating is None else AgeRating(int(age_rating))
+
+
 def _label(age: AgeRating | None) -> str | None:
     if age is None:
         return None
@@ -213,6 +219,27 @@ def move_editions(connection: Connection, edition_ids: list[str], work_id: str) 
             )
 
 
+def _reopen_twin(
+    connection: Connection, table: sa.Table, data: dict[str, Any], keep_id: str
+) -> None:
+    """A suggested age that is still open never disappears in a merge: the survivor holds the same
+    suggestion (the key does not carry the state) that somebody already settled, so the survivor's
+    row is opened again (EF-BIB-055: nobody has looked at it for the absorbed Work). Its earlier
+    state is kept in the snapshot, to put back on « Séparer »."""
+    twin = connection.execute(
+        sa.select(table.c.id, table.c.state).where(
+            table.c.entity_type == "work",
+            table.c.entity_id == keep_id,
+            table.c.value == data["value"],
+            table.c.x == data["x"],
+            table.c.provenance == data["provenance"],
+        )
+    ).first()
+    if twin is not None and twin.state != "open":
+        connection.execute(sa.update(table).where(table.c.id == twin.id).values(state="open"))
+        data["_reopened"] = {"id": twin.id, "state": twin.state}
+
+
 def _move_entity_rows(connection: Connection, drop_id: str, keep_id: str) -> dict[str, Any]:
     """Credits, fields and suggested ages of the absorbed Work go to the survivor; a row the
     survivor already holds is dropped, and both kinds are in the snapshot."""
@@ -235,6 +262,8 @@ def _move_entity_rows(connection: Connection, drop_id: str, keep_id: str) -> dic
                     )
                 data["_moved"] = True
             except exc.IntegrityError:
+                if name == "age_suggestion" and data.get("state") == "open":
+                    _reopen_twin(connection, table, data, keep_id)
                 connection.execute(
                     sa.delete(table).where(*(table.c[k] == v for k, v in pk.items()))
                 )
@@ -303,8 +332,10 @@ def apply_work_merge(
 def _apply(connection: Connection, plan: WorkMergePlan, now: datetime) -> WorkMerged:
     keep_id, drop_id = plan.keep_id, plan.drop_id
     keep, drop = _row(connection, keep_id), _row(connection, drop_id)
+    # the strictest age of the two **Works**: an Edition with an age of its own keeps it, and one
+    # without inherits the Work's, so the absorbed Work's age protects its Editions (EF-BIB-019)
     merged = max_rating(
-        a for a in (_effective(connection, keep_id), _effective(connection, drop_id)) if a
+        a for a in (_age(keep.age_rating, keep.age_x), _age(drop.age_rating, drop.age_x)) if a
     )
     titles = [_jsonable(r) for r in connection.execute(
         sa.select(catalog.work_title).where(catalog.work_title.c.work_id == drop_id))]  # fmt: skip

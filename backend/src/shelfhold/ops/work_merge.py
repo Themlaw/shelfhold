@@ -10,6 +10,7 @@ within 30 days (`merge_log`).
 
 from __future__ import annotations
 
+import re
 from typing import TYPE_CHECKING, Any
 
 import sqlalchemy as sa
@@ -37,7 +38,6 @@ from shelfhold.export.public import (
 from shelfhold.identity.public import (
     RESERVED_ACTIONS,
     Allowed,
-    Credential,
     Principal,
     authorize_reserved,
 )
@@ -51,8 +51,14 @@ if TYPE_CHECKING:
 __all__ = ["WorkMergeOps"]
 
 
-def _merge_report(plan: WorkMergePlan, applied: bool, merge_id: str | None) -> dict[str, Any]:
+def _merge_report(
+    plan: WorkMergePlan,
+    applied: bool,
+    merge_id: str | None,
+    series: SeriesReassignmentPlan | None = None,
+) -> dict[str, Any]:
     return {
+        "series_plan": None if series is None else _series_report(series, False),
         "keep_id": plan.keep_id, "drop_id": plan.drop_id, "editions": list(plan.editions),
         "blockers": list(plan.blockers), "keep_age": plan.keep_age, "drop_age": plan.drop_age,
         "merged_age": plan.merged_age, "unrated_after": plan.unrated_after,
@@ -66,13 +72,28 @@ def _series_report(plan: SeriesReassignmentPlan, applied: bool) -> dict[str, Any
         "work_id": plan.work_id,
         "moves": [
             {"edition_id": m.edition_id, "remote_library_id": m.remote_library_id,
-             "from_series_id": m.from_series_id, "to_series_id": m.to_series_id}
+             "from_series_id": m.from_series_id, "to_series_id": m.to_series_id,
+             "new_name": m.new_name}
             for m in plan.moves
         ],
         "blockers": list(plan.blockers), "path_changes": plan.path_changes,
         "emptied": list(plan.emptied), "mergeable": plan.mergeable,
         "fingerprint": plan.fingerprint, "applied": applied,
     }  # fmt: skip
+
+
+_ULID = re.compile(r"^[0-9A-HJKMNP-TV-Z]{26}$")
+
+
+def _ulid_or_none(value: str | None) -> str | None:
+    """The session behind a line, when it is a session identifier (the column checks the shape)."""
+    return value if value is not None and _ULID.match(value) else None
+
+
+def _age_label(age: Any) -> str | None:
+    if age is None:
+        return None
+    return "X" if age.x else f"{age.min_age}+"
 
 
 class WorkMergeOps:
@@ -88,20 +109,15 @@ class WorkMergeOps:
             raise CodedRefusal("forbidden", type(verdict).__name__)
 
     def _audit(
-        self,
-        connection: Connection,
-        principal: Principal,
-        action: str,
-        target: str,
-        *,
-        always: bool = False,
+        self, connection: Connection, principal: Principal, action: str, target: str
     ) -> None:
-        if principal.credential is Credential.SESSION and not always:
-            return  # the route's guard wrote the line for this session
+        """The line of what was done, with its target and the session behind it, written in the
+        transaction that did it: none for a plan that was only read, none for a refusal (the
+        routes ask the guard for no line of their own, #209)."""
         connection.execute(
             sa.insert(identity.audit).values(
                 id=new_ulid(), actor_id=principal.actor_id, action=action, target=target,
-                session_id=principal.session_id, auth_time=principal.auth_time,
+                session_id=_ulid_or_none(principal.session_id), auth_time=principal.auth_time,
             )
         )  # fmt: skip
 
@@ -122,19 +138,22 @@ class WorkMergeOps:
                     done = apply_work_merge(
                         connection, keep_id, drop_id, confirm=confirm, now=self._comp.clock.now()
                     )
+                    series = plan_series_reassignment(connection, keep_id)  # proposed, not applied
                     self._audit(
-                        connection, principal, "work.merge",
+                        connection, principal, action="work.merge", target=
                         f"{keep_id};{drop_id};fp:{done.plan.fingerprint};merge:{done.merge_id}",
                     )  # fmt: skip
-            return _merge_report(done.plan, True, done.merge_id)
+            return _merge_report(done.plan, True, done.merge_id, series)
         except LookupError as error:
             raise UnknownSubjectError(str(error)) from None
         except ValueError as error:
-            raise CodedRefusal("work.merge_refused", str(error)) from None
+            code = "work.merge_refused"
+            raise CodedRefusal(code, str(error)) from None
         except StaleMergePlanError as error:
             raise StalePreviewError(str(error)) from None
         except WorkMergeRefusedError as error:
-            raise CodedRefusal("work.merge_refused", ", ".join(error.plan.blockers)) from None
+            code = "work.merge_refused"
+            raise CodedRefusal(code, ", ".join(error.plan.blockers)) from None
 
     def separate(self, merge_id: str, *, principal: Principal) -> dict[str, Any]:
         """« Séparer »: put the two Works of a merge back, within 30 days."""
@@ -144,8 +163,9 @@ class WorkMergeOps:
                 connection.execution_options(shelfhold_begin="BEGIN IMMEDIATE")
                 with connection.begin():
                     done = separate_works(connection, merge_id, now=self._comp.clock.now())
+                    series = plan_series_reassignment(connection, done.restored_id)
                     self._audit(
-                        connection, principal, "work.separate",
+                        connection, principal, action="work.separate", target=
                         f"{done.survivor_id};{done.restored_id};merge:{merge_id}",
                     )  # fmt: skip
         except LookupError as error:
@@ -155,6 +175,9 @@ class WorkMergeOps:
         return {
             "merge_id": merge_id, "survivor_id": done.survivor_id, "restored_id": done.restored_id,
             "shelves": done.shelves, "waiting": done.waiting,
+            "survivor_age": _age_label(done.survivor_age),
+            "restored_age": _age_label(done.restored_age),
+            "series_plan": _series_report(series, False),  # proposed, never applied here
         }  # fmt: skip
 
     def series_reassign(
@@ -175,7 +198,7 @@ class WorkMergeOps:
                         connection, work_id, confirm=confirm, now=self._comp.clock.now()
                     )
                     self._audit(
-                        connection, principal, "series.reassign",
+                        connection, principal, action="series.reassign", target=
                         f"{work_id};fp:{plan.fingerprint};moves:{len(plan.moves)}",
                     )  # fmt: skip
             return _series_report(plan, True)
@@ -199,12 +222,12 @@ class WorkMergeOps:
                     self._audit(
                         connection,
                         principal,
-                        "series.attach",
-                        f"{work_id};{series_id}",
-                        always=True,
+                        action="series.attach",
+                        target=f"{work_id};{series_id}",
                     )
         except SeriesAlreadyAttachedError:
-            raise CodedRefusal("series.already_attached", work_id) from None
+            code = "series.already_attached"
+            raise CodedRefusal(code, work_id) from None
         except exc.IntegrityError:
             raise UnknownSubjectError("no such Work or Series") from None
         return {

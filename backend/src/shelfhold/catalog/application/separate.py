@@ -9,9 +9,15 @@ again, the identifiers that led to it lead to it again.
 
 What it does not do: take back what happened after the merge. An Edition created under the survivor
 since stays there; an Edition that was merged away since is not brought back; a survivor that was
-itself absorbed by another merge blocks the separation (separate that one first). The effective age
-recomputed: the absorbed Work gets back its own, and the survivor its own **unless an admin rated
-the merged Work since**: an age that was raised is never lowered by an undo. The shelves are put
+itself absorbed by another merge blocks the separation (separate that one first).
+
+The age of each half. Nothing is lowered by an undo, and nothing is guessed by comparing values:
+the history says whether the merged Work **changed hands since** (an admin rating of it in the
+audit, or a later merge into the same survivor that is still in force). If not, each half gets its
+own age back from the snapshot. If so, each half takes the **strictest** of its snapshot age and
+the merged Work's age now, and the adult flag is the union. A half that was **unrated** before the
+merge is unrated again, whatever the admin decided for the merged Work (chosen, fail closed: an
+admin rating of the whole is not a rating of a half nobody rated alone). The shelves are put
 through the gate again and what no longer fits is reported, never moved (`shelf.withdraw`).
 """
 
@@ -25,6 +31,7 @@ from sqlalchemy import Connection
 from shelfhold.catalog.application.changes import track_work_changes
 from shelfhold.catalog.application.work_merge import (
     MERGE_WINDOW_DAYS,
+    _age,
     _effective,
     _table,
     move_editions,
@@ -34,7 +41,7 @@ from shelfhold.catalog.application.work_merge import (
 from shelfhold.infrastructure.event_sequence import invalidate_tokens
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import catalog, identity
-from shelfhold.sdk.age import AgeRating
+from shelfhold.sdk.age import AgeRating, max_rating, to_columns
 
 __all__ = [
     "MergeAlreadyUndoneError",
@@ -110,8 +117,51 @@ def separate_works(connection: Connection, merge_id: str, *, now: datetime) -> S
     ):
         raise SeparationBlockedError(merge_id)
     snap: dict[str, Any] = row.snapshot
+    changed = _changed_since(connection, merge_id, keep_id, row.created_at)
     with track_work_changes(connection, [keep_id], now=now):
-        return _undo(connection, merge_id, keep_id, drop_id, snap, now)
+        return _undo(connection, merge_id, keep_id, drop_id, snap, now, changed)
+
+
+def _changed_since(
+    connection: Connection, merge_id: str, keep_id: str, created_at: datetime
+) -> bool:
+    """Whether the merged Work's age may have moved since this merge, from the history: an admin
+    rating of it (audit, `at` the merge instant or later: a tie counts, closed), or a later merge
+    into the same survivor that is still in force (its Editions and age came after)."""
+    audit, log = identity.audit, catalog.merge_log
+    rated = connection.execute(
+        sa.select(audit.c.id)
+        .where(audit.c.action == "rate", audit.c.at >= created_at,
+               sa.or_(audit.c.target == f"work:{keep_id}",
+                      audit.c.target.like(f"work:{keep_id};%")))
+        .limit(1)
+    ).first()  # fmt: skip
+    later = connection.execute(
+        sa.select(log.c.id)
+        .where(log.c.kind == "merge", log.c.survivor_id == keep_id, log.c.id != merge_id,
+               log.c.undone_at.is_(None), log.c.created_at >= created_at)
+        .limit(1)
+    ).first()  # fmt: skip
+    return rated is not None or later is not None
+
+
+def _half(before: dict[str, Any], current: sa.Row[Any], changed: bool) -> dict[str, Any]:
+    """The age columns a half gets back (see the module docstring)."""
+    if not changed:
+        return {
+            "age_rating": before["age_rating"], "age_x": bool(before["age_x"]),
+            "is_adult": bool(before["is_adult"]), "rated_at": _at(before["rated_at"]),
+        }  # fmt: skip
+    top = max_rating(
+        a for a in (_age(before["age_rating"], before["age_x"]),
+                    _age(current.age_rating, current.age_x)) if a is not None
+    )  # fmt: skip
+    age, x = to_columns(top) if top is not None else (None, False)
+    return {
+        "age_rating": age, "age_x": x,
+        "is_adult": bool(before["is_adult"] or current.is_adult),
+        "rated_at": None if before["rated_at"] is None else current.rated_at,
+    }  # fmt: skip
 
 
 def _undo(
@@ -121,12 +171,14 @@ def _undo(
     drop_id: str,
     snap: dict[str, Any],
     now: datetime,
+    changed: bool,
 ) -> Separated:
     work = catalog.work
+    merged_now = connection.execute(sa.select(work).where(work.c.id == keep_id)).one()
     drop = {k: v for k, v in snap["drop_row"].items() if k != "created_seq"}
     drop["created_at"] = _at(drop.get("created_at"))
     drop["updated_at"] = _at(drop.get("updated_at"))
-    drop["rated_at"] = _at(drop.get("rated_at"))
+    drop.update(_half(snap["drop_row"], merged_now, changed))
     connection.execute(sa.insert(work).values(**{k: v for k, v in drop.items() if k in work.c}))
     connection.execute(  # the Work was created before every token that exists: keep its sequence
         sa.update(work)
@@ -184,13 +236,24 @@ def _undo(
                 )  # fmt: skip
             else:
                 _reinsert(connection, table, data)
+                twin = data.get("_reopened")
+                if twin:  # the survivor's settled suggestion that the merge had opened again
+                    connection.execute(
+                        sa.update(table)
+                        .where(table.c.id == twin["id"], table.c.state == "open")
+                        .values(state=twin["state"])
+                    )
     redirect = catalog.work_redirect
     connection.execute(sa.delete(redirect).where(redirect.c.from_work_id == drop_id))
     for old in snap["redirects"]:
         connection.execute(
             sa.update(redirect).where(redirect.c.from_work_id == old).values(to_work_id=drop_id)
         )
-    _restore_survivor(connection, keep_id, snap)
+    connection.execute(
+        sa.update(work)
+        .where(work.c.id == keep_id)
+        .values(**_half(snap["keep_row"], merged_now, changed))
+    )
     log = catalog.merge_log
     connection.execute(sa.update(log).where(log.c.id == merge_id).values(undone_at=now))
     connection.execute(
@@ -205,27 +268,4 @@ def _undo(
     return Separated(
         merge_id, keep_id, drop_id, _effective(connection, keep_id),
         _effective(connection, drop_id), {**shelves, **more}, {**waiting, **more_waiting},
-    )  # fmt: skip
-
-
-def _restore_survivor(connection: Connection, keep_id: str, snap: dict[str, Any]) -> None:
-    """The survivor's own age back, unless somebody touched it since the merge."""
-    work = catalog.work
-    now_row = connection.execute(sa.select(work).where(work.c.id == keep_id)).one()
-    after = snap["after"]
-    same = (
-        now_row.age_rating == after["age_rating"]
-        and bool(now_row.age_x) == bool(after["age_x"])
-        and bool(now_row.is_adult) == bool(after["is_adult"])
-        and (None if now_row.rated_at is None else utc(now_row.rated_at))
-        == (None if after["rated_at"] is None else utc(_at(after["rated_at"])))  # type: ignore[arg-type]
-    )
-    if not same:
-        return  # an admin rated the merged Work since: never lowered by an undo
-    before = snap["keep_row"]
-    connection.execute(
-        sa.update(work).where(work.c.id == keep_id).values(
-            age_rating=before["age_rating"], age_x=bool(before["age_x"]),
-            is_adult=bool(before["is_adult"]), rated_at=_at(before["rated_at"]),
-        )
     )  # fmt: skip

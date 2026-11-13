@@ -88,11 +88,18 @@ membre ni un enfant.
 - `POST /api/v1/works/merges/{merge_id}/separate` (« Séparer ») : pendant 30 jours, les deux œuvres reviennent avec
   leurs éditions, leur place en série, l'état de chaque lecteur et l'âge d'origine, sauf si vous avez reclassé l'œuvre
   fusionnée depuis (un âge relevé n'est jamais abaissé par un défaire). L'ancien identifiant mène à l'œuvre restante
-  tant que la fusion dure.
+  tant que la fusion dure. L'historique décide : si l'œuvre fusionnée a été reclassée, ou si une fusion plus récente
+  l'a reçue, chaque moitié prend le plus strict de son âge d'avant et de l'âge actuel. Une moitié qui n'était pas
+  classée avant la fusion ne l'est toujours pas après : classer l'ensemble n'est pas classer une moitié. La réponse
+  donne l'âge de chaque moitié et le plan de série exportée de l'œuvre rendue.
 - `POST /api/v1/series-reassignments` : après une fusion ou un rattachement tardif à une série
   (`POST /api/v1/works/{work_id}/series`), le plan qui regroupe les éditions d'une œuvre dans une seule série
   exportée par bibliothèque. Seul le lien change, jamais un fichier ; une série adoptée (figée) n'est jamais quittée ;
-  `path_changes` compte les dossiers déjà écrits dont le chemin diffère ensuite.
+  `path_changes` compte les dossiers déjà écrits dont le chemin diffère ensuite. Après une séparation, le même plan
+  sort l'œuvre rendue de la série de l'autre vers une série à son nom. Le rattachement tardif à une série crée
+  le bloqueur « séries différentes » d'une fusion future et change la série que nommera un nouvel export.
+- Chaque fusion, séparation ou plan appliqué laisse une ligne d'audit avec sa cible ; un plan simplement lu n'en
+  laisse aucune.
 - `POST /api/v1/contributors/merge-proposals` : les plans de fusion d'éditions qu'une fusion de contributeurs
   appellerait. Rien n'est appliqué.
 

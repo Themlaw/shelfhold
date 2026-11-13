@@ -22,12 +22,12 @@ from shelfhold.ops import OpsServices
 __all__ = ["build_catalog_admin_router"]
 
 _RESPLIT = reserved_action(RESERVED_ACTIONS["coverage.resplit"])
-# M3 L22: a session is audited by the guard; the host CLI has no guard, so the ops layer writes
-# the line itself for it (one action, one line)
-_WORK_MERGE = reserved_action(RESERVED_ACTIONS["work.merge"])
-_WORK_SEPARATE = reserved_action(RESERVED_ACTIONS["work.separate"])
-_SERIES_REASSIGN = reserved_action(RESERVED_ACTIONS["series.reassign"])
-_EDITION_MERGE = reserved_action(RESERVED_ACTIONS["edition.merge"])
+# M3 L22: the guard writes no line (`audit=False`): the ops layer writes it, with the target and the
+# session, in the transaction that acts; a plan that is only read or a refusal leaves none (#209)
+_WORK_MERGE = reserved_action(RESERVED_ACTIONS["work.merge"], audit=False)
+_WORK_SEPARATE = reserved_action(RESERVED_ACTIONS["work.separate"], audit=False)
+_SERIES_REASSIGN = reserved_action(RESERVED_ACTIONS["series.reassign"], audit=False)
+_EDITION_MERGE = reserved_action(RESERVED_ACTIONS["edition.merge"], audit=False)
 Admin = Annotated[Principal, Depends(require_admin)]
 On = Literal["edition", "work"]
 
@@ -156,6 +156,25 @@ class ContributorsIn(BaseModel):
     drop_id: Id  # the one merged into it
 
 
+class SeriesMoveOut(BaseModel):
+    edition_id: str
+    remote_library_id: str
+    from_series_id: str
+    to_series_id: str | None  # None with a `new_name`: a series of its own, started for the Work
+    new_name: str | None = None
+
+
+class SeriesReassignOut(BaseModel):
+    work_id: str
+    moves: list[SeriesMoveOut]
+    blockers: list[str]
+    path_changes: int  # moves out of a folder already written: the next path differs (EF-EXP-037)
+    emptied: list[str]
+    mergeable: bool
+    fingerprint: str
+    applied: bool
+
+
 class WorkMergeOut(BaseModel):
     keep_id: str
     drop_id: str
@@ -169,6 +188,7 @@ class WorkMergeOut(BaseModel):
     fingerprint: str
     applied: bool
     merge_id: str | None
+    series_plan: "SeriesReassignOut | None" = None  # what the merge proposes for the exports
 
 
 class SeparateIn(BaseModel):
@@ -181,13 +201,9 @@ class SeparateOut(BaseModel):
     restored_id: str
     shelves: dict[str, str | None]  # each Edition of the two Works: the shelf it is filed on
     waiting: dict[str, str]  # the ones the shelf no longer admits, never moved here
-
-
-class SeriesMoveOut(BaseModel):
-    edition_id: str
-    remote_library_id: str
-    from_series_id: str
-    to_series_id: str
+    survivor_age: str | None  # the age each half has now (`13+`, `X`, none: unrated)
+    restored_age: str | None
+    series_plan: SeriesReassignOut  # the plan for the Work given back, applied on confirmation
 
 
 class SeriesReassignIn(BaseModel):
@@ -195,17 +211,6 @@ class SeriesReassignIn(BaseModel):
 
     work_id: Id
     confirm: Confirm = None
-
-
-class SeriesReassignOut(BaseModel):
-    work_id: str
-    moves: list[SeriesMoveOut]
-    blockers: list[str]
-    path_changes: int  # moves out of a folder already written: the next path differs (EF-EXP-037)
-    emptied: list[str]
-    mergeable: bool
-    fingerprint: str
-    applied: bool
 
 
 class AttachSeriesIn(BaseModel):

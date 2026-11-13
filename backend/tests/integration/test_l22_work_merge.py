@@ -34,7 +34,7 @@ from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import catalog, export, identity, platform
 from shelfhold.sdk.age import AgeRating
 from tests.export_env import ExportEnv
-from tests.family_env import NOW, family_env
+from tests.family_env import NOW, family_env, rate
 from tests.integration.test_schema_catalog import add_edition, add_unit
 
 pytestmark = pytest.mark.req("EF-BIB-019", "EF-EXP-062", "EF-BIB-049")
@@ -229,10 +229,11 @@ def test_separate_recomputes_effective_age_and_shelves(env: ExportEnv) -> None:
 def test_separate_never_lowers_an_age_the_admin_raised_since(env: ExportEnv) -> None:
     keep, drop = _pair(env)
     merged = _merge(env, keep.work_id, drop.work_id)
-    _rate(env, keep.work_id, 18)  # the admin re-rated the merged Work upwards
+    rate(env, keep, 18)  # the admin re-rated the merged Work upwards, by the real door
     with env.engine.begin() as c:
         separate_works(c, merged.merge_id, now=NOW)
-    assert str(_effective(env, keep.work_id)) == str(AgeRating(18))
+    assert _effective(env, keep.work_id) == AgeRating(18)
+    assert _effective(env, drop.work_id) == AgeRating(18)  # nor the other half
 
 
 def test_merge_never_lowers_the_age_and_unrated_stays_unrated(env: ExportEnv) -> None:
@@ -477,3 +478,114 @@ def test_merge_carries_states_requests_and_fields_and_separate_gives_them_back(
         (drop.work_id, "genre"): "dropped",
         (keep.work_id, "genre"): "kept",
     }
+
+
+def test_a_half_that_was_unrated_is_unrated_again_after_the_undo(env: ExportEnv) -> None:
+    """m3, chosen closed: an admin rating of the merged Work is not a rating of a half that nobody
+    rated alone."""
+    keep, drop = env.new_series("Gamma Tale"), env.new_series("Gamma Tale (copy)")
+    _publisher(env, drop.edition_id, "Beta")
+    _rate(env, drop.work_id, 12)
+    _rate(env, keep.work_id, None)  # K was never rated
+    merged = _merge(env, keep.work_id, drop.work_id)
+    rate(env, keep, 12)  # the admin rates the merged Work
+    with env.engine.begin() as c:
+        separate_works(c, merged.merge_id, now=NOW)
+    with env.engine.connect() as c:
+        rated = dict(c.execute(sa.select(catalog.work.c.id, catalog.work.c.rated_at)).all())
+    assert rated[keep.work_id] is None and rated[drop.work_id] is not None
+
+
+def test_the_open_suggestion_comes_back_settled_as_it_was(env: ExportEnv) -> None:
+    keep, drop = _pair(env)
+    for work, state in ((keep.work_id, "rejected"), (drop.work_id, "open")):
+        with env.engine.begin() as c:
+            c.execute(sa.insert(catalog.age_suggestion).values(
+                id=new_ulid(), entity_type="work", entity_id=work, value=16, x=False,
+                provenance="provider", seen_at=NOW, state=state))  # fmt: skip
+    merged = _merge(env, keep.work_id, drop.work_id)
+
+    def states() -> list[tuple[str, str]]:
+        with env.engine.connect() as c:
+            return sorted(
+                tuple(r) for r in c.execute(
+                    sa.select(catalog.age_suggestion.c.entity_id, catalog.age_suggestion.c.state))
+            )  # fmt: skip
+
+    assert states() == [(keep.work_id, "open")]  # nothing that hid a Work is lost
+    with env.engine.begin() as c:
+        separate_works(c, merged.merge_id, now=NOW)
+    assert states() == sorted([(keep.work_id, "rejected"), (drop.work_id, "open")])
+
+
+def test_an_edition_with_its_own_age_does_not_raise_the_others(env: ExportEnv) -> None:
+    """m1: the Work's ages decide the Work's age; an Edition keeps the one it has."""
+    keep, drop = env.new_series("Delta Tale"), env.new_series("Delta Tale (copy)")
+    _publisher(env, drop.edition_id, "Beta")
+    with env.engine.begin() as c:
+        c.execute(sa.update(catalog.work).values(age_rating=6, rated_at=NOW))
+        c.execute(
+            sa.update(catalog.edition)
+            .where(catalog.edition.c.id == drop.edition_id)
+            .values(age_rating=18, rated_at=NOW)
+        )
+    _merge(env, keep.work_id, drop.work_id)
+    with env.engine.connect() as c:
+        own = c.execute(
+            sa.select(catalog.work.c.age_rating).where(catalog.work.c.id == keep.work_id)
+        ).scalar_one()
+    assert own == 6  # the Work itself is not 18+ because one of its Editions is
+
+
+def test_separation_proposes_a_series_for_the_work_given_back(env: ExportEnv) -> None:
+    keep, drop = _pair(env)
+    a = _library_series(env, keep.edition_id, "Alpha Tale")
+    _library_series(env, drop.edition_id, "Alpha Tale (copy)")
+    merged = _merge(env, keep.work_id, drop.work_id)
+    with env.engine.connect() as c:
+        plan = plan_series_reassignment(c, keep.work_id)
+    with env.engine.begin() as c:
+        apply_series_reassignment(c, keep.work_id, confirm=plan.fingerprint, now=NOW)
+    with env.engine.begin() as c:
+        separate_works(c, merged.merge_id, now=NOW)
+    with env.engine.connect() as c:
+        back = plan_series_reassignment(c, drop.work_id)
+        own = plan_series_reassignment(c, keep.work_id)
+    assert [(m.edition_id, m.from_series_id, m.to_series_id, m.new_name) for m in back.moves] == [
+        (drop.edition_id, a, None, "Alpha Tale (copy)")
+    ]
+    assert own.moves == ()  # the survivor keeps its own series
+    assert _links(env)[0:2] and dict(_links(env))[drop.edition_id] == a  # the plan writes nothing
+    with pytest.raises(SeriesReassignmentRefusedError), env.engine.begin() as c:
+        apply_series_reassignment(c, drop.work_id, confirm="nope", now=NOW)
+    with env.engine.begin() as c:
+        apply_series_reassignment(c, drop.work_id, confirm=back.fingerprint, now=NOW)
+    links = dict(_links(env))
+    assert links[keep.edition_id] == a and links[drop.edition_id] != a
+    with env.engine.connect() as c:
+        names = sorted(c.execute(sa.select(export.export_series.c.name_raw)).scalars())
+        assert plan_series_reassignment(c, drop.work_id).moves == ()
+    assert names == ["Alpha Tale", "Alpha Tale (copy)"]
+
+
+def test_albums_of_one_series_share_its_exported_series_without_a_split(env: ExportEnv) -> None:
+    one, two = env.new_series("Epsilon 1"), env.new_series("Epsilon 2")
+    sid = new_ulid()
+    with env.engine.begin() as c:
+        c.execute(sa.insert(catalog.series).values(id=sid, title="E", sort_title="e"))
+        for w, pos in ((one.work_id, "1"), (two.work_id, "2")):
+            c.execute(
+                sa.insert(catalog.series_member).values(series_id=sid, work_id=w, position=pos)
+            )
+    shared = _library_series(env, one.edition_id, "Epsilon")
+    with env.engine.begin() as c:
+        ensure_export_series(
+            c,
+            shelf_destination_id=env.destination_id,
+            remote_library_id=env.remote_library_id,
+            ref=SeriesRef(two.edition_id, "Epsilon", "epsilon", export_series_id=shared),
+            now=NOW,
+        )
+    with env.engine.connect() as c:
+        assert plan_series_reassignment(c, two.work_id).moves == ()
+        assert plan_series_reassignment(c, one.work_id).moves == ()

@@ -3242,6 +3242,7 @@
    "request.created",
    "restore.credentials_acknowledged",
    "restore.credentials_revoked",
+   "series.attach",
    "store_false",
    "store_true",
    "unit.restore",
@@ -3334,6 +3335,7 @@
    "root.unauthenticated",
    "root_sentinel_mismatch",
    "search_like_fallback",
+   "series.already_attached",
    "shelf.ceiling_invalid",
    "shelf.conflict",
    "shelf.destination_exists",
@@ -3362,7 +3364,8 @@
    "target.tree_overlap",
    "target.unknown",
    "unit.tombstoned",
-   "unknown_user"
+   "unknown_user",
+   "work.merge_refused"
   ],
   "decision": [
    "erase",

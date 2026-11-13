@@ -3173,15 +3173,24 @@ export type SeparateOut = {
      */
     merge_id: string;
     /**
+     * Restored Age
+     */
+    restored_age: string | null;
+    /**
      * Restored Id
      */
     restored_id: string;
+    series_plan: SeriesReassignOut;
     /**
      * Shelves
      */
     shelves: {
         [key: string]: string | null;
     };
+    /**
+     * Survivor Age
+     */
+    survivor_age: string | null;
     /**
      * Survivor Id
      */
@@ -3207,13 +3216,17 @@ export type SeriesMoveOut = {
      */
     from_series_id: string;
     /**
+     * New Name
+     */
+    new_name?: string | null;
+    /**
      * Remote Library Id
      */
     remote_library_id: string;
     /**
      * To Series Id
      */
-    to_series_id: string;
+    to_series_id: string | null;
 };
 
 /**
@@ -4499,6 +4512,7 @@ export type WorkMergeOut = {
      * Merged Age
      */
     merged_age: string | null;
+    series_plan?: SeriesReassignOut | null;
     /**
      * Unrated After
      */

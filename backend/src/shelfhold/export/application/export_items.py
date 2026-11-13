@@ -12,6 +12,7 @@ from sqlalchemy import Connection
 from sqlalchemy.exc import IntegrityError
 
 from shelfhold.export.domain.export_item import CoverageError, check_coverage
+from shelfhold.export.domain.naming import normalize_series_name
 from shelfhold.export.domain.planner import SeriesRef
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import catalog, export
@@ -208,16 +209,22 @@ class SeriesReassignmentRefusedError(Exception):
 
 @dataclass(frozen=True)
 class SeriesMove:
+    """One Edition's link leaving a series. `to_series_id` is the series it joins; `None` with a
+    `new_name` is a split: a new series, named for the Work, that the Edition (with the others of
+    the same group) starts (« Séparer », EF-EXP-062)."""
+
     edition_id: str
     remote_library_id: str
     from_series_id: str
-    to_series_id: str
+    to_series_id: str | None
+    new_name: str | None = None
 
 
 @dataclass(frozen=True)
 class SeriesReassignmentPlan:
-    """After Works were merged (or a Series attached late), the Editions of one Work that sit in
-    several exported series of one remote library, and the series they would all share (I26)."""
+    """After Works were merged or separated (or a Series attached late), the Editions of one Work
+    that sit in several exported series of one remote library, or in a series that belongs to
+    another Work, and where they would go (I26)."""
 
     work_id: str
     moves: tuple[SeriesMove, ...]
@@ -248,6 +255,97 @@ def _referencing(connection: Connection, series_id: str) -> list[str]:
                 if hit is not None:
                     found.append(table.name)
     return found
+
+
+def _owner_of(connection: Connection, series_id: str, work_ids: set[str]) -> str | None:
+    """The Work a shared series belongs to: the one whose title is the series' name, else the one
+    that was exported into it first."""
+    series, link, edition, work = (
+        export.export_series, export.edition_export_series, catalog.edition, catalog.work,
+    )  # fmt: skip
+    name = connection.execute(
+        sa.select(series.c.normalized_name).where(series.c.id == series_id)
+    ).scalar()
+    titled = [
+        str(w.id) for w in connection.execute(
+            sa.select(work.c.id, work.c.title).where(work.c.id.in_(work_ids))
+        )
+        if normalize_series_name(w.title) == name
+    ]  # fmt: skip
+    if len(titled) == 1:
+        return titled[0]
+    first = connection.execute(
+        sa.select(edition.c.work_id)
+        .join(link, link.c.edition_id == edition.c.id)
+        .where(link.c.export_series_id == series_id)
+        .order_by(link.c.assigned_at, link.c.edition_id)
+        .limit(1)
+    ).scalar()
+    return None if first is None else str(first)
+
+
+def _same_catalog_series(connection: Connection, work_id: str, others: set[str]) -> bool:
+    member = catalog.series_member
+
+    def of(work: str) -> set[str]:
+        return {
+            str(r) for r in connection.execute(
+                sa.select(member.c.series_id).where(member.c.work_id == work)
+            ).scalars()
+        }  # fmt: skip
+
+    mine = of(work_id)
+    return bool(mine) and all(mine & of(o) for o in others)
+
+
+def _plan_splits(
+    connection: Connection, work_id: str, by_library: dict[str, list[Any]],
+    moves: list[SeriesMove], blockers: set[str], emptied: set[str],
+) -> int:  # fmt: skip
+    """The Editions of `work_id` that sit in a series that belongs to another Work leave it for a
+    series of their own, named for their Work (what « Séparer » leaves behind)."""
+    link, edition, series = export.edition_export_series, catalog.edition, export.export_series
+    title = connection.execute(
+        sa.select(catalog.work.c.title).where(catalog.work.c.id == work_id)
+    ).scalar()
+    if title is None:
+        return 0
+    paths = 0
+    taken = {m.edition_id for m in moves}
+    for library, group in sorted(by_library.items()):
+        for series_id in sorted({r.export_series_id for r in group}):
+            sharers = {
+                str(w) for w in connection.execute(
+                    sa.select(edition.c.work_id)
+                    .join(link, link.c.edition_id == edition.c.id)
+                    .where(link.c.export_series_id == series_id)
+                ).scalars()
+            }  # fmt: skip
+            if sharers == {work_id} or _owner_of(connection, series_id, sharers) == work_id:
+                continue  # it is this Work's series, or nobody else is in it
+            if _same_catalog_series(connection, work_id, sharers - {work_id}):
+                continue  # albums of one Series share its exported series on purpose
+            mine = [r for r in group if r.export_series_id == series_id
+                    and r.edition_id not in taken]  # fmt: skip
+            if not mine:
+                continue
+            left = connection.execute(
+                sa.select(series.c.frozen_at, series.c.series_dir).where(series.c.id == series_id)
+            ).one()
+            if left.frozen_at is not None:
+                blockers.add("frozen_series")
+            if left.series_dir is not None:
+                paths += len(mine)
+            name = normalize_series_name(str(title))
+            if connection.execute(
+                sa.select(series.c.id).where(
+                    series.c.remote_library_id == library, series.c.normalized_name == name
+                )
+            ).first():
+                blockers.add("name_collision")  # a series of this name is already there
+            moves.extend(SeriesMove(r.edition_id, library, series_id, None, str(title))
+                         for r in mine)  # fmt: skip
+    return paths
 
 
 def plan_series_reassignment(connection: Connection, work_id: str) -> SeriesReassignmentPlan:
@@ -297,8 +395,10 @@ def plan_series_reassignment(connection: Connection, work_id: str) -> SeriesReas
             if total == count[s]:  # every link of it is moving: it would be left empty
                 emptied.add(s)
                 blockers.update(f"dependent:{t}" for t in _referencing(connection, s))
+    path_changes += _plan_splits(connection, work_id, by_library, moves, blockers, emptied)
     body = {
-        "work": work_id, "moves": [(m.edition_id, m.from_series_id, m.to_series_id) for m in moves],
+        "work": work_id,
+        "moves": [(m.edition_id, m.from_series_id, m.to_series_id, m.new_name) for m in moves],
         "blockers": sorted(blockers), "emptied": sorted(emptied), "paths": path_changes,
     }  # fmt: skip
     digest = hashlib.sha256(json.dumps(body, sort_keys=True).encode()).hexdigest()[:16]
@@ -320,6 +420,8 @@ def apply_series_reassignment(
     series = export.export_series
     with connection.begin_nested():
         for move in plan.moves:
+            if move.to_series_id is None:
+                continue
             target = connection.execute(
                 sa.select(series).where(series.c.id == move.to_series_id)
             ).one()
@@ -332,6 +434,30 @@ def apply_series_reassignment(
                 ),
                 now=now,
             )  # fmt: skip
+        _apply_splits(connection, plan, now)
         for series_id in plan.emptied:
             connection.execute(sa.delete(series).where(series.c.id == series_id))
     return plan
+
+
+def _apply_splits(connection: Connection, plan: SeriesReassignmentPlan, now: datetime) -> None:
+    """The Editions of a split leave their series for one new series named for the Work: the
+    first creates it, the others join it. Only links and the new series row are written."""
+    series = export.export_series
+    created: dict[tuple[str, str], str] = {}
+    for move in plan.moves:
+        if move.to_series_id is not None or move.new_name is None:
+            continue
+        source = connection.execute(
+            sa.select(series.c.shelf_destination_id).where(series.c.id == move.from_series_id)
+        ).scalar_one()
+        made = created.get((move.remote_library_id, move.from_series_id))
+        created[(move.remote_library_id, move.from_series_id)] = reassign_edition_series(
+            connection, edition_id=move.edition_id, remote_library_id=move.remote_library_id,
+            shelf_destination_id=str(source),
+            ref=SeriesRef(
+                move.edition_id, move.new_name, normalize_series_name(move.new_name),
+                export_series_id=made,
+            ),
+            now=now,
+        )  # fmt: skip

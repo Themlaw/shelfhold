@@ -43,6 +43,18 @@ class _WorkMerge:
             "restored_id": B,
             "shelves": {},
             "waiting": {},
+            "survivor_age": "6+",
+            "restored_age": "6+",
+            "series_plan": {
+                "work_id": B,
+                "moves": [],
+                "blockers": [],
+                "path_changes": 0,
+                "emptied": [],
+                "mergeable": True,
+                "fingerprint": FP,
+                "applied": False,
+            },
         }
 
     def series_reassign(

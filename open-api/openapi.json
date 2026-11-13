@@ -5129,9 +5129,23 @@
             "title": "Merge Id",
             "type": "string"
           },
+          "restored_age": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Restored Age"
+          },
           "restored_id": {
             "title": "Restored Id",
             "type": "string"
+          },
+          "series_plan": {
+            "$ref": "#/components/schemas/SeriesReassignOut"
           },
           "shelves": {
             "additionalProperties": {
@@ -5146,6 +5160,17 @@
             },
             "title": "Shelves",
             "type": "object"
+          },
+          "survivor_age": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Survivor Age"
           },
           "survivor_id": {
             "title": "Survivor Id",
@@ -5164,7 +5189,10 @@
           "survivor_id",
           "restored_id",
           "shelves",
-          "waiting"
+          "waiting",
+          "survivor_age",
+          "restored_age",
+          "series_plan"
         ],
         "title": "SeparateOut",
         "type": "object"
@@ -5179,13 +5207,31 @@
             "title": "From Series Id",
             "type": "string"
           },
+          "new_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "New Name"
+          },
           "remote_library_id": {
             "title": "Remote Library Id",
             "type": "string"
           },
           "to_series_id": {
-            "title": "To Series Id",
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "To Series Id"
           }
         },
         "required": [
@@ -7261,6 +7307,16 @@
               }
             ],
             "title": "Merged Age"
+          },
+          "series_plan": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SeriesReassignOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "unrated_after": {
             "title": "Unrated After",
