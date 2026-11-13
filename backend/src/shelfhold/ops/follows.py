@@ -114,12 +114,13 @@ class FollowOps:
         return {"queued": len(plugins), "refresh": refresh and bool(plugins), "message": message}
 
     def follow(
-        self, source_key: str, remote_id: str, *, requester_user_id: str | None
-    ) -> dict[str, Any]:
+        self, source_key: str, remote_id: str, *, requester_user_id: str | None,
+        visibility: str = "ops",
+    ) -> dict[str, Any]:  # fmt: skip
         ref = self._ref(source_key, remote_id)
         outcome = self._run(
             lambda requests: requests.follow(
-                ref, requester_user_id=requester_user_id, visibility="ops"
+                ref, requester_user_id=requester_user_id, visibility=visibility
             )
         )
         return {"state": outcome.state, "sent": outcome.sent}

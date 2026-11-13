@@ -19,6 +19,7 @@ from typing import Any
 import sqlalchemy as sa
 from sqlalchemy import Engine
 
+from shelfhold.acquisition.application.requests import RequestService
 from shelfhold.acquisition.application.unit_follow import suppress_follow
 from shelfhold.acquisition.public import FOLLOW_JOB_KIND, make_all_due
 from shelfhold.catalog.lang import LANG_NORMALIZER_ID, LanguageError, edition_key_lang
@@ -209,6 +210,7 @@ class OpsServices:
         export_all: ExportAllOps | None = None,
         follows: FollowOps | None = None,
         acquire: AcquireOps | None = None,
+        requests: RequestService | None = None,
         roots: RootOps | None = None,
         maintenance: MaintenanceOps | None = None,
         window: MaintenanceWindow | None = None,
@@ -243,6 +245,7 @@ class OpsServices:
         self._export_all = export_all
         self._follows = follows
         self._acquire = acquire
+        self._requests = requests
         self._roots = roots
         self._maintenance = maintenance
 
@@ -766,6 +769,13 @@ class OpsServices:
         if self._follows is None:
             raise ExitUnavailableError("following is not connected")
         return self._follows
+
+    @property
+    def requests(self) -> RequestService:
+        """Ask, approve, refuse, arrive (EF-USR-010)."""
+        if self._requests is None:
+            raise ExitUnavailableError("requests are not connected")
+        return self._requests
 
     @property
     def acquire(self) -> AcquireOps:

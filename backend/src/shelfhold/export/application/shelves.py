@@ -13,6 +13,7 @@ profiles are reserved actions: the caller has passed `authorize_reserved`; the a
 
 import os
 from collections.abc import Sequence
+from contextlib import AbstractContextManager
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Protocol
@@ -394,6 +395,31 @@ class ShelfService:
             action = "edition.add_directly" if result.filed else "edition.add_directly_refused"
             self._audit(connection, actor, action, target)
         return result
+
+    def transaction(self) -> AbstractContextManager[Connection]:
+        """A write transaction, for a caller that rates and files in one (an approval, L35)."""
+        return self._immediate().begin()
+
+    def file_in(
+        self, connection: Connection, edition_id: str, shelf_id: str | None, *,
+        actor: Actor | None = None,
+    ) -> tuple[FileResult, str | None]:  # fmt: skip
+        """File an Edition in the caller's transaction, by the one admission every road uses. With
+        no `shelf_id`, the shelf the kind proposes, if it takes the Edition; the result then says
+        `no_default_shelf` and the Edition stays where it is (to shelve). Returns the result and
+        the shelf that was meant."""
+        if shelf_id is None:
+            shelf_id = self._default_shelf(connection, edition_id)
+            if (
+                shelf_id is None
+                or self._rating.admission_of(connection, edition_id, shelf_id=shelf_id)
+                is not Admission.ALLOWED
+            ):
+                return FileResult(False, "no_default_shelf"), None
+        result = self._file(connection, edition_id, shelf_id)
+        if result.filed:
+            self._audit(connection, actor, "edition.file", f"edition:{edition_id};shelf:{shelf_id}")
+        return result, shelf_id
 
     def file_default(self, edition_id: str, *, actor: Actor | None = None) -> FileResult:
         """File an Edition that sits nowhere on the shelf its kind proposes. The door is the one of

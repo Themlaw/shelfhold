@@ -1055,6 +1055,17 @@ target_kind = "What the target is: `work_id`, `source_ref`, `isbn` or `free_text
 target_value = "The target: a Work identifier, a source reference, an ISBN or free text."
 state = "`pending`, `approved`, `rejected`, `not_found`, `cancelled` or `arrived`."
 reject_reason = "Reason of the refusal; only set when the state is `rejected`."
+visibility = "`private` or `household`: who sees the request besides its owner, as decided when it was made."
+work_id = "Work the target was resolved to at approval (no foreign key: a purge removes the Work)."
+edition_id = "Edition proposed at approval (the language of the person who asked)."
+shelf_id = "Shelf proposed or chosen at approval."
+decided_by = "User (`user.id`) of the admin who approved, refused or closed the request."
+decided_at = "When the decision was made (UTC)."
+approved_age = "Minimum age chosen at approval of a child's request; applied to the Work when it appears."
+approved_x = "Whether the age chosen at approval is X."
+arrived_at = "When the first book of the approved request was filed (UTC)."
+started_at = "When the effects of the approval were all made (UTC); an approved request without it was left half done and is resumed."
+shown_title = "The title the requester was shown when she asked, kept as it was (a child's request)."
 
 [tables.notification_digest]
 description = "The digest being built for a user, sent at its due time."
@@ -1069,6 +1080,7 @@ id = "Pending item identifier (ULID)."
 series_ref = "Reference of the series in the source."
 title = "Title as the source gave it."
 fetched_at = "When the source was asked (UTC)."
+memo = "What the search knew of the result (JSON), so an approval acts on the book, not on a search page."
 
 [tables.source_alias_migration]
 description = "A bulk change of the identity scheme of a source, previewed before it is applied."

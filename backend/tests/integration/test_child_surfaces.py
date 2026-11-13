@@ -76,6 +76,13 @@ OWN = (
     "PUT /api/v1/me/title-languages",
     "GET /api/v1/me/visibility",
     "PUT /api/v1/me/visibility",
+    # M3 L35: her own requests, titled by what she was shown; a child asks by her reference only
+    # (no Work identifier, so no title of the catalogue can come back), and another profile's
+    # request is exactly an absent one (tests/integration/test_requests_http.py)
+    "GET /api/v1/requests",
+    "POST /api/v1/requests",
+    "GET /api/v1/requests/{request_id}",
+    "POST /api/v1/requests/{request_id}/cancel",
 )
 OPEN = {
     "GET /api/v1/activity": "activity",
@@ -197,6 +204,11 @@ CLOSED = (
     "POST /api/v1/works/rating-batch",
     "POST /api/v1/works/{work_id}/purge",
     "POST /api/v1/works/{work_id}/rating",
+    "GET /api/v1/requests/queue",  # M3 L35: what waits for an admin
+    "GET /api/v1/requests/{request_id}/approval",
+    "POST /api/v1/requests/{request_id}/approve",
+    "POST /api/v1/requests/{request_id}/reject",
+    "POST /api/v1/requests/{request_id}/not-found",
 )
 
 # The one route whose body is read before its guard answers: it is given a valid one, so that the

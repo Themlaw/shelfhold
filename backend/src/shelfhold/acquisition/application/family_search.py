@@ -64,6 +64,7 @@ class FamilyRef:
     source_key: str
     remote_id: str
     memo: dict[str, Any] = field(default_factory=dict)
+    title: str = ""  # what the child was shown: the title of her request (L35)
 
 
 @dataclass(frozen=True)
@@ -157,10 +158,11 @@ class FamilySearch:
             if group.appended or not group.editions:
                 continue  # shown before: only the Editions that are new are named again
             first = group.editions[0]
+            title = self._title_of(group.title)
             token = self._refs.issue(
-                owner, FamilyRef(first.source_key, first.remote_id, dict(first.memo))
+                owner, FamilyRef(first.source_key, first.remote_id, dict(first.memo), title)
             )
-            found.append(FamilyResult(self._title_of(group.title), token))
+            found.append(FamilyResult(title, token))
         # nothing kept: no cursor, the answer of a search that found nothing
         return FamilyPage(
             tuple(found), "results" if found else "empty", page.next_cursor if found else None
