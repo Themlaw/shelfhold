@@ -76,6 +76,7 @@ from shelfhold.export.domain.provenance_mirror import (
 )
 from shelfhold.identity.public import Principal
 from shelfhold.infrastructure.clock import Clock
+from shelfhold.infrastructure.event_sequence import invalidate_tokens
 from shelfhold.infrastructure.fsops import (
     FileIdentity,
     Fsops,
@@ -981,6 +982,8 @@ class PurgeService:
             ids.update(u.edition_id for u in plan.units)
             ids.update(b.id for b in plan.bindings if hasattr(b, "id"))
         jobs, events = erase_history(connection, ids, plan.needles, plan.tokens)
+        if events:  # a client may hold what was erased: every token before it is cut, for all
+            invalidate_tokens(connection)
         log.debug("purge.history_erased", jobs=jobs, events=events)
         if plan.kind == "work":
             erase_work_rows(connection, plan.work_id)

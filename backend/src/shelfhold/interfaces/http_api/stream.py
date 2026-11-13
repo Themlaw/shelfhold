@@ -16,12 +16,14 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import threading
 from collections.abc import AsyncIterator, Callable
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import StreamingResponse
 from sqlalchemy import Connection, Engine
+from starlette.background import BackgroundTask
 from starlette.concurrency import run_in_threadpool
 
 from shelfhold.events.bus import EventBus, PublishedEvent
@@ -31,7 +33,7 @@ from shelfhold.events.stream import Cursor, Feed
 from shelfhold.identity.public import Principal, credential_is_live, reader_scope
 from shelfhold.infrastructure.clock import Clock
 from shelfhold.interfaces.http_api.activity import activity_event_of, viewer_of
-from shelfhold.interfaces.http_api.auth import require_principal
+from shelfhold.interfaces.http_api.auth import gate_of, require_principal
 from shelfhold.interfaces.http_api.lists import decode_since, encode_since
 from shelfhold.interfaces.http_api.problems import ProblemError
 
@@ -48,6 +50,36 @@ async def _wait(wake: asyncio.Event, timeout: float) -> None:
     moves its clock by `timeout`: no real sleep."""
     with contextlib.suppress(TimeoutError):
         await asyncio.wait_for(wake.wait(), timeout)
+
+
+class _Slot:
+    """One open stream of a profile; `release` is idempotent (the generator and the response both
+    call it)."""
+
+    def __init__(self, slots: _Slots, user_id: str) -> None:
+        self._slots, self._user_id, self._held = slots, user_id, True
+
+    def release(self) -> None:
+        with self._slots.lock:
+            if self._held:
+                self._held = False
+                self._slots.count[self._user_id] -= 1
+                if self._slots.count[self._user_id] <= 0:
+                    del self._slots.count[self._user_id]
+
+
+class _Slots:
+    """The streams one profile holds open, in this process (the instance is a single process)."""
+
+    def __init__(self, cap: int) -> None:
+        self.cap, self.lock, self.count = cap, threading.Lock(), {}  # type: ignore[var-annotated]
+
+    def take(self, user_id: str) -> _Slot:
+        with self.lock:
+            if self.count.get(user_id, 0) >= self.cap:
+                raise ProblemError("too_many_streams")
+            self.count[user_id] = self.count.get(user_id, 0) + 1
+        return _Slot(self, user_id)
 
 
 def frame_of(
@@ -96,8 +128,11 @@ def build_stream_router(
     get_bus: Callable[[], EventBus],
     clock: Clock,
     key: SinceKey,
+    *,
+    max_per_profile: int = 4,
 ) -> APIRouter:
     router = APIRouter(prefix="/api/v1", tags=["events"])
+    slots = _Slots(max_per_profile)
 
     @router.get("/events", include_in_schema=False)
     async def events(
@@ -105,6 +140,7 @@ def build_stream_router(
         principal: Annotated[Principal, Depends(require_principal)],
     ) -> StreamingResponse:
         engine = get_engine()
+        slot = slots.take(principal.user_id)  # 429 beyond the cap, before anything is read
         scope = reader_scope(engine, principal.user_id)
         viewer = viewer_of(principal, scope.kind)
 
@@ -117,18 +153,23 @@ def build_stream_router(
             **cursor_codec(key.value, principal.user_id),
             project=project,
             clock=clock,
-            alive=lambda: credential_is_live(engine, principal, clock.now()),
+            alive=lambda: credential_is_live(
+                engine, principal, clock.now(), hardened=gate_of(request).auth.hardened
+            ),
             scope_now=lambda: reader_scope(engine, principal.user_id),
             last_event_id=request.headers.get("last-event-id"),
         )
         return StreamingResponse(
-            _frames(feed, get_bus()), media_type="text/event-stream", headers=HEADERS
+            _frames(feed, get_bus(), slot),
+            media_type="text/event-stream",
+            headers=HEADERS,
+            background=BackgroundTask(slot.release),  # a stream that never started frees it too
         )
 
     return router
 
 
-async def _frames(feed: Feed, bus: EventBus) -> AsyncIterator[str]:
+async def _frames(feed: Feed, bus: EventBus, slot: _Slot | None = None) -> AsyncIterator[str]:
     wake = asyncio.Event()
     loop = asyncio.get_running_loop()
 
@@ -150,3 +191,5 @@ async def _frames(feed: Feed, bus: EventBus) -> AsyncIterator[str]:
             await asyncio.sleep(0)  # let a disconnect cancel us
     finally:
         unsubscribe()
+        if slot is not None:
+            slot.release()

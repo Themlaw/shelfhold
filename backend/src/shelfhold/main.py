@@ -160,6 +160,7 @@ LOGGED_SETTINGS: dict[str, str] = {
     "maintenance_window_end": "maintenance_window_end", "timezone": "timezone",
     "retention_events_days": "retention_events_days",
     "retention_audit_days": "retention_audit_days",
+    "stream_max_per_profile": "stream_max_per_profile",
 }  # fmt: skip
 SECRET_SETTINGS = frozenset(
     {"api_token", "wake_token", "backup_passphrase_file", "metadata_contact"}
@@ -291,7 +292,11 @@ def create_app(
         build_activity_router(lambda: engine),  # EF-USR-016: `activity_view`, unmask audited
         build_catalog_lists_router(lambda: engine, since_key),  # M3 L11: `?since=`
         build_stream_router(
-            lambda: engine, lambda: composition.bus, clock, since_key
+            lambda: engine,
+            lambda: composition.bus,
+            clock,
+            since_key,
+            max_per_profile=resolved.stream_max_per_profile,
         ),  # M3 L12 (EF-INT-002): typed SSE, one filter per reader
         build_search_router(
             lambda: engine, ops_services

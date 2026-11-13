@@ -72,16 +72,16 @@ def test_counter_poc_open_stream_survives_a_work_purge(world: World) -> None:
         invalidate_tokens(connection)  # what `erase_work_rows` does in the purge transaction
     _insert(world, "ok", actor=admin)
     frames = feed.poll()
-    # worse than late: the frame's id is above the new floor, so even a reconnection replays on
-    # from it and never resyncs; the purge is skipped for good by whoever had a stream open
-    assert _feed(world, admin, last_event_id=_id_of(frames[0])).start() == []
-    assert frames == [RESYNC_FRAME]  # red: a normal frame, the stream stays open
+    # (the first version also asserted here that a reconnection from the id of `frames[0]` replays
+    # without resync: the frame is now `resync_required`, which carries no id; the reconnection
+    # from a cursor of before the purge is `test_sse_cursor_from_before_a_work_purge_is_resync`)
+    assert frames == [RESYNC_FRAME]
 
 
 @pytest.mark.req("EF-INT-002", "EF-USR-021", "EF-USR-022")
 @pytest.mark.parametrize("case", ["idle", "cap_after_switch"])
 def test_counter_poc_stream_outlives_a_session_the_door_refuses(world: World, case: str) -> None:
-    """L12 §5: "seule l'expiration absolue ferme". Under the hardened profile the door also
+    """L12 §5: "only the absolute expiry closes it". Under the hardened profile the door also
     refuses an admin session idle for 30 min, or older than 12 h when the profile was switched on
     after it opened. `credential_is_live` says yes to both: the stream of the most privileged
     reader (ops, every household entry) runs on up to 12 h, or up to 30 days."""

@@ -101,6 +101,7 @@ class Feed:
         self._upcast = upcast
         self._seq = 0
         self._epoch = 0
+        self._floor = 0
         self._next_beat = 0.0
         self.closed = False
         self.backlog = False  # the last poll filled its batch: poll again without waiting
@@ -125,6 +126,7 @@ class Feed:
         with self._engine.connect() as connection:
             self._epoch = restore_epoch(connection)
             seen = window(connection)
+            self._floor = seen.floor
             self._next_beat = self._now() + self._heartbeat_s
             if self._last_event_id is None:
                 self._seq = seen.head
@@ -136,14 +138,33 @@ class Feed:
                 or cursor.epoch != self._epoch  # a restore since
                 or cursor.seq > seen.head  # not issued yet: another history
                 or cursor.seq < seen.floor  # the retention or a purge took what follows
-                or cursor.marker
-                != history_marker(connection, cursor.seq)  # same places, other rows
+                or not self._same_history(connection, cursor)  # same places, other rows
             ):
                 return self._resync()
         self._seq = cursor.seq
         return []
 
+    @staticmethod
+    def _same_history(connection: Connection, cursor: Cursor) -> bool:
+        """The marker is the digest of the row at the cursor. A row that is gone (a purge or the
+        retention erased it) cannot be compared, and its going is the floor's business (every
+        purge that erases an event raises it): the cursor is not refused for it, so that the
+        erasure of a row a reader never saw tells her nothing."""
+        row = connection.execute(
+            sa.select(platform.event.c.id).where(platform.event.c.id == cursor.seq)
+        ).first()
+        return row is None or cursor.marker == history_marker(connection, cursor.seq)
+
     # -- poll ------------------------------------------------------------------------------
+
+    def _moved(self, connection: Connection) -> bool:
+        """What turns every frame of this stream stale: a restore, a purge or the retention (the
+        floor moved: the same for every reader), her role or her ceiling."""
+        return (
+            restore_epoch(connection) != self._epoch
+            or window(connection).floor != self._floor
+            or scope_code(self._scope_now()) != self._scope_code
+        )
 
     def _token(self, connection: Connection) -> str:
         return self._seal(
@@ -164,11 +185,8 @@ class Feed:
             return []
         frames: list[str] = []
         with self._engine.connect() as connection:
-            if (
-                restore_epoch(connection) != self._epoch
-                or scope_code(self._scope_now()) != self._scope_code
-            ):
-                return self._resync()  # restored under it, or her role or ceiling changed
+            if self._moved(connection):
+                return self._resync()  # restored, purged, or her role or ceiling changed
             rows = connection.execute(
                 sa.select(platform.event)
                 .where(platform.event.c.id > self._seq)
@@ -189,6 +207,10 @@ class Feed:
             if not self._alive():  # revoked while the batch was read: nothing of it leaves
                 self.closed = True
                 return []
+            if self._moved(
+                connection
+            ):  # her ceiling moved while it was filtered: none of it leaves
+                return self._resync()
             if self._now() >= self._next_beat:
                 frames.append(f"id: {self._token(connection)}\n: keepalive\n\n")
                 self._next_beat += self._heartbeat_s

@@ -35,11 +35,18 @@ from shelfhold.events.stream import (
     Feed,
 )
 from shelfhold.events.upcast import upcast_payload
-from shelfhold.identity.public import Credential, credential_is_live, local_auth, reader_scope
+from shelfhold.identity.public import (
+    Credential,
+    Principal,
+    credential_is_live,
+    local_auth,
+    reader_scope,
+)
 from shelfhold.infrastructure.event_sequence import invalidate_tokens
 from shelfhold.infrastructure.schema import identity, platform
 from shelfhold.interfaces.http_api.lists import encode_since
-from shelfhold.interfaces.http_api.stream import _frames, cursor_codec, frame_of
+from shelfhold.interfaces.http_api.problems import ProblemError
+from shelfhold.interfaces.http_api.stream import _frames, _Slots, cursor_codec, frame_of
 from shelfhold.jobs.retention import RetentionPolicy, expire_events_and_jobs
 from tests.auth_env import T0, ManualClock
 from tests.integration.test_child_surfaces import (  # noqa: F401  (fixtures)
@@ -96,6 +103,7 @@ def _feed(
     world: World, user_id: str, *, last_event_id: str | None = None,
     alive: Callable[[], bool] = lambda: True, key: bytes = KEY,
     upcast: Callable[..., dict[str, Any]] = upcast_payload,
+    scope_now: Callable[[], Any] | None = None,
 ) -> Feed:  # fmt: skip
     engine = world.seed.engine
     scope = reader_scope(engine, user_id)
@@ -111,7 +119,7 @@ def _feed(
     return Feed(
         engine, scope=scope, project=project, clock=world.env.clock,
         **cursor_codec(lambda: key, user_id),
-        alive=alive, scope_now=lambda: reader_scope(engine, user_id),
+        alive=alive, scope_now=scope_now or (lambda: reader_scope(engine, user_id)),
         last_event_id=last_event_id, upcast=upcast,
     )  # fmt: skip
 
@@ -798,3 +806,74 @@ def test_credential_is_live_for_a_session_a_key_and_a_profile(world: World) -> N
     assert not credential_is_live(
         engine, replace(expiring, user_id="01HZZZZZZZZZZZZZZZZZZZZZZZ"), before
     )
+
+
+@pytest.mark.req("EF-INT-002", *SEE)
+def test_sse_a_ceiling_lowered_while_the_batch_is_filtered_sends_none_of_it(world: World) -> None:
+    """The scope is read again after the batch, like the credential: a batch filtered under a
+    ceiling that moved meanwhile is not sent."""
+    kid = world.kid_id
+    real = reader_scope(world.seed.engine, kid)
+    reads = iter([real, reader_scope(world.seed.engine, _admin_id(world))])
+    feed = _started(world, kid, scope_now=lambda: next(reads, real))
+    _insert(world, "ok", actor=kid)
+    assert feed.poll() == [RESYNC_FRAME] and feed.closed
+
+
+@pytest.mark.req("EF-INT-002", "EF-USR-021")
+def test_sse_a_profile_holds_a_bounded_number_of_streams() -> None:
+    slots = _Slots(2)
+    first, second = slots.take("u1"), slots.take("u1")
+    with pytest.raises(ProblemError) as refused:
+        slots.take("u1")
+    assert refused.value.spec.code == "too_many_streams"
+    slots.take("u2")  # the cap is per profile
+    first.release()
+    first.release()  # idempotent: one slot back, not two
+    third = slots.take("u1")
+    with pytest.raises(ProblemError):
+        slots.take("u1")
+    second.release()
+    third.release()
+    assert slots.take("u1") and slots.take("u1")
+
+
+@pytest.mark.req("EF-INT-002", "EF-USR-021")
+def test_sse_streams_that_end_free_their_slot(
+    world: World, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """More streams than the cap (4), one after the other: each ends (a revoked session closes
+    it), each frees its slot, none is refused. And a profile at its cap is answered 429."""
+    seen = []
+    for _ in range(6):
+        seen.append(
+            open_stream(
+                world.env.app,
+                world.env.clock,
+                monkeypatch,
+                cookie=cookie_header(world.env.client),
+                until=lambda r: bool(r.heartbeats()),
+            ).status
+        )
+    assert seen == [200] * 6
+
+
+@pytest.mark.req("EF-INT-002", "EF-USR-022")
+def test_credential_is_live_follows_the_profile_of_the_instance(world: World) -> None:
+    """Without the hardened profile an admin session idle for 31 minutes is good (30 days);
+    with it, the door refuses it and so does the stream."""
+    engine, admin = world.seed.engine, _admin_id(world)
+    now = world.env.clock.now()
+    with engine.begin() as connection:
+        sid = connection.execute(
+            sa.select(identity.session.c.id).where(identity.session.c.user_id == admin)
+        ).scalar_one()
+        connection.execute(
+            sa.update(identity.session).where(identity.session.c.id == sid).values(
+                created_at=now - timedelta(hours=1), last_seen_at=now - timedelta(minutes=31),
+                absolute_expiry=now + timedelta(days=29), revoked_at=None,
+            )
+        )  # fmt: skip
+    principal = Principal(admin, "admin", "admin", Credential.SESSION, session_id=sid)
+    assert credential_is_live(engine, principal, now, hardened=False)
+    assert not credential_is_live(engine, principal, now, hardened=True)

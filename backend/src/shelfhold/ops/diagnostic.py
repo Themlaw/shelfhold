@@ -112,6 +112,7 @@ _AS_IS = (
     "disk_pause_percent", "disk_pause_gib", "disk_resume_percent", "disk_resume_gib",
     "wake_timeout_s", "wake_session_s", "maintenance_window_start", "maintenance_window_end",
     "timezone", "retention_events_days", "retention_audit_days", "backup_retention",
+    "stream_max_per_profile",
     "backup_stale_hours", "fetcher_cache",
 )  # fmt: skip
 _PRESENCE = (

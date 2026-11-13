@@ -2947,6 +2947,7 @@
   "store_provenance",
   "store_verify",
   "stored",
+  "stream_max_per_profile",
   "string",
   "stripper",
   "striptease",
