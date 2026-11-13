@@ -1,0 +1,178 @@
+"""The real address of a caller, and rate limits on the public routes (ENF-SEC-008, D15).
+
+- `real_client_ip`: the socket peer, unless the peer is a trusted proxy (`http.trusted_proxies`);
+  then `X-Forwarded-For` is read **from the right**: the first address that is not itself a
+  trusted proxy. What a client wrote to the left of that is a claim, never believed. Anything that
+  is not an address (a name, a port, brackets) stops the walk at the proxy: the caller gets no
+  fresh budget by writing garbage. An IPv4-mapped IPv6 address is the IPv4 address it wraps.
+- `SlidingWindowLimiter`: a table of at most `max_keys` entries (the least recently seen goes
+  first), each holding at most `limit` timestamps: its memory does not grow with the traffic.
+- `PublicRateLimit`: requests of an anonymous caller, per real address.
+
+State is in memory: one process per instance (`/data/.lock`); a restart forgets it.
+"""
+
+import threading
+import time
+from collections import OrderedDict, deque
+from collections.abc import Callable, Sequence
+
+from starlette.datastructures import Headers
+from starlette.types import ASGIApp, Receive, Scope, Send
+
+from shelfhold.identity.public import Principal
+from shelfhold.identity.public import address_key as address_key
+from shelfhold.interfaces.http_api.catalog import error_code
+from shelfhold.interfaces.http_api.identity_headers import IpNetwork, normalize_ip
+from shelfhold.interfaces.http_api.problems import build_problem_response
+
+UNKNOWN = "unknown"
+DEFAULT_MAX_KEYS = 10_000
+# What no anonymous quota ever slows down: the probes of the orchestrator.
+UNLIMITED_PATHS = frozenset({"/healthz", "/readyz"})
+
+
+def _in(address: str, trusted: tuple[IpNetwork, ...]) -> bool:
+    parsed = normalize_ip(address)
+    return parsed is not None and any(parsed in network for network in trusted)
+
+
+def real_client_ip(
+    peer: str | None, forwarded: Sequence[str], trusted: tuple[IpNetwork, ...]
+) -> str:
+    """`forwarded`: the values of every `X-Forwarded-For` line, in the order received."""
+    parsed = normalize_ip(peer) if peer else None
+    if parsed is None:
+        return UNKNOWN
+    if not trusted or not any(parsed in network for network in trusted):
+        return str(parsed)
+    chain = [part.strip() for value in forwarded for part in value.split(",")]
+    for entry in reversed(chain):
+        address = normalize_ip(entry)
+        if address is None:  # not an address: the walk stops at the proxy that wrote it
+            return str(parsed)
+        if not any(address in network for network in trusted):
+            return str(address)
+    return str(parsed)
+
+
+class SlidingWindowLimiter:
+    def __init__(self, *, limit: int, window_s: float, max_keys: int = DEFAULT_MAX_KEYS) -> None:
+        self._limit = limit
+        self._window = window_s
+        self._max_keys = max_keys
+        self._seen: OrderedDict[str, deque[float]] = OrderedDict()
+        self._lock = threading.Lock()
+
+    def __len__(self) -> int:
+        return len(self._seen)
+
+    def _recent(self, key: str, now: float) -> deque[float] | None:
+        stamps = self._seen.get(key)
+        if stamps is None:
+            return None
+        while stamps and now - stamps[0] >= self._window:
+            stamps.popleft()
+        if not stamps:
+            del self._seen[key]
+            return None
+        return stamps
+
+    def _wait(self, key: str, now: float) -> float | None:
+        stamps = self._recent(key, now)
+        if stamps is not None and len(stamps) >= self._limit:
+            return stamps[0] + self._window - now
+        return None
+
+    def _record(self, key: str, now: float) -> None:
+        stamps = self._seen.setdefault(key, deque(maxlen=self._limit))
+        stamps.append(now)
+        self._seen.move_to_end(key)
+        while len(self._seen) > self._max_keys:
+            self._seen.popitem(last=False)
+
+    def retry_after(self, key: str, *, now: float) -> float | None:
+        with self._lock:
+            return self._wait(key, now)
+
+    def record(self, key: str, *, now: float) -> None:
+        with self._lock:
+            self._record(key, now)
+
+    def hit(self, key: str, *, now: float) -> float | None:
+        """Atomically: refuse (seconds to wait, the attempt is not counted) or count it."""
+        with self._lock:
+            wait = self._wait(key, now)
+            if wait is None:
+                self._record(key, now)
+            return wait
+
+
+class ClientIpMiddleware:
+    """Puts the real address in `scope["state"]["client_ip"]` for everything below."""
+
+    def __init__(self, app: ASGIApp, *, trusted: tuple[IpNetwork, ...] = ()) -> None:
+        self.app = app
+        self.trusted = trusted
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] in {"http", "websocket"}:
+            client = scope.get("client")
+            forwarded = Headers(scope=scope).getlist("x-forwarded-for") if self.trusted else []
+            ip = real_client_ip(client[0] if client else None, forwarded, self.trusted)
+            scope.setdefault("state", {})["client_ip"] = ip
+        await self.app(scope, receive, send)
+
+
+def client_ip_of(scope: Scope) -> str:
+    value = scope.get("state", {}).get("client_ip")
+    if isinstance(value, str):
+        return value
+    client = scope.get("client")
+    parsed = normalize_ip(client[0]) if client else None
+    return str(parsed) if parsed is not None else UNKNOWN
+
+
+def retry_after_header(wait: float) -> int:
+    return max(1, int(wait) + (0 if wait == int(wait) else 1))
+
+
+async def refuse_too_many(scope: Scope, receive: Receive, send: Send, wait: float) -> None:
+    seconds = retry_after_header(wait)
+    response = build_problem_response(
+        error_code("too_many_attempts"),
+        request_id=scope.get("state", {}).get("request_id"),
+        extensions={"retry_after_s": seconds},
+        headers={"Retry-After": str(seconds)},
+    )
+    await response(scope, receive, send)
+
+
+class PublicRateLimit:
+    """Requests of a caller nobody signed in, per real address (ENF-SEC-008). Sits inside
+    authentication: a principal, session or key, is never counted here."""
+
+    def __init__(
+        self,
+        app: ASGIApp,
+        *,
+        per_minute: int,
+        max_keys: int = DEFAULT_MAX_KEYS,
+        clock: Callable[[], float] = time.monotonic,
+    ) -> None:
+        self.app = app
+        self._limiter = SlidingWindowLimiter(limit=per_minute, window_s=60.0, max_keys=max_keys)
+        self._clock = clock
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http" or scope.get("path") in UNLIMITED_PATHS:
+            await self.app(scope, receive, send)
+            return
+        if isinstance(scope.get("state", {}).get("principal"), Principal):
+            await self.app(scope, receive, send)
+            return
+        wait = self._limiter.hit(address_key(client_ip_of(scope)), now=self._clock())
+        if wait is not None:
+            await refuse_too_many(scope, receive, send, wait)
+            return
+        await self.app(scope, receive, send)

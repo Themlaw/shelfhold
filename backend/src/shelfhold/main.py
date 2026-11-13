@@ -60,6 +60,7 @@ from shelfhold.interfaces.http_api.identity import (
     build_identity_router,
     build_notification_prefs_router,
 )
+from shelfhold.interfaces.http_api.identity_headers import ForwardAuth
 from shelfhold.interfaces.http_api.intents import build_intents_router
 from shelfhold.interfaces.http_api.jobs import build_jobs_router
 from shelfhold.interfaces.http_api.library import build_library_router
@@ -159,7 +160,9 @@ LOGGED_SETTINGS: dict[str, str] = {
     "follow_check_max_s": "follow_check_max_s",
     "follow_check_finished_s": "follow_check_finished_s",
     "secret_key_file": "trousseau_path",  # where the keyring is: a path, not the keyring
-    "forward_auth_trusted_cidrs": "proxy_trusted_cidrs",  # networks, not credentials
+    "http_trusted_proxies": "proxy_trusted_cidrs",
+    "auth_forward_enabled": "proxy_identity_enabled",  # a switch
+    "http_public_rate_per_minute": "public_rate_per_minute",  # networks, not credentials
     "maintenance_window_start": "maintenance_window_start",
     "maintenance_window_end": "maintenance_window_end", "timezone": "timezone",
     "retention_events_days": "retention_events_days",
@@ -167,7 +170,13 @@ LOGGED_SETTINGS: dict[str, str] = {
     "stream_max_per_profile": "stream_max_per_profile",
 }  # fmt: skip
 SECRET_SETTINGS = frozenset(
-    {"api_token", "wake_token", "backup_passphrase_file", "metadata_contact"}
+    {
+        "api_token",
+        "wake_token",
+        "backup_passphrase_file",
+        "metadata_contact",
+        "auth_forward_secret",
+    }
 )  # never logged, whatever its value
 
 
@@ -453,7 +462,17 @@ def create_app(
         auth=gate,
         idempotency=IdempotencyStore(engine, clock=clock.now),  # actor: the real principal
         source_url=resolved.source_url,
-        forward_auth_trusted_cidrs=resolved.forward_auth_trusted_cidrs,
+        trusted_proxies=resolved.http_trusted_proxies,
+        forward_auth=(
+            ForwardAuth(
+                secret=resolved.auth_forward_secret.get_secret_value()
+                if resolved.auth_forward_secret is not None
+                else None
+            )
+            if resolved.auth_forward_enabled
+            else None
+        ),
+        public_rate_per_minute=resolved.http_public_rate_per_minute,
         maintenance_active=MaintenanceMode(engine, clock).probe,  # EF-INT-018
     )
 

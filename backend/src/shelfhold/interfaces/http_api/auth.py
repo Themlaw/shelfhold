@@ -17,8 +17,10 @@ cookie is set without it and without the prefix; HTTPS is decided by the request
 `https://` public URL (docs/admin/durcir.md).
 """
 
+import hashlib
+import time
 from collections.abc import Callable, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from http.cookies import SimpleCookie
 from uuid import uuid4
 
@@ -32,6 +34,7 @@ from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from shelfhold.identity.public import (
     DEFAULT_RESERVED_ROLES,
+    FORWARD_REJECTED_AUDIT,
     IDENTITY_HEADER_AUDIT,
     Allowed,
     Credential,
@@ -49,6 +52,11 @@ from shelfhold.infrastructure.http_headers import BEARER_CHALLENGE
 from shelfhold.interfaces.http_api.catalog import error_code
 from shelfhold.interfaces.http_api.idempotency import NEVER_STORE
 from shelfhold.interfaces.http_api.problems import ProblemError, build_problem_response
+from shelfhold.interfaces.http_api.ratelimit import (
+    SlidingWindowLimiter,
+    client_ip_of,
+    refuse_too_many,
+)
 
 LOGIN_PAGE = "/login"
 LOGIN_PATH = "/api/v1/auth/login"
@@ -84,6 +92,16 @@ class AuthGate:
     auth: LocalAuth
     public_url: str | None = None
     ready: Callable[[], bool] = lambda: True  # False while the start-up is not finished
+    # ENF-SEC-008: wrong API keys, per real address and per key; a good key is never counted
+    key_failures_per_minute: int = 10
+    clock: Callable[[], float] = time.monotonic
+    by_address: SlidingWindowLimiter = field(init=False)
+    by_key: SlidingWindowLimiter = field(init=False)
+
+    def __post_init__(self) -> None:
+        window = 60.0
+        self.by_address = SlidingWindowLimiter(limit=self.key_failures_per_minute, window_s=window)
+        self.by_key = SlidingWindowLimiter(limit=self.key_failures_per_minute, window_s=window)
 
     def cookies_for(self, scope: Scope) -> CookieNames:
         https = scope.get("scheme") == "https" or (self.public_url or "").startswith("https://")
@@ -92,6 +110,11 @@ class AuthGate:
     def record_stripped_header(self, header: str) -> None:
         """Audit entry read back by `shelfhold status` (one per header name and process)."""
         self.auth.audit_refusal(IDENTITY_HEADER_AUDIT, target=header)
+
+    def record_forward_rejection(self, route: str) -> None:
+        """A believed proxy sent an identity to a route with its own credentials (EF-USR-002):
+        the audit names the route, never the identity."""
+        self.auth.audit_refusal(FORWARD_REJECTED_AUDIT, target=route)
 
 
 def _cookie_header(
@@ -201,11 +224,23 @@ class AuthMiddleware:
         ):
             await self._problem(scope, receive, send, "instance.starting")
             return
-        principal, session = await self._resolve(headers, names)
+        refused = self._key_attempts_refused(scope, headers)
+        if refused is not None:
+            await refuse_too_many(scope, receive, send, refused)
+            return
+        principal, session = await self._resolve(headers, names, state.get("forward_user"))
         state["principal"] = principal
+        if principal is None and _bearer(headers) is not None:
+            self._count_failed_key(scope, headers)
 
         unsafe = scope["method"] not in SAFE_METHODS
-        by_key = principal is not None and session is None
+        by_forward = principal is not None and principal.via_forward
+        by_key = principal is not None and session is None and not by_forward
+        if unsafe and by_forward and not self._own_origin(headers):
+            # an ambient credential like a cookie, with no secret to echo: the request must come
+            # from this very site (a cross-site page cannot forge its `Origin`)
+            await self._problem(scope, receive, send, "csrf_failed")
+            return
         if unsafe and not by_key and headers.get("sec-fetch-site", "").lower() == "cross-site":
             await self._problem(scope, receive, send, "csrf_failed")
             return
@@ -243,8 +278,38 @@ class AuthMiddleware:
 
         await self.app(scope, receive, send_with_cookie)
 
+    def _key_label(self, headers: Headers) -> str:
+        """The token a wrong guess carried, as a digest: never kept, only counted."""
+        return "key:" + hashlib.sha256((_bearer(headers) or "")[:64].encode()).hexdigest()[:24]
+
+    def _key_attempts_refused(self, scope: Scope, headers: Headers) -> float | None:
+        if _bearer(headers) is None:
+            return None
+        now = self.gate.clock()
+        waits = (
+            self.gate.by_address.retry_after(client_ip_of(scope), now=now),
+            self.gate.by_key.retry_after(self._key_label(headers), now=now),
+        )
+        found = [w for w in waits if w is not None]
+        return max(found) if found else None
+
+    def _count_failed_key(self, scope: Scope, headers: Headers) -> None:
+        now = self.gate.clock()
+        self.gate.by_address.record(client_ip_of(scope), now=now)
+        self.gate.by_key.record(self._key_label(headers), now=now)
+
+    @staticmethod
+    def _own_origin(headers: Headers) -> bool:
+        if headers.get("sec-fetch-site", "").lower() == "cross-site":
+            return False
+        origin = headers.get("origin", "")
+        host = headers.get("host", "")
+        if not origin or not host:
+            return False
+        return origin.split("://", 1)[-1].casefold() == host.casefold()
+
     async def _resolve(
-        self, headers: Headers, names: CookieNames
+        self, headers: Headers, names: CookieNames, forward_user: object = None
     ) -> tuple[Principal | None, SessionAuth | None]:
         auth = self.gate.auth
         try:
@@ -252,9 +317,15 @@ class AuthMiddleware:
             if bearer is not None:  # explicit credential: the cookie is not looked at
                 return await run_in_threadpool(auth.authenticate_api_key, bearer), None
             token = _cookie_value(headers, names.session)
-            if token is None:
-                return None, None
-            session = await run_in_threadpool(auth.authenticate_session, token)
+            session = (
+                await run_in_threadpool(auth.authenticate_session, token)
+                if token is not None
+                else None
+            )
+            if session is None and isinstance(forward_user, str):
+                # a believed proxy named her, and no session of her own speaks first
+                named = await run_in_threadpool(auth.authenticate_forward, forward_user)
+                return named, None
         except sa.exc.OperationalError as error:  # database not migrated yet, or locked
             structlog.get_logger().warning("auth.store_unavailable", error=str(error))
             return None, None
@@ -308,6 +379,20 @@ def require_session(request: Request) -> Principal:
     if principal.credential is not Credential.SESSION:
         raise ProblemError("credential_not_allowed")
     return principal
+
+
+def require_requester(request: Request) -> Principal:
+    """A person asking for her own things: her session or a key of scope `request` (EF-USR-024).
+
+    The key is already the person it was issued for (its subject), with her role and her filters:
+    nothing here widens that. Read keys and `admin` keys are refused, as is everything that is not
+    one of the four routes of one's own requests (they use `require_session`)."""
+    principal = require_principal(request)
+    if principal.credential is Credential.SESSION:
+        return principal
+    if principal.credential is Credential.API_KEY and "request" in principal.scopes:
+        return principal
+    raise ProblemError("credential_not_allowed")
 
 
 def reserved_action(

@@ -4,9 +4,9 @@ a rate table that cannot grow without bound."""
 from __future__ import annotations
 
 import pytest
-from shelfhold.interfaces.http_api.ratelimit import SlidingWindowLimiter, real_client_ip
 
 from shelfhold.interfaces.http_api.identity_headers import parse_networks
+from shelfhold.interfaces.http_api.ratelimit import SlidingWindowLimiter, real_client_ip
 
 TRUSTED = parse_networks(["10.0.0.0/8", "2001:db8:aaaa::/48"])
 

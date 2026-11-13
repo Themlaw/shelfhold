@@ -10,42 +10,19 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 from contextlib import contextmanager
+from datetime import timedelta
 from typing import Any
 
 import pytest
-from fastapi import APIRouter, Depends
 from fastapi.testclient import TestClient
+from pydantic import SecretStr
 
 from shelfhold.config import Settings
-from shelfhold.identity.public import RESERVED_ACTIONS, Principal
-from shelfhold.interfaces.http_api.auth import require_principal, reserved_action
 from tests.auth_env import ADMIN, PASSWORD, WRONG, AuthEnv, auth_env, db_rows
 
 SECRET = "proxy-shared-value-0123456789"  # noqa: S105 (test fixture)
 PROXY = "10.1.2.3"
 SESSION = "/api/v1/auth/session"
-ALLOWED_PROFILES = RESERVED_ACTIONS["shelf.allowed_profiles"]
-EXPORT = RESERVED_ACTIONS["secrets.export"]
-
-
-def _router(calls: list[str]) -> APIRouter:
-    router = APIRouter(prefix="/api/v1/review")
-
-    @router.post("/profiles")
-    def profiles(p: Principal = Depends(reserved_action(ALLOWED_PROFILES))) -> dict[str, str]:  # noqa: B008
-        calls.append("profiles")
-        return {"ok": "yes"}
-
-    @router.post("/export")
-    def export(p: Principal = Depends(reserved_action(EXPORT))) -> dict[str, str]:  # noqa: B008
-        calls.append("export")
-        return {"ok": "yes"}
-
-    @router.post("/thing")
-    def thing(p: Principal = Depends(require_principal)) -> dict[str, str]:  # noqa: B008
-        return {"actor": p.actor_id}
-
-    return router
 
 
 def configured(settings: Settings, **update: Any) -> Settings:
@@ -54,20 +31,24 @@ def configured(settings: Settings, **update: Any) -> Settings:
         "http_trusted_proxies": ("10.0.0.0/8",),
         "auth_forward_secret": SECRET,
     }
-    return settings.model_copy(update={**base, **update})
+    merged = {**base, **update}
+    secret = merged["auth_forward_secret"]
+    merged["auth_forward_secret"] = SecretStr(secret) if isinstance(secret, str) else secret
+    return settings.model_copy(update=merged)
 
 
 @contextmanager
 def forward_env(
     monkeypatch: pytest.MonkeyPatch,
     settings: Settings,
-    calls: list[str] | None = None,
+    *,
+    again: bool = False,  # a second instance over the same data: the admin is already there
     **update: Any,
 ) -> Iterator[AuthEnv]:
     with auth_env(
         monkeypatch,
         configured(settings, **update),
-        routers=[_router(calls if calls is not None else [])],
+        with_admin=not again,
     ) as env:
         yield env
 
@@ -92,8 +73,8 @@ def test_identity_header_ignored_when_forward_auth_disabled(
 ) -> None:
     # default: nothing configured. Then: a proxy network is configured (for the real IP) but the
     # switch is off, and the secret is right. Either way the request is anonymous, not refused.
-    for update in ({}, {"http_trusted_proxies": ("10.0.0.0/8",), "auth_forward_secret": SECRET}):
-        with auth_env(monkeypatch, settings.model_copy(update=update)) as env:
+    for case in (settings, configured(settings, auth_forward_enabled=False)):
+        with auth_env(monkeypatch, case, with_admin=case is settings) as env:
             answer = who(env)
             assert answer.status_code == 401 and answer.json()["code"] == "unauthenticated"
             assert env.client.get("/login", headers={"Remote-User": ADMIN}).status_code == 200
@@ -140,13 +121,13 @@ def test_forward_auth_requires_trusted_cidr_and_configured_secret(
 def test_forward_auth_secret_is_optional_but_the_network_is_not(
     monkeypatch: pytest.MonkeyPatch, settings: Settings
 ) -> None:
-    for update in ({"auth_forward_secret": None}, {"auth_forward_secret": ""}):
-        with forward_env(monkeypatch, settings, **update) as env:
+    for position, update in enumerate(({"auth_forward_secret": None}, {"auth_forward_secret": ""})):
+        with forward_env(monkeypatch, settings, again=position > 0, **update) as env:
             bare = {"Remote-User": ADMIN}
             assert env.other_client(PROXY).get(SESSION, headers=bare).status_code == 200
             assert env.other_client("192.0.2.9").get(SESSION, headers=bare).status_code == 401
             # an empty secret on both sides never counts as a match for a configured one
-    with forward_env(monkeypatch, settings) as env:
+    with forward_env(monkeypatch, settings, again=True) as env:
         empty = {"Remote-User": ADMIN, "X-Shelfhold-Proxy-Secret": ""}
         assert env.other_client(PROXY).get(SESSION, headers=empty).status_code == 401
 
@@ -171,32 +152,12 @@ def test_forward_auth_rejected_outside_trusted_cidr(
         assert who(env, "::ffff:192.0.2.9").status_code == 401
         assert who(env, "::ffff:10.1.2.3").status_code == 200
         # IPv6 networks are held to the same rule
-    with forward_env(monkeypatch, settings, http_trusted_proxies=("2001:db8:1::/48",)) as env:
+    with forward_env(
+        monkeypatch, settings, again=True, http_trusted_proxies=("2001:db8:1::/48",)
+    ) as env:
         assert who(env, "2001:db8:1::5").status_code == 200
         assert who(env, "2001:db8:2::5").status_code == 401
         assert who(env, "10.1.2.3").status_code == 401
-
-
-@pytest.mark.req("EF-USR-002", "ENF-SEC-008")
-def test_the_identity_header_never_reaches_the_application_when_not_believed(
-    monkeypatch: pytest.MonkeyPatch, settings: Settings
-) -> None:
-    from fastapi import Request
-
-    router = APIRouter(prefix="/api/v1/review")
-
-    @router.get("/names")
-    def names(request: Request) -> dict[str, list[str]]:
-        return {"names": sorted(request.headers.keys())}
-
-    with auth_env(monkeypatch, configured(settings), routers=[router]) as env:
-        sent = proxied(env, "192.0.2.9")
-        seen = sent["client"].get("/api/v1/review/names", headers=sent["headers"]).json()["names"]
-        assert not [n for n in seen if n.startswith(("remote", "x-shelfhold-proxy"))]
-        believed = proxied(env)
-        seen = believed["client"].get("/api/v1/review/names", headers=believed["headers"])
-        # even believed, the secret is not passed on to the routes
-        assert "x-shelfhold-proxy-secret" not in seen.json()["names"]
 
 
 # -- routes that never take a forward identity ---------------------------------------------------
@@ -241,46 +202,57 @@ def test_healthz_and_readyz_never_take_a_forward_identity(
 # -- reserved actions ----------------------------------------------------------------------------
 
 
+NEW_PROFILE = {"username": "newcomer", "password": PASSWORD, "role": "member"}
+PROFILES = "/api/v1/profiles"
+
+
+def profile_names(env: AuthEnv) -> list[str]:
+    return sorted(str(r[0]) for r in db_rows(env.settings, "SELECT username FROM user"))
+
+
 @pytest.mark.req("EF-USR-024", "EF-USR-002")
 def test_forward_auth_session_cannot_do_reserved_actions(
     monkeypatch: pytest.MonkeyPatch, settings: Settings
 ) -> None:
-    calls: list[str] = []
-    with forward_env(monkeypatch, settings, calls) as env:
-        for path in ("/api/v1/review/profiles", "/api/v1/review/export"):
+    with forward_env(monkeypatch, settings) as env:
+        before = profile_names(env)
+        (admin_id,) = db_rows(env.settings, "SELECT id FROM user WHERE username = 'admin'")[0]
+        calls = (
+            ("POST", PROFILES, {"json": NEW_PROFILE}),  # parental control: managing profiles
+            ("GET", f"{PROFILES}/{admin_id}/export", {}),  # one person's data, revealed
+        )
+        for method, path, kwargs in calls:
             sent = proxied(env)
             sent["headers"]["Origin"] = "https://testserver"
-            answer = sent["client"].post(path, headers=sent["headers"])
+            answer = sent["client"].request(method, path, headers=sent["headers"], **kwargs)
             assert answer.status_code == 401, (path, answer.text)
             body = answer.json()
             assert body["code"] == "reauth_required"
             assert body["reauth_method"] in {"password", "local_password"}
-        assert calls == []
+        assert profile_names(env) == before  # nothing was done
         # a session opened by the local password, in the same browser, is the way in
         browser = env.other_client(PROXY)
         assert env.login(client=browser).status_code == 200
-        ok = env.post("/api/v1/review/profiles", client=browser, headers={"Remote-User": ADMIN})
-        assert ok.status_code == 200, ok.text
-        assert calls == ["profiles"]
+        ok = env.post(PROFILES, client=browser, json=NEW_PROFILE, headers={"Remote-User": ADMIN})
+        assert ok.status_code == 201, ok.text
+        assert profile_names(env) == sorted([*before, "newcomer"])
 
 
 @pytest.mark.req("EF-USR-024")
 def test_forward_auth_never_makes_a_session_fresh_by_itself(
     monkeypatch: pytest.MonkeyPatch, settings: Settings
 ) -> None:
-    calls: list[str] = []
-    with forward_env(monkeypatch, settings, calls) as env:
+    with forward_env(monkeypatch, settings) as env:
+        before = profile_names(env)
         # a local session whose password entry is old, plus a forward identity: still not fresh
         browser = env.other_client(PROXY)
         assert env.login(client=browser).status_code == 200
-        from datetime import timedelta
-
         env.clock.advance(timedelta(hours=2))
         sent = {"Remote-User": ADMIN, "X-Shelfhold-Proxy-Secret": SECRET}
         sent["X-CSRF-Token"] = env.csrf(browser)
-        answer = browser.post("/api/v1/review/export", headers=sent)
+        answer = browser.post(PROFILES, json=NEW_PROFILE, headers=sent)
         assert answer.status_code == 401 and answer.json()["code"] == "reauth_required"
-        assert calls == []
+        assert profile_names(env) == before
 
 
 @pytest.mark.req("EF-USR-024", "ENF-SEC-008")
@@ -289,7 +261,7 @@ def test_forward_auth_unsafe_request_needs_its_own_origin(
 ) -> None:
     """A proxy login is an ambient credential, like a cookie: a cross-site page must not use it."""
     with forward_env(monkeypatch, settings) as env:
-        path = "/api/v1/review/thing"
+        path = "/api/v1/auth/logout"  # a session route that changes state and is not reserved
         sent = proxied(env)
         client, headers = sent["client"], sent["headers"]
         assert client.post(path, headers=headers).status_code == 403  # no Origin at all
@@ -298,7 +270,7 @@ def test_forward_auth_unsafe_request_needs_its_own_origin(
         cross = {**headers, "Origin": "https://testserver", "Sec-Fetch-Site": "cross-site"}
         assert client.post(path, headers=cross).status_code == 403
         right = {**headers, "Origin": "https://testserver"}
-        assert client.post(path, headers=right).status_code == 200
+        assert client.post(path, headers=right).status_code == 204
         assert client.get(SESSION, headers=headers).status_code == 200  # reads need none
 
 

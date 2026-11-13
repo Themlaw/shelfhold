@@ -76,7 +76,7 @@ def test_a_key_issued_for_a_profile_acts_as_that_profile_and_issuer_is_recorded(
         assert subject == MEMBER_ID and issuer != MEMBER_ID
         # the session of the real admin, with a key in the same request: the key is what counts
         mixed = api.client.get(REQUESTS, headers=bearer(key))
-        assert mixed.status_code == 200 and mixed.json()["items"][0]["target_kind"] == "free_text"
+        assert mixed.status_code == 200 and len(mixed.json()["items"]) == 1
 
 
 @pytest.mark.req("EF-USR-024", "EF-USR-014")

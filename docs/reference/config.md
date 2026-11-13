@@ -34,7 +34,10 @@ Version du schéma de `config.toml` : `1.0`. Précédence : variable d'environne
 | `SHELFHOLD_FOLLOW_CHECK_MAX_S` | `follow_check_max_s` | int | `604800` | >= 60 | `SHELFHOLD_FOLLOW_CHECK_MAX_S_FILE` en lit la valeur dans un fichier |
 | `SHELFHOLD_FOLLOW_CHECK_FINISHED_S` | `follow_check_finished_s` | int | `2592000` | >= 3600 | `SHELFHOLD_FOLLOW_CHECK_FINISHED_S_FILE` en lit la valeur dans un fichier |
 | `SHELFHOLD_NAMING_SEGMENT_POLICY_CONFIRMED` | `naming_segment_policy_confirmed` | bool | `false` |  | `SHELFHOLD_NAMING_SEGMENT_POLICY_CONFIRMED_FILE` en lit la valeur dans un fichier |
-| `SHELFHOLD_FORWARD_AUTH_TRUSTED_CIDRS` | `forward_auth_trusted_cidrs` | liste de str | aucun |  | `SHELFHOLD_FORWARD_AUTH_TRUSTED_CIDRS_FILE` en lit la valeur dans un fichier |
+| `SHELFHOLD_HTTP_TRUSTED_PROXIES` | `http_trusted_proxies` | liste de str | aucun |  | `SHELFHOLD_HTTP_TRUSTED_PROXIES_FILE` en lit la valeur dans un fichier |
+| `SHELFHOLD_AUTH_FORWARD_ENABLED` | `auth_forward_enabled` | bool | `false` |  | `SHELFHOLD_AUTH_FORWARD_ENABLED_FILE` en lit la valeur dans un fichier |
+| `SHELFHOLD_AUTH_FORWARD_SECRET` | `auth_forward_secret` | secret (optionnel) | aucun |  | secret, masqué partout; `SHELFHOLD_AUTH_FORWARD_SECRET_FILE` en lit la valeur dans un fichier |
+| `SHELFHOLD_HTTP_PUBLIC_RATE_PER_MINUTE` | `http_public_rate_per_minute` | int | `120` | >= 10, <= 100000 | `SHELFHOLD_HTTP_PUBLIC_RATE_PER_MINUTE_FILE` en lit la valeur dans un fichier |
 | `SHELFHOLD_CLI_ALLOW_HOST` | `cli_allow_host` | bool | `false` |  | `SHELFHOLD_CLI_ALLOW_HOST_FILE` en lit la valeur dans un fichier |
 | `SHELFHOLD_ALLOW_NETWORK_DATA_DIR` | `allow_network_data_dir` | bool | `false` |  | `SHELFHOLD_ALLOW_NETWORK_DATA_DIR_FILE` en lit la valeur dans un fichier |
 | `SHELFHOLD_DISK_PAUSE_PERCENT` | `disk_pause_percent` | float | `5.0` | >= 0, <= 50 | `SHELFHOLD_DISK_PAUSE_PERCENT_FILE` en lit la valeur dans un fichier |

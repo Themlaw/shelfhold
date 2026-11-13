@@ -34,7 +34,7 @@ from shelfhold.infrastructure.local_socket import RpcFailure, call
 _VALUE_ERRORS = frozenset(
     {
         "invalid_username", "password_too_short", "password_too_long", "invalid_expiry",
-        "unknown_reference",
+        "unknown_reference", "invalid_scope", "scope_requires_admin", "subject_not_allowed",
     }
 )  # fmt: skip
 
@@ -66,8 +66,9 @@ class IdentityCommands(Protocol):
         self, *, username: str | None = None, session_id: str | None = None
     ) -> int: ...
     def create_api_key(
-        self, *, name: str | None, read_only: bool = False, expires_days: int | None = None
-    ) -> CreatedApiKey: ...
+        self, *, name: str | None, read_only: bool = False, expires_days: int | None = None,
+        scope: str | None = None, subject_username: str | None = None,
+    ) -> CreatedApiKey: ...  # fmt: skip
     def rotate_api_key(
         self, prefix: str, *, expires_days: int | None = None
     ) -> CreatedApiKey | None: ...
@@ -148,11 +149,17 @@ class SocketIdentity:
         )
 
     def create_api_key(
-        self, *, name: str | None, read_only: bool = False, expires_days: int | None = None
-    ) -> CreatedApiKey:
+        self, *, name: str | None, read_only: bool = False, expires_days: int | None = None,
+        scope: str | None = None, subject_username: str | None = None,
+    ) -> CreatedApiKey:  # fmt: skip
         return _created(
             self._call(
-                "identity.keys_create", name=name, read_only=read_only, expires_days=expires_days
+                "identity.keys_create",
+                name=name,
+                read_only=read_only,
+                expires_days=expires_days,
+                scope=scope,
+                subject=subject_username,
             )
         )
 

@@ -28,13 +28,14 @@ from shelfhold.acquisition.application.requests import (
 from shelfhold.acquisition.domain.request_target import RequestTarget
 from shelfhold.events.family_state import FamilyState, request_family_state
 from shelfhold.identity.public import RESERVED_ACTIONS, Principal
-from shelfhold.interfaces.http_api.auth import require_session, reserved_action
+from shelfhold.interfaces.http_api.auth import require_requester, require_session, reserved_action
 from shelfhold.interfaces.http_api.problems import ProblemError
 from shelfhold.ops.errors import OpsError
 
 __all__ = ["build_requests_router"]
 
 Session = Annotated[Principal, Depends(require_session)]
+RequesterOnly = Annotated[Principal, Depends(require_requester)]  # her session or her `request` key
 _APPROVE = RESERVED_ACTIONS["request.approve"]
 _MAX_REF = 64
 
@@ -150,7 +151,7 @@ def build_requests_router(
             raise ProblemError(error.code) from None
 
     @router.post("", status_code=201)
-    def create(body: RequestIn, principal: Session) -> RequestOut:
+    def create(body: RequestIn, principal: RequesterOnly) -> RequestOut:
         who = Requester(principal.user_id, principal.role)
         if body.request_ref is not None and body.target_kind is None:
             ref = resolve_ref(body.request_ref, principal.user_id)
@@ -163,7 +164,7 @@ def build_requests_router(
         return RequestOut.of(run(lambda s: s.create(who, target)))
 
     @router.get("")
-    def mine(principal: Session) -> RequestListOut:
+    def mine(principal: RequesterOnly) -> RequestListOut:
         return RequestListOut(
             items=[RequestOut.of(v, kavita_url) for v in run(lambda s: s.mine(principal.user_id))]
         )
@@ -188,11 +189,11 @@ def build_requests_router(
         )
 
     @router.get("/{request_id}")
-    def one(request_id: str, principal: Session) -> RequestOut:
+    def one(request_id: str, principal: RequesterOnly) -> RequestOut:
         return RequestOut.of(run(lambda s: s.get(principal.user_id, request_id)), kavita_url)
 
     @router.post("/{request_id}/cancel")
-    def cancel(request_id: str, principal: Session) -> RequestOut:
+    def cancel(request_id: str, principal: RequesterOnly) -> RequestOut:
         return RequestOut.of(run(lambda s: s.cancel(principal.user_id, request_id)))
 
     @router.get("/{request_id}/approval")

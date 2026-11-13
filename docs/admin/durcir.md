@@ -38,18 +38,21 @@ attribut, ce qui suffit sur un réseau domestique de confiance mais pas sur un r
   dispense du compteur par compte : un tiers qui inonde le compte ne bloque pas son propriétaire.
   Un nouveau navigateur peut en revanche être retardé pendant l'attaque. Les sessions ouvertes,
   les clés d'API et la ligne de commande de l'hôte ne sont pas touchées.
-- Jusqu'en M3, `X-Forwarded-For` est ignoré : derrière un proxy, toutes les requêtes semblent venir
-  du proxy et la limite par adresse vaut pour tous.
+- `X-Forwarded-For` n'est lu que d'un proxy déclaré dans `SHELFHOLD_HTTP_TRUSTED_PROXIES`, de droite
+  à gauche : un visiteur ne change pas d'adresse en écrivant un en-tête. Sans cette déclaration,
+  derrière un proxy, toutes les requêtes semblent venir du proxy et la limite vaut pour tous.
+- Les routes publiques (page de connexion, connexion…) sont aussi limitées par adresse réelle
+  (`SHELFHOLD_HTTP_PUBLIC_RATE_PER_MINUTE`), et les clés d'API fausses par adresse et par clé.
 - Les compteurs sont en mémoire : un redémarrage les remet à zéro.
 
 ## En-têtes d'identité
 
 Shelfhold ne croit aucun en-tête d'identité (`Remote-User`, `X-Forwarded-User`,
 `Tailscale-User-*`…) : tant que le forward-auth n'est pas configuré, ou si la requête ne vient pas
-d'un réseau de `SHELFHOLD_FORWARD_AUTH_TRUSTED_CIDRS`, ils sont retirés avant tout traitement. La
-requête continue normalement, et `tailscale serve` fonctionne. `shelfhold status` signale les
-en-têtes retirés : retirez-les au niveau du proxy ou du tunnel. Le forward-auth lui-même (CIDR de
-confiance obligatoire, secret partagé recommandé) arrive en M3.
+d'un proxy de `SHELFHOLD_HTTP_TRUSTED_PROXIES` avec le bon secret, ils sont retirés avant tout
+traitement. La requête continue normalement, et `tailscale serve` fonctionne. `shelfhold status`
+signale les en-têtes retirés : retirez-les au niveau du proxy ou du tunnel. Le forward-auth
+lui-même (désactivé par défaut) est décrit dans [exposition-publique.md](exposition-publique.md).
 
 ## Ce que voit un visiteur anonyme
 

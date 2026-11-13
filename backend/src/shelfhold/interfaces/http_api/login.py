@@ -41,6 +41,7 @@ from shelfhold.interfaces.http_api.auth import (
     set_session_cookies,
 )
 from shelfhold.interfaces.http_api.problems import ProblemError
+from shelfhold.interfaces.http_api.ratelimit import client_ip_of
 
 _TEMPLATE = Template(
     resources.files("shelfhold.interfaces.http_api").joinpath("pages/login.html").read_text("utf-8")
@@ -143,9 +144,10 @@ class SessionInfo(BaseModel):
 
 
 def _client_ip(request: Request) -> str:
-    # The socket peer. `serve` runs uvicorn with `proxy_headers=False` and no forwarded IPs, so
-    # `X-Forwarded-For` never rewrites it; trusting it from a configured proxy is M3.
-    return request.client.host if request.client else "unknown"
+    # The real address (ENF-SEC-008, D15): the socket peer, or the caller behind a trusted proxy.
+    # `serve` runs uvicorn with `proxy_headers=False`: `X-Forwarded-For` is read only by
+    # `ClientIpMiddleware`, and only when the peer is inside `http_trusted_proxies`.
+    return client_ip_of(request.scope)
 
 
 def _throttled(error: ThrottledError) -> ProblemError:
