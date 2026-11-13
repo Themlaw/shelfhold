@@ -39,7 +39,7 @@ from shelfhold.infrastructure.restore_notice import (
     read_notice,
     write_notice,
 )
-from shelfhold.infrastructure.schema import acquisition, identity, platform, reading
+from shelfhold.infrastructure.schema import acquisition, coherence, identity, platform, reading
 
 _user = identity.user
 _session = identity.session
@@ -331,12 +331,12 @@ class SqlIdentityStore:
             conn.execute(
                 sa.update(audit).where(audit.c.actor_id == user_id).values(actor_id=pseudonym)
             )
-            conn.execute(sa.update(audit).where(audit.c.target == user_id).values(target=pseudonym))
-            # a composite target (`<id>|<what>`, the policy lines) keeps its tail, not the id
+            # whatever the form of the target (`<id>`, `<id>|<what>`, `user=<id> session=<id>`):
+            # a ULID is confused with nothing, so the id is replaced wherever it stands
             conn.execute(
                 sa.update(audit)
-                .where(audit.c.target.like(f"{user_id}|%"))
-                .values(target=pseudonym + sa.func.substr(audit.c.target, len(user_id) + 1))
+                .where(sa.func.instr(audit.c.target, user_id) > 0)
+                .values(target=sa.func.replace(audit.c.target, user_id, pseudonym))
             )
             keys = identity.idempotency_key  # 24 hours of replayable answers: not a trace to keep
             conn.execute(sa.delete(keys).where(keys.c.actor_id == user_id))
@@ -351,11 +351,15 @@ class SqlIdentityStore:
         - the decision of an admin on a request keeps the pseudonym (who decided stays one
           person, not a name);
         - a ticket of a download or a follow request stays for the admin (its outcome still
-          matters) but belongs to nobody: an operation (`ops`, the admin alone), never `private`
-          of an id that is gone, never `household`;
-        - the events that name her as the actor are erased (the table is append-only for UPDATE,
-          its DELETE is the retention's): no event may name her, and the removals that this
-          cannot tell are told by cutting every `?since=` token (L11).
+          matters) but belongs to nobody. Its visibility is NOT changed: a `private` ticket stays
+          `private` with no owner, so the admin still sees it masked and unmasking stays the
+          reserved, audited action it is (`request.unmask`); the household never sees it;
+        - the waiver of a lost keyring (`tombstone_lost_kid`) and the pause of the queue
+          (`app_setting`) name the admin who made them: the token replaces the id; so does the
+          payload of a queued digest that cites her as the owner of an item;
+        - the events that name her, as the actor or anywhere in the payload, are erased (the
+          table is append-only for UPDATE, its DELETE is the retention's), and the removals that
+          this cannot tell are told by cutting every `?since=` token (L11).
         """
         request = identity.request
         conn.execute(
@@ -365,23 +369,46 @@ class SqlIdentityStore:
             conn.execute(
                 sa.update(table)
                 .where(table.c.requester_user_id == user_id)
-                .values(requester_user_id=None, visibility="ops")
+                .values(requester_user_id=None)
+            )
+        lost = coherence.tombstone_lost_kid
+        conn.execute(sa.update(lost).where(lost.c.actor_id == user_id).values(actor_id=pseudonym))
+        for document, column in (("app_setting", "value"), ("notification_digest", "payload")):
+            conn.execute(  # the text of the document, so that the JSON stays valid
+                sa.text(
+                    f"UPDATE {document} SET {column} = replace({column}, :id, :token) "  # noqa: S608
+                    f"WHERE instr({column}, :id) > 0"
+                ),
+                {"id": user_id, "token": pseudonym},
             )
         event = platform.event
-        if conn.execute(sa.delete(event).where(event.c.actor_id == user_id)).rowcount:
+        mentioned = sa.or_(
+            event.c.actor_id == user_id,
+            sa.func.instr(sa.cast(event.c.payload, sa.String), user_id) > 0,
+        )
+        if conn.execute(sa.delete(event).where(mentioned)).rowcount:
             invalidate_tokens(conn)
 
-    def export_rows(self, user_id: str) -> dict[str, Any] | None:
+    def export_rows(self, user_id: str, *, limit: int) -> dict[str, Any] | None:
         """Everything that is hers and that the export holds, as rows of plain values (EF-USR-013).
 
         Chosen column by column, so that what proves or opens something is never read: no password
         hash, no session token or secret, no key hash, no passkey material. The titles are not
         read either: a Work is named by its identifier, so a child's export cannot carry a title
-        that she may not see."""
+        that she may not see. Each list stops at `limit` rows and the sections that were cut are
+        named in `truncated` (years of reading positions are tens of thousands of rows)."""
+        truncated: list[str] = []
 
-        def rows(conn: sa.Connection, table: sa.Table, where: Any, *names: str) -> list[Any]:
+        def rows(
+            conn: sa.Connection, section: str, table: sa.Table, where: Any, *names: str
+        ) -> list[Any]:
             columns = [table.c[name] for name in names]
-            found = conn.execute(sa.select(*columns).where(where).order_by(columns[0])).all()
+            found = conn.execute(
+                sa.select(*columns).where(where).order_by(columns[0]).limit(limit + 1)
+            ).all()
+            if len(found) > limit:
+                truncated.append(section)
+                found = found[:limit]
             return [dict(zip(names, row, strict=True)) for row in found]
 
         with self._engine.connect() as conn:
@@ -394,46 +421,67 @@ class SqlIdentityStore:
             ).first()  # fmt: skip
             if user is None:
                 return None
-            state, request = identity.user_state, identity.request
+            policy, state = identity.profile_source_policy, identity.user_state
+            request, digest = identity.request, identity.notification_digest
             audit, positions = identity.audit, reading.reading_position
+            follow, download = acquisition.follow_request, acquisition.download_request
+            # a key issued FOR her (a device token), or one of hers that is for nobody else: the
+            # keys that an admin issued for a child belong to the child's export, not the admin's
+            own_keys = sa.or_(
+                _key.c.subject_user_id == user_id,
+                sa.and_(_key.c.subject_user_id.is_(None), _key.c.user_id == user_id),
+            )
             return {
                 "account": dict(user._mapping),
                 "source_policies": rows(
-                    conn, identity.profile_source_policy,
-                    identity.profile_source_policy.c.user_id == user_id,
+                    conn, "source_policies", policy, policy.c.user_id == user_id,
                     "source_key", "policy", "updated_at",
                 ),
                 "user_state": rows(
-                    conn, state, state.c.user_id == user_id,
+                    conn, "user_state", state, state.c.user_id == user_id,
                     "work_id", "followed", "favorite", "read_at", "stamp",
                 ),
                 "requests": rows(
-                    conn, request, request.c.requester_user_id == user_id,
+                    conn, "requests", request, request.c.requester_user_id == user_id,
                     "id", "target_kind", "target_value", "state", "reject_reason", "visibility",
                     "work_id", "edition_id", "decided_at", "arrived_at", "created_at",
                     "updated_at",
                 ),
+                "follow_requests": rows(
+                    conn, "follow_requests", follow, follow.c.requester_user_id == user_id,
+                    "id", "source_key", "remote_id", "state", "visibility", "created_at",
+                    "updated_at",
+                ),
+                "download_requests": rows(
+                    conn, "download_requests", download, download.c.requester_user_id == user_id,
+                    "id", "target_kind", "state", "visibility", "requested_at", "updated_at",
+                ),
+                "notification_digests": rows(  # when one is due; what it says is not a title
+                    conn, "notification_digests", digest, digest.c.user_id == user_id, "due_at"
+                ),
                 "reading_positions": rows(
-                    conn, positions, positions.c.user_id == user_id,
+                    conn, "reading_positions", positions, positions.c.user_id == user_id,
                     "id", "carrier_type", "carrier_id", "content_hash", "locator", "percent",
                     "client_ts", "server_ts", "device_id",
                 ),
                 "sessions": rows(
-                    conn, _session, _session.c.user_id == user_id,
+                    conn, "sessions", _session, _session.c.user_id == user_id,
                     "id", "created_at", "last_seen_at", "auth_time", "absolute_expiry",
                     "user_agent_label", "ip", "revoked_at",
                 ),
                 "api_keys": rows(
-                    conn, _key,
-                    sa.or_(_key.c.user_id == user_id, _key.c.subject_user_id == user_id),
+                    conn, "api_keys", _key, own_keys,
                     "id", "name", "prefix", "scopes", "read_only", "created_at", "expires_at",
                     "last_used_at", "revoked_at",
                 ),
                 "passkeys": rows(
-                    conn, _passkey, _passkey.c.user_id == user_id,
+                    conn, "passkeys", _passkey, _passkey.c.user_id == user_id,
                     "id", "name", "created_at", "last_used_at", "revoked_at",
                 ),
-                "audit": rows(conn, audit, audit.c.actor_id == user_id, "at", "action", "target"),
+                "audit": rows(
+                    conn, "audit", audit, audit.c.actor_id == user_id, "at", "action", "target"
+                ),
+                "truncated": truncated,
             }  # fmt: skip
 
     # --- household profiles (M3 L05, EF-USR-001, EF-USR-005) ---------------------------------

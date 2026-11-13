@@ -6073,10 +6073,34 @@
             "title": "Audit",
             "type": "array"
           },
+          "download_requests": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Download Requests",
+            "type": "array"
+          },
+          "follow_requests": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Follow Requests",
+            "type": "array"
+          },
           "format": {
             "const": "shelfhold-user-export",
             "title": "Format",
             "type": "string"
+          },
+          "notification_digests": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Notification Digests",
+            "type": "array"
           },
           "passkeys": {
             "items": {
@@ -6128,6 +6152,13 @@
             "title": "Source Policies",
             "type": "array"
           },
+          "truncated": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Truncated",
+            "type": "array"
+          },
           "user_state": {
             "items": {
               "additionalProperties": true,
@@ -6149,11 +6180,15 @@
           "source_policies",
           "user_state",
           "requests",
+          "follow_requests",
+          "download_requests",
+          "notification_digests",
           "reading_positions",
           "sessions",
           "api_keys",
           "passkeys",
-          "audit"
+          "audit",
+          "truncated"
         ],
         "title": "UserExportOut",
         "type": "object"

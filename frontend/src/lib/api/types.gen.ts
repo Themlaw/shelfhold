@@ -3762,9 +3762,27 @@ export type UserExportOut = {
         [key: string]: unknown;
     }>;
     /**
+     * Download Requests
+     */
+    download_requests: Array<{
+        [key: string]: unknown;
+    }>;
+    /**
+     * Follow Requests
+     */
+    follow_requests: Array<{
+        [key: string]: unknown;
+    }>;
+    /**
      * Format
      */
     format: 'shelfhold-user-export';
+    /**
+     * Notification Digests
+     */
+    notification_digests: Array<{
+        [key: string]: unknown;
+    }>;
     /**
      * Passkeys
      */
@@ -3807,6 +3825,10 @@ export type UserExportOut = {
     source_policies: Array<{
         [key: string]: unknown;
     }>;
+    /**
+     * Truncated
+     */
+    truncated: Array<string>;
     /**
      * User State
      */

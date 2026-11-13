@@ -157,11 +157,15 @@ class UserExportOut(BaseModel):
     source_policies: list[dict[str, Any]]
     user_state: list[dict[str, Any]]
     requests: list[dict[str, Any]]
+    follow_requests: list[dict[str, Any]]
+    download_requests: list[dict[str, Any]]
+    notification_digests: list[dict[str, Any]]
     reading_positions: list[dict[str, Any]]
     sessions: list[dict[str, Any]]
     api_keys: list[dict[str, Any]]
     passkeys: list[dict[str, Any]]
     audit: list[dict[str, Any]]
+    truncated: list[str]  # the sections cut at the cap of rows (never silent)
 
 
 def _out(record: ProfileRecord) -> ProfileOut:

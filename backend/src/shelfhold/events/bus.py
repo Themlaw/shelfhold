@@ -19,6 +19,7 @@ import contextlib
 import re
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
+from types import MappingProxyType
 from typing import Any, Final, Protocol
 
 import sqlalchemy as sa
@@ -52,6 +53,16 @@ VOLUME_VALUES: Final = frozenset(
 # Per event type, the values each enumerated key may take. A type or a key that is not listed
 # takes the default of that key; a value outside the enumeration is refused, so no title can be
 # smuggled in as a "code" (ENF-SEC-015). `reason` defaults to GENERIC_REASONS; the others to none.
+# The fields of a payload that name a user, by event type (M3 L08, EF-USR-013). A deletion erases
+# the events whose payload holds the id (`SqlIdentityStore._unname` reads the text, so an
+# undeclared field is erased too), but a new event type that cites a user must say so: `publish`
+# refuses a field that looks like a person's identifier unless the type declares it here, and a
+# test erases the events of every declared type.
+USER_FIELDS: Final[Mapping[str, frozenset[str]]] = MappingProxyType(
+    {"auth.passkey_registered": frozenset({"user_id"})}
+)
+_USER_KEY: Final = re.compile(r"(?:user|actor|requester|owner|subject|profile)_id\Z|by\Z")
+
 PAYLOAD_ENUMS: Final[dict[str, dict[str, frozenset[str]]]] = {
     "notify.failed": {"reason": frozenset({"retries_exhausted"})},
     "job.dead_lettered": {"reason": frozenset({"retries_exhausted", "handler_error"})},
@@ -205,6 +216,8 @@ def check_payload(payload: Mapping[str, object], event_type: str | None = None) 
             continue
         if not isinstance(value, str):
             raise EventPayloadError(f"{key}: only scalars are allowed in an event payload")
+        if _USER_KEY.search(key) and key not in USER_FIELDS.get(event_type or "", frozenset()):
+            raise EventPayloadError(f"{key} names a user: declare it in USER_FIELDS")
         if key.endswith("_id"):
             if not _ULID.fullmatch(value):
                 raise EventPayloadError(f"{key} must be a ULID")

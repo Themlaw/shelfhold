@@ -195,7 +195,7 @@ def test_download_ticket_is_unnamed_on_deletion(api: AuthEnv) -> None:
 
 @pytest.mark.req("EF-USR-013")
 def test_poc_export_holds_her_follow_and_download_tickets(api: AuthEnv) -> None:
-    """EF-USR-013: "l'export JSON contient ses données". Her follow and download tickets carry
+    """EF-USR-013: the JSON export holds her data. Her follow and download tickets carry
     her id (`_unname` has to un-name them, so they are hers), yet the export reads neither."""
     mum = _seed(api, "mum")
     ticket = _ticket(api, mum)

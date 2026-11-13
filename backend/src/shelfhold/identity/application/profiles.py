@@ -20,7 +20,7 @@ from typing import Any
 
 import structlog
 
-from shelfhold.identity.application.delete_user import build_export
+from shelfhold.identity.application.delete_user import MAX_EXPORT_ROWS, build_export
 from shelfhold.identity.application.ports import (
     AuditEntry,
     IdentityStore,
@@ -200,7 +200,7 @@ class ProfileService:
         line names the profile, never what the document holds."""
         self._manager(by)
         profile = self._existing(profile_id)
-        rows = self._store.export_rows(profile_id)
+        rows = self._store.export_rows(profile_id, limit=MAX_EXPORT_ROWS)
         if rows is None:  # removed between the two reads
             raise ProfileError("not_found")
         document = build_export(profile, rows)

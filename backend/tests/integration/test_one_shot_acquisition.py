@@ -65,6 +65,11 @@ def test_novel_work_is_filed_with_a_demande_for_its_requester() -> None:
     """The Work is a `novel`; the request is a persistent `download_request` that says who asked
     and who may see it; the file is "rangé" with one event, and the request is fetched."""
     with acquire_bench(NativeBooks(trust="publisher"), files={FILE: CLEAN}) as b:
+        with b.lib.engine.begin() as connection:  # the requester exists (a ticket for nobody is
+            connection.exec_driver_sql(  # written for nobody by the database, M3 L08)
+                'INSERT INTO "user" (id, username, role) '
+                "VALUES ('01JFZ0000000000000000000AB', 'requester', 'member')"
+            )
         prepared, _done = b.prepared_and_fetched(
             requester_user_id="01JFZ0000000000000000000AB", visibility="private"
         )

@@ -34,7 +34,8 @@ KEY_HASH = "sha256:" + "ab" * 32
 TOKEN_HASH = "sha256:" + "cd" * 32
 EXPORT_KEYS = {
     "format", "version", "profile", "preferences", "source_policies", "user_state", "requests",
-    "reading_positions", "sessions", "api_keys", "passkeys", "audit",
+    "reading_positions", "sessions", "api_keys", "passkeys", "audit", "follow_requests",
+    "download_requests", "notification_digests", "truncated",
 }  # fmt: skip
 
 
@@ -192,10 +193,10 @@ def test_a_deleted_users_tickets_never_become_visible_to_the_household(api: Auth
     mum = _seed(api, "mum")
     api.login()
     assert _send(api, "DELETE", f"{PROFILES}/{mum}").status_code == 204
-    # the follow request stays (the admin still has to see its outcome) but belongs to nobody:
-    # an operation for the admin alone, never `private` of an id that is gone, never `household`
+    # the follow request stays (the admin still has to see its outcome) but belongs to nobody. Its
+    # visibility is NOT widened (review of #218, B3): still `private`, never `ops` or `household`
     assert db_rows(api.settings, "SELECT requester_user_id, visibility FROM follow_request") == [
-        (None, "ops")
+        (None, "private")
     ]
     assert db_rows(api.settings, "SELECT decided_by FROM request") == []  # the request went too
 
