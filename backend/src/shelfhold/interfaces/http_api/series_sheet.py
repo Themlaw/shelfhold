@@ -171,12 +171,16 @@ def build_series_sheet_router(get_ops: Callable[[], OpsServices]) -> APIRouter:
             return BindingOrderOut(**get_ops().sheet.reorder(edition_id, body.binding_ids))
 
     @router.post("/editions/{edition_id}/upstream-status")
-    def upstream_status_set(edition_id: str, body: UpstreamStatusIn, _admin: Admin) -> UpstreamStatusOut:
+    def upstream_status_set(
+        edition_id: str, body: UpstreamStatusIn, _admin: Admin
+    ) -> UpstreamStatusOut:
         with refusals():
             return UpstreamStatusOut(**get_ops().sheet.set_upstream_status(edition_id, body.status))
 
     @router.post("/editions/{edition_id}/preferred-team")
-    def preferred_team_set(edition_id: str, body: PreferredTeamIn, _admin: Admin) -> PreferredTeamOut:
+    def preferred_team_set(
+        edition_id: str, body: PreferredTeamIn, _admin: Admin
+    ) -> PreferredTeamOut:
         with refusals():
             return PreferredTeamOut(**get_ops().sheet.prefer_team(edition_id, body.team_id))
 
