@@ -91,10 +91,10 @@ describe('ApproveSheet', () => {
     answer(preview());
     render(ApproveSheet, { item: item(), onapproved: vi.fn() });
     const user = userEvent.setup();
-    await user.click(await screen.findByRole('radio', { name: '0+' }));
+    await user.click(await screen.findByRole('radio', { name: 'Tous publics' }));
     await user.click(approveButton());
     await vi.waitFor(() => expect(posted).toHaveLength(1));
-    expect((posted[0].body as { age: number }).age).toBe(0);
+    expect((posted[0]?.body as { age: number }).age).toBe(0);
   });
 
   // req: EF-USR-010
@@ -105,7 +105,7 @@ describe('ApproveSheet', () => {
     await user.click(await screen.findByRole('radio', { name: 'X' }));
     await user.click(approveButton());
     await vi.waitFor(() => expect(posted).toHaveLength(1));
-    expect(posted[0].body).toMatchObject({ age: 18, x: true });
+    expect(posted[0]?.body).toMatchObject({ age: 18, x: true });
   });
 
   // req: EF-USR-010
@@ -125,7 +125,7 @@ describe('ApproveSheet', () => {
     expect(screen.queryByRole('group')).toBeNull();
     await userEvent.setup().click(approveButton());
     await vi.waitFor(() => expect(onapproved).toHaveBeenCalledOnce());
-    expect(posted[0].body).toMatchObject({ age: null, x: false, confirm_size: false });
+    expect(posted[0]?.body).toMatchObject({ age: null, x: false, confirm_size: false });
   });
 
   // req: EF-USR-010
@@ -140,13 +140,13 @@ describe('ApproveSheet', () => {
   it('over the threshold, approving needs the size to be confirmed first', async () => {
     answer(preview({ needs_age: false, units: 150, confirmation_required: true }));
     render(ApproveSheet, { item: item({ needs_age: false }), onapproved: vi.fn() });
-    const confirm = await screen.findByRole('checkbox', { name: 'Je confirme la taille' });
+    const confirm = await screen.findByRole('checkbox', { name: /la taille/ });
     expect(approveButton()).toBeDisabled();
     const user = userEvent.setup();
     await user.click(confirm);
     await user.click(approveButton());
     await vi.waitFor(() => expect(posted).toHaveLength(1));
-    expect(posted[0].body).toMatchObject({ confirm_size: true });
+    expect(posted[0]?.body).toMatchObject({ confirm_size: true });
   });
 
   // req: EF-USR-010

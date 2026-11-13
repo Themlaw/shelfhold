@@ -35,7 +35,7 @@ def navigation_for(role: str) -> list[str]:
     admin ones go to the `admin` role only, and a role this code does not know gets none."""
     family = ["home", "search", "requests"]
     if role == "admin":
-        return [*family, "activity", "settings"]
+        return [*family, "approve", "activity", "settings"]
     if role in ("member", "child"):
         return family
     return []

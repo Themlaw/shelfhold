@@ -7,12 +7,14 @@
   import RequestItem from '#lib/components/RequestItem.svelte';
   import { t } from '#lib/i18n/index.ts';
   import { reloadOnStream } from '#lib/live.ts';
+  import { csrfToken } from '#lib/passkeys.ts';
   import { problemView, type ProblemView } from '#lib/problems.ts';
 
   let items = $state<RequestOut[]>([]);
   let loaded = $state(false);
   let problem = $state<ProblemView | null>(null);
   let cancelling = $state<string | null>(null);
+  let cancelProblem = $state<ProblemView | null>(null);
 
   async function load(): Promise<void> {
     const { data, error } = await mine();
@@ -27,9 +29,17 @@
 
   async function cancelOne(id: string): Promise<void> {
     cancelling = id;
+    cancelProblem = null;
     try {
-      await cancel({ path: { request_id: id } });
-      await load();
+      const { error } = await cancel({
+        headers: { 'X-CSRF-Token': csrfToken() },
+        path: { request_id: id }
+      });
+      if (error !== undefined) {
+        cancelProblem = problemView(error);
+      } else {
+        await load();
+      }
     } finally {
       cancelling = null;
     }
@@ -59,6 +69,9 @@
       href="/chercher"
     />
   {:else}
+    {#if cancelProblem}
+      <ProblemCard problem={cancelProblem} />
+    {/if}
     <ul>
       {#each items as request (request.id)}
         <li class="request-row">

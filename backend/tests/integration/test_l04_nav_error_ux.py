@@ -40,8 +40,8 @@ def _auth(env: AuthEnv) -> Any:
 
 @pytest.mark.req("EF-UX-005")
 def test_nav_by_role(monkeypatch: pytest.MonkeyPatch, settings: Any) -> None:
-    """The admin is offered the family tabs plus To approve, Activity and Settings; a member and a child get
-    the family tabs and nothing of the admin ones."""
+    """The admin is offered the family tabs plus To approve, Activity and Settings; a member and a
+    child get the family tabs and nothing of the admin ones."""
     with auth_env(monkeypatch, settings) as api:
         _auth(api).profile_add("mum", PASSWORD, "member")
         _auth(api).profile_add("kid", PASSWORD, "child", max_age_rating=10)

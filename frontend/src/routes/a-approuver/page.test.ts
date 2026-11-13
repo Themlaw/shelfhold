@@ -39,7 +39,7 @@ beforeEach(() => {
 afterEach(() => server.resetHandlers());
 afterAll(() => server.close());
 
-describe('À approuver', () => {
+describe('To approve screen', () => {
   // req: EF-USR-010
   it('lists what waits, flags a child request, and masks the title the server withheld', async () => {
     server.use(

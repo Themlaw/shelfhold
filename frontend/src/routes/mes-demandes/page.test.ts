@@ -44,7 +44,7 @@ afterEach(() => {
 });
 afterAll(() => server.close());
 
-describe('Mes demandes', () => {
+describe('My requests screen', () => {
   // req: EF-USR-010
   it('test_my_requests_shows_reject_reason', async () => {
     server.use(
