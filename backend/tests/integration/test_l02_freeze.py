@@ -49,7 +49,7 @@ def _scheduler(env: RestoreEnv, clock: ManualClock) -> tuple[Scheduler, _Sink]:
 def _points(env: RestoreEnv, clock: ManualClock) -> dict[str, bool]:
     """What each application point says, each one built afresh from the database."""
     loaded = _loaded(env)
-    fresh = open_fsops(loaded, umask=0o022)
+    fresh = open_fsops(loaded, umask=0o022, generation_source=None)
     scheduler, _sink = _scheduler(env, clock)
     repatriator = Repatriator(env.engine, Fsops.open(loaded.path_map, loaded.expected),
                               locate=loaded.locate, clock=clock)  # fmt: skip
@@ -73,7 +73,7 @@ def test_single_freeze_source_for_writes_jobs_and_sessions() -> None:
         env.guard().enter_restored_behind()
         assert set(_points(env, clock).values()) == {True}  # one persisted state, five readers
         # a session opened afterwards is refused on every root, whatever the process says
-        other = open_fsops(_loaded(env), umask=0o022)
+        other = open_fsops(_loaded(env), umask=0o022, generation_source=None)
         with pytest.raises(RootBlockedError):
             other.write_atomic(str(env.library / "manga" / "z.cbz"), b"x", parents=True)
         # the scheduler dispatches nothing at the start of a task, with no `hold()` called
@@ -93,7 +93,7 @@ def test_freeze_lifted_only_by_adopt_after_restore() -> None:
         scheduler.release()  # the process lets go: the database still says frozen
         env.fsops.unfreeze()
         assert scheduler.held and scheduler.scan().queued == () and sink.sent == []
-        assert open_fsops(_loaded(env), umask=0o022).frozen
+        assert open_fsops(_loaded(env), umask=0o022, generation_source=None).frozen
         assert set(_points(env, clock).values()) == {True}
         adopter = env.adopter()
         adopter.adopt(confirm=adopter.preview().fingerprint)  # the one exit
@@ -143,7 +143,7 @@ def test_review_a_failed_commit_leaves_the_state_frozen_like_the_database() -> N
 
 def _forked_sessions(env: RestoreEnv) -> tuple[WriteSessions, str]:
     """A writer opened before any freeze, over a root whose sentinel is aligned (the /store)."""
-    fork = open_fsops(_loaded(env), umask=0o022)
+    fork = open_fsops(_loaded(env), umask=0o022, generation_source=None)
     sessions = WriteSessions(
         fork, instance_id=str(env.sentinel()["instance_id"]), clock=env.ex.clock,
         generations=GenerationCounter(env.engine),

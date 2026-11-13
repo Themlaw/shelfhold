@@ -13,7 +13,9 @@ import sqlalchemy as sa
 
 from shelfhold.config import Settings
 from shelfhold.export.domain.physical_roots import RootState
+from shelfhold.infrastructure.freeze import FreezeState
 from shelfhold.infrastructure.fsops import RootBlockedError
+from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import platform
 from tests.l41_env import Instance, instance
 
@@ -151,7 +153,7 @@ def test_an_unreachable_database_never_lifts_the_refusal(
         fsops = _opened_export(inst)
         _another_task_writes(inst)
 
-        def broken(_path: str) -> int | None:
+        def broken(_path: str, _root_id: str) -> None:
             raise sa.exc.OperationalError("select", {}, Exception("locked"))
 
         fsops._generation_source = broken  # the count cannot be read: fail closed
@@ -172,3 +174,79 @@ def test_without_a_generation_source_the_old_verdict_stands(
         fsops._generation_source = None
         with pytest.raises(RootBlockedError):
             fsops.require_scan_allowed(str(inst.library))
+
+
+def _held_after_one_advance(inst: Instance):  # type: ignore[no-untyped-def]
+    _another_task_writes(inst)
+    fsops = _opened_export(inst)
+    _another_task_writes(inst)  # the sentinel is now one ahead of the copy the export holds
+    return fsops
+
+
+@pytest.mark.req("EF-EXP-029", "EF-INT-026")
+def test_an_epoch_the_database_moved_on_is_never_followed(
+    settings: Settings, tmp_path: Path
+) -> None:
+    with instance(settings, tmp_path) as inst:
+        inst.configure()
+        fsops = _held_after_one_advance(inst)
+        with inst.engine.begin() as connection:  # the database now holds another epoch than the
+            connection.execute(sa.update(platform.instance).values(restore_epoch=1))  # sentinel
+        with pytest.raises(RootBlockedError) as caught:
+            fsops.require_scan_allowed(str(inst.library))
+        assert caught.value.state is RootState.RESTORED_BEHIND
+
+
+@pytest.mark.req("EF-EXP-029", "EF-INT-026")
+def test_another_root_registered_at_the_same_path_is_never_followed(
+    settings: Settings, tmp_path: Path
+) -> None:
+    with instance(settings, tmp_path) as inst:
+        inst.configure()
+        fsops = _held_after_one_advance(inst)
+        with inst.engine.begin() as connection:  # a replaced disk, registered again at the path
+            connection.execute(
+                sa.update(platform.physical_root)
+                .where(platform.physical_root.c.path_entry == str(inst.library))
+                .values(root_id=new_ulid())
+            )
+        with pytest.raises(RootBlockedError) as caught:
+            fsops.require_scan_allowed(str(inst.library))
+        assert caught.value.state is RootState.RESTORED_BEHIND
+
+
+@pytest.mark.req("EF-EXP-029", "EF-INT-026")
+def test_a_root_frozen_alone_in_the_database_is_never_followed(
+    settings: Settings, tmp_path: Path
+) -> None:
+    with instance(settings, tmp_path) as inst:
+        inst.configure()
+        fsops = _held_after_one_advance(inst)
+        with inst.engine.begin() as connection, connection.begin_nested():
+            root_id = connection.execute(
+                sa.select(platform.physical_root.c.root_id).where(
+                    platform.physical_root.c.path_entry == str(inst.library)
+                )
+            ).scalar_one()
+            FreezeState().persist_root(connection, root_id, "root_behind", reason="test")
+        with pytest.raises(RootBlockedError):
+            fsops.require_scan_allowed(str(inst.library))
+
+
+@pytest.mark.req("EF-EXP-029", "EF-INT-026")
+def test_a_sentinel_the_database_is_ahead_of_is_stale_and_freezes_its_root_only(
+    settings: Settings, tmp_path: Path
+) -> None:
+    with instance(settings, tmp_path) as inst:
+        inst.configure()
+        fsops = _held_after_one_advance(inst)
+        with inst.engine.begin() as connection:  # the base is two steps past the sentinel
+            connection.execute(
+                sa.update(platform.physical_root)
+                .where(platform.physical_root.c.path_entry == str(inst.library))
+                .values(generation=platform.physical_root.c.generation + 2)
+            )
+        with pytest.raises(RootBlockedError) as caught:
+            fsops.require_scan_allowed(str(inst.library))
+        assert caught.value.state is RootState.STALE  # not `restored_behind`
+        assert not fsops.frozen  # the instance is not frozen: this root alone is refused
