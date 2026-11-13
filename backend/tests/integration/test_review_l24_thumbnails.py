@@ -114,7 +114,9 @@ def test_review_uncached_screen_holds_only_a_few_request_threads(
         return real(*args, **kwargs)
 
     monkeypatch.setattr("shelfhold.library.application.thumbnails.make_thumbnail", blocked)
-    service = ThumbnailService(rig.engine, rig.data, rig.clock, limits=service_tests.LIMITS, wait=30)
+    service = ThumbnailService(
+        rig.engine, rig.data, rig.clock, limits=service_tests.LIMITS, wait=30
+    )
     digest = rig.cover("ok", (30, 70, 10))
     answers: list[str] = []
 
@@ -126,8 +128,7 @@ def test_review_uncached_screen_holds_only_a_few_request_threads(
             answers.append("pending")
 
     threads = [
-        threading.Thread(target=ask, args=((160, 320, 640)[i % 3],), daemon=True)
-        for i in range(60)
+        threading.Thread(target=ask, args=((160, 320, 640)[i % 3],), daemon=True) for i in range(60)
     ]
     for thread in threads:
         thread.start()
