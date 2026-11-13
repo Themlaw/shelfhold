@@ -47,6 +47,7 @@ from shelfhold.identity.public import (
 )
 from shelfhold.infrastructure.clock import Clock
 from shelfhold.infrastructure.ids import new_ulid
+from shelfhold.infrastructure.requesters import still_a_user
 from shelfhold.infrastructure.schema import acquisition, catalog, identity
 from shelfhold.sdk.age import AgeRating
 
@@ -447,6 +448,11 @@ class RequestService:
         with self._engine.connect() as connection:
             return self._view(connection, request_id, for_admin=True)
 
+    def _immediate(self) -> Engine:
+        """The write lock first: the deletion of a user takes it too, so the user read by
+        `still_a_user` is the one that is there when the decision commits (M3 L08)."""
+        return self._engine.execution_options(shelfhold_begin="BEGIN IMMEDIATE")
+
     def _claim(
         self, request_id: str, principal: Principal, rating: AgeRating | None,
         shelf_id: str | None, *, resume: bool,
@@ -459,12 +465,13 @@ class RequestService:
             if resume
             else request.c.state == "pending"
         )
-        with self._engine.begin() as connection:
+        with self._immediate().begin() as connection:
             changed = connection.execute(
                 sa.update(request)
                 .where(request.c.id == request_id, waiting)
                 .values(
-                    state="approved", decided_by=principal.user_id, decided_at=now, updated_at=now,
+                    state="approved", decided_by=still_a_user(connection, principal.user_id),
+                    decided_at=now, updated_at=now,
                     approved_age=None if rating is None else rating.min_age,
                     approved_x=bool(rating and rating.x), shelf_id=shelf_id,
                 )
@@ -527,7 +534,7 @@ class RequestService:
     def _close(
         self, request_id: str, principal: Principal, state: str, action: str, reason: str | None
     ) -> RequestView:
-        with self._engine.begin() as connection:
+        with self._immediate().begin() as connection:
             self._move(
                 connection, request_id, state, action, principal.actor_id, reason,
                 decided_by=principal.user_id, principal=principal,
@@ -547,8 +554,8 @@ class RequestService:
             raise RequestRefusedError("not_pending")
         now = self._clock.now()
         values: dict[str, Any] = {"state": state, "updated_at": now, "reject_reason": reason}
-        if decided_by is not None:
-            values.update(decided_by=decided_by, decided_at=now)
+        if decided_by is not None:  # an admin deleted since the decision began decides for nobody
+            values.update(decided_by=still_a_user(connection, decided_by), decided_at=now)
         changed = connection.execute(
             sa.update(request)
             .where(request.c.id == request_id, request.c.state == current.state)

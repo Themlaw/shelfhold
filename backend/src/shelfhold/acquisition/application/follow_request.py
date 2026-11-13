@@ -31,6 +31,7 @@ from shelfhold.acquisition.application.failures import FailureLedger, from_servi
 from shelfhold.acquisition.application.instance import check_instance
 from shelfhold.infrastructure.clock import Clock
 from shelfhold.infrastructure.ids import new_ulid
+from shelfhold.infrastructure.requesters import still_a_user
 from shelfhold.infrastructure.schema import acquisition
 from shelfhold.plugin_host.errors import ServiceInstanceChanged
 from shelfhold.sdk.refs import SeriesRef
@@ -171,6 +172,7 @@ class FollowRequests:
         now = self._clock.now()
         with immediate.begin() as connection:
             self._refuse_if_paused(connection)
+            requester_user_id = still_a_user(connection, requester_user_id)  # gone since: nobody's
             inserted = connection.execute(
                 sqlite_insert(_REQUEST)
                 .values(

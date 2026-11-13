@@ -224,10 +224,15 @@ add_trigger(
     "WHEN EXISTS (SELECT 1 FROM tombstone_kid WHERE kid = OLD.kid) "
     "BEGIN SELECT RAISE(ABORT, 'kid is cited by a tombstone'); END",
 )
+# One rewrite is allowed (M3 L08, EF-USR-013): the admin who typed the waiver is deleted, and the
+# column that names them takes the opaque token of the deletion; nothing else changes.
 add_trigger(
     tombstone_lost_kid,
     "tombstone_lost_kid_no_update",
     "BEFORE UPDATE ON tombstone_lost_kid "
+    "WHEN NOT (COALESCE(NEW.actor_id LIKE 'deleted:%%', 0) "
+    "AND COALESCE(OLD.actor_id NOT LIKE 'deleted:%%', 0) "
+    "AND NEW.kid IS OLD.kid AND NEW.accepted_at IS OLD.accepted_at) "
     "BEGIN SELECT RAISE(ABORT, 'tombstone_lost_kid is append-only'); END",
 )
 add_trigger(

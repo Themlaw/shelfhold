@@ -93,6 +93,7 @@ _DECLARED = (
     _action("profile.create", Effect.MANAGES_PROFILES),
     _action("profile.update", Effect.MANAGES_PROFILES),
     _action("profile.remove", Effect.MANAGES_PROFILES),
+    _action("profile.export", Effect.MANAGES_PROFILES),  # M3 L08: one person's data, revealed
     _action("profile.source_policy", Effect.MANAGES_PROFILES),
     # M3 L40 (D13): the sources a child's search may reach are marked "family" by the admin, once
     # in the wizard and again from the settings; it is parental control and it is refused to a

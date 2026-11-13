@@ -76,6 +76,7 @@ from shelfhold.infrastructure.fetcher import (
 )
 from shelfhold.infrastructure.fetcher.errors import InvalidFetchUrl
 from shelfhold.infrastructure.ids import new_ulid
+from shelfhold.infrastructure.requesters import still_a_user
 from shelfhold.infrastructure.schema import acquisition, catalog, export, storage
 from shelfhold.library.public import (
     SeriesBindingRef,
@@ -658,6 +659,7 @@ class NativeAcquirer:
         now: datetime,
     ) -> str:
         table = acquisition.download_request
+        requester_user_id = still_a_user(connection, requester_user_id)  # gone since: nobody's
         unit_id = connection.execute(
             sa.select(catalog.unit_variant.c.unit_id).where(catalog.unit_variant.c.id == variant_id)
         ).scalar()

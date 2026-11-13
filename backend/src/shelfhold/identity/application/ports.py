@@ -3,7 +3,7 @@
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Protocol
+from typing import Any, Protocol
 
 from shelfhold.identity.application.sessions import SessionView
 
@@ -174,6 +174,11 @@ class IdentityStore(Protocol):
     ) -> str | None:
         """`keep_one_admin`: the last admin is refused (`ProfileError("last_admin")`), decided in
         the transaction that deletes."""
+        ...
+
+    def export_rows(self, user_id: str, *, limit: int) -> dict[str, Any] | None:
+        """What is hers, column by column and without any secret, or None if there is no such user
+        (M3 L08, EF-USR-013)."""
         ...
 
     # --- household profiles (M3 L05) ---

@@ -128,6 +128,7 @@ profile_add_help = "Crée un profil (le mot de passe vient d'un fichier ou de l'
 profile_list_help = "Liste les profils."
 profile_set_help = "Change le rôle, l'âge maximal, le droit de classer ou la politique d'une source."
 profile_remove_help = "Supprime un profil (ses traces d'audit restent, pseudonymisées)."
+profile_export_help = "Écrit sur la sortie standard les données d'un profil, en JSON (sans aucun secret)."
 profile_username_help = "Identifiant du profil."
 profile_role_help = "Rôle : member (défaut), child ou admin (deux au plus)."
 profile_max_age_help = "Âge maximal d'un enfant (0 à 99, obligatoire pour un enfant)."

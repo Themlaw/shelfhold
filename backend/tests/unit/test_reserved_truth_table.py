@@ -296,6 +296,7 @@ FRESHNESS_LINE = {
             "profile.create",  # M3 L05: fresh in every profile (EF-USR-022), not only with a child
             "profile.update",
             "profile.remove",
+            "profile.export",  # M3 L08: one person's data, revealed
             "profile.source_policy",
             "source.mark_family",  # M3 L40 (D13): which sources a child's search reaches
             "maintenance.enter",  # M3 L13: a stolen session freezes every write of the instance

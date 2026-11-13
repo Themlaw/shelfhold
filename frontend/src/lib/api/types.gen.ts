@@ -4028,6 +4028,105 @@ export type UnmaskedOut = {
 };
 
 /**
+ * UserExportOut
+ *
+ * One person's data (EF-USR-013). Nothing that proves or opens something is in it, and a Work
+ * is named by its identifier, never by a title.
+ */
+export type UserExportOut = {
+    /**
+     * Api Keys
+     */
+    api_keys: Array<{
+        [key: string]: unknown;
+    }>;
+    /**
+     * Audit
+     */
+    audit: Array<{
+        [key: string]: unknown;
+    }>;
+    /**
+     * Download Requests
+     */
+    download_requests: Array<{
+        [key: string]: unknown;
+    }>;
+    /**
+     * Follow Requests
+     */
+    follow_requests: Array<{
+        [key: string]: unknown;
+    }>;
+    /**
+     * Format
+     */
+    format: 'shelfhold-user-export';
+    /**
+     * Notification Digests
+     */
+    notification_digests: Array<{
+        [key: string]: unknown;
+    }>;
+    /**
+     * Passkeys
+     */
+    passkeys: Array<{
+        [key: string]: unknown;
+    }>;
+    /**
+     * Preferences
+     */
+    preferences: {
+        [key: string]: unknown;
+    };
+    /**
+     * Profile
+     */
+    profile: {
+        [key: string]: unknown;
+    };
+    /**
+     * Reading Positions
+     */
+    reading_positions: Array<{
+        [key: string]: unknown;
+    }>;
+    /**
+     * Requests
+     */
+    requests: Array<{
+        [key: string]: unknown;
+    }>;
+    /**
+     * Sessions
+     */
+    sessions: Array<{
+        [key: string]: unknown;
+    }>;
+    /**
+     * Source Policies
+     */
+    source_policies: Array<{
+        [key: string]: unknown;
+    }>;
+    /**
+     * Truncated
+     */
+    truncated: Array<string>;
+    /**
+     * User State
+     */
+    user_state: Array<{
+        [key: string]: unknown;
+    }>;
+    /**
+     * Version
+     */
+    version: number;
+};
+
+/**
  * VisibilityIn
  */
 export type VisibilityIn = {
@@ -7991,6 +8090,44 @@ export type UpdateProfileResponses = {
 };
 
 export type UpdateProfileResponse = UpdateProfileResponses[keyof UpdateProfileResponses];
+
+export type ExportProfileData = {
+    body?: never;
+    path: {
+        /**
+         * Profile Id
+         */
+        profile_id: string;
+    };
+    query?: never;
+    url: '/api/v1/profiles/{profile_id}/export';
+};
+
+export type ExportProfileErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type ExportProfileError = ExportProfileErrors[keyof ExportProfileErrors];
+
+export type ExportProfileResponses = {
+    /**
+     * Successful Response
+     */
+    200: UserExportOut;
+};
+
+export type ExportProfileResponse = ExportProfileResponses[keyof ExportProfileResponses];
 
 export type SetFamilySearchData = {
     body: FamilySearchIn;

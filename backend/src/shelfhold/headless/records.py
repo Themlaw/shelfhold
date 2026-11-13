@@ -13,6 +13,7 @@ from sqlalchemy import Connection
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
 from shelfhold.catalog.public import record_removed
+from shelfhold.infrastructure.requesters import live_actor
 from shelfhold.infrastructure.schema import acquisition, export, identity, platform
 
 SUWAYOMI = "suwayomi"
@@ -122,7 +123,7 @@ def insert_audit(
 ) -> None:
     connection.execute(
         sa.insert(identity.audit).values(
-            id=audit_id, actor_id=actor_id, action=action, target=target, at=at,
+            id=audit_id, actor_id=live_actor(actor_id), action=action, target=target, at=at,
             session_id=session_id, auth_time=auth_time,
         )
     )  # fmt: skip

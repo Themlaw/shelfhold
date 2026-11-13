@@ -53,5 +53,6 @@ l'installation.
 | Plateformes (Docker, Unraid, TrueNAS, Synology, Podman), prérequis, veille du NAS | [plateformes.md](plateformes.md), [nas-energie.md](nas-energie.md) |
 | Avec quoi lire : navigateurs, liseuses, KOReader, OPDS, colonne « hors ligne » | [clients.md](clients.md) |
 | Désinstaller sans rien perdre (sauvegarde, kit de secours, `/store`) | [desinstaller.md](desinstaller.md) |
+| Supprimer un profil, exporter ses données (ce qui reste après, et combien de temps) | [supprimer-un-profil.md](supprimer-un-profil.md) |
 | Écrire un plugin (source, destination, kit, gabarit) | [../plugins/parcours.md](../plugins/parcours.md) |
 | Page à donner à la famille | [../famille/README.md](../famille/README.md) |

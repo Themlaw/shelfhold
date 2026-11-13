@@ -60,11 +60,26 @@ def test_passthrough_keeps_received_sha256() -> None:
         assert prepared.created
 
 
+@pytest.mark.req("EF-USR-013")
+def test_a_demande_for_a_requester_who_is_gone_is_written_for_nobody() -> None:
+    """The request was authenticated, the user deleted, then the ticket is written (M3 L08, review
+    of #218, M2): the id is not kept, the visibility is."""
+    with acquire_bench(NativeBooks(trust="publisher"), files={FILE: CLEAN}) as b:
+        b.prepared_and_fetched(requester_user_id="01JFZ0000000000000000000AC", visibility="private")
+        (request,) = b.rows("SELECT visibility, requester_user_id FROM download_request")
+        assert request == {"visibility": "private", "requester_user_id": None}
+
+
 @pytest.mark.req("EF-SRC-015", "EF-BIB-001")
 def test_novel_work_is_filed_with_a_demande_for_its_requester() -> None:
     """The Work is a `novel`; the request is a persistent `download_request` that says who asked
     and who may see it; the file is "rangé" with one event, and the request is fetched."""
     with acquire_bench(NativeBooks(trust="publisher"), files={FILE: CLEAN}) as b:
+        with b.lib.engine.begin() as connection:  # the requester exists (a ticket for nobody is
+            connection.exec_driver_sql(  # written for nobody by the database, M3 L08)
+                'INSERT INTO "user" (id, username, role) '
+                "VALUES ('01JFZ0000000000000000000AB', 'requester', 'member')"
+            )
         prepared, _done = b.prepared_and_fetched(
             requester_user_id="01JFZ0000000000000000000AB", visibility="private"
         )

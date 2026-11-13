@@ -14,7 +14,7 @@ from shelfhold.export.domain.bindings import (
 )
 from shelfhold.headless.actor import Actor
 from shelfhold.infrastructure.ids import new_ulid
-from shelfhold.infrastructure.schema import catalog, export
+from shelfhold.infrastructure.schema import catalog, export, identity
 from tests.auth_env import AuthEnv, auth_env, db_rows
 from tests.family_env import NOW, family_env, rate
 from tests.integration.test_auth_keys_reserved import _bearer, _create_key
@@ -32,6 +32,12 @@ def audited(env_engine: sa.Engine, action: str) -> list[sa.Row[tuple[object, ...
 @pytest.mark.req("EF-EXP-002", "EF-USR-015", "ENF-SEC-010")
 def test_family_shelf_created_with_its_ceiling_hold_default_and_audit() -> None:
     with family_env(18) as env:
+        with env.engine.begin() as connection:  # the audit guard only keeps the id of a live user
+            connection.execute(
+                sa.insert(identity.user).values(
+                    id=ACTOR.actor_id, username="boss", role="admin", can_rate=True
+                )
+            )
         service = ShelfService(env.engine)
         shelf_id = service.create_shelf(
             name="Famille", phrase="Pour les enfants", max_age_rating=13, actor=ACTOR

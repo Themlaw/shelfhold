@@ -171,6 +171,7 @@ CLOSED = (
     "GET /api/v1/profiles",
     "POST /api/v1/profiles",
     "DELETE /api/v1/profiles/{profile_id}",
+    "GET /api/v1/profiles/{profile_id}/export",
     "PATCH /api/v1/profiles/{profile_id}",
     "GET /api/v1/profiles/{profile_id}/source-policies",
     "PUT /api/v1/profiles/{profile_id}/source-policies/{source_key}",
