@@ -6,7 +6,8 @@ import { client } from '#lib/api/client.gen.ts';
 import Page from './+page.svelte';
 
 const server = setupServer(
-  http.get('http://shelfhold.test/healthz', () => HttpResponse.json({ state: 'ok' }))
+  http.get('http://shelfhold.test/healthz', () => HttpResponse.json({ state: 'ok' })),
+  http.get('http://shelfhold.test/api/v1/activity', () => HttpResponse.json([]))
 );
 beforeAll(() => {
   server.listen({ onUnhandledRequest: 'error' } as never);
