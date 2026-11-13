@@ -7,7 +7,7 @@
   import ProblemCard from '#lib/components/ProblemCard.svelte';
   import ReauthPrompt from '#lib/components/ReauthPrompt.svelte';
   import WizardSteps from '#lib/components/WizardSteps.svelte';
-  import { t } from '#lib/i18n/index.ts';
+  import { formatDate, t } from '#lib/i18n/index.ts';
   import { csrfToken } from '#lib/passkeys.ts';
   import { problemView, type ProblemView } from '#lib/problems.ts';
   import { needsReauth, needsSession, problemOf } from '#lib/triage.ts';
@@ -98,7 +98,7 @@
   {:else if done}
     <p role="status">{t('admin.wizard.kavita.done')}</p>
     {#if expires}
-      <p>{t('admin.wizard.kavita.expires', { date: new Date(expires).toLocaleDateString('fr-FR') })}</p>
+      <p>{t('admin.wizard.kavita.expires', { date: formatDate(expires) })}</p>
     {/if}
     {#if next}
       <!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- the app is served at the root of its origin -->

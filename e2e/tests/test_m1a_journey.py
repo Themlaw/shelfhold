@@ -6,6 +6,7 @@ Kavita and Suwayomi are the simulated servers of backend/tests/fakes behind a so
 Shelfhold wrote". Every step is a `shelfhold` command typed in the container: no SQL.
 """
 
+import re
 import json
 import subprocess
 import time
@@ -253,7 +254,7 @@ def test_detach_removes_the_exclusion_shelfhold_placed_and_keeps_the_administrat
     base = ("adopt", "--destination", str(row[0]), "--library", library)
     preview = j.shelfhold(*base, "--dry-run")
     assert preview.code == 0, preview.err
-    fingerprint = preview.out.split("aperçu :")[1].split()[0]
+    fingerprint = re.split(r"aperçu\s:", preview.out)[1].split()[0]
     adopted = j.shelfhold(*base, "--confirm", fingerprint)
     assert adopted.code == 0, adopted.err
     destination = str(row[0])
