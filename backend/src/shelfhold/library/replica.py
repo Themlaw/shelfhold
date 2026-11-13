@@ -43,6 +43,7 @@ __all__ = [
     "independent_copies",
     "kept_file_hashes",
     "library_copies",
+    "library_copies_of",
     "manifest_file_hashes",
     "mark_damaged",
     "median_unit_bytes",
@@ -362,31 +363,52 @@ class LibraryCopy:
 
 
 def library_copies(connection: Connection, unit_id: str) -> Sequence[LibraryCopy]:
+    return library_copies_of(connection, [unit_id]).get(unit_id, [])
+
+
+_COPIES_CHUNK = 500  # ids per statement: well under SQLite's bound-variable limit
+
+
+def library_copies_of(
+    connection: Connection, unit_ids: Sequence[str]
+) -> dict[str, list[LibraryCopy]]:
+    """The library copies of several Units in one statement per chunk, each Unit's in the order
+    `library_copies` gives (by replica id). A Unit without a copy is not a key. One statement per
+    Unit made a snapshot of a destination cost as many compiled queries as it has Units: an
+    export re-reads it for every chapter, and held the interpreter for it (ENF-PERF-007)."""
     root = platform.physical_root
-    rows = connection.execute(
-        sa.select(
-            replica_table.c.id,
-            replica_table.c.rel_path,
-            replica_table.c.file_hash,
-            replica_table.c.content_hash,
-            root.c.path_entry,
-            replica_table.c.independent,
-            replica_table.c.damaged_at,
+    found: dict[str, list[LibraryCopy]] = {}
+    ids = list(dict.fromkeys(unit_ids))
+    for start in range(0, len(ids), _COPIES_CHUNK):
+        rows = connection.execute(
+            sa.select(
+                replica_table.c.unit_id,
+                replica_table.c.id,
+                replica_table.c.rel_path,
+                replica_table.c.file_hash,
+                replica_table.c.content_hash,
+                root.c.path_entry,
+                replica_table.c.independent,
+                replica_table.c.damaged_at,
+            )
+            .join(root, root.c.root_id == replica_table.c.physical_root_id)
+            .where(
+                replica_table.c.unit_id.in_(ids[start : start + _COPIES_CHUNK]),
+                replica_table.c.location == "library",
+            )
+            .order_by(replica_table.c.unit_id, replica_table.c.id)
         )
-        .join(root, root.c.root_id == replica_table.c.physical_root_id)
-        .where(replica_table.c.unit_id == unit_id, replica_table.c.location == "library")
-        .order_by(replica_table.c.id)
-    )
-    return [
-        LibraryCopy(
-            r.id,
-            f"{r.path_entry.rstrip('/')}/{r.rel_path}",
-            r.file_hash,
-            r.content_hash,
-            r.damaged_at is not None,
-        )
-        for r in rows
-    ]
+        for r in rows:
+            found.setdefault(r.unit_id, []).append(
+                LibraryCopy(
+                    r.id,
+                    f"{r.path_entry.rstrip('/')}/{r.rel_path}",
+                    r.file_hash,
+                    r.content_hash,
+                    r.damaged_at is not None,
+                )
+            )
+    return found
 
 
 @dataclass(frozen=True)

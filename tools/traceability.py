@@ -177,7 +177,7 @@ def _decorator_flags(decorators: list[ast.expr]) -> list[str]:
 
 def collect_python(root: Path) -> list[TestRef]:
     refs: list[TestRef] = []
-    for f in _iter_files(root, "backend/tests", ("test_*.py",)) + _iter_files(
+    for f in _iter_files(root, "backend/tests", ("test_*.py", "bench_*.py")) + _iter_files(
         root, "e2e", ("test_*.py",)
     ):
         rel = f.relative_to(root).as_posix()
