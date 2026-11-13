@@ -756,11 +756,14 @@ def test_http_contract_ignores_are_named_with_the_lot_that_settles_them() -> Non
 
 
 @pytest.mark.req("ENF-GOV-006")
-def test_gate_p2_is_recorded_as_waiting_for_the_owner() -> None:
+def test_gate_p2_is_recorded_as_a_delegated_decision_without_a_measure() -> None:
+    """P2 was settled by the owner's delegation: the full M3 is kept, and the row never claims a
+    concierge figure that was not measured."""
     portes = (BACKEND.parent / "docs" / "governance" / "portes.md").read_text("utf-8")
     row = [ln for ln in portes.splitlines() if ln.startswith("| P2 | ")][-1]
-    assert "en attente de la réponse du porteur (D1 de PLAN-M3)" in row
-    assert "réussi" not in row.lower()
+    assert "franchie par délégation" in row
+    assert "n'a pas été mesuré" in row
+    assert "FAMILY_NAV_LITE" in row
     assert "échec" not in row.lower()
 
 
