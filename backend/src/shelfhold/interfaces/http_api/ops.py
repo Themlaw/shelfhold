@@ -59,6 +59,10 @@ class JobOut(BaseModel):
     error_code: str | None
     last_error: str | None
     attempts: int
+    request_id: str | None  # the request the job serves (EF-INT-017: « pour qui »); admin only
+    priority_class: str
+    source_key: str | None
+    progress: float | None
 
 
 class JobsOut(BaseModel):

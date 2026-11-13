@@ -2300,6 +2300,43 @@
             ],
             "title": "Last Error"
           },
+          "priority_class": {
+            "title": "Priority Class",
+            "type": "string"
+          },
+          "progress": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Progress"
+          },
+          "request_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Request Id"
+          },
+          "source_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Key"
+          },
           "status": {
             "title": "Status",
             "type": "string"
@@ -2311,7 +2348,11 @@
           "status",
           "error_code",
           "last_error",
-          "attempts"
+          "attempts",
+          "request_id",
+          "priority_class",
+          "source_key",
+          "progress"
         ],
         "title": "JobOut",
         "type": "object"
