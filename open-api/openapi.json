@@ -14283,7 +14283,7 @@
                 }
               }
             },
-            "description": "An age v1 file."
+            "description": "Successful Response"
           },
           "401": {
             "content": {

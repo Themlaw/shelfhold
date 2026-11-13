@@ -20,6 +20,7 @@ from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel, ConfigDict, Field
 
 from shelfhold.identity.public import RESERVED_ACTIONS, Principal
+from shelfhold.infrastructure.http_headers import attachment_disposition
 from shelfhold.interfaces.http_api.auth import reserved_action
 from shelfhold.interfaces.http_api.ops import refusals
 from shelfhold.ops import OpsServices
@@ -201,7 +202,7 @@ def build_setup_router(get_ops: Callable[[], OpsServices]) -> APIRouter:
     @router.post(
         "/keyring-export",
         response_class=PlainTextResponse,
-        responses={200: {"content": {"text/plain": {}}, "description": "An age v1 file."}},
+        responses={200: {"content": {"text/plain": {}}}},
     )
     def wizard_keyring_export(body: KeyringExportIn, _admin: KeyringAdmin) -> PlainTextResponse:
         """The keyring as an age file under the passphrase, once, as a download (Q25). Neither
@@ -212,7 +213,7 @@ def build_setup_router(get_ops: Callable[[], OpsServices]) -> APIRouter:
             armored,
             headers={
                 "Cache-Control": "no-store",
-                "Content-Disposition": 'attachment; filename="keyring.age"',
+                "Content-Disposition": attachment_disposition("keyring.age"),
             },
         )
 

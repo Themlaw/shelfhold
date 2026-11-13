@@ -8634,7 +8634,7 @@ export type WizardKeyringExportError = WizardKeyringExportErrors[keyof WizardKey
 
 export type WizardKeyringExportResponses = {
     /**
-     * An age v1 file.
+     * Successful Response
      */
     200: string;
 };

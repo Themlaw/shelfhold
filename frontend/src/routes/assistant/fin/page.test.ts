@@ -263,7 +263,7 @@ describe('Assistant : fin', () => {
     const user = userEvent.setup();
     const button = await screen.findByRole('button', { name: 'Lancer le premier livre' });
     expect(button).toBeDisabled(); // nothing typed
-    await user.type(screen.getByLabelText('Numéro du livre sur Gutenberg'), ' 84 ');
+    await user.type(screen.getByLabelText('Numéro du livre sur Gutenberg (libre de droits aux États-Unis)'), ' 84 ');
     await user.click(button);
     expect(await screen.findByText('Premier livre lancé.')).toBeInTheDocument();
     expect(body).toEqual({ source_key: 'gutenberg', remote_id: '84' });
@@ -300,7 +300,7 @@ describe('Assistant : fin', () => {
     render(Page);
     await user.click(await screen.findByRole('button', { name: 'Confirmer la juridiction' }));
     actions += 1;
-    await user.type(screen.getByLabelText('Numéro du livre sur Gutenberg'), '84');
+    await user.type(screen.getByLabelText('Numéro du livre sur Gutenberg (libre de droits aux États-Unis)'), '84');
     actions += 1;
     await user.click(screen.getByRole('button', { name: 'Lancer le premier livre' }));
     actions += 1;
