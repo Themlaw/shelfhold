@@ -4,6 +4,7 @@ import { http, HttpResponse } from 'msw';
 import { setupServer } from 'msw/node';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { client } from '#lib/api/client.gen.ts';
+import { t } from '#lib/i18n/index.ts';
 import Page from './+page.svelte';
 
 vi.mock('$app/state', () => ({ page: { params: { id: 'ED1' } } }));
@@ -137,18 +138,18 @@ describe('Series sheet', () => {
       })
     );
     render(Page);
-    await user.click(await screen.findByRole('button', { name: 'Vérifier maintenant' }));
+    await user.click(await screen.findByRole('button', { name: t('sheet.check') }));
     expect(await screen.findByText('Contrôle demandé.')).toBeInTheDocument();
     expect(calls).toBe(1);
   });
 
   // req: EF-SRC-038
-  it('does not show "Vérifier maintenant" when the server does not allow it', async () => {
+  it('does not show the "check now" button when the server does not allow it', async () => {
     current = sheet({ can: { ...CAN, check: false } });
     server.use(serve());
     render(Page);
     await screen.findByText('Une série', { selector: 'h2' });
-    expect(screen.queryByRole('button', { name: 'Vérifier maintenant' })).toBeNull();
+    expect(screen.queryByRole('button', { name: t('sheet.check') })).toBeNull();
   });
 
   // req: EF-BIB-056
@@ -215,7 +216,7 @@ describe('Series sheet', () => {
       })
     );
     render(Page);
-    await user.selectOptions(await screen.findByRole('combobox', { name: 'Statut amont' }), 'finished');
+    await user.selectOptions(await screen.findByRole('combobox', { name: t('sheet.status.title') }), 'finished');
     await user.click(screen.getByRole('button', { name: 'Régler' }));
     expect(await screen.findByText('Réglé à la main')).toBeInTheDocument();
     expect(bodies[0]).toEqual({ status: 'finished' });

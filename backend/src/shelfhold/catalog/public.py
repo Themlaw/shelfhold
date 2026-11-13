@@ -77,6 +77,7 @@ from shelfhold.catalog.application.dto import (
 )
 from shelfhold.catalog.application.editions import translation_type_for
 from shelfhold.catalog.application.enrich import (
+    COVER_FIELD,
     EnrichReport,
     EnrichService,
     UnknownTargetError,
@@ -118,6 +119,7 @@ from shelfhold.catalog.application.queries import (
     VisibleWork,
     count_visible_works,
     cover_ref_visible,
+    list_visible_series,
     list_visible_works,
     referenced_cover_refs,
     visible_edition_ids,
@@ -190,6 +192,7 @@ from shelfhold.catalog.application.tombstone_screen import (
     TombstoneScreenMissingError,
 )
 from shelfhold.catalog.application.work_merge import (
+    MERGE_WINDOW_DAYS,
     WorkMerged,
     WorkMergePlan,
     WorkMergeRefusedError,
@@ -433,12 +436,14 @@ __all__ = [
     "ATTACH_SUGGESTED",
     "AUTO_ATTACHED",
     "BOOK_KINDS",
+    "COVER_FIELD",
     "DEFAULT_MIN_PAGE_RATIO",
     "EDITION_KEY",
     "LANG_NORMALIZER_ID",
     "MAX_REMOVED",
     "MAX_TERMS",
     "MAX_TERM_CHARS",
+    "MERGE_WINDOW_DAYS",
     "NEED_NONE",
     "TEXT_VERSION_LABELS",
     "WRITER",
@@ -569,6 +574,7 @@ __all__ = [
     "is_age_field",
     "is_flagged",
     "join_people",
+    "list_visible_series",
     "list_visible_works",
     "lock_current",
     "lock_field",

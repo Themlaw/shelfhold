@@ -134,6 +134,13 @@ CLOSED = (
     "GET /api/v1/editions/{edition_id}/backfill",
     "POST /api/v1/editions/{edition_id}/backfill",
     "POST /api/v1/editions/{edition_id}/check",
+    "POST /api/v1/editions/{edition_id}/gaps/ack",  # M3 L43: the sheet's doors, all the admin's
+    "GET /api/v1/editions/{edition_id}/sheet",
+    "POST /api/v1/editions/{edition_id}/bindings/order",
+    "POST /api/v1/editions/{edition_id}/upstream-status",
+    "POST /api/v1/editions/{edition_id}/preferred-team",
+    "POST /api/v1/attachments/{attach_id}/plan",
+    "POST /api/v1/attachments/{attach_id}/confirm",
     "POST /api/v1/editions/{edition_id}/external-ids/renumber",
     "POST /api/v1/editions/{edition_id}/fields/{field}/lock",
     "POST /api/v1/editions/{edition_id}/fields/{field}/unlock",
@@ -752,6 +759,59 @@ def _surface_activity(world: World) -> None:
     assert shown == {world.seed.works[k] for k in VISIBLE_FOR_CEILING_10}
 
 
+def _filters_and_covers_of_the_list(world: World) -> None:
+    """M3 L43: a filter by shelf or by series only adds a condition to the one filter; the series
+    choices leave out a series with a hidden member (and its title); a cover address is given only
+    for an Edition she may see. Nothing hidden comes back through a filter, a count or a facet."""
+    from shelfhold.infrastructure.schema import catalog as catalog_schema
+    from tests.thumbnail_env import put_cover
+
+    seed, works = world.seed, world.seed.works
+    mixed, hidden_only = new_ulid(), new_ulid()
+    with seed.engine.begin() as connection:
+        for series_id, title, members in (
+            (mixed, "Mixed Saga L43", ("ok", "above")),
+            (hidden_only, "Hidden Saga L43", ("above", "x")),
+        ):
+            connection.execute(
+                sa.insert(catalog_schema.series).values(
+                    id=series_id, title=title, sort_title=title.lower()
+                )
+            )
+            for position, key in enumerate(members, start=1):
+                connection.execute(
+                    sa.insert(catalog_schema.series_member).values(
+                        series_id=series_id, work_id=works[key], position=str(position)
+                    )
+                )
+        covers = {
+            key: put_cover(
+                world.env.settings.data_dir, connection, seed.editions[key], (i * 70 + 20, 7, 7)
+            )
+            for i, key in enumerate(("ok", "above", "mixed_new"))
+        }
+    queries: list[dict[str, Any]] = [
+        {"facets": "true"}, {"series_id": mixed}, {"series_id": hidden_only},
+        {"shelf_id": seed.shelves["family"]}, {"shelf_id": seed.shelves["adult"]},
+        {"shelf_id": seed.shelves["adult"], "series_id": mixed},
+    ]  # fmt: skip
+    for query in queries:
+        got = world.kid.get("/api/v1/works", params={"limit": 200, **query})
+        assert got.status_code == 200, query
+        world.clean(got.text)
+        assert "Saga L43" not in got.text  # a series with a hidden member: no title
+        for hidden in (covers["above"], covers["mixed_new"]):
+            assert hidden not in got.text, query  # no address for a cover she may not see
+        ids = {i["work_id"] for i in got.json()["items"]}
+        assert ids <= seed.visible_ids | {works["twelve"]}, query
+        assert got.json()["total"] == len(ids), query
+    assert world.kid.get("/api/v1/works", params={"series_id": hidden_only}).json()["items"] == []
+    facets = world.kid.get("/api/v1/works", params={"facets": "true"}).json()["series"]
+    assert [s["title"] for s in facets] == []  # both series hold a hidden member
+    shown = world.kid.get("/api/v1/works", params={"limit": 200}).json()["items"]
+    assert {i["cover_hash"] for i in shown if i["cover_hash"]} == {covers["ok"]}
+
+
 def _surface_works_since(world: World) -> None:
     """The list of Works and its removals are the child's own view: a page of visible Works, and
     a removal only for a Work she saw at the token. By session and by key, never the creator's."""
@@ -771,6 +831,7 @@ def _surface_works_since(world: World) -> None:
         world.seed.title_of(k) for k in VISIBLE_FOR_CEILING_10
     }
     assert recent.json()["total"] == len(VISIBLE_FOR_CEILING_10)
+    _filters_and_covers_of_the_list(world)
     key = (
         local_auth(world.seed.engine, world.env.settings)
         .create_api_key(name="kidkey2", username="kid", read_only=True)

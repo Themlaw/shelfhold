@@ -35,6 +35,7 @@ __all__ = [
     "VisibleWork",
     "count_visible_works",
     "cover_ref_visible",
+    "list_visible_series",
     "list_visible_works",
     "referenced_cover_refs",
     "visible_edition_ids",
@@ -72,6 +73,8 @@ class VisibleWork:
     work_id: str
     title: str
     kind: str
+    edition_id: str | None = None  # the first Edition she may see
+    cover_ref: str | None = None  # the cover of that Edition, or of the next one that has one
 
 
 def _age_within(
@@ -306,14 +309,101 @@ def visible_series_ids(
     return found
 
 
-def count_visible_works(connection: sa.Connection, scope: ReaderScope) -> int:
-    """How many Works this reader may see: the same condition as the list, so a total cannot say
-    more than the pages do."""
+def _filtered(
+    scope: ReaderScope, *, shelf_id: str | None, series_id: str | None
+) -> list[sa.ColumnElement[bool]]:
+    """The conditions of a filter on the list: one more AND on the one filter, never a way round
+    it. A shelf holds a Work when an Edition she may see is filed there; a series holds it when it
+    is a member and the series itself shows (`visible_series_ids`: no hidden member)."""
+    work, edition, member = catalog.work.c, catalog.edition.c, catalog.series_member.c
+    found: list[sa.ColumnElement[bool]] = []
+    if shelf_id is not None:
+        found.append(
+            sa.select(sa.literal(1))
+            .where(
+                edition.work_id == work.id, edition.shelf_id == shelf_id,
+                visible_editions_clause(scope),
+            )
+            .exists()
+        )  # fmt: skip
+    if series_id is not None:
+        found.append(
+            sa.select(sa.literal(1))
+            .where(member.work_id == work.id, member.series_id == series_id)
+            .exists()
+        )
+    return found
+
+
+def list_visible_series(connection: sa.Connection, scope: ReaderScope) -> list[tuple[str, str]]:
+    """The series this reader may filter by: `(id, title)`, in title order. A series with a hidden
+    member is not listed, nor is its title (`visible_series_ids`)."""
+    series = catalog.series.c
+    rows = connection.execute(
+        sa.select(series.id, series.title).order_by(series.sort_title, series.id)
+    ).all()
+    shown = visible_series_ids(connection, scope, [str(r.id) for r in rows])
+    return [(str(r.id), str(r.title)) for r in rows if str(r.id) in shown]
+
+
+def count_visible_works(
+    connection: sa.Connection,
+    scope: ReaderScope,
+    *,
+    shelf_id: str | None = None,
+    series_id: str | None = None,
+) -> int:
+    """How many Works this reader may see: the same condition as the list, filters included, so a
+    total cannot say more than the pages do."""
+    if series_id is not None and not visible_series_ids(connection, scope, [series_id]):
+        return 0
     return int(
         connection.execute(
-            sa.select(sa.func.count()).select_from(catalog.work).where(visible_works_clause(scope))
+            sa.select(sa.func.count())
+            .select_from(catalog.work)
+            .where(
+                visible_works_clause(scope),
+                *_filtered(scope, shelf_id=shelf_id, series_id=series_id),
+            )
         ).scalar_one()
     )
+
+
+def _first_covers(
+    connection: sa.Connection, scope: ReaderScope, work_ids: list[str]
+) -> dict[str, tuple[str, str | None]]:
+    """For each Work of a page: the first Edition she may see and a cover among them (an Edition
+    she may not see is neither shown nor lends its cover)."""
+    edition, field = catalog.edition.c, catalog.metadata_field.c
+    rows = connection.execute(
+        sa.select(edition.work_id, edition.id, field.value)
+        .select_from(
+            catalog.edition.outerjoin(
+                catalog.metadata_field,
+                sa.and_(
+                    field.entity_id == edition.id,
+                    *_COVER_FIELD_ROWS,
+                ),
+            )
+        )
+        .where(edition.work_id.in_(work_ids), visible_editions_clause(scope))
+        .order_by(edition.work_id, edition.id)
+    ).all()
+    found: dict[str, tuple[str, str | None]] = {}
+    for row in rows:
+        ref: str | None = None
+        if row.value is not None:
+            try:
+                decoded = json.loads(row.value)
+            except ValueError:
+                decoded = None
+            ref = decoded if isinstance(decoded, str) else None
+        work_id = str(row.work_id)
+        if work_id not in found:
+            found[work_id] = (str(row.id), ref)
+        elif found[work_id][1] is None and ref is not None:
+            found[work_id] = (found[work_id][0], ref)
+    return found
 
 
 def list_visible_works(
@@ -323,19 +413,27 @@ def list_visible_works(
     limit: int,
     offset: int,
     recent: bool = False,
+    shelf_id: str | None = None,
+    series_id: str | None = None,
 ) -> list[VisibleWork]:
     """A page of the Works this reader may see, in title order, or newest first (`recent`: the
     order of creation; the same filter, so the pages of a child hold no hidden Work). A negative
-    offset or limit is no page; a page is never longer than `MAX_PAGE`."""
+    offset or limit is no page; a page is never longer than `MAX_PAGE`. A filter by shelf or by
+    series only adds a condition to the one filter."""
     if limit <= 0 or offset < 0:
         return []
+    if series_id is not None and not visible_series_ids(connection, scope, [series_id]):
+        return []  # a series with a hidden member shows no member: it is as if it did not exist
     work = catalog.work.c
     order = (work.created_seq.desc(), work.id.desc()) if recent else (work.sort_title, work.id)
     rows = connection.execute(
         sa.select(work.id, work.title, work.kind)
-        .where(visible_works_clause(scope))
+        .where(
+            visible_works_clause(scope), *_filtered(scope, shelf_id=shelf_id, series_id=series_id)
+        )
         .order_by(*order)
         .limit(min(limit, MAX_PAGE))
         .offset(offset)
-    )
-    return [VisibleWork(r.id, r.title, r.kind) for r in rows]
+    ).all()
+    covers = _first_covers(connection, scope, [str(r.id) for r in rows]) if rows else {}
+    return [VisibleWork(r.id, r.title, r.kind, *covers.get(str(r.id), (None, None))) for r in rows]

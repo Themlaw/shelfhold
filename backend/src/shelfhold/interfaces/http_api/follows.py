@@ -47,7 +47,7 @@ class CheckOut(BaseModel):
 class GapAckIn(BaseModel):
     number: str
     track: str = "main"
-    segment: str = "1"
+    segment: str = ""  # the one the sheet gave: a series without segments has an empty one
     undo: bool = False
 
 
