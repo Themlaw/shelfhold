@@ -203,4 +203,5 @@ reason = "2026-11-13: the routes with a credential of their own (`/opds`, `/kosy
 until = "M5"
 symbols = [
   "shelfhold.interfaces.http_api.ratelimit:RecognisedCredentials.add_raw",
+  "shelfhold.interfaces.http_api.ratelimit:recognise_device_credential",
 ]

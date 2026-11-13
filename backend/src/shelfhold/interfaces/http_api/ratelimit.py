@@ -32,6 +32,16 @@ UNKNOWN = "unknown"
 DEFAULT_MAX_KEYS = 10_000
 # What no anonymous quota ever slows down: the probes of the orchestrator.
 UNLIMITED_PATHS = frozenset({"/healthz", "/readyz"})
+# What an anonymous caller can ask of the server itself: the API, the sign-in page and the routes
+# with credentials of their own. The files
+# of the front (the page, its scripts, styles and client routes) are the same bytes for everyone,
+# take no decision and no database: they do not count, or a browser loading the page would use
+# the budget that protects the sign-in (and every browser behind one address would share it).
+COUNTED_PREFIXES = ("/api/", "/login", "/opds", "/kosync", "/kobo")
+
+
+def is_counted(path: str) -> bool:
+    return any(path == p.rstrip("/") or path.startswith(p) for p in COUNTED_PREFIXES)
 
 
 def _in(address: str, trusted: tuple[IpNetwork, ...]) -> bool:
@@ -252,7 +262,8 @@ class PublicRateLimit:
         self._clock = clock
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
-        if scope["type"] != "http" or scope.get("path") in UNLIMITED_PATHS:
+        path = str(scope.get("path", ""))
+        if scope["type"] != "http" or path in UNLIMITED_PATHS or not is_counted(path):
             await self.app(scope, receive, send)
             return
         if isinstance(scope.get("state", {}).get("principal"), Principal):

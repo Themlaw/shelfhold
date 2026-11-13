@@ -8,7 +8,10 @@ const env = [
   `SHELFHOLD_PORT=${PORT}`,
   // passkeys need a secure context: the RP ID is the host of this URL, so `localhost`
   `SHELFHOLD_PUBLIC_URL=http://localhost:${PORT}`,
-  `SHELFHOLD_LOG_FORMAT=console`
+  `SHELFHOLD_LOG_FORMAT=console`,
+  // every test of the bench signs in from the same address: the public rate limit (ENF-SEC-008)
+  // is raised explicitly here, and nowhere else
+  `SHELFHOLD_HTTP_PUBLIC_RATE_PER_MINUTE=100000`
 ].join(' ');
 export const ADMIN_PASSWORD = 'synthetic-admin-password-1';
 const shelfhold = 'uv run --locked --project ../backend shelfhold';
@@ -25,7 +28,10 @@ const workshopEnv = [
   `SHELFHOLD_FRONTEND_DIR=../frontend/build`,
   `SHELFHOLD_PORT=${WORKSHOP_PORT}`,
   `SHELFHOLD_PUBLIC_URL=http://localhost:${WORKSHOP_PORT}`,
-  `SHELFHOLD_LOG_FORMAT=console`
+  `SHELFHOLD_LOG_FORMAT=console`,
+  // every test of the bench signs in from the same address: the public rate limit (ENF-SEC-008)
+  // is raised explicitly here, and nowhere else
+  `SHELFHOLD_HTTP_PUBLIC_RATE_PER_MINUTE=100000`
 ].join(' ');
 const workshopUrl = `http://localhost:${WORKSHOP_PORT}`;
 const workshop = process.env.SHELFHOLD_E2E_SUITE === 'workshop';

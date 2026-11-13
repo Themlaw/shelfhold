@@ -292,3 +292,22 @@ def test_the_forward_auth_secret_holds_at_least_32_characters(settings: Settings
             validated(settings, **on, auth_forward_secret=SecretStr(short))
     assert validated(settings, **on, auth_forward_secret=SecretStr("x" * 32)).auth_forward_enabled
     assert validated(settings, **on, auth_forward_secret=SecretStr("")).auth_forward_enabled
+
+
+@pytest.mark.req("ENF-SEC-008")
+def test_the_files_of_the_front_do_not_use_the_anonymous_budget(
+    monkeypatch: pytest.MonkeyPatch, settings: Settings
+) -> None:
+    """A browser loads dozens of files: they are the same bytes for everyone, take no decision,
+    and must not eat the budget that protects the sign-in (all the browsers of an address, a test
+    bench included, share it)."""
+    update = {"http_public_rate_per_minute": 10}
+    with auth_env(monkeypatch, settings.model_copy(update=update)) as env:
+        visitor = env.other_client("192.0.2.70")
+        for path in ("/", "/index.html", "/_app/immutable/x.js", "/client/route", "/robots.txt"):
+            assert all(visitor.get(path).status_code != 429 for _ in range(30)), path
+        assert all(visitor.get("/login").status_code == 200 for _ in range(10))  # untouched
+        assert visitor.get("/login").status_code == 429
+        # the API and the sign-in are what the budget is for
+        api = [env.other_client("192.0.2.71").get("/api/v1/about").status_code for _ in range(12)]
+        assert api[-1] == 429 and 429 not in api[:10], api
