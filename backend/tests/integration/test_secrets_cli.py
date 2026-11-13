@@ -37,7 +37,7 @@ def test_cli_rotate_reencrypts_and_asks_for_a_new_export(
             SecretVault(keyring).seal_row(connection, "source_config", "p", b"s3cret")
         assert cli.main(["secrets", "rotate"]) == 0
         out = capsys.readouterr().out
-        assert "1 secret(s)" in out
+        assert "1 secret rechiffré" in out
         assert "secrets export" in out  # the previous export no longer covers the new key
         after = diagnostics.store_for(settings).load()
         assert after.active.kid != keyring.active.kid

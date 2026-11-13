@@ -1,5 +1,6 @@
 import { IntlMessageFormat } from 'intl-messageformat';
 import fr from './fr.json';
+import { typeset } from './format.ts';
 
 export type MessageKey = keyof typeof fr;
 type Values = Record<string, string | number>;
@@ -11,7 +12,7 @@ const cache = new Map<MessageKey, IntlMessageFormat>();
 export function t(key: MessageKey, values?: Values): string {
   let message = cache.get(key);
   if (!message) {
-    message = new IntlMessageFormat(fr[key], LOCALE);
+    message = new IntlMessageFormat(typeset(fr[key]), LOCALE);
     cache.set(key, message);
   }
   return String(message.format(values));
@@ -21,3 +22,5 @@ export function t(key: MessageKey, values?: Values): string {
 export function hasMessage(key: string): key is MessageKey {
   return Object.hasOwn(fr, key);
 }
+
+export * from './format.ts';

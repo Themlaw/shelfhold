@@ -5,6 +5,7 @@ row or a waiting state: the production code does."""
 
 from __future__ import annotations
 
+import re
 from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass, replace
@@ -77,7 +78,7 @@ class Bench54:
         base = ("adopt", "--destination", self.env.destination_id, "--library", self.library_ref)
         capsys.readouterr()
         assert self.cli(*base, "--dry-run") == 0
-        fingerprint = capsys.readouterr().out.split("aperçu :")[1].split()[0]
+        fingerprint = re.split(r"aperçu\s:", capsys.readouterr().out)[1].split()[0]
         return self.cli(*base, "--confirm", fingerprint)
 
     def status(self, capsys: pytest.CaptureFixture[str]) -> str:

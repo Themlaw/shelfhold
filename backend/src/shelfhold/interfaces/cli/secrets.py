@@ -10,6 +10,7 @@ import argparse
 import json
 import os
 import sys
+from collections.abc import Callable
 from pathlib import Path
 
 from shelfhold.config import ResolvedSettings, Settings
@@ -167,20 +168,22 @@ def _refusal_text(exc: KeyRetirementRefusedError) -> str:
 
 def warning_text(warning: diagnostics.KeyringWarning) -> str:
     detail = warning.detail
-    texts = {
-        "key_in_data": t("secrets.warning_key_in_data", detail=detail),
-        "rows_on_retired_key": t("secrets.warning_rows_on_retired_key", detail=detail),
-        "keyring_world_readable": t("secrets.warning_keyring_world_readable", detail=detail),
-        "keyring_absent": t("secrets.warning_keyring_absent", detail=detail),
-        "rotation_incomplete": t("secrets.warning_rotation_incomplete"),
-        "never_exported": t("secrets.warning_never_exported"),
-        "export_older_than_rotation": t("secrets.warning_export_older_than_rotation"),
-        "tombstones_not_exported": t("secrets.warning_tombstones_not_exported"),
-        "key_compromised": t("secrets.warning_key_compromised", detail=detail),
-        "tombstone_kids_lost": t("secrets.warning_tombstone_kids_lost", detail=detail),
-        "tombstone_kid_missing": t("secrets.warning_tombstone_kid_missing", detail=detail),
+    texts: dict[str, Callable[[], str]] = {
+        "key_in_data": lambda: t("secrets.warning_key_in_data", detail=detail),
+        "rows_on_retired_key": lambda: t("secrets.warning_rows_on_retired_key", detail=detail),
+        "keyring_world_readable": lambda: t(
+            "secrets.warning_keyring_world_readable", detail=detail
+        ),
+        "keyring_absent": lambda: t("secrets.warning_keyring_absent", detail=detail),
+        "rotation_incomplete": lambda: t("secrets.warning_rotation_incomplete"),
+        "never_exported": lambda: t("secrets.warning_never_exported"),
+        "export_older_than_rotation": lambda: t("secrets.warning_export_older_than_rotation"),
+        "tombstones_not_exported": lambda: t("secrets.warning_tombstones_not_exported"),
+        "key_compromised": lambda: t("secrets.warning_key_compromised", detail=detail),
+        "tombstone_kids_lost": lambda: t("secrets.warning_tombstone_kids_lost", detail=detail),
+        "tombstone_kid_missing": lambda: t("secrets.warning_tombstone_kid_missing", detail=detail),
     }
-    return texts[warning.code]
+    return texts[warning.code]()
 
 
 def run_status(args: argparse.Namespace, resolved: ResolvedSettings) -> int:

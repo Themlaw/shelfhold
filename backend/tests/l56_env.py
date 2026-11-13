@@ -7,6 +7,7 @@ reading progress is what the account of the key has read (`ChapterDto.pagesRead`
 from __future__ import annotations
 
 import json
+import re
 import shutil
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -41,7 +42,7 @@ class Repatriation56:
     def fingerprint(self, capsys: pytest.CaptureFixture[str]) -> str:
         capsys.readouterr()
         assert self.cli("--dry-run") == 0
-        return capsys.readouterr().out.split("Empreinte de l'aperçu :")[1].split()[0]
+        return re.split(r"Empreinte de l'aperçu\s:", capsys.readouterr().out)[1].split()[0]
 
     def unmount(self) -> None:
         """What the admin does last: the old volume goes away."""

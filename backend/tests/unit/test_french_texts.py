@@ -99,7 +99,7 @@ def test_typography_leaves_code_urls_and_user_values_alone() -> None:
     assert typeset('[{{"local": "/a"}}]') == '[{{"local": "/a"}}]'
     # What the user typed or what a source sent is never retypeset: only the catalog is.
     shown = render(
-        "Série {name} : {count, plural, one {# fichier} other {# fichiers}}",
+        typeset("Série {name} : {count, plural, one {# fichier} other {# fichiers}}"),
         name="Quoi : ça ?",
         count=2,
     )
@@ -125,11 +125,12 @@ def test_every_catalog_message_is_typeset_and_free_of_plural_hacks() -> None:
 @pytest.mark.parametrize(
     ("key", "params", "expected"),
     [
-        ("cli.shelf_withdraw_pending", {"count": 1}, "1 fichier reste à déplacer"),
+        ("migrate.applied", {"count": 1, "revision": "0042"}, "1 migration appliquée"),
+        ("migrate.applied", {"count": 2, "revision": "0042"}, "2 migrations appliquées"),
         ("cli.shelf_withdraw_pending", {"count": 3}, "3 fichiers restent à déplacer"),
         ("cli.shelf_withdraw_nothing", {}, "Aucune Édition à retirer."),
-        ("ops.sessions_revoked", {"count": 0}, "0 session fermée"),
-        ("ops.sessions_revoked", {"count": 2}, "2 sessions fermées"),
+        ("admin.sessions_revoked", {"count": 0}, "0 session fermée"),
+        ("admin.sessions_revoked", {"count": 2}, "2 sessions fermées"),
     ],
 )
 def test_real_messages_use_icu_plurals(key: str, params: dict[str, int], expected: str) -> None:
@@ -161,3 +162,21 @@ def test_tokens_read_by_kavita_never_go_through_the_catalog() -> None:
                 if any(n == "shelfhold.i18n" or n.startswith("shelfhold.i18n.") for n in names):
                     importers.append(path.name)
     assert importers == []
+
+
+@pytest.mark.req("ENF-I18N-003")
+def test_malformed_plurals_and_non_numbers_are_refused_not_guessed() -> None:
+    with pytest.raises(ValueError):
+        render("{n, plural, one {# jour}}", n=2)  # no `other`
+    with pytest.raises(ValueError):
+        render("{n, plural, one {# jour} other {# jours}", n=2)  # unbalanced
+    with pytest.raises(ValueError):
+        render("{n, plural, one {# jour} stray other {# jours}}", n=2)
+    with pytest.raises(TypeError):
+        render("{n, plural, one {# jour} other {# jours}}", n="beaucoup")
+    with pytest.raises(TypeError):
+        render("{n, plural, one {# jour} other {# jours}}", n=True)
+    with pytest.raises(TypeError):
+        render("{n:fr}", n="12")
+    assert render("{n, plural, one {# jour} other {# jours}}", n="3") == "3 jours"
+    assert render("{n, plural, one {# jour} other {# jours}}", n=1.5) == "1,5 jour"

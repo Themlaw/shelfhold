@@ -7,6 +7,7 @@ the real `reconcile --adopt-after-restore`.
 """
 
 import json
+import re
 import shutil
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
@@ -158,7 +159,9 @@ def test_file_no_known_unit_covers_requires_its_path(
         err = capsys.readouterr().err
         assert sc.purged_files() == before
         paths = sorted(
-            line.split(" : ", 1)[1] for line in err.splitlines() if line.endswith(".cbz")
+            re.split(r"\s: ", line, maxsplit=1)[1]
+            for line in err.splitlines()
+            if line.endswith(".cbz")
         )
         assert len(paths) == 2, err  # each file is asked for by its path
         assert adopt_with(monkeypatch, capsys, sc, "--confirm-unit", paths[0]) == 2

@@ -28,8 +28,8 @@ describe('dates and numbers (ENF-I18N-003)', () => {
   it('uses the narrow no-break space as the thousands separator and a decimal comma', () => {
     expect(formatNumber(1234567.5)).toBe(`1${NNBSP}234${NNBSP}567,5`);
     expect(formatNumber(999)).toBe('999');
-    expect(formatPercent(0.5)).toBe(`50${NNBSP}%`);
-    expect(formatCurrency(1234.5)).toBe(`1${NNBSP}234,50${NBSP}€`);
+    expect(formatPercent(0.5)).toMatch(/^50[\u00a0\u202f]%$/); // a no-break space, whichever width ICU picks
+    expect(formatCurrency(1234.5)).toMatch(/^1\u202f234,50[\u00a0\u202f]€$/);
   });
 
   // req: ENF-I18N-003

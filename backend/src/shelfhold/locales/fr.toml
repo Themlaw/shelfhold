@@ -37,13 +37,13 @@ shelf_withdraw_shelf_help = "Limite le plan à cette étagère (identifiant)."
 shelf_withdraw_adopted_help = "Limite le plan aux fichiers des Œuvres non classées d'une bibliothèque enfant adoptée (identifiant de la destination)."
 shelf_withdraw_apply_help = "Applique le plan : les fichiers sortent de la bibliothèque des enfants (corbeille de la racine)."
 shelf_withdraw_confirm_help = "Version du plan lu, donnée par la commande sans --apply."
-shelf_withdraw_item = "Édition {edition} (étagère {shelf}) : {reason}, {files} fichier(s)."
+shelf_withdraw_item = "Édition {edition} (étagère {shelf}) : {reason}, {files, plural, one {# fichier} other {# fichiers}}."
 shelf_withdraw_nothing = "Aucune Édition à retirer."
 shelf_withdraw_next = "Pour appliquer : shelfhold shelf withdraw --apply --confirm {version}"
 shelf_withdraw_next_adopted = "Pour appliquer : shelfhold shelf withdraw --adopted {destination} --apply --confirm {version}"
 shelf_withdraw_needs_confirm = "Donnez la version du plan lu : --confirm {version} (le plan a peut-être changé)."
-shelf_withdraw_done = "{editions} Édition(s) retirée(s), {files} fichier(s) mis à la corbeille ; Kavita est invité à analyser."
-shelf_withdraw_pending = "{count} fichier(s) restent à déplacer : l'intention reste ouverte jusqu'au prochain démarrage."
+shelf_withdraw_done = "{editions, plural, one {# Édition retirée} other {# Éditions retirées}}, {files, plural, one {# fichier} other {# fichiers}} mis à la corbeille ; Kavita est invité à analyser."
+shelf_withdraw_pending = "{count, plural, one {# fichier reste à déplacer} other {# fichiers restent à déplacer}} : l'intention reste ouverte jusqu'au prochain démarrage."
 shelf_purge_upstream_help = "Autorise (--on) ou non (--off) l'effacement du téléchargement chez le service connecté, après un export vérifié. Action réservée : session fraîche ou console de l'hôte."
 shelf_purge_upstream_shelf_help = "Étagère (nom ou identifiant)."
 shelf_purge_upstream_on_help = "Autorise l'effacement en amont, seulement une fois la copie de Kavita et celle de /store vérifiées."
@@ -158,12 +158,12 @@ admin_key_prefix_help = "Préfixe de la clé (8 caractères hexadécimaux)."
 
 [migrate]
 up_to_date = "La base est déjà à jour."
-applied = "{count} migration(s) appliquée(s) ; la base est à la révision {revision}."
+applied = "{count, plural, one {# migration appliquée} other {# migrations appliquées}} ; la base est à la révision {revision}."
 backup = "Sauvegarde préalable : {path}"
 failed = "La migration {revision} a échoué : {detail}. La base a été remise dans son état d'avant."
 in_progress = "Une autre migration est déjà en cours : abandon."
 instance_running = "Une instance de Shelfhold tourne sur ces volumes : arrêtez-la, puis relancez la migration."
-open_intents = "{count} intention(s) de fichier encore ouverte(s) : démarrez une fois la version actuelle pour les résoudre, puis relancez la migration."
+open_intents = "{count, plural, one {# intention de fichier encore ouverte} other {# intentions de fichier encore ouvertes}} : démarrez une fois la version actuelle pour les résoudre, puis relancez la migration."
 schema_too_new = "La base est à la révision {revision}, plus récente que cette version de Shelfhold : démarrage refusé."
 
 [config]
@@ -212,13 +212,13 @@ export_not_recorded = "Avertissement : l'export est fait, mais le trousseau n'a 
 write_failed = "Écriture impossible : {detail}"
 keyring_error = "Trousseau inutilisable : {detail}"
 no_database = "La base n'existe pas : lancez d'abord « shelfhold migrate »."
-rotated = "Rotation terminée : nouvelle clé {kid}, {count} secret(s) rechiffré(s)."
-rotation_resumed = "Rotation reprise et terminée : clé {kid}, {count} secret(s) rechiffré(s) cette fois."
+rotated = "Rotation terminée : nouvelle clé {kid}, {count, plural, one {# secret rechiffré} other {# secrets rechiffrés}}."
+rotation_resumed = "Rotation reprise et terminée : clé {kid}, {count, plural, one {# secret rechiffré} other {# secrets rechiffrés}} cette fois."
 rotation_in_progress = "Le verrou est tenu par une instance de Shelfhold ou par une autre opération sur les secrets : arrêtez Shelfhold, puis relancez la commande (procédure dans docs/admin/secrets.md)."
-rotation_incomplete = "Rotation interrompue : {remaining} secret(s) sont encore sous une ancienne clé. Relancez « shelfhold secrets rotate »."
+rotation_incomplete = "Rotation interrompue : {remaining, plural, one {# secret est encore sous une ancienne clé} other {# secrets sont encore sous une ancienne clé}}. Relancez « shelfhold secrets rotate »."
 rotation_failed = "Rotation impossible : {detail}"
-imported = "Trousseau fusionné : {added} clé(s) ajoutée(s) comme retirée(s), {present} déjà présente(s)."
-import_replayed = "Pierres tombales rejouées : {count} ligne(s)."
+imported = "Trousseau fusionné : {added, plural, one {# clé ajoutée comme retirée} other {# clés ajoutées comme retirées}}, {present, plural, one {# déjà présente} other {# déjà présentes}}."
+import_replayed = "Pierres tombales rejouées : {count, plural, one {# ligne} other {# lignes}}."
 import_deferred = "L'instance est en lecture seule (restored_behind) : les pierres tombales seront rejouées par « shelfhold reconcile --adopt-after-restore », qui est maintenant débloqué."
 import_replay_failed = "Les clés sont importées, mais le rejeu des pierres tombales n'a pas abouti : relancez la même commande."
 export_again = "Exportez de nouveau le trousseau : « shelfhold secrets export »."
@@ -230,16 +230,16 @@ retire_refused_cited_by_tombstone = "La clé {kid} est citée par une pierre tom
 retire_refused_root_unavailable = "La clé {kid} n'est pas retirée : une racine de bibliothèque est démontée ou sa sentinelle est illisible, et elle pourrait la citer. Remontez toutes les racines puis réessayez."
 status_ok = "Trousseau : aucun avertissement."
 warning_key_in_data = "La clé maîtresse est dans /data ({detail}) : une copie de /data contient la clé à côté des secrets. Placez-la hors de /data avec SHELFHOLD_SECRET_KEY_FILE."
-warning_rows_on_retired_key = "{detail} secret(s) sont encore scellés sous une clé retirée (processus resté sur l'ancien trousseau, rotation inachevée) : relancez « shelfhold secrets rotate » puis redémarrez Shelfhold."
+warning_rows_on_retired_key = "{detail, plural, one {# secret est encore scellé sous une clé retirée} other {# secrets sont encore scellés sous une clé retirée}} (processus resté sur l'ancien trousseau, rotation inachevée) : relancez « shelfhold secrets rotate » puis redémarrez Shelfhold."
 warning_keyring_world_readable = "Le fichier de trousseau {detail} est lisible par tous : limitez-le à l'utilisateur de Shelfhold (chmod 640 ou 600, ou mode 0400 du secret Docker)."
 warning_keyring_absent = "Aucun trousseau à {detail} : il est créé au premier démarrage."
 warning_rotation_incomplete = "Une rotation est inachevée : relancez « shelfhold secrets rotate »."
 warning_never_exported = "Le trousseau n'a jamais été exporté : « shelfhold secrets export --passphrase-file … --out … »."
 warning_export_older_than_rotation = "Le dernier export est antérieur à la dernière rotation : exportez de nouveau le trousseau."
 warning_tombstones_not_exported = "Des pierres tombales existent et le trousseau n'a pas été exporté depuis la première : sans lui, elles ne se lisent plus. Exportez-le avec « shelfhold secrets export »."
-warning_key_compromised = "Clé(s) marquée(s) compromise(s) : {detail}. Elles restent au trousseau pour lire d'anciennes sauvegardes mais ne valent plus rien : conservez-les hors de portée et ne restaurez pas une sauvegarde chiffrée sous elles sans lancer « shelfhold tombstone rekey »."
-warning_tombstone_kids_lost = "{detail} clé(s) de pierres tombales ont été déclarées perdues (« tombstone accept-lost-keyring ») : les lignes qu'elles protégeaient sont inertes et du contenu purgé peut revenir à la réacquisition ou à la réadoption. Retrouver le trousseau n'annule pas cette déclaration."
-warning_tombstone_kid_missing = "{detail} clé(s) citée(s) par des pierres tombales manquent au trousseau : réimportez le dernier export (« shelfhold secrets import --passphrase-file <fichier> --in <fichier> »)."
+warning_key_compromised = "Clés marquées compromises : {detail}. Elles restent au trousseau pour lire d'anciennes sauvegardes mais ne valent plus rien : conservez-les hors de portée et ne restaurez pas une sauvegarde chiffrée sous elles sans lancer « shelfhold tombstone rekey »."
+warning_tombstone_kids_lost = "{detail, plural, one {# clé de pierres tombales a été déclarée perdue} other {# clés de pierres tombales ont été déclarées perdues}} (« tombstone accept-lost-keyring ») : les lignes qu'elles protégeaient sont inertes et du contenu purgé peut revenir à la réacquisition ou à la réadoption. Retrouver le trousseau n'annule pas cette déclaration."
+warning_tombstone_kid_missing = "{detail, plural, one {# clé citée par des pierres tombales manque au trousseau} other {# clés citées par des pierres tombales manquent au trousseau}} : réimportez le dernier export (« shelfhold secrets import --passphrase-file <fichier> --in <fichier> »)."
 boot_keyring_unreadable = "Démarrage refusé : le trousseau est illisible pour cet utilisateur ({detail})."
 boot_keyring_corrupt = "Démarrage refusé : trousseau inutilisable ({detail})."
 boot_keyring_permissions = "Démarrage refusé : le trousseau {path} est non conforme (droits trop ouverts, propriétaire inattendu, ou modifiable par d'autres). Corrigez : chmod 600 {path} (et chown au compte qui lance Shelfhold)."
@@ -286,7 +286,7 @@ too_costly = "Sauvegarde non ouverte : elle demande un coût de dérivation (scr
 damaged = "Sauvegarde refusée : le fichier est abîmé ou altéré, ou la phrase de passe n'est pas la bonne."
 passphrase_refused = "Phrase de passe refusée : le fichier est illisible, trop court (12 caractères au moins), ou ses droits sont trop ouverts (0600 attendu)."
 restored = "Restauration faite sous {path} ({files} fichiers)."
-credentials_revoked = "{sessions} session(s) et {keys} clé(s) d'API ont été révoquées dans la base restaurée (elles se recréent). Les passkeys et les mots de passe changés depuis la sauvegarde sont revenus à leur état d'alors : revérifiez-les, puis lancez « shelfhold restore acknowledge » (« status » le rappelle d'ici là)."
+credentials_revoked = "{sessions, plural, one {# session révoquée} other {# sessions révoquées}} et {keys, plural, one {# clé d'API révoquée} other {# clés d'API révoquées}} dans la base restaurée (elles se recréent). Les passkeys et les mots de passe changés depuis la sauvegarde sont revenus à leur état d'alors : revérifiez-les, puis lancez « shelfhold restore acknowledge » (« status » le rappelle d'ici là)."
 next_steps = "Étapes suivantes : démarrez Shelfhold avec SHELFHOLD_DATA_DIR={path} (il démarre en « restored_behind » si la bibliothèque est en avance sur la base), puis lancez « shelfhold reconcile --adopt-after-restore »."
 restore_incomplete = "Restauration interrompue (l'archive a changé pendant l'écriture, ou l'écriture a échoué) : {path} est incomplet et inutilisable. Rien n'a été supprimé : videz ce dossier vous-même, puis recommencez."
 destination_not_empty = "{path} existe et n'est pas un dossier vide (ou c'est un lien) : choisissez un dossier inexistant ou vide."
@@ -312,7 +312,7 @@ failed_verify_failed = "Sauvegarde annulée : le fichier écrit n'a pas passé l
 [status]
 public_url_restart = "public_url a changé depuis le démarrage du serveur : redémarrez-le pour qu'il en tienne compte."
 roles_unverified = "Le compte de service Suwayomi (ui_login) n'a pas pu être vérifié : le serveur n'expose pas ses rôles, Shelfhold ne peut pas s'assurer qu'il ne peut ni administrer Suwayomi ni installer d'extensions. Utilisez un compte aux droits minimaux, puis confirmez avec « shelfhold source confirm-roles »."
-passkey_registered = "{count} clé(s) d'accès enregistrée(s) depuis le dernier acquittement : {items}. Vérifiez qu'elles sont attendues (révoquez les inconnues), puis acquittez ce que vous avez vu avec « shelfhold admin acknowledge-passkeys --through {through} »."
+passkey_registered = "{count, plural, one {# clé d'accès enregistrée} other {# clés d'accès enregistrées}} depuis le dernier acquittement : {items}. {count, plural, one {Vérifiez qu'elle est attendue (révoquez-la si elle est inconnue)} other {Vérifiez qu'elles sont attendues (révoquez les inconnues)}}, puis acquittez ce que vous avez vu avec « shelfhold admin acknowledge-passkeys --through {through} »."
 passkey_item = "« {name} » ({user})"
 passkey_items_separator = ", "
 passkey_rp_changed = "Des clés d'accès sont liées à {old}, qui n'est plus le domaine de public_url : elles ne fonctionnent plus. Le mot de passe reste en repli ; révoquez-les puis enregistrez-en de nouvelles."
@@ -382,18 +382,18 @@ restore_acknowledged = "Noté : l'avertissement de restauration est levé, la co
 restore_passkey_change = "Clé d'accès modifiée depuis la sauvegarde : {change}"
 help_store_reinit = "Estampille /store ; les chapitres dont la copie conservée y était passent en « store_missing » (action réservée)."
 root_done = "{command} : racine {root} ({path}), état quitté : {previous}. Aucun fichier n'a été supprimé."
-root_predecessors = "{count} identité(s) précédente(s) conservée(s) (les pierres tombales restent lisibles)."
-root_missing = "{count} élément(s) passé(s) en « missing » : « shelfhold missing resolve --reexport » les remet à l'export, « --unfollow » arrête de les suivre."
-root_planned = "{count} élément(s) replanifié(s) : le prochain export les écrit."
-store_units_missing = "{count} chapitre(s) en « store_missing » : leur copie conservée est introuvable."
+root_predecessors = "{count, plural, one {# identité précédente conservée} other {# identités précédentes conservées}} (les pierres tombales restent lisibles)."
+root_missing = "{count, plural, one {# élément passé} other {# éléments passés}} en « missing » : « shelfhold missing resolve --reexport » {count, plural, one {le remet} other {les remet}} à l'export, « --unfollow » arrête de {count, plural, one {le suivre} other {les suivre}}."
+root_planned = "{count, plural, one {# élément replanifié} other {# éléments replanifiés}} : le prochain export {count, plural, one {l'écrit} other {les écrit}}."
+store_units_missing = "{count, plural, one {# chapitre} other {# chapitres}} en « store_missing » : leur copie conservée est introuvable."
 root_ignored_claim = "Revendication de la sentinelle ignorée, faute de preuve par le trousseau : {claim}."
-keyring_waived = "Trousseau perdu accepté : {count} identifiant(s) de clé abandonné(s)."
+keyring_waived = "Trousseau perdu accepté : {count, plural, one {# identifiant de clé abandonné} other {# identifiants de clé abandonnés}}."
 journal_set_aside = "Racine {root} : journal mis de côté sous « {name} » ; il sera réécrit depuis la base."
 journal_nothing_to_set_aside = "Aucun journal illisible ou tronqué à mettre de côté."
-tombstone_rekeyed = "Pierres tombales rechiffrées sous la clé active : {rows} ligne(s) de la base, {roots} journal(aux) réécrit(s)."
+tombstone_rekeyed = "Pierres tombales rechiffrées sous la clé active : {rows, plural, one {# ligne} other {# lignes}} de la base, {roots, plural, one {# journal réécrit} other {# journaux réécrits}}."
 tombstone_rekey_owed = "Racine {root} : journal à réécrire dès qu'elle sera remontée (aucune autre écriture n'y est acceptée d'ici là)."
 lines_flushed = "Toutes les lignes dues ont été écrites."
-lines_still_owed = "{count} racine(s) doivent encore des lignes (non montée(s), ou refusant les écritures) : relancez quand elles sont prêtes."
+lines_still_owed = "{count, plural, one {# racine doit encore des lignes (non montée, ou refusant les écritures)} other {# racines doivent encore des lignes (non montées, ou refusant les écritures)}} : relancez quand elles sont prêtes."
 help_missing = "Fichiers disparus de la destination."
 help_missing_list = "Liste les fichiers manquants."
 help_missing_resolve = "Décide du sort d'un fichier manquant."
@@ -413,8 +413,8 @@ help_queue = "La file des tâches : pause et reprise, globales ou par source."
 help_queue_pause = "Met la file (ou une source) en pause : les tâches attendent sans échouer (action réservée)."
 help_queue_resume = "Reprend la file (ou une source) mise en pause (action réservée)."
 help_queue_source = "Ne vise que cette source ; sans cette option, toute la file."
-queue_paused = "File en pause ({scope}) : {parked} tâche(s) mises en attente."
-queue_resumed = "File reprise ({scope}) : {resumed} tâche(s) remises en file."
+queue_paused = "File en pause ({scope}) : {parked, plural, one {# tâche mise en attente} other {# tâches mises en attente}}."
+queue_resumed = "File reprise ({scope}) : {resumed, plural, one {# tâche remise en file} other {# tâches remises en file}}."
 job_cancelled = "Tâche {id} annulée."
 job_too_late = "Tâche {id} : elle ne sait pas s'arrêter en route, elle va au bout ; rien n'a été interrompu."
 job_cancelling = "Tâche {id} : annulation demandée, elle s'arrête à sa prochaine étape."
@@ -425,11 +425,11 @@ help_maintenance = "Le mode maintenance : gèle toute écriture (acquisitions, e
 help_maintenance_on = "Entre en mode maintenance (action réservée) ; les tâches en cours finissent, rien d'autre ne démarre."
 help_maintenance_off = "Sort du mode maintenance (action réservée) ; les tâches mises en attente repartent."
 help_maintenance_status = "Dit si le mode est actif, depuis quand, et montre les fenêtres de maintenance en UTC et en heure locale."
-maintenance_entered = "Mode maintenance actif : plus aucune écriture. {running} tâche(s) en cours finissent d'abord."
+maintenance_entered = "Mode maintenance actif : plus aucune écriture. {running, plural, one {# tâche en cours finit d'abord} other {# tâches en cours finissent d'abord}}."
 maintenance_already = "Le mode maintenance était déjà actif ; rien n'a changé."
 maintenance_left = "Mode maintenance levé : les tâches en attente repartent."
 maintenance_not_active = "Le mode maintenance n'était pas actif ; rien n'a changé."
-maintenance_state_on = "Maintenance : ACTIVE depuis {since} ({running} tâche(s) en cours)."
+maintenance_state_on = "Maintenance : ACTIVE depuis {since} ({running, plural, one {# tâche} other {# tâches}} en cours)."
 maintenance_state_off = "Maintenance : inactive."
 maintenance_window_line = "Fenêtre {timezone} {start}-{end} : prochaine {start_utc} → {end_utc} UTC ({start_local} → {end_local}, {hours} h)."
 help_jobs_run = "Lance dès le prochain passage du planificateur (une minute au plus) une tâche périodique, par exemple follow.cycle ou export.run."
@@ -472,10 +472,10 @@ help_coverage_children = "Les identifiants des chapitres qu'il est devenu (ses s
 help_coverage_confirm = "Le code affiché par « propose »."
 id_renumbered = "Édition {edition} : identifiant {provider} {new} ajouté, {old} marqué remplacé ; rien n'est écrasé."
 edition_line = "{edition}\t{lang}\t{title}"
-resplit_proposed = "Le chapitre {parent} serait couvert comme re-découpé en {count} chapitre(s) ; rien n'est écrit, aucun chapitre n'est retiré."
+resplit_proposed = "Le chapitre {parent} serait couvert comme re-découpé en {count, plural, one {# chapitre} other {# chapitres}} ; rien n'est écrit, aucun chapitre n'est retiré."
 resplit_confirm_with = "Pour l'appliquer, une seule fois : shelfhold coverage resplit apply {parent} {children} --confirm {code}"
 resplit_needs_confirm = "Une confirmation est nécessaire : relancez avec --confirm suivi du code de « propose »."
-resplit_applied = "Chapitre {parent} : {added} chapitre(s) re-découpé(s) couvert(s) ; rien n'est retiré."
+resplit_applied = "Chapitre {parent} : {added, plural, one {# chapitre re-découpé couvert} other {# chapitres re-découpés couverts}} ; rien n'est retiré."
 resplit_nothing = "Chapitre {parent} : déjà couvert, rien ne change."
 help_edition_merge_contributor_keep = "Le contributeur qui reste."
 help_edition_merge_contributor_drop = "Le contributeur fusionné dans le premier."
@@ -553,7 +553,7 @@ help_relink_remote_id = "Identifiant de la série chez cette source."
 help_relink_replaces = "Identifiant de l'ancienne liaison, retirée au profit de la nouvelle."
 help_relink_lang = "Langue de l'édition à créer ; sans elle, l'édition de l'ancienne liaison."
 relinked = "Série reliée : édition {edition}, liaison {binding}."
-relink_missing = "{count} numéro(s) manquant(s), que le prochain cycle de suivi demandera : {numbers}."
+relink_missing = "{count, plural, one {# numéro manquant} other {# numéros manquants}}, que le prochain cycle de suivi demandera : {numbers}."
 relink_nothing_missing = "Rien ne manque : aucun chapitre ne sera retéléchargé."
 relink_to_rate = "L'édition {edition} est nouvelle pour une œuvre classée : elle attend dans « À classer » et n'entre dans aucune étagère de moins de 18 ans avant qu'un admin la classe."
 help_backfill = "Rattrape les chapitres sous le filigrane (trous) ou tout l'historique d'une édition suivie."
@@ -563,7 +563,7 @@ help_backfill_all = "Ramène tout l'historique."
 help_backfill_dry_run = "Affiche l'estimation sans rien lancer."
 help_backfill_confirm_units = "Au-delà de 100 chapitres ou 5 Gio : le nombre de chapitres de l'estimation vue."
 help_backfill_confirm_bytes = "Au-delà de 100 chapitres ou 5 Gio : la taille en octets de l'estimation vue."
-backfill_estimate = "Rattrapage « {mode} » : {units} chapitre(s), {size} octets à télécharger, {free} octets libres."
+backfill_estimate = "Rattrapage « {mode} » : {units, plural, one {# chapitre} other {# chapitres}}, {size, plural, one {# octet} other {# octets}} à télécharger, {free, plural, one {# octet libre} other {# octets libres}}."
 backfill_started = "Rattrapage lancé : le suivi demandera ces chapitres dans ses plafonds par cycle."
 backfill_needs_confirmation = "Cette estimation dépasse 100 chapitres ou 5 Gio. Pour la confirmer : shelfhold backfill --{mode} {edition} --confirm-units {units} --confirm-bytes {size}"
 help_import = "Le dossier d'import : vos propres CBZ, EPUB et PDF."
@@ -581,8 +581,8 @@ help_import_tree = "Importe un arbre de téléchargements Suwayomi existant (CBZ
 help_import_tree_path = "Chemin absolu de l'arbre (le dossier qui contient « mangas »)."
 import_tree_skipped = "Ignoré : {path} ({message})"
 import_tree_stored = "Rangé : {path} ({kind}), l'arbre est laissé en place"
-import_tree_summary = "{stored} rangé(s), {skipped} ignoré(s), {refused} refusé(s), {waiting} en attente."
-import_summary = "{stored} rangé(s), {refused} refusé(s), {waiting} en attente."
+import_tree_summary = "{stored, plural, one {# rangé} other {# rangés}}, {skipped, plural, one {# ignoré} other {# ignorés}}, {refused, plural, one {# refusé} other {# refusés}}, {waiting} en attente."
+import_summary = "{stored, plural, one {# rangé} other {# rangés}}, {refused, plural, one {# refusé} other {# refusés}}, {waiting} en attente."
 backfill_choose_mode = "Choisissez --gaps ou --all."
 backfill_confirm_pair = "--confirm-units et --confirm-bytes vont ensemble."
 help_follow_series = "Suit une série du service connecté depuis Shelfhold : une seule entrée dans sa bibliothèque, catégorie « Shelfhold », sans téléchargement automatique."
@@ -632,13 +632,13 @@ help_normalize = "Normaliseurs versionnés : migration explicite des clés d'ide
 help_normalize_migrate = "Aperçoit la migration d'un normaliseur vers sa version courante (fusions, lignes bloquées par une pierre tombale), ou l'applique avec --confirm (action réservée)."
 help_normalizer = "Nom du normaliseur à migrer."
 help_normalize_confirm = "Empreinte de l'aperçu : applique exactement ce qui a été montré, et rien d'autre."
-normalize_header = "Normaliseur {target} : {migrate} ligne(s) à migrer, {merge} à fusionner (décision humaine), {blocked} bloquée(s) par une pierre tombale, {unresolved} refusée(s)."
+normalize_header = "Normaliseur {target} : {migrate, plural, one {# ligne} other {# lignes}} à migrer, {merge} à fusionner (décision humaine), {blocked, plural, one {# bloquée} other {# bloquées}} par une pierre tombale, {unresolved, plural, one {# refusée} other {# refusées}}."
 normalize_up_to_date = "Normaliseur {target} : toutes les lignes sont déjà à cette version, rien à migrer."
 normalize_row = "  {outcome} : {id} ({old} -> {new}) {reason}"
 normalize_collision = "  Même place visée par : {ids}"
 normalize_fingerprint = "Empreinte de l'aperçu : {fingerprint}"
 normalize_blocked_hint = "Une ligne bloquée par une pierre tombale reste telle quelle ; « shelfhold tombstone lift » ou une purge en décide."
-normalize_applied = "{applied} ligne(s) migrée(s) vers {target}. Les autres sont inchangées."
+normalize_applied = "{applied, plural, one {# ligne migrée} other {# lignes migrées}} vers {target}. Les autres sont inchangées."
 normalize_preview_stale = "Ce n'est plus l'aperçu que vous avez vu : relancez sans --confirm, relisez, puis confirmez avec la nouvelle empreinte. Rien n'a été modifié."
 
 [local_cli]
@@ -677,7 +677,7 @@ source_policy_format = "attendu : SOURCE=add_directly|request|forbidden"
 
 [admin]
 passkeys_unknown_reference = "Aucun enregistrement en attente n'a la référence {through} : relisez « shelfhold status »."
-passkeys_acknowledged = "{count} enregistrement(s) de clé d'accès acquitté(s)."
+passkeys_acknowledged = "{count, plural, one {# enregistrement de clé d'accès acquitté} other {# enregistrements de clé d'accès acquittés}}."
 created = "Compte administrateur « {username} » créé."
 exists = "Un administrateur existe déjà : un seul compte local en M1a. Pour changer son mot de passe : « shelfhold admin reset-password »."
 unknown_user = "Compte inconnu : {username}."
@@ -686,8 +686,8 @@ password_too_short = "au moins 10 caractères"
 password_too_long = "1024 caractères au plus"
 password_unreadable = "Impossible de lire le mot de passe : {detail}."
 invalid_username = "Identifiant invalide (1 à 128 caractères)."
-password_reset = "Mot de passe changé ; {count} session(s) fermée(s)."
-sessions_revoked = "{count} session(s) fermée(s)."
+password_reset = "Mot de passe changé ; {count, plural, one {# session fermée} other {# sessions fermées}}."
+sessions_revoked = "{count, plural, one {# session fermée} other {# sessions fermées}}."
 key_created = "Clé créée (préfixe {prefix}). Elle ne sera plus jamais affichée :"
 key_expires = "Expire le {date}."
 key_never_expires = "Sans expiration (recommandé : --expires-days 90)."
@@ -710,12 +710,12 @@ apply_needs_the_instance = "L'application d'un plan passe par l'instance en marc
 destination_required = "--destination est obligatoire (ou « shelfhold export item show <id> »)."
 item_header = "Support {id} ({kind}) de l'Édition {edition}"
 item_volume = "  Tome : {label}"
-item_state = "  {state} ; {units} chapitre(s) porté(s)"
+item_state = "  {state} ; {units, plural, one {# chapitre porté} other {# chapitres portés}}"
 item_closed = "clos (figé : le fichier ne change plus)"
 item_open = "en cours"
 item_kept = "  Fichier gardé : {path}"
 item_kept_problem = "  Fichier gardé : introuvable ou refusé ({code})"
-plan_header = "Plan {plan} : {ops} opération(s), {blocked} bloquée(s)."
+plan_header = "Plan {plan} : {ops, plural, one {# opération} other {# opérations}}, {blocked, plural, one {# bloquée} other {# bloquées}}."
 op_line = "{kind} {path}"
 blocked_line = "Bloqué ({code}) : chapitre {unit}"
 warning_line = "Avertissement ({code}) : chapitre {unit}"
@@ -725,10 +725,10 @@ export_help = "Exporte toute la bibliothèque au format ouvert shelfhold-export/
 folder_help = "Dossier de destination, neuf ou vide (jamais /data, /store ni la bibliothèque), nommé par chemin absolu."
 import_help = "Importe un export shelfhold-export/1 dans une instance neuve : refusé si l'instance contient déjà quelque chose. Réservé à l'admin, journalisé."
 import_folder_help = "Dossier produit par « shelfhold export-all »."
-exported = "Export écrit dans {folder} : {rows} ligne(s) dans {tables} table(s), {files} fichier(s)."
-withheld = "Laissé hors de l'export, parce qu'une pierre tombale le couvre : {units} chapitre(s), {works} œuvre(s)."
-files_warning = "Attention : {missing} fichier(s) connu(s) du registre introuvable(s) sur le disque, {altered} copie(s) qui ne correspond(ent) plus à l'empreinte du registre (voir manifest.json)."
-imported = "Import terminé : {rows} ligne(s) dans {tables} table(s), {files} fichier(s)."
+exported = "Export écrit dans {folder} : {rows, plural, one {# ligne} other {# lignes}} dans {tables, plural, one {# table} other {# tables}}, {files, plural, one {# fichier} other {# fichiers}}."
+withheld = "Laissé hors de l'export, parce qu'une pierre tombale le couvre : {units, plural, one {# chapitre} other {# chapitres}}, {works, plural, one {# œuvre} other {# œuvres}}."
+files_warning = "Attention : {missing, plural, one {# fichier connu du registre introuvable} other {# fichiers connus du registre introuvables}} sur le disque, {altered, plural, one {# copie qui ne correspond plus} other {# copies qui ne correspondent plus}} à l'empreinte du registre (voir manifest.json)."
+imported = "Import terminé : {rows, plural, one {# ligne} other {# lignes}} dans {tables, plural, one {# table} other {# tables}}, {files, plural, one {# fichier} other {# fichiers}}."
 next_steps = "Suite : « shelfhold admin reset-password » pour chaque profil (aucun mot de passe n'est exporté), « shelfhold search rebuild » pour l'index de recherche, puis « shelfhold reconcile » pour que l'instance recense les fichiers restaurés."
 
 [diagnostic]
@@ -747,7 +747,7 @@ community = "Communauté"
 unknown = "Inconnu"
 
 [search]
-rebuilt = "Index de recherche refait : {count} Œuvre(s), mode {mode}."
+rebuilt = "Index de recherche refait : {count, plural, one {# Œuvre} other {# Œuvres}}, mode {mode}."
 
 [health]
 original_lost_action = "L'original est perdu, le dérivé est conservé : « shelfhold content reneutralize » repart du dérivé."
@@ -774,13 +774,13 @@ requests_profile = "Demandes de « {username} » : {requested}, livrées : {deli
 [content]
 preview_stale = "Ce n'est pas le plan qui a été montré : relancez l'aperçu (aucun fichier n'a été touché)."
 up_to_date = "Tous les dérivés sont déjà produits par {target} : rien à régénérer."
-header = "{count} dérivé(s) à régénérer avec {target}."
+header = "{count, plural, one {# dérivé} other {# dérivés}} à régénérer avec {target}."
 row = "Unité {unit} (produit par {old}) : repart de {source} ({reason})."
 fingerprint = "Empreinte du plan : {fingerprint} (relancez avec --confirm)."
-applied = "{regenerated} dérivé(s) régénéré(s), {blocked} bloqué(s), {failed} en échec ; l'ancien fichier est gardé là où la régénération a échoué."
+applied = "{regenerated, plural, one {# dérivé régénéré} other {# dérivés régénérés}}, {blocked, plural, one {# bloqué} other {# bloqués}}, {failed} en échec ; l'ancien fichier est gardé là où la régénération a échoué."
 
 [meta]
-rebuilt = "{written} fichier(s) unit.json, {works} work.json et {mirror} fichier(s) du miroir de provenance réécrit(s) à partir de la base."
+rebuilt = "{written, plural, one {# fichier unit.json} other {# fichiers unit.json}}, {works, plural, one {# work.json} other {# work.json}} et {mirror, plural, one {# fichier du miroir de provenance} other {# fichiers du miroir de provenance}} réécrits à partir de la base."
 drift = "unit.json diverge de la base : {unit}"
 work_drift = "work.json diverge de la base : {work}"
 mirror_drift = "Le miroir de provenance diverge de la base : {name}"
@@ -788,7 +788,7 @@ newer_format = "unit.json d'un format plus récent, laissé tel quel (lecture se
 work_newer_format = "work.json d'un format plus récent, laissé tel quel (lecture seule) : {work}"
 mirror_skipped = "Fichier du miroir laissé tel quel (illisible, lien ou format plus récent) : {name}"
 run_rebuild = "Lancez « shelfhold meta rebuild » pour les régénérer."
-enriched = "Édition {edition} : {count} champ(s) proposé(s) par le fournisseur et enregistré(s) avec leur provenance."
+enriched = "Édition {edition} : {count, plural, one {# champ proposé par le fournisseur et enregistré} other {# champs proposés par le fournisseur et enregistrés}} avec leur provenance."
 enrich_field = "  - {field}"
 enrich_age_x = "X"
 enrich_kept = "Valeur conservée (verrouillée ou saisie à la main) : {field}"
@@ -808,10 +808,12 @@ unlocked = "Édition {edition} : le verrou du champ {field} ({lang}, sur {on}) e
 [errors."backup.failed"]
 title = "La sauvegarde a échoué."
 action = "Vérifiez que la destination de sauvegarde est présente et inscriptible, puis relancez la sauvegarde."
+cause = "La destination de sauvegarde est absente, pleine ou refuse l'écriture."
 
 [errors."backup.stale"]
 title = "La dernière sauvegarde est trop ancienne."
 action = "Vérifiez la destination de sauvegarde et la planification, puis lancez une sauvegarde."
+cause = "Aucune sauvegarde n'a réussi depuis plus longtemps que la fréquence prévue."
 
 [errors."bad_request"]
 title = "Requête incorrecte."
@@ -821,6 +823,7 @@ cause = "La requête est mal formée ou incomplète."
 [errors."content.untrusted_entry"]
 title = "Un fichier reçu contient une entrée non autorisée : il n'a pas été rangé."
 action = "Le chapitre est écarté et ne sera pas redemandé ; seules les images (JPEG, PNG, WebP, GIF, AVIF, JPEG XL) et ComicInfo.xml sont admises. Retirez-le de la source ou attendez la prise en charge des images vectorielles."
+cause = "L'archive reçue contient un fichier qui n'est ni une image admise ni un ComicInfo.xml : Shelfhold ne range rien qu'il ne sait pas lire sans risque."
 
 [errors."credential_not_allowed"]
 title = "Cette action est réservée à une session."
@@ -830,150 +833,187 @@ cause = "Cette action est réservée à une session ouverte par une personne, pa
 [errors."csrf_failed"]
 title = "La requête n'a pas été reconnue comme venant de cette page."
 action = "Rechargez la page puis recommencez ; un script utilise une clé d'API plutôt qu'une session."
+cause = "La requête ne porte pas la preuve de provenance de la page : session expirée, page ouverte depuis un autre site ou jeton absent."
 
 [errors."auth.passkey_registered"]
 title = "Une clé d'accès (passkey) vient d'être enregistrée sur un compte."
 action = "Vérifiez dans `shelfhold status` qu'elle est attendue (compte, nom), puis acquittez avec `shelfhold admin acknowledge-passkeys --through <référence>` depuis l'hôte. Une clé d'accès inconnue se révoque dans la page des clés d'accès du compte, ou par `shelfhold admin reset-password`."
+cause = "Une clé d'accès a été ajoutée à un compte et personne ne l'a encore acquittée : c'est le signal qu'une connexion de plus est possible."
 
 [errors."disk.low"]
 title = "Espace disque presque épuisé."
 action = "Libérez de la place (vider la corbeille, supprimer des copies inutiles) ; les files reprennent d'elles-mêmes."
+cause = "Le volume qui porte les données passe sous le seuil d'espace libre prévu."
 
 [errors."export.destination_occupied"]
 title = "Un fichier occupe déjà l'emplacement prévu."
 action = "Rien n'est écrasé : déplacez ou rattachez ce fichier, puis recalculez l'aperçu."
+cause = "Un fichier qui n'est pas celui de Shelfhold se trouve déjà à l'emplacement de l'export : Shelfhold n'écrase jamais un fichier qu'il n'a pas écrit."
 
 [errors."export.no_remote_library"]
 title = "Aucune bibliothèque distante n'est liée à cette destination."
 action = "Liez la destination à une bibliothèque du serveur, puis recalculez l'aperçu."
+cause = "La destination Kavita n'est liée à aucune bibliothèque du serveur : Shelfhold ne sait pas où ranger l'export."
 
 [errors."export.series_name_collision"]
 title = "Deux séries porteraient le même nom dans cette bibliothèque."
 action = "Définissez un nom de série exporté distinct pour l'une des deux Éditions, puis recalculez l'aperçu."
+cause = "Les noms de deux séries donnent le même nom une fois normalisés pour Kavita (majuscules, accents, ponctuation)."
 
 [errors."pairing.switchover_unconfirmed"]
 title = "Cette étagère est alimentée directement par Suwayomi : le suivi attend la procédure de bascule."
 action = "Suivez docs/admin/migration-depuis-scripts.md (adopter, apparier, rapatrier, retirer les montages directs, désactiver les scripts), puis confirmez chaque étape."
+cause = "Le service connecté écrit encore directement dans les dossiers de cette étagère : tant que la bascule n'est pas confirmée, deux programmes se partageraient les fichiers."
 
 [errors."pairing.switchover_stale"]
 title = "Le rapport de bascule a changé depuis que vous l'avez lu."
 action = "Relisez le rapport de détection, puis confirmez les étapes avec sa nouvelle empreinte."
+cause = "Le rapport de détection a été recalculé depuis votre lecture : l'empreinte donnée ne correspond plus à l'état actuel."
 
 [errors."pairing.not_writable"]
 title = "Shelfhold ne peut pas écrire dans le dossier de cette série : l'appariement est refusé."
 action = "Appliquez la commande de correction affichée (ACL, group_add ou umask), puis relancez l'appariement."
+cause = "Le compte qui fait tourner Shelfhold n'a pas le droit d'écrire dans le dossier de la série."
 
 [errors."pairing.already_paired"]
 title = "Cette série est déjà appariée à un suivi Suwayomi."
 action = "Un second appariement créerait un doublon : détachez d'abord le premier si vous voulez le remplacer."
+cause = "Un suivi du service connecté est déjà lié à cette série ; en ajouter un second ferait télécharger chaque chapitre deux fois."
 
 [errors."root.blocked"]
 title = "Une racine physique est absente ou ne porte pas la sentinelle attendue : rien n'y est écrit."
 action = "Vérifiez que le volume est monté, puis lancez « shelfhold status » pour voir la racine et la sortie qui convient."
+cause = "Le disque monté n'est pas celui que Shelfhold a enregistré : volume non monté, mal monté ou remplacé, fichier sentinelle absent."
 
 [errors."root.unauthenticated"]
 title = "La sentinelle de cette racine revendique une identité que le trousseau ne confirme pas : rien n'est repris du fichier."
 action = "Importez le trousseau (« shelfhold secrets import »), puis relancez la commande ; la racine n'a pas été modifiée."
+cause = "Le fichier sentinelle de la racine désigne une identité que le trousseau de clés de cette instance ne reconnaît pas, le plus souvent après une restauration sans le trousseau."
 
 [errors."root.busy"]
 title = "Un export ou un cycle utilise cette racine : la commande n'a rien changé."
 action = "Relancez la commande quand l'export ou le cycle en cours est terminé."
+cause = "Un export ou un cycle de travail tient cette racine : deux écritures en même temps risqueraient de la corrompre."
 
 [errors."rebaseline.refused"]
 title = "La remise à jour des identités de fichiers est refusée : rien n'a été modifié."
 action = "Si une empreinte diffère, un fichier a été modifié et non déplacé : vérifiez-le ; si le miroir manque, restaurez le dossier .shelfhold/manifest depuis la copie d'origine."
+cause = "L'empreinte d'un fichier ne correspond plus à celle qui est enregistrée, ou le miroir de provenance qui permet de le reconnaître manque."
 
 [errors."purge.collateral"]
 title = "Un fichier de cette Unité porte aussi d'autres Unités : l'effacer les effacerait."
 action = "Effacez toutes les Unités du fichier ensemble, ou gardez-le."
+cause = "Un même fichier sert plusieurs Unités : l'effacer pour l'une l'effacerait pour les autres."
 
 [errors."purge.busy"]
 title = "Un fichier ou une Œuvre à effacer est tenu par un autre travail : rien n'a été effacé."
 action = "Relancez la commande dans un instant, quand le travail en cours (copie, import) sera fini."
+cause = "Une copie, un import ou un autre travail tient le fichier ou l'Œuvre à effacer ; Shelfhold n'efface pas sous les pieds d'un travail en cours."
 
 [errors."purge.wal_busy"]
 title = "L'effacement est fait, mais le serveur tient encore le journal de la base : il peut garder un titre jusqu'à son prochain vidage."
 action = "Lancez « shelfhold purge --checkpoint » quand le serveur est inactif (ou arrêtez-le) : il ne refait que le vidage du journal. Il l'est aussi chaque nuit et au démarrage."
+cause = "Le serveur garde le journal de la base ouvert : un titre effacé peut y rester lisible jusqu'au prochain vidage."
 
 [errors."pairing.batch_stale"]
 title = "Le lot d'appariements confirmé n'est plus celui qui a été proposé."
 action = "Relancez « shelfhold adopt --pair-auto », relisez le rapport, puis confirmez avec la nouvelle empreinte."
+cause = "Les séries ou leurs suivis ont changé entre la proposition et votre confirmation : l'empreinte du lot n'est plus la bonne."
 
 [errors."repatriate.dry_run_required"]
 title = "Le rapatriement demande un dry-run préalable."
 action = "Lancez « shelfhold adopt --repatriate --dry-run », relisez le rapport, puis confirmez avec son empreinte."
+cause = "Le rapatriement déplace des fichiers : Shelfhold exige d'abord un essai à blanc dont vous avez lu le rapport."
 
 [errors."repatriate.stale"]
 title = "Les fichiers ont changé depuis le dry-run du rapatriement."
 action = "Relancez le dry-run, relisez le rapport, puis confirmez avec la nouvelle empreinte. Rien n'a été copié."
+cause = "Des fichiers ont été ajoutés, retirés ou modifiés depuis l'essai à blanc : l'empreinte confirmée décrit un état qui n'existe plus."
 
 [errors."repatriate.blocked"]
 title = "Un fichier adopté ne peut pas être rapatrié tel quel : il manque à la source, a changé depuis l'adoption, ou un autre fichier occupe déjà sa place."
 action = "Le rapport liste chaque fichier concerné. Aucun fichier n'a été copié, déplacé ni écrasé ; corrigez, puis relancez le dry-run."
+cause = "Au moins un fichier adopté a disparu de la source, a changé depuis son adoption ou trouve sa place déjà prise."
 
 [errors."repatriate.no_space"]
 title = "Il n'y a pas assez de place libre pour rapatrier les fichiers."
 action = "Libérez de la place sous /library (le dry-run donne l'espace requis), puis relancez le dry-run."
+cause = "Le volume de destination n'a pas assez d'espace libre pour recevoir tous les fichiers."
 
 [errors."export.source_missing"]
 title = "L'archive reçue de ce chapitre est introuvable."
 action = "Recalculez l'aperçu ; si le fichier a disparu, relancez le téléchargement du chapitre."
+cause = "Le fichier du chapitre n'est plus à l'endroit où Shelfhold l'avait rangé : supprimé à la main ou volume remplacé."
 
 [errors."export.transport_unsupported"]
 title = "Ce type de destination n'est pas encore pris en charge."
 action = "Utilisez une destination en arborescence ; les autres transports arrivent plus tard."
+cause = "Cette version de Shelfhold n'écrit que dans une arborescence de dossiers ; les autres modes de livraison ne sont pas encore écrits."
 
 [errors."export.watermarked_external_egress"]
 title = "Un fichier tatoué ne part jamais vers une destination hors du foyer."
 action = "Gardez ce fichier sur une destination du foyer, ou retirez-le de l'étagère liée à cette destination."
+cause = "Le fichier porte un tatouage qui identifie le foyer : l'envoyer hors du foyer le ferait remonter jusqu'à vous."
 
 [errors."fetch.dns_failed"]
 title = "Le nom de domaine n'a pas pu être résolu."
 action = "Vérifiez l'adresse saisie et le DNS du serveur."
+cause = "Le serveur de noms n'a pas de réponse pour ce nom : faute de frappe, DNS du serveur en panne ou domaine inexistant."
 
 [errors."fetch.error"]
 title = "La requête vers un service externe a échoué."
 action = "Réessayez plus tard ; si le problème persiste, consultez les journaux."
+cause = "Le service distant a répondu par une erreur ou la connexion a été coupée en cours de route."
 
 [errors."fetch.invalid_url"]
 title = "L'adresse n'est pas valide."
 action = "Corrigez l'adresse : schéma http ou https, sans identifiants dans l'URL."
+cause = "L'adresse n'est pas une adresse web complète en http ou https, ou elle contient des identifiants."
 
 [errors."fetch.robots_disallowed"]
 title = "Le site demande aux robots de ne pas lire cette page."
 action = "Shelfhold respecte le fichier robots.txt de la source ; ouvrez la page depuis un navigateur."
+cause = "Le fichier robots.txt du site interdit aux robots de lire cette page, et Shelfhold le respecte."
 
 [errors."fetch.robots_unavailable"]
 title = "Le fichier robots.txt du site ne peut pas être lu pour le moment."
 action = "Rien n'est demandé au site tant qu'il n'est pas lisible ; l'opération sera reprise plus tard."
+cause = "Le site n'a pas répondu clairement à la demande de son fichier robots.txt : par prudence, Shelfhold ne lui demande rien."
 
 [errors."fetch.quota_exceeded"]
 title = "Le plafond du jour de ce fournisseur de métadonnées est atteint."
 action = "Rien n'est envoyé d'ici demain ; les valeurs déjà reçues sont conservées."
+cause = "Le fournisseur de métadonnées limite le nombre de demandes par jour et Shelfhold a atteint son plafond."
 
 [errors."fetch.user_agent_not_identifiable"]
 title = "L'agent de la requête ne dit pas qui la fait ; elle n'est pas envoyée."
 action = "Configurez un contact valide (SHELFHOLD_METADATA_CONTACT) ou laissez l'agent par défaut."
+cause = "Le réglage du contact, qui permet au service de joindre l'opérateur, est vide ou invalide : Shelfhold n'envoie pas de requête anonyme."
 
 [errors."fetch.timeout"]
 title = "Le service externe a mis trop de temps à répondre."
 action = "Réessayez plus tard ou vérifiez que le service est en marche."
+cause = "Le service distant n'a pas répondu dans le délai imparti : il est lent, surchargé ou arrêté."
 
 [errors."fetch.too_large"]
 title = "La réponse dépasse la taille autorisée."
 action = "Vérifiez que l'adresse désigne bien le contenu attendu."
+cause = "La réponse dépasse la taille maximale que Shelfhold accepte de lire pour ce type de requête."
 
 [errors."fetch.too_many_redirects"]
 title = "Trop de redirections."
 action = "Utilisez directement l'adresse finale du service."
+cause = "Le service renvoie d'adresse en adresse, sans fin ou au-delà du nombre de renvois admis."
 
 [errors."fetch.unreachable"]
 title = "Le service externe est injoignable."
 action = "Vérifiez que le service est en marche et joignable depuis Shelfhold."
+cause = "Aucune connexion n'a pu être établie : service arrêté, pare-feu ou réseau coupé."
 
 [errors."fetch.unsafe_redirect"]
 title = "Redirection refusée par prudence."
 action = "Utilisez directement l'adresse finale du service."
+cause = "Le service a renvoyé vers une adresse qui sortirait du cadre autorisé (autre schéma, adresse interne ou identifiants)."
 
 [errors."forbidden"]
 title = "Action non autorisée pour ce compte."
@@ -983,26 +1023,32 @@ cause = "Votre profil n'a pas le droit d'effectuer cette action."
 [errors."idempotency_in_progress"]
 title = "Une requête avec cette clé est déjà en cours."
 action = "Patientez puis renvoyez la même requête avec la même clé."
+cause = "La première requête portant cette clé n'a pas fini : la rejouer maintenant risquerait de faire l'action deux fois."
 
 [errors."idempotency_key_invalid"]
 title = "La clé d'idempotence est invalide."
 action = "Utilisez une clé de 1 à 255 caractères ASCII imprimables, sans espace."
+cause = "La clé d'idempotence est vide, trop longue ou contient des caractères non imprimables."
 
 [errors."idempotency_key_reused"]
 title = "Cette clé d'idempotence a déjà servi pour une autre requête."
 action = "Générez une nouvelle clé pour chaque nouvelle requête."
+cause = "Cette clé a déjà été utilisée avec un contenu différent : elle ne peut désigner qu'une seule requête."
 
 [errors."instance.lease_conflict"]
 title = "Une autre instance de Shelfhold écrit sur ces données."
 action = "Arrêtez l'autre instance ; une seule instance doit utiliser ces volumes."
+cause = "Un autre processus Shelfhold détient le bail d'écriture sur ces volumes : deux instances qui écrivent ensemble corrompraient la base."
 
 [errors."instance.starting"]
 title = "Shelfhold démarre : une migration tient encore les données."
 action = "Patientez : l'instance reprend d'elle-même quand la migration est finie."
+cause = "Le démarrage applique encore une migration de la base : les écritures attendent qu'elle soit finie."
 
 [errors."instance.restored_behind"]
 title = "La base est en retard sur les fichiers : lecture seule."
 action = "Lancez « shelfhold reconcile --adopt-after-restore » pour rapprocher la base et les fichiers."
+cause = "La base a été restaurée depuis une sauvegarde plus ancienne que les fichiers présents sur le disque."
 
 [errors."internal_error"]
 title = "Erreur interne de Shelfhold."
@@ -1012,14 +1058,17 @@ cause = "Shelfhold a rencontré une erreur inattendue."
 [errors."remember_needs_confirmation"]
 title = "Le profil durci demande de confirmer « se souvenir de moi »."
 action = "Décochez « se souvenir de moi » pour une session de navigateur, ou confirmez-le explicitement (confirm_remember) : la session durera alors le temps du profil durci."
+cause = "Le profil durci refuse de garder une session de longue durée sans que vous l'ayez demandé explicitement."
 
 [errors."password_login_suspended"]
 title = "La connexion par mot de passe est suspendue : une restauration a pu ramener d'anciens mots de passe."
 action = "Sur la machine hôte : « shelfhold admin reset-password » pour chaque compte, puis « shelfhold restore acknowledge »."
+cause = "Une restauration peut avoir ramené d'anciens mots de passe : la connexion par mot de passe reste fermée tant qu'ils n'ont pas été changés."
 
 [errors."invalid_credentials"]
 title = "Identifiant ou mot de passe incorrect."
 action = "Vérifiez l'identifiant et le mot de passe, puis recommencez."
+cause = "L'identifiant ou le mot de passe ne correspond à aucun compte ; Shelfhold ne dit pas lequel des deux est faux."
 
 [errors."invalid_cursor"]
 title = "Le curseur de pagination est invalide."
@@ -1029,10 +1078,12 @@ cause = "Le curseur de pagination n'est plus valable."
 [errors."job.dead_lettered"]
 title = "Des tâches ont définitivement échoué."
 action = "Ouvrez l'Activité, consultez les tâches en échec puis relancez-les ou abandonnez-les."
+cause = "Des tâches ont épuisé leurs nouvelles tentatives sans réussir et ont été mises de côté."
 
 [errors."metadata.provider_down"]
 title = "Le fournisseur de métadonnées ne répond plus."
 action = "Aucune action immédiate : l'enrichissement reprend quand le fournisseur revient."
+cause = "Le fournisseur de métadonnées ne répond plus ou renvoie des erreurs de façon répétée."
 
 [errors."method_not_allowed"]
 title = "Méthode non autorisée sur cette adresse."
@@ -1042,18 +1093,22 @@ cause = "Cette adresse n'accepte pas cette méthode."
 [errors."mount.sentinel_missing"]
 title = "Un disque monté est absent ou différent de celui attendu."
 action = "Montez le bon disque, puis lancez « shelfhold target recheck »."
+cause = "Le fichier sentinelle attendu sur un disque monté est introuvable : disque démonté, remplacé ou monté au mauvais endroit."
 
 [errors."export.name_misread_number"]
 title = "Kavita lirait un autre numéro de chapitre dans ce nom de fichier."
 action = "Définissez un nom de série exporté qui ne ressemble pas à un marqueur de chapitre, puis relancez l'aperçu."
+cause = "Kavita lit un nombre dans le nom du fichier et le prendrait pour le numéro du chapitre, ce qui le rangerait au mauvais endroit."
 
 [errors."export.segment_policy_unconfirmed"]
 title = "Le nommage des séries à numérotation par segments n'est pas encore confirmé."
 action = "L'unité reste en conflit de numérotation tant que le test nocturne contre un vrai Kavita n'a pas confirmé le nommage ; ne changez pas le réglage naming_segment_policy_confirmed avant."
+cause = "Le test de nuit contre un vrai Kavita n'a pas encore confirmé comment il lit les séries numérotées par segments."
 
 [errors."export.series_name_yields_volume"]
 title = "Kavita déduirait un tome du nom de cette série."
 action = "Définissez un nom de série exporté sans marqueur de tome ou de saison (S2, T1, v3, Vol.3, 第2巻, 시즌2), puis relancez l'aperçu."
+cause = "Le nom de la série contient un motif que Kavita interprète comme un tome ou une saison."
 
 [errors."cause_default"]
 user = "La demande n'a pas pu être menée à bien."
@@ -1067,10 +1122,12 @@ cause = "L'élément demandé n'existe pas ou vous n'avez pas le droit de le voi
 [errors."notify.failed"]
 title = "Les notifications n'ont pas pu être envoyées."
 action = "Vérifiez l'adresse de notification dans les réglages, puis envoyez une notification de test."
+cause = "L'adresse de notification est invalide, ou le service de messagerie ne répond pas ou refuse l'envoi."
 
 [errors."plan.stale"]
 title = "L'aperçu a changé depuis son calcul."
 action = "Recalculez l'aperçu, vérifiez-le, puis appliquez-le."
+cause = "L'état des fichiers ou de la base a changé depuis le calcul de l'aperçu : l'appliquer ferait autre chose que ce que vous avez lu."
 
 [errors."precondition_failed"]
 title = "La ressource a changé depuis votre lecture."
@@ -1080,42 +1137,52 @@ cause = "L'élément a changé depuis que vous l'avez lu."
 [errors."precondition_required"]
 title = "L'en-tête If-Match est obligatoire pour cette action."
 action = "Relisez la ressource et envoyez son ETag dans If-Match."
+cause = "L'action modifie une ressource partagée : sans l'en-tête If-Match, rien ne prouve que vous avez vu sa dernière version."
 
 [errors."passkey_unavailable"]
 title = "Les clés d'accès ne sont pas disponibles ici."
 action = "Définissez public_url en https:// (ou utilisez http://localhost), redémarrez Shelfhold, puis rouvrez la page."
+cause = "Les clés d'accès exigent une adresse publique en https (ou localhost) ; celle de Shelfhold n'en est pas une."
 
 [errors."passkey_refused"]
 title = "La clé d'accès n'a pas pu être enregistrée."
 action = "Recommencez depuis la page des clés d'accès, avec l'appareil et le geste (empreinte, visage, code) demandés."
+cause = "Le navigateur ou l'appareil a annulé le geste, ou la réponse ne correspond pas à la demande."
 
 [errors."passkey_not_found"]
 title = "Cette clé d'accès n'existe pas ou est déjà révoquée."
 action = "Actualisez la liste des clés d'accès."
+cause = "Cette clé d'accès a déjà été révoquée, ou la liste affichée est plus ancienne que l'état réel."
 
 [errors."last_login_factor"]
 title = "C'est votre dernier moyen de connexion."
 action = "Enregistrez une autre clé d'accès avant de révoquer celle-ci."
+cause = "La révoquer vous laisserait sans aucun moyen de connexion."
 
 [errors."profile_conflict"]
 title = "Ce changement de profil est en conflit avec l'état du foyer."
 action = "Lisez la raison indiquée (nom déjà pris, dernier administrateur, deux administrateurs au plus, profil en cours de modification), puis recommencez."
+cause = "Le changement heurte une règle du foyer : nom déjà pris, dernier administrateur, trop d'administrateurs ou profil en cours d'utilisation."
 
 [errors."profile_not_found"]
 title = "Ce profil n'existe pas."
 action = "Actualisez la liste des profils."
+cause = "Le profil a été supprimé, ou l'identifiant ne correspond à aucun profil."
 
 [errors."profile_refused"]
 title = "Ce profil ne respecte pas les règles du foyer."
 action = "Un enfant a toujours un âge maximal et jamais le droit de classer ; un adulte n'a pas d'âge maximal ; un enfant ne peut ajouter ou demander que sur une source « famille »."
+cause = "Les réglages demandés enfreignent une règle des profils : un enfant a un âge maximal et ne classe pas, un adulte n'a pas d'âge maximal."
 
 [errors."user_state_refused"]
 title = "Cette valeur n'est pas acceptée."
 action = "Une date envoyée ne peut pas dépasser l'heure du serveur de plus de quelques minutes ; une langue de titre est un code comme « ja » ou « en-US », huit au plus, sans « und » ni « mul »."
+cause = "La valeur envoyée est hors des limites admises (date dans le futur, langue inconnue ou format invalide)."
 
 [errors."notification_prefs_refused"]
 title = "Ces réglages de notification ne sont pas acceptés."
 action = "Choisissez le mode « résumé » ou « immédiat », deux heures calmes au format HH:MM (ou aucune), et un fuseau horaire comme « Europe/Paris »."
+cause = "Le mode, les heures calmes ou le fuseau horaire envoyés sont hors des valeurs admises : mode inconnu, heure mal écrite ou fuseau inexistant."
 
 [errors."reauth_required"]
 title = "Confirmez votre mot de passe pour continuer."
@@ -1125,6 +1192,7 @@ cause = "Votre dernière saisie du mot de passe est trop ancienne pour cette act
 [errors."reconcile.drift"]
 title = "Les fichiers ne correspondent plus à la base."
 action = "Lancez la réconciliation, puis ré-adoptez ou re-téléchargez les éléments signalés."
+cause = "Des fichiers ont été ajoutés, déplacés ou supprimés hors de Shelfhold, ou la base a été restaurée : base et disque ne disent plus la même chose."
 
 [errors."request_too_large"]
 title = "La requête est trop volumineuse pour une clé d'idempotence."
@@ -1144,326 +1212,407 @@ cause = "Le profil a atteint le nombre de flux ouverts en même temps que l'inst
 [errors."secret.undecryptable"]
 title = "Un secret n'a pas pu être déchiffré."
 action = "Restaurez le trousseau de clés depuis son export (« shelfhold secrets import --passphrase-file <fichier> --in <fichier> »), puis redémarrez Shelfhold."
+cause = "Le trousseau de clés de cette instance ne contient pas la clé qui a chiffré ce secret, le plus souvent après une restauration sans le trousseau."
 
 [errors."series.stale"]
 title = "Des séries ne sont plus mises à jour."
 action = "Vérifiez l'état de la source, puis relancez le suivi."
+cause = "La source n'a livré aucun nouveau chapitre ni aucune réponse depuis plus longtemps que la durée prévue."
 
 [errors."series.awaiting_shelf"]
 title = "Des séries de la bibliothèque Suwayomi attendent une étagère adulte pour être rangées."
 action = "Créez l'étagère : shelfhold shelf create <nom> --max-age 18+ --target <cible> --subpath <dossier>."
+cause = "Ces séries sont classées pour adultes et aucune étagère adulte n'existe pour les recevoir."
 
 [errors."series.removed_upstream"]
 title = "La série a été retirée de la source."
 action = "Décidez de la conserver ou de la retirer de la bibliothèque."
+cause = "La source ne propose plus cette série : elle a été retirée de son catalogue."
 
 [errors."series.tombstoned_upstream"]
 title = "Une série purgée est encore dans la bibliothèque Suwayomi : elle est ignorée."
 action = "Retirez-la manuellement de la bibliothèque Suwayomi."
+cause = "Vous avez purgé cette série de Shelfhold, mais elle figure toujours dans la bibliothèque du service connecté."
 
 [errors."shelf.ceiling_invalid"]
 title = "Ce plafond d'âge n'est pas un palier de l'échelle."
 action = "Choisissez 0+, 10+, 12+, 13+, 16+, 18+, X, ou aucun plafond."
+cause = "La valeur n'est pas l'un des paliers d'âge de l'échelle (0+, 10+, 12+, 13+, 16+, 18+, X)."
 
 [errors."shelf.family_ceiling_too_high"]
 title = "L'étagère « Famille » ne peut pas dépasser 13+."
 action = "Choisissez 13+ ou moins pour Famille, ou créez une autre étagère pour les contenus plus âgés."
+cause = "Une étagère famille est lisible par des enfants : son plafond ne peut pas dépasser 13+."
 
 [errors."shelf.rating_required"]
 title = "Cette Édition n'est pas classée : elle ne peut pas entrer dans une étagère famille."
 action = "Classez l'Œuvre (shelfhold rate) : seul un administrateur approuve un contenu pour les enfants."
+cause = "Une Édition sans âge ne peut pas être jugée adaptée à des enfants : seule une personne administratrice l'approuve."
 
 [errors."shelf.above_ceiling"]
 title = "L'âge de cette Édition dépasse le maximum de l'étagère."
 action = "Choisissez une étagère adaptée, ou classez une Édition jeunesse à un âge sous le maximum."
+cause = "L'âge de l'Édition est supérieur au plafond de cette étagère."
 
 [errors."shelf.suggestion_above"]
 title = "Un âge suggéré par un fichier, une source ou un fournisseur dépasse le classement."
 action = "Classez de nouveau l'Œuvre : l'administrateur tranche, en connaissance de cause."
+cause = "Un fichier, une source ou un fournisseur annonce un âge plus élevé que celui qui a été choisi pour l'Œuvre."
 
 [errors."shelf.destination_not_partitioned"]
 title = "Une étagère sous 18+ exige une destination qui cloisonne l'accès."
 action = "Liez-la à une bibliothèque Kavita dédiée, ou à une destination déclarée et attestée comme cloisonnée."
+cause = "Rien ne garantit que la destination réserve l'accès aux seules personnes concernées : un enfant pourrait y lire des contenus plus âgés."
 
 [errors."shelf.library_not_dedicated"]
 title = "La bibliothèque Kavita de cette étagère famille contient aussi d'autres dossiers."
 action = "Créez dans Kavita une bibliothèque qui ne regarde que le dossier de l'étagère famille."
+cause = "La bibliothèque Kavita regarde d'autres dossiers que celui de l'étagère famille : des contenus plus âgés pourraient s'y retrouver."
 
 [errors."target.remote_folder_shared"]
 title = "Deux étagères écriraient dans le même dossier du serveur."
 action = "Donnez à chaque étagère son dossier."
+cause = "Deux étagères désignent le même dossier du serveur distant : leurs fichiers et leurs âges se mélangeraient."
 
 [errors."job.busy"]
 title = "Un export de cette Œuvre est en cours."
 action = "Réessayez dans un instant : rien n'a été modifié."
+cause = "Un autre export de cette Œuvre tient déjà le verrou de travail."
 
 [errors."export.series_other_shelf"]
 title = "Cette série de la bibliothèque distante appartient à une autre étagère."
 action = "Une série Kavita n'a qu'une étagère : retirez l'Édition de l'autre étagère ou renommez la série."
+cause = "Dans Kavita, la série est déjà rattachée à une autre étagère, et une série n'en a qu'une."
 
 [errors."export.age_tier_mix"]
 title = "Plusieurs paliers d'âge partagent cette bibliothèque distante."
 action = "Une bibliothèque famille ne sert qu'une étagère famille : liez chaque étagère à sa bibliothèque."
+cause = "Plusieurs paliers d'âge se partagent la même bibliothèque distante : un palier plus élevé serait visible par un compte plus jeune."
 
 [errors."export.awaiting_series_age"]
 title = "Ce livre attend que Kavita affiche l'âge de sa série, verrouillé."
 action = "Rien n'est perdu : l'export reprend dès que Kavita répond et garde le verrou. Un aperçu ne contacte pas Kavita : il affiche donc toujours cette attente pour ces livres, seul l'export la lève. Vérifiez « shelfhold target status »."
+cause = "Kavita n'a pas encore répondu avec l'âge de la série, et Shelfhold n'exporte rien tant qu'il ne peut pas le verrouiller."
 
 [errors."export.series_age_stale"]
 title = "Kavita affiche pour cette série un âge inférieur à son classement."
 action = "La série ne reçoit plus rien. Le prochain export repousse l'âge et le relit ; si cela échoue encore, vérifiez Kavita avec « shelfhold target recheck »."
+cause = "L'âge que Kavita affiche pour la série est plus bas que le classement de Shelfhold, parce qu'il a été modifié dans Kavita ou n'a pas été écrit."
 
 [errors."target.library_type_mismatch"]
 title = "Cette étagère de livres vise une bibliothèque Kavita qui n'est pas de type Livres."
 action = "Liez l'étagère à une bibliothèque Kavita de type « Book » ; Shelfhold ne change jamais le type d'une bibliothèque."
+cause = "La bibliothèque Kavita visée est d'un autre type que Livres : Kavita y lirait les EPUB comme des séries d'images."
 
 [errors."source.auth_expired"]
 title = "La connexion à la source a expiré."
 action = "Renouvelez les identifiants avec « shelfhold source set-secret »."
+cause = "Le service connecté a refusé les identifiants enregistrés : mot de passe changé, session ou jeton expiré."
 
 [errors."source.auth_mode_unsupported"]
 title = "Le mode d'authentification de la source n'est pas pris en charge."
 action = "Changez le mode d'authentification du service, puis lancez « shelfhold source recheck »."
+cause = "Le service connecté demande un mode de connexion que cette version de Shelfhold ne sait pas utiliser."
 
 [errors."source.update_filters_blocking"]
 title = "La mise à jour globale de Suwayomi exclut des séries suivies."
 action = "Désactivez l'exclusion des séries non lues ou non commencées dans Suwayomi, ou confirmez la désactivation par Shelfhold (--fix-suwayomi-settings, ou fix_suwayomi_settings dans l'API), puis relancez la commande."
+cause = "Deux réglages de Suwayomi excluent certaines séries de sa mise à jour globale : les séries suivies n'y reçoivent plus de nouveaux chapitres."
 
 [errors."source.auth_required"]
 title = "La source demande une connexion."
 action = "Enregistrez les identifiants de la source avec « shelfhold source set-secret »."
+cause = "La source répond qu'elle exige une connexion et Shelfhold n'a pas d'identifiants à lui présenter."
 
 [errors."source.broken"]
 title = "La source ne fonctionne plus correctement."
 action = "Vérifiez la source ; le suivi reprend dès qu'elle répond."
+cause = "La source répond de façon incohérente ou en erreur : son extension est souvent périmée ou le site a changé."
 
 [errors."source.changed"]
 title = "La source a changé de format."
 action = "Mettez l'extension de la source à jour."
+cause = "Le format des pages ou des réponses de la source ne correspond plus à ce que son extension sait lire."
 
 [errors."source.content_removed"]
 title = "Le contenu a été retiré de la source."
 action = "Aucune action : la copie déjà conservée est gardée."
+cause = "La source a retiré ce contenu de son catalogue ; ce n'est pas une panne."
 
 [errors."source.dns_blocked"]
 title = "Le résolveur DNS du foyer bloque cette source."
 action = "Autorisez le domaine de la source dans le bloqueur DNS (liste blanche), puis relancez."
+cause = "Le serveur de noms du foyer (bloqueur de publicités ou filtre) refuse de résoudre le domaine de la source."
 
 [errors."source.domain_not_allowed"]
 title = "Une source a demandé un domaine qu'elle n'a pas déclaré."
 action = "La requête est refusée. Vérifiez l'adresse réglée pour la source ; si elle est juste, mettez la source à jour ou désactivez-la."
+cause = "La requête visait un domaine absent de la liste que la source avait déclarée : l'extension ou le réglage a été modifié."
 
 [errors."source.downloads_dropped"]
 title = "La source a abandonné des téléchargements."
 action = "Relancez les téléchargements abandonnés depuis l'Activité."
+cause = "Le service connecté a abandonné des téléchargements en cours, par redémarrage, manque de place ou erreur de la source."
 
 [errors."source.error"]
 title = "La source a signalé une erreur."
 action = "Consultez l'état de la source dans la page Sources."
+cause = "La source a répondu par une erreur dont Shelfhold ne connaît pas la cause précise."
 
 [errors."source.forbidden_io"]
 title = "Une source a tenté d'accéder seule au réseau, au disque ou à un programme."
 action = "L'accès est refusé et journalisé. La source ne respecte pas le contrat : désactivez-la ou mettez-la à jour."
+cause = "L'extension de la source a essayé d'ouvrir une connexion, un fichier ou un programme sans passer par Shelfhold, ce que le contrat des sources interdit."
 
 [errors."source.instance_changed"]
 title = "Le service de la source semble avoir été réinstallé."
 action = "Confirmez avec « shelfhold source reconnect » ; rien n'est supprimé en attendant."
+cause = "L'identité du service connecté n'est plus celle qui a été enregistrée : réinstallation, restauration ou changement d'adresse."
 
 [errors."source.not_configured"]
 title = "Cette source n'est pas configurée : un réglage obligatoire manque, ou l'adresse du catalogue est absente ou refusée."
 action = "Renseignez ses réglages (par exemple l'adresse du catalogue et celle du miroir) avec « shelfhold plugin set », puis relancez la demande."
+cause = "Un réglage obligatoire de la source est vide, ou l'adresse de son catalogue est absente ou refusée."
 
 [errors."source.filter_invalid"]
 title = "Cette source ne propose pas ce filtre."
 action = "Retirez le filtre, ou demandez la liste de ceux que la source déclare."
+cause = "Le filtre demandé ne figure pas dans la liste de ceux que cette source déclare."
 
 [errors."acquire.unsupported_file"]
 title = "La source ne fournit pas un fichier que Shelfhold range."
 action = "Seuls les livres EPUB et les archives d'images (CBZ) sont rangés ; un PDF passe par le dossier d'import."
+cause = "Le fichier proposé n'est ni un EPUB ni une archive d'images CBZ, les deux seuls formats que Shelfhold range depuis une source."
 
 [errors."source.credential_origin"]
 title = "Un lien pointait ailleurs que le catalogue : les identifiants ne sont pas envoyés."
 action = "Aucune action : le fichier n'a pas été demandé. Vérifiez l'adresse du catalogue si cela se répète."
+cause = "Un lien du catalogue menait vers un autre domaine que celui de la source : y envoyer vos identifiants les aurait livrés à un tiers."
 
 [errors."acquire.unit_required"]
 title = "La source propose plusieurs éléments : dites lequel prendre."
 action = "Relancez la demande en précisant l'identifiant de l'élément voulu."
+cause = "La source propose plusieurs livres derrière cette adresse et Shelfhold ne devine pas lequel vous voulez."
 
 [errors."acquire.series_tombstoned"]
 title = "Cette série a été supprimée volontairement : elle n'est pas recréée."
 action = "Levez la pierre tombale de la série si vous la voulez à nouveau."
+cause = "Vous avez effacé cette série en demandant qu'elle ne soit pas rachetée ni recréée : la pierre tombale l'en empêche."
 
 [errors."acquire.work_tombstoned"]
 title = "Cette œuvre a été supprimée volontairement : elle ne revient pas par un identifiant qu'elle portait."
 action = "Levez la pierre tombale de l'œuvre si vous la voulez à nouveau."
+cause = "Vous avez effacé cette Œuvre en demandant qu'elle ne revienne pas, même sous un autre identifiant : la pierre tombale s'en souvient."
 
 [errors."acquire.tombstones_unavailable"]
 title = "Les pierres tombales ne peuvent pas être lues ici : rien n'est ajouté."
 action = "Vérifiez la bibliothèque montée et le trousseau, puis recommencez."
+cause = "Le journal des effacements est illisible ici : bibliothèque non montée ou trousseau de clés absent."
 
 [errors."unit.stored"]
 title = "Le livre demandé est rangé dans la bibliothèque."
 action = "Il sera exporté au prochain passage vers les étagères concernées."
+cause = "Ce chapitre est déjà dans la bibliothèque : il n'y a rien de plus à télécharger."
 
 [errors."source.no_match"]
 title = "Aucune source ne reconnaît cette adresse."
 action = "Vérifiez l'adresse collée, ou activez la source qui la publie."
+cause = "Aucune des sources activées ne publie ce type d'adresse, ou la source qui la publie est désactivée."
 
 [errors."source.setting_invalid"]
 title = "Ce réglage de la source est refusé."
 action = "Corrigez le champ nommé ; un secret se règle à part, par set-secret, jamais comme une valeur."
+cause = "La valeur d'un réglage ne respecte pas le format attendu par cette source, ou un secret a été saisi comme un réglage ordinaire."
 
 [errors."plugin.unknown"]
 title = "Aucun plugin chargé ou installé ne porte cette clé."
 action = "Vérifiez la clé avec « shelfhold plugin list »."
+cause = "La clé donnée ne correspond à aucun plugin chargé ou installé : faute de frappe ou plugin retiré."
 
 [errors."plugin.attestation_invalid"]
 title = "Cette valeur ne s'atteste pas."
 action = "Seules content_trust=publisher, access_partitioning=library|user et egress=foyer d'un plugin tiers installé s'attestent."
+cause = "La valeur n'est pas une de celles qu'un plugin tiers peut déclarer sur lui-même."
 
 [errors."plugin.attestation_not_needed"]
 title = "Ce plugin est first-party : ses valeurs s'appliquent telles quelles."
 action = "Rien à attester."
+cause = "Un plugin fourni avec Shelfhold est déjà jugé sûr : ses valeurs n'ont pas besoin d'attestation."
 
 [errors."source.not_loaded"]
 title = "Une source n'est pas chargée."
 action = "Vérifiez l'extension de la source dans le service, puis relancez-la."
+cause = "L'extension de la source n'est pas chargée dans le service connecté : désactivée, retirée ou en échec au démarrage."
 
 [errors."source.rate_limited"]
 title = "La source limite le nombre de requêtes."
 action = "Aucune action : Shelfhold réessaie après le délai demandé par la source."
+cause = "La source a répondu qu'on lui envoie trop de requêtes et demande d'espacer les suivantes."
 
 [errors."source.ref_has_secret"]
 title = "Une référence rendue par la source contient un secret."
 action = "La source ne respecte pas le contrat : mettez-la à jour ou désactivez-la. Aucune référence contenant un secret n'est conservée."
+cause = "La source a rendu une référence qui contient un mot de passe ou un jeton, que Shelfhold ne doit jamais conserver."
 
 [errors."source.temporarily_unavailable"]
 title = "La source est momentanément indisponible."
 action = "Aucune action : la file est en pause et reprend d'elle-même."
+cause = "La source répond qu'elle est en maintenance ou surchargée, sans date de retour."
 
 [errors."source.version_unsupported"]
 title = "La version de la source n'est pas prise en charge."
 action = "Mettez le service de la source à jour vers une version prise en charge."
+cause = "La version du service de la source est hors de celles que Shelfhold a testées."
 
 [errors."ssrf.blocked"]
 title = "Adresse refusée par la protection contre les requêtes internes."
 action = "Si l'adresse est un service de votre réseau, déclarez-la explicitement (hôte et port) dans les réglages."
+cause = "L'adresse désigne une machine du réseau interne, de la machine locale ou un point d'accès réservé : Shelfhold ne s'adresse pas à elles sans que vous l'ayez déclaré."
 
 [errors."target.child_exposure"]
 title = "Une bibliothèque Kavita est accessible à un compte enfant."
 action = "Retirez l'accès du compte enfant à cette bibliothèque dans Kavita, puis lancez « shelfhold target recheck »."
+cause = "Un compte enfant de Kavita a accès à une bibliothèque qui contient des contenus pour adultes."
 
 [errors."target.forbidden"]
 title = "Le compte Kavita n'a plus les droits nécessaires."
 action = "Rendez au compte dédié ses droits d'administrateur dans Kavita."
+cause = "Kavita refuse maintenant les actions de la clé de Shelfhold : le compte a perdu son rôle d'administrateur ou la clé a été révoquée."
 
 [errors."target.foreign_writer_detected"]
 title = "Un autre programme écrit dans un dossier géré par Shelfhold."
 action = "Retirez les fichiers étrangers ou excluez ce dossier de l'autre programme, puis relancez l'export."
+cause = "Un autre programme, un ancien script par exemple, crée ou modifie des fichiers dans un dossier que Shelfhold gère seul."
 
 [errors."target.instance_changed"]
 title = "Kavita semble avoir été réinstallé."
 action = "Confirmez avec « shelfhold target reconnect » ; rien n'est recréé tant que vous ne l'avez pas fait."
+cause = "L'identité du serveur Kavita n'est plus celle qui a été enregistrée : réinstallation, restauration ou changement d'adresse."
 
 [errors."target.key_expiring"]
 title = "La clé d'API de Kavita expire bientôt."
 action = "Générez une nouvelle clé dans Kavita et enregistrez-la dans Shelfhold."
+cause = "La clé d'API que Shelfhold utilise a une date d'expiration proche."
 
 [errors."target.library_type_changed"]
 title = "Le type d'une bibliothèque Kavita a changé."
 action = "L'étagère est en pause et rien n'est renommé. Remettez le type d'origine dans Kavita, puis lancez « shelfhold target reconnect »."
+cause = "Le type de la bibliothèque a été modifié dans Kavita depuis le dernier passage : ses fichiers seraient lus autrement."
 
 [errors."target.not_indexed"]
 title = "Le fichier écrit n'apparaît pas dans Kavita."
 action = "Vérifiez l'exclusion de dossier, le type de bibliothèque et la surveillance des dossiers dans Kavita."
+cause = "Kavita n'a pas vu le fichier écrit : dossier exclu, analyse des dossiers désactivée ou bibliothèque d'un autre type."
 
 [errors."target.permission_denied"]
 title = "Shelfhold ne peut pas écrire dans ce dossier."
 action = "Corrigez les droits du dossier de série, puis lancez « shelfhold target recheck »."
+cause = "Le compte qui fait tourner Shelfhold n'a pas le droit d'écrire dans le dossier de la série."
 
 [errors."target.pull_needs_readable_copy"]
 title = "Cette destination à la demande n'a aucune copie lisible à servir."
 action = "Conservez les copies de l'étagère, ou liez aussi une destination en arborescence."
+cause = "Une destination à la demande sert ses fichiers depuis une copie conservée, et l'étagère n'en garde aucune que l'on puisse lire."
 
 [errors."target.route_missing"]
 title = "Kavita n'a pas la fonction attendue."
 action = "Mettez Kavita à jour, puis lancez « shelfhold target recheck »."
+cause = "La version de Kavita installée ne propose pas une fonction dont Shelfhold a besoin."
 
 [errors."shelf.withdrawal_root_read_only"]
 title = "Ces fichiers sont sur une racine en lecture seule : Shelfhold ne les déplace jamais."
 action = "Montez le dossier en lecture-écriture (mode adopt) ou retirez vous-même les fichiers, puis relancez un scan."
+cause = "La racine qui porte ces fichiers est montée en lecture seule : Shelfhold ne retire jamais un fichier qu'il ne peut pas remettre."
 
 [errors."shelf.not_child_library"]
 title = "Ce dossier n'est pas une bibliothèque lisible par des enfants."
 action = "Aucun plan de retrait : seules les bibliothèques adoptées lisibles par des enfants en ont un."
+cause = "Ce dossier n'est pas celui d'une bibliothèque adoptée lisible par des enfants : le plan de retrait n'existe que pour ces bibliothèques."
 
 [errors."shelf.destination_exists"]
 title = "Cette étagère a déjà une destination."
 action = "Une seule destination par étagère pour l'instant ; plusieurs viendront avec la version suivante."
+cause = "Cette version n'accepte qu'une destination par étagère, et celle-ci en a déjà une."
 
 [errors."target.tree_overlap"]
 title = "Deux destinations en écriture se recouvrent."
 action = "Choisissez des dossiers distincts : deux indexeurs ne partagent pas encore le même arbre."
+cause = "Un dossier de l'une des destinations en écriture contient ou recouvre celui d'une autre : deux programmes y écriraient en même temps."
 
 [errors."target.unreachable"]
 title = "Kavita ne répond pas."
 action = "Vérifiez que le conteneur Kavita tourne, ou reconnectez-le avec « shelfhold target reconnect »."
+cause = "Le serveur Kavita ne répond pas : conteneur arrêté, adresse changée ou réseau coupé."
 
 [errors."target.version_unsupported"]
 title = "La version de Kavita n'est pas prise en charge."
 action = "Mettez Kavita à jour vers une version prise en charge (voir les notes de version)."
+cause = "La version de Kavita est hors de celles que Shelfhold a testées : ses réponses peuvent différer."
 
 [errors."tombstone.key_unknown"]
 title = "Une clé citée par une pierre tombale est inconnue."
 action = "Importez le trousseau (« shelfhold secrets import --passphrase-file <fichier> --in <fichier> ») ou acceptez la perte avec « shelfhold tombstone accept-lost-keyring »."
+cause = "Une pierre tombale a été chiffrée avec une clé qui n'est pas dans le trousseau de cette instance : trousseau perdu ou restauré sans elle."
 
 [errors."ops.preview_stale"]
 title = "L'aperçu confirmé n'est plus celui de l'instance."
 action = "Relancez la commande sans confirmation, relisez l'aperçu, puis confirmez avec la nouvelle empreinte."
+cause = "L'état de l'instance a changé entre l'aperçu et votre confirmation : l'empreinte donnée ne correspond plus."
 
 [errors."tombstone.migration_hit"]
 title = "Une migration a rencontré un contenu effacé."
 action = "Examinez le contenu concerné ; rien n'a été réacquis."
+cause = "Un contenu que vous aviez effacé était présent dans les données migrées : la pierre tombale a bloqué son retour."
 
 [errors."tombstone.root_mismatch"]
 title = "Le journal d'effacement appartient à une autre racine."
 action = "Consultez le rapport : les lignes ont été appliquées à la racine connue, rien n'a été supprimé."
+cause = "Le journal d'effacement a été écrit pour une autre racine que celle qui est montée : volume remplacé ou journal copié d'ailleurs."
 
 [errors."tombstone.unverified"]
 title = "Une pierre tombale n'a pas pu être vérifiée."
 action = "Examinez la ligne signalée au rapport et décidez de la garder ou de l'écarter."
+cause = "La signature ou la clé d'une ligne du journal d'effacement ne se vérifie pas : fichier modifié, tronqué ou clé inconnue."
 
 [errors."too_many_attempts"]
 title = "Trop de tentatives de connexion."
 action = "Patientez une minute avant de réessayer ; l'administrateur peut aussi agir depuis la ligne de commande de l'hôte."
+cause = "Trop d'identifiants erronés ont été essayés depuis cette adresse en peu de temps : Shelfhold ralentit les tentatives pour empêcher de deviner un mot de passe."
 
 [errors."unauthenticated"]
 title = "Connexion requise."
 action = "Connectez-vous, ou fournissez une clé d'API valide."
+cause = "La requête ne porte ni session valide ni clé d'API : session expirée, déconnexion ou clé absente."
 
 [errors."unit.safeguard_backlog"]
 title = "La file de mise à l'abri est saturée."
 action = "Laissez la file se vider ou augmentez le quota de mise à l'abri."
+cause = "Plus de chapitres attendent leur copie à l'abri que le quota ne permet d'en traiter à la fois."
 
 [errors."unit.confirmation_required"]
 title = "Ce chapitre est irremplaçable : la suppression demande une confirmation."
 action = "Tapez l'identifiant du chapitre pour confirmer. Aucune copie ne sera supprimée sans cela."
+cause = "Ce chapitre n'existe plus nulle part ailleurs : le supprimer le perdrait pour toujours, donc Shelfhold exige une confirmation explicite."
 
 [errors."unit.safeguard_failed"]
 title = "La mise à l'abri d'un chapitre a échoué."
 action = "Consultez l'Activité et relancez la mise à l'abri du chapitre."
+cause = "La copie du chapitre vers /store a échoué : volume plein, absent ou en lecture seule."
 
 [errors."unit.revision_suspect"]
 title = "Une nouvelle version d'un chapitre est bien plus petite que celle rangée : elle est en quarantaine."
 action = "L'ancienne version reste exportée. Si la nouvelle est bonne, `shelfhold revisions list` la montre et `revisions apply --force-suspect` (action réservée) l'accepte."
+cause = "La nouvelle version est beaucoup plus petite que celle qui est rangée, comme si elle était tronquée ou vide."
 
 [errors."revisions.confirmation_required"]
 title = "La file « à réécrire » se confirme par lot."
 action = "Lancez `shelfhold revisions list`, relisez le nombre de positions KOReader touchées, puis donnez le jeton affiché avec `--confirm`."
+cause = "Réécrire des chapitres déplace la position de lecture sur certains appareils : Shelfhold exige une confirmation qui dit combien sont touchés."
 
 [errors."unit.upgraded"]
 title = "Un chapitre a été remplacé par une meilleure version, au même emplacement."
 action = "La progression Kavita est conservée ; sur KOReader, la position de lecture repart du début. L'ancienne version reste 30 jours dans la corbeille."
+cause = "La source a publié une meilleure version de ce chapitre et Shelfhold l'a mise à la place de l'ancienne."
 
 [errors."validation_failed"]
 title = "Des champs de la requête sont invalides."
@@ -1473,134 +1622,167 @@ cause = "Une valeur envoyée ne respecte pas le format attendu."
 [errors."wake.deferred"]
 title = "Le service est resté endormi : des lots sont différés."
 action = "Vérifiez le réveil automatique du service ou démarrez-le à la main."
+cause = "Le service connecté dormait au moment de la demande, donc ses lots ont été repoussés."
 
 [errors."source.fallback"]
 title = "Une source de repli a pris le relais."
 action = "Vérifiez la source principale ; Shelfhold y revient dès qu'elle fonctionne."
+cause = "La source principale n'a pas répondu ou a échoué, donc la source de rang suivant a été interrogée."
 
 [errors."backfill.confirmation_required"]
 title = "Le rattrapage dépasse 100 chapitres ou 5 Gio : il demande une confirmation."
 action = "Vérifiez l'estimation (nombre, taille, espace libre), puis confirmez pour lancer le rattrapage."
+cause = "Le rattrapage dépasse 100 chapitres ou 5 Gio : Shelfhold ne lance pas un téléchargement de cette taille sans que vous l'ayez confirmé."
 
 [errors."follow.service_paused"]
 title = "Le service connecté est en pause : rien n'a été suivi."
 action = "Sortez le service de sa pause avec la commande indiquée par « shelfhold status », puis recommencez."
+cause = "Le service connecté est en pause : il ne répond à aucune demande de suivi tant qu'on ne l'a pas relancé."
 
 [errors."follow.confirmation_required"]
 title = "Retirer la série de la bibliothèque du service demande une confirmation."
 action = "Ne plus suivre garde la série dans le service ; pour l'en retirer aussi, confirmez explicitement."
+cause = "Retirer la série de la bibliothèque du service est irréversible depuis Shelfhold : il demande une confirmation explicite."
 
 [errors."request.not_found"]
 title = "Cette demande n'existe pas."
 action = "Ouvrez « Mes demandes » pour voir celles que vous avez faites."
+cause = "L'identifiant ne correspond à aucune de vos demandes : demande retirée, ou faite depuis un autre profil."
 
 [errors."request.not_pending"]
 title = "Cette demande a déjà reçu une réponse ou a été annulée."
 action = "Rafraîchissez la liste : l'état de la demande a changé."
+cause = "Quelqu'un a déjà répondu à cette demande, ou son auteur l'a annulée."
 
 [errors."request.not_allowed"]
 title = "Vous ne pouvez pas décider de cette demande."
 action = "Seul un administrateur dont la session est récente, et qui a le droit de classer, approuve une demande."
+cause = "Approuver une demande demande une connexion récente et le droit de classer, que ce profil n'a pas."
 
 [errors."request.kind_not_allowed"]
 title = "Ce profil ne peut demander un titre que depuis les résultats de sa recherche."
 action = "Cherchez le titre, puis choisissez « Demander » sur le résultat."
+cause = "Un profil d'enfant ne peut pas écrire un titre ou une adresse : il ne demande que parmi les résultats que sa recherche lui montre."
 
 [errors."request.invalid_ref"]
 title = "Ce résultat n'est plus disponible pour une demande."
 action = "Relancez la recherche, puis choisissez « Demander » sur le résultat."
+cause = "Le résultat choisi n'est plus dans la recherche : celle-ci a été refaite ou a expiré depuis."
 
 [errors."request.invalid_target"]
 title = "La demande ne désigne pas un titre valide."
 action = "Donnez un identifiant d'œuvre, un ISBN valide ou un titre en texte simple."
+cause = "Le texte n'est ni un identifiant d'œuvre, ni un ISBN valide, ni un titre en texte simple."
 
 [errors."request.too_many_pending"]
 title = "Trop de demandes sont déjà en attente pour ce profil."
 action = "Attendez une réponse, ou annulez une demande, avant d'en faire une autre."
+cause = "Ce profil a déjà atteint le nombre maximal de demandes en attente."
 
 [errors."request.invalid_reason"]
 title = "Le motif du refus est vide, trop long ou contient des caractères invisibles."
 action = "Écrivez un motif court en texte simple."
+cause = "Le motif est vide, dépasse la longueur admise ou contient des caractères invisibles."
 
 [errors."request.choose_age"]
 title = "Choisir un âge : classer le livre, c'est approuver la demande d'un enfant."
 action = "Choisissez l'âge minimal du livre, puis approuvez."
+cause = "Une demande d'enfant porte sur un livre sans âge : l'approuver revient à décider que ce livre convient à un enfant."
 
 [errors."request.confirmation_required"]
 title = "La demande dépasse 100 unités ou 5 Gio : elle demande une confirmation."
 action = "Vérifiez le résumé de taille, puis confirmez pour approuver."
+cause = "L'approbation lancerait un téléchargement de plus de 100 unités ou de 5 Gio, que Shelfhold ne démarre pas sans confirmation."
 
 [errors."request.unresolved"]
 title = "Ce texte ou cet ISBN ne correspond à aucune œuvre de la bibliothèque."
 action = "Marquez la demande « introuvable », ou ajoutez le livre par une source."
+cause = "Le texte ou l'ISBN saisi ne figure ni dans la bibliothèque ni dans aucune des sources interrogées."
 
 [errors."request.shelf_refused"]
 title = "L'étagère choisie refuse cette édition."
 action = "Choisissez une autre étagère, ou classez d'abord l'édition."
+cause = "L'âge de l'édition dépasse le plafond de l'étagère choisie, ou l'édition n'est pas classée."
 
 [errors."series.gap"]
 title = "Il manque des chapitres dans la série."
 action = "Consultez la série et lancez la recherche des chapitres manquants."
+cause = "La source n'a pas publié, ou Shelfhold n'a pas reçu, certains numéros entre le premier et le dernier chapitre."
 
 [errors."edition.auto_attached"]
 title = "Une édition a été rattachée à l'œuvre qui porte le même identifiant externe."
 action = "Vérifiez le rattachement avec « shelfhold edition attachments » ; « shelfhold edition detach » le défait (Séparer). L'édition reste hors des étagères famille tant qu'elle n'est pas classée."
+cause = "Deux éditions portent le même identifiant externe (ISBN, par exemple) : Shelfhold en conclut qu'elles sont la même Œuvre."
 
 [errors."edition.attach_suggested"]
 title = "Un rattachement par identifiant externe attend votre confirmation : il relèverait l'âge de l'œuvre."
 action = "Lisez le plan de retrait avec « shelfhold edition attach-confirm », puis confirmez-le avec le jeton affiché, ou refusez-le avec « shelfhold edition attach-decline »."
+cause = "Le rattachement ferait passer l'Œuvre à un âge plus élevé : Shelfhold attend votre confirmation avant de retirer des fichiers à un enfant."
 
 [errors."edition.attach_refused"]
 title = "Ce rattachement ne peut pas être défait ni confirmé dans son état actuel."
 action = "Consultez son état avec « shelfhold edition attachments » : il a déjà été défait, refusé, ou l'édition a changé d'œuvre depuis."
+cause = "Le rattachement a déjà été défait ou confirmé, ou les Éditions ont changé depuis."
 
 [errors."edition.merge_refused"]
 title = "Cette fusion d'éditions est refusée : rien n'a été modifié ni supprimé."
 action = "Relisez le plan avec « shelfhold edition merge » : une pierre tombale (une place ou un identifiant d'œuvre purgés), une autre œuvre, une place déjà occupée ou une liaison que la fusion ne sait pas déplacer l'arrête."
+cause = "Une pierre tombale, un verrou ou une différence d'identité empêche de fusionner ces Éditions sans rien perdre."
 
 [errors."tombstone.journal_truncated"]
 title = "Le journal d'effacement d'une racine a été tronqué."
 action = "Rien n'a été supprimé, mais la racine est bloquée (rapprochement et réacquisition) : « shelfhold tombstone set-aside-journal » met le fichier de côté et le réécrit depuis la base."
+cause = "Le journal d'effacement de la racine est plus court que ce que la base a enregistré : fichier tronqué, restauré ou remplacé."
 
 [errors."job.unknown_kind"]
 title = "Une tâche d'un type inconnu a été ignorée."
 action = "Mettez Shelfhold à jour ou retirez la tâche depuis l'Activité."
+cause = "Le type de cette tâche n'est pas connu de cette version : elle vient d'une version plus récente ou d'une extension retirée."
 
 [errors."job.failed"]
 title = "Une tâche a échoué."
 action = "Ouvrez l'Activité, consultez l'erreur de la tâche puis relancez-la."
+cause = "La tâche a rencontré une erreur qu'elle ne sait pas résoudre seule."
 
 [errors."window.preempted"]
 title = "Une tâche de maintenance a été interrompue à la fin de la fenêtre."
 action = "Aucune action : elle reprendra à la prochaine fenêtre de maintenance."
+cause = "La fenêtre de maintenance s'est terminée pendant que la tâche tournait : elle a été interrompue pour ne pas déborder."
 
 [errors."maintenance.active"]
 title = "Le mode maintenance est actif : aucune écriture n'est acceptée."
 action = "Lisez à votre aise ; pour reprendre, lancez « shelfhold maintenance off » (ou, dans l'interface, sortez du mode maintenance avec une session récente)."
+cause = "Un administrateur a activé le mode maintenance : Shelfhold refuse les écritures pour garder les données stables."
 
 [errors."db.busy"]
 title = "La base de données est occupée : la requête n'a pas pu être traitée."
 action = "Réessayez dans un instant ; ce n'est pas le mode maintenance."
+cause = "Un autre travail tient la base de données et le délai d'attente est écoulé."
 
 [errors."queue.priority_locked"]
 title = "Cette priorité n'est pas modifiable : une réparation de sécurité passe toujours avant les autres tâches."
 action = "Choisissez une priorité parmi new, request ou backfill, sur une tâche qui n'est pas une réparation de sécurité."
+cause = "Cette tâche est une réparation de sécurité : elle passe toujours en premier, quelle que soit la priorité choisie."
 
 [errors."image.too_large"]
 title = "L'image dépasse les plafonds de taille ou de dimensions."
 action = "Utilisez une image plus petite ; les plafonds par type sont dans la référence de configuration."
+cause = "L'image dépasse la taille en octets ou en pixels que Shelfhold accepte de décoder."
 
 [errors."image.format_refused"]
 title = "Le format de l'image n'est pas accepté."
 action = "Fournissez une image JPEG, PNG, WebP, GIF, AVIF ou JPEG XL."
+cause = "Le contenu de l'image n'est dans aucun des formats que Shelfhold accepte : JPEG, PNG, WebP, GIF, AVIF ou JPEG XL."
 
 [errors."image.decode_failed"]
 title = "L'image est illisible ou corrompue."
 action = "Téléchargez le fichier à nouveau ou choisissez une autre image."
+cause = "L'image est tronquée, abîmée ou ne respecte pas son format."
 
 [errors."image.worker_failed"]
 title = "Le processus de décodage d'images a échoué."
 action = "Consultez les journaux ; si cela se répète, vérifiez la mémoire disponible du conteneur."
+cause = "Le processus isolé qui décode les images s'est arrêté : manque de mémoire, plantage ou délai dépassé."
 
 [reconcile]
 help = "Rapproche la base et les fichiers après une restauration (aperçu, empreinte, confirmation)."
@@ -1612,9 +1794,9 @@ forget_root_done = "Racine {root} oubliée (lecture seule). Relancez « shelfhol
 forget_root_unknown_root = "Racine {root} inconnue : rien n'a été modifié."
 forget_root_still_readable = "La racine {root} a une sentinelle (lisible ou non) : elle est jugée par l'adoption, pas oubliée. Rien n'a été modifié."
 forget_root_phrase_mismatch = "Phrase de confirmation incorrecte : retapez --confirm \"{phrase}\". Rien n'a été modifié."
-store_missing = "{count} Unité(s) dont la copie conservée n'est pas sous /store passent en « store_missing » : rien n'est supprimé ; restaurez /store depuis l'outil de l'hôte, ou « store reinit »."
-store_lost = "/store est absent ou n'est pas le volume attendu (pas de fichier .shelfhold-mount-id) : {count} Unité(s) en dépendent et rien n'est marqué ni supprimé. Montez /store, ou « shelfhold store reinit » s'il est perdu."
-store_restored = "{count} Unité(s) retrouvent leur copie conservée sous /store (même empreinte) et repassent à « stored »."
+store_missing = "{count, plural, one {# Unité dont la copie conservée n'est pas sous /store passe} other {# Unités dont la copie conservée n'est pas sous /store passent}} en « store_missing » : rien n'est supprimé ; restaurez /store depuis l'outil de l'hôte, ou « store reinit »."
+store_lost = "/store est absent ou n'est pas le volume attendu (pas de fichier .shelfhold-mount-id) : {count, plural, one {# Unité en dépend} other {# Unités en dépendent}} et rien n'est marqué ni supprimé. Montez /store, ou « shelfhold store reinit » s'il est perdu."
+store_restored = "{count, plural, one {# Unité retrouve sa copie conservée sous /store (même empreinte) et repasse} other {# Unités retrouvent leur copie conservée sous /store (même empreinte) et repassent}} à « stored »."
 confirm_help = "Empreinte de l'aperçu : confirme exactement ce qui a été montré."
 confirm_deletion_help = "Confirme aussi la suppression des fichiers que le journal de pierres tombales recouvre (action réservée ; sans cette option, rien n'est supprimé)."
 confirm_unit_help = "Identifiant d'un chapitre irremplaçable que la suppression effacerait (à retaper pour chacun, avec --confirm-deletion ; répétable)."
@@ -1627,13 +1809,13 @@ rebaseline_help = "Après un déplacement de disques (rsync, dates conservées) 
 destination_help = "Limite --rebaseline-inodes à une destination."
 rebaseline_line = "Nouvelle identité enregistrée : {path}"
 rebaseline_skipped = "Laissé tel quel ({reason}) : {path}"
-rebaseline_done = "{updated} fichier(s) remis à jour, {unchanged} déjà à jour, {skipped} laissé(s) tel(s) quel(s), {demoted} copie(s) qui ne comptent plus comme indépendantes. Aucune série n'a été mise en pause."
+rebaseline_done = "{updated, plural, one {# fichier remis à jour} other {# fichiers remis à jour}}, {unchanged, plural, one {# déjà à jour} other {# déjà à jour}}, {skipped, plural, one {# laissé tel quel} other {# laissés tels quels}}, {demoted, plural, one {# copie qui ne compte plus comme indépendante} other {# copies qui ne comptent plus comme indépendantes}}. Aucune série n'a été mise en pause."
 rebaseline_refused = "Refusé, rien n'a été modifié : {detail}"
 not_behind = "La base n'est pas en retard sur les fichiers : rien à rapprocher."
 needs_confirmation = "Le rapprochement n'est pas confirmé : relisez l'aperçu, puis relancez avec --confirm <empreinte>."
 instance_running = "Shelfhold tourne sur ces volumes : arrêtez-le, lancez cette commande, puis redémarrez-le."
 fingerprint_line = "Empreinte de l'aperçu : {fingerprint}"
-header = "{roots} racine(s) en retard ; {files} fichier(s) à réadopter depuis le miroir ; {stale} intention(s) venue(s) de la sauvegarde, jamais rejouée(s). Rien ne sera supprimé."
+header = "{roots, plural, one {# racine} other {# racines}} en retard ; {files, plural, one {# fichier} other {# fichiers}} à réadopter depuis le miroir ; {stale, plural, one {# intention venue de la sauvegarde, jamais rejouée} other {# intentions venues de la sauvegarde, jamais rejouées}}. Rien ne sera supprimé."
 readopt_line = "Réadopté comme exporté : {path}"
 unresolved_line = "Laissé tel quel (ligne du miroir non résolue, motif {reason}) : {path}"
 modified_line = "Différent de sa ligne du miroir, rien n'est accordé : {path}"
@@ -1643,7 +1825,7 @@ missing_line = "Dans la base mais absent du disque : {path}"
 drift_line = "Dérive amont : la série {series} de {source} est dans Suwayomi mais pas dans la base restaurée."
 proposal_remove_category = "Sans relevé amont, la restauration par défaut retire ces séries de la catégorie Shelfhold de Suwayomi."
 deletion_line = "Couvert par une pierre tombale ({scope}), jamais réadopté ; suppression soumise à --confirm-deletion : {path}"
-unverified_line = "{count} ligne(s) du journal de pierres tombales inertes (non vérifiées)."
+unverified_line = "{count, plural, one {# ligne} other {# lignes}} du journal de pierres tombales inertes (non vérifiées)."
 blocked_line = "Racine {root} bloquée : {reason}."
 blocked = "Racine {root} bloquée ({reason}). Journal illisible : « shelfhold tombstone set-aside-journal » le met de côté (rien n'est supprimé) et le réécrit depuis la base. Clé inconnue : restaurez le trousseau depuis son export, ou acceptez la perte avec « shelfhold tombstone accept-lost-keyring ». Puis recommencez."
 preview_stale = "L'instance a changé depuis l'aperçu : relancez, relisez, puis confirmez avec la nouvelle empreinte."
@@ -1652,7 +1834,7 @@ by_hand_line = "Non supprimé : {path}"
 by_hand = "La suppression est incomplète : l'instance reste en lecture seule. Supprimez à la main les fichiers ci-dessus (ou corrigez la cause), puis relancez « shelfhold reconcile --adopt-after-restore --dry-run », relisez et confirmez avec --confirm <empreinte> --confirm-deletion."
 pending_line = "À supprimer (pierre tombale) : {path}"
 pending_exit = "L'instance reste en lecture seule tant que ces fichiers existent : relancez avec --confirm <empreinte> --confirm-deletion pour les supprimer, ou supprimez-les à la main puis relancez la commande."
-done = "{files} fichier(s) réadopté(s), {pending} suppression(s) en attente de votre confirmation, {deleted} supprimé(s)."
+done = "{files, plural, one {# fichier réadopté} other {# fichiers réadoptés}}, {pending, plural, one {# suppression} other {# suppressions}} en attente de votre confirmation, {deleted, plural, one {# supprimé} other {# supprimés}}."
 
 [adopt]
 shelf_refused = "Adoption refusée ({code}) : l'étagère ne peut pas recevoir cette bibliothèque."
@@ -1664,21 +1846,21 @@ library_help = "Identifiant de la bibliothèque Kavita (par défaut, celle déj�
 needs_confirmation = "L'adoption n'est pas confirmée : lancez --dry-run, relisez l'aperçu, puis relancez avec --confirm <empreinte>."
 fingerprint_line = "Empreinte de l'aperçu : {fingerprint}"
 preview_stale = "La bibliothèque a changé depuis l'aperçu : relancez --dry-run, relisez, puis confirmez avec la nouvelle empreinte."
-header = "{series} série(s), {files} fichier(s) existant(s) ; aucun ne sera modifié, déplacé ni copié."
-series_line = "Série {name} : {files} fichier(s)"
+header = "{series, plural, one {# série} other {# séries}}, {files, plural, one {# fichier existant} other {# fichiers existants}} ; aucun ne sera modifié, déplacé ni copié."
+series_line = "Série {name} : {files, plural, one {# fichier} other {# fichiers}}"
 volume_only_line = "Série {name} : tomes seuls, plage de chapitres inconnue (aucun suivi automatique)."
 rename_line = "Renommage proposé (jamais appliqué) : {from_path} -> {to_path}"
 active_content_line = "Contenu actif (scripts, gestionnaires ou ressources distantes) dans l'EPUB : {path} (adopté tel quel, jamais servi ni réécrit par Shelfhold)."
 duplicate_line = "Doublon de même numéro dans {series} (conservé) : n° {number} : {files}"
 refused = "Des comptes plus restreints que le plafond de l'étagère lisent cette bibliothèque, adoption refusée : {accounts}"
 child_accounts = "Comptes restreints qui la lisent : {accounts}"
-child_library = "Bibliothèque lisible par des enfants : {count} Œuvre(s) non classée(s) iront dans « À classer », leur suivi suspendu ; le reste de l'étagère continue."
-child_plan_header = "Plan de retrait proposé : {count} fichier(s) d'Œuvres non classées, lisibles par les enfants. Rien n'est retiré par l'adoption."
-child_plan_series = "  à retirer : {name} ({files} fichier(s))"
+child_library = "Bibliothèque lisible par des enfants : {count, plural, one {# Œuvre non classée ira} other {# Œuvres non classées iront}} dans « À classer », leur suivi suspendu ; le reste de l'étagère continue."
+child_plan_header = "Plan de retrait proposé : {count, plural, one {# fichier} other {# fichiers}} d'Œuvres non classées, lisibles par les enfants. Rien n'est retiré par l'adoption."
+child_plan_series = "  à retirer : {name} ({files, plural, one {# fichier} other {# fichiers}})"
 child_plan_next = "Après l'adoption, relisez le plan (sa version lie les octets) : shelfhold shelf withdraw --adopted {destination}"
 child_library_files = "Aucun fichier n'est déplacé, masqué ni réécrit : ceux qui sont déjà là restent lisibles tant que vous ne classez pas l'Œuvre (shelfhold rate) ou ne la retirez pas (shelfhold shelf withdraw)."
 to_rate_line = "À classer : {name}"
-done = "{done} fichier(s) adopté(s), {skipped} déjà connu(s)."
+done = "{done, plural, one {# fichier adopté} other {# fichiers adoptés}}, {skipped, plural, one {# déjà connu} other {# déjà connus}}."
 needs_destination = "Indiquez la destination avec --destination."
 check_help = "Avec --repatriate : demande à Kavita de scanner puis compare ses séries, ses fichiers et la progression de lecture avec ce qu'elle disait avant la copie."
 repatriate_help = "Rapatrie les fichiers adoptés d'un volume en lecture seule vers la racine inscriptible, avant de le démonter (aperçu avec --dry-run, puis --confirm)."
@@ -1729,74 +1911,92 @@ apply_done = "Configuration appliquée."
 [errors."target.admin_risk_not_accepted"]
 title = "La clé Kavita est celle d'un compte administrateur."
 action = "Confirmez avec --accept-admin-risk (ou accept_admin_risk = true) après avoir lu l'avertissement."
+cause = "Kavita ne donne de clé qu'avec un compte administrateur : Shelfhold ne l'enregistre pas sans que vous ayez reconnu ce risque."
 
 [errors."target.exchange_failed"]
 title = "L'échange du compte Kavita contre une clé nommée a échoué."
 action = "Vérifiez l'adresse, le compte (administrateur) et le mot de passe ; rien n'a été enregistré."
+cause = "Kavita a refusé l'échange : adresse incorrecte, compte qui n'est pas administrateur ou mot de passe erroné."
 
 [errors."target.conflict"]
 title = "Une destination de ce nom existe avec une autre adresse."
 action = "Choisissez un autre nom ou corrigez l'adresse dans le fichier."
+cause = "Une destination du même nom est déjà enregistrée avec une autre adresse ; Shelfhold ne l'écrase pas."
 
 [errors."target.unknown"]
 title = "Cette destination n'existe pas."
 action = "Ajoutez-la d'abord avec « shelfhold target add »."
+cause = "Aucune destination n'est enregistrée sous ce nom."
 
 [errors."config.unknown_key"]
 title = "Clé de configuration inconnue."
 action = "Listez les clés avec « shelfhold config list »."
+cause = "Cette clé n'existe pas dans la configuration : faute de frappe ou réglage d'une autre version."
 
 [errors."config.invalid_value"]
 title = "Valeur de configuration invalide."
 action = "Corrigez la valeur ; rien n'a été écrit."
+cause = "La valeur n'a pas le type ou le format que cette clé attend."
 
 [errors."config.key_readonly"]
 title = "Cette clé n'est pas modifiable dans cette version."
 action = "Retirez-la du fichier ; la fenêtre de maintenance est fixe en M1a."
+cause = "Cette version fixe ce réglage : il n'est pas modifiable."
 
 [errors."config.file_invalid"]
 title = "Le fichier de configuration est invalide."
 action = "Corrigez le fichier (TOML, clés connues, secrets par fichier) puis relancez."
+cause = "Le fichier n'est pas du TOML valide, contient une clé inconnue ou porte un secret en clair."
 
 [errors."source.conflict"]
 title = "Une source existe avec une autre configuration."
 action = "Corrigez l'adresse ou utilisez « shelfhold source set-secret »."
+cause = "Une source de ce nom existe déjà avec une autre configuration ; Shelfhold n'écrase pas ses réglages."
 
 [errors."shelf.conflict"]
 title = "Une étagère de ce nom existe avec d'autres réglages."
 action = "Choisissez un autre nom ou alignez le plafond d'âge et le sous-dossier."
+cause = "Une étagère de ce nom existe déjà avec un autre plafond d'âge ou un autre sous-dossier."
 
 [errors."source.unreachable"]
 title = "Suwayomi ne répond pas à cette adresse."
 action = "Vérifiez l'adresse et que le serveur tourne ; rien n'a été enregistré."
+cause = "Le service ne répond pas à cette adresse : adresse fausse, service arrêté ou réseau coupé."
 
 [errors."deletion.blocked"]
 title = "Cette suppression est refusée : elle emporterait ce qu'elle ne doit pas emporter."
 action = "Relisez l'aperçu : il dit pour chaque chapitre ce qui l'empêche (dernière copie indépendante, fichier adopté, fichier qui couvre d'autres chapitres, opération en cours). Seul « supprimer le contenu » peut retirer une dernière copie, après confirmation."
+cause = "Supprimer ce chapitre ferait disparaître sa dernière copie indépendante ou un fichier qu'un autre chapitre utilise."
 
 [errors."ops.not_waiting"]
 title = "Rien n'attend ici : l'élément n'est pas dans l'état que cette commande fait quitter."
 action = "Vérifiez avec « shelfhold status » ; rien n'a été modifié."
+cause = "L'élément n'est pas dans l'état d'attente que cette commande fait quitter : il a déjà été traité, ou il attend autre chose."
 
 [errors."ops.unknown_subject"]
 title = "Cet élément n'existe pas."
 action = "Reprenez l'identifiant affiché par « shelfhold status »."
+cause = "L'identifiant ne correspond à aucun élément : faute de frappe ou élément déjà supprimé."
 
 [errors."ops.exit_unavailable"]
 title = "Cette sortie n'est pas branchée dans cette instance."
 action = "Le composant concerné n'est pas connecté (voir la documentation d'administration)."
+cause = "Le composant que cette sortie doit appeler n'est pas branché dans cette instance."
 
 [errors."ops.invalid_choice"]
 title = "Choix invalide."
 action = "Choisissez l'une des options proposées."
+cause = "Le choix donné n'est pas l'une des options que cette commande accepte."
 
 [errors."ops.language_refused"]
 title = "Langue refusée."
 action = "Donnez une étiquette BCP 47 réelle (pas « und »), qu'aucune autre édition de l'œuvre n'utilise."
+cause = "L'étiquette n'est pas une langue BCP 47 réelle, ou une autre édition de l'Œuvre l'utilise déjà."
 
 [errors."ops.still_waiting"]
 title = "La cause de l'attente est toujours là."
 action = "Corrigez la cause (droits du compte, serveur injoignable) puis relancez la commande."
+cause = "La condition qui bloquait l'élément n'est pas levée : droits du compte insuffisants ou serveur toujours injoignable."
 
 [pair]
 where = "{source} {remote} ({score:.2f})"
@@ -1807,7 +2007,7 @@ coverage_unknown = "Couverture inconnue : aucun chapitre adopté ne donne le poi
 declined = "Série {id} sans jumelle : la découverte rangera la série Suwayomi qui lui ressemble au prochain cycle."
 paired = "Série {id} appariée ; suivi à partir du chapitre {follow_from}."
 fingerprint = "Empreinte du lot : {fingerprint}"
-batch_header = "{ready} appariement(s) sans ambiguïté, {held} à décider un par un."
+batch_header = "{ready, plural, one {# appariement} other {# appariements}} sans ambiguïté, {held} à décider un par un."
 batch_confirm_hint = "Pour appliquer le lot : shelfhold adopt --pair-auto --confirm <empreinte>."
 refused = "Série {id} : appariement refusé ({reason}) ; aucun appariement du lot n'a été fait."
 
@@ -1822,15 +2022,15 @@ confirm_hint = "Quand c'est fait : shelfhold adopt --confirm-migration --confirm
 [repatriate]
 needs_dry_run = "Le rapatriement demande un aperçu : lancez --repatriate --dry-run, relisez, puis --repatriate --confirm <empreinte>."
 fingerprint = "Empreinte de l'aperçu : {fingerprint}"
-header = "{series} série(s), {chapters} chapitre(s), {files} fichier(s) ; {size} octet(s) à copier, {free} libre(s)."
+header = "{series, plural, one {# série} other {# séries}}, {chapters, plural, one {# chapitre} other {# chapitres}}, {files, plural, one {# fichier} other {# fichiers}} ; {size, plural, one {# octet} other {# octets}} à copier, {free, plural, one {# octet libre} other {# octets libres}}."
 problem = "Bloqué : {path} ({status})"
 ready = "Prêt : rien n'est supprimé ni déplacé, les fichiers sont copiés puis vérifiés."
 not_ready = "Pas prêt : corrigez les points bloqués ci-dessus."
-done = "{copied} fichier(s) copié(s), {present} déjà en place."
+done = "{copied, plural, one {# fichier copié} other {# fichiers copiés}}, {present} déjà en place."
 check_problem = "Contrôle : {path}"
 safe = "Contrôle réussi : le volume en lecture seule peut être démonté."
 unsafe = "Contrôle échoué : ne démontez pas le volume."
-kavita_counts = "Kavita : {after_series} série(s) et {after_files} fichier(s) maintenant, {before_series} et {before_files} avant la copie."
+kavita_counts = "Kavita : {after_series, plural, one {# série} other {# séries}} et {after_files, plural, one {# fichier} other {# fichiers}} maintenant, {before_series} et {before_files} avant la copie."
 kavita_problem = "Kavita : {kind} : {what}"
 kavita_no_baseline = "Kavita : aucun état d'avant la copie n'est enregistré, rien n'est vérifié. Lancez --repatriate --dry-run puis --confirm tant que l'ancien volume est monté."
 kavita_unreachable = "Kavita ne répond pas ou refuse la lecture : rien n'est vérifié."
@@ -1848,7 +2048,7 @@ series_help = "Ne détache que cette série (identifiant d'Édition)."
 needs_restore_upstream = "Indiquez ce que le détachement fait : --restore-upstream."
 line = "Liaison {binding} : réglages rendus ({source}) : {ok}"
 ok = "fait"
-managed = "Dossier géré par Shelfhold : {folder} ({count} fichier(s)) ; vos anciens scripts doivent le laisser tranquille."
+managed = "Dossier géré par Shelfhold : {folder} ({count, plural, one {# fichier} other {# fichiers}}) ; vos anciens scripts doivent le laisser tranquille."
 files_kept = "Aucun fichier n'a été supprimé ni déplacé."
 exclusion_kept = "Liaison {binding} : la série reste exclue des mises à jour de Suwayomi par une catégorie qui n'est pas la vôtre à retirer par Shelfhold ({names}) : retirez-la vous-même si vous voulez que Suwayomi la mette à jour."
 
@@ -1860,21 +2060,21 @@ work_help = "Identifiant de l'Œuvre à effacer (toutes ses Unités)."
 confirm_help = "L'identifiant, retapé à l'identique."
 needs_now = "Indiquez --now : l'effacement est définitif."
 needs_confirmation = "Retapez l'identifiant avec --confirm pour effacer."
-done = "{units} Unité(s) concernée(s), {erased} fichier(s) effacé(s)."
+done = "{units, plural, one {# Unité concernée} other {# Unités concernées}}, {erased, plural, one {# fichier effacé} other {# fichiers effacés}}."
 root_pending = "Racine {root} : la pierre tombale lui sera écrite à son retour ; rien d'autre n'y sera écrit avant."
 alert = "À faire à la main : {alert}"
-upstream = "Service : {released} téléchargement(s) libéré(s), {kept} gardé(s) par un autre compte, {unfollowed} série(s) retirée(s) de la bibliothèque."
+upstream = "Service : {released, plural, one {# téléchargement libéré} other {# téléchargements libérés}}, {kept, plural, one {# gardé} other {# gardés}} par un autre compte, {unfollowed, plural, one {# série retirée} other {# séries retirées}} de la bibliothèque."
 retained_backup = "Sauvegarde conservée qui contient encore ces données (à écarter à la main, jamais réécrite) : {name}"
 checkpoint_help = "Refait seulement le vidage du journal de la base, après un effacement dont le journal était tenu."
 checkpoint_done = "Journal vidé : l'effacement est finalisé."
 kept_ack_help = "Efface la marque des téléchargements laissés dans le service (à faire après les avoir supprimés dans Suwayomi)."
-kept_ack_done = "{count} marque(s) effacée(s)."
+kept_ack_done = "{count, plural, one {# marque effacée} other {# marques effacées}}."
 leftovers_help = "Propose de libérer, dans le service, les téléchargements laissés par les purges de la version précédente (plan, puis --confirm)."
 leftovers_not_connected = "Aucun service connecté : rien à proposer."
-leftovers_plan = "{downloads} téléchargement(s) encore tenu(s) par le service, {dead} ticket(s) oublié(s) par le service, {series} série(s) purgée(s) encore dans sa bibliothèque. Rien n'a été effacé."
+leftovers_plan = "{downloads, plural, one {# téléchargement encore tenu} other {# téléchargements encore tenus}} par le service, {dead, plural, one {# ticket oublié} other {# tickets oubliés}} par le service, {series, plural, one {# série purgée} other {# séries purgées}} encore dans sa bibliothèque. Rien n'a été effacé."
 leftovers_series_unknown = "Le service n'a pas pu lister sa bibliothèque : les séries purgées ne sont pas proposées cette fois."
 leftovers_confirm = "Pour libérer ces téléchargements : shelfhold purge --leftovers --confirm {version}"
-leftovers_done = "{released} téléchargement(s) libéré(s), {forgotten} ticket(s) oublié(s), {unfollowed} série(s) retirée(s) de la bibliothèque."
+leftovers_done = "{released, plural, one {# téléchargement libéré} other {# téléchargements libérés}}, {forgotten, plural, one {# ticket oublié} other {# tickets oubliés}}, {unfollowed, plural, one {# série retirée} other {# séries retirées}} de la bibliothèque."
 out_of_reach = "Hors de portée d'un effacement :"
 out_of_reach_item = "  - {item}"
 
@@ -1892,136 +2092,166 @@ pending_help = "Classe d'un coup toutes les Œuvres de « À classer » ; demand
 confirm_help = "Avec --pending : la confirmation affichée par la commande sans --confirm."
 choose_one = "Indiquez --work, --edition ou --pending (un seul)."
 done = "{target} classé {age}."
-withdrawals_plan = "{count} Édition(s) ne tiennent plus dans une étagère famille ; rien n'a été retiré. Lancez « shelfhold shelf withdraw » pour voir le plan et le confirmer :"
+withdrawals_plan = "{count, plural, one {# Édition ne tient plus} other {# Éditions ne tiennent plus}} dans une étagère famille ; rien n'a été retiré. Lancez « shelfhold shelf withdraw » pour voir le plan et le confirmer :"
 withdrawal_line = "  Édition {edition} (étagère {shelf}) : {reason}"
-suggestions_open = "{count} âge(s) suggéré(s) plus élevé(s) restent ouverts : ils bloquent leur Édition tant qu'elle n'est pas classée (shelfhold rate ÂGE --edition ID) :"
+suggestions_open = "{count, plural, one {# âge suggéré plus élevé reste ouvert : il bloque son Édition} other {# âges suggérés plus élevés restent ouverts : ils bloquent leur Édition}} tant qu'elle n'est pas classée (shelfhold rate ÂGE --edition ID) :"
 suggestion_line = "  Édition {edition} : {age} suggéré ({provenance})"
 pending_line = "  {work}  {title}  ({state})"
 pending_none = "Aucune Œuvre n'attend dans « À classer »."
-pending_header = "{count} Œuvre(s) seraient classées {age} :"
+pending_header = "{count, plural, one {# Œuvre serait classée} other {# Œuvres seraient classées}} {age} :"
 pending_confirm = "Pour les classer toutes, retapez la confirmation : shelfhold rate {age} --pending --confirm {token}"
 pending_needs_confirm = "La confirmation ne correspond pas à la liste lue ({token}) : relisez la liste puis retapez-la."
-batch_done = "{count} Œuvre(s) classée(s) {age} (une entrée d'audit par Œuvre)."
+batch_done = "{count, plural, one {# Œuvre classée} other {# Œuvres classées}} {age} (une entrée d'audit par Œuvre)."
 
 [errors."import.protected"]
 title = "Fichier protégé, non pris en charge."
 action = "Shelfhold ne lève aucune protection : le fichier reste dans le dossier d'import, intact. Déposez une version sans protection que vous avez le droit d'utiliser."
+cause = "Le fichier est chiffré ou verrouillé par un dispositif de protection : Shelfhold n'en lève aucun et ne peut pas le lire."
 
 [errors."import.protected_licence"]
 title = "Fichier protégé par une licence de prêt ou d'achat, non pris en charge."
 action = "Lisez-le dans l'application prévue pour sa licence, empruntez-le en médiathèque ou achetez une version sans protection. Le fichier reste dans le dossier d'import, intact."
+cause = "Le fichier n'est lisible qu'avec une licence de prêt ou d'achat liée à un compte ou à un appareil."
 
 [errors."import.audio_unsupported"]
 title = "Fichier audio refusé : les livres audio ne sont pas encore pris en charge."
 action = "Le fichier reste dans le dossier d'import. Il pourra être importé quand les éditions audio seront disponibles."
+cause = "Le fichier est un livre audio, un format que cette version de Shelfhold ne range pas encore."
 
 [errors."import.unsupported_file"]
 title = "Fichier non reconnu : seuls les CBZ, les EPUB et les PDF sont importés."
 action = "Le type d'un fichier se lit dans son contenu, pas dans son nom. Le fichier reste dans le dossier d'import."
+cause = "Le contenu du fichier n'est ni un CBZ, ni un EPUB, ni un PDF, quelle que soit son extension."
 
 [errors."import.too_large"]
 title = "Fichier trop volumineux pour l'import."
 action = "Le fichier reste dans le dossier d'import. Relevez la limite de réception ou découpez-le."
+cause = "Le fichier dépasse la taille maximale acceptée à l'import."
 
 [errors."import.archive_refused"]
 title = "L'archive n'est pas sûre à ouvrir, ou contient une entrée non autorisée."
 action = "Le fichier reste dans le dossier d'import et n'a pas été rangé."
+cause = "L'archive contient un chemin qui sortirait de son dossier, un lien, une entrée non autorisée ou une taille anormale."
 
 [errors."import.link_refused"]
 title = "Lien symbolique, lien physique ou point de montage refusé dans le dossier d'import."
 action = "Déposez le fichier lui-même, sans lien, dans le dossier d'import."
+cause = "Un lien symbolique, un lien physique ou un point de montage pourrait mener hors du dossier d'import : Shelfhold n'en suit aucun."
 
 [errors."import.unsafe_name"]
 title = "Nom de fichier refusé : caractère de contrôle, « .. », espace ou point final, ou nom trop long."
 action = "Renommez le fichier. Il reste dans le dossier d'import."
+cause = "Le nom du fichier contient un caractère de contrôle ou « .. », finit par un espace ou un point, ou dépasse la longueur admise."
 
 [errors."import.name_collision"]
 title = "Deux fichiers ont le même nom une fois normalisé (majuscules ou accents)."
 action = "Renommez l'un d'eux. Les deux restent dans le dossier d'import."
+cause = "Une fois mis en minuscules et sans accents, les deux noms sont identiques : ils se confondraient sur certains systèmes de fichiers."
 
 [errors."import.not_ready"]
 title = "Fichier pas encore prêt : il est encore en cours d'écriture ou vient d'être déposé."
 action = "Rien à faire : Shelfhold le relira quand sa taille et sa date n'auront plus bougé."
+cause = "La taille ou la date du fichier a encore changé à la dernière lecture : il est probablement en cours de copie."
 
 [errors."import.pdf_refused"]
 title = "PDF non pris : il n'a pas pu être vérifié, ou il contient des fichiers joints ou une enveloppe."
 action = "Il reste dans le dossier d'import, intact. Réexportez-le en PDF simple, sans pièce jointe."
+cause = "Le PDF n'a pas pu être contrôlé jusqu'au bout, ou il embarque des pièces jointes ou une enveloppe qui peuvent cacher du code."
 
 [errors."import.left_in_quarantine"]
 title = "Un fichier a été mis de côté dans « .shelfhold-removing » et n'a pas pu être remis en place."
 action = "Ne l'écrasez pas : récupérez-le à la main dans ce sous-dossier du dossier d'import."
+cause = "Le fichier a été mis de côté pendant l'import, puis l'opération a échoué avant de le remettre à sa place."
 
 [errors."import.purchase_pending"]
 title = "Fichier du dossier « achats » : il n'est pris que si vous déclarez un achat."
 action = "Lancez « shelfhold import scan --purchase » ; sinon il reste où il est."
+cause = "Le dossier des achats n'est lu que lorsque vous déclarez l'achat : sa provenance est ainsi connue."
 
 [errors."import.changed_while_reading"]
 title = "Le fichier a changé pendant sa lecture : il n'a pas été rangé."
 action = "Rien à faire : il sera relu au prochain passage."
+cause = "La taille ou la date du fichier a changé pendant que Shelfhold le lisait : sa copie pourrait être incomplète."
 
 [errors."import.hash_mismatch"]
 title = "La copie rangée n'a pas la même empreinte que le fichier d'origine."
 action = "Le fichier reste dans le dossier d'import et n'est pas retiré. Vérifiez le disque puis relancez l'import."
+cause = "L'empreinte de la copie rangée diffère de celle du fichier d'origine : écriture défaillante, disque abîmé ou fichier modifié en route."
 
 [errors."import.disk_full"]
 title = "Disque plein : le fichier n'a pas pu être rangé."
 action = "Le fichier reste dans le dossier d'import. Libérez de la place puis relancez l'import."
+cause = "Le volume de rangement n'a plus assez d'espace libre pour la copie."
 
 [errors."import.not_stored"]
 title = "Le fichier n'a pas pu être rangé."
 action = "Le fichier reste dans le dossier d'import. Consultez le diagnostic puis relancez l'import."
+cause = "Une erreur imprévue a interrompu le rangement du fichier ; le diagnostic en donne le détail."
 
 [errors."import.tombstoned"]
 title = "Ce contenu a été purgé : il n'est pas rangé de nouveau."
 action = "Le fichier reste dans le dossier d'import. Retirez-le vous-même si vous n'en voulez plus."
+cause = "Vous avez purgé ce contenu en demandant qu'il ne revienne pas : la pierre tombale l'empêche d'être rangé de nouveau."
 
 [errors."import.own_export"]
 title = "Ce fichier est un export de Shelfhold lui-même : il est noté comme réplique, pas rangé de nouveau."
 action = "Le fichier reste dans le dossier d'import. Retirez-le vous-même si vous n'en voulez plus."
+cause = "L'empreinte du fichier est celle d'un export que Shelfhold a lui-même écrit : le ranger créerait un doublon de sa propre copie."
 
 [errors."import.original_not_kept"]
 title = "Fichier rangé sous sa forme neutralisée seulement : l'original n'est conservé nulle part."
 action = "Le fichier reste dans le dossier d'import, car il serait perdu sinon. Configurez /store pour conserver les originaux."
+cause = "Le fichier n'a été conservé que sous sa forme neutralisée : le ranger ferait disparaître la seule copie de l'original."
 
 [errors."import.tree_unreadable"]
 title = "L'arbre à importer n'est pas lisible."
 action = "Donnez le chemin absolu d'un dossier réel (pas un lien), distinct de /library, /store et /data."
+cause = "Le chemin donné n'est pas un dossier lisible : introuvable, lien, ou emplacement réservé à Shelfhold."
 
 [errors."import.tree_no_series"]
 title = "Aucune liaison Suwayomi ne correspond à ce dossier de série."
 action = "L'arbre n'est pas modifié. Suivez d'abord la série (« shelfhold follow »), puis relancez l'import."
+cause = "Le dossier de la série ne correspond à aucune série suivie dans le service connecté."
 
 [errors."import.tree_ambiguous_series"]
 title = "Plusieurs liaisons Suwayomi portent ce titre de série."
 action = "L'arbre n'est pas modifié. Rien n'est deviné : retirez la liaison en double, puis relancez l'import."
+cause = "Plusieurs séries suivies portent ce titre : Shelfhold ne choisit pas à votre place où ranger les chapitres."
 
 [errors."import.tree_unnumbered"]
 title = "Le numéro de ce chapitre n'est pas lisible dans son nom."
 action = "L'arbre n'est pas modifié. Renommez le chapitre avec « Chapter N » ou téléchargez-le de nouveau."
+cause = "Le nom du dossier ou du fichier ne contient pas de numéro de chapitre que Shelfhold sache lire."
 
 [errors."import.tree_duplicate"]
 title = "Ce chapitre est déjà rangé."
 action = "Rien n'est à faire : la copie existante est gardée et l'arbre n'est pas modifié."
+cause = "Un chapitre de même identité et de même numéro est déjà dans la bibliothèque."
 
 [errors."import.tree_wrong_source"]
 title = "Le dossier de source de ce chapitre n'est pas celui de la liaison de cette série."
 action = "L'arbre n'est pas modifié. Une série du même titre sous une autre source n'est pas la même série : suivez-la depuis cette source."
+cause = "Le chapitre vient d'un dossier de source différent de celui qui est lié à cette série : l'importer le mélangerait avec une autre série du même titre."
 
 [errors."import.tree_needs_rating"]
 title = "À classer : l'âge que suggèrent le fichier ou la source dépasse le classement de l'Œuvre."
 action = "Rien n'est rangé et l'arbre n'est pas modifié. Classez l'Œuvre (« shelfhold rate »), puis relancez l'import."
+cause = "L'Œuvre est classée pour un âge plus bas que celui que le fichier ou la source annonce."
 
 [errors."content.untrusted_pdf"]
 title = "PDF rangé tel quel, non exporté : sa provenance n'est pas déclarée."
 action = "Un PDF peut contenir du code que lirait le lecteur d'une destination. Déclarez-le comme un achat à l'import pour l'exporter."
+cause = "Un PDF peut embarquer du code que le lecteur de la destination exécuterait : sans provenance déclarée, Shelfhold ne l'exporte pas."
 
 [errors."import.not_configured"]
 title = "Aucun dossier d'import n'est configuré."
 action = "Définissez SHELFHOLD_IMPORT_DIR (un dossier distinct de /library, /store et /data), puis relancez."
+cause = "Le réglage du dossier d'import est absent ou désigne un emplacement réservé à Shelfhold."
 
 [errors."session_not_found"]
 title = "Cette session n'existe pas ou est déjà fermée."
 action = "Actualisez la liste des sessions."
+cause = "La session a déjà été fermée, ou la liste affichée est plus ancienne que l'état réel."
 
 [recovery_kit]
 title = "Kit de secours du foyer"

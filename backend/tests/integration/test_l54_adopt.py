@@ -4,6 +4,7 @@ states `adoption_refused` / `coverage_unknown` written down for `status`.
 Every test goes through the production path: `shelfhold adopt` against the simulated Kavita, the
 pairing commands, the follow and export handlers, `Backfill`, `status`."""
 
+import re
 from pathlib import Path
 
 import pytest
@@ -155,7 +156,7 @@ def test_adoption_refused_and_coverage_unknown_persisted_in_waiting_state(
         # leaving adoption_refused: the confirmed switch-over
         capsys.readouterr()
         assert b.cli("adopt", "--confirm-migration", "--destination", b.env.destination_id) == 2
-        fingerprint = capsys.readouterr().out.split("rapport :")[1].split()[0]
+        fingerprint = re.split(r"rapport\s:", capsys.readouterr().out)[1].split()[0]
         assert (
             b.cli("adopt", "--confirm-migration", "--destination", b.env.destination_id,
                   "--confirm", fingerprint) == 0

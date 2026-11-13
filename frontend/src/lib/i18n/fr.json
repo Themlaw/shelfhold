@@ -7,7 +7,7 @@
   "health.heading": "État du serveur",
   "health.loading": "Vérification en cours…",
   "health.ok": "Le serveur répond.",
-  "health.migrating": "Migration en cours : {done, plural, =0 {aucune étape terminée} one {# étape terminée} other {# étapes terminées}} sur {total}.",
+  "health.migrating": "Migration en cours : {done, plural, =0 {aucune étape terminée} one {# étape terminée} other {# étapes terminées}} sur {total, number}.",
   "health.error": "Le serveur est injoignable.",
   "passkeys.title": "Clés d'accès",
   "passkeys.none": "Aucune clé d'accès enregistrée. Le mot de passe reste votre moyen de connexion.",
