@@ -115,7 +115,7 @@
       />
     {/if}
 
-    <div class="actions">
+    <div class="actions main-action">
       <button type="button" disabled={!canApprove} onclick={send}>{t('approve.approve')}</button>
     </div>
   {/if}
@@ -153,6 +153,7 @@
   }
   .actions button {
     min-height: 2.75rem;
+    min-width: 2.75rem;
     padding: 0 1rem;
     border-radius: 0.5rem;
     border: 1px solid currentColor;
