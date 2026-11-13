@@ -31,6 +31,14 @@ def settings(env: dict[str, str]) -> Settings:
     return load_settings(env).values
 
 
+@pytest.fixture(autouse=True)
+def _no_periodic_root_judgement(monkeypatch: pytest.MonkeyPatch) -> None:
+    """`ops.disk_check` judges the roots every minute and may write a mark: in a test that did not
+    ask for it, a job that starts with the app would write while the test seeds the database. The
+    tests of the look call `shelfhold.ops.roots.judge_roots` themselves."""
+    monkeypatch.setattr("shelfhold.runtime.judge_roots", lambda _watcher: None)
+
+
 def pytest_addoption(parser: pytest.Parser) -> None:
     parser.addoption(
         "--shard",
