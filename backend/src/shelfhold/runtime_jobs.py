@@ -116,6 +116,7 @@ from shelfhold.jobs.daily_checks import library_type_check, major_update_replay
 from shelfhold.jobs.digest_job import register_digest_job
 from shelfhold.jobs.integrity_job import register_integrity_job
 from shelfhold.jobs.public import JobContext, JobFailedError, JobPools
+from shelfhold.jobs.thumbnail_gc import register_thumbnail_jobs
 from shelfhold.library.public import (
     KeepCopier,
     PassthroughStore,
@@ -994,6 +995,7 @@ def register_runtime_jobs(pools: JobPools, comp: Composition) -> None:
     register_store_jobs(pools, comp)  # the window jobs of /store (L14)
     register_safeguard_job(pools, comp)  # "Mettre à l'abri" and the optional purge (L16)
     register_integrity_job(pools, comp)  # the rolling integrity check (M3 L23)
+    register_thumbnail_jobs(pools, comp)  # cover thumbnails: collect, catch up (M3 L24)
 
     def export_stored() -> None:
         pools.submit(EXPORT_JOB_KIND, dedupe_key=EXPORT_JOB_KIND)

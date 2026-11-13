@@ -79,6 +79,10 @@ CLOSED_SITES: Mapping[str, frozenset[str]] = MappingProxyType(
                 # was closed, removed once installed or refused; working data, never served
                 "shelfhold/infrastructure/held_files.py::remove_held_file",
                 "shelfhold/infrastructure/migrate.py::MigrationStateFile.clear",
+                # EF-BIB-020: a cover thumbnail of the derived cache under /data/thumbnails, a
+                # name computed from a hash and a size and nothing else; a link is removed as a
+                # link; never the cover itself, never a library path
+                "shelfhold/library/application/thumbnails.py::ThumbnailService._remove",
                 "shelfhold/infrastructure/secrets/atomic.py::write_private",
                 # the CLI socket this process bound (and its staging directory), in /data
                 "shelfhold/infrastructure/local_socket/server.py::LocalSocketServer._remove_socket",

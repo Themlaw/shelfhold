@@ -146,6 +146,16 @@ from shelfhold.library.application.reneutralize import (
     ReneutralizeReport,
     StalePlanError,
 )
+from shelfhold.library.application.thumbnails import (
+    SIZES as THUMBNAIL_SIZES,
+)
+from shelfhold.library.application.thumbnails import (
+    Collected,
+    Thumb,
+    ThumbnailService,
+    cover_hash,
+    etag_of,
+)
 from shelfhold.library.domain.content_hash import (
     CONTENT_HASH_BY,
     FILE_HASH_BY,
@@ -290,6 +300,7 @@ __all__ = [
     "STORE_COPY_CHANGED",
     "STORE_COPY_MISSING",
     "SVG_DERIVED_BY",
+    "THUMBNAIL_SIZES",
     "TOMBSTONED",
     "UNIT_JSON_VERSION",
     "Batch",
@@ -298,6 +309,7 @@ __all__ = [
     "BinnedUnitFile",
     "Candidate",
     "CatalogScreenAdapter",
+    "Collected",
     "ConfirmationRequiredError",
     "ContentErrorCandidate",
     "ContentHash",
@@ -378,6 +390,8 @@ __all__ = [
     "StoreBudget",
     "StoreIndex",
     "SvgCbzStore",
+    "Thumb",
+    "ThumbnailService",
     "TombstoneGate",
     "TombstoneRoot",
     "TombstoneService",
@@ -414,6 +428,7 @@ __all__ = [
     "content_hashes",
     "content_ids",
     "copies",
+    "cover_hash",
     "created_since",
     "damaged_library_copies",
     "decide_export",
@@ -429,6 +444,7 @@ __all__ = [
     "erase_history",
     "erase_units",
     "erase_work_rows",
+    "etag_of",
     "export_sources",
     "forget_bin_rows",
     "forget_binned_export_files",

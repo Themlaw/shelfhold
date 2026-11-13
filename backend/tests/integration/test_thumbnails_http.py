@@ -127,7 +127,7 @@ def test_thumbnail_private_authz_before_etag(world: World) -> None:
                 assert "etag" not in got.headers and "immutable" not in got.headers.get(
                     "cache-control", ""
                 )
-                assert digest not in got.text and world.seed.title_of(key) not in got.text
+                assert digest not in got.text and world.seed.editions[key] not in got.text
         if key not in SEEN:
             assert len(world.files) == before  # nothing was made for a reader who may not see it
     seen = world.digests["ok"]
@@ -184,7 +184,7 @@ def test_thumbnail_refused_to_keys_and_to_nobody(world: World) -> None:
                 url(target), headers={"Authorization": f"Bearer {key}"}
             )
             assert got.status_code == 403, target
-            assert got.json()["type"].endswith("credential_not_allowed")
+            assert got.json()["type"].endswith("credential-not-allowed")
             assert "etag" not in got.headers
     anonymous = world.env.other_client("10.0.0.60").get(url(digest))
     assert anonymous.status_code == 401 and "etag" not in anonymous.headers

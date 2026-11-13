@@ -19,12 +19,14 @@ is allowed to, change nothing here. An adult sees everything; a scope that sees 
 Absent and hidden are the same answer: an identifier that is not visible is simply not returned.
 """
 
+import json
 from collections.abc import Iterable
 from dataclasses import dataclass
-from typing import Protocol
+from typing import Final, Protocol
 
 import sqlalchemy as sa
 
+from shelfhold.catalog.domain.provenance import encode_value
 from shelfhold.infrastructure.schema import catalog
 
 __all__ = [
@@ -32,7 +34,9 @@ __all__ = [
     "ReaderScope",
     "VisibleWork",
     "count_visible_works",
+    "cover_ref_visible",
     "list_visible_works",
+    "referenced_cover_refs",
     "visible_edition_ids",
     "visible_editions_clause",
     "visible_series_ids",
@@ -45,6 +49,9 @@ __all__ = [
 MAX_PAGE = 200
 _CHUNK = 500
 _X = 99  # `max_age_rating` stores X as 99
+
+
+COVER_FIELD: Final = "cover"  # the host's own field (`enrich.COVER_FIELD`)
 
 
 class ReaderScope(Protocol):
@@ -205,6 +212,49 @@ def visible_edition_ids(
             sa.select(catalog.edition.c.id).where(catalog.edition.c.id.in_(chunk), where)
         )
         found.update(r[0] for r in rows)
+    return found
+
+
+def cover_ref_visible(connection: sa.Connection, scope: ReaderScope, ref: str) -> bool:
+    """Whether an Edition this reader may see has `ref` as its cover (the `cover` field). Absent,
+    unreferenced and hidden are the same answer: False."""
+    field, edition = catalog.metadata_field.c, catalog.edition.c
+    return (
+        connection.execute(
+            sa.select(sa.literal(1))
+            .select_from(
+                catalog.metadata_field.join(catalog.edition, edition.id == field.entity_id)
+            )
+            .where(
+                field.entity_type == "edition",
+                field.field == COVER_FIELD,
+                field.value == encode_value(ref),
+                visible_editions_clause(scope),
+            )
+            .limit(1)
+        ).first()
+        is not None
+    )
+
+
+def referenced_cover_refs(connection: sa.Connection) -> set[str]:
+    """Every cover reference an existing Edition points at: what a thumbnail may be made for and
+    what the collection of orphans must keep. Not a visibility question (no reader here)."""
+    field, edition = catalog.metadata_field.c, catalog.edition.c
+    rows = connection.execute(
+        sa.select(field.value)
+        .select_from(catalog.metadata_field.join(catalog.edition, edition.id == field.entity_id))
+        .where(field.entity_type == "edition", field.field == COVER_FIELD)
+        .distinct()
+    )
+    found: set[str] = set()
+    for (value,) in rows:
+        try:
+            decoded = json.loads(value)
+        except ValueError:
+            continue
+        if isinstance(decoded, str):
+            found.add(decoded)
     return found
 
 

@@ -11,7 +11,6 @@ import io
 import os
 from collections.abc import Iterator
 from datetime import timedelta
-from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
@@ -20,7 +19,6 @@ import sqlalchemy as sa
 from PIL import Image
 
 from shelfhold.config import Settings
-from shelfhold.infrastructure.db import create_db_engine
 from shelfhold.infrastructure.imaging import WorkerLimits
 from shelfhold.infrastructure.migrate import migrate
 from shelfhold.infrastructure.schema import catalog, storage
@@ -222,15 +220,17 @@ def test_orphan_thumbnails_collected_in_window(rig: Rig) -> None:
 @pytest.mark.req("EF-BIB-020", "ENF-OPS-014")
 def test_thumbnail_jobs_are_window_jobs_ranked_by_the_window() -> None:
     class Scheduler:
-        added: list[tuple[str, bool]] = []
+        def __init__(self) -> None:
+            self.added: list[tuple[str, bool]] = []
 
         def add(self, kind: str, _cron: str, *, windowed: bool = False, **_: Any) -> None:
             self.added.append((kind, windowed))
 
     class Pools:
-        scheduler = Scheduler()
-        window = DEFAULT_WINDOW
-        registered: dict[str, dict[str, Any]] = {}
+        def __init__(self) -> None:
+            self.scheduler = Scheduler()
+            self.window = DEFAULT_WINDOW
+            self.registered: dict[str, dict[str, Any]] = {}
 
         def register(self, kind: str, **options: Any) -> None:
             self.registered[kind] = options
@@ -258,12 +258,13 @@ def test_a_closing_window_stops_the_gc_and_the_catch_up(rig: Rig) -> None:
 
 
 @pytest.mark.req("EF-BIB-020", "ENF-SEC-010")
-def test_gc_deletes_only_inside_the_thumbnail_folder(rig: Rig, tmp_path: Path) -> None:
+def test_gc_deletes_only_inside_the_thumbnail_folder(rig: Rig) -> None:
     """The row's path is data, not trust: a path out of the folder, a link, a folder, a name that
     is not a thumbnail's, are never removed; the cover and what sits beside it stay."""
     digest = rig.cover("ok", (30, 30, 30))
     rig.service.get(digest, 160)
-    outside = tmp_path / "precious.txt"
+    outside = rig.data / "elsewhere" / "precious.txt"
+    outside.parent.mkdir(parents=True)
     outside.write_text("keep")
     folder = rig.data / "thumbnails"
     link = folder / "ab" / f"{'ab' * 32}-160.webp"
@@ -274,7 +275,7 @@ def test_gc_deletes_only_inside_the_thumbnail_folder(rig: Rig, tmp_path: Path) -
     with rig.engine.begin() as connection:  # rows an attacker or a bug could have written
         connection.execute(sa.delete(catalog.metadata_field))  # all covers orphaned
         now = rig.clock.now()
-        for hashed, rel in (("ab" * 32, "../../precious.txt"), ("cd" * 32, "ab")):
+        for hashed, rel in (("ab" * 32, "elsewhere/precious.txt"), ("cd" * 32, "ab")):
             connection.execute(
                 sa.insert(storage.thumbnail).values(
                     content_hash=f"sha256:{hashed}",
