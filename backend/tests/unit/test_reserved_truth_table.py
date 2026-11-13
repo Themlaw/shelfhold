@@ -294,6 +294,7 @@ FRESHNESS_LINE = {
             "profile.update",
             "profile.remove",
             "profile.source_policy",
+            "source.mark_family",  # M3 L40 (D13): which sources a child's search reaches
             "maintenance.enter",  # M3 L13: a stolen session freezes every write of the instance
             "maintenance.exit",
             "queue.cancel_repair",  # M3 L13: a stolen session stops what protects the library

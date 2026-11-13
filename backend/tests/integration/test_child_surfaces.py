@@ -178,6 +178,8 @@ CLOSED = (
     "POST /api/v1/series/{export_series_id}/resume",
     "GET /api/v1/setup/state",  # M3 L39: the first-run wizard is the admin's, on a fresh session
     "POST /api/v1/setup/adoption/confirm",
+    "POST /api/v1/setup/keyring-export",  # M3 L40: the keyring leaves only as an age file
+    "PUT /api/v1/setup/sources/family",  # M3 L40 (D13): which sources a child's search reaches
     "POST /api/v1/setup/adoption/preview",
     "POST /api/v1/setup/library",
     "POST /api/v1/setup/probe",

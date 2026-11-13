@@ -1338,6 +1338,16 @@ export type JobsOut = {
 };
 
 /**
+ * KeyringExportIn
+ */
+export type KeyringExportIn = {
+    /**
+     * Passphrase
+     */
+    passphrase: string;
+};
+
+/**
  * KeyringIn
  */
 export type KeyringIn = {
@@ -3244,6 +3254,26 @@ export type Source = {
 };
 
 /**
+ * SourceFamilyIn
+ */
+export type SourceFamilyIn = {
+    /**
+     * Source Keys
+     */
+    source_keys: Array<string>;
+};
+
+/**
+ * SourceFamilyOut
+ */
+export type SourceFamilyOut = {
+    /**
+     * Family
+     */
+    family: Array<string>;
+};
+
+/**
  * SourceHealthOut
  */
 export type SourceHealthOut = {
@@ -3871,6 +3901,20 @@ export type WizardDestinationOut = {
 };
 
 /**
+ * WizardJurisdictionOut
+ */
+export type WizardJurisdictionOut = {
+    /**
+     * Confirmed
+     */
+    confirmed: boolean;
+    /**
+     * Country
+     */
+    country: string;
+};
+
+/**
  * WizardLibraryIn
  */
 export type WizardLibraryIn = {
@@ -3985,6 +4029,38 @@ export type WizardRootOut = {
 };
 
 /**
+ * WizardShelfOut
+ */
+export type WizardShelfOut = {
+    /**
+     * Created
+     */
+    created: boolean;
+    /**
+     * Name
+     */
+    name: string;
+    /**
+     * Phrase
+     */
+    phrase: string;
+};
+
+/**
+ * WizardSourceOut
+ */
+export type WizardSourceOut = {
+    /**
+     * Family
+     */
+    family: boolean;
+    /**
+     * Key
+     */
+    key: string;
+};
+
+/**
  * WizardStateOut
  */
 export type WizardStateOut = {
@@ -3996,6 +4072,19 @@ export type WizardStateOut = {
      * First Run
      */
     first_run: boolean;
+    jurisdiction: WizardJurisdictionOut;
+    /**
+     * Keyring Exported
+     */
+    keyring_exported: boolean;
+    /**
+     * Shelves
+     */
+    shelves: Array<WizardShelfOut>;
+    /**
+     * Sources
+     */
+    sources: Array<WizardSourceOut>;
     /**
      * Targets
      */
@@ -8519,6 +8608,39 @@ export type WizardAdoptionPreviewResponses = {
 
 export type WizardAdoptionPreviewResponse = WizardAdoptionPreviewResponses[keyof WizardAdoptionPreviewResponses];
 
+export type WizardKeyringExportData = {
+    body: KeyringExportIn;
+    path?: never;
+    query?: never;
+    url: '/api/v1/setup/keyring-export';
+};
+
+export type WizardKeyringExportErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type WizardKeyringExportError = WizardKeyringExportErrors[keyof WizardKeyringExportErrors];
+
+export type WizardKeyringExportResponses = {
+    /**
+     * An age v1 file.
+     */
+    200: string;
+};
+
+export type WizardKeyringExportResponse = WizardKeyringExportResponses[keyof WizardKeyringExportResponses];
+
 export type WizardNewLibraryData = {
     body: WizardLibraryIn;
     path?: never;
@@ -8584,6 +8706,39 @@ export type WizardProbeResponses = {
 };
 
 export type WizardProbeResponse = WizardProbeResponses[keyof WizardProbeResponses];
+
+export type WizardMarkFamilyData = {
+    body: SourceFamilyIn;
+    path?: never;
+    query?: never;
+    url: '/api/v1/setup/sources/family';
+};
+
+export type WizardMarkFamilyErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type WizardMarkFamilyError = WizardMarkFamilyErrors[keyof WizardMarkFamilyErrors];
+
+export type WizardMarkFamilyResponses = {
+    /**
+     * Successful Response
+     */
+    200: SourceFamilyOut;
+};
+
+export type WizardMarkFamilyResponse = WizardMarkFamilyResponses[keyof WizardMarkFamilyResponses];
 
 export type WizardStateData = {
     body?: never;

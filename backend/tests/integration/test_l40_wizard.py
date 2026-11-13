@@ -27,11 +27,14 @@ import pytest
 import sqlalchemy as sa
 
 from shelfhold.infrastructure.logging import configure_logging
+from shelfhold.infrastructure.secrets import diagnostics
+from shelfhold.infrastructure.secrets.errors import KeyringUnreadableError
 from shelfhold.infrastructure.secrets.export import (
     MIN_PASSPHRASE_CHARS,
     ExportError,
     decrypt_export,
 )
+from shelfhold.infrastructure.secrets.keyring import KeyringStore
 from tests.auth_env import db_dump, run_cli
 from tests.diagnostic_env import Traps, leaks
 from tests.integration.test_auth_keys_reserved import _bearer, _create_key
@@ -53,6 +56,15 @@ NEW_ROUTES = (
     ("PUT", FAMILY, {"source_keys": ["gutenberg"]}),
 )
 ADMIN_BODY = {"username": "second", "password": SECOND_ADMIN_PASSWORD, "role": "admin"}
+
+
+@pytest.fixture(autouse=True)
+def _keyring(request: pytest.FixtureRequest) -> None:
+    """A running instance has its keyring (generated at the first start): the world of L39 is
+    built without one, so it is made here, the way `boot_check` makes it."""
+    if "world" in request.fixturenames:
+        found = request.getfixturevalue("world")
+        diagnostics.boot_check(found.api.settings, announce=False)
 
 
 def _state(world: World) -> dict[str, Any]:
@@ -105,7 +117,7 @@ def test_wizard_screens_say_nothing_that_is_not_in_the_catalogue() -> None:
         markup = re.sub(r"\{[^{}]*(\{[^{}]*\}[^{}]*)*\}", "", source.split("</script>", 1)[1])
         typed = [n.strip() for n in re.findall(r">([^<>]+)<", markup) if re.search(r"[^\W\d_]", n)]
         assert typed == [], (screen, typed)
-        keys = re.findall(r"t\(\s*['\"]([a-z_.]+)['\"]", source)
+        keys = re.findall(r"\bt\(\s*['\"]([a-z_.]+)['\"]", source)
         assert keys and all(key in catalog for key in keys), (screen, set(keys) - set(catalog))
 
 
@@ -214,6 +226,36 @@ def test_keyring_export_is_never_the_key_in_clear(world: World) -> None:
 
 def _state_text(world: World) -> str:
     return world.api.client.get(STATE).text
+
+
+@pytest.mark.req("EF-UX-001", "ENF-SEC-005")
+def test_keyring_export_that_cannot_be_recorded_gives_no_file(
+    world: World, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The file leaves only with the record that it left: a keyring that cannot be written back
+    is a refusal, not a download the server would then say was never made."""
+
+    def refuse(*_a: Any, **_k: Any) -> None:
+        raise OSError("read-only")
+
+    monkeypatch.setattr(KeyringStore, "write", refuse)
+    answer = world.api.post(EXPORT, json={"passphrase": PHRASE})
+    assert answer.status_code == 503, answer.text
+    assert "BEGIN AGE" not in answer.text and PHRASE not in answer.text
+    assert not _exported(world) and _state(world)["keyring_exported"] is False
+
+
+@pytest.mark.req("EF-UX-001", "ENF-SEC-005")
+def test_an_unreadable_keyring_exports_nothing_and_is_never_called_exported(
+    world: World, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def broken() -> None:
+        raise KeyringUnreadableError("keyring", "unreadable")
+
+    monkeypatch.setattr(world.inst.comp, "keyring", broken)
+    answer = world.api.post(EXPORT, json={"passphrase": PHRASE})
+    assert answer.status_code == 503 and "BEGIN AGE" not in answer.text
+    assert _state(world)["keyring_exported"] is False
 
 
 @pytest.mark.req("EF-UX-001", "ENF-SEC-005")
@@ -458,9 +500,9 @@ def test_family_mark_opens_the_sources_the_admin_chose_and_nothing_else(world: W
         "gutenberg": True, "wikisource": True, "standardebooks": False,
     }  # fmt: skip
     # the mark is the one the child's search and the policy rules read
-    from shelfhold.identity.adapters.store import IdentityStore
+    from shelfhold.identity.adapters.store import SqlIdentityStore
 
-    store = IdentityStore(world.inst.engine)
+    store = SqlIdentityStore(world.inst.engine)
     assert store.source_family("gutenberg") and not store.source_family("standardebooks")
 
 

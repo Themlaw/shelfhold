@@ -18,8 +18,10 @@ from dataclasses import asdict
 from typing import TYPE_CHECKING, Any
 
 import sqlalchemy as sa
+from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
 from shelfhold.export.application.migration_detect import SwitchoverDetector
+from shelfhold.export.application.precreate import PRECREATED
 from shelfhold.export.application.snapshot import DestinationContext, load_context
 from shelfhold.export.domain.kavita_instance import covering_libraries
 from shelfhold.export.domain.physical_roots import discover_physical_roots
@@ -34,15 +36,30 @@ from shelfhold.export.targets.kavita.audit import AccessAuditor
 from shelfhold.export.targets.kavita.client import KavitaClient
 from shelfhold.export.targets.kavita.errors import TargetError
 from shelfhold.export.targets.kavita.probe_read import kavita_mount_hint, kavita_reads
+from shelfhold.i18n import t
 from shelfhold.infrastructure.fsops.probe import probe_folder, readable_probe
-from shelfhold.infrastructure.schema import export
-from shelfhold.ops.errors import CodedRefusal, InvalidChoiceError, UnknownSubjectError
+from shelfhold.infrastructure.logging import register_secret_value
+from shelfhold.infrastructure.schema import acquisition, export
+from shelfhold.infrastructure.secrets import diagnostics
+from shelfhold.infrastructure.secrets.errors import SecretsError
+from shelfhold.infrastructure.secrets.export import MIN_PASSPHRASE_CHARS, encrypt_export
+from shelfhold.ops.errors import (
+    CodedRefusal,
+    ExitUnavailableError,
+    InvalidChoiceError,
+    UnknownSubjectError,
+)
 from shelfhold.ops.events import BusTargetEvents
+from shelfhold.ops.status import jurisdiction_report
 
 if TYPE_CHECKING:
     from shelfhold.composition import Composition, WriteContext
 
-__all__ = ["WizardOps"]
+__all__ = ["FAMILY_PROPOSED", "WizardOps"]
+
+# The sources the wizard proposes to mark "family" (D13): the free libraries, nothing a third
+# party runs (the connected service, a web-novel crawler, an OPDS feed) and nothing unknown.
+FAMILY_PROPOSED: tuple[str, ...] = ("gutenberg", "wikisource", "standardebooks")
 
 _UNREADABLE = "no_library"  # `kavita_read` when no Kavita library holds the folder yet
 
@@ -56,7 +73,7 @@ class WizardOps:
     def state(self) -> dict[str, Any]:
         """The Kavita targets (name, address, expiry of the key: nothing secret) and the
         destinations with whether each is linked to a library and adopted."""
-        t, d = export.export_target, export.shelf_destination
+        target_table, d = export.export_target, export.shelf_destination
         with self._comp.engine.connect() as connection:
             targets = [
                 {
@@ -65,7 +82,9 @@ class WizardOps:
                     "key_expires_at": (r.config or {}).get("key_expires_at"),
                 }
                 for r in connection.execute(
-                    sa.select(t.c.id, t.c.name, t.c.config).where(t.c.kind == "kavita")
+                    sa.select(target_table.c.id, target_table.c.name, target_table.c.config).where(
+                        target_table.c.kind == "kavita"
+                    )
                 ).all()
             ]
             linked = {
@@ -83,7 +102,83 @@ class WizardOps:
                 }
                 for r in connection.execute(sa.select(d.c.id, d.c.target_id, d.c.adopted))
             ]
-        return {"targets": targets, "destinations": destinations, "first_run": not targets}
+            made = set(connection.execute(sa.select(export.shelf.c.name)).scalars())
+            family = set(
+                connection.execute(
+                    sa.select(acquisition.source_config.c.plugin_id).where(
+                        acquisition.source_config.c.family_safe.is_(True)
+                    )
+                ).scalars()
+            )
+            jurisdiction = jurisdiction_report(connection)
+        return {
+            "targets": targets,
+            "destinations": destinations,
+            "first_run": not targets,
+            # screens 4 and 5 read the server's own words and facts: the sentence of each shelf
+            # it will make, the countries it guessed, whether the keyring was exported
+            "shelves": [
+                {"name": spec.name, "phrase": spec.phrase, "created": spec.name in made}
+                for spec in PRECREATED
+            ],
+            "sources": [{"key": key, "family": key in family} for key in FAMILY_PROPOSED],
+            "keyring_exported": self._keyring_exported(),
+            "jurisdiction": {
+                "country": str((jurisdiction or {}).get("jurisdiction") or ""),
+                "confirmed": bool((jurisdiction or {}).get("confirmed")),
+            },
+        }
+
+    def _keyring_exported(self) -> bool:
+        try:
+            return self._comp.keyring().exported_at is not None
+        except SecretsError:
+            return False  # an unreadable keyring is not an exported one
+
+    # -- the keyring, out of the instance (Q25, EF-INT-015) ---------------------------------------
+
+    def export_keyring(self, passphrase: str) -> str:
+        """The whole keyring as an age v1 file under the passphrase (the format of `secrets
+        export` and of the backup), recorded as exported. The passphrase and the file are never
+        stored, logged nor named in a refusal: the caller gets the text once and keeps it."""
+        if len(passphrase) < MIN_PASSPHRASE_CHARS:
+            raise InvalidChoiceError(f"the passphrase must have {MIN_PASSPHRASE_CHARS} characters")
+        register_secret_value(passphrase)
+        store = diagnostics.store_for(self._comp.settings)
+        try:
+            armored = encrypt_export(self._comp.keyring(), passphrase)
+        except SecretsError as error:
+            raise ExitUnavailableError(t("secrets.export_failed", detail=error)) from None
+        try:  # the screen lets the admin go on only when this is on disk; the running instance
+            # holds the keyring's lock for its whole life (as in `import_keyring`), so none here
+            store.write(store.load().exported(self._comp.clock.now()))
+        except (OSError, SecretsError):
+            raise ExitUnavailableError(t("secrets.export_not_recorded")) from None
+        return armored
+
+    # -- the sources a child may search (D13) ------------------------------------------------------
+
+    def mark_family(self, source_keys: list[str]) -> list[str]:
+        """Exactly these sources, among the ones proposed, are "family" from now on; the others
+        proposed are not. A key that is not proposed is refused before anything is written."""
+        unknown = [key for key in source_keys if key not in FAMILY_PROPOSED]
+        if unknown or len(set(source_keys)) != len(source_keys):
+            raise InvalidChoiceError("only the free libraries the wizard proposes can be family")
+        table = acquisition.source_config
+        now = self._comp.clock.now()
+        with self._comp.engine.execution_options(shelfhold_begin="BEGIN IMMEDIATE").begin() as c:
+            for key in FAMILY_PROPOSED:
+                c.execute(
+                    sqlite_insert(table)
+                    .values(plugin_id=key)
+                    .on_conflict_do_nothing(index_elements=["plugin_id"])
+                )
+                c.execute(
+                    sa.update(table)
+                    .where(table.c.plugin_id == key)
+                    .values(family_safe=key in source_keys, updated_at=now)
+                )
+        return list(source_keys)
 
     # -- the probe ---------------------------------------------------------------------------------
 
