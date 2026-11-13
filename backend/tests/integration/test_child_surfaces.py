@@ -156,6 +156,7 @@ CLOSED = (
     "POST /api/v1/works/merge",
     "POST /api/v1/works/merges/{merge_id}/separate",
     "POST /api/v1/series-reassignments",
+    "POST /api/v1/works/{work_id}/series",
     "POST /api/v1/editions/merge",
     "POST /api/v1/contributors/merge-proposals",
     "POST /api/v1/merge-suggestions/works/scan",

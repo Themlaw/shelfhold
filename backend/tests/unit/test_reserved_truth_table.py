@@ -280,6 +280,9 @@ FRESHNESS_LINE = {
             "revisions.force",
             "normalize.migrate",
             "edition.merge",
+            "work.merge",  # M3 L22: the age and the shelves of what a merge moves
+            "work.separate",
+            "series.reassign",
             "coverage.resplit",  # M2 L26: which chapters a file carries
             "contributor.set_died_for_france",  # M2 L15b: a legal fact about a person
             "export.all",  # M3 L37: every profile's data leaves the instance

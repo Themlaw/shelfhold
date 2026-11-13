@@ -517,6 +517,56 @@
         "title": "ApproveIn",
         "type": "object"
       },
+      "AttachSeriesIn": {
+        "additionalProperties": false,
+        "properties": {
+          "position": {
+            "maxLength": 16,
+            "pattern": "^[0-9]+(\\.[0-9]+)?$",
+            "title": "Position",
+            "type": "string"
+          },
+          "series_id": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Series Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "series_id",
+          "position"
+        ],
+        "title": "AttachSeriesIn",
+        "type": "object"
+      },
+      "AttachSeriesOut": {
+        "properties": {
+          "position": {
+            "title": "Position",
+            "type": "string"
+          },
+          "reassignment": {
+            "$ref": "#/components/schemas/SeriesReassignOut"
+          },
+          "series_id": {
+            "title": "Series Id",
+            "type": "string"
+          },
+          "work_id": {
+            "title": "Work Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "work_id",
+          "series_id",
+          "position",
+          "reassignment"
+        ],
+        "title": "AttachSeriesOut",
+        "type": "object"
+      },
       "AttestationIn": {
         "properties": {
           "field": {
@@ -863,6 +913,29 @@
         "title": "ConfigRow",
         "type": "object"
       },
+      "ContributorsIn": {
+        "additionalProperties": false,
+        "properties": {
+          "drop_id": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Drop Id",
+            "type": "string"
+          },
+          "keep_id": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Keep Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "keep_id",
+          "drop_id"
+        ],
+        "title": "ContributorsIn",
+        "type": "object"
+      },
       "CookiesIn": {
         "properties": {
           "cookies": {
@@ -1117,6 +1190,143 @@
           "sort_key"
         ],
         "title": "EditionLineOut",
+        "type": "object"
+      },
+      "EditionMergeOut": {
+        "properties": {
+          "applied": {
+            "title": "Applied",
+            "type": "boolean"
+          },
+          "bindings": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Bindings",
+            "type": "array"
+          },
+          "blockers": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Blockers",
+            "type": "array"
+          },
+          "drop_age": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Drop Age"
+          },
+          "drop_id": {
+            "title": "Drop Id",
+            "type": "string"
+          },
+          "fingerprint": {
+            "title": "Fingerprint",
+            "type": "string"
+          },
+          "keep_age": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Keep Age"
+          },
+          "keep_id": {
+            "title": "Keep Id",
+            "type": "string"
+          },
+          "mergeable": {
+            "title": "Mergeable",
+            "type": "boolean"
+          },
+          "merged_age": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Merged Age"
+          },
+          "tombstoned_ids": {
+            "title": "Tombstoned Ids",
+            "type": "integer"
+          },
+          "tombstoned_units": {
+            "title": "Tombstoned Units",
+            "type": "integer"
+          },
+          "units": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Units",
+            "type": "array"
+          },
+          "unrated_after": {
+            "title": "Unrated After",
+            "type": "boolean"
+          },
+          "volumes": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Volumes",
+            "type": "array"
+          },
+          "work_id": {
+            "title": "Work Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "keep_id",
+          "drop_id",
+          "work_id",
+          "units",
+          "volumes",
+          "bindings",
+          "blockers",
+          "tombstoned_units",
+          "tombstoned_ids",
+          "keep_age",
+          "drop_age",
+          "merged_age",
+          "unrated_after",
+          "mergeable",
+          "fingerprint",
+          "applied"
+        ],
+        "title": "EditionMergeOut",
+        "type": "object"
+      },
+      "EditionMergeProposalsOut": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/EditionMergeOut"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "EditionMergeProposalsOut",
         "type": "object"
       },
       "EditionOut": {
@@ -2437,6 +2647,42 @@
           "nav"
         ],
         "title": "MeOut",
+        "type": "object"
+      },
+      "MergeIn": {
+        "additionalProperties": false,
+        "properties": {
+          "confirm": {
+            "anyOf": [
+              {
+                "maxLength": 256,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Confirm"
+          },
+          "drop_id": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Drop Id",
+            "type": "string"
+          },
+          "keep_id": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Keep Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "keep_id",
+          "drop_id"
+        ],
+        "title": "MergeIn",
         "type": "object"
       },
       "MigrationIn": {
@@ -4871,6 +5117,86 @@
         "title": "SecretsImportOut",
         "type": "object"
       },
+      "SeparateIn": {
+        "additionalProperties": false,
+        "properties": {},
+        "title": "SeparateIn",
+        "type": "object"
+      },
+      "SeparateOut": {
+        "properties": {
+          "merge_id": {
+            "title": "Merge Id",
+            "type": "string"
+          },
+          "restored_id": {
+            "title": "Restored Id",
+            "type": "string"
+          },
+          "shelves": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "title": "Shelves",
+            "type": "object"
+          },
+          "survivor_id": {
+            "title": "Survivor Id",
+            "type": "string"
+          },
+          "waiting": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Waiting",
+            "type": "object"
+          }
+        },
+        "required": [
+          "merge_id",
+          "survivor_id",
+          "restored_id",
+          "shelves",
+          "waiting"
+        ],
+        "title": "SeparateOut",
+        "type": "object"
+      },
+      "SeriesMoveOut": {
+        "properties": {
+          "edition_id": {
+            "title": "Edition Id",
+            "type": "string"
+          },
+          "from_series_id": {
+            "title": "From Series Id",
+            "type": "string"
+          },
+          "remote_library_id": {
+            "title": "Remote Library Id",
+            "type": "string"
+          },
+          "to_series_id": {
+            "title": "To Series Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "edition_id",
+          "remote_library_id",
+          "from_series_id",
+          "to_series_id"
+        ],
+        "title": "SeriesMoveOut",
+        "type": "object"
+      },
       "SeriesNameIn": {
         "properties": {
           "name": {
@@ -4925,6 +5251,92 @@
           "title"
         ],
         "title": "SeriesOut",
+        "type": "object"
+      },
+      "SeriesReassignIn": {
+        "additionalProperties": false,
+        "properties": {
+          "confirm": {
+            "anyOf": [
+              {
+                "maxLength": 256,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Confirm"
+          },
+          "work_id": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Work Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "work_id"
+        ],
+        "title": "SeriesReassignIn",
+        "type": "object"
+      },
+      "SeriesReassignOut": {
+        "properties": {
+          "applied": {
+            "title": "Applied",
+            "type": "boolean"
+          },
+          "blockers": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Blockers",
+            "type": "array"
+          },
+          "emptied": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Emptied",
+            "type": "array"
+          },
+          "fingerprint": {
+            "title": "Fingerprint",
+            "type": "string"
+          },
+          "mergeable": {
+            "title": "Mergeable",
+            "type": "boolean"
+          },
+          "moves": {
+            "items": {
+              "$ref": "#/components/schemas/SeriesMoveOut"
+            },
+            "title": "Moves",
+            "type": "array"
+          },
+          "path_changes": {
+            "title": "Path Changes",
+            "type": "integer"
+          },
+          "work_id": {
+            "title": "Work Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "work_id",
+          "moves",
+          "blockers",
+          "path_changes",
+          "emptied",
+          "mergeable",
+          "fingerprint",
+          "applied"
+        ],
+        "title": "SeriesReassignOut",
         "type": "object"
       },
       "SessionInfo": {
@@ -6768,6 +7180,108 @@
           "kind"
         ],
         "title": "WorkItemOut",
+        "type": "object"
+      },
+      "WorkMergeOut": {
+        "properties": {
+          "applied": {
+            "title": "Applied",
+            "type": "boolean"
+          },
+          "blockers": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Blockers",
+            "type": "array"
+          },
+          "drop_age": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Drop Age"
+          },
+          "drop_id": {
+            "title": "Drop Id",
+            "type": "string"
+          },
+          "editions": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Editions",
+            "type": "array"
+          },
+          "fingerprint": {
+            "title": "Fingerprint",
+            "type": "string"
+          },
+          "keep_age": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Keep Age"
+          },
+          "keep_id": {
+            "title": "Keep Id",
+            "type": "string"
+          },
+          "merge_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Merge Id"
+          },
+          "mergeable": {
+            "title": "Mergeable",
+            "type": "boolean"
+          },
+          "merged_age": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Merged Age"
+          },
+          "unrated_after": {
+            "title": "Unrated After",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "keep_id",
+          "drop_id",
+          "editions",
+          "blockers",
+          "keep_age",
+          "drop_age",
+          "merged_age",
+          "unrated_after",
+          "mergeable",
+          "fingerprint",
+          "applied",
+          "merge_id"
+        ],
+        "title": "WorkMergeOut",
         "type": "object"
       },
       "WorkOut": {
@@ -8722,6 +9236,68 @@
         ]
       }
     },
+    "/api/v1/contributors/merge-proposals": {
+      "post": {
+        "description": "What merging `drop_id` into `keep_id` (two contributors) would call for: the merge\nplans of the Editions that would then share a key (EF-BIB-049). Nothing is applied.",
+        "operationId": "contributors_merge_proposals",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ContributorsIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EditionMergeProposalsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Connexion requise, ou mot de passe à confirmer (reauth-required)."
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée)."
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Détail du problème (RFC 9457)."
+          }
+        },
+        "summary": "Contributors Merge Proposals",
+        "tags": [
+          "catalog"
+        ]
+      }
+    },
     "/api/v1/coverage/resplit/apply": {
       "post": {
         "operationId": "resplit_apply",
@@ -9115,6 +9691,67 @@
           }
         },
         "summary": "Editions List",
+        "tags": [
+          "catalog"
+        ]
+      }
+    },
+    "/api/v1/editions/merge": {
+      "post": {
+        "operationId": "editions_merge",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MergeIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EditionMergeOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Connexion requise, ou mot de passe à confirmer (reauth-required)."
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée)."
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Détail du problème (RFC 9457)."
+          }
+        },
+        "summary": "Editions Merge",
         "tags": [
           "catalog"
         ]
@@ -14159,6 +14796,67 @@
         ]
       }
     },
+    "/api/v1/series-reassignments": {
+      "post": {
+        "operationId": "series_reassignments",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SeriesReassignIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SeriesReassignOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Connexion requise, ou mot de passe à confirmer (reauth-required)."
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée)."
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Détail du problème (RFC 9457)."
+          }
+        },
+        "summary": "Series Reassignments",
+        "tags": [
+          "catalog"
+        ]
+      }
+    },
     "/api/v1/series/{export_series_id}/resume": {
       "post": {
         "operationId": "series_resume",
@@ -17119,6 +17817,146 @@
         ]
       }
     },
+    "/api/v1/works/merge": {
+      "post": {
+        "operationId": "works_merge",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MergeIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkMergeOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Connexion requise, ou mot de passe à confirmer (reauth-required)."
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée)."
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Détail du problème (RFC 9457)."
+          }
+        },
+        "summary": "Works Merge",
+        "tags": [
+          "catalog"
+        ]
+      }
+    },
+    "/api/v1/works/merges/{merge_id}/separate": {
+      "post": {
+        "operationId": "works_separate",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "merge_id",
+            "required": true,
+            "schema": {
+              "title": "Merge Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/SeparateIn"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SeparateOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Connexion requise, ou mot de passe à confirmer (reauth-required)."
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée)."
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Détail du problème (RFC 9457)."
+          }
+        },
+        "summary": "Works Separate",
+        "tags": [
+          "catalog"
+        ]
+      }
+    },
     "/api/v1/works/rating-batch": {
       "post": {
         "description": "\"Classer tout en lot\": reserved (EF-BIB-036); all of them or none.",
@@ -17328,6 +18166,79 @@
         ]
       }
     },
+    "/api/v1/works/{work_id}/series": {
+      "post": {
+        "description": "A Series that comes after its Work (EF-BIB-025): the membership only.",
+        "operationId": "works_attach_series",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "work_id",
+            "required": true,
+            "schema": {
+              "title": "Work Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AttachSeriesIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AttachSeriesOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Connexion requise, ou mot de passe à confirmer (reauth-required)."
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée)."
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Détail du problème (RFC 9457)."
+          }
+        },
+        "summary": "Works Attach Series",
+        "tags": [
+          "catalog"
+        ]
+      }
+    },
     "/healthz": {
       "get": {
         "operationId": "healthz",
@@ -17534,6 +18445,10 @@
     },
     "/api/v1/problems/export.series-other-shelf": {
       "code": "export.series_other_shelf",
+      "status": 409
+    },
+    "/api/v1/problems/export.series-reassignment-refused": {
+      "code": "export.series_reassignment_refused",
       "status": 409
     },
     "/api/v1/problems/export.source-missing": {
@@ -17796,6 +18711,18 @@
       "code": "maintenance.active",
       "status": 503
     },
+    "/api/v1/problems/merge.already-undone": {
+      "code": "merge.already_undone",
+      "status": 409
+    },
+    "/api/v1/problems/merge.expired": {
+      "code": "merge.expired",
+      "status": 409
+    },
+    "/api/v1/problems/merge.survivor-gone": {
+      "code": "merge.survivor_gone",
+      "status": 409
+    },
     "/api/v1/problems/metadata.provider-down": {
       "code": "metadata.provider_down",
       "status": 503
@@ -18051,6 +18978,10 @@
     "/api/v1/problems/secret.undecryptable": {
       "code": "secret.undecryptable",
       "status": 503
+    },
+    "/api/v1/problems/series.already-attached": {
+      "code": "series.already_attached",
+      "status": 409
     },
     "/api/v1/problems/series.awaiting-shelf": {
       "code": "series.awaiting_shelf",
@@ -18375,6 +19306,10 @@
     "/api/v1/problems/window.preempted": {
       "code": "window.preempted",
       "status": 503
+    },
+    "/api/v1/problems/work.merge-refused": {
+      "code": "work.merge_refused",
+      "status": 409
     }
   }
 }

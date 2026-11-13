@@ -19,6 +19,7 @@ pytestmark = pytest.mark.req("EF-BIB-019", "EF-EXP-062", "EF-BIB-049", "EF-USR-0
 
 KEY = re.compile(r"shk_[0-9a-f]{8}_[A-Za-z0-9_-]{43}")
 A, B = "01JWORKA000000000000000000", "01JWORKB000000000000000000"
+REFUSED = ("/api/v1/problems/credential-not-allowed", "/api/v1/problems/forbidden")
 MERGE = "01JMERGE00000000000000000A"
 FP = "f" * 16
 
@@ -29,18 +30,36 @@ class _WorkMerge:
 
     def merge(self, keep: str, drop: str, *, confirm: str | None, principal: Any) -> dict[str, Any]:
         self.calls.append(("merge", keep, drop, confirm, principal.credential.value))
-        return {"keep_id": keep, "drop_id": drop, "blockers": [], "mergeable": True,
-                "fingerprint": FP, "applied": confirm is not None,
+        return {"keep_id": keep, "drop_id": drop, "editions": [], "blockers": [],
+                "keep_age": None, "drop_age": None, "merged_age": None, "unrated_after": False,
+                "mergeable": True, "fingerprint": FP, "applied": confirm is not None,
                 "merge_id": MERGE if confirm else None}  # fmt: skip
 
     def separate(self, merge_id: str, *, principal: Any) -> dict[str, Any]:
         self.calls.append(("separate", merge_id, principal.credential.value))
-        return {"merge_id": merge_id, "survivor_id": A, "restored_id": B, "shelves": {}}
+        return {
+            "merge_id": merge_id,
+            "survivor_id": A,
+            "restored_id": B,
+            "shelves": {},
+            "waiting": {},
+        }
 
-    def series_reassign(self, work_id: str, *, confirm: str | None, principal: Any) -> dict[str, Any]:
+    def series_reassign(
+        self, work_id: str, *, confirm: str | None, principal: Any
+    ) -> dict[str, Any]:
         self.calls.append(("series", work_id, confirm, principal.credential.value))
-        return {"work_id": work_id, "moves": [], "blockers": [], "path_changes": 0,
+        return {"work_id": work_id, "moves": [], "blockers": [], "path_changes": 0, "emptied": [],
                 "mergeable": True, "fingerprint": FP, "applied": confirm is not None}  # fmt: skip
+
+    def attach_series(
+        self, work_id: str, series_id: str, position: str, *, principal: Any
+    ) -> dict[str, Any]:
+        self.calls.append(("attach", work_id, series_id, position))
+        return {"work_id": work_id, "series_id": series_id, "position": position,
+                "reassignment": {"work_id": work_id, "moves": [], "blockers": [],
+                                 "path_changes": 0, "emptied": [], "mergeable": True,
+                                 "fingerprint": FP, "applied": False}}  # fmt: skip
 
 
 class _EditionMerge:
@@ -110,7 +129,7 @@ def test_no_key_no_member_no_child_no_anonymous_reaches_a_door(
         for headers in (admin_key, scoped):  # not even a key with the admin scope
             refused = api.client.post(path, json=body, headers=headers)
             assert refused.status_code == 403, path
-            assert refused.json()["type"] == "/api/v1/problems/credential-not-allowed"
+            assert refused.json()["type"] in REFUSED, (path, refused.json())
     api.login()
     for role, ip in (("member", "10.0.0.5"), ("child", "10.0.0.6")):
         extra: dict[str, object] = {"max_age_rating": 10} if role == "child" else {}
@@ -118,7 +137,7 @@ def test_no_key_no_member_no_child_no_anonymous_reaches_a_door(
         for path, body in DOORS:
             refused = who.post(path, json=body, headers={CSRF_HEADER: api.csrf(who)})
             assert refused.status_code == 403, (role, path)
-            assert refused.json()["type"] == "/api/v1/problems/forbidden"
+            assert refused.json()["type"] == "/api/v1/problems/forbidden", (role, path)
     assert ops.calls == []  # the service was never reached by a refusal
 
 
@@ -154,3 +173,23 @@ def test_a_door_refuses_what_it_cannot_read_before_the_service(api: AuthEnv, ops
     # a verb that is not the door's
     assert api.client.get("/api/v1/works/merge").status_code in (405, 401, 403)
     assert api.client.get(f"/api/v1/works/merges/{MERGE}/separate").status_code in (405, 401, 403)
+
+
+def test_late_attach_door_is_for_an_admin_and_validates_its_position(
+    api: AuthEnv, ops: _Ops
+) -> None:
+    path, body = f"/api/v1/works/{A}/series", {"series_id": B, "position": "1.5"}
+    assert api.client.post(path, json=body).status_code in (401, 403)
+    api.login()
+    for role, ip in (("member", "10.0.0.7"), ("child", "10.0.0.8")):
+        extra: dict[str, object] = {"max_age_rating": 10} if role == "child" else {}
+        who = add_profile(api, f"late{role}", role, ip, **extra)
+        refused = who.post(path, json=body, headers={CSRF_HEADER: api.csrf(who)})
+        assert refused.status_code == 403, role
+    assert ops.work_merge.calls == []
+    for bad in ({"series_id": B, "position": "1.2.3"}, {"series_id": B, "position": "x"},
+                {"series_id": B}, {"series_id": B, "position": "1", "extra": 1}):  # fmt: skip
+        assert api.post(path, json=bad).status_code == 422
+    done = api.post(path, json=body)
+    assert done.status_code == 200 and done.json()["reassignment"]["applied"] is False
+    assert ops.work_merge.calls == [("attach", A, B, "1.5")]

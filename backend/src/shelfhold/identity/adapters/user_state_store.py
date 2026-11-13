@@ -10,7 +10,7 @@ from typing import Any
 import sqlalchemy as sa
 from sqlalchemy import Engine
 
-from shelfhold.catalog.public import visible_work_ids
+from shelfhold.catalog.public import resolve_work, visible_work_ids
 from shelfhold.identity.adapters.reader_scope import reader_scope
 from shelfhold.identity.application.user_state import UserStateService
 from shelfhold.identity.domain.user_state import UserFlags
@@ -109,4 +109,8 @@ def user_state_service(engine: Engine, clock: Clock) -> UserStateService:
             ).all()
         return str(own), [(r[0], r[1], r[2]) for r in rows]
 
-    return UserStateService(SqlUserStateStore(engine), clock, admits, titles_of)
+    def resolve(work_id: str) -> str:
+        with engine.connect() as conn:
+            return resolve_work(conn, work_id)
+
+    return UserStateService(SqlUserStateStore(engine), clock, admits, titles_of, resolve)

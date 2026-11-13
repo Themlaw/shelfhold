@@ -31,8 +31,8 @@ from shelfhold.export.application.export_items import (
 )
 from shelfhold.export.domain.planner import SeriesRef
 from shelfhold.infrastructure.ids import new_ulid
-from shelfhold.sdk.age import AgeRating
 from shelfhold.infrastructure.schema import catalog, export, identity, platform
+from shelfhold.sdk.age import AgeRating
 from tests.export_env import ExportEnv
 from tests.family_env import NOW, family_env
 from tests.integration.test_schema_catalog import add_edition, add_unit
@@ -79,10 +79,25 @@ def _effective(env: ExportEnv, work_id: str) -> object:
         return RATING.effective_age_of(c, work_id)
 
 
+def _publisher(env: ExportEnv, edition_id: str, name: str) -> None:
+    with env.engine.begin() as c:  # two Editions that do not share a key
+        c.execute(
+            sa.update(catalog.edition)
+            .where(catalog.edition.c.id == edition_id)
+            .values(publisher=name)
+        )
+
+
 def _pair(env: ExportEnv):  # type: ignore[no-untyped-def]
     keep, drop = env.new_series("Alpha Tale"), env.new_series("Alpha Tale (copy)")
     _rate(env, keep.work_id, 0)
     _rate(env, drop.work_id, 16)
+    with env.engine.begin() as c:  # two Editions that do not share a key
+        c.execute(
+            sa.update(catalog.edition)
+            .where(catalog.edition.c.id == drop.edition_id)
+            .values(publisher="Beta")
+        )
     return keep, drop
 
 
@@ -104,13 +119,14 @@ def test_separate_undoes_merge_within_30_days(env: ExportEnv) -> None:
     assert done.survivor_id == keep.work_id and done.restored_id == drop.work_id
     assert {keep.work_id, drop.work_id} <= _work_ids(env)  # both Works are back, same ids
     with env.engine.connect() as c:
-        rows = dict(
-            c.execute(sa.select(catalog.edition.c.id, catalog.edition.c.work_id)).all()
-        )
+        rows = dict(c.execute(sa.select(catalog.edition.c.id, catalog.edition.c.work_id)).all())
         assert rows[drop.edition_id] == drop.work_id and rows[keep.edition_id] == keep.work_id
-        assert c.execute(
-            sa.select(catalog.unit.c.edition_id).where(catalog.unit.c.id == unit)
-        ).scalar_one() == drop.edition_id
+        assert (
+            c.execute(
+                sa.select(catalog.unit.c.edition_id).where(catalog.unit.c.id == unit)
+            ).scalar_one()
+            == drop.edition_id
+        )
         counts = {t.name: c.execute(sa.select(sa.func.count()).select_from(t)).scalar_one()
                   for t in (catalog.edition, catalog.unit)}  # fmt: skip
         title = c.execute(
@@ -122,9 +138,8 @@ def test_separate_undoes_merge_within_30_days(env: ExportEnv) -> None:
 def test_separate_refused_after_30_days_and_twice_and_changes_nothing(env: ExportEnv) -> None:
     keep, drop = _pair(env)
     merged = _merge(env, keep.work_id, drop.work_id)
-    with env.engine.begin() as c:  # the 31st day: the merge stays
-        with pytest.raises(MergeExpiredError):
-            separate_works(c, merged.merge_id, now=NOW + timedelta(days=30, seconds=1))
+    with pytest.raises(MergeExpiredError), env.engine.begin() as c:  # the 31st day: it stays
+        separate_works(c, merged.merge_id, now=NOW + timedelta(days=30, seconds=1))
     assert drop.work_id not in _work_ids(env)
     with pytest.raises(LookupError), env.engine.begin() as c:
         separate_works(c, new_ulid(), now=NOW)  # an identifier that is no merge
@@ -137,6 +152,7 @@ def test_separate_refused_after_30_days_and_twice_and_changes_nothing(env: Expor
 def test_work_redirect_after_merge(env: ExportEnv) -> None:
     keep, drop = _pair(env)
     third = env.new_series("Alpha Tale (third)")
+    _publisher(env, third.edition_id, "Gamma")
     _rate(env, third.work_id, 0)
     first = _merge(env, drop.work_id, third.work_id)  # third -> drop
     second = _merge(env, keep.work_id, drop.work_id)  # drop -> keep (a chain of two)
@@ -154,17 +170,12 @@ def test_work_redirect_after_merge(env: ExportEnv) -> None:
 
 
 def test_redirect_never_loops(env: ExportEnv) -> None:
-    keep, drop = _pair(env)
-    _merge(env, keep.work_id, drop.work_id)
-    with env.engine.begin() as c:  # a corrupt row that points back
-        c.execute(sa.text("PRAGMA foreign_keys=OFF"))
-        c.execute(
-            sa.insert(catalog.work_redirect).values(
-                from_work_id=keep.work_id, to_work_id=drop.work_id
-            )
-        )
+    x, y = env.new_series("Loop X"), env.new_series("Loop Y")
+    with env.engine.begin() as c:  # a corrupt table: two live Works that point at each other
+        for a, b in ((x.work_id, y.work_id), (y.work_id, x.work_id)):
+            c.execute(sa.insert(catalog.work_redirect).values(from_work_id=a, to_work_id=b))
     with env.engine.connect() as c:
-        assert resolve_work(c, drop.work_id) in {keep.work_id, drop.work_id}  # terminates
+        assert resolve_work(c, x.work_id) in {x.work_id, y.work_id}  # it ends
 
 
 def test_merge_moves_the_user_state_and_separate_gives_it_back(env: ExportEnv) -> None:
@@ -189,9 +200,8 @@ def test_merge_moves_the_user_state_and_separate_gives_it_back(env: ExportEnv) -
 def _user_row(user_id: str) -> dict[str, object]:
     columns = {c.name: c for c in identity.user.columns}
     row: dict[str, object] = {"id": user_id, "username": f"u{user_id[-6:].lower()}"}
-    for name in ("role", "password_hash"):
-        if name in columns:
-            row[name] = "member" if name == "role" else "x"
+    if "role" in columns:
+        row["role"] = "member"
     return row
 
 
@@ -201,9 +211,9 @@ def test_separate_recomputes_effective_age_and_shelves(env: ExportEnv) -> None:
     low = _effective(env, keep.work_id)
     merged = _merge(env, keep.work_id, drop.work_id)
     assert merged.effective_age == _effective(env, keep.work_id)  # never below the strictest
-    assert str(merged.effective_age) == str(_effective(env, drop.work_id) or merged.effective_age)
+    assert merged.effective_age == AgeRating(16)
     # the family shelf no longer admits the Edition of the 16+ Work: reported, never moved by this
-    assert merged.shelves[drop.edition_id] == "waiting" or merged.shelves[drop.edition_id]
+    assert drop.edition_id in merged.waiting  # reported with its reason
     with env.engine.connect() as c:
         filed = c.execute(
             sa.select(catalog.edition.c.shelf_id).where(catalog.edition.c.id == drop.edition_id)
@@ -212,7 +222,7 @@ def test_separate_recomputes_effective_age_and_shelves(env: ExportEnv) -> None:
     with env.engine.begin() as c:
         done = separate_works(c, merged.merge_id, now=NOW)
     assert _effective(env, keep.work_id) == low  # the survivor is the age it was
-    assert str(_effective(env, drop.work_id)) == str(merged.effective_age)  # and the other is 16+
+    assert _effective(env, drop.work_id) == AgeRating(16)  # and the other is back at 16+
     assert done.shelves[keep.edition_id] == env.shelf_id  # the 0+ Edition stays on its shelf
 
 
@@ -227,6 +237,7 @@ def test_separate_never_lowers_an_age_the_admin_raised_since(env: ExportEnv) -> 
 
 def test_merge_never_lowers_the_age_and_unrated_stays_unrated(env: ExportEnv) -> None:
     keep, drop = env.new_series("Beta Tale"), env.new_series("Beta Tale (copy)")
+    _publisher(env, drop.edition_id, "Beta")
     _rate(env, keep.work_id, 18)
     _rate(env, drop.work_id, None)  # nobody rated this one
     _merge(env, keep.work_id, drop.work_id)
@@ -261,8 +272,11 @@ def test_merge_refused_changes_nothing(env: ExportEnv, case: str) -> None:
         with env.engine.begin() as c:
             sid, other = new_ulid(), new_ulid()
             for s in (sid, other):
-                c.execute(sa.insert(catalog.series).values(
-                    id=s, title=f"S {s[-4:]}", sort_title=f"s {s[-4:]}"))
+                c.execute(
+                    sa.insert(catalog.series).values(
+                        id=s, title=f"S {s[-4:]}", sort_title=f"s {s[-4:]}"
+                    )
+                )
             c.execute(sa.insert(catalog.series_member).values(
                 series_id=sid, work_id=keep.work_id, position="1"))  # fmt: skip
             c.execute(sa.insert(catalog.series_member).values(
@@ -369,13 +383,15 @@ def test_series_reassignment_never_leaves_an_adopted_series(env: ExportEnv) -> N
     with env.engine.connect() as c:
         plan = plan_series_reassignment(c, keep.work_id)
     assert not plan.mergeable and any(x.startswith("frozen") for x in plan.blockers)
-    with pytest.raises((SeriesReassignmentRefusedError, FrozenSeriesError)):
-        with env.engine.begin() as c:
-            apply_series_reassignment(c, keep.work_id, confirm=plan.fingerprint, now=NOW)
+    with (
+        pytest.raises((SeriesReassignmentRefusedError, FrozenSeriesError)),
+        env.engine.begin() as c,
+    ):
+        apply_series_reassignment(c, keep.work_id, confirm=plan.fingerprint, now=NOW)
     assert dict(_links(env)) == {keep.edition_id: a, drop.edition_id: b}
 
 
-def test_series_reassignment_warns_when_the_path_changes_and_keeps_written_series(
+def test_series_reassignment_warns_when_the_path_changes(
     env: ExportEnv,
 ) -> None:
     keep, drop = _pair(env)
@@ -391,4 +407,73 @@ def test_series_reassignment_warns_when_the_path_changes_and_keeps_written_serie
     with env.engine.connect() as c:
         plan = plan_series_reassignment(c, keep.work_id)
     assert plan.path_changes and plan.moves  # the warning of EF-EXP-037: the folder differs
-    assert not plan.mergeable and "written_files" in plan.blockers  # fail closed: files stay put
+    assert plan.mergeable  # a warning, not a refusal: the files stay where they are
+    with env.engine.begin() as c:
+        apply_series_reassignment(c, keep.work_id, confirm=plan.fingerprint, now=NOW)
+    with env.engine.connect() as c:
+        assert not c.execute(
+            sa.select(export.export_series.c.id).where(export.export_series.c.id == b)
+        ).first()  # the emptied series is gone, no orphan
+
+
+def test_merge_carries_states_requests_and_fields_and_separate_gives_them_back(
+    env: ExportEnv,
+) -> None:
+    keep, drop = _pair(env)
+    both, only = new_ulid(), new_ulid()
+    request_id = new_ulid()
+    field = catalog.metadata_field
+    base = {"provider": "manual", "provenance": "manual", "fetched_at": NOW}
+    with env.engine.begin() as c:
+        for u in (both, only):
+            c.execute(sa.insert(identity.user).values(**_user_row(u)))
+        for w, followed, favorite in ((keep.work_id, False, True), (drop.work_id, True, False)):
+            c.execute(sa.insert(identity.user_state).values(
+                user_id=both, work_id=w, followed=followed, favorite=favorite))  # fmt: skip
+        c.execute(
+            sa.insert(identity.request).values(
+                id=request_id, requester_user_id=only, target_kind="free_text",
+                target_value="x", work_id=drop.work_id,
+            )
+        )  # fmt: skip
+        for w, name, value in (
+            (drop.work_id, "summary", "from the dropped one"),  # only the dropped Work has it
+            (drop.work_id, "genre", "dropped"),  # both have it: the survivor's stays
+            (keep.work_id, "genre", "kept"),
+        ):
+            c.execute(sa.insert(field).values(
+                entity_type="work", entity_id=w, field=name, value=value, **base))  # fmt: skip
+    merged = _merge(env, keep.work_id, drop.work_id)
+    with env.engine.connect() as c:
+        flags = c.execute(
+            sa.select(identity.user_state.c.followed, identity.user_state.c.favorite)
+        ).one()
+        assert tuple(flags) == (True, True)  # the union: nothing the reader set is lost
+        assert (
+            c.execute(
+                sa.select(identity.request.c.work_id).where(identity.request.c.id == request_id)
+            ).scalar_one()
+            == keep.work_id
+        )
+        values = dict(c.execute(sa.select(field.c.field, field.c.value)).all())
+    assert values == {"summary": "from the dropped one", "genre": "kept"}
+    with env.engine.begin() as c:
+        separate_works(c, merged.merge_id, now=NOW)
+    with env.engine.connect() as c:
+        states = sorted(
+            tuple(r) for r in c.execute(
+                sa.select(identity.user_state.c.work_id, identity.user_state.c.followed))
+        )  # fmt: skip
+        assert states == sorted([(keep.work_id, True), (drop.work_id, True)])
+        assert (
+            c.execute(
+                sa.select(identity.request.c.work_id).where(identity.request.c.id == request_id)
+            ).scalar_one()
+            == drop.work_id
+        )
+        rows = {(r.entity_id, r.field): r.value for r in c.execute(sa.select(field))}
+    assert rows == {
+        (drop.work_id, "summary"): "from the dropped one",
+        (drop.work_id, "genre"): "dropped",
+        (keep.work_id, "genre"): "kept",
+    }

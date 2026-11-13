@@ -175,12 +175,27 @@ from shelfhold.catalog.application.search import (
 from shelfhold.catalog.application.search import rebuild as _rebuild_search
 from shelfhold.catalog.application.search import remove_works as remove_from_search_index
 from shelfhold.catalog.application.search import sync as sync_search_index
+from shelfhold.catalog.application.separate import (
+    MergeAlreadyUndoneError,
+    MergeExpiredError,
+    Separated,
+    SeparationBlockedError,
+    separate_works,
+)
 from shelfhold.catalog.application.series import SeriesAlreadyAttachedError
 from shelfhold.catalog.application.service import CatalogService
 from shelfhold.catalog.application.tombstone_screen import (
     MergedPlace,
     TombstoneScreen,
     TombstoneScreenMissingError,
+)
+from shelfhold.catalog.application.work_merge import (
+    WorkMerged,
+    WorkMergePlan,
+    WorkMergeRefusedError,
+    apply_work_merge,
+    plan_work_merge,
+    resolve_work,
 )
 from shelfhold.catalog.domain.age import (
     Admission,
@@ -470,6 +485,8 @@ __all__ = [
     "InvalidTermError",
     "LanguageError",
     "ListedUnit",
+    "MergeAlreadyUndoneError",
+    "MergeExpiredError",
     "MergedPlace",
     "NameKind",
     "NoPersonFieldName",
@@ -501,6 +518,8 @@ __all__ = [
     "SearchCapability",
     "SearchHit",
     "SearchPage",
+    "Separated",
+    "SeparationBlockedError",
     "SeriesAlreadyAttachedError",
     "StaleMergePlanError",
     "StoredExternalId",
@@ -516,11 +535,15 @@ __all__ = [
     "Verdict",
     "VisibleWork",
     "Withdrawal",
+    "WorkMergePlan",
+    "WorkMergeRefusedError",
+    "WorkMerged",
     "add_external_id",
     "admission",
     "announced_kind",
     "apply_edition_merge",
     "apply_resplit",
+    "apply_work_merge",
     "bounds_from_toc",
     "ceiling_of",
     "check_before_fallback",
@@ -562,6 +585,7 @@ __all__ = [
     "place_parts",
     "plan_after_contributor_merge",
     "plan_edition_merge",
+    "plan_work_merge",
     "propose_fields",
     "propose_resplit",
     "rebuild_search_index",
@@ -574,10 +598,12 @@ __all__ = [
     "remove_from_search_index",
     "removed_ids",
     "renumber_external_id",
+    "resolve_work",
     "restore_epoch",
     "scope_code",
     "search_capability",
     "search_page",
+    "separate_works",
     "sort_key",
     "stored_bounds",
     "stored_date",

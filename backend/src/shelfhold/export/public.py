@@ -3,10 +3,27 @@
 from sqlalchemy import Connection
 
 from shelfhold.export.application.coverage import adopted_volumes, attach_to_volume
+from shelfhold.export.application.export_items import (
+    SeriesMove,
+    SeriesReassignmentPlan,
+    SeriesReassignmentRefusedError,
+    apply_series_reassignment,
+    plan_series_reassignment,
+)
 from shelfhold.export.application.pairing import pending_pairing
 from shelfhold.export.application.waiting_marks import clear as _clear_marks
 
-__all__ = ["adopted_volumes", "attach_to_volume", "forget_coverage_unknown", "pending_pairing"]
+__all__ = [
+    "SeriesMove",
+    "SeriesReassignmentPlan",
+    "SeriesReassignmentRefusedError",
+    "adopted_volumes",
+    "apply_series_reassignment",
+    "attach_to_volume",
+    "forget_coverage_unknown",
+    "pending_pairing",
+    "plan_series_reassignment",
+]
 
 
 def forget_coverage_unknown(connection: Connection, export_series_id: str) -> None:
