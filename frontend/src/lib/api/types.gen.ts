@@ -322,6 +322,42 @@ export type ApproveIn = {
 };
 
 /**
+ * AttachConfirmIn
+ */
+export type AttachConfirmIn = {
+    /**
+     * Confirm
+     */
+    confirm: string;
+};
+
+/**
+ * AttachPlanOut
+ */
+export type AttachPlanOut = {
+    /**
+     * Attach Id
+     */
+    attach_id: string;
+    /**
+     * Edition Id
+     */
+    edition_id: string;
+    /**
+     * Token
+     */
+    token: string;
+    /**
+     * Withdrawals
+     */
+    withdrawals: Array<AttachWithdrawalOut>;
+    /**
+     * Work Id
+     */
+    work_id: string;
+};
+
+/**
  * AttachSeriesIn
  */
 export type AttachSeriesIn = {
@@ -352,6 +388,24 @@ export type AttachSeriesOut = {
      * Work Id
      */
     work_id: string;
+};
+
+/**
+ * AttachWithdrawalOut
+ */
+export type AttachWithdrawalOut = {
+    /**
+     * Edition Id
+     */
+    edition_id: string;
+    /**
+     * Reason
+     */
+    reason: string;
+    /**
+     * Shelf Id
+     */
+    shelf_id: string;
 };
 
 /**
@@ -454,6 +508,30 @@ export type BatchRatedOut = {
      * Work Id
      */
     work_id: string;
+};
+
+/**
+ * BindingOrderIn
+ */
+export type BindingOrderIn = {
+    /**
+     * Binding Ids
+     */
+    binding_ids: Array<string>;
+};
+
+/**
+ * BindingOrderOut
+ */
+export type BindingOrderOut = {
+    /**
+     * Edition Id
+     */
+    edition_id: string;
+    /**
+     * Order
+     */
+    order: Array<string>;
 };
 
 /**
@@ -1258,6 +1336,28 @@ export type ForgetRootIn = {
      * Root Id
      */
     root_id: string;
+};
+
+/**
+ * GapAckIn
+ */
+export type GapAckIn = {
+    /**
+     * Number
+     */
+    number: string;
+    /**
+     * Segment
+     */
+    segment?: string;
+    /**
+     * Track
+     */
+    track?: string;
+    /**
+     * Undo
+     */
+    undo?: boolean;
 };
 
 /**
@@ -2259,6 +2359,30 @@ export type PreferencesOut = {
      * Theme
      */
     theme: string;
+};
+
+/**
+ * PreferredTeamIn
+ */
+export type PreferredTeamIn = {
+    /**
+     * Team Id
+     */
+    team_id: string;
+};
+
+/**
+ * PreferredTeamOut
+ */
+export type PreferredTeamOut = {
+    /**
+     * Edition Id
+     */
+    edition_id: string;
+    /**
+     * Team Id
+     */
+    team_id: string;
 };
 
 /**
@@ -3289,6 +3413,20 @@ export type SeparateOut = {
 };
 
 /**
+ * SeriesChoiceOut
+ */
+export type SeriesChoiceOut = {
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Title
+     */
+    title: string;
+};
+
+/**
  * SeriesMoveOut
  */
 export type SeriesMoveOut = {
@@ -3537,6 +3675,248 @@ export type SettingsPatch = {
     values: {
         [key: string]: unknown;
     };
+};
+
+/**
+ * SheetAttachOut
+ */
+export type SheetAttachOut = {
+    /**
+     * Attach Id
+     */
+    attach_id: string;
+    /**
+     * From Work Id
+     */
+    from_work_id: string;
+    /**
+     * To Work Id
+     */
+    to_work_id: string;
+};
+
+/**
+ * SheetBindingOut
+ */
+export type SheetBindingOut = {
+    /**
+     * Active
+     */
+    active: boolean;
+    /**
+     * Disabled Reason
+     */
+    disabled_reason: 'not_loaded' | 'content_failures' | 'removed_upstream' | 'manual' | null;
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Last Checked
+     */
+    last_checked: string | null;
+    /**
+     * Next Expected
+     */
+    next_expected: string | null;
+    /**
+     * Rank
+     */
+    rank: number;
+    /**
+     * Source Key
+     */
+    source_key: string;
+};
+
+/**
+ * SheetCanOut
+ */
+export type SheetCanOut = {
+    /**
+     * Acknowledge Gap
+     */
+    acknowledge_gap: boolean;
+    /**
+     * Check
+     */
+    check: boolean;
+    /**
+     * Confirm Attach
+     */
+    confirm_attach: boolean;
+    /**
+     * Edit Field
+     */
+    edit_field: boolean;
+    /**
+     * Prefer Team
+     */
+    prefer_team: boolean;
+    /**
+     * Reorder
+     */
+    reorder: boolean;
+    /**
+     * Separate
+     */
+    separate: boolean;
+    /**
+     * Set Upstream Status
+     */
+    set_upstream_status: boolean;
+};
+
+/**
+ * SheetFieldOut
+ */
+export type SheetFieldOut = {
+    /**
+     * Field
+     */
+    field: string;
+    /**
+     * Lang
+     */
+    lang: string;
+    /**
+     * Locked
+     */
+    locked: boolean;
+    /**
+     * Manual
+     */
+    manual: boolean;
+    /**
+     * On
+     */
+    on: 'edition' | 'work';
+    /**
+     * Value
+     */
+    value: string;
+};
+
+/**
+ * SheetGapOut
+ */
+export type SheetGapOut = {
+    /**
+     * Number
+     */
+    number: string;
+    /**
+     * Segment
+     */
+    segment: string;
+    /**
+     * Track
+     */
+    track: string;
+};
+
+/**
+ * SheetMergeOut
+ */
+export type SheetMergeOut = {
+    /**
+     * Merge Id
+     */
+    merge_id: string;
+    /**
+     * Merged At
+     */
+    merged_at: string;
+    /**
+     * Undoable Until
+     */
+    undoable_until: string;
+};
+
+/**
+ * SheetOut
+ */
+export type SheetOut = {
+    attach: SheetAttachOut | null;
+    /**
+     * Bindings
+     */
+    bindings: Array<SheetBindingOut>;
+    can: SheetCanOut;
+    /**
+     * Cover Hash
+     */
+    cover_hash: string | null;
+    /**
+     * Edition Id
+     */
+    edition_id: string;
+    /**
+     * Fields
+     */
+    fields: Array<SheetFieldOut>;
+    /**
+     * Followed
+     */
+    followed: boolean;
+    /**
+     * Gaps
+     */
+    gaps: Array<SheetGapOut>;
+    /**
+     * Lang
+     */
+    lang: string;
+    /**
+     * Merges
+     */
+    merges: Array<SheetMergeOut>;
+    /**
+     * Shelf Id
+     */
+    shelf_id: string | null;
+    /**
+     * Teams
+     */
+    teams: Array<SheetTeamOut>;
+    /**
+     * Title
+     */
+    title: string;
+    /**
+     * Upstream Status
+     */
+    upstream_status: 'ongoing' | 'finished' | 'paused' | 'unknown';
+    /**
+     * Upstream Status By
+     */
+    upstream_status_by: string | null;
+    /**
+     * Work Id
+     */
+    work_id: string;
+};
+
+/**
+ * SheetTeamOut
+ */
+export type SheetTeamOut = {
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Label
+     */
+    label: string;
+    /**
+     * Preferred
+     */
+    preferred: boolean;
+    /**
+     * Rank
+     */
+    rank: number | null;
 };
 
 /**
@@ -4127,6 +4507,34 @@ export type UnmaskedOut = {
 };
 
 /**
+ * UpstreamStatusIn
+ */
+export type UpstreamStatusIn = {
+    /**
+     * Status
+     */
+    status: 'ongoing' | 'finished' | 'paused' | 'unknown';
+};
+
+/**
+ * UpstreamStatusOut
+ */
+export type UpstreamStatusOut = {
+    /**
+     * By
+     */
+    by: string;
+    /**
+     * Edition Id
+     */
+    edition_id: string;
+    /**
+     * Upstream Status
+     */
+    upstream_status: 'ongoing' | 'finished' | 'paused' | 'unknown';
+};
+
+/**
  * UserExportOut
  *
  * One person's data (EF-USR-013). Nothing that proves or opens something is in it, and a Work
@@ -4665,6 +5073,14 @@ export type WizardWriteProbeOut = {
  */
 export type WorkItemOut = {
     /**
+     * Cover Hash
+     */
+    cover_hash?: string | null;
+    /**
+     * Edition Id
+     */
+    edition_id?: string | null;
+    /**
      * Kind
      */
     kind: string;
@@ -4779,6 +5195,10 @@ export type WorksPageOut = {
      * Removed
      */
     removed: Array<string>;
+    /**
+     * Series
+     */
+    series?: Array<SeriesChoiceOut> | null;
     /**
      * Since
      */
@@ -5448,6 +5868,82 @@ export type RepatriateResponses = {
 };
 
 export type RepatriateResponse = RepatriateResponses[keyof RepatriateResponses];
+
+export type AttachConfirmData = {
+    body: AttachConfirmIn;
+    path: {
+        /**
+         * Attach Id
+         */
+        attach_id: string;
+    };
+    query?: never;
+    url: '/api/v1/attachments/{attach_id}/confirm';
+};
+
+export type AttachConfirmErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type AttachConfirmError = AttachConfirmErrors[keyof AttachConfirmErrors];
+
+export type AttachConfirmResponses = {
+    /**
+     * Successful Response
+     */
+    200: AttachPlanOut;
+};
+
+export type AttachConfirmResponse = AttachConfirmResponses[keyof AttachConfirmResponses];
+
+export type AttachPlanData = {
+    body?: never;
+    path: {
+        /**
+         * Attach Id
+         */
+        attach_id: string;
+    };
+    query?: never;
+    url: '/api/v1/attachments/{attach_id}/plan';
+};
+
+export type AttachPlanErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type AttachPlanError = AttachPlanErrors[keyof AttachPlanErrors];
+
+export type AttachPlanResponses = {
+    /**
+     * Successful Response
+     */
+    200: AttachPlanOut;
+};
+
+export type AttachPlanResponse = AttachPlanResponses[keyof AttachPlanResponses];
 
 export type LastAuditData = {
     body?: never;
@@ -6444,6 +6940,44 @@ export type BackfillStartResponses = {
 
 export type BackfillStartResponse = BackfillStartResponses[keyof BackfillStartResponses];
 
+export type BindingsOrderData = {
+    body: BindingOrderIn;
+    path: {
+        /**
+         * Edition Id
+         */
+        edition_id: string;
+    };
+    query?: never;
+    url: '/api/v1/editions/{edition_id}/bindings/order';
+};
+
+export type BindingsOrderErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type BindingsOrderError = BindingsOrderErrors[keyof BindingsOrderErrors];
+
+export type BindingsOrderResponses = {
+    /**
+     * Successful Response
+     */
+    200: BindingOrderOut;
+};
+
+export type BindingsOrderResponse = BindingsOrderResponses[keyof BindingsOrderResponses];
+
 export type FollowCheckData = {
     body?: never;
     path: {
@@ -6604,6 +7138,48 @@ export type FieldUnlockResponses = {
 
 export type FieldUnlockResponse = FieldUnlockResponses[keyof FieldUnlockResponses];
 
+export type GapAckData = {
+    body: GapAckIn;
+    path: {
+        /**
+         * Edition Id
+         */
+        edition_id: string;
+    };
+    query?: never;
+    url: '/api/v1/editions/{edition_id}/gaps/ack';
+};
+
+export type GapAckErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type GapAckError = GapAckErrors[keyof GapAckErrors];
+
+export type GapAckResponses = {
+    /**
+     * Response Gap Ack
+     *
+     * Successful Response
+     */
+    200: {
+        [key: string]: unknown;
+    };
+};
+
+export type GapAckResponse = GapAckResponses[keyof GapAckResponses];
+
 export type EditionSetLangData = {
     body: LanguageIn;
     path: {
@@ -6642,6 +7218,44 @@ export type EditionSetLangResponses = {
 
 export type EditionSetLangResponse = EditionSetLangResponses[keyof EditionSetLangResponses];
 
+export type PreferredTeamSetData = {
+    body: PreferredTeamIn;
+    path: {
+        /**
+         * Edition Id
+         */
+        edition_id: string;
+    };
+    query?: never;
+    url: '/api/v1/editions/{edition_id}/preferred-team';
+};
+
+export type PreferredTeamSetErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type PreferredTeamSetError = PreferredTeamSetErrors[keyof PreferredTeamSetErrors];
+
+export type PreferredTeamSetResponses = {
+    /**
+     * Successful Response
+     */
+    200: PreferredTeamOut;
+};
+
+export type PreferredTeamSetResponse = PreferredTeamSetResponses[keyof PreferredTeamSetResponses];
+
 export type EditionSetSeriesNameData = {
     body: SeriesNameIn;
     path: {
@@ -6679,6 +7293,44 @@ export type EditionSetSeriesNameResponses = {
 };
 
 export type EditionSetSeriesNameResponse = EditionSetSeriesNameResponses[keyof EditionSetSeriesNameResponses];
+
+export type EditionSheetData = {
+    body?: never;
+    path: {
+        /**
+         * Edition Id
+         */
+        edition_id: string;
+    };
+    query?: never;
+    url: '/api/v1/editions/{edition_id}/sheet';
+};
+
+export type EditionSheetErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type EditionSheetError = EditionSheetErrors[keyof EditionSheetErrors];
+
+export type EditionSheetResponses = {
+    /**
+     * Successful Response
+     */
+    200: SheetOut;
+};
+
+export type EditionSheetResponse = EditionSheetResponses[keyof EditionSheetResponses];
 
 export type FileEditionData = {
     body: EditionShelfIn;
@@ -6759,6 +7411,44 @@ export type ShelfProposalResponses = {
 };
 
 export type ShelfProposalResponse = ShelfProposalResponses[keyof ShelfProposalResponses];
+
+export type UpstreamStatusSetData = {
+    body: UpstreamStatusIn;
+    path: {
+        /**
+         * Edition Id
+         */
+        edition_id: string;
+    };
+    query?: never;
+    url: '/api/v1/editions/{edition_id}/upstream-status';
+};
+
+export type UpstreamStatusSetErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type UpstreamStatusSetError = UpstreamStatusSetErrors[keyof UpstreamStatusSetErrors];
+
+export type UpstreamStatusSetResponses = {
+    /**
+     * Successful Response
+     */
+    200: UpstreamStatusOut;
+};
+
+export type UpstreamStatusSetResponse = UpstreamStatusSetResponses[keyof UpstreamStatusSetResponses];
 
 export type ExportItemData = {
     body?: never;
@@ -10951,6 +11641,18 @@ export type ListWorksData = {
          * Sort
          */
         sort?: 'title' | 'recent';
+        /**
+         * Shelf Id
+         */
+        shelf_id?: string | null;
+        /**
+         * Series Id
+         */
+        series_id?: string | null;
+        /**
+         * Facets
+         */
+        facets?: boolean;
         /**
          * Since
          */
