@@ -627,3 +627,26 @@ def test_a_child_never_reads_the_change_events_in_the_activity_feed(world: World
         answer = world.get(who, "/api/v1/activity", limit=100)
         assert answer.status_code == 200
         assert "ops.work_visibility" not in answer.text and world.work("ok") not in answer.text
+
+
+@pytest.mark.req("EF-INT-001", "EF-USR-010")
+def test_an_age_applied_by_an_approved_request_is_tracked_like_a_rating(world: World) -> None:
+    """L35 writes the age an admin chose on approval through the same `_write`: the Work that was
+    unrated becomes visible, and a later raise is a loss that the token tells."""
+    from datetime import UTC, datetime
+
+    from shelfhold.catalog.application.rating import RatingService
+    from shelfhold.sdk.age import AgeRating
+
+    work_id = world.work("unrated")
+    now = datetime(2026, 11, 13, tzinfo=UTC)
+    with world.seed.engine.begin() as connection:
+        done = RatingService().rate_decided(
+            connection, work_id, AgeRating(6 + 4), request_id="r", decided_by="a", now=now
+        )
+        assert done is not None
+    events = world.change_events()
+    assert [(e.payload["need_before"], e.payload["need_after"]) for e in events] == [(100, 10)]
+    token = world.token("kid")
+    assert world.rate(work_id, "13+").status_code == 200
+    assert world.removed("kid", token) == [work_id]
