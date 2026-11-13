@@ -1,4 +1,4 @@
-"""The key of the apply job carries the confirmation of a rename plan (M3 L29, EF-EXP-037)."""
+"""The key of the apply job and the paths of a rename plan (M3 L29, EF-EXP-037, EF-EXP-030)."""
 
 import pytest
 
@@ -7,11 +7,13 @@ from shelfhold.runtime_jobs import _plan_of, apply_key
 
 
 @pytest.mark.req("EF-EXP-037")
-def test_the_confirmation_travels_in_the_dedupe_key_and_is_part_of_its_identity() -> None:
+def test_the_confirmation_is_not_part_of_the_dedupe_key() -> None:
+    """A confirmation belongs to the session that gave it and is recorded with the plan; a key
+    that carried it would let a replayed job bring one of its own (M3 L29, contradictor)."""
     plain, confirmed = apply_key("P1", "abc"), apply_key("P1", "abc", confirmed=True)
-    assert plain != confirmed  # a request without the confirmation never shares the job
-    assert _plan_of(plain) == ("P1", "abc", False)
-    assert _plan_of(confirmed) == ("P1", "abc", True)
+    assert plain == confirmed  # two requests for one plan share one job
+    assert _plan_of(plain) == ("P1", "abc")
+    assert "confirmed" not in confirmed
 
 
 @pytest.mark.req("EF-EXP-030")

@@ -263,9 +263,12 @@ def build_ops_router(get_ops: Callable[[], OpsServices]) -> APIRouter:
         return conditional_json(request, page.model_dump(mode="json"))
 
     @router.post(_path("jobs", "retry"))
-    def jobs_retry(job_id: str, _admin: Admin) -> Done:
+    def jobs_retry(job_id: str, request: Request, admin: Admin) -> Done:
         with refusals():
-            get_ops().jobs_retry(job_id)
+            ops = get_ops()
+            if ops.jobs_retry_is_reserved(job_id):  # the application of a rename plan: a session
+                conditional(request, "plan.apply_rename")
+            ops.jobs_retry(job_id, principal=admin)
         return Done()
 
     @router.post(_path("target", "reconnect"))

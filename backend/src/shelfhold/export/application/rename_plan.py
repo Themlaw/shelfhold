@@ -23,9 +23,10 @@ doors and nowhere else (no event, no audit line, no log carries it).
 """
 
 import posixpath
+import unicodedata
 from collections import defaultdict
 from collections.abc import Callable, Sequence
-from contextlib import AbstractContextManager
+from contextlib import AbstractContextManager, ExitStack
 from dataclasses import dataclass, replace
 from datetime import datetime
 from pathlib import PurePosixPath
@@ -41,13 +42,19 @@ from shelfhold.export.application.intents import (
     MoveRefusedError,
     OpenIntent,
     RenameStep,
+    holds_any,
     open_intent_paths,
     within_any,
 )
-from shelfhold.export.application.locks import ResourceLocks, path_resource
+from shelfhold.export.application.locks import (
+    LockBusyError,
+    ResourceLocks,
+    path_resource,
+    plan_resource,
+)
 from shelfhold.export.application.plans import PlanOp, PlanStore, StalePlanError
 from shelfhold.export.application.snapshot import DestinationContext, load_context
-from shelfhold.export.domain.naming import FrozenAttrs, NamingTemplate, export_path
+from shelfhold.export.domain.naming import FrozenAttrs, NamingTemplate, export_path, sanitize_name
 from shelfhold.export.domain.physical_roots import RECEIVED_DIR
 from shelfhold.infrastructure.clock import Clock
 from shelfhold.infrastructure.fsops import Fsops, FsopsError
@@ -94,7 +101,9 @@ class RenameConfirmationRequiredError(Exception):
     status = 409
 
     def __init__(self, readers: int, *, exact: bool = True) -> None:
-        super().__init__(f"{readers} readers")
+        # the message is the closed reason: a message reaches the logs, the count only the answer
+        # of the admin, in its own field (EF-EXP-037)
+        super().__init__("confirmation_required")
         self.readers = readers
         self.exact = exact
 
@@ -165,10 +174,12 @@ class _Record:
     frozen: dict[str, Any]
 
 
-def validate_rel_path(rel: str) -> str:
+def validate_rel_path(rel: str, *, export_names: bool = False) -> str:
     """The relative path of a destination, or the reason it is refused. Closed answers:
     `outside_root` (absolute, `..`), `reserved` (`.shelfhold`), `invalid_path` (anything else
-    that is not a plain relative path: empty parts, `.`, a backslash, a control character)."""
+    that is not a plain relative path: empty parts, `.`, a backslash, a control character).
+    `export_names`: a path that is to be made (a reshelving) is named like an export names it,
+    each part as `sanitize_name` leaves it (NFC, no trailing dot or blank, nothing SMB refuses)."""
     if not rel or "\\" in rel or any(ord(c) < 32 or ord(c) == 127 for c in rel):
         raise RenameRefusedError("invalid_path")
     if rel.startswith("/"):
@@ -182,11 +193,15 @@ def validate_rel_path(rel: str) -> str:
         raise RenameRefusedError("reserved")
     if len(parts) > 8 or any(len(part.encode()) > 255 for part in parts):
         raise RenameRefusedError("invalid_path")
+    if export_names and any(sanitize_name(part) != part for part in parts):
+        raise RenameRefusedError("invalid_path")
     return rel
 
 
 def _fold(text: str) -> str:
-    return " ".join(text.casefold().split())
+    """The name as Kavita and SMB tell two names apart: normalisation and case do not."""
+    nfc = unicodedata.normalize("NFC", text)
+    return " ".join(unicodedata.normalize("NFC", nfc.casefold()).split())
 
 
 class RenameBook:
@@ -211,9 +226,18 @@ class RenameBook:
         self._request_scan = request_scan
         self._lock_wait_s = lock_wait_s
         self._readers: ReaderCounter | None = None
+        self._drain: Callable[[], None] | None = None
 
     def bind_readers(self, counter: ReaderCounter | None) -> None:
         self._readers = counter
+
+    def bind_scan_drain(self, drain: Callable[[], None] | None) -> None:
+        """What sends the scans asked so far: called at the end of every batch, so that Kavita
+        sees a batch when it is done and not when the whole plan is."""
+        self._drain = drain
+
+    def _store(self) -> PlanStore:
+        return PlanStore(self._engine, clock=self._clock, current_version=lambda: "")
 
     # -- the preview ------------------------------------------------------------------------
 
@@ -248,12 +272,16 @@ class RenameBook:
         by_batch: dict[int, list[PlanOp]] = defaultdict(list)
         for number, batch in enumerate(batches, start=1):
             for step in batch:
-                by_batch[number].append(self._op_of(ctx, step, wanted, template, number))
+                by_batch[number].append(self._op_of(ctx, step, records, template, number))
+        announced = (
+            {"readers": warnings[0].readers, "exact": warnings[0].exact} if warnings else None
+        )
         record = store.create(
             kind=PLAN_KIND,
             files=files,
             ops=[op for number in sorted(by_batch) for op in by_batch[number]],
             shelf_destination_id=destination_id,
+            meta={"announced": announced},  # what the admin was told: the confirmation is for it
         )
         log.info("rename.planned", plan_id=record.plan_id, steps=len(steps), batches=len(batches))
         return RenamePreview(
@@ -269,11 +297,13 @@ class RenameBook:
         self,
         ctx: DestinationContext,
         step: PlannedRename,
-        wanted: dict[str, str],
+        records: dict[str, _Record],
         template: NamingTemplate | None,
         batch: int,
     ) -> PlanOp:
+        prior = records[step.export_item_id].template_ref if step.export_item_id else None
         payload: dict[str, Any] = {
+            "prior_ref": prior,  # what a step undone gives back to the record
             "scope": step.kind,
             "destination_id": ctx.destination_id,
             "old_rel": step.src,
@@ -340,7 +370,7 @@ class RenameBook:
         for move in moves:
             if move.export_item_id not in records:
                 raise RenameRefusedError("unknown_item")
-            wanted[move.export_item_id] = validate_rel_path(move.new_rel_path)
+            wanted[move.export_item_id] = validate_rel_path(move.new_rel_path, export_names=True)
         return wanted
 
     def _steps(
@@ -411,21 +441,69 @@ class RenameBook:
             self._free_folder(ctx, folder, new_folder, top)
             self._require_dir(ctx, folder)
             steps.append(PlannedRename("series_dir", folder, new_folder))
+            inside = {i: new_folder + records[i].rel_path[len(folder) :] for i in items}
+            vacated = set(inside.values())
+            renames = []
             for item in items:
-                old_in_new = new_folder + records[item].rel_path[len(folder) :]
-                if old_in_new != news[item]:
-                    self._free_file(ctx, news[item], covered, vacated=set())
-                    steps.append(PlannedRename("file", old_in_new, news[item], item))
+                if inside[item] != news[item]:
+                    self._free_file(ctx, news[item], vacated=vacated)
+                    renames.append(PlannedRename("file", inside[item], news[item], item))
+            steps += self._ordered(ctx, renames)
         else:
             vacated = {records[i].rel_path for i in items}
+            renames = []
             for item in items:
                 self._require_file(ctx, records[item].rel_path)
-                self._free_file(ctx, news[item], covered, vacated=vacated)
-                steps.append(PlannedRename("file", records[item].rel_path, news[item], item))
-        for step in steps:
-            if within_any(ctx.local(step.src), covered) or within_any(ctx.local(step.dst), covered):
-                raise RenameRefusedError("intent_open")
+                self._free_file(ctx, news[item], vacated=vacated)
+                renames.append(PlannedRename("file", records[item].rel_path, news[item], item))
+            steps = self._ordered(ctx, renames)
+        for step in steps:  # I9, both ways: under an open intent, or holding one
+            for rel in (step.src, step.dst):
+                local = ctx.local(rel)
+                if within_any(local, covered) or holds_any(local, covered):
+                    raise RenameRefusedError("intent_open")
         return steps
+
+    def _ordered(self, ctx: DestinationContext, steps: list[PlannedRename]) -> list[PlannedRename]:
+        """The steps in an order the disk can follow, one rename never replacing anything: a step
+        whose target is the source of another goes after it (topological order). A cycle (a swap)
+        is broken by one step through a temporary name in its own folder, taken back at the end."""
+        by_src = {s.src: s for s in steps}
+        blocker = {s.src: by_src[s.dst].src for s in steps if s.dst in by_src}
+        unblocks: dict[str, list[PlannedRename]] = defaultdict(list)
+        for step in steps:
+            if step.src in blocker:
+                unblocks[blocker[step.src]].append(step)
+        ordered: list[PlannedRename] = []
+        deferred: list[PlannedRename] = []
+        ready = [s for s in steps if s.src not in blocker]
+        emitted: set[str] = set()
+
+        def release(step: PlannedRename) -> None:
+            emitted.add(step.src)
+            ready.extend(unblocks[step.src])
+
+        remaining = iter(steps)
+        while len(emitted) < len(steps):
+            if ready:
+                step = ready.pop(0)
+                ordered.append(step)
+                release(step)
+                continue
+            cycle = next(s for s in remaining if s.src not in emitted)  # a swap: break it here
+            tmp = self._temp_name(ctx, cycle)
+            ordered.append(PlannedRename("file", cycle.src, tmp, cycle.export_item_id))
+            deferred.append(PlannedRename("file", tmp, cycle.dst, cycle.export_item_id))
+            release(cycle)
+        return ordered + deferred
+
+    def _temp_name(self, ctx: DestinationContext, step: PlannedRename) -> str:
+        tmp = posixpath.join(
+            posixpath.dirname(step.src), f".{(step.export_item_id or 'x')[-12:]}.shelfhold-tmp"
+        )
+        if self._fsops.observe(ctx.local(tmp)) is not None:
+            raise RenameRefusedError("destination_taken")
+        return tmp
 
     def _free_folder(
         self, ctx: DestinationContext, old: str, new: str, top: dict[str, str]
@@ -454,10 +532,9 @@ class RenameBook:
         if seen is None or seen[0] != "file":
             raise RenameRefusedError("not_a_file")
 
-    def _free_file(
-        self, ctx: DestinationContext, rel: str, covered: frozenset[str], *, vacated: set[str]
-    ) -> None:
-        """The target is free and every parent that exists is a real folder (a link is refused,
+    def _free_file(self, ctx: DestinationContext, rel: str, *, vacated: set[str]) -> None:
+        """The target is free (for Kavita and SMB, which take names that differ by case or
+        normalisation for one) and every parent that exists is a real folder (a link is refused,
         never followed)."""
         parts = rel.split("/")
         for depth in range(1, len(parts)):
@@ -466,7 +543,17 @@ class RenameBook:
                 break
             if seen[0] != "dir":
                 raise RenameRefusedError("not_a_folder")
-        if rel not in vacated and self._fsops.observe(ctx.local(rel)) is not None:
+        if rel in vacated:
+            return
+        if self._fsops.observe(ctx.local(rel)) is not None:
+            raise RenameRefusedError("destination_taken")
+        parent, name = posixpath.split(rel)
+        try:
+            names = self._fsops.list_dir(ctx.local(parent) if parent else ctx.root_local or "")
+        except (FsopsError, OSError):
+            return  # no such folder yet: nothing in it takes the name
+        taken = {posixpath.join(parent, n) for n in names if _fold(n) == _fold(name)}
+        if taken - vacated:
             raise RenameRefusedError("destination_taken")
 
     # -- the warning ------------------------------------------------------------------------
@@ -487,7 +574,9 @@ class RenameBook:
         return self._readers(remote)
 
     def require_confirmation(self, plan_id: str, *, confirmed: bool) -> None:
-        """EF-EXP-037: asked before the plan is claimed, and again when it runs."""
+        """EF-EXP-037: asked before the plan is claimed, and again when it runs. A confirmation
+        is for the count the admin was shown (kept with the plan as `announced`): a count that is
+        larger now, or that was exact and is not any more, asks for a new one."""
         with self._engine.connect() as conn:
             plan = conn.execute(
                 sa.select(coherence.export_plan).where(coherence.export_plan.c.plan_id == plan_id)
@@ -505,10 +594,36 @@ class RenameBook:
         root = (ctx.root_local or "").rstrip("/") + "/"
         folders = sorted({p[len(root) :].split("/", 1)[0] for p in ops if p and p.startswith(root)})
         found = self._count_readers(ctx, folders)
-        if found is None or confirmed:
+        if found is None or (found.count == 0 and found.exact):
             return
-        if found.count > 0 or not found.exact:
-            raise RenameConfirmationRequiredError(found.count, exact=found.exact)
+        meta = self._store().meta(plan_id)
+        announced = meta.get("announced")
+        if (confirmed or meta.get("confirmed") is True) and isinstance(announced, dict):
+            covered = found.count <= int(announced.get("readers", 0))
+            if covered and (found.exact or not announced.get("exact", True)):
+                return
+        raise RenameConfirmationRequiredError(found.count, exact=found.exact)
+
+    def record_confirmation(self, plan_id: str) -> None:
+        """The confirmation a fresh admin session gave with its request, kept with the plan: the
+        job that applies it later (it has no session) relies on it, never on its own say."""
+        self._store().annotate(plan_id, confirmed=True)
+
+    def is_applying(self, plan_id: str) -> bool:
+        """A job is applying this plan right now."""
+        return self._locks.is_held(plan_resource(plan_id))
+
+    def _plan_lock(self, job_id: str, plan_id: str) -> ExitStack:
+        """One application of a plan at a time. A second one is refused at once (409), the plan
+        and the disk are left to the first."""
+        stack = ExitStack()
+        try:
+            stack.enter_context(
+                self._locks.hold_resources(job_id, [plan_resource(plan_id)], timeout=0.0)
+            )
+        except LockBusyError:
+            raise StalePlanError("the plan is being applied", busy=True) from None
+        return stack
 
     # -- the application --------------------------------------------------------------------
 
@@ -518,14 +633,18 @@ class RenameBook:
         versions: tuple[Callable[[], str], Callable[[], str]],
     ) -> RenameReport:  # fmt: skip
         """Apply a stored plan once. Nothing runs without the confirmation when readers would
-        lose their progress; `StalePlanError` (412) when anything moved since the preview."""
-        with self._engine.connect() as conn:
-            plan = conn.execute(
-                sa.select(coherence.export_plan).where(coherence.export_plan.c.plan_id == plan_id)
-            ).one()
-        if plan.status == "planned" and if_match == plan.base_version:
-            self.require_confirmation(plan_id, confirmed=confirm_progress_loss)
-        return self._run(plan_id, if_match=if_match, job_id=job_id, versions=versions)
+        lose their progress; `StalePlanError` (412) when anything moved since the preview, (409)
+        when another job is applying it."""
+        with self._plan_lock(job_id, plan_id):
+            with self._engine.connect() as conn:
+                plan = conn.execute(
+                    sa.select(coherence.export_plan).where(
+                        coherence.export_plan.c.plan_id == plan_id
+                    )
+                ).one()
+            if plan.status == "planned" and if_match == plan.base_version:
+                self.require_confirmation(plan_id, confirmed=confirm_progress_loss)
+            return self._run(plan_id, if_match=if_match, job_id=job_id, versions=versions)
 
     def resume(
         self, plan_id: str, *, job_id: str,
@@ -533,18 +652,20 @@ class RenameBook:
         settle: Callable[[], int],
     ) -> RenameReport:  # fmt: skip
         """Go on with a plan a stop cut short: the intents it left are settled first (the folder
-        is at the source or at the target, never both), then the steps that are not done."""
-        with self._engine.connect() as conn:
-            status = conn.execute(
-                sa.select(coherence.export_plan.c.status).where(
-                    coherence.export_plan.c.plan_id == plan_id
-                )
-            ).scalar_one()
-        if status != "applying":
-            raise StalePlanError("the plan is not being applied")
-        settled = settle()
-        report = self._run(plan_id, if_match=None, job_id=job_id, versions=versions)
-        return replace(report, settled=settled)
+        is at the source or at the target, never both), then the steps that are not done. The
+        lock of the plan comes first: a plan that a job is applying is not resumed under it."""
+        with self._plan_lock(job_id, plan_id):
+            with self._engine.connect() as conn:
+                status = conn.execute(
+                    sa.select(coherence.export_plan.c.status).where(
+                        coherence.export_plan.c.plan_id == plan_id
+                    )
+                ).scalar_one()
+            if status != "applying":
+                raise StalePlanError("the plan is not being applied")
+            settled = settle()
+            report = self._run(plan_id, if_match=None, job_id=job_id, versions=versions)
+            return replace(report, settled=settled)
 
     def _run(
         self, plan_id: str, *, if_match: str | None, job_id: str,
@@ -564,12 +685,18 @@ class RenameBook:
         done = {"n": 0}
         scanned: set[int] = set()
         batches_left = self._batch_sizes(plan_id)
+        if if_match is None:  # a stop may have come before the scan of a batch that was done
+            for batch in self._done_batches(plan_id):
+                self._finish_batch(ctx, plan_id, batch)
 
         def run(op: PlanOp) -> None:
             payload = op.payload or {}
-            held = self._hold(job_id, ctx, payload)
-            with held:
-                self._step(ctx, journal, hook, plan_id, op, payload)
+            with self._hold(job_id, ctx, payload):
+                try:
+                    self._step(ctx, journal, hook, plan_id, op, payload)
+                except Exception:  # the batch is given back as it was: the series is not blocked
+                    self._undo_batch(journal, hook, plan_id, op.batch)
+                    raise
             done["n"] += 1
             batches_left[op.batch] -= 1
             if batches_left[op.batch] == 0 and op.batch not in scanned:
@@ -582,6 +709,51 @@ class RenameBook:
             store.apply(plan_id, if_match=if_match, run=run)
         self._complete(ctx, plan_id)
         return RenameReport(plan_id, done["n"])
+
+    def _done_batches(self, plan_id: str) -> list[int]:
+        table = coherence.export_op
+        with self._engine.connect() as conn:
+            rows = conn.execute(
+                sa.select(table.c.batch, table.c.status).where(table.c.plan_id == plan_id)
+            ).all()
+        batches: dict[int, set[str]] = defaultdict(set)
+        for batch, status in rows:
+            batches[int(batch)].add(status)
+        return sorted(b for b, states in batches.items() if states == {"done"})
+
+    def _undo_batch(
+        self,
+        journal: IntentJournal,
+        hook: Callable[[Connection, OpenIntent], None],
+        plan_id: str,
+        batch: int,
+    ) -> None:
+        """The steps of the batch already done go back, last first, each by its own intent. A step
+        that cannot go back stops the undoing: what is left is recorded as the disk shows it."""
+        table = coherence.export_op
+        with self._engine.connect() as conn:
+            rows = conn.execute(
+                sa.select(table)
+                .where(table.c.plan_id == plan_id, table.c.batch == batch, table.c.status == "done")
+                .order_by(table.c.position.desc())
+            ).all()
+        for row in rows:
+            payload = dict(row.payload or {})
+            back = {k: v for k, v in payload.items() if k != "template"}
+            back.update(old_rel=payload["new_rel"], new_rel=payload["old_rel"],
+                        template_ref=payload.get("prior_ref"))  # fmt: skip
+            try:
+                if payload.get("scope") == "series_dir":
+                    journal.apply_move_dir(MoveDirStep(row.dst_path, row.src_path), payload=back,
+                                           plan_id=plan_id, on_done=hook)  # fmt: skip
+                else:
+                    journal.apply_rename(RenameStep(row.dst_path, row.src_path, payload=back),
+                                         on_done=hook, cancel_on_refusal=True)  # fmt: skip
+            except (MoveRefusedError, FsopsError, OSError):
+                log.warning("rename.undo_stopped", plan_id=plan_id, batch=batch)
+                return
+            with self._engine.begin() as conn:
+                conn.execute(sa.update(table).where(table.c.id == row.id).values(status="skipped"))
 
     def _batch_sizes(self, plan_id: str) -> dict[int, int]:
         table = coherence.export_op
@@ -626,6 +798,10 @@ class RenameBook:
         extra["template_ref"] = self._template_ref(payload)
         if self._already_moved(ctx, payload):
             return  # the intent of a cut-short step was settled: the manifest says it is done
+        with self._engine.connect() as conn:
+            covered = open_intent_paths(conn)
+        if any(within_any(p, covered) or holds_any(p, covered) for p in (src, dst)):
+            raise RenameRefusedError("intent_open")  # I9, both ways, as the disk is now
         try:
             if scope == "series_dir":
                 self._make_parent(dst)
@@ -634,14 +810,15 @@ class RenameBook:
             else:
                 self._require_plain_file(src)
                 self._make_parent(dst)
-                journal.apply_rename(RenameStep(src, dst, payload=extra), on_done=hook)
+                journal.apply_rename(RenameStep(src, dst, payload=extra), on_done=hook,
+                                     cancel_on_refusal=True)  # fmt: skip
         except MoveRefusedError as refused:
             raise RenameRefusedError(refused.reason) from None
         except FileExistsError:
             raise RenameRefusedError("destination_taken") from None
         except FileNotFoundError:
             raise RenameRefusedError("not_a_file") from None
-        except FsopsError as error:
+        except (FsopsError, OSError) as error:  # EXDEV, EBUSY, EACCES...: the intent is closed
             raise RenameRefusedError("refused_by_the_disk") from error
 
     @staticmethod
@@ -713,6 +890,8 @@ class RenameBook:
             for folder in sorted(folders):
                 if self._fsops.observe(ctx.local(folder)) is not None:
                     self._request_scan(ctx.remote_folder(ctx.local(folder)))
+        if self._drain is not None:
+            self._drain()  # one scan per batch, now
 
     def _remove_emptied(self, root: str, local: str) -> None:
         """A managed folder the batch emptied goes; the root and a folder with anything left

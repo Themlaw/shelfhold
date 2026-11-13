@@ -21134,6 +21134,10 @@
       "code": "password_login_suspended",
       "status": 409
     },
+    "/api/v1/problems/plan.applying": {
+      "code": "plan.applying",
+      "status": 409
+    },
     "/api/v1/problems/plan.stale": {
       "code": "plan.stale",
       "status": 412

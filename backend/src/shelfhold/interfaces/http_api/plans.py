@@ -306,8 +306,8 @@ def build_plans_router(get_pipeline: Callable[[], PlanPipeline]) -> APIRouter:
             ) from None
         except RenameRefusedError as error:
             raise ProblemError(error.code, extensions={"reason": error.reason}) from None
-        except StalePlanError:
-            raise ProblemError("plan.stale") from None
+        except StalePlanError as error:  # 412, or 409 `plan.applying` while a job is on it
+            raise ProblemError(error.code) from None
         except UnknownPlanError:
             raise ProblemError("not_found") from None
         except (

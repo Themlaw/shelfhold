@@ -353,6 +353,10 @@ class ExportPipeline:
         """Who reads a folder in Kavita, for the warning of a rename (EF-EXP-037)."""
         self._renames.bind_readers(counter)
 
+    def bind_scan_drain(self, drain: Callable[[], None] | None) -> None:
+        """What sends the scans asked so far: a rename plan calls it at the end of each batch."""
+        self._renames.bind_scan_drain(drain)
+
     def rename_preview(
         self,
         destination_id: str,
@@ -377,9 +381,17 @@ class ExportPipeline:
         return str(kind)
 
     def require_confirmation(self, plan_id: str, *, confirmed: bool) -> None:
-        """The refusals of a rename plan that need no disk write, asked before a job exists."""
+        """The refusals of a rename plan that need no disk write, asked before a job exists. A
+        confirmation that passes is kept with the plan: the job relies on it (EF-EXP-037)."""
         if self.kind_of(plan_id) == RENAME_KIND:
             self._renames.require_confirmation(plan_id, confirmed=confirmed)
+            if confirmed:
+                self._renames.record_confirmation(plan_id)
+
+    def require_not_applying(self, plan_id: str) -> None:
+        """409 `plan.applying`: a job is applying this plan now; a second request leaves it be."""
+        if self.kind_of(plan_id) == RENAME_KIND and self._renames.is_applying(plan_id):
+            raise StalePlanError("the plan is being applied", busy=True)
 
     def _versions(self, ctx: DestinationContext) -> tuple[Callable[[], str], Callable[[], str]]:
         def current() -> str:

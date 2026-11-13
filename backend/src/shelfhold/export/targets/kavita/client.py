@@ -469,10 +469,13 @@ class KavitaClient:
         """Ask for a scan; `flush_scans` sends it once the writing has been quiet."""
         self._scans.request(remote_path)
 
-    async def flush_scans(self, allowed: Callable[[str], bool] | None = None) -> list[str]:
-        """Send the scans due. `allowed(remote_path)` is the sentinel's word on the folder
-        (`require_scan_allowed`): a scan it refuses is not sent, and the next run asks again."""
-        due = self._scans.take_due()
+    async def flush_scans(
+        self, allowed: Callable[[str], bool] | None = None, *, now: bool = False
+    ) -> list[str]:
+        """Send the scans due (`now`: all that were asked, a batch of a rename plan is done).
+        `allowed(remote_path)` is the sentinel's word on the folder (`require_scan_allowed`): a
+        scan it refuses is not sent, and the next run asks again."""
+        due = self._scans.take_all() if now else self._scans.take_due()
         sent = []
         for path in due:
             if allowed is not None and not allowed(path):

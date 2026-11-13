@@ -50,6 +50,7 @@ __all__ = [
     "RenameStep",
     "ResolveReport",
     "SamePathDisk",
+    "holds_any",
     "open_intent_paths",
     "within_any",
 ]
@@ -181,6 +182,13 @@ def within_any(path: str, bases: Iterable[str]) -> bool:
     return any(path == b or path.startswith(b.rstrip("/") + "/") for b in bases)
 
 
+def holds_any(path: str, bases: Iterable[str]) -> bool:
+    """The other way of `within_any` (I9): an open intent lies under `path`. A folder that is to be
+    moved whole carries away what a write in flight holds in it."""
+    prefix = path.rstrip("/") + "/"
+    return any(b == path or b.startswith(prefix) for b in bases)
+
+
 class IntentJournal:
     def __init__(
         self,
@@ -292,7 +300,15 @@ class IntentJournal:
             ).all()
         return [(r.id, r.state, dict(r.expected_file_id or {})) for r in rows]
 
-    def apply_rename(self, step: RenameStep, *, on_done: ManifestHook | None = None) -> None:
+    def apply_rename(
+        self,
+        step: RenameStep,
+        *,
+        on_done: ManifestHook | None = None,
+        cancel_on_refusal: bool = False,
+    ) -> None:
+        """`cancel_on_refusal`: a disk that refuses the rename (the file is where it was, nothing
+        moved) closes the intent `cancelled` and the error goes on: nothing is left to replay."""
         observed = self._disk.observe(step.src)
         if observed is None or observed[0] != "file":
             raise FileNotFoundError(step.src)
@@ -307,7 +323,12 @@ class IntentJournal:
             extra=step.payload,
         )
         self.mark_applying(intent_id)
-        self._disk.rename(step.src, step.dst)
+        try:
+            self._disk.rename(step.src, step.dst)
+        except (OSError, FsopsError):
+            if cancel_on_refusal:
+                self.cancel(intent_id)
+            raise
         intent = OpenIntent(
             intent_id, "rename", step.src, step.dst, sha256, file_id, "applying",
             0, INTENT_SCHEMA_VERSION, payload=dict(step.payload or {}),
@@ -347,6 +368,9 @@ class IntentJournal:
         except FileExistsError:
             self.cancel(intent_id)
             raise MoveRefusedError("destination_taken") from None
+        except (OSError, FsopsError):  # EXDEV, EBUSY, EACCES...: the folder did not move
+            self.cancel(intent_id)
+            raise MoveRefusedError("refused_by_the_disk") from None
         intent = OpenIntent(
             intent_id, "rename", step.src, step.dst, None, identity, "applying",
             0, INTENT_SCHEMA_VERSION, plan_id, {**(payload or {}), "kind": "dir"},

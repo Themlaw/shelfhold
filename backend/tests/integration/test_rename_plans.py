@@ -277,10 +277,10 @@ def test_rename_interrupted_resumes_from_intent(
         if crash == "after_rename":
             die_once()
 
-    def set_op(self: Any, op_id: str, status: str) -> None:
+    def set_op(self: Any, op_id: str, status: str, *reason: Any) -> None:
         if crash == "op" and status == "done":
             die_once()
-        real_set_op(self, op_id, status)
+        real_set_op(self, op_id, status, *reason)
 
     monkeypatch.setattr(IntentJournal, "record", record)
     monkeypatch.setattr(IntentJournal, "mark_applying", applying)

@@ -26,8 +26,17 @@ __all__ = ["PlanOp", "PlanRecord", "PlanStore", "StalePlanError", "fingerprint_f
 
 
 class StalePlanError(Exception):
+    """The preview is not the present (412). `busy`: the plan is being applied by another job
+    right now (409, `plan.applying`): nothing of it is touched, the first application goes on."""
+
     code = "plan.stale"
     status = 412
+
+    def __init__(self, message: str = "", *, busy: bool = False) -> None:
+        super().__init__(message)
+        if busy:
+            self.code = "plan.applying"
+            self.status = 409
 
 
 @dataclass(frozen=True)
@@ -81,6 +90,7 @@ class PlanStore:
         files: Iterable[str],
         ops: Iterable[PlanOp],
         shelf_destination_id: str | None = None,
+        meta: dict[str, Any] | None = None,
     ) -> PlanRecord:
         paths = list(files)
         record = PlanRecord(new_ulid(), self._current_version(), fingerprint_files(paths))
@@ -93,7 +103,7 @@ class PlanStore:
                     dry_run=True,
                     base_version=record.base_version,
                     files_fingerprint=record.fingerprint,
-                    batches=[{"batch": 1, "files": paths}],
+                    batches=[{"batch": 1, "files": paths, **(meta or {})}],
                     status="planned",
                 )
             )
@@ -170,8 +180,8 @@ class PlanStore:
             op = PlanOp(row.op, row.src_path, row.dst_path, row.payload, row.batch)
             try:
                 run(op)
-            except BaseException:
-                self._set_op(row.id, "failed")
+            except BaseException as error:
+                self._set_op(row.id, "failed", _reason_of(error))
                 self._set_plan(plan_id, "failed", only_from="applying")
                 raise
             self._set_op(row.id, "done")
@@ -207,8 +217,8 @@ class PlanStore:
                     raise StalePlanError("the data changed while the plan was being applied")
                 try:
                     run(PlanOp(row.op, row.src_path, row.dst_path, row.payload, row.batch))
-                except BaseException:
-                    self._set_op(row.id, "failed")
+                except BaseException as error:
+                    self._set_op(row.id, "failed", _reason_of(error))
                     self._set_plan(plan_id, "failed", only_from="applying")
                     raise
                 self._set_op(row.id, "done")
@@ -223,10 +233,42 @@ class PlanStore:
                 .values(status=status, updated_at=self._clock.now())
             )
 
-    def _set_op(self, op_id: str, status: str) -> None:
+    def _set_op(self, op_id: str, status: str, reason: str | None = None) -> None:
         with self._engine.begin() as conn:
             conn.execute(
                 sa.update(coherence.export_op)
                 .where(coherence.export_op.c.id == op_id)
-                .values(status=status)
+                .values(status=status, error_code=reason)
             )
+
+    def meta(self, plan_id: str) -> dict[str, Any]:
+        """What the plan keeps about itself next to its files (the first batch entry)."""
+        table = coherence.export_plan
+        with self._engine.connect() as conn:
+            batches = conn.execute(
+                sa.select(table.c.batches).where(table.c.plan_id == plan_id)
+            ).scalar_one()
+        return dict(batches[0]) if batches else {}
+
+    def annotate(self, plan_id: str, **values: Any) -> None:
+        """Add to what the plan keeps about itself (a confirmation given with the request)."""
+        table = coherence.export_plan
+        with self._engine.begin() as conn:
+            batches = conn.execute(
+                sa.select(table.c.batches).where(table.c.plan_id == plan_id)
+            ).scalar_one()
+            first = {**(batches[0] if batches else {"batch": 1, "files": []}), **values}
+            conn.execute(
+                sa.update(table)
+                .where(table.c.plan_id == plan_id)
+                .values(batches=[first, *batches[1:]])
+            )
+
+
+def _reason_of(error: BaseException) -> str | None:
+    """The closed word of a refusal (`reason`, else `code`), for the op that failed."""
+    for name in ("reason", "code"):
+        value = getattr(error, name, None)
+        if isinstance(value, str):
+            return value[:64]
+    return None

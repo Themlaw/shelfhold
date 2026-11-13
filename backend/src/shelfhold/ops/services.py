@@ -34,10 +34,10 @@ from shelfhold.export.application.target_state import load_health
 from shelfhold.export.domain.naming import normalize_series_name, series_name_refusal
 from shelfhold.export.domain.physical_roots import RootState
 from shelfhold.export.domain.planner import SeriesRef
-from shelfhold.identity.public import Principal
+from shelfhold.identity.public import RESERVED_ACTIONS, Allowed, Principal, authorize_reserved
 from shelfhold.infrastructure.clock import Clock
 from shelfhold.infrastructure.fsops import Fsops
-from shelfhold.infrastructure.schema import catalog, export, platform
+from shelfhold.infrastructure.schema import catalog, coherence, export, platform
 from shelfhold.jobs.control import QueueControl
 from shelfhold.jobs.window import DEFAULT_WINDOW, MaintenanceWindow
 from shelfhold.ops.acquire import AcquireOps
@@ -183,6 +183,9 @@ def _job_row(r: sa.Row[tuple[object, ...]]) -> JobRow:
         r.id, r.kind, r.status, r.error_code, r.last_error, r.attempts, r.created_at,
         r.started_at, r.finished_at, r.progress, r.request_id, r.priority_class, r.source_key,
     )  # fmt: skip
+
+
+_APPLY_JOB_KIND = "export.apply"  # `runtime_jobs.APPLY_JOB_KIND` (the composition root)
 
 
 class OpsServices:
@@ -426,9 +429,36 @@ class OpsServices:
         if not rows:
             raise UnknownSubjectError("no periodic job of this kind is scheduled")
 
-    def jobs_retry(self, subject: str) -> JobRow | None:
+    def jobs_retry_is_reserved(self, subject: str) -> bool:
+        """The job applies a rename plan: putting it back in the queue is `plan.apply_rename`,
+        which asks for a fresh admin session (EF-EXP-030, EF-USR-024), never a key."""
+        job, plan = platform.job_view, coherence.export_plan
+        with self._engine.connect() as connection:
+            row = connection.execute(
+                sa.select(job.c.kind, job.c.dedupe_key).where(job.c.id == subject)
+            ).first()
+            if row is None or row.kind != _APPLY_JOB_KIND or not row.dedupe_key:
+                return False
+            kind = connection.execute(
+                sa.select(plan.c.kind).where(plan.c.plan_id == row.dedupe_key.split(":")[1])
+            ).scalar()
+        return kind == "rename_plan"
+
+    def jobs_retry(self, subject: str, *, principal: Principal | None = None) -> JobRow | None:
         """A job that gave up goes back to the queue (the scheduler dispatches it); a file the
-        server never indexed is looked at again by the arrival poll."""
+        server never indexed is looked at again by the arrival poll. A job that applies a rename
+        plan goes back only for a fresh admin session: a key (or a caller that says nobody) is
+        refused, so that no replay brings an application the session did not give."""
+        if self.jobs_retry_is_reserved(subject):
+            verdict = (
+                authorize_reserved(
+                    principal, RESERVED_ACTIONS["plan.apply_rename"], now=self._clock.now()
+                )
+                if principal is not None
+                else None
+            )
+            if not isinstance(verdict, Allowed):
+                raise CodedRefusal("forbidden", "applying a rename plan needs a fresh session")
         job, record = platform.job_view, export.export_record
         with self._engine.begin() as connection:
             row = connection.execute(sa.select(job.c.status).where(job.c.id == subject)).first()

@@ -40,6 +40,7 @@ class FakePipeline:
     version: ClassVar[str] = "4242"
     calls: list[tuple[Any, ...]] = field(default_factory=list)
     stale: bool = False
+    busy: bool = False
 
     def kind_of(self, plan_id: str) -> str:
         if plan_id == RENAME:
@@ -65,6 +66,8 @@ class FakePipeline:
         self.calls.append(("apply", plan_id, if_match, confirm_progress_loss))
         if plan_id not in (RENAME, EXPORT):
             raise UnknownPlanError(plan_id)
+        if self.busy:
+            raise StalePlanError("the plan is being applied", busy=True)
         if self.stale or if_match != self.version:
             raise StalePlanError("the preview changed: recompute it")
         if plan_id == RENAME and not confirm_progress_loss:
@@ -192,3 +195,15 @@ def test_a_refused_preview_says_why_and_stores_nothing(
                  {"shelf_destination_id": DEST, "moves": [], "template": None}):  # fmt: skip
         assert api.post(PREVIEW, json=body).status_code == 422, body
     assert ItemMove  # the model of a move is part of the contract
+
+
+def test_a_second_application_during_one_is_a_409_and_touches_nothing(
+    api: AuthEnv, pipeline: FakePipeline
+) -> None:
+    """EF-EXP-030: one application of a plan at a time; the second request is told so."""
+    api.login()
+    pipeline.busy = True
+    refused = api.post(APPLY, headers=IF_MATCH, json={"confirm_progress_loss": True})
+    assert refused.status_code == 409
+    assert refused.json()["type"] == "/api/v1/problems/plan.applying"
+    assert "readers" not in refused.text

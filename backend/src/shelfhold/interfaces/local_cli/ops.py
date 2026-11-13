@@ -105,8 +105,8 @@ def _jobs_run(ops: OpsServices, _by: Principal, p: Params) -> object:
     return {"ok": True}
 
 
-def _jobs_retry(ops: OpsServices, _by: Principal, p: Params) -> object:
-    ops.jobs_retry(_text(p, "job_id"))
+def _jobs_retry(ops: OpsServices, by: Principal, p: Params) -> object:
+    ops.jobs_retry(_text(p, "job_id"), principal=by)
     return {"ok": True}
 
 

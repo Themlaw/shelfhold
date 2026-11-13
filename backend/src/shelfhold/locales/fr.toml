@@ -1164,6 +1164,11 @@ title = "L'aperçu a changé depuis son calcul."
 action = "Recalculez l'aperçu, vérifiez-le, puis appliquez-le."
 cause = "L'état des fichiers ou de la base a changé depuis le calcul de l'aperçu : l'appliquer ferait autre chose que ce que vous avez lu."
 
+[errors."plan.applying"]
+title = "Ce plan est déjà en cours d'application."
+action = "Attendez la fin de la tâche en cours (voir les tâches), puis relisez l'état du plan : il n'a pas été touché."
+cause = "Une tâche applique ce plan en ce moment : une deuxième application en même temps déplacerait les mêmes fichiers deux fois."
+
 [errors."precondition_failed"]
 title = "La ressource a changé depuis votre lecture."
 action = "Relisez la ressource pour obtenir son ETag actuel, puis recommencez."
