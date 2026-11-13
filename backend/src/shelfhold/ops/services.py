@@ -97,6 +97,7 @@ from shelfhold.ops.status import (
     unverifiable_download_dirs,
     wal_pending_report,
 )
+from shelfhold.ops.wizard import WizardOps
 
 __all__ = ["JobRow", "OpsServices", "RecheckOutcome", "StatusReport", "user_of"]
 
@@ -208,6 +209,7 @@ class OpsServices:
         contributors: ContributorOps | None = None,
         export_items: ExportItemOps | None = None,
         export_all: ExportAllOps | None = None,
+        wizard: WizardOps | None = None,
         follows: FollowOps | None = None,
         acquire: AcquireOps | None = None,
         requests: RequestService | None = None,
@@ -243,6 +245,7 @@ class OpsServices:
         self._contributors = contributors
         self._export_items = export_items
         self._export_all = export_all
+        self._wizard = wizard
         self._follows = follows
         self._acquire = acquire
         self._requests = requests
@@ -748,6 +751,13 @@ class OpsServices:
         if self._export_all is None:
             raise ExitUnavailableError("the open export is not connected")
         return self._export_all
+
+    @property
+    def wizard(self) -> WizardOps:
+        """The first-run wizard: the folder probe read by Kavita and the adoption (L39)."""
+        if self._wizard is None:
+            raise ExitUnavailableError("the first-run wizard is not connected")
+        return self._wizard
 
     @property
     def export_items(self) -> ExportItemOps:

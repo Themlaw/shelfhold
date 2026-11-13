@@ -57,6 +57,7 @@ from shelfhold.ops.revisions import RevisionOps
 from shelfhold.ops.roots import RootOps
 from shelfhold.ops.services import OpsServices
 from shelfhold.ops.tombstone_screens import CatalogScreens
+from shelfhold.ops.wizard import WizardOps
 
 __all__ = ["open_ops"]
 
@@ -162,6 +163,7 @@ def open_ops(
         dedup=DedupOps(engine, CatalogScreens(composition)),
         resplit=ResplitOps(composition), contributors=ContributorOps(composition),
         export_items=ExportItemOps(composition), export_all=ExportAllOps(composition),
+        wizard=WizardOps(composition),
         follows=FollowOps(composition), acquire=AcquireOps(composition),
         requests=build_service(composition), roots=RootOps(composition),
         maintenance=MaintenanceOps(

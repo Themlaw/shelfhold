@@ -3632,6 +3632,268 @@ export type WithdrawalOut = {
 };
 
 /**
+ * WizardAdoptIn
+ */
+export type WizardAdoptIn = {
+    /**
+     * Destination Id
+     */
+    destination_id: string;
+    /**
+     * Fingerprint
+     */
+    fingerprint: string;
+    /**
+     * Library Ref
+     */
+    library_ref?: string | null;
+};
+
+/**
+ * WizardAdoptOut
+ */
+export type WizardAdoptOut = {
+    /**
+     * Adopted Files
+     */
+    adopted_files: number;
+    /**
+     * Already Adopted
+     */
+    already_adopted: number;
+    /**
+     * Library Ref
+     */
+    library_ref: string;
+    /**
+     * Linked
+     */
+    linked: boolean;
+    /**
+     * Series
+     */
+    series: number;
+};
+
+/**
+ * WizardDestinationIn
+ */
+export type WizardDestinationIn = {
+    /**
+     * Destination Id
+     */
+    destination_id: string;
+};
+
+/**
+ * WizardDestinationOut
+ */
+export type WizardDestinationOut = {
+    /**
+     * Adopted
+     */
+    adopted: boolean;
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Linked
+     */
+    linked: boolean;
+    /**
+     * Target Id
+     */
+    target_id: string;
+};
+
+/**
+ * WizardLibraryIn
+ */
+export type WizardLibraryIn = {
+    /**
+     * Destination Id
+     */
+    destination_id: string;
+    /**
+     * Library Type
+     */
+    library_type?: string | null;
+    /**
+     * Name
+     */
+    name: string;
+};
+
+/**
+ * WizardLibraryOut
+ */
+export type WizardLibraryOut = {
+    /**
+     * Library Ref
+     */
+    library_ref: string;
+    /**
+     * Linked
+     */
+    linked: boolean;
+};
+
+/**
+ * WizardPreviewIn
+ */
+export type WizardPreviewIn = {
+    /**
+     * Destination Id
+     */
+    destination_id: string;
+    /**
+     * Download Dir
+     */
+    download_dir?: string | null;
+    /**
+     * Library Ref
+     */
+    library_ref?: string | null;
+};
+
+/**
+ * WizardPreviewOut
+ */
+export type WizardPreviewOut = {
+    /**
+     * Child Library
+     */
+    child_library: boolean;
+    download_dir: WizardVerdictOut | null;
+    /**
+     * Files
+     */
+    files: number;
+    /**
+     * Fingerprint
+     */
+    fingerprint: string;
+    /**
+     * Library Ref
+     */
+    library_ref: string;
+    /**
+     * Roots
+     */
+    roots: Array<WizardRootOut>;
+    /**
+     * Series
+     */
+    series: number;
+};
+
+/**
+ * WizardProbeOut
+ */
+export type WizardProbeOut = {
+    /**
+     * Kavita Read
+     */
+    kavita_read: boolean | 'no_library' | null;
+    /**
+     * Ok
+     */
+    ok: boolean;
+    write: WizardWriteProbeOut;
+    /**
+     * Yaml Hint
+     */
+    yaml_hint: string | null;
+};
+
+/**
+ * WizardRootOut
+ */
+export type WizardRootOut = {
+    /**
+     * Path
+     */
+    path: string;
+    /**
+     * Present
+     */
+    present: boolean;
+};
+
+/**
+ * WizardStateOut
+ */
+export type WizardStateOut = {
+    /**
+     * Destinations
+     */
+    destinations: Array<WizardDestinationOut>;
+    /**
+     * First Run
+     */
+    first_run: boolean;
+    /**
+     * Targets
+     */
+    targets: Array<WizardTargetOut>;
+};
+
+/**
+ * WizardTargetOut
+ */
+export type WizardTargetOut = {
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Key Expires At
+     */
+    key_expires_at: string | null;
+    /**
+     * Name
+     */
+    name: string;
+};
+
+/**
+ * WizardVerdictOut
+ */
+export type WizardVerdictOut = {
+    /**
+     * Action
+     */
+    action: string;
+    /**
+     * Copy Needed
+     */
+    copy_needed: boolean;
+    /**
+     * Kind
+     */
+    kind: 'under_library' | 'outside_library';
+};
+
+/**
+ * WizardWriteProbeOut
+ */
+export type WizardWriteProbeOut = {
+    /**
+     * Cause
+     */
+    cause: string | null;
+    /**
+     * Failed Step
+     */
+    failed_step: string | null;
+    /**
+     * Ok
+     */
+    ok: boolean;
+};
+
+/**
  * WorkItemOut
  */
 export type WorkItemOut = {
@@ -7753,6 +8015,171 @@ export type SeriesResumeResponses = {
 };
 
 export type SeriesResumeResponse = SeriesResumeResponses[keyof SeriesResumeResponses];
+
+export type WizardAdoptionConfirmData = {
+    body: WizardAdoptIn;
+    path?: never;
+    query?: never;
+    url: '/api/v1/setup/adoption/confirm';
+};
+
+export type WizardAdoptionConfirmErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type WizardAdoptionConfirmError = WizardAdoptionConfirmErrors[keyof WizardAdoptionConfirmErrors];
+
+export type WizardAdoptionConfirmResponses = {
+    /**
+     * Successful Response
+     */
+    200: WizardAdoptOut;
+};
+
+export type WizardAdoptionConfirmResponse = WizardAdoptionConfirmResponses[keyof WizardAdoptionConfirmResponses];
+
+export type WizardAdoptionPreviewData = {
+    body: WizardPreviewIn;
+    path?: never;
+    query?: never;
+    url: '/api/v1/setup/adoption/preview';
+};
+
+export type WizardAdoptionPreviewErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type WizardAdoptionPreviewError = WizardAdoptionPreviewErrors[keyof WizardAdoptionPreviewErrors];
+
+export type WizardAdoptionPreviewResponses = {
+    /**
+     * Successful Response
+     */
+    200: WizardPreviewOut;
+};
+
+export type WizardAdoptionPreviewResponse = WizardAdoptionPreviewResponses[keyof WizardAdoptionPreviewResponses];
+
+export type WizardNewLibraryData = {
+    body: WizardLibraryIn;
+    path?: never;
+    query?: never;
+    url: '/api/v1/setup/library';
+};
+
+export type WizardNewLibraryErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type WizardNewLibraryError = WizardNewLibraryErrors[keyof WizardNewLibraryErrors];
+
+export type WizardNewLibraryResponses = {
+    /**
+     * Successful Response
+     */
+    201: WizardLibraryOut;
+};
+
+export type WizardNewLibraryResponse = WizardNewLibraryResponses[keyof WizardNewLibraryResponses];
+
+export type WizardProbeData = {
+    body: WizardDestinationIn;
+    path?: never;
+    query?: never;
+    url: '/api/v1/setup/probe';
+};
+
+export type WizardProbeErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type WizardProbeError = WizardProbeErrors[keyof WizardProbeErrors];
+
+export type WizardProbeResponses = {
+    /**
+     * Successful Response
+     */
+    200: WizardProbeOut;
+};
+
+export type WizardProbeResponse = WizardProbeResponses[keyof WizardProbeResponses];
+
+export type WizardStateData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/setup/state';
+};
+
+export type WizardStateErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type WizardStateError = WizardStateErrors[keyof WizardStateErrors];
+
+export type WizardStateResponses = {
+    /**
+     * Successful Response
+     */
+    200: WizardStateOut;
+};
+
+export type WizardStateResponse = WizardStateResponses[keyof WizardStateResponses];
 
 export type ShelvesData = {
     body?: never;

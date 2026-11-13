@@ -169,6 +169,11 @@ CLOSED = (
     "POST /api/v1/roots/{root}/takeover",
     "POST /api/v1/secrets/import",
     "POST /api/v1/series/{export_series_id}/resume",
+    "GET /api/v1/setup/state",  # M3 L39: the first-run wizard is the admin's, on a fresh session
+    "POST /api/v1/setup/adoption/confirm",
+    "POST /api/v1/setup/adoption/preview",
+    "POST /api/v1/setup/library",
+    "POST /api/v1/setup/probe",
     "POST /api/v1/shelves",
     "POST /api/v1/shelves/precreate",
     "GET /api/v1/shelves",  # M3 L11: the list of shelves and its `?since=` removals
