@@ -940,7 +940,7 @@ def test_cli_export_all_and_import_all_say_what_they_did(
         capsys.readouterr()
         assert cli(monkeypatch, home, "export-all", str(out)) == 0
         printed = capsys.readouterr().out
-        assert "fichier(s)" in printed and "ligne(s)" in printed
+        assert "fichiers" in printed and "lignes" in printed
         assert cli(monkeypatch, home, "export-all", str(out)) != 0  # the folder is no longer empty
         assert "not_empty" in capsys.readouterr().err
     fresh_home = settings_in(tmp_path / "fresh")

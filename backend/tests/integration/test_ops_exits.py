@@ -9,6 +9,7 @@ enumeration is partitioned (M1a / later): a new `WaitingState` fails here until 
 
 import argparse
 import inspect
+import re
 import sqlite3
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -325,7 +326,7 @@ def adoption_refused(
             capsys.readouterr()
             base = ("adopt", "--confirm-migration", "--destination", b.env.destination_id)
             assert b.cli(*base) == 2  # the report and its fingerprint first
-            fingerprint = capsys.readouterr().out.split("rapport :")[1].split()[0]
+            fingerprint = re.split(r"rapport\s:", capsys.readouterr().out)[1].split()[0]
             assert b.cli(*base, "--confirm", fingerprint) == 0
 
         ctx.listed_then_gone("adoption_refused", leave)

@@ -60,7 +60,7 @@ def test_purge_now_work_unfollows_releases_and_lists_the_retained_backups(
         assert b.cli("purge", "--now", "--work", work, "--confirm", work) == 0
         shown = capsys.readouterr()
         assert _suwayomi(b)["inLibrary"] is False  # the series left the service's library
-        assert re.search(r"1 série\(s\) retirée\(s\)", shown.out)
+        assert re.search(r"1 série retirée", shown.out)
         assert name in shown.err  # a retained backup that still holds the title: said, not touched
         assert (folder / name).read_bytes() == b"shelfhold-backup/2 1\n"
 
@@ -109,13 +109,13 @@ def test_leftovers_plan_then_confirmation_only_by_the_version_read(
         assert b.cli("purge", "--leftovers") == 0
         planned = capsys.readouterr().out
         match = re.search(r"--confirm (\w+)", planned)
-        assert match and "1 série(s)" in planned
+        assert match and "1 série purgée" in planned
         assert _suwayomi(b)["inLibrary"] is True  # a plan reads only
         assert b.cli("purge", "--leftovers", "--confirm", "0" * 32) != 0  # a stale plan
         assert _suwayomi(b)["inLibrary"] is True
         capsys.readouterr()
         assert b.cli("purge", "--leftovers", "--confirm", match.group(1)) == 0
-        assert "1 série(s) retirée(s)" in capsys.readouterr().out
+        assert "1 série retirée" in capsys.readouterr().out
         assert _suwayomi(b)["inLibrary"] is False
 
 
@@ -156,7 +156,7 @@ def test_kept_in_service_is_shown_by_status_until_the_admin_clears_it(
         b.cli("status")
         assert request in capsys.readouterr().out
         assert b.cli("purge", "--kept-ack") == 0
-        assert "1 marque(s)" in capsys.readouterr().out
+        assert "1 marque effacée" in capsys.readouterr().out
         with b.engine.connect() as connection:  # a reserved action: the trace is in the audit log
             acted = connection.execute(
                 sa.text("SELECT count(*) FROM audit WHERE action = 'purge.kept_acknowledged'")

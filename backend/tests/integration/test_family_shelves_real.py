@@ -3,6 +3,7 @@ shelf command, the Kavita linker and the access audit against the simulated Kavi
 cycle and the export job as the scheduler runs them."""
 
 import asyncio
+import re
 from pathlib import Path
 
 import pytest
@@ -243,8 +244,8 @@ def test_adoption_into_a_family_shelf_suspends_the_unrated_works(
         capsys.readouterr()
         assert b.cli(*base, "--dry-run") == 0
         shown = capsys.readouterr().out
-        assert "À classer : Lupin" in shown and "suivi suspendu" in shown
-        fingerprint = shown.split("aperçu :")[1].split()[0]
+        assert re.search(r"À classer\s: Lupin", shown) and "suivi suspendu" in shown
+        fingerprint = re.split(r"aperçu\s:", shown)[1].split()[0]
         assert b.cli(*base, "--confirm", fingerprint) == 0
         assert (folder / "Lupin v01.cbz").read_bytes() == written  # not touched
         (work,) = b.rows("SELECT id, rated_at, age_rating FROM work")

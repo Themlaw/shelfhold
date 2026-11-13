@@ -1,11 +1,42 @@
-"""Message catalogs (ENF-I18N-001): French only in M0, English added before 1.0."""
+"""Message catalogs (ENF-I18N-001) and French typography (ENF-I18N-003).
 
+French only in M0, English added before 1.0. A message is an ICU subset, enough for French:
+
+- `{count, plural, =0 {aucun fichier} one {# fichier} other {# fichiers}}`: exact `=N` first, then
+  the CLDR category of French (`one` is 0 and 1, `many` is a whole number of millions, else
+  `other`; a missing `many` falls back to `other`). `#` is the number, grouped as `Intl` does in
+  fr-FR. A branch may hold `{name}` placeholders and other plurals.
+- `{size:fr}`: a number grouped with a narrow no-break space (thousands), not a bare digit run.
+- every other `{name}` is a `str.format` placeholder, `{{` and `}}` the literal braces.
+
+The typography is applied once, to the catalog text, when it is loaded: a plain space before `;`,
+`:`, `!` or `?` becomes a narrow no-break space (U+202F), except in a code span between
+backticks. A value (a title, a path, a name sent by a source) is never retypeset.
+"""
+
+import re
 import tomllib
 from functools import cache
 from importlib import resources
 from typing import Any
 
 DEFAULT_LANGUAGE = "fr"
+NARROW_NBSP = chr(0x202F)
+
+_BEFORE_PUNCTUATION = re.compile(f"[ {chr(0x00A0)}{NARROW_NBSP}]+(?=[;:!?])")
+_CODE_SPAN = re.compile(r"(`[^`]*`)")
+_GROUPED = re.compile(r"\{(\w+):fr\}")
+_PLURAL_HEAD = re.compile(r"\s*(\w+)\s*,\s*plural\s*,")
+_SELECTOR = re.compile(r"\s*(=?\w+)\s*\{")
+
+
+def typeset(text: str) -> str:
+    """Narrow no-break space before `;:!?`, outside code spans."""
+    parts = _CODE_SPAN.split(text)
+    return "".join(
+        part if index % 2 else _BEFORE_PUNCTUATION.sub(NARROW_NBSP, part)
+        for index, part in enumerate(parts)
+    )
 
 
 def _flatten(table: dict[str, Any], prefix: str = "") -> dict[str, str]:
@@ -22,9 +53,89 @@ def _flatten(table: dict[str, Any], prefix: str = "") -> dict[str, str]:
 @cache
 def load_catalog(language: str = DEFAULT_LANGUAGE) -> dict[str, str]:
     text = resources.files("shelfhold").joinpath("locales", f"{language}.toml").read_text("utf-8")
-    return _flatten(tomllib.loads(text))
+    return {key: typeset(value) for key, value in _flatten(tomllib.loads(text)).items()}
+
+
+def _grouped(value: object) -> str:
+    """`1234567.5` is `1 234 567,5` with narrow no-break spaces, as `Intl` writes it in fr-FR."""
+    if isinstance(value, bool) or not isinstance(value, int | float):
+        raise TypeError(f"not a number: {value!r}")
+    text = f"{value:,}"
+    return text.replace(",", NARROW_NBSP).replace(".", ",")
+
+
+def _category(value: int | float) -> str:
+    if abs(value) < 2:  # 0, 1 and 1.5 are singular in French
+        return "one"
+    if value == int(value) and int(value) % 1_000_000 == 0:
+        return "many"
+    return "other"
+
+
+def _closing(text: str, opening: int) -> int:
+    depth = 0
+    for index in range(opening, len(text)):
+        if text[index] == "{":
+            depth += 1
+        elif text[index] == "}":
+            depth -= 1
+            if depth == 0:
+                return index
+    raise ValueError(f"unbalanced braces in {text!r}")
+
+
+def _choose(inner: str, params: dict[str, object]) -> str | None:
+    head = _PLURAL_HEAD.match(inner)
+    if head is None:
+        return None
+    value = params[head.group(1)]
+    if isinstance(value, str) and value.isascii() and value.isdecimal():
+        value = int(value)  # a count already written as digits
+    if isinstance(value, bool) or not isinstance(value, int | float):
+        raise TypeError(f"plural argument {head.group(1)!r} is not a number: {value!r}")
+    branches: dict[str, str] = {}
+    position = head.end()
+    while (selector := _SELECTOR.match(inner, position)) is not None:
+        opening = selector.end() - 1
+        closing = _closing(inner, opening)
+        branches[selector.group(1)] = inner[opening + 1 : closing]
+        position = closing + 1
+    if inner[position:].strip():
+        raise ValueError(f"unreadable plural in {inner!r}")
+    category = _category(value)
+    chosen = branches.get(f"={int(value) if value == int(value) else value}")
+    if chosen is None:
+        chosen = branches.get(category) or branches.get("other")
+    if chosen is None:
+        raise ValueError(f"plural without `other` in {inner!r}")
+    return _expand(chosen, params).replace("#", _grouped(value))
+
+
+def _expand(template: str, params: dict[str, object]) -> str:
+    out: list[str] = []
+    index = 0
+    while index < len(template):
+        if template.startswith(("{{", "}}"), index):
+            out.append(template[index : index + 2])
+            index += 2
+        elif template[index] == "{":
+            closing = _closing(template, index)
+            chosen = _choose(template[index + 1 : closing], params)
+            out.append(template[index : closing + 1] if chosen is None else chosen)
+            index = closing + 1
+        else:
+            out.append(template[index])
+            index += 1
+    return "".join(out)
+
+
+def render(template: str, **params: object) -> str:
+    """Fill a catalog message: plurals, grouped numbers, then the `str.format` placeholders."""
+    expanded = _expand(template, params)
+    expanded = _GROUPED.sub(lambda match: _grouped(params[match.group(1)]), expanded)
+    return expanded.format(**params)
 
 
 def t(key: str, **params: object) -> str:
     """Return the localized message for `key`; an unknown key raises KeyError."""
-    return load_catalog()[key].format(**params)
+    return render(load_catalog()[key], **params)

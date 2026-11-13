@@ -56,7 +56,7 @@ def test_cli_relink(
         captured = capsys.readouterr()
         shown = captured.out
         assert code == 0, captured.err
-        assert "2 numéro(s) manquant(s)" in shown and "3,4" in shown  # what it lacks
+        assert "2 numéros manquants" in shown and "3,4" in shown  # what it lacks
         (binding,) = b.rows(
             "SELECT id, edition_id FROM source_binding WHERE work_id = :w AND active", w=work
         )

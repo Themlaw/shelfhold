@@ -1,5 +1,7 @@
 """`shelfhold adopt --dry-run` shows what adoption would do and writes nothing (EF-INT-014)."""
 
+import re
+
 import pytest
 import sqlalchemy as sa
 
@@ -41,7 +43,7 @@ def test_cli_adopt_dry_run(
         # without --dry-run and without an explicit confirmation: refused, nothing is entered
         assert cli.main(["adopt", "--destination", destination]) == 2
         assert a.wired.fake.writes == [] and _records(export_environment) == 0
-        fingerprint = out.split("Empreinte de l'aperçu : ")[1].split()[0]
+        fingerprint = re.split(r"Empreinte de l'aperçu\s: ", out)[1].split()[0]
         assert cli.main(["adopt", "--confirm", "nope", "--destination", destination]) == 4
         assert _records(export_environment) == 0  # a stale fingerprint enters nothing
         assert cli.main(["adopt", "--confirm", fingerprint, "--destination", destination]) == 0

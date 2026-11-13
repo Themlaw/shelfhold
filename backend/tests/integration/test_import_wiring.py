@@ -152,7 +152,7 @@ def test_a_file_dropped_in_the_folder_is_stored_verified_and_removed(
 
         assert run_cli(monkeypatch, settings, "import", "scan") == 0
         out = capsys.readouterr().out
-        assert "3 rangé(s), 1 refusé(s)" in out
+        assert "3 rangés, 1 refusé" in out
         assert "Fichier protégé" in out
         assert [p.name for p in folder.rglob("*") if p.is_file()] == ["locked.epub"]
         assert locked.read_bytes() == protected  # untouched

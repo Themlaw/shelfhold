@@ -251,7 +251,7 @@ def test_m1b_backup_restore_other_path_journey(journey_m1b: Journey) -> None:
     assert preview.code == 0, preview.err
     assert j.shelfhold("reconcile", "--adopt-after-restore", env=restored).code != 0  # unconfirmed
     assert j.library_files() == before
-    fingerprint = re.search(r"Empreinte de l'aperçu : (\w+)", preview.out)
+    fingerprint = re.search(r"Empreinte de l'aperçu\s: (\w+)", preview.out)
     assert fingerprint is not None, preview.out
     adopted = j.shelfhold(
         "reconcile",
@@ -407,9 +407,11 @@ def run_rollback(j: Journey) -> dict[str, object]:
         )  # fmt: skip
 
     preview = offline("reconcile", "--adopt-after-restore", "--dry-run")
-    assert "racine(s) en retard" in preview.stdout, (preview.stdout, preview.stderr)
+    # the previous release prints "racine(s)", the image under test an ICU plural
+    late = re.search(r"racine(?:s|\(s\))? en retard", preview.stdout)
+    assert late, (preview.stdout, preview.stderr)
     assert "Rien ne sera supprimé" in preview.stdout
-    fingerprint = re.search(r"Empreinte de l'aperçu : (\w+)", preview.stdout)
+    fingerprint = re.search(r"Empreinte de l'aperçu\s: (\w+)", preview.stdout)
     assert fingerprint is not None, (preview.stdout, preview.stderr)
     adopted = offline("reconcile", "--adopt-after-restore", "--confirm", fingerprint.group(1))
     assert adopted.returncode == 0, adopted.stderr
@@ -453,7 +455,7 @@ def test_rollback_after_lazy_format_migration_no_loss(
     projections written by the newer release are readable by the older one."""
     world = rollback_world
     assert "Rien ne sera supprimé" in world["preview"]  # type: ignore[operator]
-    assert "racine(s) en retard" in world["preview"]  # type: ignore[operator]
+    assert re.search(r"racine(?:s|\(s\))? en retard", world["preview"])  # type: ignore[arg-type]
     assert world["files_after"] == world["files_m1b"]  # nothing lost, nothing moved
     assert world["meta_check"] == 0  # unit.json, work.json and the mirror: read, no drift
 

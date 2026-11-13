@@ -36,6 +36,7 @@ def test_error_catalog_every_error_has_action_fr() -> None:
     for spec in codes:
         assert catalog.get(spec.title_key, "").strip(), f"{spec.code}: no French title"
         assert catalog.get(spec.action_key, "").strip(), f"{spec.code}: no French action"
+        assert catalog.get(spec.cause_key, "").strip(), f"{spec.code}: no French cause"
         assert spec.audience in {"admin", "user"}
         assert 400 <= spec.status <= 599
 

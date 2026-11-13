@@ -71,7 +71,7 @@ def test_import_tree_command_end_to_end(
 
         assert run_cli(monkeypatch, settings, "import", "tree", str(tree)) == 0
         out = capsys.readouterr().out
-        assert "2 rangé(s), 1 ignoré(s), 0 refusé(s)" in out
+        assert "2 rangés, 1 ignoré, 0 refusé" in out
         assert "Aucune liaison Suwayomi" in out
         with env.inst.engine.connect() as connection:
             assert connection.execute(sa.select(sa.func.count()).select_from(storage.content)
@@ -85,7 +85,7 @@ def test_import_tree_command_end_to_end(
         assert listing(tree) == before  # the tree is as it was
 
         assert run_cli(monkeypatch, settings, "import", "tree", str(tree)) == 0
-        assert "0 rangé(s), 3 ignoré(s)" in capsys.readouterr().out  # twice: nothing new
+        assert "0 rangé, 3 ignorés" in capsys.readouterr().out  # twice: nothing new
 
 
 @pytest.mark.req("EF-INT-009")
