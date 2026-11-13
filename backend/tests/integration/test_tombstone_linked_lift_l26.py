@@ -98,3 +98,22 @@ def test_a_new_form_with_no_known_origin_stands_alone(tmp_path: Path) -> None:
     new = service.record(NEW, env.roots, reason="new_form", origins=[])
 
     assert [r.linked_to for r in service.listing() if r.seq == new.seq] == [()]
+
+
+def test_a_new_form_is_lifted_with_the_last_of_its_origins_and_the_list_says_who_holds_it(
+    tmp_path: Path,
+) -> None:
+    env = make_tomb_env(tmp_path)
+    service = env.service()
+    service.replay(env.roots)
+    first = service.record(OLD, env.roots)
+    second = service.record(OLD, env.roots)
+    new = service.record(NEW, env.roots, reason="new_form", origins=service.origin_tokens(OLD))
+    assert {r.seq: r.linked_to for r in service.listing()}[new.seq] == (first.seq, second.seq)
+
+    assert _lift(service, env, first.seq).linked == ()  # type: ignore[attr-defined]
+    assert _blocked(service, NEW, env)
+    assert {r.seq: r.linked_to for r in service.listing()}[new.seq] == (second.seq,)  # still held
+
+    assert _lift(service, env, second.seq).linked == (new.seq,)  # type: ignore[attr-defined]
+    assert not _blocked(service, NEW, env)

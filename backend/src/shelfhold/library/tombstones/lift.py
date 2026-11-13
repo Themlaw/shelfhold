@@ -77,7 +77,10 @@ def origin_token(values: TombstoneValues, cited: Mapping[str, str]) -> str:
     if event is not None:
         return event
     folded = folded_fields(values.scope, flatten(values)) or ()
-    return "~" + hashlib.sha256("\x1f".join(folded).encode()).hexdigest()[:16]
+    # the scope is part of the token: a variant and a series binding that fold alike differ
+    # (the token is computed on read, so the tombstones that exist are given it at the next start)
+    digest = hashlib.sha256("\x1f".join((values.scope, *folded)).encode()).hexdigest()[:16]
+    return "~" + digest
 
 
 def origins_of(cited: Mapping[str, str]) -> frozenset[str]:
