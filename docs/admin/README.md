@@ -25,6 +25,7 @@ l'installation.
 | Remplacer un chapitre par une meilleure version, ce que voient Kavita et KOReader | [mise-a-niveau.md](mise-a-niveau.md) |
 | Révisions republiées par une source, version suspecte, chapitre retiré à la source | [revisions-en-attente.md](revisions-en-attente.md) |
 | Effacer pour de bon (`purge --now`, `--checkpoint`, `--leftovers`) | [purge.md](purge.md) |
+| Récupérer de l'espace : vider la corbeille, purge anticipée, ajout refusé, lever une pierre tombale | [corbeille.md](corbeille.md) |
 | Garder une copie dans `/store`, « Mettre à l'abri », purge chez Suwayomi, l'index de `/store` | [copie-conservee.md](copie-conservee.md) |
 | Importer vos propres fichiers, fichiers protégés et audio refusés, tatouage | [dossier-import.md](dossier-import.md) |
 | Comprendre la pause « disque presque plein » | [garde-disque.md](garde-disque.md) |

@@ -10,12 +10,12 @@ from datetime import timedelta
 from typing import Any
 
 import pytest
-from shelfhold.library.application.disk_guard import GIB, check_add_fits
 
 from shelfhold.config import Settings
 from shelfhold.identity.public import RESERVED_ACTIONS, Principal
 from shelfhold.interfaces.cli.registry import build_parser
 from shelfhold.interfaces.local_cli.ops import OPS_METHODS
+from shelfhold.library.application.disk_guard import GIB, check_add_fits
 from tests.auth_env import AuthEnv, auth_env, db_dump, db_rows, run_cli
 from tests.integration.test_reserved_real_path import add_user, make_key, real_reserved_routes
 
@@ -38,8 +38,10 @@ class _Library:
 
     def purge(self, *, principal: Principal, typed: str | None, **_: object) -> dict[str, Any]:
         self.effects.append(f"purge:{typed}:{principal.credential}")
-        return {"anchor_id": "u1", "units": ["u1"], "complete": True, "erased": 1,
-                "unreachable_roots": [], "pending_roots": [], "alerts": [], "out_of_reach": []}  # fmt: skip
+        return {
+            "anchor_id": "u1", "units": ["u1"], "complete": True, "erased": 1,
+            "unreachable_roots": [], "pending_roots": [], "alerts": [], "out_of_reach": [],
+        }  # fmt: skip
 
     def space_check(self, *, estimated_bytes: int) -> dict[str, Any]:
         figures = check_add_fits(estimated_bytes, free_bytes=40 * GIB, reserve_bytes=10 * GIB)
@@ -77,10 +79,11 @@ def test_empty_trash_over_http_is_a_reserved_action_with_a_typed_word(
     ok = api.post(EMPTY, json={"typed": PHRASE})
     assert ok.status_code == 200 and ok.json()["removed"] == 2
     assert effects == [f"empty:{PHRASE}:session"]
-    [(session_id, auth_time)] = db_rows(
+    lines = db_rows(
         api.settings, "SELECT session_id, auth_time FROM audit WHERE action = 'trash.empty'"
     )
-    assert session_id and auth_time
+    assert len(lines) == 2  # the guard writes one per authorised call, the empty body included
+    assert all(session_id and auth_time for session_id, auth_time in lines)
     api.clock.advance(timedelta(minutes=20))  # stale: the fresh session is the right
     stale = api.post(EMPTY, json={"typed": PHRASE})
     assert stale.status_code == 401

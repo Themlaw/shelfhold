@@ -707,6 +707,15 @@ class OpsServices:
             raise ExitUnavailableError("the tombstone service is not connected")
         return self._keyring.rekey(principal=principal, kids=kids)
 
+    def tombstone_lift(self, *, seq: int, typed: str, principal: Principal) -> dict[str, Any]:
+        """`tombstone lift` (reserved, host CLI or fresh session, never a key): the tombstone at
+        that sequence no longer blocks; nothing is restored (M3 L26, 06 Q54)."""
+        return self.library.tombstone_lift(seq=seq, typed=typed, principal=principal)
+
+    def trash_empty(self, *, typed: str | None, principal: Principal) -> dict[str, Any]:
+        """`trash empty` (reserved): the bins now, minus what the holds keep (M3 L26)."""
+        return self.library.trash_empty(typed=typed, principal=principal)
+
     def tombstone_flush(self) -> list[str]:
         """Write the lines the mounted roots owe; the roots that still owe some."""
         if self._keyring is None:

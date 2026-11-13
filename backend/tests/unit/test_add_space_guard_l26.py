@@ -2,6 +2,8 @@
 less the reserve, and refuses before any write, with the figures and the action."""
 
 import pytest
+
+from shelfhold.infrastructure.observability.disk_guard import DiskThresholds
 from shelfhold.library.application.disk_guard import (
     EMPTY_TRASH_ACTION,
     GIB,
@@ -9,8 +11,6 @@ from shelfhold.library.application.disk_guard import (
     check_add_fits,
     reserve_for,
 )
-
-from shelfhold.infrastructure.observability.disk_guard import DiskThresholds
 
 pytestmark = pytest.mark.req("EF-BIB-030")
 

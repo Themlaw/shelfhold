@@ -109,7 +109,11 @@ class RecycleSweeper:
             return [path]
         found: list[str] = []
         for name, kind in sorted(listed.items()):
-            found += self._files(f"{path}/{name}") if str(kind) != "file" else [f"{path}/{name}"]
+            if str(kind) == "file":
+                found.append(f"{path}/{name}")
+            elif str(kind) == "dir":
+                found += self._files(f"{path}/{name}")
+            # a link or a special file is never a copy to protect, and is never followed
         return found
 
     def _holds_only_copy(self, entry: str) -> bool:
@@ -149,6 +153,27 @@ class RecycleSweeper:
             )
             _allowed, kept = safe_to_clean(connection, units) if units else ([], [])
         return bool(kept)
+
+    def holds(self, name: str, entry: str) -> str | None:
+        """Why this bin entry must stay whatever its age, or None (EF-BIB-021, EF-BIB-030,
+        EF-BIB-031). Asked by the manual emptying and by the early purge, which only drop the
+        age: an open intent (an upgrade's old version, a restore on its way, a removal begun), a
+        Unit that became irreplaceable, a copy a retained backup may look for, an adopted
+        original with no verified copy in /store. One of `intent`, `irreplaceable`, `backup`,
+        `only_copy`."""
+        with self._journal.engine.connect() as connection:
+            paths = open_intent_paths(connection)
+            if name in open_intent_ids(connection) or any(
+                p in (name, entry) or p.startswith((f"{name}/", f"{entry}/")) for p in paths
+            ):
+                return "intent"
+        if self._became_irreplaceable(name):
+            return "irreplaceable"
+        if self._retained_by_backup(name):
+            return "backup"
+        if self._holds_only_copy(entry):
+            return "only_copy"
+        return None
 
     def sweep(self) -> RecycleReport:
         removed = kept = failed = held = 0

@@ -475,6 +475,7 @@ def _opens_for_writing(node: ast.Call) -> bool:
 FSOPS_CALLERS = (
     "shelfhold/export/application/deletion.py",  # the empty folders after a deletion (EF-BIB-021)
     "shelfhold/export/application/intents.py",
+    "shelfhold/export/application/reclaim.py",  # the trash emptied, the early purge (EF-BIB-030)
     "shelfhold/export/application/recycle_sweep.py",  # the bin retention (ENF-OPS-009)
     "shelfhold/export/application/rename_plan.py",  # the folders a rename plan makes and empties
     "shelfhold/infrastructure/instance/lease.py",

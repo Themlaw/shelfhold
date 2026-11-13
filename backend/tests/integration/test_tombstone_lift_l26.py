@@ -11,16 +11,16 @@ from pathlib import Path
 
 import pytest
 import sqlalchemy as sa
+
+from shelfhold.identity.public import Credential, Principal
+from shelfhold.infrastructure.schema import coherence, identity, platform
+from shelfhold.library.tombstones import PlaceRef, VariantRef
 from shelfhold.library.tombstones.lift import (
     LiftConfirmationError,
     LiftRefusedError,
     UnknownTombstoneError,
     lift_phrase,
 )
-
-from shelfhold.identity.public import Credential, Principal
-from shelfhold.infrastructure.schema import coherence, identity, platform
-from shelfhold.library.tombstones import PlaceRef, VariantRef
 from tests.intents_env import NOW
 from tests.tombstone_env import ADMIN, PLACE, SLUG, TITLE, VARIANT, TombEnv, make_tomb_env
 
@@ -138,32 +138,31 @@ def test_lift_of_an_unknown_or_already_lifted_sequence_is_refused(tmp_path: Path
     assert len(_audit(env, "tombstone.lifted")) == 1
 
 
+def _counts(env: TombEnv) -> dict[str, int]:
+    """Every table but the ones a lift is meant to write: the tombstones, the audit, the events."""
+    own = {"audit", "event", "instance", "sqlite_sequence", "content_tombstone", "tombstone_kid"}
+    with env.engine.connect() as connection:
+        tables = connection.execute(
+            sa.text("SELECT name FROM sqlite_master WHERE type = 'table'")
+        ).scalars()
+        return {
+            t: connection.execute(sa.text(f'SELECT count(*) FROM "{t}"')).scalar()  # noqa: S608
+            for t in tables
+            if t not in own and not t.startswith(("tombstone_", "sqlite_"))
+        }
+
+
 def test_a_lift_restores_nothing_by_itself(tmp_path: Path) -> None:
     """The lift opens the door; it brings back no Unit, no file, no request, no job."""
     env, service, seq = _laid(tmp_path)
-    tables = ("unit", "content", "variant", "work", "edition", "job", "trash_item", "replica")
-    with env.engine.connect() as connection:
-        before = {
-            t: connection.execute(sa.text(f"SELECT count(*) FROM {t}")).scalar()  # noqa: S608
-            for t in tables
-        }
-    tree = sorted(p.relative_to(env.tmp).as_posix() for p in env.tmp.rglob("*") if p.is_file())
+    before = _counts(env)
+    tree = {p for p in env.tmp.rglob("*") if p.is_file()}
 
     _lift(service, env, seq)
 
-    with env.engine.connect() as connection:
-        after = {
-            t: connection.execute(sa.text(f"SELECT count(*) FROM {t}")).scalar()  # noqa: S608
-            for t in tables
-        }
-    assert after == before
-    new_files = {
-        p.relative_to(env.tmp).as_posix() for p in env.tmp.rglob("*") if p.is_file()
-    } - set(tree)
-    assert all(
-        f.endswith(("tombstones", "tombstones.chain", ".shelfhold-mount-id")) or "keyring" in f
-        for f in new_files
-    ), new_files
+    assert _counts(env) == before
+    new_files = {p.name for p in env.tmp.rglob("*") if p.is_file()} - {p.name for p in tree}
+    assert new_files <= {"tombstones", "tombstones.chain"}, new_files  # the journals only
 
 
 def test_a_lift_survives_a_replay_and_a_restore_of_an_older_database(tmp_path: Path) -> None:

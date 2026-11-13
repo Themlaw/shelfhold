@@ -21,7 +21,7 @@ une fois à chaque passage sous le seuil, `ops.disk_recovered` à la reprise.
 
 **La garde ne supprime jamais rien.** Libérez de la place vous-même (copies inutiles, Suwayomi,
 corbeille) ; les files reprennent seules au-dessus du seuil de reprise. La purge anticipée de la
-corbeille sous pression disque arrive avec M3.
+corbeille sous pression disque est décrite dans [corbeille.md](corbeille.md) (M3, EF-BIB-030).
 
 ## Stockage réseau
 

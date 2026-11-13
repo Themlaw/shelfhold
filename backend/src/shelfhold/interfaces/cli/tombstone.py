@@ -9,6 +9,7 @@ and `rekey` (after a key leak, EF-BIB-054 (10)) are reserved actions: the host C
 from __future__ import annotations
 
 import argparse
+import sys
 
 from shelfhold.i18n import t
 from shelfhold.interfaces.cli._ops import ops_command
@@ -33,6 +34,10 @@ def register(commands: argparse._SubParsersAction[argparse.ArgumentParser]) -> N
         "--kid", dest="kids", action="append", required=True, help=t("ops.help_rekey_kid")
     )
     rekey.set_defaults(handler=run_rekey, configure_logging=False)
+    lift = actions.add_parser("lift", help=t("ops.help_tombstone_lift"), allow_abbrev=False)
+    lift.add_argument("--seq", type=int, required=True, help=t("ops.help_lift_seq"))
+    lift.add_argument("--confirm", default=None, help=t("ops.help_lift_confirm"))
+    lift.set_defaults(handler=run_lift, configure_logging=False)
     flush = actions.add_parser("flush", help=t("ops.help_tombstone_flush"), allow_abbrev=False)
     flush.set_defaults(handler=run_flush, configure_logging=False)
 
@@ -61,6 +66,25 @@ def run_rekey(args: argparse.Namespace, channel: OpsChannel) -> int:
     print(t("ops.tombstone_rekeyed", rows=done["table_rows"], roots=len(done["rewritten"])))
     for root_id in done["owed"]:
         print(t("ops.tombstone_rekey_owed", root=root_id))
+    return 0
+
+
+def run_lift(args: argparse.Namespace, resolved: object) -> int:
+    if args.seq < 1:
+        print(t("ops.lift_seq_invalid"), file=sys.stderr)
+        return 2
+    if not args.confirm:
+        print(t("ops.lift_needs_confirmation", seq=args.seq), file=sys.stderr)
+        return 2
+    return _lift(args, resolved)  # type: ignore[arg-type]
+
+
+@ops_command
+def _lift(args: argparse.Namespace, channel: OpsChannel) -> int:
+    done = channel.call("ops.tombstone_lift", seq=args.seq, typed=args.confirm)
+    print(t("ops.tombstone_lifted", seq=done["seq"]))
+    if done["pending"]:
+        print(t("ops.tombstone_lift_owed", roots=done["pending"]), file=sys.stderr)
     return 0
 
 

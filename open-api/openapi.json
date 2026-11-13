@@ -6910,6 +6910,20 @@
         "title": "SourceIn",
         "type": "object"
       },
+      "SpaceCheckIn": {
+        "properties": {
+          "estimated_bytes": {
+            "minimum": 0.0,
+            "title": "Estimated Bytes",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "estimated_bytes"
+        ],
+        "title": "SpaceCheckIn",
+        "type": "object"
+      },
       "SpanOut": {
         "properties": {
           "duration_s": {
@@ -7515,6 +7529,20 @@
           "current"
         ],
         "title": "TrustLineOut",
+        "type": "object"
+      },
+      "TypedIn": {
+        "properties": {
+          "typed": {
+            "minLength": 1,
+            "title": "Typed",
+            "type": "string"
+          }
+        },
+        "required": [
+          "typed"
+        ],
+        "title": "TypedIn",
         "type": "object"
       },
       "UnfollowIn": {
@@ -13316,6 +13344,70 @@
         "summary": "Jobs Retry",
         "tags": [
           "operations"
+        ]
+      }
+    },
+    "/api/v1/library/space-check": {
+      "post": {
+        "description": "The « Ajouter » sheet: does the estimated size fit in the free space less the reserve?\nRefused (409) with the three figures and the action « Vider la corbeille ».",
+        "operationId": "space_check",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SpaceCheckIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Space Check",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Connexion requise, ou mot de passe à confirmer (reauth-required)."
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée)."
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Détail du problème (RFC 9457)."
+          }
+        },
+        "summary": "Space Check",
+        "tags": [
+          "library"
         ]
       }
     },
@@ -19825,6 +19917,146 @@
         ]
       }
     },
+    "/api/v1/tombstones/{seq}/lift": {
+      "post": {
+        "description": "Lifts one tombstone, named by its sequence: it blocks nothing any more and nothing is\nrestored. The same method as `shelfhold tombstone lift`.",
+        "operationId": "lift_tombstone",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "seq",
+            "required": true,
+            "schema": {
+              "minimum": 1,
+              "title": "Seq",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TypedIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Lift Tombstone",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Connexion requise, ou mot de passe à confirmer (reauth-required)."
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée)."
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Détail du problème (RFC 9457)."
+          }
+        },
+        "summary": "Lift Tombstone",
+        "tags": [
+          "library"
+        ]
+      }
+    },
+    "/api/v1/trash/empty": {
+      "post": {
+        "description": "« Vider la corbeille maintenant »: the same method as `shelfhold trash empty`.",
+        "operationId": "empty_trash",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TypedIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Empty Trash",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Connexion requise, ou mot de passe à confirmer (reauth-required)."
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée)."
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Détail du problème (RFC 9457)."
+          }
+        },
+        "summary": "Empty Trash",
+        "tags": [
+          "library"
+        ]
+      }
+    },
     "/api/v1/units/{unit_id}/purge": {
       "post": {
         "operationId": "purge_unit",
@@ -21026,6 +21258,24 @@
       "code": "last_login_factor",
       "status": 409
     },
+    "/api/v1/problems/library.space-insufficient": {
+      "code": "library.space_insufficient",
+      "extensions": {
+        "estimated_bytes": {
+          "type": "integer"
+        },
+        "free_bytes": {
+          "type": "integer"
+        },
+        "reserve_bytes": {
+          "type": "integer"
+        },
+        "usable_bytes": {
+          "type": "integer"
+        }
+      },
+      "status": 409
+    },
     "/api/v1/problems/maintenance.active": {
       "code": "maintenance.active",
       "status": 503
@@ -21570,6 +21820,10 @@
       "code": "target.version_unsupported",
       "status": 503
     },
+    "/api/v1/problems/tombstone.confirmation-required": {
+      "code": "tombstone.confirmation_required",
+      "status": 409
+    },
     "/api/v1/problems/tombstone.journal-truncated": {
       "code": "tombstone.journal_truncated",
       "status": 409
@@ -21586,6 +21840,10 @@
       "code": "tombstone.root_mismatch",
       "status": 409
     },
+    "/api/v1/problems/tombstone.unknown": {
+      "code": "tombstone.unknown",
+      "status": 404
+    },
     "/api/v1/problems/tombstone.unverified": {
       "code": "tombstone.unverified",
       "status": 409
@@ -21597,6 +21855,10 @@
     "/api/v1/problems/too-many-streams": {
       "code": "too_many_streams",
       "status": 429
+    },
+    "/api/v1/problems/trash.confirmation-required": {
+      "code": "trash.confirmation_required",
+      "status": 409
     },
     "/api/v1/problems/unauthenticated": {
       "code": "unauthenticated",
