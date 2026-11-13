@@ -1310,6 +1310,7 @@
   "shelfhold.infrastructure.packaging.epub.opf",
   "shelfhold.infrastructure.packaging.epub.toc",
   "shelfhold.infrastructure.packaging.epub.writer",
+  "shelfhold.infrastructure.requesters",
   "shelfhold.infrastructure.restore_notice",
   "shelfhold.infrastructure.schema",
   "shelfhold.infrastructure.schema._base",
