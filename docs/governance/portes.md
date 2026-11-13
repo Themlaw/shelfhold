@@ -37,5 +37,5 @@ Décision M0 : la porte P0 est jugée sur S1, S2, S4, S5 et une veille concurren
 |---|---|---|---|
 | P0 | | à venir | |
 | P1 | | à venir | |
-| P2 | | en attente | P2 : en attente de la réponse du porteur (D1 de PLAN-M3). Aucun résultat consigné. |
+| P2 | 2026-11-13 | franchie par délégation | Le porteur a délégué la décision (13/11). Le test concierge n'a pas été mesuré : aucun chiffre n'est consigné. Décision : M3 complet, parcours famille compris (déjà livré par L35, L41 et L44) ; `FAMILY_NAV_LITE` reste à `false`. À réexaminer au bilan de M3 si l'usage réel ne suit pas. |
 | P3 | | à venir | |
