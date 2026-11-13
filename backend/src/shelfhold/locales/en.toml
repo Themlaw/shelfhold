@@ -785,6 +785,7 @@
   original_lost_action = "The original is lost, the derivative is kept: “shelfhold content reneutralize” starts from the derivative."
   withdrawal_action = "Files no longer have their place on a family shelf: “shelfhold shelf withdraw” (reserved action) removes them, nothing is done alone."
   kavita_audit_action = "A Kavita account sees more than the shelf allows: fix it in Kavita, then run the check again."
+  library_type_action = "A library type changed in Kavita, the shelf is paused: restore the original type in Kavita, then “shelfhold target reconnect”."
   jurisdiction_action = "Jurisdiction is not confirmed: “shelfhold config set instance.jurisdiction <country>”."
   backup_not_configured = "No backup is configured: “shelfhold config set” (folder and passphrase)."
   backup_incomplete = "The backup is half configured: “shelfhold config set” for folder and passphrase."
