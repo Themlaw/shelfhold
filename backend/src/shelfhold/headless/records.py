@@ -12,6 +12,7 @@ import sqlalchemy as sa
 from sqlalchemy import Connection
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
+from shelfhold.catalog.public import record_removed
 from shelfhold.infrastructure.schema import acquisition, export, identity, platform
 
 SUWAYOMI = "suwayomi"
@@ -180,4 +181,5 @@ def unbind(connection: Connection, shelf_id: str, destination_id: str, *, drop_s
         sa.delete(export.shelf_destination).where(export.shelf_destination.c.id == destination_id)
     )
     if drop_shelf:
+        record_removed(connection, "shelf", shelf_id)  # `GET /shelves?since=` tells the removal
         connection.execute(sa.delete(export.shelf).where(export.shelf.c.id == shelf_id))

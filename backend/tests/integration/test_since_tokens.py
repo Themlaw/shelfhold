@@ -11,7 +11,6 @@ carried to another list, a forged or truncated token, an approval without the ri
 
 from __future__ import annotations
 
-import base64
 import re
 from collections.abc import Iterator
 from typing import Any
@@ -199,8 +198,10 @@ def test_a_token_newer_than_what_the_purge_took_stays_good(world: World) -> None
 @pytest.mark.req("EF-INT-001")
 def test_a_token_from_the_future_is_a_restore_and_asks_for_a_resync(world: World) -> None:
     from shelfhold.events.since_key import SinceKey
+    from shelfhold.infrastructure.secrets import diagnostics
 
-    key = SinceKey(world.env.settings.data_dir).value()
+    settings = world.env.settings
+    key = SinceKey(lambda: diagnostics.boot_check(settings, create=False, announce=False)).value()
     ahead = encode_since(
         10**9, key=key, kind="works"
     )  # signed by this instance, but not issued yet
@@ -247,21 +248,22 @@ def test_since_removals_follow_each_readers_own_ceiling(world: World) -> None:
 @pytest.mark.req("EF-INT-001")
 def test_since_token_tampered_rejected(world: World) -> None:
     token = world.token("kid")
-    body = token.split(".")
-    assert len(body) == 3 and body[0] == "s2"
-    other = base64.urlsafe_b64encode(b"1").rstrip(b"=").decode()
+    assert token.startswith("s3.") and token.count(".") == 1
+    body = token[3:]
+    flipped = ("A" if body[10] != "A" else "B").join([body[:10], body[11:]])
     forged = [
-        ".".join([body[0], body[1], body[2][:-1] + ("A" if body[2][-1] != "A" else "B")]),
-        ".".join([body[0], other, body[2]]),  # another sequence, the same signature
-        ".".join([body[0], body[1], ""]),
-        ".".join(body[:2]),  # signature stripped
-        "s1." + body[1],  # the unsigned M1a shape
+        "s3." + flipped,  # one character changed
+        token[:-4],  # truncated
+        token + "AAAA",  # extended
+        "s3." + body[: len(body) // 2],
+        "s2." + body,  # the signed M1a-era shape
+        "s1." + body,  # the unsigned one
         "",
-        "s2.",
+        "s3.",
         "x" * 500,
         token.upper(),
         token + "=",
-        "s2.é.é",
+        "s3.\u00e9\u00e9",
     ]
     for bad in forged:
         answer = world.get("kid", since=bad)
@@ -300,16 +302,26 @@ def test_child_key_reads_removals_as_the_child_not_as_its_creator(world: World) 
 
 @pytest.mark.req("EF-INT-001", "EF-USR-006")
 def test_token_carried_to_another_reader_is_filtered_for_that_reader(world: World) -> None:
-    """IDOR: a token proves nothing about who holds it; the answer is the holder's own view."""
+    """IDOR: a token is bound to the scope of its reader, not to her name. Another reader of the
+    same scope (a second child with the same ceiling) gets her own view; a reader of another scope
+    (an adult's token in a child's hand) gets a resync, and nothing of what the adult knew."""
+    sibling = add_profile(world.env, "sib", "child", "10.0.0.8", max_age_rating=10)
+    world.clients["sib"] = sibling
+    kid_token = world.token("kid")
     admin_token = world.token("admin")
     assert world.rate("unrated", "0+").status_code == 200
     assert world.rate("unrated", "18+").status_code == 200
     assert world.rate("ok", "18+").status_code == 200
     assert world.rate("above", "18+").status_code == 200
-    answer = world.get("kid", since=admin_token, limit=200)
+    answer = world.get("sib", since=kid_token, limit=200)
     assert answer.status_code == 200
     assert answer.json()["removed"] == [world.work("ok")]  # not `unrated`, not `above`
-    world.clean("kid", answer.text, hidden=("unrated", "above"))
+    world.clean("sib", answer.text, hidden=("unrated", "above"))
+    for who in ("kid", "kid16", "sib"):
+        refused = world.get(who, since=admin_token, limit=200)
+        assert refused.status_code == 410
+        assert "removed" not in refused.text and world.work("ok") not in refused.text
+    assert world.get("kid", since=world.token("kid16")).status_code == 410  # another ceiling
 
 
 @pytest.mark.req("EF-INT-001", "EF-USR-006")
@@ -461,17 +473,23 @@ def test_need_of_a_work_is_exactly_the_one_filter(world: World) -> None:
 
 
 @pytest.mark.req("EF-INT-001")
-def test_since_token_round_trip_is_signed_and_scoped() -> None:
-    token = encode_since(42, key=KEY, kind="works")
-    assert token.startswith("s2.") and "42" not in token  # opaque, not a readable number
-    assert decode_since(token, key=KEY, kind="works").seq == 42
+def test_since_token_round_trip_is_sealed_and_scoped() -> None:
+    marker = bytes(range(6))
+    token = encode_since(42, key=KEY, kind="works", epoch=3, marker=marker, scope=10)
+    assert token.startswith("s3.") and "42" not in token  # opaque, not a readable number
+    opened = decode_since(token, key=KEY, kind="works")
+    assert (opened.seq, opened.epoch, opened.marker, opened.scope) == (42, 3, marker, 10)
     for key, kind in ((bytes(32), "works"), (KEY, "shelves")):
         with pytest.raises(ProblemError) as caught:
             decode_since(token, key=key, kind=kind)
         assert caught.value.spec.code == "invalid_cursor"
-    assert re.fullmatch(r"s2\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+", token)
-    assert encode_since(42, key=KEY, kind="works") == token  # deterministic
-    assert encode_since(43, key=KEY, kind="works") != token
+    assert re.fullmatch(r"s3\.[A-Za-z0-9_-]+", token)
+    # two tokens of the same moment are unrelated strings of one width
+    again = encode_since(42, key=KEY, kind="works", epoch=3, marker=marker, scope=10)
+    assert again != token and len(again) == len(token)
+    assert len(encode_since(2**63 - 1, key=KEY, kind="works", epoch=2**32 - 1, scope=65535)) == len(
+        token
+    )
 
 
 @pytest.mark.req("EF-INT-001")
@@ -479,11 +497,33 @@ def test_since_token_is_never_a_timestamp_and_bounds_hold() -> None:
     for bad in (-1, 2**63):
         with pytest.raises(ValueError):
             encode_since(bad, key=KEY, kind="works")
+    for extra in ({"epoch": -1}, {"epoch": 2**32}, {"scope": -1}, {"scope": 2**16}):
+        with pytest.raises(ValueError):
+            encode_since(1, key=KEY, kind="works", **extra)
+    with pytest.raises(ValueError, match="marker_length"):
+        encode_since(1, key=KEY, kind="works", marker=b"abc")
     assert decode_since(encode_since(0, key=KEY, kind="works"), key=KEY, kind="works").seq == 0
     assert (
         decode_since(encode_since(2**63 - 1, key=KEY, kind="works"), key=KEY, kind="works").seq
         == 2**63 - 1
     )
+
+
+@pytest.mark.req("EF-INT-001")
+def test_a_scope_or_epoch_that_changed_asks_for_a_resync(world: World) -> None:
+    from shelfhold.catalog.application import changes as c
+
+    token = world.token("kid")
+    with world.seed.engine.begin() as connection:
+        connection.execute(sa.text("UPDATE instance SET restore_epoch = restore_epoch + 1"))
+    refused = world.get("kid", since=token)
+    assert refused.status_code == 410  # a restore since: the epoch is part of the token
+    assert world.get("kid", limit=200).status_code == 200
+    with world.seed.engine.connect() as connection:
+        assert c.scope_code(scope_of("admin", None)) == c.ADMIN_SCOPE
+        assert c.scope_code(scope_of("child", 10)) == 10
+        assert c.scope_code(scope_of("???", None)) not in (c.ADMIN_SCOPE, 10)
+        assert c.history_marker(connection, 0) == bytes(6)  # no event at or before 0
 
 
 @pytest.mark.req("EF-INT-001")

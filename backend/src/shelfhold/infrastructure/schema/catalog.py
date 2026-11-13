@@ -161,9 +161,9 @@ work = sa.Table(
     bool_column("is_adult", default=False),
     sa.Column("reading_direction", sa.String(), nullable=True),  # null: the kind's default
     sa.Column("locked_fields", sa.JSON(), nullable=False, server_default="[]"),
-    # The sequence of the `event` table when the Work was created (a trigger sets it, and moves
-    # the sequence by one so that no token can be equal to it): `?since=` never reports a removal
-    # of a Work that did not exist when the token was issued (M3 L11). 0: older than any token.
+    # The sequence of the `event` table when the Work was created (a trigger sets it and moves the
+    # sequence by one, so that every token issued before has a lower value): `?since=` never reports
+    # a removal of a Work created after the token (M3 L11). 0: older than any token.
     sa.Column("created_seq", sa.Integer(), nullable=False, server_default="0"),
     now_column(),
     ulid_check("id"),

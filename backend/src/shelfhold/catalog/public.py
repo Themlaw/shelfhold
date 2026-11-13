@@ -30,12 +30,16 @@ from shelfhold.catalog.application.auto_attach import (
     Refiling,
 )
 from shelfhold.catalog.application.changes import (
+    ADMIN_SCOPE,
     MAX_REMOVED,
     NEED_NONE,
     TooManyRemovalsError,
+    history_marker,
     record_removed,
     record_work_removed,
     removed_ids,
+    restore_epoch,
+    scope_code,
     track_work_changes,
     window,
     work_need,
@@ -407,6 +411,7 @@ def rebuild_search_index(connection: sa.Connection) -> int:
 
 
 __all__ = [
+    "ADMIN_SCOPE",
     "ARTIST",
     "ATTACH_SUGGESTED",
     "AUTO_ATTACHED",
@@ -531,6 +536,7 @@ __all__ = [
     "external_ids_of",
     "file_new_edition",
     "guard_received",
+    "history_marker",
     "holder_of",
     "index_work",
     "ingest_isolated",
@@ -564,6 +570,8 @@ __all__ = [
     "remove_from_search_index",
     "removed_ids",
     "renumber_external_id",
+    "restore_epoch",
+    "scope_code",
     "search_capability",
     "search_page",
     "sort_key",

@@ -60,6 +60,17 @@ def _patch_profile(world: World, username: str, **body: object) -> None:
     assert answer.status_code == 200, answer.text
 
 
+def _position(world: World, token: str) -> int:
+    """The position a token holds (opened with the key of the instance: a client cannot)."""
+    from shelfhold.events.since_key import SinceKey
+    from shelfhold.infrastructure.secrets import diagnostics
+    from shelfhold.interfaces.http_api.lists import decode_since
+
+    settings = world.env.settings
+    key = SinceKey(lambda: diagnostics.boot_check(settings, create=False, announce=False)).value()
+    return decode_since(token, key=key, kind="works").seq
+
+
 def _head(world: World) -> int:
     with world.seed.engine.connect() as connection:
         return changes.window(connection).head
@@ -151,8 +162,7 @@ def test_review_poc_restore_in_place_never_replays_an_old_token(
     token = world.token("kid")  # issued at H > H0; `ok` is hers
     assert world.work("ok") in {i["work_id"] for i in world.get("kid", limit=200).json()["items"]}
     _copy(saved, live)  # the restore: back to H0, same key
-    middle = token.split(".")[1]
-    assert _head(world) < int(base64.urlsafe_b64decode(middle + "=" * (-len(middle) % 4)))
+    assert _head(world) < _position(world, token)  # the restored head is behind the token
     assert world.rate("ok", "18+").status_code == 200  # H0 + 1 <= H: a loss for the child
     for age in ("13+", "12+", "13+", "12+", "13+", "12+"):  # the new history passes H
         assert world.rate("twelve", age).status_code == 200

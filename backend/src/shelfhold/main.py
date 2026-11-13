@@ -279,7 +279,7 @@ def create_app(
         build_me_router(cache(lambda: user_state_service(engine, clock))),  # EF-USR-007, EF-BIB-022
         build_activity_router(lambda: engine),  # EF-USR-016: `activity_view`, unmask audited
         build_catalog_lists_router(
-            lambda: engine, SinceKey(resolved.data_dir)
+            lambda: engine, SinceKey(composition.keyring)
         ),  # M3 L11: `?since=`
         build_search_router(
             lambda: engine, ops_services

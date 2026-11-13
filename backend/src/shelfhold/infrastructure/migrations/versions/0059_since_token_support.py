@@ -1,9 +1,11 @@
 """What `?since=` needs of the database (M3 L11, EF-INT-001).
 
 - `work.created_seq`: the sequence of the `event` table when the Work was created, set by a trigger
-  that also moves the sequence by one (so a token, which is a value of the sequence, can never be
-  equal to it). The removals of a list never name a Work that did not exist at the token. Works
-  that exist now are 0: older than any token.
+  that also moves the sequence by one. A token issued right after the creation holds exactly that
+  value, and the Work then existed at the token (`created_seq <= token`); a Work created later has
+  a greater value, because its creation moved the sequence past every token already issued. The
+  removals of a list never name a Work that did not exist at the token. Works that exist now are
+  0: older than any token.
 - `instance.events_purged_through`: the highest event id the retention purged; a token under it is
   `resync_required`. 0 until the first purge.
 """

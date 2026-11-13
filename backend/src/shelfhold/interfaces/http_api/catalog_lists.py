@@ -21,10 +21,14 @@ from pydantic import BaseModel
 from sqlalchemy import Connection, Engine
 
 from shelfhold.catalog.public import (
+    ADMIN_SCOPE,
     TooManyRemovalsError,
     count_visible_works,
+    history_marker,
     list_visible_works,
     removed_ids,
+    restore_epoch,
+    scope_code,
     window,
 )
 from shelfhold.events.since_key import SinceKey
@@ -75,16 +79,29 @@ def _removals(
     raw: str | None,
     key: SinceKey,
     kind: str,
+    scope: int,
     read: Callable[[int], list[str]],
 ) -> tuple[str, list[str]]:
-    """The next token and the removals after `raw`, both read at the head of one snapshot."""
+    """The next token and the removals after `raw`, both read at the head of one snapshot.
+
+    A token that is not of this reader's scope, of this restore epoch and of this history cannot
+    be answered from the events of a Work: the client reloads the list."""
     seen = window(connection)
-    next_token = encode_since(seen.head, key=key.value(), kind=kind)
+    epoch = restore_epoch(connection)
+    next_token = encode_since(
+        seen.head, key=key.value(), kind=kind, epoch=epoch,
+        marker=history_marker(connection, seen.head), scope=scope,
+    )  # fmt: skip
     if raw is None:
         return next_token, []
     since = decode_since(raw, key=key.value(), kind=kind)
     since.require_not_older_than(seen.floor)  # the events after the token were purged
-    if since.seq > seen.head:  # a token this instance has not issued yet: a restored backup
+    if (
+        since.seq > seen.head  # not issued yet: a restored backup
+        or since.epoch != epoch  # a restore since
+        or since.scope != scope  # her ceiling or her role changed since
+        or since.marker != history_marker(connection, since.seq)  # another history, same positions
+    ):
         raise ProblemError("resync_required")
     try:
         return next_token, read(since.seq)
@@ -105,7 +122,7 @@ def build_catalog_lists_router(get_engine: Callable[[], Engine], key: SinceKey) 
         with get_engine().connect() as connection:
             scope = reader_scope(connection, principal.user_id)
             token, removed = _removals(
-                connection, raw, key, WORKS_KIND,
+                connection, raw, key, WORKS_KIND, scope_code(scope),
                 lambda seq: removed_ids(connection, scope, seq),
             )  # fmt: skip
             page = list_visible_works(connection, scope, limit=limit, offset=offset)
@@ -122,7 +139,7 @@ def build_catalog_lists_router(get_engine: Callable[[], Engine], key: SinceKey) 
     ) -> ShelvesPageOut:
         with get_engine().connect() as connection:
             token, removed = _removals(
-                connection, raw, key, SHELVES_KIND,
+                connection, raw, key, SHELVES_KIND, ADMIN_SCOPE,
                 lambda seq: removed_ids(connection, None, seq, kind="shelf"),
             )  # fmt: skip
             found = list_shelves(connection)

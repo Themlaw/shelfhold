@@ -37,6 +37,8 @@ A writer that moves the visibility of a Work outside the rating route wraps its 
 `track_work_changes`; one that is not wrapped leaves no event (see the decision record of L11).
 """
 
+import hashlib
+import json
 from collections.abc import Iterable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -49,14 +51,18 @@ from shelfhold.catalog.application.queries import visible_works_clause
 from shelfhold.infrastructure.schema import catalog, platform
 
 __all__ = [
+    "ADMIN_SCOPE",
     "EVENT_SCHEMA_VERSION",
     "MAX_REMOVED",
     "NEED_NONE",
     "TooManyRemovalsError",
     "Window",
+    "history_marker",
     "record_removed",
     "record_work_removed",
     "removed_ids",
+    "restore_epoch",
+    "scope_code",
     "track_work_changes",
     "window",
     "work_need",
@@ -70,6 +76,10 @@ WORK_REMOVED_EVENT: Final = "ops.work_removed"
 SHELF_REMOVED_EVENT: Final = "ops.shelf_removed"
 _MAX_CEILING = 99  # X
 Kind = Literal["work", "shelf"]
+
+
+ADMIN_SCOPE: Final = 255  # the code of an adult's scope in a token (a ceiling is its number)
+_NO_SCOPE: Final = 254  # a scope nobody defined
 
 
 class TooManyRemovalsError(Exception):
@@ -276,3 +286,44 @@ def _capped(found: list[str]) -> list[str]:
     if len(found) > MAX_REMOVED:
         raise TooManyRemovalsError
     return found
+
+
+def scope_code(scope: Any) -> int:
+    """What a token remembers of the reader's scope: 255 for an adult, her ceiling for a child,
+    254 for a scope nobody defined. A change of any of them since the token is a change of what
+    she sees that no event of a Work tells."""
+    if getattr(scope, "unrestricted", False):
+        return ADMIN_SCOPE
+    ceiling = getattr(scope, "ceiling", None)
+    if getattr(scope, "kind", "none") == "ceiling" and isinstance(ceiling, int):
+        return min(max(ceiling, 0), _MAX_CEILING)
+    return _NO_SCOPE
+
+
+def restore_epoch(connection: sa.Connection) -> int:
+    return int(
+        connection.execute(sa.select(sa.func.max(platform.instance.c.restore_epoch))).scalar() or 0
+    )
+
+
+def history_marker(connection: sa.Connection, seq: int) -> bytes:
+    """Six bytes that identify the event history up to `seq`: a digest of the last event at or
+    before it (id, type, time, payload). A backup restored in place starts a history that passes
+    the same positions with other events, and a token of the old one does not match it."""
+    row = connection.execute(
+        sa.select(
+            platform.event.c.id,
+            platform.event.c.type,
+            platform.event.c.occurred_at,
+            platform.event.c.payload,
+        )
+        .where(platform.event.c.id <= seq)
+        .order_by(platform.event.c.id.desc())
+        .limit(1)
+    ).first()
+    if row is None:
+        return b"\x00" * 6
+    body = json.dumps(
+        [row.id, row.type, str(row.occurred_at), row.payload], sort_keys=True, separators=(",", ":")
+    )
+    return hashlib.sha256(body.encode("utf-8")).digest()[:6]

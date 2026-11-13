@@ -13,10 +13,10 @@
 
 ## Le jeton
 
-- Opaque : `s2.<…>.<…>`. Le client ne le lit pas, ne le fabrique pas, ne le modifie pas, ne le compare pas.
-- Adossé à la **séquence** de la table des événements, jamais à une heure.
-- Signé par l'instance et propre à sa liste : un jeton de `/shelves` est refusé sur `/works`.
-- Un jeton ne désigne pas son porteur : la réponse est celle du lecteur qui l'envoie.
+- Opaque : `s3.<…>`, une chaîne de largeur fixe. Le client ne la lit pas, ne la fabrique pas, ne la modifie pas, ne la compare pas : deux jetons du même instant sont deux chaînes sans rapport (chiffrement authentifié XChaCha20-Poly1305, nonce aléatoire, clé dérivée du trousseau de l'instance).
+- Adossé à la **séquence** de la table des événements, jamais à une heure. La position qu'il porte n'est pas lisible : elle ne dit rien de l'activité des autres profils.
+- Propre à sa liste : un jeton de `/shelves` est refusé sur `/works`.
+- Lié à la **portée du lecteur** (adulte, ou son plafond), à l'époque de restauration de l'instance et à l'historique des événements. Un plafond abaissé ou relevé, un rôle changé, une sauvegarde restaurée (en place ou ailleurs) : la réponse est `resync_required`, jamais une liste de retraits incomplète. Un jeton ne désigne pas son porteur : un autre lecteur de **même** portée reçoit sa propre vue ; un lecteur d'une autre portée reçoit `resync_required`.
 
 ## `removed`
 
@@ -27,12 +27,14 @@ Les identifiants sortis de la vue **de ce lecteur** depuis le jeton :
 
 Limites, toutes testées : jamais un identifiant d'Œuvre que le lecteur ne voyait pas **au moment du jeton** ; jamais une Œuvre créée après le jeton ; jamais un titre. Un adulte voit tout, donc n'a que les suppressions.
 
+**Ce que `removed` ne dit pas.** Il ne liste que des Œuvres (et, sur `/shelves`, des étagères). Une Édition qui cesse d'être visible alors que son Œuvre reste visible (un classement 18+ sur une seule Édition) n'y figure pas : un client hors ligne qui garde des Éditions les revalide autrement (flux d'événements typés, L12, ou rechargement). Le client ne déduit rien de l'absence d'une Édition dans `removed`.
+
 ## Erreurs
 
 | Statut | Code | Quand | Que faire |
 |---|---|---|---|
-| 400 | `invalid_cursor` | jeton modifié, tronqué, d'une autre liste, de l'ancien format, trop long | ne pas réessayer ce jeton ; recharger la liste |
-| 410 | `resync_required` | jeton plus ancien que la rétention des événements, jeton d'une instance restaurée en arrière, ou plus de 1000 retraits | recharger la liste (sans `since`), garder le `since` de cette réponse |
+| 400 | `invalid_cursor` | jeton qui ne s'ouvre pas : modifié, tronqué, d'une autre liste, d'une autre instance, d'un ancien format, trop long | ne pas réessayer ce jeton ; recharger la liste |
+| 410 | `resync_required` | jeton plus ancien que la rétention des événements ; instance restaurée (époque ou historique différents, position pas encore émise) ; portée du lecteur changée (plafond, rôle) ; plus de 1000 retraits | recharger la liste (sans `since`), garder le `since` de cette réponse |
 | 401 / 403 | | pas de session ; `/shelves` demandée par un non-administrateur | |
 
 La rétention des événements est de 90 jours par défaut (`retention_events_days`) : un client qui ne se synchronise pas pendant plus longtemps recharge la liste.
