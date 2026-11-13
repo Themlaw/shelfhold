@@ -207,3 +207,39 @@ def test_poc_export_holds_her_follow_and_download_tickets(api: AuthEnv) -> None:
     assert exported.status_code == 200
     assert str(follow[0]) in exported.text  # red
     assert ticket in exported.text  # red
+
+
+# -- Contre-relecture : M2 n'a fermé que deux des écrivains sans clé étrangère ----------------------
+
+
+@pytest.mark.req("EF-USR-013")
+def test_counter_poc_decision_after_the_admins_deletion_writes_her_id(api: AuthEnv) -> None:
+    """The class of M2, on another writer. `RequestService._close` (`requests.py`, reached by
+    `reject` and `mark_not_found`) writes `request.decided_by = principal.user_id` (no foreign key)
+    without `still_a_user`: the admin's decision was authenticated, another admin deleted her, then
+    the decision commits. `_unname` already ran: her id stays on the member's request for ever.
+    (Same shape: `_claim` of an approval, `QueueControl.pause` `by`, the waiver of a lost keyring.)"""
+    from shelfhold.acquisition.application.requests import RequestService
+    from shelfhold.identity.domain.credentials import Credential, Principal
+
+    mum = _seed(api, "mum")
+    nan = _auth(api).profile_add("nan", PASSWORD, "admin")
+    request_id = new_ulid()
+    _sql(
+        api,
+        "INSERT INTO request (id, requester_user_id, target_kind, target_value, state) "
+        "VALUES (?, ?, 'free_text', 'x', 'pending')",
+        request_id, mum,
+    )  # fmt: skip
+    principal = Principal(
+        user_id=nan, username="nan", role="admin", credential=Credential.SESSION,
+        session_id=new_ulid(),
+    )  # fmt: skip
+    _auth(api).profile_remove(nan, by=None)  # the deletion lands between auth and decision
+    engine = create_db_engine(api.settings.database_path)
+    try:
+        service = RequestService(engine, api.clock, None)  # type: ignore[arg-type]
+        service._close(request_id, principal, "rejected", "request.rejected", None)
+    finally:
+        engine.dispose()
+    assert _carrying(api, nan) == []  # red: ['request.decided_by']
