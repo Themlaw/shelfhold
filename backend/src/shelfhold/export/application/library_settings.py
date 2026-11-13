@@ -5,7 +5,7 @@ takes the client of the target, the reference of the library and what it was bef
 adoption, and answers with what was done. The Kavita side is `targets/kavita/settings_restore.py`.
 """
 
-from collections.abc import Awaitable, Callable, Mapping
+from collections.abc import Callable, Coroutine, Mapping
 from dataclasses import dataclass
 from typing import Any
 
@@ -22,4 +22,6 @@ class SettingsRestored:
     type_unchanged: bool  # True when no "before" was recorded: nothing to compare
 
 
-RestoreSettings = Callable[[Any, str, Mapping[str, Any] | None], Awaitable[SettingsRestored]]
+RestoreSettings = Callable[
+    [Any, str, Mapping[str, Any] | None], Coroutine[Any, Any, SettingsRestored]
+]
