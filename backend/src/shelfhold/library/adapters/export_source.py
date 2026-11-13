@@ -68,7 +68,7 @@ def export_sources(
             content.c.unit_id, sa.func.coalesce(variant.c.preferred, False).desc(), content.c.id
         )
     )
-    preferred: dict[str, sa.Row[Any]] = {}
+    preferred: dict[str, Any] = {}
     for row in rows:
         preferred.setdefault(row.unit_id, row)
     copies_of = library_copies_of(connection, list(preferred))

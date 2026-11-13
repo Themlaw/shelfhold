@@ -103,7 +103,7 @@ def measure_contention(
                 env.add_chapter(series, str(number))
         else:
             for number in range(1, chapters + 1):
-                env.add_chapter(env.new_series(f"Serie {spelled(number)}"), "1")
+                env.add_chapter(env.new_series(f"Shelf row {spelled(number)}"), "1")
         # the application serves the very database file the export writes
         database = env.engine.url.database
         assert database is not None

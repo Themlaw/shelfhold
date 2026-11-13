@@ -8,6 +8,7 @@ source, the first healthy copy by replica id is still the one, and a Unit withou
 a Unit without a path.
 """
 
+import hashlib
 from collections.abc import Iterator
 from contextlib import contextmanager
 
@@ -21,10 +22,14 @@ from shelfhold.library.replica import library_copies, library_copies_of, record_
 from tests.library_env import LibEnv, lib_env
 
 
+def sha(text: str) -> str:
+    return "sha256:" + hashlib.sha256(text.encode()).hexdigest()
+
+
 def put_copy(connection: sa.Connection, lib: LibEnv, unit_id: str, name: str) -> str:
     return record_replica(
-        connection, unit_id=unit_id, location="library", content_hash=f"hash-{unit_id}",
-        file_hash=f"file-{name}", independent=True, physical_root_id=lib.library_root,
+        connection, unit_id=unit_id, location="library", content_hash=sha(unit_id),
+        file_hash=sha(name), independent=True, physical_root_id=lib.library_root,
         rel_path=name,
     )  # fmt: skip
 
@@ -79,16 +84,17 @@ def test_batch_is_a_few_statements_however_many_units() -> None:
 @pytest.mark.req("ENF-PERF-007")
 def test_export_never_takes_a_damaged_copy_as_its_source() -> None:
     with lib_env() as lib:
-        unit, _variant = lib.new_unit()
-        other, _ = lib.new_unit()
+        unit, unit_variant = lib.new_unit()
+        other, other_variant = lib.new_unit()
         with lib.engine.begin() as connection:
-            for u in (unit, other):
+            for u, v in ((unit, unit_variant), (other, other_variant)):
                 connection.execute(
                     sa.insert(storage.content).values(
-                        id=new_ulid(), unit_id=u, kind="images", format="cbz",
+                        id=new_ulid(), unit_id=u, variant_id=v, kind="images", format="cbz",
                         media_type="application/vnd.comicbook+zip", retention="keep",
-                        original_sha256="0" * 64, store_provenance="received", size=10,
-                        content_hash=f"hash-{u}", watermarked=False, page_count=2,
+                        original_sha256=sha(u), path=f"manga/{u}.cbz",
+                        store_provenance="received", size=10,
+                        content_hash=sha(u), watermarked=False, page_count=2,
                     )
                 )  # fmt: skip
             bad = put_copy(connection, lib, unit, "bad.cbz")
