@@ -430,6 +430,20 @@ def _waits(waiting: Sequence[WaitingItem]) -> tuple[dict[str, object], list[dict
     return withdrawal, audit
 
 
+def _library_type_changes(waiting: Sequence[WaitingItem]) -> list[dict[str, object]]:
+    """The shelves paused because a library changed its type in Kavita (EF-EXP-049, EF-EXP-036):
+    a code, the id of the target and the way out. The reason is left out of the page."""
+    return [
+        {
+            "code": w.state,
+            "subject": w.subject,
+            "action": action_of_command(w.command, t("health.library_type_action")),
+        }
+        for w in waiting
+        if w.state == "library_type_changed"
+    ]
+
+
 def _jurisdiction(connection: Connection) -> dict[str, object] | None:
     report = jurisdiction_report(connection)
     if report is None:
@@ -460,6 +474,7 @@ def build_health_page(
     with engine.connect() as connection:
         items = list(waiting) if waiting is not None else collect(connection)
         withdrawal, audit = _waits(items)
+        type_changes = _library_type_changes(items)
         page: dict[str, object] = {
             "generated_at": now.isoformat(),
             "sources": _sources(connection),
@@ -467,6 +482,7 @@ def build_health_page(
             "lost_originals": _lost_originals(connection),
             "withdrawal_pending": withdrawal,
             "kavita_audit": audit,
+            "library_type_changes": type_changes,
             "jurisdiction": _jurisdiction(connection),
         }
     page["backup"] = _backup(engine, settings, now)

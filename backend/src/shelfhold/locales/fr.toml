@@ -783,6 +783,7 @@ rebuilt = "Index de recherche refait : {count, plural, one {# Œuvre} other {# �
 original_lost_action = "L'original est perdu, le dérivé est conservé : « shelfhold content reneutralize » repart du dérivé."
 withdrawal_action = "Des fichiers n'ont plus leur place sur une étagère famille : « shelfhold shelf withdraw » (action réservée) les retire, rien n'est fait tout seul."
 kavita_audit_action = "Un compte Kavita voit plus que l'étagère ne le permet : corrigez-le dans Kavita, puis relancez la vérification."
+library_type_action = "Un type de bibliothèque a changé dans Kavita, l'étagère est en pause : remettez le type d'origine dans Kavita, puis « shelfhold target reconnect »."
 jurisdiction_action = "La juridiction n'est pas confirmée : « shelfhold config set instance.jurisdiction <pays> »."
 backup_not_configured = "Aucune sauvegarde n'est configurée : « shelfhold config set » (dossier et phrase de passe)."
 backup_incomplete = "La sauvegarde est à moitié configurée : « shelfhold config set » pour le dossier et la phrase de passe."

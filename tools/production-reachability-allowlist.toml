@@ -38,7 +38,7 @@ symbols = [
 
 [[allow]]
 category = "unwired-m3"
-reason = "Content serving comes with the reader and the admin UI of M3 (B1 for content_response). The diagnostic bundle is wired by its CLI (M2 L30); its download over HTTP comes with the admin UI of M3 (`attachment_disposition` left this entry with M3 L40, the keyring download). The `?since=` tokens left this entry with M3 L11 (the lists of Works and of shelves)."
+reason = "Content serving comes with the reader and the admin UI of M3 (B1 for content_response). The diagnostic bundle is wired by its CLI (M2 L30) and by its download over HTTP (M3 L46); `attachment_disposition` left this entry with M3 L40. The `?since=` tokens left this entry with M3 L11 (the lists of Works and of shelves)."
 until = "M3"
 symbols = [
   "shelfhold.interfaces.http_api.content:content_response",
