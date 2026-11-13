@@ -21,7 +21,7 @@ HTTPS = "https://testserver"
 PROBLEM_JSON = "application/problem+json"
 KEY = re.compile(r"shk_([0-9a-f]{8})_[A-Za-z0-9_-]{43}")
 FAMILY = ["home", "search", "requests"]
-ADMIN_ONLY = ["activity", "settings"]
+ADMIN_ONLY = ["approve", "activity", "settings"]
 PROFILES = "/api/v1/profiles"
 LEAKS = ("/srv/library/secret-folder", "kavita.internal.lan", "10.0.3.7", "tok_live_0123456789")
 
@@ -40,7 +40,7 @@ def _auth(env: AuthEnv) -> Any:
 
 @pytest.mark.req("EF-UX-005")
 def test_nav_by_role(monkeypatch: pytest.MonkeyPatch, settings: Any) -> None:
-    """The admin is offered the family tabs plus Activity and Settings; a member and a child get
+    """The admin is offered the family tabs plus To approve, Activity and Settings; a member and a child get
     the family tabs and nothing of the admin ones."""
     with auth_env(monkeypatch, settings) as api:
         _auth(api).profile_add("mum", PASSWORD, "member")
@@ -125,7 +125,7 @@ def test_an_unknown_role_is_offered_nothing() -> None:
     assert navigation_for("integration") == []
     assert navigation_for("") == []
     assert navigation_for("Admin") == []  # the match is exact, never case-folded
-    assert navigation_for("admin")[-2:] == ADMIN_ONLY
+    assert navigation_for("admin")[-3:] == ADMIN_ONLY
 
 
 # -- EF-UX-003: a problem carries a stable code, a text, a cause and an action --------------------
