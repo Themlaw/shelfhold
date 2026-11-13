@@ -191,6 +191,8 @@ category = "m3-l32-kavita-event-transport"
 reason = "2026-11-13: the reading of Kavita's scan events (EF-EXP-034, D11) is pinned by tests in M3: the frames, the handshake, and the rule that an event is a reason to look and never a proof. No WebSocket client is bundled (a new dependency needs wheels for amd64 and arm64 and a way to authenticate by key): the transport that feeds `HubSession` and calls `ArrivalEventWatcher.on_events` is M4, and until then the polling alone confirms, as D11 allows."
 until = "M4"
 symbols = [
-  "shelfhold.export.targets.kavita.events.*",
-  "shelfhold.export.targets.kavita.polling:ArrivalPoller.waiting_destinations",
+  "shelfhold.export.targets.kavita.events:ArrivalEventWatcher",
+  "shelfhold.export.targets.kavita.events:HubSession",
+  "shelfhold.export.targets.kavita.events:ScanEvent",
+  "shelfhold.export.targets.kavita.events:parse_hub_frames",
 ]

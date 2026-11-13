@@ -33,7 +33,7 @@ from shelfhold.export.targets.kavita.events import (
 from shelfhold.export.targets.kavita.polling import ArrivalPoller
 from shelfhold.infrastructure.fsops import Fsops
 from shelfhold.infrastructure.ids import new_ulid
-from shelfhold.infrastructure.schema import export, platform
+from shelfhold.infrastructure.schema import coherence, export, platform
 from tests.export_env import ExportEnv, export_env
 from tests.kavita_env import run
 from tests.kavita_export_env import LIBRARY_ID, REMOTE_ROOT, Wired, wire
@@ -255,6 +255,28 @@ def test_a_same_size_same_mtime_rewrite_is_drift_in_the_window() -> None:
         rel = str(files[0].relative_to(env.root))
         assert _scanner(env).scan(env.destination_id, in_window=False).drift == ()
         assert _scanner(env).scan(env.destination_id, in_window=True).drift == (rel,)
+
+
+@pytest.mark.req("EF-EXP-018")
+def test_a_path_under_an_open_intent_is_left_out_of_the_inventory() -> None:
+    with export_env() as env:
+        _exported(env, 1)
+        (env.root / "Busy").mkdir()
+        (env.root / "Busy" / "mid-write.cbz").write_bytes(b"half")
+        (env.root / "idle.cbz").write_bytes(b"x")
+        with env.engine.begin() as connection:  # a write that has not finished (I9)
+            connection.execute(
+                sa.insert(coherence.fs_intent).values(
+                    id=new_ulid(),
+                    op="write",
+                    intent_schema_version="1",
+                    state="applying",
+                    dst_path=f"{env.root}/Busy",
+                    epoch=1,
+                )
+            )
+        report = _scanner(env).scan(env.destination_id, in_window=True)
+        assert report.orphans == ("idle.cbz",)  # what a job is writing is not a finding yet
 
 
 @pytest.mark.req("EF-EXP-018")
