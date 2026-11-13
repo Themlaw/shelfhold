@@ -6,7 +6,7 @@ import type { MessageKey } from '#lib/i18n/index.ts';
 export const WIZARD_TOTAL = 5;
 
 export interface WizardStep {
-  id: 'compte' | 'kavita' | 'dossier';
+  id: 'compte' | 'kavita' | 'dossier' | 'etageres' | 'fin';
   href: string;
   nameKey: MessageKey;
 }
@@ -14,7 +14,9 @@ export interface WizardStep {
 export const WIZARD_STEPS: readonly WizardStep[] = [
   { id: 'compte', href: '/assistant/compte', nameKey: 'admin.wizard.step.compte' },
   { id: 'kavita', href: '/assistant/kavita', nameKey: 'admin.wizard.step.kavita' },
-  { id: 'dossier', href: '/assistant/dossier', nameKey: 'admin.wizard.step.dossier' }
+  { id: 'dossier', href: '/assistant/dossier', nameKey: 'admin.wizard.step.dossier' },
+  { id: 'etageres', href: '/assistant/etageres', nameKey: 'admin.wizard.step.etageres' },
+  { id: 'fin', href: '/assistant/fin', nameKey: 'admin.wizard.step.fin' }
 ];
 
 /** The step after `id`, or null on the last one of this part. */
