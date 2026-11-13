@@ -27,3 +27,16 @@ Seul l'administrateur saisit ces URL.
 L'alerte est écrite dans la même transaction que l'événement, puis envoyée par une tâche : un arrêt brutal entre les deux ne la perd pas, au prix d'un doublon possible. Un envoi en échec est retenté pendant quelques heures, puis abandonné ; la bannière « Notifications en échec » (`notify.failed`) le signale, et cet événement n'est jamais renvoyé par Apprise. Plusieurs tâches abandonnées sont regroupées en un seul message.
 
 Un message ne contient ni titre d'œuvre ni texte venu d'une source, sauf le texte amont demandé par identifiant, assaini et rendu inoffensif : les liens et les mentions (`@everyone`) y sont affichés comme du code, jamais actifs.
+
+## Notifications par personne (EF-INT-021)
+
+Chaque profil est prévenu à sa façon, en plus des alertes d'exploitation ci-dessus.
+
+- **Par défaut, un résumé quotidien à 8 h**, dans le fuseau du profil, regroupé par série : trente chapitres d'une série font une ligne, pas trente messages.
+- **Immédiat seulement dans deux cas** : « ta demande est arrivée » (au demandeur seul) et une panne qui dure depuis plus d'une heure (à l'administrateur seul ; une série d'échecs séparés de plus de deux heures compte pour deux pannes, chacune annoncée une fois). Un profil peut choisir le mode « immédiat » pour tout le reste.
+- **Heures calmes** : de 21 h à 7 h tant que le profil n'a pas choisi les siennes. Elles retardent le résumé et l'arrivée d'une demande jusqu'à leur fin ; une panne de plus d'une heure passe malgré elles.
+- **Rappel de retrait en attente** : tant qu'un `withdrawal_pending` est ouvert, chaque administrateur le retrouve une fois par jour dans son résumé. Le rappel ne fait que lire : la sortie reste `shelf withdraw`, une action réservée.
+- **Ce qu'un profil peut lire** : chaque notification est projetée comme l'activité (rôle, visibilité, propriétaire) et, pour un enfant, par le filtre de la bibliothèque. Un enfant ne reçoit rien sur une œuvre qu'il ne voit pas, ni directement, ni par une série qui en contient une autre qu'il ne voit pas. La décision est reprise à la construction du message : une œuvre reclassée ou un plafond abaissé après l'événement suffit à retirer la ligne.
+- **Réglages** : `GET` et `PUT /api/v1/me/notifications` (mode, heures calmes, fuseau) ; ils ne concernent que le profil connecté, et une clé d'API ou un jeton est refusé.
+
+**Limite** : aucun profil n'a de destination à lui. Ces messages partent par les canaux de l'instance, que plusieurs personnes peuvent lire : le titre d'une demande **privée** n'y figure donc jamais (« un livre »), celui d'une demande du foyer ou d'une série suivie y figure. Aucune URL de canal, aucun titre et aucun texte d'erreur n'entre dans un journal ni dans le paquet de diagnostic ; un envoi en échec est retenté (5 min, 10 min, 20 min…) puis abandonné au bout de cinq essais.

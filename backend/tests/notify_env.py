@@ -68,7 +68,9 @@ class Env:
         series_id = new_ulid()
         with self.engine.begin() as connection:
             connection.execute(
-                sa.insert(catalog.series).values(id=series_id, title=title, sort_title=title.lower())
+                sa.insert(catalog.series).values(
+                    id=series_id, title=title, sort_title=title.lower()
+                )
             )
             for position, work_id in enumerate(work_ids, start=1):
                 connection.execute(
@@ -163,7 +165,9 @@ class Env:
 
 
 @contextmanager
-def world(settings: Settings, *, sink: Sink | None = None) -> Iterator[Env]:
+def world(
+    settings: Settings, *, sink: Sink | None = None, private_titles: bool = True
+) -> Iterator[Env]:
     with rig(settings) as base:
         clock = base.clock
         bus = EventBus(clock)
@@ -172,6 +176,10 @@ def world(settings: Settings, *, sink: Sink | None = None) -> Iterator[Env]:
         router = NotificationRouter(base.engine, clock)
         router.subscribe(bus)
         sender = NotificationSender(
-            base.engine, clock, deliver=out, pending_withdrawals=lambda _c: withdrawals[0]
+            base.engine,
+            clock,
+            deliver=out,
+            pending_withdrawals=lambda _c: withdrawals[0],
+            private_titles=private_titles,
         )
         yield Env(base.engine, clock, bus, router, sender, out, withdrawals)

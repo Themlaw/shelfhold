@@ -1113,6 +1113,10 @@ action = "Un enfant a toujours un âge maximal et jamais le droit de classer ; u
 title = "Cette valeur n'est pas acceptée."
 action = "Une date envoyée ne peut pas dépasser l'heure du serveur de plus de quelques minutes ; une langue de titre est un code comme « ja » ou « en-US », huit au plus, sans « und » ni « mul »."
 
+[errors."notification_prefs_refused"]
+title = "Ces réglages de notification ne sont pas acceptés."
+action = "Choisissez le mode « résumé » ou « immédiat », deux heures calmes au format HH:MM (ou aucune), et un fuseau horaire comme « Europe/Paris »."
+
 [errors."reauth_required"]
 title = "Confirmez votre mot de passe pour continuer."
 action = "Saisissez de nouveau votre mot de passe, puis recommencez l'action."

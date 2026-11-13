@@ -64,8 +64,11 @@ def test_digest_hour_follows_the_summer_time_change() -> None:
     paris = person(timezone="Europe/Paris")
     summer = datetime(2026, 7, 1, 12, tzinfo=UTC)  # UTC+2: 8:00 local is 6:00 UTC
     assert next_digest_at(paris, summer) == datetime(2026, 7, 2, 6, tzinfo=UTC)
-    before = datetime(2026, 3, 28, 12, tzinfo=UTC)  # the night of the 29th, clocks go forward
-    assert next_digest_at(paris, before) == datetime(2026, 3, 29, 7, tzinfo=UTC)
+    winter = datetime(2026, 3, 27, 12, tzinfo=UTC)  # UTC+1 still: 8:00 local is 7:00 UTC
+    assert next_digest_at(paris, winter) == datetime(2026, 3, 28, 7, tzinfo=UTC)
+    # clocks go forward at 02:00 local on the 29th: that morning's 8:00 is already UTC+2
+    night = datetime(2026, 3, 28, 12, tzinfo=UTC)
+    assert next_digest_at(paris, night) == datetime(2026, 3, 29, 6, tzinfo=UTC)
     after = datetime(2026, 3, 29, 12, tzinfo=UTC)
     assert next_digest_at(paris, after) == datetime(2026, 3, 30, 6, tzinfo=UTC)
 

@@ -1596,6 +1596,56 @@ export type NamingTemplateIn = {
 };
 
 /**
+ * NotificationPrefsIn
+ *
+ * The whole of it, replaced at once. Nothing names a person: the caller's row is the one.
+ */
+export type NotificationPrefsIn = {
+    /**
+     * Notify Mode
+     */
+    notify_mode: string;
+    /**
+     * Quiet End
+     */
+    quiet_end?: string | null;
+    /**
+     * Quiet Start
+     */
+    quiet_start?: string | null;
+    /**
+     * Timezone
+     */
+    timezone?: string;
+};
+
+/**
+ * NotificationPrefsOut
+ */
+export type NotificationPrefsOut = {
+    /**
+     * Effective Quiet
+     */
+    effective_quiet: Array<string>;
+    /**
+     * Notify Mode
+     */
+    notify_mode: 'digest' | 'immediate';
+    /**
+     * Quiet End
+     */
+    quiet_end: string | null;
+    /**
+     * Quiet Start
+     */
+    quiet_start: string | null;
+    /**
+     * Timezone
+     */
+    timezone: string;
+};
+
+/**
  * PairAutoIn
  */
 export type PairAutoIn = {
@@ -6494,6 +6544,72 @@ export type MeResponses = {
 };
 
 export type MeResponse = MeResponses[keyof MeResponses];
+
+export type GetNotificationsData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/me/notifications';
+};
+
+export type GetNotificationsErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type GetNotificationsError = GetNotificationsErrors[keyof GetNotificationsErrors];
+
+export type GetNotificationsResponses = {
+    /**
+     * Successful Response
+     */
+    200: NotificationPrefsOut;
+};
+
+export type GetNotificationsResponse = GetNotificationsResponses[keyof GetNotificationsResponses];
+
+export type PutNotificationsData = {
+    body: NotificationPrefsIn;
+    path?: never;
+    query?: never;
+    url: '/api/v1/me/notifications';
+};
+
+export type PutNotificationsErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type PutNotificationsError = PutNotificationsErrors[keyof PutNotificationsErrors];
+
+export type PutNotificationsResponses = {
+    /**
+     * Successful Response
+     */
+    200: NotificationPrefsOut;
+};
+
+export type PutNotificationsResponse = PutNotificationsResponses[keyof PutNotificationsResponses];
 
 export type GetPreferencesData = {
     body?: never;

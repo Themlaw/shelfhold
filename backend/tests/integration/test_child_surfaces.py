@@ -33,6 +33,7 @@ from shelfhold.config import Settings
 from shelfhold.events.activity import ActivityEvent, Viewer
 from shelfhold.events.projection import project_event
 from shelfhold.identity.public import local_auth, reader_scope, scope_of
+from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import platform
 from tests.auth_env import CSRF_HEADER, AuthEnv, auth_env, run_cli
 from tests.visibility_env import HIDDEN_TITLES, VISIBLE_TITLES, Seed, add_profile, seed_catalogue
@@ -77,6 +78,9 @@ OWN = (
     "PATCH /api/v1/me/preferences",
     "GET /api/v1/me/title-languages",
     "PUT /api/v1/me/title-languages",
+    # M3 L14: how she wants to be told, her own row only (no identifier names another profile)
+    "GET /api/v1/me/notifications",
+    "PUT /api/v1/me/notifications",
     "GET /api/v1/me/visibility",
     "PUT /api/v1/me/visibility",
     # M3 L35: her own requests, titled by what she was shown; a child asks by her reference only
@@ -235,7 +239,6 @@ PENDING_SURFACES = {
     "sse": ("L12", ("stream", "events")),
     "thumbnails": ("L24", ("thumb", "thumbs", "thumbnail", "thumbnails")),
     "covers": ("L24", ("cover", "covers")),
-    "notifications": ("L14", ("notification", "notifications")),
     "opds": ("M5", ("opds",)),
 }
 
@@ -753,6 +756,53 @@ def _surface_notification(world: World) -> None:
             ActivityEvent(4, "work.updated", "ops", {"work_id": world.seed.works["unrated"]}),
         )  # fmt: skip
         assert admin is not None
+    _notification_built_for_a_child(world)
+
+
+def _notification_built_for_a_child(world: World) -> None:
+    """L14: the real router and sender, over every Work of the catalogue that she follows (a row
+    that should not exist, or that predates a rerate). What leaves for her names none of the
+    hidden ones, by their title, their identifier or the series that groups them."""
+    from shelfhold.events.bus import EventBus
+    from shelfhold.infrastructure.schema import identity
+    from shelfhold.integrations.notify import NotificationRouter, NotificationSender
+    from tests.auth_env import ManualClock
+
+    engine, clock = world.seed.engine, ManualClock()
+    sent: list[tuple[str, str]] = []
+
+    def deliver(user_id: str, message: Any) -> bool:
+        sent.append((user_id, f"{message.title}\n{message.body}"))
+        return True
+
+    bus = EventBus(clock)
+    NotificationRouter(engine, clock).subscribe(bus)
+    with engine.begin() as connection:
+        connection.execute(
+            sa.update(identity.user)
+            .where(identity.user.c.id == world.kid_id)
+            .values(notify_mode="immediate")
+        )
+        for work_id in world.seed.works.values():
+            connection.execute(
+                sa.insert(identity.user_state).values(
+                    user_id=world.kid_id, work_id=work_id, followed=True
+                )
+            )
+    for work_id in world.seed.works.values():
+        with engine.begin() as connection:
+            published = bus.publish(
+                connection, "unit.stored",
+                {"unit_id": new_ulid(), "edition_id": new_ulid(), "work_id": work_id},
+            )  # fmt: skip
+        bus.deliver([published])
+    NotificationSender(engine, clock, deliver=deliver, pending_withdrawals=lambda _c: 0).run_once()
+    text = "\n".join(t for u, t in sent if u == world.kid_id)
+    world.clean(text)
+    for key in VISIBLE_FOR_CEILING_10:
+        assert world.seed.title_of(key) in text, key  # the control: she is told of what is hers
+    for key in HIDDEN_FROM_CEILING_10:
+        assert world.seed.title_of(key) not in text, key
 
 
 @pytest.mark.req("EF-USR-006", "ENF-SEC-010", "EF-USR-014")

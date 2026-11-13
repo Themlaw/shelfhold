@@ -5,6 +5,7 @@ from collections.abc import Mapping
 import sqlalchemy as sa
 from sqlalchemy import Engine
 
+from shelfhold.identity.application.notification_prefs import NotificationPrefs
 from shelfhold.infrastructure.schema import identity, platform
 
 DEFAULT_THEME_SETTING = "ui.default_theme"
@@ -33,3 +34,32 @@ class SqlPreferencesStore:
         user = identity.user
         with self._engine.begin() as connection:
             connection.execute(sa.update(user).where(user.c.id == user_id).values(**changes))
+
+
+class SqlNotificationPrefsStore:
+    """The mode, the quiet hours and the zone of one `user` row."""
+
+    def __init__(self, engine: Engine) -> None:
+        self._engine = engine
+
+    def read(self, user_id: str) -> NotificationPrefs | None:
+        user = identity.user
+        with self._engine.connect() as connection:
+            row = connection.execute(
+                sa.select(
+                    user.c.notify_mode, user.c.quiet_start, user.c.quiet_end, user.c.timezone
+                ).where(user.c.id == user_id)
+            ).first()
+        return None if row is None else NotificationPrefs(*row)
+
+    def write(self, user_id: str, prefs: NotificationPrefs) -> None:
+        user = identity.user
+        with self._engine.begin() as connection:
+            connection.execute(
+                sa.update(user)
+                .where(user.c.id == user_id)
+                .values(
+                    notify_mode=prefs.notify_mode, quiet_start=prefs.quiet_start,
+                    quiet_end=prefs.quiet_end, timezone=prefs.timezone,
+                )
+            )  # fmt: skip

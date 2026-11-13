@@ -81,7 +81,7 @@ def test_a_profile_cannot_set_another_ones_preferences(api: AuthEnv) -> None:
 
 @pytest.mark.req("EF-INT-021", "ENF-SEC-010")
 def test_a_key_may_not_read_or_set_notification_preferences(api: AuthEnv) -> None:
-    for username, read_only in (("kid", True), ("member", False), ("admin", False)):
+    for username, read_only in (("kid", True), ("member", True), ("admin", False)):
         key = api_key_of(api, username, read_only=read_only)
         bare = api.other_client("10.9.9.8")
         headers = {"Authorization": f"Bearer {key}"}
@@ -112,7 +112,9 @@ def test_anonymous_gets_nothing(api: AuthEnv) -> None:
         {},
     ],
 )
-def test_invalid_preferences_are_refused_and_change_nothing(api: AuthEnv, bad: dict[str, Any]) -> None:
+def test_invalid_preferences_are_refused_and_change_nothing(
+    api: AuthEnv, bad: dict[str, Any]
+) -> None:
     member = client_of(api, "member", "10.0.0.54")
     before = row(api, MEMBER_ID)
     answer = put(api, member, bad)

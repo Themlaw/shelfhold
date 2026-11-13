@@ -2582,6 +2582,102 @@
         "title": "NamingTemplateIn",
         "type": "object"
       },
+      "NotificationPrefsIn": {
+        "additionalProperties": false,
+        "description": "The whole of it, replaced at once. Nothing names a person: the caller's row is the one.",
+        "properties": {
+          "notify_mode": {
+            "title": "Notify Mode",
+            "type": "string"
+          },
+          "quiet_end": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Quiet End"
+          },
+          "quiet_start": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Quiet Start"
+          },
+          "timezone": {
+            "default": "UTC",
+            "title": "Timezone",
+            "type": "string"
+          }
+        },
+        "required": [
+          "notify_mode"
+        ],
+        "title": "NotificationPrefsIn",
+        "type": "object"
+      },
+      "NotificationPrefsOut": {
+        "properties": {
+          "effective_quiet": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Effective Quiet",
+            "type": "array"
+          },
+          "notify_mode": {
+            "enum": [
+              "digest",
+              "immediate"
+            ],
+            "title": "Notify Mode",
+            "type": "string"
+          },
+          "quiet_end": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Quiet End"
+          },
+          "quiet_start": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Quiet Start"
+          },
+          "timezone": {
+            "title": "Timezone",
+            "type": "string"
+          }
+        },
+        "required": [
+          "notify_mode",
+          "quiet_start",
+          "quiet_end",
+          "timezone",
+          "effective_quiet"
+        ],
+        "title": "NotificationPrefsOut",
+        "type": "object"
+      },
       "PairAutoIn": {
         "properties": {
           "fingerprint": {
@@ -10591,6 +10687,116 @@
         ]
       }
     },
+    "/api/v1/me/notifications": {
+      "get": {
+        "operationId": "get_notifications",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationPrefsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Connexion requise, ou mot de passe à confirmer (reauth-required)."
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée)."
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Détail du problème (RFC 9457)."
+          }
+        },
+        "summary": "Get Notifications",
+        "tags": [
+          "me"
+        ]
+      },
+      "put": {
+        "operationId": "put_notifications",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NotificationPrefsIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationPrefsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Connexion requise, ou mot de passe à confirmer (reauth-required)."
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée)."
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Détail du problème (RFC 9457)."
+          }
+        },
+        "summary": "Put Notifications",
+        "tags": [
+          "me"
+        ]
+      }
+    },
     "/api/v1/me/preferences": {
       "get": {
         "operationId": "get_preferences",
@@ -17178,6 +17384,10 @@
     "/api/v1/problems/not-found": {
       "code": "not_found",
       "status": 404
+    },
+    "/api/v1/problems/notification-prefs-refused": {
+      "code": "notification_prefs_refused",
+      "status": 422
     },
     "/api/v1/problems/notify.failed": {
       "code": "notify.failed",
