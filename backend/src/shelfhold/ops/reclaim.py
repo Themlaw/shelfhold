@@ -122,7 +122,12 @@ def lift_tombstone(
         done = w.tombstones.lift(
             roots, seq=seq, confirmation=typed, principal=principal, now=comp.clock.now()
         )
-    return {"seq": done.seq, "written": len(done.written), "pending": len(done.pending)}
+    return {
+        "seq": done.seq,
+        "written": len(done.written),
+        "pending": len(done.pending),
+        "linked": list(done.linked),
+    }
 
 
 def list_tombstones(comp: Composition) -> dict[str, Any]:
@@ -137,6 +142,7 @@ def list_tombstones(comp: Composition) -> dict[str, Any]:
                 "created_at": r.created_at.isoformat(),
                 "scope": r.scope,
                 "reason": r.reason,
+                "linked_to": list(r.linked_to),
             }
             for r in rows
         ]

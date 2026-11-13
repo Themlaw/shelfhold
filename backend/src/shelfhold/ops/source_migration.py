@@ -133,7 +133,27 @@ class SourceMigrationOps:
             for plugin_id, source_key, remote_id in plan.new_forms:
                 values = SeriesBindingRef(plugin_id, source_key, remote_id)
                 if not w.tombstones.has_values(values):
-                    w.tombstones.record(values, roots, reason="new_form")
+                    w.tombstones.record(
+                        values,
+                        roots,
+                        reason="new_form",
+                        origins=self._origins(
+                            w.tombstones, plan, (plugin_id, source_key, remote_id)
+                        ),
+                    )
+
+    @staticmethod
+    def _origins(
+        service: TombstoneService, plan: AliasPlan, form: tuple[str, str, str]
+    ) -> list[str]:
+        """The tokens of the tombstones the new form comes from (the erased reference it replaces):
+        lifting one of them lifts this one (`tombstone lift`)."""
+        tokens: list[str] = []
+        for new, (plugin_id, key, ref) in plan.origins:
+            if new != form:
+                continue
+            tokens += service.origin_tokens(SeriesBindingRef(plugin_id, key, ref))
+        return tokens
 
     def _mark_sealed(self, plan: AliasPlan) -> None:
         """The durable intent is done: every new form is sealed (a number, never a value)."""

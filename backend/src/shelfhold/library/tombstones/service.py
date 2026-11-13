@@ -91,10 +91,10 @@ from shelfhold.library.tombstones.journal import (
     parse_line,
     parse_lines_ignoring_header,
 )
-from shelfhold.library.tombstones.scopes import EmptyRefError, alias_family, fold_ref
 from shelfhold.library.tombstones.lift import (
     EVENT_KEY,
     LIFT_REASON,
+    ORIGIN_KEY,
     LiftConfirmationError,
     LiftRefusedError,
     TombstoneRow,
@@ -103,8 +103,11 @@ from shelfhold.library.tombstones.lift import (
     lift_cited,
     lift_phrase,
     new_event_id,
+    origin_token,
+    origins_of,
     still_blocking,
 )
+from shelfhold.library.tombstones.scopes import EmptyRefError, alias_family, fold_ref, folded_fields
 from shelfhold.library.tombstones.state import TombstoneState
 from shelfhold.library.tombstones.values import (
     ContentHash,
@@ -210,6 +213,7 @@ class Lifted:
     line_seq: int  # the line that lifts it
     written: tuple[str, ...]
     pending: tuple[str, ...]
+    linked: tuple[int, ...] = ()  # the new forms lifted with it (EF-SRC-022, L27)
 
 
 @dataclass(frozen=True)
@@ -390,8 +394,13 @@ class TombstoneService:
         roots: Sequence[TombstoneRoot],
         *,
         reason: str | None = None,
+        origins: Sequence[str] = (),
     ) -> Recorded:
+        """`origins`: the tokens (`origin_tokens`) of the tombstones a new form comes from, so that
+        lifting one of them lifts this one too."""
         cited = {**self.cited_now(values), EVENT_KEY: new_event_id()}
+        if origins:
+            cited[ORIGIN_KEY] = ",".join(sorted(set(origins)))
         return self._record(values, roots, reason=reason, cited=cited)
 
     def _record(
@@ -471,17 +480,38 @@ class TombstoneService:
         no sealed value is opened for the answer (the variant, the place, the title and the path
         are not stored anywhere else, and this lists none)."""
         with self._engine.connect() as connection:
-            alive = set(self._active(connection))
+            active = self._active(connection)
             rows = connection.execute(
                 sa.select(_tomb.c.seq, _tomb.c.created_at, _tomb.c.scope, _tomb.c.reason).order_by(
                     _tomb.c.seq
                 )
             ).all()
+        token_seq = {origin_token(v, c): n for n, (v, c) in active.items()}
         return [
-            TombstoneRow(seq, made, scope, reason)
+            TombstoneRow(
+                seq,
+                made,
+                scope,
+                reason,
+                tuple(sorted(token_seq[t] for t in origins_of(active[seq][1]) if t in token_seq)),
+            )
             for seq, made, scope, reason in rows
-            if seq in alive
+            if seq in active
         ]
+
+    def origin_tokens(self, origin: TombstoneValues) -> list[str]:
+        """The tokens of the tombstones that hold the same folded reference as `origin` (what a
+        new form of it says it comes from)."""
+        scope = origin.scope
+        folded = folded_fields(scope, flatten(origin))
+        if folded is None:
+            return []
+        with self._engine.connect() as connection:
+            active = self._active(connection)
+        return sorted(
+            origin_token(v, c) for v, c in active.values()
+            if v.scope == scope and folded_fields(v.scope, flatten(v)) == folded
+        )  # fmt: skip
 
     def lift(
         self,
@@ -509,21 +539,50 @@ class TombstoneService:
             if target is None:
                 raise UnknownTombstoneError(f"no tombstone to lift at sequence {seq}")
             values, cited = target
+            with self._engine.connect() as connection:
+                active = self._active(connection)
+            token = origin_token(values, cited)
+            linked = sorted(
+                n for n, (_v, c) in active.items() if n != seq and token in origins_of(c)
+            )  # the new forms derived from this tombstone (EF-SRC-022): lifted with it
 
-            def audit(connection: Connection) -> None:
-                connection.execute(
-                    sa.insert(identity.audit).values(
-                        id=new_ulid(), actor_id=principal.actor_id, action="tombstone.lifted",
-                        target=f"seq:{seq}", session_id=principal.session_id,
-                        auth_time=principal.auth_time,
-                    )
-                )  # fmt: skip
-                invalidate_tokens(connection)  # no removal is told: the clients resync
+            def audit_of(number: int, via: int | None = None) -> Callable[[Connection], None]:
+                label = f"seq:{number}" + (f";via:{via}" if via is not None else "")
+
+                def audit(connection: Connection) -> None:
+                    connection.execute(
+                        sa.insert(identity.audit).values(
+                            id=new_ulid(), actor_id=principal.actor_id, action="tombstone.lifted",
+                            target=label, session_id=principal.session_id,
+                            auth_time=principal.auth_time,
+                        )
+                    )  # fmt: skip
+                    invalidate_tokens(connection)  # no removal is told: the clients resync
+
+                return audit
 
             line = self._record(
-                values, roots, reason=LIFT_REASON, cited=cited, lifting=True, within=audit
+                values,
+                roots,
+                reason=LIFT_REASON,
+                cited=cited,
+                lifting=True,
+                within=audit_of(seq),
             )
-            return Lifted(seq, line.seq, line.written, line.pending)
+            written, pending = list(line.written), list(line.pending)
+            for number in linked:  # each is a line of its own, audited as lifted via this one
+                other_values, other_cited = active[number]
+                more = self._record(
+                    other_values,
+                    roots,
+                    reason=LIFT_REASON,
+                    cited=other_cited,
+                    lifting=True,
+                    within=audit_of(number, via=seq),
+                )
+                written += [r for r in more.written if r not in written]
+                pending += [r for r in more.pending if r not in pending]
+            return Lifted(seq, line.seq, tuple(written), tuple(pending), tuple(linked))
 
     def _write_line(self, root: TombstoneRoot, seq: int, kid: str, line: bytes) -> bool:
         """Registry of the sentinel first, then the line, then the label that follows it, then the

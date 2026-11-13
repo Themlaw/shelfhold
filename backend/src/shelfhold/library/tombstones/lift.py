@@ -16,19 +16,23 @@ The lift moves the `?since=` floor like the purges do (`invalidate_tokens`): a c
 token from before resynchronises.
 """
 
+import hashlib
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Final
 
 from shelfhold.infrastructure.ids import new_ulid
-from shelfhold.library.tombstones.index import LIFT_MARK
+from shelfhold.library.tombstones.index import LIFT_MARK, flatten
+from shelfhold.library.tombstones.scopes import folded_fields
+from shelfhold.library.tombstones.values import TombstoneValues
 
 __all__ = [
     "EVENT_KEY",
     "LEGACY_TARGET",
     "LIFT_MARK",
     "LIFT_REASON",
+    "ORIGIN_KEY",
     "LiftConfirmationError",
     "LiftRefusedError",
     "TombstoneRow",
@@ -36,6 +40,8 @@ __all__ = [
     "lift_cited",
     "lift_phrase",
     "new_event_id",
+    "origin_token",
+    "origins_of",
     "still_blocking",
     "versions_of",
 ]
@@ -46,6 +52,7 @@ LIFT_REASON: Final = "lifted"
 # and ordered (a ULID), written in the table and in every journal. A replay merges by it, never by
 # the values: two purges of the same content are two events, and a lift names the one it lifts.
 EVENT_KEY: Final = "ev"
+ORIGIN_KEY: Final = "from"  # a new form: the tokens of the tombstones it was derived from
 LEGACY_TARGET: Final = "1"  # a lift of a tombstone laid before events had an identifier
 
 
@@ -59,7 +66,22 @@ def event_of(cited: Mapping[str, str]) -> str | None:
 
 def versions_of(cited: Mapping[str, str]) -> dict[str, str]:
     """The cited normalizer versions alone (what the index keys on), without the event marks."""
-    return {k: v for k, v in cited.items() if k not in (EVENT_KEY, LIFT_MARK)}
+    return {k: v for k, v in cited.items() if k not in (EVENT_KEY, LIFT_MARK, ORIGIN_KEY)}
+
+
+def origin_token(values: TombstoneValues, cited: Mapping[str, str]) -> str:
+    """What a new form says to name the tombstone it comes from: the identifier of its event, or,
+    for a tombstone from before the identifiers, a digest of its folded reference. Both live in
+    the sealed line: nothing readable is written (EF-BIB-054 (4))."""
+    event = event_of(cited)
+    if event is not None:
+        return event
+    folded = folded_fields(values.scope, flatten(values)) or ()
+    return "~" + hashlib.sha256("\x1f".join(folded).encode()).hexdigest()[:16]
+
+
+def origins_of(cited: Mapping[str, str]) -> frozenset[str]:
+    return frozenset(t for t in cited.get(ORIGIN_KEY, "").split(",") if t)
 
 
 def lift_cited(target: Mapping[str, str]) -> dict[str, str]:
@@ -112,6 +134,7 @@ class TombstoneRow:
     created_at: datetime
     scope: str
     reason: str | None
+    linked_to: tuple[int, ...] = ()  # a new form: the sequences of the tombstones it comes from
 
 
 class LiftRefusedError(PermissionError):

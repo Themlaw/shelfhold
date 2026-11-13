@@ -76,6 +76,10 @@ identité effacée) : chacune se lève par son propre numéro.
 - La levée est une **ligne de plus** dans la table et dans chaque journal (le journal ne s'efface
   pas) : elle survit à un redémarrage et à une restauration de `/data`. Une racine absente la reçoit à
   son retour.
+- Lever la pierre d'une série effacée lève aussi les pierres `new_form` posées par la migration
+  d'alias de source pour sa nouvelle forme ; `tombstone list` montre le lien (« forme nouvelle de
+  n ») et l'audit a une ligne par pierre. Lever une forme nouvelle seule laisse l'origine. Une forme
+  nouvelle sans pierre d'origine connue reste autonome : levez-la par son numéro.
 - Elle ne **restaure rien** : aucune Unité, aucun fichier, aucune demande. Elle ouvre seulement la
   porte : la pierre levée ne bloque plus la réacquisition, l'adoption, l'import ni une migration.
   Une nouvelle purge du même contenu pose une nouvelle pierre, qui bloque de nouveau.

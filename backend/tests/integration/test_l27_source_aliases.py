@@ -751,6 +751,25 @@ def test_a_blocked_row_seals_the_new_form_the_plugin_gave_and_writes_no_alias(
         assert env.rows(acquisition.source_alias_migration)[0].preview["new_forms"] == 1
 
 
+def test_a_new_form_stone_is_linked_to_the_tombstone_of_the_erased_series(
+    monkeypatch: pytest.MonkeyPatch, settings: Settings, tmp_path: Path
+) -> None:
+    """The levée liée (L26): the new form names the tombstone it comes from, so that lifting the
+    origin lifts it; `tombstone list` shows the link, never a value."""
+    with seeded(settings, tmp_path / "inst") as env:
+        erased = live(env, GONE)
+        erase(env, monkeypatch, settings, erased)
+        ops = make_ops(env, {GONE: "gone-new"})
+        preview = plan(ops)
+        assert preview["new_forms"] == 1
+        plan(ops, preview["fingerprint"])
+        rows = {r.seq: r for r in _gate(env).listing()}
+        [new] = [r for r in rows.values() if r.reason == "new_form"]
+        [origin] = new.linked_to
+        assert origin in rows and rows[origin].reason != "new_form"
+        assert rows[origin].linked_to == ()
+
+
 def _new_form_stones(env: Seeded) -> int:
     """The tombstones laid for a new form: they carry their own closed reason, never a value."""
     return sum(1 for r in env.rows(coherence.content_tombstone) if r.reason == "new_form")
