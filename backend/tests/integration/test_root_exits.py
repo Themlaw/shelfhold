@@ -458,7 +458,8 @@ def test_the_periodic_look_marks_a_vanished_root_with_no_probe_and_writes_nothin
     assert rid not in marks(env)  # back by itself: released at the next look
     assert (env.library / SENTINEL).read_bytes() == good
     with env.engine.connect() as connection:
-        assert connection.execute(sa.select(platform.physical_root.c.generation)).all() == generation
+        after = connection.execute(sa.select(platform.physical_root.c.generation)).all()
+    assert after == generation
 
 
 @pytest.mark.req("EF-EXP-064")

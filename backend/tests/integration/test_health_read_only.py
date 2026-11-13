@@ -31,7 +31,8 @@ class _Roots:
         self.judged += 1
 
     def waiting(self) -> list[WaitingItem]:
-        return [WaitingItem("root_lost", "export", "/library", "lost", "shelfhold root reinit", True)]
+        item = WaitingItem("root_lost", "export", "/library", "lost", "shelfhold root reinit", True)
+        return [item]
 
 
 @pytest.fixture
@@ -73,7 +74,7 @@ def test_the_health_read_is_not_held_by_a_write_in_progress_and_does_not_hold_on
                 conn.execute(sa.update(platform.job_view).values(attempts=1))
                 inside.set()
                 time.sleep(0.6)
-        except BaseException as error:  # noqa: BLE001 - reported below
+        except BaseException as error:  # reported below
             errors.append(error)
 
     thread = threading.Thread(target=writer)
