@@ -19,10 +19,10 @@ from typing import Any
 import pytest
 
 from shelfhold.config import Settings
+from shelfhold.infrastructure.db import create_db_engine
 from shelfhold.ops import health as health_module
 from shelfhold.ops.health import HEALTH_CACHE_TTL, OpsHealth
 from shelfhold.ops.ports import PausedQueue
-from shelfhold.infrastructure.db import create_db_engine
 from tests.auth_env import AuthEnv, auth_env
 from tests.ops_env import add_job
 from tests.visibility_env import add_profile

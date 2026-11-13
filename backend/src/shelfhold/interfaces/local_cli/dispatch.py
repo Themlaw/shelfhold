@@ -468,9 +468,7 @@ class IdentityDispatcher:
             principal = principal_for_peer(peer)
             self._authorize(principal, operating[1])
             try:
-                return await asyncio.to_thread(
-                    run_ops_method, self._ops, principal, method, params
-                )
+                return await asyncio.to_thread(run_ops_method, self._ops, principal, method, params)
             finally:
                 await self._changed()
         headless = HEADLESS_METHODS.get(method)

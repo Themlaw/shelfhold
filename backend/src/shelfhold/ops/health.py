@@ -43,9 +43,9 @@ __all__ = ["HEALTH_CACHE_TTL", "Action", "OpsHealth", "action_of", "build_health
 STORE_BACKUP_KEY = "store.backup_declared_at"  # what the host's own backup tool declared
 LOST_ORIGINAL = "content.original_lost"  # stable code of the entry (EF-BIB-051)
 # How long the shared part of `/healthz` (the paused queues, read through the roots, the restore,
-# the keyring...) is kept. A change made by the instance itself refreshes it at once (`OpsHealth.refresh`); one made
-# from outside (a restore, a keyring file, the host's disk) shows on `/healthz` at most this many
-# seconds later: the probe is a liveness check, not a transaction.
+# the keyring...) is kept. A change made by the instance itself refreshes it at once
+# (`OpsHealth.refresh`); one made from outside (a restore, a keyring file, the host's disk) shows on
+# `/healthz` at most this many seconds later: the probe is a liveness check, not a transaction.
 HEALTH_CACHE_TTL = 5.0
 KAVITA_AUDIT_STATES = ("child_exposure", "permission_denied", "target_forbidden")
 
