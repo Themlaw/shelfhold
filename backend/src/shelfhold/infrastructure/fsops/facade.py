@@ -783,6 +783,18 @@ class Fsops:
             kind = root.lstat_kind(located.rel)
         return (kind, identity_of(observed)) if kind is not None else None
 
+    def fingerprint(self, local: str, *, host: bool = False) -> tuple[int, ...] | None:
+        """Device, inode, size, mtime and ctime of the file at `local` (None when nothing is
+        there). The ctime is the one `utime` cannot put back: a cache keyed on this sees a file
+        rewritten in place."""
+        located = self._locate(local, read_mirror=True, host=host)
+        with self._root(located.root_path) as root:
+            try:
+                s = root.stat(located.rel)
+            except FileNotFoundError:
+                return None
+        return (s.st_dev, s.st_ino, s.st_size, s.st_mtime_ns, s.st_ctime_ns)
+
     def list_dir(self, local: str, *, host: bool = False) -> dict[str, Kind]:
         """The entries of a folder with what each is (a link is described, never followed).
         An entry that vanishes while it is read is left out. `host`: the reserved area (a bin)."""

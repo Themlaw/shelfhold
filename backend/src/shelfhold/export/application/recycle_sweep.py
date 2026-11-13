@@ -39,7 +39,7 @@ from shelfhold.library.public import (
 
 log = structlog.get_logger(__name__)
 
-_DIGESTS: dict[tuple[str, int, int, int], str] = {}
+_DIGESTS: dict[tuple[str | int, ...], str] = {}
 _DIGESTS_MAX = 20_000
 
 
@@ -120,11 +120,11 @@ class RecycleSweeper:
         return found
 
     def _digest(self, local: str) -> str:
-        """The SHA-256 of a file of a bin, remembered by its inode, size and mtime: the early
-        purge looks at the same entries every ten minutes, and a big bin is not read again each
-        time. A file that changed has another identity and is read again."""
-        seen = self._fsops.observe(local, host=True)
-        key = (local, seen[1].ino, seen[1].size, seen[1].mtime_ns) if seen else None
+        """The SHA-256 of a file of a bin, remembered by its device, inode, size, mtime and ctime.
+        The early purge looks at the same entries every ten minutes, and a big bin is not read
+        again each time. A file that changed has another identity and is read again."""
+        seen = self._fsops.fingerprint(local, host=True)
+        key: tuple[str | int, ...] | None = (local, *seen) if seen else None
         if key is not None and key in _DIGESTS:
             return _DIGESTS[key]
         digest = self._fsops.sha256_of(local, host=True)
