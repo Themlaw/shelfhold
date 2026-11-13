@@ -12,7 +12,7 @@
 State is in memory: one process per instance (`/data/.lock`); a restart forgets it.
 """
 
-import hmac
+import hashlib
 import secrets
 import threading
 import time
@@ -137,7 +137,8 @@ _LABEL_KEY = secrets.token_bytes(32)  # per process: a label cannot be recompute
 def credential_label(raw: str) -> str:
     """A keyed digest of a credential, only ever compared in memory (a Basic carries a password:
     it is never kept, logged or hashed for storage, so no password-hashing cost applies)."""
-    return "cred:" + hmac.new(_LABEL_KEY, raw.encode(), "sha256").hexdigest()[:24]
+    digest = hashlib.pbkdf2_hmac("sha256", raw.encode(), _LABEL_KEY, 1_000)  # ~0.3 ms, keyed
+    return "cred:" + digest.hex()[:24]
 
 
 class RecognisedCredentials:
