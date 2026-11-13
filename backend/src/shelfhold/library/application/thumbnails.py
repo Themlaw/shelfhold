@@ -59,6 +59,7 @@ MAX_THUMBNAIL_BYTES: Final = 8 * 1024 * 1024  # a thumbnail of 640 pixels is a f
 WAIT_SECONDS: Final = 0.25  # what a request waits for a worker slot or for the one decode
 MAX_WAITERS: Final = 4  # threads that wait for one decode; the others answer at once
 CONCURRENT_WORKERS: Final = 2  # a library screen asks for sixty covers at once
+MAX_HELD: Final = 8  # request threads the decodes may hold, of the server's 40 shared with the rest
 
 MAX_AGE: Final = 86400  # a day: what a lowered ceiling may leave in a browser that had it
 CACHE_CONTROL: Final = ", ".join(("private", f"max-age={MAX_AGE}", "immutable"))
@@ -127,6 +128,7 @@ class ThumbnailService:
         self._limits = limits
         self._wait = wait
         self._workers = threading.BoundedSemaphore(CONCURRENT_WORKERS)
+        self._held = threading.BoundedSemaphore(MAX_HELD)
         self._lock = threading.Lock()
         self._flights: dict[tuple[str, int], _Flight] = {}
 
@@ -174,6 +176,18 @@ class ThumbnailService:
         return self._source(digest)
 
     def _single_flight(self, digest: str, size: int) -> Thumb | None:
+        """At most `MAX_HELD` threads wait here at once, whatever the number of covers or sizes:
+        the others are told `Pending` without waiting, so the pool the synchronous routes share
+        is never kept full by decodes (a flood of sixty requests would otherwise refill it from
+        one wave of waiters to the next)."""
+        if not self._held.acquire(blocking=False):
+            raise Pending
+        try:
+            return self._fly(digest, size)
+        finally:
+            self._held.release()
+
+    def _fly(self, digest: str, size: int) -> Thumb | None:
         key = (digest, size)
         with self._lock:
             flight = self._flights.get(key)
