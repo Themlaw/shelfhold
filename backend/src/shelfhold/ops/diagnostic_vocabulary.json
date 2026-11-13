@@ -597,6 +597,7 @@
   "follow.upgrade_left",
   "fsops.blocked_hook_failed",
   "fsops.exchange_unsupported",
+  "fsops.generation_source_failed",
   "fsops.mkdir",
   "fsops.purge_remove_tree",
   "fsops.purge_unlink",

@@ -230,7 +230,9 @@ class Fsops:
         now: Callable[[], float] = time.time,
         frozen: bool = False,
         freeze: FreezeState | None = None,
+        generation_source: Callable[[str], int | None] | None = None,
     ) -> None:
+        self._generation_source = generation_source  # the database's own count, per root path
         self._stop_gate = stop_gate  # raises once the shutdown went past its checkpoint delay
         self._write_gate = write_gate  # raises while the disk guard is paused (ENF-OPS-006)
         self._now = now
@@ -357,13 +359,14 @@ class Fsops:
         now: Callable[[], float] = time.time,
         frozen: bool = False,
         freeze: FreezeState | None = None,
+        generation_source: Callable[[str], int | None] | None = None,
     ) -> Self:
         """No file system access: roots are opened, and their sentinels read, per operation.
         `frozen`: the database says `restored_behind` (read from `LoadedRoots.restore_pending`)."""
         return cls(
             path_map, expected, umask=umask, strategy=strategy,
             write_gate=write_gate, stop_gate=stop_gate, now=now, frozen=frozen,
-            freeze=freeze,
+            freeze=freeze, generation_source=generation_source,
         )  # fmt: skip
 
     # -- locating ---------------------------------------------------------------------------
@@ -418,10 +421,48 @@ class Fsops:
     def _verdict(self, root: ConfinedRoot) -> SentinelVerdict:
         expected = self._expected[root.path]
         try:
-            return judge_sentinel(read_sentinel(root), expected)
+            doc = read_sentinel(root)
         except (SentinelFormatError, OSError):
             # unreadable, a FIFO, a directory...: fail closed, this root only (EF-EXP-059)
             return SentinelVerdict(RootState.MISMATCH)
+        verdict = judge_sentinel(doc, expected)
+        if verdict.state is RootState.RESTORED_BEHIND and doc is not None:
+            followed = self._follow_generation(root.path, doc, expected)
+            if followed is not None:
+                return followed
+        return verdict
+
+    def _follow_generation(
+        self, root_path: str, doc: SentinelDocument, expected: ExpectedRoot
+    ) -> SentinelVerdict | None:
+        """A sentinel ahead of the generation this `Fsops` was opened with, while the database
+        itself has moved on: another task of this instance advanced the counter (the database
+        commits first, the sentinel follows, I39). Only the database's current value counts: the
+        sentinel is read as right when it is that value (or one behind), and the copy held here
+        is refreshed. A sentinel ahead of the database (a restored backup), of another root or
+        instance, or of a newer restore epoch is still `restored_behind`."""
+        source = self._generation_source
+        if (
+            source is None
+            or doc.root_id != expected.root_id
+            or doc.instance_id != expected.instance_id
+            or doc.restore_epoch > expected.restore_epoch
+            or doc.generation <= expected.generation
+        ):
+            return None
+        try:
+            current = source(root_path)
+        except Exception:  # database unreachable: fail closed, the verdict stays as it was
+            log.warning("fsops.generation_source_failed", root=root_path)
+            return None
+        if current is None or current <= expected.generation:
+            return None
+        refreshed = replace(expected, generation=current)
+        verdict = judge_sentinel(doc, refreshed)
+        if verdict.state is not RootState.OK:
+            return None
+        self._expected[root_path] = refreshed
+        return verdict
 
     @contextmanager
     def _gated(

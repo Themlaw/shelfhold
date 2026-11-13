@@ -83,7 +83,7 @@ def test_export_follows_several_advances_then_refuses_a_real_fall_back(
         for _ in range(3):
             _another_task_writes(inst)
         fsops.require_scan_allowed(str(inst.library))
-        _edit(inst, generation=_db_generation(inst) - 1)  # then it really falls behind the base
+        _edit(inst, generation=_db_generation(inst) - 2)  # then it really falls back
         with pytest.raises(RootBlockedError) as caught:
             fsops.require_scan_allowed(str(inst.library))
         assert caught.value.state is RootState.STALE
@@ -139,3 +139,36 @@ def test_a_restore_epoch_ahead_is_never_followed(settings: Settings, tmp_path: P
         with pytest.raises(RootBlockedError) as caught:
             fsops.require_scan_allowed(str(inst.library))
         assert caught.value.state is RootState.RESTORED_BEHIND
+
+
+@pytest.mark.req("EF-EXP-029", "EF-INT-026")
+def test_an_unreachable_database_never_lifts_the_refusal(
+    settings: Settings, tmp_path: Path
+) -> None:
+    with instance(settings, tmp_path) as inst:
+        inst.configure()
+        _another_task_writes(inst)
+        fsops = _opened_export(inst)
+        _another_task_writes(inst)
+
+        def broken(_path: str) -> int | None:
+            raise sa.exc.OperationalError("select", {}, Exception("locked"))
+
+        fsops._generation_source = broken  # the count cannot be read: fail closed
+        with pytest.raises(RootBlockedError) as caught:
+            fsops.require_scan_allowed(str(inst.library))
+        assert caught.value.state is RootState.RESTORED_BEHIND
+
+
+@pytest.mark.req("EF-EXP-029", "EF-INT-026")
+def test_without_a_generation_source_the_old_verdict_stands(
+    settings: Settings, tmp_path: Path
+) -> None:
+    with instance(settings, tmp_path) as inst:
+        inst.configure()
+        _another_task_writes(inst)
+        fsops = _opened_export(inst)
+        _another_task_writes(inst)
+        fsops._generation_source = None
+        with pytest.raises(RootBlockedError):
+            fsops.require_scan_allowed(str(inst.library))
