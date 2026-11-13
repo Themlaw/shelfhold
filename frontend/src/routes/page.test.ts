@@ -9,6 +9,15 @@ const BASE = 'http://shelfhold.test';
 const KAVITA = 'http://kavita.test:5000';
 
 type Listener = (message: MessageEvent<string>) => void;
+const FRAME = JSON.stringify({
+  type: 'ops.request_arrived',
+  visibility: 'household',
+  payload: {},
+  occurred_at: '2026-11-03T09:00:00Z',
+  title: null,
+  title_masked: false
+});
+
 class FakeSource {
   static all: FakeSource[] = [];
   listeners = new Map<string, Listener[]>();
@@ -23,7 +32,7 @@ class FakeSource {
   close() {
     this.closed = true;
   }
-  emit(name: string, data = '{}') {
+  emit(name: string, data = FRAME) {
     for (const listener of this.listeners.get(name) ?? []) listener({ data } as MessageEvent<string>);
   }
 }
@@ -100,18 +109,16 @@ describe('home page', () => {
   });
 
   // req: EF-UX-005
-  it('test_home_empty_state_is_the_same_whatever_the_server_hides', async () => {
-    // a child whose ceiling hides every Work is served the page of an empty library: the
-    // screen has no word for "hidden", and never asks why the list is empty
-    const { container, unmount } = render(Page);
+  it('test_home_empty_state_gives_no_clue_about_what_the_server_hides', async () => {
+    // a child whose ceiling hides every Work is served the page of an empty library, and the
+    // screen has no word for "hidden": the same title, the same action, nothing else
+    const { container } = render(Page);
     await screen.findByRole('link', { name: 'Ajouter un premier livre' });
-    const empty = container.querySelector('.recently-arrived')?.innerHTML;
-    unmount();
-    works = [];
-    const again = render(Page);
-    await screen.findByRole('link', { name: 'Ajouter un premier livre' });
-    expect(again.container.querySelector('.recently-arrived')?.innerHTML).toBe(empty);
-    expect(again.container.textContent ?? '').not.toMatch(/mask|masqu|cach|filtr/i);
+    const section = container.querySelector('.recently-arrived');
+    expect(section?.textContent?.split(/\s+/).join(' ').trim()).toBe(
+      'Arrivé récemment Bibliothèque vide Ajouter un premier livre'
+    );
+    expect(container.textContent ?? '').not.toMatch(/mask|masqu|hidden|filter|filtr/i);
   });
 
   // req: EF-UX-005

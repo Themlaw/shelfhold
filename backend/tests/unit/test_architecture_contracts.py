@@ -749,8 +749,10 @@ def test_http_contract_ignores_are_named_with_the_lot_that_settles_them() -> Non
     block = text.split("[importlinter:contract:http-no-infrastructure-adapter]")[1].split(
         "[importlinter"
     )[0]
-    assert "M3 L41" in block
     assert "M3 L56" in block
+    # M3 L41 settled its debt: the activity queries sit behind `events.activity_feed`
+    assert "M3 L41" not in block
+    assert "interfaces.http_api.activity ->" not in block
 
 
 @pytest.mark.req("ENF-GOV-006")

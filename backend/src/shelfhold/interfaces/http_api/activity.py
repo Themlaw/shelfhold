@@ -14,17 +14,28 @@ from collections.abc import Callable, Mapping
 from datetime import datetime
 from typing import Annotated, Any
 
-import sqlalchemy as sa
 from fastapi import APIRouter, Depends, Query, Request
 from pydantic import BaseModel
-from sqlalchemy import Connection, Engine
+from sqlalchemy import Engine
 
 from shelfhold.events.activity import (
-    ActivityEvent,
     UnmaskRefusedError,
     Viewer,
-    download_request_event,
     unmask_title,
+)
+from shelfhold.events.activity_feed import (
+    activity_event_of,
+    entry_of,
+    kavita_open_url,
+    recent_events,
+    recent_requests,
+    request_edition,
+    request_event,
+)
+from shelfhold.events.family_state import (
+    FamilyState,
+    download_family_state,
+    event_family_state,
 )
 from shelfhold.events.projection import project_event
 from shelfhold.identity.public import (
@@ -34,11 +45,10 @@ from shelfhold.identity.public import (
     Principal,
     reader_scope,
 )
-from shelfhold.infrastructure.schema import acquisition, catalog, identity, platform
 from shelfhold.interfaces.http_api.auth import gate_of, require_principal, reserved_action
 from shelfhold.interfaces.http_api.problems import ProblemError
 
-__all__ = ["activity_event_of", "build_activity_router", "viewer_of"]
+__all__ = ["activity_event_of", "build_activity_router", "family_payload", "viewer_of"]
 
 MAX_LIMIT = 100
 _UNMASK = RESERVED_ACTIONS["request.unmask"]
@@ -52,6 +62,9 @@ class ActivityOut(BaseModel):
     occurred_at: datetime
     title: str | None
     title_masked: bool
+    family_state: FamilyState | None  # the one word the family reads (EF-UX-010)
+    open_url: str | None  # where "Ouvrir dans Kavita" goes: only for an item that is available
+    koreader_reset: bool  # the admin's: KOReader's position was reset (EF-EXP-016)
 
 
 class UnmaskedOut(BaseModel):
@@ -71,84 +84,39 @@ def viewer_of(principal: Principal, scope_kind: str = "all") -> Viewer:
     return Viewer(None, INTEGRATION_ROLE)
 
 
-def _title_of(connection: Connection, payload: Mapping[str, object]) -> str | None:
-    """The title the ULIDs of the payload point at, resolved at display time (never stored)."""
-    for key, table in (("work_id", catalog.work), ("series_id", catalog.series)):
-        ulid = payload.get(key)
-        if isinstance(ulid, str):
-            title = connection.execute(sa.select(table.c.title).where(table.c.id == ulid)).scalar()
-            if title is not None:
-                return str(title)
-    return None
+def family_payload(role: str, event_type: str, payload: Mapping[str, object]) -> dict[str, Any]:
+    """What of the payload a viewer reads. The steps and `koreader_reset` are the admin's: the
+    family reads `family_state`, so a download's step is dropped and the flag never leaves."""
+    if role == "admin":
+        return dict(payload)
+    if event_type == "download_request":
+        return {}
+    return {k: v for k, v in payload.items() if k != "koreader_reset"}
 
 
-def _request_edition(connection: Connection, row: Any) -> str | None:
-    """The Edition a request is about: through its Variant, or through the range it asks."""
-    edition_id = (row.range_ref or {}).get("edition_id") if row.range_ref else None
-    if row.variant_id is not None:
-        edition_id = connection.execute(
-            sa.select(catalog.unit.c.edition_id)
-            .join(catalog.unit_variant, catalog.unit_variant.c.unit_id == catalog.unit.c.id)
-            .where(catalog.unit_variant.c.id == row.variant_id)
-        ).scalar()
-    return edition_id if isinstance(edition_id, str) else None
+def _family_state(item: Any) -> FamilyState | None:
+    if item.type == "download_request":
+        return download_family_state(str(item.payload.get("state", "")))
+    return event_family_state(item.type)
 
 
-def _request_title(connection: Connection, row: Any) -> str | None:
-    """The Work a request is about, resolved through its Edition."""
-    edition_id = _request_edition(connection, row)
-    if edition_id is None:
-        return None
-    return _title_of(
-        connection,
-        {
-            "work_id": connection.execute(
-                sa.select(catalog.edition.c.work_id).where(catalog.edition.c.id == edition_id)
-            ).scalar()
-        },
-    )
-
-
-def _owner_role(connection: Connection, user_id: str | None) -> tuple[str | None, str | None]:
-    if user_id is None:
-        return None, None
-    role = connection.execute(
-        sa.select(identity.user.c.role).where(identity.user.c.id == user_id)
-    ).scalar()
-    return (user_id, str(role)) if role is not None else (None, None)
-
-
-def activity_event_of(
-    connection: Connection, row: Any, payload: Mapping[str, object] | None = None
-) -> ActivityEvent:
-    """`payload`: the row's own, unless a reader of an older row has moved it to the current
-    version (the SSE stream)."""
-    body = row.payload or {} if payload is None else payload
-    owner_id, owner_role = _owner_role(connection, row.actor_id)
-    return ActivityEvent(
-        id=row.id, type=row.type, visibility=row.visibility, payload=body,
-        owner_id=owner_id, owner_role=owner_role, title=_title_of(connection, body),
-    )  # fmt: skip
-
-
-def _request_event(connection: Connection, row: Any) -> ActivityEvent:
-    owner_id, owner_role = _owner_role(connection, row.requester_user_id)
-    return download_request_event(
-        request_id=row.id, state=row.state, visibility=row.visibility, requester_id=owner_id,
-        requester_role=owner_role, title=_request_title(connection, row),
-    )  # fmt: skip
-
-
-def _out(item: Any, occurred_at: datetime) -> ActivityOut:
+def _out(
+    item: Any, occurred_at: datetime, role: str, kavita: Callable[[], str | None]
+) -> ActivityOut:
+    state = _family_state(item)
     return ActivityOut(
         event_id=item.event_id,
         type=item.type,
         visibility=item.visibility,
-        payload=dict(item.payload),
+        payload=family_payload(role, item.type, item.payload),
         occurred_at=occurred_at,
         title=item.title,
         title_masked=item.title_masked,
-    )
+        family_state=state,
+        # a key reads like the integration role: it is handed no address of the household
+        open_url=kavita() if state == "available" and role != INTEGRATION_ROLE else None,
+        koreader_reset=role == "admin" and bool(item.payload.get("koreader_reset")),
+    )  # fmt: skip
 
 
 def build_activity_router(get_engine: Callable[[], Engine]) -> APIRouter:
@@ -164,25 +132,25 @@ def build_activity_router(get_engine: Callable[[], Engine]) -> APIRouter:
             # the reader's own profile, a key or a token included: never who issued the key
             scope = reader_scope(connection, principal.user_id)
             viewer = viewer_of(principal, scope.kind)
-            events = connection.execute(
-                sa.select(platform.event).order_by(platform.event.c.id.desc()).limit(limit * 4)
-            )
+            address: list[str | None] = []
+
+            def kavita() -> str | None:  # read once, and only if an item is available
+                if not address:
+                    address.append(kavita_open_url(connection))
+                return address[0]
+
+            events = recent_events(connection, limit * 4)
             for row in events:  # the projection decides: a hidden entry leaves no trace
                 item = project_event(connection, viewer, scope, activity_event_of(connection, row))
                 if item is not None:
-                    found.append(_out(item, row.occurred_at))
-            requests = connection.execute(
-                sa.select(acquisition.download_request)
-                .order_by(acquisition.download_request.c.requested_at.desc())
-                .limit(limit * 4)
-            )
-            for request in requests:
+                    found.append(_out(item, row.occurred_at, viewer.role, kavita))
+            for request in recent_requests(connection, limit * 4):
                 item = project_event(
-                    connection, viewer, scope, _request_event(connection, request),
-                    editions=[e] if (e := _request_edition(connection, request)) else [],
+                    connection, viewer, scope, request_event(connection, request),
+                    editions=[e] if (e := request_edition(connection, request)) else [],
                 )  # fmt: skip
                 if item is not None:
-                    found.append(_out(item, request.requested_at))
+                    found.append(_out(item, request.requested_at, viewer.role, kavita))
         found.sort(key=lambda entry: entry.occurred_at, reverse=True)
         return found[:limit]
 
@@ -195,7 +163,7 @@ def build_activity_router(get_engine: Callable[[], Engine]) -> APIRouter:
         """`ref`: the number of an event, or the ULID of a download request."""
         auth = gate_of(request).auth
         with get_engine().begin() as connection:
-            entry = _entry(connection, ref)
+            entry = entry_of(connection, ref)
             if entry is None:
                 raise ProblemError("not_found")
             try:
@@ -211,15 +179,3 @@ def build_activity_router(get_engine: Callable[[], Engine]) -> APIRouter:
         return UnmaskedOut(event_id=item.event_id, title=item.title)
 
     return router
-
-
-def _entry(connection: Connection, ref: str) -> ActivityEvent | None:
-    if ref.isascii() and ref.isdigit():
-        row = connection.execute(
-            sa.select(platform.event).where(platform.event.c.id == int(ref))
-        ).first()
-        return activity_event_of(connection, row) if row is not None else None
-    request = connection.execute(
-        sa.select(acquisition.download_request).where(acquisition.download_request.c.id == ref)
-    ).first()
-    return _request_event(connection, request) if request is not None else None

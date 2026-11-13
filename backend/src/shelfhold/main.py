@@ -17,6 +17,7 @@ from shelfhold import __version__
 from shelfhold.catalog.public import ensure_search_tables, sync_search_index
 from shelfhold.composition import Composition, Network
 from shelfhold.config import Settings, load_settings
+from shelfhold.events.activity_feed import kavita_open_url_of
 from shelfhold.events.bus import EventBus
 from shelfhold.events.since_key import SinceKey
 from shelfhold.export.application.pipeline import ExportPipeline
@@ -286,6 +287,7 @@ def create_app(
         build_requests_router(  # EF-USR-010: ask, approve, refuse, follow a request
             lambda: ops_services().requests,
             lambda token, owner: resolve_request_ref(ops_services().acquire, token, owner),
+            lambda: kavita_open_url_of(engine),  # M3 L41: "Ouvrir dans Kavita"
         ),
         build_sources_router(ops_services),  # EF-SRC-015, EF-SRC-004: search, acquire, a URL
         build_me_router(cache(lambda: user_state_service(engine, clock))),  # EF-USR-007, EF-BIB-022

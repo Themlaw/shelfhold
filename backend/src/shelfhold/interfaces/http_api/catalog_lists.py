@@ -14,7 +14,7 @@ The answer carries `since`, the token to send next time, read in the same transa
 """
 
 from collections.abc import Callable
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
@@ -118,6 +118,7 @@ def build_catalog_lists_router(get_engine: Callable[[], Engine], key: SinceKey) 
         raw: Annotated[str | None, Depends(since_param)],
         limit: Annotated[int, Query(ge=1, le=200)] = 50,
         offset: Annotated[int, Query(ge=0)] = 0,
+        sort: Annotated[Literal["title", "recent"], Query()] = "title",
     ) -> WorksPageOut:
         with get_engine().connect() as connection:
             scope = reader_scope(connection, principal.user_id)
@@ -125,7 +126,9 @@ def build_catalog_lists_router(get_engine: Callable[[], Engine], key: SinceKey) 
                 connection, raw, key, WORKS_KIND, scope_code(scope),
                 lambda seq: removed_ids(connection, scope, seq),
             )  # fmt: skip
-            page = list_visible_works(connection, scope, limit=limit, offset=offset)
+            page = list_visible_works(
+                connection, scope, limit=limit, offset=offset, recent=sort == "recent"
+            )
             total = count_visible_works(connection, scope)
         return WorksPageOut(
             items=[WorkItemOut(work_id=w.work_id, title=w.title, kind=w.kind) for w in page],

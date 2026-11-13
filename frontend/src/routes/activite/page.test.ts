@@ -7,6 +7,15 @@ import Page from './+page.svelte';
 
 const BASE = 'http://shelfhold.test';
 type Listener = (message: MessageEvent<string>) => void;
+const FRAME = JSON.stringify({
+  type: 'ops.request_arrived',
+  visibility: 'household',
+  payload: {},
+  occurred_at: '2026-11-03T09:00:00Z',
+  title: null,
+  title_masked: false
+});
+
 class FakeSource {
   static all: FakeSource[] = [];
   listeners = new Map<string, Listener[]>();
@@ -22,7 +31,7 @@ class FakeSource {
     this.closed = true;
   }
   emit(name: string) {
-    for (const listener of this.listeners.get(name) ?? []) listener({ data: '{}' } as MessageEvent<string>);
+    for (const listener of this.listeners.get(name) ?? []) listener({ data: FRAME } as MessageEvent<string>);
   }
 }
 

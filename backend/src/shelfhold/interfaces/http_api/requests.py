@@ -26,6 +26,7 @@ from shelfhold.acquisition.application.requests import (
     SourceRef,
 )
 from shelfhold.acquisition.domain.request_target import RequestTarget
+from shelfhold.events.family_state import FamilyState, request_family_state
 from shelfhold.identity.public import RESERVED_ACTIONS, Principal
 from shelfhold.interfaces.http_api.auth import require_session, reserved_action
 from shelfhold.interfaces.http_api.problems import ProblemError
@@ -65,12 +66,16 @@ class RequestOut(BaseModel):
     reject_reason: str | None
     created_at: datetime
     updated_at: datetime
+    family_state: FamilyState | None  # the one word she reads (EF-UX-010); None: refused, withdrawn
+    open_url: str | None  # "Ouvrir dans Kavita": read on the server, only when it is available
 
     @classmethod
-    def of(cls, view: RequestView) -> "RequestOut":
+    def of(cls, view: RequestView, kavita: Callable[[], str | None] = lambda: None) -> "RequestOut":
+        state = request_family_state(view.state)
         return cls(
             id=view.id, state=view.state, title=view.title, reject_reason=view.reject_reason,
-            created_at=view.created_at, updated_at=view.updated_at,
+            created_at=view.created_at, updated_at=view.updated_at, family_state=state,
+            open_url=kavita() if state == "available" else None,
         )  # fmt: skip
 
 
@@ -130,8 +135,10 @@ class RejectIn(BaseModel):
 def build_requests_router(
     get_service: Callable[[], RequestService],
     resolve_ref: Callable[[str, str], SourceRef | None],
+    kavita_url: Callable[[], str | None] = lambda: None,
 ) -> APIRouter:
-    """`resolve_ref(token, owner)`: the remote result a child's search showed her, or None."""
+    """`resolve_ref(token, owner)`: the remote result a child's search showed her, or None.
+    `kavita_url()`: the address "Ouvrir dans Kavita" opens, read on the server (M3 L41)."""
     router = APIRouter(prefix="/api/v1/requests", tags=["requests"])
 
     def run[T](work: Callable[[RequestService], T]) -> T:
@@ -158,7 +165,7 @@ def build_requests_router(
     @router.get("")
     def mine(principal: Session) -> RequestListOut:
         return RequestListOut(
-            items=[RequestOut.of(v) for v in run(lambda s: s.mine(principal.user_id))]
+            items=[RequestOut.of(v, kavita_url) for v in run(lambda s: s.mine(principal.user_id))]
         )
 
     @router.get("/queue")
@@ -182,7 +189,7 @@ def build_requests_router(
 
     @router.get("/{request_id}")
     def one(request_id: str, principal: Session) -> RequestOut:
-        return RequestOut.of(run(lambda s: s.get(principal.user_id, request_id)))
+        return RequestOut.of(run(lambda s: s.get(principal.user_id, request_id)), kavita_url)
 
     @router.post("/{request_id}/cancel")
     def cancel(request_id: str, principal: Session) -> RequestOut:

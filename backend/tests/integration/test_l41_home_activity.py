@@ -6,7 +6,7 @@ The family reads one state per request (En préparation, Disponible dans Kavita,
 a link that opens Kavita; the steps and `koreader_reset` are the admin's. The state and the link
 are decided here, by the server, never by the screen. "Arrivé récemment" is the reader's own view
 of the Works (the one `ViewerScope` filter), newest first: a child sees no hidden Work, not by a
-title, a count, an empty page or a page number. "Mes demandes" holds the caller's own requests only.
+title, a count, an empty page or a page number. "My requests" holds the caller's own requests only.
 """
 
 from __future__ import annotations
@@ -18,7 +18,7 @@ import sqlalchemy as sa
 from fastapi.testclient import TestClient
 
 from shelfhold.infrastructure.ids import new_ulid
-from shelfhold.infrastructure.schema import export, identity, platform
+from shelfhold.infrastructure.schema import acquisition, export, identity, platform
 from tests.integration.test_child_surfaces import (  # noqa: F401  (fixtures)
     VISIBLE_FOR_CEILING_10,
     World,
@@ -34,7 +34,7 @@ REQUESTS = "/api/v1/requests"
 WORKS = "/api/v1/works"
 KAVITA = "http://kavita.test:5000"
 WHEN = datetime(2026, 11, 3, 9, 0, tzinfo=UTC)
-STEPS = {"requested", "downloaded", "fetched", "preparing"}
+STEPS = {"pending", "approved", "arrived", "requested", "downloaded", "fetched"}
 
 
 def add_kavita(world: World) -> None:
@@ -96,7 +96,7 @@ def test_activity_family_single_state_with_open_in_kavita(world: World) -> None:
         preparing: ("preparing", None),
         done: ("available", KAVITA),
     }
-    # the member's own "Mes demandes" says the same, in the same words
+    # another profile has no request of its own: nothing of the child's shows in its list
     assert mine(member_client(world)) == {}
     # the steps are not the family's: no raw state is a second word for the same thing
     assert STEPS.isdisjoint({str(item["family_state"]) for item in shown.values()})
@@ -256,3 +256,115 @@ def test_open_url_is_never_set_by_the_client(world: World) -> None:
     done = add_request(world, world.kid_id, "arrived")
     answer = world.kid.get(f"{REQUESTS}/{done}", params={"open_url": "http://evil.example"})
     assert answer.json()["open_url"] == KAVITA
+
+
+# -- the download requests of the feed, and the unmasking behind them ---------------------------
+
+
+def add_download(world: World, edition: str, state: str, owner: str | None = None) -> str:
+    """A ticket on a range of one Edition, as the feed reads it (the binding is real: the keys
+    of the database are enforced)."""
+    download_id, item_id, binding_id = new_ulid(), new_ulid(), new_ulid()
+    with world.seed.engine.begin() as connection:
+        work_id = connection.execute(
+            sa.text("SELECT work_id FROM edition WHERE id = :e"), {"e": edition}
+        ).scalar_one()
+        connection.execute(
+            sa.insert(acquisition.source_item).values(
+                id=item_id, plugin_id="fake", source_key="fake:1", remote_id=new_ulid()
+            )
+        )
+        connection.execute(
+            sa.insert(acquisition.source_binding).values(
+                id=binding_id, work_id=work_id, edition_id=edition, source_item_id=item_id,
+                priority=1 + len(download_ids(connection)), active=True,
+            )
+        )  # fmt: skip
+        connection.execute(
+            sa.insert(acquisition.download_request).values(
+                id=download_id, target_kind="range", range_ref={"edition_id": edition},
+                source_binding_id=binding_id, state=state, visibility="household",
+                requester_user_id=owner or world.kid_id,
+            )
+        )  # fmt: skip
+    return download_id
+
+
+def download_ids(connection: sa.Connection) -> list[str]:
+    return [r.id for r in connection.execute(sa.select(acquisition.source_binding.c.id))]
+
+
+def downloads(client: TestClient) -> dict[str, dict[str, object]]:
+    answer = client.get(ACTIVITY, params={"limit": 100})
+    assert answer.status_code == 200
+    return {str(i["event_id"]): i for i in answer.json() if i["type"] == "download_request"}
+
+
+@pytest.mark.req("EF-UX-010")
+def test_a_download_is_one_word_for_the_family_and_a_step_for_the_admin(world: World) -> None:
+    add_kavita(world)
+    ok = world.seed.editions["ok"]
+    preparing = add_download(world, ok, "downloaded")
+    done = add_download(world, ok, "fetched")
+    stuck = add_download(world, ok, "abandoned")
+    gone = add_download(world, ok, "cancelled")
+    kid = downloads(world.kid)
+    assert {k: (v["family_state"], v["open_url"], v["payload"]) for k, v in kid.items()} == {
+        preparing: ("preparing", None, {}),
+        done: ("available", KAVITA, {}),
+        stuck: ("waiting", None, {}),
+        gone: (None, None, {}),
+    }
+    admin = downloads(world.env.client)
+    assert admin[preparing]["payload"] == {"state": "downloaded"}  # the step is the admin's
+    assert admin[done]["family_state"] == "available"
+
+
+@pytest.mark.req("EF-USR-016")
+def test_a_download_of_a_hidden_edition_leaves_no_trace_for_a_child(world: World) -> None:
+    """Attack: the child is the requester, the ticket is hers, the Edition is above her ceiling
+    (or unrated, or misfiled): the feed shows nothing, and says nothing about it."""
+    for key in ("above", "adult_edition", "mixed_new", "misfiled"):
+        add_download(world, world.seed.editions[key], "fetched")
+    add_download(world, world.seed.editions["ok"], "requested")
+    answer = world.kid.get(ACTIVITY, params={"limit": 100})
+    world.clean(answer.text)
+    assert [i["family_state"] for i in answer.json()] == ["preparing"]
+
+
+@pytest.mark.req("EF-USR-016")
+def test_a_download_of_another_child_is_not_in_the_feed(world: World) -> None:
+    other = add_profile(world.env, "sister", "child", "10.0.0.6", max_age_rating=10)
+    add_download(world, world.seed.editions["ok"], "requested")  # the kid's own
+    assert len(downloads(world.kid)) == 1
+    assert downloads(other) == {}  # a sibling's request is not hers to read
+
+
+@pytest.mark.req("EF-USR-016")
+def test_unmask_by_the_admin_reads_the_title_and_a_child_cannot(world: World) -> None:
+    mum = member_client(world)
+    work_id = world.seed.works["ok"]
+    with world.seed.engine.begin() as connection:
+        member_id = connection.execute(sa.text("SELECT id FROM user WHERE username='mum'")).scalar()
+        event_id = connection.execute(
+            sa.insert(platform.event)
+            .values(
+                type="work.updated",
+                schema_version=1,
+                payload={"work_id": work_id},
+                occurred_at=WHEN,
+                actor_id=member_id,
+                visibility="private",
+            )
+            .returning(platform.event.c.id)
+        ).scalar_one()  # a private event of an adult: the admin sees it masked
+    masked = [i for i in world.env.client.get(ACTIVITY).json() if i["event_id"] == event_id]
+    assert [(i["title"], i["title_masked"]) for i in masked] == [(None, True)]
+    for refused in (world.kid, mum):  # never the family
+        answer = world.env.post(f"{ACTIVITY}/{event_id}/unmask", client=refused)
+        assert answer.status_code == 403
+    answer = world.env.post(f"{ACTIVITY}/{event_id}/unmask")
+    assert answer.status_code == 200 and answer.json()["title"] == world.seed.title_of("ok")
+    # a number nobody holds, and a ULID nobody holds, are the same absence
+    assert world.env.post(f"{ACTIVITY}/999999/unmask").status_code == 404
+    assert world.env.post(f"{ACTIVITY}/{new_ulid()}/unmask").status_code == 404

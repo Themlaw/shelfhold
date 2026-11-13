@@ -34,7 +34,9 @@ OWN_ROUTES = (
     ("GET", f"{REQUESTS}/{{id}}"),
     ("POST", f"{REQUESTS}/{{id}}/cancel"),
 )
-CHILD_KEYS = {"id", "state", "title", "reject_reason", "created_at", "updated_at"}
+CHILD_KEYS = {  # M3 L41 added the two words she reads: the one state and the link
+    "id", "state", "title", "reject_reason", "created_at", "updated_at", "family_state", "open_url",
+}  # fmt: skip
 ULID = "01ARZ3NDEKTSV4RRFFQ69G5FAV"
 
 
