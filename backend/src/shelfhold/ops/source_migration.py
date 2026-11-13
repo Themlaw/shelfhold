@@ -34,10 +34,17 @@ from shelfhold.acquisition.application.alias_migration import (
 )
 from shelfhold.catalog.public import default_registry
 from shelfhold.composition_errors import KeyringUnavailableError, NoLibraryError
+from shelfhold.export.domain.path_map import PathMode
+from shelfhold.export.domain.physical_roots import RootState
 from shelfhold.identity.public import RESERVED_ACTIONS, Allowed, Principal, authorize_reserved
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import identity
-from shelfhold.library.public import SeriesBindingRef, TombstoneService, normalizers_of
+from shelfhold.library.public import (
+    SeriesBindingRef,
+    TombstoneRoot,
+    TombstoneService,
+    normalizers_of,
+)
 from shelfhold.ops.errors import (
     CodedRefusal,
     ExitUnavailableError,
@@ -100,9 +107,31 @@ class SourceMigrationOps:
                         "the plan is not the one that was previewed: look again"
                     )
                 applied = apply_alias_migration(connection, plan, audit=self._audit(principal))
-        if plan.of(Outcome.BLOCKED):  # told after the lock: the bus writes in its own transaction
+        # After the lock is let go (the tombstones write in their own transactions): the new forms
+        # of erased series are sealed, and the hits told. A cut in between leaves the plan to be
+        # made again: the forms still to seal are the same ones, so a rerun finishes the job.
+        self._seal(plan)
+        if plan.of(Outcome.BLOCKED):
             service.announce_hits(["series_binding"])
         return self._report(plan, applied)
+
+    def _seal(self, plan: AliasPlan) -> None:
+        """One more tombstone of the same scope (`series_binding`), sealed like the others, on each
+        new form of an erased series. Nothing else records it: no alias, no readable row."""
+        if not plan.new_forms:
+            return
+        with self._comp.write_context() as w:
+            roots = [
+                TombstoneRoot(
+                    r.root_id, r.path, w.fsops.root_state(r.path) is RootState.OK, r.predecessors
+                )
+                for r in w.loaded.roots
+                if r.mode is PathMode.RW
+            ]
+            for plugin_id, source_key, remote_id in plan.new_forms:
+                values = SeriesBindingRef(plugin_id, source_key, remote_id)
+                if not w.tombstones.has_values(values):
+                    w.tombstones.record(values, roots, reason="purge_work")
 
     @staticmethod
     def _check_schemes(source_key: str, from_scheme: str, to_scheme: str) -> None:

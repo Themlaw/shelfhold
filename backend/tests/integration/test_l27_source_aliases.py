@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import re
+import sqlite3
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, ClassVar
@@ -326,11 +327,9 @@ def test_migrate_ref_of_a_plugin_cannot_bring_an_erased_series_back(
             assert applied["applied"] == 0
             assert item_ref(env, victim) == "old-5"
         with env.inst.engine.connect() as connection:
-            # the blocked row keeps its place, but the alias is recorded: the form the plugin gave
-            # stays known as the erased series (the tombstone check follows every alias)
-            rows = connection.execute(sa.select(acquisition.source_alias)).all()
-        # one alias per old reference: the first answer stays
-        assert [(r.old_remote_id, r.new_remote_id) for r in rows] == [("old-5", GONE)]
+            # no alias at all: it would write the erased reference in clear (the folded forms are
+            # held by the tombstone as it is)
+            assert not connection.execute(sa.select(acquisition.source_alias)).all()
         service = SourceMigrationOps(env.inst.comp)._service()
         assert service.check(SeriesBindingRef(PLUGIN, SOURCE, "gone%2D1"), root_id=None).blocked
 
@@ -652,3 +651,81 @@ def test_the_central_check_follows_aliases_of_every_scheme_in_both_directions(
         assert gate.check(SeriesBindingRef(PLUGIN, SOURCE, "/?"), root_id=None).blocked  # refused
         other = SeriesBindingRef("plugin-b", SOURCE, "mid-1")  # aliases are per plugin
         assert not gate.check(other, root_id=None).blocked
+
+
+def clear_text_hits(env: Seeded, settings: Settings, needles: tuple[str, ...]) -> list[str]:
+    """Every table cell (all columns of all tables) and every file of the data directory and the
+    roots that holds one of `needles` in clear, whatever its case."""
+    found: list[str] = []
+    connection = sqlite3.connect(settings.database_path)
+    try:
+        tables = [
+            r[0] for r in connection.execute("SELECT name FROM sqlite_master WHERE type='table'")
+        ]
+        for table in tables:
+            columns = [r[1] for r in connection.execute(f'PRAGMA table_info("{table}")')]
+            for row in connection.execute(f'SELECT * FROM "{table}"'):  # noqa: S608 (own tables)
+                for column, cell in zip(columns, row, strict=True):
+                    text = cell.decode("latin-1") if isinstance(cell, bytes) else str(cell)
+                    found += [f"{table}.{column}" for n in needles if n in text.lower()]
+    finally:
+        connection.close()
+    for root in (settings.data_dir, env.inst.library):
+        for path in root.rglob("*"):
+            if path.is_file() and not path.name.startswith(settings.database_path.name):
+                data = path.read_bytes().decode("latin-1").lower()
+                found += [f"file:{path.name}" for n in needles if n in data]
+    return found
+
+
+def test_no_table_holds_an_erased_reference_in_clear_after_the_migration(
+    monkeypatch: pytest.MonkeyPatch, settings: Settings, tmp_path: Path
+) -> None:
+    """The plugin says where the erased series went: the new form is sealed as one more tombstone
+    (same scope), never written as an alias, a row, an event or a title anywhere."""
+    with seeded(settings, tmp_path / "inst") as env:
+        erased = live(env, GONE)
+        erase(env, monkeypatch, settings, erased)
+        clean = live(env, "old-1")
+        needles = (GONE, "gone-new", "title gone")
+        ops = make_ops(env, {GONE: "gone-new", "old-1": "new-1"})
+        report = plan(ops)
+        assert plan(ops, report["fingerprint"])["applied"] == 1  # only the clean series moves
+        assert item_ref(env, clean) == "new-1"
+        assert clear_text_hits(env, settings, needles) == []
+        gate = _gate(env)  # yet every new form is held, by the sealed tombstones
+        for ref in ("gone-new", "Gone-New/", GONE):
+            assert gate.check(SeriesBindingRef(PLUGIN, SOURCE, ref), root_id=None).blocked, ref
+        assert not gate.check(SeriesBindingRef(PLUGIN, SOURCE, "gone-other"), root_id=None).blocked
+        record = env.rows(acquisition.source_alias_migration)[0].preview
+        assert record == {"moved": 1, "held": 0, "new_forms": 1}  # numbers, never values
+        # a rerun has nothing left to seal: no second tombstone for a form already held
+        again = plan(ops)
+        assert not again["migrate"]
+
+
+def test_a_blocked_row_seals_the_new_form_the_plugin_gave_and_writes_no_alias(
+    monkeypatch: pytest.MonkeyPatch, settings: Settings, tmp_path: Path
+) -> None:
+    with seeded(settings, tmp_path / "inst") as env:
+        erased = live(env, GONE)
+        erase(env, monkeypatch, settings, erased)
+        victim = live(env, "old-5")
+        with env.inst.engine.begin() as connection:  # another scheme ties it to the erased series
+            connection.execute(
+                sa.insert(acquisition.source_alias).values(
+                    plugin_id=PLUGIN, old_source_key=SOURCE, old_remote_id="old-5",
+                    new_source_key=SOURCE, new_remote_id=GONE, id_scheme="legacy",
+                )
+            )  # fmt: skip
+        aliases = env.rows(acquisition.source_alias)
+        ops = make_ops(env, {"old-5": "elsewhere-1"})
+        report = plan(ops)
+        assert ids(report, "blocked") == {iid(env, victim)} and not report["migrate"]
+        assert plan(ops, report["fingerprint"])["applied"] == 0
+        assert item_ref(env, victim) == "old-5"
+        assert env.rows(acquisition.source_alias) == aliases  # no alias written
+        assert (
+            _gate(env).check(SeriesBindingRef(PLUGIN, SOURCE, "elsewhere-1"), root_id=None).blocked
+        )
+        assert env.rows(acquisition.source_alias_migration)[0].preview["new_forms"] == 1

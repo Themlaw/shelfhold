@@ -94,9 +94,11 @@ class AliasPlan:
     to_scheme: str
     rows: tuple[PlannedRow, ...]
     fingerprint: str
-    # (plugin, old, new) the plugin gave for series that are **erased**: written as aliases so the
-    # new form of an erased series stays known as erased (EF-BIB-054 (4)); not rows of the library
-    erased_aliases: tuple[tuple[str, Ref, Ref], ...] = ()
+    # (plugin, source key, reference): new forms of **erased** series (what the plugin said for an
+    # erased reference, or for a blocked row). The caller seals each as one more tombstone of the
+    # same scope, after the commit; nothing readable is ever written (EF-BIB-054 (4)). In memory
+    # only: the report, the fingerprint and the record of the migration hold their number.
+    new_forms: tuple[tuple[str, str, str], ...] = ()
 
     def of(self, outcome: Outcome) -> list[PlannedRow]:
         return [r for r in self.rows if r.outcome is outcome]
@@ -153,13 +155,18 @@ def _fingerprint(
     from_scheme: str,
     to_scheme: str,
     rows: Sequence[PlannedRow],
-    erased: Sequence[tuple[str, Ref, Ref]] = (),
+    new_forms: int = 0,
 ) -> str:
+    """Of the plan, what the admin may see: a blocked row says neither where it would have gone
+    nor why, and the new forms of erased series count for a number (a digest of an erased
+    reference would let it be guessed)."""
     body = [
         _PLAN_VERSION, source_key, from_scheme, to_scheme,
-        sorted([r.id, r.plugin_id, *r.old, *(r.new or ("", "")), r.outcome.value, r.reason,
-                r.from_plugin] for r in rows),
-        sorted([p, *o, *n] for p, o, n in erased),
+        sorted([r.id, r.plugin_id, *r.old,
+                *((r.new or ("", "")) if r.outcome is Outcome.MIGRATE else ("", "")),
+                r.outcome.value, r.reason, r.from_plugin and r.outcome is Outcome.MIGRATE]
+               for r in rows),
+        new_forms,
     ]  # fmt: skip
     return hashlib.sha256(json.dumps(body, separators=(",", ":")).encode()).hexdigest()
 
@@ -203,7 +210,7 @@ def plan_alias_migration(
     """The migration of every series of `source_key`, and what holds each one back. Reads only."""
     item = acquisition.source_item
     rows: list[PlannedRow] = []
-    erased_aliases: list[tuple[str, Ref, Ref]] = []
+    candidate_forms: list[tuple[str, str, str]] = []
     pending: list[tuple[PlannedRow, set[Ref]]] = []  # candidates, with their family
     plugins = connection.execute(
         sa.select(item.c.plugin_id).where(item.c.source_key == source_key).distinct()
@@ -211,16 +218,15 @@ def plan_alias_migration(
     for plugin_id in sorted(plugins):
         aliases = _alias_rows(connection, plugin_id, to_scheme)
         if erased_refs is not None and migrate_ref is not None:
-            known = _alias_rows(connection, plugin_id, None)
             for erased in erased_refs(plugin_id, source_key):
                 said = migrate_ref(plugin_id, source_key, erased)
-                if said is None or said == (source_key, erased) or (source_key, erased) in known:
+                if said is None or _folded(said) == _folded((source_key, erased)):
                     continue
                 try:
                     fold_ref(said[1])
                 except EmptyRefError:
                     continue
-                erased_aliases.append((plugin_id, (source_key, erased), said))
+                candidate_forms.append((plugin_id, said[0], said[1]))
         found = connection.execute(
             sa.select(item.c.id, item.c.remote_id)
             .where(item.c.plugin_id == plugin_id, item.c.source_key == source_key)
@@ -258,6 +264,8 @@ def plan_alias_migration(
     survivors: list[tuple[PlannedRow, Ref]] = []
     for planned, _family_of in pending:
         if planned.id in blocked or planned.new is None:  # what a tombstone covers is never moved
+            if planned.from_plugin and planned.new is not None:
+                candidate_forms.append((planned.plugin_id, *planned.new))
             rows.append(
                 PlannedRow(planned.id, planned.plugin_id, planned.old, planned.new, Outcome.BLOCKED,
                            "tombstone", planned.from_plugin)
@@ -285,10 +293,13 @@ def plan_alias_migration(
             PlannedRow(planned.id, planned.plugin_id, planned.old, None, Outcome.UNRESOLVED, reason)
         )
     rows.sort(key=lambda r: r.id)
+    # A form that a tombstone already holds (as received, folded, or through an alias) needs none.
+    distinct = sorted(set(candidate_forms))
+    held_already = screen([(f"form:{i}", (form,)) for i, form in enumerate(distinct)])
+    new_forms = tuple(f for i, f in enumerate(distinct) if f"form:{i}" not in held_already)
     return AliasPlan(
         source_key, from_scheme, to_scheme, tuple(rows),
-        _fingerprint(source_key, from_scheme, to_scheme, rows, erased_aliases),
-        tuple(erased_aliases),
+        _fingerprint(source_key, from_scheme, to_scheme, rows, len(new_forms)), new_forms,
     )  # fmt: skip
 
 
@@ -346,19 +357,15 @@ def apply_alias_migration(
             .values(source_key=new_key, series_ref=new_id)
         )  # fmt: skip
         moved += 1
-    # The alias of what the plugin said is kept for a migrated row (the old reference keeps
-    # resolving) **and for a blocked one**: the new form of an erased series must stay known as
-    # erased, so the tombstone check, which follows every alias, finds it (EF-BIB-054 (4)).
-    wanted = [
-        (row.plugin_id, row.old, row.new)
-        for row in plan.rows
-        if row.from_plugin and row.new is not None and row.outcome is not Outcome.UNRESOLVED
-    ]
-    for plugin_id, old, new in [*wanted, *plan.erased_aliases]:
-        _remember_alias(connection, plugin_id, old, new, plan.to_scheme)
+    # The alias of what the plugin said is kept for a migrated row: the old reference keeps
+    # resolving. An erased or blocked series gets **no** alias (it would write what was erased in
+    # clear): its new form is sealed as a tombstone by the caller (`plan.new_forms`).
+    for row in plan.of(Outcome.MIGRATE):
+        if row.from_plugin and row.new is not None:
+            _remember_alias(connection, row.plugin_id, row.old, row.new, plan.to_scheme)
     held = len(plan.rows) - moved
     migration_id = new_ulid()
-    counts = {"moved": moved, "held": held, "erased_aliases": len(plan.erased_aliases)}
+    counts = {"moved": moved, "held": held, "new_forms": len(plan.new_forms)}
     connection.execute(
         sa.insert(acquisition.source_alias_migration).values(
             id=migration_id, source_key=plan.source_key, from_scheme=plan.from_scheme,
