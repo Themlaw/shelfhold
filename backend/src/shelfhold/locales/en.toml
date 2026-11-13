@@ -648,23 +648,35 @@
   normalize_blocked_hint = "A line blocked by a tombstone remains as is; “shelfhold tombstone lift” or a purge decides."
   normalize_applied = "{applied, plural, one {# migrated line} other {# migrated lines}} towards {target}. The others are unchanged."
   normalize_preview_stale = "This is no longer the preview you saw: rerun without --confirm, reread, then confirm with the new fingerprint. Nothing has been changed."
-  help_source_migrate_ids = "Bulk migration of a source's series identity (identifier schema change): --preview lists the mappings without writing anything; --apply --confirm applies exactly the preview (reserved action)."
-  help_migrate_from_scheme = "Current identifier schema of the source."
-  help_migrate_to_scheme = "The identifier schema to move to."
-  help_migrate_preview = "Lists the mappings and the held-back series, without writing anything."
+  help_lift_confirm = "The word “lift” followed by the number, retyped exactly."
+  help_lift_seq = "The number of the tombstone (positive)."
   help_migrate_apply = "Applies the migration of the preview whose fingerprint is given by --confirm."
-  help_migrate_confirm = "Preview fingerprint: applies exactly what was shown, and nothing else."
-  migrate_ids_needs_confirm = "--apply requires a preview fingerprint (--confirm). Run --preview first. Nothing has been changed."
-  migrate_ids_preview_has_no_confirm = "--preview writes nothing and takes no fingerprint: use --apply --confirm to apply."
-  migrate_ids_nothing = "No series of this source changes identifier: nothing to migrate."
-  migrate_ids_header = "{migrate, plural, one {# series to migrate} other {# series to migrate}}, {blocked, plural, one {# blocked} other {# blocked}} by a tombstone, {unresolved, plural, one {# held back} other {# held back}} (alias cycle, target already present, or targeted twice)."
-  migrate_ids_forms_to_seal = "{forms, plural, one {# new form to seal} other {# new forms to seal}}: the plugin gives a new identifier to erased series; the application seals them (tombstones) so that they do not come back."
-  migrate_ids_forms_sealed = "{forms, plural, one {# new form sealed} other {# new forms sealed}} (tombstones of the same scope)."
-  migrate_ids_row = "{outcome}: {id} ({old} -> {new}) {reason}"
-  migrate_ids_blocked_hint = "A series blocked by a tombstone remains as is; “shelfhold tombstone lift” or a purge decides."
+  help_migrate_confirm = "Fingerprint of the preview: applies exactly what was shown, and nothing else."
+  help_migrate_from_scheme = "Current identifier scheme of the source."
+  help_migrate_preview = "Lists the matches and the series held back, without writing anything."
+  help_migrate_to_scheme = "Target identifier scheme."
+  help_source_migrate_ids = "Bulk migration of the identity of a source's series (change of identifier scheme): --preview lists the matches without writing anything; --apply --confirm applies exactly the preview (reserved action)."
+  help_tombstone_lift = "Lifts a tombstone: it blocks nothing any more, nothing is restored (reserved action)."
+  help_tombstone_list = "Lists the tombstones that still block: number, day, scope, reason (never the title or the path)."
+  lift_needs_confirmation = "Give --confirm \"lift {seq}\": the tombstone will stop blocking."
+  lift_seq_invalid = "The tombstone number is a positive integer."
+  migrate_ids_applied = "{applied, plural, one {# series migrated} other {# series migrated}}. The Units, their files and their history are unchanged; nothing was downloaded again."
+  migrate_ids_blocked_hint = "A series blocked by a tombstone stays as it is; “shelfhold tombstone lift” or a purge decides."
   migrate_ids_fingerprint = "Preview fingerprint: {fingerprint}"
-  migrate_ids_applied = "{applied, plural, one {# series migrated} other {# series migrated}}. The Units, their files and their history are unchanged; nothing has been re-downloaded."
-  migrate_ids_preview_stale = "This is no longer the preview you saw: rerun --preview, reread, then apply with the new fingerprint. Nothing has been changed."
+  migrate_ids_forms_sealed = "{forms, plural, one {# new form sealed} other {# new forms sealed}} (tombstones of the same scope)."
+  migrate_ids_forms_to_seal = "{forms, plural, one {# new form to seal} other {# new forms to seal}}: the plugin gives a new identifier to erased series; the application seals them (tombstones) so that they do not come back."
+  migrate_ids_header = "{migrate, plural, one {# series to migrate} other {# series to migrate}}, {blocked, plural, one {# blocked} other {# blocked}} by a tombstone, {unresolved, plural, one {# held back} other {# held back}} (alias cycle, target already present or targeted twice)."
+  migrate_ids_needs_confirm = "--apply needs the fingerprint of a preview (--confirm). Run --preview first. Nothing was changed."
+  migrate_ids_nothing = "No series of this source changes identifier: nothing to migrate."
+  migrate_ids_preview_has_no_confirm = "--preview writes nothing and takes no fingerprint: use --apply --confirm to apply."
+  migrate_ids_preview_stale = "This is no longer the preview you saw: rerun --preview, reread, then apply with the new fingerprint. Nothing was changed."
+  migrate_ids_row = "  {outcome}: {id} ({old} -> {new}) {reason}"
+  tombstone_lift_owed = "{roots, plural, one {# root away} other {# roots away}}: the line will be written on its return."
+  tombstone_lifted = "Tombstone {seq} lifted. Nothing was restored."
+  tombstone_lifted_linked = "Lifted with it, its new forms: {seqs}."
+  tombstone_none = "No tombstone blocks."
+  tombstone_row = "{seq}  {day}  {scope}  {reason}"
+  tombstone_row_from = "  (new form of {seqs})"
 
 [local_cli]
   maintenance_active = "maintenance mode is active: only reading passes. Run “shelfhold maintenance off” to resume."
@@ -704,6 +716,15 @@
   kavita_cleared = "The profile “{username}” is no longer associated with a Kavita account."
   child_visibility_household = "A child profile remains visible to parents: only “household” is possible."
   source_policy_format = "expected: SOURCE=add_directly|request|forbidden"
+
+[trash]
+  help = "The trash of the library roots (reserved action)."
+  empty_help = "Empties the trash now, without waiting for the 30 days (reserved action)."
+  confirm_help = "The phrase “empty-trash”, retyped exactly."
+  needs_confirmation = "Give --confirm empty-trash: the files of the trash will be deleted for good."
+  done = "Trash emptied: {removed, plural, one {# entry deleted} other {# entries deleted}}, {kept, plural, one {# left} other {# left}}."
+  held_irreplaceable = "{count, plural, one {# entry kept} other {# entries kept}}: the Unit has become irreplaceable (EF-BIB-031)."
+  held_other = "{count, plural, one {# entry kept} other {# entries kept}}: an operation in progress, a backup being kept or an adopted original without a verified copy."
 
 [admin]
   passkeys_unknown_reference = "No pending records have the reference {through}: reread “shelfhold status”."
@@ -837,6 +858,26 @@
   unlocked = "Edition {edition}: the lock of field {field} ({lang}, on {on}) is lifted, the value remains."
 
 [errors]
+
+  [errors."library.space_insufficient"]
+    title = "The addition does not fit in the free space."
+    action = "Free some space: “Empty the trash” gives back the space of files deleted less than 30 days ago. Nothing was written."
+    cause = "The estimated size of the addition exceeds the free space once the disk reserve is set aside."
+
+  [errors."tombstone.confirmation_required"]
+    title = "The confirmation phrase is not the one of this tombstone."
+    action = "Retype exactly the requested phrase (“lift” followed by the number). Nothing was lifted."
+    cause = "Lifting a tombstone lets back the content it was blocking: Shelfhold asks you to type the phrase that names this number."
+
+  [errors."tombstone.unknown"]
+    title = "No tombstone to lift under this number."
+    action = "Check the number. A tombstone already lifted, or the line that lifts one, cannot be lifted again."
+    cause = "This number designates no tombstone still in force."
+
+  [errors."trash.confirmation_required"]
+    title = "The confirmation phrase is not the right one."
+    action = "Type exactly “empty-trash” to empty the trash. Nothing was deleted."
+    cause = "Emptying the trash deletes for good files that could still be restored: the phrase is compared by the server."
 
   [errors."backup.failed"]
     title = "The backup failed."
