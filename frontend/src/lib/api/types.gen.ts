@@ -1300,6 +1300,18 @@ export type JobOut = {
      */
     last_error: string | null;
     /**
+     * Priority Class
+     */
+    priority_class?: string | null;
+    /**
+     * Request Id
+     */
+    request_id?: string | null;
+    /**
+     * Source Key
+     */
+    source_key?: string | null;
+    /**
      * Status
      */
     status: string;
