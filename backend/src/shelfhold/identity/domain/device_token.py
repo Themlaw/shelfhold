@@ -6,6 +6,10 @@ ceiling of EF-USR-006, the table of truth of ENF-SEC-010) is that of the subject
 pairs the e-reader of a child gives it the child's view, not their own. The subject has no default
 (the pairing asks for the profile), and the issuer is kept for the audit and nothing else.
 
+A reset of the subject's password (`admin reset-password`) must close the tokens issued for that
+profile, as it closes its sessions, passkeys and API keys: the M5 store that holds them joins
+`reset_credentials` (EF-USR-011), or a reader's e-reader would outlive a stolen-device reset.
+
 M3 lands the hook and its rule; the token itself (storage, pairing, revocation) is M5 (EF-USR-008).
 """
 

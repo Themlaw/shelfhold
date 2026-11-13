@@ -417,7 +417,7 @@ def test_a_password_rehashed_at_login_on_the_copy_does_not_hide_the_gap(tmp_path
             store_auth = local_auth(engine, bench.settings, bench.clock)
             user = store_auth._store.user_by_name("admin")
             assert user is not None
-            store_auth._store.set_password_hash(user.id, user.password_hash)
+            store_auth._store.replace_password_hash(user.id, user.password_hash, user.password_hash)
             assert store_auth.authenticate_api_key(key.value) is None
         finally:
             engine.dispose()

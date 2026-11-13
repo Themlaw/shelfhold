@@ -589,10 +589,15 @@ class SqlIdentityStore:
             ).all()
         return {row.source_key: row.policy for row in rows}
 
-    def set_password_hash(self, user_id: str, password_hash: str) -> None:
+    def replace_password_hash(self, user_id: str, expected: str, password_hash: str) -> bool:
         with self._changing() as conn:
-            conn.execute(
-                sa.update(_user).where(_user.c.id == user_id).values(password_hash=password_hash)
+            return (
+                conn.execute(
+                    sa.update(_user)
+                    .where(_user.c.id == user_id, _user.c.password_hash == expected)
+                    .values(password_hash=password_hash)
+                ).rowcount
+                > 0
             )
 
     # --- passkeys (EF-USR-025) ---------------------------------------------------------------

@@ -560,7 +560,10 @@ class LocalAuth:
         checked_hash = user.password_hash
         if self._hasher.needs_rehash(user.password_hash):
             checked_hash = self._hasher.hash(password)
-            self._store.set_password_hash(user.id, checked_hash)
+            # only while the hash that was checked is still the stored one: a reset that
+            # committed since is never overwritten, and answers as a wrong password
+            if not self._store.replace_password_hash(user.id, user.password_hash, checked_hash):
+                raise self._fail(ip=ip)
         if presented_token:  # whatever the browser held is closed, never adopted
             self._store.revoke_session_by_token_hash(token_digest(presented_token), now=self.now())
         try:  # the hash is read again under the write lock: a reset between the two refuses
