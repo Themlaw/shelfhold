@@ -1,5 +1,5 @@
 ---
-status: accepté (spike S2 conclu le 2026-11-04 : SvelteKit retenu)
+status: "accepté (spike S2 conclu le 2026-11-04 : SvelteKit retenu)"
 date: 2026-11-02
 amended: 2026-11-02 (passe 1) ; 2026-11-02 (passe 2) ; 2026-11-04 (porteur 2) ; 2026-11-04 (spike S2)
 decision-makers: mainteneur

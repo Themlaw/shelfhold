@@ -1,7 +1,7 @@
 # Retour arrière : détacher Shelfhold, ou revenir à la 0.2.0
 
-Deux retours différents : [détacher Shelfhold](#détacher-shelfhold) (vos scripts reprennent la main, Shelfhold
-reste installé) et [revenir à la 0.2.0](#revenir-de-la-03-à-la-020) (l'image précédente).
+Deux retours différents : [détacher Shelfhold](#detacher-shelfhold) (vos scripts reprennent la main, Shelfhold
+reste installé) et [revenir à la 0.2.0](#revenir-de-la-03-a-la-020) (l'image précédente).
 
 ## Détacher Shelfhold
 

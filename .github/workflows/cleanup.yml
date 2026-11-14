@@ -35,6 +35,8 @@ jobs:
       DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry-run || 'false' }}
       GH_TOKEN: ${{ github.token }}
     steps:
+      # Never `build-*`: the registry versions by digest, so deleting the version that carries
+      # `build-<sha>` would delete `edge` and `sha-<long>` with it (docs/admin/verifier-les-images.md).
       - name: Delete the pr-* versions older than the retention
         run: |
           cutoff="$(date -u -d "${KEEP_DAYS} days ago" +%Y-%m-%dT%H:%M:%SZ)"

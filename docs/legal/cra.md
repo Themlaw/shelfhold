@@ -21,9 +21,15 @@ Toute évolution ci-dessous impose de relire ce document, de poser la question �
 
 ## Ce que le projet fournit aux intégrateurs
 
-- Canal de signalement privé et avis GHSA ([SECURITY.md](../../SECURITY.md)).
-- SBOM et attestations de provenance en assets de release (palier M1b, [ADR-0016](../adr/0016-ci-cd-supply-chain.md)).
-- Délais de traitement indicatifs avant 1.0 (voir SECURITY.md).
+Le projet ne prétend à aucune conformité : ce sont des faits vérifiables, que l'intégrateur apprécie lui-même.
+
+- **Canal de signalement privé et avis GHSA** publiés après correctif ([SECURITY.md](https://github.com/Themlaw/shelfhold/blob/main/SECURITY.md)).
+- **Délais** (au mieux, sans garantie) : accusé de réception ≤ 7 jours, correctif visé ≤ 90 jours.
+- **Versions supportées** : la version mineure `X.Y` courante et la précédente ; avant 1.0, la dernière seulement.
+- **SBOM SPDX et attestations de provenance** en assets de chaque release (palier M1b, [ADR-0016](../adr/0016-ci-cd-supply-chain.md)).
+- **Images signées avec cosign** (sans clé, identité du workflow de publication) sur GHCR, à partir des publications faites après le palier M3 (les images antérieures ne le sont pas). Il n'y a **pas** de second registre à ce jour : sa publication est reportée en M4 (ENF-GOV-004, décision du porteur) et se branchera sans changer le code. La vérification est décrite dans [vérifier les images](../admin/verifier-les-images.md).
+- **OpenSSF Scorecard** hebdomadaire (palier M3), résultat dans l'onglet *Security* une fois le workflow lancé ; le score n'est pas un engagement.
+- Actions de CI épinglées par SHA, DCO obligatoire, aucune télémétrie ; ce sont des pratiques du dépôt, pas des garanties sur son contenu.
 
 ## Revue
 

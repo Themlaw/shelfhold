@@ -1,6 +1,6 @@
 # Revue de chevauchement — sortie de M0
 
-Source : ENF-GOV-002, ENF-GOV-003 ; [GOVERNANCE.md](../../GOVERNANCE.md), [ADR-0020](../adr/0020-positionnement-atelier-kavita.md). Première revue, faite le 2026-11-04 à partir des notes de version publiques récentes. **Ce n'est pas une analyse exhaustive** : seules les trois dernières versions notables de chaque projet ont été lues, et les concurrents de la liste de veille ne sont jugés que sur leur description publique.
+Source : ENF-GOV-002, ENF-GOV-003 ; [GOVERNANCE.md](https://github.com/Themlaw/shelfhold/blob/main/GOVERNANCE.md), [ADR-0020](../adr/0020-positionnement-atelier-kavita.md). Première revue, faite le 2026-11-04 à partir des notes de version publiques récentes. **Ce n'est pas une analyse exhaustive** : seules les trois dernières versions notables de chaque projet ont été lues, et les concurrents de la liste de veille ne sont jugés que sur leur description publique.
 
 ## Sources
 

@@ -1,0 +1,76 @@
+name: docs
+
+# Documentation site (ENF-DOC-001, D17): Zensical, built from docs/ in strict mode (a warning
+# fails the build). A pull request that touches docs/ only builds. A published release builds the
+# code of the TAG and publishes it on GitHub Pages (no domain of our own). Pages must be enabled
+# once in the repository settings (source: GitHub Actions), a reversible setting.
+on:
+  pull_request:
+    paths:
+      - "docs/**"
+      - ".github/workflows/docs.yml"
+      - "backend/pyproject.toml"
+      - "backend/uv.lock"
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing release tag, vX.Y.Z (builds only; the site is published by a release)"
+        type: string
+        required: true
+
+permissions: {}
+
+concurrency:
+  group: docs-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  build:
+    name: build (strict)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    env:
+      TAG: ${{ github.event.release.tag_name || inputs.tag }}
+    steps:
+      - name: Validate the tag
+        if: github.event_name != 'pull_request'
+        run: |
+          [[ "$TAG" =~ ^v([0-9]+)\.([0-9]+)\.([0-9]+)$ ]] || { echo "::error::tag must be vX.Y.Z, got ${TAG}"; exit 1; }
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event_name == 'pull_request' && github.sha || format('refs/tags/{0}', env.TAG) }}
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          version: "0.12.x"
+          enable-cache: false
+      - name: Install the locked tools (zensical is pinned in uv.lock)
+        run: uv sync --project backend --locked --only-group docs
+      - name: Build the site, strict mode (any warning fails)
+        run: uv run --project backend --locked zensical build --strict -f docs/mkdocs.yml
+      - uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
+        if: github.event_name == 'release'
+      - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        if: github.event_name == 'release'
+        with:
+          path: docs/_site
+
+  deploy:
+    name: deploy (GitHub Pages)
+    needs: build
+    if: github.event_name == 'release'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      pages: write  # publishes the artifact built by `build`
+      id-token: write  # required by deploy-pages; this job runs no code of the repository
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1

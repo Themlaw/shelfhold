@@ -54,6 +54,19 @@ if [ -n "$existing" ] && [ "$existing" != "$digest" ]; then
   echo "::error::${IMAGE}:${VERSION} already exists with digest ${existing}, refusing to rewrite it"; exit 1
 fi
 
+# 3b. a version tag is never given to an unsigned digest (cosign, keyless: the identity is the
+# publication workflow on main). A re-run for a version that already carries this digest adds
+# nothing new and does not need the signature again (releases older than the signatures).
+if [ -z "$existing" ]; then
+  identity="^https://github\.com/${REPO//./\.}/\.github/workflows/image-publish\.yml@refs/heads/main$"
+  if ! cosign verify "${IMAGE}@${digest}" --certificate-identity-regexp "$identity" \
+    --certificate-oidc-issuer https://token.actions.githubusercontent.com > /dev/null 2>&1; then
+    echo "::error::${IMAGE}@${digest} has no valid cosign signature from image-publish.yml, refusing to tag ${VERSION}"; exit 1
+  fi
+else
+  echo "${VERSION} already carries ${digest}: signature not checked again"
+fi
+
 # 4. X.Y only moves forward: skip it when a higher patch of this minor is already published
 name="${IMAGE#ghcr.io/}"
 token="$(curl -fsS -u "token:${GH_TOKEN}" "https://ghcr.io/token?service=ghcr.io&scope=repository:${name}:pull" | jq -r .token)"

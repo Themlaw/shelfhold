@@ -12,7 +12,16 @@
 - **Attestations (ENF-SEC-007, palier M1b).** Le job `merge` de `image-publish.yml` est le seul à détenir `id-token: write` et
   `attestations: write` (l'appelant `ci.yml` les accorde à ce seul appel). Il attache une provenance SLSA au manifeste multi-arch et
   à chaque image de plateforme, et un SBOM SPDX à chaque image de plateforme (`gh attestation verify` réussit pour les deux
-  architectures). Pas de cosign avant M3.
+  architectures).
+- **Signatures cosign (ENF-SEC-007, palier M3).** Le même job `merge` signe, sans clé (OIDC), le manifeste multi-arch et les deux
+  images de plateforme, puis vérifie ses propres signatures. **Second registre (ENF-GOV-004, optionnel)** : si le secret
+  `CODEBERG_TOKEN` existe, le job copie le manifeste (digest conservé) vers `vars.SECOND_REGISTRY` (`codeberg.org/<owner>` par
+  défaut), signe les mêmes digests et vérifie ; sinon il l'écrit dans son résumé (« Second registry: skipped ») et réussit. `release.yml`
+  (`second-registry`, sans `id-token`) n'ajoute `X.Y.Z` et `X.Y` là-bas que pour un digest déjà signé. Le secret n'atteint que
+  `docker/login-action`, jamais une exécution `pull_request`. Vérification : [verifier-les-images.md](admin/verifier-les-images.md).
+- **Scorecard et site.** `scorecard.yml` (hebdomadaire, SARIF vers l'onglet Sécurité, sans `id-token`) ; `docs.yml` construit
+  `docs/` avec Zensical en mode strict sur chaque PR qui touche `docs/` et publie sur GitHub Pages à chaque release (job `deploy` :
+  `pages: write` et `id-token: write`, aucun code du dépôt).
 - **`packages: write` n'atteint jamais une exécution `pull_request`**, y compris pour une branche du dépôt
   (`test_no_job_reachable_on_pull_request_has_packages_write`). C'est pourquoi la publication est dans un second
   workflow réutilisable : un workflow appelé ne peut pas déclarer plus de droits que son appelant, même pour un job sauté.

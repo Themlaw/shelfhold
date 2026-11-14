@@ -9,5 +9,5 @@ Source : [`docs/spec/03-roadmap-tdd.md`](../spec/03-roadmap-tdd.md) §1 bis et �
 | 3 | Kavita, Komga ou Suwayomi livrent la fonction | Notes de version | Revue de chevauchement à chaque jalon | 2026-11-04 (M0) | ouvert |
 | 4 | Une dépendance critique est abandonnée ou casse l'API | Contrat nightly en échec | Versions épinglées, registre `docs/dependencies.md`, adaptateurs | | ouvert |
 | 5 | Retrait du dépôt ou de l'image par l'hébergeur | Notification | Posture légale ([ADR-0015](../adr/0015-posture-legale.md)), continuité ([ADR-0029](../adr/0029-resilience-retrait-forge.md)) | | ouvert |
-| 6 | Mainteneur unique indisponible (facteur bus 1) | Absence prolongée | Successeur à désigner ([GOVERNANCE.md](../../GOVERNANCE.md)), archivage propre | | ouvert |
-| 7 | Code d'agent de mauvaise qualité mal détecté | Régressions après fusion | TDD, relecture croisée, CI, relecture du mainteneur à chaque jalon ([AI_POLICY.md](../../AI_POLICY.md)) | | ouvert |
+| 6 | Mainteneur unique indisponible (facteur bus 1) | Absence prolongée | Successeur à désigner ([GOVERNANCE.md](https://github.com/Themlaw/shelfhold/blob/main/GOVERNANCE.md)), archivage propre | | ouvert |
+| 7 | Code d'agent de mauvaise qualité mal détecté | Régressions après fusion | TDD, relecture croisée, CI, relecture du mainteneur à chaque jalon ([AI_POLICY.md](https://github.com/Themlaw/shelfhold/blob/main/AI_POLICY.md)) | | ouvert |

@@ -120,4 +120,4 @@ reason = "M4 : passe 2, B15 ; avant M4, l'avertissement EF-EXP-037 s'applique"
 [[deferred]]
 requirement = "ENF-GOV-004"
 aspect = "second registre d'images, miroir du dépôt, vérificateur de mises à jour non bloquant"
-reason = "accord du porteur 2026-11-11, second registre livré avec un lot M2"
+reason = "M4 : le porteur a tranché D5 le 2026-11-14, la v1.0.0 est signée sur GHCR seul ; le code « avec ou sans jeton » est prêt (L54), le second registre s'active dès que le secret CODEBERG_TOKEN existe"

@@ -40,7 +40,7 @@ un contenu vide.
 
 `remote_unit_id` et `SeriesRef` restent stables à la réinstallation de l'outil connecté et à la rotation des
 identifiants : `remote_unit_id` est l'identifiant de la source amont, jamais celui de la base de l'outil relayé.
-Le kit la contrôle (`simulated_reinstall`). Voir [parcours.md](parcours.md#4-la-règle-de-stabilité-ef-src-036).
+Le kit la contrôle (`simulated_reinstall`). Voir [parcours.md](parcours.md#4-la-regle-de-stabilite-ef-src-036).
 
 ## Kit de conformité
 
