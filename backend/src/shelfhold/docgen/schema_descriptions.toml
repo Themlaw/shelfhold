@@ -815,6 +815,9 @@ state = "`approved`, `following` (a worker is calling the service), `followed` o
 visibility = "Who may see the request: `private`, `household` or `ops`."
 requester_user_id = "User who asked (`user.id`), null for the host command line."
 claimed_at = "When a worker took the request to call the service (UTC); an old claim is taken over."
+mode = "What the add sheet chose to bring: `all`, `from_number` or `new_only`; null when the series was added without a choice."
+from_number = "The number the follow starts from, with the `from_number` mode."
+shelf_id = "Shelf the add sheet chose for the Edition (`shelf.id`), null: the default shelf of the discovery."
 
 [tables.safeguard_backlog]
 description = "What \"Mettre à l'abri\" left behind at its last cycle: one row, the Units and bytes beyond the cycle cap or the room of /store."

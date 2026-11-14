@@ -2060,14 +2060,20 @@
             "title": "From Number"
           },
           "mode": {
-            "default": "all",
-            "enum": [
-              "all",
-              "from_number",
-              "new_only"
+            "anyOf": [
+              {
+                "enum": [
+                  "all",
+                  "from_number",
+                  "new_only"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
             ],
-            "title": "Mode",
-            "type": "string"
+            "title": "Mode"
           },
           "remote_id": {
             "title": "Remote Id",
@@ -7660,14 +7666,20 @@
             "title": "From Number"
           },
           "mode": {
-            "default": "all",
-            "enum": [
-              "all",
-              "from_number",
-              "new_only"
+            "anyOf": [
+              {
+                "enum": [
+                  "all",
+                  "from_number",
+                  "new_only"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
             ],
-            "title": "Mode",
-            "type": "string"
+            "title": "Mode"
           },
           "remote_id": {
             "title": "Remote Id",
@@ -21213,6 +21225,23 @@
     },
     "/api/v1/problems/backfill.confirmation-required": {
       "code": "backfill.confirmation_required",
+      "extensions": {
+        "free_bytes": {
+          "type": "integer"
+        },
+        "mode": {
+          "type": "integer"
+        },
+        "needs_confirmation": {
+          "type": "integer"
+        },
+        "size_bytes": {
+          "type": "integer"
+        },
+        "units": {
+          "type": "integer"
+        }
+      },
       "status": 409
     },
     "/api/v1/problems/backup.failed": {

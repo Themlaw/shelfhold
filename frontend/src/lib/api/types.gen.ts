@@ -1283,7 +1283,7 @@ export type FollowIn = {
     /**
      * Mode
      */
-    mode?: 'all' | 'from_number' | 'new_only';
+    mode?: 'all' | 'from_number' | 'new_only' | null;
     /**
      * Remote Id
      */
@@ -4691,7 +4691,7 @@ export type UnfollowIn = {
     /**
      * Mode
      */
-    mode?: 'all' | 'from_number' | 'new_only';
+    mode?: 'all' | 'from_number' | 'new_only' | null;
     /**
      * Remote Id
      */

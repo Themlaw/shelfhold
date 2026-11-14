@@ -28,7 +28,7 @@ class FollowIn(BaseModel):
 
     source_key: str
     remote_id: str
-    mode: Literal["all", "from_number", "new_only"] = "all"
+    mode: Literal["all", "from_number", "new_only"] | None = None  # None: no choice was made
     from_number: str | None = Field(default=None, min_length=1, max_length=64)
     shelf_id: str | None = Field(default=None, min_length=1)
     confirm_units: int | None = Field(default=None, ge=0)
@@ -38,10 +38,10 @@ class FollowIn(BaseModel):
     def _mode_and_number(self) -> "FollowIn":
         if self.mode == "from_number":
             if not self.from_number:
-                raise ValueError("from_number is required for this mode")
+                raise ValueError("from_number_required")
         else:
             if self.from_number is not None:
-                raise ValueError("from_number is not allowed for this mode")
+                raise ValueError("from_number_not_allowed")
         return self
 
 
@@ -76,7 +76,8 @@ def build_follows_router(get_ops: Callable[[], OpsServices]) -> APIRouter:
         with refusals():
             answer = get_ops().follows.follow(
                 body.source_key, body.remote_id, requester_user_id=user_of(admin),
-                mode=body.mode, from_number=body.from_number, shelf_id=body.shelf_id,
+                mode=body.mode or ("all" if body.shelf_id else None),
+                from_number=body.from_number, shelf_id=body.shelf_id,
                 confirm_units=body.confirm_units, confirm_bytes=body.confirm_bytes,
             )  # fmt: skip
         return FollowOut(**answer)
