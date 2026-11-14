@@ -13,6 +13,7 @@ import contextlib
 from typing import TYPE_CHECKING, Any
 
 import sqlalchemy as sa
+import structlog
 
 from shelfhold.composition_errors import KeyringUnavailableError, NoLibraryError
 from shelfhold.export.application import waiting_marks
@@ -178,3 +179,16 @@ _REASON = {
     "root_behind": "this root is older than the database: an old copy was put back",
     "store_lost": "the sentinel of /store is missing, foreign or behind the database",
 }
+
+
+def judge_roots(watcher: RootWatcher) -> None:
+    """The periodic look at the roots (`ops.disk_check`, every minute): judge them and record the
+    marks that changed, in one short write transaction taken with its lock at once (`busy_timeout`
+    waits for it). It writes marks and nothing else: no generation moves, no sentinel is written,
+    and a mark already recorded is not written again. `/healthz` lists the marks as recorded, so a
+    root that vanishes shows there within this minute plus `HEALTH_CACHE_TTL`. A busy database is
+    not an error: the next minute is the retry."""
+    try:
+        watcher.refresh()
+    except sa.exc.OperationalError:
+        structlog.get_logger().warning("roots.judge_busy")

@@ -743,6 +743,7 @@
   "root_bootstrap.registered",
   "root_bootstrap.unwritable",
   "root_bootstrap_skipped",
+  "roots.judge_busy",
   "sablier.failed",
   "sablier.not_ready",
   "sablier.ready",

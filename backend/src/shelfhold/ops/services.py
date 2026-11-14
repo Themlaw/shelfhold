@@ -280,10 +280,12 @@ class OpsServices:
 
     # -- reading -------------------------------------------------------------------------------
 
-    def status(self, *, full: bool = True) -> StatusReport:
+    def status(self, *, full: bool = True, judge_roots: bool = True) -> StatusReport:
         """What waits and which queues are paused; with `full`, also the sections of `shelfhold
-        status` that are not waits (they cost a few reads per followed series)."""
-        if self._roots is not None:
+        status` that are not waits (they cost a few reads per followed series). `judge_roots=False`
+        reads the marks as they were recorded: judging the roots looks at the disks and may write
+        a mark, which a probe must not do."""
+        if self._roots is not None and judge_roots:
             self._roots.refresh()  # before the rest reads the marks: one view of the roots
         # The ports read the database on their own connections: asked while one is held here, a
         # burst of `/healthz` (one connection held, a second awaited) empties the pool and every
@@ -321,7 +323,10 @@ class OpsServices:
         return self._restore is not None and bool(self._restore.waiting())
 
     def paused_queues(self) -> list[PausedQueue]:
-        return self.status(full=False).queues
+        """For `/healthz`: only reads (the database, the marks as recorded), no disk is looked at
+        and no mark is written, so that a probe never contends with a job that writes. The roots
+        are judged at start-up, when a write is refused, by the exits and by `status`."""
+        return self.status(full=False, judge_roots=False).queues
 
     def missing_list(self) -> list[WaitingItem]:
         return [i for i in self.status(full=False).waiting if i.state == "missing"]

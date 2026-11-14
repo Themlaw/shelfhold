@@ -14,6 +14,9 @@ content.
 
 from __future__ import annotations
 
+import asyncio
+import concurrent.futures
+import contextlib
 import threading
 import time
 from collections.abc import Callable, Mapping, Sequence
@@ -46,7 +49,13 @@ LOST_ORIGINAL = "content.original_lost"  # stable code of the entry (EF-BIB-051)
 # the keyring...) is kept. A change made by the instance itself refreshes it at once
 # (`OpsHealth.refresh`); one made from outside (a restore, a keyring file, the host's disk) shows on
 # `/healthz` at most this many seconds later: the probe is a liveness check, not a transaction.
+# The roots are not judged by the probes: the `ops.disk_check` job judges them every 60 s and
+# records the marks, which this read lists as recorded. A root that vanishes shows on `/healthz`
+# within 60 s + HEALTH_CACHE_TTL (65 s at most).
 HEALTH_CACHE_TTL = 5.0
+# How long the very first probe waits for the first read of the status (it is started at start-up,
+# in a thread of its own): past it the probe answers with no paused queue rather than hold on.
+FIRST_READ_WAIT = 2.0
 KAVITA_AUDIT_STATES = ("child_exposure", "permission_denied", "target_forbidden")
 
 
@@ -84,6 +93,9 @@ class OpsHealth:
         self._at = 0.0
         self._flight: threading.Event | None = None  # set while one caller reads
         self._threads: list[threading.Thread] = []  # the background reads, joined by `close`
+        self._closed = False  # after `close` nothing reads the status any more
+        # set when the first read has ended, for the probe that comes before any value
+        self._first: concurrent.futures.Future[None] = concurrent.futures.Future()
 
     def migration_progress(self) -> tuple[int, int] | None:
         return self._probe.migration_progress()
@@ -92,8 +104,11 @@ class OpsHealth:
         return self._probe.readiness()
 
     def _read(self) -> list[PausedQueue]:
+        ops = self._ops()
+        if not callable(getattr(ops, "paused_queues", None)):
+            return []  # services that cannot say (a stand-in): nothing is read
         try:
-            return self._ops().paused_queues()
+            return ops.paused_queues()
         except sa.exc.SQLAlchemyError:
             return []
 
@@ -104,12 +119,18 @@ class OpsHealth:
         except BaseException:
             with self._mutex:
                 self._flight = None
+            self._end_first()
             flight.set()
             raise
         with self._mutex:
             self._value, self._at, self._flight = value, self._clock(), None
+        self._end_first()
         flight.set()
         return list(value)
+
+    def _end_first(self) -> None:
+        if not self._first.done():
+            self._first.set_result(None)
 
     def _lead_quietly(self, flight: threading.Event) -> None:
         try:
@@ -122,8 +143,8 @@ class OpsHealth:
         others get the last value (the first call of all waits for it)."""
         with self._mutex:
             value = self._value
-            if value is not None and self._clock() - self._at < HEALTH_CACHE_TTL:
-                return list(value)
+            if self._closed or (value is not None and self._clock() - self._at < HEALTH_CACHE_TTL):
+                return list(value or [])
             flight = self._flight
             leader = flight is None
             if leader:
@@ -144,7 +165,11 @@ class OpsHealth:
             value = self._value
             if value is None:
                 return None
-            refresh = self._clock() - self._at >= HEALTH_CACHE_TTL and self._flight is None
+            refresh = (
+                not self._closed
+                and self._clock() - self._at >= HEALTH_CACHE_TTL
+                and self._flight is None
+            )
             if refresh:
                 flight = self._flight = threading.Event()
         if refresh:
@@ -160,6 +185,8 @@ class OpsHealth:
         last value (the next probe retries)."""
         while True:
             with self._mutex:
+                if self._closed:
+                    return
                 flight = self._flight
                 if flight is None:
                     flight = self._flight = threading.Event()
@@ -170,10 +197,30 @@ class OpsHealth:
         except Exception:
             structlog.get_logger().warning("health.refresh_failed")
 
+    def _start_first_read(self) -> None:
+        """Start the first read in a thread of its own, unless one runs or the value is there."""
+        with self._mutex:
+            if self._closed or self._value is not None or self._flight is not None:
+                return
+            flight = self._flight = threading.Event()
+        self._spawn(self._lead_quietly, "health-prime", flight)
+
     def prime(self) -> None:
         """Read the status once in the background, so that the first probe is not the one that
         pays for it."""
-        self._spawn(self.queues, "health-prime")
+        self._start_first_read()
+
+    async def queues_first(self) -> list[PausedQueue]:
+        """For the probe that comes before any value: wait for the first read, which has its own
+        thread (never one of the server's pool, which the decodes may fill), for at most
+        `FIRST_READ_WAIT` seconds; past it, or if the read failed, no paused queue is reported."""
+        self._start_first_read()
+        with contextlib.suppress(TimeoutError):
+            await asyncio.wait_for(
+                asyncio.shield(asyncio.wrap_future(self._first)), FIRST_READ_WAIT
+            )
+        with self._mutex:
+            return list(self._value or [])
 
     def _spawn(self, target: Callable[..., object], name: str, *args: object) -> None:
         thread = threading.Thread(target=target, args=args, daemon=True, name=name)
@@ -183,9 +230,13 @@ class OpsHealth:
 
     def close(self) -> None:
         """At shutdown, before the engine is disposed: no read of the status is left running to
-        open a connection after it."""
+        open a connection after it, whichever thread started it, and none starts again."""
         with self._mutex:
+            self._closed = True
+            flight = self._flight
             threads = list(self._threads)
+        if flight is not None:
+            flight.wait(10)
         for thread in threads:
             thread.join(10)
 

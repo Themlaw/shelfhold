@@ -14,6 +14,8 @@ import sys
 from collections.abc import Callable, Iterable, Sequence
 from types import ModuleType
 
+import structlog
+
 from shelfhold.config import ConfigError, ResolvedSettings, load_settings
 from shelfhold.i18n import t
 from shelfhold.infrastructure.logging import configure_logging
@@ -122,9 +124,14 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 2
     for path in resolved.world_readable_secret_files:
         print(t("config.secret_file_world_readable", path=path), file=sys.stderr)
-    if getattr(args, "configure_logging", True):
-        settings = resolved.values
-        configure_logging(level=settings.log_level, log_format=settings.log_format)
+    # stdout is the output of the command (a JSON document, a list): the logs go to stderr, always.
+    # A command that does not configure its logs (`configure_logging=False`) has them silenced
+    # below WARNING: left unconfigured, structlog prints every level on stdout. Logging that was
+    # configured before (a test, an embedding program) is left as it is.
+    settings = resolved.values
+    if not structlog.is_configured():
+        level = settings.log_level if getattr(args, "configure_logging", True) else "WARNING"
+        configure_logging(level=level, log_format=settings.log_format, stream=sys.stderr)
     if getattr(args, "command_path", ()) not in FROZEN_OPEN and frozen_on_disk(
         resolved.values.database_path
     ):

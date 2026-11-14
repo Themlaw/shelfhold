@@ -65,7 +65,10 @@ async def _paused_state(
     a thread of the pool; only the first read, or a port without a cache, goes through one."""
     nowait = getattr(health, "queues_nowait", None)
     queues = nowait() if callable(nowait) else None
-    if queues is None and callable(getattr(health, "queues", None)):
+    first = getattr(health, "queues_first", None)
+    if queues is None and callable(first):
+        queues = await first()  # a thread of its own: never the pool, which may be full
+    elif queues is None and callable(getattr(health, "queues", None)):
         queues = await run_in_threadpool(health.queues)  # type: ignore[attr-defined]
     if queues is not None:
         names = sorted(q.queue for q in queues)

@@ -258,25 +258,38 @@ class RootWatcher:
             self._seen_ok[verdict.subject] = ok
         if back:
             self._on_root_ok()
-        with self._engine.begin() as connection:
-            stored = FreezeState.stored_roots(connection)
-            for verdict in verdicts:
-                current = stored.get(verdict.subject)
-                if verdict.state is RootState.RESTORED_BEHIND:
-                    continue  # the instance's own state (EF-INT-026): not a root mark
-                if verdict.waiting is None:
-                    if current == "root_lost":  # a vanished sentinel that came back
-                        FreezeState().lift_root(connection, verdict.subject)
-                    continue  # the other marks wait for their exit command
-                if current != verdict.waiting:
-                    FreezeState().persist_root(
-                        connection, verdict.subject, verdict.waiting,
-                        reason=_REASONS[verdict.waiting], path=verdict.path,
-                    )  # fmt: skip
+        with self._engine.connect() as connection:  # a look: nothing is locked for it
+            owed = self._marks_owed(verdicts, FreezeState.stored_roots(connection))
+        if owed:  # the write lock is taken once, for the marks only (`busy_timeout` waits for it)
+            with self._engine.execution_options(shelfhold_begin="BEGIN IMMEDIATE").begin() as conn:
+                for verdict in self._marks_owed(verdicts, FreezeState.stored_roots(conn)):
+                    if verdict.waiting is None:
+                        FreezeState().lift_root(conn, verdict.subject)
+                    else:
+                        FreezeState().persist_root(
+                            conn, verdict.subject, verdict.waiting,
+                            reason=_REASONS[verdict.waiting], path=verdict.path,
+                        )  # fmt: skip
         if self._freeze is not None:
             with self._engine.connect() as connection:
                 self._freeze.sync(connection)
         return verdicts
+
+    @staticmethod
+    def _marks_owed(verdicts: list[RootVerdict], stored: dict[str, str]) -> list[RootVerdict]:
+        """The verdicts whose mark is to be written or lifted: what is recorded already, and what
+        waits for its exit command, is left alone (no write, no generation, no sentinel)."""
+        owed: list[RootVerdict] = []
+        for verdict in verdicts:
+            current = stored.get(verdict.subject)
+            if verdict.state is RootState.RESTORED_BEHIND:
+                continue  # the instance's own state (EF-INT-026): not a root mark
+            if verdict.waiting is None:
+                if current == "root_lost":  # a vanished sentinel that came back
+                    owed.append(verdict)
+            elif current != verdict.waiting:
+                owed.append(verdict)
+        return owed
 
     def note_blocked(self, root_path: str, state: RootState) -> None:
         """`Fsops` refused a write on this root: look again, once per change of state."""

@@ -48,13 +48,19 @@ class _Ops:
         self.calls = 0
         self.delay = 0.0
         self.queues = [RESTORE]
+        self.running = 0  # reads inside the status right now
         self._lock = threading.Lock()
 
     def paused_queues(self) -> list[PausedQueue]:
         with self._lock:
             self.calls += 1
-        time.sleep(self.delay)
-        return list(self.queues)
+            self.running += 1
+        try:
+            time.sleep(self.delay)
+            return list(self.queues)
+        finally:
+            with self._lock:
+                self.running -= 1
 
     def __getattr__(self, name: str) -> Callable[..., None]:
         return lambda *_a, **_k: None
@@ -343,3 +349,107 @@ def test_refresh_keeps_the_last_value_when_the_status_cannot_be_read(ops: _Ops) 
     ops.paused_queues = broken  # type: ignore[method-assign]
     health.refresh()  # logged, never raised
     assert [q.queue for q in health.queues()] == ["export.scan"]
+
+
+# -- no read outlives the app, none runs on a stand-in, the first probe never takes the pool ------
+
+
+class _NoStatus:
+    """Operating services of a test that cannot say which queues are paused."""
+
+
+def test_nothing_is_read_from_services_that_cannot_say_which_queues_are_paused(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    raised: list[object] = []
+    monkeypatch.setattr(threading, "excepthook", lambda args: raised.append(args.exc_value))
+    health = OpsHealth(_Probe(), lambda: _NoStatus(), clock=None)  # type: ignore[arg-type]
+    health.prime()
+    health.close()
+    health.refresh()
+    assert health.queues() == []
+    assert raised == [], "a background read raised on a stand-in"
+
+
+def test_a_read_that_raises_in_the_background_leaves_no_thread_exception(
+    monkeypatch: pytest.MonkeyPatch, ops: _Ops
+) -> None:
+    raised: list[object] = []
+    monkeypatch.setattr(threading, "excepthook", lambda args: raised.append(args.exc_value))
+
+    def broken() -> list[PausedQueue]:
+        raise AttributeError("a stand-in without the method")
+
+    ops.paused_queues = broken  # type: ignore[method-assign]
+    health = _health(ops)
+    health.prime()
+    health.close()
+    health.refresh()
+    assert raised == []
+
+
+def test_close_waits_for_a_read_that_no_background_thread_started(ops: _Ops) -> None:
+    """A read led by a request's own thread (the first probe, a refresh) is waited for as well,
+    and after `close` nothing reads: no connection is opened once the engine is gone."""
+    ops.delay = 0.4
+    health = _health(ops)
+    leader = threading.Thread(target=health.queues, name="request")
+    leader.start()
+    time.sleep(0.1)  # inside the status
+    assert ops.running == 1
+    health.close()
+    assert ops.running == 0, "close returned with a read still inside the status"
+    calls = ops.calls
+    health.refresh()
+    health.queues()
+    health.queues_nowait()
+    assert ops.calls == calls, "the status was read after close"
+    leader.join(10)
+
+
+def test_the_app_leaves_no_read_of_the_status_behind(
+    monkeypatch: pytest.MonkeyPatch, settings: Settings, ops: _Ops
+) -> None:
+    """`database is locked` in the set-up of the next test: a read of the status still running
+    when the app stops keeps a connection to a database the next test deletes."""
+    ops.delay = 0.6
+    with auth_env(monkeypatch, settings, ops_services=ops) as env:
+        assert env.login().status_code == 200
+        env.client.get("/healthz")  # the start-up read is still inside the status
+    assert ops.running == 0
+    assert not [t for t in threading.enumerate() if t.name.startswith("health-")]
+
+
+def test_the_first_probe_before_any_value_takes_no_thread_of_the_pool(
+    monkeypatch: pytest.MonkeyPatch, settings: Settings, ops: _Ops
+) -> None:
+    """The pool may be full of decodes: the probe that comes before the start-up read has ended
+    waits for it on a thread of its own, not on one of the pool's."""
+    ops.delay = 0.3
+
+    async def refused(*_a: Any, **_k: Any) -> Any:
+        raise AssertionError("the first /healthz asked for a thread of the pool")
+
+    with auth_env(monkeypatch, settings, ops_services=ops) as env:
+        assert env.login().status_code == 200
+        monkeypatch.setattr("shelfhold.interfaces.http_api.health.run_in_threadpool", refused)
+        body = env.client.get("/healthz")
+        assert body.status_code == 200
+        assert body.json()["paused_queues"] == ["export.scan"]
+
+
+def test_a_signed_in_probe_resolves_its_session_without_the_pool(
+    api: AuthEnv, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The thumbnail screen: the pool is full, and the session of an authenticated `/healthz`
+    was looked up on one of its threads. The probe has threads of its own for that."""
+    admin = _probe_as(api, "admin")
+
+    async def refused(*_a: Any, **_k: Any) -> Any:
+        raise AssertionError("an authenticated probe asked for a thread of the pool")
+
+    monkeypatch.setattr("shelfhold.interfaces.http_api.auth.run_in_threadpool", refused)
+    body = admin.get("/healthz")
+    assert body.status_code == 200
+    assert body.json()["paused_queues"] == ["export.scan"]
+    assert admin.get("/readyz").status_code == 200

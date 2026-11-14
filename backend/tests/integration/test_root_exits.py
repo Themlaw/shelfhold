@@ -419,3 +419,59 @@ def test_status_refreshes_the_roots_before_it_reads_anything(env: RestoreEnv) ->
     )
     ops.status(full=False)
     assert order == ["refresh", "waiting"]
+
+
+@pytest.mark.req("EF-EXP-064", "ENF-OPS-003")
+def test_the_periodic_look_marks_a_vanished_root_with_no_probe_and_writes_nothing_else(
+    env: RestoreEnv,
+) -> None:
+    """`ops.disk_check` judges the roots every minute (`/healthz` lists the marks as recorded): a
+    root whose sentinel vanished is marked at the next look; a mark already recorded is not written
+    again; no sentinel is written and no generation moves (the L26 rule: a look is not a lease)."""
+    from shelfhold.ops.roots import judge_roots
+
+    _ex, watcher = exits(env)
+    rid = root_id(env)
+    good = (env.library / SENTINEL).read_bytes()
+    with env.engine.connect() as connection:
+        generation = connection.execute(sa.select(platform.physical_root.c.generation)).all()
+    judge_roots(watcher)
+    assert rid not in marks(env)  # a root that is right: nothing recorded
+
+    statements: list[str] = []
+
+    def spy(_c, _cur, statement, *_a):  # type: ignore[no-untyped-def]
+        statements.append(statement.strip().split(None, 1)[0].upper())
+
+    sa.event.listen(env.engine, "before_cursor_execute", spy)
+    (env.library / SENTINEL).unlink()
+    judge_roots(watcher)  # the next look: no probe, no status asked
+    assert marks(env).get(rid) == "root_lost"
+    statements.clear()
+    judge_roots(watcher)  # the same state again
+    assert not {"INSERT", "UPDATE", "DELETE"} & set(statements), statements  # nothing rewritten
+    sa.event.remove(env.engine, "before_cursor_execute", spy)
+
+    assert not (env.library / SENTINEL).exists(), "the look rewrote a sentinel"
+    (env.library / SENTINEL).write_bytes(good)
+    judge_roots(watcher)
+    assert rid not in marks(env)  # back by itself: released at the next look
+    assert (env.library / SENTINEL).read_bytes() == good
+    with env.engine.connect() as connection:
+        after = connection.execute(sa.select(platform.physical_root.c.generation)).all()
+    assert after == generation
+
+
+@pytest.mark.req("EF-EXP-064")
+def test_the_periodic_look_leaves_a_busy_database_to_the_next_minute(
+    env: RestoreEnv, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from shelfhold.ops.roots import judge_roots
+
+    _ex, watcher = exits(env)
+
+    def busy() -> None:
+        raise sa.exc.OperationalError("BEGIN IMMEDIATE", {}, Exception("database is locked"))
+
+    monkeypatch.setattr(watcher, "refresh", busy)
+    judge_roots(watcher)  # logged, not raised: the job does not fail, the next look is the retry

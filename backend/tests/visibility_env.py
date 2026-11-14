@@ -112,7 +112,10 @@ def seed_catalogue(env: AuthEnv, *, other_profile: str = "someone-else") -> Seed
 
 def seed_database(path: Path, *, other_profile: str = "someone-else") -> Seed:
     engine = create_db_engine(path)
-    with engine.begin() as connection:
+    # The app is running: its jobs write too. A deferred transaction that reads and then writes is
+    # refused at once (`database is locked`, the busy timeout does not apply to a snapshot that
+    # another writer has outdated); the write lock is taken first and waited for.
+    with engine.execution_options(shelfhold_begin="BEGIN IMMEDIATE").begin() as connection:
         kind = str(connection.execute(sa.text("SELECT key FROM work_kind LIMIT 1")).scalar_one())
         family = _shelf(connection, "Family", 13, [other_profile])  # not the kid's own id
         adult = _shelf(connection, "Adults", None, [])

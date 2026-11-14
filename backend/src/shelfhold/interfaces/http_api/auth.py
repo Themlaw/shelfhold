@@ -17,12 +17,15 @@ cookie is set without it and without the prefix; HTTPS is decided by the request
 `https://` public URL (docs/admin/durcir.md).
 """
 
+import asyncio
 import hashlib
 import re
 import time
 from collections.abc import Callable, Sequence
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from http.cookies import SimpleCookie
+from typing import Any
 from uuid import uuid4
 
 import sqlalchemy as sa
@@ -234,6 +237,18 @@ def is_request_key(principal: Principal | None) -> bool:
     )
 
 
+PROBE_PATHS = frozenset({"/healthz", "/readyz"})
+# The probes resolve their session on threads of their own: the server's pool (40) may be full of
+# decodes and long reads, and a liveness probe that waits for it is not one (ENF-OPS-003).
+_PROBE_POOL = ThreadPoolExecutor(max_workers=2, thread_name_prefix="probe-auth")
+
+
+async def _offload(probe: bool, function: Callable[..., Any], *args: Any) -> Any:
+    if probe:
+        return await asyncio.get_running_loop().run_in_executor(_PROBE_POOL, function, *args)
+    return await run_in_threadpool(function, *args)
+
+
 class AuthMiddleware:
     def __init__(self, app: ASGIApp, gate: AuthGate) -> None:
         self.app = app
@@ -259,7 +274,10 @@ class AuthMiddleware:
         if refused is not None:
             await refuse_too_many(scope, receive, send, refused)
             return
-        principal, session = await self._resolve(headers, names, state.get("forward_user"))
+        probe = scope.get("path") in PROBE_PATHS
+        principal, session = await self._resolve(
+            headers, names, state.get("forward_user"), probe=probe
+        )
         state["principal"] = principal
         if is_request_key(principal) and not request_key_may_reach(
             scope["method"], str(scope["path"])
@@ -345,22 +363,27 @@ class AuthMiddleware:
         return origin.split("://", 1)[-1].casefold() == host.casefold()
 
     async def _resolve(
-        self, headers: Headers, names: CookieNames, forward_user: object = None
+        self,
+        headers: Headers,
+        names: CookieNames,
+        forward_user: object = None,
+        *,
+        probe: bool = False,
     ) -> tuple[Principal | None, SessionAuth | None]:
         auth = self.gate.auth
         try:
             bearer = _bearer(headers)
             if bearer is not None:  # explicit credential: the cookie is not looked at
-                return await run_in_threadpool(auth.authenticate_api_key, bearer), None
+                return await _offload(probe, auth.authenticate_api_key, bearer), None
             token = _cookie_value(headers, names.session)
             session = (
-                await run_in_threadpool(auth.authenticate_session, token)
+                await _offload(probe, auth.authenticate_session, token)
                 if token is not None
                 else None
             )
             if session is None and isinstance(forward_user, str):
                 # a believed proxy named her, and no session of her own speaks first
-                named = await run_in_threadpool(auth.authenticate_forward, forward_user)
+                named = await _offload(probe, auth.authenticate_forward, forward_user)
                 return named, None
         except sa.exc.OperationalError as error:  # database not migrated yet, or locked
             structlog.get_logger().warning("auth.store_unavailable", error=str(error))

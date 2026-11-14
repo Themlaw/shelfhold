@@ -44,7 +44,7 @@ class World:
     def __init__(self, env: AuthEnv, seed: Seed, kid: TestClient, mum: TestClient) -> None:
         self.env, self.seed, self.kid, self.mum, self.admin = env, seed, kid, mum, env.client
         self.digests: dict[str, str] = {}
-        with seed.engine.begin() as connection:
+        with seed.engine.execution_options(shelfhold_begin="BEGIN IMMEDIATE").begin() as connection:
             for key, colour in {**SEEN, **HIDDEN}.items():
                 self.digests[key] = put_cover(
                     env.settings.data_dir, connection, seed.editions[key], colour
