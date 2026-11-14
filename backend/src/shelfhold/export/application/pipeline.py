@@ -834,10 +834,8 @@ class ExportPipeline:
         ) as held:  # fmt: skip
             try:
                 if self._superseded(ctx, planned):  # planned before this lock: look again
-                    log.warning(
-                        "export.op_superseded", kind=planned.kind, unit_id=planned.unit_id,
-                        rel_path=planned.rel_path,
-                    )  # fmt: skip
+                    # the unit names the operation; its path would name a title in the logs
+                    log.warning("export.op_superseded", kind=planned.kind, unit_id=planned.unit_id)
                     return REFUSED
                 if planned.kind == "register":
                     self._register(ctx, planned)
