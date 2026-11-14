@@ -2029,6 +2029,34 @@
         "title": "FindingOut",
         "type": "object"
       },
+      "FirstAdminIn": {
+        "properties": {
+          "password": {
+            "maxLength": 1024,
+            "minLength": 1,
+            "title": "Password",
+            "type": "string"
+          },
+          "setup_token": {
+            "maxLength": 256,
+            "title": "Setup Token",
+            "type": "string"
+          },
+          "username": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Username",
+            "type": "string"
+          }
+        },
+        "required": [
+          "username",
+          "password",
+          "setup_token"
+        ],
+        "title": "FirstAdminIn",
+        "type": "object"
+      },
       "FlushOut": {
         "properties": {
           "still_owed": {
@@ -6385,6 +6413,24 @@
         "title": "SettingsPatch",
         "type": "object"
       },
+      "SetupStatusOut": {
+        "properties": {
+          "needs_admin": {
+            "title": "Needs Admin",
+            "type": "boolean"
+          },
+          "token_configured": {
+            "title": "Token Configured",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "needs_admin",
+          "token_configured"
+        ],
+        "title": "SetupStatusOut",
+        "type": "object"
+      },
       "SheetAttachOut": {
         "properties": {
           "attach_id": {
@@ -8621,6 +8667,64 @@
           "present"
         ],
         "title": "WizardRootOut",
+        "type": "object"
+      },
+      "WizardShelfMadeOut": {
+        "properties": {
+          "created": {
+            "title": "Created",
+            "type": "boolean"
+          },
+          "destination_id": {
+            "title": "Destination Id",
+            "type": "string"
+          },
+          "shelf_id": {
+            "title": "Shelf Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "shelf_id",
+          "destination_id",
+          "created"
+        ],
+        "title": "WizardShelfMadeOut",
+        "type": "object"
+      },
+      "WizardShelfMakeIn": {
+        "additionalProperties": false,
+        "properties": {
+          "max_age": {
+            "pattern": "^(X|\\d{1,2}\\+?)$",
+            "title": "Max Age",
+            "type": "string"
+          },
+          "name": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "subpath": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9 _-]{0,63}$",
+            "title": "Subpath",
+            "type": "string"
+          },
+          "target": {
+            "default": "kavita",
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Target",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "max_age",
+          "subpath"
+        ],
+        "title": "WizardShelfMakeIn",
         "type": "object"
       },
       "WizardShelfOut": {
@@ -17979,6 +18083,44 @@
         ]
       }
     },
+    "/api/v1/setup/admin": {
+      "post": {
+        "operationId": "make_first_admin",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FirstAdminIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CsrfToken"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Détail du problème (RFC 9457)."
+          }
+        },
+        "summary": "Make First Admin"
+      }
+    },
     "/api/v1/setup/adoption/confirm": {
       "post": {
         "operationId": "wizard_adoption_confirm",
@@ -18285,6 +18427,68 @@
         ]
       }
     },
+    "/api/v1/setup/shelf": {
+      "post": {
+        "description": "The shelf linked to Kavita, made as `shelfhold shelf create` makes it (same service):\nthe age ceiling and the family cap, the folder under a registered root, the Kavita library\nand the audit of who may read it. The guard is that of `POST /shelves` (the reserved\naction `shelf.max_age_rating`: an admin session, never a key).",
+        "operationId": "wizard_shelf",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WizardShelfMakeIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WizardShelfMadeOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Connexion requise, ou mot de passe à confirmer (reauth-required)."
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée)."
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Détail du problème (RFC 9457)."
+          }
+        },
+        "summary": "Wizard Shelf",
+        "tags": [
+          "setup"
+        ]
+      }
+    },
     "/api/v1/setup/sources/family": {
       "put": {
         "operationId": "wizard_mark_family",
@@ -18395,6 +18599,54 @@
         "tags": [
           "setup"
         ]
+      }
+    },
+    "/api/v1/setup/status": {
+      "get": {
+        "operationId": "first_run_status",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SetupStatusOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Connexion requise, ou mot de passe à confirmer (reauth-required)."
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée)."
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Détail du problème (RFC 9457)."
+          }
+        },
+        "summary": "First Run Status"
       }
     },
     "/api/v1/shelves": {
@@ -22731,6 +22983,18 @@
     "/api/v1/problems/session-not-found": {
       "code": "session_not_found",
       "status": 404
+    },
+    "/api/v1/problems/setup-closed": {
+      "code": "setup_closed",
+      "status": 409
+    },
+    "/api/v1/problems/setup-token-invalid": {
+      "code": "setup_token_invalid",
+      "status": 403
+    },
+    "/api/v1/problems/setup-token-not-configured": {
+      "code": "setup_token_not_configured",
+      "status": 409
     },
     "/api/v1/problems/shelf.above-ceiling": {
       "code": "shelf.above_ceiling",

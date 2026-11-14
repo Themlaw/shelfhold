@@ -1285,6 +1285,24 @@ export type FindingOut = {
 };
 
 /**
+ * FirstAdminIn
+ */
+export type FirstAdminIn = {
+    /**
+     * Password
+     */
+    password: string;
+    /**
+     * Setup Token
+     */
+    setup_token: string;
+    /**
+     * Username
+     */
+    username: string;
+};
+
+/**
  * FlushOut
  */
 export type FlushOut = {
@@ -3942,6 +3960,20 @@ export type SettingsPatch = {
 };
 
 /**
+ * SetupStatusOut
+ */
+export type SetupStatusOut = {
+    /**
+     * Needs Admin
+     */
+    needs_admin: boolean;
+    /**
+     * Token Configured
+     */
+    token_configured: boolean;
+};
+
+/**
  * SheetAttachOut
  */
 export type SheetAttachOut = {
@@ -5307,6 +5339,46 @@ export type WizardRootOut = {
      * Present
      */
     present: boolean;
+};
+
+/**
+ * WizardShelfMadeOut
+ */
+export type WizardShelfMadeOut = {
+    /**
+     * Created
+     */
+    created: boolean;
+    /**
+     * Destination Id
+     */
+    destination_id: string;
+    /**
+     * Shelf Id
+     */
+    shelf_id: string;
+};
+
+/**
+ * WizardShelfMakeIn
+ */
+export type WizardShelfMakeIn = {
+    /**
+     * Max Age
+     */
+    max_age: string;
+    /**
+     * Name
+     */
+    name: string;
+    /**
+     * Subpath
+     */
+    subpath: string;
+    /**
+     * Target
+     */
+    target?: string;
 };
 
 /**
@@ -10771,6 +10843,31 @@ export type SeriesResumeResponses = {
 
 export type SeriesResumeResponse = SeriesResumeResponses[keyof SeriesResumeResponses];
 
+export type MakeFirstAdminData = {
+    body: FirstAdminIn;
+    path?: never;
+    query?: never;
+    url: '/api/v1/setup/admin';
+};
+
+export type MakeFirstAdminErrors = {
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type MakeFirstAdminError = MakeFirstAdminErrors[keyof MakeFirstAdminErrors];
+
+export type MakeFirstAdminResponses = {
+    /**
+     * Successful Response
+     */
+    201: CsrfToken;
+};
+
+export type MakeFirstAdminResponse = MakeFirstAdminResponses[keyof MakeFirstAdminResponses];
+
 export type WizardAdoptionConfirmData = {
     body: WizardAdoptIn;
     path?: never;
@@ -10936,6 +11033,39 @@ export type WizardProbeResponses = {
 
 export type WizardProbeResponse = WizardProbeResponses[keyof WizardProbeResponses];
 
+export type WizardShelfData = {
+    body: WizardShelfMakeIn;
+    path?: never;
+    query?: never;
+    url: '/api/v1/setup/shelf';
+};
+
+export type WizardShelfErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type WizardShelfError = WizardShelfErrors[keyof WizardShelfErrors];
+
+export type WizardShelfResponses = {
+    /**
+     * Successful Response
+     */
+    201: WizardShelfMadeOut;
+};
+
+export type WizardShelfResponse = WizardShelfResponses[keyof WizardShelfResponses];
+
 export type WizardMarkFamilyData = {
     body: SourceFamilyIn;
     path?: never;
@@ -11001,6 +11131,39 @@ export type WizardStateResponses = {
 };
 
 export type WizardStateResponse = WizardStateResponses[keyof WizardStateResponses];
+
+export type FirstRunStatusData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/setup/status';
+};
+
+export type FirstRunStatusErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type FirstRunStatusError = FirstRunStatusErrors[keyof FirstRunStatusErrors];
+
+export type FirstRunStatusResponses = {
+    /**
+     * Successful Response
+     */
+    200: SetupStatusOut;
+};
+
+export type FirstRunStatusResponse = FirstRunStatusResponses[keyof FirstRunStatusResponses];
 
 export type ShelvesData = {
     body?: never;

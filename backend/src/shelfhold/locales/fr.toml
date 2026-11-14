@@ -1113,6 +1113,21 @@ title = "La connexion par mot de passe est suspendue : une restauration a pu ram
 action = "Sur la machine hôte : « shelfhold admin reset-password » pour chaque compte, puis « shelfhold restore acknowledge »."
 cause = "Une restauration peut avoir ramené d'anciens mots de passe : la connexion par mot de passe reste fermée tant qu'ils n'ont pas été changés."
 
+[errors."setup_token_invalid"]
+title = "Le secret d'installation est incorrect."
+action = "Recopiez la valeur de SHELFHOLD_SETUP_TOKEN du fichier compose, sans espace avant ni après."
+cause = "La valeur saisie ne correspond pas à celle que le fichier compose donne à Shelfhold."
+
+[errors."setup_token_not_configured"]
+title = "Le compte ne peut pas encore être créé ici : aucun secret d'installation n'est défini."
+action = "Ajoutez SHELFHOLD_SETUP_TOKEN (au moins 24 caractères, par exemple « openssl rand -hex 24 ») au fichier compose et redémarrez, ou lancez « shelfhold admin create » sur la machine hôte."
+cause = "Sans secret choisi par la personne qui installe, le premier venu pourrait prendre le compte administrateur."
+
+[errors."setup_closed"]
+title = "Un compte administrateur existe déjà."
+action = "Connectez-vous avec ce compte."
+cause = "La création du premier compte n'est possible que tant qu'aucun administrateur n'existe."
+
 [errors."invalid_credentials"]
 title = "Identifiant ou mot de passe incorrect."
 action = "Vérifiez l'identifiant et le mot de passe, puis recommencez."

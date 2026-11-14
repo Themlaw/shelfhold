@@ -29,6 +29,8 @@ from shelfhold.jobs.window import parse_clock, parse_zone
 ENV_PREFIX = "SHELFHOLD_"
 MIN_FORWARD_SECRET_LENGTH = 32  # a shared secret is generated, not chosen
 FILE_SUFFIX = "_FILE"
+MIN_SETUP_TOKEN_LENGTH = 24
+MIN_SETUP_TOKEN_DISTINCT = 10  # a secret is generated: one character repeated is not one
 CONFIG_FILE_NAME = "config.toml"
 CONFIG_SCHEMA_VERSION = "1.0"  # "major.minor", ADR-0039
 SUPPORTED_CONFIG_MAJOR = 1
@@ -110,6 +112,11 @@ class Settings(BaseModel):
     # removed from every other request: never believed, never an error of their own.
     auth_forward_enabled: bool = False
     auth_forward_secret: SecretStr | None = None
+    # M3 ENF-UX-001, EF-UX-001: the secret that opens the first-run wizard's account screen. Put in
+    # the compose by whoever installs (`openssl rand -hex 24`), it proves that the one who makes
+    # the first account holds the host, not only the address. Unset: the screen stays shut and the
+    # host command `shelfhold admin create` is the way. It opens nothing once an admin exists.
+    setup_token: SecretStr | None = None
     # ENF-SEC-008: requests per minute and per real address on the public routes (login page,
     # sign-in, anything an anonymous caller may reach). Failures of sign-in have their own limits.
     http_public_rate_per_minute: int = Field(default=120, ge=10, le=100_000)
@@ -237,6 +244,17 @@ class Settings(BaseModel):
 
     @model_validator(mode="after")
     def _forward_auth_needs_a_network(self) -> Self:
+        token = self.setup_token
+        if token is not None and 0 < len(token.get_secret_value()) < MIN_SETUP_TOKEN_LENGTH:
+            raise ValueError(f"setup_token must hold at least {MIN_SETUP_TOKEN_LENGTH} characters")
+        if (
+            token is not None
+            and token.get_secret_value()
+            and len(set(token.get_secret_value())) < MIN_SETUP_TOKEN_DISTINCT
+        ):
+            raise ValueError(
+                f"setup_token must hold at least {MIN_SETUP_TOKEN_DISTINCT} different characters"
+            )
         networks = [ipaddress.ip_network(cidr) for cidr in self.http_trusted_proxies]
         if any(network.prefixlen == 0 for network in networks):
             # every address is "a proxy": any caller names herself, or is any visitor's address

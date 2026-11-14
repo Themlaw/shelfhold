@@ -132,7 +132,8 @@ def test_every_secret_value_is_masked_by_config_show(
     capsys: pytest.CaptureFixture[str],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    env[f"SHELFHOLD_{field.upper()}"] = "top-secret"
+    # long and varied enough for any rule of a secret
+    env[f"SHELFHOLD_{field.upper()}"] = "top-secret-abcdefghijklmnopqrstuvwxyz012345"
     for key, value in env.items():
         monkeypatch.setenv(key, value)
     assert cli_main(["config", "show", *(["--json"] if as_json else [])]) == 0

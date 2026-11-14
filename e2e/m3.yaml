@@ -11,3 +11,13 @@ services:
   egress-watch:
     ports:
       - "127.0.0.1:18080:8080"
+
+  shelfhold:
+    environment:
+      # the secret of the compose that opens the account screen of the wizard (EF-UX-001): the
+      # administrator reads it in the file and types it once, in the browser, with the account
+      SHELFHOLD_SETUP_TOKEN: synthetic-setup-token-0123456789abcdef
+    volumes:
+      - ./fakes/m3:/fakes/m3:ro
+    # the stack sets the two addresses of the books project (harness, see the script)
+    command: ["python", "/fakes/m3/serve_with_sources.py"]

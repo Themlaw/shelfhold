@@ -7,7 +7,7 @@ wizard adds no second door for them. Here: the state the screens read, the share
 that Kavita reads, the adoption of an existing library (preview, then confirmation on the
 fingerprint) and the making of a new one.
 
-Every route is the admin's, on a fresh session, never a key (`admin_risk.accept`, the reserved
+Every route is the admin's, never a key (`admin_risk.accept`, the reserved
 action of the Kavita connection itself): the member, the child and a key are refused, and so is
 an admin whose session is stale. Each call leaves a line in the audit.
 """
@@ -19,10 +19,16 @@ from fastapi import APIRouter, Depends
 from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel, ConfigDict, Field
 
-from shelfhold.identity.public import RESERVED_ACTIONS, Principal
+from shelfhold.export.domain.bindings import BindingError
+from shelfhold.headless import HeadlessAdmin
+from shelfhold.headless.actor import Actor
+from shelfhold.headless.admin import SHELF_SUBPATH_PATTERN
+from shelfhold.headless.errors import HeadlessError
+from shelfhold.identity.public import RESERVED_ACTIONS, Principal, audit_actor
 from shelfhold.infrastructure.http_headers import attachment_disposition
 from shelfhold.interfaces.http_api.auth import reserved_action
 from shelfhold.interfaces.http_api.ops import refusals
+from shelfhold.interfaces.http_api.problems import ProblemError
 from shelfhold.ops import OpsServices
 
 __all__ = ["build_setup_router"]
@@ -32,6 +38,12 @@ Admin = Annotated[Principal, Depends(reserved_action(_RISK))]  # one line in the
 # The two writes of part 2 that are reserved actions of their own, with their own audit line: the
 # keyring leaves the instance (a fresh session, never a key) and the sources a child may search
 # are chosen (parental control)
+# The shelf of the wizard is the parental decision of `shelf create` and `POST /shelves` (the age
+# ceiling of a new shelf): the same reserved action, so the audit and the rules of freshness are
+# theirs, not those of an acceptance of risk.
+CeilingAdmin = Annotated[
+    Principal, Depends(reserved_action(RESERVED_ACTIONS["shelf.max_age_rating"]))
+]
 KeyringAdmin = Annotated[Principal, Depends(reserved_action(RESERVED_ACTIONS["secrets.export"]))]
 FamilyAdmin = Annotated[Principal, Depends(reserved_action(RESERVED_ACTIONS["source.mark_family"]))]
 
@@ -141,6 +153,21 @@ class WizardLibraryIn(WizardDestinationIn):
     library_type: str | None = None
 
 
+class WizardShelfMakeIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    name: str = Field(min_length=1, max_length=128)
+    target: str = Field(default="kavita", min_length=1, max_length=128)  # the name the wizard gave
+    max_age: str = Field(pattern=r"^(X|\d{1,2}\+?)$")  # "18+", "13+", "X": as on the host
+    # one folder under the shared one, as `shelf create --subpath` takes it; never a path
+    subpath: str = Field(pattern=SHELF_SUBPATH_PATTERN)
+
+
+class WizardShelfMadeOut(BaseModel):
+    shelf_id: str
+    destination_id: str
+    created: bool  # false: the shelf was already there, bound the same way
+
+
 class KeyringExportIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
     # In the body, never in a URL. Its length is the service's to judge, and no refusal carries
@@ -157,13 +184,36 @@ class SourceFamilyOut(BaseModel):
     family: list[str]
 
 
-def build_setup_router(get_ops: Callable[[], OpsServices]) -> APIRouter:
+def build_setup_router(
+    get_ops: Callable[[], OpsServices], get_admin: Callable[[], HeadlessAdmin]
+) -> APIRouter:
     router = APIRouter(prefix="/api/v1/setup", tags=["setup"])
 
     @router.get("/state")
     def wizard_state(_admin: Admin) -> WizardStateOut:
         with refusals():
             return WizardStateOut(**get_ops().wizard.state())
+
+    @router.post("/shelf", status_code=201)
+    def wizard_shelf(
+        body: WizardShelfMakeIn,
+        principal: CeilingAdmin,  # the reserved action of every other door that makes a shelf
+    ) -> WizardShelfMadeOut:
+        """The shelf linked to Kavita, made as `shelfhold shelf create` makes it (same service):
+        the age ceiling and the family cap, the folder under a registered root, the Kavita library
+        and the audit of who may read it. The guard is that of `POST /shelves` (the reserved
+        action `shelf.max_age_rating`: an admin session, never a key).
+        """
+        try:
+            made = get_admin().shelf_create(
+                name=body.name, max_age=body.max_age, target=body.target, subpath=body.subpath,
+                actor=Actor(audit_actor(principal), principal.session_id, principal.auth_time),
+            )  # fmt: skip
+        except (HeadlessError, BindingError) as error:
+            raise ProblemError(getattr(error, "code", "config.invalid_value")) from None
+        return WizardShelfMadeOut(
+            shelf_id=made.shelf_id, destination_id=made.destination_id, created=made.created
+        )
 
     @router.post("/probe")
     def wizard_probe(body: WizardDestinationIn, _admin: Admin) -> WizardProbeOut:

@@ -3,6 +3,7 @@
   // for a named key that expires; the server keeps only that key. Here they live in memory for
   // the time of the request and are wiped as soon as it is over (kept only while the password
   // is asked again, because the same request is then sent again).
+  import { onDestroy } from 'svelte';
   import { addTarget, wizardState } from '#lib/api/index.ts';
   import ProblemCard from '#lib/components/ProblemCard.svelte';
   import ReauthPrompt from '#lib/components/ReauthPrompt.svelte';
@@ -11,12 +12,16 @@
   import { csrfToken } from '#lib/passkeys.ts';
   import { problemView, type ProblemView } from '#lib/problems.ts';
   import { needsReauth, needsSession, problemOf } from '#lib/triage.ts';
-  import { nextStep } from '#lib/wizard.ts';
+  import { advanceFrom, nextStep, parsePathMap } from '#lib/wizard.ts';
 
   let url = $state('');
   let username = $state('');
   let password = $state('');
   let accepted = $state(false);
+  let pathMap = $state('');
+  let mapInvalid = $state(false);
+  let cancelAdvance = () => {};
+  onDestroy(() => cancelAdvance());
   let busy = $state(false);
   let done = $state(false);
   let expires = $state<string | null>(null);
@@ -31,6 +36,10 @@
   };
 
   async function connect(): Promise<void> {
+    // the map is read first: a wrong one is refused before the password leaves this page
+    const map = parsePathMap(pathMap);
+    mapInvalid = map === null;
+    if (map === null) return;
     busy = true;
     problem = null;
     try {
@@ -42,12 +51,14 @@
           url,
           username,
           password,
-          accept_admin_risk: accepted
+          accept_admin_risk: accepted,
+          ...(map ? { path_map: map } : {})
         },
         throwOnError: true
       });
       wipe();
       done = true;
+      cancelAdvance = advanceFrom('kavita');
       const { data } = await wizardState({ throwOnError: true });
       expires = data.targets[0]?.key_expires_at ?? null;
     } catch (error) {
@@ -128,6 +139,16 @@
         <input type="checkbox" bind:checked={accepted} />
         {t('admin.wizard.kavita.accept')}
       </label>
+      <div class="map">
+        <p>{t('admin.wizard.kavita.map_help')}</p>
+        <label>
+          {t('admin.wizard.kavita.map')}
+          <input type="text" bind:value={pathMap} autocomplete="off" placeholder="/library=/library" />
+        </label>
+        {#if mapInvalid}
+          <p role="alert">{t('admin.wizard.kavita.map_invalid')}</p>
+        {/if}
+      </div>
       <button type="submit" disabled={busy || !accepted || reauthMethods !== null}>
         {t('admin.wizard.kavita.connect')}
       </button>

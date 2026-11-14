@@ -179,7 +179,8 @@ class IdentityStore(Protocol):
         password_hash: str,
         now: datetime,
         max_age_rating: int | None = None,
-    ) -> None: ...
+        only_if_no_admin: bool = False,
+    ) -> bool: ...
     def replace_password_hash(self, user_id: str, expected: str, password_hash: str) -> bool:
         """The new hash of the SAME password, written only while the stored one is still
         `expected`: False when a reset (or anything else) changed it meanwhile, nothing written."""

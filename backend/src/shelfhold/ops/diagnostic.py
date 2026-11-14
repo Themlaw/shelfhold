@@ -118,7 +118,7 @@ _AS_IS = (
 )  # fmt: skip
 _PRESENCE = (
     "public_url", "api_token", "secret_key_file", "frontend_dir", "source_url", "wake_url",
-    "wake_token", "auth_forward_secret", "backup_dir", "backup_passphrase_file",
+    "wake_token", "auth_forward_secret", "setup_token", "backup_dir", "backup_passphrase_file",
     "metadata_contact", "import_dir",
 )  # fmt: skip
 _VOLUMES = ("data_dir", "store_dir", "library_dir")

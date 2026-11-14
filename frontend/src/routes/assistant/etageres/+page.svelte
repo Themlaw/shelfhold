@@ -3,7 +3,7 @@
   // EF-UX-001, D13). The sentences are the server's own, shown before and after the shelves
   // exist; one button makes the shelves (L33's route) and records the family sources, so the
   // admin who accepts what is proposed does it in one action. Nothing here decides who may.
-  import { onMount } from 'svelte';
+  import { onDestroy, onMount } from 'svelte';
   import { precreate, wizardMarkFamily, wizardState } from '#lib/api/index.ts';
   import type { WizardShelfOut, WizardSourceOut } from '#lib/api/types.gen.ts';
   import ProblemCard from '#lib/components/ProblemCard.svelte';
@@ -13,7 +13,14 @@
   import { t } from '#lib/i18n/index.ts';
   import { csrfToken } from '#lib/passkeys.ts';
   import type { ProblemView } from '#lib/problems.ts';
-  import { attempt, FAMILY_BY_DEFAULT, nextStep, SOURCE_NAMES, type Outcome } from '#lib/wizard.ts';
+  import {
+    advanceFrom,
+    attempt,
+    FAMILY_BY_DEFAULT,
+    nextStep,
+    SOURCE_NAMES,
+    type Outcome
+  } from '#lib/wizard.ts';
 
   let shelves = $state<WizardShelfOut[]>([]);
   let sources = $state<WizardSourceOut[]>([]);
@@ -26,6 +33,8 @@
   let signedOut = $state(false);
   let retry: (() => Promise<boolean>) | null = null;
   const next = nextStep('etageres');
+  let cancelAdvance = () => {};
+  onDestroy(() => cancelAdvance());
 
   const headers = () => ({ 'X-CSRF-Token': csrfToken() });
 
@@ -63,6 +72,7 @@
       await precreate({ headers: headers(), body: { adopted: [] }, throwOnError: true });
       await wizardMarkFamily({ headers: headers(), body: { source_keys: family }, throwOnError: true });
       done = true;
+      cancelAdvance = advanceFrom('etageres');
     });
 
   async function afterReauth(): Promise<void> {

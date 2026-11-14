@@ -295,12 +295,20 @@ class SqlIdentityStore:
         password_hash: str,
         now: datetime,
         max_age_rating: int | None = None,
-    ) -> None:
+        only_if_no_admin: bool = False,
+    ) -> bool:
         """A child never has a NULL ceiling (NULL is not "all ages"): without one, the strictest
-        (0) is laid down, whoever calls."""
+        (0) is laid down, whoever calls. `only_if_no_admin` is the first account: the check and the
+        insert share one write lock, so two requests at once make one administrator, never two
+        (False: one exists, nothing was written)."""
         if role == "child" and max_age_rating is None:
             max_age_rating = 0
         with write_transaction(self._engine) as conn:
+            if (
+                only_if_no_admin
+                and conn.execute(sa.select(_user.c.id).where(_user.c.role == "admin")).first()
+            ):
+                return False
             conn.execute(
                 sa.insert(_user).values(
                     id=id,
@@ -312,6 +320,7 @@ class SqlIdentityStore:
                     max_age_rating=max_age_rating,
                 )
             )
+        return True
 
     def delete_user(
         self, user_id: str, *, keep_one_admin: bool = False, actor_id: str | None = None

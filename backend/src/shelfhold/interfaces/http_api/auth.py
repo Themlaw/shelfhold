@@ -72,8 +72,11 @@ LOGIN_PATH = "/api/v1/auth/login"
 PASSKEY_SCRIPT_PATH = "/login/passkey.js"
 PASSKEY_LOGIN_OPTIONS_PATH = "/api/v1/auth/passkeys/login/options"
 PASSKEY_LOGIN_PATH = "/api/v1/auth/passkeys/login"
+SETUP_ADMIN_PATH = "/api/v1/setup/admin"
 # Anonymous state-changing routes: JSON only (a cross-site form cannot send it), no CSRF token.
-ANONYMOUS_JSON_PATHS = frozenset({LOGIN_PATH, PASSKEY_LOGIN_OPTIONS_PATH, PASSKEY_LOGIN_PATH})
+ANONYMOUS_JSON_PATHS = frozenset(
+    {LOGIN_PATH, PASSKEY_LOGIN_OPTIONS_PATH, PASSKEY_LOGIN_PATH, SETUP_ADMIN_PATH}
+)
 CSRF_HEADER = "X-CSRF-Token"
 SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
 
