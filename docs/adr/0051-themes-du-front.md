@@ -41,6 +41,14 @@ Dérive des thèmes secondaires (R71). Mitigation : contraste AA bloquant par th
 ## Réversibilité
 Haute : retirer un thème = retirer un fichier de jetons (les utilisateurs retombent sur le défaut) ; revenir à l'option A = figer le sélecteur.
 
+## Amendement M3 (2026-11-15) : mécanisme livré
+
+Le mécanisme livré suit la décision (option C : socle unique, jetons W3C dans `themes/<thème>/tokens.json` compilés sous `:root[data-theme]`, variantes d'une liste fermée de quatre points, aucun composant ne lit le nom du thème, contraste AA bloquant, préférence par utilisateur persistée, attribut posé avant le premier rendu sous une CSP à empreinte). Quatre écarts, sans changer la décision :
+- le **défaut d'instance** est lu dans le réglage `ui.default_theme`, mais aucun écran, aucune route ni aucune commande ne l'écrit : il n'est réglable que dans la base. Un écrivain arrive avec le sélecteur en M4 ;
+- un second attribut `data-color-scheme` est posé quand l'utilisateur a choisi clair ou sombre (`auto` suit `prefers-color-scheme`) ;
+- le script d'`app.html` teste le thème `bibliotheque` en dur et la liste côté API est figée à ce thème : ils suivront `THEMES` quand B, C et D arrivent (M4) ;
+- les captures par thème comparent une référence structurelle commitée (jetons appliqués et structure de la page), non les pixels.
+
 ## Exigences liées
 EF-UX-012, ENF-A11Y-001, ENF-I18N-001, ENF-SEC-004, I51, ADR-0013.
 

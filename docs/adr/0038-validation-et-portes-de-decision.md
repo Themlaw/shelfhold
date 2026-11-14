@@ -47,6 +47,10 @@ Les portes sont écrites puis jamais relues. Mitigation : `portes.md` est relu �
 ## Réversibilité
 Haute : document de gouvernance ; M3-lite ne supprime rien du modèle ni des contrats (les EF reportées passent en Plus tard).
 
+## Amendement M3 (2026-11-15) : résultat de la porte P2 (D1)
+
+La porte P2 a été **franchie par délégation du porteur le 2026-11-13** : décision « M3 complet », parcours famille compris (livré par L35, L41 et L44) ; `FAMILY_NAV_LITE` reste à `false`. Le résultat est consigné dans le journal de `docs/governance/portes.md`. Ni le test concierge de 8 semaines ni le prototype cliquable n'ont eu lieu, et aucun chiffre (demandes par mois, préférence pour l'interface) n'a été mesuré : la décision est une délégation, non une mesure. Le test d'utilisabilité de la `rc.1` (`docs/governance/test-utilisabilite.md`) en tient lieu, et la porte se relit au bilan de M3 si l'usage réel ne suit pas. ENF-GOV-006 reste déclarée partielle dans `tools/traceability-exceptions.toml`. M3-lite n'a pas été retenu : aucune exigence n'est passée en « Plus tard ».
+
 ## Exigences liées
 ENF-GOV-006, ENF-GOV-005, ENF-GOV-003, ENF-UX-001, EF-INT-025, EF-EXP-056, EF-USR-010, EF-UX-004, EF-UX-005, EF-UX-006, EF-INT-021.
 

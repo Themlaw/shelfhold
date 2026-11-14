@@ -63,6 +63,10 @@ G1–G10.
 - Ajouts passe 7 à M1a : 7 exigences de schéma et de contrat (EF-BIB-048, EF-BIB-049, EF-EXP-062, EF-SRC-034, EF-INT-026, EF-LEC-014, ENF-OPS-021), estimées 12 à 20 h ; M1a compte **110 exigences** (76 EF, 34 ENF). La boîte de 200 h et le seuil de 300 h sont conservés (Q44).
 - **EF-INT-026 rejoint les intouchables** (11 exigences, 8 garanties) : c'est le comportement de la sentinelle et du journal d'intentions après une restauration, dont le sens doit être fixé avant le premier déploiement. Les coupables sont inchangés.
 
+## Amendement M3 (2026-11-15) : coupables de M3 (D2)
+
+Lot M3 L58. 03 ne listait aucun élément coupable pour M3 ; la liste retenue est celle du plan (environ 14 h) : OPML et CSV des suivis (EF-INT-027), rejeu `parse-bulk` après une mise à jour majeure de Kavita (EF-EXP-049), import aller-retour de l'export intégral (EF-INT-016), romanisation des titres (EF-BIB-010), décalage de numérotation par équipe (EF-BIB-028) et détection d'une migration Suwayomi (EF-BIB-029). **Aucun n'a été coupé : les six ont été livrés** (PR #196, #200, #206, #192, #197, #197). Seul l'écran « Même œuvre ? » de la détection de migration n'existe pas : la détection et l'API sont livrées, l'écran est reporté en M4 (`docs/decisions/M3.md`, écarts). Aucune de ces exigences n'est de sécurité, de contrôle parental ni d'intégrité ; ces trois familles restent non coupables. La boîte de 338 h et le seuil de 507 h n'ont pas été atteints en durée d'horloge (`docs/governance/velocite.md`).
+
 ## Exigences liées
 ENF-GOV-005, ENF-GOV-003, ENF-GOV-001, EF-USR-021, EF-INT-023, ENF-SEC-015, EF-EXP-002, EF-EXP-028, EF-SRC-025, ENF-QUAL-006, ENF-GOV-006, EF-INT-024, EF-EXP-051, EF-EXP-056, EF-EXP-059, EF-INT-026.
 

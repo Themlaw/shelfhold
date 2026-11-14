@@ -18,8 +18,8 @@ Le développement est fait par des agents d'IA orchestrés par le mainteneur. Le
 | M0 | | | | | | |
 | M1a | 2026-11-04 à 2026-11-05 (PR #24 à #63, hors lot de documentation) | à relever par le mainteneur | 122 sur 123 couvertes avant le lot de documentation (`tools/traceability.py --milestone M1a`) ; le budget mémoire (ENF-OPS-005) est couvert par ce lot | 40 | à relever par le mainteneur | Plafond du jalon : 300 h d'effort agent ; règle de coupe à 150 %. Aucun élément coupable n'a été reporté à ce stade. |
 | M1b | | | | | | |
-| M2 | 2026-11-10 à 2026-11-12 (PR #115 à #172, en cours) | à relever par le mainteneur | 57 sur 58 couvertes au 2026-11-12 (`tools/traceability.py --milestone M2`) ; reste ENF-GOV-004 (second registre, hors lot de documentation) | 35 PR de lot (« M2 Lxx »), 55 PR fusionnées depuis le lot L00 | à relever par le mainteneur | Aucun élément coupable de M2 n'a été coupé (ADR-0035, amendement M2). Chiffres provisoires : la revue de fin de jalon les fige. |
-| M3 | | | | | | |
+| M2 | 2026-11-10 à 2026-11-12 (PR #115 à #172) | à relever par le mainteneur | 57 sur 57 couvertes (`tools/traceability.py --milestone M2`) ; ENF-GOV-004 (second registre) est reportée en M4 avec l'accord du porteur (2026-11-14) | 35 PR de lot (« M2 Lxx »), 55 PR fusionnées depuis le lot L00 | à relever par le mainteneur | Aucun élément coupable de M2 n'a été coupé (ADR-0035, amendement M2). Chiffres provisoires : la revue de fin de jalon les fige. |
+| M3 | 2026-11-12 à 2026-11-14 (PR #177 à #260, hors lot de documentation de clôture) | à relever par le mainteneur | 104 sur 104 couvertes (`tools/traceability.py --milestone M3`) ; ENF-GOV-004 reportée en M4 avec l'accord du porteur (D5) | 58 PR de lot (« M3 Lxx »), 83 PR fusionnées depuis le début du jalon | à relever par le mainteneur | Boîte de 338 h d'effort agent, seuil de coupe 507 h : environ 58 h d'horloge, effort réel à relever. Aucun des six éléments coupables n'a été coupé (ADR-0035, amendement M3). Chiffres provisoires : la revue de fin de jalon les fige. |
 | M4 | | | | | | |
 | M5 | | | | | | |
 | M6 | | | | | | |

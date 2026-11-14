@@ -25,6 +25,20 @@ def test_ci_success_needs_every_gate_including_dco_title_and_traceability() -> N
 
 
 @pytest.mark.req("ENF-SEC-007")
+def test_traceability_blocks_every_delivered_milestone() -> None:
+    """M2 and M3 block like the others since the closure of M3 (L58): no milestone is exempted."""
+    ci: dict[str, Any] = yaml.safe_load(CI.read_text(encoding="utf-8"))
+    run = next(
+        s["run"]
+        for s in ci["jobs"]["traceability"]["steps"]
+        if "run" in s and "traceability.py" in s["run"]
+    )
+    assert "for ms in M0 M1a M1b M2 M3; do" in run
+    assert "case " not in run, "a milestone is exempted from the blocking status"
+    assert "[ $code -eq 0 ] || status=1" in run
+
+
+@pytest.mark.req("ENF-SEC-007")
 def test_image_paths_filter_covers_every_dockerfile_copy_source() -> None:
     root = CI.parents[2]
     ci: dict[str, Any] = yaml.safe_load(CI.read_text(encoding="utf-8"))

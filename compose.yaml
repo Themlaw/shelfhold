@@ -1,7 +1,8 @@
 # Shelfhold reference compose (= homelab example, docs/spec/04-structure-repo.md section 5).
 # The image is defined here and in env.IMAGE of the workflows, nowhere else.
-# Pinned on X.Y (patch releases only, never a migration): `0.4` is published with the 0.4.0 release.
-# Use `edge` meanwhile (development image).
+# Pinned on X.Y (patch releases only, never a migration): `1.0` follows the 1.0.x releases.
+# `edge` is the development image: do not use it for a library you care about.
+# Updating from 0.2: the 1.0 migrations are not reversible by themselves (docs/admin/retour-arriere.md).
 #
 # Hardened by default (ENF-SEC-006). Shelfhold still starts if you run it differently
 # (root, writable filesystem), but this profile is the one that is tested.
@@ -9,7 +10,7 @@
 # Host directories must be writable by uid 1000:  mkdir -p data store && chown 1000:1000 data store && chmod 750 data store
 
 x-shelfhold: &shelfhold
-  image: ghcr.io/themlaw/shelfhold:0.4
+  image: ghcr.io/themlaw/shelfhold:1.0
   user: "1000:1000"
   read_only: true
   cap_drop: [ALL]
@@ -18,6 +19,12 @@ x-shelfhold: &shelfhold
     core: 0            # no core dump of decrypted data
   environment: &shelfhold-env
     TZ: Etc/UTC
+    # First start (EF-UX-001): to create the first administrator in the browser wizard, set a setup
+    # secret of at least 24 characters, generated on your machine (`openssl rand -hex 24`), then
+    # uncomment the next line and paste it. You type it once in the "Your account" screen; it opens
+    # nothing once an administrator exists. Unset: the screen stays closed and
+    # `docker compose exec shelfhold shelfhold admin create` is the way (docs/configuration.md).
+    # SHELFHOLD_SETUP_TOKEN: "<the-24-or-more-characters-you-generated>"
     # SHELFHOLD_IMPORT_DIR: /import   # with the ./import volume below; unset = import off
   volumes:
     - ./data:/data     # database, config, thumbnails (local disk, SSD advised, not NFS)

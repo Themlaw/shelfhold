@@ -339,7 +339,7 @@ Les EF de la partie famille (EF-USR-010, EF-UX-004/005/006, EF-INT-021) portent 
 
 **Exigences couvertes.**
 - EF : EF-SRC-002, EF-SRC-003, EF-SRC-004, EF-SRC-006, EF-SRC-007, EF-SRC-010, EF-SRC-011, EF-SRC-012, EF-SRC-013, EF-SRC-015, EF-SRC-023 (autres flux), EF-SRC-024 ; EF-BIB-003, EF-BIB-008, EF-BIB-009, EF-BIB-013 (contrat + OpenLibrary), EF-BIB-024, EF-BIB-033 (volet sources), EF-BIB-037 (fusion par identifiant), EF-BIB-040, EF-BIB-041, EF-BIB-043 (passe 5) ; EF-EXP-015, EF-EXP-016, EF-EXP-033 ; EF-INT-009.
-- ENF : ENF-GOV-004 (second registre, miroir, vérificateur de mises à jour ; reporté de M1b) ; ENF-LEG-003 (dont liste d'admission des sources), ENF-LEG-005 (volet OpenLibrary), ENF-LEG-007, ENF-LEG-008, ENF-LEG-009.
+- ENF : ENF-LEG-003 (dont liste d'admission des sources), ENF-LEG-005 (volet OpenLibrary), ENF-LEG-007, ENF-LEG-008, ENF-LEG-009.
 - Passe 6 (volets M2 d'exigences commencées en M1a) : EF-SRC-032 (lncrawl livre un fichier par plage, tomes clos), EF-SRC-033 (`server_queue` de lncrawl), EF-BIB-044 (plage d'un tome lue dans ComicInfo et chez les fournisseurs), EF-BIB-046 et EF-SRC-024 (domaine public calculé sur toutes les contributions), EF-BIB-013 (contrat MetadataProvider typé par entité, GAP-6-14).
 - Passe 7 (volets M2) : EF-SRC-034 (lncrawl demande des plages en deux temps, un ticket et un `export_item` par plage), EF-BIB-049 (lncrawl déclare `community`, les catalogues `published`), EF-LEC-014 (bornes de couverture lues dans la table des matières des EPUB de plage).
 - Passe 9 : EF-SRC-035 (références distantes sans secret, prérequis d'entrée) ; volets M2 : EF-BIB-051 (neutraliseur `xhtml-neutralizer@vN`, `extracted_derived`, rastérisation des SVG de CBZ), EF-SRC-010 et EF-SRC-006 (adaptateurs `untrusted`), ENF-SEC-015 (corps des fichiers), EF-EXP-056 (`upstream_restore` sans secret), ENF-LEG-003 (admission des plugins de métadonnées), EF-SRC-013 (proxy jamais présenté comme contournement).
@@ -447,7 +447,7 @@ Les EF de la partie famille (EF-USR-010, EF-UX-004/005/006, EF-INT-021) portent 
 
 **Exigences couvertes.**
 - EF : EF-SRC-026 (renvoi de l'état « lu ») ; EF-BIB-013 (AniList, MangaUpdates, Hardcover, BnF ; ComicVine en plugin optionnel), EF-BIB-014, EF-BIB-016, EF-BIB-023, EF-BIB-026, EF-BIB-031 (BagIt), EF-BIB-032, EF-BIB-039 (UI) ; EF-EXP-047 (destinations M4) ; EF-USR-019, EF-USR-020 ; EF-EXP-002 (volet fan-out), EF-EXP-010, EF-EXP-017, EF-EXP-019, EF-EXP-020, EF-EXP-022, EF-EXP-025, EF-EXP-026, EF-EXP-030 (préservation) ; EF-USR-012 ; EF-INT-005, EF-INT-008, EF-INT-019, EF-INT-020.
-- ENF : ENF-OBS-002, ENF-QUAL-005, ENF-LEG-005 (autres fournisseurs), ENF-QUAL-003 (kit de conformité des destinations).
+- ENF : ENF-OBS-002, ENF-QUAL-005, ENF-LEG-005 (autres fournisseurs), ENF-QUAL-003 (kit de conformité des destinations), ENF-GOV-004 (second registre, miroir, vérificateur de mises à jour ; reporté de M1b en M2 puis en M4, accord du porteur 2026-11-14).
 - Passe 6 : le fan-out lit ses octets par `independent_copies()` (EF-BIB-045) ; transports `dropbox`/`push`/`pull` et `egress` vérifiés par le kit de conformité des destinations (EF-EXP-058) ; sélection du format par `accepted_content_types` (EF-EXP-046) ; assemblage par tome inscrit dans `unit_coverage` au lieu de `covers[]` (EF-BIB-044) ; correspondance entre Éditions d'EF-BIB-026 par couverture ; Wikidata comme fournisseur de correspondances optionnel (EF-BIB-003).
 - Passe 7 : sync de progression Kavita par l'ancre `reading_position` et projection `reading_progress` (EF-LEC-014, EF-BIB-026) ; rendu refait par destination à partir du canonique, jamais copié d'une destination à l'autre (EF-BIB-048) ; prédicat `present_in` par liaison (EF-BIB-044) ; webhooks et outbox filtrés par `activity_view` et relus par remontée de version (EF-INT-005, EF-INT-002).
 - Passe 8 : **ADR « arbre et indexeurs » écrite avant le début de M4** (Kavita et Komga indexant le même arbre : un arbre, une sentinelle, un rendu, plusieurs indexeurs ; Q48) ; `series_grouping` déclaré par destination (EF-EXP-032) ; le refus `target.tree_overlap` n'est levé qu'avec cette ADR.
@@ -899,7 +899,7 @@ Marqueur pytest : `@pytest.mark.req("EF-EXP-028")` ; le rapport CI liste, par ja
 | ENF-GOV-001 | M0 | revue GOVERNANCE.md (dont support, triage, financement) |
 | ENF-GOV-002 | M0 | `test_dependencies_md_lists_every_critical_dependency` + import-linter « adaptateur dédié » |
 | ENF-GOV-003 | M0 → M6 | revue de chevauchement Kavita consignée à chaque sortie de jalon, revue de chevauchement incluant Suwayomi et les concurrents |
-| ENF-GOV-004 | M2 | workflow `publish-mirror`, image présente sur les deux registres, `test_update_check_failure_is_silent` |
+| ENF-GOV-004 | M4 (reporté de M1b puis de M2, accord du porteur 2026-11-14) | workflow `publish-mirror`, image présente sur les deux registres, `test_update_check_failure_is_silent` |
 | ENF-GOV-005 | M0 → M6 | revue de jalon (vélocité, règle de coupe), `test_roadmap_has_time_budget_per_milestone` |
 | ENF-GOV-006 | M0 (relevé, entretiens, `portes.md`) / M3 (porte P2) | `test_portes_md_has_p0_p3_stop_and_handover_rules`, revue de jalon (portes P0 à P3) |
 | ENF-TIME-001 | M1a | `test_lww_uses_server_receive_timestamp`, `test_dst_transition_schedule` |
