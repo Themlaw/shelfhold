@@ -277,7 +277,10 @@ def create_app(
             if runtime.pools is not None:
                 runtime.pools.revoke(task_id)
 
-        return open_ops(resolved, engine=engine, composition=composition, revoke=revoke)
+        return open_ops(
+            resolved, engine=engine, composition=composition, revoke=revoke,
+            flagged_names=lambda destination_id: plans().flagged_names(destination_id),
+        )  # fmt: skip
 
     @cache
     def plans() -> PlanService:

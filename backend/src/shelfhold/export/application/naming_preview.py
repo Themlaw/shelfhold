@@ -31,7 +31,27 @@ from shelfhold.export.domain.naming import (
     sanitize_name,
 )
 
-__all__ = ["NameEntry", "NamingItem", "NamingPreview", "PreviewCollision", "preview_names"]
+__all__ = [
+    "CONTESTED_FLAGS",
+    "NAMING_BLOCKS",
+    "NameEntry",
+    "NamingItem",
+    "NamingPreview",
+    "PreviewCollision",
+    "contested_names",
+    "preview_names",
+]
+
+# What the template alone makes of a name, with no Kavita asked: a name the disk refuses, cuts,
+# reserves or gives to two files. (`path_taken` is the shelf's own file, not a contest.)
+CONTESTED_FLAGS = frozenset({"reserved_name", "too_long", "truncated", "path_collision"})
+# What the planner refuses to write for a name: two series of one name, a name Kavita would misread,
+# a segment policy not confirmed, a path already taken. Such a Unit has no name in the preview.
+NAMING_BLOCKS = frozenset({
+    "export.naming", "export.series_name_collision", "export.series_name_yields_volume",
+    "export.segment_policy_unconfirmed", "export.name_misread_number",
+    "export.destination_occupied",
+})  # fmt: skip
 
 RESERVED_FOLDER: Final = ".shelfhold"
 MAX_PATH_COMPONENT: Final = 255  # bytes, ext4 and SMB
@@ -213,3 +233,8 @@ def _flag_numbers(
                 )
                 if decision is not None and decision.existing != path.filename:
                     flags.append("number_taken")
+
+
+def contested_names(preview: NamingPreview) -> int:
+    """How many names of the preview the template itself puts in question."""
+    return sum(1 for entry in preview.entries if CONTESTED_FLAGS & set(entry.flags))

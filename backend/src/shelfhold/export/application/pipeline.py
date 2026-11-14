@@ -27,7 +27,7 @@ from shelfhold.export.application.intents import IntentJournal, open_intent_path
 from shelfhold.export.application.locks import ResourceLocks, library_resource
 from shelfhold.export.application.manifest_write import complete_write
 from shelfhold.export.application.mirror import ProvenanceMirror
-from shelfhold.export.application.naming_preview import NamingItem
+from shelfhold.export.application.naming_preview import NAMING_BLOCKS, NamingItem
 from shelfhold.export.application.plans import PlanOp, PlanStore, StalePlanError
 from shelfhold.export.application.ranged_export import (
     PreparedRange,
@@ -512,6 +512,13 @@ class ExportPipeline:
     def naming_inputs(self, destination_id: str) -> tuple[list[NamingItem], list[str], str | None]:
         """What a naming preview renders: the Units the plan would write, the paths already on
         the shelf, and the Kavita library type. From the database alone: no disk, no write."""
+        items, existing, kind, _blocked = self.naming_state(destination_id)
+        return items, existing, kind
+
+    def naming_state(
+        self, destination_id: str
+    ) -> tuple[list[NamingItem], list[str], str | None, int]:
+        """`naming_inputs`, and how many Units the planner refuses for their name."""
         with self._engine.connect() as connection:
             ctx = load_context(connection, destination_id)
             loaded = load_request(
@@ -538,7 +545,8 @@ class ExportPipeline:
             if op.rel_path is not None
         ]
         existing = [r.rel_path for r in loaded.request.records if r.rel_path]
-        return items, existing, kind
+        refused = sum(1 for blocked in plan.blocked if blocked.code in NAMING_BLOCKS)
+        return items, existing, kind, refused
 
     def _compute(
         self, destination_id: str, *, disk: bool = True

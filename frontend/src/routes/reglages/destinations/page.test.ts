@@ -210,7 +210,7 @@ describe('Destinations', () => {
     await screen.findByText(REMOVE_PHRASE);
     await user.type(phrase(), REMOVE_PHRASE);
     await user.click(screen.getByRole('button', { name: 'Confirmer' }));
-    expect((await screen.findByRole('alert')).textContent).toMatch(/Retrait inachevé : reprenez-le\./);
+    expect((await screen.findByRole('alert')).textContent).toMatch(/Retrait inachevé[ \u202f]: reprenez-le\./);
     expect(screen.queryByText('Destination retirée.')).toBeNull();
   });
 

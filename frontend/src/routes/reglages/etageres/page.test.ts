@@ -359,7 +359,7 @@ describe('Étagères', () => {
     await screen.findByText('La progression Kavita de 7 lecteurs sera perdue.');
     await user.type(screen.getByLabelText('Recopiez la phrase pour confirmer'), PHRASE);
     await user.click(screen.getByRole('button', { name: 'Appliquer le plan' }));
-    expect((await screen.findByRole('alert')).textContent).toMatch(/Le plan a changé : recalculez-le\./);
+    expect((await screen.findByRole('alert')).textContent).toMatch(/Le plan a changé[ \u202f]: recalculez-le\./);
   });
 
   // req: EF-USR-001, ENF-SEC-010

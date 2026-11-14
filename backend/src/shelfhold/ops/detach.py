@@ -74,9 +74,16 @@ class _Revoker:
 
 
 class DetachOps:
-    def __init__(self, comp: Composition, headless: HeadlessOps) -> None:
+    def __init__(
+        self,
+        comp: Composition,
+        headless: HeadlessOps,
+        *,
+        flagged_names: Callable[[str], int] | None = None,
+    ) -> None:
         self._comp = comp
         self._headless = headless
+        self._flagged_names = flagged_names
 
     # -- the pieces -----------------------------------------------------------------------------
 
@@ -132,6 +139,7 @@ class DetachOps:
 
     # -- list the destinations ------------------------------------------------------------------
 
+    # Lives here, not with the shelves, because the screens' fixed tests read it on `teardown`.
     def list_destinations(self) -> list[dict[str, Any]]:
         import json
 
@@ -156,6 +164,9 @@ class DetachOps:
                 .select_from(destination.join(shelf, destination.c.shelf_id == shelf.c.id))
                 .order_by(destination.c.id)
             ).all()
+        count = self._flagged_names
+        if rows and count is None:
+            raise RuntimeError("the count of contested names is not wired")
         items: list[dict[str, Any]] = []
         for row in rows:
             try:
@@ -171,7 +182,7 @@ class DetachOps:
                     "root_subpath": row.root_subpath,
                     "transport": row.transport,
                     "adopted": bool(row.adopted),
-                    "flagged_names": 0,
+                    "flagged_names": count(row.id) if count else 0,
                     "template": template,
                 }
             )
