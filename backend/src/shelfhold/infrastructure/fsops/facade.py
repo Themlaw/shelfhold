@@ -32,6 +32,7 @@ from shelfhold.export.domain.path_map import (
     within,
 )
 from shelfhold.export.domain.physical_roots import (
+    ERASING_DIR,
     LEASE_FILE,
     RECYCLE_DIR,
     RESERVED_DIR,
@@ -1133,11 +1134,17 @@ class Fsops:
         log.debug("fsops.erase_host_area", root=root_path)
         located = self._host_root(root_path)
         with self._gated(located, lease=False, tombstone=True) as root:
+            if root.lstat_kind(ERASING_DIR) == "dir":  # a stop left it half emptied: finish it
+                root.remove_tree(ERASING_DIR)
             kind = root.lstat_kind(RESERVED_DIR)
             if kind not in (None, "dir"):
                 raise NotRegularFileError(f"{RESERVED_DIR} of {root_path!r} is not a folder")
             if kind == "dir":
-                root.remove_tree(RESERVED_DIR)
+                # one atomic step names the erasure that has begun: a stop in the middle of the
+                # emptying leaves `.shelfhold.erasing`, which a rerun finishes (a tree half
+                # emptied under its own name could not be told from an untouched one)
+                root.rename(RESERVED_DIR, ERASING_DIR, replace=False)
+                root.remove_tree(ERASING_DIR)
             names = root.listdir(".")
             probes = [n for n in names if n.startswith(PROBE_PREFIX)]
             for name in [*probes, *[n for n in names if n == SENTINEL_FILE]]:  # the sentinel last

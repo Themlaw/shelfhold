@@ -14,12 +14,14 @@ import sqlalchemy as sa
 from shelfhold.export.application.detach import FullDetacher
 from shelfhold.export.application.intents import IntentJournal
 from shelfhold.export.application.remove_destination import RemoveDestination
+from shelfhold.export.targets.kavita.account_session import KavitaAccountSession
 from shelfhold.export.targets.kavita.dto import HIDDEN_DIR_PATTERNS
+from shelfhold.headless.adapters import key_digest as _digest
 from shelfhold.identity.public import Credential, Principal
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import export
 from tests.export_env import ExportEnv, export_env
-from tests.fakes.kavita import API_KEY, FakeKavita
+from tests.fakes.kavita import API_KEY, BASE_URL, FakeKavita, build_fetcher
 from tests.kavita_export_env import Wired, wire
 from tests.purge_env import ADMIN, KEY, READER, STALE
 
@@ -50,13 +52,15 @@ class Revoker:
     raises: BaseException | None = None
     seen_before: Callable[[], Any] | None = None  # looked at when the key is asked to go
 
-    def key_id(self, target_id: str, *, credential: str | None) -> str | None:
+    def key_id(self, target_id: str, *, credential: str | None) -> tuple[str, str] | None:
         if self.fake is None:
-            return "1"
+            return "1", _digest(API_KEY)
         row = next((k for k in self.fake.auth_keys if k["key"] == API_KEY), None)
-        return None if row is None else str(row["id"])
+        return None if row is None else (str(row["id"]), _digest(API_KEY))
 
-    def revoke_id(self, target_id: str, *, credential: str | None, key_id: str) -> bool:
+    def revoke_id(
+        self, target_id: str, *, credential: str | None, key_id: str, key_digest: str | None = None
+    ) -> str:
         if self.seen_before is not None:
             self.seen_before()
         if self.raises is not None:
@@ -64,14 +68,21 @@ class Revoker:
         self.calls.append((target_id, credential))
         self.ids.append(key_id)
         if not self.answer:
-            return False
-        if self.fake is not None:  # gone by this identifier only; already gone is still gone
+            return "failed"
+        if self.fake is not None:
+            row = next((k for k in self.fake.auth_keys if str(k["id"]) == key_id), None)
+            if row is not None and key_digest is not None and _digest(row["key"]) != key_digest:
+                return "reused"  # the identifier now names another key: not ours
+            # gone by this identifier only; already gone is still gone
             self.fake.auth_keys = [k for k in self.fake.auth_keys if str(k["id"]) != key_id]
-        return True
+        return "revoked"
 
     def revoke(self, target_id: str, *, credential: str | None) -> bool:
         key = self.key_id(target_id, credential=credential)
-        return key is not None and self.revoke_id(target_id, credential=credential, key_id=key)
+        return key is not None and (
+            self.revoke_id(target_id, credential=credential, key_id=key[0], key_digest=key[1])
+            == "revoked"
+        )
 
 
 @dataclass
@@ -88,6 +99,11 @@ class DetachEnv:
     def root(self) -> Path:
         """The physical root the destination lives in (its `.shelfhold` is here)."""
         return self.env.lib.library
+
+    def account_session(self) -> KavitaAccountSession:
+        """The admin account's login on the simulated Kavita (what `--key-gone` settles through)."""
+        username, password = self.wired.fake.account
+        return KavitaAccountSession(build_fetcher(self.wired.fake), BASE_URL, username, password)
 
     def kavita_patterns(self) -> list[str]:
         return list(self.wired.fake.libraries[0]["excludePatterns"])

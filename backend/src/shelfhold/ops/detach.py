@@ -33,6 +33,7 @@ from shelfhold.export.application.remove_destination import (
     RemoveDestination,
 )
 from shelfhold.export.application.root_ref import RootRef
+from shelfhold.export.targets.kavita.account_session import KavitaAccountSession
 from shelfhold.export.targets.kavita.errors import TargetError
 from shelfhold.export.targets.kavita.settings_restore import restore_library_settings
 from shelfhold.identity.public import Principal
@@ -58,14 +59,19 @@ class _Revoker:
 
     def revoke(self, target_id: str, *, credential: str | None) -> bool:
         key = self.key_id(target_id, credential=credential)
-        return key is not None and self.revoke_id(target_id, credential=credential, key_id=key)
+        return key is not None and (
+            self.revoke_id(target_id, credential=credential, key_id=key[0], key_digest=key[1])
+            == "revoked"
+        )
 
-    def key_id(self, target_id: str, *, credential: str | None) -> str | None:
+    def key_id(self, target_id: str, *, credential: str | None) -> tuple[str, str] | None:
         return self._headless.target_find_key(target=target_id, password=credential)
 
-    def revoke_id(self, target_id: str, *, credential: str | None, key_id: str) -> bool:
+    def revoke_id(
+        self, target_id: str, *, credential: str | None, key_id: str, key_digest: str | None = None
+    ) -> str:
         return self._headless.target_revoke_key_id(
-            target=target_id, password=credential, key_id=key_id
+            target=target_id, password=credential, key_id=key_id, key_digest=key_digest
         )
 
 
@@ -178,6 +184,28 @@ class DetachOps:
             fresh_auth_s=comp.settings.fresh_auth_s,
         )  # fmt: skip
 
+    def _account_session(self, target_id: str, password: str | None) -> KavitaAccountSession | None:
+        """The admin account's session, when its password came with the command."""
+        import sqlalchemy as sa
+
+        from shelfhold.infrastructure.schema import export
+
+        if not password:
+            return None
+        with self._comp.engine.connect() as conn:
+            config = conn.execute(
+                sa.select(export.export_target.c.config).where(
+                    export.export_target.c.id == target_id
+                )
+            ).scalar_one()
+        url = str(config["url"])
+        return KavitaAccountSession(
+            self._comp.network.integration_fetcher(url),
+            url,
+            str(config.get("username", "")),
+            password,
+        )
+
     def full_preview(self, *, target_id: str) -> dict[str, Any]:
         fsops, loaded, journal = self._context()
         try:
@@ -191,16 +219,14 @@ class DetachOps:
 
     def full(
         self, *, target_id: str, typed: str | None, credential: str | None,
-        discard_hidden_data: bool, discard_tombstone_journal: bool, give_up: bool,
-        principal: Principal,
+        discard_hidden_data: bool, discard_tombstone_journal: bool, key_gone: bool = False,
+        give_up: bool, principal: Principal,
     ) -> dict[str, Any]:  # fmt: skip
         fsops, loaded, journal = self._context()
         detacher = self._full_detacher(fsops, loaded, journal)
-        client = (
-            self._comp.kavita_client(target_id)
-            if target_id in self._comp.kavita_targets()
-            else None
-        )
+        known = target_id in self._comp.kavita_targets()
+        client = self._comp.kavita_client(target_id) if known else None
+        account = self._account_session(target_id, credential) if key_gone and known else None
         try:
             if give_up:
                 report = detacher.settle(target_id, resume=False, principal=principal)
@@ -210,9 +236,14 @@ class DetachOps:
                     revoker=_Revoker(self._headless), credential=credential,
                     discard_hidden_data=discard_hidden_data,
                     discard_tombstone_journal=discard_tombstone_journal,
+                    key_gone=key_gone, account=account,
                 )  # fmt: skip
         except DetachRefusedError as error:
             raise _full_refusal(error) from None
+        finally:
+            if account is not None:
+                with contextlib.suppress(Exception):  # the connection is best-effort closed
+                    self._comp.run(account.aclose())
         if report.past_no_return:  # nothing was undone, and the report must not say it was
             raise CodedRefusal("detach.refused", "past_no_return")
         self._comp.roots_changed()  # the roots demoted are no longer expected stamped
@@ -249,6 +280,7 @@ def _full_report(report: DetachReport) -> dict[str, Any]:
     return {
         "target_id": report.target_id, "complete": report.complete,
         "hidden_removed": len(report.hidden_removed), "key_revoked": report.key_revoked,
+        "key_gone": report.key_gone,
         "forgotten": report.forgotten, "cancelled": report.cancelled,
         "settings_restored": any(s.exclude_patterns_restored for s in report.settings),
         "settings": [

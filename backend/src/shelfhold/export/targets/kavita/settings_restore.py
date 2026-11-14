@@ -15,6 +15,7 @@ Idempotent: run again after an interruption, it finds the settings restored and 
 """
 
 from collections.abc import Mapping, Sequence
+from pathlib import PurePosixPath
 from typing import Any
 
 from shelfhold.export.application.library_settings import LibraryGoneError, SettingsRestored
@@ -29,10 +30,30 @@ __all__ = [
 ]
 
 
-def patterns_after_detach(current: tuple[str, ...], before: tuple[str, ...] | None) -> list[str]:
-    """What `ExcludePatterns` becomes: Shelfhold's pattern goes unless the library had it before."""
+def patterns_after_detach(
+    current: tuple[str, ...], before: tuple[str, ...] | None, *, keep_hidden: bool = False
+) -> list[str]:
+    """What `ExcludePatterns` becomes: Shelfhold's pattern goes unless the library had it before,
+    or unless a reserved folder stays under the library (`keep_hidden`)."""
     kept_from_before = set(before or ())
-    return [p for p in current if p not in HIDDEN_DIR_PATTERNS or p in kept_from_before]
+    return [
+        p for p in current if keep_hidden or p not in HIDDEN_DIR_PATTERNS or p in kept_from_before
+    ]
+
+
+def _holds_kept_root(folders: Sequence[object], kept_remote: Sequence[str]) -> bool:
+    """A folder of the library contains, or lies inside, a root whose `.shelfhold/` stays. Without
+    folders to compare, a kept root anywhere counts: the safe side."""
+    if not kept_remote:
+        return False
+    if not folders:
+        return True
+    for folder in folders:
+        mine = PurePosixPath(str(folder))
+        for kept in map(PurePosixPath, kept_remote):
+            if mine == kept or mine in kept.parents or kept in mine.parents:
+                return True
+    return False
 
 
 def _same_type(before: str, now: LibraryType) -> bool:
@@ -43,11 +64,15 @@ def _same_type(before: str, now: LibraryType) -> bool:
 
 
 async def restore_library_settings(
-    client: KavitaClient, library_ref: str, prior_settings: Sequence[Mapping[str, Any] | None]
+    client: KavitaClient,
+    library_ref: str,
+    prior_settings: Sequence[Mapping[str, Any] | None],
+    kept_remote: Sequence[str] = (),
 ) -> SettingsRestored:
     """One library, every destination that was adopted on it: the patterns of before of all of
-    them are kept, the type of each is compared. Raises `LibraryGoneError` when Kavita no longer
-    has the library."""
+    them are kept, the type of each is compared; the pattern that hides `.shelfhold/` stays when a
+    folder of the library holds a root whose reserved folder stays. Raises `LibraryGoneError` when
+    Kavita no longer has the library."""
     libraries = await client.list_libraries()
     library = next((lib for lib in libraries if str(lib.get("id")) == str(library_ref)), None)
     if library is None:
@@ -61,7 +86,8 @@ async def restore_library_settings(
         tuple(dict.fromkeys(str(p) for patterns in lists for p in patterns)) if lists else None
     )
     current = tuple(str(p) for p in library.get("excludePatterns") or ())
-    wanted = patterns_after_detach(current, recorded)
+    keep_hidden = _holds_kept_root(library.get("folders") or (), kept_remote)
+    wanted = patterns_after_detach(current, recorded, keep_hidden=keep_hidden)
     update = await client.replace_exclude_patterns(int(library_ref), wanted)
     type_now = LibraryType(int(library.get("type", 0)))
     types = [
@@ -75,4 +101,5 @@ async def restore_library_settings(
         library_type_before=(changed + types)[0] if (changed or types) else None,
         library_type_now=type_now.kavita_name,
         type_unchanged=not changed,
+        hidden_pattern_kept=keep_hidden,
     )

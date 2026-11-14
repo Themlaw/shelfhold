@@ -1823,7 +1823,7 @@
 
   [errors."detach.refused"]
     title = "The detachment is refused: nothing was changed."
-    action = "Read the reason: the phrase was not typed as shown, a file operation is still open under the root, an export or a scan holds a destination (try again later), the reserved folder holds a deleted book in its bin or an archive waiting for its export (--discard-hidden-data if you are sure), its erase log would go (--discard-tombstone-journal), or the erasure has already begun (run the same command again to finish)."
+    action = "Read the reason: the phrase was not typed as shown, a file operation is still open under the root, an export or a scan holds a destination (try again later), the reserved folder holds a deleted book in its bin or an archive waiting for its export (--discard-hidden-data if you are sure), its erase log would go (--discard-tombstone-journal), --key-gone without --password-file, or the erasure has already begun (run the same command again to finish)."
     cause = "The confirmation phrase is missing or different, an operation is still open, or the reserved folder holds data of yours that the detachment would destroy."
 
   [errors."tombstone.journal_truncated"]
@@ -2326,8 +2326,13 @@
   leftover_store = "Left in place: /store holds {count} files."
   leftover_root_shared = "Left in place: {count} root(s) used by another target keep their reserved folder."
   leftover_hidden_not_erased = "NOT done: the reserved folder of {count} root(s) could not be erased."
-  leftover_settings_not_restored = "NOT done: the Kavita settings of {count} library(ies) could not be restored."
-  leftover_key_not_revoked = "NOT done: the dedicated key was not revoked (give --password-file)."
+  leftover_settings_not_restored = "NOT done: the Kavita settings of {count} library(ies) could not be restored. If the dedicated key was deleted by hand in Kavita, run again with --key-gone and --password-file."
+  leftover_key_not_revoked = "NOT done: the dedicated key was not revoked (give --password-file). If it was deleted by hand in Kavita, run again with --key-gone."
+  leftover_key_gone = "The dedicated key no longer existed in Kavita (deleted by hand): nothing to revoke; the settings were given back by the admin account."
+  leftover_key_id_reused = "Kavita gave the identifier of the dedicated key to another key of the account: it is left in place, the dedicated key is already gone."
+  leftover_hidden_pattern_kept = "The pattern that hides .shelfhold/ stays on {count} library(ies): a reserved folder stays inside their folders (shared root or Shelfhold's library), Kavita would otherwise index the bin and the receipts."
+  key_gone = "Dedicated key absent from Kavita (--key-gone): nothing to revoke."
+  key_gone_help = "The dedicated key no longer exists (deleted by hand, Kavita answers 401): skips the revocation and gives the settings back through the admin account (with --password-file). A key that is still there is revoked as usual."
   leftover_library_gone = "{count} library(ies) no longer exist in Kavita: no settings to give back."
   leftover_tombstone_journal_erased = "The erase log (tombstones) of {count} root(s) was erased with the reserved folder."
   discard_tombstone_help = "Also erase the erase log (tombstones) of the reserved folder: without it, a restored backup can bring erased Works back."

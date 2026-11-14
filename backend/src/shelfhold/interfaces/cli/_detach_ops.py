@@ -41,6 +41,9 @@ _WARNINGS: dict[str, Callable[[object], str]] = {
     ),
 }
 _LEFTOVERS: dict[str, Callable[[object], str]] = {
+    "hidden_pattern_kept": lambda n: t("detach.leftover_hidden_pattern_kept", count=n),
+    "key_id_reused": lambda n: t("detach.leftover_key_id_reused", count=n),
+    "key_gone": lambda n: t("detach.leftover_key_gone", count=n),
     "library_gone": lambda n: t("detach.leftover_library_gone", count=n),
     "tombstone_journal_erased": lambda n: t("detach.leftover_tombstone_journal_erased", count=n),
     "suwayomi_downloads": lambda n: t("detach.leftover_suwayomi_downloads", count=n),
@@ -95,6 +98,7 @@ def run_detach_full(args: argparse.Namespace, channel: OpsChannel) -> int:
                 give_up=True,
                 discard_hidden_data=False,
                 discard_tombstone_journal=False,
+                key_gone=False,
             )
         except OpsRefusal as refusal:
             if str(refusal) != "past_no_return":
@@ -117,13 +121,17 @@ def run_detach_full(args: argparse.Namespace, channel: OpsChannel) -> int:
     report = channel.call(
         "ops.detach_full", target_id=args.target, typed=args.confirm, credential=credential,
         discard_hidden_data=args.discard_hidden_data,
-        discard_tombstone_journal=args.discard_tombstone_journal, give_up=False,
+        discard_tombstone_journal=args.discard_tombstone_journal, key_gone=args.key_gone,
+        give_up=False,
     )  # fmt: skip
     if report["hidden_removed"]:
         print(t("detach.hidden_removed", count=report["hidden_removed"]))
     if report["settings_restored"]:
         print(t("detach.settings_restored"))
-    print(t("detach.key_revoked") if report["key_revoked"] else t("detach.key_kept"))
+    if report["key_gone"]:
+        print(t("detach.key_gone"))
+    else:
+        print(t("detach.key_revoked") if report["key_revoked"] else t("detach.key_kept"))
     for line in report["leftovers"]:
         stream = (
             sys.stderr

@@ -29,6 +29,7 @@ downloads in Suwayomi, the Kavita accounts, `/store`.
 """
 
 import asyncio
+import contextlib
 import hmac
 import os
 from collections.abc import Callable, Collection, Coroutine, Iterator
@@ -62,6 +63,7 @@ from shelfhold.export.application.root_ref import RootDirectory, RootRef, copy_s
 from shelfhold.export.application.snapshot import DestinationContext, load_context
 from shelfhold.export.domain.path_map import PathMode, within
 from shelfhold.export.domain.physical_roots import (
+    ERASING_DIR,
     RECEIVED_DIR,
     RECYCLE_DIR,
     RESERVED_DIR,
@@ -121,9 +123,18 @@ class KeyIdRevoker(KeyRevoker, Protocol):
     identifier: a rerun after a stop finds the key gone and the identifier on record, which is a
     revocation already done; and another key of the account is never touched."""
 
-    def key_id(self, target_id: str, *, credential: str | None) -> str | None: ...
+    def key_id(self, target_id: str, *, credential: str | None) -> tuple[str, str] | None:
+        """`(identifier, sha256 of the value)` of the dedicated key, or None when the account
+        has no such key. A refused login or an unreachable Kavita raises: it is not "absent"."""
+        ...
 
-    def revoke_id(self, target_id: str, *, credential: str | None, key_id: str) -> bool: ...
+    def revoke_id(
+        self, target_id: str, *, credential: str | None, key_id: str, key_digest: str | None = None
+    ) -> str:
+        """Deletes that identifier and no other: `revoked` (gone, or already gone), `reused` (the
+        identifier now names another key, whose value is not the one sealed: left alone) or
+        `failed`."""
+        ...
 
 
 class DetachRefusedError(PermissionError):
@@ -131,7 +142,8 @@ class DetachRefusedError(PermissionError):
     open file operation lies under a root, I9), `hidden_data_present` (a bin entry or an archive
     waiting for its export would be destroyed), `tombstone_journal_present` (the erasure journal
     would go: it takes `discard_tombstone_journal`), `busy` (an export, a scan or another job holds
-    a destination of the target), `unknown_target`, `past_no_return` (`give up` after an erasure
+    a destination of the target), `credential_required` (`key_gone` without the account's
+    password), `unknown_target`, `past_no_return` (`give up` after an erasure
     began: run the command again to finish)."""
 
     def __init__(self, reason: str, *, verdict: object | None = None) -> None:
@@ -168,6 +180,9 @@ class DetachReport:
     hidden_removed: tuple[str, ...] = ()  # the roots whose reserved folder went
     settings: tuple[SettingsRestored, ...] = ()
     key_revoked: bool = False
+    key_gone: bool = (
+        False  # `--key-gone`: the key was not there, the account gave the settings back
+    )
     forgotten: int = 0  # manifest lines
     cancelled: int = 0  # intentions given up by `settle(resume=False)`
     past_no_return: bool = False  # `settle(resume=False)` after an erasure began: nothing undone
@@ -246,13 +261,21 @@ class FullDetacher:
         credential: str | None = None,
         discard_hidden_data: bool = False,
         discard_tombstone_journal: bool = False,
+        key_gone: bool = False,
+        account: object | None = None,
         job_id: str | None = None,
     ) -> DetachReport:
+        """`key_gone`: the dedicated key no longer exists (deleted by hand, 401): the settings are
+        given back through `account` (a session of the admin account, not the dead key) and the
+        revocation is skipped when the account confirms no such key is there. A key that is still
+        there is revoked as usual: the flag never leaves a live key behind."""
         self._authorize(principal)
         if typed is None or not hmac.compare_digest(
             typed.strip().encode(), full_detach_phrase(target_id).encode()
         ):
             raise DetachRefusedError("confirmation_required")
+        if key_gone and not credential:
+            raise DetachRefusedError("credential_required")
         report = DetachReport(target_id)
         with self._held(target_id, job_id or new_ulid()):
             with self._engine.connect() as conn:  # read once the target is ours
@@ -272,9 +295,11 @@ class FullDetacher:
                 if journals and not any(x.code in _INCOMPLETE for x in left):
                     left.append(Leftover("tombstone_journal_erased", len(journals)))
                 if not any(leftover.code in _INCOMPLETE for leftover in left):
-                    self._restore_settings(contexts, client, report, left)
+                    self._restore_settings(
+                        contexts, account if key_gone else client, report, left, shared
+                    )
             if not any(leftover.code in _INCOMPLETE for leftover in left):
-                self._revoke(target_id, revoker, credential, report, left)
+                self._revoke(target_id, revoker, credential, report, left, key_gone=key_gone)
             report.complete = not any(leftover.code in _INCOMPLETE for leftover in left)
             if report.complete:
                 report.forgotten = self._forget(principal, target_id, contexts)
@@ -338,7 +363,12 @@ class FullDetacher:
         client: object | None,
         report: DetachReport,
         left: list[Leftover],
+        kept: list[RootRef],
     ) -> None:
+        """Gives each library its settings back. The pattern that hides `.shelfhold/` stays on a
+        library whose folder holds a root whose reserved folder stays (`kept`): without it Kavita
+        would index the bin and the received archives."""
+        kept_remote = self._remote_of(contexts, kept)
         restored: list[SettingsRestored] = []
         with self._engine.connect() as conn:
             before = {
@@ -363,19 +393,33 @@ class FullDetacher:
         gone = 0
         for ref, prior_settings in libraries.items():
             try:
-                restored.append(self._run(self._restore(client, ref, prior_settings)))
+                restored.append(self._run(self._restore(client, ref, prior_settings, kept_remote)))
             except LibraryGoneError:  # nothing is left there to give back: said, not a failure
                 gone += 1
             except Exception as error:  # Kavita unreachable, refused: said, never hidden
                 log.warning("detach.settings_failed", error=type(error).__name__)
                 left.append(Leftover("settings_not_restored", 1))
         report.settings = tuple(restored)
+        if pinned := sum(s.hidden_pattern_kept for s in restored):
+            left.append(Leftover("hidden_pattern_kept", pinned))
         if gone:
             left.append(Leftover("library_gone", gone))
         if any(not s.type_unchanged for s in restored):  # told, not forced
             left.append(
                 Leftover("library_type_changed", sum(not s.type_unchanged for s in restored))
             )
+
+    @staticmethod
+    def _remote_of(contexts: list[DestinationContext], roots: list[RootRef]) -> tuple[str, ...]:
+        """Where Kavita sees these roots (the remote side of the target's path map)."""
+        paths = {r.path for r in roots}
+        found = {
+            e.remote
+            for ctx in contexts
+            for e in ctx.path_map.entries
+            if e.mode is PathMode.RW and any(within(e.local, p) is not None for p in paths)
+        }
+        return tuple(sorted(found))
 
     def _revoke(
         self,
@@ -384,50 +428,82 @@ class FullDetacher:
         credential: str | None,
         report: DetachReport,
         left: list[Leftover],
+        *,
+        key_gone: bool = False,
     ) -> None:
-        """The key goes by its identifier, written in an intention before it goes. A stop between
-        the revocation and the end finds, on the rerun, an intention that is `done` (nothing to
-        do) or `applying` with the identifier (a key absent by that identifier is revoked). Never
-        by name, and never another key of the account."""
+        """The key goes by its identifier, written in an intention (with the digest of its value,
+        never the value) before it goes. A stop between the revocation and the end finds, on the
+        rerun, an intention that is `done` (nothing to do) or `applying` with the identifier: a
+        key absent by that identifier is revoked, and an identifier that now names another key is
+        left alone and said. Never by name, never another key of the account."""
         found = self._revocation(target_id)
         if found is not None and found.state == "done":
             report.key_revoked = True
             return
         key_id = None if found is None else found.payload.get("key_id")
+        digest = None if found is None else found.payload.get("key_digest")
         named = revoker if isinstance(revoker, KeyIdRevoker) else None
+        intent = ""
         try:
             if named is not None and key_id is None:
-                key_id = named.key_id(target_id, credential=credential)
-                if key_id is None:  # the key is not there to be named: nothing was done
-                    report.key_revoked = False
-                    left.append(Leftover("key_not_revoked", 1))
+                handle = named.key_id(target_id, credential=credential)
+                if handle is None:  # the account has no such key
+                    self._no_key(report, left, key_gone)
                     return
-            intent = found.id if found is not None else self._record_revocation(target_id, key_id)
+                key_id, digest = handle
+            intent = (
+                found.id
+                if found is not None
+                else self._record_revocation(target_id, key_id, digest)
+            )
             if found is None or found.state == "pending":
                 self._journal.mark_applying(intent)
             if named is not None:
-                revoked = named.revoke_id(target_id, credential=credential, key_id=str(key_id))
+                outcome = named.revoke_id(
+                    target_id, credential=credential, key_id=str(key_id),
+                    key_digest=None if digest is None else str(digest),
+                )  # fmt: skip
             else:
-                revoked = revoker.revoke(target_id, credential=credential)
+                outcome = (
+                    "revoked" if revoker.revoke(target_id, credential=credential) else "failed"
+                )
         except Exception as error:  # the account's door failed: the key stays, and it is said
             log.warning("detach.revoke_failed", error=type(error).__name__)
-            revoked = False
-            intent = ""
-        if revoked:
+            outcome = "failed"
+        if outcome == "failed" and named is None and key_gone:
+            self._no_key(report, left, key_gone)
+            return
+        if outcome in ("revoked", "reused"):
             if intent:
                 self._journal.mark_done(intent)
+            if outcome == "reused":  # the identifier was given to another key: it stays
+                left.append(Leftover("key_id_reused", 1))
         elif (
             intent and named is None
         ):  # without an identifier a failed try leaves nothing to resume
             self._journal.cancel(intent)
-        report.key_revoked = revoked
-        if not revoked:
+        report.key_revoked = outcome in ("revoked", "reused")
+        if not report.key_revoked:
             left.append(Leftover("key_not_revoked", 1))
 
-    def _record_revocation(self, target_id: str, key_id: str | None) -> str:
+    @staticmethod
+    def _no_key(report: DetachReport, left: list[Leftover], key_gone: bool) -> None:
+        """No key to name: with `key_gone` that is what the admin said (already gone, said in the
+        report), otherwise nothing was done and the detachment is not complete."""
+        if key_gone:
+            report.key_gone = True
+            left.append(Leftover("key_gone", 1))
+        else:
+            left.append(Leftover("key_not_revoked", 1))
+
+    def _record_revocation(self, target_id: str, key_id: str | None, digest: str | None) -> str:
         return self._journal.record(
-            op="delete", extra={"scope": REVOKE_SCOPE, "target_id": target_id, "key_id": key_id}
-        )
+            op="delete",
+            extra={
+                "scope": REVOKE_SCOPE, "target_id": target_id, "key_id": key_id,
+                "key_digest": digest,
+            },
+        )  # fmt: skip
 
     def _forget(
         self, principal: Principal, target_id: str, contexts: list[DestinationContext]
@@ -601,7 +677,7 @@ class FullDetacher:
 
     def _erased(self, root: RootRef) -> bool:
         """Nothing of the reserved folder and the sentinel is left at the top of the root."""
-        for name in (RESERVED_DIR, SENTINEL_FILE):
+        for name in (RESERVED_DIR, ERASING_DIR, SENTINEL_FILE):
             try:
                 if self._fsops.observe(f"{root.path}/{name}", host=True) is not None:
                     return False
@@ -610,7 +686,11 @@ class FullDetacher:
         return True
 
     def _partly_erased(self, root: RootRef) -> bool:
-        """At least one of the reserved folder and the sentinel is gone."""
+        """At least one of the reserved folder and the sentinel is gone, or the reserved folder
+        is half emptied (renamed to its erasing name)."""
+        with contextlib.suppress(FsopsError):
+            if self._fsops.observe(f"{root.path}/{ERASING_DIR}", host=True) is not None:
+                return True
         for name in (RESERVED_DIR, SENTINEL_FILE):
             try:
                 if self._fsops.observe(f"{root.path}/{name}", host=True) is None:

@@ -38,11 +38,11 @@ def _clean_bins(d: DetachEnv) -> None:
     shutil.rmtree(d.env.lib.manga / ".shelfhold", ignore_errors=True)
 
 
-def _detach(d: DetachEnv) -> Any:
+def _detach(d: DetachEnv, **more: Any) -> Any:
     target = d.env.target_id
     return d.detacher.apply(
         target, principal=ADMIN, typed=full_detach_phrase(target), client=d.wired.client,
-        revoker=d.revoker, credential="the account password",
+        revoker=d.revoker, credential="the account password", **more,
     )  # fmt: skip
 
 
@@ -97,6 +97,6 @@ def test_a_key_already_revoked_by_hand_does_not_block_the_detachment(d: DetachEn
     flag to get past it."""
     _clean_bins(d)
     d.wired.fake.auth_keys = [k for k in d.wired.fake.auth_keys if k["key"] != API_KEY]
-    first = _detach(d)
-    second = _detach(d)
+    first = _detach(d, key_gone=True, account=d.account_session())  # the flag the author added
+    second = first if first.complete else _detach(d, key_gone=True, account=d.account_session())
     assert first.complete or second.complete, [line.code for line in second.leftovers]

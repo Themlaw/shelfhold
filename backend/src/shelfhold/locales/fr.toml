@@ -1821,7 +1821,7 @@ cause = "La phrase de confirmation manque ou diffère, une opération sur ces fi
 
 [errors."detach.refused"]
 title = "Le détachement est refusé : rien n'a été modifié."
-action = "Lisez la raison : la phrase n'a pas été tapée telle qu'affichée, une opération sur fichiers est encore ouverte sous la racine, un export ou un scan tient une destination (réessayez après), le dossier réservé contient un livre supprimé dans sa corbeille ou une archive qui attend son export (--discard-hidden-data si vous en êtes sûr), son journal d'effacement partirait (--discard-tombstone-journal), ou l'effacement a déjà commencé (relancez la même commande pour finir)."
+action = "Lisez la raison : la phrase n'a pas été tapée telle qu'affichée, une opération sur fichiers est encore ouverte sous la racine, un export ou un scan tient une destination (réessayez après), le dossier réservé contient un livre supprimé dans sa corbeille ou une archive qui attend son export (--discard-hidden-data si vous en êtes sûr), son journal d'effacement partirait (--discard-tombstone-journal), l'option --key-gone sans --password-file, ou l'effacement a déjà commencé (relancez la même commande pour finir)."
 cause = "La phrase de confirmation manque ou diffère, une opération est encore ouverte, une destination est occupée, ou le dossier réservé contient des données à vous que le détachement détruirait."
 
 [errors."tombstone.journal_truncated"]
@@ -2176,8 +2176,13 @@ leftover_kavita_accounts = "Laissé en place : les comptes Kavita ({count} dédi
 leftover_store = "Laissé en place : /store contient {count} fichiers."
 leftover_root_shared = "Laissé en place : {count, plural, one {# racine utilisée par une autre cible garde son dossier réservé} other {# racines utilisées par une autre cible gardent leur dossier réservé}}."
 leftover_hidden_not_erased = "PAS fait : le dossier réservé de {count, plural, one {# racine} other {# racines}} n'a pas pu être effacé."
-leftover_settings_not_restored = "PAS fait : les réglages Kavita de {count, plural, one {# bibliothèque} other {# bibliothèques}} n'ont pas pu être restaurés."
-leftover_key_not_revoked = "PAS fait : la clé dédiée n'a pas été révoquée (donnez --password-file)."
+leftover_settings_not_restored = "PAS fait : les réglages Kavita de {count, plural, one {# bibliothèque} other {# bibliothèques}} n'ont pas pu être restaurés. Si la clé dédiée a été supprimée à la main dans Kavita, relancez avec --key-gone et --password-file."
+leftover_key_not_revoked = "PAS fait : la clé dédiée n'a pas été révoquée (donnez --password-file). Si elle a été supprimée à la main dans Kavita, relancez avec --key-gone."
+leftover_key_gone = "La clé dédiée n'existait plus dans Kavita (supprimée à la main) : rien à révoquer ; les réglages ont été rendus par le compte administrateur."
+leftover_key_id_reused = "Kavita a donné l'identifiant de la clé dédiée à une autre clé du compte : elle est laissée en place, la clé dédiée est déjà partie."
+leftover_hidden_pattern_kept = "Le motif qui cache .shelfhold/ reste sur {count, plural, one {# bibliothèque} other {# bibliothèques}} : un dossier réservé reste dans leurs dossiers (racine partagée ou bibliothèque de Shelfhold), Kavita indexerait sinon la corbeille et les reçus."
+key_gone = "Clé dédiée absente de Kavita (--key-gone) : rien à révoquer."
+key_gone_help = "La clé dédiée n'existe plus (supprimée à la main, Kavita répond 401) : saute la révocation et rend les réglages par le compte administrateur (avec --password-file). Une clé encore présente est révoquée comme d'habitude."
 leftover_library_gone = "{count, plural, one {# bibliothèque n'existe} other {# bibliothèques n'existent}} plus dans Kavita : aucun réglage à rendre."
 leftover_tombstone_journal_erased = "Le journal d'effacement (pierres tombales) de {count, plural, one {# racine a été effacé} other {# racines ont été effacés}} avec le dossier réservé."
 leftover_library_type_changed = "{count, plural, one {# bibliothèque a un autre type} other {# bibliothèques ont un autre type}} qu'avant l'adoption : non modifié."

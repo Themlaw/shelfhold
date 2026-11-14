@@ -29,6 +29,7 @@ def register(commands: argparse._SubParsersAction[argparse.ArgumentParser]) -> N
     detach.add_argument(
         "--discard-tombstone-journal", action="store_true", help=t("detach.discard_tombstone_help")
     )
+    detach.add_argument("--key-gone", action="store_true", help=t("detach.key_gone_help"))
     detach.add_argument("--give-up", action="store_true", help=t("detach.give_up_help"))
     detach.add_argument("--shelf", default=None, help=t("detach.shelf_help"))
     detach.add_argument("--series", default=None, help=t("detach.series_help"))

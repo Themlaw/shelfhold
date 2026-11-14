@@ -9,6 +9,7 @@ password is sent once, in a JSON body, to the declared address only.
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
@@ -26,6 +27,15 @@ from shelfhold.infrastructure.fetcher import FetchError, GuardedFetcher
 
 SERVER_INFO = "/api/Server/server-info-slim"
 KEY_LENGTH = 32  # RotateAuthKeyRequestDto: 8 to 32
+
+
+def key_digest(key: str) -> str:
+    """What is written about a key instead of its value: the SHA-256 of it."""
+    return hashlib.sha256(key.encode()).hexdigest()
+
+
+class _KeyIdReused(Exception):
+    """The identifier on record now names a key whose value is not the sealed one."""
 
 
 def _json(body: bytes) -> dict[str, Any]:
@@ -66,29 +76,44 @@ class HttpKavitaKeyExchange:
         except FetchError:
             raise TargetExchangeFailed("Kavita cannot be reached at this address") from None
 
-    def find_key_id(self, *, url: str, username: str, password: str, key: str) -> str | None:
+    def find_key_id(
+        self, *, url: str, username: str, password: str, key: str
+    ) -> tuple[str, str] | None:
         try:
             fetcher = self._fetchers(url)
             found = asyncio.run(self._keys(fetcher, url.rstrip("/"), username, password, None))
         except FetchError:
             raise TargetExchangeFailed("Kavita cannot be reached at this address") from None
         row = next((i for i in found if i.get("key") == key), None)
-        return None if row is None else str(row["id"])
+        return None if row is None else (str(row["id"]), key_digest(key))
 
-    def revoke_key_id(self, *, url: str, username: str, password: str, key_id: str) -> bool:
+    def revoke_key_id(
+        self, *, url: str, username: str, password: str, key_id: str, key_digest: str | None = None
+    ) -> str:
         try:
             fetcher = self._fetchers(url)
-            asked = asyncio.run(self._keys(fetcher, url.rstrip("/"), username, password, key_id))
+            asked = asyncio.run(
+                self._keys(fetcher, url.rstrip("/"), username, password, key_id, key_digest)
+            )
         except FetchError:
             raise TargetExchangeFailed("Kavita cannot be reached at this address") from None
-        return asked == []
+        except _KeyIdReused:
+            return "reused"
+        return "revoked" if asked == [] else "failed"
 
     async def _keys(
-        self, fetcher: GuardedFetcher, base: str, username: str, password: str, drop: str | None
+        self,
+        fetcher: GuardedFetcher,
+        base: str,
+        username: str,
+        password: str,
+        drop: str | None,
+        digest: str | None = None,
     ) -> list[dict[str, Any]]:
         """Log in and list the account's keys; with `drop`, delete that identifier and only it
-        (nothing is deleted when it is not in the list). Returns the rows (empty after a
-        deletion that went through, or when the identifier was already gone)."""
+        (nothing is deleted when it is not in the list, or when `digest` is given and the key of
+        that identifier no longer has this digest). Returns the rows (empty after a deletion that went
+        through, or when the identifier was already gone)."""
         try:
             login = await fetcher.post(
                 base + LOGIN.path, json={"username": username, "password": password}
@@ -107,8 +132,11 @@ class HttpKavitaKeyExchange:
             rows = [i for i in items if isinstance(i, dict) and isinstance(i.get("id"), int)]
             if drop is None:
                 return rows
-            if not any(str(i["id"]) == drop for i in rows):
+            row = next((i for i in rows if str(i["id"]) == drop), None)
+            if row is None:
                 return []  # already gone
+            if digest is not None and key_digest(str(row.get("key", ""))) != digest:
+                raise _KeyIdReused  # the identifier now names another key: it is not ours to delete
             gone = await fetcher.delete(
                 base + DELETE_AUTH_KEY.path, headers=auth, params={"authKeyId": int(drop)}
             )

@@ -1197,6 +1197,7 @@
   "shelfhold.export.public",
   "shelfhold.export.targets",
   "shelfhold.export.targets.kavita",
+  "shelfhold.export.targets.kavita.account_session",
   "shelfhold.export.targets.kavita.accounts_audit",
   "shelfhold.export.targets.kavita.adopt",
   "shelfhold.export.targets.kavita.audit",

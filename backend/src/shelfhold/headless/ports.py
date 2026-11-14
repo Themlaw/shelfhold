@@ -34,13 +34,19 @@ class KavitaKeyExchange(Protocol):
     def revoke(self, *, url: str, username: str, password: str, key: str, key_name: str) -> bool:
         """Delete the old key at Kavita (found by value, else by name); False when not found."""
 
-    def find_key_id(self, *, url: str, username: str, password: str, key: str) -> str | None:
-        """The identifier of the key whose **value** is `key` (never found by name); None when
-        Kavita has no such key or refuses the login."""
+    def find_key_id(
+        self, *, url: str, username: str, password: str, key: str
+    ) -> tuple[str, str] | None:
+        """`(identifier, sha256 of the value)` of the key whose **value** is `key` (never found by
+        name); None when the login was accepted and Kavita has no such key. A refused login or an
+        unreachable Kavita raises `TargetExchangeFailed`: that is not "absent"."""
 
-    def revoke_key_id(self, *, url: str, username: str, password: str, key_id: str) -> bool:
-        """Delete the key with this identifier and no other. True when Kavita no longer has it:
-        deleted now, or already gone (the identifier was recorded before the first try)."""
+    def revoke_key_id(
+        self, *, url: str, username: str, password: str, key_id: str, key_digest: str | None = None
+    ) -> str:
+        """Delete the key with this identifier and no other: `revoked` (deleted now, or already
+        gone: the identifier was recorded before the first try), `reused` (the identifier now
+        names a key whose digest is not `key_digest`: left alone) or `failed`."""
 
 
 class SuwayomiProbe(Protocol):

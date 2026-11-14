@@ -41,10 +41,14 @@ Dans cet ordre, et chaque pas peut être refait si une coupure l'interrompt (rel
    moins celui de Shelfhold* (sauf s'il y était déjà avant l'adoption), et non la liste d'avant l'adoption recopiée
    telle quelle ; un motif que vous avez ajouté depuis reste, un motif que vous avez retiré depuis n'est pas remis.
    Quand plusieurs destinations ont été adoptées sur la même bibliothèque, les motifs d'avant de chacune sont
-   respectés ;
+   respectés. **Le motif qui cache `.shelfhold/` reste** sur toute bibliothèque dont un dossier contient un
+   `.shelfhold/` laissé en place (racine utilisée par une autre cible, ou bibliothèque de Shelfhold) : sans lui,
+   Kavita indexerait la corbeille et les archives reçues. Le rapport le dit (`hidden_pattern_kept`) ;
 3. la **clé dédiée est révoquée** dans Kavita **par son identifiant**, noté dans le journal avant la révocation (jamais
    son nom : une autre clé du même compte n'est jamais touchée). Si une coupure survient juste après, la même commande
-   termine : une clé absente dont l'identifiant est noté compte comme révoquée ;
+   termine : une clé absente dont l'identifiant est noté compte comme révoquée, et un identifiant que Kavita a
+   entre-temps donné à une autre clé (valeur différente de celle notée, par empreinte) est laissé en place et signalé
+   (`key_id_reused`) ;
 4. Shelfhold **oublie** son manifeste et la cible. **Aucun fichier exporté n'est touché** : mêmes octets, mêmes noms.
 
 Un **rapport final** liste ce qui reste en place, à vous d'en décider : les téléchargements restés dans Suwayomi, les
@@ -62,6 +66,12 @@ Ce qui l'arrête, sans rien changer :
 - la phrase n'est pas celle affichée.
 
 Si Shelfhold suit encore des séries, lancez d'abord `shelfhold detach --restore-upstream` (étape 1).
+
+**La clé dédiée n'existe plus** (supprimée à la main dans Kavita, réponse 401) : sans option, le détachement ne
+finit pas et le message propose `--key-gone`. Avec `--key-gone --password-file <fichier>`, la révocation est sautée
+(le rapport dit `key_gone`) et les réglages de la bibliothèque sont rendus par une connexion du compte administrateur
+au lieu de la clé morte. Si le compte voit encore la clé, elle est révoquée comme d'habitude : l'option ne laisse
+jamais une clé vivante. Sans mot de passe, l'option est refusée.
 
 Un détachement **interrompu** (coupure de courant, arrêt forcé) : relancez la même commande pour le finir. Avant que
 l'effacement du dossier réservé commence, `shelfhold detach --full --target <id> --give-up` l'abandonne proprement et

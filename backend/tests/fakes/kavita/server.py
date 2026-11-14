@@ -18,6 +18,7 @@ import base64
 import binascii
 import copy
 import json
+import secrets
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -39,6 +40,7 @@ OTHER_KEY = "synthetic-admin-key-0002"  # another key of the same account
 
 # (method, lower-cased path) -> needs an administrator. Written here, not imported.
 ALLOWED: dict[tuple[str, str], bool] = {
+    ("POST", "/api/account/login"): False,
     ("GET", "/api/server/server-info-slim"): False,
     ("GET", "/api/plugin/authkey-expires"): False,
     ("GET", "/api/plugin/parse"): False,
@@ -170,8 +172,23 @@ class FakeKavita:
         ]
     )
 
+    account: tuple[str, str] = ("admin", "the account password")  # what the login accepts
+    sessions: set[str] = field(default_factory=set)  # the bearer tokens a login handed out
+
     def key_is_valid(self, key: object) -> bool:
         return any(k["key"] == key for k in self.auth_keys)
+
+    def _authenticated(self, headers: dict[str, str]) -> bool:
+        bearer = headers.get("authorization", "").removeprefix("Bearer ")
+        return self.key_is_valid(headers.get("x-api-key")) or bearer in self.sessions
+
+    def _login(self, recorded: RecordedRequest) -> httpx2.Response:
+        body = json.loads(recorded.body or b"{}")
+        if (body.get("username"), body.get("password")) != self.account:
+            return self._text(401, "Unauthorized")
+        session = secrets.token_hex(8)
+        self.sessions.add(session)
+        return self._json({"username": self.account[0], "token": session})
 
     # -- scenario helpers -------------------------------------------------------------------
     def demote(self) -> None:
@@ -300,7 +317,9 @@ class FakeKavita:
             return self._json({"title": "Not Found", "status": 404}, 404)
         if route in self.missing:
             return self._text(404, "Not Found")
-        if not self.key_is_valid(recorded.headers.get("x-api-key")):
+        if route[1] == "/api/account/login":
+            return self._login(recorded)
+        if not self._authenticated(recorded.headers):
             return self._text(401, "Unauthorized")
         if ALLOWED[route] and not self.is_admin:
             return self._text(403, "Forbidden")

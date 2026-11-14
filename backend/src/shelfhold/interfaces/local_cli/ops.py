@@ -138,7 +138,7 @@ def _full_detach(ops: OpsServices, by: Principal, p: Params) -> object:
         credential=_optional(p, "credential"),
         discard_hidden_data=_flag(p, "discard_hidden_data"),
         discard_tombstone_journal=_flag(p, "discard_tombstone_journal"),
-        give_up=_flag(p, "give_up"), principal=by,
+        key_gone=_flag(p, "key_gone"), give_up=_flag(p, "give_up"), principal=by,
     )  # fmt: skip
 
 
