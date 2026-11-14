@@ -142,6 +142,14 @@ _OTHER: Mapping[str, str] = MappingProxyType(
         # intention per root, after the reserved action `detach.full` and the typed phrase.
         f"{_EXPORT_APP}/detach.py::FullDetacher._record_erasure": "detach.full",
         f"{_EXPORT_APP}/detach.py::FullDetacher._record_revocation": "detach.full",
+        # The two doors of the screen (L45): the full detachment (reserved: a fresh admin session,
+        # never a key) and its preview, named after it and deleting nothing
+        "shelfhold/interfaces/http_api/destinations.py::build_destinations_router.detach": (
+            "detach.full"
+        ),
+        "shelfhold/interfaces/http_api/destinations.py::build_destinations_router.detach_preview": (
+            "detach.full"
+        ),
         f"{_EXPORT_APP}/remove_destination.py::RemoveDestination._remove_emptied": (
             "destination.remove_all"
         ),
