@@ -112,8 +112,8 @@ class HttpKavitaKeyExchange:
     ) -> list[dict[str, Any]]:
         """Log in and list the account's keys; with `drop`, delete that identifier and only it
         (nothing is deleted when it is not in the list, or when `digest` is given and the key of
-        that identifier no longer has this digest). Returns the rows (empty after a deletion that went
-        through, or when the identifier was already gone)."""
+        that identifier no longer has this digest). Returns the rows (empty after a deletion that
+        went through, or when the identifier was already gone)."""
         try:
             login = await fetcher.post(
                 base + LOGIN.path, json={"username": username, "password": password}
