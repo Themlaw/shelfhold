@@ -255,9 +255,11 @@ def test_nightly_real_kavita_epub_series_age_lock(kavita: RealKavita) -> None:
         else:
             assert not age.locked  # the series left without an age stays "unknown"
 
-    kids = kavita.restricted_account("kid", [library], age_rating=5, include_unknowns=False)
+    kids = kavita.restricted_account("book-kid", [library], age_rating=5, include_unknowns=False)
     assert kavita.visible_to(kids) == {"Book Kids"}
-    tolerant = kavita.restricted_account("tolerant", [library], age_rating=5, include_unknowns=True)
+    tolerant = kavita.restricted_account(
+        "book-tolerant", [library], age_rating=5, include_unknowns=True
+    )
     assert kavita.visible_to(tolerant) == {"Book Kids", "Book Unrated"}
-    free = kavita.restricted_account("free", [library], age_rating=-1, include_unknowns=True)
+    free = kavita.restricted_account("book-free", [library], age_rating=-1, include_unknowns=True)
     assert kavita.visible_to(free) == {"Book Kids", "Book Adult", "Book Unrated"}
