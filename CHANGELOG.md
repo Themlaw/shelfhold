@@ -6,11 +6,11 @@ Format : [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/). Versionnement
 
 1.0.0 regroupe les jalons M1b, M2 et M3 ; aucune version 0.3 à 0.5 n'a été publiée ; on passe de 0.2.0 à 1.0.0.
 
-Mise à jour depuis 0.2.0 : les migrations de base de données de 0.2.0 à 1.0.0 s'appliquent seules au démarrage ; elles ne sont pas réversibles automatiquement ; faites une sauvegarde avant (voir docs/admin/sauvegarde.md).
+Mise à jour depuis 0.2.0 : les migrations 0013 à 0062 (détail par jalon ci-dessous) s'appliquent au démarrage et ne sont pas réversibles automatiquement. `shelfhold migrate` sauvegarde la base avant de migrer (`/data/backups/pre-migration`) ; un retour à la 0.2.0 passe par cette sauvegarde et par `shelfhold reconcile --adopt-after-restore` (`docs/admin/retour-arriere.md`, `docs/admin/sauvegarde.md`). Version minimale de Kavita : 0.9.1.
 
 ### M3
 
-Migration : oui (de 0046 à 0062 : 0046, 0047, 0053, 0054, 0055, 0056, 0057, 0059, 0060 et 0062), réversible : non automatiquement. `shelfhold migrate` sauvegarde la base avant de migrer (`/data/backups/pre-migration`) ; un retour à la 0.4.0 passe par cette sauvegarde (`docs/admin/retour-arriere.md`). Version minimale de Kavita : 0.9.1, inchangée.
+Migration : oui (de 0046 à 0062 : 0046, 0047, 0053, 0054, 0055, 0056, 0057, 0059, 0060 et 0062), réversible : non automatiquement. `shelfhold migrate` sauvegarde la base avant de migrer (`/data/backups/pre-migration`) ; un retour à la 0.2.0 passe par cette sauvegarde (`docs/admin/retour-arriere.md`). Version minimale de Kavita : 0.9.1, inchangée.
 
 Cette section est un brouillon : le mainteneur la date et la fige au moment du tag.
 
@@ -27,7 +27,7 @@ Migrations de M3 :
 - 0060 : `tombstone_lost_kid.actor_id` peut prendre un jeton opaque `deleted:` (suppression d'utilisateur).
 - 0062 : index partiel sur `metadata_field.value` pour les couvertures.
 
-### Ajouté
+#### Ajouté
 
 - **Profils du foyer et contrôle parental** (EF-USR-001, EF-USR-005, EF-USR-006, EF-USR-016, EF-USR-018, EF-BIB-055, ENF-SEC-008, ENF-SEC-010) : profils membre et enfant avec plafond d'âge, droit de classer, politique par source (`shelfhold profile add|list|set|remove`), visibilité d'un profil (privé ou partagé au foyer), sources marquées « famille », recherche famille pour les enfants (forme réduite, sources famille seules, résultats non classés masqués, demande possible). Attribution d'un profil enfant à un compte Kavita dédié, audit en lecture seule des comptes Kavita contre le plafond d'âge (`shelfhold profile map-kavita`).
 - **Identité et sessions** (EF-USR-002, EF-USR-013, EF-USR-024, ENF-SEC-008) : forward-auth optionnel (désactivé par défaut, CIDR de confiance, secret en temps constant), limitation de débit des routes publiques par adresse réelle, liste et révocation de sessions, réinitialisation du mot de passe par l'administrateur, trousseau de récupération imprimable sans secret, suppression et export d'un utilisateur (cascade, export JSON, audit pseudonymisé), alias de source et migration d'identité en masse avec aperçu à blanc (`shelfhold migrate-ids`).
@@ -45,18 +45,18 @@ Migrations de M3 :
 - **Chaîne d'approvisionnement** (ENF-SEC-007 palier M3, ENF-SEC-011, ENF-LEG-011, ENF-DOC-001) : images signées avec cosign (sans clé) sur GHCR et, si le secret `CODEBERG_TOKEN` existe, sur un second registre (`vars.SECOND_REGISTRY`, `codeberg.org/<owner>` par défaut) ; sans le jeton, la CI le dit dans son résumé et réussit ; vérification dans `docs/admin/verifier-les-images.md` ; OpenSSF Scorecard hebdomadaire ; site de documentation Zensical (construit en mode strict, publié sur GitHub Pages à chaque release) ; `SECURITY.md` avec délais (accusé ≤ 7 jours, correctif visé ≤ 90 jours au mieux), versions `X.Y` courante et précédente et avis publiés. ENF-GOV-004 reste ouverte.
 - **Variables** : `SHELFHOLD_AUTH_FORWARD_ENABLED`, `SHELFHOLD_AUTH_FORWARD_SECRET`, `SHELFHOLD_HTTP_TRUSTED_PROXIES`, `SHELFHOLD_HTTP_PUBLIC_RATE_PER_MINUTE`, `SHELFHOLD_HTTP_DEVICE_RATE_PER_MINUTE`, `SHELFHOLD_STREAM_MAX_PER_PROFILE` (`docs/reference/config.md`).
 
-### Modifié
+#### Modifié
 
 - La recherche et l'activité filtrent par profil à la requête plutôt qu'après coup.
 
-### Corrigé
+#### Corrigé
 
 - Limitation des fils d'exécution pour le décodage des vignettes.
 - Le sondage de santé ne bloque plus les tâches qui écrivent.
 - Correction des clés anglaises de la migration d'identité.
 - Divers correctifs issus des relectures adversariales (génération, export, bibliothèque).
 
-### Sécurité
+#### Sécurité
 
 - Forward-auth désactivé par défaut, secret comparé en temps constant, CIDR de confiance.
 - Limitation de débit des routes publiques par adresse réelle (proxy de confiance).
@@ -65,7 +65,7 @@ Migrations de M3 :
 
 ### M2
 
-Migration : oui (de 0020 à 0040 : 0020, 0021, 0025, 0026, 0027, 0028, 0035, 0037 et 0040 ; les 0013 à 0017 sont celles de la 0.3.0), réversible : non automatiquement. `shelfhold migrate` sauvegarde la base avant de migrer (`/data/backups/pre-migration`) ; un retour à la 0.3.0 passe par cette sauvegarde (`docs/admin/retour-arriere.md`). Les migrations 0020 et suivantes sont publiées avec ce tag (`tools/published-migrations.toml`) : à partir de là, une version corrective n'en modifie ni n'en ajoute aucune (ENF-OPS-002). Version minimale de Kavita : 0.9.1, inchangée.
+Migration : oui (de 0020 à 0040 : 0020, 0021, 0025, 0026, 0027, 0028, 0035, 0037 et 0040 ; les 0013 à 0017 sont celles de M1b), réversible : non automatiquement. `shelfhold migrate` sauvegarde la base avant de migrer (`/data/backups/pre-migration`) ; un retour à la 0.2.0 passe par cette sauvegarde (`docs/admin/retour-arriere.md`). Les migrations 0020 et suivantes sont publiées avec le tag v1.0.0 (`tools/published-migrations.toml`) : à partir de là, une version corrective n'en modifie ni n'en ajoute aucune (ENF-OPS-002). Version minimale de Kavita : 0.9.1, inchangée.
 
 Cette section est un brouillon : le mainteneur la date et la fige au moment du tag.
 
@@ -81,7 +81,7 @@ Migrations de M2 :
 - 0037 : `export_record.spine_count` (garde des révisions suspectes).
 - 0040 : `source_binding.last_refreshed_at` (dernière demande de rafraîchissement, pour la cadence adaptative).
 
-### Ajouté
+#### Ajouté
 
 - **Sources natives** (EF-SRC-006, EF-SRC-007, EF-SRC-011, EF-SRC-012, ENF-LEG-003) : source OPDS générique (1.2 et 2.0, OpenSearch, authentification Basic ou clé d'API, règle anti-écho), Project Gutenberg (libre de droits aux États-Unis : catalogue officiel et miroir d'une liste blanche figée, jamais le site), Wikisource (un EPUB par livre, attribution CC BY-SA construite et copiée dans l'EPUB), Standard Ebooks (libre de droits aux États-Unis : une adresse par livre, flux OPDS réservé aux patrons), dossier d'import (CBZ, EPUB, PDF). Chaque source déclare son `terms_url` et ses limites de débit ; voir `docs/admin/sources.md`.
 - **Acquisition ponctuelle** : `shelfhold source search`, `source filters`, `source acquire`, `shelfhold acquire <adresse>` (EF-SRC-015, EF-SRC-004).
@@ -100,13 +100,13 @@ Migrations de M2 :
 - **Documentation** : `docs/admin/` complété (sources, dossier d'import, lncrawl, métadonnées, domaine public, fichiers tatoués, neutraliseur, révisions, suivi multi-sources, diagnostic), `docs/plugins/source.md` et `metadata-provider.md` avec la liste d'admission (ENF-LEG-003), ADR-0021, ADR-0027, ADR-0035 et ADR-0047 amendées, `docs/decisions/M2.md`.
 - Variables : `SHELFHOLD_IMPORT_DIR`, `SHELFHOLD_REVISION_MIN_PAGE_RATIO`, `SHELFHOLD_FOLLOW_FALLBACK_RETURN`, `SHELFHOLD_FOLLOW_CHECK_MIN_S`, `_MAX_S`, `_FINISHED_S`, `SHELFHOLD_METADATA_CONTACT` (`docs/reference/config.md`).
 
-### Modifié
+#### Modifié
 
 - Le compose d'exemple passe à l'image `0.4` et documente le dossier d'import ; `/store` est recommandé dès qu'une source non fiable est active (sans lui, l'original d'un EPUB non fiable n'est gardé nulle part).
 - **EF-EXP-033 lu contre la définition de fini de 03** (ADR-0027, D1) : aucun âge dans l'OPF d'un EPUB ; l'âge de série est poussé verrouillé par l'API Kavita et n'est visible que dans la bibliothèque adulte.
 - Un EPUB `untrusted` n'atteint plus jamais `/library` sous sa forme d'origine : seul son dérivé neutralisé y est rangé.
 
-### Sécurité
+#### Sécurité
 
 - Un EPUB ou un CBZ reçu d'une source native ou du dossier d'import est traité comme non fiable : neutraliseur avant tout export, entrées SVG rastérisées ou refusées, PDF jamais exporté tant qu'il n'est pas déclaré d'éditeur.
 - Aucun secret de source n'est relu par l'API ni la CLI ; il est masqué des journaux, du cache HTTP, des références et du paquet de diagnostic.
@@ -134,7 +134,7 @@ Migrations de M2 que l'image taggée depuis `main` applique aussi (voir « Avant
 - 0035 : une seule demande ouverte par Unité.
 - 0037 : `export_record.spine_count` (garde des révisions suspectes).
 
-### Ajouté
+#### Ajouté
 
 - **Rôles, droits et passkeys** (EF-USR-005, EF-USR-016, EF-USR-022, EF-USR-024, EF-USR-025, ENF-SEC-010) : table de vérité exhaustive action x rôle x crédential avec colonne de fraîcheur (`shelfhold access-table`), droit « classer », visibilité de l'activité (un adulte compte comme parent), démasquage audité. Passkeys WebAuthn : connexion sans mot de passe, ré-authentification en un geste, révocation, avertissement si le domaine change ; HTTPS ou `localhost` seulement.
 - **Contrôle parental** (EF-BIB-036, EF-BIB-037, EF-BIB-055, EF-EXP-002, EF-EXP-046, EF-EXP-047, EF-EXP-048, EF-EXP-050, EF-EXP-055, EF-USR-015) : étagères famille (plafond sous 18+) sur une bibliothèque Kavita dédiée, retenue des Œuvres non classées, âge effectif (maximum des Éditions, âge d'Édition explicite), `shelfhold rate`, écran « À classer » et vue « À ranger », retrait par plan (`shelfhold shelf withdraw`, jamais automatique), adoption d'une bibliothèque lue par des enfants, âge poussé vers Kavita sur la série et verrouillé (EF-EXP-040).
@@ -152,17 +152,8 @@ Migrations de M2 que l'image taggée depuis `main` applique aussi (voir « Avant
 - **Documentation d'administration** : `docs/admin/` complété (rôles, famille, « À classer », Suwayomi multi-comptes, purge, copie conservée, retour arrière, restauration), `docs/decisions/M1b.md`.
 - Variables : `SHELFHOLD_BACKUP_DIR`, `SHELFHOLD_BACKUP_PASSPHRASE_FILE`, `SHELFHOLD_BACKUP_RETENTION`, `SHELFHOLD_BACKUP_STALE_HOURS`, `SHELFHOLD_WAKE_URL`, `_WAKE_SUWAYOMI`, `_WAKE_KAVITA`, `_WAKE_TIMEOUT_S`, `_WAKE_SESSION_S`, `_WAKE_TOKEN`, `SHELFHOLD_MAINTENANCE_WINDOW_START`, `_END`, `SHELFHOLD_TIMEZONE`, `SHELFHOLD_RETENTION_EVENTS_DAYS`, `SHELFHOLD_RETENTION_AUDIT_DAYS` (`docs/reference/config.md`).
 
-### Avant-première M2
 
-Le code de M2 déjà fusionné sur `main` est joignable dans l'image de la 0.3.0. **Ces fonctions n'ont pas encore eu leur revue de jalon** : considérez-les comme une avant-première, sans garantie de stabilité.
-
-- Sources natives : Project Gutenberg (catalogue officiel et miroir, jamais le site), ajoutable par `shelfhold source add`. (La source OPDS n'est pas fusionnée : elle ne figure ici que si elle l'est au moment du tag.)
-- Suivi multi-sources (liaisons classées, une demande par Unité et par cycle, repli notifié), filtres de téléchargement avant la demande, détection des trous de numérotation.
-- Dossier d'import (EPUB non fiables neutralisés, PDF protégés refusés).
-- Purge de portée `work` (`shelfhold purge --work`, avec pierres tombales d'Œuvre).
-- Métadonnées (OpenLibrary), droit d'auteur par juridiction, révisions en attente, remplacement au même chemin, politique de volumes des romans.
-
-### Modifié
+#### Modifié
 
 - **`shelfhold shelf create`** accepte tous les plafonds de l'échelle (`0`, `10+`, `12+`, `13+`, `16+`, `18+`, `X`) ; sous 18+, l'étagère est une étagère famille.
 - **Restauration** : toutes les sessions et clés d'API sont révoquées ; la connexion par passkey est refusée tant que `restore acknowledge` n'a pas été fait.
@@ -171,7 +162,7 @@ Le code de M2 déjà fusionné sur `main` est joignable dans l'image de la 0.3.0
 - Le réglage `shelf.upstream_purge` du plan est `shelf.purge_upstream_after_export` (désactivé par défaut).
 - Code réservé aux tests retiré de `src` (environ 255 lignes) ; les méthodes d'`ExportTarget` propres à Kavita sont dépréciées (SDK 1.1).
 
-### Corrigé
+#### Corrigé
 
 - `shelfhold jobs run` d'une tâche à fenêtre ne s'exécutait jamais (la fenêtre stockée était celle de la nuit suivante).
 - Une purge ne laisse plus de titre dans les pages libres de la base ni dans son journal (`secure_delete`, point de contrôle).
@@ -179,16 +170,16 @@ Le code de M2 déjà fusionné sur `main` est joignable dans l'image de la 0.3.0
 - `rate` d'une Œuvre ne règle plus les suggestions d'âge plus élevées d'une Édition (migration de données 0025 : les suggestions déjà réglées sont rouvertes).
 - Course entre le renouvellement du bail et la vérification de la session d'écriture.
 
-### Sécurité
+#### Sécurité
 
 - Classer une Œuvre et enregistrer une passkey exigent une authentification de moins de 900 s dans tous les profils (décision du porteur du 2026-11-11).
 - Les actions réservées sont refusées à toute clé d'API et à tout jeton, portée `admin` comprise ; la table complète est publiée par `shelfhold access-table`.
 - Une restauration ne rend plus valides une session fermée, une clé révoquée ni un mot de passe réinitialisé depuis la sauvegarde.
 - Les plugins tiers ne peuvent plus être chargés sans l'accord explicite et vérifié de l'administrateur.
 
-### Connu
+#### Connu
 
-- **Le second registre d'images et le miroir du dépôt sont à venir** (ENF-GOV-004) : reportés en M2 (accord du porteur 2026-11-11). La 0.3.0 est publiée sur GHCR seulement.
+- **Le second registre d'images et le miroir du dépôt sont à venir** (ENF-GOV-004) : reportés en M4 (accord du porteur 2026-11-14). La 1.0.0 est publiée sur GHCR seulement.
 - Sur le Suwayomi épinglé, `excludeUnreadChapters` et `excludeNotStarted` sont activés par défaut : `source add` est refusé tant qu'ils ne sont pas désactivés (`docs/admin/suwayomi-multi-comptes.md`).
 - Une étagère en mode conservation créée par `POST /api/v1/shelves` n'est pas liée à une bibliothèque Kavita : la lier par la CLI.
 - Certains chemins du journal structuré (`fsops.write_atomic`, `export.op_done`) contiennent encore le titre.
