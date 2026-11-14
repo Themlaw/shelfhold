@@ -19,6 +19,7 @@ from shelfhold.identity.public import Credential, Principal
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import export
 from tests.export_env import ExportEnv, export_env
+from tests.fakes.kavita import API_KEY, FakeKavita
 from tests.kavita_export_env import Wired, wire
 from tests.purge_env import ADMIN, KEY, READER, STALE
 
@@ -26,7 +27,7 @@ CHILD = Principal(
     "01J00000000000000000000KID", "kid", "child", Credential.SESSION,
     session_id="01J0000000000000000000SES1",
 )  # fmt: skip
-PRE_ADOPTION = {"library_type": "manga", "exclude_patterns": ["*.tmp"]}
+PRE_ADOPTION = {"library_type": "Manga", "exclude_patterns": ["*.tmp"]}  # as adopt.py writes it
 OTHERS = (KEY, STALE, READER, CHILD)  # nobody of these may remove or detach anything
 
 
@@ -39,20 +40,38 @@ def fresh_admin(env: ExportEnv) -> Principal:
 
 @dataclass
 class Revoker:
-    """What the Kavita account's door does: it records the order of the deeds."""
+    """What the Kavita account's door does, against the simulated server: it records the order of
+    the deeds, names the key by its identifier and deletes that identifier and no other."""
 
+    fake: FakeKavita | None = None
     calls: list[tuple[str, str | None]] = field(default_factory=list)
+    ids: list[str] = field(default_factory=list)  # the identifiers it was asked to revoke
     answer: bool = True
     raises: BaseException | None = None
     seen_before: Callable[[], Any] | None = None  # looked at when the key is asked to go
 
-    def revoke(self, target_id: str, *, credential: str | None) -> bool:
+    def key_id(self, target_id: str, *, credential: str | None) -> str | None:
+        if self.fake is None:
+            return "1"
+        row = next((k for k in self.fake.auth_keys if k["key"] == API_KEY), None)
+        return None if row is None else str(row["id"])
+
+    def revoke_id(self, target_id: str, *, credential: str | None, key_id: str) -> bool:
         if self.seen_before is not None:
             self.seen_before()
         if self.raises is not None:
             raise self.raises
         self.calls.append((target_id, credential))
-        return self.answer
+        self.ids.append(key_id)
+        if not self.answer:
+            return False
+        if self.fake is not None:  # gone by this identifier only; already gone is still gone
+            self.fake.auth_keys = [k for k in self.fake.auth_keys if str(k["id"]) != key_id]
+        return True
+
+    def revoke(self, target_id: str, *, credential: str | None) -> bool:
+        key = self.key_id(target_id, credential=credential)
+        return key is not None and self.revoke_id(target_id, credential=credential, key_id=key)
 
 
 @dataclass
@@ -63,6 +82,7 @@ class DetachEnv:
     remover: RemoveDestination
     detacher: FullDetacher
     revoker: Revoker
+    library_roots: set[str]
 
     @property
     def root(self) -> Path:

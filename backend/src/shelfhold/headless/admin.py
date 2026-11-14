@@ -636,29 +636,44 @@ class HeadlessAdmin:
         _log.info("headless.target_key_rotated", name=row.name, old_key_revoked=revoked)
         return TargetAdded(row.id, row.name, False, exchanged.expires_at)
 
-    def target_revoke_key(self, *, target: str, password: str | None) -> bool:
-        """`detach --full`: the dedicated key is revoked in Kavita with the account's password
-        (Kavita revokes a key only for a login, not for the key itself). False: it could not be
-        (no password given, the account refused it, Kavita unreachable): the key stays and the
-        detachment says so. The sealed copy is forgotten with the target, by the caller."""
-        if not password:
+    def target_find_key(self, *, target: str, password: str | None) -> str | None:
+        """`detach --full`: the identifier of the dedicated key in Kavita, found by the key's
+        value (never by name), with the account's password (Kavita lists keys only for a login).
+        None: no password, the account refused it, Kavita is unreachable, or the key is not
+        there; the detachment then says the key was not revoked."""
+        row, username = self._key_target(target, password)
+        if row is None or not password:
+            return None
+        with self._engine.connect() as connection:
+            key = load_admin_key(self._vault, connection, row.id).reveal()
+        try:
+            return self._kavita.find_key_id(
+                url=str(row.config["url"]), username=username, password=password, key=key
+            )
+        except TargetExchangeFailed:
+            return None
+
+    def target_revoke_key_id(self, *, target: str, password: str | None, key_id: str) -> bool:
+        """The key with this identifier is deleted in Kavita, and no other of the account. True
+        when Kavita no longer has it (already gone counts: the identifier was written before)."""
+        row, username = self._key_target(target, password)
+        if row is None or not password:
             return False
+        try:
+            return self._kavita.revoke_key_id(
+                url=str(row.config["url"]), username=username, password=password, key_id=key_id
+            )
+        except TargetExchangeFailed:
+            return False
+
+    def _key_target(self, target: str, password: str | None) -> tuple[Any, str]:
+        if not password:
+            return None, ""
         with self._engine.connect() as connection:
             row = records.kavita_target(connection, target)
         if row is None:
             raise UnknownTarget(f"no Kavita target {target!r}")
-        username = str(row.config.get("username", ""))
-        if not username:
-            return False
-        with self._engine.connect() as connection:
-            key = load_admin_key(self._vault, connection, row.id).reveal()
-        try:
-            return self._kavita.revoke(
-                url=str(row.config["url"]), username=username, password=password, key=key,
-                key_name=str(row.config.get("key_name", KEY_NAME)),
-            )  # fmt: skip
-        except TargetExchangeFailed:
-            return False
+        return row, str(row.config.get("username", "")) or ""
 
     def _suwayomi_url(self) -> str:
         with self._engine.connect() as connection:

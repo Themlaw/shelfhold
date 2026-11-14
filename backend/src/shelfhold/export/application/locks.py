@@ -6,6 +6,7 @@ idempotence. A lock carries a lease: a killed job's rows run out, and `release_a
 boot once the instance lock is ours.
 """
 
+import re
 import threading
 import time
 from collections.abc import Callable, Iterator
@@ -29,6 +30,7 @@ __all__ = [
     "LockBusyError",
     "LockLostError",
     "ResourceLocks",
+    "dest_resource",
     "library_resource",
     "path_resource",
     "plan_resource",
@@ -58,6 +60,18 @@ def path_resource(series: str) -> str:
     return f"path:{series}"
 
 
+def dest_resource(destination_id: str) -> str:
+    """A destination as a whole (L30). Asked by name, it is **exclusive**: the removal of the
+    destination and the detachment of its target. Every job that holds a `path:<destination>/..`
+    (export, scan, staging, rename, repatriation, purge) holds it **shared** without asking: the
+    two kinds exclude each other, the shared ones do not exclude one another."""
+    return f"dest:{destination_id}"
+
+
+_PATH_OF_DESTINATION = re.compile(r"^path:([0-9A-HJKMNP-TV-Z]{26})/")
+_SHARED = "#"  # `dest:<id>#<unique>`: the row of one shared holder
+
+
 def plan_resource(plan_id: str) -> str:
     """One application of one plan at a time (a rename plan, EF-EXP-030)."""
     return f"plan:{plan_id}"
@@ -85,21 +99,28 @@ def work_lock_for(
 class HeldLocks:
     """The locks of one job: renewed by a heartbeat, `ensure()` before each write."""
 
-    def __init__(self, owner: "ResourceLocks", job_id: str, resources: list[str]) -> None:
+    def __init__(
+        self,
+        owner: "ResourceLocks",
+        job_id: str,
+        resources: list[str],
+        rows: list[str] | None = None,
+    ) -> None:
         self._owner = owner
         self.job_id = job_id
         self.resources = resources
+        self._rows = rows if rows is not None else resources  # + the shared rows of destinations
         self._lost = threading.Event()
 
     def renew(self) -> None:
         """Extend `lease_until`, only for rows still held by this job; fewer rows = lost."""
-        if self._owner._renew(self.job_id, self.resources) != len(self.resources):
+        if self._owner._renew(self.job_id, self._rows) != len(self._rows):
             self._lost.set()
             raise LockLostError(f"{self.resources}: no longer held by job {self.job_id}")
 
     def ensure(self) -> None:
         """Raise `LockLostError` if the locks were lost (checked against the table, not memory)."""
-        if self._lost.is_set() or not self._owner._still_held(self.job_id, self.resources):
+        if self._lost.is_set() or not self._owner._still_held(self.job_id, self._rows):
             self._lost.set()
             raise LockLostError(f"{self.resources}: no longer held by job {self.job_id}")
 
@@ -142,15 +163,16 @@ class ResourceLocks:
         `work`, then the `path`s, then `library`). The purge holds one `path` per folder it
         touches (EF-BIB-052)."""
         deadline = time.monotonic() + timeout
+        rows = [*resources, *self._shared_rows(resources)]
         while True:
             try:
-                self._try_acquire(job_id, resources)
+                self._try_acquire(job_id, resources, rows)
                 break
             except LockBusyError:
                 if time.monotonic() >= deadline:
                     raise
                 time.sleep(POLL_SECONDS)
-        held = HeldLocks(self, job_id, resources)
+        held = HeldLocks(self, job_id, resources, rows)
         stop = threading.Event()
         interval = heartbeat if heartbeat is not None else self._lease.total_seconds() / 3
 
@@ -168,26 +190,50 @@ class ResourceLocks:
         finally:
             stop.set()
             thread.join()
-            self._release(job_id, resources)
+            self._release(job_id, rows)
 
-    def _try_acquire(self, job_id: str, resources: list[str]) -> None:
+    @staticmethod
+    def _shared_rows(resources: list[str]) -> list[str]:
+        """One shared row per destination whose folders are asked for (`path:<destination>/..`)."""
+        found = {m.group(1) for r in resources if (m := _PATH_OF_DESTINATION.match(r))}
+        return [f"{dest_resource(d)}{_SHARED}{new_ulid()}" for d in sorted(found)]
+
+    def _try_acquire(
+        self, job_id: str, resources: list[str], rows: list[str] | None = None
+    ) -> None:
         table = coherence.resource_lock
         now = self._clock.now()
         try:
             with self._engine.begin() as conn:
                 # The DELETE takes SQLite's write lock: what follows is serialised.
                 conn.execute(sa.delete(table).where(table.c.lease_until <= now))
+                every = rows if rows is not None else resources
                 for resource in resources:
                     held = conn.execute(
                         sa.select(table.c.holder_job_id).where(table.c.resource == resource)
                     ).first()
                     if held is not None:
                         raise LockBusyError(resource)
+                    if resource.startswith("dest:") and _SHARED not in resource:
+                        shared = conn.execute(  # an exclusive ask: no shared holder may be there
+                            sa.select(table.c.holder_job_id).where(
+                                table.c.resource.like(f"{resource}{_SHARED}%")
+                            )
+                        ).first()
+                        if shared is not None:
+                            raise LockBusyError(resource)
+                for row in every[len(resources) :]:  # a shared ask: no exclusive holder
+                    exclusive = row.split(_SHARED, 1)[0]
+                    taken = conn.execute(
+                        sa.select(table.c.holder_job_id).where(table.c.resource == exclusive)
+                    ).first()
+                    if taken is not None:
+                        raise LockBusyError(exclusive)
                 conn.execute(
                     sa.insert(table),
                     [
                         {"resource": r, "holder_job_id": job_id, "lease_until": now + self._lease}
-                        for r in resources
+                        for r in every
                     ],
                 )
         except IntegrityError:

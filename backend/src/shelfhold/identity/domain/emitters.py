@@ -140,7 +140,11 @@ _OTHER: Mapping[str, str] = MappingProxyType(
         f"{_EXPORT_APP}/remove_destination.py::RemoveDestination._record": "destination.remove_all",
         # The full detachment (L30): the one erasure of a root's reserved folder, one journaled
         # intention per root, after the reserved action `detach.full` and the typed phrase.
-        f"{_EXPORT_APP}/detach.py::FullDetacher._erase_hidden": "detach.full",
+        f"{_EXPORT_APP}/detach.py::FullDetacher._record_erasure": "detach.full",
+        f"{_EXPORT_APP}/detach.py::FullDetacher._record_revocation": "detach.full",
+        f"{_EXPORT_APP}/remove_destination.py::RemoveDestination._remove_emptied": (
+            "destination.remove_all"
+        ),
         # `purge --now` doors (L41): the CLI command, the socket method, the two routes (a reserved
         # action: a fresh session, never a key) and the service-less glue they share
         "shelfhold/interfaces/cli/purge.py::_purge": "purge.now",

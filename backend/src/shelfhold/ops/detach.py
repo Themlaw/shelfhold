@@ -23,7 +23,6 @@ from shelfhold.export.application.detach import (
     DetachRefusedError,
     DetachReport,
     FullDetacher,
-    RootRef,
 )
 from shelfhold.export.application.intents import IntentJournal
 from shelfhold.export.application.locks import ResourceLocks
@@ -33,10 +32,12 @@ from shelfhold.export.application.remove_destination import (
     RemovalReport,
     RemoveDestination,
 )
+from shelfhold.export.application.root_ref import RootRef
 from shelfhold.export.targets.kavita.errors import TargetError
 from shelfhold.export.targets.kavita.settings_restore import restore_library_settings
 from shelfhold.identity.public import Principal
 from shelfhold.infrastructure.fsops import Fsops
+from shelfhold.library.public import roots_holding_library_copies
 from shelfhold.ops.errors import CodedRefusal, InvalidChoiceError
 
 if TYPE_CHECKING:
@@ -56,7 +57,16 @@ class _Revoker:
         self._headless = headless
 
     def revoke(self, target_id: str, *, credential: str | None) -> bool:
-        return self._headless.target_revoke_key(target=target_id, password=credential)
+        key = self.key_id(target_id, credential=credential)
+        return key is not None and self.revoke_id(target_id, credential=credential, key_id=key)
+
+    def key_id(self, target_id: str, *, credential: str | None) -> str | None:
+        return self._headless.target_find_key(target=target_id, password=credential)
+
+    def revoke_id(self, target_id: str, *, credential: str | None, key_id: str) -> bool:
+        return self._headless.target_revoke_key_id(
+            target=target_id, password=credential, key_id=key_id
+        )
 
 
 class DetachOps:
@@ -70,12 +80,26 @@ class DetachOps:
         fsops, loaded, _tombstones = self._comp.read_context()
         return fsops, loaded, IntentJournal(self._comp.engine, fsops, clock=self._comp.clock)
 
+    @staticmethod
+    def _root_directory(loaded: LoadedRoots) -> Callable[[str], RootRef | None]:
+        rows = {r.root_id: r for r in loaded.roots}
+
+        def roots(local: str) -> RootRef | None:
+            root_id = loaded.root_id_for(local)
+            return None if root_id is None else RootRef(root_id, rows[root_id].path)
+
+        return roots
+
     def _remover(
-        self, fsops: Fsops, journal: IntentJournal, scan: Callable[[str], None] | None
+        self,
+        fsops: Fsops,
+        loaded: LoadedRoots,
+        journal: IntentJournal,
+        scan: Callable[[str], None] | None,
     ) -> RemoveDestination:
         comp = self._comp
         return RemoveDestination(
-            comp.engine, fsops, journal, clock=comp.clock,
+            comp.engine, fsops, journal, clock=comp.clock, roots=self._root_directory(loaded),
             locks=ResourceLocks(comp.engine, clock=comp.clock), request_scan=scan,
             fresh_auth_s=comp.settings.fresh_auth_s,
         )  # fmt: skip
@@ -105,9 +129,11 @@ class DetachOps:
     # -- remove a destination -------------------------------------------------------------------
 
     def remove_preview(self, *, destination_id: str, mode: str) -> dict[str, Any]:
-        fsops, _loaded, journal = self._context()
+        fsops, loaded, journal = self._context()
         try:
-            preview = self._remover(fsops, journal, None).preview(destination_id, _mode(mode))
+            preview = self._remover(fsops, loaded, journal, None).preview(
+                destination_id, _mode(mode)
+            )
         except RemovalRefusedError as error:
             raise _removal(error) from None
         return {
@@ -120,8 +146,8 @@ class DetachOps:
         self, *, destination_id: str, mode: str, typed: str | None, give_up: bool,
         principal: Principal,
     ) -> dict[str, Any]:  # fmt: skip
-        fsops, _loaded, journal = self._context()
-        service = self._remover(fsops, journal, self._scan_of(destination_id))
+        fsops, loaded, journal = self._context()
+        service = self._remover(fsops, loaded, journal, self._scan_of(destination_id))
         try:
             if give_up:
                 report = service.settle(destination_id, resume=False, principal=principal)
@@ -139,15 +165,15 @@ class DetachOps:
         self, fsops: Fsops, loaded: LoadedRoots, journal: IntentJournal
     ) -> FullDetacher:
         comp = self._comp
-        rows = {r.root_id: r for r in loaded.roots}
 
-        def roots(local: str) -> RootRef | None:
-            root_id = loaded.root_id_for(local)
-            return None if root_id is None else RootRef(root_id, rows[root_id].path)
+        def library_roots() -> set[str]:
+            with comp.engine.connect() as conn:
+                return roots_holding_library_copies(conn)
 
         return FullDetacher(
-            comp.engine, fsops, journal, clock=comp.clock, roots=roots,
-            restore=restore_library_settings, locks=ResourceLocks(comp.engine, clock=comp.clock),
+            comp.engine, fsops, journal, clock=comp.clock, roots=self._root_directory(loaded),
+            restore=restore_library_settings, library_roots=library_roots,
+            locks=ResourceLocks(comp.engine, clock=comp.clock),
             store_path=str(comp.settings.store_dir), run=comp.run,
             fresh_auth_s=comp.settings.fresh_auth_s,
         )  # fmt: skip
@@ -165,7 +191,8 @@ class DetachOps:
 
     def full(
         self, *, target_id: str, typed: str | None, credential: str | None,
-        discard_hidden_data: bool, give_up: bool, principal: Principal,
+        discard_hidden_data: bool, discard_tombstone_journal: bool, give_up: bool,
+        principal: Principal,
     ) -> dict[str, Any]:  # fmt: skip
         fsops, loaded, journal = self._context()
         detacher = self._full_detacher(fsops, loaded, journal)
@@ -182,9 +209,12 @@ class DetachOps:
                     target_id, principal=principal, typed=typed, client=client,
                     revoker=_Revoker(self._headless), credential=credential,
                     discard_hidden_data=discard_hidden_data,
+                    discard_tombstone_journal=discard_tombstone_journal,
                 )  # fmt: skip
         except DetachRefusedError as error:
             raise _full_refusal(error) from None
+        if report.past_no_return:  # nothing was undone, and the report must not say it was
+            raise CodedRefusal("detach.refused", "past_no_return")
         self._comp.roots_changed()  # the roots demoted are no longer expected stamped
         return _full_report(report)
 
@@ -220,9 +250,7 @@ def _full_report(report: DetachReport) -> dict[str, Any]:
         "target_id": report.target_id, "complete": report.complete,
         "hidden_removed": len(report.hidden_removed), "key_revoked": report.key_revoked,
         "forgotten": report.forgotten, "cancelled": report.cancelled,
-        "settings_restored": bool(
-            report.settings_restored and report.settings_restored.exclude_patterns_restored
-        ),
+        "settings_restored": any(s.exclude_patterns_restored for s in report.settings),
         "settings": [
             {
                 "exclude_patterns_restored": s.exclude_patterns_restored,

@@ -136,8 +136,9 @@ def _full_detach(ops: OpsServices, by: Principal, p: Params) -> object:
     return ops.teardown.full(
         target_id=_text(p, "target_id"), typed=_optional(p, "typed"),
         credential=_optional(p, "credential"),
-        discard_hidden_data=_flag(p, "discard_hidden_data"), give_up=_flag(p, "give_up"),
-        principal=by,
+        discard_hidden_data=_flag(p, "discard_hidden_data"),
+        discard_tombstone_journal=_flag(p, "discard_tombstone_journal"),
+        give_up=_flag(p, "give_up"), principal=by,
     )  # fmt: skip
 
 

@@ -99,9 +99,12 @@ def test_kill9_at_each_stage_of_the_erasure_of_a_reserved_folder(
     journal.resolve_open()
     detacher = FullDetacher(
         ienv.engine, fsops, journal, clock=ienv.clock, roots=lambda _local: None,
-        restore=restore_library_settings,
+        restore=restore_library_settings, library_roots=set,
     )  # fmt: skip
     report = detacher.settle(TARGET, resume=False, principal=ADMIN)
+    if kill_at >= 2:  # the erasure ran: giving up is refused (nothing is undone, nothing closed)
+        assert report.past_no_return and report.cancelled == 0
+        detacher.settle(TARGET, resume=True, principal=ADMIN)  # the rerun closes what is done
     with ienv.engine.connect() as conn:
         assert open_intent_paths(conn) == frozenset()  # nothing is left half-done
     area, sentinel = (env.library / RESERVED_DIR).exists(), (env.library / SENTINEL_FILE).exists()

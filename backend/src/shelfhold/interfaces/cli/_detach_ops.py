@@ -15,7 +15,7 @@ from collections.abc import Callable
 from shelfhold.i18n import t
 from shelfhold.interfaces.cli._headless import fail, read_secret
 from shelfhold.interfaces.cli._ops import ops_command
-from shelfhold.interfaces.local_cli import OpsChannel
+from shelfhold.interfaces.local_cli import OpsChannel, OpsRefusal
 
 __all__ = ["run_detach_full", "run_remove"]
 
@@ -41,6 +41,8 @@ _WARNINGS: dict[str, Callable[[object], str]] = {
     ),
 }
 _LEFTOVERS: dict[str, Callable[[object], str]] = {
+    "library_gone": lambda n: t("detach.leftover_library_gone", count=n),
+    "tombstone_journal_erased": lambda n: t("detach.leftover_tombstone_journal_erased", count=n),
     "suwayomi_downloads": lambda n: t("detach.leftover_suwayomi_downloads", count=n),
     "kavita_accounts": lambda n: t("detach.leftover_kavita_accounts", count=n),
     "store": lambda n: t("detach.leftover_store", count=n),
@@ -86,9 +88,19 @@ def run_remove(args: argparse.Namespace, channel: OpsChannel) -> int:
 @ops_command
 def run_detach_full(args: argparse.Namespace, channel: OpsChannel) -> int:
     if args.give_up:
-        report = channel.call(
-            "ops.detach_full", target_id=args.target, give_up=True, discard_hidden_data=False
-        )
+        try:
+            report = channel.call(
+                "ops.detach_full",
+                target_id=args.target,
+                give_up=True,
+                discard_hidden_data=False,
+                discard_tombstone_journal=False,
+            )
+        except OpsRefusal as refusal:
+            if str(refusal) != "past_no_return":
+                raise
+            print(t("detach.give_up_too_late"), file=sys.stderr)  # said, never "0 abandoned"
+            return UNFINISHED
         print(t("detach.given_up", count=report["cancelled"]))
         return 0
     if not args.confirm:
@@ -104,7 +116,8 @@ def run_detach_full(args: argparse.Namespace, channel: OpsChannel) -> int:
             return fail(t("headless.secret_unreadable", detail=error))
     report = channel.call(
         "ops.detach_full", target_id=args.target, typed=args.confirm, credential=credential,
-        discard_hidden_data=args.discard_hidden_data, give_up=False,
+        discard_hidden_data=args.discard_hidden_data,
+        discard_tombstone_journal=args.discard_tombstone_journal, give_up=False,
     )  # fmt: skip
     if report["hidden_removed"]:
         print(t("detach.hidden_removed", count=report["hidden_removed"]))

@@ -29,6 +29,7 @@ says. A file that cannot be removed (out of the root, a link, changed since it w
 """
 
 import hmac
+import posixpath
 from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass, field
@@ -46,7 +47,8 @@ from shelfhold.export.application.intents import (
     open_intent_paths,
     within_any,
 )
-from shelfhold.export.application.locks import LockBusyError, ResourceLocks, path_resource
+from shelfhold.export.application.locks import LockBusyError, ResourceLocks, dest_resource
+from shelfhold.export.application.root_ref import CopyScope, RootDirectory, copy_scope
 from shelfhold.export.application.snapshot import DestinationContext, load_context
 from shelfhold.export.domain.path_map import PathMapError, clean_absolute, within
 from shelfhold.identity.public import (
@@ -58,7 +60,7 @@ from shelfhold.identity.public import (
     authorize_reserved,
 )
 from shelfhold.infrastructure.clock import Clock
-from shelfhold.infrastructure.fsops import Fsops, FsopsError
+from shelfhold.infrastructure.fsops import FileChangedError, FileIdentity, Fsops, FsopsError
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import export
 from shelfhold.library.public import forget_destination_copies
@@ -121,7 +123,8 @@ class RemovalPreview:
 @dataclass(frozen=True)
 class LeftLine:
     """A file that stays, and why: `outside_root`, `not_a_regular_file`, `changed_since_export`,
-    `refused_by_the_disk`. The path is the manifest's (relative to the destination), never an
+    `refused_by_the_disk`, `no_hash` (the manifest has no hash for it: nothing says it is
+    Shelfhold's own). The path is the manifest's (relative to the destination), never an
     absolute one."""
 
     code: str
@@ -148,11 +151,13 @@ class RemoveDestination:
         journal: IntentJournal,
         *,
         clock: Clock,
+        roots: RootDirectory,
         locks: ResourceLocks | None = None,
         request_scan: Callable[[str], None] | None = None,
         fresh_auth_s: int = 900,
     ) -> None:
         self._engine = engine
+        self._roots = roots
         self._fsops = fsops
         self._journal = journal
         self._clock = clock
@@ -200,15 +205,19 @@ class RemoveDestination:
             ctx = self._context(conn, destination_id)
         with self._held(ctx, job_id or new_ulid()):
             report = RemovalReport()
-            self._settle_own(destination_id, ctx, report, resume=True)
+            left: list[LeftLine] = []
+            self._settle_own(destination_id, ctx, report, left, resume=True)
             with self._engine.connect() as conn:
                 self._require_free(conn, ctx, destination_id)
-                records = _records(conn, destination_id)
+                records = _records(conn, destination_id)  # read once the destination is ours
             if mode is RemovalMode.DELETE_FILES:
-                self._delete_files(ctx, records, report)
+                self._delete_files(ctx, records, report, left)
+            report.left = tuple(left)
             if report.complete:
                 with self._engine.begin() as conn:
-                    report.forgotten += forget_destination(conn, destination_id)
+                    report.forgotten += forget_destination(
+                        conn, destination_id, copy_scope(ctx, self._roots)
+                    )
                     self._audit(conn, principal, destination_id, mode)
                 if report.deleted and self._request_scan is not None and ctx.root_local:
                     self._request_scan(ctx.remote_folder(ctx.root_local))
@@ -226,16 +235,23 @@ class RemoveDestination:
         with self._engine.connect() as conn:
             ctx = self._context(conn, destination_id)
         report = RemovalReport()
+        left: list[LeftLine] = []
         with self._held(ctx, new_ulid()):
-            self._settle_own(destination_id, ctx, report, resume=resume)
+            self._settle_own(destination_id, ctx, report, left, resume=resume)
+        report.left = tuple(left)
         return report
 
     # -- the steps ------------------------------------------------------------------------------
 
     def _delete_files(
-        self, ctx: DestinationContext, records: Sequence[Any], report: RemovalReport
+        self,
+        ctx: DestinationContext,
+        records: Sequence[Any],
+        report: RemovalReport,
+        left: list[LeftLine],
     ) -> None:
-        left: list[LeftLine] = []
+        scope = copy_scope(ctx, self._roots)
+        emptied: set[str] = set()
         for record in sorted(records, key=lambda r: str(r.rel_path)):
             if not _is_managed(record):
                 continue
@@ -247,67 +263,143 @@ class RemoveDestination:
             found = self._look(local)
             if found == "gone":  # the file is not there: only the line is left to forget
                 with self._engine.begin() as conn:
-                    _forget_line(conn, ctx.destination_id, record.export_item_id)
+                    _forget_line(conn, ctx.destination_id, record.export_item_id, scope)
                 continue
             if found != "file":
                 left.append(LeftLine("not_a_regular_file", rel))
                 continue
-            if record.file_hash and self._digest(local) != record.file_hash:
-                left.append(LeftLine("changed_since_export", rel))
+            if not record.file_hash:  # nothing says this file is Shelfhold's own: never deleted
+                left.append(LeftLine("no_hash", rel))
                 continue
-            intent = self._record(ctx, record, local)
-            if self._remove(intent, local):
-                self._close(ctx.destination_id, record.export_item_id, intent)
-                report.deleted += 1
-            else:
+            made = self._record(ctx, record, local)
+            if made is None:
                 left.append(LeftLine("refused_by_the_disk", rel))
-        report.left = tuple(left)
+                continue
+            intent, identity = made
+            outcome = self._remove(intent, local, record.file_hash, identity)
+            if outcome == "deleted":
+                self._close(ctx.destination_id, record.export_item_id, intent, scope)
+                report.deleted += 1
+                emptied.add(posixpath.dirname(local))
+            else:
+                left.append(LeftLine(outcome, rel))
+        self._remove_emptied(ctx, emptied)
 
-    def _record(self, ctx: DestinationContext, record: Any, local: str) -> str:
-        observed = self._fsops.observe(local)
-        return self._journal.record(
-            op="unlink", src=local,
-            expected_sha256=record.file_hash or self._fsops.sha256_of(local),
-            expected_file_id=None if observed is None else observed[1],
+    def _record(
+        self, ctx: DestinationContext, record: Any, local: str
+    ) -> tuple[str, FileIdentity] | None:
+        try:
+            observed = self._fsops.observe(local)
+        except FsopsError:
+            return None
+        if observed is None or observed[0] != "file":
+            return None
+        intent = self._journal.record(
+            op="unlink", src=local, expected_sha256=record.file_hash, expected_file_id=observed[1],
             extra={
                 "scope": REMOVAL_SCOPE, "destination_id": ctx.destination_id,
                 "item_id": record.export_item_id,
             },
         )  # fmt: skip
+        return intent, observed[1]
 
-    def _remove(self, intent_id: str, local: str) -> bool:
-        """`applying`, then the file goes. A disk that refuses closes the intention `cancelled`
-        (nothing moved) and the file is reported left."""
+    def _remove(
+        self,
+        intent_id: str,
+        local: str,
+        sha256: str | None,
+        identity: FileIdentity | None,
+    ) -> str:
+        """`applying`, then the file goes, only if it is still the one the intention names (its
+        content and its identity are read again by the primitive, just before the unlink).
+        `deleted`, or why it stayed: `changed_since_export`, `refused_by_the_disk` (the intention
+        is then `cancelled`: nothing moved)."""
         self._journal.mark_applying(intent_id)
         try:
-            self._fsops.purge_unlink(local)
+            self._fsops.purge_unlink(local, expected_sha256=sha256, expected_identity=identity)
+        except FileChangedError:
+            self._journal.cancel(intent_id)
+            return "changed_since_export"
         except (OSError, FsopsError):
             self._journal.cancel(intent_id)
-            return False
-        return True
+            return "refused_by_the_disk"
+        return "deleted"
 
-    def _close(self, destination_id: str, item_id: str, intent_id: str) -> None:
+    def _close(
+        self, destination_id: str, item_id: str, intent_id: str, scope: CopyScope | None
+    ) -> None:
         with self._engine.begin() as conn:
             self._journal.mark_done(intent_id, within=conn)
-            _forget_line(conn, destination_id, item_id)
+            _forget_line(conn, destination_id, item_id, scope)
+
+    def _remove_emptied(self, ctx: DestinationContext, folders: set[str]) -> None:
+        """A series folder the removal emptied goes, deepest first, each by a journaled `rmdir`;
+        the destination's own folder and a folder with anything left in it never."""
+        root = ctx.root_local
+        if root is None:
+            return
+        base = root.rstrip("/")
+        pending = {f for f in folders if f.startswith(base + "/")}
+        while pending:
+            local = max(pending, key=len)
+            pending.discard(local)
+            try:
+                seen = self._fsops.observe(local)
+                if seen is None:
+                    pass
+                elif seen[0] != "dir" or self._fsops.list_dir(local):
+                    continue
+                else:
+                    self._fsops.require_delete_allowed(local)
+                    intent = self._journal.record(op="rmdir", src=local)
+                    self._journal.mark_applying(intent)
+                    try:
+                        self._fsops.rmdir(local)
+                    except (FsopsError, OSError):
+                        self._journal.cancel(intent)
+                        continue
+                    self._journal.mark_done(intent)
+            except (FsopsError, OSError):
+                continue
+            parent = posixpath.dirname(local)
+            if parent.startswith(base + "/"):
+                pending.add(parent)
 
     def _settle_own(
-        self, destination_id: str, ctx: DestinationContext, report: RemovalReport, *, resume: bool
+        self,
+        destination_id: str,
+        ctx: DestinationContext,
+        report: RemovalReport,
+        left: list[LeftLine],
+        *,
+        resume: bool,
     ) -> None:
+        scope = copy_scope(ctx, self._roots)
         for intent in self._journal.open_intents():
             if not _ours(intent, destination_id) or intent.src is None:
                 continue
             item_id = str(intent.payload.get("item_id", ""))
-            if self._look(intent.src) == "gone":  # it went before the stop: close its line
-                self._close(destination_id, item_id, intent.id)
+            found = self._look(intent.src)
+            if found == "gone":  # it went before the stop: close its line
+                self._close(destination_id, item_id, intent.id, scope)
                 report.deleted += 1
-            elif resume and self._look(intent.src) == "file":
-                if self._remove(intent.id, intent.src):
-                    self._close(destination_id, item_id, intent.id)
+            elif resume and found == "file":  # the file is looked at again, as at the first pass
+                outcome = self._remove(
+                    intent.id, intent.src, intent.expected_sha256, intent.expected_file_id
+                )
+                if outcome == "deleted":
+                    self._close(destination_id, item_id, intent.id, scope)
                     report.deleted += 1
+                else:
+                    left.append(LeftLine(outcome, self._relative(ctx, intent.src)))
             else:
                 self._journal.cancel(intent.id)
                 report.cancelled += 1
+
+    @staticmethod
+    def _relative(ctx: DestinationContext, local: str) -> str:
+        rel = within(local, ctx.root_local) if ctx.root_local is not None else None
+        return rel if rel else local.rsplit("/", 1)[-1]
 
     # -- the checks -----------------------------------------------------------------------------
 
@@ -372,13 +464,14 @@ class RemoveDestination:
 
     @contextmanager
     def _held(self, ctx: DestinationContext, job_id: str) -> Iterator[None]:
-        """The destination's folder is held for the length of the removal (no other job writes
-        it), and released whatever happens; a lease that a kill left expires by itself."""
-        if self._locks is None or ctx.root_local is None:
+        """The destination is held, alone, for the length of the removal (`dest:<id>`, exclusive:
+        no export, scan or staging of it runs, and none starts), and released whatever happens;
+        a lease that a kill left expires by itself."""
+        if self._locks is None:
             yield
             return
         try:
-            held = self._locks.hold_resources(job_id, [path_resource(ctx.root_local)])
+            held = self._locks.hold_resources(job_id, [dest_resource(ctx.destination_id)])
             held.__enter__()
         except LockBusyError:
             raise RemovalRefusedError("busy") from None
@@ -427,17 +520,29 @@ def _records(conn: Connection, destination_id: str) -> list[Any]:
     )
 
 
-def _forget_line(conn: Connection, destination_id: str, item_id: str) -> None:
+def _forget_line(
+    conn: Connection, destination_id: str, item_id: str, scope: CopyScope | None
+) -> None:
     record = export.export_record
     conn.execute(
         sa.delete(record).where(
             record.c.shelf_destination_id == destination_id, record.c.export_item_id == item_id
         )
     )
-    forget_destination_copies(conn, item_id)
+    _forget_copies(conn, item_id, scope)
 
 
-def forget_destination(conn: Connection, destination_id: str) -> int:
+def _forget_copies(conn: Connection, item_id: str, scope: CopyScope | None) -> None:
+    """The `destination` copy rows of the item that lie in this destination's own folder, and
+    only those: the same item may live in another destination of the shelf. Without a known
+    root, no row is touched."""
+    if scope is not None:
+        forget_destination_copies(conn, item_id, physical_root_id=scope.root_id, under=scope.under)
+
+
+def forget_destination(
+    conn: Connection, destination_id: str, scope: CopyScope | None = None
+) -> int:
     """The destination and everything that hangs on it in the database: the manifest, the series
     it kept for its folder and their links, the links to remote libraries. No file, no Kavita.
     Returns the number of manifest lines forgotten."""
@@ -460,7 +565,7 @@ def forget_destination(conn: Connection, destination_id: str) -> int:
     ))  # fmt: skip
     conn.execute(sa.delete(series).where(series.c.shelf_destination_id == destination_id))
     for item_id in items:
-        forget_destination_copies(conn, item_id)
+        _forget_copies(conn, item_id, scope)
     conn.execute(sa.delete(record).where(record.c.shelf_destination_id == destination_id))
     conn.execute(sa.delete(export.export_upgrade).where(
         export.export_upgrade.c.shelf_destination_id == destination_id

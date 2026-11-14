@@ -5,11 +5,15 @@ takes the client of the target, the reference of the library and what it was bef
 adoption, and answers with what was done. The Kavita side is `targets/kavita/settings_restore.py`.
 """
 
-from collections.abc import Callable, Coroutine, Mapping
+from collections.abc import Callable, Coroutine, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
-__all__ = ["RestoreSettings", "SettingsRestored"]
+__all__ = ["LibraryGoneError", "RestoreSettings", "SettingsRestored"]
+
+
+class LibraryGoneError(Exception):
+    """The library is no longer in Kavita: there is nothing to give back."""
 
 
 @dataclass(frozen=True)
@@ -23,5 +27,5 @@ class SettingsRestored:
 
 
 RestoreSettings = Callable[
-    [Any, str, Mapping[str, Any] | None], Coroutine[Any, Any, SettingsRestored]
+    [Any, str, Sequence[Mapping[str, Any] | None]], Coroutine[Any, Any, SettingsRestored]
 ]

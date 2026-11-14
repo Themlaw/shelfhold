@@ -66,6 +66,56 @@ class HttpKavitaKeyExchange:
         except FetchError:
             raise TargetExchangeFailed("Kavita cannot be reached at this address") from None
 
+    def find_key_id(self, *, url: str, username: str, password: str, key: str) -> str | None:
+        try:
+            fetcher = self._fetchers(url)
+            found = asyncio.run(self._keys(fetcher, url.rstrip("/"), username, password, None))
+        except FetchError:
+            raise TargetExchangeFailed("Kavita cannot be reached at this address") from None
+        row = next((i for i in found if i.get("key") == key), None)
+        return None if row is None else str(row["id"])
+
+    def revoke_key_id(self, *, url: str, username: str, password: str, key_id: str) -> bool:
+        try:
+            fetcher = self._fetchers(url)
+            asked = asyncio.run(self._keys(fetcher, url.rstrip("/"), username, password, key_id))
+        except FetchError:
+            raise TargetExchangeFailed("Kavita cannot be reached at this address") from None
+        return asked == []
+
+    async def _keys(
+        self, fetcher: GuardedFetcher, base: str, username: str, password: str, drop: str | None
+    ) -> list[dict[str, Any]]:
+        """Log in and list the account's keys; with `drop`, delete that identifier and only it
+        (nothing is deleted when it is not in the list). Returns the rows (empty after a
+        deletion that went through, or when the identifier was already gone)."""
+        try:
+            login = await fetcher.post(
+                base + LOGIN.path, json={"username": username, "password": password}
+            )
+            token = _json(login.body).get("token") if login.status == 200 else None
+            if not isinstance(token, str) or not token:
+                raise TargetExchangeFailed("Kavita refused these credentials")
+            auth = {"Authorization": f"Bearer {token}"}
+            listed = await fetcher.get(base + LIST_AUTH_KEYS.path, headers=auth)
+            try:
+                items = json.loads(listed.body) if listed.status == 200 else []
+            except ValueError:
+                items = []
+            if listed.status != 200:
+                raise TargetExchangeFailed("Kavita did not list the keys")
+            rows = [i for i in items if isinstance(i, dict) and isinstance(i.get("id"), int)]
+            if drop is None:
+                return rows
+            if not any(str(i["id"]) == drop for i in rows):
+                return []  # already gone
+            gone = await fetcher.delete(
+                base + DELETE_AUTH_KEY.path, headers=auth, params={"authKeyId": int(drop)}
+            )
+            return [] if 200 <= gone.status < 300 else rows
+        finally:
+            await fetcher.aclose()
+
     async def _revoke(
         self, fetcher: GuardedFetcher, base: str, username: str, password: str, key: str, name: str
     ) -> bool:

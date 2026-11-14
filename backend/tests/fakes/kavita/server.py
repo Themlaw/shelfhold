@@ -35,6 +35,7 @@ OPENAPI = TESTS / "fixtures" / "kavita" / "openapi"
 BASE_URL = "http://kavita.lan:5000"
 LAN_ADDRESS = "192.168.1.50"
 API_KEY = "synthetic-admin-key-0001"
+OTHER_KEY = "synthetic-admin-key-0002"  # another key of the same account
 
 # (method, lower-cased path) -> needs an administrator. Written here, not imported.
 ALLOWED: dict[tuple[str, str], bool] = {
@@ -160,6 +161,17 @@ class FakeKavita:
     asleep: bool = False  # stopped by Sablier: the connection is refused until `wake_up`
     drops_age_lock: bool = False  # takes a metadata update but forgets the lock of the age
     manga_parse_only: bool = True  # the replica of plugin/parse is the Manga one: refuse others
+    # the keys of the account, by identifier: a request is served only for a key still listed, and
+    # a revoked key answers 401 (the detachment of L30 revokes the dedicated one)
+    auth_keys: list[dict[str, Any]] = field(
+        default_factory=lambda: [
+            {"id": 1, "name": "shelfhold", "key": API_KEY},
+            {"id": 2, "name": "other-tool", "key": OTHER_KEY},
+        ]
+    )
+
+    def key_is_valid(self, key: object) -> bool:
+        return any(k["key"] == key for k in self.auth_keys)
 
     # -- scenario helpers -------------------------------------------------------------------
     def demote(self) -> None:
@@ -288,7 +300,7 @@ class FakeKavita:
             return self._json({"title": "Not Found", "status": 404}, 404)
         if route in self.missing:
             return self._text(404, "Not Found")
-        if recorded.headers.get("x-api-key") != API_KEY:
+        if not self.key_is_valid(recorded.headers.get("x-api-key")):
             return self._text(401, "Unauthorized")
         if ALLOWED[route] and not self.is_admin:
             return self._text(403, "Forbidden")
@@ -427,7 +439,7 @@ class FakeKavita:
             return body
         # Kavita ignores the request (still 200) when the key of the body is not a valid one
         folder = body.get("folderPath") or ""
-        valid = body.get("apiKey") == API_KEY
+        valid = self.key_is_valid(body.get("apiKey"))
         (self.scans if valid else self.ignored_scans).append(folder)
         if valid and folder not in self.never_indexed:
             self._reveal(folder)

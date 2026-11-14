@@ -63,6 +63,7 @@ from shelfhold.infrastructure.fsops.errors import (
     CrossRootError,
     EmitterConditionError,
     EmitterPerimeterError,
+    FileChangedError,
     FsopsError,
     HashInterrupted,
     JournalChangedError,
@@ -1064,19 +1065,51 @@ class Fsops:
         with self._gated(located) as root:
             root.unlink(located.rel)
 
-    def purge_unlink(self, local: str) -> None:
+    def purge_unlink(
+        self,
+        local: str,
+        *,
+        expected_sha256: str | None = None,
+        expected_identity: FileIdentity | None = None,
+    ) -> None:
         """`purge --now` deletes one regular file: a copy of a Unit in a read-write root, or a
         file of that root's bin (EF-BIB-052). The caller has passed the reserved-action rule, has
         recorded the tombstone and has written the intent; this is the primitive, and it adds
         what only fsops can check: the path is under a writable root, never through a link, never
-        a directory, never the host's own files (sentinel, lease, tombstone journal, mirror)."""
+        a directory, never the host's own files (sentinel, lease, tombstone journal, mirror).
+        `expected_sha256` and `expected_identity` (L30): the file goes only if it is still the one
+        the caller looked at, read and compared here, in the same opened root, just before the
+        unlink; a file that changed raises `FileChangedError` and stays."""
         log.debug("fsops.purge_unlink", **self._where(local))
         located = self._locate(local, host=True)
         self._require_purgeable(located.rel)
         with self._gated(located) as root:
             if root.lstat_kind(located.rel) != "file":
                 raise NotRegularFileError(f"{local!r} is not a regular file")
+            if expected_sha256 is not None or expected_identity is not None:
+                self._require_unchanged(root, located.rel, expected_sha256, expected_identity)
             root.unlink(located.rel)
+
+    @staticmethod
+    def _require_unchanged(
+        root: ConfinedRoot,
+        rel: str,
+        expected_sha256: str | None,
+        expected_identity: FileIdentity | None,
+    ) -> None:
+        fd = root.open_file(rel, os.O_RDONLY)
+        with os.fdopen(fd, "rb") as stream:
+            opened = os.fstat(stream.fileno())
+            if expected_identity is not None and identity_of(opened) != expected_identity:
+                raise FileChangedError("the file is not the one that was looked at")
+            if expected_sha256 is not None:
+                digest = hashlib.sha256()
+                while chunk := stream.read(1 << 20):
+                    digest.update(chunk)
+                if "sha256:" + digest.hexdigest() != expected_sha256:
+                    raise FileChangedError("the file's content is not the one that was looked at")
+        if root.stat(rel).st_ino != opened.st_ino:  # swapped while it was read
+            raise FileChangedError("the file was replaced while it was read")
 
     def purge_remove_tree(self, local: str) -> None:
         """The same for one entry of a root's bin (`.shelfhold/recycle/<id>`) and what it holds,
@@ -1105,10 +1138,10 @@ class Fsops:
                 raise NotRegularFileError(f"{RESERVED_DIR} of {root_path!r} is not a folder")
             if kind == "dir":
                 root.remove_tree(RESERVED_DIR)
-            for name in root.listdir("."):
-                if (name == SENTINEL_FILE or name.startswith(PROBE_PREFIX)) and (
-                    root.lstat_kind(name) == "file"
-                ):
+            names = root.listdir(".")
+            probes = [n for n in names if n.startswith(PROBE_PREFIX)]
+            for name in [*probes, *[n for n in names if n == SENTINEL_FILE]]:  # the sentinel last
+                if root.lstat_kind(name) == "file":
                     root.unlink(name)
 
     @staticmethod

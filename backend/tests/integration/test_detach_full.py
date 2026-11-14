@@ -81,8 +81,7 @@ def test_detach_restores_pre_adoption_settings_and_revokes_key(d: DetachEnv) -> 
     assert d.kavita_patterns() != PRE_ADOPTION["exclude_patterns"]
     report = _run(d)
     assert d.kavita_patterns() == PRE_ADOPTION["exclude_patterns"]  # `*.tmp`, as before
-    assert report.settings_restored is not None
-    assert report.settings_restored.exclude_patterns_restored
+    assert report.settings and report.settings[0].exclude_patterns_restored
     assert d.wired.fake.libraries[0]["type"] == 0  # the type is still the manga one of before
     assert d.revoker.calls == [(d.env.target_id, "the account password")]
     assert report.key_revoked

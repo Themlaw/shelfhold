@@ -31,11 +31,11 @@ downloads in Suwayomi, the Kavita accounts, `/store`.
 import asyncio
 import hmac
 import os
-from collections.abc import Callable, Coroutine, Iterator
+from collections.abc import Callable, Collection, Coroutine, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Protocol
+from typing import Any, Protocol, runtime_checkable
 
 import sqlalchemy as sa
 import structlog
@@ -45,12 +45,20 @@ from shelfhold.export.application.intents import (
     IntentJournal,
     OpenIntent,
     holds_any,
-    open_intent_paths,
     within_any,
 )
-from shelfhold.export.application.library_settings import RestoreSettings, SettingsRestored
-from shelfhold.export.application.locks import LockBusyError, ResourceLocks, path_resource
+from shelfhold.export.application.library_settings import (
+    LibraryGoneError,
+    RestoreSettings,
+    SettingsRestored,
+)
+from shelfhold.export.application.locks import (
+    LockBusyError,
+    ResourceLocks,
+    dest_resource,
+)
 from shelfhold.export.application.remove_destination import forget_destination
+from shelfhold.export.application.root_ref import RootDirectory, RootRef, copy_scope
 from shelfhold.export.application.snapshot import DestinationContext, load_context
 from shelfhold.export.domain.path_map import PathMode, within
 from shelfhold.export.domain.physical_roots import (
@@ -71,7 +79,7 @@ from shelfhold.identity.public import (
 from shelfhold.infrastructure.clock import Clock
 from shelfhold.infrastructure.fsops import Fsops, FsopsError
 from shelfhold.infrastructure.ids import new_ulid
-from shelfhold.infrastructure.schema import acquisition, catalog, export, platform
+from shelfhold.infrastructure.schema import acquisition, catalog, coherence, export, platform
 
 __all__ = [
     "DETACH_SCOPE",
@@ -80,6 +88,7 @@ __all__ = [
     "DetachReport",
     "DetachWarning",
     "FullDetacher",
+    "KeyIdRevoker",
     "KeyRevoker",
     "Leftover",
     "RootRef",
@@ -89,23 +98,13 @@ __all__ = [
 log = structlog.get_logger()
 
 DETACH_SCOPE = "hidden_area"  # what the intention of the erasure of a root says about itself
+REVOKE_SCOPE = "revoke_key"  # the intention of the revocation of the dedicated key
 _ACTION = "detach.full"
 
 
 def full_detach_phrase(target_id: str) -> str:
     """What the admin types: the id, so that a pasted command names its target."""
     return f"detach {target_id}"
-
-
-@dataclass(frozen=True)
-class RootRef:
-    """A physical root: its id (the database's) and its path on this machine."""
-
-    root_id: str
-    path: str
-
-
-RootDirectory = Callable[[str], RootRef | None]  # a local path -> the physical root holding it
 
 
 class KeyRevoker(Protocol):
@@ -115,10 +114,25 @@ class KeyRevoker(Protocol):
     def revoke(self, target_id: str, *, credential: str | None) -> bool: ...
 
 
+@runtime_checkable
+class KeyIdRevoker(KeyRevoker, Protocol):
+    """The door that can name the key. The detachment writes the **identifier** of the key (never
+    its name, never its value) in its intention before the key goes, and revokes by that
+    identifier: a rerun after a stop finds the key gone and the identifier on record, which is a
+    revocation already done; and another key of the account is never touched."""
+
+    def key_id(self, target_id: str, *, credential: str | None) -> str | None: ...
+
+    def revoke_id(self, target_id: str, *, credential: str | None, key_id: str) -> bool: ...
+
+
 class DetachRefusedError(PermissionError):
     """Nothing was changed. `reason`: `not_allowed`, `confirmation_required`, `intent_open` (an
     open file operation lies under a root, I9), `hidden_data_present` (a bin entry or an archive
-    waiting for its export would be destroyed), `busy`, `unknown_target`."""
+    waiting for its export would be destroyed), `tombstone_journal_present` (the erasure journal
+    would go: it takes `discard_tombstone_journal`), `busy` (an export, a scan or another job holds
+    a destination of the target), `unknown_target`, `past_no_return` (`give up` after an erasure
+    began: run the command again to finish)."""
 
     def __init__(self, reason: str, *, verdict: object | None = None) -> None:
         super().__init__(reason)
@@ -156,12 +170,9 @@ class DetachReport:
     key_revoked: bool = False
     forgotten: int = 0  # manifest lines
     cancelled: int = 0  # intentions given up by `settle(resume=False)`
+    past_no_return: bool = False  # `settle(resume=False)` after an erasure began: nothing undone
     leftovers: tuple[Leftover, ...] = field(default_factory=tuple)
     complete: bool = False
-
-    @property
-    def settings_restored(self) -> SettingsRestored | None:
-        return self.settings[0] if self.settings else None
 
 
 # What blocks the end, in the report: these codes make the detachment incomplete.
@@ -178,6 +189,7 @@ class FullDetacher:
         clock: Clock,
         roots: RootDirectory,
         restore: RestoreSettings,
+        library_roots: Callable[[], Collection[str]],
         locks: ResourceLocks | None = None,
         store_path: str | None = None,
         run: Callable[[Coroutine[Any, Any, Any]], Any] = asyncio.run,
@@ -185,6 +197,7 @@ class FullDetacher:
     ) -> None:
         self._engine = engine
         self._restore = restore
+        self._library_roots = library_roots  # the roots Shelfhold's own library lives on
         self._fsops = fsops
         self._journal = journal
         self._clock = clock
@@ -216,8 +229,8 @@ class FullDetacher:
             warnings.append(DetachWarning("root_shared", len(shared)))
         if following:
             warnings.append(DetachWarning("follows_active", following))
-        if any(self._has_tombstone_journal(r) for r in erase):
-            warnings.append(DetachWarning("tombstone_journal_erased", 1))
+        if journals := sum(self._has_tombstone_journal(r) for r in erase):
+            warnings.append(DetachWarning("tombstone_journal_erased", journals))
         return DetachPreview(target_id, tuple(warnings), full_detach_phrase(target_id))
 
     # -- the detachment -------------------------------------------------------------------------
@@ -232,6 +245,7 @@ class FullDetacher:
         revoker: KeyRevoker,
         credential: str | None = None,
         discard_hidden_data: bool = False,
+        discard_tombstone_journal: bool = False,
         job_id: str | None = None,
     ) -> DetachReport:
         self._authorize(principal)
@@ -239,19 +253,26 @@ class FullDetacher:
             typed.strip().encode(), full_detach_phrase(target_id).encode()
         ):
             raise DetachRefusedError("confirmation_required")
-        with self._engine.connect() as conn:
-            contexts = self._contexts(conn, target_id)
-        erase, shared = self._split_roots(target_id, contexts)
         report = DetachReport(target_id)
-        with self._held(erase, job_id or new_ulid()):
+        with self._held(target_id, job_id or new_ulid()):
+            with self._engine.connect() as conn:  # read once the target is ours
+                contexts = self._contexts(conn, target_id)
+            erase, shared = self._split_roots(target_id, contexts)
             self._settle_own(target_id, report, resume=True)
-            self._require_free(erase)
+            self._require_free(target_id, erase)
             if not discard_hidden_data and any(self._hidden_data(r) for r in erase):
                 raise DetachRefusedError("hidden_data_present")
+            journals = [r for r in erase if self._has_tombstone_journal(r)]
+            if journals and not discard_tombstone_journal:
+                raise DetachRefusedError("tombstone_journal_present")
             left: list[Leftover] = []
-            self._erase_hidden(target_id, erase, report, left)
-            if not any(leftover.code in _INCOMPLETE for leftover in left):
-                self._restore_settings(contexts, client, report, left)
+            revocation = self._revocation(target_id)
+            if revocation is None:  # a revocation on record means the settings were given back
+                self._erase_hidden(target_id, erase, report, left)
+                if journals and not any(x.code in _INCOMPLETE for x in left):
+                    left.append(Leftover("tombstone_journal_erased", len(journals)))
+                if not any(leftover.code in _INCOMPLETE for leftover in left):
+                    self._restore_settings(contexts, client, report, left)
             if not any(leftover.code in _INCOMPLETE for leftover in left):
                 self._revoke(target_id, revoker, credential, report, left)
             report.complete = not any(leftover.code in _INCOMPLETE for leftover in left)
@@ -267,11 +288,14 @@ class FullDetacher:
 
     def settle(self, target_id: str, *, resume: bool, principal: Principal) -> DetachReport:
         """After a stop. `resume`: close what the stop left finished (the erasure that did reach
-        the disk), leave the rest to the same command run again. Otherwise give up: the
-        intentions whose erasure did not happen are cancelled and nothing else changes."""
+        the disk), leave the rest to the same command run again. Otherwise give up: **before** an
+        erasure began, the intentions are cancelled and nothing else changes; **after**, there is
+        nothing to undo (the folder is gone), so nothing is closed or demoted and the report says
+        `past_no_return`: the same command run again finishes."""
         self._authorize(principal)
         report = DetachReport(target_id)
-        self._settle_own(target_id, report, resume=resume)
+        with self._held(target_id, new_ulid()):
+            self._settle_own(target_id, report, resume=resume)
         return report
 
     # -- the steps ------------------------------------------------------------------------------
@@ -281,24 +305,32 @@ class FullDetacher:
     ) -> None:
         done: list[str] = []
         for root in roots:
+            open_here = self._open_for_root(target_id, root)
             if self._erased(root):
-                self._demote(root.root_id)
+                if open_here is not None:
+                    self._close_erased(open_here.id, root.root_id)
+                else:
+                    self._demote(root.root_id)
                 continue
-            area = f"{root.path}/{RESERVED_DIR}"
-            intent = self._journal.record(
-                op="delete", src=area,
-                extra={"scope": DETACH_SCOPE, "target_id": target_id, "root_id": root.root_id},
-            )  # fmt: skip
-            self._journal.mark_applying(intent)
+            intent = self._record_erasure(target_id, root) if open_here is None else open_here.id
+            if open_here is None or open_here.state == "pending":
+                self._journal.mark_applying(intent)
             try:
                 self._fsops.erase_host_area(root.path)
             except (OSError, FsopsError):
-                self._journal.cancel(intent)
+                if not self._partly_erased(root):  # nothing moved: nothing to remember
+                    self._journal.cancel(intent)
                 left.append(Leftover("hidden_not_erased", 1))
                 continue
             self._close_erased(intent, root.root_id)
             done.append(root.path)
         report.hidden_removed = tuple(done)
+
+    def _record_erasure(self, target_id: str, root: RootRef) -> str:
+        return self._journal.record(
+            op="delete", src=f"{root.path}/{RESERVED_DIR}",
+            extra={"scope": DETACH_SCOPE, "target_id": target_id, "root_id": root.root_id},
+        )  # fmt: skip
 
     def _restore_settings(
         self,
@@ -308,7 +340,6 @@ class FullDetacher:
         left: list[Leftover],
     ) -> None:
         restored: list[SettingsRestored] = []
-        seen: set[str] = set()
         with self._engine.connect() as conn:
             before = {
                 row.id: row.pre_adoption_settings
@@ -323,17 +354,24 @@ class FullDetacher:
         if client is None:
             left.append(Leftover("settings_not_restored", len(contexts)))
             return
+        libraries: dict[
+            str, list[Any]
+        ] = {}  # every destination adopted on one library says its own
         for ctx in contexts:
-            ref = refs[ctx.destination_id]
-            if ref is None or ref in seen:
-                continue
-            seen.add(ref)
+            if (ref := refs[ctx.destination_id]) is not None:
+                libraries.setdefault(ref, []).append(before[ctx.destination_id])
+        gone = 0
+        for ref, prior_settings in libraries.items():
             try:
-                restored.append(self._run(self._restore(client, ref, before[ctx.destination_id])))
-            except Exception as error:  # Kavita unreachable, library gone: said, never hidden
+                restored.append(self._run(self._restore(client, ref, prior_settings)))
+            except LibraryGoneError:  # nothing is left there to give back: said, not a failure
+                gone += 1
+            except Exception as error:  # Kavita unreachable, refused: said, never hidden
                 log.warning("detach.settings_failed", error=type(error).__name__)
                 left.append(Leftover("settings_not_restored", 1))
         report.settings = tuple(restored)
+        if gone:
+            left.append(Leftover("library_gone", gone))
         if any(not s.type_unchanged for s in restored):  # told, not forced
             left.append(
                 Leftover("library_type_changed", sum(not s.type_unchanged for s in restored))
@@ -347,14 +385,49 @@ class FullDetacher:
         report: DetachReport,
         left: list[Leftover],
     ) -> None:
+        """The key goes by its identifier, written in an intention before it goes. A stop between
+        the revocation and the end finds, on the rerun, an intention that is `done` (nothing to
+        do) or `applying` with the identifier (a key absent by that identifier is revoked). Never
+        by name, and never another key of the account."""
+        found = self._revocation(target_id)
+        if found is not None and found.state == "done":
+            report.key_revoked = True
+            return
+        key_id = None if found is None else found.payload.get("key_id")
+        named = revoker if isinstance(revoker, KeyIdRevoker) else None
         try:
-            revoked = revoker.revoke(target_id, credential=credential)
+            if named is not None and key_id is None:
+                key_id = named.key_id(target_id, credential=credential)
+                if key_id is None:  # the key is not there to be named: nothing was done
+                    report.key_revoked = False
+                    left.append(Leftover("key_not_revoked", 1))
+                    return
+            intent = found.id if found is not None else self._record_revocation(target_id, key_id)
+            if found is None or found.state == "pending":
+                self._journal.mark_applying(intent)
+            if named is not None:
+                revoked = named.revoke_id(target_id, credential=credential, key_id=str(key_id))
+            else:
+                revoked = revoker.revoke(target_id, credential=credential)
         except Exception as error:  # the account's door failed: the key stays, and it is said
             log.warning("detach.revoke_failed", error=type(error).__name__)
             revoked = False
+            intent = ""
+        if revoked:
+            if intent:
+                self._journal.mark_done(intent)
+        elif (
+            intent and named is None
+        ):  # without an identifier a failed try leaves nothing to resume
+            self._journal.cancel(intent)
         report.key_revoked = revoked
         if not revoked:
             left.append(Leftover("key_not_revoked", 1))
+
+    def _record_revocation(self, target_id: str, key_id: str | None) -> str:
+        return self._journal.record(
+            op="delete", extra={"scope": REVOKE_SCOPE, "target_id": target_id, "key_id": key_id}
+        )
 
     def _forget(
         self, principal: Principal, target_id: str, contexts: list[DestinationContext]
@@ -362,7 +435,9 @@ class FullDetacher:
         forgotten = 0
         with self._engine.begin() as conn:
             for ctx in contexts:
-                forgotten += forget_destination(conn, ctx.destination_id)
+                forgotten += forget_destination(
+                    conn, ctx.destination_id, copy_scope(ctx, self._roots)
+                )
             libraries = export.remote_library
             conn.execute(sa.delete(export.kavita_instance).where(
                 export.kavita_instance.c.target_id == target_id
@@ -388,19 +463,63 @@ class FullDetacher:
     # -- after a stop ---------------------------------------------------------------------------
 
     def _settle_own(self, target_id: str, report: DetachReport, *, resume: bool) -> None:
-        """The erasure intentions of this target a stop left open: an erasure that did reach the
-        disk is closed (and its root demoted), one that did not is given up, to be redone fresh
-        by `apply` (`resume`) or not at all (`resume=False`)."""
-        for intent in self._journal.open_intents():
-            if not _ours(intent, target_id) or intent.src is None:
+        """The erasure intentions of this target a stop left open. An erasure that reached the
+        disk is closed (and its root demoted) when the command is run again. Giving up
+        (`resume=False`) cancels the intentions of an erasure that has not touched the disk; once
+        a root is partly or wholly erased, or a revocation is on record, there is nothing to undo,
+        so nothing is closed or demoted and the report says `past_no_return`."""
+        mine = [i for i in self._journal.open_intents() if _ours(i, target_id)]
+        if not resume and (self._erasure_began(target_id, mine) or self._revocation(target_id)):
+            report.past_no_return = True
+            return
+        for intent in mine:
+            if intent.src is None:
                 continue
             root = str(intent.src).removesuffix(f"/{RESERVED_DIR}")
             if self._erased(RootRef("", root)):
                 self._close_erased(intent.id, str(intent.payload.get("root_id", "")))
-            else:
+            elif not resume or intent.state == "pending":  # nothing touched the disk
                 self._journal.cancel(intent.id)
                 if not resume:
                     report.cancelled += 1
+
+    def _erasure_began(self, target_id: str, mine: list[OpenIntent]) -> bool:
+        """The point of no return: an erasure of this target was closed, or a root of an open one
+        is already partly gone (the reserved folder or the sentinel)."""
+        if any(row.state == "done" for row in self._intents_of(DETACH_SCOPE, target_id)):
+            return True
+        return any(
+            intent.src is not None
+            and self._partly_erased(RootRef("", str(intent.src).removesuffix(f"/{RESERVED_DIR}")))
+            for intent in mine
+        )
+
+    def _open_for_root(self, target_id: str, root: RootRef) -> OpenIntent | None:
+        for intent in self._journal.open_intents():
+            if _ours(intent, target_id) and intent.src == f"{root.path}/{RESERVED_DIR}":
+                return intent
+        return None
+
+    def _revocation(self, target_id: str) -> OpenIntent | None:
+        """The intention of the key's revocation, whatever its state but `cancelled`."""
+        for row in self._intents_of(REVOKE_SCOPE, target_id):
+            if row.state != "cancelled":
+                return _open_from(row)
+        return None
+
+    def _intents_of(self, scope: str, target_id: str) -> list[Any]:
+        table = coherence.fs_intent
+        with self._engine.connect() as conn:
+            rows = conn.execute(
+                sa.select(table).where(table.c.op == "delete").order_by(table.c.created_at)
+            ).all()
+        return [
+            row
+            for row in rows
+            if isinstance(row.expected_file_id, dict)
+            and row.expected_file_id.get("scope") == scope
+            and row.expected_file_id.get("target_id") == target_id
+        ]
 
     def _close_erased(self, intent_id: str, root_id: str) -> None:
         with self._engine.begin() as conn:
@@ -437,7 +556,8 @@ class FullDetacher:
     def _split_roots(
         self, target_id: str, contexts: list[DestinationContext]
     ) -> tuple[list[RootRef], list[RootRef]]:
-        """The roots to erase and the roots another target still uses (left alone, said)."""
+        """The roots to erase and the roots that stay: another export target still uses them, or
+        Shelfhold's own library lives on them (left alone, said)."""
         found: dict[str, RootRef] = {}
         for ctx in contexts:
             for entry in ctx.path_map.entries:
@@ -453,10 +573,11 @@ class FullDetacher:
                 ).all()
             ]
         entries = [str(e.get("local", "")) for rows in others for e in rows if isinstance(e, dict)]
+        own_library = set(self._library_roots())
         erase: list[RootRef] = []
         shared: list[RootRef] = []
         for ref in sorted(found.values(), key=lambda r: r.path):
-            clash = any(
+            clash = ref.root_id in own_library or any(
                 within(local, ref.path) is not None or within(ref.path, local) is not None
                 for local in entries
                 if local
@@ -464,9 +585,16 @@ class FullDetacher:
             (shared if clash else erase).append(ref)
         return erase, shared
 
-    def _require_free(self, roots: list[RootRef]) -> None:
-        with self._engine.connect() as conn:
-            bases = open_intent_paths(conn)
+    def _require_free(self, target_id: str, roots: list[RootRef]) -> None:
+        """I9: an open file operation of somebody else under a root stops the detachment; the
+        target's own erasure and revocation intentions are not somebody else's."""
+        bases = frozenset(
+            p
+            for intent in self._journal.open_intents()
+            if not _ours(intent, target_id) and not _is_revocation(intent, target_id)
+            for p in (intent.src, intent.dst)
+            if p
+        )
         for root in roots:
             if within_any(root.path, bases) or holds_any(root.path, bases):
                 raise DetachRefusedError("intent_open")
@@ -480,6 +608,16 @@ class FullDetacher:
             except FsopsError:
                 return False
         return True
+
+    def _partly_erased(self, root: RootRef) -> bool:
+        """At least one of the reserved folder and the sentinel is gone."""
+        for name in (RESERVED_DIR, SENTINEL_FILE):
+            try:
+                if self._fsops.observe(f"{root.path}/{name}", host=True) is None:
+                    return True
+            except FsopsError:
+                continue
+        return False
 
     def _hidden_data(self, root: RootRef) -> int:
         """Entries in the bin and archives waiting for their export: user data, never silently
@@ -499,14 +637,28 @@ class FullDetacher:
             return False
 
     @contextmanager
-    def _held(self, roots: list[RootRef], job_id: str) -> Iterator[None]:
-        """The roots are held for the length of the detachment (no export writes them), released
-        whatever happens; a lease that a kill left expires by itself."""
-        if self._locks is None or not roots:
+    def _held(self, target_id: str, job_id: str) -> Iterator[None]:
+        """Every destination of the target is held, alone (`dest:<id>`, exclusive), for the length
+        of the detachment: no export, scan or staging of it runs, and none starts. A job of
+        theirs that runs makes this answer `busy`, and the other way round. Released whatever
+        happens; a lease that a kill left expires by itself."""
+        if self._locks is None:
+            yield
+            return
+        with self._engine.connect() as conn:
+            ids = sorted(
+                str(i)
+                for i in conn.execute(
+                    sa.select(export.shelf_destination.c.id).where(
+                        export.shelf_destination.c.target_id == target_id
+                    )
+                ).scalars()
+            )
+        if not ids:  # an unknown target: the caller says so, nothing to hold
             yield
             return
         try:
-            held = self._locks.hold_resources(job_id, sorted(path_resource(r.path) for r in roots))
+            held = self._locks.hold_resources(job_id, [dest_resource(i) for i in ids])
             held.__enter__()
         except LockBusyError:
             raise DetachRefusedError("busy") from None
@@ -554,6 +706,25 @@ def _ours(intent: OpenIntent, target_id: str) -> bool:
         and intent.payload.get("scope") == DETACH_SCOPE
         and intent.payload.get("target_id") == target_id
     )
+
+
+def _is_revocation(intent: OpenIntent, target_id: str) -> bool:
+    return (
+        intent.op == "delete"
+        and intent.payload.get("scope") == REVOKE_SCOPE
+        and intent.payload.get("target_id") == target_id
+    )
+
+
+def _open_from(row: Any) -> OpenIntent:
+    """An intention row, in any state, as the journal's own type (the payload is what matters)."""
+    payload = dict(row.expected_file_id or {})
+    return OpenIntent(
+        id=row.id, op=row.op, src=row.src_path, dst=row.dst_path,
+        expected_sha256=row.expected_sha256, expected_file_id=None, state=row.state,
+        epoch=row.epoch, schema_version=row.intent_schema_version, plan_id=row.plan_id,
+        payload=payload,
+    )  # fmt: skip
 
 
 def _records(conn: Connection, destination_id: str) -> list[Any]:

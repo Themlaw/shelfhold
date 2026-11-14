@@ -308,14 +308,44 @@ def relocate_root_paths(
     return done
 
 
-def forget_destination_copies(connection: Connection, export_item_id: str) -> None:
-    """The stale `destination` rows of an item that is written again (EF-EXP-018)."""
-    connection.execute(
-        sa.delete(replica_table).where(
-            replica_table.c.export_item_id == export_item_id,
-            replica_table.c.location == "destination",
+def forget_destination_copies(
+    connection: Connection,
+    export_item_id: str,
+    *,
+    physical_root_id: str | None = None,
+    under: str | None = None,
+) -> None:
+    """The stale `destination` rows of an item that is written again (EF-EXP-018).
+
+    `physical_root_id` and `under` (a folder relative to that root, `""` for the whole root)
+    keep the deletion to the copies of one destination's own folder: a destination that is
+    removed (L30) must not forget the copy of the same item that lives in another one."""
+    where = [
+        replica_table.c.export_item_id == export_item_id,
+        replica_table.c.location == "destination",
+    ]
+    if physical_root_id is not None:
+        where.append(replica_table.c.physical_root_id == physical_root_id)
+        if under:
+            escaped = (
+                under.rstrip("/").replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+            )
+            where.append(replica_table.c.rel_path.like(f"{escaped}/%", escape="\\"))
+    connection.execute(sa.delete(replica_table).where(*where))
+
+
+def roots_holding_library_copies(connection: Connection) -> set[str]:
+    """The physical roots Shelfhold's own library lives on: any root that holds a `library` or
+    `store` copy of a Unit. A detachment never erases the reserved folder of such a root (L30)."""
+    rows = connection.execute(
+        sa.select(replica_table.c.physical_root_id)
+        .where(
+            replica_table.c.location.in_(("library", "store")),
+            replica_table.c.physical_root_id.isnot(None),
         )
+        .distinct()
     )
+    return {str(r) for r in rows.scalars()}
 
 
 def destination_identities(

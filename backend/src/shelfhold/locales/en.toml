@@ -1823,7 +1823,7 @@
 
   [errors."detach.refused"]
     title = "The detachment is refused: nothing was changed."
-    action = "Read the reason: the phrase was not typed as shown, a file operation is still open under the root, or the reserved folder holds a deleted book in its bin or an archive waiting for its export (ask to discard them by name if you are sure)."
+    action = "Read the reason: the phrase was not typed as shown, a file operation is still open under the root, an export or a scan holds a destination (try again later), the reserved folder holds a deleted book in its bin or an archive waiting for its export (--discard-hidden-data if you are sure), its erase log would go (--discard-tombstone-journal), or the erasure has already begun (run the same command again to finish)."
     cause = "The confirmation phrase is missing or different, an operation is still open, or the reserved folder holds data of yours that the detachment would destroy."
 
   [errors."tombstone.journal_truncated"]
@@ -2312,7 +2312,7 @@
   warning_hidden_data_present = "The reserved folder holds {count} entries of yours (bin, archives waiting for their export): the detachment stops unless you add --discard-hidden-data."
   warning_root_shared = "{count} root(s) are still used by another target: their reserved folder stays."
   warning_follows_active = "Shelfhold still follows {count} series: run detach --restore-upstream first so that Suwayomi takes its updates back."
-  warning_tombstone_journal_erased = "The erase log (tombstones) kept in the reserved folder is erased too."
+  warning_tombstone_journal_erased = "The erase log (tombstones) of {count} root(s) is erased too: it takes --discard-tombstone-journal, otherwise the detachment is refused."
   type_phrase = "To go on, run the same command again with --confirm \"{phrase}\"."
   hidden_removed = "Reserved folder erased on {count} root(s)."
   settings_restored = "Kavita library settings restored: ExcludePatterns as before the adoption."
@@ -2328,6 +2328,10 @@
   leftover_hidden_not_erased = "NOT done: the reserved folder of {count} root(s) could not be erased."
   leftover_settings_not_restored = "NOT done: the Kavita settings of {count} library(ies) could not be restored."
   leftover_key_not_revoked = "NOT done: the dedicated key was not revoked (give --password-file)."
+  leftover_library_gone = "{count} library(ies) no longer exist in Kavita: no settings to give back."
+  leftover_tombstone_journal_erased = "The erase log (tombstones) of {count} root(s) was erased with the reserved folder."
+  discard_tombstone_help = "Also erase the erase log (tombstones) of the reserved folder: without it, a restored backup can bring erased Works back."
+  give_up_too_late = "Give up refused: the erasure of the reserved folder has already begun and cannot be undone. Run the same command again to finish the detachment."
   leftover_library_type_changed = "{count} library(ies) have another type than before the adoption: not changed."
 
 [removal]

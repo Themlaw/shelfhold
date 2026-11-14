@@ -315,7 +315,8 @@ def test_concurrent_export_and_rename_same_series_serialized(settings: Settings,
                 held = connection.execute(
                     sa.select(sa.func.count()).select_from(coherence.resource_lock)
                 ).scalar_one()
-            assert held == 2  # the rename's work and path locks only
+            # the rename's work and path locks, and its shared row of the destination
+            assert held == 3
         worker.join(30)
         assert not worker.is_alive()
         assert [p.name for p in env.exported_files()] == ["Dr Stone - Ch.2.cbz"]

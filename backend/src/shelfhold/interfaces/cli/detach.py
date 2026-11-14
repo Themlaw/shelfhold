@@ -26,6 +26,9 @@ def register(commands: argparse._SubParsersAction[argparse.ArgumentParser]) -> N
     detach.add_argument("--confirm", default=None, help=t("detach.confirm_help"))
     detach.add_argument("--password-file", default=None, help=t("detach.password_file_help"))
     detach.add_argument("--discard-hidden-data", action="store_true", help=t("detach.discard_help"))
+    detach.add_argument(
+        "--discard-tombstone-journal", action="store_true", help=t("detach.discard_tombstone_help")
+    )
     detach.add_argument("--give-up", action="store_true", help=t("detach.give_up_help"))
     detach.add_argument("--shelf", default=None, help=t("detach.shelf_help"))
     detach.add_argument("--series", default=None, help=t("detach.series_help"))
