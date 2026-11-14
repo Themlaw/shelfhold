@@ -63,7 +63,8 @@ class HashedFiles:
     def _wait_out_the_tick(changed_at: int | None) -> None:
         """A file touched a moment ago has the ctime of the tick it will be touched in again: a
         rewrite right after the hash would leave it as it is ("racily clean", as git calls it).
-        Wait until it is old enough that a later rewrite shows in it. Files are rarely that young."""
+        Wait until it is old enough that a later rewrite shows in it. Files are rarely that
+        young."""
         if changed_at is None:
             return
         age = time.time_ns() - changed_at
