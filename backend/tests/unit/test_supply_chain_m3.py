@@ -21,6 +21,11 @@ from typing import Any
 import pytest
 import yaml
 
+# the issuer is the exact value of the flag, not a substring of some other host
+OIDC_ISSUER = re.compile(
+    r"--certificate-oidc-issuer[ =]\"?https://token\.actions\.githubusercontent\.com\b"
+)
+
 ROOT = Path(__file__).resolve().parents[3]
 WORKFLOWS = ROOT / ".github" / "workflows"
 SCRIPT = ROOT / ".github" / "scripts" / "second-registry.sh"
@@ -297,7 +302,7 @@ def test_release_workflow_signs_both_registries() -> None:
     assert verify, names
     joined = "\n".join(str(s["run"]) for s in verify)
     assert "--certificate-identity" in joined and "--certificate-oidc-issuer" in joined
-    assert "token.actions.githubusercontent.com" in joined
+    assert re.search(OIDC_ISSUER, joined)
     assert "SECOND_IMAGE" in joined and "IMAGE" in joined
     # the caller hands over the optional secret by name, never `secrets: inherit`
     caller = workflows["ci.yml"]["jobs"]["image-publish"]
@@ -538,7 +543,7 @@ def test_cosign_verification_documented_for_both_registries() -> None:
     assert "ghcr.io/themlaw/shelfhold" in text
     assert "codeberg.org/<owner>/shelfhold" in text
     assert "--certificate-identity-regexp" in text and "image-publish" in text
-    assert "https://token.actions.githubusercontent.com" in text
+    assert re.search(OIDC_ISSUER, text)
     assert "gh attestation verify" in text
     for needle in ("CODEBERG_TOKEN", "SECOND_REGISTRY", "sans le jeton"):
         assert needle.lower() in text.lower(), needle

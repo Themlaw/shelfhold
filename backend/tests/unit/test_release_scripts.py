@@ -2,6 +2,7 @@
 
 import json
 import os
+import re
 import stat
 import subprocess
 from pathlib import Path
@@ -9,6 +10,11 @@ from pathlib import Path
 import pytest
 
 from tests.support.tools import require_tool
+
+# the issuer is the exact value of the flag, not a substring of some other host
+OIDC_ISSUER = re.compile(
+    r"--certificate-oidc-issuer[ =]\"?https://token\.actions\.githubusercontent\.com\b"
+)
 
 ROOT = Path(__file__).resolve().parents[3]
 SCRIPTS = ROOT / ".github" / "scripts"
@@ -140,7 +146,8 @@ def test_retag_verifies_the_signature_of_the_digest_before_tagging(env: dict[str
     verify = next(i for i, line in enumerate(log) if line.startswith("cosign verify"))
     create = next(i for i, line in enumerate(log) if " create " in line)
     assert verify < create
-    assert "image-publish" in log[verify] and "token.actions.githubusercontent.com" in log[verify]
+    assert "image-publish" in log[verify]
+    assert re.search(OIDC_ISSUER, log[verify])
 
 
 @pytest.mark.req("ENF-SEC-007")
