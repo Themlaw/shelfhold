@@ -63,7 +63,11 @@ from shelfhold.export.application.intents import IntentJournal
 from shelfhold.export.application.library_repair import LibraryRepair
 from shelfhold.export.application.locks import work_lock_for
 from shelfhold.export.application.migration_detect import SwitchoverDetector, SwitchoverGate
-from shelfhold.export.application.naming_preview import NamingPreview, preview_names
+from shelfhold.export.application.naming_preview import (
+    NamingPreview,
+    contested_names,
+    preview_names,
+)
 from shelfhold.export.application.pipeline import (
     ExportPipeline,
     PlanPreview,
@@ -888,6 +892,23 @@ class PlanService:
             except (KeyringUnavailableError, KeyError, sa.exc.NoResultFound, TargetError):
                 pipeline.bind_parse(_no_remote_parse, verified=False)
             return pipeline.preview(destination_id)
+
+    def flagged_names(self, destination_id: str) -> int:
+        """The names the destination's own template puts in question (two files on one path, a
+        name cut or reserved, a Unit the planner refuses for its name): from the database
+        alone, no Kavita asked and no lock taken (the one of `preview` is held while Kavita
+        answers), so the list of the shelves never waits on a sleeping server."""
+        items, existing, _kind, refused = self._pipeline().naming_state(destination_id)
+        with self._comp.engine.connect() as conn:
+            stored = conn.execute(
+                sa.select(export.shelf_destination.c.template).where(
+                    export.shelf_destination.c.id == destination_id
+                )
+            ).scalar_one()
+        preview = preview_names(
+            items, NamingTemplate.loads(stored), parse=None, verified=False, existing=existing
+        )
+        return contested_names(preview) + refused
 
     def naming_preview(
         self, destination_id: str, template: NamingTemplate | None = None

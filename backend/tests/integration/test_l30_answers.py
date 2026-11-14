@@ -57,7 +57,7 @@ def _detach(d: DetachEnv, **kw: Any) -> Any:
 
 def _remove(d: DetachEnv, mode: RemovalMode, dest: str | None = None) -> Any:
     dest = dest or d.env.destination_id
-    return d.remover.apply(dest, mode, principal=ADMIN, typed=removal_phrase(dest))
+    return d.remover.apply(dest, mode, principal=ADMIN, typed=removal_phrase(dest, mode))
 
 
 def _series_folder(d: DetachEnv) -> str:

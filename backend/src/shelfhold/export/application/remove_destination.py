@@ -10,8 +10,8 @@ Two ways, and the warning is read before either:
   A volume the admin already had (an adopted one) is never Shelfhold's to delete and stays.
 
 Both are one reserved action (`destination.remove_all`): a fresh admin session or the host CLI,
-never a key, a member or a child, and the admin types the phrase `remove <destination id>`. The
-check is made here, not only at the door.
+never a key, a member or a child, and the admin types the phrase `remove --keep-files <destination
+id>` (or `--delete-files`), exactly. The check is made here, not only at the door.
 
 The safety is the order, one file at a time, each step durable before the next:
 
@@ -95,9 +95,10 @@ class RemovalMode(StrEnum):
     DELETE_FILES = "delete_files"
 
 
-def removal_phrase(destination_id: str) -> str:
-    """What the admin types: the id, so that a pasted command names its destination."""
-    return f"remove {destination_id}"
+def removal_phrase(destination_id: str, mode: RemovalMode) -> str:
+    """What the admin types: the mode and the id, so that a pasted command names its destination
+    and what was seen in the preview is what is done (the way out of a keep is not a delete)."""
+    return f"remove --{mode.value.replace('_', '-')} {destination_id}"
 
 
 class RemovalRefusedError(PermissionError):
@@ -189,7 +190,9 @@ class RemoveDestination:
             if adopted:
                 warnings.append(RemovalWarning("adopted_kept", adopted))
         warnings.append(RemovalWarning("manifest_forgotten", len(records)))
-        return RemovalPreview(destination_id, mode, tuple(warnings), removal_phrase(destination_id))
+        return RemovalPreview(
+            destination_id, mode, tuple(warnings), removal_phrase(destination_id, mode)
+        )
 
     # -- the removal ----------------------------------------------------------------------------
 
@@ -204,7 +207,8 @@ class RemoveDestination:
     ) -> RemovalReport:
         self._authorize(principal)
         if typed is None or not hmac.compare_digest(
-            typed.strip().encode(), removal_phrase(destination_id).encode()
+            typed.encode(),
+            removal_phrase(destination_id, mode).encode(),  # exactly, no trim
         ):
             raise RemovalRefusedError("confirmation_required")
         with self._engine.connect() as conn:

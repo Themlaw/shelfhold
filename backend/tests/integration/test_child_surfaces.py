@@ -135,6 +135,13 @@ CLOSED = (
     "GET /api/v1/tombstones",
     "POST /api/v1/library/space-check",
     "POST /api/v1/detach",
+    # M3 L45: the destinations and the full detachment (reserved: a fresh admin session, a typed
+    # phrase) are the admin's: a child is refused by session and by key, before any service
+    "GET /api/v1/destinations",
+    "POST /api/v1/destinations/{destination_id}/removal",
+    "POST /api/v1/destinations/{destination_id}/removal-preview",
+    "POST /api/v1/targets/{target_id}/detach",
+    "POST /api/v1/targets/{target_id}/detach-preview",
     "GET /api/v1/diagnostic/bundle",  # M3 L46: the bundle is the admin's alone
     "GET /api/v1/editions",
     "POST /api/v1/editions/{edition_id}/add-directly",
@@ -267,7 +274,12 @@ CLOSED = (
 
 # The one route whose body is read before its guard answers: it is given a valid one, so that the
 # refusal under test is the child's, not a validation error.
-BODIES = {"POST /api/v1/reconcile/forget-root": {"root_id": "x", "confirm": "x"}}
+BODIES = {
+    "POST /api/v1/reconcile/forget-root": {"root_id": "x", "confirm": "x"},
+    "POST /api/v1/destinations/{destination_id}/removal": {"mode": "keep_files", "typed": "x"},
+    "POST /api/v1/destinations/{destination_id}/removal-preview": {"mode": "keep_files"},
+    "POST /api/v1/targets/{target_id}/detach": {"typed": "x"},
+}
 
 # Surfaces that do not exist yet: the lot that builds each one adds its child case, and this
 # list is where the suite notices that the surface has arrived (the meta-test fails when a path

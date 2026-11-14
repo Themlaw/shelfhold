@@ -19,6 +19,8 @@ import contextlib
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
+import structlog
+
 from shelfhold.export.application.detach import (
     DetachRefusedError,
     DetachReport,
@@ -49,6 +51,8 @@ if TYPE_CHECKING:
 
 __all__ = ["DetachOps"]
 
+log = structlog.get_logger()
+
 _MODES = {m.value: m for m in RemovalMode}
 
 
@@ -74,9 +78,16 @@ class _Revoker:
 
 
 class DetachOps:
-    def __init__(self, comp: Composition, headless: HeadlessOps) -> None:
+    def __init__(
+        self,
+        comp: Composition,
+        headless: HeadlessOps,
+        *,
+        flagged_names: Callable[[str], int] | None = None,
+    ) -> None:
         self._comp = comp
         self._headless = headless
+        self._flagged_names = flagged_names
 
     # -- the pieces -----------------------------------------------------------------------------
 
@@ -129,6 +140,68 @@ class DetachOps:
                 asyncio.run(client.scan_folder(remote_folder))
 
         return scan
+
+    # -- list the destinations ------------------------------------------------------------------
+
+    # Lives here, not with the shelves, because the screens' fixed tests read it on `teardown`.
+    def list_destinations(self) -> list[dict[str, Any]]:
+        import json
+
+        import sqlalchemy as sa
+
+        from shelfhold.infrastructure.schema import export
+
+        shelf = export.shelf
+        destination = export.shelf_destination
+        with self._comp.engine.connect() as connection:
+            rows = connection.execute(
+                sa.select(
+                    destination.c.id,
+                    destination.c.shelf_id,
+                    shelf.c.name.label("shelf_name"),
+                    destination.c.target_id,
+                    destination.c.root_subpath,
+                    destination.c.transport,
+                    destination.c.adopted,
+                    destination.c.template,
+                )
+                .select_from(destination.join(shelf, destination.c.shelf_id == shelf.c.id))
+                .order_by(destination.c.id)
+            ).all()
+        count = self._flagged_names
+        if rows and count is None:
+            raise RuntimeError("the count of contested names is not wired")
+        items: list[dict[str, Any]] = []
+        for row in rows:
+            try:
+                template = json.loads(row.template)
+            except (TypeError, ValueError):
+                template = {}
+            flagged: int | None = None
+            reason: str | None = None
+            if count is not None:
+                try:
+                    flagged = count(row.id)
+                except Exception as error:  # one destination that cannot be counted is still listed
+                    reason = type(error).__name__
+                    log.warning(
+                        "destination.flagged_names_failed", destination_id=row.id, reason=reason
+                    )
+            items.append(
+                {
+                    "id": row.id,
+                    "shelf_id": row.shelf_id,
+                    "shelf_name": row.shelf_name,
+                    "target_id": row.target_id,
+                    "root_subpath": row.root_subpath,
+                    "transport": row.transport,
+                    "adopted": bool(row.adopted),
+                    "flagged_names": flagged,
+                    "flagged_reason": reason,  # why there is no count: the screen says it
+                    "template": template,
+                }
+            )
+        return items
 
     # -- remove a destination -------------------------------------------------------------------
 

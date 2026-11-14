@@ -63,12 +63,17 @@ def test_remove_destination_keep_or_delete_files_warns(d: DetachEnv) -> None:
     assert {w.code for w in keep.warnings} == {"files_kept", "manifest_forgotten"}
     assert {w.code for w in every.warnings} >= {"files_deleted", "past_the_bin"}
     assert next(w for w in every.warnings if w.code == "files_deleted").count == 3
-    assert keep.phrase == every.phrase == removal_phrase(dest)
+    assert keep.phrase == removal_phrase(dest, RemovalMode.KEEP_FILES)
+    assert every.phrase == removal_phrase(dest, RemovalMode.DELETE_FILES)
+    assert keep.phrase != every.phrase  # what was seen is what is typed: the mode is in it
     assert _state(d) == untouched  # a preview writes nothing
     # keep the files: the tree is exactly as it was, the manifest and the destination are gone
     before = d.tree_digest()
     report = d.remover.apply(
-        dest, RemovalMode.KEEP_FILES, principal=ADMIN, typed=removal_phrase(dest)
+        dest,
+        RemovalMode.KEEP_FILES,
+        principal=ADMIN,
+        typed=removal_phrase(dest, RemovalMode.KEEP_FILES),
     )
     assert d.tree_digest() == before and report.deleted == 0 and report.forgotten == 3
     assert d.count(export.export_record) == 0 and d.count(export.shelf_destination) == 0
@@ -83,7 +88,10 @@ def test_remove_destination_delete_files_takes_only_what_shelfhold_wrote(d: Deta
     assert next(w for w in preview.warnings if w.code == "files_deleted").count == 2
     assert next(w for w in preview.warnings if w.code == "adopted_kept").count == 1
     report = d.remover.apply(
-        dest, RemovalMode.DELETE_FILES, principal=fresh_admin(d.env), typed=removal_phrase(dest)
+        dest,
+        RemovalMode.DELETE_FILES,
+        principal=fresh_admin(d.env),
+        typed=removal_phrase(dest, RemovalMode.DELETE_FILES),
     )
     assert report.deleted == 2, report.left
     assert [str(p.relative_to(d.env.root)) for p in d.env.files()] == [adopted]  # the admin's own
@@ -115,7 +123,12 @@ def test_every_removal_goes_through_a_journaled_intent(
 
     monkeypatch.setattr(Fsops, "purge_unlink", guard(Fsops.purge_unlink))
     dest = d.env.destination_id
-    d.remover.apply(dest, RemovalMode.DELETE_FILES, principal=ADMIN, typed=removal_phrase(dest))
+    d.remover.apply(
+        dest,
+        RemovalMode.DELETE_FILES,
+        principal=ADMIN,
+        typed=removal_phrase(dest, RemovalMode.DELETE_FILES),
+    )
     assert len(seen) == 3
 
 
@@ -128,7 +141,7 @@ def test_remove_destination_refused_to_key_member_child_stale_session(
     dest = d.env.destination_id
     before = _state(d)
     with pytest.raises(RemovalRefusedError):
-        d.remover.apply(dest, mode, principal=OTHERS[who], typed=removal_phrase(dest))
+        d.remover.apply(dest, mode, principal=OTHERS[who], typed=removal_phrase(dest, mode))
     assert _state(d) == before
 
 
@@ -165,7 +178,10 @@ def test_remove_destination_never_leaves_the_managed_root(d: DetachEnv) -> None:
     linked.symlink_to(keep)
     dest = d.env.destination_id
     report = d.remover.apply(
-        dest, RemovalMode.DELETE_FILES, principal=ADMIN, typed=removal_phrase(dest)
+        dest,
+        RemovalMode.DELETE_FILES,
+        principal=ADMIN,
+        typed=removal_phrase(dest, RemovalMode.DELETE_FILES),
     )
     assert outside.read_bytes() == b"not Shelfhold's"
     assert keep.read_bytes() == b"the target of a planted link"
@@ -194,12 +210,20 @@ def test_remove_destination_interrupted_resumes_to_the_end(
 
     monkeypatch.setattr(owner, name, die)
     with pytest.raises(Killed):
-        d.remover.apply(dest, RemovalMode.DELETE_FILES, principal=ADMIN, typed=removal_phrase(dest))
+        d.remover.apply(
+            dest,
+            RemovalMode.DELETE_FILES,
+            principal=ADMIN,
+            typed=removal_phrase(dest, RemovalMode.DELETE_FILES),
+        )
     monkeypatch.undo()
     assert d.intents("pending", "applying")  # the stop left its deed open
     # the same command, again, finishes: what was gone stays gone, the rest goes
     report = d.remover.apply(
-        dest, RemovalMode.DELETE_FILES, principal=ADMIN, typed=removal_phrase(dest)
+        dest,
+        RemovalMode.DELETE_FILES,
+        principal=ADMIN,
+        typed=removal_phrase(dest, RemovalMode.DELETE_FILES),
     )
     assert report.complete
     assert d.env.files() == [] and d.count(export.shelf_destination) == 0
@@ -222,7 +246,12 @@ def test_remove_destination_interrupted_can_be_given_up_cleanly(
 
     monkeypatch.setattr(d.journal, "mark_applying", die)
     with pytest.raises(Killed):
-        d.remover.apply(dest, RemovalMode.DELETE_FILES, principal=ADMIN, typed=removal_phrase(dest))
+        d.remover.apply(
+            dest,
+            RemovalMode.DELETE_FILES,
+            principal=ADMIN,
+            typed=removal_phrase(dest, RemovalMode.DELETE_FILES),
+        )
     monkeypatch.undo()
     report = d.remover.settle(dest, resume=False, principal=ADMIN)
     assert d.intents("pending", "applying") == []  # nothing left half-done
@@ -246,5 +275,10 @@ def test_remove_destination_refused_while_another_intent_covers_its_files(d: Det
     before = _state(d)
     dest = d.env.destination_id
     with pytest.raises(RemovalRefusedError) as refused:
-        d.remover.apply(dest, RemovalMode.DELETE_FILES, principal=ADMIN, typed=removal_phrase(dest))
+        d.remover.apply(
+            dest,
+            RemovalMode.DELETE_FILES,
+            principal=ADMIN,
+            typed=removal_phrase(dest, RemovalMode.DELETE_FILES),
+        )
     assert refused.value.reason == "intent_open" and _state(d) == before

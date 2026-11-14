@@ -107,7 +107,7 @@ def test_remove_destination_command_keep_files_asks_then_forgets_the_manifest(
         files, hidden = _files(b), _hidden(b)
         capsys.readouterr()
         assert b.cli("target", "remove", destination, "--keep-files") == 2
-        assert f"remove {destination}" in capsys.readouterr().err
+        assert f"remove --keep-files {destination}" in capsys.readouterr().err
         assert b.cli("target", "remove", destination, "--keep-files", "--confirm", "no") != 0
         with pytest.raises(SystemExit):  # one of the two ways is required
             b.cli("target", "remove", destination)
@@ -125,7 +125,7 @@ def test_remove_destination_command_keep_files_asks_then_forgets_the_manifest(
                 destination,
                 "--keep-files",
                 "--confirm",
-                f"remove {destination}",
+                f"remove --keep-files {destination}",
             )
             == 0
         )

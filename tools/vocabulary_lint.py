@@ -48,7 +48,12 @@ CIRCUMVENTION = re.compile(
 
 
 UI_CATALOGS = ("frontend/src/lib/i18n/fr.json", "frontend/src/lib/i18n/en.json")
-ADMIN_KEY_PREFIXES = ("admin.", "add.", "toShelve.", "health_page.", "trash.", "devices.")  # screens only the administrator opens
+# Screens only the administrator opens. `destinations.` (L45): the screen of the destinations is
+# the admin's alone (the door answers 403 to anyone else, the screen says so and lists nothing),
+# and it speaks of what it undoes: the manifest, the Kavita target, a root shared with another target.
+ADMIN_KEY_PREFIXES = (
+    "admin.", "add.", "toShelve.", "health_page.", "trash.", "devices.", "destinations.",
+)  # fmt: skip
 _PREFIX = r"(?<![\w])"
 _UI_FORBIDDEN = {
     "fr": re.compile(

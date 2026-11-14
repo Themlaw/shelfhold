@@ -130,6 +130,7 @@ def open_ops(
     mount: bool = True,
     composition: Composition | None = None,
     revoke: Callable[[str], None] | None = None,
+    flagged_names: Callable[[str], int] | None = None,
 ) -> OpsServices:
     """`mount=False`: the library is not opened (a read of the database, as `status` does).
     `composition`: the one of the running server; a command run by itself builds its own."""
@@ -194,6 +195,6 @@ def open_ops(
             window=window,
             control=QueueControl(revoke=revoke),
         ),
-        teardown=DetachOps(composition, lazy_headless),
+        teardown=DetachOps(composition, lazy_headless, flagged_names=flagged_names),
         window=window,
     )  # fmt: skip
