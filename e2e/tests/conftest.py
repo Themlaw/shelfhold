@@ -128,7 +128,7 @@ def _m2_env(tmp_path: Path) -> dict[str, str]:
     make(folder, ["fr.wikisource.org", "ws-export.wmcloud.org", "standardebooks.org"])
     return {
         "E2E_PKI_DIR": str(folder),
-        "E2E_LOG_LEVEL": os.environ.get("E2E_LOG_LEVEL", "debug"),
+        "E2E_LOG_LEVEL": os.environ.get("E2E_LOG_LEVEL", "DEBUG"),
     }
 
 
