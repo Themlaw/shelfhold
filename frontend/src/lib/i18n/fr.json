@@ -130,7 +130,7 @@
   "admin.wizard.dossier.shelf_created": "Étagère créée et liée à Kavita.",
   "admin.wizard.dossier.no_target": "Kavita n'est pas encore connecté : connectez-le d'abord, l'étagère s'y lie.",
   "admin.wizard.dossier.back_to_kavita": "Retour à la connexion à Kavita",
-  "admin.wizard.kavita.map": "Correspondance des dossiers (avancé)",
+  "admin.wizard.kavita.map": "Chemins des dossiers (avancé)",
   "admin.wizard.kavita.map_help": "Facultatif. Laissez vide si vous avez monté le parent des médias de Kavita comme indiqué. Sinon : dossier vu par Shelfhold = dossier vu par Kavita, par exemple /library=/library.",
   "admin.wizard.kavita.map_invalid": "Écrivez chaque paire sous la forme local=distant, avec deux chemins absolus, séparées par des virgules.",
   "admin.wizard.kavita.expires": "La clé expire le {date}.",

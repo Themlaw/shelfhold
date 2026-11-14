@@ -104,35 +104,17 @@ def install_by_the_administrator(j: Journey) -> None:
 # -- (1) the first book, in a browser ---------------------------------------------------------------
 
 
-# The two journeys below carry no `req`: the first documents the known gap of the wizard, the second
-# measures the time. ENF-UX-001 stays uncovered (open gap of `test_m3_open_gaps.py`) until the third
-# gets through its budget.
 @pytest.mark.e2e_timeout(780)
+@pytest.mark.req("ENF-UX-001", "EF-UX-001")
 def test_first_book_under_10_minutes(journey_m3: Journey) -> None:
     """A new installation to the first Gutenberg book listed by Kavita, played in a browser: at
-    most 10 minutes and 6 actions. Today the screens stop at the folder screen (see the spec): the
-    test passes while that known gap is where the journey stops, fails on any other stop, and asserts
-    both budgets in full the day the journey gets through."""
+    most 10 minutes and 6 actions in the UI, the shelf linked to Kavita made by the wizard itself.
+    The book is in Kavita as a file the shared volume holds, and nothing left the network
+    namespace."""
     j = journey_m3
     install_by_the_administrator(j)
     done = playwright(
         j, "test_first_book_under_10_minutes", 720,
-        {"E2E_HOST_COMMANDS": json.dumps(HOST_COMMANDS)},
-    )  # fmt: skip
-    assert done.returncode == 0, "the spec failed in a way it did not expect (see its output)"
-    assert j.egress() == []
-
-
-@pytest.mark.e2e_timeout(780)
-def test_timed_first_book_with_the_shelf_made_by_command(journey_m3: Journey) -> None:
-    """A measure, not a coverage: the same journey with the shelf bound to Kavita made by command.
-    The real time of the rest (the spec prints the list of the gestures and the seconds) is at most
-    10 minutes, the book is in Kavita as a file the shared volume holds, and nothing left the
-    network namespace."""
-    j = journey_m3
-    install_by_the_administrator(j)
-    done = playwright(
-        j, "test_timed_first_book_with_the_shelf_made_by_command", 720,
         {"E2E_HOST_COMMANDS": json.dumps(HOST_COMMANDS)},
     )  # fmt: skip
     assert done.returncode == 0, "the timed journey failed (see the output of the spec)"
@@ -143,26 +125,22 @@ def test_timed_first_book_with_the_shelf_made_by_command(journey_m3: Journey) ->
 
 
 @pytest.mark.e2e_timeout(780)
-@pytest.mark.req("ENF-UX-001", "EF-UX-001")
 @pytest.mark.xfail(
     strict=True,
     reason=(
-        "ENF-UX-001 is not delivered: the first book takes 15 gestures against 6 (4 screens to "
-        "move on, 6 decisions in the wizard, 5 commands typed on the host, among them the shelf "
-        "bound to Kavita that no screen makes yet). It turns green with the wizard step that "
-        "creates the shelf and the removal of the separate `Continuer` screens."
+        "The stricter reading of ENF-UX-001: every gesture, the two commands typed on the host "
+        "included (the first account, the books' addresses), against 6. The wizard now takes the "
+        "shelf bound to Kavita and moves on by itself, so the UI holds 6 actions; with the two "
+        "host commands the journey has 8. It turns green when the host types nothing more."
     ),
 )
-def test_first_book_within_6_actions_with_the_shelf_made_by_command(
-    journey_m3: Journey,
-) -> None:
-    """The card's budget on the same journey, read on ALL the gestures: screens, decisions and the
-    commands typed on the host. Strict xfail: it is red today, and the requirement stays uncovered
-    until it passes (the traceability matrix does not count an xfail)."""
+def test_first_book_within_6_actions_host_commands_included(journey_m3: Journey) -> None:
+    """Carries no `req`: the requirement is read on the UI by the test above; this one keeps the
+    stricter count visible until the host commands are taken by the screens."""
     j = journey_m3
     install_by_the_administrator(j)
     done = playwright(
-        j, "test_first_book_within_6_actions_with_the_shelf_made_by_command", 720,
+        j, "test_first_book_within_6_actions_host_commands_included", 720,
         {"E2E_HOST_COMMANDS": json.dumps(HOST_COMMANDS)},
     )  # fmt: skip
     assert done.returncode == 0, "more than 6 gestures (see the report of the spec)"

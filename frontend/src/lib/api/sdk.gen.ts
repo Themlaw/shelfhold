@@ -1317,8 +1317,8 @@ export const wizardProbe = <ThrowOnError extends boolean = false>(options: Optio
  *
  * The shelf linked to Kavita, made as `shelfhold shelf create` makes it (same service):
  * the age ceiling and the family cap, the folder under a registered root, the Kavita library
- * and the audit of who may read it. Both guards: the wizard's and the creation of a shelf
- * (parental control), so this door is never softer than either.
+ * and the audit of who may read it. The guard is the wizard's (a fresh admin session, never a
+ * key, even when no child profile exists), which is never softer than that of `POST /shelves`.
  */
 export const wizardShelf = <ThrowOnError extends boolean = false>(options: Options<WizardShelfData, ThrowOnError>): RequestResult<WizardShelfResponses, WizardShelfErrors, ThrowOnError> => (options.client ?? client).post<WizardShelfResponses, WizardShelfErrors, ThrowOnError>({
     url: '/api/v1/setup/shelf',

@@ -70,7 +70,7 @@ describe('Assistant : le passage d\'un écran au suivant', () => {
     await user.type(screen.getByLabelText("Nom d'utilisateur Kavita"), 'admin');
     await user.type(screen.getByLabelText('Mot de passe Kavita'), 'synthetic-kavita-password');
     await user.type(
-      screen.getByLabelText('Correspondance des dossiers (avancé)'),
+      screen.getByLabelText('Chemins des dossiers (avancé)'),
       '/library=/library, /extra=/extra'
     );
     await user.click(screen.getByRole('checkbox', { name: /J'ai compris/ }));
@@ -105,7 +105,7 @@ describe('Assistant : le passage d\'un écran au suivant', () => {
     await user.type(screen.getByLabelText("Nom d'utilisateur Kavita"), 'admin');
     await user.type(screen.getByLabelText('Mot de passe Kavita'), 'synthetic-kavita-password');
     await user.click(screen.getByRole('checkbox', { name: /J'ai compris/ }));
-    const map = screen.getByLabelText('Correspondance des dossiers (avancé)');
+    const map = screen.getByLabelText('Chemins des dossiers (avancé)');
     await user.type(map, 'not-a-pair');
     await user.click(screen.getByRole('button', { name: 'Connecter Kavita' }));
     expect(await screen.findByRole('alert')).toHaveTextContent('local=distant');

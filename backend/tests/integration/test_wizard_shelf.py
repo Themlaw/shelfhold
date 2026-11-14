@@ -2,11 +2,10 @@
 
 The route is the door of the wizard to what `shelfhold shelf create` does on the host: the same
 service (`HeadlessAdmin.shelf_create`: the shelf, its destination under a registered root, the
-folder, the Kavita library with the audit of who may read it). Two guards, none softer than the
-host's: the wizard's own (a fresh admin session, never a key) and the creation of a shelf (the
-parental control, one line in the audit each). A shelf below 18+ stays refused unless Kavita keeps
-the accounts apart, and a name or a folder that climbs out of the library is refused before
-anything is written.
+folder, the Kavita library with the audit of who may read it). The guard is the wizard's own (a
+fresh admin session, never a key, even before any child profile exists): never softer than that of
+`POST /shelves`. A shelf below 18+ stays refused unless Kavita keeps the accounts apart, and a name
+or a folder that climbs out of the library is refused before anything is written.
 """
 
 from __future__ import annotations
@@ -116,7 +115,7 @@ def test_the_second_call_changes_nothing(world: World) -> None:
 
 
 @pytest.mark.req("ENF-UX-001", "EF-EXP-047")
-def test_age_ceiling_is_the_shelfs_own_and_kept_by_the_rules(world: World) -> None:
+def test_age_ceiling_is_the_own_of_the_shelf_and_kept_by_the_rules(world: World) -> None:
     """The ceiling is read like on the host: a tier of the scale, Famille never above 13+."""
     assert world.make(name="Famille", max_age="18+", subpath="famille").status_code == 422
     assert world.make(max_age="seven").status_code == 422
@@ -193,5 +192,5 @@ def test_the_creation_leaves_a_line_in_the_audit(world: World) -> None:
     assert world.make().status_code == 201
     with world.inst.engine.connect() as c:
         actions = c.execute(sa.text("SELECT action FROM audit")).scalars().all()
-    assert {"admin_risk.accept", "shelf.max_age_rating"} <= set(actions)  # both guards' lines
+    assert "admin_risk.accept" in actions  # the guard's line
     assert "shelf.create" in actions  # the service's own, in the transaction of the change

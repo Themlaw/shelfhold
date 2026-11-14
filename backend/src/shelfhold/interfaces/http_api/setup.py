@@ -21,6 +21,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from shelfhold.export.domain.bindings import BindingError
 from shelfhold.headless import HeadlessAdmin
+from shelfhold.headless.admin import SHELF_SUBPATH_PATTERN
 from shelfhold.headless.actor import Actor
 from shelfhold.headless.errors import HeadlessError
 from shelfhold.identity.public import RESERVED_ACTIONS, Principal, audit_actor
@@ -33,7 +34,6 @@ from shelfhold.ops import OpsServices
 __all__ = ["build_setup_router"]
 
 _RISK = RESERVED_ACTIONS["admin_risk.accept"]
-_CEILING = RESERVED_ACTIONS["shelf.max_age_rating"]
 Admin = Annotated[Principal, Depends(reserved_action(_RISK))]  # one line in the audit per call
 # The two writes of part 2 that are reserved actions of their own, with their own audit line: the
 # keyring leaves the instance (a fresh session, never a key) and the sources a child may search
@@ -153,7 +153,7 @@ class WizardShelfMakeIn(BaseModel):
     target: str = Field(default="kavita", min_length=1, max_length=128)  # the name the wizard gave
     max_age: str = Field(pattern=r"^(X|\d{1,2}\+?)$")  # "18+", "13+", "X": as on the host
     # one folder under the shared one, as `shelf create --subpath` takes it; never a path
-    subpath: str = Field(pattern=r"^[A-Za-z0-9][A-Za-z0-9 _-]{0,63}$")
+    subpath: str = Field(pattern=SHELF_SUBPATH_PATTERN)
 
 
 class WizardShelfMadeOut(BaseModel):
@@ -191,13 +191,12 @@ def build_setup_router(
     @router.post("/shelf", status_code=201)
     def wizard_shelf(
         body: WizardShelfMakeIn,
-        _admin: Admin,  # the wizard's own: a fresh admin session, as for the Kavita it reaches
-        principal: Principal = Depends(reserved_action(_CEILING)),  # noqa: B008
+        principal: Admin,  # the wizard's own: a fresh admin session, as for the Kavita it reaches
     ) -> WizardShelfMadeOut:
         """The shelf linked to Kavita, made as `shelfhold shelf create` makes it (same service):
         the age ceiling and the family cap, the folder under a registered root, the Kavita library
-        and the audit of who may read it. Both guards: the wizard's and the creation of a shelf
-        (parental control), so this door is never softer than either."""
+        and the audit of who may read it. The guard is the wizard's (a fresh admin session, never a
+        key, even when no child profile exists), which is never softer than that of `POST /shelves`."""
         try:
             made = get_admin().shelf_create(
                 name=body.name, max_age=body.max_age, target=body.target, subpath=body.subpath,

@@ -156,7 +156,7 @@ async function firstBook(page: Page, run: Run): Promise<void> {
   await page.getByLabel("Nom d'utilisateur Kavita").fill(KAVITA_USER);
   await page.getByLabel('Mot de passe Kavita').fill(KAVITA_PASSWORD);
   // the simulated Kavita sees the whole volume at the same path: the map the administrator gives
-  await page.getByLabel('Correspondance des dossiers (avancé)').fill('/library=/library');
+  await page.getByLabel('Chemins des dossiers (avancé)').fill('/library=/library');
   await run.click(page.getByLabel("J'ai compris", { exact: false }), 'accept the admin key', 'decision');
   await run.click(page.getByRole('button', { name: 'Connecter Kavita' }), 'connect Kavita', 'decision');
   await expect(page.getByText(/Kavita est connecté/)).toBeVisible();

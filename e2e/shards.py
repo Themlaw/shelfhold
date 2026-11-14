@@ -48,8 +48,7 @@ SHARDS: dict[str, tuple[str, ...]] = {
     # M3 (L57): one journey per runner. The two that drive a browser (`m3-first-book*`,
     # `m3-themes`) install Playwright's Chromium in the job (image.yml)
     "m3-first-book": ("test_first_book_under_10_minutes",),
-    "m3-first-book-timed": ("test_timed_first_book_with_the_shelf_made_by_command",),
-    "m3-first-book-actions": ("test_first_book_within_6_actions_with_the_shelf_made_by_command",),
+    "m3-first-book-actions": ("test_first_book_within_6_actions_host_commands_included",),
     "m3-parental": ("test_parental_control_end_to_end",),
     "m3-request": ("test_m3_request_journey",),
     "m3-rename": ("test_m3_rename_warning_journey",),

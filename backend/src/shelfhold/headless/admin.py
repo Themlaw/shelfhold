@@ -261,6 +261,9 @@ def _ceiling(text: str) -> int:
     raise InvalidConfigValue("max age is a number of years such as 13+, or X")
 
 
+# One plain name under the shared folder, as the wizard takes it: never a path, never a dot first.
+SHELF_SUBPATH_PATTERN = r"^[A-Za-z0-9][A-Za-z0-9 _-]{0,63}$"
+
 WAKE_KINDS = ("follow.cycle", "export.run")
 
 
