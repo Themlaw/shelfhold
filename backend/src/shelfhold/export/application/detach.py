@@ -124,7 +124,7 @@ class KeyIdRevoker(KeyRevoker, Protocol):
     revocation already done; and another key of the account is never touched."""
 
     def key_id(self, target_id: str, *, credential: str | None) -> tuple[str, str] | None:
-        """`(identifier, sha256 of the value)` of the dedicated key, or None when the account
+        """`(identifier, fingerprint of the value)` of the dedicated key, or None when the account
         has no such key. A refused login or an unreachable Kavita raises: it is not "absent"."""
         ...
 

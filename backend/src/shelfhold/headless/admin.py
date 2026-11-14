@@ -637,7 +637,7 @@ class HeadlessAdmin:
         return TargetAdded(row.id, row.name, False, exchanged.expires_at)
 
     def target_find_key(self, *, target: str, password: str | None) -> tuple[str, str] | None:
-        """`detach --full`: `(identifier, sha256 of the value)` of the dedicated key in Kavita,
+        """`detach --full`: `(identifier, fingerprint of the value)` of the dedicated key in Kavita,
         found by the key's value (never by name), with the account's password (Kavita lists keys
         only for a login). None: no password, or the login was accepted and the key is not there.
         A refused login or an unreachable Kavita raises `TargetExchangeFailed`."""

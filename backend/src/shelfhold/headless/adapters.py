@@ -30,8 +30,9 @@ KEY_LENGTH = 32  # RotateAuthKeyRequestDto: 8 to 32
 
 
 def key_digest(key: str) -> str:
-    """What is written about a key instead of its value: the SHA-256 of it."""
-    return hashlib.sha256(key.encode()).hexdigest()
+    """What is written about a key instead of its value: a BLAKE2b fingerprint. The key is a
+    random token, not a password a person chose: a fast hash is the right tool to compare it."""
+    return hashlib.blake2b(key.encode(), digest_size=20).hexdigest()
 
 
 class _KeyIdReused(Exception):

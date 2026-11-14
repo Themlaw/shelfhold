@@ -37,8 +37,8 @@ class KavitaKeyExchange(Protocol):
     def find_key_id(
         self, *, url: str, username: str, password: str, key: str
     ) -> tuple[str, str] | None:
-        """`(identifier, sha256 of the value)` of the key whose **value** is `key` (never found by
-        name); None when the login was accepted and Kavita has no such key. A refused login or an
+        """`(identifier, fingerprint of the value)` of the key whose **value** is `key` (never found
+        by name); None when the login was accepted and Kavita has no such key. A refused login or an
         unreachable Kavita raises `TargetExchangeFailed`: that is not "absent"."""
 
     def revoke_key_id(
