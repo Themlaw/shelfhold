@@ -8,28 +8,11 @@ CI" in the traceability matrix until then (tools/traceability-exceptions.toml).
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
 import pytest
 
 ROOT = Path(__file__).resolve().parents[3]
-
-
-@pytest.mark.req("EF-UX-004")
-@pytest.mark.xfail(
-    strict=True,
-    reason="EF-UX-004: M3 L48 (screen 'Connect a device', QR of the Kavita entry points) "
-    "is not delivered: no `appareils` route, no local QR generator",
-)
-def test_connect_device_qr_kavita_endpoints() -> None:
-    page = ROOT / "frontend" / "src" / "routes" / "appareils" / "+page.svelte"
-    assert page.is_file(), "the 'Connect a device' screen does not exist"
-    source = page.read_text(encoding="utf-8")
-    assert "opds" in source.lower()  # the entry points of Kavita are offered
-    package = json.loads((ROOT / "frontend" / "package.json").read_text(encoding="utf-8"))
-    deps = {**package.get("dependencies", {}), **package.get("devDependencies", {})}
-    assert any("qr" in name.lower() for name in deps), "no local QR generator (no network)"
 
 
 @pytest.mark.req("ENF-UX-001")

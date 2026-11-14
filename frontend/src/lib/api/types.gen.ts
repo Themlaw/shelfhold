@@ -797,6 +797,68 @@ export type DetachIn = {
 };
 
 /**
+ * DeviceConnectOut
+ */
+export type DeviceConnectOut = {
+    /**
+     * Skipped
+     */
+    skipped?: Array<DeviceSkippedOut>;
+    /**
+     * Targets
+     */
+    targets: Array<DeviceTargetOut>;
+};
+
+/**
+ * DeviceSkippedOut
+ *
+ * A Kavita target left out, and why (`address_unusable`): the screen says so.
+ */
+export type DeviceSkippedOut = {
+    /**
+     * Name
+     */
+    name: string;
+    /**
+     * Reason
+     */
+    reason: string;
+    /**
+     * Target Id
+     */
+    target_id: string;
+};
+
+/**
+ * DeviceTargetOut
+ *
+ * Kavita's own entry points: addresses only, never a key or a token.
+ */
+export type DeviceTargetOut = {
+    /**
+     * Kosync
+     */
+    kosync: string;
+    /**
+     * Kover
+     */
+    kover: string;
+    /**
+     * Name
+     */
+    name: string;
+    /**
+     * Opds
+     */
+    opds: string;
+    /**
+     * Target Id
+     */
+    target_id: string;
+};
+
+/**
  * Done
  */
 export type Done = {
@@ -4627,6 +4689,60 @@ export type ToShelveOut = {
 };
 
 /**
+ * TrashEntryOut
+ *
+ * One deletion of one Unit in the bins: never a path, never a title.
+ */
+export type TrashEntryOut = {
+    /**
+     * Bytes
+     */
+    bytes: number;
+    /**
+     * Deleted At
+     */
+    deleted_at: string;
+    /**
+     * Deletion Id
+     */
+    deletion_id: string | null;
+    /**
+     * Files
+     */
+    files: number;
+    /**
+     * Irreplaceable
+     */
+    irreplaceable: boolean;
+    /**
+     * Level
+     */
+    level: string;
+    /**
+     * Purge After
+     */
+    purge_after: string;
+    /**
+     * Unit Id
+     */
+    unit_id: string;
+};
+
+/**
+ * TrashListOut
+ */
+export type TrashListOut = {
+    /**
+     * Entries
+     */
+    entries: Array<TrashEntryOut>;
+    /**
+     * Total Bytes
+     */
+    total_bytes: number;
+};
+
+/**
  * TrustCardOut
  */
 export type TrustCardOut = {
@@ -7000,6 +7116,39 @@ export type RestoreUpstreamResponses = {
 
 export type RestoreUpstreamResponse = RestoreUpstreamResponses[keyof RestoreUpstreamResponses];
 
+export type DeviceConnectData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/devices/connect';
+};
+
+export type DeviceConnectErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type DeviceConnectError = DeviceConnectErrors[keyof DeviceConnectErrors];
+
+export type DeviceConnectResponses = {
+    /**
+     * Successful Response
+     */
+    200: DeviceConnectOut;
+};
+
+export type DeviceConnectResponse = DeviceConnectResponses[keyof DeviceConnectResponses];
+
 export type DiagnosticBundleDownloadData = {
     body?: never;
     path?: never;
@@ -7544,6 +7693,44 @@ export type PreferredTeamSetResponses = {
 };
 
 export type PreferredTeamSetResponse = PreferredTeamSetResponses[keyof PreferredTeamSetResponses];
+
+export type RateEditionData = {
+    body: RateIn;
+    path: {
+        /**
+         * Edition Id
+         */
+        edition_id: string;
+    };
+    query?: never;
+    url: '/api/v1/editions/{edition_id}/rating';
+};
+
+export type RateEditionErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type RateEditionError = RateEditionErrors[keyof RateEditionErrors];
+
+export type RateEditionResponses = {
+    /**
+     * Successful Response
+     */
+    200: RatedOut;
+};
+
+export type RateEditionResponse = RateEditionResponses[keyof RateEditionResponses];
 
 export type EditionSetSeriesNameData = {
     body: SeriesNameIn;
@@ -12071,6 +12258,39 @@ export type LiftTombstoneResponses = {
 };
 
 export type LiftTombstoneResponse = LiftTombstoneResponses[keyof LiftTombstoneResponses];
+
+export type TrashListData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/trash';
+};
+
+export type TrashListErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type TrashListError = TrashListErrors[keyof TrashListErrors];
+
+export type TrashListResponses = {
+    /**
+     * Successful Response
+     */
+    200: TrashListOut;
+};
+
+export type TrashListResponse = TrashListResponses[keyof TrashListResponses];
 
 export type EmptyTrashData = {
     body: TypedIn;

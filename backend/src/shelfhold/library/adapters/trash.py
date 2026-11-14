@@ -21,6 +21,7 @@ __all__ = [
     "forget_bin_rows",
     "held_for_irreplaceable_units",
     "latest_deletion",
+    "list_binned",
     "record_binned_file",
     "units_binned_from_store",
 ]
@@ -168,3 +169,46 @@ def units_binned_from_store(connection: Connection) -> frozenset[str]:
 def forget_bin_rows(connection: Connection, trash_ids: list[str]) -> None:
     if trash_ids:
         connection.execute(sa.delete(_trash).where(_trash.c.id.in_(trash_ids)))
+
+
+def list_binned(connection: Connection) -> list[dict[str, Any]]:
+    """What the bins hold, one line per deletion and Unit (the « Corbeille » screen): the term,
+    the size, and whether the Unit is irreplaceable now (EF-BIB-031). Never a path or a snapshot:
+    the screen needs neither, and a path names where a copy sat."""
+    from shelfhold.library.adapters.units import irreplaceability
+
+    rows = connection.execute(
+        sa.select(
+            _trash.c.deletion_id, _trash.c.snapshot, _trash.c.level, _trash.c.size,
+            _trash.c.deleted_at, _trash.c.purge_after,
+        )
+        .where(_trash.c.snapshot.is_not(None))
+        .order_by(_trash.c.id)
+    ).all()  # fmt: skip
+    lines: dict[tuple[str | None, str], dict[str, Any]] = {}
+    for r in rows:
+        unit = r.snapshot.get("unit_id") if isinstance(r.snapshot, dict) else None
+        if not unit:
+            continue
+        line = lines.setdefault(
+            (r.deletion_id, str(unit)),
+            {"deletion_id": r.deletion_id, "unit_id": str(unit), "level": r.level, "files": 0,
+             "bytes": 0, "deleted_at": r.deleted_at, "purge_after": r.purge_after},
+        )  # fmt: skip
+        line["files"] += 1
+        line["bytes"] += r.size or 0
+        line["purge_after"] = max(line["purge_after"], r.purge_after)
+    known = set(
+        connection.execute(
+            sa.select(catalog.unit.c.id).where(catalog.unit.c.id.in_([u for _, u in lines]))
+        ).scalars()
+    )  # a Unit purged since has no row left to ask: it is not irreplaceable, it is gone
+    found = []
+    for line in lines.values():
+        line["irreplaceable"] = (
+            line["unit_id"] in known and irreplaceability(connection, line["unit_id"]).irreplaceable
+        )
+        line["deleted_at"] = line["deleted_at"].isoformat()
+        line["purge_after"] = line["purge_after"].isoformat()
+        found.append(line)
+    return found

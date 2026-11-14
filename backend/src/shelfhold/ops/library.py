@@ -964,6 +964,40 @@ class LibraryOps:
         return reclaim.list_tombstones(self._comp)
 
     @_refused
+    def trash_list(self) -> dict[str, Any]:
+        """The « Corbeille » screen (admin): what the bins hold, read from the bin index."""
+        from shelfhold.library.adapters.trash import list_binned
+
+        with self._comp.engine.connect() as connection:
+            entries = list_binned(connection)
+        return {"entries": entries, "total_bytes": sum(e["bytes"] for e in entries)}
+
+    @_refused
+    def device_entry_points(self) -> dict[str, Any]:
+        """« Connect a device » (admin): the addresses of each Kavita target, from its
+        configured address only (EF-UX-004). The sealed key of the target is never read here."""
+        from shelfhold.export.domain.kavita_instance import device_entry_points
+
+        with self._comp.engine.connect() as connection:
+            rows = connection.execute(
+                sa.select(export.export_target.c.id, export.export_target.c.name,
+                          export.export_target.c.config)
+                .where(export.export_target.c.kind == "kavita")
+                .order_by(export.export_target.c.id)
+            ).all()  # fmt: skip
+        targets = []
+        skipped = []
+        for row in rows:
+            found = device_entry_points(str((row.config or {}).get("url", "")))
+            if found is None:  # a row that gives no address leaves the others on screen
+                skipped.append(
+                    {"target_id": row.id, "name": row.name, "reason": "address_unusable"}
+                )
+            else:
+                targets.append({"target_id": row.id, "name": row.name, **found})
+        return {"targets": targets, "skipped": skipped}
+
+    @_refused
     def space_check(self, *, estimated_bytes: int) -> dict[str, Any]:
         """The « Ajouter » sheet against the free space less the reserve; nothing is written."""
         return reclaim.space_check(self._comp, estimated_bytes=estimated_bytes)
