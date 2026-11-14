@@ -779,24 +779,6 @@ export type DestinationOut = {
 };
 
 /**
- * DetachIn
- */
-export type DetachIn = {
-    /**
-     * Edition Id
-     */
-    edition_id?: string | null;
-    /**
-     * Restore Upstream
-     */
-    restore_upstream: true;
-    /**
-     * Shelf Id
-     */
-    shelf_id?: string | null;
-};
-
-/**
  * DeviceConnectOut
  */
 export type DeviceConnectOut = {
@@ -3021,6 +3003,34 @@ export type RejectIn = {
      * Reason
      */
     reason: string;
+};
+
+/**
+ * RemovalIn
+ */
+export type RemovalIn = {
+    /**
+     * Give Up
+     */
+    give_up?: boolean;
+    /**
+     * Mode
+     */
+    mode: 'keep_files' | 'delete_files';
+    /**
+     * Typed
+     */
+    typed: string;
+};
+
+/**
+ * RemovalPreviewIn
+ */
+export type RemovalPreviewIn = {
+    /**
+     * Mode
+     */
+    mode: 'keep_files' | 'delete_files';
 };
 
 /**
@@ -5558,6 +5568,36 @@ export type WorksPageOut = {
 };
 
 /**
+ * DetachIn
+ */
+export type ShelfholdInterfacesHttpApiDestinationsDetachIn = {
+    /**
+     * Credential
+     */
+    credential?: string | null;
+    /**
+     * Discard Hidden Data
+     */
+    discard_hidden_data?: boolean;
+    /**
+     * Discard Tombstone Journal
+     */
+    discard_tombstone_journal?: boolean;
+    /**
+     * Give Up
+     */
+    give_up?: boolean;
+    /**
+     * Key Gone
+     */
+    key_gone?: boolean;
+    /**
+     * Typed
+     */
+    typed: string;
+};
+
+/**
  * ResolveIn
  */
 export type ShelfholdInterfacesHttpApiIntentsResolveIn = {
@@ -5569,6 +5609,24 @@ export type ShelfholdInterfacesHttpApiIntentsResolveIn = {
      * Confirm
      */
     confirm?: string | null;
+};
+
+/**
+ * DetachIn
+ */
+export type ShelfholdInterfacesHttpApiLibraryDetachIn = {
+    /**
+     * Edition Id
+     */
+    edition_id?: string | null;
+    /**
+     * Restore Upstream
+     */
+    restore_upstream: true;
+    /**
+     * Shelf Id
+     */
+    shelf_id?: string | null;
 };
 
 /**
@@ -7079,8 +7137,129 @@ export type DeletionPreviewResponses = {
 
 export type DeletionPreviewResponse = DeletionPreviewResponses[keyof DeletionPreviewResponses];
 
+export type ListDestinationsData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/destinations';
+};
+
+export type ListDestinationsErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type ListDestinationsError = ListDestinationsErrors[keyof ListDestinationsErrors];
+
+export type ListDestinationsResponses = {
+    /**
+     * Response List Destinations
+     *
+     * Successful Response
+     */
+    200: {
+        [key: string]: unknown;
+    };
+};
+
+export type ListDestinationsResponse = ListDestinationsResponses[keyof ListDestinationsResponses];
+
+export type RemovalData = {
+    body: RemovalIn;
+    path: {
+        /**
+         * Destination Id
+         */
+        destination_id: string;
+    };
+    query?: never;
+    url: '/api/v1/destinations/{destination_id}/removal';
+};
+
+export type RemovalErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type RemovalError = RemovalErrors[keyof RemovalErrors];
+
+export type RemovalResponses = {
+    /**
+     * Response Removal
+     *
+     * Successful Response
+     */
+    200: {
+        [key: string]: unknown;
+    };
+};
+
+export type RemovalResponse = RemovalResponses[keyof RemovalResponses];
+
+export type RemovalPreviewData = {
+    body: RemovalPreviewIn;
+    path: {
+        /**
+         * Destination Id
+         */
+        destination_id: string;
+    };
+    query?: never;
+    url: '/api/v1/destinations/{destination_id}/removal-preview';
+};
+
+export type RemovalPreviewErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type RemovalPreviewError = RemovalPreviewErrors[keyof RemovalPreviewErrors];
+
+export type RemovalPreviewResponses = {
+    /**
+     * Response Removal Preview
+     *
+     * Successful Response
+     */
+    200: {
+        [key: string]: unknown;
+    };
+};
+
+export type RemovalPreviewResponse = RemovalPreviewResponses[keyof RemovalPreviewResponses];
+
 export type RestoreUpstreamData = {
-    body: DetachIn;
+    body: ShelfholdInterfacesHttpApiLibraryDetachIn;
     path?: never;
     query?: never;
     url: '/api/v1/detach';
@@ -11851,6 +12030,90 @@ export type AddTargetResponses = {
 };
 
 export type AddTargetResponse = AddTargetResponses[keyof AddTargetResponses];
+
+export type DetachData = {
+    body: ShelfholdInterfacesHttpApiDestinationsDetachIn;
+    path: {
+        /**
+         * Target Id
+         */
+        target_id: string;
+    };
+    query?: never;
+    url: '/api/v1/targets/{target_id}/detach';
+};
+
+export type DetachErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type DetachError = DetachErrors[keyof DetachErrors];
+
+export type DetachResponses = {
+    /**
+     * Response Detach
+     *
+     * Successful Response
+     */
+    200: {
+        [key: string]: unknown;
+    };
+};
+
+export type DetachResponse = DetachResponses[keyof DetachResponses];
+
+export type DetachPreviewData = {
+    body?: never;
+    path: {
+        /**
+         * Target Id
+         */
+        target_id: string;
+    };
+    query?: never;
+    url: '/api/v1/targets/{target_id}/detach-preview';
+};
+
+export type DetachPreviewErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type DetachPreviewError = DetachPreviewErrors[keyof DetachPreviewErrors];
+
+export type DetachPreviewResponses = {
+    /**
+     * Response Detach Preview
+     *
+     * Successful Response
+     */
+    200: {
+        [key: string]: unknown;
+    };
+};
+
+export type DetachPreviewResponse = DetachPreviewResponses[keyof DetachPreviewResponses];
 
 export type TargetRecheckData = {
     body?: never;

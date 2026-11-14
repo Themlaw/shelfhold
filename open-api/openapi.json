@@ -1246,42 +1246,6 @@
         "title": "DestinationOut",
         "type": "object"
       },
-      "DetachIn": {
-        "properties": {
-          "edition_id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Edition Id"
-          },
-          "restore_upstream": {
-            "const": true,
-            "title": "Restore Upstream",
-            "type": "boolean"
-          },
-          "shelf_id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Shelf Id"
-          }
-        },
-        "required": [
-          "restore_upstream"
-        ],
-        "title": "DetachIn",
-        "type": "object"
-      },
       "DeviceConnectOut": {
         "properties": {
           "skipped": {
@@ -4906,6 +4870,53 @@
           "reason"
         ],
         "title": "RejectIn",
+        "type": "object"
+      },
+      "RemovalIn": {
+        "additionalProperties": false,
+        "properties": {
+          "give_up": {
+            "default": false,
+            "title": "Give Up",
+            "type": "boolean"
+          },
+          "mode": {
+            "enum": [
+              "keep_files",
+              "delete_files"
+            ],
+            "title": "Mode",
+            "type": "string"
+          },
+          "typed": {
+            "minLength": 1,
+            "title": "Typed",
+            "type": "string"
+          }
+        },
+        "required": [
+          "mode",
+          "typed"
+        ],
+        "title": "RemovalIn",
+        "type": "object"
+      },
+      "RemovalPreviewIn": {
+        "additionalProperties": false,
+        "properties": {
+          "mode": {
+            "enum": [
+              "keep_files",
+              "delete_files"
+            ],
+            "title": "Mode",
+            "type": "string"
+          }
+        },
+        "required": [
+          "mode"
+        ],
+        "title": "RemovalPreviewIn",
         "type": "object"
       },
       "RenamePlanIn": {
@@ -9057,6 +9068,52 @@
         "title": "WorksPageOut",
         "type": "object"
       },
+      "shelfhold__interfaces__http_api__destinations__DetachIn": {
+        "additionalProperties": false,
+        "properties": {
+          "credential": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Credential"
+          },
+          "discard_hidden_data": {
+            "default": false,
+            "title": "Discard Hidden Data",
+            "type": "boolean"
+          },
+          "discard_tombstone_journal": {
+            "default": false,
+            "title": "Discard Tombstone Journal",
+            "type": "boolean"
+          },
+          "give_up": {
+            "default": false,
+            "title": "Give Up",
+            "type": "boolean"
+          },
+          "key_gone": {
+            "default": false,
+            "title": "Key Gone",
+            "type": "boolean"
+          },
+          "typed": {
+            "minLength": 1,
+            "title": "Typed",
+            "type": "string"
+          }
+        },
+        "required": [
+          "typed"
+        ],
+        "title": "DetachIn",
+        "type": "object"
+      },
       "shelfhold__interfaces__http_api__intents__ResolveIn": {
         "properties": {
           "action": {
@@ -9081,6 +9138,42 @@
           }
         },
         "title": "ResolveIn",
+        "type": "object"
+      },
+      "shelfhold__interfaces__http_api__library__DetachIn": {
+        "properties": {
+          "edition_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Edition Id"
+          },
+          "restore_upstream": {
+            "const": true,
+            "title": "Restore Upstream",
+            "type": "boolean"
+          },
+          "shelf_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Shelf Id"
+          }
+        },
+        "required": [
+          "restore_upstream"
+        ],
+        "title": "DetachIn",
         "type": "object"
       },
       "shelfhold__interfaces__http_api__library__RestoreIn": {
@@ -11504,6 +11597,207 @@
         ]
       }
     },
+    "/api/v1/destinations": {
+      "get": {
+        "operationId": "list_destinations",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response List Destinations",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Connexion requise, ou mot de passe à confirmer (reauth-required)."
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée)."
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Détail du problème (RFC 9457)."
+          }
+        },
+        "summary": "List Destinations",
+        "tags": [
+          "destinations"
+        ]
+      }
+    },
+    "/api/v1/destinations/{destination_id}/removal": {
+      "post": {
+        "operationId": "removal",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "destination_id",
+            "required": true,
+            "schema": {
+              "title": "Destination Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RemovalIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Removal",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Connexion requise, ou mot de passe à confirmer (reauth-required)."
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée)."
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Détail du problème (RFC 9457)."
+          }
+        },
+        "summary": "Removal",
+        "tags": [
+          "destinations"
+        ]
+      }
+    },
+    "/api/v1/destinations/{destination_id}/removal-preview": {
+      "post": {
+        "operationId": "removal_preview",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "destination_id",
+            "required": true,
+            "schema": {
+              "title": "Destination Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RemovalPreviewIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Removal Preview",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Connexion requise, ou mot de passe à confirmer (reauth-required)."
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée)."
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Détail du problème (RFC 9457)."
+          }
+        },
+        "summary": "Removal Preview",
+        "tags": [
+          "destinations"
+        ]
+      }
+    },
     "/api/v1/detach": {
       "post": {
         "operationId": "restore_upstream",
@@ -11511,7 +11805,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/DetachIn"
+                "$ref": "#/components/schemas/shelfhold__interfaces__http_api__library__DetachIn"
               }
             }
           },
@@ -19927,6 +20221,144 @@
         "summary": "Add Target",
         "tags": [
           "configuration"
+        ]
+      }
+    },
+    "/api/v1/targets/{target_id}/detach": {
+      "post": {
+        "operationId": "detach",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "target_id",
+            "required": true,
+            "schema": {
+              "title": "Target Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/shelfhold__interfaces__http_api__destinations__DetachIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Detach",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Connexion requise, ou mot de passe à confirmer (reauth-required)."
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée)."
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Détail du problème (RFC 9457)."
+          }
+        },
+        "summary": "Detach",
+        "tags": [
+          "destinations"
+        ]
+      }
+    },
+    "/api/v1/targets/{target_id}/detach-preview": {
+      "post": {
+        "operationId": "detach_preview",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "target_id",
+            "required": true,
+            "schema": {
+              "title": "Target Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Detach Preview",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Connexion requise, ou mot de passe à confirmer (reauth-required)."
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée)."
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Détail du problème (RFC 9457)."
+          }
+        },
+        "summary": "Detach Preview",
+        "tags": [
+          "destinations"
         ]
       }
     },
