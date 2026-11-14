@@ -29,6 +29,7 @@ from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
 from shelfhold.acquisition.application.failures import FailureLedger, from_service
 from shelfhold.acquisition.application.instance import check_instance
+from shelfhold.acquisition.domain.follow_intent import FollowIntent
 from shelfhold.infrastructure.clock import Clock
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.requesters import still_a_user
@@ -48,6 +49,12 @@ __all__ = [
 
 _REQUEST = acquisition.follow_request
 CLAIM_TTL = timedelta(minutes=2)  # a claim older than this is a worker that died
+
+
+def _intent_values(intent: FollowIntent | None) -> dict[str, str | None]:
+    if intent is None:
+        return {}
+    return {"mode": intent.mode, "from_number": intent.from_number, "shelf_id": intent.shelf_id}
 
 
 class ServiceLink(Protocol):
@@ -103,11 +110,17 @@ class FollowRequests:
     # -- follow -------------------------------------------------------------------------------
 
     async def follow(
-        self, ref: SeriesRef, *, requester_user_id: str | None = None, visibility: str = "ops"
+        self,
+        ref: SeriesRef,
+        *,
+        requester_user_id: str | None = None,
+        visibility: str = "ops",
+        intent: FollowIntent | None = None,
     ) -> FollowOutcome:
-        """Approve the request for `ref` and make its entry, once."""
+        """Approve the request for `ref` and make its entry, once. `intent`: what the add sheet
+        chose (which Units, which shelf), kept with the request for the discovery to apply."""
         link = self._link()
-        state, created = self._claim(ref, requester_user_id, visibility)
+        state, created = self._claim(ref, requester_user_id, visibility, intent)
         if state == "followed":
             return FollowOutcome("followed", sent=False)
         if state == "in_progress":
@@ -164,7 +177,11 @@ class FollowRequests:
                 raise ServiceInstanceChanged()
 
     def _claim(
-        self, ref: SeriesRef, requester_user_id: str | None, visibility: str
+        self,
+        ref: SeriesRef,
+        requester_user_id: str | None,
+        visibility: str,
+        intent: FollowIntent | None = None,
     ) -> tuple[str, bool]:
         """`(state, created)`: `followed` or `in_progress` when there is nothing for this one to
         do, else `following`, the claim it now holds. The pause is read in the same transaction."""
@@ -182,12 +199,17 @@ class FollowRequests:
                     state="approved",
                     visibility=visibility,
                     requester_user_id=requester_user_id,
+                    **_intent_values(intent),
                 )
                 .on_conflict_do_nothing(index_elements=["source_key", "remote_id"])
             )
             row = connection.execute(self._row(ref)).one()
             if row.state == "followed":
                 return "followed", False
+            if intent is not None and inserted.rowcount == 0:  # the choice of this click is the one
+                connection.execute(
+                    sa.update(_REQUEST).where(_REQUEST.c.id == row.id).values(_intent_values(intent))
+                )
             if row.state == "following" and row.claimed_at and now - row.claimed_at < CLAIM_TTL:
                 return "in_progress", False
             connection.execute(

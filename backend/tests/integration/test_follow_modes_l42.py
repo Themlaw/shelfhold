@@ -24,7 +24,7 @@ from shelfhold.acquisition.public import FollowIntent
 from shelfhold.config import Settings
 from shelfhold.infrastructure.db import create_db_engine
 from shelfhold.infrastructure.ids import new_ulid
-from shelfhold.infrastructure.schema import acquisition
+from shelfhold.infrastructure.schema import acquisition, export
 from shelfhold.infrastructure.schema import replica as replica_schema
 from shelfhold.sdk.refs import SeriesRef, UnitInfo
 from shelfhold.sdk.source import SourceError
@@ -104,7 +104,13 @@ def test_a_series_nobody_chose_for_keeps_asking_for_what_is_new_only() -> None:
 @pytest.mark.req("EF-UX-006")
 def test_a_follow_files_the_edition_on_the_shelf_that_was_chosen() -> None:
     with follow_bench(seeded=False, adult_shelf=True) as bench:
-        other = add_adult_shelf(bench.lib, max_age_rating=16)
+        other = new_ulid()
+        with bench.lib.engine.begin() as connection:
+            connection.execute(
+                sa.insert(export.shelf).values(
+                    id=other, name="Ados", phrase="Mes mangas", max_age_rating=16
+                )
+            )
         assert other != bench.shelf_id
         follow(bench, FollowIntent(mode="new_only", shelf_id=other))
         cycles(bench, 1)
@@ -304,7 +310,7 @@ def test_a_key_is_refused_the_follow_and_the_estimate_like_a_member_and_a_child(
 ) -> None:
     with instance(monkeypatch, settings, alpha(chapters(3))) as api:
         for who, ip in (("member", "10.0.2.61"), ("kid", "10.0.2.62")):
-            key = api_key_of(api, who, read_only=False)
+            key = api_key_of(api, who)
             keyed = api.other_client(ip)
             headers = {"Authorization": f"Bearer {key}"}
             body = {"source_key": "alpha", "remote_id": "a1", "mode": "all"}

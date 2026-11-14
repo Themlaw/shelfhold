@@ -45,7 +45,7 @@ from shelfhold.acquisition.application.lncrawl_ranges import (
     ticket_expired,
     verify_range_answer,
 )
-from shelfhold.acquisition.application.planning import pending
+from shelfhold.acquisition.application.planning import held_numbers, pending
 from shelfhold.acquisition.application.preference import TeamPreference
 from shelfhold.acquisition.application.presence import present_for_acquisition, present_in
 from shelfhold.acquisition.application.ranges import (
@@ -83,8 +83,9 @@ from shelfhold.acquisition.application.upstream import (
     TakeReport,
     UpstreamSnapshots,
 )
-from shelfhold.acquisition.domain.backfill import BackfillEstimate
+from shelfhold.acquisition.domain.backfill import BackfillEstimate, needs_confirmation
 from shelfhold.acquisition.domain.failures import Disposition, classify, disposition_of
+from shelfhold.acquisition.domain.follow_intent import FOLLOW_MODES, FollowIntent, FollowMode, parse_number
 from shelfhold.acquisition.domain.freshness import DEFAULT_K, cadence, is_stale, stale_threshold
 from shelfhold.acquisition.domain.requests import RequestBudget
 from shelfhold.acquisition.domain.team_policy import TeamChoice, TeamStats, choose_team
@@ -94,6 +95,7 @@ __all__ = [
     "ACQUIRE_JOB_KIND",
     "DEFAULT_K",
     "FOLLOW_JOB_KIND",
+    "FOLLOW_MODES",
     "IMPORT_PLUGIN",
     "MAX_COVERED",
     "MAX_TICKET_AGE",
@@ -117,6 +119,8 @@ __all__ = [
     "FollowOutcome",
     "FollowRefused",
     "FollowReport",
+    "FollowIntent",
+    "FollowMode",
     "FollowRequests",
     "ImportTargets",
     "LeasedReceiver",
@@ -159,9 +163,12 @@ __all__ = [
     "fold",
     "follow_dedupe_key",
     "follow_job",
+    "held_numbers",
     "is_stale",
     "make_all_due",
     "oriented_name",
+    "needs_confirmation",
+    "parse_number",
     "pending",
     "present_for_acquisition",
     "present_in",

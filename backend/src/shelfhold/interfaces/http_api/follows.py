@@ -75,8 +75,10 @@ def build_follows_router(get_ops: Callable[[], OpsServices]) -> APIRouter:
     def follow(body: FollowIn, admin: Admin) -> FollowOut:
         with refusals():
             answer = get_ops().follows.follow(
-                body.source_key, body.remote_id, requester_user_id=user_of(admin)
-            )
+                body.source_key, body.remote_id, requester_user_id=user_of(admin),
+                mode=body.mode, from_number=body.from_number, shelf_id=body.shelf_id,
+                confirm_units=body.confirm_units, confirm_bytes=body.confirm_bytes,
+            )  # fmt: skip
         return FollowOut(**answer)
 
     @router.delete("/follows")

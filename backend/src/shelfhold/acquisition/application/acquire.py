@@ -411,14 +411,20 @@ class NativeAcquirer:
             await handle.aclose()
         return len(units)
 
-    async def _list_units(self, ref: SeriesRef) -> list[UnitInfo]:
-        """The Units a source lists for this series, without recording anything (EF-UX-006)."""
-        record = self._record(ref.source_key)
-        handle = await self._open(record)
+    async def list_units(self, ref: SeriesRef) -> list[UnitInfo]:
+        """The Units a source lists for this series, nothing recorded (EF-UX-006). A source that
+        cannot list them is refused (`source.error`), never an empty listing."""
+        handle, _ = await self._search_handle(ref.source_key)  # the connected service, or a source
         try:
             units = await handle.service.list_units(handle.fetcher, handle.guard.screen(ref))
-        except Exception:
-            units = []
+        except NotConfigured as error:
+            raise AcquireRefused(
+                "source.not_configured", "the source's settings are refused"
+            ) from error
+        except SourceError:
+            raise
+        except Exception as error:
+            raise AcquireRefused("source.error", "the source could not list this series") from error
         finally:
             await handle.aclose()
         return list(units)

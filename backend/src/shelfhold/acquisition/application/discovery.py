@@ -23,6 +23,7 @@ from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
 from shelfhold.acquisition.application.sub_sources import upsert_sub_sources
 from shelfhold.acquisition.domain.failures import Disposition, classify, disposition_of
+from shelfhold.acquisition.domain.follow_intent import FollowIntent
 from shelfhold.acquisition.domain.watermark import Watermark
 from shelfhold.catalog.public import (
     Catalog,
@@ -175,6 +176,7 @@ class SeriesDiscovery:
             twins = pending_pairing(connection, fresh, declined=declined) if fresh else {}
             shelf_id = self._adult_shelf(connection)
             hold = self._family_hold(connection)
+            intents = self._intents(connection)
         held_sources = {s.source_key for s in subs if hold and s.content_warning == "safe"}
         todo: list[SeriesRef] = []
         buried: dict[str, str] = {}
@@ -192,7 +194,14 @@ class SeriesDiscovery:
             self._digest(ref): twins[self._key(ref)] for ref in fresh if self._key(ref) in twins
         }
         # without an adult shelf only a held Work can be created: it waits unshelved, in "À classer"
-        unplaced = [r for r in todo if shelf_id is None and r.source_key not in held_sources]
+        # (a shelf the admin chose on the add sheet is a place)
+        unplaced = [
+            r
+            for r in todo
+            if shelf_id is None
+            and r.source_key not in held_sources
+            and not (intents.get(self._key(r)) and intents[self._key(r)].shelf_id)
+        ]
         todo = [r for r in todo if r not in unplaced]
         self._sync(buried, waiting, awaiting=bool(unplaced))
         log.debug(
@@ -222,8 +231,10 @@ class SeriesDiscovery:
                 log.warning("follow.discovery_skipped", failure_class=failure_class)
                 continue  # that series' problem: found again at the next cycle
             held = ref.source_key in held_sources
+            chosen = intents.get(self._key(ref))
+            placed = chosen.shelf_id if chosen and chosen.shelf_id else (None if held else shelf_id)
             binding_id = self._create(
-                ref, lang, None if held else shelf_id, _watermark(units),
+                ref, lang, placed, chosen.watermark() if chosen else _watermark(units),
                 # a series whose sub-source was not listed is not known to be safe either
                 suggested=warned.get(ref.source_key, unknown_age),
             )  # fmt: skip
@@ -255,6 +266,23 @@ class SeriesDiscovery:
             self._notices.sync(connection, "pending_pairing", waiting)
 
     # -- what exists ------------------------------------------------------------------------
+    @staticmethod
+    def _intents(connection: sa.Connection) -> dict[tuple[str, str], FollowIntent]:
+        """What the add sheet chose for the series that were followed from it (M3 L42)."""
+        request = acquisition.follow_request
+        rows = connection.execute(
+            sa.select(
+                request.c.source_key, request.c.remote_id, request.c.mode,
+                request.c.from_number, request.c.shelf_id,
+            ).where(request.c.mode.is_not(None))
+        )  # fmt: skip
+        return {
+            (row.source_key, row.remote_id): FollowIntent(
+                mode=row.mode, from_number=row.from_number, shelf_id=row.shelf_id
+            )
+            for row in rows
+        }
+
     def _key(self, ref: SeriesRef) -> tuple[str, str]:
         return (ref.source_key, ref.remote_id)
 
