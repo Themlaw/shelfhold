@@ -100,7 +100,10 @@ def test_add_estimate_is_the_admins_only(
             key = api_key_of(api, who)
             keyed = api.other_client(f"10.0.1.{ip[-2:]}")
             assert (
-                keyed.get(ESTIMATE, params=params, headers={"Authorization": f"Bearer {key}"}).status_code == 403
+                keyed.get(
+                    ESTIMATE, params=params, headers={"Authorization": f"Bearer {key}"}
+                ).status_code
+                == 403
             ), who
 
 

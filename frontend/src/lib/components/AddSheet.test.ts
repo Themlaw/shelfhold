@@ -535,7 +535,7 @@ describe('AddSheet', () => {
     expect(follows).toEqual([]);
   });
 
-  // ENF-A11Y-002
+  // req: ENF-A11Y-002
   it('is a labelled dialog: focus goes in, Escape and « Fermer » close it, every control has a name', async () => {
     serve();
     const { onclose } = open();
@@ -564,7 +564,7 @@ describe('AddSheet', () => {
     expect(document.body.textContent).not.toMatch(/export/i);
   });
 
-  // ENF-I18N-001
+  // req: ENF-I18N-001
   it('speaks English once the language is English, with nothing left in French', async () => {
     serve({ spaceCheck: () => refusal(60 * GIB, 40 * GIB, 10 * GIB) });
     try {

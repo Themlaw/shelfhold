@@ -208,7 +208,9 @@ class FollowRequests:
                 return "followed", False
             if intent is not None and inserted.rowcount == 0:  # the choice of this click is the one
                 connection.execute(
-                    sa.update(_REQUEST).where(_REQUEST.c.id == row.id).values(_intent_values(intent))
+                    sa.update(_REQUEST)
+                    .where(_REQUEST.c.id == row.id)
+                    .values(_intent_values(intent))
                 )
             if row.state == "following" and row.claimed_at and now - row.claimed_at < CLAIM_TTL:
                 return "in_progress", False

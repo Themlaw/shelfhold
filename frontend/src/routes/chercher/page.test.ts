@@ -531,7 +531,7 @@ describe('Search screen, child', () => {
 });
 
 describe('Search screen, English', () => {
-  // ENF-I18N-001
+  // req: ENF-I18N-001
   it('speaks English, in the same places, with nothing left in French', async () => {
     answerSearch(() => HttpResponse.json(empty()));
     try {

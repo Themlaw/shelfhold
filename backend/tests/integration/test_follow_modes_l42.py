@@ -30,7 +30,7 @@ from shelfhold.sdk.refs import SeriesRef, UnitInfo
 from shelfhold.sdk.source import SourceError
 from tests.auth_env import CSRF_HEADER
 from tests.federated_env import FakeSource, api_key_of, hit, instance
-from tests.follow_env import Bench, add_adult_shelf, follow_bench
+from tests.follow_env import Bench, follow_bench
 from tests.integration.test_schema_catalog import add_edition, add_unit, add_work
 
 ALPHA = SeriesRef(source_key="suwayomi:7001", remote_id="/series-alpha", title="Series Alpha")
@@ -118,7 +118,8 @@ def test_a_follow_files_the_edition_on_the_shelf_that_was_chosen() -> None:
             r["remote"]: r["shelf"]
             for r in bench.rows(
                 "SELECT i.remote_id AS remote, e.shelf_id AS shelf FROM source_binding b "
-                "JOIN source_item i ON i.id = b.source_item_id JOIN edition e ON e.id = b.edition_id"
+                "JOIN source_item i ON i.id = b.source_item_id "
+                "JOIN edition e ON e.id = b.edition_id"
             )
         }
         assert shelves["/series-alpha"] == other
@@ -180,7 +181,9 @@ def hold(settings: Settings, numbers: list[str]) -> None:
                 unit_id = add_unit(connection, edition_id, number)
                 connection.execute(
                     sa.insert(replica_schema.replica).values(
-                        id=new_ulid(), unit_id=unit_id, location="store",
+                        id=new_ulid(),
+                        unit_id=unit_id,
+                        location="store",
                         rel_path=f"alpha/{number}.cbz",
                     )
                 )
@@ -276,7 +279,9 @@ def test_a_confirmation_that_is_what_was_estimated_goes_on(
             api, mode="all", confirm_units=seen["units"], confirm_bytes=seen["size_bytes"]
         )
         # no service is connected in this instance: that is the refusal it gets, not a stale one
-        assert answer.status_code != 409 or answer.json()["code"] != "backfill.confirmation_required"
+        assert (
+            answer.status_code != 409 or answer.json()["code"] != "backfill.confirmation_required"
+        )
 
 
 @pytest.mark.req("EF-UX-006")
@@ -286,7 +291,9 @@ def test_a_small_choice_asks_for_no_confirmation(
     with instance(monkeypatch, settings, alpha(chapters(3))) as api:
         assert api.login().status_code == 200
         answer = post(api, mode="all")
-        assert answer.status_code != 409 or answer.json()["code"] != "backfill.confirmation_required"
+        assert (
+            answer.status_code != 409 or answer.json()["code"] != "backfill.confirmation_required"
+        )
 
 
 @pytest.mark.req("EF-UX-006")

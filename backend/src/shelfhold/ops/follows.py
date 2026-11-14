@@ -19,6 +19,7 @@ from shelfhold.acquisition.public import (
     CadencePolicy,
     FollowConfirmationRequired,
     FollowIntent,
+    FollowMode,
     FollowOutcome,
     FollowRefused,
     FollowRequests,
@@ -29,13 +30,13 @@ from shelfhold.acquisition.public import (
 )
 from shelfhold.i18n import t
 from shelfhold.infrastructure.schema import acquisition, export
+from shelfhold.ops.acquire import AcquireOps
 from shelfhold.ops.errors import (
     CodedRefusal,
     ExitUnavailableError,
     InvalidChoiceError,
     UnknownSubjectError,
 )
-from shelfhold.ops.acquire import AcquireOps
 from shelfhold.ops.reclaim import estimate_units, require_space
 from shelfhold.sdk.refs import SeriesRef
 from shelfhold.sdk.source import SourceError
@@ -135,7 +136,8 @@ class FollowOps:
                 source_key, remote_id, mode, from_number
             )
             if estimate["needs_confirmation"] and (confirm_units, confirm_bytes) != (
-                estimate["units"], estimate["size_bytes"],
+                estimate["units"],
+                estimate["size_bytes"],
             ):  # exactly what was shown: a larger figure would be a blank cheque
                 raise CodedRefusal(
                     "backfill.confirmation_required",

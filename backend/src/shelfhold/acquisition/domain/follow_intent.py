@@ -4,7 +4,8 @@
 is held, so they ask for the same Units; the estimate of `new_only` is the one that leaves out what
 is held). `from_number` brings the Units from that number on, in the unnamed numbering segment.
 A follow made without a choice (the host CLI, a series added in the service) has no intent, and the
-watermark stays the highest chapter visible: the first cycle asks for what is new, never the archive.
+watermark stays the highest chapter visible: the first cycle asks for what is new,
+never the archive.
 """
 
 from dataclasses import dataclass

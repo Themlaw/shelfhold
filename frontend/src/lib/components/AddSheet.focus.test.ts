@@ -23,6 +23,7 @@ afterEach(() => server.resetHandlers());
 afterAll(() => server.close());
 
 describe('Add sheet, focus', () => {
+  // req: ENF-A11Y-002
   it('keeps Tab and Shift+Tab inside the sheet', async () => {
     const outside = document.createElement('button');
     document.body.append(outside);

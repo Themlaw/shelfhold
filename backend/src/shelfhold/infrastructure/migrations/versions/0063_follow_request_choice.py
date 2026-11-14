@@ -34,7 +34,10 @@ def upgrade() -> None:
         batch.add_column(sa.Column("from_number", sa.String(), nullable=True))
         batch.add_column(sa.Column("shelf_id", sa.String(26), nullable=True))
         batch.create_foreign_key(
-            op.f("fk_follow_request_shelf_id_shelf"), "shelf", ["shelf_id"], ["id"],
+            op.f("fk_follow_request_shelf_id_shelf"),
+            "shelf",
+            ["shelf_id"],
+            ["id"],
             ondelete="SET NULL",
         )
         batch.create_check_constraint(

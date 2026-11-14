@@ -85,7 +85,12 @@ from shelfhold.acquisition.application.upstream import (
 )
 from shelfhold.acquisition.domain.backfill import BackfillEstimate, needs_confirmation
 from shelfhold.acquisition.domain.failures import Disposition, classify, disposition_of
-from shelfhold.acquisition.domain.follow_intent import FOLLOW_MODES, FollowIntent, FollowMode, parse_number
+from shelfhold.acquisition.domain.follow_intent import (
+    FOLLOW_MODES,
+    FollowIntent,
+    FollowMode,
+    parse_number,
+)
 from shelfhold.acquisition.domain.freshness import DEFAULT_K, cadence, is_stale, stale_threshold
 from shelfhold.acquisition.domain.requests import RequestBudget
 from shelfhold.acquisition.domain.team_policy import TeamChoice, TeamStats, choose_team
@@ -116,11 +121,11 @@ __all__ = [
     "FailureLedger",
     "FollowConfirmationRequired",
     "FollowCycle",
+    "FollowIntent",
+    "FollowMode",
     "FollowOutcome",
     "FollowRefused",
     "FollowReport",
-    "FollowIntent",
-    "FollowMode",
     "FollowRequests",
     "ImportTargets",
     "LeasedReceiver",
@@ -166,8 +171,8 @@ __all__ = [
     "held_numbers",
     "is_stale",
     "make_all_due",
-    "oriented_name",
     "needs_confirmation",
+    "oriented_name",
     "parse_number",
     "pending",
     "present_for_acquisition",
