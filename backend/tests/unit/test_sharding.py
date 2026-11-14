@@ -1,15 +1,17 @@
 """The --shard option of tests/conftest.py partitions the suite: no test lost, none duplicated."""
 
+import re
 from pathlib import Path
 
 import pytest
 
 pytest_plugins = ["pytester"]
 
-_CONFTEST = "\n".join(
-    line
-    for line in Path(__file__).parents[1].joinpath("conftest.py").read_text("utf-8").splitlines()
-    if not line.startswith("pytest_plugins")  # the guard imports `tests`, absent from a pytester
+_CONFTEST = re.sub(  # the plugins import `tests`, absent from a pytester
+    r"^pytest_plugins = \[.*?^\]\n",
+    "",
+    Path(__file__).parents[1].joinpath("conftest.py").read_text("utf-8"),
+    flags=re.DOTALL | re.MULTILINE,
 )
 _SUITE = "\n".join(f"def test_{i}() -> None:\n    pass\n" for i in range(40))
 
