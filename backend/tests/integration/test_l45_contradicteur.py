@@ -1,6 +1,6 @@
 """Adverse review of the L45 doors (PR #252): one red test per hole found.
 
-Each test turns green when its objection in `docs/decisions/M3.md` ("L45 : contradicteur") is
+Each test turns green when its objection in `docs/decisions/M3.md` ("L45 : relecture adverse") is
 lifted. Production is not changed here.
 """
 
