@@ -1,7 +1,7 @@
 """Review PoCs of PR #210 (M3 L07): sessions, admin reset-password, recovery kit, attacked.
 
 Each test is red on the branch under review and names the objection it proves (B/M/m in
-`docs/decisions/M3.md`, section "L07 : contradicteur de la #210 (Opus)").
+`docs/decisions/M3.md`, section "L07 : contradicteur de la #210").
 """
 
 from __future__ import annotations

@@ -1,4 +1,4 @@
-"""Regression tests from the Opus review of PR #30 (PoCs turned into tests)."""
+"""Regression tests from the review of PR #30 (PoCs turned into tests)."""
 
 import os
 import shutil

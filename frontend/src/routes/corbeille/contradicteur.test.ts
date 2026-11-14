@@ -35,7 +35,7 @@ beforeEach(() => {
 afterEach(() => server.resetHandlers());
 afterAll(() => server.close());
 
-describe('Corbeille, contradicteur L48 (Opus)', () => {
+describe('Corbeille, contradicteur L48', () => {
   // req: EF-BIB-031, EF-BIB-052
   // « Effacer maintenant » on an irreplaceable Unit: the form gives the same warning as for any
   // Unit. The badge sits above, but the moment the word is typed nothing says that no source can

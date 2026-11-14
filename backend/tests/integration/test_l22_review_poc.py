@@ -1,6 +1,6 @@
-"""M3 L22, adversarial review of #219 (Opus): proofs of concept. Each test is red on the head of
+"""M3 L22, adversarial review of #219: proofs of concept. Each test is red on the head of
 the PR and turns green when its objection is lifted (docs/decisions/M3.md, « L22 : contradicteur
-de la #219 (Opus) »). Real database, real schema, the admin's real rating door; no Edition here
+de la #219 »). Real database, real schema, the admin's real rating door; no Edition here
 has an age of its own, so each one counts for its Work's (the existing tests rate the Editions
 too, which hides what a Work's age carries)."""
 

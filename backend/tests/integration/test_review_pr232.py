@@ -1,4 +1,4 @@
-"""Contradicteur Opus de la PR #232 (M3 L06): PoC rouges, une objection par test.
+"""Contradicteur de la PR #232 (M3 L06): PoC rouges, une objection par test.
 
 Chaque test décrit ce que la spec promet et échoue tant que le code de la PR ne le tient pas."""
 

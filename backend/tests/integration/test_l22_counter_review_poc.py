@@ -1,4 +1,4 @@
-"""M3 L22, counter-review of the fixes of #219 (Opus): attacks through the admin's real rating door
+"""M3 L22, counter-review of the fixes of #219: attacks through the admin's real rating door
 (`RatingService.rate`, the Work's age only; no Edition here has an age of its own unless said).
 docs/decisions/M3.md, « L22 : contre-relecture »."""
 

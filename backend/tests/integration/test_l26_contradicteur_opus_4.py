@@ -1,5 +1,5 @@
 """M3 L26, review of the linked lift (6e14cef2): proofs of concept, red against the branch as
-reviewed. See `docs/decisions/M3.md`, « L26 : contradicteur de la #233 (Opus) », linked lift."""
+reviewed. See `docs/decisions/M3.md`, « L26 : contradicteur de la #233 », linked lift."""
 
 from pathlib import Path
 

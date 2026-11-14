@@ -1,6 +1,6 @@
 """Counter-review of #239 (M3 L29) after the answers: proofs of concept, red until answered.
 
-See `docs/decisions/M3.md`, "L29 : contradicteur de la #239 (Opus)", "Contre-relecture"."""
+See `docs/decisions/M3.md`, "L29 : contradicteur de la #239", "Contre-relecture"."""
 
 import signal
 from collections.abc import Iterator

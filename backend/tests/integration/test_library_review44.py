@@ -1,4 +1,4 @@
-"""Regression tests for the Opus review of PR #44 (each one was a working proof of concept)."""
+"""Regression tests for the review of PR #44 (each one was a working proof of concept)."""
 
 import asyncio
 import json

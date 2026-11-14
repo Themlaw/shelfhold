@@ -4,7 +4,7 @@ Each test attacks one promise of the rename plans (EF-EXP-030, EF-EXP-037, EF-EX
 batch left half applied, a write under an open intent, an intent left open by a refused rename, a
 name Kavita and SMB take for another, a plan applied by two jobs at once, a key that replays the
 application, and the reader count in a log line. See `docs/decisions/M3.md`, "L29 : contradicteur
-de la #239 (Opus)"."""
+de la #239"."""
 
 import contextlib
 import errno
