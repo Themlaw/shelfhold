@@ -177,6 +177,7 @@ def test_workflow_actions_are_pinned_by_sha() -> None:
     assert not unpinned, unpinned
 
 
+@pytest.mark.req("ENF-GOV-002")
 def test_adr_index_lists_every_adr() -> None:
     """Every ADR file has one row in the register, and every row points at an existing file."""
     adr_dir = ROOT / "docs" / "adr"
