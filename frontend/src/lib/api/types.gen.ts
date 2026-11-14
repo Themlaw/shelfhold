@@ -1396,6 +1396,12 @@ export type HealthPageOut = {
         [key: string]: unknown;
     }>;
     /**
+     * Library Type Changes
+     */
+    library_type_changes: Array<{
+        [key: string]: unknown;
+    }>;
+    /**
      * Lost Originals
      */
     lost_originals: Array<{
@@ -6933,6 +6939,37 @@ export type RestoreUpstreamResponses = {
 };
 
 export type RestoreUpstreamResponse = RestoreUpstreamResponses[keyof RestoreUpstreamResponses];
+
+export type DiagnosticBundleDownloadData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/diagnostic/bundle';
+};
+
+export type DiagnosticBundleDownloadErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type DiagnosticBundleDownloadError = DiagnosticBundleDownloadErrors[keyof DiagnosticBundleDownloadErrors];
+
+export type DiagnosticBundleDownloadResponses = {
+    /**
+     * Successful Response
+     */
+    200: unknown;
+};
 
 export type EditionsListData = {
     body?: never;

@@ -4,20 +4,25 @@ Anonymous callers get the state only (O12, A7). A session or an API key also get
 the paused queues on `/healthz`, and the check names on `/readyz` (L05).
 """
 
+import tempfile
 from collections.abc import Callable, Mapping
-from datetime import datetime
+from datetime import UTC, datetime
+from pathlib import Path
 from typing import Annotated, Any, Literal, Protocol
 
 import structlog
 from fastapi import APIRouter, Depends, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel
 from sqlalchemy import Engine
 from starlette.concurrency import run_in_threadpool
 
-from shelfhold.config import Settings
+from shelfhold.config import ResolvedSettings, Settings
 from shelfhold.identity.public import Principal
+from shelfhold.infrastructure.http_headers import attachment_disposition
+from shelfhold.interfaces.cli import status as status_cli
 from shelfhold.interfaces.http_api.stats import require_admin
+from shelfhold.ops.diagnostic import build_bundle
 from shelfhold.ops.health import build_health_page
 
 
@@ -181,6 +186,7 @@ class HealthPageOut(BaseModel):
     lost_originals: list[dict[str, Any]]
     withdrawal_pending: dict[str, Any]
     kavita_audit: list[dict[str, Any]]
+    library_type_changes: list[dict[str, Any]]
     jurisdiction: dict[str, Any] | None
     backup: dict[str, Any]
     stats: dict[str, Any]
@@ -196,5 +202,28 @@ def build_health_page_router(
     @router.get("/health/page", response_model=HealthPageOut)
     def health_page(_admin: Annotated[Principal, Depends(require_admin)]) -> HealthPageOut:
         return HealthPageOut.model_validate(build_health_page(get_engine(), settings, now()))
+
+    @router.get("/diagnostic/bundle", operation_id="diagnostic_bundle_download")
+    def diagnostic_bundle(_admin: Annotated[Principal, Depends(require_admin)]) -> Response:
+        """The diagnostic bundle as a download (M3 L46): admin only, written to a temporary
+        file, never to a content root, and served as an attachment."""
+        resolved = ResolvedSettings(values=settings, fields={}, schema_version="")
+        with tempfile.TemporaryDirectory(prefix="shelfhold-diag-") as tmp:
+            out = Path(tmp) / "diagnostic.zip"
+            build_bundle(
+                resolved,
+                out,
+                status=lambda: status_cli.report(resolved),
+                now=datetime.now(UTC),
+            )
+            data = out.read_bytes()
+        return Response(
+            content=data,
+            media_type="application/zip",
+            headers={
+                "Cache-Control": "no-store",
+                "Content-Disposition": attachment_disposition("diagnostic-bundle.zip"),
+            },
+        )
 
     return router

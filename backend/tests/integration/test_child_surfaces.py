@@ -129,6 +129,7 @@ CLOSED = (
     "POST /api/v1/deletions",
     "POST /api/v1/deletions/preview",
     "POST /api/v1/detach",
+    "GET /api/v1/diagnostic/bundle",  # M3 L46: the bundle is the admin's alone
     "GET /api/v1/editions",
     "POST /api/v1/editions/{edition_id}/add-directly",
     "GET /api/v1/editions/{edition_id}/backfill",
