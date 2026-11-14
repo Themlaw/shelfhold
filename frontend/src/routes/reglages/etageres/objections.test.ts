@@ -33,6 +33,7 @@ afterEach(() => server.resetHandlers());
 afterAll(() => server.close());
 
 describe('the review of L45', () => {
+  // req: EF-EXP-031
   it('says on each « Détacher » that the whole target goes, and names its shelves', async () => {
     server.use(
       http.get(`${BASE}/api/v1/destinations`, () =>
@@ -45,6 +46,7 @@ describe('the review of L45', () => {
     expect(button).toHaveAccessibleDescription(/toute la cible Kavita.*Manga, Romans/);
   });
 
+  // req: EF-EXP-005, EF-EXP-031
   it('lists a destination whose names could not be counted, and says so', async () => {
     server.use(
       http.get(`${BASE}/api/v1/shelves`, () =>
