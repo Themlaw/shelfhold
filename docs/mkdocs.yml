@@ -1,0 +1,8 @@
+# Documentation site (ENF-DOC-001, D17): Zensical reads this file and builds docs/ as is.
+#   uv run --project backend zensical build --strict -f docs/mkdocs.yml
+# The project root is docs/ (Zensical refuses an output folder outside it): the site goes to
+# docs/_site, which git ignores. No domain of our own: the site is published on GitHub Pages.
+site_name: Shelfhold
+site_description: Documentation de Shelfhold
+docs_dir: .
+site_dir: _site

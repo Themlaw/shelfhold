@@ -6,7 +6,7 @@ au démarrage (ENF-OPS-017).
 
 ## Mettre à jour
 
-1. Lisez la section de la version dans [`CHANGELOG.md`](../../CHANGELOG.md), notamment la ligne
+1. Lisez la section de la version dans [`CHANGELOG.md`](https://github.com/Themlaw/shelfhold/blob/main/CHANGELOG.md), notamment la ligne
    « Migration : oui/non, réversible ».
 2. Sauvegardez `/data` ([restauration.md](restauration.md)).
 3. Changez la version de l'image dans le compose et redéployez avec votre outil habituel

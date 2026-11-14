@@ -634,6 +634,8 @@ jobs:
       id-token: write  # attestations of the pushed digests, used by the `merge` job only
       attestations: write
     uses: ./.github/workflows/image-publish.yml  # zizmor: ignore[self-repository]
+    secrets:
+      CODEBERG_TOKEN: ${{ secrets.CODEBERG_TOKEN }}  # optional (ENF-GOV-004): absent = GHCR only
 
   scan:
     # Grype on the image archive that was built (and tested) in this run, SARIF to code scanning.

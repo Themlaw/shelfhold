@@ -6,8 +6,8 @@ Pages pour qui installe et fait vivre une instance Shelfhold. Les clés de confi
 [`docs/decisions/M1a.md`](../decisions/M1a.md) et [`docs/decisions/M1b.md`](../decisions/M1b.md).
 
 `shelfhold <commande> --help` fait foi sur ce que votre version propose. Ce qui est annoncé pour plus tard
-est dit comme tel dans la page : le second registre d'images (Codeberg) est à venir et ne change rien à
-l'installation.
+est dit comme tel dans la page. Le second registre d'images (Codeberg) est optionnel : il n'existe que si le mainteneur y publie,
+et ne change rien à l'installation (voir [vérifier les images](verifier-les-images.md)).
 
 | Je veux… | Page |
 | --- | --- |
@@ -55,5 +55,6 @@ l'installation.
 | Avec quoi lire : navigateurs, liseuses, KOReader, OPDS, colonne « hors ligne » | [clients.md](clients.md) |
 | Désinstaller sans rien perdre (sauvegarde, kit de secours, `/store`) | [desinstaller.md](desinstaller.md) |
 | Supprimer un profil, exporter ses données (ce qui reste après, et combien de temps) | [supprimer-un-profil.md](supprimer-un-profil.md) |
+| Vérifier la signature et la provenance de l'image (GHCR et second registre, `cosign`) | [verifier-les-images.md](verifier-les-images.md) |
 | Écrire un plugin (source, destination, kit, gabarit) | [../plugins/parcours.md](../plugins/parcours.md) |
 | Page à donner à la famille | [../famille/README.md](../famille/README.md) |

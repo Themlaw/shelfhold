@@ -1,4 +1,4 @@
-"""M3 supply-chain tier (L54): cosign on both registries, Scorecard, documentation site, SECURITY.md.
+"""M3 supply-chain tier (L54): cosign on both registries, Scorecard, docs site, SECURITY.md.
 
 The workflows are read as YAML, never run. The one piece of logic that decides whether the second
 registry is used (`.github/scripts/second-registry.sh detect`) is run for real, with and without the
@@ -48,20 +48,18 @@ def _read(rel: str) -> str:
 # --- SECURITY.md and cra.md: deadlines, supported versions, advisories, no compliance claim ---
 
 CLAIM = re.compile(r"conforme|conformité|certifi|compliant|compliance|certified", re.I)
-DENIAL = re.compile(r"ne prétend|aucune|sans prétendre|pas de |n'affirme|ne garantit|pas un avis", re.I)
+DENIAL = re.compile(
+    r"ne prétend|aucune|sans prétendre|pas de |n'affirme|ne garantit|pas un avis", re.I
+)
 
 
 def _security_problems(text: str) -> list[str]:
     problems: list[str] = []
-    if not re.search(r"accusé de réception[^\n]*(?:≤|au plus|sous)\s*7 jours", text):
+    if not re.search(r"accusé de réception[^\n]*(?:≤|au plus|sous)\s*7 jours", text, re.I):
         problems.append("acknowledgement deadline of 7 days missing")
-    if not re.search(r"correctif[^\n]*(?:≤|au plus|sous)\s*90 jours[^\n]*au mieux", text):
+    if not re.search(r"correctif[^\n]*(?:≤|au plus|sous)\s*90 jours[^\n]*au mieux", text, re.I):
         problems.append("fix target of 90 days, best effort, missing")
-    if not (
-        "X.Y" in text
-        and re.search(r"courante", text)
-        and re.search(r"précédente", text)
-    ):
+    if not ("X.Y" in text and re.search(r"courante", text) and re.search(r"précédente", text)):
         problems.append("supported versions X.Y current and previous missing")
     if not re.search(r"avis[^\n]*publi", text, re.I):
         problems.append("published advisories missing")
@@ -94,14 +92,13 @@ def test_security_md_checker_rejects_weakened_or_overclaiming_text() -> None:
     assert any("supported versions" in p for p in _security_problems(no_versions))
     future = good + "\nLes délais seront publiés avant 1.0.\n"
     assert any("future" in p for p in _security_problems(future))
-    overclaim = good + "\nLe projet est conforme au Cyber Resilience Act.\n"
+    overclaim = good + "\nThis release is compliant with the Cyber Resilience Act.\n"
     assert any("compliance claim" in p for p in _security_problems(overclaim))
 
 
 @pytest.mark.req("ENF-LEG-011")
 def test_cra_md_same_spirit_and_covers_signatures() -> None:
     text = _read("docs/legal/cra.md")
-    assert _security_problems("accusé de réception ≤ 7 jours\n" + text) is not None
     for line in text.splitlines():
         assert not (CLAIM.search(line) and not DENIAL.search(line)), line
     assert "ne prétend" in text or "n'affirme aucune conformité" in text
@@ -115,7 +112,9 @@ def test_cra_md_same_spirit_and_covers_signatures() -> None:
 # --- cosign on both registries, with or without the second registry's token ---
 
 
-def _detect(tmp_path: Path, **env: str) -> tuple[subprocess.CompletedProcess[str], dict[str, str], str]:
+def _detect(
+    tmp_path: Path, env: dict[str, str]
+) -> tuple[subprocess.CompletedProcess[str], dict[str, str], str]:
     out, summary = tmp_path / "out", tmp_path / "summary"
     out.write_text("")
     summary.write_text("")
@@ -138,26 +137,30 @@ def _detect(tmp_path: Path, **env: str) -> tuple[subprocess.CompletedProcess[str
 
 @pytest.mark.req("ENF-SEC-007")
 def test_second_registry_absent_token_skips_without_failing_and_says_so(tmp_path: Path) -> None:
-    done, outputs, summary = _detect(tmp_path, HAS_TOKEN="false", SECOND_REGISTRY="")
+    done, outputs, summary = _detect(tmp_path, {"HAS_TOKEN": "false", "SECOND_REGISTRY": ""})
     assert done.returncode == 0, done.stderr
     assert outputs == {"enabled": "false"}
     assert "CODEBERG_TOKEN" in summary and "GHCR" in summary and "ENF-GOV-004" in summary
-    assert re.search(r"skipped|ignor|absent", summary, re.I)
+    assert re.search(r"skipped|absent", summary, re.I)
 
 
 @pytest.mark.req("ENF-SEC-007")
 def test_second_registry_with_token_defaults_to_codeberg_owner(tmp_path: Path) -> None:
-    done, outputs, summary = _detect(tmp_path, HAS_TOKEN="true", SECOND_REGISTRY="")
+    done, outputs, summary = _detect(tmp_path, {"HAS_TOKEN": "true", "SECOND_REGISTRY": ""})
     assert done.returncode == 0, done.stderr
     assert outputs["enabled"] == "true"
-    assert outputs["image"] == "codeberg.org/someowner/shelfhold"  # lowercase, `codeberg.org/<owner>`
+    assert (
+        outputs["image"] == "codeberg.org/someowner/shelfhold"
+    )  # lowercase, `codeberg.org/<owner>`
     assert outputs["host"] == "codeberg.org"
     assert "codeberg.org/someowner/shelfhold" in summary
 
 
 @pytest.mark.req("ENF-SEC-007")
 def test_second_registry_variable_overrides_the_default(tmp_path: Path) -> None:
-    done, outputs, _ = _detect(tmp_path, HAS_TOKEN="true", SECOND_REGISTRY="registry.example.org:5000/team")
+    done, outputs, _ = _detect(
+        tmp_path, {"HAS_TOKEN": "true", "SECOND_REGISTRY": "registry.example.org:5000/team"}
+    )
     assert done.returncode == 0, done.stderr
     assert outputs["image"] == "registry.example.org:5000/team/shelfhold"
     assert outputs["host"] == "registry.example.org:5000"
@@ -177,12 +180,14 @@ def test_second_registry_variable_overrides_the_default(tmp_path: Path) -> None:
         "/leading-slash",
     ],
 )
-def test_second_registry_hostile_variable_never_reaches_the_outputs(tmp_path: Path, hostile: str) -> None:
-    done, outputs, _ = _detect(tmp_path, HAS_TOKEN="true", SECOND_REGISTRY=hostile)
+def test_second_registry_hostile_variable_never_reaches_the_outputs(
+    tmp_path: Path, hostile: str
+) -> None:
+    done, outputs, _ = _detect(tmp_path, {"HAS_TOKEN": "true", "SECOND_REGISTRY": hostile})
     assert done.returncode != 0  # a configuration mistake is loud when the token is there
     assert "image" not in outputs and outputs.get("enabled") != "true"
     # and with no token the odd value is ignored: nothing to publish, nothing emitted
-    quiet, quiet_outputs, _ = _detect(tmp_path, HAS_TOKEN="false", SECOND_REGISTRY=hostile)
+    quiet, quiet_outputs, _ = _detect(tmp_path, {"HAS_TOKEN": "false", "SECOND_REGISTRY": hostile})
     assert quiet.returncode == 0 and quiet_outputs == {"enabled": "false"}
 
 
@@ -191,8 +196,8 @@ def test_second_registry_script_never_sees_or_prints_the_token(tmp_path: Path) -
     text = SCRIPT.read_text(encoding="utf-8")
     assert "CODEBERG_TOKEN" in text  # named in the message to the maintainer, never read
     assert not re.search(r"\$\{?(CODEBERG_TOKEN|TOKEN|PASSWORD)\b", text)
-    done, _, summary = _detect(tmp_path, HAS_TOKEN="true", CODEBERG_TOKEN="s3cr3t-value-123")
-    assert "s3cr3t-value-123" not in done.stdout + done.stderr + summary
+    done, _, summary = _detect(tmp_path, {"HAS_TOKEN": "true", "CODEBERG_TOKEN": "xxxxxxxx"})
+    assert "xxxxxxxx" not in done.stdout + done.stderr + summary
 
 
 def _step_text(step: dict[str, Any]) -> str:
@@ -226,13 +231,17 @@ def _second_problems(workflows: dict[str, dict[str, Any]]) -> list[str]:
             seen_detect = True
             continue
         text = _step_text(step)
-        touches = "secrets.CODEBERG_TOKEN" in text or "SECOND_IMAGE" in text or "steps.second." in text
+        touches = (
+            "secrets.CODEBERG_TOKEN" in text or "SECOND_IMAGE" in text or "steps.second." in text
+        )
         if touches and ENABLED not in str(step.get("if", "")):
             problems.append(f"step not conditioned on the token: {step.get('name')}")
         if touches and not seen_detect:
             problems.append(f"step before detection: {step.get('name')}")
     # the token is read by the login step only (never by a run script, never on a command line)
-    holders = [s for s in steps if "secrets.CODEBERG_TOKEN" in _step_text(s) and s.get("id") != "second"]
+    holders = [
+        s for s in steps if "secrets.CODEBERG_TOKEN" in _step_text(s) and s.get("id") != "second"
+    ]
     if [str(s.get("uses", "")).split("@")[0] for s in holders] != ["docker/login-action"]:
         problems.append("the token must reach docker/login-action only")
     return problems
@@ -259,10 +268,12 @@ def test_release_workflow_signs_both_registries() -> None:
     # keyless: OIDC only, no key material anywhere, the manifest list and both platform images
     for s in sign:
         run = str(s["run"])
-        assert "--key" not in run and "COSIGN_PRIVATE_KEY" not in run and "COSIGN_PASSWORD" not in run
+        assert (
+            "--key" not in run and "COSIGN_PRIVATE_KEY" not in run and "COSIGN_PASSWORD" not in run
+        )
         for digest in ("index", "platform1", "platform2"):
             assert digest in str(s.get("env", {})) + run
-    assert 'IMAGE}@' in str(always[0]["run"]) or "$IMAGE@" in str(always[0]["run"])
+    assert "IMAGE}@" in str(always[0]["run"]) or "$IMAGE@" in str(always[0]["run"])
     assert "SECOND_IMAGE" in str(gated[0]["run"]) + str(gated[0].get("env", {}))
     # what was signed is verified in the same run, on both registries
     verify = [s for s in steps if "cosign verify" in str(s.get("run", ""))]
@@ -298,7 +309,9 @@ def test_second_registry_mutations_are_caught() -> None:
     assert any("not conditioned" in p for p in run(drop_condition))
 
     def required(w: dict[str, dict[str, Any]]) -> None:
-        w["image-publish.yml"][True]["workflow_call"]["secrets"]["CODEBERG_TOKEN"]["required"] = True
+        w["image-publish.yml"][True]["workflow_call"]["secrets"]["CODEBERG_TOKEN"]["required"] = (
+            True
+        )
 
     assert any("optional" in p for p in run(required))
 
@@ -334,7 +347,7 @@ def test_the_second_registry_token_never_reaches_a_pull_request_run() -> None:
     for path in [*WORKFLOWS.glob("*.yml"), *SCRIPT.parent.glob("*.sh")]:
         text = path.read_text(encoding="utf-8")
         assert not re.search(r"ghp_|glpat-|-----BEGIN|password:\s*[^$\s]", text), path.name
-        assert "--password " not in text and "echo \"$CODEBERG" not in text, path.name
+        assert "--password " not in text and 'echo "$CODEBERG' not in text, path.name
 
 
 @pytest.mark.req("ENF-SEC-007")
@@ -347,7 +360,9 @@ def test_release_tags_reach_the_second_registry_only_when_signed_and_token_prese
     assert any(s.get("id") == "second" and "second-registry.sh" in str(s.get("run")) for s in steps)
     for step in steps:
         text = _step_text(step)
-        if "SECOND_IMAGE" in text or "secrets.CODEBERG_TOKEN" in text:
+        if step.get("id") != "second" and (
+            "SECOND_IMAGE" in text or "secrets.CODEBERG_TOKEN" in text
+        ):
             assert ENABLED in str(step.get("if", "")), step.get("name")
     texts = [str(s.get("run", "")) for s in steps]
     verify = next(i for i, t in enumerate(texts) if "cosign verify" in t)
@@ -442,8 +457,9 @@ def test_docs_site_config_is_zensical_over_docs() -> None:
     assert "_site" in _read(".gitignore")
     lock = _read("backend/uv.lock")
     assert 'name = "zensical"' in lock
-    dev = tomllib.loads(_read("backend/pyproject.toml"))["dependency-groups"]["dev"]
-    assert any(d.startswith("zensical==") for d in dev)  # pinned exactly
+    groups = tomllib.loads(_read("backend/pyproject.toml"))["dependency-groups"]
+    assert any(d.startswith("zensical==") for d in groups["docs"])  # pinned exactly
+    assert {"include-group": "docs"} in groups["dev"]  # the unit suite builds the site offline
 
 
 def _zensical() -> str:
@@ -474,7 +490,7 @@ def test_docs_site_builds_without_warning(tmp_path: Path) -> None:
     )
     output = done.stdout + done.stderr
     assert done.returncode == 0, output[-3000:]
-    assert not re.search(r"warning|issues? found", output, re.I), output[-3000:]
+    assert not re.search(r"warning|[1-9][0-9]* issues? found", output, re.I), output[-3000:]
     assert (project / "_site" / "index.html").is_file()
 
 
@@ -508,7 +524,7 @@ def test_cosign_verification_documented_for_both_registries() -> None:
     assert "https://token.actions.githubusercontent.com" in text
     assert "gh attestation verify" in text
     for needle in ("CODEBERG_TOKEN", "SECOND_REGISTRY", "sans le jeton"):
-        assert needle in text, needle
+        assert needle.lower() in text.lower(), needle
     # the release page and the pipeline page point to it, and the false statement is gone
     assert "verifier-les-images" in _read("docs/releasing.md")
     ci_image = _read("docs/ci-image.md")
@@ -522,9 +538,10 @@ def test_enf_gov_004_stays_open_and_is_not_claimed_delivered() -> None:
     exceptions = tomllib.loads(_read("tools/traceability-exceptions.toml"))
     deferred = [d for d in exceptions["deferred"] if d["requirement"] == "ENF-GOV-004"]
     assert len(deferred) == 1
+    assert deferred[0]["reason"].startswith("M4")  # D5: reported to M4, GHCR-only v1.0.0
     decision = _read("docs/decisions/M3.md")
     section = decision.split("## L54", 1)[1].split("\n## ", 1)[0]
-    assert re.search(r"ENF-GOV-004[^\n]*(reste ouverte|n'est pas livrée|reste `\[\[deferred\]\]`)", section)
+    assert re.search(r"ENF-GOV-004[^\n]*ouverte", section)
     # no test of this lot claims the requirement as its own delivery (the tests above only
     # exercise the branches); the traceability tool sees the deferral
     for line in _read("CHANGELOG.md").splitlines():

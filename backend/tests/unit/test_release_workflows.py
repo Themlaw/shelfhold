@@ -84,6 +84,8 @@ def test_ghcr_cleanup_policy_only_pr_tags() -> None:
 
 CONTENTS_WRITE_ALLOWED = {("release.yml", "release-proofs")}
 OIDC_HOLDER = ("image-publish.yml", "merge")
+# GitHub Pages' deploy action needs the OIDC token; that job runs no code of the repository (L54)
+PAGES_DEPLOY = ("docs.yml", "deploy")
 PUSH_MAIN = re.compile(r"github\.event_name == 'push'.*github\.ref == 'refs/heads/main'")
 
 
@@ -117,7 +119,7 @@ def _leaks(workflows: dict[str, dict[str, Any]]) -> list[str]:
                 elif "uses" in job:  # a caller: only on a push to main, never on a pull request
                     if not PUSH_MAIN.search(str(job.get("if", ""))):
                         leaks.append(f"{name}/{job_id}: caller of OIDC not limited to main")
-                elif where != OIDC_HOLDER:
+                elif where not in (OIDC_HOLDER, PAGES_DEPLOY):
                     leaks.append(f"{name}/{job_id}: id-token or attestations")
     return leaks
 

@@ -1,5 +1,5 @@
 ---
-status: accepté (spike S1 mené en M0 : Huey retenu malgré l'échec du critère 3, dette de mesure sur 24 h)
+status: "accepté (spike S1 mené en M0 : Huey retenu malgré l'échec du critère 3, dette de mesure sur 24 h)"
 date: 2026-11-02
 amended: 2026-11-02 (passe 1) ; 2026-11-02 (passe 2) ; 2026-11-03 (passe 11) ; 2026-11-04 (spike S1)
 decision-makers: mainteneur

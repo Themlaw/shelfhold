@@ -2,6 +2,7 @@
 
 import tomllib
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -39,9 +40,11 @@ def _locked() -> dict[str, str]:
     return {p["name"]: p["version"] for p in data["package"]}
 
 
-def _names(requirements: list[str]) -> set[str]:
+def _names(requirements: list[Any]) -> set[str]:
     out = set()
     for req in requirements:
+        if not isinstance(req, str):
+            continue  # `{ include-group = "docs" }`: the group is read where it is declared
         name = req
         for sep in ">=<~![ ;":
             name = name.split(sep)[0]
