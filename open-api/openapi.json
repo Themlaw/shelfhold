@@ -18345,7 +18345,7 @@
     },
     "/api/v1/setup/shelf": {
       "post": {
-        "description": "The shelf linked to Kavita, made as `shelfhold shelf create` makes it (same service):\nthe age ceiling and the family cap, the folder under a registered root, the Kavita library\nand the audit of who may read it. The guard is the wizard's (a fresh admin session, never a\nkey, even when no child profile exists), which is never softer than that of `POST /shelves`.",
+        "description": "The shelf linked to Kavita, made as `shelfhold shelf create` makes it (same service):\nthe age ceiling and the family cap, the folder under a registered root, the Kavita library\nand the audit of who may read it. The guard is the wizard's (a fresh admin session, never a\nkey, even when no child profile exists): never softer than that of `POST /shelves`.",
         "operationId": "wizard_shelf",
         "requestBody": {
           "content": {
