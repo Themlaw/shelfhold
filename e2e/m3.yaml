@@ -1,0 +1,13 @@
+# M3 overlay (L57), used with compose.yaml, journey.yaml and m2.yaml: `-f compose.yaml -f journey.yaml
+# -f m2.yaml -f m3.yaml`. The M3 journeys drive the screens of the image under test with a browser
+# that runs on the runner, so the door it needs is published on the loopback of the host:
+# 18080 -> Shelfhold (the SPA and its API, in the image). The simulated Kavita's window stays inside
+# the stack (the fakes listen on its loopback): the test reads it with `compose exec`.
+# Published ports belong to the service that owns the network namespace. Replies to the browser
+# go back to the bridge of the stack, inside its own subnet: `egress-watch` still sees nothing leave.
+name: shelfhold-e2e-m3
+
+services:
+  egress-watch:
+    ports:
+      - "127.0.0.1:18080:8080"

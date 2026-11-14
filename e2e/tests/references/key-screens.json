@@ -1,0 +1,454 @@
+{
+  "admin bibliotheque/light /": {
+    "tokens": {
+      "bg": "#f6f1e7",
+      "surface": "#fffdf8",
+      "ink": "#2b2622",
+      "muted": "#6e6357",
+      "rule": "#e3d9c8",
+      "accent": "#a3471f",
+      "on-accent": "#fffdf8",
+      "ok": "#44703f",
+      "warn": "#8a5409",
+      "err": "#a8281f"
+    },
+    "structure": [
+      "nav",
+      "main",
+      "h1: Shelfhold — pré-alpha",
+      "h2: État du serveur",
+      "status",
+      "h2: Arrivé récemment",
+      "h2: Mes demandes",
+      "h3: Aucune demande en cours",
+      "footer"
+    ]
+  },
+  "admin bibliotheque/dark /": {
+    "tokens": {
+      "bg": "#1a1714",
+      "surface": "#24201b",
+      "ink": "#ede6d9",
+      "muted": "#a89c8c",
+      "rule": "#3a332c",
+      "accent": "#e08a5f",
+      "on-accent": "#1a1714",
+      "ok": "#8db887",
+      "warn": "#e0a84f",
+      "err": "#f2a08f"
+    },
+    "structure": [
+      "nav",
+      "main",
+      "h1: Shelfhold — pré-alpha",
+      "h2: État du serveur",
+      "status",
+      "h2: Arrivé récemment",
+      "h2: Mes demandes",
+      "h3: Aucune demande en cours",
+      "footer"
+    ]
+  },
+  "admin bibliotheque/light /chercher": {
+    "tokens": {
+      "bg": "#f6f1e7",
+      "surface": "#fffdf8",
+      "ink": "#2b2622",
+      "muted": "#6e6357",
+      "rule": "#e3d9c8",
+      "accent": "#a3471f",
+      "on-accent": "#fffdf8",
+      "ok": "#44703f",
+      "warn": "#8a5409",
+      "err": "#a8281f"
+    },
+    "structure": [
+      "nav",
+      "main",
+      "h1: Chercher",
+      "footer"
+    ]
+  },
+  "admin bibliotheque/dark /chercher": {
+    "tokens": {
+      "bg": "#1a1714",
+      "surface": "#24201b",
+      "ink": "#ede6d9",
+      "muted": "#a89c8c",
+      "rule": "#3a332c",
+      "accent": "#e08a5f",
+      "on-accent": "#1a1714",
+      "ok": "#8db887",
+      "warn": "#e0a84f",
+      "err": "#f2a08f"
+    },
+    "structure": [
+      "nav",
+      "main",
+      "h1: Chercher",
+      "footer"
+    ]
+  },
+  "admin bibliotheque/light /bibliotheque": {
+    "tokens": {
+      "bg": "#f6f1e7",
+      "surface": "#fffdf8",
+      "ink": "#2b2622",
+      "muted": "#6e6357",
+      "rule": "#e3d9c8",
+      "accent": "#a3471f",
+      "on-accent": "#fffdf8",
+      "ok": "#44703f",
+      "warn": "#8a5409",
+      "err": "#a8281f"
+    },
+    "structure": [
+      "nav",
+      "main",
+      "h1: Bibliothèque",
+      "status",
+      "footer"
+    ]
+  },
+  "admin bibliotheque/dark /bibliotheque": {
+    "tokens": {
+      "bg": "#1a1714",
+      "surface": "#24201b",
+      "ink": "#ede6d9",
+      "muted": "#a89c8c",
+      "rule": "#3a332c",
+      "accent": "#e08a5f",
+      "on-accent": "#1a1714",
+      "ok": "#8db887",
+      "warn": "#e0a84f",
+      "err": "#f2a08f"
+    },
+    "structure": [
+      "nav",
+      "main",
+      "h1: Bibliothèque",
+      "status",
+      "footer"
+    ]
+  },
+  "admin bibliotheque/light /serie/{edition}": {
+    "tokens": {
+      "bg": "#f6f1e7",
+      "surface": "#fffdf8",
+      "ink": "#2b2622",
+      "muted": "#6e6357",
+      "rule": "#e3d9c8",
+      "accent": "#a3471f",
+      "on-accent": "#fffdf8",
+      "ok": "#44703f",
+      "warn": "#8a5409",
+      "err": "#a8281f"
+    },
+    "structure": [
+      "nav",
+      "main",
+      "h1: Fiche série",
+      "header",
+      "h2: Series Alpha",
+      "h2: Sources classées",
+      "h2: Statut amont",
+      "footer"
+    ]
+  },
+  "admin bibliotheque/dark /serie/{edition}": {
+    "tokens": {
+      "bg": "#1a1714",
+      "surface": "#24201b",
+      "ink": "#ede6d9",
+      "muted": "#a89c8c",
+      "rule": "#3a332c",
+      "accent": "#e08a5f",
+      "on-accent": "#1a1714",
+      "ok": "#8db887",
+      "warn": "#e0a84f",
+      "err": "#f2a08f"
+    },
+    "structure": [
+      "nav",
+      "main",
+      "h1: Fiche série",
+      "header",
+      "h2: Series Alpha",
+      "h2: Sources classées",
+      "h2: Statut amont",
+      "footer"
+    ]
+  },
+  "admin bibliotheque/light /assistant/kavita": {
+    "tokens": {
+      "bg": "#f6f1e7",
+      "surface": "#fffdf8",
+      "ink": "#2b2622",
+      "muted": "#6e6357",
+      "rule": "#e3d9c8",
+      "accent": "#a3471f",
+      "on-accent": "#fffdf8",
+      "ok": "#44703f",
+      "warn": "#8a5409",
+      "err": "#a8281f"
+    },
+    "structure": [
+      "nav",
+      "main",
+      "h1: Assistant de premier lancement",
+      "h2: Connexion à Kavita",
+      "footer"
+    ]
+  },
+  "admin bibliotheque/dark /assistant/kavita": {
+    "tokens": {
+      "bg": "#1a1714",
+      "surface": "#24201b",
+      "ink": "#ede6d9",
+      "muted": "#a89c8c",
+      "rule": "#3a332c",
+      "accent": "#e08a5f",
+      "on-accent": "#1a1714",
+      "ok": "#8db887",
+      "warn": "#e0a84f",
+      "err": "#f2a08f"
+    },
+    "structure": [
+      "nav",
+      "main",
+      "h1: Assistant de premier lancement",
+      "h2: Connexion à Kavita",
+      "footer"
+    ]
+  },
+  "admin bibliotheque/light /sante": {
+    "tokens": {
+      "bg": "#f6f1e7",
+      "surface": "#fffdf8",
+      "ink": "#2b2622",
+      "muted": "#6e6357",
+      "rule": "#e3d9c8",
+      "accent": "#a3471f",
+      "on-accent": "#fffdf8",
+      "ok": "#44703f",
+      "warn": "#8a5409",
+      "err": "#a8281f"
+    },
+    "structure": [
+      "nav",
+      "main",
+      "h1: Santé",
+      "h2: Sources",
+      "h2: Contenu irremplaçable",
+      "h2: Sauvegarde",
+      "h2: Audit des comptes Kavita",
+      "h2: Types de bibliothèque modifiés dans Kavita",
+      "h2: En attente",
+      "h2: Indicateurs de cette instance",
+      "h2: Paquet de diagnostic",
+      "footer"
+    ]
+  },
+  "admin bibliotheque/dark /sante": {
+    "tokens": {
+      "bg": "#1a1714",
+      "surface": "#24201b",
+      "ink": "#ede6d9",
+      "muted": "#a89c8c",
+      "rule": "#3a332c",
+      "accent": "#e08a5f",
+      "on-accent": "#1a1714",
+      "ok": "#8db887",
+      "warn": "#e0a84f",
+      "err": "#f2a08f"
+    },
+    "structure": [
+      "nav",
+      "main",
+      "h1: Santé",
+      "h2: Sources",
+      "h2: Contenu irremplaçable",
+      "h2: Sauvegarde",
+      "h2: Audit des comptes Kavita",
+      "h2: Types de bibliothèque modifiés dans Kavita",
+      "h2: En attente",
+      "h2: Indicateurs de cette instance",
+      "h2: Paquet de diagnostic",
+      "footer"
+    ]
+  },
+  "admin bibliotheque/light /reglages/apparence": {
+    "tokens": {
+      "bg": "#f6f1e7",
+      "surface": "#fffdf8",
+      "ink": "#2b2622",
+      "muted": "#6e6357",
+      "rule": "#e3d9c8",
+      "accent": "#a3471f",
+      "on-accent": "#fffdf8",
+      "ok": "#44703f",
+      "warn": "#8a5409",
+      "err": "#a8281f"
+    },
+    "structure": [
+      "nav",
+      "main",
+      "h1: Apparence",
+      "footer"
+    ]
+  },
+  "admin bibliotheque/dark /reglages/apparence": {
+    "tokens": {
+      "bg": "#1a1714",
+      "surface": "#24201b",
+      "ink": "#ede6d9",
+      "muted": "#a89c8c",
+      "rule": "#3a332c",
+      "accent": "#e08a5f",
+      "on-accent": "#1a1714",
+      "ok": "#8db887",
+      "warn": "#e0a84f",
+      "err": "#f2a08f"
+    },
+    "structure": [
+      "nav",
+      "main",
+      "h1: Apparence",
+      "footer"
+    ]
+  },
+  "kid8 bibliotheque/light /": {
+    "tokens": {
+      "bg": "#f6f1e7",
+      "surface": "#fffdf8",
+      "ink": "#2b2622",
+      "muted": "#6e6357",
+      "rule": "#e3d9c8",
+      "accent": "#a3471f",
+      "on-accent": "#fffdf8",
+      "ok": "#44703f",
+      "warn": "#8a5409",
+      "err": "#a8281f"
+    },
+    "structure": [
+      "nav",
+      "main",
+      "h1: Shelfhold — pré-alpha",
+      "h2: État du serveur",
+      "status",
+      "h2: Arrivé récemment",
+      "h3: Bibliothèque vide",
+      "h2: Mes demandes",
+      "h3: Aucune demande en cours",
+      "footer"
+    ]
+  },
+  "kid8 bibliotheque/dark /": {
+    "tokens": {
+      "bg": "#1a1714",
+      "surface": "#24201b",
+      "ink": "#ede6d9",
+      "muted": "#a89c8c",
+      "rule": "#3a332c",
+      "accent": "#e08a5f",
+      "on-accent": "#1a1714",
+      "ok": "#8db887",
+      "warn": "#e0a84f",
+      "err": "#f2a08f"
+    },
+    "structure": [
+      "nav",
+      "main",
+      "h1: Shelfhold — pré-alpha",
+      "h2: État du serveur",
+      "status",
+      "h2: Arrivé récemment",
+      "h3: Bibliothèque vide",
+      "h2: Mes demandes",
+      "h3: Aucune demande en cours",
+      "footer"
+    ]
+  },
+  "kid8 bibliotheque/light /chercher": {
+    "tokens": {
+      "bg": "#f6f1e7",
+      "surface": "#fffdf8",
+      "ink": "#2b2622",
+      "muted": "#6e6357",
+      "rule": "#e3d9c8",
+      "accent": "#a3471f",
+      "on-accent": "#fffdf8",
+      "ok": "#44703f",
+      "warn": "#8a5409",
+      "err": "#a8281f"
+    },
+    "structure": [
+      "nav",
+      "main",
+      "h1: Chercher",
+      "footer"
+    ]
+  },
+  "kid8 bibliotheque/dark /chercher": {
+    "tokens": {
+      "bg": "#1a1714",
+      "surface": "#24201b",
+      "ink": "#ede6d9",
+      "muted": "#a89c8c",
+      "rule": "#3a332c",
+      "accent": "#e08a5f",
+      "on-accent": "#1a1714",
+      "ok": "#8db887",
+      "warn": "#e0a84f",
+      "err": "#f2a08f"
+    },
+    "structure": [
+      "nav",
+      "main",
+      "h1: Chercher",
+      "footer"
+    ]
+  },
+  "kid8 bibliotheque/light /mes-demandes": {
+    "tokens": {
+      "bg": "#f6f1e7",
+      "surface": "#fffdf8",
+      "ink": "#2b2622",
+      "muted": "#6e6357",
+      "rule": "#e3d9c8",
+      "accent": "#a3471f",
+      "on-accent": "#fffdf8",
+      "ok": "#44703f",
+      "warn": "#8a5409",
+      "err": "#a8281f"
+    },
+    "structure": [
+      "nav",
+      "main",
+      "h1: Mes demandes",
+      "h3: Aucune demande en cours",
+      "footer"
+    ]
+  },
+  "kid8 bibliotheque/dark /mes-demandes": {
+    "tokens": {
+      "bg": "#1a1714",
+      "surface": "#24201b",
+      "ink": "#ede6d9",
+      "muted": "#a89c8c",
+      "rule": "#3a332c",
+      "accent": "#e08a5f",
+      "on-accent": "#1a1714",
+      "ok": "#8db887",
+      "warn": "#e0a84f",
+      "err": "#f2a08f"
+    },
+    "structure": [
+      "nav",
+      "main",
+      "h1: Mes demandes",
+      "h3: Aucune demande en cours",
+      "footer"
+    ]
+  }
+}

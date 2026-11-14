@@ -121,3 +121,17 @@ reason = "M4 : passe 2, B15 ; avant M4, l'avertissement EF-EXP-037 s'applique"
 requirement = "ENF-GOV-004"
 aspect = "second registre d'images, miroir du dépôt, vérificateur de mises à jour non bloquant"
 reason = "M4 : le porteur a tranché D5 le 2026-11-14, la v1.0.0 est signée sur GHCR seul ; le code « avec ou sans jeton » est prêt (L54), le second registre s'active dès que le secret CODEBERG_TOKEN existe"
+
+[[exception]]
+path = "e2e/tests/test_m3_journey.py"
+tests = ["test_first_book_under_10_minutes", "test_timed_first_book_with_the_shelf_made_by_command"]
+reason = "documente le trou connu de l'assistant (L57) et mesure le temps du premier livre : ils ne couvrent pas ENF-UX-001, que le xfail strict de test_m3_open_gaps.py garde non couverte"
+
+[[exception]]
+path = "e2e/tests/test_m3_journey.spec.ts"
+tests = [
+  "test_first_book_under_10_minutes",
+  "test_timed_first_book_with_the_shelf_made_by_command",
+  "test_first_book_within_6_actions_with_the_shelf_made_by_command",
+]
+reason = "côté navigateur des parcours du premier livre (L57) : leur marqueur de couverture est porté par l'enveloppe pytest en xfail strict, ENF-UX-001 restant non couverte"

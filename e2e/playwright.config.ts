@@ -60,6 +60,8 @@ const workshopConfig = defineConfig({
 
 export default workshop ? workshopConfig : defineConfig({
   testDir: 'tests',
+  // played on the image, by `playwright.image.config.ts` (M3 L57), never on this local server
+  testIgnore: '**/test_m3_journey.spec.ts',
   reporter: 'list',
   use: { baseURL: `http://127.0.0.1:${PORT}`, locale: 'fr-FR' },
   webServer: {

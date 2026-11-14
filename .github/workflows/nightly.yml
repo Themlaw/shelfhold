@@ -5,7 +5,8 @@ name: nightly
 # on a schedule and on demand only, and a pull request cannot trigger it. No real content source:
 # every file is built by the tests, the extension reads a fixture server on an internal network.
 # The Kavita job also locks the age of an EPUB series on a Books library (M2 L32, DoD 03) and reads
-# it back after a scan, for each version below. A failure is read in the Actions tab (no issue is opened: the token has no write permission).
+# it back after a scan, for each version below. The journeys of the release image run on amd64 and
+# arm64 (job `image-journeys`). A failure is read in the Actions tab (no issue is opened: the token has no write permission).
 
 on:
   workflow_dispatch:
@@ -19,6 +20,20 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # The journeys of the image on both architectures (ENF-PORT-003, M3 L57): a pull request builds
+  # and tests amd64 only, main both; the night does it again, so that an arm64 regression that
+  # no merge showed (a runner image, a base layer) is seen the next morning. The same reusable
+  # workflow as the CI, never published from here (`cache-write` stays off).
+  image-journeys:
+    name: image journeys (amd64, arm64)
+    # `contents: read` only, like every job of this file: without `packages`, the layer cache of
+    # the registry is not read (the build says so and starts from scratch), which a night affords.
+    permissions:
+      contents: read
+    uses: ./.github/workflows/image.yml  # zizmor: ignore[self-repository]
+    with:
+      arm64: true
+
   kavita:
     name: kavita (${{ matrix.label }})
     runs-on: ubuntu-24.04

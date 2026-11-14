@@ -764,15 +764,18 @@ def reader_counter(comp: Composition, destination: Destination) -> ReaderCounter
     from shelfhold.export.targets.kavita.readers import count_readers
 
     def count(folders: Sequence[str]) -> ReaderCount:
+        def ask(library: int) -> ReaderCount:
+            # the client is made here, in the thread with no running loop: building it runs
+            # a loop of its own (the fetcher of the integrations)
+            client = comp.kavita_client(destination.target_id)
+            return asyncio.run(count_readers(client, library, list(folders)))
+
         try:
             library = _remote_library_id(comp, destination.id)
-            client = comp.kavita_client(destination.target_id)
+            with ThreadPoolExecutor(max_workers=1) as pool:
+                return pool.submit(ask, library).result()
         except (KeyringUnavailableError, KeyError, sa.exc.NoResultFound, ValueError):
             return ReaderCount(0, exact=False)
-        with ThreadPoolExecutor(max_workers=1) as pool:
-            return pool.submit(
-                lambda: asyncio.run(count_readers(client, library, list(folders)))
-            ).result()
 
     return count
 
