@@ -27,7 +27,6 @@ from shelfhold.catalog.public import (
     list_visible_works,
     visible_edition_ids,
     visible_work_ids,
-    work_is_visible,
 )
 from shelfhold.config import Settings
 from shelfhold.events.activity import ActivityEvent, Viewer
@@ -36,7 +35,14 @@ from shelfhold.identity.public import local_auth, reader_scope, scope_of
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import platform
 from tests.auth_env import CSRF_HEADER, AuthEnv, auth_env, run_cli
-from tests.visibility_env import HIDDEN_TITLES, VISIBLE_TITLES, Seed, add_profile, seed_catalogue
+from tests.visibility_env import (
+    HIDDEN_TITLES,
+    VISIBLE_TITLES,
+    Seed,
+    add_profile,
+    seed_catalogue,
+    work_is_visible,
+)
 
 ULID = "01HZZZZZZZZZZZZZZZZZZZZZZZ"
 MISSING = "01HZZZZZZZZZZZZZZZZZZZZZZM"

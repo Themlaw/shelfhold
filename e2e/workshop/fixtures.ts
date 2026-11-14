@@ -17,6 +17,9 @@ export async function signInAs(page: Page, role: Role): Promise<void> {
   expect(answer.status(), `sign in as ${role}`).toBe(200);
 }
 
+/** The screens the cross-cutting specs (footer, CSP, theme) play on: one per kind of page. */
+export const CORE_SCREENS = ['/', '/a-classer', '/a-ranger', '/compte/passkeys'];
+
 const BLOCKING = ['serious', 'critical'];
 
 /** axe on the page as it stands: any `serious` or `critical` violation fails the test. */

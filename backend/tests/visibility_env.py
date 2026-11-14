@@ -13,6 +13,7 @@ from pathlib import Path
 import sqlalchemy as sa
 from sqlalchemy import Engine
 
+from shelfhold.catalog.public import ReaderScope, visible_work_ids
 from shelfhold.identity.public import LocalAuth
 from shelfhold.infrastructure.db import create_db_engine, write_transaction
 from shelfhold.infrastructure.ids import new_ulid
@@ -50,6 +51,11 @@ class Seed:
 
     def title_of(self, key: str) -> str:
         return {**VISIBLE_TITLES, **HIDDEN_TITLES}[key]
+
+
+def work_is_visible(connection: sa.Connection, scope: ReaderScope, work_id: str) -> bool:
+    """Whether one Work is in what this reader may see (the filter of the search and the lists)."""
+    return work_id in visible_work_ids(connection, scope, [work_id])
 
 
 def _work(

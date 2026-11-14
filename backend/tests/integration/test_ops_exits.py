@@ -41,7 +41,6 @@ from shelfhold.ops import (
     ENDPOINTS,
     M1A_STATES,
     M1B_SERVED_STATES,
-    M3_SERVED_STATES,
     UNSERVED,
     OpsServices,
     bare,
@@ -93,6 +92,8 @@ M1B_STATES = frozenset(
         WaitingState.RESTORED_CREDENTIALS,
     }
 )
+# The M3 states whose exit is served: `maintenance off` (L13, EF-INT-018).
+M3_SERVED_STATES = frozenset({WaitingState.MAINTENANCE})
 M3_STATES = frozenset({WaitingState.LIBRARY_TYPE_CHANGED})  # EF-EXP-049, `target reconnect`
 PLAYED_STATES = (
     M1A_STATES | M1B_SERVED_STATES | M3_STATES | M3_SERVED_STATES

@@ -128,7 +128,6 @@ from shelfhold.catalog.application.queries import (
     visible_unit_ids,
     visible_work_ids,
     visible_works_clause,
-    work_is_visible,
 )
 from shelfhold.catalog.application.rating import (
     EditionSuggestion,
@@ -632,6 +631,5 @@ __all__ = [
     "visible_work_ids",
     "visible_works_clause",
     "window",
-    "work_is_visible",
     "work_need",
 ]

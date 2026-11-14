@@ -1,9 +1,7 @@
-import { expect, expectNoBlockingViolations, signInAs, test } from './fixtures';
+import { CORE_SCREENS, expect, expectNoBlockingViolations, signInAs, test } from './fixtures';
 
 // M3 L03: the theme mechanism, the CSP by hash and the reduced motion, played in a real browser on
 // the SPA served by the real API.
-
-const SCREENS = ['/', '/a-classer', '/a-ranger', '/compte/passkeys'];
 
 /** Records every CSP violation and what the boot script did, before any script of the page runs. */
 const RECORDER = `
@@ -27,7 +25,7 @@ const RECORDER = `
 test('test_spa_screens_raise_no_csp_violation', async ({ page }) => {
   await signInAs(page, 'admin');
   await page.addInitScript(RECORDER);
-  for (const path of SCREENS) {
+  for (const path of CORE_SCREENS) {
     await page.goto(path);
     await expect(page.getByRole('contentinfo')).toBeVisible();
     expect(await page.evaluate(() => (window as never as { __violations: string[] }).__violations), path).toEqual([]);
@@ -36,7 +34,7 @@ test('test_spa_screens_raise_no_csp_violation', async ({ page }) => {
 
 // req: ENF-SEC-004
 test('test_spa_csp_header_is_by_hash_without_unsafe_inline', async ({ page }) => {
-  for (const path of SCREENS) {
+  for (const path of CORE_SCREENS) {
     const response = await page.request.get(path);
     const csp = response.headers()['content-security-policy'] ?? '';
     expect(csp, path).toMatch(/script-src [^;]*'sha256-/);
