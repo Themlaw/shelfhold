@@ -24,7 +24,7 @@ pytestmark = pytest.mark.req("EF-INT-023", "EF-EXP-034", "EF-SRC-009")
 JOBS = {
     "follow.cycle", "export.run", "reconcile.cycle", "reconcile.hash",
     "target.access_audit", "ops.disk_check", "intents.prune", "target.key_expiry",
-    "target.library_type_check", "target.major_update_replay",
+    "target.library_type_check", "target.major_update_replay", "retention.early_purge",
 }  # fmt: skip
 
 

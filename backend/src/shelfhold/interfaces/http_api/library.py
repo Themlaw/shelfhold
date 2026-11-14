@@ -9,19 +9,23 @@ action: a fresh session, never a key) and the write probe. The CLI twin of each 
 from collections.abc import Callable
 from typing import Annotated, Any, Literal
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Path
 from pydantic import BaseModel, Field
 
 from shelfhold.identity.public import RESERVED_ACTIONS, Principal
 from shelfhold.interfaces.http_api.auth import reserved_action
 from shelfhold.interfaces.http_api.ops import refusals
+from shelfhold.interfaces.http_api.problems import ProblemError
 from shelfhold.interfaces.http_api.stats import require_admin
+from shelfhold.library.public import AddSpaceRefusedError
 from shelfhold.ops import OpsServices
 
 __all__ = ["build_library_router"]
 
 _PURGE = reserved_action(RESERVED_ACTIONS["purge.now"])
 _DELETE = reserved_action(RESERVED_ACTIONS["unit.delete"])
+_EMPTY = reserved_action(RESERVED_ACTIONS["trash.empty"])  # M3 L26, EF-BIB-030
+_LIFT = reserved_action(RESERVED_ACTIONS["tombstone.lift"])  # M3 L26, 06 Q54
 Admin = Annotated[Principal, Depends(require_admin)]
 Body = dict[str, Any]
 
@@ -67,6 +71,14 @@ class DeletionIn(DeletionPreviewIn):
 class RestoreIn(BaseModel):
     deletion_id: str | None = None  # one deletion (the latest when absent)
     partial: bool = False  # the files that can go back do, the others stay in the bin
+
+
+class TypedIn(BaseModel):
+    typed: str = Field(min_length=1)  # the phrase, compared on the server
+
+
+class SpaceCheckIn(BaseModel):
+    estimated_bytes: int = Field(ge=0)
 
 
 class ProbeIn(BaseModel):
@@ -164,6 +176,43 @@ def build_library_router(get_ops: Callable[[], OpsServices]) -> APIRouter:
                 unit_id=unit_id, principal=principal,
                 deletion_id=asked.deletion_id, partial=asked.partial,
             )  # fmt: skip
+
+    @router.post("/trash/empty", response_model=Body)
+    def empty_trash(body: TypedIn, principal: Annotated[Principal, Depends(_EMPTY)]) -> Body:
+        """« Vider la corbeille »: the same method as `shelfhold trash empty`."""
+        with refusals():
+            return get_ops().library.trash_empty(typed=body.typed, principal=principal)
+
+    @router.get("/tombstones", response_model=Body)
+    def list_tombstones(_admin: Admin) -> Body:
+        """The tombstones that still block: the number to lift by, the day, the scope, the
+        reason. Never what was erased: the table does not hold a title or a path."""
+        with refusals():
+            return get_ops().library.tombstone_list()
+
+    @router.post("/tombstones/{seq}/lift", response_model=Body)
+    def lift_tombstone(
+        seq: Annotated[int, Path(ge=1)],
+        body: TypedIn,
+        principal: Annotated[Principal, Depends(_LIFT)],
+    ) -> Body:
+        """Lifts one tombstone, named by its sequence: it blocks nothing any more and nothing is
+        restored. The same method as `shelfhold tombstone lift`."""
+        with refusals():
+            return get_ops().tombstone_lift(seq=seq, typed=body.typed, principal=principal)
+
+    @router.post("/library/space-check", response_model=Body)
+    def space_check(body: SpaceCheckIn, _admin: Admin) -> Body:
+        """The « Ajouter » sheet: does the estimated size fit in the free space less the reserve?
+        Refused (409) with the three figures and the action « Vider la corbeille »."""
+        try:
+            with refusals():
+                return get_ops().library.space_check(estimated_bytes=body.estimated_bytes)
+        except AddSpaceRefusedError as refused:
+            raise ProblemError(
+                refused.code,
+                extensions={**refused.figures.as_dict(), "reclaim_action": refused.reclaim_action},
+            ) from None
 
     @router.post("/probe", response_model=Body)
     def probe(body: ProbeIn, _admin: Admin) -> Body:

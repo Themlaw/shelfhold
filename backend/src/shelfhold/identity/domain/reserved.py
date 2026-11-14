@@ -117,6 +117,9 @@ SYSTEM_EMITTERS = frozenset(
         "staging_orphan_cleanup",  # EF-EXP-006, ENF-OPS-009
         "probe_file_cleanup",  # `.shelfhold-probe-*`, EF-EXP-054
         "trash_retention_purge",  # trash older than 30 days, ENF-OPS-009
+        # the bin under disk pressure (M3 L26, EF-BIB-030): oldest first, never younger than a
+        # week, only while the volume is under its mark, never an irreplaceable Unit's entry
+        "disk_guard_purge",
     }
 )
 

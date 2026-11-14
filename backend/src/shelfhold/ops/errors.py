@@ -83,6 +83,9 @@ class StillWaitingError(OpsError):
 class CodedRefusal(OpsError):
     """A refusal of another lot's service, under the catalog code that service already carries."""
 
-    def __init__(self, code: str, message: str = "") -> None:
+    def __init__(
+        self, code: str, message: str = "", *, extensions: dict[str, object] | None = None
+    ) -> None:
         super().__init__(message)
         self.code = code
+        self.extensions = extensions  # the figures of a refusal that has some (space, ...)

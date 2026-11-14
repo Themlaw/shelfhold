@@ -12,6 +12,7 @@ import contextlib
 import threading
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from pathlib import Path
 
 import sqlalchemy as sa
 import structlog
@@ -157,7 +158,13 @@ class InstanceRuntime:
         return Gates(
             write_gate=self.require_space, stop_gate=self.barrier.require_open,
             writable=self.require_writable, lock_path=self.lock.path, on_behind=self.on_behind,
+            disk_pressure=self.disk_pressure,
         )  # fmt: skip
+
+    def disk_pressure(self, root_path: str) -> bool:
+        """The volume of a library root is under its free-space mark (EF-BIB-030)."""
+        guard = self.disk_guard
+        return guard is not None and guard.triggered(Path(root_path), fresh=True)
 
     def on_behind(self) -> None:
         if self._recheck is not None:

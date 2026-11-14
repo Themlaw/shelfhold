@@ -39,6 +39,9 @@ from shelfhold.library.public import (
 
 log = structlog.get_logger(__name__)
 
+_DIGESTS: dict[tuple[str | int, ...], str] = {}
+_DIGESTS_MAX = 20_000
+
 
 BackupsSince = Callable[[datetime], list[tuple[str, datetime]]]  # `ops.backup.report` shape
 
@@ -109,8 +112,27 @@ class RecycleSweeper:
             return [path]
         found: list[str] = []
         for name, kind in sorted(listed.items()):
-            found += self._files(f"{path}/{name}") if str(kind) != "file" else [f"{path}/{name}"]
+            if str(kind) == "file":
+                found.append(f"{path}/{name}")
+            elif str(kind) == "dir":
+                found += self._files(f"{path}/{name}")
+            # a link or a special file is never a copy to protect, and is never followed
         return found
+
+    def _digest(self, local: str) -> str:
+        """The SHA-256 of a file of a bin, remembered by its device, inode, size, mtime and ctime.
+        The early purge looks at the same entries every ten minutes, and a big bin is not read
+        again each time. A file that changed has another identity and is read again."""
+        seen = self._fsops.fingerprint(local, host=True)
+        key: tuple[str | int, ...] | None = (local, *seen) if seen else None
+        if key is not None and key in _DIGESTS:
+            return _DIGESTS[key]
+        digest = self._fsops.sha256_of(local, host=True)
+        if key is not None:
+            if len(_DIGESTS) >= _DIGESTS_MAX:
+                _DIGESTS.clear()  # bounded: a cache, never a store
+            _DIGESTS[key] = digest
+        return digest
 
     def _holds_only_copy(self, entry: str) -> bool:
         """The entry holds a file adopted in place (`adopted_ref`, no copy of Shelfhold's own) that
@@ -118,7 +140,7 @@ class RecycleSweeper:
         (EF-BIB-021, EF-BIB-030). A file this does not recognise is not held."""
         for local in self._files(entry):
             try:
-                digest = self._fsops.sha256_of(local, host=True)
+                digest = self._digest(local)
             except (FsopsError, OSError):
                 return True  # unreadable: it cannot be shown to be safe, so it is not swept
             with self._journal.engine.connect() as connection:
@@ -149,6 +171,42 @@ class RecycleSweeper:
             )
             _allowed, kept = safe_to_clean(connection, units) if units else ([], [])
         return bool(kept)
+
+    def intent_open(self, name: str, entry: str) -> bool:
+        """An intent names this entry (a restore on its way, an upgrade's old version, a removal
+        begun). Read again, alone, right before a removal."""
+        with self._journal.engine.connect() as connection:
+            paths = open_intent_paths(connection)
+            return name in open_intent_ids(connection) or any(
+                p in (name, entry) or p.startswith((f"{name}/", f"{entry}/")) for p in paths
+            )
+
+    def _unknown_to_index(self, name: str) -> bool:
+        """The bin index has no row for this entry (a database restored from before the deletion,
+        a same-path upgrade's old version): nothing says it is a copy, so it is kept by default.
+        The 30-day sweep, which asks the age of the folder, is what removes it in the end."""
+        with self._journal.engine.connect() as connection:
+            known = bin_entry(connection, name)
+        return not known.units and known.purge_after is None
+
+    def holds(self, name: str, entry: str) -> str | None:
+        """Why this bin entry must stay whatever its age, or None (EF-BIB-021, EF-BIB-030,
+        EF-BIB-031). Asked by the manual emptying and by the early purge, which only drop the
+        age: an open intent (an upgrade's old version, a restore on its way, a removal begun), a
+        Unit that became irreplaceable, a copy a retained backup may look for, an adopted
+        original with no verified copy in /store, an entry the index does not know. One of
+        `intent`, `unknown`, `irreplaceable`, `backup`, `only_copy`."""
+        if self.intent_open(name, entry):
+            return "intent"
+        if self._unknown_to_index(name):
+            return "unknown"
+        if self._became_irreplaceable(name):
+            return "irreplaceable"
+        if self._retained_by_backup(name):
+            return "backup"
+        if self._holds_only_copy(entry):
+            return "only_copy"
+        return None
 
     def sweep(self) -> RecycleReport:
         removed = kept = failed = held = 0

@@ -72,6 +72,7 @@ from shelfhold.export.application.purge import (
     PurgeUnknownError,
 )
 from shelfhold.export.application.purge_leftovers import PurgeLeftovers
+from shelfhold.export.application.reclaim import TrashEmptyRefusedError
 from shelfhold.export.application.repatriate import (
     RepatriationBlockedError,
     RepatriationCheck,
@@ -121,7 +122,14 @@ from shelfhold.library.public import (
     DeletionPlan,
     DeletionRefusedError,
     StoreIndex,
+    TrashConfirmationError,
 )
+from shelfhold.library.tombstones.lift import (
+    LiftConfirmationError,
+    LiftRefusedError,
+    UnknownTombstoneError,
+)
+from shelfhold.ops import reclaim
 from shelfhold.ops.backup.report import retained_since
 from shelfhold.ops.backup.scratch import sweep_orphans
 from shelfhold.ops.errors import CodedRefusal, ExitUnavailableError, OpsError, UnknownSubjectError
@@ -292,6 +300,11 @@ _CODED: tuple[tuple[type[Exception], str], ...] = (
     (NoLibraryError, "ops.exit_unavailable"),
     (KeyringUnavailableError, "ops.exit_unavailable"),
     (RelinkRefusedError, "forbidden"),
+    (TrashEmptyRefusedError, "forbidden"),  # M3 L26: a key, a member, a stale session
+    (TrashConfirmationError, "trash.confirmation_required"),
+    (LiftRefusedError, "forbidden"),
+    (LiftConfirmationError, "tombstone.confirmation_required"),
+    (UnknownTombstoneError, "tombstone.unknown"),
 )
 
 
@@ -930,6 +943,29 @@ class LibraryOps:
             "alerts": list(report.alerts),
             "out_of_reach": list(report.out_of_reach),
         }
+
+    # -- « Récupérer de la place » and the lift (M3 L26) -----------------------------------------
+
+    @_refused
+    def trash_empty(self, *, typed: str | None, principal: Principal) -> dict[str, Any]:
+        """« Vider la corbeille » (reserved): the bins of every writable root, minus
+        what the holds keep; the same method for the route and the host command."""
+        return reclaim.trash_empty(self._comp, typed=typed, principal=principal)
+
+    @_refused
+    def tombstone_lift(self, *, seq: int, typed: str, principal: Principal) -> dict[str, Any]:
+        """`tombstone lift` (reserved), on the tombstone service this process runs."""
+        return reclaim.lift_tombstone(self._comp, seq=seq, typed=typed, principal=principal)
+
+    @_refused
+    def tombstone_list(self) -> dict[str, Any]:
+        """`tombstone list` (admin): the numbers to lift by, and nothing of what was erased."""
+        return reclaim.list_tombstones(self._comp)
+
+    @_refused
+    def space_check(self, *, estimated_bytes: int) -> dict[str, Any]:
+        """The « Ajouter » sheet against the free space less the reserve; nothing is written."""
+        return reclaim.space_check(self._comp, estimated_bytes=estimated_bytes)
 
     # -- what the purges of M1a left in the service (L17): a plan, then a confirmation ------------
 

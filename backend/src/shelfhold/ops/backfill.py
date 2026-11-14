@@ -17,6 +17,7 @@ from shelfhold.acquisition.public import Backfill, BackfillConfirmationRequired,
 from shelfhold.infrastructure.observability.disk_guard import disk_usage
 from shelfhold.infrastructure.schema import acquisition
 from shelfhold.ops.errors import InvalidChoiceError, UnknownSubjectError
+from shelfhold.ops.reclaim import require_space
 
 if TYPE_CHECKING:
     from shelfhold.composition import Composition
@@ -65,6 +66,7 @@ class BackfillOps:
         self, edition_id: str, mode: str, *, confirm_units: int | None, confirm_bytes: int | None
     ) -> dict[str, Any]:
         service, checked = self._service(edition_id, mode)
+        require_space(self._comp, service.estimate(edition_id, checked).size_bytes)
         try:
             estimate = service.start(
                 edition_id, checked, confirm_units=confirm_units, confirm_bytes=confirm_bytes

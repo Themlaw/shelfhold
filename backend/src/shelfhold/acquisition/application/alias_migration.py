@@ -101,6 +101,10 @@ class AliasPlan:
     # same scope, after the commit; nothing readable is ever written (EF-BIB-054 (4)). In memory
     # only: the report, the fingerprint and the record of the migration hold their number.
     new_forms: tuple[tuple[str, str, str], ...] = ()
+    # (new form, the erased reference it came from), both `(plugin, source key, reference)`: so
+    # that the tombstone of the new form is linked to the one of its origin and lifts with it.
+    # In memory only, like `new_forms`.
+    origins: tuple[tuple[tuple[str, str, str], tuple[str, str, str]], ...] = ()
 
     def of(self, outcome: Outcome) -> list[PlannedRow]:
         return [r for r in self.rows if r.outcome is outcome]
@@ -214,6 +218,7 @@ def plan_alias_migration(
     item = acquisition.source_item
     rows: list[PlannedRow] = []
     candidate_forms: list[tuple[str, str, str]] = []
+    origin_pairs: list[tuple[tuple[str, str, str], tuple[str, str, str]]] = []
     pending: list[tuple[PlannedRow, set[Ref]]] = []  # candidates, with their family
     plugins = set(
         connection.execute(
@@ -236,6 +241,9 @@ def plan_alias_migration(
                 except EmptyRefError:
                     continue
                 candidate_forms.append((plugin_id, said[0], said[1]))
+                origin_pairs.append(
+                    ((plugin_id, said[0], said[1]), (plugin_id, source_key, erased))
+                )
         found = connection.execute(
             sa.select(item.c.id, item.c.remote_id)
             .where(item.c.plugin_id == plugin_id, item.c.source_key == source_key)
@@ -275,6 +283,9 @@ def plan_alias_migration(
         if planned.id in blocked or planned.new is None:  # what a tombstone covers is never moved
             if planned.from_plugin and planned.new is not None:
                 candidate_forms.append((planned.plugin_id, *planned.new))
+                origin_pairs.append(
+                    ((planned.plugin_id, *planned.new), (planned.plugin_id, *planned.old))
+                )
             rows.append(
                 PlannedRow(planned.id, planned.plugin_id, planned.old, planned.new, Outcome.BLOCKED,
                            "tombstone", planned.from_plugin)
@@ -309,6 +320,7 @@ def plan_alias_migration(
     return AliasPlan(
         source_key, from_scheme, to_scheme, tuple(rows),
         _fingerprint(source_key, from_scheme, to_scheme, rows, len(new_forms)), new_forms,
+        tuple(sorted({pair for pair in origin_pairs if pair[0] in new_forms})),
     )  # fmt: skip
 
 

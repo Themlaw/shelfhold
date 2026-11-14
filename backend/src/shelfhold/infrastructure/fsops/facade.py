@@ -51,6 +51,7 @@ from shelfhold.infrastructure.freeze import FreezeState
 from shelfhold.infrastructure.fsops.capabilities import RootCapabilities, probe_root
 from shelfhold.infrastructure.fsops.confined import ConfinedRoot, Kind, Strategy
 from shelfhold.infrastructure.fsops.emitters import (
+    EARLY_PURGE_MIN_AGE_S,
     PROBE_PREFIX,
     TRASH_RETENTION_S,
     Perimeter,
@@ -252,6 +253,9 @@ class Fsops:
         self._freeze = freeze if freeze is not None else FreezeState(process=frozen)
         self._behind_hook: Callable[[], None] | None = None
         self._blocked_hook: Callable[[str, RootState], None] | None = None
+        # "is the volume of this root under its mark?": the condition of `disk_guard_purge`, given
+        # by the owner of the disk guard, never by the caller of the removal (EF-BIB-030)
+        self._pressure: Callable[[str], bool] | None = None
 
     def _where(self, local: str) -> dict[str, str]:
         """What a DEBUG line says of a path: the ULID of its physical root, never the path, which
@@ -339,6 +343,10 @@ class Fsops:
 
     def unfreeze(self) -> None:
         self._freeze.thaw()
+
+    def on_disk_pressure(self, hook: Callable[[str], bool] | None) -> None:
+        """The disk guard's answer for a root path: without one, `disk_guard_purge` never runs."""
+        self._pressure = hook
 
     def enforce_lease(self, verify: Callable[[str, bytes | None], None] | None) -> None:
         """From now on every write passes `verify(root_path, raw_lease)`, which raises when the
@@ -780,6 +788,18 @@ class Fsops:
             kind = root.lstat_kind(located.rel)
         return (kind, identity_of(observed)) if kind is not None else None
 
+    def fingerprint(self, local: str, *, host: bool = False) -> tuple[int, ...] | None:
+        """Device, inode, size, mtime and ctime of the file at `local` (None when nothing is
+        there). The ctime is the one `utime` cannot put back: a cache keyed on this sees a file
+        rewritten in place."""
+        located = self._locate(local, read_mirror=True, host=host)
+        with self._root(located.root_path) as root:
+            try:
+                s = root.stat(located.rel)
+            except FileNotFoundError:
+                return None
+        return (s.st_dev, s.st_ino, s.st_size, s.st_mtime_ns, s.st_ctime_ns)
+
     def list_dir(self, local: str, *, host: bool = False) -> dict[str, Kind]:
         """The entries of a folder with what each is (a link is described, never followed).
         An entry that vanishes while it is read is left out. `host`: the reserved area (a bin)."""
@@ -1182,7 +1202,7 @@ class Fsops:
         located = self._locate(local, host=True)
         require_inside(emitter, located.rel)
         with self._gated(located) as root:
-            self._require_condition(emitter, root, located.rel, is_tree=False)
+            self._require_condition(emitter, root, located, is_tree=False)
             root.unlink(located.rel)
 
     def trash_expired(self, local: str) -> bool:
@@ -1206,22 +1226,42 @@ class Fsops:
         require_inside(emitter, located.rel)
         require_tree_allowed(emitter)
         with self._gated(located) as root:
-            self._require_condition(emitter, root, located.rel, is_tree=True)
+            self._require_condition(emitter, root, located, is_tree=True)
             root.remove_tree(located.rel)
 
     def _require_condition(
-        self, emitter: str, root: ConfinedRoot, rel: str, *, is_tree: bool
+        self, emitter: str, root: ConfinedRoot, located: _Located, *, is_tree: bool
     ) -> None:
+        rel = located.rel
         if perimeter_of(emitter).needs_file and root.lstat_kind(rel) != "file":
             raise EmitterPerimeterError(f"{emitter} removes a regular file, not {rel!r}")
-        if emitter == "trash_retention_purge":
+        if emitter in {"trash_retention_purge", "disk_guard_purge"}:
             entry = trash_entry(rel)
             try:
                 age = self._now() - root.stat(entry).st_mtime
             except FileNotFoundError:
                 return  # nothing to delete: the removal below reports it
-            if age < TRASH_RETENTION_S:
+            if emitter == "trash_retention_purge" and age < TRASH_RETENTION_S:
                 raise EmitterConditionError(f"{entry} is {int(age)} s old: kept 30 days")
+            if emitter == "disk_guard_purge":
+                if age < EARLY_PURGE_MIN_AGE_S:
+                    raise EmitterConditionError(f"{entry} is {int(age)} s old: kept for a week")
+                if self._pressure is None or not self._pressure(located.root_path):
+                    raise EmitterConditionError("the disk is not under its free-space mark")
+
+    def early_purge_allowed(self, local: str) -> bool:
+        """A question, not a deletion: the bin entry holding `local` is old enough, and its volume
+        is under the mark, for `disk_guard_purge` (the caller asks before it records an intent)."""
+        located = self._locate(local, host=True)
+        require_inside("disk_guard_purge", located.rel)
+        if self._pressure is None or not self._pressure(located.root_path):
+            return False
+        with self._root(located.root_path) as root:
+            try:
+                age = self._now() - root.stat(trash_entry(located.rel)).st_mtime
+            except FileNotFoundError:
+                return False
+        return bool(age >= EARLY_PURGE_MIN_AGE_S)
 
     def _system_empty(self, root: ConfinedRoot, emitter: str, rel: str) -> int:
         require_content_inside(emitter, rel)

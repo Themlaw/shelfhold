@@ -107,6 +107,9 @@ class Gates:
     writable: Callable[[], None] | None = None
     lock_path: Path | None = None
     on_behind: Callable[[], None] | None = None
+    # "is the volume of this root path under its mark?": the condition of the early purge of the
+    # trash (`disk_guard_purge`, EF-BIB-030), asked by fsops itself, never by the caller
+    disk_pressure: Callable[[str], bool] | None = None
 
 
 @dataclass
@@ -226,12 +229,14 @@ class Composition:
             return self._watcher
 
     def open_fsops(self, loaded: LoadedRoots) -> Fsops:
-        return open_fsops(
+        fsops = open_fsops(
             loaded, umask=self.settings.umask,
             write_gate=self.gates.write_gate, stop_gate=self.gates.stop_gate,
             on_blocked=self.root_watcher().note_blocked,
             generation_source=GenerationCounter(self.engine).read,
         )  # fmt: skip
+        fsops.on_disk_pressure(self.gates.disk_pressure)
+        return fsops
 
     def tombstones(self, fsops: Fsops, loaded: LoadedRoots) -> TombstoneService:
         """The tombstone service, replayed (a purged file is never acquired again). One per

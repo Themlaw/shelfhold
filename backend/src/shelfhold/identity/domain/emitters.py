@@ -181,6 +181,15 @@ _OTHER: Mapping[str, str] = MappingProxyType(
         # The recycle bins past 30 days (ENF-OPS-009): the daily sweep, under an intention; fsops
         # reads the age of the entry from the file system and refuses a younger one.
         f"{_EXPORT_APP}/recycle_sweep.py::RecycleSweeper.sweep": "trash_retention_purge",
+        # « Vider la corbeille » (M3 L26, EF-BIB-030): a reserved action (a fresh
+        # session or the host CLI, a typed word); it removes entries of the bins, nothing else
+        f"{_EXPORT_APP}/reclaim.py::BinReclaimer.empty_trash": "trash.empty",
+        f"{_EXPORT_APP}/reclaim.py::BinReclaimer._empty_trash_entry": "trash.empty",
+        "shelfhold/interfaces/cli/trash.py::_empty_trash": "trash.empty",
+        "shelfhold/interfaces/local_cli/ops.py::_empty_trash": "trash.empty",
+        "shelfhold/interfaces/http_api/library.py::build_library_router.empty_trash": "trash.empty",
+        # The early purge under disk pressure (M3 L26): a system emitter, driven by the disk guard
+        f"{_EXPORT_APP}/reclaim.py::BinReclaimer._remove_under_pressure": "disk_guard_purge",
         # The probe file of the permission preflight (EF-EXP-054): a name the probe drew itself.
         f"{_FSOPS}/probe.py::_remove_probe_file": ("probe_file_cleanup"),
         # The files of the capability probe of a root (EF-EXP-059): names it drew, in the staging

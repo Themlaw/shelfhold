@@ -25,6 +25,13 @@ IMPORT_KIND: Final = "import.scan"
 IMPORT_CRON: Final = "*/10 * * * *"
 
 
+def _skipped(refused: CodedRefusal) -> str:
+    """Off, or refused for lack of space (M3 L26): a scan that waits for room, not a failure."""
+    return (
+        "space_insufficient" if refused.code == "library.space_insufficient" else "not_configured"
+    )
+
+
 def import_handler(
     comp: Composition, on_stored: Callable[[], None] | None = None
 ) -> Callable[[JobContext], None]:
@@ -35,8 +42,8 @@ def import_handler(
             log.info("import.skipped", reason=type(error).__name__)
             context.record(skipped=type(error).__name__)
             return
-        except CodedRefusal:
-            context.record(skipped="not_configured")
+        except CodedRefusal as refused:
+            context.record(skipped=_skipped(refused))
             return
         done = report["outcomes"]
         stored = sum(1 for o in done if o["state"] == "stored")
