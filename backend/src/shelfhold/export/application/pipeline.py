@@ -445,18 +445,23 @@ class ExportPipeline:
             ensure_active(connection, plan.shelf_destination_id)
             ctx = load_context(connection, plan.shelf_destination_id)
         versions = self._versions(ctx)
-        # the moves write on the root: under the write lease like every other write (ENF-OPS-015)
-        with self._root_session(ctx.destination_id):
-            if plan.status == "applying" and if_match == plan.base_version:
-                self._renames.resume(
-                    plan_id, job_id=job_id, versions=versions,
-                    settle=lambda: self._settle_renames(ctx.destination_id),
-                )  # fmt: skip
-            else:
-                self._renames.apply(
-                    plan_id, if_match=if_match, job_id=job_id, versions=versions,
-                    confirm_progress_loss=confirm_progress_loss,
-                )  # fmt: skip
+
+        # the moves write on the root, under the write lease like every other write (ENF-OPS-015):
+        # the plan opens the session at its first move, after the refusals, so that a refused
+        # plan (412, 409, confirmation asked for) wakes no disk (ENF-OPS-014)
+        def session() -> AbstractContextManager[object]:
+            return self._root_session(ctx.destination_id)
+
+        if plan.status == "applying" and if_match == plan.base_version:
+            self._renames.resume(
+                plan_id, job_id=job_id, versions=versions, session=session,
+                settle=lambda: self._settle_renames(ctx.destination_id),
+            )  # fmt: skip
+        else:
+            self._renames.apply(
+                plan_id, if_match=if_match, job_id=job_id, versions=versions, session=session,
+                confirm_progress_loss=confirm_progress_loss,
+            )  # fmt: skip
         self.heal_mirror(ctx.destination_id)
         return ApplyReport(plan_id, ())
 

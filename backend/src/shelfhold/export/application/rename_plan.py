@@ -26,7 +26,7 @@ import posixpath
 import unicodedata
 from collections import defaultdict, deque
 from collections.abc import Callable, Sequence
-from contextlib import AbstractContextManager, ExitStack
+from contextlib import AbstractContextManager, ExitStack, nullcontext
 from dataclasses import dataclass, replace
 from datetime import datetime
 from pathlib import PurePosixPath
@@ -121,6 +121,8 @@ class ReaderCount:
 # `folders`: the folders as Kavita sees them. Bound by the composition root; none bound means no
 # reading server is behind the destination.
 ReaderCounter = Callable[[Sequence[str]], ReaderCount]
+# what opens the write session of the root a plan moves files on (ENF-OPS-015)
+WriteSession = Callable[[], AbstractContextManager[object]]
 
 
 @dataclass(frozen=True)
@@ -647,10 +649,12 @@ class RenameBook:
         self, plan_id: str, *, if_match: str, job_id: str,
         confirm_progress_loss: bool = False,
         versions: tuple[Callable[[], str], Callable[[], str]],
+        session: WriteSession | None = None,
     ) -> RenameReport:  # fmt: skip
         """Apply a stored plan once. Nothing runs without the confirmation when readers would
         lose their progress; `StalePlanError` (412) when anything moved since the preview, (409)
-        when another job is applying it."""
+        when another job is applying it. `session` opens the write session of the root: it is
+        opened by the first move, after every refusal, so a refused plan wakes no disk."""
         with self._plan_lock(job_id, plan_id):
             with self._engine.connect() as conn:
                 plan = conn.execute(
@@ -660,12 +664,15 @@ class RenameBook:
                 ).one()
             if plan.status == "planned" and if_match == plan.base_version:
                 self.require_confirmation(plan_id, confirmed=confirm_progress_loss)
-            return self._run(plan_id, if_match=if_match, job_id=job_id, versions=versions)
+            return self._run(
+                plan_id, if_match=if_match, job_id=job_id, versions=versions, session=session
+            )
 
     def resume(
         self, plan_id: str, *, job_id: str,
         versions: tuple[Callable[[], str], Callable[[], str]],
         settle: Callable[[], int],
+        session: WriteSession | None = None,
     ) -> RenameReport:  # fmt: skip
         """Go on with a plan a stop cut short: the intents it left are settled first (the folder
         is at the source or at the target, never both), then the steps that are not done. The
@@ -679,13 +686,15 @@ class RenameBook:
                 ).scalar_one()
             if status != "applying":
                 raise StalePlanError("the plan is not being applied")
-            settled = settle()
-            report = self._run(plan_id, if_match=None, job_id=job_id, versions=versions)
+            with session() if session is not None else nullcontext():  # no refusal left: it writes
+                settled = settle()
+                report = self._run(plan_id, if_match=None, job_id=job_id, versions=versions)
             return replace(report, settled=settled)
 
     def _run(
         self, plan_id: str, *, if_match: str | None, job_id: str,
         versions: tuple[Callable[[], str], Callable[[], str]],
+        session: WriteSession | None = None,
     ) -> RenameReport:  # fmt: skip
         current, inputs = versions
         with self._engine.connect() as conn:
@@ -705,8 +714,18 @@ class RenameBook:
             for batch in self._done_batches(plan_id):
                 self._finish_batch(ctx, plan_id, batch)
 
+        held = ExitStack()  # the write session, opened by the first move: after the refusals
+        opened = False
+
+        def ensure_session() -> None:
+            nonlocal opened
+            if session is not None and not opened:
+                opened = True
+                held.enter_context(session())
+
         def run(op: PlanOp) -> None:
             payload = op.payload or {}
+            ensure_session()
             with self._hold(job_id, ctx, payload):
                 try:
                     self._step(ctx, journal, hook, plan_id, op, payload)
@@ -720,11 +739,13 @@ class RenameBook:
                 scanned.add(op.batch)
                 self._finish_batch(ctx, plan_id, op.batch)
 
-        if if_match is None:
-            store.resume(plan_id, run=run)
-        else:
-            store.apply(plan_id, if_match=if_match, run=run)
-        self._complete(ctx, plan_id)
+        with held:
+            if if_match is None:
+                store.resume(plan_id, run=run)
+            else:
+                store.apply(plan_id, if_match=if_match, run=run)
+            ensure_session()  # a plan with no move left still closes its folders under the lease
+            self._complete(ctx, plan_id)
         return RenameReport(plan_id, done["n"])
 
     def _done_batches(self, plan_id: str) -> list[int]:
