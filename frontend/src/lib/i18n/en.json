@@ -429,6 +429,7 @@
   "add.added": "Added to your library",
   "add.in_progress": "Adding in progress",
   "add.trash_emptied": "Trash emptied",
+  "add.estimate_changed": "The figures changed since they were counted: check them and confirm again.",
   "add.retry": "Retry",
   "add.empty_trash": "Empty the trash",
   "add.empty_trash_prompt": "Type empty-trash",

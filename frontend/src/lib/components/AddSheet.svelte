@@ -105,10 +105,39 @@
     void fetchEstimate();
   });
 
+  const FOCUSABLE =
+    'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+
+  // The sheet is modal: Tab and Shift+Tab go round inside it, never to the page behind.
+  function trapFocus(event: KeyboardEvent) {
+    if (!dialogEl) return;
+    const inside = Array.from(dialogEl.querySelectorAll<HTMLElement>(FOCUSABLE));
+    if (inside.length === 0) {
+      event.preventDefault();
+      dialogEl.focus();
+      return;
+    }
+    const first = inside[0]!;
+    const last = inside[inside.length - 1]!;
+    const active = document.activeElement;
+    if (event.shiftKey && (active === first || active === dialogEl)) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && active === last) {
+      event.preventDefault();
+      first.focus();
+    } else if (!dialogEl.contains(active)) {
+      event.preventDefault();
+      first.focus();
+    }
+  }
+
   function onKeydown(event: KeyboardEvent) {
     if (event.key === 'Escape') {
       event.preventDefault();
       onclose();
+    } else if (event.key === 'Tab') {
+      trapFocus(event);
     }
   }
 
@@ -160,6 +189,11 @@
       if (followError !== undefined) {
         if (needsReauth(followError)) {
           reauthMethods = problemOf(followError).reauth_methods ?? ['password'];
+        } else if (problemOf(followError).code === 'backfill.confirmation_required') {
+          // the series moved since it was counted: the figures are counted again, and confirmed again
+          confirmed = false;
+          await fetchEstimate();
+          statusMessage = t('add.estimate_changed');
         } else {
           actionProblem = problemView(followError);
         }

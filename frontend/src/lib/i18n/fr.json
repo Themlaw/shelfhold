@@ -429,6 +429,7 @@
   "add.added": "Ajouté à votre bibliothèque",
   "add.in_progress": "Ajout en cours",
   "add.trash_emptied": "Corbeille vidée",
+  "add.estimate_changed": "Les chiffres ont changé depuis le calcul : vérifiez-les et confirmez à nouveau.",
   "add.retry": "Réessayer",
   "add.empty_trash": "Vider la corbeille",
   "add.empty_trash_prompt": "Tapez empty-trash",
