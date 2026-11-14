@@ -329,12 +329,12 @@ def test_review_l57_poc_a_journey_that_stops_at_its_known_gap_is_not_coverage() 
     repo = TOOL.parents[1]
     spec = repo / "e2e" / "tests" / "test_m3_journey.spec.ts"
     tests = tr.collect_python(repo) + tr.collect_typescript(repo)
+    if "KNOWN_GAP" not in spec.read_text(encoding="utf-8"):
+        return  # the journey gets through: the gap closes, its xfail strict goes with it
     gaps = "backend/tests/unit/test_m3_open_gaps.py"
     assert any(
         t.path == gaps and "ENF-UX-001" in t.reqs and "xfail" in t.conditional for t in tests
     ), "the open gap of ENF-UX-001 is gone"
-    if "KNOWN_GAP" not in spec.read_text(encoding="utf-8"):
-        return  # the journey gets through: the gap closes, the xfail strict flips with it
     claiming = sorted(t.label for t in tests if "ENF-UX-001" in t.reqs and not t.conditional)
     assert claiming == [], (
         "counted as covering ENF-UX-001 while the journey stops at its known gap: "
