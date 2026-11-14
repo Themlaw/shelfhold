@@ -18,6 +18,8 @@ from shelfhold.acquisition.application.gap_watch import acknowledge, unacknowled
 from shelfhold.acquisition.public import (
     CadencePolicy,
     FollowConfirmationRequired,
+    FollowIntent,
+    FollowMode,
     FollowOutcome,
     FollowRefused,
     FollowRequests,
@@ -27,7 +29,8 @@ from shelfhold.acquisition.public import (
     request_check_job,
 )
 from shelfhold.i18n import t
-from shelfhold.infrastructure.schema import acquisition
+from shelfhold.infrastructure.schema import acquisition, export
+from shelfhold.ops.acquire import AcquireOps
 from shelfhold.ops.errors import (
     CodedRefusal,
     ExitUnavailableError,
@@ -117,16 +120,50 @@ class FollowOps:
     def follow(
         self, source_key: str, remote_id: str, *, requester_user_id: str | None,
         visibility: str = "ops", units: int | None = None,
+        mode: FollowMode | None = None, from_number: str | None = None,
+        shelf_id: str | None = None, confirm_units: int | None = None,
+        confirm_bytes: int | None = None,
     ) -> dict[str, Any]:  # fmt: skip
+        """`mode` (the add sheet's choice, with `from_number` and `shelf_id`): the Units the follow
+        brings and the shelf the Edition is filed on, applied when the series is discovered.
+        Above the thresholds the confirmation must be the figures of the estimate taken now: if
+        the series moved since the sheet counted, it is refused with the fresh estimate (409)."""
+        intent = None
+        if mode is not None:
+            intent = FollowIntent(mode=mode, from_number=from_number, shelf_id=shelf_id)
+            self._require_shelf(shelf_id)
+            estimate = AcquireOps(self._comp).series_estimate(
+                source_key, remote_id, mode, from_number
+            )
+            if estimate["needs_confirmation"] and (confirm_units, confirm_bytes) != (
+                estimate["units"],
+                estimate["size_bytes"],
+            ):  # exactly what was shown: a larger figure would be a blank cheque
+                raise CodedRefusal(
+                    "backfill.confirmation_required",
+                    "the figures confirmed are not those of the estimate",
+                    extensions=estimate,
+                )
+            units = estimate["units"]
         # a followed series is a series that will be written
         require_space(self._comp, estimate_units(self._comp, units))
         ref = self._ref(source_key, remote_id)
         outcome = self._run(
             lambda requests: requests.follow(
-                ref, requester_user_id=requester_user_id, visibility=visibility
+                ref, requester_user_id=requester_user_id, visibility=visibility, intent=intent
             )
         )
         return {"state": outcome.state, "sent": outcome.sent}
+
+    def _require_shelf(self, shelf_id: str | None) -> None:
+        if shelf_id is None:
+            return
+        with self._comp.engine.connect() as connection:
+            found = connection.execute(
+                sa.select(export.shelf.c.id).where(export.shelf.c.id == shelf_id)
+            ).first()
+        if found is None:
+            raise UnknownSubjectError("no shelf has this identifier")
 
     def unfollow(
         self, source_key: str, remote_id: str, *, remove_upstream: bool, confirm: bool

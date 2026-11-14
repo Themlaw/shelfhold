@@ -40,6 +40,7 @@ DOWNLOAD_STATES = (
 )
 DOWNLOAD_UNIT_STATES = ("requested", "covered", "missing")
 FOLLOW_REQUEST_STATES = ("approved", "following", "followed", "unfollowed")
+FOLLOW_REQUEST_MODES = ("all", "from_number", "new_only")  # = the `FollowMode` of the domain
 FAILURE_CLASSES = ("content", "auth", "version", "schema", "infra")
 ACCOUNT_KINDS = ("admin", "service")
 PLUGIN_ORIGINS = ("builtin", "local")  # `repo` joins in M6
@@ -323,10 +324,15 @@ follow_request = sa.Table(
     sa.Column("visibility", sa.String(), nullable=False, server_default="ops"),
     sa.Column("requester_user_id", sa.String(26), nullable=True),  # `user.id`; null: the host CLI
     sa.Column("claimed_at", UtcDateTime(), nullable=True),
+    # what the add sheet chose (M3 L42): NULL mode, the series was added without a choice
+    sa.Column("mode", sa.String(), nullable=True),
+    sa.Column("from_number", sa.String(), nullable=True),
+    _fk("shelf_id", "shelf.id", ondelete="SET NULL", nullable=True),
     now_column(),
     sa.Column("updated_at", UtcDateTime(), nullable=True),
     ulid_check("id"),
     in_check("state", FOLLOW_REQUEST_STATES),
+    in_check("mode", FOLLOW_REQUEST_MODES),
     in_check("visibility", ("private", "household", "ops")),
     sa.UniqueConstraint("source_key", "remote_id"),
 )

@@ -28,7 +28,7 @@ from shelfhold.sdk.models import (
     PluginKind,
     RateLimit,
 )
-from shelfhold.sdk.refs import SeriesRef
+from shelfhold.sdk.refs import SeriesRef, UnitInfo
 from shelfhold.sdk.source import Capability, SourceManifest
 from tests.auth_env import AuthEnv, auth_env, db_rows
 
@@ -50,6 +50,8 @@ class FakeSource:
     name: str | None = None
     error: Exception | None = None
     delay: float = 0.0
+    units: Sequence[UnitInfo] = ()  # what `list_units` answers, for every series
+    list_error: Exception | None = None  # `list_units` fails with it
     calls: list[tuple[str, str | None]] = field(default_factory=list)
 
     def __post_init__(self) -> None:
@@ -64,6 +66,11 @@ class FakeSource:
 
     def filters(self) -> list[Any]:
         return []
+
+    async def list_units(self, f: Any, ref: SeriesRef) -> list[UnitInfo]:
+        if self.list_error is not None:
+            raise self.list_error
+        return list(self.units)
 
     async def search(
         self, f: Any, q: str, filters: dict[str, Any], cursor: Cursor | None, *,

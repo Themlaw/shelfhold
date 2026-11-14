@@ -411,6 +411,24 @@ class NativeAcquirer:
             await handle.aclose()
         return len(units)
 
+    async def list_units(self, ref: SeriesRef) -> list[UnitInfo]:
+        """The Units a source lists for this series, nothing recorded (EF-UX-006). A source that
+        cannot list them is refused (`source.error`), never an empty listing."""
+        handle, _ = await self._search_handle(ref.source_key)  # the connected service, or a source
+        try:
+            units = await handle.service.list_units(handle.fetcher, handle.guard.screen(ref))
+        except NotConfigured as error:
+            raise AcquireRefused(
+                "source.not_configured", "the source's settings are refused"
+            ) from error
+        except SourceError:
+            raise
+        except Exception as error:
+            raise AcquireRefused("source.error", "the source could not list this series") from error
+        finally:
+            await handle.aclose()
+        return list(units)
+
     def _screen_for(self, record: Any, info: SeriesInfo) -> TombstoneScreen | None:
         """The Work tombstones, when the source gives identifiers for its Work: no screen to ask
         means no arrival, never an unscreened one (fails closed)."""

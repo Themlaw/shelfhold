@@ -2020,10 +2020,76 @@
         "type": "object"
       },
       "FollowIn": {
+        "additionalProperties": false,
         "properties": {
+          "confirm_bytes": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Confirm Bytes"
+          },
+          "confirm_units": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Confirm Units"
+          },
+          "from_number": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "From Number"
+          },
+          "mode": {
+            "anyOf": [
+              {
+                "enum": [
+                  "all",
+                  "from_number",
+                  "new_only"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mode"
+          },
           "remote_id": {
             "title": "Remote Id",
             "type": "string"
+          },
+          "shelf_id": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Shelf Id"
           },
           "source_key": {
             "title": "Source Key",
@@ -7555,11 +7621,65 @@
         "type": "object"
       },
       "UnfollowIn": {
+        "additionalProperties": false,
         "properties": {
           "confirm": {
             "default": false,
             "title": "Confirm",
             "type": "boolean"
+          },
+          "confirm_bytes": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Confirm Bytes"
+          },
+          "confirm_units": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Confirm Units"
+          },
+          "from_number": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "From Number"
+          },
+          "mode": {
+            "anyOf": [
+              {
+                "enum": [
+                  "all",
+                  "from_number",
+                  "new_only"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mode"
           },
           "remote_id": {
             "title": "Remote Id",
@@ -7569,6 +7689,18 @@
             "default": false,
             "title": "Remove Upstream",
             "type": "boolean"
+          },
+          "shelf_id": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Shelf Id"
           },
           "source_key": {
             "title": "Source Key",
@@ -19185,6 +19317,106 @@
         ]
       }
     },
+    "/api/v1/sources/{source_key}/series/{remote_id}/estimate": {
+      "get": {
+        "operationId": "estimate",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "source_key",
+            "required": true,
+            "schema": {
+              "title": "Source Key",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "remote_id",
+            "required": true,
+            "schema": {
+              "title": "Remote Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "mode",
+            "required": false,
+            "schema": {
+              "default": "all",
+              "title": "Mode",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "from_number",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 64,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "From Number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Estimate",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Connexion requise, ou mot de passe à confirmer (reauth-required)."
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée)."
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Détail du problème (RFC 9457)."
+          }
+        },
+        "summary": "Estimate",
+        "tags": [
+          "sources"
+        ]
+      }
+    },
     "/api/v1/stats": {
       "get": {
         "operationId": "stats",
@@ -20993,6 +21225,23 @@
     },
     "/api/v1/problems/backfill.confirmation-required": {
       "code": "backfill.confirmation_required",
+      "extensions": {
+        "free_bytes": {
+          "type": "integer"
+        },
+        "mode": {
+          "type": "integer"
+        },
+        "needs_confirmation": {
+          "type": "integer"
+        },
+        "size_bytes": {
+          "type": "integer"
+        },
+        "units": {
+          "type": "integer"
+        }
+      },
       "status": 409
     },
     "/api/v1/problems/backup.failed": {

@@ -48,7 +48,7 @@ CIRCUMVENTION = re.compile(
 
 
 UI_CATALOGS = ("frontend/src/lib/i18n/fr.json", "frontend/src/lib/i18n/en.json")
-ADMIN_KEY_PREFIXES = ("admin.", "toShelve.", "health_page.")  # screens only the administrator opens
+ADMIN_KEY_PREFIXES = ("admin.", "add.", "toShelve.", "health_page.")  # screens only the administrator opens
 _PREFIX = r"(?<![\w])"
 _UI_FORBIDDEN = {
     "fr": re.compile(

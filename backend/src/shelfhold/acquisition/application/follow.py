@@ -916,7 +916,7 @@ class FollowCycle:
         await self._credit_authors(binding, ref)
         with self._engine.connect() as connection:
             mark = watermark_of(connection, binding.edition_id)
-        if fresh:
+        if fresh and not self._chosen(binding):
             mark = None  # just discovered: this look is its baseline, nothing is asked (extras too)
         # Without a watermark the first look only learns what is there (it becomes the watermark):
         # a series followed from now on is asked for what is new, never for its whole archive.
@@ -971,6 +971,22 @@ class FollowCycle:
                 sa.update(table).where(table.c.id == binding.id).values(last_checked=look.now)
             )
         self._looked.add(binding.id)
+
+    def _chosen(self, binding: _Binding) -> bool:
+        """Followed from the add sheet (M3 L42): the discovery set the watermark the choice names,
+        and the first look asks for what lies beyond it instead of taking it as its baseline."""
+        request = acquisition.follow_request
+        with self._engine.connect() as connection:
+            return (
+                connection.execute(
+                    sa.select(request.c.id).where(
+                        request.c.source_key == binding.source_key,
+                        request.c.remote_id == binding.remote_id,
+                        request.c.mode.is_not(None),
+                    )
+                ).first()
+                is not None
+            )
 
     def _take_quarantined(self) -> list[str]:
         taken = getattr(self._service, "take_quarantined", None)

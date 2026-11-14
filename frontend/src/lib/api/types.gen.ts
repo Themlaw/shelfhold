@@ -1269,9 +1269,29 @@ export type FollowFromIn = {
  */
 export type FollowIn = {
     /**
+     * Confirm Bytes
+     */
+    confirm_bytes?: number | null;
+    /**
+     * Confirm Units
+     */
+    confirm_units?: number | null;
+    /**
+     * From Number
+     */
+    from_number?: string | null;
+    /**
+     * Mode
+     */
+    mode?: 'all' | 'from_number' | 'new_only' | null;
+    /**
      * Remote Id
      */
     remote_id: string;
+    /**
+     * Shelf Id
+     */
+    shelf_id?: string | null;
     /**
      * Source Key
      */
@@ -4657,6 +4677,22 @@ export type UnfollowIn = {
      */
     confirm?: boolean;
     /**
+     * Confirm Bytes
+     */
+    confirm_bytes?: number | null;
+    /**
+     * Confirm Units
+     */
+    confirm_units?: number | null;
+    /**
+     * From Number
+     */
+    from_number?: string | null;
+    /**
+     * Mode
+     */
+    mode?: 'all' | 'from_number' | 'new_only' | null;
+    /**
      * Remote Id
      */
     remote_id: string;
@@ -4664,6 +4700,10 @@ export type UnfollowIn = {
      * Remove Upstream
      */
     remove_upstream?: boolean;
+    /**
+     * Shelf Id
+     */
+    shelf_id?: string | null;
     /**
      * Source Key
      */
@@ -11432,6 +11472,61 @@ export type Search2Responses = {
 };
 
 export type Search2Response = Search2Responses[keyof Search2Responses];
+
+export type EstimateData = {
+    body?: never;
+    path: {
+        /**
+         * Source Key
+         */
+        source_key: string;
+        /**
+         * Remote Id
+         */
+        remote_id: string;
+    };
+    query?: {
+        /**
+         * Mode
+         */
+        mode?: string;
+        /**
+         * From Number
+         */
+        from_number?: string | null;
+    };
+    url: '/api/v1/sources/{source_key}/series/{remote_id}/estimate';
+};
+
+export type EstimateErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type EstimateError = EstimateErrors[keyof EstimateErrors];
+
+export type EstimateResponses = {
+    /**
+     * Response Estimate
+     *
+     * Successful Response
+     */
+    200: {
+        [key: string]: unknown;
+    };
+};
+
+export type EstimateResponse = EstimateResponses[keyof EstimateResponses];
 
 export type StatsData = {
     body?: never;

@@ -33,14 +33,19 @@ from shelfhold.acquisition.application.federated_search import (
 from shelfhold.acquisition.public import (
     ACQUIRE_JOB_KIND,
     AcquireRefused,
+    FollowIntent,
     NativeAcquirer,
+    Watermark,
     acquire_dedupe_key,
+    held_numbers,
+    needs_confirmation,
 )
-from shelfhold.catalog.public import clean_terms, is_flagged, visible_title
+from shelfhold.catalog.public import clean_terms, is_flagged, numbered_mark, visible_title
 from shelfhold.identity.public import family_profile, family_search_mode, family_source_keys
 from shelfhold.infrastructure.fetcher import FetchError
+from shelfhold.infrastructure.observability.disk_guard import disk_usage
 from shelfhold.infrastructure.schema import acquisition, catalog
-from shelfhold.ops.errors import CodedRefusal, ExitUnavailableError
+from shelfhold.ops.errors import CodedRefusal, ExitUnavailableError, InvalidChoiceError
 from shelfhold.ops.reclaim import estimate_units, require_space
 from shelfhold.ops.tombstone_screens import CatalogScreens
 from shelfhold.plugin_host.errors import NoSourceForUrl, RefHasSecret
@@ -261,6 +266,43 @@ class AcquireOps:
         """What an approval shows before it asks a source for a series (EF-USR-010)."""
         ref = SeriesRef(source_key=source_key, remote_id=remote_id, title="")
         return int(self._run(self.acquirer().count_units(ref)))
+
+    def series_estimate(
+        self, source_key: str, remote_id: str, mode: str, from_number: str | None = None
+    ) -> dict[str, Any]:
+        """The « Ajouter » sheet's figures for one series, in one mode (EF-UX-006): the Units that
+        follow would ask for. A source that cannot list its Units is an error, never zero."""
+        acquirer = self.acquirer(connected_key=source_key.partition(":")[0])
+        ref = SeriesRef(source_key=source_key, remote_id=remote_id, title="")
+        listed = self._run(acquirer.list_units(ref))
+        try:
+            mark = FollowIntent(mode=mode, from_number=from_number).watermark()  # type: ignore[arg-type]
+        except ValueError:
+            raise InvalidChoiceError("from_number is not a number") from None
+        with self._comp.engine.connect() as connection:
+            held = held_numbers(connection, source_key, remote_id) if mode == "new_only" else set()
+        units = 0
+        for unit in listed:
+            placed = numbered_mark(unit.number, unit.source_order)
+            if placed is None:  # an extra: a follow starts with none of them
+                continue
+            where = Watermark.of(*placed)
+            if mark.is_beyond(ordinal=where.ordinal, number=where.number) and (
+                (where.ordinal, where.number) not in held
+            ):
+                units += 1
+        size_bytes = estimate_units(self._comp, units)
+        try:
+            free_bytes = int(disk_usage(self._comp.settings.store_dir).free)
+        except OSError:
+            free_bytes = 0
+        return {
+            "mode": mode,
+            "units": units,
+            "size_bytes": int(size_bytes),
+            "free_bytes": free_bytes,
+            "needs_confirmation": needs_confirmation(units=units, size_bytes=size_bytes),
+        }
 
     def resolve_family_ref(self, token: str, *, owner: str) -> FamilyRef:
         """What a reference of the family search stands for, for the child it was shown to (the

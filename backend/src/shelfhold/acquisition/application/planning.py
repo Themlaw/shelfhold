@@ -131,3 +131,25 @@ def pending(connection: Connection, edition_id: str, mode: Mode) -> list[KnownUn
     return requestable(
         known_units(connection, edition_id), watermark_of(connection, edition_id), mode
     )
+
+
+def held_numbers(
+    connection: Connection, source_key: str, remote_id: str
+) -> set[tuple[int, Decimal]]:
+    """`(segment ordinal, number)` of the numbered Units the library already holds of the series
+    this source item is bound to (none when the library has never seen the series): what a
+    follow has no need to ask for (I20)."""
+    item, binding = acquisition.source_item, acquisition.source_binding
+    editions = set(
+        connection.execute(
+            sa.select(binding.c.edition_id)
+            .join(item, item.c.id == binding.c.source_item_id)
+            .where(item.c.source_key == source_key, item.c.remote_id == remote_id)
+        ).scalars()
+    )
+    return {
+        (unit.ordinal, unit.number)
+        for edition_id in editions
+        for unit in known_units(connection, edition_id)
+        if unit.present and unit.number is not None
+    }
