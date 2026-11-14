@@ -74,6 +74,7 @@ from shelfhold.export.domain.field_owner import AGE_RATING
 from shelfhold.export.domain.naming import FrozenAttrs, NamingTemplate, Parsed
 from shelfhold.export.domain.planner import (
     GATE_CLOSED,
+    GONE_STATES,
     AgeGateFacts,
     Blocked,
     Plan,
@@ -118,6 +119,7 @@ __all__ = [
 log = structlog.get_logger(__name__)
 PLAN_KIND = "export"
 LOCK_WAIT_SECONDS = 30.0
+RUN_ATTEMPTS = 3  # plans made, then found stale at the claim, before the run gives up
 
 
 class SourceMissingError(Exception):
@@ -610,19 +612,32 @@ class ExportPipeline:
         if self._preflight is not None:
             with self._root_session(destination_id):  # the probe writes: under the lease too
                 self._preflight.require_root(destination_id)
-        ctx, loaded, plan = self._compute(destination_id)
-        self._heal_mirror(ctx)
-        if not plan.ops:
-            # only what the disk alone decides: a name Kavita misreads depends on Kavita, which
-            # can change its mind with no change of ours
-            if plan.blocked and all(b.code == "export.destination_occupied" for b in plan.blocked):
-                blocked_memo.remember(self._engine, destination_id, loaded.version)
-            log.debug("export.plan_empty", blocked=[b.code for b in plan.blocked])
-            return ApplyReport(None, ())
-        blocked_memo.forget(self._engine, destination_id)
-        plan_id = self._store(ctx, loaded, plan)
-        self._log_plan(plan_id, plan)
-        return self.apply(plan_id, if_match=loaded.version, job_id=job_id)
+        for attempt in range(RUN_ATTEMPTS):
+            ctx, loaded, plan = self._compute(destination_id)
+            self._heal_mirror(ctx)
+            if not plan.ops:
+                # only what the disk alone decides: a name Kavita misreads depends on Kavita,
+                # which can change its mind with no change of ours
+                if plan.blocked and all(
+                    b.code == "export.destination_occupied" for b in plan.blocked
+                ):
+                    blocked_memo.remember(self._engine, destination_id, loaded.version)
+                log.debug("export.plan_empty", blocked=[b.code for b in plan.blocked])
+                return ApplyReport(None, ())
+            blocked_memo.forget(self._engine, destination_id)
+            plan_id = self._store(ctx, loaded, plan)
+            self._log_plan(plan_id, plan)
+            try:
+                return self.apply(plan_id, if_match=loaded.version, job_id=job_id)
+            except StalePlanError as error:
+                # another export of the destination moved the manifest between this plan and its
+                # claim: start again from what is there now (nothing left to do ends the run)
+                if attempt == RUN_ATTEMPTS - 1:
+                    raise StalePlanError(  # not the "preview" of a person: nobody asked for one
+                        "other exports kept changing the destination while this export planned"
+                    ) from error
+                log.info("export.plan_stale_retry", destination_id=destination_id)
+        raise AssertionError("unreachable")  # pragma: no cover
 
     def _root_session(self, destination_id: str) -> AbstractContextManager[object]:
         if self._sessions is None:
@@ -774,7 +789,11 @@ class ExportPipeline:
             )
 
     def _execute(
-        self, ctx: DestinationContext, planned: PlannedOp, plan_id: str, job_id: str
+        self,
+        ctx: DestinationContext,
+        planned: PlannedOp,
+        plan_id: str,
+        job_id: str,
     ) -> str | _Refused | None:
         with bound_contextvars(
             unit_id=planned.unit_id,
@@ -793,7 +812,11 @@ class ExportPipeline:
             return folder
 
     def _execute_bound(
-        self, ctx: DestinationContext, planned: PlannedOp, plan_id: str, job_id: str
+        self,
+        ctx: DestinationContext,
+        planned: PlannedOp,
+        plan_id: str,
+        job_id: str,
     ) -> str | _Refused | None:
         folder = planned.rel_path.split("/", 1)[0] if planned.rel_path else ""
         with self._engine.connect() as connection:
@@ -810,6 +833,10 @@ class ExportPipeline:
             library=library, timeout=LOCK_WAIT_SECONDS,
         ) as held:  # fmt: skip
             try:
+                if self._superseded(ctx, planned):  # planned before this lock: look again
+                    # the unit names the operation; its path would name a title in the logs
+                    log.warning("export.op_superseded", kind=planned.kind, unit_id=planned.unit_id)
+                    return REFUSED
                 if planned.kind == "register":
                     self._register(ctx, planned)
                     return None
@@ -834,6 +861,40 @@ class ExportPipeline:
                 log.warning("export.write_denied", export_series_id=series_id)
                 return REFUSED
         return ctx.local(folder)
+
+    def _superseded(self, ctx: DestinationContext, planned: PlannedOp) -> bool:
+        """Under the resource lock, the plan is checked again against the manifest as it is now:
+        another export of the destination may have applied the very same plan between this plan
+        and this lock. What the plan meant as a first write (a new item, or a line left `planned`
+        or `error`) is not written again when the manifest already holds it. A volume decides
+        again from the database in `_write_volume`."""
+        if planned.unit_id is None:
+            return False
+        record, coverage = export.export_record, export.unit_coverage
+        with self._engine.connect() as connection:
+            if planned.export_item_id is not None:  # a line left `planned` or `error`
+                state = connection.execute(
+                    sa.select(record.c.state).where(
+                        record.c.shelf_destination_id == ctx.destination_id,
+                        record.c.export_item_id == planned.export_item_id,
+                    )
+                ).scalar()
+                return state is not None and state not in ("planned", "error", *GONE_STATES)
+            covers = record.c.export_item_id.in_(
+                sa.select(coverage.c.carrier_id).where(
+                    coverage.c.carrier_type == "export_item",
+                    coverage.c.unit_id == planned.unit_id,
+                )
+            )
+            same_path = (
+                [record.c.rel_path == planned.rel_path] if planned.rel_path is not None else []
+            )
+            clash = sa.select(record.c.export_item_id).where(
+                record.c.shelf_destination_id == ctx.destination_id,
+                record.c.state.not_in(GONE_STATES),  # a freed path is free, as the planner says
+                sa.or_(covers, *same_path),
+            )
+            return connection.execute(clash.limit(1)).first() is not None
 
     def _series_of(self, ctx: DestinationContext, planned: PlannedOp) -> str | None:
         """The export series of an operation, created by its reservation when it was new."""
