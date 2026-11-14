@@ -2,6 +2,60 @@
 
 Format : [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/). Versionnement : [SemVer](https://semver.org/lang/fr/). Procédure de release : `docs/releasing.md`.
 
+## [0.5.0] (à paraître) — M3
+
+Migration : oui (de 0046 à 0062 : 0046, 0047, 0053, 0054, 0055, 0056, 0057, 0059, 0060 et 0062), réversible : non automatiquement. `shelfhold migrate` sauvegarde la base avant de migrer (`/data/backups/pre-migration`) ; un retour à la 0.4.0 passe par cette sauvegarde (`docs/admin/retour-arriere.md`). Version minimale de Kavita : 0.9.1, inchangée.
+
+Cette section est un brouillon : le mainteneur la date et la fige au moment du tag.
+
+Migrations de M3 :
+
+- 0046 : schéma M3 (profils du foyer, demandes, notifications, corbeille à trois niveaux, visibilité, vignettes, fenêtres horaires, alias de source, fusion et redirection d'Œuvres).
+- 0047 : `contributor.died_for_france` (statut « mort pour la France », +30 ans au droit français).
+- 0053 : tables de recherche plein texte (FTS5 unicode61 et trigramme), projection reconstruisible.
+- 0054 : `replica.damaged_at` (copie abîmée, jamais comptée ni exportée).
+- 0055 : `trash_item.deletion_id` et `snapshot` (restauration d'une suppression), opération `unbin`.
+- 0056 : `user.visibility` (profil privé ou partagé au foyer).
+- 0057 : ce qu'un accord enregistre sur une demande (Œuvre, Édition, étagère, décideur, âge, arrivée).
+- 0059 : `work.created_seq` et `instance.events_purged_through` (jetons `since`).
+- 0060 : `tombstone_lost_kid.actor_id` peut prendre un jeton opaque `deleted:` (suppression d'utilisateur).
+- 0062 : index partiel sur `metadata_field.value` pour les couvertures.
+
+### Ajouté
+
+- **Profils du foyer et contrôle parental** (EF-USR-001, EF-USR-005, EF-USR-006, EF-USR-016, EF-USR-018, EF-BIB-055, ENF-SEC-008, ENF-SEC-010) : profils membre et enfant avec plafond d'âge, droit de classer, politique par source (`shelfhold profile add|list|set|remove`), visibilité d'un profil (privé ou partagé au foyer), sources marquées « famille », recherche famille pour les enfants (forme réduite, sources famille seules, résultats non classés masqués, demande possible). Attribution d'un profil enfant à un compte Kavita dédié, audit en lecture seule des comptes Kavita contre le plafond d'âge (`shelfhold profile map-kavita`).
+- **Identité et sessions** (EF-USR-002, EF-USR-013, EF-USR-024, ENF-SEC-008) : forward-auth optionnel (désactivé par défaut, CIDR de confiance, secret en temps constant), limitation de débit des routes publiques par adresse réelle, liste et révocation de sessions, réinitialisation du mot de passe par l'administrateur, trousseau de récupération imprimable sans secret, suppression et export d'un utilisateur (cascade, export JSON, audit pseudonymisé), alias de source et migration d'identité en masse avec aperçu à blanc (`shelfhold migrate-ids`).
+- **Demandes** (EF-USR-010, EF-SRC-029) : demandes polymorphes (livre, chapitre, série), accord en un geste avec préremplissage, âge requis pour la demande d'un enfant, confirmation de taille, motifs, notification d'arrivée ; écrans « Mes demandes » et « À approuver ».
+- **Recherche** (EF-BIB-010, EF-USR-014) : recherche locale (FTS5, trigramme pour le CJK, noms de contributeurs, tri sans article), recherche fédérée multi-sources, recherche famille pour les profils enfant, rebuild de l'index (`shelfhold search rebuild`).
+- **Catalogue** (EF-BIB-028, EF-BIB-054) : déduplication qui ne s'appuie jamais sur le titre seul, édition manuelle qui verrouille le champ, équipe préférée, décalage de numérotation par équipe vérifié avant repli, détection d'une migration Suwayomi proposant « Même œuvre ? », séparation d'une fusion erronée sous 30 jours avec redirections d'Œuvre et recalcul de l'âge et des étagères, fusion d'Éditions avec plan.
+- **Bibliothèque et intégrité** (EF-BIB-012, EF-BIB-020, EF-BIB-021, EF-BIB-031) : contrôle d'intégrité des archives (CRC, nombre de pages, empreinte), réacquisition complète d'une Unité, vignettes WebP 160/320/640 adressées par empreinte avec cache privé, suppression à trois niveaux avec aperçu d'impact, corbeille de 30 jours restaurable, dossiers vides retirés après scan, confirmation tapée pour les Unités irremplaçables.
+- **Export et destinations** (EF-EXP-030, EF-EXP-036, EF-EXP-037, EF-EXP-041, EF-EXP-062) : étagère choisie par Édition avec défaut selon le type, une Édition par bibliothèque distante, étagères précréées dont « Famille (13+) », relecture du type de bibliothèque Kavita et pause d'étagère, validation du nommage par Kavita avec détection de collision, plans de renommage par lots avec déplacement atomique du dossier de série et avertissement de perte de progression, rapprochement complet (dérive, orphelins, doublons, liens symboliques) et arrivée confirmée par l'événement Kavita avec repli par interrogation, export complet en format ouvert (JSON versionné et arborescence) avec import aller-retour dans une instance neuve, export des suivis en OPML et CSV.
+- **Exploitation** (EF-INT-001, EF-INT-002, EF-INT-004, EF-INT-017, EF-INT-021, EF-INT-023, ENF-OPS-009, ENF-PERF-010) : mode maintenance avec fenêtres UTC à travers le changement d'heure, contrôle de la file (pause, reprise, annulation, priorité, rejeu) par API, santé des sources avec erreurs typées et action proposée, Unités irremplaçables, originaux perdus, phrase de passe dans `/data`, métriques locales, matrice d'échec de chaque dépendance, bancs sur le profil de référence.
+- **Temps réel et événements** (EF-INT-001, EF-INT-002) : jetons `since` opaques sur la séquence d'événements (retraits et perte de visibilité, jamais pour un élément jamais vu, resynchronisation requise), flux SSE typé avec rejeu par `Last-Event-ID`, battement toutes les 15 secondes, remontée de version.
+- **Notifications** (EF-INT-021) : notifications par utilisateur, résumé quotidien par défaut, immédiat pour les demandes arrivées et les pannes de plus d'une heure, heures calmes, regroupement par série.
+- **Interface et premiers pas** (EF-UX-005, EF-UX-008, EF-UX-010) : assistant de premier démarrage (compte, liaison Kavita avec clé dédiée expirante, sonde du dossier partagé avec indice YAML, adoption, étagères, sources, juridiction, trousseau et kit de récupération, second administrateur, premier livre), réglages en trois niveaux (essentiel ≤ 15), champs définis par l'environnement grisés avec origine, thème A avec attribut pré-rendu sous CSP par empreinte, navigation selon le rôle, composant d'erreur avec code, cause et action, page d'accueil « Récemment arrivés » et « Mes demandes », Activité lisible, pages Santé et Sources. Accessibilité de l'atelier (navigation au clavier, mouvement réduit, cibles tactiles de 44 px, cartes empilées sous 600 px, action principale collante, axe sur chaque écran).
+- **Internationalisation** : catalogue anglais complet avec échec de la CI sur une clé manquante, textes français pour chaque code d'erreur avec cause et action, pluriels ICU, espaces fines insécables, dates au format fr-FR.
+- **Documentation** : pages d'administration ajoutées (clients, désinstallation, NAS et énergie, plateformes, secours, suppression d'un profil), `docs/plugins/destination.md`, `kit.md`, `parcours.md`, `docs/famille/README.md`, `docs/reference/api.md` et `format-export.md`, `docs/decisions/M3.md`.
+- **Variables** : `SHELFHOLD_AUTH_FORWARD_ENABLED`, `SHELFHOLD_AUTH_FORWARD_SECRET`, `SHELFHOLD_HTTP_TRUSTED_PROXIES`, `SHELFHOLD_HTTP_PUBLIC_RATE_PER_MINUTE`, `SHELFHOLD_HTTP_DEVICE_RATE_PER_MINUTE`, `SHELFHOLD_STREAM_MAX_PER_PROFILE` (`docs/reference/config.md`).
+
+### Modifié
+
+- La recherche et l'activité filtrent par profil à la requête plutôt qu'après coup.
+
+### Corrigé
+
+- Limitation des fils d'exécution pour le décodage des vignettes.
+- Le sondage de santé ne bloque plus les tâches qui écrivent.
+- Correction des clés anglaises de la migration d'identité.
+- Divers correctifs issus des relectures adversariales (génération, export, bibliothèque).
+
+### Sécurité
+
+- Forward-auth désactivé par défaut, secret comparé en temps constant, CIDR de confiance.
+- Limitation de débit des routes publiques par adresse réelle (proxy de confiance).
+- Aucun secret de source ni de profil relu par l'API ni la CLI.
+- Un profil enfant ne voit jamais un titre non classé au-delà de son plafond, y compris dans la recherche fédérée.
+
 ## [0.4.0] (à paraître) — M2
 
 Migration : oui (de 0020 à 0040 : 0020, 0021, 0025, 0026, 0027, 0028, 0035, 0037 et 0040 ; les 0013 à 0017 sont celles de la 0.3.0), réversible : non automatiquement. `shelfhold migrate` sauvegarde la base avant de migrer (`/data/backups/pre-migration`) ; un retour à la 0.3.0 passe par cette sauvegarde (`docs/admin/retour-arriere.md`). Les migrations 0020 et suivantes sont publiées avec ce tag (`tools/published-migrations.toml`) : à partir de là, une version corrective n'en modifie ni n'en ajoute aucune (ENF-OPS-002). Version minimale de Kavita : 0.9.1, inchangée.
