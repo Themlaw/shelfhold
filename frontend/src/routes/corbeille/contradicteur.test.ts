@@ -25,9 +25,6 @@ const listing = () =>
   http.get(`${BASE}/api/v1/trash`, () =>
     HttpResponse.json({ entries: [entry(UNIT), entry(RARE, { irreplaceable: true })], total_bytes: 10_000_000 })
   );
-const problem = (status: number, extra: Record<string, unknown> = {}) =>
-  HttpResponse.json({ type: '/api/v1/problems/x', title: 'x', status, code: 'x', ...extra }, { status });
-
 beforeAll(() => {
   server.listen({ onUnhandledRequest: 'error' } as never);
   client.setConfig({ baseUrl: BASE });

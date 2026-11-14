@@ -258,4 +258,34 @@ describe('À classer', () => {
     expect(container.querySelector('ul.works')).toBeNull();
     expect(screen.queryByRole('region', { name: 'Classer tout en lot' })).toBeNull();
   });
+
+  // req: EF-USR-006
+  it('says on the batch buttons that the whole waiting list is rated, whatever the filter', async () => {
+    server.use(
+      http.get(`${BASE}/api/v1/to-rate`, ({ request }) =>
+        HttpResponse.json({
+          age: null,
+          token: new URL(request.url).searchParams.get('age') ? TOKEN : null,
+          items: [
+            { work_id: WORK, title: 'Alpha', state: 'rating_pending', reason: 'r' },
+            { work_id: '01JWORK0000000000000000002', title: 'Bravo', state: 'rating_pending', reason: 'r' }
+          ]
+        })
+      )
+    );
+    render(Page);
+    await screen.findByText('Alpha');
+    const user = userEvent.setup();
+    const batch = screen.getByRole('region', { name: 'Classer tout en lot' });
+    await user.click(within(batch).getByRole('radio', { name: '13+' }));
+    expect(within(batch).getByRole('button', { name: 'Préparer le lot' })).toBeInTheDocument();
+    await user.type(screen.getByLabelText('Chercher dans la liste'), 'alp');
+    await user.click(
+      within(batch).getByRole('button', { name: /Préparer le lot.{1,3}toute la liste d'attente \(2\), même filtrée/ })
+    );
+    expect(
+      await within(batch).findByRole('button', { name: /Classer toute la liste d'attente \(2\), pas seulement le filtre/ })
+    ).toBeDisabled();
+    expect(screen.queryByText('Bravo')).toBeNull(); // the filter still narrows the display
+  });
 });

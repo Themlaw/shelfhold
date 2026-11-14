@@ -801,9 +801,33 @@ export type DetachIn = {
  */
 export type DeviceConnectOut = {
     /**
+     * Skipped
+     */
+    skipped?: Array<DeviceSkippedOut>;
+    /**
      * Targets
      */
     targets: Array<DeviceTargetOut>;
+};
+
+/**
+ * DeviceSkippedOut
+ *
+ * A Kavita target left out, and why (`address_unusable`): the screen says so.
+ */
+export type DeviceSkippedOut = {
+    /**
+     * Name
+     */
+    name: string;
+    /**
+     * Reason
+     */
+    reason: string;
+    /**
+     * Target Id
+     */
+    target_id: string;
 };
 
 /**

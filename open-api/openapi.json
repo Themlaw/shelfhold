@@ -1284,6 +1284,14 @@
       },
       "DeviceConnectOut": {
         "properties": {
+          "skipped": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/DeviceSkippedOut"
+            },
+            "title": "Skipped",
+            "type": "array"
+          },
           "targets": {
             "items": {
               "$ref": "#/components/schemas/DeviceTargetOut"
@@ -1296,6 +1304,30 @@
           "targets"
         ],
         "title": "DeviceConnectOut",
+        "type": "object"
+      },
+      "DeviceSkippedOut": {
+        "description": "A Kavita target left out, and why (`address_unusable`): the screen says so.",
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          },
+          "target_id": {
+            "title": "Target Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "target_id",
+          "name",
+          "reason"
+        ],
+        "title": "DeviceSkippedOut",
         "type": "object"
       },
       "DeviceTargetOut": {

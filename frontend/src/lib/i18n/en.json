@@ -506,5 +506,12 @@
   "trash.purged": "Unit erased.",
   "trash.error": "The operation failed. Reload the page and try again.",
   "trash.forbidden": "This screen is for administration: your profile has no access to it.",
-  "trash.signed_out": "Sign-in required: open an administration session, then come back to this page."
+  "trash.signed_out": "Sign-in required: open an administration session, then come back to this page.",
+  "settings.link.to_rate": "To classify",
+  "settings.link.devices": "Connect a device",
+  "settings.link.trash": "Trash",
+  "devices.skipped": "Instance {name} is left out: its address cannot be used. Fix it in the settings.",
+  "trash.purge_warning_irreplaceable": "This Unit is irreplaceable: no source can give it back. Once erased, it is lost.",
+  "toRate.batch_prepare_filtered": "Prepare the batch: the whole waiting list ({count}), filtered or not",
+  "toRate.batch_run_filtered": "Classify the whole waiting list ({count}), not only the filter"
 }

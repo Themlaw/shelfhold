@@ -147,6 +147,12 @@
         <li><a href="/sante">{t('settings.link.health')}</a></li>
         <!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- the app is served at the root of its origin -->
         <li><a href="/sources">{t('settings.link.sources')}</a></li>
+        <!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- the app is served at the root of its origin -->
+        <li><a href="/a-classer">{t('settings.link.to_rate')}</a></li>
+        <!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- the app is served at the root of its origin -->
+        <li><a href="/appareils">{t('settings.link.devices')}</a></li>
+        <!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- the app is served at the root of its origin -->
+        <li><a href="/corbeille">{t('settings.link.trash')}</a></li>
       {/if}
       <!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- the app is served at the root of its origin -->
       <li><a href="/reglages/notifications">{t('settings.link.notifications')}</a></li>

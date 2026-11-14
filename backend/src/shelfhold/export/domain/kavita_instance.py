@@ -96,14 +96,18 @@ def library_is_dedicated(library: Mapping[str, Any], remote_root: str) -> bool:
 
 
 def device_entry_points(base_url: str) -> dict[str, str] | None:
-    """The addresses a device is told to open (EF-UX-004): Kavita's own, built from the address
-    of the instance and nothing else. No userinfo, no query, no fragment, and no key: the OPDS and
-    kosync keys belong to the reader's account and are made in Kavita. Anything that is not a web
-    address gives `None`."""
+    """The addresses a device is told to open (EF-UX-004): Kavita's own, built here from the
+    origin of the configured address (scheme, host, port) and nothing else. No path, parameter,
+    fragment, query or userinfo that was given gets in: a path may hold a reader's key (Kavita
+    shows `/api/opds/<key>`), so the known Kavita paths are written by this function. Anything
+    that is not a web address, or whose port is out of range, gives `None`."""
     parts = urlsplit(base_url.strip())
     if parts.scheme not in ("http", "https") or not parts.hostname:
         return None
+    try:
+        port = parts.port
+    except ValueError:  # `:99999`, `:abc`: no such address
+        return None
     host = f"[{parts.hostname}]" if ":" in parts.hostname else parts.hostname
-    root = f"{parts.scheme}://{host}{f':{parts.port}' if parts.port else ''}"
-    root += parts.path.rstrip("/")
+    root = f"{parts.scheme}://{host}{f':{port}' if port else ''}"
     return {"kover": root, "opds": f"{root}/api/opds", "kosync": f"{root}/api/koreader"}

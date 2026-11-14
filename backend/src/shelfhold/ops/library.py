@@ -986,11 +986,16 @@ class LibraryOps:
                 .order_by(export.export_target.c.id)
             ).all()  # fmt: skip
         targets = []
+        skipped = []
         for row in rows:
             found = device_entry_points(str((row.config or {}).get("url", "")))
-            if found is not None:
+            if found is None:  # a row that gives no address leaves the others on screen
+                skipped.append(
+                    {"target_id": row.id, "name": row.name, "reason": "address_unusable"}
+                )
+            else:
                 targets.append({"target_id": row.id, "name": row.name, **found})
-        return {"targets": targets}
+        return {"targets": targets, "skipped": skipped}
 
     @_refused
     def space_check(self, *, estimated_bytes: int) -> dict[str, Any]:

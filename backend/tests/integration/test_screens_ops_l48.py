@@ -25,7 +25,12 @@ def test_device_entry_points_read_the_kavita_targets_and_leave_every_secret_out(
         with inst.engine.begin() as connection:
             for kind, name, url in (
                 ("kavita", "source-a", "https://user:pw@kavita.example:8443/?apiKey=abc"),
-                ("kavita", "source-b", "javascript:alert(1)"),  # no web address: left out
+                (
+                    "kavita",
+                    "source-b",
+                    "javascript:alert(1)",
+                ),  # no web address: left out, with a reason
+                ("kavita", "source-d", "https://kavita.example:99999"),  # port out of range
                 ("tree", "source-c", "https://tree.example"),  # not Kavita: left out
             ):
                 connection.execute(
@@ -40,11 +45,15 @@ def test_device_entry_points_read_the_kavita_targets_and_leave_every_secret_out(
     assert target["opds"] == "https://kavita.example:8443/api/opds"
     assert target["kosync"] == "https://kavita.example:8443/api/koreader"
     assert not any(mark in repr(found) for mark in ("pw", "abc", "apiKey", "user:"))
+    assert [(s["name"], s["reason"]) for s in found["skipped"]] == [
+        ("source-b", "address_unusable"),
+        ("source-d", "address_unusable"),
+    ]  # one bad row never turns the screen into a 500 and never hides the others
 
 
 def test_device_entry_points_without_a_target_is_empty(settings: Settings, tmp_path: Path) -> None:
     with instance(settings, tmp_path) as inst:
-        assert LibraryOps(inst.comp).device_entry_points() == {"targets": []}
+        assert LibraryOps(inst.comp).device_entry_points() == {"targets": [], "skipped": []}
 
 
 def test_trash_list_reads_the_bin_index_and_totals_the_bytes(

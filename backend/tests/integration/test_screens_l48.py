@@ -25,6 +25,7 @@ RATE = f"/api/v1/editions/{EDITION}/rating"
 TRASH = "/api/v1/trash"
 CONNECT = "/api/v1/devices/connect"
 ENTRY_POINTS = {
+    "skipped": [],
     "targets": [
         {
             "target_id": "01JTARG0000000000000000001",
@@ -33,7 +34,7 @@ ENTRY_POINTS = {
             "opds": "https://kavita.example/api/opds",
             "kosync": "https://kavita.example/api/koreader",
         }
-    ]
+    ],
 }
 TRASH_BODY = {
     "entries": [

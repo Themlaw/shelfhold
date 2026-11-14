@@ -105,8 +105,17 @@ class DeviceTargetOut(BaseModel):
     kosync: str
 
 
+class DeviceSkippedOut(BaseModel):
+    """A Kavita target left out, and why (`address_unusable`): the screen says so."""
+
+    target_id: str
+    name: str
+    reason: str
+
+
 class DeviceConnectOut(BaseModel):
     targets: list[DeviceTargetOut]
+    skipped: list[DeviceSkippedOut] = []
 
 
 class SpaceCheckIn(BaseModel):

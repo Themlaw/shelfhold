@@ -139,6 +139,9 @@
             {#if purging === entry.unit_id}
               <form onsubmit={(event) => purgeNow(event, entry.unit_id)}>
                 <p class="err">{t('trash.purge_warning')}</p>
+                {#if entry.irreplaceable}
+                  <p class="err"><strong>{t('trash.purge_warning_irreplaceable')}</strong></p>
+                {/if}
                 <label for={`purge-${entry.unit_id}`}>{t('trash.purge_label', { unit: entry.unit_id })}</label>
                 <input
                   id={`purge-${entry.unit_id}`}

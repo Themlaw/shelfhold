@@ -129,6 +129,7 @@
     });
   }
 
+  const filtering = $derived(stateFilter !== '' || textFilter.trim() !== '');
   const shown = $derived(
     items.filter(
       (item) =>
@@ -268,7 +269,9 @@
         <p class="muted">{t('toRate.batch_scope', { count: items.length })}</p>
         <AgePicker name="age-batch" legend={t('toRate.batch_age')} bind:value={batchAge} />
         <button type="button" disabled={!batchAge} onclick={prepareBatch}>
-          {t('toRate.batch_prepare')}
+          {filtering
+            ? t('toRate.batch_prepare_filtered', { count: items.length })
+            : t('toRate.batch_prepare')}
         </button>
         {#if batchToken}
           <form onsubmit={runBatch}>
@@ -276,7 +279,9 @@
             <label for="batch-confirm">{t('toRate.batch_token')}</label>
             <input id="batch-confirm" bind:value={typed} autocomplete="off" spellcheck="false" />
             <button type="submit" disabled={typed.trim() !== batchToken}>
-              {t('toRate.batch_run')}
+              {filtering
+                ? t('toRate.batch_run_filtered', { count: items.length })
+                : t('toRate.batch_run')}
             </button>
           </form>
         {/if}

@@ -122,4 +122,16 @@ describe('Corbeille', () => {
     expect(await screen.findByRole('alert')).toBeInTheDocument();
     expect(container.querySelector('button')).toBeNull();
   });
+
+  // req: EF-BIB-031
+  it('does not add the irreplaceable warning to the form of an ordinary Unit', async () => {
+    server.use(listing());
+    render(Page);
+    await screen.findByText(UNIT);
+    const user = userEvent.setup();
+    const row = screen.getByRole('listitem', { name: new RegExp(UNIT) });
+    await user.click(within(row).getByRole('button', { name: 'Effacer maintenant' }));
+    const form = within(row).getByRole('button', { name: 'Effacer pour de bon' }).closest('form');
+    expect(form!.textContent).not.toMatch(/irremplaçable/i);
+  });
 });

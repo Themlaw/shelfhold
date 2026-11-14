@@ -165,4 +165,27 @@ describe('Réglages', () => {
     );
     expect(screen.getByRole('link', { name: /Apparence/ }).getAttribute('href')).toBe('/reglages/apparence');
   });
+
+  // req: EF-UX-004, EF-USR-006, EF-BIB-021
+  it('links the three workshop screens for the admin and reaches each one by keyboard', async () => {
+    serve([row('a.key', { level: 'essential' })]);
+    render(Page);
+    await screen.findByLabelText(/a\.key/);
+    const wanted = new Map([
+      ['À classer', '/a-classer'],
+      ['Connecter un appareil', '/appareils'],
+      ['Corbeille', '/corbeille']
+    ]);
+    for (const [name, href] of wanted) {
+      expect(screen.getByRole('link', { name }).getAttribute('href')).toBe(href);
+    }
+    const user = userEvent.setup();
+    const reached = new Set<string>();
+    for (let step = 0; step < 60 && reached.size < wanted.size; step += 1) {
+      await user.tab();
+      const name = document.activeElement?.textContent?.trim() ?? '';
+      if (document.activeElement?.tagName === 'A' && wanted.has(name)) reached.add(name);
+    }
+    expect([...reached].sort()).toEqual([...wanted.keys()].sort());
+  });
 });

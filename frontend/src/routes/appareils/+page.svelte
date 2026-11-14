@@ -4,7 +4,7 @@
   // key or token, the page asks for none, and an address that is not a web address draws no code.
   import { onMount } from 'svelte';
   import { deviceConnect } from '#lib/api/index.ts';
-  import type { DeviceTargetOut } from '#lib/api/types.gen.ts';
+  import type { DeviceSkippedOut, DeviceTargetOut } from '#lib/api/types.gen.ts';
   import QrCode from '#lib/components/QrCode.svelte';
   import { Guard } from '#lib/guard.svelte.ts';
   import { t, type MessageKey } from '#lib/i18n/index.ts';
@@ -14,12 +14,14 @@
 
   const guard = new Guard();
   let targets = $state<DeviceTargetOut[]>([]);
+  let skipped = $state<DeviceSkippedOut[]>([]);
   let loaded = $state(false);
 
   onMount(() =>
     guard.run(async () => {
       const { data } = await deviceConnect({ throwOnError: true });
       targets = data.targets;
+      skipped = data.skipped ?? [];
       loaded = true;
     })
   );
@@ -60,7 +62,11 @@
     <p>{t('devices.intro')}</p>
     <p class="muted">{t('devices.key_note')}</p>
 
-    {#if loaded && targets.length === 0}
+    {#each skipped as left (left.target_id)}
+      <p role="status" class="err">{t('devices.skipped', { name: left.name })}</p>
+    {/each}
+
+    {#if loaded && targets.length === 0 && skipped.length === 0}
       <p>{t('devices.none')}</p>
     {/if}
 

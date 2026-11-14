@@ -1,4 +1,4 @@
-"""M3 L48, contradicteur (Opus): red PoCs, see `docs/decisions/M3.md`, « L48 : contradicteur (Opus) ».
+"""M3 L48, contradicteur (Opus): red PoCs, see `docs/decisions/M3.md` (« L48 : contradicteur »).
 
 The end of the card says « le QR ne contient aucun jeton ni clé ». `device_entry_points` strips
 the userinfo, the query and the fragment, but keeps the path whole: Kavita's own OPDS and kosync

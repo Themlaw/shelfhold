@@ -506,5 +506,12 @@
   "trash.purged": "Unité effacée.",
   "trash.error": "L'opération a échoué. Rechargez la page puis recommencez.",
   "trash.forbidden": "Écran réservé à l'administration : votre profil n'y a pas accès.",
-  "trash.signed_out": "Connexion requise : ouvrez une session d'administration, puis revenez sur cette page."
+  "trash.signed_out": "Connexion requise : ouvrez une session d'administration, puis revenez sur cette page.",
+  "settings.link.to_rate": "À classer",
+  "settings.link.devices": "Connecter un appareil",
+  "settings.link.trash": "Corbeille",
+  "devices.skipped": "L'instance {name} est laissée de côté : son adresse n'est pas utilisable. Corrigez-la dans les réglages.",
+  "trash.purge_warning_irreplaceable": "Cette Unité est irremplaçable : aucune source ne pourra la rendre. Une fois effacée, elle est perdue.",
+  "toRate.batch_prepare_filtered": "Préparer le lot : toute la liste d'attente ({count}), même filtrée",
+  "toRate.batch_run_filtered": "Classer toute la liste d'attente ({count}), pas seulement le filtre"
 }

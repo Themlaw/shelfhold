@@ -103,4 +103,17 @@ describe('Connecter un appareil', () => {
       expect(source).not.toContain(word);
     }
   });
+
+  // req: EF-UX-004
+  it('leaves a Kavita target with an unusable address aside, says so, and keeps the others', async () => {
+    server.use(
+      serve({
+        ...ENTRY,
+        skipped: [{ target_id: '01JTARG0000000000000000002', name: 'source-b', reason: 'address_unusable' }]
+      })
+    );
+    render(Page);
+    expect(await screen.findByText(/source-b est laissée de côté/)).toBeInTheDocument();
+    expect(screen.getAllByRole('img').length).toBeGreaterThan(0);
+  });
 });
