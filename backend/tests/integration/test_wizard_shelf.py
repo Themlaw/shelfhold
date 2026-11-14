@@ -4,9 +4,9 @@ The route is the door of the wizard to what `shelfhold shelf create` does on the
 service (`HeadlessAdmin.shelf_create`: the shelf, its destination under a registered root, the
 folder, the Kavita library with the audit of who may read it). The guard is that of every other
 door that makes a shelf (`shelf.max_age_rating`, a parental decision: an admin session, never a
-key; a fresh one as soon as a child profile exists), and the audit line names it so. A shelf below 18+ stays refused unless Kavita keeps the accounts
-apart, and a name or a folder that climbs out of the library is refused before anything is
-written.
+key; a fresh one as soon as a child profile exists), and the audit line names it so. A shelf
+below 18+ stays refused unless Kavita keeps the accounts apart, and a name or a folder that
+climbs out of the library is refused before anything is written.
 """
 
 from __future__ import annotations
