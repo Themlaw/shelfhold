@@ -47,7 +47,7 @@ Dans cet ordre, et chaque pas peut être refait si une coupure l'interrompt (rel
 3. la **clé dédiée est révoquée** dans Kavita **par son identifiant**, noté dans le journal avant la révocation (jamais
    son nom : une autre clé du même compte n'est jamais touchée). Si une coupure survient juste après, la même commande
    termine : une clé absente dont l'identifiant est noté compte comme révoquée, et un identifiant que Kavita a
-   entre-temps donné à une autre clé (valeur différente de celle notée, par empreinte) est laissé en place et signalé
+   entre-temps donné à une autre clé (valeur différente de celle notée, par somme de contrôle) est laissé en place et signalé
    (`key_id_reused`) ;
 4. Shelfhold **oublie** son manifeste et la cible. **Aucun fichier exporté n'est touché** : mêmes octets, mêmes noms.
 

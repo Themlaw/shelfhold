@@ -9,8 +9,8 @@ password is sent once, in a JSON body, to the declared address only.
 from __future__ import annotations
 
 import asyncio
-import hashlib
 import json
+import zlib
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -30,9 +30,10 @@ KEY_LENGTH = 32  # RotateAuthKeyRequestDto: 8 to 32
 
 
 def key_digest(key: str) -> str:
-    """What is written about a key instead of its value: a BLAKE2b fingerprint. The key is a
-    random token, not a password a person chose: a fast hash is the right tool to compare it."""
-    return hashlib.blake2b(key.encode(), digest_size=20).hexdigest()
+    """What is written about a key instead of its value: a 32-bit checksum. It only has to tell
+    "the same key" from "another key that got the same identifier" (an accident, not an
+    attacker), and it reveals nothing usable of a random token."""
+    return f"{zlib.crc32(key.encode()):08x}"
 
 
 class _KeyIdReused(Exception):
