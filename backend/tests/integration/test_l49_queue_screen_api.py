@@ -66,11 +66,13 @@ def test_job_list_says_for_whom_which_source_and_which_priority(api: AuthEnv) ->
 def test_the_queue_screen_reads_are_refused_without_a_session(api: AuthEnv) -> None:
     request = new_ulid()
     _seed(api.settings, request_id=request, source_key="alpha")
-    with TestClient(api.app, base_url=HTTPS) as anonymous:  # type: ignore[arg-type]
-        for path in (JOBS, MAINTENANCE):
-            response = anonymous.get(path)
-            assert response.status_code == 401, path
-            assert request not in response.text and "alpha" not in response.text
+    # not entered (`with`): a second lifespan would start a second set of Huey workers on the
+    # app that `auth_env` already runs, and the test would leave them behind
+    anonymous = TestClient(api.app, base_url=HTTPS)  # type: ignore[arg-type]
+    for path in (JOBS, MAINTENANCE):
+        response = anonymous.get(path)
+        assert response.status_code == 401, path
+        assert request not in response.text and "alpha" not in response.text
 
 
 @pytest.mark.req("EF-INT-017", "EF-INT-018")
@@ -79,9 +81,11 @@ def test_the_queue_screen_writes_are_refused_without_a_session_or_a_csrf_token(
 ) -> None:
     job = _seed(api.settings)
     paths = [*WRITES, ("POST", f"/api/v1/jobs/{job}/cancel", None)]
-    with TestClient(api.app, base_url=HTTPS) as anonymous:  # type: ignore[arg-type]
-        for _method, path, body in paths:
-            assert anonymous.post(path, json=body).status_code in (401, 403), path
+    # not entered (`with`): a second lifespan would start a second set of Huey workers on the
+    # app that `auth_env` already runs, and the test would leave them behind
+    anonymous = TestClient(api.app, base_url=HTTPS)  # type: ignore[arg-type]
+    for _method, path, body in paths:
+        assert anonymous.post(path, json=body).status_code in (401, 403), path
     for _method, path, body in paths:  # signed in, but no CSRF token: still refused
         assert api.client.post(path, json=body).status_code in (401, 403), path
     status = api.client.get(MAINTENANCE).json()
