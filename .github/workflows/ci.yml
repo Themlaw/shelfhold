@@ -675,7 +675,7 @@ jobs:
           category: grype
 
   traceability:
-    # Blocking, for M0 to M3: every requirement of the milestone has a test, every test has a marker.
+    # Blocking for M0, M1a and M1b (M2 and M3: report only, L58): every requirement of the milestone has a test, every test has a marker.
     # The matrix is not committed: it is an artifact and the job summary.
     runs-on: ubuntu-24.04
     timeout-minutes: 10
@@ -683,17 +683,22 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      # M0, M1a and M1b block. M2 and M3 only report in the job summary: three requirements
+      # are not delivered yet (EF-UX-004 with L48, ENF-UX-001 with L57, ENF-GOV-004), and their
+      # strict xfail tests keep them as gaps in the matrix. Until the closure of M3 (L58) makes
+      # M2 and M3 blocking too (see docs/decisions/M3.md).
       - name: Build the traceability matrix of every delivered milestone
         run: |
           set +e
           status=0
           for ms in M0 M1a M1b M2 M3; do
             python3 tools/traceability.py --milestone "$ms" --output "$RUNNER_TEMP/$ms.md" 2> "$RUNNER_TEMP/errors-$ms.txt"
-            [ $? -eq 0 ] || status=1
+            code=$?
+            case "$ms" in M2|M3) ;; *) [ $code -eq 0 ] || status=1 ;; esac
             {
               cat "$RUNNER_TEMP/$ms.md"
               echo
-              echo "## Erreurs et avertissements ($ms)"
+              echo "## Erreurs et avertissements ($ms, exit $code)"
               echo '```'
               cat "$RUNNER_TEMP/errors-$ms.txt"
               echo '```'

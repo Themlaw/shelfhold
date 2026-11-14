@@ -19,12 +19,12 @@ ROOT = Path(__file__).resolve().parents[3]
 @pytest.mark.req("EF-UX-004")
 @pytest.mark.xfail(
     strict=True,
-    reason="EF-UX-004: M3 L48 (screen "Connect a device", QR of the Kavita entry points) "
+    reason="EF-UX-004: M3 L48 (screen 'Connect a device', QR of the Kavita entry points) "
     "is not delivered: no `appareils` route, no local QR generator",
 )
 def test_connect_device_qr_kavita_endpoints() -> None:
     page = ROOT / "frontend" / "src" / "routes" / "appareils" / "+page.svelte"
-    assert page.is_file(), "the "Connect a device" screen does not exist"
+    assert page.is_file(), "the 'Connect a device' screen does not exist"
     source = page.read_text(encoding="utf-8")
     assert "opds" in source.lower()  # the entry points of Kavita are offered
     package = json.loads((ROOT / "frontend" / "package.json").read_text(encoding="utf-8"))
@@ -35,7 +35,7 @@ def test_connect_device_qr_kavita_endpoints() -> None:
 @pytest.mark.req("ENF-UX-001")
 @pytest.mark.xfail(
     strict=True,
-    reason="ENF-UX-001: M3 L57 (timed E2E "first 10 minutes", ≤ 10 min and ≤ 6 actions) is "
+    reason="ENF-UX-001: M3 L57 (timed E2E 'first 10 minutes', ≤ 10 min and ≤ 6 actions) is "
     "not delivered: no M3 journey spec",
 )
 def test_first_book_under_10_minutes() -> None:

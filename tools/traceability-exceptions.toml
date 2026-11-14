@@ -67,11 +67,6 @@ workflow = "contract.yml"
 reason = "banc de contrat contre un Suwayomi réel épinglé (Docker, spike S5) : workflow_dispatch et hebdomadaire, non requis par décision M0 5"
 
 [[out_of_required_ci]]
-path = "backend/tests/unit/test_m3_open_gaps.py"
-workflow = "ci.yml"
-reason = "EF-UX-004 (L48), ENF-UX-001 (L57) et ENF-GOV-004 (M2, reporté) : lots non livrés, tests rouges exprès en xfail strict ; ils passent au vert avec le lot, strict force alors le retrait du marqueur"
-
-[[out_of_required_ci]]
 path = "backend/tests/nightly/test_kavita_nightly.py"
 workflow = "nightly.yml"
 reason = "Kavita officiel réel (ligne 0.9.1, version épinglée, dernière) sur réseau interne : planifié et manuel, jamais requis pour fusionner (L40)"
