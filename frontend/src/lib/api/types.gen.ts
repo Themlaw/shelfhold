@@ -1285,6 +1285,24 @@ export type FindingOut = {
 };
 
 /**
+ * FirstAdminIn
+ */
+export type FirstAdminIn = {
+    /**
+     * Password
+     */
+    password: string;
+    /**
+     * Setup Token
+     */
+    setup_token: string;
+    /**
+     * Username
+     */
+    username: string;
+};
+
+/**
  * FlushOut
  */
 export type FlushOut = {
@@ -3939,6 +3957,20 @@ export type SettingsPatch = {
     values: {
         [key: string]: unknown;
     };
+};
+
+/**
+ * SetupStatusOut
+ */
+export type SetupStatusOut = {
+    /**
+     * Needs Admin
+     */
+    needs_admin: boolean;
+    /**
+     * Token Configured
+     */
+    token_configured: boolean;
 };
 
 /**
@@ -10811,6 +10843,31 @@ export type SeriesResumeResponses = {
 
 export type SeriesResumeResponse = SeriesResumeResponses[keyof SeriesResumeResponses];
 
+export type MakeFirstAdminData = {
+    body: FirstAdminIn;
+    path?: never;
+    query?: never;
+    url: '/api/v1/setup/admin';
+};
+
+export type MakeFirstAdminErrors = {
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type MakeFirstAdminError = MakeFirstAdminErrors[keyof MakeFirstAdminErrors];
+
+export type MakeFirstAdminResponses = {
+    /**
+     * Successful Response
+     */
+    201: CsrfToken;
+};
+
+export type MakeFirstAdminResponse = MakeFirstAdminResponses[keyof MakeFirstAdminResponses];
+
 export type WizardAdoptionConfirmData = {
     body: WizardAdoptIn;
     path?: never;
@@ -11074,6 +11131,39 @@ export type WizardStateResponses = {
 };
 
 export type WizardStateResponse = WizardStateResponses[keyof WizardStateResponses];
+
+export type FirstRunStatusData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/setup/status';
+};
+
+export type FirstRunStatusErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type FirstRunStatusError = FirstRunStatusErrors[keyof FirstRunStatusErrors];
+
+export type FirstRunStatusResponses = {
+    /**
+     * Successful Response
+     */
+    200: SetupStatusOut;
+};
+
+export type FirstRunStatusResponse = FirstRunStatusResponses[keyof FirstRunStatusResponses];
 
 export type ShelvesData = {
     body?: never;

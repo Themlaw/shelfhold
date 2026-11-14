@@ -77,4 +77,31 @@ describe('root layout load', () => {
     const data = await load({ fetch } as never);
     expect(data.appearance).toEqual({ theme: 'bibliotheque', colorScheme: 'auto' });
   });
+
+  // req: ENF-UX-001, EF-UX-001
+  it('sends a new instance, from any screen, to the account screen of the wizard', async () => {
+    const fetch = fetcher({
+      '/api/v1/setup/status': () => json({ needs_admin: true, token_configured: true })
+    });
+    for (const path of ['/', '/bibliotheque', '/assistant']) {
+      await expect(load({ fetch, url: new URL(`http://x${path}`) } as never)).rejects.toMatchObject({
+        status: 307,
+        location: '/assistant/compte'
+      });
+    }
+  });
+
+  // req: ENF-UX-001
+  it('leaves the wizard screens alone on a new instance and the rest alone on an instance with its admin', async () => {
+    const fresh = fetcher({
+      '/api/v1/setup/status': () => json({ needs_admin: true, token_configured: true })
+    });
+    await expect(
+      load({ fetch: fresh, url: new URL('http://x/assistant/compte') } as never)
+    ).resolves.toBeDefined();
+    const settled = fetcher({
+      '/api/v1/setup/status': () => json({ needs_admin: false, token_configured: true })
+    });
+    await expect(load({ fetch: settled, url: new URL('http://x/') } as never)).resolves.toBeDefined();
+  });
 });
