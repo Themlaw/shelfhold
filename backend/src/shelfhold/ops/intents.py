@@ -36,9 +36,11 @@ from shelfhold.export.application.manifest_write import (
     release_reserved_hook,
     reserved_line,
 )
+from shelfhold.export.application.snapshot import load_context
+from shelfhold.export.domain.path_map import within
 from shelfhold.identity.public import RESERVED_ACTIONS, Allowed, Principal, authorize_reserved
 from shelfhold.infrastructure.ids import new_ulid
-from shelfhold.infrastructure.schema import coherence, identity, platform
+from shelfhold.infrastructure.schema import coherence, export, identity, platform
 from shelfhold.ops.errors import (
     CodedRefusal,
     InvalidChoiceError,
@@ -141,13 +143,31 @@ class IntentOps:
                 path_resource(f"{line.destination_id}/{line.rel_path.split('/', 1)[0]}"),
             ]
         else:
-            resources = [path_resource(intent.dst or intent.src or intent.id)]
+            resources = [self._path_lock(intent)]
         locks = ResourceLocks(self._comp.engine, clock=self._comp.clock)
         try:
             with locks.hold_resources(new_ulid(), resources):
                 yield
         except LockBusyError:
             raise StillWaitingError("a job is writing there: try again when it is over") from None
+
+    def _path_lock(self, intent: OpenIntent) -> str:
+        """The lock of an intent with no reserved line (a rename, a repatriation, a file of the
+        mirror): the one the writers of that folder hold, `path:<destination>/<series folder>`,
+        found from the destination whose root holds the path (the longest root wins). The shared
+        `dest:<id>` row follows from the name, so a removal or a detachment of the destination
+        is excluded too. A path under no destination (the store, `received/`, a library root)
+        has no export writer to meet: it keeps its own path as the name."""
+        path = intent.dst or intent.src or intent.id
+        best: tuple[int, str] | None = None
+        with self._comp.engine.connect() as connection:
+            ids = connection.execute(sa.select(export.shelf_destination.c.id)).scalars().all()
+            for destination_id in ids:
+                root = load_context(connection, destination_id).root_local
+                below = within(path, root) if root is not None else None
+                if below and (best is None or len(root or "") > best[0]):
+                    best = (len(root or ""), f"{destination_id}/{below.split('/', 1)[0]}")
+        return path_resource(best[1] if best is not None else path)
 
     def _refuse_not_open(self, intent_id: str) -> None:
         with self._comp.engine.connect() as connection:
