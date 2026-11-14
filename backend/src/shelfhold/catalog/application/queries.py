@@ -44,7 +44,6 @@ __all__ = [
     "visible_unit_ids",
     "visible_work_ids",
     "visible_works_clause",
-    "work_is_visible",
 ]
 
 MAX_PAGE = 200
@@ -199,10 +198,6 @@ def visible_work_ids(
         )
         found.update(r[0] for r in rows)
     return found
-
-
-def work_is_visible(connection: sa.Connection, scope: ReaderScope, work_id: str) -> bool:
-    return work_id in visible_work_ids(connection, scope, [work_id])
 
 
 def visible_edition_ids(

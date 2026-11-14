@@ -16,7 +16,6 @@ __all__ = [
     "ENDPOINTS",
     "M1A_STATES",
     "M1B_SERVED_STATES",
-    "M3_SERVED_STATES",
     "UNSERVED",
     "bare",
     "endpoint_of",
@@ -105,9 +104,6 @@ M1B_SERVED_STATES: Final = frozenset(
         WaitingState.TOMBSTONE_JOURNAL_TRUNCATED,  # `tombstone set-aside-journal` (L26, D12)
     }
 )
-
-# The M3 states whose exit is served by this lot: `maintenance off` (L13, EF-INT-018).
-M3_SERVED_STATES: Final = frozenset({WaitingState.MAINTENANCE})
 
 # Commands whose CLI module belongs to a lot still in flight (the route and the service exist
 # here). The lot that lands the CLI removes its entry: a test fails while it is listed and the

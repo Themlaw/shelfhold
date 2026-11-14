@@ -14,7 +14,6 @@ from typing import Any
 
 import pytest
 import sqlalchemy as sa
-from fastapi import APIRouter
 from fastapi.testclient import TestClient
 
 from shelfhold.catalog.public import (
@@ -22,7 +21,6 @@ from shelfhold.catalog.public import (
     RatingService,
     search_page,
     visible_edition_ids,
-    work_is_visible,
 )
 from shelfhold.config import Settings
 from shelfhold.identity.public import local_auth, scope_of
@@ -30,7 +28,7 @@ from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import catalog, export, platform
 from tests.auth_env import CSRF_HEADER, AuthEnv, auth_env, run_cli
 from tests.integration.test_child_surfaces import SEARCH, _routes
-from tests.visibility_env import Seed, add_profile, seed_catalogue
+from tests.visibility_env import Seed, add_profile, seed_catalogue, work_is_visible
 
 NOW = datetime(2026, 11, 5, 9, 0, tzinfo=UTC)
 
@@ -229,17 +227,11 @@ def test_review_poc_hidden_and_absent_search_cost_the_same(world: _World) -> Non
 def test_review_poc_meta_test_sees_routes_outside_openapi(
     monkeypatch: pytest.MonkeyPatch, settings: Settings
 ) -> None:
-    """SSE streams, thumbnails and covers are the surfaces most often declared with
-    `include_in_schema=False`. Such a route serves a child with no child case and the meta-test
-    (`_routes`, built from `app.openapi()`) never sees it."""
-    extra = APIRouter()
-
-    @extra.get("/api/v1/zz-stream", include_in_schema=False)
-    def stream() -> dict[str, str]:
-        return {"title": "Tale of Harbor Sixteen"}
-
-    with auth_env(monkeypatch, settings, routers=[extra]) as built:
-        assert "GET /api/v1/zz-stream" in _routes(built.app), (
+    """The stream of events (L12) is declared with `include_in_schema=False`: it serves a child,
+    and the meta-test (`_routes`) must see it although `app.openapi()` does not list it."""
+    with auth_env(monkeypatch, settings) as built:
+        assert "/api/v1/events" not in built.app.openapi()["paths"]
+        assert "GET /api/v1/events" in _routes(built.app), (
             "a route outside the OpenAPI document escapes the meta-test"
         )
 

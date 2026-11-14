@@ -37,9 +37,9 @@ symbols = [
 ]
 
 [[allow]]
-category = "unwired-m3"
-reason = "Content serving comes with the reader and the admin UI of M3 (B1 for content_response). The diagnostic bundle is wired by its CLI (M2 L30) and by its download over HTTP (M3 L46); `attachment_disposition` left this entry with M3 L40. The `?since=` tokens left this entry with M3 L11 (the lists of Works and of shelves)."
-until = "M3"
+category = "unwired-m5"
+reason = "2026-11-14 (M3 L56, D9): `content_response` serves untrusted content under a sandbox (B1). M3 serves no content: reading goes through Kavita, and the reader of Shelfhold is M5's. Redated M5 in writing (docs/decisions/M3.md). The diagnostic bundle is wired by its CLI (M2 L30) and by its download over HTTP (M3 L46); `attachment_disposition` left this entry with M3 L40. The `?since=` tokens left this entry with M3 L11."
+until = "M5"
 symbols = [
   "shelfhold.interfaces.http_api.content:content_response",
 ]
@@ -59,7 +59,7 @@ symbols = [
 
 [[route_test]]
 category = "generic-mechanics"
-reason = "Proves a generic mechanic of the HTTP stack (identity headers, idempotency replay, reserved-action gate, unhandled-exception log line) on the real middleware of create_app() with a toy route: no product route carries the case (a reserved action that touches secrets, a request header dump, a failing handler)."
+reason = "Proves a generic mechanic of the HTTP stack (identity headers, idempotency replay, reserved-action gate, unhandled-exception log line) on the real middleware of create_app() with a toy route: no product route carries the case (a reserved action that touches secrets, a request header dump, a failing handler). 2026-11-14 (M3 L56): the meta-test of the child surfaces counts a mount and a WebSocket, which the product has none of; the test declares them. The routes outside OpenAPI (the stream, the thumbnails) are now proved on the product's own routes."
 until = "permanent"
 tests = [
   "backend/tests/integration/test_review_pr41.py::test_tunnel_identity_header_without_forward_auth_rejected",
@@ -67,23 +67,15 @@ tests = [
   "backend/tests/integration/test_review_pr41.py::test_idempotent_replay_never_skips_fresh_auth",
   "backend/tests/integration/test_review_pr41.py::test_idempotency_actor_is_one_credential",
   "backend/tests/unit/test_logging.py::test_unhandled_http_exception_and_library_logs_are_json_with_request_id",
+  "backend/tests/integration/test_child_surfaces.py::test_meta_test_counts_mounts_and_websockets",
 ]
 
 [[route_test]]
-category = "unwired-m3"
-reason = "content_response (B1) has no route before the reader of M3: the sandbox/attachment headers are proved on a route declared by the test."
-until = "M3"
+category = "unwired-m5"
+reason = "2026-11-14 (M3 L56, D9): content_response (B1) has no route before the reader of M5: the sandbox/attachment headers are proved on a route declared by the test."
+until = "M5"
 tests = [
   "backend/tests/integration/test_http_headers.py::test_svg_served_as_attachment_with_csp_sandbox",
-]
-
-[[route_test]]
-category = "generic-mechanics"
-reason = "2026-11-12 (M3 L09): proves that the child-surface meta-test walks the routes left out of the OpenAPI document (a stream, a thumbnail, a cover are `include_in_schema=False`): the tests declare one such route (and a mount, and a WebSocket) to show they are counted. No product route has the case before L12 (SSE) and L24 (thumbnails), which add their own child case."
-until = "M3"
-tests = [
-  "backend/tests/integration/test_l09_review_poc.py::test_review_poc_meta_test_sees_routes_outside_openapi",
-  "backend/tests/integration/test_child_surfaces.py::test_meta_test_counts_mounts_and_websockets",
 ]
 
 [[allow]]
@@ -122,9 +114,9 @@ symbols = [
 # What waited for M2 and is neither wired nor deleted (M2 L31 and closure, 2026-11-12): each group
 # is written down for M3, where it has its first caller (docs/decisions/M2-L31-debts.md).
 [[allow]]
-category = "m2-l31-deferred-m3-decode-probe"
-reason = "2026-11-12 (M2 closure, L10 and L29 merged): `probe_image` (format and size of an untrusted image, decoded once in the worker) and `diagnose_worker` (what the sandbox really allows) have no production caller after L10: the rasterizer and `make_thumbnail` (OpenLibrary cover) go through `run_worker` directly, and no M2 requirement asks the pages of an arriving CBZ to be probed or the sandbox report to be exposed. They stay as the proof surface of ENF-SEC-003 (decode caps, no network, RLIMIT_AS), tested in test_decode_worker*.py and test_imaging_*.py. Written down for M3, whose reader and diagnostic screens are their first callers; deleted there if none is planned."
-until = "M3"
+category = "m2-l31-deferred-m4-decode-probe"
+reason = "2026-11-12 (M2 closure, L10 and L29 merged): `probe_image` (format and size of an untrusted image, decoded once in the worker) and `diagnose_worker` (what the sandbox really allows) have no production caller after L10: the rasterizer and `make_thumbnail` (OpenLibrary cover) go through `run_worker` directly, and no M2 requirement asks the pages of an arriving CBZ to be probed or the sandbox report to be exposed. They stay as the proof surface of ENF-SEC-003 (decode caps, no network, RLIMIT_AS), tested in test_decode_worker*.py and test_imaging_*.py. Written down for M3 (2026-11-12), where no screen came to call them: the diagnostic bundle (L46) reports the sandbox through its own checks, and no M3 lot probes an arriving CBZ. 2026-11-14 (M3 L56): redated M4, where the adoption of a foreign library (EF-EXP-045) reads untrusted images and is their natural first caller; deleted there if it does not need them. They are the proof surface of ENF-SEC-003, a sensitive one: not deleted at a milestone closure."
+until = "M4"
 symbols = [
   "shelfhold.infrastructure.imaging.client:diagnose_worker",
   "shelfhold.infrastructure.imaging.client:probe_image",
@@ -151,27 +143,11 @@ symbols = [
 ]
 
 [[allow]]
-category = "m3-l20-preferred-team"
-reason = "2026-11-12: the preferred team is stored and the switch is tested end to end (the files served are replaced by the upgrade under intent), but the upgrader of the running instance is not wired yet: the route of the series sheet only chooses the team (`CatalogService.prefer_team`), nothing already served is replaced."
-until = "M3"
+category = "m3-l56-deferred-team-switch"
+reason = "2026-11-14 (M3 L56): redated M4. Wiring it means that a click on the series sheet replaces served files, which is an upgrade under intent on a write context with its lease, its guards and its screen of outcomes (`SwitchReport`: switched, blocked, pending): a feature of its own, not a wiring, and the sheet of L43 decided that choosing a team replaces nothing. M4 builds it with the upgrader of the follow cycle (`runtime_jobs._LazyUpgrader`). Before: 2026-11-12: the preferred team is stored and the switch is tested end to end (the files served are replaced by the upgrade under intent), but the upgrader of the running instance is not wired yet: the route of the series sheet only chooses the team (`CatalogService.prefer_team`), nothing already served is replaced."
+until = "M4"
 symbols = [
   "shelfhold.acquisition.application.team_switch:switch_to_preferred_team",
-]
-
-[[allow]]
-category = "m3-l09-works-listing"
-reason = "2026-11-12 (M3 L09, narrowed by L11): the filter of what a reader may see also answers a single Work (`work_is_visible`), proved by tests against the same condition as the search and the per-user state. The count and the page of Works are served by `GET /works` since L11; a single Work is shown by the library screens of the UI lots, which call it and add their child case to `test_child_surfaces`."
-until = "M3"
-symbols = [
-  "shelfhold.catalog.application.queries:work_is_visible",
-]
-
-[[allow]]
-category = "m3-l13-served-states"
-reason = "2026-11-12: the table of the M3 waiting states whose exit is served (`maintenance`) is read by the exit-table tests only; production reads the catalogue and the routes, which say where each exit is."
-until = "M3"
-symbols = [
-  "shelfhold.ops.exits:M3_SERVED_STATES",
 ]
 
 [[allow]]
