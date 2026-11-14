@@ -13,18 +13,26 @@ import { expect, test, type Locator, type Page } from '@playwright/test';
 // ENF-UX-001: "first 10 minutes" — a new installation to the first Gutenberg book listed by Kavita
 // in at most 10 minutes (BUDGET_S) and at most 6 actions (BUDGET_ACTIONS).
 //
-// What an action is: one gesture of the person on a control that is not a text field — a click on
-// a button, a link or a checkbox, a submission. Typing never counts by itself: the fields filled
-// before a submission belong to it. Every action is listed in the report of the test, tagged
-// `decision` (it sends something to the server) or `navigation` (a link to the next screen).
-// The commands typed on the host are listed too (kind `host`). The card says "dans l'UI": the
-// first test reads the budget on the actions of the UI, decisions and navigations alike; the second
-// reads it on ALL the gestures, host commands included, and is red (xfail strict, no `req`) until
-// the host types nothing more. A screen with nothing left to ask moves on by itself (the wizard
-// waits a moment so that what was done can be read): that is no gesture, and the wait is inside the
-// time measured. The person is signed in by the API (no sign-in screen exists: the stand-in counts
-// as the one action of signing in) and opens the address of the wizard (nothing on the home page
-// leads there yet: not a click, not counted, reported as a gap).
+// What an action is (decision M3, L57 "définition d'une action"): one gesture of the person on a
+// control that is not a text field — a click on a button, a link or a checkbox, a submission.
+// Typing never counts by itself: the fields filled before a submission belong to it. Opening an
+// address counts for nothing. Every action is listed in the report of the test, tagged `decision`
+// (it sends something to the server), `navigation` (a link to the next screen) or `host` (a
+// command typed on the machine: the only one the journey allows is `docker compose up`, which is
+// the install itself and is not counted). The budget is read on ALL of them: the interface and the
+// host together, no more than 6.
+//
+// The journey starts at `/`, on a new instance: the app leads to the wizard by itself (nothing to
+// type), the account is made on its first screen with the secret that the compose holds, and each
+// screen with nothing left to ask moves on by itself (the wizard waits a moment so that what was
+// done can be read: that is no gesture, and the wait is inside the time measured).
+//
+// Two things belong to the harness, not to the person, and are not counted:
+// - the two addresses of the simulated books project (catalogue and mirror) exist only in this
+//   stack, so the stack gives them to the plugin itself (`fakes/m3/serve_with_sources.py`); a real
+//   install talks to the real project and sets nothing;
+// - the turn of the scheduler (`jobs run export.run`, then the scan of Kavita), nudged by hand so
+//   that the wait for the first book does not depend on the period of the scheduler.
 //
 // EF-UX-012: one capture per theme and per scheme of the key screens. The reference is NOT a pixel
 // image: such a file depends on the fonts of the machine that made it (here the runners of the CI,
@@ -37,6 +45,8 @@ import { expect, test, type Locator, type Page } from '@playwright/test';
 const BUDGET_S = 600;
 const BUDGET_ACTIONS = 6;
 const ADMIN = { username: 'admin', password: 'synthetic-admin-password-1' };
+// the value of SHELFHOLD_SETUP_TOKEN in `e2e/m3.yaml`
+const SETUP_TOKEN = 'synthetic-setup-token-0123456789abcdef';
 const KID = { username: 'kid8', password: 'synthetic-kid-password-1' };
 // the simulated Kavita listens on the loopback of the stack: its window is read from inside
 const KAVITA_WINDOW = 'http://127.0.0.1:5000';
@@ -55,12 +65,6 @@ interface Action {
 class Run {
   readonly started = Date.now();
   readonly actions: Action[] = [];
-  constructor() {
-    // what the administrator already typed on the host before the browser (the pytest wrapper
-    // lists it): the first account, the addresses of the books project
-    const before = JSON.parse(process.env.E2E_HOST_COMMANDS ?? '[]') as string[];
-    for (const what of before) this.actions.push({ what: `host: ${what}`, kind: 'host', at_s: 0 });
-  }
   /** A command typed on the host: one gesture, counted. */
   host(what: string): void {
     this.actions.push({ what: `host: ${what}`, kind: 'host', at_s: Math.round(this.elapsed()) });
@@ -144,11 +148,15 @@ async function waitForTheBook(run: Run, folder: string): Promise<void> {
 
 /** The wizard, screen after screen, as a person follows it. Returns when the first book is launched. */
 async function firstBook(page: Page, run: Run): Promise<void> {
-  await signInByApi(page, ADMIN); // no sign-in screen exists yet: see the report of L57
-  run.actions.push({ what: 'sign in (by the API: no screen)', kind: 'decision', at_s: 0 });
-
-  await page.goto('/assistant/compte');
-  await expect(page.getByText('Connecté en tant que admin.')).toBeVisible();
+  // the address of the instance, nothing else: a new instance leads to the wizard by itself
+  await page.goto('/');
+  await expect(page).toHaveURL(/\/assistant\/compte$/);
+  await expect(page.getByRole('heading', { name: 'Votre compte', level: 2 })).toBeVisible();
+  await page.getByLabel("Nom d'utilisateur").fill(ADMIN.username);
+  await page.getByLabel('Mot de passe').fill(ADMIN.password);
+  await page.getByLabel("Secret d'installation").fill(SETUP_TOKEN); // read in the compose file
+  await run.click(page.getByRole('button', { name: 'Créer le compte' }), 'create the account (signs in)', 'decision');
+  await expect(page.getByText(`Connecté en tant que ${ADMIN.username}.`)).toBeVisible();
 
   // the account screen has nothing to ask of the administrator: it moves on by itself
   await expect(page.getByRole('heading', { name: 'Connexion à Kavita', level: 2 })).toBeVisible();
@@ -181,12 +189,11 @@ async function firstBook(page: Page, run: Run): Promise<void> {
 
 // req: ENF-UX-001
 test('test_first_book_under_10_minutes', async ({ page }, info) => {
-  // A new installation: the compose, the first account and the books' addresses typed on the host,
-  // then the browser. The administrator goes through the five screens, makes the shelf linked to
-  // Kavita on the folder screen, launches a Gutenberg book, and Kavita lists it: within BUDGET_S
-  // seconds and BUDGET_ACTIONS actions in the UI, every click and submission counted (decisions
-  // and navigations alike; a screen that moves on by itself is no gesture). The card says "dans
-  // l'UI": the commands typed on the host are listed in the report and read by the next test.
+  // A new installation: `docker compose up` (the compose holds the setup secret), then the
+  // browser opens `/`. The administrator makes the account, goes through the screens, makes the
+  // shelf linked to Kavita, launches a Gutenberg book, and Kavita lists it: within BUDGET_S seconds
+  // and BUDGET_ACTIONS actions, every click and submission counted (decisions and navigations
+  // alike; a screen that moves on by itself is no gesture) plus any command typed on the host.
   const run = new Run();
   await firstBook(page, run);
   await waitForTheBook(run, '/library/livres');
@@ -195,21 +202,6 @@ test('test_first_book_under_10_minutes', async ({ page }, info) => {
   await info.attach('first-book-report', { body: report });
   expect((await kavitaSeries()).includes(FIRST_BOOK.title), report).toBe(true);
   expect(run.elapsed(), report).toBeLessThanOrEqual(BUDGET_S);
-  const inTheUi = run.actions.filter((a) => a.kind !== 'host').length;
-  expect(inTheUi, report).toBeLessThanOrEqual(BUDGET_ACTIONS);
-});
-
-// The stricter reading of the card: ALL the gestures, the commands typed on the host included
-// (the first account, the books' addresses). Red today: the wrapper of `test_m3_journey.py` marks
-// it xfail strict and it carries no `req`; it turns green when the wizard also takes what the
-// host still types.
-test('test_first_book_within_6_actions_host_commands_included', async ({ page }, info) => {
-  const run = new Run();
-  await firstBook(page, run);
-  await waitForTheBook(run, '/library/livres');
-  const report = run.report();
-  console.log(report);
-  await info.attach('first-book-report', { body: report });
   expect(run.actions.length, report).toBeLessThanOrEqual(BUDGET_ACTIONS);
 });
 

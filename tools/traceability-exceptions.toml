@@ -121,13 +121,3 @@ reason = "M4 : passe 2, B15 ; avant M4, l'avertissement EF-EXP-037 s'applique"
 requirement = "ENF-GOV-004"
 aspect = "second registre d'images, miroir du dépôt, vérificateur de mises à jour non bloquant"
 reason = "M4 : le porteur a tranché D5 le 2026-11-14, la v1.0.0 est signée sur GHCR seul ; le code « avec ou sans jeton » est prêt (L54), le second registre s'active dès que le secret CODEBERG_TOKEN existe"
-
-[[exception]]
-path = "e2e/tests/test_m3_journey.py"
-tests = ["test_first_book_within_6_actions_host_commands_included"]
-reason = "lecture stricte du budget d'ENF-UX-001 (commandes de l'hôte comprises), en xfail strict : elle garde le décompte visible, la couverture est portée par test_first_book_under_10_minutes (budget lu dans l'interface)"
-
-[[exception]]
-path = "e2e/tests/test_m3_journey.spec.ts"
-tests = ["test_first_book_within_6_actions_host_commands_included"]
-reason = "côté navigateur de la lecture stricte du budget (commandes de l'hôte comprises) : l'enveloppe pytest la marque xfail strict, sans marqueur de couverture"

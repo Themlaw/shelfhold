@@ -89,61 +89,23 @@ def playwright(
     return done
 
 
-# what `install_by_the_administrator` types, listed for the count of gestures of the spec
-HOST_COMMANDS = ["admin create (the first account)", "plugin set gutenberg (the two addresses)"]
-
-
-def install_by_the_administrator(j: Journey) -> None:
-    """What the administrator does on the host before opening the browser, and nothing else: the
-    first account (the screens have no sign-in of their own yet) and the two addresses of the books
-    project (`plugin set`, which the first-run wizard does not take)."""
-    j.create_admin()
-    configure_sources(j)
-
-
 # -- (1) the first book, in a browser ---------------------------------------------------------------
 
 
 @pytest.mark.e2e_timeout(780)
 @pytest.mark.req("ENF-UX-001", "EF-UX-001")
 def test_first_book_under_10_minutes(journey_m3: Journey) -> None:
-    """A new installation to the first Gutenberg book listed by Kavita, played in a browser: at
-    most 10 minutes and 6 actions in the UI, the shelf linked to Kavita made by the wizard itself.
-    The book is in Kavita as a file the shared volume holds, and nothing left the network
-    namespace."""
-    j = journey_m3
-    install_by_the_administrator(j)
-    done = playwright(
-        j, "test_first_book_under_10_minutes", 720,
-        {"E2E_HOST_COMMANDS": json.dumps(HOST_COMMANDS)},
-    )  # fmt: skip
+    """A new installation to the first Gutenberg book listed by Kavita, played in a browser from
+    `docker compose up`: at most 10 minutes and 6 actions, the account and the shelf linked to
+    Kavita made by the wizard itself, nothing typed on the host. The book is in Kavita as a file
+    the shared volume holds, and nothing left the network namespace."""
+    j = journey_m3  # no account, no command: the person opens `/`
+    done = playwright(j, "test_first_book_under_10_minutes", 720)
     assert done.returncode == 0, "the timed journey failed (see the output of the spec)"
     assert kavita_titles(j) == ["A Study in Test"]
     assert len(library_epubs(j)) == 1
     assert j.kavita()["violations"] == []
     assert j.egress() == []
-
-
-@pytest.mark.e2e_timeout(780)
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "The stricter reading of ENF-UX-001: every gesture, the two commands typed on the host "
-        "included (the first account, the books' addresses), against 6. The wizard now takes the "
-        "shelf bound to Kavita and moves on by itself, so the UI holds 6 actions; with the two "
-        "host commands the journey has 8. It turns green when the host types nothing more."
-    ),
-)
-def test_first_book_within_6_actions_host_commands_included(journey_m3: Journey) -> None:
-    """Carries no `req`: the requirement is read on the UI by the test above; this one keeps the
-    stricter count visible until the host commands are taken by the screens."""
-    j = journey_m3
-    install_by_the_administrator(j)
-    done = playwright(
-        j, "test_first_book_within_6_actions_host_commands_included", 720,
-        {"E2E_HOST_COMMANDS": json.dumps(HOST_COMMANDS)},
-    )  # fmt: skip
-    assert done.returncode == 0, "more than 6 gestures (see the report of the spec)"
 
 
 # -- (2) the parental control, end to end ------------------------------------------------------------

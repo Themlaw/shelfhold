@@ -37,6 +37,7 @@ Version du schéma de `config.toml` : `1.0`. Précédence : variable d'environne
 | `SHELFHOLD_HTTP_TRUSTED_PROXIES` | `http_trusted_proxies` | liste de str | aucun |  | `SHELFHOLD_HTTP_TRUSTED_PROXIES_FILE` en lit la valeur dans un fichier |
 | `SHELFHOLD_AUTH_FORWARD_ENABLED` | `auth_forward_enabled` | bool | `false` |  | `SHELFHOLD_AUTH_FORWARD_ENABLED_FILE` en lit la valeur dans un fichier |
 | `SHELFHOLD_AUTH_FORWARD_SECRET` | `auth_forward_secret` | secret (optionnel) | aucun |  | secret, masqué partout; `SHELFHOLD_AUTH_FORWARD_SECRET_FILE` en lit la valeur dans un fichier |
+| `SHELFHOLD_SETUP_TOKEN` | `setup_token` | secret (optionnel) | aucun |  | secret, masqué partout; `SHELFHOLD_SETUP_TOKEN_FILE` en lit la valeur dans un fichier |
 | `SHELFHOLD_HTTP_PUBLIC_RATE_PER_MINUTE` | `http_public_rate_per_minute` | int | `120` | >= 10, <= 100000 | `SHELFHOLD_HTTP_PUBLIC_RATE_PER_MINUTE_FILE` en lit la valeur dans un fichier |
 | `SHELFHOLD_HTTP_DEVICE_RATE_PER_MINUTE` | `http_device_rate_per_minute` | int | `600` | >= 10, <= 100000 | `SHELFHOLD_HTTP_DEVICE_RATE_PER_MINUTE_FILE` en lit la valeur dans un fichier |
 | `SHELFHOLD_CLI_ALLOW_HOST` | `cli_allow_host` | bool | `false` |  | `SHELFHOLD_CLI_ALLOW_HOST_FILE` en lit la valeur dans un fichier |
