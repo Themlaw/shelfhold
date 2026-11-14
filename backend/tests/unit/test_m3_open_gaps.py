@@ -36,8 +36,8 @@ def test_first_book_under_10_minutes() -> None:
 @pytest.mark.req("ENF-GOV-004")
 @pytest.mark.xfail(
     strict=True,
-    reason="ENF-GOV-004 (M4, deferred by the maintainer in writing on 2026-11-14): no update checker "
-    "(SHELFHOLD_UPDATE_CHECK_URL) and no `publish-mirror` workflow yet",
+    reason="ENF-GOV-004 (M4, deferred by the maintainer in writing on 2026-11-14): "
+    "no update checker (SHELFHOLD_UPDATE_CHECK_URL) and no `publish-mirror` workflow yet",
 )
 def test_update_check_failure_is_silent() -> None:
     sources = "\n".join(
