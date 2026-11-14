@@ -35,6 +35,8 @@ const KAVITA_USER = 'shelfhold';
 const KAVITA_PASSWORD = 'synthetic-kavita-password';
 const FIRST_BOOK = { id: '1001', title: 'A Study in Test' };
 const HERE = dirname(fileURLToPath(import.meta.url));
+// where the journey of the screens stops today (the message of the expectation in `firstBook`)
+const KNOWN_GAP = 'the folder screen offers its check (a destination exists)';
 
 type Kind = 'decision' | 'navigation';
 interface Action {
@@ -70,6 +72,16 @@ function compose(args: string[]): string {
     encoding: 'utf8',
     timeout: 180_000
   });
+}
+
+/** A file the administrator brings (a secret): written in the tmpfs of the container, mode 0600. */
+function putFile(path: string, text: string): void {
+  const base = JSON.parse(process.env.E2E_COMPOSE ?? '[]') as string[];
+  execFileSync(
+    'docker',
+    ['compose', ...base, 'exec', '-T', 'shelfhold', 'sh', '-c', `umask 077; cat > ${path}`],
+    { input: text, timeout: 60_000 }
+  );
 }
 
 function shelfhold(args: string[]): string {
@@ -138,7 +150,7 @@ async function firstBook(page: Page, run: Run, afterKavita?: () => void): Promis
   // a shelf must be bound to Kavita for the folder to be checked: the screen says so otherwise
   await expect(
     page.getByRole('button', { name: 'Vérifier le dossier' }),
-    'the folder screen offers its check (a destination exists)'
+    KNOWN_GAP
   ).toBeVisible({ timeout: 10_000 });
   await run.click(page.getByRole('button', { name: 'Vérifier le dossier' }), 'check the folder', 'decision');
   await expect(page.getByText(/Kavita lit le dossier partagé|Le dossier est inscriptible/)).toBeVisible();
@@ -165,29 +177,52 @@ async function firstBook(page: Page, run: Run, afterKavita?: () => void): Promis
 
 // req: ENF-UX-001
 test('test_first_book_under_10_minutes', async ({ page }, info) => {
-  // The journey as the screens allow it today: nothing but the compose, then the browser. It does
-  // not get through (no sign-in screen, no screen binds a shelf to Kavita, so "Dossier partagé"
-  // has no destination, the Gutenberg addresses are set by command), and the wizard takes more
-  // than 6 gestures. The test is the gap, written first: it is expected to fail (strict: the day
-  // it passes, Playwright fails it and the marker goes). See `test_timed_first_book_*` for the
-  // time the rest of the journey takes once those blocks are lifted by a command.
-  test.fail(true, 'ENF-UX-001: the first-run screens cannot yet reach a first book alone (M3 L57)');
+  // The journey as the screens allow it today: nothing but the compose and the first account,
+  // then the browser. It does not get through: there is no sign-in screen (the person is signed in
+  // by the API here), no screen binds a shelf to Kavita, so "Dossier partagé" has no destination
+  // and no check to offer; the screen after it has no way onward; the Gutenberg addresses are set by
+  // command; and the wizard takes more gestures than the budget. The test is that gap, written
+  // first: while the folder screen is where the journey stops, it passes and says so (KNOWN_GAP);
+  // it fails on any other stop, and the day the journey gets through it asserts the two budgets
+  // in full. The test of `test_m3_open_gaps.py` flips with it and asks for this marker to go.
   const run = new Run();
-  await firstBook(page, run);
-  await waitForTheBook(run, '/library/livres');
-  await info.attach('first-book-report', { body: run.report() });
-  expect(run.elapsed(), run.report()).toBeLessThanOrEqual(BUDGET_S);
-  expect(run.actions.length, run.report()).toBeLessThanOrEqual(BUDGET_ACTIONS);
+  let stopped: Error | null = null;
+  try {
+    await firstBook(page, run);
+    await waitForTheBook(run, '/library/livres');
+  } catch (error) {
+    stopped = error as Error;
+  }
+  const report = `${run.report()}\n${stopped ? `stopped: ${stopped.message.split('\n')[0]}` : 'got through'}`;
+  console.log(report);
+  await info.attach('first-book-report', { body: report });
+  if (stopped !== null) {
+    expect(stopped.message, `only the known gap may stop the journey\n${report}`).toContain(KNOWN_GAP);
+    return;
+  }
+  expect(run.elapsed(), report).toBeLessThanOrEqual(BUDGET_S);
+  expect(run.actions.length, report).toBeLessThanOrEqual(BUDGET_ACTIONS);
 });
 
 // req: ENF-UX-001
 test('test_timed_first_book_with_the_shelf_made_by_command', async ({ page }, info) => {
-  // The same journey with the one block the screens leave to the host lifted: the shelf bound to
-  // Kavita is made by `shelf create`, right after Kavita is connected (the order of the wizard).
+  // The same journey with the blocks the screens leave to the host lifted: the path map and the
+  // shelf bound to Kavita are made by command, right after Kavita is connected (the order of the
+  // wizard).
   // It measures the real time of the rest and asserts the time budget; the number of actions is
   // reported in full, and read against BUDGET_ACTIONS by the test above.
   const run = new Run();
   await firstBook(page, run, () => {
+    // the wizard cannot set the path map of the target: its default roots (books, comics, manga)
+    // do not exist on a new volume, so a shelf cannot get its folder. The administrator gives the
+    // whole volume by command (the target already exists: nothing is asked of Kavita again), then
+    // makes the shelf the screens cannot make.
+    putFile('/tmp/kavita.pw', `${KAVITA_PASSWORD}\n`);
+    shelfhold([
+      'target', 'add', 'kavita', '--url', 'http://127.0.0.1:5000', '--user', KAVITA_USER,
+      '--password-file', '/tmp/kavita.pw', '--accept-admin-risk',
+      '--path-map', '[{"local": "/library", "remote": "/library", "mode": "rw"}]'
+    ]);
     shelfhold([
       'shelf', 'create', 'Livres', '--max-age', '18+', '--target', 'kavita', '--subpath', 'livres'
     ]);
@@ -240,12 +275,12 @@ test('test_key_screens_snapshot_per_theme', async ({ browser }, info) => {
   expect(THEMES.length, 'at least the default theme exists').toBeGreaterThan(0);
   const shots = join(info.outputPath(), 'themes');
   mkdirSync(shots, { recursive: true });
-  for (const who of KEY_SCREENS) {
+  for (const { who, paths } of KEY_SCREENS) {
     for (const theme of THEMES) {
       const tokens = JSON.parse(
         readFileSync(join(FRONTEND, theme, 'tokens.json'), 'utf8')
       ) as Tokens;
-      for (const path of who.paths) {
+      for (const path of paths) {
         const structures = new Map<string, string[]>();
         for (const scheme of SCHEMES) {
           const context = await browser.newContext({ locale: 'fr-FR', colorScheme: scheme });

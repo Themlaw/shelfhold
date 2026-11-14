@@ -12,6 +12,7 @@ leaves the network namespace (`Journey.egress()` is read at the end of each jour
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 from pathlib import Path
 
@@ -73,6 +74,10 @@ def playwright(j: Journey, grep: str, seconds: int) -> subprocess.CompletedProce
     )  # fmt: skip
     print(done.stdout)
     print(done.stderr)
+    summary = os.environ.get("GITHUB_STEP_SUMMARY")
+    if summary:  # the report of the spec (time, gestures) is read on the page of the run
+        with open(summary, "a", encoding="utf-8") as page:
+            page.write(f"### Playwright `{grep}`\n\n```\n{done.stdout[-6000:]}\n```\n")
     return done
 
 
@@ -91,9 +96,9 @@ def install_by_the_administrator(j: Journey) -> None:
 @pytest.mark.req("ENF-UX-001", "EF-UX-001")
 def test_first_book_under_10_minutes(journey_m3: Journey) -> None:
     """A new installation to the first Gutenberg book listed by Kavita, played in a browser: at
-    most 10 minutes and 6 actions. The journey of the screens is, today, a gap (see the spec): the
-    test passes while that gap is what it finds, and fails the day it is closed (Playwright
-    `test.fail`)."""
+    most 10 minutes and 6 actions. Today the screens stop at the folder screen (see the spec): the
+    test passes while that known gap is where the journey stops, fails on any other stop, and asserts
+    both budgets in full the day the journey gets through."""
     j = journey_m3
     install_by_the_administrator(j)
     done = playwright(j, "test_first_book_under_10_minutes", 720)
@@ -156,10 +161,10 @@ def test_parental_control_end_to_end(journey_m3: Journey) -> None:
     )
     assert j.visible_to("kid") == []
 
-    # classed 8+ and filed on the family shelf, the series is hers everywhere; Beta stays out
+    # classed for all audiences (0) and filed on the family shelf, the series is hers everywhere; Beta stays out
     rate = f"/api/v1/works/{alpha_work}/rating"
     rated, filed = j.api(
-        ("POST", rate, {"age": "8+"}),
+        ("POST", rate, {"age": "0"}),
         ("POST", f"/api/v1/editions/{alpha_edition}/shelf", {"shelf_id": shelf_id(j, "Famille")}),
     )  # fmt: skip
     assert rated[0] == 200 and filed == (200, {"filed": True, "reason": None}), (rated, filed)
@@ -305,6 +310,9 @@ def manga_install(j: Journey) -> tuple[str, str]:
     discovered(j)
     j.publish_upstream()
     assert j.follow_until(lambda: exported_chapter(j, "manga"), 300)
+    # Kavita's own scan of its folder, which the simulated server does when asked
+    j.fake("kavita", f"{KAVITA_URL}/_fake/index?folder=/library/manga", post=True)
+    assert wait_for(lambda: kavita_titles(j) == ["Series Alpha"], 60), kavita_titles(j)
     return destination_of(j, "Manga"), "Manga"
 
 
@@ -345,10 +353,20 @@ def test_m3_rename_warning_journey(journey_m3: Journey) -> None:
 
     [(accepted, job)] = j.api(("POST", apply_path, {"confirm_progress_loss": True}, etag))
     assert accepted == 202, job
-    assert wait_for(
-        lambda: all(" - Chapter " in f for f in j.library_files() if f.startswith("/library/manga/") and f.endswith(".cbz")),
-        240,
-    ), j.library_files()  # fmt: skip
+    renamed = wait_for(
+        lambda: all(
+            " - Chapter " in f
+            for f in j.library_files()
+            if f.startswith("/library/manga/") and f.endswith(".cbz")
+        ),
+        200,
+    )
+    assert renamed, (
+        j.library_files(),
+        j.sql(
+            "select kind, status, attempts, error_code, last_error from job where kind = 'export.apply'"
+        ),
+    )
     assert j.kavita()["violations"] == [] and j.egress() == []
 
 

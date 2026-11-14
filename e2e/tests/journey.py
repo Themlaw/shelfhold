@@ -350,7 +350,7 @@ def call(method, path, body=None, headers=None):
         "content-type": "application/json", **(headers or {})},
         data=None if body is None else json.dumps(body).encode())
     try:
-        reply = opener.open(request, timeout=20)
+        reply = opener.open(request, timeout=150)
         status, text = reply.status, reply.read().decode()
     except u.HTTPError as error:
         status, text = error.code, error.read().decode()

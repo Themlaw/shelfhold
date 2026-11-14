@@ -23,7 +23,9 @@ def _nightly() -> dict[str, Any]:
 
 
 def _steps(workflow: dict[str, Any]) -> list[dict[str, Any]]:
-    return [s for job in workflow["jobs"].values() for s in job["steps"]]
+    # a job that calls a reusable workflow has no steps of its own: the pins of `image.yml` are
+    # checked with that file (the call itself is checked below)
+    return [s for job in workflow["jobs"].values() for s in job.get("steps", [])]
 
 
 @pytest.mark.req("ENF-LEG-013")
@@ -51,6 +53,13 @@ def test_nightly_actions_are_pinned_by_sha_and_permissions_are_minimal() -> None
             assert SHA.match(step["uses"]), step["uses"]
             if step["uses"].startswith("actions/checkout"):
                 assert step["with"]["persist-credentials"] is False
+
+
+def test_nightly_runs_the_image_journeys_on_both_architectures() -> None:
+    call = _nightly()["jobs"]["image-journeys"]
+    assert call["uses"] == "./.github/workflows/image.yml"  # the file of this repository, not a ref
+    assert call["with"] == {"arm64": True}  # a night builds and tests amd64 and arm64
+    assert "cache-write" not in call["with"]  # and never refreshes the layer cache
 
 
 def test_nightly_runs_kavita_on_the_line_the_pinned_version_and_the_latest() -> None:
