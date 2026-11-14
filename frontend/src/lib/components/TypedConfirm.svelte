@@ -7,13 +7,18 @@
     phrase,
     onconfirm,
     oncancel,
+    busy = false,
     confirmLabel = t('typed_confirm.confirm')
   }: {
     phrase: string;
     onconfirm: (typed: string) => void;
     oncancel?: () => void;
+    busy?: boolean;
     confirmLabel?: string;
   } = $props();
+
+  // Several of these can be on one page: the label must point at its own field.
+  const fieldId = $props.id();
 
   let typed = $state('');
 
@@ -21,20 +26,21 @@
 
   function submit(event: SubmitEvent): void {
     event.preventDefault();
-    if (exact) onconfirm(typed);
+    if (exact && !busy) onconfirm(typed);
   }
 </script>
 
 <p>{phrase}</p>
 <form onsubmit={submit}>
-  <label for="typed-phrase">{t('typed_confirm.phrase_label')}</label>
+  <label for={fieldId}>{t('typed_confirm.phrase_label')}</label>
   <input
-    id="typed-phrase"
+    id={fieldId}
+    spellcheck="false"
     type="text"
     autocomplete="off"
     bind:value={typed}
   />
-  <button type="submit" disabled={!exact}>{confirmLabel}</button>
+  <button type="submit" disabled={!exact || busy}>{confirmLabel}</button>
   {#if oncancel}
     <button type="button" onclick={oncancel}>{t('typed_confirm.cancel')}</button>
   {/if}

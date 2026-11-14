@@ -4,7 +4,7 @@
   import TypedConfirm from './TypedConfirm.svelte';
   import { t } from '#lib/i18n/index.ts';
 
-  type Step = { kind: string; src: string; dst: string; export_item_id: string };
+  type Step = { kind: string; src: string; dst: string };
   type Warning = { code: string; readers: number; exact: boolean; series: string[] };
   type Blocked = { code: string; src: string };
   type Plan = {
@@ -24,7 +24,7 @@
 
   const progressWarning = $derived(plan.warnings.find((w) => w.code === 'progress_loss'));
   const hasProgressLoss = $derived(!!progressWarning && (progressWarning.readers ?? 0) > 0);
-  const phrase = t('plan.phrase');
+  const phrase = $derived(t('plan.phrase'));
 
   function warningText(w: Warning): string {
     const readers = w.readers;
@@ -39,7 +39,7 @@
   <p>{t('plan.nothing')}</p>
 {:else}
   <ul role="list" aria-label={t('plan.renames')}>
-    {#each plan.steps as step (step.export_item_id)}
+    {#each plan.steps as step (`${step.src}\u0000${step.dst}`)}
       <li>{step.src} → {step.dst}</li>
     {/each}
   </ul>

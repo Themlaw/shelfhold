@@ -1,5 +1,8 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  // The shelves screen (EF-EXP-002, EF-EXP-005, EF-EXP-030, EF-EXP-037): the naming template of
+  // each destination, the naming preview (folded unless the template was changed or the server
+  // says names are contested), the rename plan with its warning, and its application.
+  import { onDestroy, onMount } from 'svelte';
   import { client } from '#lib/api/client.gen.ts';
   import { t } from '#lib/i18n/index.ts';
   import PlanPreview from '#lib/components/PlanPreview.svelte';
@@ -7,31 +10,17 @@
   import { csrfToken } from '#lib/passkeys.ts';
   import { isForbidden, needsReauth, problemOf } from '#lib/triage.ts';
 
-  type Template = {
-    chapter: string;
-    volume: string;
-    special: string;
-    special_dir: string;
-    segment: string;
-  };
+  const FIELDS = ['chapter', 'volume', 'special', 'special_dir', 'segment'] as const;
+  type Template = Record<(typeof FIELDS)[number], string>;
   type Destination = {
     id: string;
     shelf_id: string;
     shelf_name: string;
-    target_id: string;
     root_subpath: string;
-    transport: string;
-    adopted: boolean;
     flagged_names: number;
     template: Template;
   };
-  type PreviewEntry = {
-    key: string;
-    rel_path: string;
-    template_ref: string;
-    status: string;
-    flags: string[];
-  };
+  type PreviewEntry = { key: string; rel_path: string; status: string };
   type NamingPreview = {
     verified: boolean;
     entries: PreviewEntry[];
@@ -40,36 +29,36 @@
   type RenamePlan = {
     plan_id: string | null;
     base_version: string;
-    steps: { kind: string; src: string; dst: string; export_item_id: string }[];
+    steps: { kind: string; src: string; dst: string }[];
     batches: number;
     blocked: { code: string; src: string }[];
     warnings: { code: string; readers: number; exact: boolean; series: string[] }[];
   };
-
-  let shelves = $state<{ id: string; name: string; max_age_rating: number | null }[]>([]);
-  let destinations = $state<Destination[]>([]);
-  let adminOnly = $state(false);
-  let failed = $state(false);
-  let message = $state('');
-  let failedKind = $state(false);
-
-  // per-destination state
+  type Shelf = { id: string; name: string };
   type DestState = {
     template: Template;
-    original: Template;
     preview: NamingPreview | null;
     previewOpen: boolean;
-    previewLoading: boolean;
+    asked: number;
     plan: RenamePlan | null;
     planEtag: string | null;
-    applying: boolean;
   };
-  let states = $state<Record<string, DestState>>({});
 
+  const DEBOUNCE_MS = 300;
+
+  let shelves = $state<Shelf[]>([]);
+  let destinations = $state<Destination[]>([]);
+  let adminOnly = $state(false);
+  let notice = $state<{ text: string; kind: 'status' | 'alert' } | null>(null);
+  let states = $state<Record<string, DestState>>({});
   let reauthMethods = $state<string[] | null>(null);
   let retry: (() => Promise<void>) | null = null;
+  const timers: Record<string, ReturnType<typeof setTimeout>> = {};
 
   const headers = () => ({ 'X-CSRF-Token': csrfToken() });
+  const say = (text: string, kind: 'status' | 'alert') => (notice = { text, kind });
+  const sameTemplate = (a: Template, b: Template) => FIELDS.every((field) => a[field] === b[field]);
+  const unplaced = $derived(shelves.filter((s) => !destinations.some((d) => d.shelf_id === s.id)));
 
   function statusLabel(status: string, verified: boolean): string {
     if (!verified) return t('shelves.naming.unverified');
@@ -79,146 +68,111 @@
   }
 
   async function load(): Promise<void> {
-    try {
-      const shelvesRes = await client.get({ url: '/api/v1/shelves', throwOnError: true });
-      shelves = (shelvesRes.data as { items: typeof shelves }).items ?? [];
-    } catch (error) {
-      if (isForbidden(error)) {
-        adminOnly = true;
-        message = t('screens.admin_only');
-        return;
-      }
-      failed = true;
-      message = t('shelves.error');
+    const shelvesAnswer = await client.get({ url: '/api/v1/shelves', throwOnError: false });
+    const destinationsAnswer = await client.get({ url: '/api/v1/destinations', throwOnError: false });
+    const error = shelvesAnswer.error ?? destinationsAnswer.error;
+    if (error) {
+      adminOnly = isForbidden(error);
+      say(adminOnly ? t('screens.admin_only') : t('shelves.error'), 'alert');
       return;
     }
-    try {
-      const destRes = await client.get({ url: '/api/v1/destinations', throwOnError: true });
-      destinations = (destRes.data as { items: Destination[] }).items ?? [];
-    } catch (error) {
-      if (isForbidden(error)) {
-        adminOnly = true;
-        message = t('screens.admin_only');
-        return;
-      }
-      failed = true;
-      message = t('shelves.error');
-      return;
-    }
+    shelves = (shelvesAnswer.data as { items: Shelf[] }).items;
+    destinations = (destinationsAnswer.data as { items: Destination[] }).items;
     const next: Record<string, DestState> = {};
     for (const d of destinations) {
       next[d.id] = {
         template: { ...d.template },
-        original: { ...d.template },
         preview: null,
         previewOpen: d.flagged_names > 0,
-        previewLoading: false,
+        asked: 0,
         plan: null,
-        planEtag: null,
-        applying: false
+        planEtag: null
       };
     }
     states = next;
-    // initial previews for contested names
-    for (const d of destinations) {
-      if (d.flagged_names > 0) {
-        void fetchPreview(d, states[d.id].template);
-      }
-    }
+    for (const d of destinations) if (d.flagged_names > 0) void fetchPreview(d);
   }
 
-  async function fetchPreview(dest: Destination, template: Template): Promise<void> {
+  /** The names of the template as it stands in the fields; a late answer never replaces a later one. */
+  async function fetchPreview(dest: Destination): Promise<void> {
     const st = states[dest.id];
     if (!st) return;
-    st.previewLoading = true;
-    try {
-      const { data, error } = await client.post({
-        url: '/api/v1/plans/naming-preview',
-        headers: headers(),
-        body: { shelf_destination_id: dest.id, template },
-        throwOnError: false
-      });
-      if (error) return;
-      st.preview = data as NamingPreview;
-      st.previewOpen = true;
-    } finally {
-      st.previewLoading = false;
+    const ticket = ++st.asked;
+    const { data, error } = await client.post({
+      url: '/api/v1/plans/naming-preview',
+      headers: headers(),
+      body: { shelf_destination_id: dest.id, template: $state.snapshot(st.template) },
+      throwOnError: false
+    });
+    if (ticket !== st.asked) return;
+    if (error) {
+      say(t('shelves.naming.error'), 'alert');
+      return;
     }
+    st.preview = data as NamingPreview;
+    st.previewOpen = true;
   }
 
-  function isChanged(dest: Destination): boolean {
-    const st = states[dest.id];
-    if (!st) return false;
-    return JSON.stringify(st.template) !== JSON.stringify(st.original);
-  }
-
-  function onFieldInput(dest: Destination, field: keyof Template, value: string): void {
+  function onField(dest: Destination, field: keyof Template, value: string): void {
     const st = states[dest.id];
     if (!st) return;
-    st.template = { ...st.template, [field]: value };
-    if (isChanged(dest)) {
-      void fetchPreview(dest, st.template);
-    }
+    st.template[field] = value;
+    st.plan = null; // a plan was computed for another template
+    clearTimeout(timers[dest.id]);
+    if (sameTemplate(st.template, dest.template)) return;
+    timers[dest.id] = setTimeout(() => void fetchPreview(dest), DEBOUNCE_MS);
+  }
+
+  function askAgain(error: unknown, replay: () => Promise<void>): boolean {
+    if (!needsReauth(error)) return false;
+    retry = replay;
+    reauthMethods = problemOf(error).reauth_methods ?? ['password'];
+    return true;
   }
 
   async function rename(dest: Destination): Promise<void> {
     const st = states[dest.id];
     if (!st) return;
-    failedKind = false;
-    message = '';
-    try {
-      const res = await client.post({
-        url: '/api/v1/plans/renames',
-        headers: headers(),
-        body: { shelf_destination_id: dest.id, template: st.template },
-        throwOnError: true
-      });
-      const data = res.data as RenamePlan;
-      const etag = (res.response as Response | undefined)?.headers?.get('etag') ?? null;
-      st.plan = data;
-      st.planEtag = etag;
-    } catch (error) {
-      if (needsReauth(error)) {
-        retry = () => rename(dest);
-        reauthMethods = problemOf(error).reauth_methods ?? ['password'];
-      } else {
-        failed = true;
-        message = t('shelves.refused');
-      }
+    notice = null;
+    const { data, error, response } = await client.post({
+      url: '/api/v1/plans/renames',
+      headers: headers(),
+      body: { shelf_destination_id: dest.id, template: $state.snapshot(st.template) },
+      throwOnError: false
+    });
+    if (error) {
+      if (!askAgain(error, () => rename(dest))) say(t('shelves.refused'), 'alert');
+      return;
     }
+    const plan = data as RenamePlan;
+    st.plan = plan;
+    st.planEtag = response?.headers.get('etag') ?? `"${plan.base_version}"`; // the version the plan was computed on
   }
 
   async function applyPlan(dest: Destination, confirmProgressLoss: boolean): Promise<void> {
     const st = states[dest.id];
-    if (!st?.plan) return;
-    st.applying = true;
-    try {
-      await client.post({
-        url: '/api/v1/plans/{plan_id}/apply',
-        path: { plan_id: st.plan.plan_id },
-        headers: { ...headers(), 'If-Match': st.planEtag ?? '' },
-        body: { confirm_progress_loss: confirmProgressLoss },
-        throwOnError: true
-      });
-      message = t('shelves.apply_started');
-      failed = false;
-    } catch (error) {
-      if (needsReauth(error)) {
-        retry = () => applyPlan(dest, confirmProgressLoss);
-        reauthMethods = problemOf(error).reauth_methods ?? ['password'];
-      } else if (problemOf(error).code === 'plan.stale' || problemOf(error).type?.endsWith('plan.stale')) {
-        failed = true;
-        message = t('shelves.plan_stale');
-      } else {
-        failed = true;
-        message = t('shelves.refused');
-      }
-    } finally {
-      st.applying = false;
+    const planId = st?.plan?.plan_id;
+    if (!st || !planId) return;
+    const { error } = await client.post({
+      url: '/api/v1/plans/{plan_id}/apply',
+      path: { plan_id: planId },
+      headers: { ...headers(), 'If-Match': st.planEtag ?? '' },
+      body: { confirm_progress_loss: confirmProgressLoss },
+      throwOnError: false
+    });
+    if (error) {
+      if (askAgain(error, () => applyPlan(dest, confirmProgressLoss))) return;
+      const stale = problemOf(error).type?.endsWith('plan.stale') || problemOf(error).code === 'plan.stale';
+      if (stale) st.plan = null; // recomputed on « Renommer »
+      say(stale ? t('shelves.plan_stale') : t('shelves.refused'), 'alert');
+      return;
     }
+    st.plan = null;
+    say(t('shelves.apply_started'), 'status');
   }
 
   onMount(load);
+  onDestroy(() => Object.values(timers).forEach((timer) => clearTimeout(timer)));
 </script>
 
 <svelte:head>
@@ -228,9 +182,7 @@
 <main>
   <h1>{t('shelves.title')}</h1>
   {#if adminOnly}
-    <p role="alert">{message}</p>
-  {:else if failed && !adminOnly && message && destinations.length === 0}
-    <p role="alert">{message}</p>
+    <p role="alert">{notice?.text}</p>
   {:else}
     {#if destinations.length === 0}
       <p>{t('shelves.empty')}</p>
@@ -240,62 +192,67 @@
         {@const st = states[dest.id]}
         {#if st}
           <li>
-            <span>{dest.shelf_name}</span>
-            <span>{dest.root_subpath}</span>
-            {#each ['chapter', 'volume', 'special', 'special_dir', 'segment'] as field (field)}
-              <label>
-                {t(`shelves.field.${field}`)}
-                <input
-                  type="text"
-                  value={st.template[field as keyof Template]}
-                  oninput={(e) => onFieldInput(dest, field as keyof Template, (e.currentTarget as HTMLInputElement).value)}
-                />
-              </label>
-            {/each}
-            <details open={st.previewOpen}>
+            <fieldset>
+              <legend>{dest.shelf_name} <span>{dest.root_subpath}</span></legend>
+              {#each FIELDS as field (field)}
+                <label>
+                  {t(`shelves.field.${field}`)}
+                  <input
+                    type="text"
+                    value={st.template[field]}
+                    oninput={(event) => onField(dest, field, event.currentTarget.value)}
+                  />
+                </label>
+              {/each}
+            </fieldset>
+            <details open={st.previewOpen} ontoggle={(event) => (st.previewOpen = event.currentTarget.open)}>
               <summary>{t('shelves.naming.title')}</summary>
               {#if st.preview}
+                {@const verified = st.preview.verified}
                 <ul>
                   {#each st.preview.entries as entry (entry.key)}
-                    <li>
-                      {entry.rel_path}
-                      {statusLabel(entry.status, st.preview.verified)}
-                    </li>
+                    <li><span>{entry.rel_path}</span> <span>{statusLabel(entry.status, verified)}</span></li>
                   {/each}
                 </ul>
-                {#each st.preview.collisions as col}
-                  <p>{col.names.join(', ')}</p>
+                {#each st.preview.collisions as collision (collision.names.join('\u0000'))}
+                  <p>{collision.names.join(', ')}</p>
                 {/each}
               {/if}
             </details>
-            <button type="button" disabled={!isChanged(dest)} onclick={() => rename(dest)}>
+            <button type="button" disabled={sameTemplate(st.template, dest.template)} onclick={() => rename(dest)}>
               {t('shelves.rename')}
             </button>
             {#if st.plan}
               <PlanPreview
                 plan={st.plan}
-                onapply={(r) => applyPlan(dest, r.confirmProgressLoss)}
-                oncancel={() => { st.plan = null; }}
+                onapply={(result) => applyPlan(dest, result.confirmProgressLoss)}
+                oncancel={() => (st.plan = null)}
               />
             {/if}
           </li>
         {/if}
       {/each}
     </ul>
-  {/if}
-  {#if message && !adminOnly}
-    <p role={failed ? 'alert' : 'status'}>{message}</p>
+    {#each unplaced as shelf (shelf.id)}
+      <p>{t('shelves.no_destination', { name: shelf.name })}</p>
+    {/each}
+    {#if notice}
+      <p role={notice.kind}>{notice.text}</p>
+    {/if}
   {/if}
   {#if reauthMethods}
     <ReauthPrompt
       methods={reauthMethods}
       ondone={async () => {
         reauthMethods = null;
-        const r = retry;
+        const replay = retry;
         retry = null;
-        await r?.();
+        await replay?.();
       }}
-      oncancel={() => { reauthMethods = null; retry = null; }}
+      oncancel={() => {
+        reauthMethods = null;
+        retry = null;
+      }}
     />
   {/if}
 </main>
@@ -305,4 +262,5 @@
   ul { list-style: none; padding: 0; }
   li { margin-bottom: 2rem; }
   details { margin: 0.5rem 0; }
+  label { display: block; margin: 0.25rem 0; }
 </style>

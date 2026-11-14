@@ -44,15 +44,15 @@ class RemovalIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     mode: Literal["keep_files", "delete_files"]
-    typed: str = Field(min_length=1)
+    typed: str = Field(min_length=1, repr=False)  # names a folder: never in a trace
     give_up: bool = False
 
 
 class DetachIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    typed: str = Field(min_length=1)
-    credential: str | None = None
+    typed: str = Field(min_length=1, repr=False)  # names a folder: never in a trace
+    credential: str | None = Field(default=None, repr=False)  # the Kavita password
     discard_hidden_data: bool = False
     discard_tombstone_journal: bool = False
     key_gone: bool = False
@@ -72,7 +72,7 @@ def build_destinations_router(get_ops: Callable[[], OpsServices]) -> APIRouter:
     def removal_preview(
         destination_id: str,
         body: RemovalPreviewIn,
-        _principal: Principal = Depends(_REMOVE_ALL),  # noqa: B008  # noqa: B008
+        _principal: Principal = Depends(_REMOVE_ALL),  # noqa: B008
     ) -> dict[str, Any]:
         with refusals():
             return get_ops().teardown.remove_preview(destination_id=destination_id, mode=body.mode)
@@ -95,7 +95,7 @@ def build_destinations_router(get_ops: Callable[[], OpsServices]) -> APIRouter:
     @router.post("/targets/{target_id}/detach-preview")
     def detach_preview(
         target_id: str,
-        _principal: Principal = Depends(_DETACH_FULL),  # noqa: B008  # noqa: B008
+        _principal: Principal = Depends(_DETACH_FULL),  # noqa: B008
     ) -> dict[str, Any]:
         with refusals():
             return get_ops().teardown.full_preview(target_id=target_id)
