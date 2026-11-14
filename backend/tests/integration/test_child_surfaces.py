@@ -207,6 +207,9 @@ CLOSED = (
     "POST /api/v1/roots/{root}/takeover",
     "POST /api/v1/secrets/import",
     "POST /api/v1/series/{export_series_id}/resume",
+    "GET /api/v1/trash",  # M3 L48: the bin is the admin's
+    "GET /api/v1/devices/connect",  # M3 L48: Kavita's entry points, the admin's
+    "POST /api/v1/editions/{edition_id}/rating",  # M3 L48: one Edition alone, reserved `rate`
     "GET /api/v1/setup/state",  # M3 L39: the first-run wizard is the admin's, on a fresh session
     "POST /api/v1/setup/adoption/confirm",
     "POST /api/v1/setup/keyring-export",  # M3 L40: the keyring leaves only as an age file
