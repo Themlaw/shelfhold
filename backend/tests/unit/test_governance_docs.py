@@ -175,3 +175,18 @@ def test_workflow_actions_are_pinned_by_sha() -> None:
             if not re.search(r"@[0-9a-f]{40}$", ref):
                 unpinned.append(f"{wf.name}: {ref}")
     assert not unpinned, unpinned
+
+
+def test_adr_index_lists_every_adr() -> None:
+    """Every ADR file has one row in the register, and every row points at an existing file."""
+    adr_dir = ROOT / "docs" / "adr"
+    files = {p.name for p in adr_dir.glob("[0-9][0-9][0-9][0-9]-*.md")}
+    rows = re.findall(r"^\| \[(\d{4})\]\(([^)]+\.md)\) \|", _read("docs/adr/README.md"), re.M)
+    linked = [name for _, name in rows]
+    assert sorted(linked) == sorted(set(linked)), "an ADR is listed twice"
+    assert set(linked) == files
+    for number, name in rows:
+        assert name.startswith(f"{number}-")
+        text = (adr_dir / name).read_text(encoding="utf-8")
+        assert text.startswith("---\nstatus:"), name
+        assert f"# ADR-{number}" in text, name

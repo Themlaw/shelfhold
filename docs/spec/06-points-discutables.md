@@ -627,7 +627,7 @@ Ce que l'utilisateur fait chez lui de son côté ne regarde pas le projet. Le pr
 | Komga en destination secondaire sans écriture, simple lecture de l'arbre Kavita | Rien à écrire pour Komga | Pas de scan ciblé ni de préservation de progression pour Komga |
 
 **Recommandation.** Première option, à écrire comme ADR **avant M4** ; d'ici là, refus des recouvrements.
-**Statut.** Ouvert : ADR avant **M4** (H3).
+**Statut.** Tranché (H3, D6 de M4, 2026-11-15) : première option, ADR-0052 « Arbre et indexeurs » (statut proposée, relecture adverse avant acceptation). Le refus `target.tree_overlap` reste pour tout recouvrement qui n'est pas une identité d'arbre ; un dossier identique, de la même Étagère, se rattache comme indexeur si un rendu commun existe (`target.tree_render_conflict` sinon). Contrat de destination v1.4 : ajouts compatibles N-1 (ADR-0011 et ADR-0024 amendées) ; membres propres à Kavita dépréciés jusqu'au SDK 2.0 (M6).
 
 ## Q49 — Provenance des fichiers exportés : annexe dans l'archive ou miroir à côté
 
@@ -1021,7 +1021,7 @@ Chaque risque résiduel accepté a un **responsable** et un jalon de revue (GAP-
 | Miroir de provenance effacé ou fichier déplacé à la main hors de sa racine (passe 8) | Rien n'est écrit dans les fichiers (Q49) | **Propriétaire** | M1a | Appariement par hash et chemin, état `adopted` ; `shelfhold meta rebuild` régénère le miroir depuis la base (EF-EXP-063, ADR-0046) |
 | Marqueur de saison non reconnu par le normaliseur (passe 8) | Les formes de saison varient d'une source à l'autre | **Propriétaire** (trancher les `numbering_conflict`) ; **mainteneur** (enrichir le normaliseur) | M1a | Jamais de révision ni de remplacement : suggestion `numbering_conflict`, pas d'export avant décision (EF-BIB-050) |
 | Clé maîtresse gardée dans `/data`, donc dans les copies de l'hôte (passe 8) | Défaut le plus simple au premier démarrage | **Propriétaire** | M1a | `SHELFHOLD_SECRET_KEY_FILE` hors de `/data` recommandé, avertissement dans `shelfhold status` (ENF-SEC-005) |
-| Kavita et Komga sur le même arbre refusés jusqu'à l'ADR (passe 8) | Le contrat ne sait pas encore attacher deux indexeurs à un arbre | **Mainteneur** | Avant M4 | Refus `target.tree_overlap` explicite, ADR Q48 avant M4 (EF-EXP-058) |
+| Rendu commun à Kavita et Komga qui diverge à l'usage (ADR-0052, ex-refus de la passe 8) | Kavita regroupe par nom, Komga par dossier, chacun à sa version | **Mainteneur** | M4 | Normaliseurs versionnés, `known_bad_versions`, nightly sur les deux serveurs contre le même arbre, repli par deux arbres (EF-EXP-058) |
 | Contournement du neutraliseur par une construction non prévue (passe 9) | Aucune liste blanche n'est prouvée complète | **Mainteneur** | M2, puis à chaque avis | Liste blanche nh3, analyse par `safe_parse_xml()`, corpus d'EPUB piégés enrichi, version du neutraliseur dans chaque empreinte pour régénérer (EF-BIB-051, ADR-0047) |
 | Copies hors de portée de `purge --now` : sauvegardes externes de l'hôte, caches et signets de Kavita, copies faites à la main (passe 9) | Shelfhold ne gère pas ces copies | **Propriétaire** | M1a | Rapport de purge qui les liste, documentation admin (EF-BIB-052, ADR-0048) |
 | EPUB `untrusted` en mode passage **sans `/store` configuré** : seul le dérivé neutralisé survit (passe 9 ; restreint en passe 10, K9) | Depuis la passe 10, l'original est gardé dans `/store` même en mode passage ; le risque ne demeure que sans `/store` | **Propriétaire** (configurer `/store` pour les sources `untrusted`) | M2 | Avertissement à la liaison, correction depuis le dérivé avec `derived_chain`, « original perdu, dérivé présent » (EF-BIB-038, EF-BIB-051) |
@@ -1092,7 +1092,7 @@ Chaque risque résiduel accepté a un **responsable** et un jalon de revue (GAP-
 | Q45 | Contenu de `/store` | Toujours l'original ; extraction vérifiée à défaut de source | Tranché (G1) |
 | Q46 | Roman web traduit par des équipes | Discriminant selon `translation_nature` : communautaire → Équipe | Tranché (G6) |
 | Q47 | Positions hors ligne | `client_ts` borné, historique, conflit proposé | Tranché sur le principe (G10) ; seuil M5 |
-| Q48 | Kavita et Komga sur le même arbre | Séparer arbre et indexeurs ; refus des recouvrements d'ici là | Ouvert : ADR avant M4 |
+| Q48 | Kavita et Komga sur le même arbre | Séparer arbre et indexeurs (ADR-0052) ; recouvrements sans identité refusés | Tranché (H3, D6 de M4) ; ADR proposée |
 | Q49 | Provenance des fichiers exportés | Miroir par racine physique, rien dans les fichiers (ADR-0046) | Tranché (H1) |
 | Q50 | Nommage d'un segment de numérotation | Dossier ou track, tranché par golden `plugin/parse` ; `numbering_conflict` d'ici là | Ouvert : M1a |
 | Q51 | Boîte de M1a (passe 8) | 200 h conservées, 2 exigences et volets de schéma absorbés, aucun nouveau coupable | Ouvert, M0 |

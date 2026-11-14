@@ -1,7 +1,7 @@
 ---
 status: accepté, remplacé en partie par ADR-0022
 date: 2026-11-02
-amended: 2026-11-02 (passe 1) ; 2026-11-03 (passe 6) ; 2026-11-03 (passe 7) ; 2026-11-03 (passe 8) ; 2026-11-03 (passe 10) ; 2026-11-03 (passe 11) ; 2026-11-03 (passe 12)
+amended: 2026-11-02 (passe 1) ; 2026-11-03 (passe 6) ; 2026-11-03 (passe 7) ; 2026-11-03 (passe 8) ; 2026-11-03 (passe 10) ; 2026-11-03 (passe 11) ; 2026-11-03 (passe 12) ; 2026-11-15 (contrat v1.4, ADR-0052)
 decision-makers: mainteneur
 ---
 # ADR-0011 — Contrat de destination d'export, Étagères et Destinations (montage : voir ADR-0022)
@@ -135,3 +135,15 @@ N6 (AB1, AB2, AB3, AB5).
 - Tests : `test_apicall_content_body_obeys_fsop_reference_and_egress_rules`, `test_kit_refuses_push_transport_before_m4`.
 
 Source : `deliverables/review/chasseur-trous-passe13.md`, `deliverables/review/explorateur-passe13.md`, `deliverables/review/ARBITRAGES-passe13.md` (passe 13)
+
+## Amendement contrat v1.4 (M4 L01, ADR-0052)
+Q48 est tranchée (option 1) : **arbre** et **indexeur** se séparent. Les ajouts sont compatibles N-1 (ADR-0024, SDK 1.4).
+- Le refus de la passe 8 est **précisé**, non supprimé : `target.tree_overlap` reste le code de tout recouvrement qui n'est pas une identité (dossier contenu dans un arbre ou qui en contient un) et de l'identité d'arbre demandée sans rattachement explicite. Un dossier **identique** à un arbre existant, de la **même Étagère**, peut être rattaché comme indexeur secondaire (champ facultatif `tree_id` à la création de la liaison), si un rendu commun existe ; sinon refus `target.tree_render_conflict` avec la liste des raisons.
+- Le **rendu** est calculé **par arbre**, plus par liaison (précise le dernier point de la passe 7) ; `file_hash` est identique pour tous les indexeurs d'un arbre. Les lignes d'`export_record` restent clés par `(shelf_destination_id, export_item_id)` ; l'état du fichier fait autorité sur la liaison primaire, les secondaires ne portent que leur état d'indexeur.
+- `series_grouping ∈ {name, folder}` et `name_normalizer` sont déclarés **par indexeur** ; le rendu commun (`{Série}/<fichier>`, nom = dossier, unicité sous tous les normaliseurs) est celui qui satisfait tous les indexeurs. `series.json` n'est jamais écrit dans un arbre dont un indexeur est Kavita.
+- Capacités ajoutées : `indexes_tree: bool = False`, `forbidden_sidecars: set[str] = set()`.
+- Les membres propres à Kavita restent dépréciés jusqu'au SDK 2.0 (M6) ; aucun n'est retiré en M4 (ADR-0024).
+- Inchangés : sentinelle, bail et corbeille par racine physique (ADR-0022), miroir de provenance par racine (ADR-0046, format 1.2), vérification du rangement et détection d'un autre écrivain.
+- Tests : voir ADR-0052 (`test_second_indexer_attaches_to_existing_tree`, `test_overlap_without_identity_still_refused`, `test_common_render_satisfies_name_and_folder_grouping`, `test_series_json_never_written_in_tree_with_kavita`).
+
+Source : `docs/adr/0052-arbre-et-indexeurs.md`, `docs/spec/06-points-discutables.md` (Q48)

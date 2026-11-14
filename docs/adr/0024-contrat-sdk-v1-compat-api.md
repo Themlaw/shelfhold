@@ -1,7 +1,7 @@
 ---
 status: accepté (amende ADR-0007)
 date: 2026-11-02
-amended: 2026-11-03 (passe 6) ; 2026-11-03 (passe 7) ; 2026-11-03 (passe 8) ; 2026-11-03 (passe 10) ; 2026-11-03 (passe 11) ; 2026-11-03 (passe 12)
+amended: 2026-11-03 (passe 6) ; 2026-11-03 (passe 7) ; 2026-11-03 (passe 8) ; 2026-11-03 (passe 10) ; 2026-11-03 (passe 11) ; 2026-11-03 (passe 12) ; 2026-11-15 (SDK 1.4, ADR-0052)
 decision-makers: mainteneur
 ---
 # ADR-0024 — Contrat de données du SDK v1 et compatibilité `api` N-1
@@ -161,3 +161,15 @@ Ajouts compatibles (un plugin écrit pour 1.2 passe le kit 1.3) :
 - Les événements d'un plugin vivent sous `plugin.<clé>.<nom>`, la clé étant celle sous laquelle l'hôte a chargé le plugin.
 - `PluginManifest.waiting_states` : chaque état d'attente propre déclare une sortie (`retry`, `recheck`, `reconfigure`) ; le kit le vérifie (`waiting_states_declare_exit`).
 - D10 : `Source.fetch_range` devient facultatif (défaut `NotImplementedError`) ; le kit ne l'appelle plus, l'adaptateur lncrawl ne l'implémente plus (le ticket reste le chemin de production).
+
+## Amendement SDK 1.4 (M4 L01, ADR-0052)
+Contrat de destination v1.4 : **ajouts compatibles N-1**, `API_VERSION` reste 1. Un plugin écrit pour 1.3 (ou 1.2) passe le kit 1.4 sans changement ; les champs ajoutés ont un défaut sûr.
+- `TargetCapabilities.indexes_tree: bool = False` : la destination accepte d'être rattachée en indexeur secondaire d'un arbre qu'elle n'a pas créé, sans y écrire (ADR-0052). `False` = elle reste propriétaire de son arbre, comme en 1.3.
+- `TargetCapabilities.forbidden_sidecars: set[str] = set()` : sidecars dont la présence nuit à la destination ; le rendu d'un arbre n'écrit que les sidecars acceptés par tous ses indexeurs. Kavita first-party : `{"series.json"}`.
+- `series_grouping` (`name` par défaut, `folder`) et `name_normalizer` (versionné) existent depuis la passe 8 ; ils deviennent **obligatoirement renseignés** par toute destination qui déclare `indexes_tree = True`, le kit le vérifie (`test_kit_indexes_tree_requires_grouping_and_normalizer`).
+- Reprise des ajouts déjà décidés pour 1.4 : `ApiCall.body` (passe 13), `update_metadata(fields, lock)` facultatif (passe 12), `readback`, `can_purge` (passe 10), `push` ouvert au kit une fois qu'une destination first-party le déclare (L03 et L05 de M4).
+- Le kit vérifie que `indexes_tree = True` n'est pas combiné à un transport sans arbre (`dropbox`, `push`, `pull`) et qu'un indexeur ne produit aucun `FsOp` d'écriture dans un arbre dont il n'est pas propriétaire (`test_kit_indexer_emits_no_fsop_write`).
+- **Dépréciations** : les membres propres à Kavita (`parse_name_call`, `ensure_library_call`, `resolve_remote_calls`, `event_subscription`, `progress_calls`) restent `@deprecated` depuis 1.1 et **présents dans toute la série 1.x**. Aucun n'est retiré en M4 ; le retrait n'a lieu qu'au **SDK 2.0**, publié en M6 avec le kit (D7 de M4, D9 de M1b). Leur message de dépréciation cesse d'annoncer un « contrat v2 (M4) » : il renvoie au SDK 2.0. Le second adaptateur (Komga) sert à concevoir leurs remplaçants génériques, ajoutés à côté en 1.4 ou 1.5 sans toucher aux anciens.
+- Tests : `test_kit_indexes_tree_defaults_false`, `test_kit_accepts_plugin_written_for_sdk_1_3`, `test_deprecated_kavita_members_still_resolve`.
+
+Source : `docs/adr/0052-arbre-et-indexeurs.md`, `docs/spec/06-points-discutables.md` (Q48).
