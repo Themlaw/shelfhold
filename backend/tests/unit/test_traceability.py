@@ -319,3 +319,24 @@ def test_partial_requirement_is_labelled_partielle_with_its_milestone(tmp_path: 
     text = (root / "o.md").read_text(encoding="utf-8")
     assert "PARTIELLE (complétée en M1b)" in text
     assert "entretiens reportés" in text
+
+
+def test_review_l57_poc_a_journey_that_stops_at_its_known_gap_is_not_coverage() -> None:
+    """Contradicteur de la #257. `test_first_book_under_10_minutes` (spec and pytest wrapper) is
+    green while it stops at `KNOWN_GAP`, and carries `req: ENF-UX-001`: the matrix counts it, and
+    ENF-UX-001 goes from "NON COUVERTE" (main, 103/104) to "couverte" (104/104) while the xfail
+    strict of `test_m3_open_gaps.py` still says the requirement is not delivered."""
+    repo = TOOL.parents[1]
+    spec = repo / "e2e" / "tests" / "test_m3_journey.spec.ts"
+    tests = tr.collect_python(repo) + tr.collect_typescript(repo)
+    gaps = "backend/tests/unit/test_m3_open_gaps.py"
+    assert any(
+        t.path == gaps and "ENF-UX-001" in t.reqs and "xfail" in t.conditional for t in tests
+    ), "the open gap of ENF-UX-001 is gone"
+    if "KNOWN_GAP" not in spec.read_text(encoding="utf-8"):
+        return  # the journey gets through: the gap closes, the xfail strict flips with it
+    claiming = sorted(t.label for t in tests if "ENF-UX-001" in t.reqs and not t.conditional)
+    assert claiming == [], (
+        "counted as covering ENF-UX-001 while the journey stops at its known gap: "
+        + ", ".join(claiming)
+    )
