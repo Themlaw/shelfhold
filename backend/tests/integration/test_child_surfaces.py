@@ -233,6 +233,7 @@ CLOSED = (
     "PATCH /api/v1/sources/{key}/settings",
     "GET /api/v1/sources/{source_key}/filters",
     "GET /api/v1/sources/{source_key}/search",
+    "GET /api/v1/sources/{source_key}/series/{remote_id}/estimate",  # M3 L42: the Add sheet's figures
     "GET /api/v1/stats",
     "GET /api/v1/status",
     "POST /api/v1/store/reinit",
