@@ -30,7 +30,8 @@ const BUDGET_S = 600;
 const BUDGET_ACTIONS = 6;
 const ADMIN = { username: 'admin', password: 'synthetic-admin-password-1' };
 const KID = { username: 'kid8', password: 'synthetic-kid-password-1' };
-const KAVITA_WINDOW = process.env.E2E_KAVITA_WINDOW ?? 'http://127.0.0.1:15000';
+// the simulated Kavita listens on the loopback of the stack: its window is read from inside
+const KAVITA_WINDOW = 'http://127.0.0.1:5000';
 const KAVITA_USER = 'shelfhold';
 const KAVITA_PASSWORD = 'synthetic-kavita-password';
 const FIRST_BOOK = { id: '1001', title: 'A Study in Test' };
@@ -88,17 +89,24 @@ function shelfhold(args: string[]): string {
   return compose(['exec', '-T', 'shelfhold', 'shelfhold', ...args]);
 }
 
+const FAKE_GET =
+  'import urllib.request as u,sys; sys.stdout.write(u.urlopen(sys.argv[1], timeout=5).read().decode())';
+const FAKE_POST =
+  "import urllib.request as u,sys; u.urlopen(u.Request(sys.argv[1], data=b'{}', method='POST'), timeout=5)";
+
 async function kavitaSeries(): Promise<string[]> {
-  const answer = await fetch(`${KAVITA_WINDOW}/_fake/state`);
-  const state = (await answer.json()) as { series: { name: string }[] };
+  const state = JSON.parse(
+    compose(['exec', '-T', 'fake-kavita', 'python', '-c', FAKE_GET, `${KAVITA_WINDOW}/_fake/state`])
+  ) as { series: { name: string }[] };
   return state.series.map((s) => s.name);
 }
 
 /** Kavita's own periodic scan of its folders, which the simulated server does when asked. */
 async function kavitaScans(folder: string): Promise<void> {
-  await fetch(`${KAVITA_WINDOW}/_fake/index?folder=${encodeURIComponent(folder)}`, {
-    method: 'POST'
-  });
+  compose([
+    'exec', '-T', 'fake-kavita', 'python', '-c', FAKE_POST,
+    `${KAVITA_WINDOW}/_fake/index?folder=${encodeURIComponent(folder)}`
+  ]);
 }
 
 /** The scheduler's turn, asked by hand (the journeys of M1 and M2 do the same): export, then scan. */
@@ -284,15 +292,19 @@ test('test_key_screens_snapshot_per_theme', async ({ browser }, info) => {
         const structures = new Map<string, string[]>();
         for (const scheme of SCHEMES) {
           const context = await browser.newContext({ locale: 'fr-FR', colorScheme: scheme });
-          await context.addInitScript(
-            ([key, value]) => localStorage.setItem(key, value),
-            ['shelfhold.appearance', JSON.stringify({ theme, colorScheme: scheme })]
-          );
           const page = await context.newPage();
           const here = `${who.username} ${theme}/${scheme} ${path}`;
           const errors: string[] = [];
           page.on('pageerror', (e) => errors.push(e.message));
           await signInByApi(page, who);
+          // the choice is the person's own, kept by the server (it overrides what the browser
+          // remembers): theme and scheme by the preference route, as the appearance screen sends it
+          const csrf = (await context.cookies()).find((c) => c.name.endsWith('csrf'))?.value ?? '';
+          const chosen = await page.request.patch('/api/v1/me/preferences', {
+            data: { theme, color_scheme: scheme },
+            headers: { 'X-CSRF-Token': csrf }
+          });
+          expect(chosen.status(), `${here}: preferences`).toBe(200);
           await page.goto(path);
           await expect(page.locator('main').first(), here).toBeVisible();
 

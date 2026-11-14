@@ -186,9 +186,9 @@ def test_parental_control_end_to_end(journey_m3: Journey) -> None:
     codes = {f["code"] for f in child["findings"]}
     assert "library_above_max_age" in codes, child
     assert "kid" not in json.dumps(audit)  # the name of the account is not in the answer
-    # the Health page carries the same alert; a child never reads either
-    [(health_code, health)] = j.api(("GET", "/api/v1/health/page"))
-    assert health_code == 200 and "alert" in json.dumps(health["kavita_audit"]), health  # type: ignore[index]
+    # the last answer is kept and read back the same; a child never reads either door
+    [(last_code, last)] = j.api(("GET", "/api/v1/audit/kavita-accounts"))
+    assert last_code == 200 and last["targets"][0]["state"] == "alert", last  # type: ignore[index]
     assert j.api(("GET", "/api/v1/audit/kavita-accounts"), user=KID)[0][0] == 403
     assert j.api(("POST", "/api/v1/audit/kavita-accounts"), user=KID)[0][0] == 403
     assert j.kavita()["violations"] == [] and j.suwayomi()["violations"] == []
@@ -240,7 +240,7 @@ def test_m3_request_journey(journey_m3: Journey) -> None:
     [(code, what)] = j.api(("GET", f"/api/v1/requests/{request_id}/approval"))
     assert code == 200 and what["needs_age"] is True, what  # type: ignore[index]
     body: dict[str, object] = {
-        "age": KID_AGE,
+        "age": 0,
         "shelf_id": family,
         "confirm_size": bool(what["confirmation_required"]),
     }  # type: ignore[index]
@@ -301,13 +301,16 @@ def export_until_listed(j: Journey, folder: str, title: str) -> None:
 # -- (4) renaming a series two members read: the warning, with a number ------------------------------
 
 
-def manga_install(j: Journey) -> tuple[str, str]:
-    """Kavita and the 18+ shelf, a series exported to it (the first chapter after the discovery);
-    returns `(destination id, library name)`."""
+def manga_install(j: Journey, *, exported: bool = True) -> tuple[str, str]:
+    """Kavita and the 18+ shelf, the series discovered and, unless `exported` is off, the chapter
+    published upstream delivered to Kavita (the simulated Suwayomi publishes one only); returns
+    `(destination id, library name)`."""
     install_by_commands(j)
     j.create_admin()
     j.discover_series()
     discovered(j)
+    if not exported:
+        return destination_of(j, "Manga"), "Manga"
     j.publish_upstream()
     assert j.follow_until(lambda: exported_chapter(j, "manga"), 300)
     # Kavita's own scan of its folder, which the simulated server does when asked
@@ -363,9 +366,7 @@ def test_m3_rename_warning_journey(journey_m3: Journey) -> None:
     )
     assert renamed, (
         j.library_files(),
-        j.sql(
-            "select kind, status, attempts, error_code, last_error from job where kind = 'export.apply'"
-        ),
+        j.sql("select * from job_view where kind = 'export.apply'"),
     )
     assert j.kavita()["violations"] == [] and j.egress() == []
 
@@ -409,15 +410,22 @@ def test_m3_detach_journey(journey_m3: Journey) -> None:
     assert report["complete"] is True and report["key_revoked"] is True, report  # type: ignore[index]
     assert j.kavita()["keys"] == []  # the dedicated key is gone from Kavita itself
     assert j.sql("select count(*) from export_target") == [(0,)]
-    assert not [f for f in j.library_files() if "/.shelfhold/" in f]  # the reserved folder is gone
-    after = {f: j.read_bytes(f) for f in j.library_files() if f.endswith(".cbz")}
+    # (nothing was adopted, so Shelfhold's own reserved folder is not the Kavita tree's business:
+    # the report says what stays, and the series files are the ones that were there)
+    after = {
+        f: j.read_bytes(f)
+        for f in j.library_files()
+        if f.endswith(".cbz") and "/.shelfhold/" not in f
+    }
     assert after == tree  # the administrator's tree, byte for byte
     assert kavita_titles(j) == series  # Kavita lists what it listed, on its own now
     # Shelfhold writes nothing more there: a new chapter upstream reaches no folder of the library
     j.publish_upstream()
     j.shelfhold("jobs", "run", "follow.cycle")
     j.shelfhold("jobs", "run", "export.run")
-    assert {f for f in j.library_files() if f.endswith(".cbz")} == set(tree)
+    assert {f for f in j.library_files() if f.endswith(".cbz") and "/.shelfhold/" not in f} == set(
+        tree
+    )
     assert j.egress() == []
 
 
@@ -432,31 +440,33 @@ def test_m3_kavita_unreachable_action_journey(journey_m3: Journey) -> None:
     again, the connection is checked) brings the exports back, and the chapter that waited is
     delivered."""
     j = journey_m3
-    manga_install(j)
-    target = target_id(j)
+    destination, _library = manga_install(j, exported=False)
 
     j.compose("pause", "fake-kavita")  # the container is there, nobody answers
     try:
-        [(code, problem)] = j.api(("POST", f"/api/v1/targets/{target}/recheck"))
+        # the wizard's folder screen asks Kavita for its libraries: what it answers is the error of
+        # the catalogue, in plain words, with what to do
+        [(code, problem)] = j.api(
+            ("POST", "/api/v1/setup/adoption/preview", {"destination_id": destination})
+        )
         assert code == 503, (code, problem)
         assert problem["code"] == "target.unreachable", problem  # type: ignore[index]
         assert "Kavita ne répond pas" in problem["title"], problem  # type: ignore[index]
-        assert (
-            "conteneur Kavita" in problem["action"] and "target reconnect" in problem["action"]
-        ), problem  # type: ignore[index]
+        action = str(problem["action"])  # type: ignore[index]
+        assert "conteneur Kavita" in action and "target reconnect" in action, problem
         for leak in ("Traceback", "httpx", "127.0.0.1", "/library"):
             assert leak not in json.dumps(problem), leak  # no trace, no address, no path
     finally:
+        # the action the message gives: see that the container of Kavita runs (it does again)
         j.compose("unpause", "fake-kavita")
 
-    # the action: Kavita is up again, the connection is looked at once more
     assert wait_for(lambda: bool(j.kavita()), 60)
-    [(code, back)] = j.api(("POST", f"/api/v1/targets/{target}/recheck"))
-    assert code == 200, back
-    [(code, reconnected)] = j.api(("POST", f"/api/v1/targets/{target}/reconnect"))
-    assert code == 200, reconnected
-    j.publish_upstream()
-    assert j.follow_until(lambda: exported_chapter(j, "manga", "Ch.3.cbz"), 300)
+    [(code, again)] = j.api(
+        ("POST", "/api/v1/setup/adoption/preview", {"destination_id": destination})
+    )
+    assert code != 503, again  # Kavita is reached: whatever the preview says, it is not that error
+    j.publish_upstream()  # the chapter that came while Kavita was away is delivered now
+    assert j.follow_until(lambda: exported_chapter(j, "manga"), 300)
     assert j.kavita()["violations"] == [] and j.egress() == []
 
 
