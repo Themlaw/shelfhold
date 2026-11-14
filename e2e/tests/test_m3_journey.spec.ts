@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, readFileSync, readdirSync } from 'node:fs';
+import { mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { expect, test, type Locator, type Page } from '@playwright/test';
@@ -17,14 +17,17 @@ import { expect, test, type Locator, type Page } from '@playwright/test';
 // a button, a link or a checkbox, a submission. Typing never counts by itself: the fields filled
 // before a submission belong to it. Every action is listed in the report of the test, tagged
 // `decision` (it sends something to the server) or `navigation` (a link to the next screen).
-// The budget is read on ALL the actions, never on the decisions alone: the test of the card does
-// not get easier by renaming what it counts.
+// The commands typed on the host count too (kind `host`): the card says "0 files edited, one
+// copy-paste at most", and a command is a gesture. The budget is read on ALL the actions, never on
+// the decisions alone: the test of the card does not get easier by renaming what it counts.
 //
 // EF-UX-012: one capture per theme and per scheme of the key screens. The reference is NOT a pixel
 // image: such a file depends on the fonts of the machine that made it (here the runners of the CI,
 // elsewhere a developer's) and AGENTS.md forbids making a reference in the CI. The "capture" is the
 // structure of the screen (landmarks and headings) and the tokens the browser applied, compared to
-// `tokens.json`; the pixels are kept as an artifact for the eye, never compared.
+// a reference COMMITTED in `references/key-screens.json` (and to `tokens.json`); the pixels are kept
+// as an artifact for the eye, never compared. The reference is made by an explicit command that
+// refuses to run in the CI: see `e2e/README.md`.
 
 const BUDGET_S = 600;
 const BUDGET_ACTIONS = 6;
@@ -39,7 +42,7 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 // where the journey of the screens stops today (the message of the expectation in `firstBook`)
 const KNOWN_GAP = 'the folder screen offers its check (a destination exists)';
 
-type Kind = 'decision' | 'navigation';
+type Kind = 'decision' | 'navigation' | 'host';
 interface Action {
   what: string;
   kind: Kind;
@@ -49,6 +52,16 @@ interface Action {
 class Run {
   readonly started = Date.now();
   readonly actions: Action[] = [];
+  constructor() {
+    // what the administrator already typed on the host before the browser (the pytest wrapper
+    // lists it): the first account, the addresses of the books project
+    const before = JSON.parse(process.env.E2E_HOST_COMMANDS ?? '[]') as string[];
+    for (const what of before) this.actions.push({ what: `host: ${what}`, kind: 'host', at_s: 0 });
+  }
+  /** A command typed on the host: one gesture, counted. */
+  host(what: string): void {
+    this.actions.push({ what: `host: ${what}`, kind: 'host', at_s: Math.round(this.elapsed()) });
+  }
   elapsed(): number {
     return (Date.now() - this.started) / 1000;
   }
@@ -57,10 +70,11 @@ class Run {
     await control.click();
   }
   report(): string {
-    const decisions = this.actions.filter((a) => a.kind === 'decision').length;
+    const count = (kind: Kind) => this.actions.filter((a) => a.kind === kind).length;
     return [
       `first book: ${this.elapsed().toFixed(0)} s, ${this.actions.length} actions ` +
-        `(${decisions} decisions, ${this.actions.length - decisions} navigations)`,
+        `(${count('decision')} decisions, ${count('navigation')} navigations, ` +
+        `${count('host')} host commands)`,
       ...this.actions.map((a, i) => `  ${i + 1}. [${a.kind}] ${a.what} (t+${a.at_s} s)`)
     ].join('\n');
   }
@@ -183,7 +197,8 @@ async function firstBook(page: Page, run: Run, afterKavita?: () => void): Promis
   await expect(page.getByText('Premier livre lancé.')).toBeVisible();
 }
 
-// req: ENF-UX-001
+// No `req`: while the journey stops at its known gap this test documents the gap, it does not cover
+// ENF-UX-001 (the open gap in `test_m3_open_gaps.py` keeps the requirement uncovered).
 test('test_first_book_under_10_minutes', async ({ page }, info) => {
   // The journey as the screens allow it today: nothing but the compose and the first account,
   // then the browser. It does not get through: there is no sign-in screen (the person is signed in
@@ -212,37 +227,53 @@ test('test_first_book_under_10_minutes', async ({ page }, info) => {
   expect(run.actions.length, report).toBeLessThanOrEqual(BUDGET_ACTIONS);
 });
 
-// req: ENF-UX-001
-test('test_timed_first_book_with_the_shelf_made_by_command', async ({ page }, info) => {
-  // The same journey with the blocks the screens leave to the host lifted: the path map and the
-  // shelf bound to Kavita are made by command, right after Kavita is connected (the order of the
-  // wizard).
-  // It measures the real time of the rest and asserts the time budget; the number of actions is
-  // reported in full, and read against BUDGET_ACTIONS by the test above.
-  const run = new Run();
+/** The journey with the blocks the screens leave to the host lifted: the path map and the shelf
+ * bound to Kavita are made by command, right after Kavita is connected (the order of the wizard).
+ * Every one of these commands is counted as a gesture. */
+async function journeyWithTheShelfByCommand(page: Page, run: Run): Promise<void> {
   await firstBook(page, run, () => {
     // the wizard cannot set the path map of the target: its default roots (books, comics, manga)
     // do not exist on a new volume, so a shelf cannot get its folder. The administrator gives the
     // whole volume by command (the target already exists: nothing is asked of Kavita again), then
     // makes the shelf the screens cannot make.
     putFile('/tmp/kavita.pw', `${KAVITA_PASSWORD}\n`);
+    run.host('the secret of Kavita, put in a file');
     shelfhold([
       'target', 'add', 'kavita', '--url', 'http://127.0.0.1:5000', '--user', KAVITA_USER,
       '--password-file', '/tmp/kavita.pw', '--accept-admin-risk',
       '--path-map', '[{"local": "/library", "remote": "/library", "mode": "rw"}]'
     ]);
+    run.host('target add kavita --path-map');
     shelfhold([
       'shelf', 'create', 'Livres', '--max-age', '18+', '--target', 'kavita', '--subpath', 'livres'
     ]);
+    run.host('shelf create Livres --target kavita');
   });
   await waitForTheBook(run, '/library/livres');
+}
+
+// A measure of the time, not a coverage: no `req`. It asserts the time budget only; the gestures
+// are listed in full in its report.
+test('test_timed_first_book_with_the_shelf_made_by_command', async ({ page }, info) => {
+  const run = new Run();
+  await journeyWithTheShelfByCommand(page, run);
   const report = run.report();
   console.log(report);
   await info.attach('first-book-report', { body: report });
   expect(run.elapsed(), report).toBeLessThanOrEqual(BUDGET_S);
   expect((await kavitaSeries()).includes(FIRST_BOOK.title)).toBe(true);
-  const decisions = run.actions.filter((a) => a.kind === 'decision').length;
-  expect(decisions, report).toBeLessThanOrEqual(BUDGET_ACTIONS);
+});
+
+// The budget of the card on the same journey, on ALL the gestures (screens and host commands). Red
+// today: the wrapper of `test_m3_journey.py` marks it xfail strict, so the requirement stays
+// uncovered until the wizard does it in at most BUDGET_ACTIONS.
+test('test_first_book_within_6_actions_with_the_shelf_made_by_command', async ({ page }, info) => {
+  const run = new Run();
+  await journeyWithTheShelfByCommand(page, run);
+  const report = run.report();
+  console.log(report);
+  await info.attach('first-book-report', { body: report });
+  expect(run.actions.length, report).toBeLessThanOrEqual(BUDGET_ACTIONS);
 });
 
 // ---- EF-UX-012: key screens, per theme and per scheme ------------------------------------------
@@ -253,10 +284,28 @@ const THEMES = readdirSync(FRONTEND, { withFileTypes: true })
   .map((d) => d.name)
   .sort();
 const SCHEMES = ['light', 'dark'] as const;
+// the series sheet is the one of a series the wrapper made known (its edition, `E2E_EDITION_ID`)
+const EDITION = process.env.E2E_EDITION_ID ?? '';
+const SERIES_SHEET = '/serie/{edition}';
 const KEY_SCREENS: { who: typeof ADMIN | typeof KID; paths: string[] }[] = [
-  { who: ADMIN, paths: ['/', '/chercher', '/bibliotheque', '/sante', '/reglages/apparence'] },
+  {
+    who: ADMIN,
+    paths: [
+      '/', '/chercher', '/bibliotheque', SERIES_SHEET, '/assistant/kavita', '/sante',
+      '/reglages/apparence'
+    ]
+  },
   { who: KID, paths: ['/', '/chercher', '/mes-demandes'] }
 ];
+
+// The committed reference: per screen, per theme and per scheme, the tokens the browser applied and
+// the structure of the page. Made by `E2E_UPDATE_REFERENCE=1` (see `e2e/README.md`), never by the CI.
+const REFERENCE = join(HERE, 'references', 'key-screens.json');
+interface Captured {
+  tokens: Record<string, string>;
+  structure: string[];
+}
+const UPDATING = process.env.E2E_UPDATE_REFERENCE === '1';
 
 interface Tokens {
   light: { color: Record<string, { $value: string }> };
@@ -280,6 +329,12 @@ async function structureOf(page: Page): Promise<string[]> {
 // req: EF-UX-012
 test('test_key_screens_snapshot_per_theme', async ({ browser }, info) => {
   test.setTimeout(240_000);
+  expect(
+    !(UPDATING && process.env.CI),
+    'the reference of the screens is never made in the CI (AGENTS.md): see e2e/README.md'
+  ).toBe(true);
+  expect(EDITION, 'the wrapper gives the edition of the series sheet').not.toBe('');
+  const captured: Record<string, Captured> = {};
   expect(THEMES.length, 'at least the default theme exists').toBeGreaterThan(0);
   const shots = join(info.outputPath(), 'themes');
   mkdirSync(shots, { recursive: true });
@@ -290,6 +345,8 @@ test('test_key_screens_snapshot_per_theme', async ({ browser }, info) => {
       ) as Tokens;
       for (const path of paths) {
         const structures = new Map<string, string[]>();
+        const screen = path;
+        const url = path === SERIES_SHEET ? `/serie/${EDITION}` : path;
         for (const scheme of SCHEMES) {
           const context = await browser.newContext({ locale: 'fr-FR', colorScheme: scheme });
           const page = await context.newPage();
@@ -305,28 +362,33 @@ test('test_key_screens_snapshot_per_theme', async ({ browser }, info) => {
             headers: { 'X-CSRF-Token': csrf }
           });
           expect(chosen.status(), `${here}: preferences`).toBe(200);
-          await page.goto(path);
+          await page.goto(url);
           await expect(page.locator('main').first(), here).toBeVisible();
 
           const root = page.locator('html');
           await expect(root, here).toHaveAttribute('data-theme', theme);
           await expect(root, here).toHaveAttribute('data-color-scheme', scheme);
           const wanted = (scheme === 'dark' ? tokens.dark ?? tokens.light : tokens.light).color;
+          const applied: Record<string, string> = {};
           for (const [name, token] of Object.entries(wanted)) {
-            const applied = await page.evaluate(
-              (n) => getComputedStyle(document.documentElement).getPropertyValue(`--color-${n}`).trim(),
-              name
-            );
-            expect(applied.toLowerCase(), `${here}: --color-${name}`).toBe(token.$value.toLowerCase());
+            applied[name] = (
+              await page.evaluate(
+                (n) => getComputedStyle(document.documentElement).getPropertyValue(`--color-${n}`).trim(),
+                name
+              )
+            ).toLowerCase();
+            expect(applied[name], `${here}: --color-${name}`).toBe(token.$value.toLowerCase());
           }
           const overflow = await page.evaluate(
             () => document.documentElement.scrollWidth - document.documentElement.clientWidth
           );
           expect(overflow, `${here}: horizontal overflow`).toBeLessThanOrEqual(0);
           expect(errors, `${here}: page errors`).toEqual([]);
-          structures.set(scheme, await structureOf(page));
+          const structure = await structureOf(page);
+          structures.set(scheme, structure);
+          captured[`${who.username} ${theme}/${scheme} ${screen}`] = { tokens: applied, structure };
           await page.screenshot({
-            path: join(shots, `${who.username}-${theme}-${scheme}-${path.replaceAll('/', '_') || '_'}.png`),
+            path: join(shots, `${who.username}-${theme}-${scheme}-${screen.replaceAll('/', '_').replaceAll(/[{}]/g, '') || '_'}.png`),
             fullPage: true
           });
           await context.close();
@@ -337,5 +399,21 @@ test('test_key_screens_snapshot_per_theme', async ({ browser }, info) => {
         );
       }
     }
+  }
+  if (UPDATING) {
+    mkdirSync(dirname(REFERENCE), { recursive: true });
+    writeFileSync(REFERENCE, `${JSON.stringify(captured, null, 2)}\n`);
+    console.log(`reference written: ${REFERENCE} (${Object.keys(captured).length} screens)`);
+    return;
+  }
+  // compared to the reference committed with the code: a screen that changed shape, or a token
+  // that drifted, is a difference to read and to decide (the reference is made again on purpose)
+  const reference = JSON.parse(readFileSync(REFERENCE, 'utf8')) as Record<string, Captured>;
+  expect(Object.keys(captured).sort(), 'the screens of the reference').toEqual(
+    Object.keys(reference).sort()
+  );
+  for (const [key, now] of Object.entries(captured)) {
+    expect(now.tokens, `${key}: tokens`).toEqual(reference[key].tokens);
+    expect(now.structure, `${key}: structure`).toEqual(reference[key].structure);
   }
 });

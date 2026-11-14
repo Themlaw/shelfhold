@@ -70,13 +70,15 @@ def exported_chapter(j: Journey, folder: str, wanted: str = "Ch.2.cbz") -> bool:
     )
 
 
-def playwright(j: Journey, grep: str, seconds: int) -> subprocess.CompletedProcess[str]:
+def playwright(
+    j: Journey, grep: str, seconds: int, env: dict[str, str] | None = None
+) -> subprocess.CompletedProcess[str]:
     """The spec of the image journeys, on the stack of `j` (the base address and the compose
     arguments are what the spec reads); its output is printed, whatever the outcome."""
     done = subprocess.run(  # noqa: S603
         ["npx", "playwright", "test", "-c", "playwright.image.config.ts", "-g", grep],  # noqa: S607
         cwd=E2E, capture_output=True, text=True, check=False, timeout=seconds,
-        env={**j._env(), "E2E_COMPOSE": json.dumps(j._command()[2:])},
+        env={**j._env(), "E2E_COMPOSE": json.dumps(j._command()[2:]), **(env or {})},
     )  # fmt: skip
     print(done.stdout)
     print(done.stderr)
@@ -85,6 +87,10 @@ def playwright(j: Journey, grep: str, seconds: int) -> subprocess.CompletedProce
         with open(summary, "a", encoding="utf-8") as page:
             page.write(f"### Playwright `{grep}`\n\n```\n{done.stdout[-6000:]}\n```\n")
     return done
+
+
+# what `install_by_the_administrator` types, listed for the count of gestures of the spec
+HOST_COMMANDS = ["admin create (the first account)", "plugin set gutenberg (the two addresses)"]
 
 
 def install_by_the_administrator(j: Journey) -> None:
@@ -98,8 +104,10 @@ def install_by_the_administrator(j: Journey) -> None:
 # -- (1) the first book, in a browser ---------------------------------------------------------------
 
 
+# The two journeys below carry no `req`: the first documents the known gap of the wizard, the second
+# measures the time. ENF-UX-001 stays uncovered (open gap of `test_m3_open_gaps.py`) until the third
+# gets through its budget.
 @pytest.mark.e2e_timeout(780)
-@pytest.mark.req("ENF-UX-001", "EF-UX-001")
 def test_first_book_under_10_minutes(journey_m3: Journey) -> None:
     """A new installation to the first Gutenberg book listed by Kavita, played in a browser: at
     most 10 minutes and 6 actions. Today the screens stop at the folder screen (see the spec): the
@@ -107,25 +115,57 @@ def test_first_book_under_10_minutes(journey_m3: Journey) -> None:
     both budgets in full the day the journey gets through."""
     j = journey_m3
     install_by_the_administrator(j)
-    done = playwright(j, "test_first_book_under_10_minutes", 720)
+    done = playwright(
+        j, "test_first_book_under_10_minutes", 720,
+        {"E2E_HOST_COMMANDS": json.dumps(HOST_COMMANDS)},
+    )  # fmt: skip
     assert done.returncode == 0, "the spec failed in a way it did not expect (see its output)"
     assert j.egress() == []
 
 
 @pytest.mark.e2e_timeout(780)
-@pytest.mark.req("ENF-UX-001", "EF-UX-001")
 def test_timed_first_book_with_the_shelf_made_by_command(journey_m3: Journey) -> None:
-    """The same journey with the shelf bound to Kavita made by command: the real time of the rest
-    (the spec prints the list of the gestures and the seconds) is at most 10 minutes, the book is in
-    Kavita as a file the shared volume holds, and nothing left the network namespace."""
+    """A measure, not a coverage: the same journey with the shelf bound to Kavita made by command.
+    The real time of the rest (the spec prints the list of the gestures and the seconds) is at most
+    10 minutes, the book is in Kavita as a file the shared volume holds, and nothing left the
+    network namespace."""
     j = journey_m3
     install_by_the_administrator(j)
-    done = playwright(j, "test_timed_first_book_with_the_shelf_made_by_command", 720)
+    done = playwright(
+        j, "test_timed_first_book_with_the_shelf_made_by_command", 720,
+        {"E2E_HOST_COMMANDS": json.dumps(HOST_COMMANDS)},
+    )  # fmt: skip
     assert done.returncode == 0, "the timed journey failed (see the output of the spec)"
     assert kavita_titles(j) == ["A Study in Test"]
     assert len(library_epubs(j)) == 1
     assert j.kavita()["violations"] == []
     assert j.egress() == []
+
+
+@pytest.mark.e2e_timeout(780)
+@pytest.mark.req("ENF-UX-001", "EF-UX-001")
+@pytest.mark.xfail(
+    strict=True,
+    reason=(
+        "ENF-UX-001 is not delivered: the first book takes 15 gestures against 6 (4 screens to "
+        "move on, 6 decisions in the wizard, 5 commands typed on the host, among them the shelf "
+        "bound to Kavita that no screen makes yet). It turns green with the wizard step that "
+        "creates the shelf and the removal of the separate `Continuer` screens."
+    ),
+)
+def test_first_book_within_6_actions_with_the_shelf_made_by_command(
+    journey_m3: Journey,
+) -> None:
+    """The card's budget on the same journey, read on ALL the gestures: screens, decisions and the
+    commands typed on the host. Strict xfail: it is red today, and the requirement stays uncovered
+    until it passes (the traceability matrix does not count an xfail)."""
+    j = journey_m3
+    install_by_the_administrator(j)
+    done = playwright(
+        j, "test_first_book_within_6_actions_with_the_shelf_made_by_command", 720,
+        {"E2E_HOST_COMMANDS": json.dumps(HOST_COMMANDS)},
+    )  # fmt: skip
+    assert done.returncode == 0, "more than 6 gestures (see the report of the spec)"
 
 
 # -- (2) the parental control, end to end ------------------------------------------------------------
@@ -487,10 +527,20 @@ def test_key_screens_snapshot_per_theme(journey_m3: Journey) -> None:
     screen has the same landmarks in light and in dark, nothing overflows, no script fails. The
     pixels are kept as an artifact and never compared (see the spec for why)."""
     j = journey_m3
-    install_by_the_administrator(j)
+    install_by_commands(j)  # Kavita, the Suwayomi source and its shelf: a series to open
+    j.create_admin()
+    j.discover_series()
+    discovered(j)
+    edition, _work = ids_of(j, "Series Alpha")
     make_profile(j, KID, "child", KID_AGE)
-    done = playwright(j, "test_key_screens_snapshot_per_theme", 560)
+    done = playwright(
+        j, "test_key_screens_snapshot_per_theme", 560,
+        {
+            "E2E_EDITION_ID": edition,
+            **{k: os.environ[k] for k in ("E2E_UPDATE_REFERENCE",) if k in os.environ},
+        },
+    )  # fmt: skip
     assert done.returncode == 0, (
-        "the key screens differ from the themes (see the output of the spec)"
+        "the key screens differ from their reference (see the output of the spec)"
     )
     assert j.egress() == []
