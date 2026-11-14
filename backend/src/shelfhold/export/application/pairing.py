@@ -35,6 +35,7 @@ from shelfhold.export.application.preflight import PermissionPreflight, ProbeRes
 from shelfhold.export.domain.naming import normalize_series_name
 from shelfhold.infrastructure.binding_priority import next_binding_priority
 from shelfhold.infrastructure.clock import Clock
+from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import acquisition, catalog, export
 from shelfhold.library.public import EDITION_KEY_COLUMNS, PlaceRef, TombstoneGate
@@ -418,7 +419,7 @@ class Pairing:
             follow_segment=follow_segment, confirm_backfill=confirm_backfill,
         )  # fmt: skip
         if isinstance(plan, PairingResult):
-            with self._engine.begin() as connection:  # written down: `status` lists it
+            with write_transaction(self._engine) as connection:  # written down: `status` lists it
                 flag_unknown_coverage(connection, plan.export_series_id, plan.edition_id)
             return plan
         return self._bind_all([plan])[0]

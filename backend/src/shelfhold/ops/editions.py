@@ -33,6 +33,7 @@ from shelfhold.catalog.public import (
     sort_key,
     unlock_field,
 )
+from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.ids import is_ulid
 from shelfhold.infrastructure.schema import catalog
 from shelfhold.ops.errors import InvalidChoiceError, UnknownSubjectError
@@ -103,7 +104,7 @@ class EditionOps:
         """Lock a field: with `value`, an admin's own (`manual`); without, the one stored."""
         if value is not None:
             _clean_value(value)
-        with self._comp.engine.begin() as connection:
+        with write_transaction(self._comp.engine) as connection:
             key = self._key(connection, edition_id, name, lang, on)
             if value is None:
                 if not lock_current(connection, key):
@@ -118,7 +119,7 @@ class EditionOps:
     ) -> dict[str, Any]:  # fmt: skip
         """Lift the lock; the value stays, with its provenance, until a provider proposes another
         (and a hand-typed one is never replaced by one)."""
-        with self._comp.engine.begin() as connection:
+        with write_transaction(self._comp.engine) as connection:
             key = self._key(connection, edition_id, name, lang, on)
             if not unlock_field(connection, key):
                 raise InvalidChoiceError("nothing is stored for that field")
@@ -134,7 +135,7 @@ class EditionOps:
             after = normalize_external_id("edition", provider, new, id_scheme=id_scheme)
         except ExternalIdError as error:
             raise InvalidChoiceError(str(error)) from None
-        with self._comp.engine.begin() as connection:
+        with write_transaction(self._comp.engine) as connection:
             edition, _work = self._edition(connection, edition_id)
             if holder_of(connection, before) != edition:  # never invented, never another's
                 raise InvalidChoiceError("the old identifier is not one of this Edition's")

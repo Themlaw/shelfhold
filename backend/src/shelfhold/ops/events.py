@@ -13,6 +13,7 @@ import structlog
 from sqlalchemy import Engine
 
 from shelfhold.events.bus import EventBus, EventPayloadError, UnknownEventType, check_payload
+from shelfhold.infrastructure.db import write_transaction
 
 __all__ = ["BusTargetEvents"]
 
@@ -34,7 +35,7 @@ class BusTargetEvents:
             kept[key] = value
         log.warning(code, **{k: v for k, v in detail.items() if isinstance(v, str | int | bool)})
         try:
-            with self._engine.begin() as connection:
+            with write_transaction(self._engine) as connection:
                 published = self._bus.publish(connection, code, kept)
         except (UnknownEventType, EventPayloadError):
             return

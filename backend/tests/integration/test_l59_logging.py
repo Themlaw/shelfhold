@@ -438,6 +438,9 @@ def test_an_untrusted_entry_name_is_only_in_debug_and_escaped(logs: Logs) -> Non
 
 
 class _NoEngine:
+    def execution_options(self, **_: object) -> _NoEngine:
+        return self
+
     def begin(self) -> _NoEngine:
         return self
 

@@ -48,6 +48,7 @@ from shelfhold.identity.public import (
     authorize_reserved,
 )
 from shelfhold.infrastructure.clock import Clock
+from shelfhold.infrastructure.db import write_transaction
 from shelfhold.library.public import (
     SeriesBindingRef,
     TombstoneGate,
@@ -197,7 +198,7 @@ class PurgeLeftovers:
     def _forget(self, request_ids: list[str], principal: Principal, now: datetime) -> int:
         if not request_ids:
             return 0
-        with self._engine.begin() as connection:
+        with write_transaction(self._engine) as connection:
             count = let_go_tickets(connection, request_ids)
             connection.execute(
                 audit_insert(

@@ -29,6 +29,7 @@ from sqlalchemy import Engine
 
 from shelfhold.events.bus import EventBus
 from shelfhold.export.domain.physical_roots import RootState, waiting_state_of
+from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.fsops import Fsops, OutsidePathMapError
 from shelfhold.infrastructure.schema import catalog
 
@@ -90,7 +91,7 @@ def mark_store_missing(
         sa.column("derived_hash"),
     )
     published = []
-    with engine.begin() as connection:
+    with write_transaction(engine) as connection:
         rows = connection.execute(
             sa.select(unit.c.id, unit.c.state, content.c.path, content.c.original_sha256,
                       content.c.derived_hash)

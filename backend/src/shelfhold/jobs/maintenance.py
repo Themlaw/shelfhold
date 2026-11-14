@@ -39,6 +39,7 @@ from sqlalchemy import Engine
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
 from shelfhold.infrastructure.clock import Clock
+from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.freeze import FreezeState
 from shelfhold.infrastructure.schema import platform
 from shelfhold.infrastructure.wal import settle_pending, truncate_wal
@@ -269,7 +270,7 @@ class SqliteMaintenance:
         return datetime.fromisoformat(value) if value else None
 
     def _record_vacuum(self, at: datetime) -> None:
-        with self._engine.begin() as connection:
+        with write_transaction(self._engine) as connection:
             connection.execute(
                 sqlite_insert(platform.app_setting)
                 .values(key=VACUUM_RECORD, value=at.isoformat())

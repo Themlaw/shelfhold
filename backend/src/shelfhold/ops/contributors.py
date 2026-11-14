@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING, Any, Final
 import sqlalchemy as sa
 
 from shelfhold.identity.public import RESERVED_ACTIONS, Allowed, Principal, authorize_reserved
+from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.ids import is_ulid, new_ulid
 from shelfhold.infrastructure.schema import catalog, identity
 from shelfhold.ops.errors import CodedRefusal, InvalidChoiceError, UnknownSubjectError
@@ -43,7 +44,7 @@ class ContributorOps:
         if not is_ulid(contributor_id):
             raise InvalidChoiceError("a contributor is named by its identifier")
         table = catalog.contributor
-        with self._comp.engine.begin() as connection:
+        with write_transaction(self._comp.engine) as connection:
             found = connection.execute(
                 sa.update(table).where(table.c.id == contributor_id).values(died_for_france=value)
             ).rowcount

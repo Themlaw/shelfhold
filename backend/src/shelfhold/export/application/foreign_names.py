@@ -16,6 +16,7 @@ import sqlalchemy as sa
 from sqlalchemy import Connection, Engine
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
+from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.schema import platform
 
 __all__ = ["load_foreign_names", "save_foreign_names"]
@@ -26,7 +27,7 @@ MAX_NAMES: Final = 100_000
 
 def save_foreign_names(engine: Engine, destination_id: str, names: list[str]) -> None:
     value = json.dumps(names[:MAX_NAMES])
-    with engine.begin() as connection:
+    with write_transaction(engine) as connection:
         connection.execute(
             sqlite_insert(platform.app_setting)
             .values(key=PREFIX + destination_id, value=value)

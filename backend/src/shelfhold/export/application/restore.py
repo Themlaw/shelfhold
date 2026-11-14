@@ -77,6 +77,7 @@ from shelfhold.identity.public import (
     revoke_all_credentials,
 )
 from shelfhold.infrastructure.clock import Clock
+from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.freeze import FreezeState
 from shelfhold.infrastructure.fsops import Fsops
 from shelfhold.infrastructure.fsops.errors import FsopsError
@@ -394,7 +395,7 @@ class RestoreGuard:
         if not hmac.compare_digest(confirm.strip().encode(), forget_root_phrase(root_id).encode()):
             raise ForgetRootRefusedError("phrase_mismatch")
         now = self._clock.now()
-        with self._engine.begin() as connection:
+        with write_transaction(self._engine) as connection:
             connection.execute(
                 sa.update(platform.physical_root)
                 .where(platform.physical_root.c.root_id == root_id)
@@ -437,7 +438,7 @@ class RestoreGuard:
                 (min(f.sentinel_generation or 0, MAX_RESTORE_EPOCH) for f in status.behind_roots),
                 default=0,
             )
-            with self._engine.begin() as connection:
+            with write_transaction(self._engine) as connection:
                 if status.epoch <= seen:
                     epoch = min(max(status.epoch, seen) + 1, MAX_RESTORE_EPOCH)
                 # the freeze is written with the epoch: it survives a restart (until the adoption)
@@ -824,7 +825,7 @@ class RestoreAdopter:
             raise DeletionUnavailableError("no purge executor: nothing is deleted")
         now = self._clock.now()
         new_generation: dict[str, int] = {}
-        with self._engine.begin() as connection:
+        with write_transaction(self._engine) as connection:
             for line in sorted(survey.lines, key=lambda ln: (ln.destination_id, ln.rel_path)):
                 if line.outcome is LineOutcome.READOPT:
                     self._insert(connection, line, now, survey)

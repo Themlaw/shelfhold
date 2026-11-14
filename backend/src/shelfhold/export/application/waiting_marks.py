@@ -16,6 +16,7 @@ import sqlalchemy as sa
 from sqlalchemy import Connection, Engine
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
+from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.freeze import ROOT_STATES, WAITING_PREFIX
 from shelfhold.infrastructure.schema import platform
 
@@ -75,7 +76,7 @@ def clear(connection: Connection, state: str, subjects: Iterable[str]) -> None:
 def mark_mount_blocked(engine: Engine, destination_id: str, reason: str) -> None:
     """The root of a destination fails its sentinel, or lost too many files (EF-EXP-029): the
     exports, deletions and scans stay blocked and `status` says so until it is right again."""
-    with engine.begin() as connection:
+    with write_transaction(engine) as connection:
         put(
             connection, "mount_sentinel_missing", destination_id,
             {"sentinel": "the mount does not carry the expected sentinel",
@@ -85,7 +86,7 @@ def mark_mount_blocked(engine: Engine, destination_id: str, reason: str) -> None
 
 
 def clear_mount_blocked(engine: Engine, destination_id: str) -> None:
-    with engine.begin() as connection:
+    with write_transaction(engine) as connection:
         clear(connection, "mount_sentinel_missing", [destination_id])
 
 

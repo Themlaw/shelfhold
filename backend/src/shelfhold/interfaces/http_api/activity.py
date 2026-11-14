@@ -21,7 +21,6 @@ from sqlalchemy import Engine
 from shelfhold.events.activity import (
     UnmaskRefusedError,
     Viewer,
-    unmask_title,
 )
 from shelfhold.events.family_state import (
     FamilyState,
@@ -40,12 +39,12 @@ from shelfhold.interfaces.http_api.auth import gate_of, require_principal, reser
 from shelfhold.interfaces.http_api.problems import ProblemError
 from shelfhold.ops.activity_feed import (
     activity_event_of,
-    entry_of,
     kavita_open_url,
     recent_events,
     recent_requests,
     request_edition,
     request_event,
+    unmask_entry,
 )
 
 __all__ = ["activity_event_of", "build_activity_router", "family_payload", "viewer_of"]
@@ -162,18 +161,16 @@ def build_activity_router(get_engine: Callable[[], Engine]) -> APIRouter:
     ) -> UnmaskedOut:
         """`ref`: the number of an event, or the ULID of a download request."""
         auth = gate_of(request).auth
-        with get_engine().begin() as connection:
-            entry = entry_of(connection, ref)
-            if entry is None:
-                raise ProblemError("not_found")
-            try:
-                item = unmask_title(
-                    connection, principal, entry, now=auth.now(),
-                    fresh_auth_s=auth.fresh_auth_s, hardened=auth.hardened,
-                    restricted_profile_exists=auth.restricted_profile_exists(),
-                )  # fmt: skip
-            except UnmaskRefusedError:
-                raise ProblemError("not_found") from None  # nothing masked for this viewer
+        try:
+            item = unmask_entry(
+                get_engine(), principal, ref, now=auth.now(),
+                fresh_auth_s=auth.fresh_auth_s, hardened=auth.hardened,
+                restricted_profile_exists=auth.restricted_profile_exists(),
+            )  # fmt: skip
+        except UnmaskRefusedError:
+            raise ProblemError("not_found") from None  # nothing masked for this viewer
+        if item is None:
+            raise ProblemError("not_found")
         if item.title is None:  # pragma: no cover (`unmask_title` returns a title or raises)
             raise ProblemError("not_found")
         return UnmaskedOut(event_id=item.event_id, title=item.title)

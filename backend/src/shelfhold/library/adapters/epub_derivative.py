@@ -53,6 +53,7 @@ from shelfhold.infrastructure.content_trust import (
     find_active_content,
     neutralize_epub,
 )
+from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.fsops import Fsops, FsopsError
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import acquisition, catalog, storage
@@ -431,7 +432,7 @@ class UntrustedEpubStore:
         sections = spine_count(
             derived_path, self._limits
         )  # an EPUB's pages are its reading order (EF-BIB-024)
-        with self._engine.begin() as connection:
+        with write_transaction(self._engine) as connection:
             if sections is not None and guard_received(
                 connection, variant_id=variant_id, pages=sections,
                 content_hash=made.original_hash, seen_at=now,
@@ -514,7 +515,7 @@ class UntrustedEpubStore:
                 verify_digest=lambda: original.removeprefix("sha256:"),
             )  # fmt: skip
         device, now, content_id = self._fsops.device_of(dest), datetime.now(UTC), new_ulid()
-        with self._engine.begin() as connection:
+        with write_transaction(self._engine) as connection:
             connection.execute(
                 sa.insert(storage.content).values(
                     id=content_id, unit_id=unit_id, variant_id=variant_id, kind="text",
@@ -545,7 +546,7 @@ class UntrustedEpubStore:
         reason = f"{error.code}: {error.reason}" + (f" ({error.entry})" if error.entry else "")
         now = datetime.now(UTC)
         revision = catalog.variant_revision
-        with self._engine.begin() as connection:
+        with write_transaction(self._engine) as connection:
             latest = connection.execute(
                 sa.select(revision.c.id, revision.c.quarantined_at)
                 .where(revision.c.variant_id == variant_id)
@@ -639,7 +640,7 @@ class UntrustedEpubStore:
                 verify_digest=lambda: file_hash.removeprefix("sha256:"),
             )  # fmt: skip
         device, now = self._fsops.device_of(dest), datetime.now(UTC)
-        with self._engine.begin() as connection:
+        with write_transaction(self._engine) as connection:
             connection.execute(
                 sa.insert(storage.content).values(
                     id=content_id, unit_id=unit_id, variant_id=variant_id, kind="text",
@@ -759,7 +760,7 @@ class UntrustedEpubStore:
                     content.derived_hash_by, list(content.derived_chain or ()), None,
                 )  # fmt: skip
                 raise
-            with self._engine.begin() as connection:
+            with write_transaction(self._engine) as connection:
                 record_library_rewrite(
                     connection, into.replica_id, file_hash=digest,
                     dev=self._fsops.device_of(into.local), ino=written.ino, size=written.size,
@@ -779,7 +780,7 @@ class UntrustedEpubStore:
         self, content_id: str, derived_hash: str, derived_by: str, hash_by: str | None,
         chain: list[Any], size: int | None,
     ) -> None:  # fmt: skip
-        with self._engine.begin() as connection:
+        with write_transaction(self._engine) as connection:
             connection.execute(
                 sa.update(storage.content)
                 .where(storage.content.c.id == content_id)

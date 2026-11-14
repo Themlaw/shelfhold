@@ -26,6 +26,7 @@ from sqlalchemy import Engine
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
 from shelfhold.export.domain.path_map import clean_absolute
+from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.schema import platform
 
 __all__ = [
@@ -190,7 +191,7 @@ class BaselineStore:
         return None if raw is None else KavitaSnapshot.loads(raw)
 
     def save_if_absent(self, destination_id: str, snapshot: KavitaSnapshot) -> bool:
-        with self._engine.begin() as connection:
+        with write_transaction(self._engine) as connection:
             inserted = connection.execute(
                 sqlite_insert(platform.app_setting)
                 .values(key=self.key(destination_id), value=snapshot.dumps())

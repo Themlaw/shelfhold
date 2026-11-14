@@ -33,6 +33,7 @@ from shelfhold.acquisition.application.staleness import (
     discoveries_of,
 )
 from shelfhold.acquisition.domain.freshness import cadence
+from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.schema import acquisition, catalog
 
 if TYPE_CHECKING:
@@ -172,7 +173,7 @@ def request_check_job(
 ) -> list[str]:
     """ "Check now": the series is made due and the follow job of its service is queued in the
     news class (a double click joins the job in flight). `[]`: asked too recently, nothing done."""
-    with engine.begin() as connection:
+    with write_transaction(engine) as connection:
         plugins = check_now(connection, edition_id, clock.now(), policy)
     for plugin_id in plugins:
         pools.submit(
@@ -221,7 +222,7 @@ class CadencedFollowCycle(FollowCycle):
         their next look from what is known now."""
         now = self._clock.now()
         table = acquisition.source_binding
-        with self._engine.begin() as connection:
+        with write_transaction(self._engine) as connection:
             for binding_id, (binding, before) in self._before.items():
                 seen = discoveries_of(connection, binding.edition_id)
                 if binding_id not in self._due and len(seen) == before:

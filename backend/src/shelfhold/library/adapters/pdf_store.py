@@ -20,6 +20,7 @@ import sqlalchemy as sa
 import structlog
 from sqlalchemy import Engine
 
+from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.fsops import Fsops, FsopsError
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import storage
@@ -134,7 +135,7 @@ class PdfStore:
             )  # fmt: skip
         try:
             content_id, now = new_ulid(), datetime.now(UTC)
-            with self._engine.begin() as connection:
+            with write_transaction(self._engine) as connection:
                 connection.execute(
                     sa.insert(storage.content).values(
                         id=content_id, unit_id=unit_id, variant_id=variant_id, kind="file",

@@ -19,6 +19,7 @@ import sqlalchemy as sa
 from sqlalchemy import Engine
 
 from shelfhold.infrastructure.clock import Clock
+from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import coherence
 
@@ -94,7 +95,7 @@ class PlanStore:
     ) -> PlanRecord:
         paths = list(files)
         record = PlanRecord(new_ulid(), self._current_version(), fingerprint_files(paths))
-        with self._engine.begin() as conn:
+        with write_transaction(self._engine) as conn:
             conn.execute(
                 sa.insert(coherence.export_plan).values(
                     plan_id=record.plan_id,
@@ -160,7 +161,7 @@ class PlanStore:
         ):
             self._set_plan(plan_id, "stale", only_from="planned")
             raise StalePlanError("the preview changed: recompute it")
-        with self._engine.begin() as conn:  # the claim
+        with write_transaction(self._engine) as conn:  # the claim
             claimed = conn.execute(
                 sa.update(plan_table)
                 .where(
@@ -226,7 +227,7 @@ class PlanStore:
 
     def _set_plan(self, plan_id: str, status: str, *, only_from: str) -> None:
         table = coherence.export_plan
-        with self._engine.begin() as conn:
+        with write_transaction(self._engine) as conn:
             conn.execute(
                 sa.update(table)
                 .where(table.c.plan_id == plan_id, table.c.status == only_from)
@@ -234,7 +235,7 @@ class PlanStore:
             )
 
     def _set_op(self, op_id: str, status: str, reason: str | None = None) -> None:
-        with self._engine.begin() as conn:
+        with write_transaction(self._engine) as conn:
             conn.execute(
                 sa.update(coherence.export_op)
                 .where(coherence.export_op.c.id == op_id)
@@ -253,7 +254,7 @@ class PlanStore:
     def annotate(self, plan_id: str, **values: Any) -> None:
         """Add to what the plan keeps about itself (a confirmation given with the request)."""
         table = coherence.export_plan
-        with self._engine.begin() as conn:
+        with write_transaction(self._engine) as conn:
             batches = conn.execute(
                 sa.select(table.c.batches).where(table.c.plan_id == plan_id)
             ).scalar_one()

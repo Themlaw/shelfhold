@@ -38,7 +38,7 @@ from shelfhold.export.application.upgrade import SamePathUpgrade
 from shelfhold.export.domain.path_map import PathMap, PathMode
 from shelfhold.export.domain.physical_roots import LEGACY_RECEIVED_DIR, RECEIVED_DIR
 from shelfhold.infrastructure.clock import SystemClock
-from shelfhold.infrastructure.db import create_db_engine
+from shelfhold.infrastructure.db import create_db_engine, write_transaction
 from shelfhold.infrastructure.freeze import FreezeState
 from shelfhold.infrastructure.fsops import BootReport, Fsops
 from shelfhold.infrastructure.fsops.capabilities import unprobed
@@ -282,7 +282,8 @@ class InstanceRuntime:
                 structlog.get_logger().warning(
                     "reconcile.drift", intent=intent_id, reason=result.drift_reasons[intent_id]
                 )
-                with engine.begin() as conn:  # the log is not enough: the channels are told
+                # the log is not enough: the channels are told
+                with write_transaction(engine) as conn:
                     bus.publish(
                         conn,
                         "reconcile.drift",
@@ -412,7 +413,7 @@ class InstanceRuntime:
                 yaml_hint=report.yaml_hint,
             )  # fmt: skip
             if report.event is not None:
-                with engine.begin() as conn:
+                with write_transaction(engine) as conn:
                     bus.publish(conn, report.event, {"reason": "forbidden"})
         self._probe_capabilities(fsops, sessions, loaded, engine, ready, booted)
         return ready
@@ -439,14 +440,14 @@ class InstanceRuntime:
                     else booted.blocked[root.path].value if root.path in booted.blocked
                     else "write_probe_failed"
                 )  # fmt: skip
-                with engine.begin() as conn:
+                with write_transaction(engine) as conn:
                     root_capabilities.save(conn, root.root_id, unprobed(root.path, why))
                 continue
             leased = [root.path, *([store] if store in ready and store != root.path else [])]
             try:
                 with sessions.open(*leased):
                     found = fsops.probe_capabilities(root.path, store_path=store)
-                with engine.begin() as conn:
+                with write_transaction(engine) as conn:
                     root_capabilities.save(conn, root.root_id, found)
             except (OSError, sa.exc.SQLAlchemyError) as error:
                 structlog.get_logger().warning(

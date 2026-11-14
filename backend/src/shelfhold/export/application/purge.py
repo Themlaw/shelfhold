@@ -76,6 +76,7 @@ from shelfhold.export.domain.provenance_mirror import (
 )
 from shelfhold.identity.public import Principal
 from shelfhold.infrastructure.clock import Clock
+from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.event_sequence import invalidate_tokens
 from shelfhold.infrastructure.fsops import (
     FileIdentity,
@@ -573,7 +574,7 @@ class PurgeService:
         return roots
 
     def _audit(self, plan: _Plan, allowed: PurgeAuthorization) -> None:
-        with self._engine.begin() as connection:
+        with write_transaction(self._engine) as connection:
             connection.execute(
                 sa.insert(identity.audit).values(
                     id=new_ulid(), actor_id=allowed.actor, action="purge.now",
@@ -887,7 +888,7 @@ class PurgeService:
     ) -> PurgeReport:
         complete = not (progress.refused or progress.unreachable or self._unresolved_bin(plan))
         events: list[PublishedEvent] = []
-        with self._engine.begin() as connection:
+        with write_transaction(self._engine) as connection:
             for intent in progress.done_intents:
                 self._journal.mark_done(intent, within=connection)
             closed = self._close_tickets(connection, plan, progress.unsettled)

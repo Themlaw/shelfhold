@@ -29,6 +29,7 @@ from shelfhold.acquisition.public import (
     request_check_job,
 )
 from shelfhold.i18n import t
+from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.schema import acquisition, export
 from shelfhold.ops.acquire import AcquireOps
 from shelfhold.ops.errors import (
@@ -65,7 +66,7 @@ class FollowOps:
             raise InvalidChoiceError("a whole number, on one of the numbered tracks")
         number = str(int(number))
         gap = acquisition.series_gap
-        with self._comp.engine.begin() as connection:
+        with write_transaction(self._comp.engine) as connection:
             if undo:
                 return {"changed": unacknowledge(
                     connection, edition_id, track=track, segment=segment, number=number

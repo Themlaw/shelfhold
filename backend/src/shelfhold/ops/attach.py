@@ -17,6 +17,7 @@ from shelfhold.catalog.public import (
     AutoAttachService,
 )
 from shelfhold.identity.public import Principal
+from shelfhold.infrastructure.db import write_transaction
 from shelfhold.ops.errors import (
     CodedRefusal,
     ExitUnavailableError,
@@ -86,7 +87,7 @@ class AttachOps:
 
     def separate(self, attach_id: str, *, principal: Principal) -> dict[str, Any]:
         try:
-            with self._engine.begin() as connection:
+            with write_transaction(self._engine) as connection:
                 done = self._service.separate(
                     connection, attach_id, principal=principal, now=self._clock.now()
                 )
@@ -108,7 +109,7 @@ class AttachOps:
     def plan(self, attach_id: str) -> dict[str, Any]:
         service = self._screened()  # the screen is replayed before any write transaction
         try:
-            with self._engine.begin() as connection:
+            with write_transaction(self._engine) as connection:
                 return _plan(service.plan(connection, attach_id))
         except AttachRefusedError as error:
             raise CodedRefusal("edition.attach_refused", str(error)) from None
@@ -118,7 +119,7 @@ class AttachOps:
     def confirm(self, attach_id: str, *, confirm: str, principal: Principal) -> dict[str, Any]:
         service = self._screened()
         try:
-            with self._engine.begin() as connection:
+            with write_transaction(self._engine) as connection:
                 done = service.confirm(
                     connection, attach_id, confirm=confirm, principal=principal,
                     now=self._clock.now(),
@@ -133,7 +134,7 @@ class AttachOps:
 
     def decline(self, attach_id: str, *, principal: Principal) -> dict[str, str]:
         try:
-            with self._engine.begin() as connection:
+            with write_transaction(self._engine) as connection:
                 self._service.decline(
                     connection, attach_id, principal=principal, now=self._clock.now()
                 )

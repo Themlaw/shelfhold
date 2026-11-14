@@ -107,6 +107,7 @@ from shelfhold.events.bus import EventBus, PublishedEvent
 from shelfhold.export.public import adopted_volumes, attach_to_volume
 from shelfhold.infrastructure.clock import Clock, FutureDateError, reject_future
 from shelfhold.infrastructure.content_trust import sanitize_upstream_text
+from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.follow_suspended import suspended_work_ids
 from shelfhold.infrastructure.logging import elapsed_ms
 from shelfhold.infrastructure.schema import acquisition, catalog
@@ -399,7 +400,7 @@ class FollowCycle:
         """A cycle that could not reach the service. A blip is nothing; `OUTAGE_CYCLES` in a row
         is an outage: `source.broken` (reason `unreachable`) once, counted against no series. The
         next cycle is the probe: the first that gets through ends the outage by itself."""
-        with self._engine.begin() as connection:
+        with write_transaction(self._engine) as connection:
             if self._ledger.bump_outage(connection) < OUTAGE_CYCLES:
                 return
             report.unavailable = True
@@ -407,12 +408,12 @@ class FollowCycle:
                 self._emit(connection, "source.broken", {"reason": "unreachable"})
 
     def _end_outage(self) -> None:
-        with self._engine.begin() as connection:
+        with write_transaction(self._engine) as connection:
             self._ledger.clear_outage(connection)
 
     def resume(self) -> None:
         """The admin dealt with the cause (renewed the secret, updated the tool): follow again."""
-        with self._engine.begin() as connection:
+        with write_transaction(self._engine) as connection:
             self._ledger.resume(connection)
         self._tickets.reopen_abandoned()
 
@@ -431,7 +432,7 @@ class FollowCycle:
         """Another installation of the tool pauses the follow, before anything is read from it
         (EF-SRC-036): its empty library must not look like series that were removed."""
         current = await from_service(self._service.instance_fingerprint(self._fetcher))
-        with self._engine.begin() as connection:
+        with write_transaction(self._engine) as connection:
             if check_instance(connection, self._plugin_id, current, self._clock.now()):
                 raise ServiceInstanceChanged()
 
@@ -489,7 +490,7 @@ class FollowCycle:
         if report.tickets.fetched:  # the source delivers: what was given up may be tried again
             self._tickets.reopen_abandoned()
         if report.tickets.dropped:
-            with self._engine.begin() as connection:
+            with write_transaction(self._engine) as connection:
                 self._emit(
                     connection, "source.downloads_dropped", {"count": report.tickets.dropped}
                 )
@@ -509,7 +510,7 @@ class FollowCycle:
         keys |= {b.source_key for b in self._bindings() if b.active}
         found = await from_service(self._service.unloaded_sources(self._fetcher, sorted(keys)))
         unloaded = frozenset(found) & keys
-        with self._engine.begin() as connection:
+        with write_transaction(self._engine) as connection:
             known = self._ledger.not_loaded(connection)
             told = 0
             for key in sorted(unloaded - known):
@@ -685,7 +686,7 @@ class FollowCycle:
         mass = bool(absent) and (
             not in_library or (len(active) >= 2 and len(absent) == len(active))
         )
-        with self._engine.begin() as connection:
+        with write_transaction(self._engine) as connection:
             if mass:
                 if self._ledger.raise_mass_alert(connection):
                     self._emit(
@@ -697,12 +698,12 @@ class FollowCycle:
         if not mass:
             for binding in active:
                 if binding in absent:
-                    with self._engine.begin() as connection:
+                    with write_transaction(self._engine) as connection:
                         count = self._ledger.bump_missing(connection, binding.id)
                     if count >= MISSING_CYCLES and self._stop_following(binding):
                         report.removed += 1
                 else:
-                    with self._engine.begin() as connection:
+                    with write_transaction(self._engine) as connection:
                         self._ledger.clear_missing(connection, binding.id)
         for binding in bindings:
             if (
@@ -738,7 +739,7 @@ class FollowCycle:
     def _remember_buried(self) -> None:
         """What `shelfhold status` lists as "tombstoned upstream" until the admin removes the
         series from Suwayomi (the rows of the series that already have a binding)."""
-        with self._engine.begin() as connection:
+        with write_transaction(self._engine) as connection:
             fresh = self._notices.sync(
                 connection, "tombstoned", self._buried,
                 own=lambda key: key.startswith(BOUND_PREFIX),
@@ -815,7 +816,7 @@ class FollowCycle:
         """EF-SRC-027: the series left the Suwayomi library. The binding goes inactive, so its
         Units are irreplaceable by calculation; no file and no follow row is touched."""
         table = acquisition.source_binding
-        with self._engine.begin() as connection:
+        with write_transaction(self._engine) as connection:
             changed = connection.execute(
                 sa.update(table)
                 .where(table.c.id == binding.id, table.c.active)
@@ -833,7 +834,7 @@ class FollowCycle:
 
     def _reactivate(self, binding: _Binding) -> bool:
         table = acquisition.source_binding
-        with self._engine.begin() as connection:
+        with write_transaction(self._engine) as connection:
             taken = connection.execute(
                 sa.select(table.c.id).where(
                     table.c.edition_id == binding.edition_id,
@@ -870,7 +871,7 @@ class FollowCycle:
             if disposition is Disposition.PAUSE:
                 raise
             if disposition is Disposition.COUNT:
-                with self._engine.begin() as connection:
+                with write_transaction(self._engine) as connection:
                     self._ledger.count_content(
                         connection, binding.id, binding.source_key,
                         getattr(error, "code", "source.content_removed"), self._clock.now(),
@@ -950,7 +951,7 @@ class FollowCycle:
                 outcome=result.outcome.name.lower(),
             )
         for unit_id in sorted(look.touched):  # every offer is known now: one election per Unit
-            with self._engine.begin() as connection:
+            with write_transaction(self._engine) as connection:
                 self._prefs.elect(connection, unit_id, look.now)
         report.requested += len(look.opened)
         log.debug(
@@ -960,7 +961,7 @@ class FollowCycle:
             baseline=mark is None,
             fresh=fresh,
         )
-        with self._engine.begin() as connection:
+        with write_transaction(self._engine) as connection:
             top = highest_numbered(connection, binding.edition_id) if mark is None else None
             if top == NOTHING_YET and fresh:
                 top = None  # a discovered series with nothing numbered: the next look takes it
@@ -997,7 +998,7 @@ class FollowCycle:
         without them, the state says why (visible), and `source.ref_has_secret` is told once per
         episode. The service is never paused for it."""
         reasons = self._left_out.pop(binding.remote_id, [])
-        with self._engine.begin() as connection:
+        with write_transaction(self._engine) as connection:
             if not reasons:
                 self._ledger.release(connection, binding.id)
                 return
@@ -1030,7 +1031,7 @@ class FollowCycle:
                 "follow.authors_skipped", binding_id=binding.id, failure_class=failure_class
             )
             return
-        with self._engine.begin() as connection:
+        with write_transaction(self._engine) as connection:
             catalog_ = Catalog(connection)
             for role, names in ((WRITER, info.authors), (ARTIST, info.artists)):
                 clean = [text for text in map(_plain, names) if text]
@@ -1117,7 +1118,7 @@ class FollowCycle:
         for edition_id, bindings in by_edition.items():
             if not all(b.id in self._looked for b in bindings):
                 continue
-            with self._engine.begin() as connection:
+            with write_transaction(self._engine) as connection:
                 report.gaps += self._gaps.scan(connection, edition_id, bindings[0].work_id, now)
 
     def _take(self, binding: _Binding, budget: RequestBudget, *, catch_up: bool = False) -> bool:
@@ -1162,7 +1163,7 @@ class FollowCycle:
             ]
             report.requested += self._round_robin(asked, mode, by_id, budget)
         report.requested += self._request_upgrades(by_id, budget)
-        with self._engine.begin() as connection:
+        with write_transaction(self._engine) as connection:
             for edition in editions:
                 if modes.get(edition.edition_id) in ("gaps", "all") and not pending(
                     connection, edition.edition_id, modes[edition.edition_id]
@@ -1186,7 +1187,7 @@ class FollowCycle:
         reach the threshold, falls back to the next rank (told once); one that fell for an
         unloaded source that is loaded again goes back to its rank (a setting)."""
         for binding in self._bindings():
-            with self._engine.begin() as connection:
+            with write_transaction(self._engine) as connection:
                 if binding.active:
                     cycles = self._not_loaded_cycles.get(binding.source_key, 0)
                     reason = self._fallback.dead_reason(
@@ -1212,7 +1213,7 @@ class FollowCycle:
             binding = by_id.get(candidate.binding_id)
             if binding is None or candidate.unit_id in self._asked_units:
                 continue
-            with self._engine.begin() as connection:
+            with write_transaction(self._engine) as connection:
                 if refusals(
                     connection, binding.edition_id, candidate.unit_id, {candidate.variant_id}
                 ):
@@ -1246,14 +1247,14 @@ class FollowCycle:
             if "upgraded" not in outcomes:
                 log.info("follow.upgrade_left", unit_id=item.unit_id, outcomes=outcomes)
                 continue
-            with self._engine.begin() as connection:
+            with write_transaction(self._engine) as connection:
                 Catalog(connection).set_preferred(item.unit_id, item.variant_id)
             report.upgraded += 1
 
     def _backfill_ok(self, edition: _Binding, mode: BackfillMode) -> bool:
         """Later arrivals may not take a backfill past what the user confirmed: it stops, and a
         new estimate must be confirmed."""
-        with self._engine.begin() as connection:
+        with write_transaction(self._engine) as connection:
             estimate = estimate_with(connection, edition.edition_id, mode, free_bytes=0)
             if within_ceiling(estimate, confirmed_ceiling(connection, edition.edition_id)):
                 return True
@@ -1301,7 +1302,7 @@ class FollowCycle:
         if unit_id in self._asked_units:
             return "skipped"  # I52: this Unit was asked of a binding already in this cycle
         now = self._clock.now()
-        with self._engine.begin() as connection:
+        with write_transaction(self._engine) as connection:
             election = self._prefs.elect(connection, unit_id, now, allowed=self._allowed)
             binding = by_id.get(election.binding_id) if election else None
             if election is None or binding is None:
@@ -1336,7 +1337,7 @@ class FollowCycle:
         number (an event holds no title). The ones announced stay in the ledger until they speak
         again, so a series is told once per episode; `shelfhold status` lists them all."""
         now = self._clock.now()
-        with self._engine.begin() as connection:
+        with write_transaction(self._engine) as connection:
             silent = stale_series(connection, now, k=self._k, plugin_id=self._plugin_id)
             fresh = self._ledger.sync_stale(connection, [str(s.edition_id) for s in silent])
             if fresh:
@@ -1346,7 +1347,7 @@ class FollowCycle:
     # -- pause and events --------------------------------------------------------------------
     def _pause(self, failure_class: str, error: Exception, report: FollowReport) -> None:
         pause = pause_of(failure_class, error)
-        with self._engine.begin() as connection:
+        with write_transaction(self._engine) as connection:
             if self._ledger.pause(connection, pause, self._clock.now()):
                 payload: dict[str, object] = {"code": pause.event_type}
                 if pause.waiting_state:

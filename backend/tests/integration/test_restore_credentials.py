@@ -666,6 +666,9 @@ def test_a_database_error_at_start_is_retried_then_stops_the_start(
     class Locked:
         calls = 0
 
+        def execution_options(self, **_: object) -> Locked:
+            return self
+
         def begin(self) -> object:
             Locked.calls += 1
             raise OperationalError("BEGIN", {}, Exception("database is locked"))

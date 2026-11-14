@@ -11,6 +11,7 @@ import sqlalchemy as sa
 from sqlalchemy import Engine
 
 from shelfhold.export.domain.path_map import clean_absolute
+from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.freeze import FreezeState
 from shelfhold.infrastructure.fsops.reading import RootReading
 from shelfhold.infrastructure.schema import platform
@@ -30,7 +31,7 @@ class GenerationCounter:
         """Commit `generation + 1` for the root at `root_path`; None for a root the database does
         not know (nothing to compare the sentinel with)."""
         table = platform.physical_root
-        with self._engine.begin() as connection:
+        with write_transaction(self._engine) as connection:
             moved = connection.execute(
                 sa.update(table)
                 .where(table.c.path_entry == clean_absolute(root_path))

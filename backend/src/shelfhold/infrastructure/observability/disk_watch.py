@@ -8,6 +8,7 @@ queues are sent again, with an `ops.disk_recovered` for the record (no notificat
 from sqlalchemy import Engine
 
 from shelfhold.events.bus import EventBus, PublishedEvent
+from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.observability.disk_guard import DISK_LOW, DiskGuard
 from shelfhold.jobs.huey_app import JobPools
 
@@ -24,7 +25,7 @@ class DiskWatcher:
         state = self._guard.evaluate()
         published: list[PublishedEvent] = []
         if state.changes:
-            with self._engine.begin() as connection:
+            with write_transaction(self._engine) as connection:
                 for change in state.changes:
                     published.append(
                         self._bus.publish(

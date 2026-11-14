@@ -109,6 +109,7 @@ from shelfhold.identity.public import (
     audit_insert,
     authorize_reserved,
 )
+from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.fsops.errors import RootBlockedError
 from shelfhold.infrastructure.fsops.probe import probe_folder
 from shelfhold.infrastructure.ids import new_ulid
@@ -634,7 +635,7 @@ class LibraryOps:
         destination_id = self._destination(destination_id)
         self._refresh_names(destination_id)
         s, link = export.export_series, export.edition_export_series
-        with self._comp.engine.begin() as connection:
+        with write_transaction(self._comp.engine) as connection:
             rows = connection.execute(
                 sa.select(s.c.id, link.c.edition_id)
                 .select_from(
@@ -981,7 +982,7 @@ class LibraryOps:
         if not isinstance(verdict, Allowed):
             raise CodedRefusal("forbidden", type(verdict).__name__)
         setting = platform.app_setting
-        with self._comp.engine.begin() as connection:
+        with write_transaction(self._comp.engine) as connection:
             count = connection.execute(
                 sa.delete(setting).where(setting.c.key.like(KEPT_PREFIX + "%"))
             ).rowcount

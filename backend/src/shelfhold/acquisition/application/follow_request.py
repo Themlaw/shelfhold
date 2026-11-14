@@ -31,6 +31,7 @@ from shelfhold.acquisition.application.failures import FailureLedger, from_servi
 from shelfhold.acquisition.application.instance import check_instance
 from shelfhold.acquisition.domain.follow_intent import FollowIntent
 from shelfhold.infrastructure.clock import Clock
+from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.requesters import still_a_user
 from shelfhold.infrastructure.schema import acquisition
@@ -172,7 +173,7 @@ class FollowRequests:
         """The fingerprint, as the cycle reads it before anything else: another installation is
         refused here, and the adapter only makes its category after a lately read fingerprint."""
         current = await from_service(link.service.instance_fingerprint(link.fetcher))
-        with self._engine.begin() as connection:
+        with write_transaction(self._engine) as connection:
             if check_instance(connection, self._plugin_id, current, self._clock.now()):
                 raise ServiceInstanceChanged()
 
@@ -225,7 +226,7 @@ class FollowRequests:
         """The call did not go through. A request this one made goes with it (nothing stale is
         kept for a series that does not exist or a service that refused); an older one stays
         approved, to be asked again."""
-        with self._engine.begin() as connection:
+        with write_transaction(self._engine) as connection:
             if forget:
                 connection.execute(
                     sa.delete(_REQUEST).where(
@@ -247,7 +248,7 @@ class FollowRequests:
 
     def _settle(self, ref: SeriesRef, state: str, *, only_if_known: bool = False) -> None:
         now = self._clock.now()
-        with self._engine.begin() as connection:
+        with write_transaction(self._engine) as connection:
             result = connection.execute(
                 sa.update(_REQUEST)
                 .where(

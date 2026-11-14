@@ -37,6 +37,7 @@ from shelfhold.export.domain.physical_roots import RootState
 from shelfhold.export.domain.provenance_mirror import MirrorDocument, MirrorFormatError
 from shelfhold.export.domain.reconcile import LIVE_STATES
 from shelfhold.infrastructure.clock import Clock
+from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.fsops import Fsops
 from shelfhold.infrastructure.fsops.errors import FsopsError
 from shelfhold.infrastructure.ids import new_ulid
@@ -243,7 +244,7 @@ class Rebaseliner:
         if not plan.updates:
             return 0
         now = self._clock.now()
-        with self._engine.begin() as connection:
+        with write_transaction(self._engine) as connection:
             for found in plan.updates:
                 refresh_destination_identity(
                     connection, found.item_id, dev=found.dev, ino=found.ino, size=found.size,

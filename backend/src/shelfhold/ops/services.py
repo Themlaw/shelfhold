@@ -36,6 +36,7 @@ from shelfhold.export.domain.physical_roots import RootState
 from shelfhold.export.domain.planner import SeriesRef
 from shelfhold.identity.public import RESERVED_ACTIONS, Allowed, Principal, authorize_reserved
 from shelfhold.infrastructure.clock import Clock
+from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.fsops import Fsops
 from shelfhold.infrastructure.schema import catalog, coherence, export, platform
 from shelfhold.jobs.control import QueueControl
@@ -370,7 +371,7 @@ class OpsServices:
         if action not in {"reexport", "unfollow"}:
             raise InvalidChoiceError("choose `reexport` or `unfollow`")
         record, coverage = export.export_record, export.unit_coverage
-        with self._engine.begin() as connection:
+        with write_transaction(self._engine) as connection:
             row = connection.execute(
                 sa.select(record.c.state).where(
                     record.c.shelf_destination_id == destination_id,
@@ -415,7 +416,7 @@ class OpsServices:
         """A periodic job is due now: the server's next tick (at most a minute) starts it."""
         table = platform.schedule
         now = self._clock.now()
-        with self._engine.begin() as connection:
+        with write_transaction(self._engine) as connection:
             rows = connection.execute(
                 sa.select(table.c.id, table.c.window).where(
                     table.c.job_kind == kind, table.c.enabled
@@ -468,7 +469,7 @@ class OpsServices:
             if not isinstance(verdict, Allowed):
                 raise CodedRefusal("forbidden", "applying a rename plan needs a fresh session")
         job, record = platform.job_view, export.export_record
-        with self._engine.begin() as connection:
+        with write_transaction(self._engine) as connection:
             row = connection.execute(sa.select(job.c.status).where(job.c.id == subject)).first()
             if row is not None:
                 if row.status not in DEAD:
@@ -493,7 +494,7 @@ class OpsServices:
         except LanguageError as error:
             raise LanguageRefusedError(f"language refused ({error.code})") from None
         table = catalog.edition
-        with self._engine.begin() as connection:
+        with write_transaction(self._engine) as connection:
             current = connection.execute(
                 sa.select(table.c.lang).where(table.c.id == edition_id)
             ).first()
@@ -525,7 +526,7 @@ class OpsServices:
         normalized = normalize_series_name(clean)
         if not clean or not normalized or len(clean) > MAX_SERIES_NAME:
             raise InvalidChoiceError("give a series name of letters and digits, 200 characters")
-        with self._engine.begin() as connection:
+        with write_transaction(self._engine) as connection:
             mark = waiting_marks.read_one(connection, "series_name_collision", edition_id)
             if mark is None:
                 raise NotWaitingError("this Edition does not wait for a series name")

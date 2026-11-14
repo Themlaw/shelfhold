@@ -24,6 +24,7 @@ from shelfhold.catalog.public import (
 from shelfhold.export.targets.kavita.errors import TargetError
 from shelfhold.export.targets.kavita.series import SeriesFields
 from shelfhold.identity.public import RESERVED_ACTIONS, Allowed, Principal, authorize_reserved
+from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import export, identity
 from shelfhold.ops.errors import CodedRefusal, ExitUnavailableError
@@ -98,7 +99,7 @@ class RevisionOps:
         self._comp = comp
 
     def list_pending(self) -> dict[str, Any]:
-        with self._comp.engine.begin() as connection:
+        with write_transaction(self._comp.engine) as connection:
             queue = RevisionQueue(connection)
             queued = queue.enqueue_missing()
             report = queue.report()
@@ -124,11 +125,11 @@ class RevisionOps:
         )  # fmt: skip
         if not isinstance(verdict, Allowed):  # the route and the socket decided first
             raise CodedRefusal("forbidden", type(verdict).__name__)
-        with self._comp.engine.begin() as connection:
+        with write_transaction(self._comp.engine) as connection:
             RevisionQueue(connection).enqueue_missing()
         pushed = self._push_metadata()
         try:
-            with self._comp.engine.begin() as connection:
+            with write_transaction(self._comp.engine) as connection:
                 done = RevisionQueue(connection, requester=None).apply_rewrites(
                     confirm, include_read=include_read, force=force_ids,
                     grant=verdict if force_ids else None,
@@ -157,7 +158,7 @@ class RevisionOps:
             if item.field is None or item.value is None:
                 continue
             taken = pusher.push_unit(item.unit_id, item.field, item.value)
-            with self._comp.engine.begin() as connection:
+            with write_transaction(self._comp.engine) as connection:
                 RevisionQueue(connection).settle_metadata(item.id, taken=taken)
             pushed += int(taken)
         return pushed

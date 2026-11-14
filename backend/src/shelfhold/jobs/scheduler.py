@@ -18,6 +18,7 @@ import sqlalchemy as sa
 from sqlalchemy import Engine
 
 from shelfhold.infrastructure.clock import Clock
+from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.freeze import FreezeState
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import platform
@@ -118,7 +119,7 @@ class Scheduler:
         jitter or window plans it afresh."""
         CronSpec.parse(cron)  # refuse a bad expression at registration, not at 03:00
         now = self._clock.now()
-        with self._engine.begin() as conn:
+        with write_transaction(self._engine) as conn:
             existing = conn.execute(
                 sa.select(schedule).where(
                     schedule.c.job_kind == kind, schedule.c.scope_key == scope_key
@@ -237,7 +238,7 @@ class Scheduler:
         span = self._window.next_span(now)
         jitter = jitter_for(self._seed, row.job_kind, row.scope_key, span.start, row.jitter_s)
         due = min(span.start + timedelta(seconds=jitter), span.end - timedelta(seconds=1))
-        with self._engine.begin() as conn:
+        with write_transaction(self._engine) as conn:
             won = conn.execute(
                 sa.update(schedule)
                 .where(schedule.c.id == row.id, schedule.c.next_due_at == row.next_due_at)
@@ -261,7 +262,7 @@ class Scheduler:
         windowed = row.window is not None
         dedupe_key = f"periodic:{row.job_kind}:{row.scope_key}"
         priority_class = "backfill" if windowed else "new"
-        with self._engine.begin() as conn:
+        with write_transaction(self._engine) as conn:
             won = conn.execute(
                 sa.update(schedule)
                 .where(schedule.c.id == row.id, schedule.c.next_due_at == row.next_due_at)

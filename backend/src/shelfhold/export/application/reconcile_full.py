@@ -33,6 +33,7 @@ from shelfhold.export.domain.reconcile import (
     classify_change,
 )
 from shelfhold.infrastructure.clock import Clock
+from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.fsops import Fsops
 from shelfhold.infrastructure.fsops.errors import HashInterrupted
 
@@ -251,7 +252,7 @@ class FullReconciler:
         self._announced[destination_id] = counts
         for family, kind in KINDS.items():
             if counts[family] and counts[family] != last.get(family):
-                with self._engine.begin() as connection:
+                with write_transaction(self._engine) as connection:
                     self._bus.publish(
                         connection, "reconcile.drift",
                         {"destination_id": destination_id, "kind": kind, "count": counts[family]},

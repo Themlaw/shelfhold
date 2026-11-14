@@ -43,6 +43,7 @@ from shelfhold.infrastructure.content_trust.cbz_entries import (
     UntrustedEntryError,
     check_cbz_entries,
 )
+from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.schema import catalog, storage
 from shelfhold.library.replica import library_copies, mark_damaged, store_copies
 
@@ -268,7 +269,7 @@ class IntegrityChecker:
         verdicts = self._verdicts(targets)
         unit = catalog.unit
         announced = []
-        with self._engine.begin() as connection:
+        with write_transaction(self._engine) as connection:
             previous = connection.execute(
                 sa.select(unit.c.integrity_state).where(unit.c.id == unit_id)
             ).scalar_one()
@@ -303,7 +304,7 @@ class IntegrityChecker:
         damaged, changes nothing else."""
         targets, damaged = self._targets(unit_id)
         verdicts = self._verdicts(targets)
-        with self._engine.begin() as connection:
+        with write_transaction(self._engine) as connection:
             for target, verdict in verdicts:
                 if not verdict.ok:
                     mark_damaged(connection, target.replica_id, self._clock.now())

@@ -42,6 +42,7 @@ from shelfhold.export.domain.reconcile import (
     thresholds_from,
 )
 from shelfhold.infrastructure.clock import Clock
+from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.fsops import Fsops
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.logging import elapsed_ms
@@ -276,7 +277,7 @@ class Reconciler:
         record = export.export_record
         mine = {f.item_id for f in managed if f.rel_path.split("/", 1)[0] == folder}
         paused: list[str] = []
-        with self._engine.begin() as connection:
+        with write_transaction(self._engine) as connection:
             where = (record.c.shelf_destination_id == destination_id,)
             for item in decisions[Disappeared.REEXPORT]:
                 if item.item_id in mine:
@@ -352,7 +353,7 @@ class Reconciler:
         if not refresh and not settled:
             return
         record = export.export_record
-        with self._engine.begin() as connection:
+        with write_transaction(self._engine) as connection:
             for item_id, size, mtime_ns, dev, ino in refresh:
                 connection.execute(
                     sa.update(record)
@@ -374,7 +375,7 @@ class Reconciler:
                 )
 
     def _announce(self, destination_id: str, event_type: str, **payload: str | int) -> None:
-        with self._engine.begin() as connection:
+        with write_transaction(self._engine) as connection:
             self._bus.publish(connection, event_type, {"destination_id": destination_id, **payload})
 
     # -- resuming --------------------------------------------------------------------------------
@@ -405,7 +406,7 @@ class Reconciler:
             export.edition_export_series,
         )  # fmt: skip
         self._probe_if_denied(export_series_id)
-        with self._engine.begin() as connection:
+        with write_transaction(self._engine) as connection:
             row = connection.execute(
                 sa.select(series.c.shelf_destination_id).where(
                     series.c.id == export_series_id, series.c.paused_reason.isnot(None)

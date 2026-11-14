@@ -37,6 +37,7 @@ from shelfhold.composition_errors import KeyringUnavailableError, NoLibraryError
 from shelfhold.export.domain.path_map import PathMode
 from shelfhold.export.domain.physical_roots import RootState
 from shelfhold.identity.public import RESERVED_ACTIONS, Allowed, Principal, authorize_reserved
+from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import acquisition, identity
 from shelfhold.library.public import (
@@ -158,7 +159,7 @@ class SourceMigrationOps:
     def _mark_sealed(self, plan: AliasPlan) -> None:
         """The durable intent is done: every new form is sealed (a number, never a value)."""
         record = acquisition.source_alias_migration
-        with self._comp.engine.begin() as connection:
+        with write_transaction(self._comp.engine) as connection:
             connection.execute(
                 sa.update(record)
                 .where(record.c.source_key == plan.source_key, record.c.state == "applied")

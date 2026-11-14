@@ -16,6 +16,7 @@ from shelfhold.events.bus import EventBus
 from shelfhold.export.application.restore import ForgetRootRefusedError, RestoreGuard
 from shelfhold.identity.public import AuditEntry, Principal, audit_insert
 from shelfhold.infrastructure.clock import Clock
+from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.fsops import Fsops
 from shelfhold.infrastructure.restore_notice import clear_notice, read_notice
 from shelfhold.ops.errors import ExitUnavailableError, NotWaitingError
@@ -105,7 +106,7 @@ class RestoreCredentialsExit:
 
     def acknowledge(self, *, principal: Principal) -> list[str]:
         """The passkeys that changed since the backup, as far as they are known."""
-        with self._engine.begin() as connection:
+        with write_transaction(self._engine) as connection:
             data = read_notice(connection)
             if data is None:
                 raise NotWaitingError("no restore is waiting for an acknowledgement")

@@ -39,6 +39,7 @@ from shelfhold.catalog.domain.external_ids import ExternalId, ExternalIdError, n
 from shelfhold.catalog.domain.provenance import FieldKey, StoredField, is_age_field
 from shelfhold.infrastructure.clock import Clock
 from shelfhold.infrastructure.cover_store import CoverStore
+from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.fetcher.client import is_identifiable
 from shelfhold.infrastructure.fetcher.errors import (
     DnsBlocked,
@@ -251,7 +252,7 @@ class EnrichService:
             if r.kind == "age_suggestion" and r.subject.entity_type == "edition"
             and r.provenance.provider == manifest.key and (a := _age_of(r.data)) is not None
         ]  # fmt: skip
-        with self._engine.begin() as connection:
+        with write_transaction(self._engine) as connection:
             keep, manual = self._split_manual(connection, edition_id, proposals)
             report = propose_fields(connection, {"edition": edition_id}, keep, now=now)
             withdrawals: list[Withdrawal] = []
@@ -356,7 +357,7 @@ class EnrichService:
     def _down(self, edition_id: str, reason: str) -> EnrichReport:
         """Tell the admin once an hour; change nothing else."""
         now = self._clock.now()
-        with self._engine.begin() as connection:
+        with write_transaction(self._engine) as connection:
             recent = connection.execute(
                 sa.select(sa.func.count())
                 .select_from(platform.event)

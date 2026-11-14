@@ -45,6 +45,7 @@ from shelfhold.identity.public import (
     authorize_reserved,
 )
 from shelfhold.infrastructure.clock import Clock
+from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.fsops import Fsops
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import catalog, export, storage
@@ -401,7 +402,7 @@ class WithdrawalService:
                     pending.append(local)
                     continue
                 moved += 1
-                with self._engine.begin() as connection:
+                with write_transaction(self._engine) as connection:
                     connection.execute(
                         sa.update(export.export_record)
                         .where(
@@ -423,7 +424,7 @@ class WithdrawalService:
         try:
             if not self._keep_copy(file, local):
                 return False
-            with self._engine.begin() as connection:
+            with write_transaction(self._engine) as connection:
                 intent = journal.record(
                     op="recycle", src=local, within=connection,
                     expected_sha256=file.sha256 or self._fsops.sha256_of(local),
@@ -467,7 +468,7 @@ class WithdrawalService:
         if observed is None:
             return False
         root_id, root_rel = self._locate(target)
-        with self._engine.begin() as connection:
+        with write_transaction(self._engine) as connection:
             record_replica(
                 connection, unit_id=unit_id, export_item_id=file.export_item_id, location="store",
                 content_hash=digest, file_hash=digest, independent=True, physical_root_id=root_id,
@@ -478,7 +479,7 @@ class WithdrawalService:
         return True
 
     def _unshelve(self, item: WithdrawalItem, principal: Principal, now: datetime) -> None:
-        with self._engine.begin() as connection:
+        with write_transaction(self._engine) as connection:
             connection.execute(
                 sa.update(catalog.edition)
                 .where(
@@ -524,7 +525,7 @@ class WithdrawalService:
         """Intents, records, Edition and audit in one transaction."""
         record = export.export_record
         intents: list[tuple[str, str]] = []
-        with self._engine.begin() as connection:
+        with write_transaction(self._engine) as connection:
             for file in item.files:
                 local = load_context(connection, file.destination_id).local(file.rel_path)
                 observed = self._fsops.observe(local)

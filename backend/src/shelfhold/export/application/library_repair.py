@@ -40,6 +40,7 @@ from shelfhold.export.application.intents import IntentJournal, ManifestHook, Op
 from shelfhold.export.application.snapshot import barrier_closed_by
 from shelfhold.export.application.upgrade import UpgradeMark, place_under_intent
 from shelfhold.infrastructure.clock import Clock
+from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.fsops import Fsops
 from shelfhold.infrastructure.held_files import remove_held_file
 from shelfhold.infrastructure.logging import escaped
@@ -205,7 +206,7 @@ class LibraryRepair:
             intent = place_under_intent(
                 self._journal, self._fsops, target, mark=mark, new_hash=new_hash, data=stream
             )
-        with self._engine.begin() as connection:
+        with write_transaction(self._engine) as connection:
             event = self._complete(connection, intent, mark.to_json())
             self._journal.mark_done(intent, within=connection)
         if event is not None:

@@ -68,6 +68,7 @@ from shelfhold.infrastructure.content_trust import (
     UntrustedEntryError,
     sanitize_upstream_text,
 )
+from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.fetcher import (
     DomainNotAllowed,
     FetchError,
@@ -824,7 +825,7 @@ class NativeAcquirer:
 
     def _bump(self, request_id: str) -> None:
         table = acquisition.download_request
-        with self._engine.begin() as connection:
+        with write_transaction(self._engine) as connection:
             connection.execute(
                 sa.update(table)
                 .where(table.c.id == request_id)
@@ -836,7 +837,7 @@ class NativeAcquirer:
         source's text (it may name a title or carry what it was handed)."""
         reason = _reason(error)
         table = acquisition.download_request
-        with self._engine.begin() as connection:
+        with write_transaction(self._engine) as connection:
             connection.execute(
                 sa.update(table)
                 .where(table.c.id == row.id)
@@ -847,7 +848,7 @@ class NativeAcquirer:
 
     def _fetched(self, row: Any, sha: str, kind: str) -> AcquireOutcome:
         table = acquisition.download_request
-        with self._engine.begin() as connection:
+        with write_transaction(self._engine) as connection:
             connection.execute(
                 sa.update(table)
                 .where(table.c.id == row.id)

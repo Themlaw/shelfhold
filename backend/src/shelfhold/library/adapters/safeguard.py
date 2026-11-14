@@ -33,6 +33,7 @@ from shelfhold.infrastructure.archives import (
     safe_open_archive,
 )
 from shelfhold.infrastructure.content_trust import UntrustedEntryError, check_cbz_entries
+from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.fsops import Fsops, FsopsError
 from shelfhold.infrastructure.schema import storage
 from shelfhold.library.adapters.meta_projection import MetaProjection
@@ -147,7 +148,7 @@ class Safeguard:
     # -- the safeguard ------------------------------------------------------------------------
 
     def run(self, unit_id: str, *, upstream: UpstreamFetch | None = None) -> SafeguardResult:
-        with self._engine.begin() as connection:
+        with write_transaction(self._engine) as connection:
             content = connection.execute(
                 sa.select(storage.content)
                 .where(
@@ -256,7 +257,7 @@ class Safeguard:
         if observed is None:
             raise SafeguardFailedError("vanished", "the stored file disappeared after writing")
         identity = observed[1]
-        with self._engine.begin() as connection:
+        with write_transaction(self._engine) as connection:
             connection.execute(
                 sa.update(storage.content)
                 .where(storage.content.c.id == content_id)

@@ -67,6 +67,7 @@ from shelfhold.infrastructure.content_trust.protection import (
     detect_protection,
     watermark_hint,
 )
+from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.fsops import Fsops, FsopsError
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import storage
@@ -955,7 +956,7 @@ class ImportFolder:
         """Flag the content. A user's flag stays; the heuristic only fills a blank."""
         content = storage.content
         allowed = ("none", "heuristic") if origin == "user" else ("none",)
-        with self._engine.begin() as connection:
+        with write_transaction(self._engine) as connection:
             connection.execute(
                 sa.update(content)
                 .where(content.c.id == content_id, content.c.watermark_origin.in_(allowed))
@@ -987,7 +988,7 @@ class ImportFolder:
             "sha256": sha, "state": state, "reason": reason, "decided_at": now,
         }  # fmt: skip
         try:
-            with self._engine.begin() as connection:
+            with write_transaction(self._engine) as connection:
                 exists = connection.execute(
                     sa.select(table.c.rel_path).where(table.c.rel_path == key)
                 ).first()

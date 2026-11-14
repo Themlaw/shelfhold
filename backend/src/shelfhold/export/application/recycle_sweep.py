@@ -27,6 +27,7 @@ from shelfhold.export.application.intents import (
     open_intent_paths,
 )
 from shelfhold.export.domain.physical_roots import RECYCLE_DIR
+from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.fsops import Fsops
 from shelfhold.infrastructure.fsops.errors import EmitterConditionError, FsopsError
 from shelfhold.infrastructure.schema import catalog, platform, storage
@@ -254,7 +255,7 @@ class RecycleSweeper:
                     failed += 1
                     log.warning("retention.recycle_failed")
                 else:
-                    with self._journal.engine.begin() as connection:
+                    with write_transaction(self._journal.engine) as connection:
                         self._journal.mark_done(intent, within=connection)
                         forget_binned_export_files(connection, name)
                     removed += 1

@@ -24,6 +24,7 @@ from shelfhold.export.domain.path_map import PathMapError
 from shelfhold.export.targets.kavita.client import KavitaClient
 from shelfhold.export.targets.kavita.reinstall import library_type_of
 from shelfhold.infrastructure.clock import Clock
+from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.fsops import Fsops
 from shelfhold.infrastructure.fsops.errors import RootBlockedError
 from shelfhold.infrastructure.schema import export
@@ -193,7 +194,7 @@ class ArrivalPoller:
             t.c.shelf_destination_id == ctx.destination_id,
             t.c.export_item_id == record.item_id,
         )
-        with self._engine.begin() as connection:
+        with write_transaction(self._engine) as connection:
             if step is Step.INDEXED:
                 connection.execute(
                     sa.update(t)
@@ -218,7 +219,7 @@ class ArrivalPoller:
 
     def _save_waiting(self, destination_id: str, client: KavitaClient) -> None:
         t = export.export_record
-        with self._engine.begin() as connection:
+        with write_transaction(self._engine) as connection:
             target_id = connection.execute(
                 sa.select(export.shelf_destination.c.target_id).where(
                     export.shelf_destination.c.id == destination_id

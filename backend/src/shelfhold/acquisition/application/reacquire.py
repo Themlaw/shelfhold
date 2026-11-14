@@ -29,6 +29,7 @@ from sqlalchemy import Connection, Engine
 from shelfhold.acquisition.application.tickets import DownloadTickets
 from shelfhold.events.bus import EventBus
 from shelfhold.infrastructure.clock import Clock
+from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.schema import acquisition, catalog, platform
 from shelfhold.library.public import fresh_repair_content
 
@@ -93,7 +94,7 @@ class Reacquirer:
     def reacquire(self, unit_id: str) -> ReacquireOutcome:
         now = self._clock.now()
         announced = []
-        with self._engine.begin() as connection:
+        with write_transaction(self._engine) as connection:
             flagged = connection.execute(
                 sa.select(catalog.unit.c.integrity_checked_at).where(catalog.unit.c.id == unit_id)
             ).scalar()
@@ -184,7 +185,8 @@ class Reacquirer:
         if content_id is None:
             return Replacement("no_fresh_copy")  # the ticket is open, or nothing new came
         done = repaired(unit_id)
-        with self._engine.begin() as connection:  # the attempt is dated: no new copy, no new read
+        # the attempt is dated: no new copy, no new read
+        with write_transaction(self._engine) as connection:
             connection.execute(
                 sa.update(catalog.unit)
                 .where(catalog.unit.c.id == unit_id)

@@ -44,6 +44,7 @@ from shelfhold.catalog.public import (
 )
 from shelfhold.infrastructure.archives import DEFAULT_LIMITS
 from shelfhold.infrastructure.content_trust import NeutralizationError, neutralize_epub
+from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.packaging.epub import TocError, read_toc
 from shelfhold.infrastructure.schema import catalog, export
 from shelfhold.infrastructure.volumes import open_data_folder
@@ -241,7 +242,7 @@ class RangedExporter:
         """Write down the length of the file placed: what the guard of the next replacement
         compares with. The two doors call it once the file is on the destination."""
         record = export.export_record
-        with self._engine.begin() as connection:
+        with write_transaction(self._engine) as connection:
             connection.execute(
                 sa.update(record)
                 .where(

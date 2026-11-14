@@ -23,6 +23,7 @@ from shelfhold.acquisition.domain.backfill import (
     BackfillMode,
     needs_confirmation,
 )
+from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.schema import acquisition, platform
 from shelfhold.library.public import median_unit_bytes
 
@@ -112,7 +113,7 @@ class Backfill:
             raise BackfillConfirmationRequired(estimate)
         ceiling = (estimate.units, estimate.size_bytes)  # never the client's figures
         follow = acquisition.series_follow
-        with self._engine.begin() as connection:
+        with write_transaction(self._engine) as connection:
             changed = connection.execute(
                 sa.update(follow)
                 .where(follow.c.edition_id == edition_id)

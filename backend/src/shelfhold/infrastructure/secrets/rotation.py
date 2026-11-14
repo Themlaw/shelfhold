@@ -16,8 +16,9 @@ from dataclasses import dataclass
 from datetime import datetime
 
 import sqlalchemy as sa
-from sqlalchemy import Connection, Engine
+from sqlalchemy import Engine
 
+from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.fsops.tombstone_journal import sentinel_kid_names
 from shelfhold.infrastructure.schema import platform
 from shelfhold.infrastructure.secrets import registry
@@ -44,19 +45,14 @@ class RotationReport:
     reencrypted: int
 
 
-def _begin_immediate(connection: Connection) -> None:
-    # take the write lock before reading the row
-    connection.execution_options(shelfhold_begin="BEGIN IMMEDIATE")
-    connection.begin()
-
-
 def _reseal_row(
     engine: Engine, vault: SecretVault, sealed: registry.SealedTable, row_id: str
 ) -> bool:
     active = vault.keyring.active.kid
     table = sealed.table
-    with engine.connect() as connection:
-        _begin_immediate(connection)
+    # the write lock before reading the row
+    with engine.execution_options(shelfhold_begin="BEGIN IMMEDIATE").connect() as connection:
+        connection.begin()
         try:
             row = (
                 connection.execute(sa.select(table).where(sealed.pk == row_id))
@@ -101,7 +97,7 @@ def rotate(
         if not resumed:
             keyring = keyring.rotated(now)
             store.write(keyring)  # the intention, durable before any row moves
-        with engine.begin() as connection:
+        with write_transaction(engine) as connection:
             registry.sync_registry(connection, keyring)
         vault = SecretVault(keyring)
         moved = 0
@@ -141,7 +137,7 @@ def mark_compromised(
     with nullcontext() if locked else store.lock():
         keyring = store.load().compromised(kids, now)
         store.write(keyring)
-        with engine.begin() as connection:
+        with write_transaction(engine) as connection:
             registry.sync_registry(connection, keyring)
         return keyring
 

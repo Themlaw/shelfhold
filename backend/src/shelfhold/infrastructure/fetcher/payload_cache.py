@@ -18,6 +18,7 @@ from sqlalchemy import Engine
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
 from shelfhold.infrastructure.clock import Clock
+from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.fetcher.cache import cacheable_request
 from shelfhold.infrastructure.schema import platform
 from shelfhold.sdk.fetcher import CookieJarView, DownloadedFile, Response
@@ -65,7 +66,7 @@ class PayloadCache:
         }
         values = {"payload": payload, "fetched_at": now, "expires_at": now + self._ttl}
         table = platform.metadata_cache
-        with self._engine.begin() as connection:
+        with write_transaction(self._engine) as connection:
             connection.execute(sa.delete(table).where(table.c.expires_at <= now))
             connection.execute(
                 sqlite_insert(table)

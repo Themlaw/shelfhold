@@ -13,6 +13,7 @@ from sqlalchemy import Engine
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
 from shelfhold.infrastructure.clock import Clock
+from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.schema import platform
 
 domain_slot = platform.domain_slot
@@ -37,12 +38,12 @@ class DomainSlots:
             index_elements=["limit_key"],
             set_={"slots": slots, "in_use": sa.func.min(domain_slot.c.in_use, slots)},
         )
-        with self._engine.begin() as conn:
+        with write_transaction(self._engine) as conn:
             conn.execute(stmt)
 
     def try_acquire(self, limit_key: str) -> bool:
         now = self._clock.now()
-        with self._engine.begin() as conn:
+        with write_transaction(self._engine) as conn:
             conn.execute(  # a lease nobody renewed is a dead holder: free the key
                 sa.update(domain_slot)
                 .where(domain_slot.c.limit_key == limit_key, domain_slot.c.lease_until < now)
@@ -65,7 +66,7 @@ class DomainSlots:
         return False
 
     def release(self, limit_key: str) -> None:
-        with self._engine.begin() as conn:
+        with write_transaction(self._engine) as conn:
             conn.execute(
                 sa.update(domain_slot)
                 .where(domain_slot.c.limit_key == limit_key, domain_slot.c.in_use > 0)
@@ -74,7 +75,7 @@ class DomainSlots:
 
     def release_all(self) -> int:
         """At boot, once the instance lock is ours: no worker of a previous run is alive."""
-        with self._engine.begin() as conn:
+        with write_transaction(self._engine) as conn:
             leased = conn.execute(
                 sa.select(sa.func.coalesce(sa.func.sum(domain_slot.c.in_use), 0))
             ).scalar_one()

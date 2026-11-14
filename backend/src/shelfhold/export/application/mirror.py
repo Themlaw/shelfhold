@@ -35,6 +35,7 @@ from shelfhold.export.domain.provenance_mirror import (
     mirror_name,
 )
 from shelfhold.infrastructure.clock import Clock
+from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.fetcher.refs import projectable
 from shelfhold.infrastructure.fsops import Fsops, PathEscapeError
 from shelfhold.infrastructure.logging import known_secret_values
@@ -147,7 +148,7 @@ class ProvenanceMirror:
         self.skipped.append(name)
         log.warning("mirror_skipped", file=name, reason=reason)
         try:
-            with self._engine.begin() as connection:
+            with write_transaction(self._engine) as connection:
                 self._bus.publish(
                     connection,
                     "reconcile.drift",

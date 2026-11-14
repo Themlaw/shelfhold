@@ -7,6 +7,7 @@ from sqlalchemy import Engine
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.exc import OperationalError
 
+from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.schema import platform
 
 __all__ = ["APPLIED_KEY", "applied_public_url", "record_applied_public_url"]
@@ -18,7 +19,7 @@ def record_applied_public_url(engine: Engine, public_url: str | None) -> None:
     table = platform.app_setting
     value = public_url or ""
     try:
-        with engine.begin() as connection:
+        with write_transaction(engine) as connection:
             connection.execute(
                 sqlite_insert(table)
                 .values(key=APPLIED_KEY, value=value)

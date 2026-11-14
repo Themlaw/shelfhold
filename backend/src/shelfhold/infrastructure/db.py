@@ -1,7 +1,7 @@
 """SQLite engine in WAL mode (ADR-0004)."""
 
 from collections.abc import Iterator
-from contextlib import contextmanager
+from contextlib import AbstractContextManager, contextmanager
 from pathlib import Path
 from typing import Any
 
@@ -37,6 +37,19 @@ def create_db_engine(path: Path) -> Engine:
 
     install_write_guard(engine)  # a registered secret never reaches a reference or a journal
     return engine
+
+
+def write_transaction(engine: Engine) -> AbstractContextManager[Connection]:
+    """A transaction that may write: `BEGIN IMMEDIATE`, the write lock taken first and waited for.
+
+    A deferred transaction (`engine.begin()`) that reads and then writes is refused at once with
+    `database is locked` when another writer commits in between (its snapshot is outdated, and
+    the busy timeout does not apply to it). Every transaction of the production code that may
+    write comes from here; a transaction that never writes may stay deferred, and says so in
+    `tests/unit/test_write_lock_architecture.py`. Commits when the block ends, rolls back when it
+    raises, like `engine.begin()`.
+    """
+    return engine.execution_options(shelfhold_begin="BEGIN IMMEDIATE").begin()
 
 
 class ForeignKeyViolationError(Exception):

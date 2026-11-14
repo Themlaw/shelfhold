@@ -35,6 +35,7 @@ from shelfhold.export.domain.kavita_instance import covering_libraries, library_
 from shelfhold.export.targets.kavita import dto
 from shelfhold.export.targets.kavita.client import KavitaClient
 from shelfhold.infrastructure.clock import Clock
+from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.schema import export
 
 __all__ = ["AccessAuditor", "AuditReport", "account_of"]
@@ -107,7 +108,7 @@ class AccessAuditor:
 
     def _fail_closed(self, client: KavitaClient, target_id: str, error: Exception) -> AuditReport:
         report = AuditReport(failed=True, error=type(error).__name__)
-        with self._engine.begin() as connection:
+        with write_transaction(self._engine) as connection:
             for shelf_id in self._shelves(connection, target_id):
                 if pause_shelf(connection, shelf_id, CHILD_EXPOSURE):
                     report.paused_shelves.append(shelf_id)
@@ -136,7 +137,7 @@ class AccessAuditor:
         family_blocked = False  # a shelf below 18+ on a release with the access-control flaw
         shared_library = False  # a family library that holds more than its own folder
         now = self._clock.now()
-        with self._engine.begin() as connection:
+        with write_transaction(self._engine) as connection:
             for row in self.links(connection, target_id):
                 ctx = load_context(connection, row.destination_id)
                 root = ctx.remote_folder(ctx.root_local) if ctx.root_local else None

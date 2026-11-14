@@ -57,6 +57,7 @@ from shelfhold.identity.public import (
     Principal,
     authorize_reserved,
 )
+from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.event_sequence import invalidate_tokens
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import acquisition, coherence, identity, platform
@@ -421,7 +422,7 @@ class TombstoneService:
         stored = lift_cited(cited) if lifting else dict(cited)
         plaintext = encode_plaintext(values, stored)
         kid = self._keyring.active.kid
-        with self._engine.begin() as connection:
+        with write_transaction(self._engine) as connection:
             seq = self._insert_row(connection, plaintext, values.scope, reason=reason)
             lines = {
                 root.root_id: self._line(plaintext, values.scope, root.root_id, seq)
@@ -618,7 +619,7 @@ class TombstoneService:
                             reason=type(error).__name__)  # fmt: skip
                 return False  # stays pending: written at the next replay of this root
             self._advance_chain(root, seq, line, created=created)
-            with self._engine.begin() as connection:
+            with write_transaction(self._engine) as connection:
                 connection.execute(
                     sa.delete(_pending).where(
                         _pending.c.root_id == root.root_id, _pending.c.seq == seq
@@ -865,7 +866,7 @@ class TombstoneService:
         for root_id in sorted(report.truncated_roots):
             if self._state.mark_truncated(root_id, announce=True):
                 report.truncated_new.add(root_id)
-        with self._engine.begin() as connection:
+        with write_transaction(self._engine) as connection:
             for kid, seq in sorted(heal):
                 self._register_kid(connection, kid, seq)
             for values, cited in to_merge:
@@ -1220,7 +1221,7 @@ class TombstoneService:
     def _tell_hits(self, scopes: set[Scope]) -> None:
         if not scopes:
             return
-        with self._engine.begin() as connection:
+        with write_transaction(self._engine) as connection:
             published = [
                 self._bus.publish(connection, "tombstone.migration_hit", {"scope": scope})
                 for scope in sorted(scopes)
@@ -1275,7 +1276,7 @@ class TombstoneService:
                 # `rename` leaves the old file in place and every line owed to it (appended
                 # again, harmlessly: a repeated line is one line); the other order could lose, in
                 # the set-aside file, a line that only this journal held.
-                with self._engine.begin() as connection:
+                with write_transaction(self._engine) as connection:
                     self._merge_into_table(found[root.root_id], connection)
                     self._owe_every_line(root.root_id, connection)
                     # the new journal starts a new chain, rewritten from the table under the
@@ -1382,7 +1383,7 @@ class TombstoneService:
         """Every row of the table becomes a line owed to this root (a root stamped again after a
         takeover or a reinit has a journal that lacks them): they are written by the next flush.
         Its chained label is taken again from the journal as it will be."""
-        with _WRITE_LOCK, self._engine.begin() as connection:
+        with _WRITE_LOCK, write_transaction(self._engine) as connection:
             self._owe_every_line(root_id, connection)
             self._state.set_chain(root_id, None, connection)
 
@@ -1417,7 +1418,7 @@ class TombstoneService:
                 if count is not None:
                     rewritten[root.root_id] = count
         owed = tuple(r.root_id for r in roots if self._state.rekey_owed(r.root_id))
-        with self._engine.begin() as connection:
+        with write_transaction(self._engine) as connection:
             connection.execute(
                 sa.insert(identity.audit).values(
                     id=new_ulid(),
@@ -1435,7 +1436,7 @@ class TombstoneService:
         """The table and the lines owed, sealed again; every root marked as owing its journal."""
         key = self._keyring.active
         resealed = 0
-        with _WRITE_LOCK, self._engine.begin() as connection:
+        with _WRITE_LOCK, write_transaction(self._engine) as connection:
             key_registry.register_active_key(connection, self._keyring)
             self._register_kid(connection, key.kid, self._next_seq(connection))
             rows = connection.execute(
@@ -1625,7 +1626,7 @@ class TombstoneService:
                 else "type the confirmation phrase exactly"
             )  # fmt: skip
         self.replay(roots)
-        with self._engine.begin() as connection:
+        with write_transaction(self._engine) as connection:
             db_kids = set(connection.execute(sa.select(_kid.c.kid)).scalars())
             lost = set(connection.execute(sa.select(_lost.c.kid)).scalars())
             seen = set().union(*self._sentinel_kids.values()) if self._sentinel_kids else set()

@@ -27,6 +27,7 @@ from shelfhold.events.activity import ActivityEvent, Viewer, activity_view
 from shelfhold.events.bus import EventBus
 from shelfhold.events.operating import AGGREGATED
 from shelfhold.infrastructure.clock import Clock
+from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.fetcher import LanTargets, Resolver, SystemResolver
 from shelfhold.infrastructure.schema import platform
 from shelfhold.infrastructure.secrets.vault import SecretVault
@@ -126,7 +127,7 @@ class NotificationDispatcher:
 
     def _claim(self) -> list[_Row]:
         now = self._clock.now()
-        with self._engine.begin() as conn:
+        with write_transaction(self._engine) as conn:
             due = conn.execute(
                 sa.select(
                     pending.c.id,
@@ -168,7 +169,7 @@ class NotificationDispatcher:
     def _renew(self, group: list[_Row]) -> None:
         """A long batch must not let another worker take a row we are about to send."""
         until = self._clock.now() + LEASE
-        with self._engine.begin() as conn:
+        with write_transaction(self._engine) as conn:
             conn.execute(
                 sa.update(pending)
                 .where(pending.c.id.in_([r.id for r in group]))
@@ -193,13 +194,13 @@ class NotificationDispatcher:
             return False
 
     def _delete(self, group: list[_Row]) -> None:
-        with self._engine.begin() as conn:
+        with write_transaction(self._engine) as conn:
             conn.execute(sa.delete(pending).where(pending.c.id.in_([r.id for r in group])))
 
     def _retry_or_drop(self, group: list[_Row]) -> int:
         now = self._clock.now()
         dropped = 0
-        with self._engine.begin() as conn:
+        with write_transaction(self._engine) as conn:
             for row in group:
                 attempts = row.attempts + 1
                 if attempts >= MAX_ATTEMPTS:

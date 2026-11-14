@@ -56,6 +56,7 @@ from shelfhold.export.domain.path_map import (
 )
 from shelfhold.identity.public import AuditEntry, add_directly_refusal, audit_insert
 from shelfhold.infrastructure.clock import Clock, SystemClock
+from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import catalog, export
 from shelfhold.infrastructure.schema.export import LINK_MODES
@@ -129,7 +130,7 @@ class ShelfService:
         check_family_cap(name, max_age_rating)
         hold = is_family(max_age_rating) if hold_until_rated is None else hold_until_rated
         shelf_id = new_ulid()
-        with self._engine.begin() as connection:
+        with write_transaction(self._engine) as connection:
             connection.execute(
                 sa.insert(export.shelf).values(
                     id=shelf_id, name=name, phrase=phrase, max_age_rating=max_age_rating,
@@ -146,7 +147,7 @@ class ShelfService:
         """Change the ceiling. Below 18+ the destinations of the shelf must partition access; what
         the new ceiling no longer admits comes back as a removal plan, never as a removal."""
         check_ceiling(max_age_rating)
-        with self._engine.begin() as connection:
+        with write_transaction(self._engine) as connection:
             name, previous = connection.execute(
                 sa.select(export.shelf.c.name, export.shelf.c.max_age_rating).where(
                     export.shelf.c.id == shelf_id
@@ -177,7 +178,7 @@ class ShelfService:
         self, shelf_id: str, profiles: list[str], *, actor: Actor | None = None
     ) -> list[str]:
         clean = sorted(set(profiles))
-        with self._engine.begin() as connection:
+        with write_transaction(self._engine) as connection:
             done = connection.execute(
                 sa.update(export.shelf)
                 .where(export.shelf.c.id == shelf_id)
@@ -191,7 +192,7 @@ class ShelfService:
     def set_hold_until_rated(
         self, shelf_id: str, hold: bool, *, actor: Actor | None = None
     ) -> None:
-        with self._engine.begin() as connection:
+        with write_transaction(self._engine) as connection:
             done = connection.execute(
                 sa.update(export.shelf)
                 .where(export.shelf.c.id == shelf_id)
@@ -206,7 +207,7 @@ class ShelfService:
     ) -> None:
         """ "Do not upgrade read Units" (EF-EXP-016): on by default; `SamePathUpgrade` reads it
         for every reason it is asked to replace a file."""
-        with self._engine.begin() as connection:
+        with write_transaction(self._engine) as connection:
             done = connection.execute(
                 sa.update(export.shelf)
                 .where(export.shelf.c.id == shelf_id)
@@ -226,7 +227,7 @@ class ShelfService:
         (irreplaceable: never) and of the mount is taken where the copy is made."""
         if mode not in LINK_MODES:
             raise ValueError(f"link mode {mode!r}: one of {', '.join(LINK_MODES)}")
-        with self._engine.begin() as connection:
+        with write_transaction(self._engine) as connection:
             done = connection.execute(
                 sa.update(export.shelf).where(export.shelf.c.id == shelf_id).values(link_mode=mode)
             )
@@ -242,7 +243,7 @@ class ShelfService:
         `purge_upstream_after_export`, and the caller holds the reserved action
         `shelf.purge_upstream`: the nightly deed that erases upstream acts only where an admin,
         fresh or on the host, said so. Even then it is subject to "Mettre à l'abri" (EF-BIB-038)."""
-        with self._engine.begin() as connection:
+        with write_transaction(self._engine) as connection:
             done = connection.execute(
                 sa.update(export.shelf)
                 .where(export.shelf.c.id == shelf_id)
@@ -325,7 +326,7 @@ class ShelfService:
         """Put an Edition on a shelf, by the one admission every road uses (EF-BIB-055): a shelf
         below 18+ takes it only once an admin rated it and nothing suggests more. A shelf that aims
         at a remote library already holding the Edition under another shelf refuses it."""
-        with self._immediate().begin() as connection:
+        with write_transaction(self._engine) as connection:
             result = self._file(connection, edition_id, shelf_id)
             if result.filed:
                 self._audit(
@@ -373,7 +374,7 @@ class ShelfService:
         adult without the right to classify does not choose one), then the admission every road
         uses. A refusal is audited, with the Edition and the shelf; the Edition stays where it was
         (unrated: unfiled, waiting in "À classer"). `LookupError`: no such Edition or shelf."""
-        with self._immediate().begin() as connection:
+        with write_transaction(self._engine) as connection:
             family = self._family_involved(connection, edition_id, shelf_id)
             rated = connection.execute(
                 sa.select(catalog.edition.c.rated_at).where(catalog.edition.c.id == edition_id)
@@ -398,7 +399,7 @@ class ShelfService:
 
     def transaction(self) -> AbstractContextManager[Connection]:
         """A write transaction, for a caller that rates and files in one (an approval, L35)."""
-        return self._immediate().begin()
+        return write_transaction(self._engine)
 
     def file_in(
         self, connection: Connection, edition_id: str, shelf_id: str | None, *,
@@ -425,7 +426,7 @@ class ShelfService:
         """File an Edition that sits nowhere on the shelf its kind proposes. The door is the one of
         the new Edition (`file_new_edition`): a shelf below 18+ never takes an Edition nobody
         rated or rated above its ceiling, and the default never moves an Edition already shelved."""
-        with self._immediate().begin() as connection:
+        with write_transaction(self._engine) as connection:
             current = connection.execute(
                 sa.select(catalog.edition.c.shelf_id).where(catalog.edition.c.id == edition_id)
             ).scalar_one()
@@ -519,7 +520,7 @@ class ShelfService:
         a later default is only proposed, the binding keeps its own copy."""
         destination_id = new_ulid()
         template = copy_template_into_binding(default)
-        with self._engine.begin() as connection:
+        with write_transaction(self._engine) as connection:
             shelf = connection.execute(
                 sa.select(export.shelf.c.retention_mode, export.shelf.c.max_age_rating).where(
                     export.shelf.c.id == shelf_id
@@ -574,7 +575,7 @@ class ShelfService:
         """A new path map moves the folders a Kavita library reads, so who can read what has to be
         audited again: every linked shelf below 18+ of the target waits for a `target recheck`."""
         paused = []
-        with self._engine.begin() as connection:
+        with write_transaction(self._engine) as connection:
             rows = connection.execute(
                 sa.select(export.shelf.c.id, export.shelf.c.max_age_rating)
                 .select_from(

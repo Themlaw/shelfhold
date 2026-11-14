@@ -36,6 +36,7 @@ import sqlalchemy as sa
 from sqlalchemy import Connection, Engine
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
+from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.logging import MIN_KNOWN_SECRET, register_secret_value
 from shelfhold.infrastructure.schema import acquisition, export, identity
@@ -462,7 +463,7 @@ class SourceSettings:
         self, plugin_id: str, schema: SettingsSchema, values: Mapping[str, Any], *, actor: Actor
     ) -> SettingsView:
         checked = schema.validate_values(values)
-        with self.engine.begin() as connection:
+        with write_transaction(self.engine) as connection:
             merged = {**self._plain(connection, plugin_id)}
             for name, value in checked.items():
                 if value is None:
@@ -493,7 +494,7 @@ class SourceSettings:
         spec.check(value)
         register_secret_value(value)  # known before anything can log it
         state = self._seal(plugin_id, "secret", name, value.encode("utf-8"), value)
-        with self.engine.begin() as connection:
+        with write_transaction(self.engine) as connection:
             write_audit(connection, "source.secret_set", f"{plugin_id}:{name}", actor)
         return state
 
@@ -517,7 +518,7 @@ class SourceSettings:
         _register_cookies(checked)
         document = json.dumps(checked, sort_keys=True, separators=(",", ":"))
         state = self._seal(plugin_id, "cookies", _JAR, document.encode("utf-8"), document)
-        with self.engine.begin() as connection:
+        with write_transaction(self.engine) as connection:
             write_audit(connection, "source.cookies_set", target, actor)
         return state
 
@@ -543,7 +544,7 @@ class SourceSettings:
         vault = self.vault()
         table = acquisition.source_secret
         fingerprint = self._fingerprint(vault, f"{plugin_id}/{kind}/{field_name}", text)
-        with self.engine.begin() as connection:
+        with write_transaction(self.engine) as connection:
             where = self._where(plugin_id, kind, field_name)
             previous = connection.execute(sa.select(table.c.generation).where(where)).scalar()
             generation = (previous or 0) + 1
@@ -577,7 +578,7 @@ class SourceSettings:
     def _delete(
         self, plugin_id: str, kind: str, field_name: str, action: str, target: str, actor: Actor
     ) -> None:
-        with self.engine.begin() as connection:
+        with write_transaction(self.engine) as connection:
             connection.execute(
                 sa.delete(acquisition.source_secret).where(self._where(plugin_id, kind, field_name))
             )

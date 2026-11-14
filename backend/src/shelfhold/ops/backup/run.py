@@ -52,6 +52,7 @@ from shelfhold.config import CONFIG_FILE_NAME, Settings
 from shelfhold.docgen.release_assets import DICTIONARY_FILE, SCHEMA_FILE, write_assets
 from shelfhold.events.bus import EventBus
 from shelfhold.infrastructure.clock import Clock
+from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.logging import register_secret_value
 from shelfhold.infrastructure.schema import platform
@@ -260,7 +261,7 @@ class BackupService:
 
     def _flag(self, key: str, on: bool) -> None:
         stamp = self._clock.now().isoformat()
-        with self._engine.begin() as connection:
+        with write_transaction(self._engine) as connection:
             if on:
                 connection.execute(
                     sqlite_insert(_setting)
@@ -272,14 +273,14 @@ class BackupService:
 
     def _begin(self) -> str:
         run_id = new_ulid()
-        with self._engine.begin() as connection:
+        with write_transaction(self._engine) as connection:
             connection.execute(
                 sa.insert(_run).values(id=run_id, started_at=self._clock.now(), state="running")
             )
         return run_id
 
     def _finish(self, run_id: str, **values: Any) -> None:
-        with self._engine.begin() as connection:
+        with write_transaction(self._engine) as connection:
             connection.execute(
                 sa.update(_run)
                 .where(_run.c.id == run_id)
@@ -287,7 +288,7 @@ class BackupService:
             )
 
     def _announce(self, event: str, payload: Mapping[str, object]) -> None:
-        with self._engine.begin() as connection:
+        with write_transaction(self._engine) as connection:
             published = self._bus.publish(connection, event, payload)
         self._bus.deliver([published])
 
@@ -328,7 +329,7 @@ class BackupService:
                 run_id, state="ok", file_name=report.name, size=report.size, sha256=report.sha256,
                 schema_revision=report.schema_revision,
             )  # fmt: skip
-            with self._engine.begin() as connection:
+            with write_transaction(self._engine) as connection:
                 connection.execute(sa.delete(_setting).where(_setting.c.key == STALE_KEY))
             log.info("backup.done", name=report.name, size=report.size, pruned=len(report.pruned))
             return report
@@ -410,7 +411,7 @@ class BackupService:
     def _settle(self, *, exclude: str | None = None) -> int:
         """Runs left `running` while the lock is free (we hold it, or just took it) died: they
         become `failed` with the cause `interrupted`, and `backup.failed` says so."""
-        with self._engine.begin() as connection:
+        with write_transaction(self._engine) as connection:
             stale = list(
                 connection.execute(
                     sa.select(_run.c.id).where(_run.c.state == "running", _run.c.id != exclude)
@@ -516,7 +517,7 @@ class BackupService:
         report = self.stale()
         if not report.stale:
             return False
-        with self._engine.begin() as connection:
+        with write_transaction(self._engine) as connection:
             done = connection.execute(
                 sqlite_insert(_setting)
                 .values(key=STALE_KEY, value=self._clock.now().isoformat())

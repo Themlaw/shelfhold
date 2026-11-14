@@ -46,6 +46,7 @@ from shelfhold.export.application.snapshot import DestinationContext, load_conte
 from shelfhold.export.domain.physical_roots import is_reserved
 from shelfhold.identity.public import AuditEntry, Principal, audit_insert
 from shelfhold.infrastructure.clock import Clock
+from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.fsops import Fsops
 from shelfhold.infrastructure.fsops.errors import FsopsError
 from shelfhold.infrastructure.ids import new_ulid
@@ -552,7 +553,7 @@ class DeletionService:
     ) -> list[tuple[str, str, str]]:
         deeds: list[tuple[str, str, str]] = []
         record = export.export_record
-        with self._engine.begin() as connection:
+        with write_transaction(self._engine) as connection:
             follow_set = False
             if level is DeletionLevel.DELETE_CONTENT or level is DeletionLevel.UNFOLLOW:
                 follow_set = self._suppress(connection, scope.unit_id, now)
@@ -793,7 +794,7 @@ class DeletionService:
         # the rows, the bin index and the intents of every move: one transaction. A crash after
         # it leaves the intents, which the start replays (the file goes back into its place); a
         # failure before it leaves the files where they are
-        with self._engine.begin() as connection:
+        with write_transaction(self._engine) as connection:
             follow = any(b.snapshot.get("follow_set") for b, _ in good)
             for binned, local in good:
                 snap = binned.snapshot

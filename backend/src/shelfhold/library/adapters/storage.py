@@ -28,6 +28,7 @@ from shelfhold.catalog.public import DEFAULT_MIN_PAGE_RATIO, guard_received
 from shelfhold.infrastructure.archives import DEFAULT_LIMITS, ArchiveLimits, safe_open_archive
 from shelfhold.infrastructure.content_trust import check_cbz_entries
 from shelfhold.infrastructure.content_trust.cbz_entries import COMICINFO_MAX_BYTES
+from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.fsops import (
     CopyVerificationError,
     Fsops,
@@ -288,7 +289,7 @@ class PassthroughStore:
         device = self._fsops.device_of(dest)
         now = datetime.now(UTC)
         content_id = new_ulid()
-        with self._engine.begin() as connection:
+        with write_transaction(self._engine) as connection:
             # before the new content exists: the baseline is the version already stored (EF-BIB-024)
             suspect = guard_received(
                 connection, variant_id=variant_id, pages=images, content_hash=payload_hash,
@@ -568,7 +569,7 @@ class KeepCopier:
                 target.local, stream, replace=True,
                 verify_digest=lambda: derived_hash.removeprefix("sha256:"),
             )  # fmt: skip
-        with self._engine.begin() as connection:
+        with write_transaction(self._engine) as connection:
             record_library_rewrite(
                 connection, target.replica_id, file_hash=derived_hash,
                 dev=self._fsops.device_of(target.local), ino=written.ino, size=written.size,
@@ -609,7 +610,7 @@ class KeepCopier:
         except BaseException:
             self._journal.cancel(intent_id)  # staged and atomic: nothing landed
             raise
-        with self._engine.begin() as connection:
+        with write_transaction(self._engine) as connection:
             independent = complete_keep(
                 connection, self._fsops, self._locate, content.id, target, source,
                 datetime.now(UTC),
@@ -688,7 +689,7 @@ class KeepCopier:
         except BaseException:
             self._journal.cancel(intent_id)
             raise
-        with self._engine.begin() as connection:
+        with write_transaction(self._engine) as connection:
             self._journal.mark_done(intent_id, within=connection)
 
 
@@ -781,7 +782,7 @@ def verify_kept(engine: Engine, fsops: Fsops, unit_id: str) -> int:
     many count."""
     counted = 0
     now = datetime.now(UTC)
-    with engine.begin() as connection:
+    with write_transaction(engine) as connection:
         refresh_library_rows(connection, fsops, unit_id, now)
         siblings = sibling_inodes(connection, unit_id, skip=("library",))
         siblings |= fresh_library_inodes(connection, fsops, unit_id)

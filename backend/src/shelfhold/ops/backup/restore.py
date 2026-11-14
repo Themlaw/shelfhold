@@ -40,6 +40,7 @@ from typing import BinaryIO
 import sqlalchemy as sa
 
 from shelfhold.identity.public import revoke_all_credentials
+from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.identity_counter import (
     COUNTER_KEY,
     IdentityCounter,
@@ -358,7 +359,7 @@ def _revoke_credentials(
     sessions = keys = 0
     value: int | None = None
     try:
-        with engine.begin() as connection:
+        with write_transaction(engine) as connection:
             tables = set(sa.inspect(connection).get_table_names())
             if {"session", "api_key", "audit", "app_setting"} <= tables:
                 changes: list[str] = []

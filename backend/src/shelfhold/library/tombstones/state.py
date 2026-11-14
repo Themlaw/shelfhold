@@ -22,6 +22,7 @@ import sqlalchemy as sa
 from sqlalchemy import Connection, Engine
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
+from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.freeze import WAITING_PREFIX
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import coherence, platform
@@ -52,7 +53,7 @@ class TombstoneState:
     def _put(self, key: str, value: str, connection: Connection | None = None) -> bool:
         """True when the row is new. In the transaction of `connection` when one is given."""
         if connection is None:
-            with self._engine.begin() as own:
+            with write_transaction(self._engine) as own:
                 return self._put(key, value, own)
         known = connection.execute(sa.select(_setting.c.key).where(_setting.c.key == key)).first()
         connection.execute(
@@ -64,7 +65,7 @@ class TombstoneState:
 
     def _delete(self, key: str, connection: Connection | None = None) -> bool:
         if connection is None:
-            with self._engine.begin() as own:
+            with write_transaction(self._engine) as own:
                 return self._delete(key, own)
         return bool(connection.execute(sa.delete(_setting).where(_setting.c.key == key)).rowcount)
 
@@ -150,7 +151,7 @@ class TombstoneState:
         """Step one of a rewrite: durable before the disk is touched. `src` is the new file,
         `dst` the journal it replaces, `sha256` that of the new file."""
         intent_id = new_ulid()
-        with self._engine.begin() as connection:
+        with write_transaction(self._engine) as connection:
             epoch = connection.execute(sa.select(platform.instance.c.restore_epoch)).scalar()
             connection.execute(
                 sa.insert(coherence.fs_intent).values(
@@ -162,7 +163,7 @@ class TombstoneState:
         return intent_id
 
     def close_intent(self, intent_id: str, state: str, now: datetime) -> None:
-        with self._engine.begin() as connection:
+        with write_transaction(self._engine) as connection:
             connection.execute(
                 sa.update(coherence.fs_intent)
                 .where(coherence.fs_intent.c.id == intent_id)

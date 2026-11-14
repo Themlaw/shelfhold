@@ -39,6 +39,7 @@ from shelfhold.export.public import forget_coverage_unknown, pending_pairing
 from shelfhold.infrastructure.binding_priority import next_binding_priority
 from shelfhold.infrastructure.clock import Clock
 from shelfhold.infrastructure.content_trust import Destination, sanitize_upstream_text
+from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import acquisition, catalog, export
 from shelfhold.library.public import SeriesBindingRef, TombstoneGate
@@ -120,7 +121,7 @@ def decline_pairing(engine: sa.Engine, clock: Clock, export_series_id: str) -> N
     """The admin says an adopted series has no twin in the library: what looks like one is
     discovered as a series of its own from the next cycle on."""
     table = acquisition.follow_notice
-    with engine.begin() as connection:
+    with write_transaction(engine) as connection:
         connection.execute(
             sqlite_insert(table)
             .values(
@@ -167,7 +168,8 @@ class SeriesDiscovery:
     ) -> Discovery:
         found = Discovery()
         subs = await sub_sources()
-        with self._engine.begin() as connection:  # kept every cycle, whatever is left to create
+        # kept every cycle, whatever is left to create
+        with write_transaction(self._engine) as connection:
             upsert_sub_sources(connection, self._plugin_id, subs)
         with self._engine.connect() as connection:
             known = self._known(connection)
@@ -254,7 +256,7 @@ class SeriesDiscovery:
     # -- what is told, what waits -------------------------------------------------------------
     def _sync(self, buried: dict[str, str], waiting: dict[str, str], *, awaiting: bool) -> None:
         """Persist the conditions (so no process tells them twice) and announce the new ones."""
-        with self._engine.begin() as connection:
+        with write_transaction(self._engine) as connection:
             for _ in self._notices.sync(
                 connection, "tombstoned", buried, own=lambda key: not key.startswith(BOUND_PREFIX)
             ):

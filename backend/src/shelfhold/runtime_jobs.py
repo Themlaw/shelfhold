@@ -117,6 +117,7 @@ from shelfhold.export.targets.kavita.series import (
 )
 from shelfhold.identity.public import child_kavita_accounts
 from shelfhold.import_jobs import register_import_job
+from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.fsops import Fsops
 from shelfhold.infrastructure.fsops.errors import RootBlockedError
 from shelfhold.infrastructure.observability.wiring import daily_access_audit
@@ -548,7 +549,7 @@ async def _probe_version(comp: Composition, client: KavitaClient, target_id: str
     from shelfhold.export.application.target_state import load_health, save_health
 
     await client.probe()
-    with comp.engine.begin() as connection:
+    with write_transaction(comp.engine) as connection:
         health = load_health(connection, target_id)
         health.version, health.version_mode = client.health.version, client.health.version_mode
         save_health(connection, target_id, health)

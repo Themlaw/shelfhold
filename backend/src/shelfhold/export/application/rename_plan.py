@@ -57,6 +57,7 @@ from shelfhold.export.application.snapshot import DestinationContext, load_conte
 from shelfhold.export.domain.naming import FrozenAttrs, NamingTemplate, export_path, sanitize_name
 from shelfhold.export.domain.physical_roots import RECEIVED_DIR
 from shelfhold.infrastructure.clock import Clock
+from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.fsops import Fsops, FsopsError
 from shelfhold.infrastructure.schema import coherence, export
 from shelfhold.library.public import relocate_destination_copy
@@ -768,7 +769,7 @@ class RenameBook:
             except (MoveRefusedError, FsopsError, OSError):
                 log.warning("rename.undo_stopped", plan_id=plan_id, batch=batch)
                 return
-            with self._engine.begin() as conn:
+            with write_transaction(self._engine) as conn:
                 conn.execute(sa.update(table).where(table.c.id == row.id).values(status="skipped"))
 
     def _batch_sizes(self, plan_id: str) -> dict[int, int]:
@@ -940,7 +941,7 @@ class RenameBook:
         """`export_series.series_dir` follows its files when all of them are in one other folder."""
         record, link = export.export_record, export.edition_export_series
         item, series = export.export_item, export.export_series
-        with self._engine.begin() as conn:
+        with write_transaction(self._engine) as conn:
             rows = conn.execute(
                 sa.select(link.c.export_series_id, record.c.rel_path)
                 .select_from(
@@ -978,7 +979,7 @@ class RenameBook:
         template = (text or {}).get("template") if isinstance(text, dict) else None
         if template:
             parsed = NamingTemplate.loads(template)
-            with self._engine.begin() as conn:
+            with write_transaction(self._engine) as conn:
                 conn.execute(
                     sa.update(export.shelf_destination)
                     .where(export.shelf_destination.c.id == ctx.destination_id)
