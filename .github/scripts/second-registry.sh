@@ -9,7 +9,7 @@
 # summary and exits 0; GHCR is signed in every case.
 #
 # Inputs (environment): HAS_TOKEN (true|false), SECOND_REGISTRY (repository variable, may be
-# empty; default `codeberg.org/<owner>`), OWNER (repository owner), REPO_NAME (repository name).
+# empty; default `codeberg.org/<owner>`; host: codeberg.org, docker.io or quay.io only), OWNER (repository owner), REPO_NAME (repository name).
 # Outputs ($GITHUB_OUTPUT): enabled, and when enabled: host, image.
 set -euo pipefail
 : "${GITHUB_OUTPUT:?}" "${GITHUB_STEP_SUMMARY:?}"
@@ -38,6 +38,16 @@ else
   summary "The variable \`SECOND_REGISTRY\` is not a valid registry path. Nothing was published there."
   exit 1
 fi
+# the token is only ever sent to a known host: anything else is a configuration mistake
+host="${registry%%/*}"
+case "$host" in
+  codeberg.org|docker.io|quay.io) ;;
+  *)
+    echo "::error::SECOND_REGISTRY host '${host}' is not allowed: use codeberg.org, docker.io or quay.io"
+    summary "### Second registry: configuration error"
+    summary "The host of \`SECOND_REGISTRY\` must be one of codeberg.org, docker.io, quay.io. Nothing was published there."
+    exit 1 ;;
+esac
 image="${registry}/${repo,,}"
 {
   echo "enabled=true"

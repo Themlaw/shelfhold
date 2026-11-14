@@ -27,9 +27,9 @@ Le projet ne prétend à aucune conformité : ce sont des faits vérifiables, qu
 - **Délais** (au mieux, sans garantie) : accusé de réception ≤ 7 jours, correctif visé ≤ 90 jours.
 - **Versions supportées** : la version mineure `X.Y` courante et la précédente ; avant 1.0, la dernière seulement.
 - **SBOM SPDX et attestations de provenance** en assets de chaque release (palier M1b, [ADR-0016](../adr/0016-ci-cd-supply-chain.md)).
-- **Images signées avec cosign** (sans clé, identité du workflow de publication), sur GHCR et, si le mainteneur l'a configuré, sur un second registre ; la vérification est décrite dans [vérifier les images](../admin/verifier-les-images.md) (palier M3).
-- **OpenSSF Scorecard** hebdomadaire sur le dépôt, résultat dans l'onglet *Security* (palier M3).
-- Actions de CI épinglées par SHA, DCO obligatoire, aucune télémétrie.
+- **Images signées avec cosign** (sans clé, identité du workflow de publication) sur GHCR, à partir des publications faites après le palier M3 (les images antérieures ne le sont pas). Il n'y a **pas** de second registre à ce jour : sa publication est reportée en M4 (ENF-GOV-004, décision du porteur) et se branchera sans changer le code. La vérification est décrite dans [vérifier les images](../admin/verifier-les-images.md).
+- **OpenSSF Scorecard** hebdomadaire (palier M3), résultat dans l'onglet *Security* une fois le workflow lancé ; le score n'est pas un engagement.
+- Actions de CI épinglées par SHA, DCO obligatoire, aucune télémétrie ; ce sont des pratiques du dépôt, pas des garanties sur son contenu.
 
 ## Revue
 

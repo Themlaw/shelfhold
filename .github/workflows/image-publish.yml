@@ -92,23 +92,19 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ github.token }}
-      - name: Create the multi-arch manifest
+      - name: Create the multi-arch manifest (temporary tag, public tags come after the signature)
         env:
-          TAGS: ${{ inputs.tags }}
           SHA: ${{ github.sha }}
         id: manifest
         run: |
-          tags="${TAGS:-$(printf 'edge\nsha-%s' "$SHA")}"
-          args=()
-          while read -r tag; do [ -n "$tag" ] && args+=(-t "${IMAGE}:${tag}"); done <<< "$tags"
           sources=()
           for digest in "$RUNNER_TEMP"/digests/*; do sources+=("${IMAGE}@sha256:$(basename "$digest")"); done
           [ "${#sources[@]}" -eq 2 ] || { echo "::error::expected 2 platform digests"; exit 1; }
-          docker buildx imagetools create "${args[@]}" "${sources[@]}"
-          docker buildx imagetools inspect "${IMAGE}:$(head -n1 <<< "$tags")"
+          docker buildx imagetools create -t "${IMAGE}:build-${SHA}" "${sources[@]}"
+          docker buildx imagetools inspect "${IMAGE}:build-${SHA}"
           # Digests to attest: the manifest list and each platform manifest (the order of the
           # platforms does not matter, both are attested the same way).
-          index="$(docker buildx imagetools inspect "${IMAGE}:$(head -n1 <<< "$tags")" --format '{{.Manifest.Digest}}')"
+          index="$(docker buildx imagetools inspect "${IMAGE}:build-${SHA}" --format '{{.Manifest.Digest}}')"
           {
             echo "index=${index}"
             echo "platform1=sha256:${sources[0]##*@sha256:}"
@@ -186,6 +182,24 @@ jobs:
             cosign verify "${IMAGE}@${digest}" --certificate-identity-regexp "$identity" \
               --certificate-oidc-issuer https://token.actions.githubusercontent.com > /dev/null
           done
+      - name: Publish the public tags on GHCR (the digest is signed and verified)
+        env:
+          TAGS: ${{ inputs.tags }}
+          SHA: ${{ github.sha }}
+          INDEX: ${{ steps.manifest.outputs.index }}
+        run: |
+          tags="${TAGS:-$(printf 'edge\nsha-%s' "$SHA")}"
+          args=()
+          while read -r tag; do [ -n "$tag" ] && args+=(-t "${IMAGE}:${tag}"); done <<< "$tags"
+          docker buildx imagetools create "${args[@]}" "${IMAGE}@${INDEX}"
+          published="$(docker buildx imagetools inspect "${IMAGE}:$(head -n1 <<< "$tags")" --format '{{.Manifest.Digest}}')"
+          [ "$published" = "$INDEX" ] || { echo "::error::tag points to ${published}, not ${INDEX}"; exit 1; }
+      - name: Second registry, the script of this commit (nothing else is checked out)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          sparse-checkout: .github/scripts/second-registry.sh
+          sparse-checkout-cone-mode: false
       - name: Second registry, detection (optional, never fails without the token)
         id: second
         env:
@@ -201,19 +215,15 @@ jobs:
           registry: ${{ steps.second.outputs.host }}
           username: ${{ vars.SECOND_REGISTRY_USER || github.repository_owner }}
           password: ${{ secrets.CODEBERG_TOKEN }}
-      - name: Second registry, copy the manifest list (digest preserved)
+      - name: Second registry, copy the manifest list under a temporary tag (digest preserved)
         if: steps.second.outputs.enabled == 'true'
         env:
           SECOND_IMAGE: ${{ steps.second.outputs.image }}
-          TAGS: ${{ inputs.tags }}
           SHA: ${{ github.sha }}
           INDEX: ${{ steps.manifest.outputs.index }}
         run: |
-          tags="${TAGS:-$(printf 'edge\nsha-%s' "$SHA")}"
-          args=()
-          while read -r tag; do [ -n "$tag" ] && args+=(-t "${SECOND_IMAGE}:${tag}"); done <<< "$tags"
-          docker buildx imagetools create "${args[@]}" "${IMAGE}@${INDEX}"
-          copied="$(docker buildx imagetools inspect "${SECOND_IMAGE}:$(head -n1 <<< "$tags")" --format '{{.Manifest.Digest}}')"
+          docker buildx imagetools create -t "${SECOND_IMAGE}:build-${SHA}" "${IMAGE}@${INDEX}"
+          copied="$(docker buildx imagetools inspect "${SECOND_IMAGE}:build-${SHA}" --format '{{.Manifest.Digest}}')"
           [ "$copied" = "$INDEX" ] || { echo "::error::copied digest ${copied} differs from ${INDEX}"; exit 1; }
       - name: Second registry, sign the same digests (keyless, OIDC)
         if: steps.second.outputs.enabled == 'true'
@@ -240,3 +250,15 @@ jobs:
             cosign verify "${SECOND_IMAGE}@${digest}" --certificate-identity-regexp "$identity" \
               --certificate-oidc-issuer https://token.actions.githubusercontent.com > /dev/null
           done
+      - name: Second registry, publish the public tags (the digest is signed and verified)
+        if: steps.second.outputs.enabled == 'true'
+        env:
+          SECOND_IMAGE: ${{ steps.second.outputs.image }}
+          TAGS: ${{ inputs.tags }}
+          SHA: ${{ github.sha }}
+          INDEX: ${{ steps.manifest.outputs.index }}
+        run: |
+          tags="${TAGS:-$(printf 'edge\nsha-%s' "$SHA")}"
+          args=()
+          while read -r tag; do [ -n "$tag" ] && args+=(-t "${SECOND_IMAGE}:${tag}"); done <<< "$tags"
+          docker buildx imagetools create "${args[@]}" "${SECOND_IMAGE}@${INDEX}"

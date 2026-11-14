@@ -41,6 +41,10 @@ if [ "$3" = create ]; then
 fi
 exit 0
 """
+COSIGN = r"""#!/usr/bin/env bash
+echo "cosign $*" >> "$STUB_STATE/log"
+[ ! -f "$STUB_STATE/cosign_fail" ]
+"""
 GH = r"""#!/usr/bin/env bash
 state="$STUB_STATE"; echo "gh $*" >> "$state/log"
 case "$*" in
@@ -58,7 +62,13 @@ def env(tmp_path: Path) -> dict[str, str]:
     require_tool("jq")  # release-retag.sh pipes the registry answers through jq
     bindir = tmp_path / "bin"
     bindir.mkdir()
-    for name, body in (("docker", DOCKER), ("gh", GH), ("curl", CURL), ("sleep", "#!/bin/sh\n")):
+    for name, body in (
+        ("docker", DOCKER),
+        ("gh", GH),
+        ("curl", CURL),
+        ("cosign", COSIGN),
+        ("sleep", "#!/bin/sh\n"),
+    ):
         p = bindir / name
         p.write_text(body)
         p.chmod(p.stat().st_mode | stat.S_IEXEC)
@@ -111,6 +121,36 @@ def test_retag_uses_the_given_sha_and_tags_version_and_minor(env: dict[str, str]
     r = run("release-retag.sh", env)
     assert r.returncode == 0, r.stderr
     assert created(env) == {f"{IMG}:0.1.0", f"{IMG}:0.1"}
+
+
+@pytest.mark.req("ENF-SEC-007")
+def test_retag_refuses_an_unsigned_digest_and_writes_nothing(env: dict[str, str]) -> None:
+    put(env, f"{IMG}:sha-{'c' * 40}", DIGEST)
+    (Path(env["STUB_STATE"]) / "cosign_fail").write_text("")
+    r = run("release-retag.sh", env)
+    assert r.returncode != 0 and "no valid cosign signature" in r.stdout + r.stderr
+    assert created(env) == set()
+
+
+@pytest.mark.req("ENF-SEC-007")
+def test_retag_verifies_the_signature_of_the_digest_before_tagging(env: dict[str, str]) -> None:
+    put(env, f"{IMG}:sha-{'c' * 40}", DIGEST)
+    assert run("release-retag.sh", env).returncode == 0
+    log = (Path(env["STUB_STATE"]) / "log").read_text().splitlines()
+    verify = next(i for i, line in enumerate(log) if line.startswith("cosign verify"))
+    create = next(i for i, line in enumerate(log) if " create " in line)
+    assert verify < create
+    assert "image-publish" in log[verify] and "token.actions.githubusercontent.com" in log[verify]
+
+
+@pytest.mark.req("ENF-SEC-007")
+def test_retag_rerun_of_a_published_version_does_not_need_the_signature(
+    env: dict[str, str],
+) -> None:
+    put(env, f"{IMG}:sha-{'c' * 40}", DIGEST)
+    put(env, f"{IMG}:0.1.0", DIGEST)
+    (Path(env["STUB_STATE"]) / "cosign_fail").write_text("")
+    assert run("release-retag.sh", env).returncode == 0
 
 
 @pytest.mark.req("ENF-SEC-007", "ENF-OPS-002")

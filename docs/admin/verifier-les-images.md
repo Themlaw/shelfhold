@@ -1,6 +1,8 @@
 # Vérifier les images (signature et provenance)
 
-Chaque image publiée par la CI (`edge`, `sha-<commit>`, puis les versions `X.Y.Z` et `X.Y`) est **signée avec cosign, sans clé** : la signature est faite par le workflow `image-publish.yml` du dépôt, avec le jeton OIDC de GitHub Actions, et inscrite dans le journal public Sigstore. Aucune clé privée n'existe, donc aucune ne peut fuir. Le manifeste multi-architecture et chaque image de plateforme (amd64, arm64) sont signés.
+Chaque image publiée par la CI (`edge`, `sha-<commit>`, puis les versions `X.Y.Z` et `X.Y`) est **signée avec cosign, sans clé** : la signature est faite par le workflow `image-publish.yml` du dépôt, avec le jeton OIDC de GitHub Actions, et inscrite dans le journal public Sigstore. Aucune clé privée n'existe, donc aucune ne peut fuir. Les tags (`edge`, `sha-<commit>`) ne sont posés qu'**après** la signature et sa vérification ; les images publiées avant ce palier ne sont pas signées. Le manifeste multi-architecture et chaque image de plateforme (amd64, arm64) sont signés.
+
+**Les commandes ci-dessous demandent cosign ≥ 3** : les signatures sont écrites au format de cosign 3 (référents OCI) et un cosign 2 peut ne rien trouver.
 
 Trois preuves, indépendantes les unes des autres :
 
@@ -47,9 +49,9 @@ Rien n'est à changer dans le code ; ce sont des réglages du dépôt GitHub, r�
 | Réglage | Où | Valeur |
 | --- | --- | --- |
 | `CODEBERG_TOKEN` | secret du dépôt | jeton du compte du second registre, avec le droit d'écrire des paquets (jamais dans un fichier du dépôt) |
-| `SECOND_REGISTRY` | variable du dépôt | `codeberg.org/<owner>` par défaut ; `<owner>` est le propriétaire du dépôt GitHub (en minuscules), à remplacer ici s'il diffère |
+| `SECOND_REGISTRY` | variable du dépôt | `codeberg.org/<owner>` par défaut ; `<owner>` est le propriétaire du dépôt GitHub (en minuscules), à remplacer ici s'il diffère. L'hôte doit être `codeberg.org`, `docker.io` ou `quay.io` : le jeton n'est envoyé nulle part ailleurs, et un autre hôte fait échouer l'étape avec un message clair |
 | `SECOND_REGISTRY_USER` | variable du dépôt, facultative | identifiant du compte ; par défaut le propriétaire du dépôt GitHub |
 
-**Sans le jeton** : la CI fonctionne comme avant. `image-publish.yml` signe GHCR et écrit dans le résumé du job « Second registry: skipped » ; `release.yml` écrit la même chose. **Avec le jeton** : à chaque publication sur `main`, la CI copie le manifeste (digest conservé), signe les trois digests, puis vérifie les deux registres dans le même run ; à chaque release, elle ajoute `X.Y.Z` et `X.Y` sur le second registre **seulement** pour un digest déjà présent et signé (une valeur de `SECOND_REGISTRY` invalide fait échouer l'étape : l'erreur est voulue).
+**Sans le jeton** : la CI fonctionne comme avant. `image-publish.yml` signe GHCR et écrit dans le résumé du job « Second registry: skipped » ; `release.yml` écrit la même chose. **Avec le jeton** : à chaque publication sur `main`, la CI copie le manifeste (digest conservé), signe les trois digests, puis vérifie les deux registres dans le même run ; à chaque release, elle ajoute `X.Y.Z` et `X.Y` sur GHCR **seulement** après avoir vérifié la signature du digest (sauf relance d'une version qui porte déjà ce digest), et sur le second registre **seulement** pour un digest déjà présent et signé (une valeur de `SECOND_REGISTRY` invalide fait échouer l'étape : l'erreur est voulue).
 
 L'exigence ENF-GOV-004 (second registre, miroir du dépôt, vérificateur de mises à jour) est **reportée en M4** (décision du porteur, D5) et reste ouverte : la v1.0.0 est signée sur GHCR seul. Le second registre s'active dès que le jeton existe, sans changer le code.

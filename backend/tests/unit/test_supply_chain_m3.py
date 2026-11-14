@@ -48,8 +48,16 @@ def _read(rel: str) -> str:
 # --- SECURITY.md and cra.md: deadlines, supported versions, advisories, no compliance claim ---
 
 CLAIM = re.compile(r"conforme|conformité|certifi|compliant|compliance|certified", re.I)
+# a negation counts only when it is about the claim itself, not any « aucune » of the line
 DENIAL = re.compile(
-    r"ne prétend|aucune|sans prétendre|pas de |n'affirme|ne garantit|pas un avis", re.I
+    r"ne prétend[^.\n]*(?:conformité|certification)"
+    r"|sans prétendre[^.\n]*(?:conformité|certification)"
+    r"|n'affirme aucune (?:conformité|certification)"
+    r"|pas une? (?:certification|preuve de conformité)",
+    re.I,
+)
+ABSOLUTE = re.compile(
+    r"aucune (?:faille|vulnérabilité)|sans (?:faille|vulnérabilité)|zéro faille", re.I
 )
 
 
@@ -68,6 +76,8 @@ def _security_problems(text: str) -> list[str]:
     for line in text.splitlines():
         if CLAIM.search(line) and not DENIAL.search(line):
             problems.append(f"possible compliance claim: {line.strip()}")
+        if ABSOLUTE.search(line):
+            problems.append(f"absolute security claim: {line.strip()}")
     return problems
 
 
@@ -99,8 +109,8 @@ def test_security_md_checker_rejects_weakened_or_overclaiming_text() -> None:
 @pytest.mark.req("ENF-LEG-011")
 def test_cra_md_same_spirit_and_covers_signatures() -> None:
     text = _read("docs/legal/cra.md")
-    for line in text.splitlines():
-        assert not (CLAIM.search(line) and not DENIAL.search(line)), line
+    lines = [p for p in _security_problems(text) if "claim" in p]
+    assert lines == []
     assert "ne prétend" in text or "n'affirme aucune conformité" in text
     assert "cosign" in text and "verifier-les-images" in text
     assert "Scorecard" in text
@@ -158,12 +168,10 @@ def test_second_registry_with_token_defaults_to_codeberg_owner(tmp_path: Path) -
 
 @pytest.mark.req("ENF-SEC-007")
 def test_second_registry_variable_overrides_the_default(tmp_path: Path) -> None:
-    done, outputs, _ = _detect(
-        tmp_path, {"HAS_TOKEN": "true", "SECOND_REGISTRY": "registry.example.org:5000/team"}
-    )
+    done, outputs, _ = _detect(tmp_path, {"HAS_TOKEN": "true", "SECOND_REGISTRY": "quay.io/team"})
     assert done.returncode == 0, done.stderr
-    assert outputs["image"] == "registry.example.org:5000/team/shelfhold"
-    assert outputs["host"] == "registry.example.org:5000"
+    assert outputs["image"] == "quay.io/team/shelfhold"
+    assert outputs["host"] == "quay.io"
 
 
 @pytest.mark.req("ENF-SEC-007")
@@ -546,3 +554,71 @@ def test_enf_gov_004_stays_open_and_is_not_claimed_delivered() -> None:
     # exercise the branches); the traceability tool sees the deferral
     for line in _read("CHANGELOG.md").splitlines():
         assert not ("ENF-GOV-004" in line and re.search(r"livrée|delivered|done", line, re.I)), line
+
+
+@pytest.mark.req("ENF-SEC-011", "ENF-LEG-011")
+def test_security_md_names_cosign_3_and_the_host_list() -> None:
+    doc = _read("docs/admin/verifier-les-images.md")
+    assert re.search(r"cosign (?:≥|>=) ?3", doc)
+    for host in ("codeberg.org", "docker.io", "quay.io"):
+        assert host in doc
+
+
+@pytest.mark.req("ENF-SEC-007")
+def test_absolute_security_claims_are_rejected() -> None:
+    base = _read("SECURITY.md")
+    for line in ("Aucune faille connue.", "Le code est sans vulnérabilité."):
+        assert any("absolute" in p for p in _security_problems(base + "\n" + line + "\n"))
+
+
+@pytest.mark.req("ENF-SEC-007")
+@pytest.mark.parametrize(
+    "host", ["evil.example", "registry.example.org:5000", "ghcr.io", "quay.io.evil.example"]
+)
+def test_second_registry_host_outside_the_list_is_refused_with_a_clear_message(
+    tmp_path: Path, host: str
+) -> None:
+    done, outputs, summary = _detect(
+        tmp_path, {"HAS_TOKEN": "true", "SECOND_REGISTRY": f"{host}/team"}
+    )
+    assert done.returncode != 0 and "image" not in outputs
+    assert "codeberg.org, docker.io or quay.io" in done.stdout + done.stderr + summary
+
+
+# --- every script of the repository that a job runs is checked out, and only that one ---
+
+SCRIPT_REF = re.compile(r"(?:^|[\s;&|(])\.?/?(\.github/scripts/[\w.-]+)")
+
+
+@pytest.mark.req("ENF-SEC-007")
+@pytest.mark.parametrize("workflow", sorted(p.name for p in WORKFLOWS.glob("*.yml")))
+def test_every_repository_script_a_job_runs_is_in_its_checkout(workflow: str) -> None:
+    for job_id, job in _load(workflow)["jobs"].items():
+        checkout: dict[str, Any] | None = None
+        for step in job.get("steps", []):
+            if str(step.get("uses", "")).startswith("actions/checkout@"):
+                checkout = step.get("with") or {}
+                assert checkout.get("persist-credentials") is False, (workflow, job_id)
+            for script in SCRIPT_REF.findall(str(step.get("run", ""))):
+                where = (workflow, job_id, script)
+                assert checkout is not None, where  # no checkout before the step
+                sparse = checkout.get("sparse-checkout")
+                if sparse is not None:  # a partial checkout must list the script itself
+                    assert script in str(sparse).split(), where
+                    assert checkout.get("sparse-checkout-cone-mode") is False, where
+
+
+@pytest.mark.req("ENF-SEC-007")
+def test_the_script_checkout_check_catches_a_missing_or_wrong_checkout() -> None:
+    merge = copy.deepcopy(_load("image-publish.yml")["jobs"]["merge"])
+    steps = merge["steps"]
+    index = next(
+        i for i, s in enumerate(steps) if str(s.get("uses", "")).startswith("actions/checkout@")
+    )
+    assert steps[index]["with"]["sparse-checkout"] == ".github/scripts/second-registry.sh"
+    removed = steps[:index] + steps[index + 1 :]
+    detect = next(s for s in removed if s.get("id") == "second")
+    ahead = [s for s in removed if str(s.get("uses", "")).startswith("actions/checkout@")]
+    assert ahead == [] and SCRIPT_REF.search(str(detect["run"]))
+    # the order matters too: the checkout comes before the step that runs the script
+    assert index < next(i for i, s in enumerate(steps) if s.get("id") == "second")
