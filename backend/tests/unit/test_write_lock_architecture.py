@@ -32,6 +32,10 @@ pytestmark = pytest.mark.req("ENF-OPS-003")
 
 # (file, function) -> why it may start deferred.
 DEFERRED_READS: dict[tuple[str, str], str] = {
+    ("interfaces/http_api/idempotency.py", "IdempotencyMiddleware.__call__"): (
+        "`self.store.begin` is the idempotency store's own method (it claims a key), handed to "
+        "the thread pool: not a database transaction"
+    ),
     ("infrastructure/db.py", "foreign_keys_disabled"): (
         "its commit ends the transaction the caller opened (always a locked connection) before "
         "a PRAGMA that SQLite ignores inside one; it writes nothing itself"
@@ -82,16 +86,28 @@ def _call_name(node: ast.AST) -> str | None:
 
 @dataclass
 class _Scope:
+    """The names of a scope, each with its bindings in the order of the source: what a name is at
+    a line is what it was last bound to before that line. A name bound to a locked connection and
+    later to an unlocked one is unlocked from there on, with no need to rename it."""
+
     name: str
     node: ast.AST
     parent: "_Scope | None"
-    kinds: dict[str, str] = field(default_factory=dict)
+    kinds: dict[str, list[tuple[int, str]]] = field(default_factory=dict)
 
-    def lookup(self, name: str) -> str | None:
-        scope: _Scope | None = self
+    def bind(self, name: str, line: int, kind: str) -> None:
+        self.kinds.setdefault(name, []).append((line, kind))
+
+    def lookup(self, name: str, line: int) -> str | None:
+        if name in self.kinds:
+            before = [kind for at, kind in self.kinds[name] if at <= line]
+            return before[-1] if before else None
+        # a name of an enclosing scope (a closure): only when all its bindings say the same
+        scope = self.parent
         while scope is not None:
             if name in scope.kinds:
-                return scope.kinds[name]
+                found = {kind for _at, kind in scope.kinds[name]}
+                return found.pop() if len(found) == 1 else None
             scope = scope.parent
         return None
 
@@ -99,7 +115,7 @@ class _Scope:
 def _kind_of(expr: ast.AST, scope: _Scope) -> str | None:
     """What `expr` is, as far as the locking goes."""
     if isinstance(expr, ast.Name):
-        return scope.lookup(expr.id)
+        return scope.lookup(expr.id, expr.lineno)
     if _is_locking_call(expr):
         return _LOCKED_ENGINE
     name = _call_name(expr)
@@ -107,6 +123,8 @@ def _kind_of(expr: ast.AST, scope: _Scope) -> str | None:
         return _LOCKED_CONN
     if not isinstance(expr, ast.Call) or not isinstance(expr.func, ast.Attribute):
         return None
+    if name == "enter_context" and expr.args:  # `ExitStack`: what it opens is what it hands back
+        return _kind_of(expr.args[0], scope)
     receiver = _kind_of(expr.func.value, scope)
     if name == "connect":
         if isinstance(expr.func.value, ast.Name) and expr.func.value.id == "sqlite3":
@@ -135,33 +153,54 @@ def _bind(scope: _Scope) -> None:
         args = node.args
         for arg in [*args.posonlyargs, *args.args, *args.kwonlyargs, args.vararg, args.kwarg]:
             if arg is not None:
-                scope.kinds[arg.arg] = _PARAM
-    pending = [n for n in _own_nodes(node)]
-    # two passes: a name bound from another name needs that name first
-    for _ in range(2):
-        for n in pending:
-            targets: list[tuple[ast.AST, ast.AST]] = []
-            if isinstance(n, ast.Assign) and len(n.targets) == 1:
-                targets.append((n.targets[0], n.value))
-            elif isinstance(n, ast.AnnAssign) and n.value is not None:
-                targets.append((n.target, n.value))
-            elif isinstance(n, ast.With | ast.AsyncWith):
-                targets.extend(
-                    (i.optional_vars, i.context_expr) for i in n.items if i.optional_vars
-                )
-            for target, value in targets:
-                if isinstance(target, ast.Name):
-                    kind = _kind_of(value, scope)
-                    if kind is not None:
-                        scope.kinds[target.id] = kind
-    for n in pending:  # `connection.execution_options(shelfhold_begin=...)` locks it in place
+                scope.bind(arg.arg, 0, _PARAM)
+    events: list[tuple[int, int, ast.AST, str | None]] = []
+    for n in _own_nodes(node):
+        targets: list[tuple[ast.AST, ast.AST]] = []
+        if isinstance(n, ast.Assign) and len(n.targets) == 1:
+            targets.append((n.targets[0], n.value))
+        elif isinstance(n, ast.AnnAssign) and n.value is not None:
+            targets.append((n.target, n.value))
+        elif isinstance(n, ast.With | ast.AsyncWith):
+            targets.extend((i.optional_vars, i.context_expr) for i in n.items if i.optional_vars)
+        for target, value in targets:
+            if isinstance(target, ast.Name):
+                events.append((n.lineno, target.col_offset, value, target.id))
         if isinstance(n, ast.Expr) and isinstance(n.value, ast.Call):
             call = n.value
             receiver = call.func.value if isinstance(call.func, ast.Attribute) else None
             if isinstance(receiver, ast.Name) and (
                 _is_locking_call(call) or _begins_immediate(call)
-            ):
-                scope.kinds[receiver.id] = _LOCKED_CONN
+            ):  # `connection.execution_options(shelfhold_begin=...)`: locks it in place
+                events.append((n.lineno, n.col_offset, call, receiver.id))
+    for line, _col, value, name in sorted(events, key=lambda e: (e[0], e[1])):
+        assert name is not None
+        if isinstance(value, ast.Call) and (_is_locking_call(value) or _begins_immediate(value)):
+            receiver = value.func.value  # type: ignore[attr-defined]
+            if isinstance(receiver, ast.Name) and receiver.id == name:
+                scope.bind(name, line, _LOCKED_CONN)  # the in-place form
+                continue
+        kind = _kind_of_at(value, scope, line)
+        if kind is not None:
+            scope.bind(name, line, kind)
+
+
+def _kind_of_at(expr: ast.AST, scope: _Scope, line: int) -> str | None:
+    """`_kind_of` for a binding made at `line`: its names are those bound before it."""
+    if isinstance(expr, ast.Name):
+        return scope.lookup(expr.id, line)
+    if not isinstance(expr, ast.Call) or not isinstance(expr.func, ast.Attribute):
+        return _kind_of(expr, scope)
+    inner = expr.func.value
+    if isinstance(inner, ast.Name) and expr.func.attr in ("connect", "begin", "begin_nested"):
+        receiver = scope.lookup(inner.id, line)
+        if expr.func.attr == "connect" and inner.id != "sqlite3":
+            return _LOCKED_CONN if receiver == _LOCKED_ENGINE else _CONN
+        if expr.func.attr == "begin" and receiver in (_LOCKED_ENGINE, _LOCKED_CONN):
+            return _LOCKED_CONN
+        if expr.func.attr in ("begin", "begin_nested"):
+            return _TXN
+    return _kind_of(expr, scope)
 
 
 def _scopes(tree: ast.Module) -> Iterator[tuple[str, _Scope]]:
@@ -183,6 +222,52 @@ def _scopes(tree: ast.Module) -> Iterator[tuple[str, _Scope]]:
     yield from visit(tree, None, "")
 
 
+def _refusal(node: ast.AST, scope: _Scope, called: set[int]) -> str | None:
+    """Why `node` starts or ends a transaction that may be deferred, or None."""
+    if (
+        isinstance(node, ast.Attribute)
+        and node.attr in ("begin", "commit")
+        and id(node) not in called
+    ):
+        return f"{ast.unparse(node)} taken as a value"  # `begin = engine.begin`
+    if isinstance(node, ast.Call):
+        if (
+            isinstance(node.func, ast.Name)
+            and node.func.id == "getattr"
+            and len(node.args) > 1
+            and isinstance(node.args[1], ast.Constant)
+            and node.args[1].value in ("begin", "commit")
+        ):
+            return f"{ast.unparse(node)} (the call is hidden)"
+        if isinstance(node.func, ast.Attribute) and node.func.attr in ("begin", "commit"):
+            if node.args:
+                return None
+            kind = _kind_of(node.func.value, scope)
+            if node.func.attr == "begin":
+                refused = kind not in (_LOCKED_ENGINE, _LOCKED_CONN)
+            else:  # a commit: of a connection that may write, not of a transaction object
+                refused = kind != _TXN and kind not in (_LOCKED_ENGINE, _LOCKED_CONN)
+            return ast.unparse(node.func) if refused else None
+    if isinstance(node, ast.With | ast.AsyncWith):
+        for item in node.items:
+            call = item.context_expr
+            if (
+                isinstance(call, ast.Call)
+                and isinstance(call.func, ast.Attribute)
+                and call.func.attr == "connect"
+                and isinstance(call.func.value, ast.Name)
+                and call.func.value.id == "sqlite3"
+                and not any(
+                    k.arg == "isolation_level"
+                    and isinstance(k.value, ast.Constant)
+                    and k.value.value is None
+                    for k in call.keywords
+                )
+            ):  # it commits when the block ends, and its BEGIN is deferred
+                return "with sqlite3.connect(...) commits a deferred transaction"
+    return None
+
+
 def _scan(
     root: Path, allowed: dict[tuple[str, str], str]
 ) -> tuple[list[str], set[tuple[str, str]]]:
@@ -192,26 +277,16 @@ def _scan(
         relative = path.relative_to(root if root.is_dir() else root.parent).as_posix()
         tree = ast.parse(path.read_text("utf-8"))
         for name, scope in _scopes(tree):
-            for node in _own_nodes(scope.node):
-                if not (
-                    isinstance(node, ast.Call)
-                    and isinstance(node.func, ast.Attribute)
-                    and node.func.attr in ("begin", "commit")
-                    and not node.args
-                ):
-                    continue
-                receiver = node.func.value
-                kind = _kind_of(receiver, scope)
-                if node.func.attr == "begin":
-                    refused = kind not in (_LOCKED_ENGINE, _LOCKED_CONN)
-                else:  # a commit: of a connection that may write, not of a transaction object
-                    refused = kind in (_CONN, _RAW, _PARAM)
-                if not refused:
+            nodes = list(_own_nodes(scope.node))
+            called = {id(n.func) for n in nodes if isinstance(n, ast.Call)}
+            for node in nodes:
+                found = _refusal(node, scope, called)
+                if found is None:
                     continue
                 if (relative, name) in allowed:
                     used.add((relative, name))
                     continue
-                bad.append(f"{relative}:{node.lineno} {name} ({ast.unparse(node.func)})")
+                bad.append(f"{relative}:{node.lineno} {name} ({found})")
     return bad, used
 
 

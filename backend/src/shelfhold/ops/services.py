@@ -39,6 +39,7 @@ from shelfhold.infrastructure.clock import Clock
 from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.fsops import Fsops
 from shelfhold.infrastructure.schema import catalog, coherence, export, platform
+from shelfhold.infrastructure.stable_hash import FileChangedError
 from shelfhold.jobs.control import QueueControl
 from shelfhold.jobs.window import DEFAULT_WINDOW, MaintenanceWindow
 from shelfhold.ops.acquire import AcquireOps
@@ -408,7 +409,13 @@ class OpsServices:
         if fsops is None:
             raise ExitUnavailableError("no library is mounted here")
         reconciler = Reconciler(self._engine, fsops, clock=self._clock, bus=self._bus)
-        if not reconciler.resume_series(export_series_id):
+        try:
+            resumed = reconciler.resume_series(export_series_id)
+        except FileChangedError:  # a file of the series keeps changing: nothing was recorded
+            raise StillWaitingError(
+                "a file of the series is being written: it stays paused"
+            ) from None
+        if not resumed:
             raise NotWaitingError("this series is not paused")
         return True
 

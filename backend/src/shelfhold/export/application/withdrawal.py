@@ -369,7 +369,18 @@ class WithdrawalService:
         moved = 0
         pending: list[str] = []
         for item in plan.items:
-            intents = self._commit(journal, item, principal, now)
+            try:
+                intents = self._commit(journal, item, principal, now)
+            except FileChangedError:
+                # a file keeps changing (a third party is writing it): nothing of this Edition
+                # was committed, its files stay in place and wait, as when a move is refused; the
+                # Editions before it are whole, and the report comes back
+                with read_transaction(self._engine) as connection:
+                    pending.extend(
+                        load_context(connection, f.destination_id).local(f.rel_path)
+                        for f in item.files
+                    )
+                continue
             withdrawn.append(item.edition_id)
             for local, intent_id in intents:
                 if self._move(journal, local, intent_id):

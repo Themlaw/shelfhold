@@ -123,6 +123,7 @@
   "FetchTooLarge",
   "FetchUnreachable",
   "FileChangedError",
+  "FileChangedSinceLookError",
   "FileExistsError",
   "FileNotFoundError",
   "FloatingPointError",

@@ -61,7 +61,12 @@ from shelfhold.identity.public import (
 )
 from shelfhold.infrastructure.clock import Clock
 from shelfhold.infrastructure.db import write_transaction
-from shelfhold.infrastructure.fsops import FileChangedError, FileIdentity, Fsops, FsopsError
+from shelfhold.infrastructure.fsops import (
+    FileChangedSinceLookError,
+    FileIdentity,
+    Fsops,
+    FsopsError,
+)
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import export
 from shelfhold.library.public import forget_destination_copies
@@ -318,7 +323,7 @@ class RemoveDestination:
         self._journal.mark_applying(intent_id)
         try:
             self._fsops.purge_unlink(local, expected_sha256=sha256, expected_identity=identity)
-        except FileChangedError:
+        except FileChangedSinceLookError:
             self._journal.cancel(intent_id)
             return "changed_since_export"
         except (OSError, FsopsError):

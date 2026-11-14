@@ -29,7 +29,7 @@ from shelfhold.acquisition.application.volume_cut import is_cut
 from shelfhold.acquisition.domain.failures import Disposition, classify, disposition_of
 from shelfhold.acquisition.domain.requests import RequestBudget
 from shelfhold.infrastructure.clock import Clock
-from shelfhold.infrastructure.db import read_transaction, write_transaction
+from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import acquisition, catalog, export
 from shelfhold.library.public import Received, readable_unit_ids
@@ -437,17 +437,25 @@ class RangeTickets:
 
     def _retry(self, request_id: str, attempts: int | None, report: RangeReport) -> None:
         r = acquisition.download_request
-        with read_transaction(self._engine) as connection:
+        # one transaction for the read and the write: two retries at once count both
+        with write_transaction(self._engine) as connection:
             current = attempts
             if current is None:
                 current = connection.execute(
                     sa.select(r.c.attempts).where(r.c.id == request_id)
                 ).scalar_one()
+            if current + 1 >= MAX_ATTEMPTS:
+                values: dict[str, object] = {"state": "abandoned", "attempts": current + 1}
+            else:
+                values = {"state": "requested", "attempts": current + 1, "ticket": None}
+            connection.execute(
+                sa.update(r)
+                .where(r.c.id == request_id)
+                .values(updated_at=self._clock.now(), **values)
+            )
         if current + 1 >= MAX_ATTEMPTS:
-            self._update(request_id, state="abandoned", attempts=current + 1)
             report.abandoned += 1
         else:
-            self._update(request_id, state="requested", attempts=current + 1, ticket=None)
             report.retried += 1
 
     def retry_uncovered(self, request_id: str, budget: RequestBudget) -> str | None:

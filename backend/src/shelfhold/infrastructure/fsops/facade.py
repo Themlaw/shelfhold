@@ -66,7 +66,7 @@ from shelfhold.infrastructure.fsops.errors import (
     EmitterConditionError,
     EmitterPerimeterError,
     ErasingNameTakenError,
-    FileChangedError,
+    FileChangedSinceLookError,
     FsopsError,
     HashInterrupted,
     JournalChangedError,
@@ -1101,7 +1101,7 @@ class Fsops:
         a directory, never the host's own files (sentinel, lease, tombstone journal, mirror).
         `expected_sha256` and `expected_identity` (L30): the file goes only if it is still the one
         the caller looked at, read and compared here, in the same opened root, just before the
-        unlink; a file that changed raises `FileChangedError` and stays."""
+        unlink; a file that changed raises `FileChangedSinceLookError` and stays."""
         log.debug("fsops.purge_unlink", **self._where(local))
         located = self._locate(local, host=True)
         self._require_purgeable(located.rel)
@@ -1123,15 +1123,17 @@ class Fsops:
         with os.fdopen(fd, "rb") as stream:
             opened = os.fstat(stream.fileno())
             if expected_identity is not None and identity_of(opened) != expected_identity:
-                raise FileChangedError("the file is not the one that was looked at")
+                raise FileChangedSinceLookError("the file is not the one that was looked at")
             if expected_sha256 is not None:
                 digest = hashlib.sha256()
                 while chunk := stream.read(1 << 20):
                     digest.update(chunk)
                 if "sha256:" + digest.hexdigest() != expected_sha256:
-                    raise FileChangedError("the file's content is not the one that was looked at")
+                    raise FileChangedSinceLookError(
+                        "the file's content is not the one that was looked at"
+                    )
         if root.stat(rel).st_ino != opened.st_ino:  # swapped while it was read
-            raise FileChangedError("the file was replaced while it was read")
+            raise FileChangedSinceLookError("the file was replaced while it was read")
 
     def purge_remove_tree(self, local: str) -> None:
         """The same for one entry of a root's bin (`.shelfhold/recycle/<id>`) and what it holds,

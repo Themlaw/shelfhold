@@ -9,7 +9,7 @@ __all__ = [
     "CrossRootError",
     "EmitterConditionError",
     "EmitterPerimeterError",
-    "FileChangedError",
+    "FileChangedSinceLookError",
     "FsopsError",
     "HashInterrupted",
     "JournalChangedError",
@@ -43,7 +43,7 @@ class PathEscapeError(FsopsError):
         super().__init__(message, code=errno.ELOOP)
 
 
-class FileChangedError(FsopsError):
+class FileChangedSinceLookError(FsopsError):
     """The file is not the one the caller meant to delete (its content or identity moved)."""
 
 

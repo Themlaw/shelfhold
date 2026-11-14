@@ -80,8 +80,13 @@ def read_transaction(engine: Engine) -> Iterator[Connection]:
         try:
             yield connection
         finally:
-            connection.rollback()  # a read: nothing to keep, the snapshot ends
-            raw.execute("PRAGMA query_only=OFF")
+            try:
+                connection.rollback()  # a read: nothing to keep, the snapshot ends
+            finally:
+                try:  # whatever the rollback did: the pool never gets a read-only connection
+                    raw.execute("PRAGMA query_only=OFF")
+                except Exception:
+                    connection.invalidate()  # a dead or locked connection is not given back
 
 
 class ForeignKeyViolationError(Exception):

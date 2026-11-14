@@ -37,7 +37,7 @@ from shelfhold.infrastructure.fsops import (
 )
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import catalog, export, storage
-from shelfhold.infrastructure.stable_hash import HashedFiles, retry_when_changed
+from shelfhold.infrastructure.stable_hash import FileChangedError, HashedFiles, retry_when_changed
 from shelfhold.library.adapters.meta_projection import MetaProjection
 from shelfhold.library.adapters.origin_comicinfo import keep_origin_comicinfo
 from shelfhold.library.adapters.units import irreplaceability
@@ -793,7 +793,10 @@ def verify_kept(engine: Engine, fsops: Fsops, unit_id: str) -> int:
                 hashed.unreadable(local)
         return _verify_locked(engine, fsops, unit_id, hashed)
 
-    return retry_when_changed(attempt)
+    try:
+        return retry_when_changed(attempt)
+    except FileChangedError:
+        return 0  # a copy that keeps changing does not count (nothing is recorded for it)
 
 
 def _verify_locked(engine: Engine, fsops: Fsops, unit_id: str, hashed: HashedFiles) -> int:

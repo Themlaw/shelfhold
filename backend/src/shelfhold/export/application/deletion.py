@@ -51,7 +51,7 @@ from shelfhold.infrastructure.fsops import Fsops
 from shelfhold.infrastructure.fsops.errors import FsopsError
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import catalog, export, platform, reading, storage
-from shelfhold.infrastructure.stable_hash import HashedFiles, retry_when_changed
+from shelfhold.infrastructure.stable_hash import FileChangedError, HashedFiles, retry_when_changed
 from shelfhold.library.public import (
     BinnedUnitFile,
     DeletionLevel,
@@ -521,8 +521,16 @@ class DeletionService:
         for scope in scopes:
             for item in scope.items:
                 self._fsops.require_delete_allowed(item.local)  # the sentinel's word, before all
+        done: list[_Scope] = []
         for scope in scopes:
-            deeds = self._commit(level, scope, deletion_id, journal, principal, now)
+            try:
+                deeds = self._commit(level, scope, deletion_id, journal, principal, now)
+            except FileChangedError:
+                # a file keeps changing (a third party is writing it): nothing of this scope was
+                # committed, its files stay and wait; the scopes before it are whole
+                pending.extend(item.local for item in scope.items)
+                continue
+            done.append(scope)
             for local, intent_id, entry in deeds:
                 if self._move(journal, local, intent_id, entry):
                     moved += 1
@@ -535,11 +543,11 @@ class DeletionService:
         if folders and not pending:
             removed, kept = self._after_scan(plan, scopes, journal)
         log.info(
-            "deletion.applied", level=level.value, units=len(scopes), files=moved,
+            "deletion.applied", level=level.value, units=len(done), files=moved,
             pending=len(pending), folders=len(removed),
         )  # fmt: skip
         return DeletionReport(
-            level, deletion_id, tuple(s.unit_id for s in scopes), moved, tuple(pending),
+            level, deletion_id, tuple(s.unit_id for s in done), moved, tuple(pending),
             removed, kept,
         )  # fmt: skip
 
