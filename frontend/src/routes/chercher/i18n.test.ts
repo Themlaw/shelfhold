@@ -14,11 +14,20 @@ const FILES = [
   'lib/components/SearchedIn.svelte'
 ];
 const read = (file: string) => readFileSync(resolve(ROOT, file), 'utf8');
-const strip = (source: string) =>
-  source
-    .replace(/<script[\s\S]*?<\/script>/g, '')
-    .replace(/<style[\s\S]*?<\/style>/g, '')
-    .replace(/<!--[\s\S]*?-->/g, '');
+// Our own component sources, not untrusted HTML: drop the script, style and comment blocks until
+// nothing is left to drop, so the remaining markup is what the template renders.
+const strip = (source: string) => {
+  let previous: string;
+  let markup = source;
+  do {
+    previous = markup;
+    markup = markup
+      .replace(/<script\b[\s\S]*?<\/script\s*>/gi, '')
+      .replace(/<style\b[\s\S]*?<\/style\s*>/gi, '')
+      .replace(/<!--[\s\S]*?--!?>/g, '');
+  } while (markup !== previous);
+  return markup;
+};
 const keysOf = (source: string) =>
   [...source.matchAll(/\bt\(\s*'([a-z0-9_.]+)'/gi)].map((match) => match[1]!);
 

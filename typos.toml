@@ -7,6 +7,9 @@ extend-exclude = ["*.md", "docs/", "backend/uv.lock", "backend/tests/unit/vector
 [default.extend-words]
 cours = "cours"
 sur = "sur"
+confirme = "confirme"
+maintenant = "maintenant"
+projet = "projet"
 opf = "opf"
 
 # Exact identifiers: a pydantic setting and the in-toto provenance file name.
