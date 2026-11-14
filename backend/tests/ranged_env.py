@@ -18,6 +18,7 @@ from pathlib import Path
 import sqlalchemy as sa
 
 from shelfhold.catalog.public import ResplitSigner
+from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import catalog, export
 from shelfhold.infrastructure.volumes import write_data_file
@@ -135,7 +136,7 @@ class RangedBench:
 
 
 def set_edition(lib: LibEnv, *, policy: str = "closed_only", status: str = "ongoing") -> None:
-    with lib.engine.begin() as connection:
+    with write_transaction(lib.engine) as connection:
         connection.execute(
             sa.update(catalog.edition)
             .where(catalog.edition.c.id == lib.chain["edition"])
@@ -162,7 +163,7 @@ def ranged_bench(
     item_id = new_ulid()
     wanted = list(declared) if declared is not None else list(range(1, count + 1))
     units: list[str] = []
-    with lib.engine.begin() as connection:
+    with write_transaction(lib.engine) as connection:
         connection.execute(
             sa.insert(export.export_item).values(
                 id=item_id, edition_id=lib.chain["edition"],
@@ -202,7 +203,7 @@ def regrow(bench: RangedBench, chapters: int, *, data: bytes | None = None) -> N
     """What the keeper does when a chapter joins (or leaves) the rolling volume: the same item,
     its coverage rewritten for the first `chapters` chapters, the kept file replaced."""
     engine = bench.lib.engine
-    with engine.begin() as connection:
+    with write_transaction(engine) as connection:
         while len(bench.unit_ids) < chapters:
             top = connection.execute(
                 sa.select(sa.func.max(catalog.unit.c.number_sort)).where(

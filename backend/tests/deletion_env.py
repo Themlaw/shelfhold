@@ -11,6 +11,7 @@ import sqlalchemy as sa
 
 from shelfhold.export.application.deletion import DeletionService
 from shelfhold.export.application.intents import IntentJournal
+from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.library.public import DeletionLevel, DeletionPlan, Safeguard, StoreIndex
 from tests.export_env import ExportEnv, Series
@@ -113,7 +114,7 @@ def spread_unit(env: ExportEnv, series: Series, number: str = "1") -> str:
 
 def make_irreplaceable(env: ExportEnv, unit: str) -> None:
     """The source no longer lists the Unit: nothing upstream can give it back (EF-BIB-031)."""
-    with env.engine.begin() as connection:
+    with write_transaction(env.engine) as connection:
         connection.execute(
             sa.text("UPDATE unit SET availability = 'removed' WHERE id = :u"), {"u": unit}
         )

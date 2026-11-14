@@ -32,6 +32,7 @@ from shelfhold.identity.domain.kavita_mapping import same_kavita_username
 from shelfhold.identity.domain.policy import check_source_policy, effective_source_policy
 from shelfhold.identity.domain.roles import ProfileError
 from shelfhold.identity.domain.visibility import check_visibility, effective_visibility
+from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.event_sequence import invalidate_tokens
 from shelfhold.infrastructure.identity_counter import DAMAGED, IdentityCounter
 from shelfhold.infrastructure.ids import new_ulid
@@ -144,7 +145,7 @@ def reconcile_identity_counter(
     error (a lock held by a shell, say) is retried and then stops the start: it is never skipped."""
     for attempt in range(_LOCKED_RETRIES + 1):
         try:
-            with engine.begin() as connection:
+            with write_transaction(engine) as connection:
                 acted = revoke_if_behind(connection, counter, now=now)
                 value = counter.db_value(connection)
             break
@@ -240,7 +241,7 @@ class SqlIdentityStore:
             else self._engine
         )
         value: int | None = None
-        with engine.begin() as conn:
+        with write_transaction(engine) as conn:
             if self._counter is not None:
                 revoke_if_behind(conn, self._counter, now=datetime.now(UTC))
             yield conn
@@ -299,7 +300,7 @@ class SqlIdentityStore:
         (0) is laid down, whoever calls."""
         if role == "child" and max_age_rating is None:
             max_age_rating = 0
-        with self._engine.begin() as conn:
+        with write_transaction(self._engine) as conn:
             conn.execute(
                 sa.insert(_user).values(
                     id=id,
@@ -815,7 +816,7 @@ class SqlIdentityStore:
 
     def insert_passkey(self, passkey: NewPasskey, audit: AuditEntry | None = None) -> bool:
         try:
-            with self._engine.begin() as conn:
+            with write_transaction(self._engine) as conn:
                 conn.execute(
                     sa.insert(_passkey).values(
                         id=passkey.id,
@@ -856,7 +857,7 @@ class SqlIdentityStore:
         # The counter moves forward in the statement itself: of two concurrent presentations of
         # the same assertion only one finds `sign_count < :new` (0 stays 0: no counter).
         advanced = _passkey.c.sign_count < sign_count
-        with self._engine.begin() as conn:
+        with write_transaction(self._engine) as conn:
             result = conn.execute(
                 sa.update(_passkey)
                 .where(
@@ -967,7 +968,7 @@ class SqlIdentityStore:
             if guarded
             else self._engine
         )
-        with engine.begin() as conn:
+        with write_transaction(engine) as conn:
             if session.password_hash is not None:
                 stored = conn.execute(
                     sa.select(_user.c.password_hash).where(_user.c.id == session.user_id)
@@ -1022,7 +1023,7 @@ class SqlIdentityStore:
         )
 
     def touch_session(self, session_id: str, *, now: datetime, absolute_expiry: datetime) -> None:
-        with self._engine.begin() as conn:
+        with write_transaction(self._engine) as conn:
             conn.execute(
                 sa.update(_session)
                 .where(_session.c.id == session_id, _session.c.revoked_at.is_(None))
@@ -1032,7 +1033,7 @@ class SqlIdentityStore:
     def rotate_session(
         self, session_id: str, *, token_hash: str, csrf_secret: str, now: datetime
     ) -> None:
-        with self._engine.begin() as conn:
+        with write_transaction(self._engine) as conn:
             conn.execute(
                 sa.update(_session)
                 .where(_session.c.id == session_id, _session.c.revoked_at.is_(None))
@@ -1100,7 +1101,7 @@ class SqlIdentityStore:
     # --- API keys ----------------------------------------------------------------------------
 
     def insert_api_key(self, key: NewApiKey) -> None:
-        with self._engine.begin() as conn:
+        with write_transaction(self._engine) as conn:
             conn.execute(
                 sa.insert(_key).values(
                     id=key.id,
@@ -1154,7 +1155,7 @@ class SqlIdentityStore:
         return self._keys()
 
     def touch_api_key(self, key_id: str, *, now: datetime) -> None:
-        with self._engine.begin() as conn:
+        with write_transaction(self._engine) as conn:
             conn.execute(sa.update(_key).where(_key.c.id == key_id).values(last_used_at=now))
 
     def revoke_api_key(self, prefix: str, *, now: datetime) -> bool:
@@ -1216,5 +1217,5 @@ class SqlIdentityStore:
         return audit_insert(entry)
 
     def audit(self, entry: AuditEntry) -> None:
-        with self._engine.begin() as conn:
+        with write_transaction(self._engine) as conn:
             conn.execute(self._audit_insert(entry))

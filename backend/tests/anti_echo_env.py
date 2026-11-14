@@ -8,6 +8,7 @@ from dataclasses import dataclass
 import sqlalchemy as sa
 
 from shelfhold.export.domain.naming import DEFAULT_TEMPLATE
+from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import export, storage
 from tests.integration.test_schema_catalog import add_edition, add_work
@@ -36,7 +37,7 @@ def seed_own_export(
     `content` it was made from."""
     target_id, shelf_id, destination_id = new_ulid(), new_ulid(), new_ulid()
     item_id = new_ulid()
-    with lib.engine.begin() as connection:
+    with write_transaction(lib.engine) as connection:
         edition_id = add_edition(connection, add_work(connection), lang="en", media="text")
         connection.execute(
             sa.insert(export.export_target).values(

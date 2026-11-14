@@ -15,6 +15,7 @@ import sqlalchemy as sa
 import structlog
 from sqlalchemy import Engine
 
+from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.fsops import Fsops
 from shelfhold.infrastructure.schema import coherence
 from shelfhold.library.replica import paths_under, relocate_root_paths
@@ -50,7 +51,7 @@ def migrate_received_dirs(
             continue
         names = set(moved) | _moved_before_a_crash(engine, fsops, root_id, path, old_dir, new_dir)
         if names:
-            with engine.begin() as connection:
+            with write_transaction(engine) as connection:
                 relocate_root_paths(
                     connection,
                     root_id,

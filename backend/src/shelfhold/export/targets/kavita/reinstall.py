@@ -37,6 +37,7 @@ from shelfhold.export.targets.kavita.client import KavitaClient
 from shelfhold.export.targets.kavita.errors import ProtocolError
 from shelfhold.export.targets.kavita.series import SeriesAges
 from shelfhold.infrastructure.clock import Clock
+from shelfhold.infrastructure.db import read_transaction, write_transaction
 from shelfhold.infrastructure.schema import export
 
 __all__ = ["InstanceService", "ReconnectReport", "library_type_of"]
@@ -76,7 +77,7 @@ class InstanceService:
         await client.probe()
         health = client.health
         current = await self._fingerprint(client)
-        with self._engine.begin() as connection:
+        with write_transaction(self._engine) as connection:
             stored = load_fingerprint(connection, target_id)
             if stored is None:
                 if current is not None:
@@ -121,7 +122,7 @@ class InstanceService:
             raise ProtocolError("the server gives no installation id")
         libraries = await client.list_libraries()
         report = ReconnectReport()
-        with self._engine.begin() as connection:
+        with read_transaction(self._engine) as connection:
             wanted = self._wanted(connection, target_id)
         resolved: dict[str, str] = {}
         for item in wanted:
@@ -141,7 +142,7 @@ class InstanceService:
             elif assessment.mode.value != "degraded_readonly":
                 await client.ensure_exclude_patterns(int(str(found["id"])), dto.HIDDEN_DIR_PATTERNS)
                 report.settings_applied.append(item.remote_library_id)
-        with self._engine.begin() as connection:
+        with write_transaction(self._engine) as connection:
             report.re_resolved = self._store_refs(connection, target_id, resolved)
             forget_remote_cache(connection, target_id)
             report.invalidated_fields = invalidate_field_owners(connection, target_id)
@@ -151,7 +152,7 @@ class InstanceService:
         audit = await auditor.audit(client, target_id)  # fails closed: the pause then stays
         report.audit_failed = audit.failed
         report.paused_shelves = list(audit.paused_shelves)
-        with self._engine.begin() as connection:
+        with write_transaction(self._engine) as connection:
             client.health.instance_changed = False
             client.health.refresh_waiting()
             save_health(connection, target_id, client.health)

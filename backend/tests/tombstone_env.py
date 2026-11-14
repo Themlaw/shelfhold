@@ -12,6 +12,7 @@ from sqlalchemy import Engine
 
 from shelfhold.events.bus import EventBus
 from shelfhold.identity.public import Credential, Principal
+from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.schema import coherence, platform
 from shelfhold.infrastructure.secrets.keyring import Keyring, KeyringStore
 from shelfhold.library.tombstones import (
@@ -116,7 +117,7 @@ class TombEnv:
 def make_tomb_env(tmp: Path, *, database: Path | None = None) -> TombEnv:
     fs = make_env(tmp)
     engine = prepare_database(database or tmp / "shelfhold.db")
-    with engine.begin() as connection:
+    with write_transaction(engine) as connection:
         for root in fs.expected:
             connection.execute(
                 sa.insert(platform.physical_root).values(root_id=root.root_id, path_entry=root.path)

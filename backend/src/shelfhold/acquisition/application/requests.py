@@ -46,6 +46,7 @@ from shelfhold.identity.public import (
     effective_visibility,
 )
 from shelfhold.infrastructure.clock import Clock
+from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.requesters import still_a_user
 from shelfhold.infrastructure.schema import acquisition, catalog, identity
@@ -220,7 +221,7 @@ class RequestService:
 
     def create_from_ref(self, who: Requester, ref: SourceRef) -> RequestView:
         """A request on the remote result of a search; the one door of a child."""
-        with self._engine.begin() as connection:
+        with write_transaction(self._engine) as connection:
             owner = self._owner(connection, who.user_id)
             item = _upsert_item(connection, ref, self._clock.now())
             return self._insert(
@@ -233,7 +234,7 @@ class RequestService:
         the same whatever the Work: no identifier of hers says whether a title is there)."""
         if target.kind == "source_ref":
             raise RequestRefusedError("kind_not_allowed")  # only `create_from_ref` makes one
-        with self._engine.begin() as connection:
+        with write_transaction(self._engine) as connection:
             owner = self._owner(connection, who.user_id)
             if needs_age(owner.role):
                 raise RequestRefusedError("kind_not_allowed")
@@ -434,7 +435,7 @@ class RequestService:
         except BaseException:
             self._revert(request_id, principal)
             raise
-        with self._engine.begin() as connection:
+        with write_transaction(self._engine) as connection:
             connection.execute(
                 sa.update(request)
                 .where(request.c.id == request_id)
@@ -448,11 +449,6 @@ class RequestService:
         with self._engine.connect() as connection:
             return self._view(connection, request_id, for_admin=True)
 
-    def _immediate(self) -> Engine:
-        """The write lock first: the deletion of a user takes it too, so the user read by
-        `still_a_user` is the one that is there when the decision commits (M3 L08)."""
-        return self._engine.execution_options(shelfhold_begin="BEGIN IMMEDIATE")
-
     def _claim(
         self, request_id: str, principal: Principal, rating: AgeRating | None,
         shelf_id: str | None, *, resume: bool,
@@ -465,7 +461,9 @@ class RequestService:
             if resume
             else request.c.state == "pending"
         )
-        with self._immediate().begin() as connection:
+        # The write lock first: the deletion of a user takes it too, so the user read by
+        # `still_a_user` is the one that is there when the decision commits (M3 L08).
+        with write_transaction(self._engine) as connection:
             changed = connection.execute(
                 sa.update(request)
                 .where(request.c.id == request_id, waiting)
@@ -491,7 +489,7 @@ class RequestService:
     def _revert(self, request_id: str, principal: Principal) -> None:
         """The source refused after the decision: back to pending, and the journal says so."""
         now = self._clock.now()
-        with self._engine.begin() as connection:
+        with write_transaction(self._engine) as connection:
             changed = connection.execute(
                 sa.update(request)
                 .where(request.c.id == request_id, request.c.state == "approved")
@@ -520,7 +518,7 @@ class RequestService:
 
     def cancel(self, user_id: str, request_id: str) -> RequestView:
         """Her own pending request, by her alone."""
-        with self._engine.begin() as connection:
+        with write_transaction(self._engine) as connection:
             row = connection.execute(
                 sa.select(request.c.state).where(
                     request.c.id == request_id, request.c.requester_user_id == user_id
@@ -534,7 +532,7 @@ class RequestService:
     def _close(
         self, request_id: str, principal: Principal, state: str, action: str, reason: str | None
     ) -> RequestView:
-        with self._immediate().begin() as connection:
+        with write_transaction(self._engine) as connection:
             self._move(
                 connection, request_id, state, action, principal.actor_id, reason,
                 decided_by=principal.user_id, principal=principal,
@@ -584,7 +582,7 @@ class RequestService:
         it, in the view of the request (private, or household). A replay finds nothing to do."""
         published: list[PublishedEvent] = []
         now = self._clock.now()
-        with self._engine.begin() as connection:
+        with write_transaction(self._engine) as connection:
             rows = sorted(self._waiting_for(connection, work_id), key=lambda r: r.id)
             decided = [r for r in rows if r.approved_age is not None]
             if decided:  # several ages for one Work: the strictest, whatever the order of rows

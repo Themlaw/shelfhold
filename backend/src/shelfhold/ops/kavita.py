@@ -15,6 +15,7 @@ from shelfhold.export.targets.kavita.errors import TargetError
 from shelfhold.export.targets.kavita.library_type import resume_after_correction
 from shelfhold.export.targets.kavita.reinstall import InstanceService
 from shelfhold.infrastructure.clock import Clock
+from shelfhold.infrastructure.db import write_transaction
 from shelfhold.ops.errors import StillWaitingError
 
 __all__ = ["KavitaTargetOps"]
@@ -58,7 +59,7 @@ class KavitaTargetOps:
 
     def _save(self, client: KavitaClient, target_id: str) -> None:
         client.health.refresh_waiting()
-        with self._engine.begin() as connection:
+        with write_transaction(self._engine) as connection:
             save_health(connection, target_id, client.health)
 
     def recheck(self, target_id: str) -> None:

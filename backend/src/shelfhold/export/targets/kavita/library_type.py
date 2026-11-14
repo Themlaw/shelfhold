@@ -32,6 +32,7 @@ from shelfhold.export.targets.kavita.dto import LibraryType
 from shelfhold.export.targets.kavita.errors import TargetError
 from shelfhold.export.targets.kavita.revalidate import Revalidator
 from shelfhold.infrastructure.clock import Clock
+from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.schema import export
 
 __all__ = [
@@ -119,7 +120,7 @@ class LibraryTypeService:
             return LibraryTypeChangeReport()
         announced: list[_Linked] = []
         paused: list[str] = []
-        with self._engine.begin() as connection:
+        with write_transaction(self._engine) as connection:
             health = load_health(connection, target_id)
             already = health.library_type_changed
             for item in changed:
@@ -178,7 +179,7 @@ async def resume_after_correction(engine: Engine, client: KavitaClient, target_i
     seen = await _seen(client, linked)
     differing = {i.shelf_id for i in linked if seen.get(i.remote_ref, i.stored) != i.stored}
     unread = {i.shelf_id for i in linked if i.remote_ref not in seen}
-    with engine.begin() as connection:
+    with write_transaction(engine) as connection:
         for shelf_id in {i.shelf_id for i in linked} - differing - unread:
             resume_shelf(connection, shelf_id, LIBRARY_TYPE_CHANGED)
     if differing or unread:

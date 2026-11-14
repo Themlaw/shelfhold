@@ -17,6 +17,7 @@ from shelfhold.catalog.public import (
     open_suggestions,
     suggest_duplicates,
 )
+from shelfhold.infrastructure.db import write_transaction
 from shelfhold.ops.errors import ExitUnavailableError
 
 if TYPE_CHECKING:
@@ -38,7 +39,7 @@ class DedupOps:
         if self._screens is None:
             raise ExitUnavailableError("the Work tombstones cannot be checked here")
         screen = self._screens.open()  # opened before the write transaction: the replay may write
-        with self._engine.begin() as connection:
+        with write_transaction(self._engine) as connection:
             created = suggest_duplicates(connection, screen=screen)
             # a series that moved sources in Suwayomi: "Même œuvre ?", never a creation
             created += detect_suwayomi_migrations(connection, screen=screen)

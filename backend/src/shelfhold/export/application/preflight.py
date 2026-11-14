@@ -24,6 +24,7 @@ from sqlalchemy import Connection, Engine
 from shelfhold.events.bus import EventBus
 from shelfhold.export.application.snapshot import DestinationContext, load_context
 from shelfhold.infrastructure.clock import Clock
+from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.fsops import Fsops
 from shelfhold.infrastructure.fsops.errors import RootBlockedError
 from shelfhold.infrastructure.fsops.probe import probe_folder, sweep_probe_files
@@ -307,7 +308,7 @@ class PermissionPreflight:
     def mark_denied(self, destination_id: str, export_series_id: str) -> bool:
         """A write was refused: the series waits, announced once, never retried by itself."""
         series = export.export_series
-        with self._engine.begin() as connection:
+        with write_transaction(self._engine) as connection:
             changed = connection.execute(
                 sa.update(series)
                 .where(series.c.id == export_series_id, series.c.paused_reason.is_(None))
@@ -344,7 +345,7 @@ class PermissionPreflight:
         for series_id in self.denied_series(destination_id):
             result = self.check_series(destination_id, series_id)
             if result is None or result.ok:
-                with self._engine.begin() as connection:
+                with write_transaction(self._engine) as connection:
                     connection.execute(
                         sa.update(series)
                         .where(series.c.id == series_id, series.c.paused_reason == DENIED)

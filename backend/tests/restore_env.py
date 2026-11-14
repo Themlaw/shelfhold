@@ -26,7 +26,7 @@ from shelfhold.export.application.restore import (
 )
 from shelfhold.export.application.roots import LoadedRoots, load_roots
 from shelfhold.export.domain.path_map import PathMap
-from shelfhold.infrastructure.db import create_db_engine
+from shelfhold.infrastructure.db import create_db_engine, write_transaction
 from shelfhold.infrastructure.fsops import Fsops
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.instance import WriteSessions
@@ -237,7 +237,7 @@ def restore_env(*, first_chapters: int = 2) -> Iterator[RestoreEnv]:
     """A shelf with a series whose first chapters are exported, under write sessions."""
     with export_env() as ex:
         series = ex.main_series()
-        with ex.engine.begin() as connection:
+        with write_transaction(ex.engine) as connection:
             sentinel = json.loads((ex.lib.library / ".shelfhold-mount-id").read_text("utf-8"))
             connection.execute(
                 sa.update(platform.instance).values(instance_id=sentinel["instance_id"])
@@ -248,7 +248,8 @@ def restore_env(*, first_chapters: int = 2) -> Iterator[RestoreEnv]:
         env = RestoreEnv.__new__(RestoreEnv)
         env.ex, env.series, env.store, env.bus = ex, series, store, EventBus(ex.clock)
         env.chapters = {}
-        with ex.engine.begin() as connection:  # the fixture's own chapter 1 has no archive
+        # the fixture's own chapter 1 has no archive
+        with write_transaction(ex.engine) as connection:
             connection.execute(sa.text("DELETE FROM unit_variant"))
             connection.execute(sa.text("DELETE FROM unit"))
         env.open_instance()

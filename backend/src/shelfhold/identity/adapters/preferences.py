@@ -6,6 +6,7 @@ import sqlalchemy as sa
 from sqlalchemy import Engine
 
 from shelfhold.identity.application.notification_prefs import NotificationPrefs
+from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.schema import identity, platform
 
 DEFAULT_THEME_SETTING = "ui.default_theme"
@@ -38,7 +39,7 @@ class SqlPreferencesStore:
             "locale" if name == "language" else name: value for name, value in changes.items()
         }
         user = identity.user
-        with self._engine.begin() as connection:
+        with write_transaction(self._engine) as connection:
             connection.execute(sa.update(user).where(user.c.id == user_id).values(**values))
 
 
@@ -60,7 +61,7 @@ class SqlNotificationPrefsStore:
 
     def write(self, user_id: str, prefs: NotificationPrefs) -> None:
         user = identity.user
-        with self._engine.begin() as connection:
+        with write_transaction(self._engine) as connection:
             connection.execute(
                 sa.update(user)
                 .where(user.c.id == user_id)

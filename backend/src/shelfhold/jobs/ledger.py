@@ -15,6 +15,7 @@ import sqlalchemy as sa
 from sqlalchemy import Connection, Engine
 
 from shelfhold.infrastructure.clock import Clock
+from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import platform
 from shelfhold.jobs.kinds import security_repair_kinds
@@ -127,7 +128,7 @@ class JobLedger:
         ).scalar_one_or_none()
 
     def mark_dispatched(self, job_id: str, huey_task_id: str) -> None:
-        with self._engine.begin() as conn:
+        with write_transaction(self._engine) as conn:
             conn.execute(
                 sa.update(job_view).where(job_view.c.id == job_id).values(huey_task_id=huey_task_id)
             )
@@ -155,7 +156,7 @@ class JobLedger:
             ~frozen,
             sa.or_(~paused, job_view.c.kind.in_(security_repair_kinds())),
         ]
-        with self._engine.begin() as conn:
+        with write_transaction(self._engine) as conn:
             claimed = bool(
                 conn.execute(
                     sa.update(job_view)
@@ -175,7 +176,7 @@ class JobLedger:
 
     def set_window_end(self, job_id: str, window_end: datetime) -> bool:
         """Move a still-queued window job to another window; False if it is not queued."""
-        with self._engine.begin() as conn:
+        with write_transaction(self._engine) as conn:
             return bool(
                 conn.execute(
                     sa.update(job_view)
@@ -187,12 +188,12 @@ class JobLedger:
     def save_cursor(self, job_id: str, next_index: int | None) -> None:
         """Keep (or, with None, clear) where the job resumes."""
         value = None if next_index is None else json.dumps({"next_index": next_index})
-        with self._engine.begin() as conn:
+        with write_transaction(self._engine) as conn:
             conn.execute(sa.update(job_view).where(job_view.c.id == job_id).values(cursor=value))
 
     def mark_preempted(self, job_id: str) -> None:
         """The window closed before the job was done: parked, with its cursor, until the next."""
-        with self._engine.begin() as conn:
+        with write_transaction(self._engine) as conn:
             conn.execute(
                 sa.update(job_view)
                 .where(job_view.c.id == job_id)
@@ -202,7 +203,7 @@ class JobLedger:
     def pause_queued(self, code: str, kinds: Collection[str]) -> int:
         """Queue-wide pause (disk guard): queued jobs of these kinds park with `code`. No attempt
         is spent and nothing is rescheduled; `resume_paused` puts them back."""
-        with self._engine.begin() as conn:
+        with write_transaction(self._engine) as conn:
             return int(
                 conn.execute(
                     sa.update(job_view)
@@ -212,7 +213,7 @@ class JobLedger:
             )
 
     def pause_one(self, job_id: str, code: str) -> bool:
-        with self._engine.begin() as conn:
+        with write_transaction(self._engine) as conn:
             return bool(
                 conn.execute(
                     sa.update(job_view)
@@ -224,7 +225,7 @@ class JobLedger:
     def park_running(self, job_id: str, code: str) -> bool:
         """A job that hit a pause condition mid-flight (the disk filled): back to `paused`
         under `code`, the attempt it spent given back, nothing recorded as a failure."""
-        with self._engine.begin() as conn:
+        with write_transaction(self._engine) as conn:
             return bool(
                 conn.execute(
                     sa.update(job_view)
@@ -243,7 +244,7 @@ class JobLedger:
     def forget_dispatch(self, job_id: str) -> None:
         """The Huey task was consumed without running the job (shutdown): `undispatched()` will
         send it again at the next boot."""
-        with self._engine.begin() as conn:
+        with write_transaction(self._engine) as conn:
             conn.execute(
                 sa.update(job_view)
                 .where(job_view.c.id == job_id, job_view.c.status == "queued")
@@ -259,7 +260,7 @@ class JobLedger:
         with self._engine.connect() as probe:  # the tick asks this every minute: a read, no lock
             if probe.execute(sa.select(job_view.c.id).where(*where).limit(1)).first() is None:  # type: ignore[arg-type]
                 return []
-        with self._engine.begin() as conn:
+        with write_transaction(self._engine) as conn:
             rows = conn.execute(sa.select(job_view).where(*where)).all()  # type: ignore[arg-type]
             conn.execute(
                 sa.update(job_view)
@@ -281,7 +282,7 @@ class JobLedger:
     def mark_finished(
         self, job_id: str, *, error: str | None = None, error_code: str | None = None
     ) -> None:
-        with self._engine.begin() as conn:
+        with write_transaction(self._engine) as conn:
             conn.execute(
                 sa.update(job_view)
                 .where(job_view.c.id == job_id)
@@ -303,7 +304,7 @@ class JobLedger:
 
     def mark_retry(self, job_id: str, error: str) -> None:
         """The job raised and has attempts left: back to `queued`, the failure remembered."""
-        with self._engine.begin() as conn:
+        with write_transaction(self._engine) as conn:
             conn.execute(
                 sa.update(job_view)
                 .where(job_view.c.id == job_id)
@@ -328,7 +329,7 @@ class JobLedger:
         """Back to `queued` (a busy domain slot): the task will be retried later. The handler
         never ran, so the attempt `claim_running` spent is given back, as `park_running` does:
         waiting for a slot must not bring a job closer to its dead letter."""
-        with self._engine.begin() as conn:
+        with write_transaction(self._engine) as conn:
             conn.execute(
                 sa.update(job_view)
                 .where(job_view.c.id == job_id)
@@ -366,7 +367,7 @@ class JobLedger:
 
     def promote(self, job_id: str, priority_class: str) -> bool:
         """Move a still-queued job to a higher class; False if it started in the meantime."""
-        with self._engine.begin() as conn:
+        with write_transaction(self._engine) as conn:
             return bool(
                 conn.execute(
                     sa.update(job_view)
@@ -378,7 +379,7 @@ class JobLedger:
     def forget_dispatches_not_in(self, present: set[str]) -> int:
         """Queued rows whose Huey task is no longer anywhere: a worker took it out of the queue
         and was killed before it claimed the job. They are `undispatched` again."""
-        with self._engine.begin() as conn:
+        with write_transaction(self._engine) as conn:
             rows = conn.execute(
                 sa.select(job_view.c.id, job_view.c.huey_task_id).where(
                     job_view.c.status == "queued", job_view.c.huey_task_id.is_not(None)
@@ -395,7 +396,7 @@ class JobLedger:
 
     def requeue_running(self) -> list[PendingJob]:
         """At boot: a job still `running` lost its worker; it goes back to the queue."""
-        with self._engine.begin() as conn:
+        with write_transaction(self._engine) as conn:
             rows = conn.execute(sa.select(job_view).where(job_view.c.status == "running")).all()
             conn.execute(
                 sa.update(job_view)

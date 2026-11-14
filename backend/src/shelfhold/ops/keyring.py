@@ -25,6 +25,7 @@ from shelfhold.export.domain.physical_roots import RootState
 from shelfhold.i18n import t
 from shelfhold.identity.public import RESERVED_ACTIONS, Allowed, Principal, authorize_reserved
 from shelfhold.infrastructure.clock import Clock
+from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.freeze import FreezeState
 from shelfhold.infrastructure.fsops.tombstone_journal import journal_kid_names, sentinel_kid_tags
 from shelfhold.infrastructure.ids import new_ulid
@@ -224,7 +225,8 @@ class TombstoneKeyringExit:
         if not names:
             raise InvalidChoiceError("name the compromised key (--kid)")
         store = diagnostics.store_for(self._settings)
-        with self._engine.begin() as connection:  # the debt first: a kill after the mark keeps it
+        # the debt first: a kill after the mark keeps it
+        with write_transaction(self._engine) as connection:
             state = TombstoneState(self._engine)
             for (owed_root,) in connection.execute(
                 sa.select(platform.physical_root.c.root_id).where(
@@ -336,7 +338,7 @@ class TombstoneKeyringExit:
             added, target = self._write_keyring(imported)
             kids = added or tuple(key.kid for key in imported.keys)
             audited = "kids:" + ",".join(kids[:MAX_AUDITED_KIDS])
-            with self._engine.begin() as connection:
+            with write_transaction(self._engine) as connection:
                 registry.sync_registry(connection, target)
                 # a run that adds nothing and finds its audit row already there is the rerun of
                 # an import killed after its commit: it is not audited twice

@@ -31,6 +31,7 @@ from shelfhold.events.bus import EventBus, PublishedEvent
 from shelfhold.events.projection import project_event
 from shelfhold.identity.public import reader_scope
 from shelfhold.infrastructure.clock import Clock
+from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.schema import catalog, identity, platform
 from shelfhold.integrations.apprise.render import Message, neutralize_markdown
 from shelfhold.integrations.notify.routing import (
@@ -149,7 +150,7 @@ class NotificationRouter:
     def on_event(self, event: PublishedEvent) -> None:
         kind = classify(event.type)
         urgent_queued = False
-        with self._engine.begin() as connection:
+        with write_transaction(self._engine) as connection:
             actor = connection.execute(
                 sa.select(platform.event.c.actor_id).where(platform.event.c.id == event.id)
             ).scalar_one_or_none()
@@ -279,7 +280,7 @@ class NotificationSender:
 
     def run_once(self) -> SendReport:
         now = self._clock.now()
-        with self._engine.begin() as connection:
+        with write_transaction(self._engine) as connection:
             for event_type in sorted(OUTAGE_EVENTS):
                 self._scan_outage(connection, event_type, now)
             self._ensure_reminders(connection, now)
@@ -399,7 +400,7 @@ class NotificationSender:
 
     def _claim(self, user_id: str, due_at: datetime, now: datetime) -> tuple[datetime, Any] | None:
         """Move the row a lease ahead: a concurrent sweep that read it too finds nothing."""
-        with self._engine.begin() as connection:
+        with write_transaction(self._engine) as connection:
             payload = connection.execute(
                 sa.select(digest.c.payload).where(
                     digest.c.user_id == user_id, digest.c.due_at == due_at
@@ -435,7 +436,7 @@ class NotificationSender:
             return "dropped"
         wait = min(_BACKOFF * (2 ** (attempts - 1)), _BACKOFF_MAX)
         log.warning("notify.digest_failed", attempts=attempts)
-        with self._engine.begin() as connection:
+        with write_transaction(self._engine) as connection:
             connection.execute(
                 sa.delete(digest).where(digest.c.user_id == user_id, digest.c.due_at == leased_at)
             )
@@ -443,7 +444,7 @@ class NotificationSender:
         return "failed"
 
     def _finish(self, user_id: str, due_at: datetime) -> None:
-        with self._engine.begin() as connection:
+        with write_transaction(self._engine) as connection:
             connection.execute(
                 sa.delete(digest).where(digest.c.user_id == user_id, digest.c.due_at == due_at)
             )

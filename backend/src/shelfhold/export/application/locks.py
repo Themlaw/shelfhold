@@ -18,6 +18,7 @@ from sqlalchemy import Engine
 from sqlalchemy.exc import IntegrityError
 
 from shelfhold.infrastructure.clock import Clock
+from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import coherence
 
@@ -204,7 +205,7 @@ class ResourceLocks:
         table = coherence.resource_lock
         now = self._clock.now()
         try:
-            with self._engine.begin() as conn:
+            with write_transaction(self._engine) as conn:
                 # The DELETE takes SQLite's write lock: what follows is serialised.
                 conn.execute(sa.delete(table).where(table.c.lease_until <= now))
                 every = rows if rows is not None else resources
@@ -250,7 +251,7 @@ class ResourceLocks:
 
     def _renew(self, job_id: str, resources: list[str]) -> int:
         table = coherence.resource_lock
-        with self._engine.begin() as conn:
+        with write_transaction(self._engine) as conn:
             return conn.execute(
                 sa.update(table)
                 .where(table.c.resource.in_(resources), table.c.holder_job_id == job_id)
@@ -270,7 +271,7 @@ class ResourceLocks:
 
     def _release(self, job_id: str, resources: list[str]) -> None:
         table = coherence.resource_lock
-        with self._engine.begin() as conn:
+        with write_transaction(self._engine) as conn:
             conn.execute(
                 sa.delete(table).where(
                     table.c.resource.in_(resources), table.c.holder_job_id == job_id
@@ -279,5 +280,5 @@ class ResourceLocks:
 
     def release_all(self) -> int:
         """At boot, once the instance lock is ours: whatever a killed process left."""
-        with self._engine.begin() as conn:
+        with write_transaction(self._engine) as conn:
             return conn.execute(sa.delete(coherence.resource_lock)).rowcount

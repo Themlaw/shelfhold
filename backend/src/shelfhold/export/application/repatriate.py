@@ -32,6 +32,7 @@ from shelfhold.export.application.restore import RestoredBehindError
 from shelfhold.export.application.snapshot import barrier_holds, load_context
 from shelfhold.export.domain.path_map import PathMode, clean_absolute
 from shelfhold.infrastructure.clock import Clock
+from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.fsops import (
     CopyVerificationError,
     Fsops,
@@ -417,7 +418,7 @@ class Repatriator:
             raise RepatriationBlockedError((action,))
         identity = found[1]
         root_id, root_rel = self._locate(action.target)
-        with self._engine.begin() as connection:
+        with write_transaction(self._engine) as connection:
             relocate_destination_copy(
                 connection, action.export_item_id, physical_root_id=root_id, rel_path=root_rel,
                 dev=self._fsops.device_of(action.target), ino=identity.ino, size=identity.size,

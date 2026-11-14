@@ -17,6 +17,7 @@ from shelfhold.config import Settings
 from shelfhold.export.application.pipeline import ApplyReport
 from shelfhold.export.targets.kavita.audit import AccessAuditor
 from shelfhold.export.targets.kavita.linking import ShelfLinker
+from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import export
 from shelfhold.library.public import PassthroughStore
@@ -53,7 +54,7 @@ class Seeded:
     scans: rj.ScanRelay = field(default_factory=rj.ScanRelay)
 
     def new_series(self, title: str = "Dr Stone", *, lang: str = "fr") -> Series:
-        with self.inst.engine.begin() as connection:
+        with write_transaction(self.inst.engine) as connection:
             work = add_work(connection, title=title, sort_title=title.lower())
             edition = add_edition(connection, work, lang=lang, shelf_id=self.shelf_id)
             item = add_source_item(connection, remote_id=f"series-{new_ulid()}")
@@ -70,7 +71,7 @@ class Seeded:
     ) -> str:
         """A Unit received through the production store, into the inbox of the first root.
         `page` replaces the single page (name, bytes) of the archive."""
-        with self.inst.engine.begin() as connection:
+        with write_transaction(self.inst.engine) as connection:
             unit = add_unit(
                 connection, series.edition_id, number, **({"part": part} if part > 1 else {})
             )

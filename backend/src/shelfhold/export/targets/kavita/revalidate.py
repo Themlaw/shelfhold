@@ -34,6 +34,7 @@ from shelfhold.export.targets.kavita.adopt import BulkParse, library_type_named
 from shelfhold.export.targets.kavita.client import KavitaClient
 from shelfhold.export.targets.kavita.dto import LibraryType
 from shelfhold.infrastructure.clock import Clock
+from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.schema import export
 
 __all__ = ["Rejected", "RevalidationReport", "Revalidator"]
@@ -142,7 +143,7 @@ class Revalidator:
         return RevalidationReport(replayed=True, sampled=len(records), rejected=tuple(rejected))
 
     def _record(self, target_id: str, version: str, rejected: list[str] | None) -> None:
-        with self._engine.begin() as connection:
+        with write_transaction(self._engine) as connection:
             health = load_health(connection, target_id)
             health.replayed_version = version
             if rejected is not None:

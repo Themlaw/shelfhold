@@ -140,6 +140,7 @@ def instance(
     with auth_env(monkeypatch, settings) as api:
         (admin_hash,) = db_rows(settings, "SELECT password_hash FROM user WHERE role = 'admin'")[0]
         connection = sqlite3.connect(settings.database_path)
+        connection.execute("BEGIN IMMEDIATE")  # other writers (the app) are running
         try:
             connection.execute(
                 "INSERT INTO user (id, username, password_hash, role, can_rate) "

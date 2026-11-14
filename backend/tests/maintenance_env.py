@@ -13,7 +13,7 @@ import sqlalchemy as sa
 from sqlalchemy import Engine
 
 from shelfhold.identity.public import Credential, Principal
-from shelfhold.infrastructure.db import create_db_engine
+from shelfhold.infrastructure.db import create_db_engine, write_transaction
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import metadata, platform
 from shelfhold.jobs.huey_app import JobPools
@@ -101,7 +101,7 @@ def env(
 ) -> Iterator[Env]:
     engine = create_db_engine(tmp_path / "shelfhold.db")
     metadata.create_all(engine)
-    with engine.begin() as conn:
+    with write_transaction(engine) as conn:
         conn.execute(sa.insert(platform.instance).values(instance_id=new_ulid(), jurisdiction="FR"))
     clock = ManualClock(start)
     data = tmp_path / "data"

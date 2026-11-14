@@ -13,6 +13,7 @@ import sqlalchemy as sa
 from shelfhold.events.bus import EventBus
 from shelfhold.export.application.purge import PurgeService
 from shelfhold.identity.public import Credential, Principal
+from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.fsops import Fsops
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import acquisition, platform, storage
@@ -95,7 +96,7 @@ class PurgeEnv:
 
 
 def make_purge_env(lib: LibEnv) -> PurgeEnv:
-    with lib.engine.begin() as connection:
+    with write_transaction(lib.engine) as connection:
         if connection.execute(sa.select(platform.instance.c.instance_id)).first() is None:
             connection.execute(
                 sa.insert(platform.instance).values(instance_id=new_ulid(), jurisdiction="FR")
@@ -135,7 +136,7 @@ def spread(env: ExportEnv, series: Series, number: str = "1") -> tuple[str, dict
     lib.fsops.write_atomic(str(binned), b"PK-binned-copy", parents=True)
     moved = lib.fsops.recycle(str(binned))
     recycle = Path(moved).relative_to(lib.library / ".shelfhold" / "recycle")
-    with lib.engine.begin() as connection:
+    with write_transaction(lib.engine) as connection:
         connection.execute(
             sa.insert(storage.trash_item).values(
                 id=new_ulid(), kind="unit", ref=unit, path=recycle.as_posix(),
@@ -160,7 +161,7 @@ def spread(env: ExportEnv, series: Series, number: str = "1") -> tuple[str, dict
 
 def open_ticket(env: ExportEnv, unit: str, state: str = "requested") -> str:
     """A download ticket of the Unit's Variant, as the follow cycle would have opened it."""
-    with env.engine.begin() as connection:
+    with write_transaction(env.engine) as connection:
         variant, binding = connection.execute(
             sa.text("SELECT id, source_binding_id FROM unit_variant WHERE unit_id = :u"),
             {"u": unit},

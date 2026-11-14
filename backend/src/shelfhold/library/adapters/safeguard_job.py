@@ -39,6 +39,7 @@ from shelfhold.identity.public import AuditEntry, audit_insert
 from shelfhold.infrastructure.archives import UnsafeArchiveError
 from shelfhold.infrastructure.clock import Clock
 from shelfhold.infrastructure.content_trust import UntrustedEntryError
+from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.fsops import FileIdentity, Fsops, FsopsError
 from shelfhold.infrastructure.schema import acquisition, catalog, coherence, platform, storage
 from shelfhold.library.adapters.safeguard import payload_hash_at
@@ -292,7 +293,7 @@ class SafeguardCycle:
             batch.bytes,
             batch.backlog,
         )
-        with self._engine.begin() as connection:
+        with write_transaction(self._engine) as connection:
             record_backlog(
                 connection, units=batch.backlog, size=sum(c.size for c in batch.deferred),
                 now=self._clock.now(),
@@ -328,7 +329,7 @@ class SafeguardCycle:
     def close(self, report: CycleReport) -> None:
         """One `unit.safeguard_failed` for the run, whatever the number of Units that failed."""
         if report.failed:
-            with self._engine.begin() as connection:
+            with write_transaction(self._engine) as connection:
                 self._publish(
                     connection, "unit.safeguard_failed",
                     {"count": report.failed, "reasons": sorted(self._failures)},
@@ -719,7 +720,7 @@ class UpstreamPurge:
         the file stays in the service (another account may hold it, or the answer was ambiguous):
         a durable mark, which `status` shows until the admin clears it (`purge --kept-ack`)."""
         now = self._clock.now()
-        with self._engine.begin() as connection:
+        with write_transaction(self._engine) as connection:
             connection.execute(
                 sa.update(acquisition.download_request)
                 .where(

@@ -22,7 +22,7 @@ from shelfhold.acquisition.application.requests import (
 from shelfhold.catalog.public import RatingRefusedError, RatingService
 from shelfhold.config import Settings
 from shelfhold.identity.public import Credential, Principal
-from shelfhold.infrastructure.db import create_db_engine
+from shelfhold.infrastructure.db import create_db_engine, write_transaction
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.migrate import migrate
 from shelfhold.infrastructure.schema import acquisition
@@ -88,7 +88,7 @@ class FakePorts:
     ) -> PreparedAcquisition:
         """A novel's Work and Edition exist before anything is fetched."""
         assert self.engine is not None
-        with self.engine.begin() as connection:
+        with write_transaction(self.engine) as connection:
             work = bind_work(connection, source_key, remote_id)
             edition = connection.execute(
                 sa.text("SELECT id FROM edition WHERE work_id = :w"), {"w": work}
@@ -116,7 +116,7 @@ class FakePorts:
             self.file(edition_id, shelf, approver_id=principal.user_id)
         if rating is not None:
             assert self.engine is not None
-            with self.engine.begin() as connection:
+            with write_transaction(self.engine) as connection:
                 try:
                     RatingService().rate(connection, work_id, rating, principal=principal, now=T0)
                 except RatingRefusedError:
@@ -173,7 +173,7 @@ class Rig:
     def work(self, *, editions: bool = True, **extra: Any) -> str:
         from tests.integration.test_schema_catalog import add_edition, add_work
 
-        with self.engine.begin() as connection:
+        with write_transaction(self.engine) as connection:
             work_id = add_work(connection, **extra)
             if editions:
                 add_edition(connection, work_id)
@@ -182,6 +182,7 @@ class Rig:
 
 def add_users(path: Path) -> None:
     connection = sqlite3.connect(path)
+    connection.execute("BEGIN IMMEDIATE")  # other writers (the app) are running
     try:
         for uid, name, role, ceiling, rate in (
             (ADMIN_ID, "admin", "admin", None, 1),

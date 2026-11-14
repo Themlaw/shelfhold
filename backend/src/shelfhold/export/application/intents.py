@@ -31,6 +31,7 @@ from sqlalchemy import Connection, Engine
 from shelfhold.export.domain.physical_roots import RECYCLE_DIR
 from shelfhold.export.domain.provenance_mirror import MIRROR_DIR
 from shelfhold.infrastructure.clock import Clock, SystemClock
+from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.fsops import FileIdentity, FsopsError, SamePathState
 from shelfhold.infrastructure.fsops.confined import Kind
 from shelfhold.infrastructure.ids import new_ulid
@@ -251,7 +252,7 @@ class IntentJournal:
             if extra
             else (expected_file_id.to_json() if expected_file_id else None)
         )
-        with nullcontext(within) if within is not None else self._engine.begin() as conn:
+        with nullcontext(within) if within is not None else write_transaction(self._engine) as conn:
             epoch = conn.execute(sa.select(platform.instance.c.restore_epoch)).scalar_one()
             conn.execute(
                 sa.insert(coherence.fs_intent).values(
@@ -281,7 +282,7 @@ class IntentJournal:
         if within is not None:
             within.execute(statement)
             return
-        with self._engine.begin() as conn:
+        with write_transaction(self._engine) as conn:
             conn.execute(statement)
 
     def mark_done(self, intent_id: str, *, within: Connection | None = None) -> None:
@@ -295,7 +296,7 @@ class IntentJournal:
         if within is not None:
             within.execute(statement)
             return
-        with self._engine.begin() as conn:
+        with write_transaction(self._engine) as conn:
             conn.execute(statement)
 
     def cancel(self, intent_id: str) -> None:
@@ -347,7 +348,7 @@ class IntentJournal:
             intent_id, "rename", step.src, step.dst, sha256, file_id, "applying",
             0, INTENT_SCHEMA_VERSION, payload=dict(step.payload or {}),
         )  # fmt: skip
-        with self._engine.begin() as conn:
+        with write_transaction(self._engine) as conn:
             self.mark_done(intent_id, within=conn)
             if on_done is not None:
                 on_done(conn, intent)
@@ -389,7 +390,7 @@ class IntentJournal:
             intent_id, "rename", step.src, step.dst, None, identity, "applying",
             0, INTENT_SCHEMA_VERSION, plan_id, {**(payload or {}), "kind": "dir"},
         )  # fmt: skip
-        with self._engine.begin() as conn:
+        with write_transaction(self._engine) as conn:
             self.mark_done(intent_id, within=conn)
             if on_done is not None:
                 on_done(conn, intent)
@@ -407,7 +408,7 @@ class IntentJournal:
         never does, and nothing else is touched: the upstream snapshots live in their own table
         (`upstream_snapshot`, EF-EXP-056) and the journal keeps references only."""
         table = coherence.fs_intent
-        with self._engine.begin() as conn:
+        with write_transaction(self._engine) as conn:
             return conn.execute(
                 sa.delete(table).where(
                     table.c.state.not_in(OPEN_STATES), table.c.resolved_at < before
@@ -459,7 +460,7 @@ class IntentJournal:
         if not found:
             return False
         table = coherence.fs_intent
-        with self._engine.begin() as conn:
+        with write_transaction(self._engine) as conn:
             if found[0].op == "purge_upstream":
                 self._let_go_of_deed(conn, found[0])
             closed = conn.execute(
@@ -508,7 +509,7 @@ class IntentJournal:
             self._resolve_one(intent, report, on_done)
 
     def _close_open(self, intent_id: str, state: str) -> None:
-        with self._engine.begin() as conn:
+        with write_transaction(self._engine) as conn:
             conn.execute(
                 sa.update(coherence.fs_intent)
                 .where(coherence.fs_intent.c.id == intent_id)
@@ -517,7 +518,7 @@ class IntentJournal:
             )
 
     def _close(self, intent_id: str, state: str) -> None:
-        with self._engine.begin() as conn:
+        with write_transaction(self._engine) as conn:
             conn.execute(
                 sa.update(coherence.fs_intent)
                 .where(coherence.fs_intent.c.id == intent_id)
@@ -565,7 +566,7 @@ class IntentJournal:
             self._drift(intent, report, f"{type(error).__name__}: {error}")
 
     def _finish(self, intent: OpenIntent, on_done: ManifestHook | None) -> None:
-        with self._engine.begin() as conn:
+        with write_transaction(self._engine) as conn:
             self.mark_done(intent.id, within=conn)
             if on_done is not None:
                 on_done(conn, intent)

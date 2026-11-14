@@ -17,6 +17,7 @@ from shelfhold.export.application.remove_destination import RemoveDestination
 from shelfhold.export.targets.kavita.account_session import KavitaAccountSession
 from shelfhold.export.targets.kavita.dto import HIDDEN_DIR_PATTERNS
 from shelfhold.identity.public import Credential, Principal
+from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import export
 from tests.export_env import ExportEnv, export_env
@@ -161,7 +162,7 @@ def detach_env(*, adopted: bool = True) -> Iterator[DetachEnv]:
         wired = wire(env)
         if adopted:  # the library as an adoption left it: the hidden-folder pattern added
             wired.fake.libraries[0]["excludePatterns"] = ["*.tmp", *HIDDEN_DIR_PATTERNS]
-            with env.engine.begin() as conn:
+            with write_transaction(env.engine) as conn:
                 conn.execute(
                     sa.update(export.shelf_destination).values(
                         adopted=True, pre_adoption_settings=PRE_ADOPTION

@@ -34,7 +34,7 @@ import pytest
 import sqlalchemy as sa
 
 from shelfhold.config import Settings
-from shelfhold.infrastructure.db import create_db_engine
+from shelfhold.infrastructure.db import create_db_engine, write_transaction
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.migrate import migrate
 from shelfhold.infrastructure.schema import acquisition, catalog, storage
@@ -159,7 +159,7 @@ def trap_instance(monkeypatch: pytest.MonkeyPatch, settings: Settings, tmp: Path
     sha = "sha256:" + hashlib.sha256(epub).hexdigest()
     engine = create_db_engine(settings.database_path)
     try:
-        with engine.begin() as connection:
+        with write_transaction(engine) as connection:
             ((user_id,),) = connection.execute(sa.text("SELECT id FROM user")).all()
             series_id = new_ulid()
             connection.execute(

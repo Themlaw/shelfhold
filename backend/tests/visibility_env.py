@@ -14,7 +14,7 @@ import sqlalchemy as sa
 from sqlalchemy import Engine
 
 from shelfhold.identity.public import LocalAuth
-from shelfhold.infrastructure.db import create_db_engine
+from shelfhold.infrastructure.db import create_db_engine, write_transaction
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import catalog, export
 from tests.auth_env import PASSWORD, AuthEnv
@@ -115,7 +115,7 @@ def seed_database(path: Path, *, other_profile: str = "someone-else") -> Seed:
     # The app is running: its jobs write too. A deferred transaction that reads and then writes is
     # refused at once (`database is locked`, the busy timeout does not apply to a snapshot that
     # another writer has outdated); the write lock is taken first and waited for.
-    with engine.execution_options(shelfhold_begin="BEGIN IMMEDIATE").begin() as connection:
+    with write_transaction(engine) as connection:
         kind = str(connection.execute(sa.text("SELECT key FROM work_kind LIMIT 1")).scalar_one())
         family = _shelf(connection, "Family", 13, [other_profile])  # not the kid's own id
         adult = _shelf(connection, "Adults", None, [])

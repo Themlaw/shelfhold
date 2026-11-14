@@ -85,6 +85,7 @@ from shelfhold.export.domain.planner import (
     plan_destination,
 )
 from shelfhold.infrastructure.clock import Clock
+from shelfhold.infrastructure.db import read_transaction, write_transaction
 from shelfhold.infrastructure.fsops import Fsops
 from shelfhold.infrastructure.logging import debug_enabled, elapsed_ms
 from shelfhold.infrastructure.schema import coherence, export
@@ -229,12 +230,20 @@ def mark_name_collisions(
         who = blocked.unit_id or blocked.export_item_id
         if blocked.code == "export.series_name_collision" and who in edition_of:
             colliding.setdefault(edition_of[who], blocked.detail)
-    with engine.begin() as connection:
+    reasons = {
+        edition_id: f"another series is already called {name!r} in this library"
+        for edition_id, name in colliding.items()
+    }
+    with read_transaction(engine) as connection:  # the marks are already right: no write lock
+        if waiting_marks.scope_is_exactly(
+            connection, "series_name_collision", destination_id, reasons
+        ):
+            return
+    with write_transaction(engine) as connection:  # `clear_except` and `put` read under the lock
         waiting_marks.clear_except(connection, "series_name_collision", destination_id, colliding)
-        for edition_id, name in colliding.items():
+        for edition_id, reason in reasons.items():
             waiting_marks.put(
-                connection, "series_name_collision", edition_id,
-                f"another series is already called {name!r} in this library",
+                connection, "series_name_collision", edition_id, reason,
                 destination_id=destination_id,
             )  # fmt: skip
 
@@ -756,7 +765,7 @@ class ExportPipeline:
             raise StalePlanError("the names changed under plugin/parse: recompute the preview")
 
     def _mark_stale(self, plan_id: str) -> None:
-        with self._engine.begin() as connection:
+        with write_transaction(self._engine) as connection:
             connection.execute(
                 sa.update(coherence.export_plan)
                 .where(coherence.export_plan.c.plan_id == plan_id)
@@ -1124,7 +1133,8 @@ class ExportPipeline:
         `resolve_intents`: the expected file is at the target, the line is completed; nothing is
         there, the intent is closed; anything else is a drift and nothing is touched."""
         target = ctx.local(str(planned.rel_path))
-        with self._engine.begin() as connection:  # reservation: a clash stops here, nothing placed
+        # reservation: a clash stops here, nothing placed
+        with write_transaction(self._engine) as connection:
             self._require_barrier(connection, ctx, planned)
             item_id = self._item(connection, ctx, planned, source)
             self._record(connection, ctx, planned, item_id, reserved)
@@ -1145,7 +1155,7 @@ class ExportPipeline:
                     )  # fmt: skip
                 except PermissionError as error:
                     raise DestinationPermissionError(*error.args) from error
-                with self._engine.begin() as connection:
+                with write_transaction(self._engine) as connection:
                     complete_write(
                         connection, self._fsops, self._locate, self._clock.now(),
                         destination_id=ctx.destination_id, item_id=item_id, target=target,
@@ -1211,7 +1221,7 @@ class ExportPipeline:
         """A `pull` destination: the manifest line only, no locator, nothing on disk."""
         source = self._source(planned.unit_id) if planned.unit_id is not None else None
         now = self._clock.now()
-        with self._engine.begin() as connection:
+        with write_transaction(self._engine) as connection:
             self._require_barrier(connection, ctx, planned)
             item_id = self._item(connection, ctx, planned, source)
             values = {

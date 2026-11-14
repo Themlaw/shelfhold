@@ -13,6 +13,7 @@ import sqlalchemy as sa
 
 from shelfhold.export.application.locks import work_lock_for
 from shelfhold.infrastructure.clock import SystemClock
+from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.schema import acquisition, storage
 from shelfhold.library.adapters.epub_derivative import UntrustedEpubStore
 from shelfhold.library.adapters.import_scan import ImportFolder, ImportItem
@@ -110,7 +111,8 @@ class ImportEnv:
 
         def target(item: ImportItem) -> tuple[str, str]:
             self.items.append(item)
-            with lib.engine.begin() as connection:  # the binding says what the import declared
+            # the binding says what the import declared
+            with write_transaction(lib.engine) as connection:
                 binding = acquisition.source_binding
                 connection.execute(
                     sa.update(binding)

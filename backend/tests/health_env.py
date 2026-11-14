@@ -9,7 +9,7 @@ from typing import Any
 import sqlalchemy as sa
 
 from shelfhold.config import Settings
-from shelfhold.infrastructure.db import create_db_engine
+from shelfhold.infrastructure.db import create_db_engine, write_transaction
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import acquisition, storage
 from shelfhold.infrastructure.schema import replica as replica_schema
@@ -36,6 +36,7 @@ def add_profile(api: AuthEnv, username: str, role: str, ceiling: int | None = No
     (admin_hash,) = db_rows(api.settings, "SELECT password_hash FROM user WHERE role = 'admin'")[0]
     profile_id = new_ulid()
     connection = sqlite3.connect(api.settings.database_path)
+    connection.execute("BEGIN IMMEDIATE")  # other writers (the app) are running
     try:
         connection.execute(
             "INSERT INTO user (id, username, password_hash, role, can_rate, max_age_rating) "
@@ -57,7 +58,7 @@ def seed_sources(settings: Settings) -> None:
     whose session expired (paused). The settings of one hold a service URL."""
     engine = engine_of(settings)
     try:
-        with engine.begin() as connection:
+        with write_transaction(engine) as connection:
             for plugin, health, extra in (
                 ("good-source", {"outage": 1}, {}),
                 ("down-source", {"outage": 3, "unavailable": True}, {}),
@@ -112,7 +113,7 @@ def seed_units(settings: Settings) -> dict[str, str]:
     engine = engine_of(settings)
     ids: dict[str, str] = {}
     try:
-        with engine.begin() as connection:
+        with write_transaction(engine) as connection:
             work = add_work(connection)
             edition = add_edition(connection, work)
             binding = add_binding(connection, work, edition, add_source_item(connection))
@@ -134,7 +135,7 @@ def seed_lost_original(settings: Settings) -> tuple[str, str]:
     """An `untrusted` EPUB whose original is gone: only the neutralised derivative is held."""
     engine = engine_of(settings)
     try:
-        with engine.begin() as connection:
+        with write_transaction(engine) as connection:
             work = add_work(connection)
             edition = add_edition(connection, work)
             unit = add_unit(connection, edition, "9")
@@ -154,7 +155,7 @@ def seed_requests(settings: Settings, now: datetime, ids: dict[str, str]) -> Non
     request older than the window, which count for nobody."""
     engine = engine_of(settings)
     try:
-        with engine.begin() as connection:
+        with write_transaction(engine) as connection:
             work = add_work(connection)
             edition = add_edition(connection, work)
             binding = add_binding(connection, work, edition, add_source_item(connection, "r"))

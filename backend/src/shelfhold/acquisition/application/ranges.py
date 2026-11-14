@@ -29,6 +29,7 @@ from shelfhold.acquisition.application.volume_cut import is_cut
 from shelfhold.acquisition.domain.failures import Disposition, classify, disposition_of
 from shelfhold.acquisition.domain.requests import RequestBudget
 from shelfhold.infrastructure.clock import Clock
+from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import acquisition, catalog, export
 from shelfhold.library.public import Received, readable_unit_ids
@@ -223,7 +224,7 @@ class RangeTickets:
         chosen, deferred = self._grant(units, budget)
         result = RangeRequest(deferred=deferred)
         if chosen:
-            with self._engine.begin() as connection:
+            with write_transaction(self._engine) as connection:
                 result.ticket_ids.append(self._open(connection, chosen))
         return result
 
@@ -323,7 +324,7 @@ class RangeTickets:
             raise SourceChanged("a ranged ticket must be answered with a ranged payload")
         verify_range_answer(units, payload, origin=self._origin)  # before a byte is received
         async with self._receive(payload.asset) as received:
-            with self._engine.begin() as connection:
+            with write_transaction(self._engine) as connection:
                 item_id = self._record(connection, request_id, units, payload)
                 self._keep(received, payload, item_id)  # a refusal rolls the whole record back
         report.fetched += 1
@@ -436,24 +437,32 @@ class RangeTickets:
 
     def _retry(self, request_id: str, attempts: int | None, report: RangeReport) -> None:
         r = acquisition.download_request
-        with self._engine.begin() as connection:
+        # one transaction for the read and the write: two retries at once count both
+        with write_transaction(self._engine) as connection:
             current = attempts
             if current is None:
                 current = connection.execute(
                     sa.select(r.c.attempts).where(r.c.id == request_id)
                 ).scalar_one()
+            if current + 1 >= MAX_ATTEMPTS:
+                values: dict[str, object] = {"state": "abandoned", "attempts": current + 1}
+            else:
+                values = {"state": "requested", "attempts": current + 1, "ticket": None}
+            connection.execute(
+                sa.update(r)
+                .where(r.c.id == request_id)
+                .values(updated_at=self._clock.now(), **values)
+            )
         if current + 1 >= MAX_ATTEMPTS:
-            self._update(request_id, state="abandoned", attempts=current + 1)
             report.abandoned += 1
         else:
-            self._update(request_id, state="requested", attempts=current + 1, ticket=None)
             report.retried += 1
 
     def retry_uncovered(self, request_id: str, budget: RequestBudget) -> str | None:
         """A new ticket for the Units of this one that were asked and not covered; nothing else
         is asked again. None when nothing is left to ask, or it is already asked anew."""
         r, ru = acquisition.download_request, acquisition.download_request_unit
-        with self._engine.begin() as connection:
+        with write_transaction(self._engine) as connection:
             range_ref = connection.execute(
                 sa.select(r.c.range_ref).where(r.c.id == request_id)
             ).scalar_one()
@@ -479,7 +488,7 @@ class RangeTickets:
 
     def _update(self, request_id: str, **values: object) -> None:
         table = acquisition.download_request
-        with self._engine.begin() as connection:
+        with write_transaction(self._engine) as connection:
             connection.execute(
                 sa.update(table)
                 .where(table.c.id == request_id)

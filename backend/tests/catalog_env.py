@@ -18,7 +18,7 @@ import sqlalchemy as sa
 
 from shelfhold.catalog.public import BindingRef, EditionRef, EditionSpec
 from shelfhold.config import load_settings
-from shelfhold.infrastructure.db import create_db_engine
+from shelfhold.infrastructure.db import create_db_engine, write_transaction
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.migrate import migrate
 from shelfhold.infrastructure.schema import acquisition
@@ -135,7 +135,7 @@ def harness() -> Iterator[Harness]:
     with database() as path:
         engine = create_db_engine(path)
         try:
-            with engine.begin() as connection:
+            with write_transaction(engine) as connection:
                 yield Harness(connection, SupportCatalog(connection))
         finally:
             engine.dispose()

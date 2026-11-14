@@ -20,6 +20,7 @@ import sqlalchemy as sa
 from sqlalchemy import Engine
 
 from shelfhold.config import Settings
+from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.schema import identity, platform
 
 FINISHED_JOB_STATUSES = ("succeeded", "failed", "cancelled")
@@ -66,7 +67,7 @@ def _delete_older(
 ) -> int:
     total = 0
     while True:
-        with engine.begin() as conn:
+        with write_transaction(engine) as conn:
             ids = conn.execute(sa.select(key).where(where).limit(BATCH)).scalars().all()  # type: ignore[arg-type]
             if not ids:
                 return total

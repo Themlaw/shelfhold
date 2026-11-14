@@ -21,6 +21,7 @@ from shelfhold.export.targets.kavita.series import (
     blocking_unknowns_tier,
 )
 from shelfhold.infrastructure.clock import SystemClock
+from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import export
 from shelfhold.library.public import UntrustedEpubStore
@@ -38,7 +39,7 @@ UNKNOWN, EVERYONE_10, TEEN, MATURE_17 = 0, 5, 8, 10
 
 def books_library(env: ExportEnv, library_type: str = "book") -> None:
     """The admin declared the Kavita library of the destination as a Books library (D19)."""
-    with env.engine.begin() as connection:
+    with write_transaction(env.engine) as connection:
         connection.execute(
             sa.update(export.shelf_destination)
             .where(export.shelf_destination.c.id == env.destination_id)
@@ -48,7 +49,7 @@ def books_library(env: ExportEnv, library_type: str = "book") -> None:
 
 def add_book(env: ExportEnv, series: Series, number: str) -> str:
     """A Unit whose content is an EPUB, filed through the derivative pipeline (L03)."""
-    with env.engine.begin() as connection:
+    with write_transaction(env.engine) as connection:
         unit = add_unit(connection, series.edition_id, number)
         variant = add_variant(connection, unit, series.binding_id, f"bk-{new_ulid()}")
     store = UntrustedEpubStore(

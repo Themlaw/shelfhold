@@ -18,6 +18,7 @@ import sqlalchemy as sa
 from shelfhold.acquisition.public import FollowCycle, FollowReport, bounded_receiver
 from shelfhold.events.bus import EventBus, PublishedEvent
 from shelfhold.export.domain.naming import DEFAULT_TEMPLATE
+from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.fetcher.client import IntegrationFetcher
 from shelfhold.infrastructure.fetcher.lan import LanTargets
 from shelfhold.infrastructure.ids import new_ulid
@@ -89,7 +90,7 @@ class Bench:
 
     def add_binding(self, source_key: str, remote_id: str) -> str:
         """Follow another series of the same service (its own Edition, binding and follow)."""
-        with self.lib.engine.begin() as connection:
+        with write_transaction(self.lib.engine) as connection:
             work_id = add_work(connection)
             edition_id = add_edition(connection, work_id)
             item_id, binding_id = new_ulid(), new_ulid()
@@ -120,7 +121,7 @@ class Bench:
 
     def set_first_seen(self, days_ago: dict[str, float]) -> None:
         """Date the discovery of each Variant (by remote chapter url suffix) back in time."""
-        with self.lib.engine.begin() as connection:
+        with write_transaction(self.lib.engine) as connection:
             for suffix, days in days_ago.items():
                 connection.execute(
                     sa.text(
@@ -134,7 +135,7 @@ class Bench:
 def empty_catalog(lib: LibEnv) -> None:
     """A database with no Work at all: the unrelated chain `lib_env` seeds is removed."""
     chain = lib.chain
-    with lib.engine.begin() as connection:
+    with write_transaction(lib.engine) as connection:
         for table, key in (
             (catalog.unit_variant, "variant"), (catalog.unit, "unit"),
             (acquisition.source_binding, "binding"), (catalog.edition, "edition"),
@@ -148,7 +149,7 @@ def add_adult_shelf(lib: LibEnv, *, max_age_rating: int | None = None) -> str:
     """A target, a shelf without ceiling (adult) and its destination: where a discovered series is
     filed. Returns the shelf id."""
     target_id, shelf_id, destination_id = new_ulid(), new_ulid(), new_ulid()
-    with lib.engine.begin() as connection:
+    with write_transaction(lib.engine) as connection:
         connection.execute(
             sa.insert(export.export_target).values(
                 id=target_id, kind="kavita", name="Kavita", path_map=[]
@@ -211,7 +212,7 @@ def follow_bench(
         shelf_id = add_adult_shelf(lib) if adult_shelf else ""
         if not seeded:
             empty_catalog(lib)
-        with lib.engine.begin() as connection:
+        with write_transaction(lib.engine) as connection:
             if seeded:
                 work_id = add_work(connection)
                 edition_id = add_edition(connection, work_id)

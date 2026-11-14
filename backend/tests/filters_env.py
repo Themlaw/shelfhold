@@ -8,6 +8,7 @@ from typing import Any
 
 import sqlalchemy as sa
 
+from shelfhold.infrastructure.db import write_transaction
 from shelfhold.plugin_host.adapters.meta.suwayomi import SuwayomiService
 from shelfhold.sdk.refs import SeriesRef, UnitInfo
 from shelfhold.sdk.source import RateLimited
@@ -83,7 +84,7 @@ def filter_bench(
 
 
 def set_filters(bench: Bench, filters: dict[str, Any] | None, *, cap: int | None = None) -> None:
-    with bench.lib.engine.begin() as connection:
+    with write_transaction(bench.lib.engine) as connection:
         connection.execute(
             sa.text("UPDATE series_follow SET filters = :f, cap = :c"),
             {"f": None if filters is None else json.dumps(filters), "c": cap},

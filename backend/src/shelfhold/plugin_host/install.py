@@ -40,6 +40,7 @@ import sqlalchemy as sa
 from sqlalchemy.engine import Engine
 
 from shelfhold.infrastructure.archives import UnsafeArchiveError, safe_open_archive
+from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import metadata as schema
 from shelfhold.infrastructure.secrets.atomic import write_private
@@ -586,7 +587,7 @@ def verdicts(layout: Layout, environ: dict[str, str] | os._Environ[str]) -> list
 def audit(engine: Engine, action: str, target: str) -> None:
     """One row of the `audit` table; the actor is the host user that ran the command."""
     table = schema.tables["audit"]
-    with engine.begin() as connection:
+    with write_transaction(engine) as connection:
         connection.execute(
             sa.insert(table).values(
                 id=new_ulid(), actor_id=f"cli:uid{os.getuid()}", action=action, target=target

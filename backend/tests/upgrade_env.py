@@ -13,6 +13,7 @@ import sqlalchemy as sa
 
 from shelfhold.export.application.upgrade import SamePathUpgrade, UpgradeRequest
 from shelfhold.export.domain.physical_roots import RECEIVED_DIR, RECYCLE_DIR
+from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import catalog, export, identity
 from shelfhold.library.public import PassthroughStore
@@ -55,7 +56,7 @@ def export_one(env: ExportEnv) -> Exported:
 
 def better_copy(env: ExportEnv, exported: Exported, *, tag: bytes = b"better") -> str:
     """Another Variant of the same Unit with other pages, received: its `content.id`."""
-    with env.engine.begin() as connection:
+    with write_transaction(env.engine) as connection:
         variant = add_variant(
             connection, exported.unit_id, exported.series.binding_id, f"ch-{new_ulid()}"
         )
@@ -114,7 +115,7 @@ def request(
 def mark_read(env: ExportEnv, exported: Exported) -> None:
     """A reader finished the exported file: `reading_progress` says `read` for the Unit."""
     user_id = new_ulid()
-    with env.engine.begin() as connection:
+    with write_transaction(env.engine) as connection:
         connection.execute(
             sa.insert(identity.user).values(id=user_id, username=f"reader-{user_id}", role="member")
         )
@@ -133,7 +134,7 @@ def mark_read(env: ExportEnv, exported: Exported) -> None:
 
 def make_irreplaceable(env: ExportEnv) -> None:
     """No active binding lists the Unit any more: nothing upstream can give it back."""
-    with env.engine.begin() as connection:
+    with write_transaction(env.engine) as connection:
         connection.execute(sa.update(catalog.unit_variant).values(removed_at=env.clock.now()))
 
 

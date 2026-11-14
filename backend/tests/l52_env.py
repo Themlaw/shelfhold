@@ -10,6 +10,7 @@ import sqlalchemy as sa
 from sqlalchemy import Engine
 
 from shelfhold.composition import Composition
+from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.fetcher import LanTargets
 from shelfhold.infrastructure.schema import platform
 from shelfhold.integrations.apprise import ChannelStore, validate_channel_url
@@ -23,7 +24,7 @@ def add_channel(comp: Composition, name: str = "ops") -> None:
     checked = asyncio.run(
         validate_channel_url(CHANNEL_URL, lan=LanTargets.empty(), resolver=resolver)
     )
-    with comp.engine.begin() as connection:
+    with write_transaction(comp.engine) as connection:
         ChannelStore(comp.vault(), comp.clock).save(connection, name, checked)
 
 
@@ -56,7 +57,7 @@ def name_channel(engine: Engine, name: str = "ops") -> None:
     from shelfhold.infrastructure.schema import acquisition
     from shelfhold.integrations.apprise.channels import ROW_ID
 
-    with engine.begin() as connection:
+    with write_transaction(engine) as connection:
         connection.execute(
             sa.insert(acquisition.source_config).values(
                 plugin_id=ROW_ID, settings={"channels": [name]}

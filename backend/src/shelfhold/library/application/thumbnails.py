@@ -29,6 +29,7 @@ import sqlalchemy as sa
 import structlog
 
 from shelfhold.infrastructure.clock import Clock
+from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.imaging import (
     ImageKind,
     ImageRejected,
@@ -227,7 +228,7 @@ class ThumbnailService:
 
     def _touch(self, digest: str, size: int) -> None:
         now, t = self._clock.now(), storage.thumbnail.c
-        with self._engine.begin() as connection:
+        with write_transaction(self._engine) as connection:
             connection.execute(
                 sa.update(storage.thumbnail)
                 .where(
@@ -268,7 +269,7 @@ class ThumbnailService:
             log.info("thumbnail.not_kept")
             return None
         now = self._clock.now()
-        with self._engine.begin() as connection:
+        with write_transaction(self._engine) as connection:
             connection.execute(
                 sa.insert(storage.thumbnail)
                 .prefix_with("OR REPLACE")
@@ -329,7 +330,7 @@ class ThumbnailService:
             return False
 
     def _forget(self, digest: str, size: int) -> None:
-        with self._engine.begin() as connection:
+        with write_transaction(self._engine) as connection:
             connection.execute(
                 sa.delete(storage.thumbnail).where(
                     storage.thumbnail.c.content_hash == f"sha256:{digest}",

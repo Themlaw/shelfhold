@@ -45,9 +45,11 @@ from shelfhold.identity.public import (
     authorize_reserved,
 )
 from shelfhold.infrastructure.clock import Clock
+from shelfhold.infrastructure.db import read_transaction, write_transaction
 from shelfhold.infrastructure.fsops import Fsops
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import catalog, export, storage
+from shelfhold.infrastructure.stable_hash import FileChangedError, HashedFiles, retry_when_changed
 from shelfhold.library.public import has_independent_store_copy, record_replica
 
 __all__ = [
@@ -367,7 +369,18 @@ class WithdrawalService:
         moved = 0
         pending: list[str] = []
         for item in plan.items:
-            intents = self._commit(journal, item, principal, now)
+            try:
+                intents = self._commit(journal, item, principal, now)
+            except FileChangedError:
+                # a file keeps changing (a third party is writing it): nothing of this Edition
+                # was committed, its files stay in place and wait, as when a move is refused; the
+                # Editions before it are whole, and the report comes back
+                with read_transaction(self._engine) as connection:
+                    pending.extend(
+                        load_context(connection, f.destination_id).local(f.rel_path)
+                        for f in item.files
+                    )
+                continue
             withdrawn.append(item.edition_id)
             for local, intent_id in intents:
                 if self._move(journal, local, intent_id):
@@ -401,7 +414,7 @@ class WithdrawalService:
                     pending.append(local)
                     continue
                 moved += 1
-                with self._engine.begin() as connection:
+                with write_transaction(self._engine) as connection:
                     connection.execute(
                         sa.update(export.export_record)
                         .where(
@@ -423,11 +436,24 @@ class WithdrawalService:
         try:
             if not self._keep_copy(file, local):
                 return False
-            with self._engine.begin() as connection:
+            # the whole file is read before the lock; under it, one `stat` says it is the same
+            hashed = HashedFiles(self._fsops)
+            if not file.sha256:
+                hashed.hash(local)
+            with write_transaction(self._engine) as connection:
+                if file.sha256:
+                    digest = file.sha256
+                    now = self._fsops.observe(local)
+                    if now is None or now[0] != "file" or now[1] != observed[1]:
+                        raise FileChangedError(local)
+                else:
+                    checked = hashed.verified(local)
+                    if checked is None or checked[0] != observed[1]:
+                        raise FileChangedError(local)
+                    digest = checked[1]
                 intent = journal.record(
                     op="recycle", src=local, within=connection,
-                    expected_sha256=file.sha256 or self._fsops.sha256_of(local),
-                    expected_file_id=observed[1],
+                    expected_sha256=digest, expected_file_id=observed[1],
                 )  # fmt: skip
         except Exception:
             log.warning("withdrawal.keep_failed", export_item_id=file.export_item_id)
@@ -467,7 +493,7 @@ class WithdrawalService:
         if observed is None:
             return False
         root_id, root_rel = self._locate(target)
-        with self._engine.begin() as connection:
+        with write_transaction(self._engine) as connection:
             record_replica(
                 connection, unit_id=unit_id, export_item_id=file.export_item_id, location="store",
                 content_hash=digest, file_hash=digest, independent=True, physical_root_id=root_id,
@@ -478,7 +504,7 @@ class WithdrawalService:
         return True
 
     def _unshelve(self, item: WithdrawalItem, principal: Principal, now: datetime) -> None:
-        with self._engine.begin() as connection:
+        with write_transaction(self._engine) as connection:
             connection.execute(
                 sa.update(catalog.edition)
                 .where(
@@ -522,20 +548,43 @@ class WithdrawalService:
         now: datetime,
     ) -> list[tuple[str, str]]:
         """Intents, records, Edition and audit in one transaction."""
+
+        def attempt() -> list[tuple[str, str]]:
+            hashed = HashedFiles(self._fsops)
+            with read_transaction(self._engine) as connection:
+                paths = [
+                    load_context(connection, f.destination_id).local(f.rel_path) for f in item.files
+                ]
+            for path in paths:  # the files are read before the lock, never under it
+                hashed.hash(path)
+            return self._commit_locked(journal, item, principal, now, paths, hashed)
+
+        return retry_when_changed(attempt)
+
+    def _commit_locked(
+        self,
+        journal: IntentJournal,
+        item: WithdrawalItem,
+        principal: Principal,
+        now: datetime,
+        paths: list[str],
+        hashed: HashedFiles,
+    ) -> list[tuple[str, str]]:
         record = export.export_record
         intents: list[tuple[str, str]] = []
-        with self._engine.begin() as connection:
-            for file in item.files:
+        with write_transaction(self._engine) as connection:
+            for file, expected in zip(item.files, paths, strict=True):
                 local = load_context(connection, file.destination_id).local(file.rel_path)
-                observed = self._fsops.observe(local)
-                if observed is not None and observed[0] == "file":
+                if local != expected:
+                    raise FileChangedError(local)  # the rows moved since the look: start over
+                checked = hashed.verified(local)  # one `stat` under the lock
+                if checked is not None:
                     intents.append(
                         (
                             local,
                             journal.record(
                                 op="recycle", src=local, within=connection,
-                                expected_sha256=self._fsops.sha256_of(local),
-                                expected_file_id=observed[1],
+                                expected_sha256=checked[1], expected_file_id=checked[0],
                             ),
                         )
                     )  # fmt: skip

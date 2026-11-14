@@ -28,6 +28,7 @@ import sqlalchemy as sa
 from sqlalchemy import Connection, Engine
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
+from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.schema import acquisition
 from shelfhold.plugin_host.settings import Actor, write_audit
 
@@ -190,7 +191,7 @@ class AttestationStore:
         attestation given for a version or files that are no longer the installed ones."""
         install, attestation = acquisition.plugin_install, acquisition.plugin_attestation
         revoked: list[Attestation] = []
-        with self._engine.begin() as connection:
+        with write_transaction(self._engine) as connection:
             for plugin in installed.values():
                 digest = (
                     plugin.digest
@@ -243,7 +244,7 @@ class AttestationStore:
         if field_name not in ATTESTABLE or value not in ATTESTABLE[field_name]:
             raise AttestationError(f"{field_name}={value} is not a trust value that needs a word")
         install = acquisition.plugin_install
-        with self._engine.begin() as connection:
+        with write_transaction(self._engine) as connection:
             installed = connection.execute(
                 sa.select(install.c.version, install.c.sha256).where(
                     install.c.plugin_id == plugin_key, install.c.origin == THIRD_PARTY_ORIGIN
@@ -272,7 +273,7 @@ class AttestationStore:
 
     def withdraw(self, plugin_key: str, field_name: str, *, actor: Actor) -> bool:
         attestation = acquisition.plugin_attestation
-        with self._engine.begin() as connection:
+        with write_transaction(self._engine) as connection:
             row = connection.execute(
                 sa.select(attestation).where(
                     attestation.c.plugin_key == plugin_key, attestation.c.field == field_name
@@ -293,7 +294,7 @@ class AttestationStore:
     def revoke(self, plugin_key: str) -> list[Attestation]:
         """Every attestation of a plugin, gone (and audited): it was removed."""
         attestation = acquisition.plugin_attestation
-        with self._engine.begin() as connection:
+        with write_transaction(self._engine) as connection:
             rows = connection.execute(
                 sa.select(attestation).where(attestation.c.plugin_key == plugin_key)
             ).all()

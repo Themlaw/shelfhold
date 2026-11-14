@@ -80,6 +80,7 @@ from shelfhold.identity.public import (
     authorize_reserved,
 )
 from shelfhold.infrastructure.clock import Clock
+from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.fsops import ErasingNameTakenError, Fsops, FsopsError
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import acquisition, catalog, coherence, export, platform
@@ -509,7 +510,7 @@ class FullDetacher:
         self, principal: Principal, target_id: str, contexts: list[DestinationContext]
     ) -> int:
         forgotten = 0
-        with self._engine.begin() as conn:
+        with write_transaction(self._engine) as conn:
             for ctx in contexts:
                 forgotten += forget_destination(
                     conn, ctx.destination_id, copy_scope(ctx, self._roots)
@@ -598,14 +599,14 @@ class FullDetacher:
         ]
 
     def _close_erased(self, intent_id: str, root_id: str) -> None:
-        with self._engine.begin() as conn:
+        with write_transaction(self._engine) as conn:
             self._journal.mark_done(intent_id, within=conn)
             if root_id:
                 _demote_row(conn, root_id)
 
     def _demote(self, root_id: str) -> None:
         if root_id:
-            with self._engine.begin() as conn:
+            with write_transaction(self._engine) as conn:
                 _demote_row(conn, root_id)
 
     # -- the checks -----------------------------------------------------------------------------

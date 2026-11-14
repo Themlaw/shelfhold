@@ -4,13 +4,13 @@ from pathlib import Path
 
 from sqlalchemy import text
 
-from shelfhold.infrastructure.db import create_db_engine
+from shelfhold.infrastructure.db import create_db_engine, write_transaction
 
 
 def put_setting(database: Path, key: str, value: str) -> None:
     engine = create_db_engine(database)
     try:
-        with engine.begin() as connection:
+        with write_transaction(engine) as connection:
             connection.execute(
                 text(
                     "INSERT INTO app_setting (key, value) VALUES (:key, :value) "

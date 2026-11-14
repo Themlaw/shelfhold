@@ -12,6 +12,7 @@ acknowledged leaves the table, so the same hole is told once, not at each cycle.
 from collections.abc import Callable
 from datetime import datetime
 from decimal import Decimal
+from typing import Any
 
 import sqlalchemy as sa
 import structlog
@@ -69,8 +70,9 @@ class GapWatch:
     def __init__(self, emit: Emit) -> None:
         self._emit = emit
 
-    def scan(self, connection: Connection, edition_id: str, work_id: str, now: datetime) -> int:
-        """Bring `series_gap` to what is missing now; the number of gaps told in this call."""
+    @staticmethod
+    def _state(connection: Connection, edition_id: str) -> tuple[dict[Any, Any], dict[Any, Any]]:
+        """The gaps held in `series_gap` and the gaps there are now, each by its key."""
         gaps = find_gaps(
             _places(connection, edition_id),
             watermark_of(connection, edition_id),
@@ -81,7 +83,17 @@ class GapWatch:
             (r.track, r.number_segment, r.number_norm): r
             for r in connection.execute(sa.select(table).where(table.c.edition_id == edition_id))
         }
-        keys = {(g.track, g.segment, str(g.number)): g for g in gaps}
+        return held, {(g.track, g.segment, str(g.number)): g for g in gaps}
+
+    def would_change(self, connection: Connection, edition_id: str) -> bool:
+        """`scan` would write: a gap was filled or is new."""
+        held, keys = self._state(connection, edition_id)
+        return held.keys() != keys.keys()
+
+    def scan(self, connection: Connection, edition_id: str, work_id: str, now: datetime) -> int:
+        """Bring `series_gap` to what is missing now; the number of gaps told in this call."""
+        held, keys = self._state(connection, edition_id)
+        table = acquisition.series_gap
         for key in held.keys() - keys.keys():  # filled, acknowledged or renumbered away
             connection.execute(
                 sa.delete(table).where(

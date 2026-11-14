@@ -17,6 +17,7 @@ import sqlalchemy as sa
 from shelfhold.export.application.repatriate import Repatriator
 from shelfhold.export.domain.path_map import PathEntry, PathMap, PathMode
 from shelfhold.export.domain.physical_roots import ExpectedRoot, SentinelDocument
+from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.fsops import Fsops
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import export, identity, platform, reading
@@ -105,7 +106,7 @@ def _reader(env: ExportEnv) -> str:
     """A reader with a position on every adopted file: Shelfhold's own progress (found by
     `export_item` and `content_hash`)."""
     user_id = new_ulid()
-    with env.engine.begin() as connection:
+    with write_transaction(env.engine) as connection:
         connection.execute(
             sa.insert(identity.user).values(
                 id=user_id, username="reader", password_hash=ARGON, role="admin", can_rate=True
@@ -136,7 +137,7 @@ def _fsops_with(env: ExportEnv, ro: Path, generation: int) -> Fsops:
         PathEntry(str(lib.store), "/store"),
         PathEntry(str(ro), "/upstream/suwayomi", PathMode.ADOPT_RO),
     )
-    with env.engine.begin() as connection:
+    with write_transaction(env.engine) as connection:
         connection.execute(
             sa.update(export.export_target)
             .where(export.export_target.c.id == env.target_id)

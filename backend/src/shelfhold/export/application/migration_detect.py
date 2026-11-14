@@ -29,6 +29,7 @@ from shelfhold.export.application.snapshot import DestinationContext, load_conte
 from shelfhold.export.domain.path_map import PathMode, clean_absolute, within
 from shelfhold.infrastructure.archives.safe_open import UnsafeArchiveError, safe_open_archive
 from shelfhold.infrastructure.clock import Clock
+from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.fsops import Fsops
 from shelfhold.infrastructure.schema import export, platform
 from shelfhold.infrastructure.xml.safe_parse import UnsafeXmlError, safe_parse_xml
@@ -254,7 +255,7 @@ class SwitchoverGate:
         )
 
     def _put(self, key: str, value: str) -> None:
-        with self._engine.begin() as connection:
+        with write_transaction(self._engine) as connection:
             self._put_in(connection, key, value)
 
     def _get(self, key: str) -> str | None:
@@ -282,7 +283,7 @@ class SwitchoverGate:
             within(path, entry.local) is not None for entry in ctx.path_map.entries
         ):
             reason = "outside_known_roots"
-        with self._engine.begin() as connection:
+        with write_transaction(self._engine) as connection:
             if reason is None and path is not None:
                 self._put_in(connection, self._dir_key(destination_id), path)
                 connection.execute(
@@ -320,7 +321,8 @@ class SwitchoverGate:
             "series": sorted(report.ids),
             "at": self._clock.now().isoformat(),
         }
-        with self._engine.begin() as connection:  # one transaction: the steps and the mark
+        # one transaction: the steps and the mark
+        with write_transaction(self._engine) as connection:
             self._put_in(connection, self._key(destination_id), json.dumps(value))
             waiting_marks.clear(connection, "adoption_refused", [destination_id])
 
@@ -333,7 +335,8 @@ class SwitchoverGate:
         down as `adoption_refused` (read by `status`), and erased once nothing is outside."""
         report = self.report(destination_id)
         outside: tuple[FeedFinding, ...] = ()
-        with self._engine.begin() as connection:  # one transaction: the read and the mark
+        # one transaction: the read and the mark
+        with write_transaction(self._engine) as connection:
             if report.detected:
                 raw = connection.execute(
                     sa.select(platform.app_setting.c.value).where(

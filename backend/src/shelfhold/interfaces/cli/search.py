@@ -14,7 +14,7 @@ import sys
 from shelfhold.catalog.public import ensure_search_tables, rebuild_search_index, search_capability
 from shelfhold.config import ResolvedSettings
 from shelfhold.i18n import t
-from shelfhold.infrastructure.db import create_db_engine
+from shelfhold.infrastructure.db import create_db_engine, write_transaction
 from shelfhold.infrastructure.migrate import current_revision, head_revision
 
 
@@ -33,7 +33,7 @@ def run_rebuild(args: argparse.Namespace, resolved: ResolvedSettings) -> int:
         return 1
     engine = create_db_engine(database)
     try:
-        with engine.begin() as connection:
+        with write_transaction(engine) as connection:
             ensure_search_tables(connection)
             indexed = rebuild_search_index(connection)
             capability = search_capability(connection)

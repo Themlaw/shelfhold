@@ -12,6 +12,7 @@ import sqlalchemy as sa
 from sqlalchemy import Engine
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
+from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.schema import platform
 
 _PREFIX = "export.blocked."
@@ -31,7 +32,7 @@ def known(engine: Engine, destination_id: str, version: str) -> bool:
 
 
 def remember(engine: Engine, destination_id: str, version: str) -> None:
-    with engine.begin() as connection:
+    with write_transaction(engine) as connection:
         connection.execute(
             sqlite_insert(_table)
             .values(key=_key(destination_id), value=version)
@@ -40,5 +41,5 @@ def remember(engine: Engine, destination_id: str, version: str) -> None:
 
 
 def forget(engine: Engine, destination_id: str) -> None:
-    with engine.begin() as connection:
+    with write_transaction(engine) as connection:
         connection.execute(sa.delete(_table).where(_table.c.key == _key(destination_id)))

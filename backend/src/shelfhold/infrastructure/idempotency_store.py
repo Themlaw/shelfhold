@@ -16,6 +16,7 @@ import sqlalchemy as sa
 import structlog
 from sqlalchemy import Engine, exc
 
+from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.schema import identity
 
 IDEMPOTENCY_TTL = timedelta(hours=24)
@@ -76,7 +77,7 @@ class IdempotencyStore:
         table = identity.idempotency_key
         now = self._clock()
         mine = sa.and_(table.c.actor_id == actor_id, table.c.key == key)
-        with self._engine.begin() as connection:
+        with write_transaction(self._engine) as connection:
             connection.execute(sa.delete(table).where(table.c.expires_at <= now))
             row = connection.execute(sa.select(table).where(mine)).mappings().first()
             if row is None:
@@ -113,7 +114,7 @@ class IdempotencyStore:
         """Store the answer; False (and nothing written) when the claim was re-granted."""
         table = identity.idempotency_key
         envelope = {"headers": dict(headers), "body": json.loads(body) if body else None}
-        with self._engine.begin() as connection:
+        with write_transaction(self._engine) as connection:
             result = connection.execute(
                 sa.update(table)
                 .where(*self._owned(claim))
@@ -130,7 +131,7 @@ class IdempotencyStore:
 
     def release(self, claim: Claim) -> None:
         table = identity.idempotency_key
-        with self._engine.begin() as connection:
+        with write_transaction(self._engine) as connection:
             connection.execute(sa.delete(table).where(*self._owned(claim)))
 
     @staticmethod

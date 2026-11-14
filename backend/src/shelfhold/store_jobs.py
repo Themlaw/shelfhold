@@ -22,6 +22,7 @@ import structlog
 from shelfhold.composition import Composition, KeyringUnavailableError, NoLibraryError
 from shelfhold.export.application.intents import IntentJournal
 from shelfhold.export.application.locks import LockBusyError
+from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.observability.disk_guard import disk_usage
 from shelfhold.infrastructure.observability.wiring import thresholds_of
 from shelfhold.jobs.public import JobContext, JobPools
@@ -62,7 +63,7 @@ def keep_catchup_handler(comp: Composition) -> Callable[[JobContext], None]:
         batch = plan_batch(candidates, store_budget(comp))
         context.record(queued=len(batch.selected), queued_bytes=batch.bytes, backlog=batch.backlog)
         if batch.backlog:  # said once per run; the unit ids stay in the database
-            with comp.engine.begin() as connection:
+            with write_transaction(comp.engine) as connection:
                 comp.bus.publish(connection, "unit.safeguard_backlog", {"count": batch.backlog})
         if not batch.selected:
             return

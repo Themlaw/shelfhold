@@ -23,6 +23,7 @@ from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
 from shelfhold.events.bus import EventBus
 from shelfhold.infrastructure.clock import Clock
+from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.schema import platform
 from shelfhold.sdk.connected import WakeHook, WakeTimeout
 
@@ -117,7 +118,7 @@ class Wakes:
     # -- the deferred batches, in app_setting -------------------------------------------------
     def _defer(self, target: str, reason: str) -> None:
         key = _KEY + target
-        with self._engine.begin() as connection:
+        with write_transaction(self._engine) as connection:
             stored = connection.execute(
                 sa.select(_table.c.value).where(_table.c.key == key)
             ).scalar()
@@ -136,5 +137,5 @@ class Wakes:
             self._bus.deliver([published])
 
     def _clear(self, target: str) -> None:
-        with self._engine.begin() as connection:
+        with write_transaction(self._engine) as connection:
             connection.execute(sa.delete(_table).where(_table.c.key == _KEY + target))

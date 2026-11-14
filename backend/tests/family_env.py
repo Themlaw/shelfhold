@@ -13,6 +13,7 @@ import sqlalchemy as sa
 
 from shelfhold.catalog.public import RatingService
 from shelfhold.identity.public import Credential, Principal
+from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import catalog, export
 from shelfhold.sdk.age import AgeRating
@@ -33,7 +34,7 @@ def admin() -> Principal:
 @contextmanager
 def family_env(ceiling: int = 13, *, kavita: str | None = SAFE_KAVITA) -> Iterator[ExportEnv]:
     with export_env(max_age_rating=ceiling) as env:
-        with env.engine.begin() as connection:
+        with write_transaction(env.engine) as connection:
             connection.execute(
                 sa.update(export.export_target)
                 .where(export.export_target.c.id == env.target_id)
@@ -44,18 +45,18 @@ def family_env(ceiling: int = 13, *, kavita: str | None = SAFE_KAVITA) -> Iterat
 
 def rate(env: ExportEnv, series: Series, age: int, *, x: bool = False) -> None:
     """The admin rates the Work: its Editions count as rated with it."""
-    with env.engine.begin() as connection:
+    with write_transaction(env.engine) as connection:
         RATING.rate(connection, series.work_id, AgeRating(age, x=x), principal=admin(), now=NOW)
 
 
 def rate_edition(env: ExportEnv, edition_id: str, age: int, *, x: bool = False) -> None:
-    with env.engine.begin() as connection:
+    with write_transaction(env.engine) as connection:
         RATING.rate_edition(connection, edition_id, AgeRating(age, x=x), principal=admin(), now=NOW)
 
 
 def suggest(env: ExportEnv, edition_id: str, age: int, *, x: bool = False) -> None:
     """A file, a sub-source or a provider suggests an age: never a rating."""
-    with env.engine.begin() as connection:
+    with write_transaction(env.engine) as connection:
         connection.execute(
             sa.insert(catalog.age_suggestion).values(
                 id=new_ulid(), entity_type="edition", entity_id=edition_id, value=age, x=x,
@@ -68,7 +69,7 @@ def add_edition_to(env: ExportEnv, series: Series, lang: str = "en") -> str:
     """A later Edition of the same Work, never rated and filed nowhere yet."""
     from tests.integration.test_schema_catalog import add_edition
 
-    with env.engine.begin() as connection:
+    with write_transaction(env.engine) as connection:
         return add_edition(connection, series.work_id, lang=lang)
 
 
@@ -80,7 +81,7 @@ def second_edition(env: ExportEnv, series: Series, lang: str = "en") -> Series:
         add_source_item,
     )
 
-    with env.engine.begin() as connection:
+    with write_transaction(env.engine) as connection:
         edition = add_edition(connection, series.work_id, lang=lang, shelf_id=env.shelf_id)
         item = add_source_item(connection, remote_id=f"series-{new_ulid()}")
         binding = add_binding(connection, series.work_id, edition, item)
@@ -93,7 +94,7 @@ def add_adult_shelf(env: ExportEnv, *, subpath: str = "Adultes") -> tuple[str, s
 
     shelf_id, destination_id, library_id = new_ulid(), new_ulid(), new_ulid()
     (env.lib.manga / subpath).mkdir(exist_ok=True)
-    with env.engine.begin() as connection:
+    with write_transaction(env.engine) as connection:
         connection.execute(
             sa.insert(export.shelf).values(
                 id=shelf_id, name=f"Adultes {subpath}", phrase="Adultes", max_age_rating=99
@@ -129,7 +130,7 @@ def add_adult_shelf(env: ExportEnv, *, subpath: str = "Adultes") -> tuple[str, s
 
 def unrate(env: ExportEnv, edition_id: str) -> None:
     """The Edition is new since the last rating: `rated_at` was never set for it."""
-    with env.engine.begin() as connection:
+    with write_transaction(env.engine) as connection:
         connection.execute(
             sa.update(catalog.edition)
             .where(catalog.edition.c.id == edition_id)

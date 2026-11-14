@@ -13,6 +13,7 @@ import sqlalchemy as sa
 
 from shelfhold.export.application.intents import IntentJournal
 from shelfhold.export.application.purge import PurgeService
+from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import acquisition, platform
 from shelfhold.library.public import StoreIndex
@@ -130,7 +131,7 @@ def fetched_ticket(
     export: ExportEnv, service: FakeService, unit: str, token: str, state: str = "fetched"
 ) -> str:
     """A download request of the Unit's Variant, the service holding the chapter."""
-    with export.engine.begin() as connection:
+    with write_transaction(export.engine) as connection:
         variant, binding = connection.execute(
             sa.text("SELECT id, source_binding_id FROM unit_variant WHERE unit_id = :u"),
             {"u": unit},
@@ -152,7 +153,7 @@ def cite(
     """Jobs, events and pending notifications that cite a Unit, a request or (in an error text) a
     title; and one of each that cite nothing, which must stay."""
     ids: dict[str, int | str] = {}
-    with env.lib.engine.begin() as connection:
+    with write_transaction(env.lib.engine) as connection:
         for name, values in {
             "job_request": {"request_id": request_id},
             "job_dedupe": {"dedupe_key": f"unit:{unit}"},

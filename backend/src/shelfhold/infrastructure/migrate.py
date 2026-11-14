@@ -313,7 +313,9 @@ def _migrate_locked(
         for index, revision in enumerate(steps):
             log.info("migration_started", revision=revision, step=index + 1, total=len(steps))
             try:
-                with engine.connect() as connection, foreign_keys_disabled(connection):
+                # a data migration reads and then writes: the write lock first, and waited for
+                immediate = engine.execution_options(shelfhold_begin="BEGIN IMMEDIATE")
+                with immediate.connect() as connection, foreign_keys_disabled(connection):
                     config.attributes["connection"] = connection
                     command.upgrade(config, revision)
                     check_foreign_keys(connection)  # a violation restores the backup, below

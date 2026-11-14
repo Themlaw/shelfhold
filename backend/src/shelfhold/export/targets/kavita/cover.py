@@ -37,6 +37,7 @@ from shelfhold.export.targets.kavita.errors import TargetError
 from shelfhold.infrastructure.archives import UnsafeArchiveError, safe_open_archive
 from shelfhold.infrastructure.clock import Clock
 from shelfhold.infrastructure.content_trust import check_cbz_entries
+from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.fsops import Fsops
 from shelfhold.infrastructure.imaging import ImageKind, ImageRejected, make_thumbnail
 from shelfhold.infrastructure.imaging.errors import WORKER_FAILED
@@ -158,7 +159,7 @@ class SeriesCovers:
             series = current.get(task.kavita_series_id)
             if series is None:
                 continue
-            with self._engine.begin() as connection:
+            with write_transaction(self._engine) as connection:
                 owned = FieldRegistry(connection).get(
                     destination_id, task.export_series_id, COVER_FIELD
                 )
@@ -198,7 +199,7 @@ class SeriesCovers:
         return posted
 
     def _record(self, destination_id: str, task: CoverTask, value: dict[str, object]) -> None:
-        with self._engine.begin() as connection:
+        with write_transaction(self._engine) as connection:
             FieldRegistry(connection).record_push(
                 destination_id, task.export_series_id, COVER_FIELD, value, self._clock.now()
             )

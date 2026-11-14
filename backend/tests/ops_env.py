@@ -15,6 +15,7 @@ from shelfhold.export.application.target_state import save_health
 from shelfhold.export.targets.kavita.audit import AccessAuditor
 from shelfhold.export.targets.kavita.reinstall import InstanceService
 from shelfhold.identity.public import Credential, Principal
+from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import acquisition, catalog, platform
 from shelfhold.ops import KavitaTargetOps, OpsServices, WaitingItem
@@ -125,14 +126,14 @@ def put_health(env: ExportEnv, **flags: Any) -> TargetHealth:
     """Store a target health with the given flags, as the client would have left it."""
     health = TargetHealth(**flags)
     health.refresh_waiting()
-    with env.engine.begin() as connection:
+    with write_transaction(env.engine) as connection:
         save_health(connection, env.target_id, health)
     return health
 
 
 def add_job(engine: sa.Engine, *, kind: str, status: str, code: str | None = None) -> str:
     job_id = new_ulid()
-    with engine.begin() as connection:
+    with write_transaction(engine) as connection:
         connection.execute(
             sa.insert(platform.job_view).values(
                 id=job_id, kind=kind, status=status, dedupe_key=f"{kind}:{job_id}",
@@ -165,7 +166,7 @@ def pause_follow(engine: sa.Engine, *, failure_class: str, state: str | None) ->
     """The follow cycle paused on a source failure (EF-SRC-026)."""
     pause = {"failure_class": failure_class, "event_type": "source.x", "waiting_state": state,
              "since": NOW.isoformat()}  # fmt: skip
-    with engine.begin() as connection:
+    with write_transaction(engine) as connection:
         connection.execute(
             sa.update(acquisition.source_config)
             .where(acquisition.source_config.c.plugin_id == "suwayomi")

@@ -84,6 +84,7 @@ from shelfhold.headless.ports import (
 from shelfhold.headless.urls import validate_target_url
 from shelfhold.i18n import t
 from shelfhold.infrastructure.clock import Clock
+from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.secrets import registry
 from shelfhold.infrastructure.secrets.vault import SecretVault
@@ -292,7 +293,7 @@ class HeadlessAdmin:
     def _wake(self) -> None:
         """A running server picks the follow and the export up at its next tick instead of at the
         next quarter hour: what was just configured is worth acting on now. No server: no row."""
-        with self._engine.begin() as connection:
+        with write_transaction(self._engine) as connection:
             records.wake_schedule(connection, WAKE_KINDS, self._clock.now())
 
     def _bootstrap(self) -> None:
@@ -415,7 +416,7 @@ class HeadlessAdmin:
         clean = validate(value)
         if key.startswith("export.missing_"):
             self._check_thresholds(key, clean)
-        with self._engine.begin() as connection:
+        with write_transaction(self._engine) as connection:
             self._write_setting(connection, key, clean)
             if key == "instance.jurisdiction":
                 records.set_jurisdiction(connection, clean, self._clock.now())
@@ -477,7 +478,7 @@ class HeadlessAdmin:
             self._shelves.check_path_map(own, entries)  # bindings that would overlap or share
         except BindingError as error:
             raise InvalidConfigValue(f"{error.code}: {error}") from None
-        with self._engine.begin() as connection:
+        with write_transaction(self._engine) as connection:
             row = self._target_row(connection, key.removeprefix(PATH_MAP_PREFIX))
             before = list(row.path_map)
             records.set_path_map(connection, row.id, entries, self._clock.now())
@@ -485,7 +486,7 @@ class HeadlessAdmin:
         try:
             self._bootstrap()
         except Exception:  # the path map is stored only once the roots are registered
-            with self._engine.begin() as connection:
+            with write_transaction(self._engine) as connection:
                 records.set_path_map(connection, row.id, before, self._clock.now())
             raise
         self._shelves.pause_family_of_target(own)  # audited again before anything is written
@@ -504,7 +505,7 @@ class HeadlessAdmin:
         channel = ValidatedChannel(url=checked, scheme=urlsplit(checked).scheme,
                                    follows_redirects=False)  # fmt: skip
         try:
-            with self._engine.begin() as connection:
+            with write_transaction(self._engine) as connection:
                 self._store.save(connection, name, channel)
         except ValueError:
             raise InvalidConfigValue("a channel name is a short lowercase slug") from None
@@ -556,7 +557,7 @@ class HeadlessAdmin:
             "key_expires_at": expires_at,
         }
         try:
-            with self._engine.begin() as connection:
+            with write_transaction(self._engine) as connection:
                 records.insert_kavita_target(
                     connection,
                     target_id=target_id,
@@ -613,7 +614,7 @@ class HeadlessAdmin:
             key_name=new_name, expires_days=KEY_DAYS,
         )  # fmt: skip
         expires_at = exchanged.expires_at.isoformat() if exchanged.expires_at else None
-        with self._engine.begin() as connection:
+        with write_transaction(self._engine) as connection:
             registry.register_active_key(connection, self._vault.keyring)
             store_admin_key(self._vault, connection, row.id, AdminKey(exchanged.value))
             records.set_target_config(
@@ -685,7 +686,7 @@ class HeadlessAdmin:
         return str(settings["base_url"])
 
     def _resume_follow(self) -> None:
-        with self._engine.begin() as connection:
+        with write_transaction(self._engine) as connection:
             FailureLedger("suwayomi").resume(connection)
 
     def source_set_secret(self, secret: str) -> SourceAdded:
@@ -719,7 +720,7 @@ class HeadlessAdmin:
         follow. The old fingerprint is forgotten and the follow resumes; the next cycle takes the
         new installation as its reference and finds the series again by their upstream identity.
         False when the service is not paused for that (nothing changes)."""
-        with self._engine.begin() as connection:
+        with write_transaction(self._engine) as connection:
             return reconnect(connection, "suwayomi", self._clock.now())
 
     def _audit_source(
@@ -742,7 +743,7 @@ class HeadlessAdmin:
         """`source confirm-roles`: the admin vouches that the service account of a `ui_login`
         Suwayomi has minimal rights (the server exposes no role to check). Clears the
         `roles_unverified` warning of `status`; audited. False when nothing was to confirm."""
-        with self._engine.begin() as connection:
+        with write_transaction(self._engine) as connection:
             row = records.source_row(connection)
             if row is None or not row.settings.get("roles_unverified"):
                 return False
@@ -789,7 +790,7 @@ class HeadlessAdmin:
             # Owner decision 2026-11-12: the admin confirmed; the only write in Suwayomi's
             # settings. The audit row comes first and stands alone: whatever happens to the
             # call or to the read that follows, a write that may have landed has its trace.
-            with self._engine.begin() as connection:
+            with write_transaction(self._engine) as connection:
                 self._audit_source(connection, SETTINGS_WRITE_ACTION, actor)
             try:
                 self._suwayomi.blocking_filters = self._suwayomi.disable_update_filters(
@@ -813,7 +814,7 @@ class HeadlessAdmin:
         unverified = mode == "ui_login" and not self._suwayomi.roles_verified
         if unverified:  # a durable warning in `status` until the admin confirms (D1)
             settings["roles_unverified"] = True
-        with self._engine.begin() as connection:
+        with write_transaction(self._engine) as connection:
             if unverified:
                 self._audit_source(connection, ROLES_UNVERIFIED_ACTION)
             created = records.source_row(connection) is None
@@ -895,7 +896,7 @@ class HeadlessAdmin:
 
     def _unbind(self, shelf_id: str, destination_id: str, *, shelf_was_new: bool) -> None:
         """A shelf the audit refused leaves nothing behind (nothing was written in Kavita)."""
-        with self._engine.begin() as connection:
+        with write_transaction(self._engine) as connection:
             records.unbind(connection, shelf_id, destination_id, drop_shelf=shelf_was_new)
 
     # -- config apply -------------------------------------------------------------------------

@@ -12,6 +12,7 @@ from typing import Any
 import sqlalchemy as sa
 
 from shelfhold.export.application.intents import IntentJournal
+from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import acquisition, catalog, export, platform, storage
 from shelfhold.library.public import (
@@ -76,7 +77,7 @@ class World:
         self.events: list[tuple[str, dict[str, object]]] = []
         self.items: list[Item] = []
         self._first = True
-        with env.engine.begin() as c:
+        with write_transaction(env.engine) as c:
             c.execute(
                 sa.insert(platform.instance).values(instance_id=env.instance_id, jurisdiction="FR")
             )
@@ -122,7 +123,7 @@ class World:
             hold_work=work_lock(env.engine),
         ).ingest(unit_id=unit_id, variant_id=variant_id, staged=env.stage(data), dest=str(dest))
         ticket, request_id = f"ticket-{n}", new_ulid()
-        with env.engine.begin() as c:
+        with write_transaction(env.engine) as c:
             if fetched:
                 c.execute(
                     sa.insert(acquisition.download_request).values(
@@ -218,7 +219,7 @@ hold_work=work_lock(env.engine),
             ).scalar_one()
 
     def pause_service(self) -> None:
-        with self.env.engine.begin() as c:
+        with write_transaction(self.env.engine) as c:
             c.execute(
                 sa.insert(acquisition.source_config).values(
                     plugin_id="suwayomi",
@@ -229,7 +230,7 @@ hold_work=work_lock(env.engine),
             )  # fmt: skip
 
     def set_settings(self, **settings: object) -> None:
-        with self.env.engine.begin() as c:
+        with write_transaction(self.env.engine) as c:
             row = c.execute(
                 sa.select(acquisition.source_config.c.plugin_id).where(
                     acquisition.source_config.c.plugin_id == "suwayomi"

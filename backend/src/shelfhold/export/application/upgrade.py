@@ -60,6 +60,7 @@ from shelfhold.export.application.snapshot import (
 from shelfhold.export.domain.physical_roots import RootState
 from shelfhold.identity.public import Allowed
 from shelfhold.infrastructure.clock import Clock
+from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.fsops import FileIdentity, Fsops
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.logging import escaped
@@ -608,7 +609,7 @@ class SamePathUpgrade:
         intent = place_under_intent(
             self._journal, self._fsops, target, mark=mark, new_hash=new.file_hash, data=new.data
         )
-        with self._engine.begin() as connection:
+        with write_transaction(self._engine) as connection:
             upgrade_id, event = self._complete(connection, intent, mark.to_json())
             self._journal.mark_done(intent, within=connection)
         if event is not None:

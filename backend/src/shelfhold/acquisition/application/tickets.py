@@ -27,6 +27,7 @@ from shelfhold.acquisition.application.failures import FailureLedger, from_servi
 from shelfhold.acquisition.domain.failures import Disposition, classify, disposition_of
 from shelfhold.infrastructure.clock import Clock
 from shelfhold.infrastructure.content_trust import UntrustedEntryError
+from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.fetcher import FetchError, FetchTooLarge, GuardedFetcher
 from shelfhold.infrastructure.fetcher.errors import InvalidFetchUrl
 from shelfhold.infrastructure.ids import new_ulid
@@ -364,7 +365,7 @@ class DownloadTickets:
                 next_at[key] = self._clock.now().timestamp() + interval * (
                     1.0 + jitter_fraction(request.id)
                 )
-                with self._engine.begin() as connection:
+                with write_transaction(self._engine) as connection:
                     self._ledger.set_next_at(connection, key, next_at[key])
                 if not queues[key]:
                     del queues[key]
@@ -417,7 +418,7 @@ class DownloadTickets:
         a corrupt Unit asks again for what a finished request already holds): the token follows
         the live request, the finished one lets go of it (the key is unique per binding)."""
         table = acquisition.download_request
-        with self._engine.begin() as connection:
+        with write_transaction(self._engine) as connection:
             connection.execute(
                 sa.update(table)
                 .where(
@@ -477,7 +478,7 @@ class DownloadTickets:
                 if self._corrupt(request.unit_id):
                     self._repair(request, received.path, received.sha256)
         now = self._clock.now()
-        with self._engine.begin() as connection:
+        with write_transaction(self._engine) as connection:
             connection.execute(
                 sa.update(acquisition.download_request)
                 .where(acquisition.download_request.c.id == request.id)
@@ -512,7 +513,7 @@ class DownloadTickets:
             self._refuse(request, error, report)
         elif disposition_of(classify(error)) is Disposition.COUNT:
             now = self._clock.now()
-            with self._engine.begin() as connection:
+            with write_transaction(self._engine) as connection:
                 self._ledger.count_content(
                     connection, request.binding_id, request.source_key,
                     getattr(error, "code", "source.content_removed"), now,
@@ -533,7 +534,7 @@ class DownloadTickets:
         filed. The event holds the Unit and a closed reason, never an entry name (it is the
         archive's own text)."""
         reason = error.kind if isinstance(error, UntrustedEntryError) else "not_allowlisted"
-        with self._engine.begin() as connection:
+        with write_transaction(self._engine) as connection:
             connection.execute(
                 sa.update(acquisition.download_request)
                 .where(acquisition.download_request.c.id == request.id)
@@ -594,7 +595,7 @@ class DownloadTickets:
         values: dict[str, object] = {"attempts": attempts, "updated_at": self._clock.now()}
         values.update({"state": "abandoned"} if given_up else {"ticket": None})
         table = acquisition.download_request
-        with self._engine.begin() as connection:
+        with write_transaction(self._engine) as connection:
             changed = connection.execute(
                 sa.update(table)
                 .where(
@@ -624,7 +625,7 @@ class DownloadTickets:
         attempts = request.attempts + 1
         if attempts >= self._max_attempts:
             self._update(request.id, state="abandoned", attempts=attempts)
-            with self._engine.begin() as connection:
+            with write_transaction(self._engine) as connection:
                 self._ledger.record_download(
                     connection, request.source_key, ok=False, now=self._clock.now()
                 )
@@ -656,7 +657,7 @@ class DownloadTickets:
             if source_keys is not None
             else []
         )
-        with self._engine.begin() as connection:
+        with write_transaction(self._engine) as connection:
             result = connection.execute(
                 sa.update(r)
                 .where(
@@ -683,7 +684,7 @@ class DownloadTickets:
 
     def _update(self, request_id: str, **values: object) -> None:
         table = acquisition.download_request
-        with self._engine.begin() as connection:
+        with write_transaction(self._engine) as connection:
             connection.execute(
                 sa.update(table)
                 .where(table.c.id == request_id)

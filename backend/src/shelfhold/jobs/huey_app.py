@@ -31,6 +31,7 @@ from structlog.contextvars import bound_contextvars
 
 from shelfhold.events.bus import EventBus
 from shelfhold.infrastructure.clock import Clock
+from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.freeze import FreezeState
 from shelfhold.infrastructure.logging import elapsed_ms, exception_detail
 from shelfhold.jobs.control import (
@@ -313,7 +314,7 @@ class JobPools:
             return self.control.cancel_requested(conn, job_id)
 
     def _settle_cancel(self, job_id: str) -> bool:
-        with self._engine.begin() as conn:
+        with write_transaction(self._engine) as conn:
             return self.control.settle_cancelled(conn, job_id, now=self.clock.now())
 
     def flush_huey_locks(self) -> int:
@@ -362,7 +363,7 @@ class JobPools:
         priority_class: str = "new",
     ) -> Created:
         """Queue a job once per dedupe key (for a download, the chapter)."""
-        with self._engine.begin() as conn:
+        with write_transaction(self._engine) as conn:
             created = self.ledger.create(
                 conn,
                 kind=kind,
@@ -551,7 +552,7 @@ class JobPools:
             log.warning("job.retry", error=error, attempt=attempts, delay_s=delay)
             return delay
         log.error("job.dead_lettered", error=error, attempts=attempts)
-        with self._engine.begin() as conn:
+        with write_transaction(self._engine) as conn:
             self.ledger.mark_dead_letter(conn, job_id, error)
             if self._bus is not None:
                 try:

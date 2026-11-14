@@ -29,6 +29,7 @@ from shelfhold.catalog.public import (
 )
 from shelfhold.export.application.to_rate import ToRate, batch_token, rateable, to_rate
 from shelfhold.identity.public import Principal
+from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.schema import catalog
 from shelfhold.ops.errors import (
     CodedRefusal,
@@ -102,7 +103,7 @@ class RatingOps:
         rating = _age(age)
         service = self._service
         try:
-            with self._engine.begin() as connection:
+            with write_transaction(self._engine) as connection:
                 now = self._clock.now()
                 if work_id is not None:
                     done = service.rate(connection, work_id, rating, principal=principal, now=now)

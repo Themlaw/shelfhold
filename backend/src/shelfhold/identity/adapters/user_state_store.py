@@ -15,6 +15,7 @@ from shelfhold.identity.adapters.reader_scope import reader_scope
 from shelfhold.identity.application.user_state import UserStateService
 from shelfhold.identity.domain.user_state import UserFlags
 from shelfhold.infrastructure.clock import Clock, Stamped
+from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.schema import catalog, identity
 
 _T = identity.user_state
@@ -81,7 +82,7 @@ class SqlUserStateStore:
         return [x for x in raw if isinstance(x, str)] if isinstance(raw, list) else []
 
     def set_languages(self, user_id: str, languages: list[str]) -> None:
-        with self._engine.begin() as conn:
+        with write_transaction(self._engine) as conn:
             conn.execute(
                 sa.update(identity.user)
                 .where(identity.user.c.id == user_id)

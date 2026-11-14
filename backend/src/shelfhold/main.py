@@ -30,7 +30,7 @@ from shelfhold.identity.application.notification_prefs import NotificationPrefsS
 from shelfhold.identity.application.preferences import PreferencesService
 from shelfhold.identity.public import PasskeyRecord, local_auth, reconcile_identity_counter
 from shelfhold.infrastructure.clock import Clock, SystemClock
-from shelfhold.infrastructure.db import create_db_engine
+from shelfhold.infrastructure.db import create_db_engine, write_transaction
 from shelfhold.infrastructure.health import HealthProbe
 from shelfhold.infrastructure.idempotency_store import IdempotencyStore
 from shelfhold.infrastructure.identity_counter import IdentityCounter
@@ -125,7 +125,7 @@ def announce_keyring_failure(engine: Engine, bus: EventBus, error: KeyringError)
     operating bus first, if the database can take it (`secret.undecryptable`, ENF-OPS-011)."""
     reason = next((why for kind, why in _KEYRING_REASONS if isinstance(error, kind)), None)
     try:
-        with engine.begin() as connection:
+        with write_transaction(engine) as connection:
             bus.publish(
                 connection, "secret.undecryptable", {"reason": reason or "keyring_unreadable"}
             )
@@ -214,7 +214,7 @@ def create_app(
     def passkey_registered(record: PasskeyRecord) -> None:
         # Owner decision 2026-11-12: any registration, any account, tells the admin (identifiers
         # only: the name of a passkey is typed by a person and never goes in an event)
-        with engine.begin() as connection:
+        with write_transaction(engine) as connection:
             composition.bus.publish(
                 connection,
                 "auth.passkey_registered",
@@ -377,7 +377,7 @@ def create_app(
         """EF-BIB-010: the search index follows the catalog (a Work written by a path that does not
         index it, a SQLite that gained FTS5): never a reason not to start."""
         try:
-            with engine.begin() as connection:
+            with write_transaction(engine) as connection:
                 ensure_search_tables(connection)
                 sync_search_index(connection)
         except sa.exc.SQLAlchemyError as error:

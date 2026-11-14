@@ -24,6 +24,7 @@ from typing import TYPE_CHECKING, Any, Final
 import sqlalchemy as sa
 
 from shelfhold.catalog.public import COVER_FIELD, MERGE_WINDOW_DAYS, Catalog
+from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.ids import is_ulid
 from shelfhold.infrastructure.schema import acquisition, catalog
 from shelfhold.library.public import cover_hash
@@ -228,7 +229,7 @@ class SheetOps:
         """Rank the active bindings in the order given. The list must be exactly the active
         bindings of this Edition: one missing, repeated or foreign is refused and nothing moves."""
         b = acquisition.source_binding
-        with self._comp.engine.begin() as connection:
+        with write_transaction(self._comp.engine) as connection:
             self._edition(connection, edition_id)
             active = {
                 str(i)
@@ -257,7 +258,7 @@ class SheetOps:
         if status not in UPSTREAM_STATUSES:
             raise InvalidChoiceError("ongoing, finished, paused or unknown")
         ed = catalog.edition
-        with self._comp.engine.begin() as connection:
+        with write_transaction(self._comp.engine) as connection:
             self._edition(connection, edition_id)
             connection.execute(
                 sa.update(ed).where(ed.c.id == edition_id).values(
@@ -270,7 +271,7 @@ class SheetOps:
     def prefer_team(self, edition_id: str, team_id: str) -> dict[str, Any]:
         if not is_ulid(team_id):
             raise InvalidChoiceError("not a Team identifier")
-        with self._comp.engine.begin() as connection:
+        with write_transaction(self._comp.engine) as connection:
             self._edition(connection, edition_id)
             known = connection.execute(
                 sa.select(catalog.team.c.id).where(

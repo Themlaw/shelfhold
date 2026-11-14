@@ -28,6 +28,7 @@ from typing import Final
 import sqlalchemy as sa
 from sqlalchemy.engine import Connection, Engine
 
+from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.schema import platform
 
 WAITING_PREFIX: Final = "waiting."
@@ -137,7 +138,7 @@ class FreezeState:
     def lift(self, engine: Engine) -> None:
         """The end of the freeze, written by the adoption alone. This state is thawed only after
         the commit: a commit that fails leaves it frozen, like the database."""
-        with engine.begin() as connection:
+        with write_transaction(engine) as connection:
             connection.execute(sa.update(platform.instance).values(restore_generation=0))
         self._generation = 0
         self._process = False

@@ -9,13 +9,14 @@ down: one `app_setting` row per subject (no migration), deleted when the way out
 from __future__ import annotations
 
 import json
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from typing import Final, NamedTuple
 
 import sqlalchemy as sa
 from sqlalchemy import Connection, Engine
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
+from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.freeze import ROOT_STATES, WAITING_PREFIX
 from shelfhold.infrastructure.schema import platform
 
@@ -29,6 +30,7 @@ __all__ = [
     "put",
     "read_all",
     "read_one",
+    "scope_is_exactly",
 ]
 
 PREFIX: Final = WAITING_PREFIX
@@ -75,7 +77,7 @@ def clear(connection: Connection, state: str, subjects: Iterable[str]) -> None:
 def mark_mount_blocked(engine: Engine, destination_id: str, reason: str) -> None:
     """The root of a destination fails its sentinel, or lost too many files (EF-EXP-029): the
     exports, deletions and scans stay blocked and `status` says so until it is right again."""
-    with engine.begin() as connection:
+    with write_transaction(engine) as connection:
         put(
             connection, "mount_sentinel_missing", destination_id,
             {"sentinel": "the mount does not carry the expected sentinel",
@@ -85,7 +87,7 @@ def mark_mount_blocked(engine: Engine, destination_id: str, reason: str) -> None
 
 
 def clear_mount_blocked(engine: Engine, destination_id: str) -> None:
-    with engine.begin() as connection:
+    with write_transaction(engine) as connection:
         clear(connection, "mount_sentinel_missing", [destination_id])
 
 
@@ -107,6 +109,21 @@ def clear_except(connection: Connection, state: str, scope: str, keep: Iterable[
         one = read_one(connection, state, found.subject)
         if one is not None and one.get("destination_id") == scope:
             clear(connection, state, [found.subject])
+
+
+def scope_is_exactly(
+    connection: Connection, state: str, scope: str, wanted: Mapping[str, str]
+) -> bool:
+    """The marks of `state` written for `scope` are exactly `wanted` (`subject -> reason`), each
+    with the destination: nothing for `put` or `clear_except` to change."""
+    held: dict[str, str] = {}
+    for found in read_all(connection):
+        if found.state != state:
+            continue
+        one = read_one(connection, state, found.subject)
+        if one is not None and one.get("destination_id") == scope:
+            held[found.subject] = one.get("reason", "")
+    return held == dict(wanted)
 
 
 def read_all(connection: Connection) -> list[Mark]:

@@ -48,6 +48,7 @@ from shelfhold.export.targets.kavita.audit import account_of
 from shelfhold.export.targets.kavita.client import KavitaClient
 from shelfhold.export.targets.kavita.errors import ListingIncomplete, ProtocolError, TargetError
 from shelfhold.infrastructure.clock import Clock
+from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.schema import export
 from shelfhold.sdk.age import AgeRating
 
@@ -171,7 +172,7 @@ async def refresh_names(engine: Engine, client: KavitaClient, destination_id: st
         if not normalized:
             continue
         try:
-            with engine.begin() as connection:
+            with write_transaction(engine) as connection:
                 connection.execute(
                     sa.update(series)
                     .where(series.c.id == row.id)
@@ -302,7 +303,7 @@ class SeriesAges:
         current: dto.SeriesAge,
     ) -> bool:
         series = task.export_series_id
-        with self._engine.begin() as connection:
+        with write_transaction(self._engine) as connection:
             registry = FieldRegistry(connection)
             owned = registry.get(destination_id, series, AGE_RATING)
             ours = owned is not None and owned.pushed
@@ -322,7 +323,7 @@ class SeriesAges:
         try:
             await client.set_series_age(current, wanted)
         except (TargetError, DestinationPausedError):
-            with self._engine.begin() as connection:
+            with write_transaction(self._engine) as connection:
                 FieldRegistry(connection).restore(destination_id, series, AGE_RATING, owned)
             raise
         return True
@@ -353,7 +354,7 @@ class SeriesFields:
             return False
         current = await client.series_age(kavita_series_id)
         locked = bool(current.document.get(f"{key}Locked", False))
-        with self._engine.begin() as connection:
+        with write_transaction(self._engine) as connection:
             registry = FieldRegistry(connection)
             owned = registry.get(destination_id, export_series_id, field)
             action = FieldGuard(registry, self._events).decide(
@@ -368,7 +369,7 @@ class SeriesFields:
         try:
             await client.set_series_field(current, key, value)
         except (TargetError, DestinationPausedError):
-            with self._engine.begin() as connection:
+            with write_transaction(self._engine) as connection:
                 FieldRegistry(connection).restore(destination_id, export_series_id, field, owned)
             raise
         return True
@@ -471,7 +472,7 @@ class SeriesAgeGate:
     def _pause(self, destination_id: str, series_id: str, reason: str | None) -> None:
         """Set (or clear, with None) the age pause of a series; announce it when it starts."""
         series = export.export_series
-        with self._engine.begin() as connection:
+        with write_transaction(self._engine) as connection:
             now = connection.execute(
                 sa.select(series.c.paused_reason).where(series.c.id == series_id)
             ).scalar()

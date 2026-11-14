@@ -8,12 +8,20 @@ network, nothing secret), read here and never from the client.
 """
 
 from collections.abc import Mapping
+from datetime import datetime
 from typing import Any
 
 import sqlalchemy as sa
 from sqlalchemy import Connection, Engine
 
-from shelfhold.events.activity import ActivityEvent, download_request_event
+from shelfhold.events.activity import (
+    ActivityEvent,
+    ActivityItem,
+    download_request_event,
+    unmask_title,
+)
+from shelfhold.identity.public import Principal
+from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.schema import acquisition, catalog, export, identity, platform
 
 __all__ = [
@@ -25,6 +33,7 @@ __all__ = [
     "recent_requests",
     "request_edition",
     "request_event",
+    "unmask_entry",
 ]
 
 _SCHEMES = ("http://", "https://")
@@ -129,6 +138,29 @@ def request_event(connection: Connection, row: Any) -> ActivityEvent:
         request_id=row.id, state=row.state, visibility=row.visibility, requester_id=owner_id,
         requester_role=owner_role, title=request_title(connection, row),
     )  # fmt: skip
+
+
+def unmask_entry(
+    engine: Engine,
+    principal: Principal,
+    ref: str,
+    *,
+    now: datetime,
+    fresh_auth_s: int,
+    hardened: bool,
+    restricted_profile_exists: bool,
+) -> ActivityItem | None:
+    """The title behind `ref`, and its audit line written in the same transaction (that takes the
+    write lock first: it reads the entry, then writes). `None`: no such entry. A refusal
+    (`UnmaskRefusedError`) leaves the transaction, and so the audit line, rolled back."""
+    with write_transaction(engine) as connection:
+        entry = entry_of(connection, ref)
+        if entry is None:
+            return None
+        return unmask_title(
+            connection, principal, entry, now=now, fresh_auth_s=fresh_auth_s,
+            hardened=hardened, restricted_profile_exists=restricted_profile_exists,
+        )  # fmt: skip
 
 
 def entry_of(connection: Connection, ref: str) -> ActivityEvent | None:

@@ -33,6 +33,7 @@ from shelfhold.export.application.recycle_sweep import BackupsSince, RecycleSwee
 from shelfhold.export.domain.physical_roots import RECYCLE_DIR
 from shelfhold.identity.public import RESERVED_ACTIONS, Allowed, Principal, authorize_reserved
 from shelfhold.infrastructure.clock import Clock
+from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.fsops import Fsops
 from shelfhold.infrastructure.fsops.emitters import EARLY_PURGE_MIN_AGE_S
 from shelfhold.infrastructure.fsops.errors import EmitterConditionError, FsopsError
@@ -127,12 +128,12 @@ class BinReclaimer:
         return True
 
     def _close(self, intent: str, name: str) -> None:
-        with self._journal.engine.begin() as connection:
+        with write_transaction(self._journal.engine) as connection:
             self._journal.mark_done(intent, within=connection)
             forget_binned_export_files(connection, name)  # the index follows the bin
 
     def _audit(self, action: str, removed: int, principal: Principal | None) -> None:
-        with self._journal.engine.begin() as connection:
+        with write_transaction(self._journal.engine) as connection:
             connection.execute(
                 sa.insert(identity.audit).values(
                     id=new_ulid(), action=action,

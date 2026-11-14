@@ -28,6 +28,7 @@ from shelfhold.catalog.public import DEFAULT_MIN_PAGE_RATIO, guard_received
 from shelfhold.infrastructure.archives import DEFAULT_LIMITS, ArchiveLimits, safe_open_archive
 from shelfhold.infrastructure.content_trust import check_cbz_entries
 from shelfhold.infrastructure.content_trust.cbz_entries import COMICINFO_MAX_BYTES
+from shelfhold.infrastructure.db import read_transaction, write_transaction
 from shelfhold.infrastructure.fsops import (
     CopyVerificationError,
     Fsops,
@@ -36,6 +37,7 @@ from shelfhold.infrastructure.fsops import (
 )
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import catalog, export, storage
+from shelfhold.infrastructure.stable_hash import FileChangedError, HashedFiles, retry_when_changed
 from shelfhold.library.adapters.meta_projection import MetaProjection
 from shelfhold.library.adapters.origin_comicinfo import keep_origin_comicinfo
 from shelfhold.library.adapters.units import irreplaceability
@@ -288,7 +290,7 @@ class PassthroughStore:
         device = self._fsops.device_of(dest)
         now = datetime.now(UTC)
         content_id = new_ulid()
-        with self._engine.begin() as connection:
+        with write_transaction(self._engine) as connection:
             # before the new content exists: the baseline is the version already stored (EF-BIB-024)
             suspect = guard_received(
                 connection, variant_id=variant_id, pages=images, content_hash=payload_hash,
@@ -568,7 +570,7 @@ class KeepCopier:
                 target.local, stream, replace=True,
                 verify_digest=lambda: derived_hash.removeprefix("sha256:"),
             )  # fmt: skip
-        with self._engine.begin() as connection:
+        with write_transaction(self._engine) as connection:
             record_library_rewrite(
                 connection, target.replica_id, file_hash=derived_hash,
                 dev=self._fsops.device_of(target.local), ino=written.ino, size=written.size,
@@ -609,7 +611,7 @@ class KeepCopier:
         except BaseException:
             self._journal.cancel(intent_id)  # staged and atomic: nothing landed
             raise
-        with self._engine.begin() as connection:
+        with write_transaction(self._engine) as connection:
             independent = complete_keep(
                 connection, self._fsops, self._locate, content.id, target, source,
                 datetime.now(UTC),
@@ -688,7 +690,7 @@ class KeepCopier:
         except BaseException:
             self._journal.cancel(intent_id)
             raise
-        with self._engine.begin() as connection:
+        with write_transaction(self._engine) as connection:
             self._journal.mark_done(intent_id, within=connection)
 
 
@@ -779,25 +781,44 @@ def verify_kept(engine: Engine, fsops: Fsops, unit_id: str) -> int:
     and not the inode of any library file) and the hash it was stored at. Both sides are read on
     the disk now, never in the stored rows; the library rows are brought up to date. Returns how
     many count."""
+
+    def attempt() -> int:
+        hashed = HashedFiles(fsops)
+        with read_transaction(engine) as connection:
+            copies = [c.local for c in store_copies(connection, unit_id)]
+        for local in copies:  # the copies are read before the lock, never under it
+            try:
+                hashed.hash(local)
+            except (FileNotFoundError, FsopsError):
+                hashed.unreadable(local)
+        return _verify_locked(engine, fsops, unit_id, hashed)
+
+    try:
+        return retry_when_changed(attempt)
+    except FileChangedError:
+        return 0  # a copy that keeps changing does not count (nothing is recorded for it)
+
+
+def _verify_locked(engine: Engine, fsops: Fsops, unit_id: str, hashed: HashedFiles) -> int:
     counted = 0
     now = datetime.now(UTC)
-    with engine.begin() as connection:
+    with write_transaction(engine) as connection:
         refresh_library_rows(connection, fsops, unit_id, now)
         siblings = sibling_inodes(connection, unit_id, skip=("library",))
         siblings |= fresh_library_inodes(connection, fsops, unit_id)
         for copy in store_copies(connection, unit_id):
             try:
-                found = fsops.observe(copy.local)
-                seen = fsops.sha256_of(copy.local)
+                checked = hashed.verified(copy.local)  # one `stat` under the lock
             except (FileNotFoundError, FsopsError):
-                found, seen = None, None
-            if found is None:
+                checked = None
+            if checked is None:
                 record_store_observation(
                     connection, copy.replica_id, independent=False, dev=None, ino=None,
                     size=None, mtime_ns=None, verified_at=now,
                 )  # fmt: skip
                 continue
-            identity, device = found[1], fsops.device_of(copy.local)
+            identity, seen = checked
+            device = fsops.device_of(copy.local)
             own, _ = is_own_inode(fsops, copy.local, siblings)
             good = own and is_independent(
                 CopyFacts(device, identity.ino, seen or ""), stored_sha256=copy.file_hash,

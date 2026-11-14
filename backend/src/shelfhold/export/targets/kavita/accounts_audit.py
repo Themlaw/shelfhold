@@ -41,6 +41,7 @@ from shelfhold.export.domain.kavita_instance import covering_libraries, library_
 from shelfhold.export.targets.kavita.audit import AccessAuditor, account_of
 from shelfhold.export.targets.kavita.client import KavitaClient
 from shelfhold.infrastructure.clock import Clock
+from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.schema import platform
 
 __all__ = [
@@ -175,7 +176,7 @@ class ChildAccountsAuditor:
         }
         key = _KEY + target_id
         table = platform.app_setting
-        with self._engine.begin() as connection:
+        with write_transaction(self._engine) as connection:
             done = connection.execute(
                 sa.update(table).where(table.c.key == key).values(value=json.dumps(state))
             )

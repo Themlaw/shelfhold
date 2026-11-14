@@ -19,6 +19,7 @@ from sqlalchemy import Connection, Engine
 
 from shelfhold.identity.public import RESERVED_ACTIONS, Allowed, Principal, authorize_reserved
 from shelfhold.infrastructure.clock import Clock
+from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import identity, platform
 from shelfhold.jobs.control import (
@@ -145,7 +146,7 @@ class MaintenanceOps:
 
     def enter(self, *, principal: Principal, audit: bool = True) -> dict[str, Any]:
         self._authorize(principal, ENTER)
-        with self._engine.begin() as conn:
+        with write_transaction(self._engine) as conn:
             try:
                 changed = self.mode.enter(conn, by=_user(principal))
             except LookupError:
@@ -159,7 +160,7 @@ class MaintenanceOps:
 
     def leave(self, *, principal: Principal, audit: bool = True) -> dict[str, Any]:
         self._authorize(principal, EXIT)
-        with self._engine.begin() as conn:
+        with write_transaction(self._engine) as conn:
             changed = self.mode.leave(conn)
             if changed and audit:
                 self._audit(conn, principal, EXIT, "instance")
@@ -186,7 +187,7 @@ class MaintenanceOps:
         self, source: str | None, *, principal: Principal, audit: bool = True
     ) -> dict[str, Any]:
         self._authorize(principal, QUEUE)
-        with self._engine.begin() as conn:
+        with write_transaction(self._engine) as conn:
             resumed = self.control.resume(conn, source=source)
             if audit:
                 self._audit(conn, principal, QUEUE, f"resume:{source or 'all'}")
@@ -195,7 +196,7 @@ class MaintenanceOps:
 
     def cancel(self, job_id: str, *, principal: Principal, audit: bool = True) -> dict[str, Any]:
         self._authorize(principal, QUEUE)
-        with self._engine.begin() as conn:
+        with write_transaction(self._engine) as conn:
             kind = conn.execute(
                 sa.select(platform.job_view.c.kind).where(platform.job_view.c.id == job_id)
             ).scalar()
@@ -218,7 +219,7 @@ class MaintenanceOps:
         self._authorize(principal, QUEUE)
         if priority_class not in USER_CLASSES:
             raise InvalidChoiceError(f"a priority is one of {', '.join(USER_CLASSES)}")
-        with self._engine.begin() as conn:
+        with write_transaction(self._engine) as conn:
             try:
                 chosen = self.control.set_priority(conn, job_id, priority_class)
             except JobNotFoundError:
@@ -233,7 +234,7 @@ class MaintenanceOps:
 
     def replay(self, job_id: str, *, principal: Principal, audit: bool = True) -> dict[str, Any]:
         self._authorize(principal, QUEUE)
-        with self._engine.begin() as conn:
+        with write_transaction(self._engine) as conn:
             try:
                 queued, changed = self.control.replay(conn, job_id)
             except JobNotFoundError:

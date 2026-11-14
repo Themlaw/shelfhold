@@ -12,6 +12,7 @@ import pytest
 import sqlalchemy as sa
 
 from shelfhold.config import Settings
+from shelfhold.infrastructure.db import write_transaction
 from tests.auth_env import run_cli
 from tests.l54_env import Bench54
 
@@ -44,7 +45,7 @@ def age_discoveries(b: Bench54, edition_id: str, days_ago: list[float]) -> None:
     (the follow cycle stamps `first_seen_at` with the clock; the clock of a real instance is the
     system's, so the past is written where the cycle wrote the present)."""
     now = datetime.now(tz=b.env.inst.comp.clock.now().tzinfo)
-    with b.engine.begin() as connection:
+    with write_transaction(b.engine) as connection:
         ids = list(
             connection.execute(
                 sa.text(

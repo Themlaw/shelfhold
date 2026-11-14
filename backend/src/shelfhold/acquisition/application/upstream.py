@@ -31,6 +31,7 @@ from shelfhold.acquisition.application.upstream_snapshot import (
     validate_payload,
 )
 from shelfhold.infrastructure.clock import Clock
+from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import acquisition, catalog, export
 from shelfhold.infrastructure.secrets.vault import SecretVault
@@ -88,7 +89,7 @@ class UpstreamSnapshots:
         row_id = new_ulid()
         if hidden and self._vault is not None:
             clear = {**clear, SEALED_KEY: seal_fields(self._vault, row_id, hidden)}
-        with self._engine.begin() as connection:
+        with write_transaction(self._engine) as connection:
             if self._row(connection, connected_service_id, key) is not None:
                 return False
             connection.execute(
@@ -161,7 +162,7 @@ class UpstreamSnapshots:
         if SEALED_KEY in stored:
             payload[SEALED_KEY] = stored[SEALED_KEY]
         table = acquisition.upstream_snapshot
-        with self._engine.begin() as connection:
+        with write_transaction(self._engine) as connection:
             connection.execute(
                 sa.update(table)
                 .where(
@@ -203,7 +204,7 @@ class UpstreamSnapshots:
     def forget(self, connected_service_id: str, key: str) -> None:
         """Only after the settings were given back: the one place a snapshot goes."""
         table = acquisition.upstream_snapshot
-        with self._engine.begin() as connection:
+        with write_transaction(self._engine) as connection:
             connection.execute(
                 sa.delete(table).where(
                     table.c.connected_service_id == connected_service_id,
@@ -360,7 +361,7 @@ class Detacher:
     def _stop_following(self, binding_id: str) -> None:
         """The binding stays (its history and the watermark are kept) but no longer follows."""
         binding = acquisition.source_binding
-        with self._engine.begin() as connection:
+        with write_transaction(self._engine) as connection:
             connection.execute(
                 sa.update(binding)
                 .where(binding.c.id == binding_id)

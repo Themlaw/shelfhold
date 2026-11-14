@@ -69,6 +69,7 @@ from shelfhold.export.targets.kavita.dto import HIDDEN_DIR_PATTERNS, LibraryType
 from shelfhold.export.targets.kavita.errors import ConfirmationRequired
 from shelfhold.infrastructure.archives.safe_open import UnsafeArchiveError, safe_open_archive
 from shelfhold.infrastructure.clock import Clock
+from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.follow_suspended import suspend as suspend_follow
 from shelfhold.infrastructure.fsops import Fsops
 from shelfhold.infrastructure.ids import new_ulid
@@ -389,7 +390,7 @@ def _dominant(values: Sequence[str]) -> str | None:
 def ensure_link(engine: Engine, clock: Clock, ctx: DestinationContext, library_ref: str) -> str:
     """The `remote_library` row of the server's library and its link to the destination."""
     library, link = export.remote_library, export.shelf_destination_remote_library
-    with engine.begin() as connection:
+    with write_transaction(engine) as connection:
         library_id = connection.execute(
             sa.select(library.c.id).where(
                 library.c.export_target_id == ctx.target_id, library.c.remote_ref == library_ref
@@ -727,7 +728,7 @@ class Adopter:
         ctx = self._context(destination_id)
         now = self._clock.now()
         done = skipped = 0
-        with self._engine.begin() as connection:
+        with write_transaction(self._engine) as connection:
             self._mark_adopted(connection, ctx, report.pre_adoption_settings)
             for item in report.series:
                 added, existing = self._inscribe(
