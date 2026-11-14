@@ -91,6 +91,7 @@ def wait_for(predicate: Callable[[], bool], seconds: float = 20.0) -> bool:
 
 M1B_FILES = ["compose.yaml", "journey.yaml", "m1b.yaml"]
 M2_FILES = ["compose.yaml", "journey.yaml", "m2.yaml"]
+M3_FILES = [*M2_FILES, "m3.yaml"]
 
 
 @pytest.fixture
@@ -110,11 +111,25 @@ def journey_m2(tmp_path: Path) -> Iterator["Journey"]:
     """The journey stack with the import folder, the sources switched on, and the simulated servers
     they ask (M2 overlay): the names resolve to an address of the stack's own loopback and the
     test authority of `pki.py` is the only trust anchor added."""
+    yield from _journey(M2_FILES, extra_env=_m2_env(tmp_path))
+
+
+@pytest.fixture
+def journey_m3(tmp_path: Path) -> Iterator["Journey"]:
+    """The M2 stack with the doors of the M3 overlay published (the SPA and the simulated Kavita's
+    window), for the journeys a browser plays on the image under test."""
+    yield from _journey(M3_FILES, extra_env=_m2_env(tmp_path))
+
+
+def _m2_env(tmp_path: Path) -> dict[str, str]:
     from pki import make
 
     folder = tmp_path / "pki"
     make(folder, ["fr.wikisource.org", "ws-export.wmcloud.org", "standardebooks.org"])
-    yield from _journey(M2_FILES, extra_env={"E2E_PKI_DIR": str(folder), **({"E2E_LOG_LEVEL": os.environ["E2E_LOG_LEVEL"]} if "E2E_LOG_LEVEL" in os.environ else {})})
+    return {
+        "E2E_PKI_DIR": str(folder),
+        "E2E_LOG_LEVEL": os.environ.get("E2E_LOG_LEVEL", "DEBUG"),
+    }
 
 
 @pytest.fixture
