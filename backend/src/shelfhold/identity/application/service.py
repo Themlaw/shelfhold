@@ -361,11 +361,13 @@ class LocalAuth:
         if self._store.admins():
             raise AdminExistsError  # one local admin in M1a (EF-USR-021)
         user_id = new_ulid()
-        if not self._store.insert_first_admin(
+        if not self._store.insert_user(
             id=user_id,
             username=username,
+            role=ADMIN_ROLE,
             password_hash=self._hasher.hash(password),
             now=self.now(),
+            only_if_no_admin=True,
         ):
             raise AdminExistsError
         self._audit("user.created", by, target=user_id)
@@ -405,11 +407,13 @@ class LocalAuth:
             raise ValueError("invalid_username")
         check_password_shape(password)
         user_id = new_ulid()
-        if not self._store.insert_first_admin(
+        if not self._store.insert_user(
             id=user_id,
             username=username,
+            role=ADMIN_ROLE,
             password_hash=self._hasher.hash(password),
             now=self.now(),
+            only_if_no_admin=True,
         ):
             raise AdminExistsError
         user = self._store.user_by_id(user_id)
