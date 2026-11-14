@@ -130,6 +130,53 @@ class DetachOps:
 
         return scan
 
+    # -- list the destinations ------------------------------------------------------------------
+
+    def list_destinations(self) -> list[dict[str, Any]]:
+        import json
+
+        import sqlalchemy as sa
+
+        from shelfhold.infrastructure.schema import export
+
+        shelf = export.shelf
+        destination = export.shelf_destination
+        with self._comp.engine.connect() as connection:
+            rows = connection.execute(
+                sa.select(
+                    destination.c.id,
+                    destination.c.shelf_id,
+                    shelf.c.name.label("shelf_name"),
+                    destination.c.target_id,
+                    destination.c.root_subpath,
+                    destination.c.transport,
+                    destination.c.adopted,
+                    destination.c.template,
+                )
+                .select_from(destination.join(shelf, destination.c.shelf_id == shelf.c.id))
+                .order_by(destination.c.id)
+            ).all()
+        items: list[dict[str, Any]] = []
+        for row in rows:
+            try:
+                template = json.loads(row.template)
+            except (TypeError, ValueError):
+                template = {}
+            items.append(
+                {
+                    "id": row.id,
+                    "shelf_id": row.shelf_id,
+                    "shelf_name": row.shelf_name,
+                    "target_id": row.target_id,
+                    "root_subpath": row.root_subpath,
+                    "transport": row.transport,
+                    "adopted": bool(row.adopted),
+                    "flagged_names": 0,
+                    "template": template,
+                }
+            )
+        return items
+
     # -- remove a destination -------------------------------------------------------------------
 
     def remove_preview(self, *, destination_id: str, mode: str) -> dict[str, Any]:
