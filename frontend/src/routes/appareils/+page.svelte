@@ -104,7 +104,7 @@
     margin: 1rem 0;
     padding: 0;
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr));
     gap: 1rem;
   }
   .cards li {
@@ -116,7 +116,16 @@
     border-radius: var(--radius-cover);
     background: var(--color-surface);
   }
-  code {
+  main,
+  .cards li {
+    min-width: 0;
+  }
+  .cards li > * {
+    max-width: 100%;
+  }
+  code,
+  strong,
+  p {
     overflow-wrap: anywhere;
   }
   .muted {

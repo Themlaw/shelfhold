@@ -319,8 +319,16 @@
   }
   .head {
     display: flex;
+    flex-wrap: wrap;
     justify-content: space-between;
-    gap: 1rem;
+    gap: 0.25rem 1rem;
+    overflow-wrap: anywhere;
+  }
+  .head > * {
+    min-width: 0;
+  }
+  .works p,
+  .plan li {
     overflow-wrap: anywhere;
   }
   .batch,
@@ -333,20 +341,45 @@
     display: grid;
     gap: 0.5rem;
   }
+  /* Under 600 px the filters stack, and nothing is wider than the screen: a select is as wide as
+     its longest option and a button as wide as its label unless told otherwise. */
   .filters {
-    display: flex;
-    flex-wrap: wrap;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr));
     gap: 0.5rem 1rem;
     margin-top: 1rem;
   }
   .filters label {
     display: grid;
     gap: 0.25rem;
+    min-width: 0;
+  }
+  main,
+  .works li,
+  .batch,
+  .plan,
+  form {
+    min-width: 0;
+  }
+  select,
+  input {
+    box-sizing: border-box;
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
   }
   select,
   input,
   button {
     min-height: 2.75rem;
+  }
+  button {
+    max-width: 100%;
+    height: auto;
+    padding-block: 0.5rem;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    text-align: center;
   }
   .muted {
     color: var(--color-muted);

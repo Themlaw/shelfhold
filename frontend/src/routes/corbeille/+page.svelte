@@ -237,8 +237,30 @@
   .err {
     color: var(--color-err);
   }
+  main,
+  .entries li,
+  form,
+  .empty {
+    min-width: 0;
+  }
   button,
   input {
     min-height: 2.75rem;
+  }
+  input {
+    box-sizing: border-box;
+    width: 100%;
+    max-width: 100%;
+  }
+  button {
+    max-width: 100%;
+    height: auto;
+    padding-block: 0.5rem;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+  .entries p,
+  label {
+    overflow-wrap: anywhere;
   }
 </style>
