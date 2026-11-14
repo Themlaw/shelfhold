@@ -399,11 +399,15 @@ def main(argv: list[str] | None = None) -> int:
     errors: list[str] = []
     by_req: dict[str, list[str]] = {}
     cond_req: dict[str, list[str]] = {}
+    xfail_req: dict[str, list[str]] = {}
     ci_exc = {e["path"]: e for e in load_out_of_required_ci(root)}
     for t in tests:
         for r in t.reqs:
             if r not in reqs:
                 errors.append(f"{t.label}: ID inconnu {r}")
+            elif "xfail" in t.conditional:
+                # Known gap: the test is red on purpose, the requirement is not delivered.
+                xfail_req.setdefault(r, []).append(t.label)
             elif t.conditional:
                 wf = ci_exc.get(t.path, {}).get("workflow", "?")
                 cond_req.setdefault(r, []).append(
@@ -419,7 +423,10 @@ def main(argv: list[str] | None = None) -> int:
         if by_req.get(r):
             continue
         if not cond_req.get(r):
-            errors.append(f"{r}: exigence {ms} sans aucun test")
+            known = (
+                f" (seulement xfail strict : {', '.join(xfail_req[r])})" if r in xfail_req else ""
+            )
+            errors.append(f"{r}: exigence {ms} sans aucun test{known}")
         elif any("[" in c and c.endswith("; ?]") for c in cond_req[r]):
             errors.append(
                 f"{r}: couverte seulement hors CI requise, workflow non justifié dans {EXCEPTIONS}"

@@ -279,6 +279,21 @@ def test_requirement_only_covered_conditionally_needs_a_justified_workflow(
     assert "contract.yml" in text
 
 
+def test_a_strict_xfail_test_never_covers_a_requirement(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    xfailed = COND.replace(
+        "skipif(True, reason='needs docker')", "xfail(strict=True, reason='gap')"
+    )
+    root = _mini_repo(tmp_path, xfailed, COND_EXC)  # even with a justified workflow
+    args = ["--milestone", "M0", "--root", str(root), "--output", str(root / "o.md")]
+    assert tr.main(args) == 1
+    assert (
+        "EF-AAA-003: exigence M0 sans aucun test (seulement xfail strict" in capsys.readouterr().err
+    )
+    assert "NON COUVERTE" in (root / "o.md").read_text(encoding="utf-8")
+
+
 def test_an_out_of_required_ci_entry_needs_workflow_and_reason(tmp_path: Path) -> None:
     root = _mini_repo(tmp_path, COND, '[[out_of_required_ci]]\npath = "a.py"\n')
     with pytest.raises(SystemExit):
