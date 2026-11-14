@@ -262,6 +262,73 @@ class AcquireOps:
         ref = SeriesRef(source_key=source_key, remote_id=remote_id, title="")
         return int(self._run(self.acquirer().count_units(ref)))
 
+    def series_estimate(
+        self, source_key: str, remote_id: str, mode: str, from_number: str | None = None
+    ) -> dict[str, Any]:
+        """The « Ajouter » sheet's figures for one series, in one mode (EF-UX-006)."""
+        from decimal import Decimal, InvalidOperation
+
+        from shelfhold.acquisition.domain.backfill import needs_confirmation
+        from shelfhold.infrastructure.observability.disk_guard import disk_usage
+        from shelfhold.ops.reclaim import estimate_units as _estimate_bytes
+
+        acquirer = self.acquirer(connected_key=source_key.partition(":")[0])
+        try:
+            acquirer._record(source_key)
+        except Exception as error:
+            raise self._refused(error) from None
+
+        ref = SeriesRef(source_key=source_key, remote_id=remote_id, title="")
+        try:
+            units_list = self._comp.run(acquirer._list_units(ref))
+        except Exception:
+            units_list = []
+        all_count = len(units_list)
+
+        if mode == "all":
+            units = all_count
+        elif mode == "from_number":
+            threshold: Decimal | None = None
+            try:
+                threshold = Decimal(str(from_number).strip())
+            except (InvalidOperation, ValueError, AttributeError):
+                threshold = None
+            if threshold is None:
+                units = 0
+            else:
+                units = 0
+                for item in units_list:
+                    sort = getattr(item, "number_sort", None)
+                    if sort is None:
+                        raw = getattr(item, "number", None)
+                        try:
+                            sort = Decimal(str(raw).strip()) if raw is not None else None
+                        except (InvalidOperation, ValueError):
+                            sort = None
+                    if sort is not None and sort >= threshold:
+                        units += 1
+                if units > all_count:
+                    units = all_count
+        elif mode == "new_only":
+            units = all_count
+        else:
+            units = 0
+
+        size_bytes = _estimate_bytes(self._comp, units)
+        free_bytes = 0
+        try:
+            usage = disk_usage(self._comp.settings.store_dir)
+            free_bytes = int(getattr(usage, "free", 0) or 0)
+        except Exception:
+            free_bytes = 0
+        return {
+            "mode": mode,
+            "units": int(units),
+            "size_bytes": int(size_bytes),
+            "free_bytes": int(free_bytes),
+            "needs_confirmation": bool(needs_confirmation(units=units, size_bytes=size_bytes)),
+        }
+
     def resolve_family_ref(self, token: str, *, owner: str) -> FamilyRef:
         """What a reference of the family search stands for, for the child it was shown to (the
         request of L35 takes it); `invalid_ref` for any other."""

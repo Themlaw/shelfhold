@@ -11,7 +11,7 @@ from collections.abc import Callable
 from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from shelfhold.identity.public import Principal
 from shelfhold.interfaces.http_api.ops import refusals
@@ -24,8 +24,25 @@ Admin = Annotated[Principal, Depends(require_admin)]
 
 
 class FollowIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     source_key: str
     remote_id: str
+    mode: Literal["all", "from_number", "new_only"] = "all"
+    from_number: str | None = Field(default=None, min_length=1, max_length=64)
+    shelf_id: str | None = Field(default=None, min_length=1)
+    confirm_units: int | None = Field(default=None, ge=0)
+    confirm_bytes: int | None = Field(default=None, ge=0)
+
+    @model_validator(mode="after")
+    def _mode_and_number(self) -> "FollowIn":
+        if self.mode == "from_number":
+            if not self.from_number:
+                raise ValueError("from_number is required for this mode")
+        else:
+            if self.from_number is not None:
+                raise ValueError("from_number is not allowed for this mode")
+        return self
 
 
 class UnfollowIn(FollowIn):

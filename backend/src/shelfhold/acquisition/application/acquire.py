@@ -411,6 +411,18 @@ class NativeAcquirer:
             await handle.aclose()
         return len(units)
 
+    async def _list_units(self, ref: SeriesRef) -> list[UnitInfo]:
+        """The Units a source lists for this series, without recording anything (EF-UX-006)."""
+        record = self._record(ref.source_key)
+        handle = await self._open(record)
+        try:
+            units = await handle.service.list_units(handle.fetcher, handle.guard.screen(ref))
+        except Exception:
+            units = []
+        finally:
+            await handle.aclose()
+        return list(units)
+
     def _screen_for(self, record: Any, info: SeriesInfo) -> TombstoneScreen | None:
         """The Work tombstones, when the source gives identifiers for its Work: no screen to ask
         means no arrival, never an unscreened one (fails closed)."""

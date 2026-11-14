@@ -132,6 +132,27 @@ def build_sources_router(get_ops: Callable[[], OpsServices]) -> APIRouter:
             return JSONResponse(StoredOut(state=answer["state"]).model_dump(), status_code=200)
         return accepted_job(answer["job_id"])
 
+    @router.get("/sources/{source_key}/series/{remote_id}/estimate")
+    def estimate(
+        source_key: str,
+        remote_id: str,
+        _admin: Admin,
+        mode: Annotated[str, Query()] = "all",
+        from_number: Annotated[str | None, Query(max_length=64)] = None,
+    ) -> dict[str, Any]:
+        if mode not in {"all", "from_number", "new_only"}:
+            raise ProblemError("validation_failed")
+        if mode == "from_number":
+            if not from_number:
+                raise ProblemError("validation_failed")
+        else:
+            if from_number is not None:
+                raise ProblemError("validation_failed")
+        with refusals():
+            return get_ops().acquire.series_estimate(
+                source_key, remote_id, mode, from_number=from_number
+            )
+
     @router.post("/sources/{source_key}/migrate-ids")
     def migrate_ids(
         source_key: str,
