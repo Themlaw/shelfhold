@@ -14,7 +14,7 @@ import time
 import traceback
 from collections.abc import Callable, Mapping
 from pathlib import Path
-from typing import Any, Literal, cast
+from typing import Any, Literal, TextIO, cast
 from urllib.parse import unquote, urlsplit
 
 import structlog
@@ -417,7 +417,12 @@ def _redact(_logger: WrappedLogger, _method: str, event_dict: EventDict) -> Even
     return event_dict
 
 
-def configure_logging(*, level: str, log_format: Literal["json", "console"]) -> None:
+def configure_logging(
+    *, level: str, log_format: Literal["json", "console"], stream: TextIO | None = None
+) -> None:
+    """The server writes its logs to stdout (the container's log). A command of the CLI passes
+    `sys.stderr`: its stdout is the output of the command (a JSON document, a list), and no line of
+    a log may be mixed into it."""
     shared: list[Processor] = [
         structlog.contextvars.merge_contextvars,
         structlog.stdlib.add_log_level,
@@ -442,7 +447,7 @@ def configure_logging(*, level: str, log_format: Literal["json", "console"]) -> 
         logger_factory=structlog.stdlib.LoggerFactory(),
         cache_logger_on_first_use=False,
     )
-    handler = logging.StreamHandler(sys.stdout)  # resolved now, so tests can capture it
+    handler = logging.StreamHandler(stream or sys.stdout)  # resolved now, so tests can capture it
     setattr(handler, _HANDLER_MARK, True)
     handler.setFormatter(
         structlog.stdlib.ProcessorFormatter(

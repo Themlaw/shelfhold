@@ -10,7 +10,11 @@ import pytest
 
 from shelfhold.config import Settings, load_settings
 
-pytest_plugins = ["tests.support.leaks"]  # the temporary-folder guard (not in a pytester copy)
+pytest_plugins = [
+    "tests.support.leaks",  # the temporary-folder guard (not in a pytester copy)
+    "tests.support.threads",  # no thread of the application outlives its test
+    "tests.support.logs",  # the logging a test configures does not outlive it
+]
 
 
 @pytest.fixture

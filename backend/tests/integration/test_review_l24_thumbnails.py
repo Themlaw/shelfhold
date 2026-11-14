@@ -34,6 +34,7 @@ world = http_tests.world
 
 
 MAX_HELD = 8  # threads the decodes may hold of the server's 40: the rest answer at once
+DECODE_S = 2.0  # a decode made as slow as a cold start on a small NAS
 
 
 def _slow_worker(monkeypatch: pytest.MonkeyPatch, delay: float) -> list[int]:
@@ -84,7 +85,7 @@ def test_review_uncached_screen_does_not_stall_the_api(
     """A screen of sixty uncached covers (any profile may ask it, a child included): each request
     waits on `BoundedSemaphore(2)` inside a thread of the server's pool (40), with no timeout.
     The pool is full; a liveness probe, a login, any synchronous route waits behind the decodes."""
-    _slow_worker(monkeypatch, 0.5)
+    _slow_worker(monkeypatch, DECODE_S)
     digest = world.digests["ok"]
     threads, _ = _flood(world.admin, [url(digest, (160, 320, 640)[i % 3]) for i in range(60)])
     time.sleep(0.5)
@@ -94,7 +95,12 @@ def test_review_uncached_screen_does_not_stall_the_api(
     for thread in threads:
         thread.join(60)
     assert probe.status_code == 200
-    assert waited < 0.3, f"/healthz waited {waited:.1f} s behind the thumbnail decodes"
+    # What is measured is the wait for a decode: a probe held by the pool would come back when a
+    # decode ends (DECODE_S, minus the 0.5 s already spent). The 60 requests and their 60 client
+    # threads share one process and its GIL here: on a loaded runner the probe is late by a few
+    # tenths of a second whatever it waits for (the loop is as late with the decode replaced by a
+    # sleep, and a static route is as late), which is why the bound sits between the two.
+    assert waited < DECODE_S / 2, f"/healthz waited {waited:.1f} s behind the thumbnail decodes"
 
 
 @pytest.fixture

@@ -1,6 +1,6 @@
 # Journaux : niveaux, noms d'événements et lecture
 
-Shelfhold écrit ses journaux sur la sortie standard du conteneur, une ligne JSON par événement (`SHELFHOLD_LOG_FORMAT=json`, par défaut) ou un texte lisible (`console`, pour le développement). Le niveau se règle avec `SHELFHOLD_LOG_LEVEL` (`DEBUG`, `INFO`, `WARNING` ou `ERROR`) ; `docker compose logs shelfhold` suffit à les lire.
+Shelfhold écrit ses journaux sur la sortie standard du conteneur, une ligne JSON par événement (`SHELFHOLD_LOG_FORMAT=json`, par défaut) ou un texte lisible (`console`, pour le développement). Le niveau se règle avec `SHELFHOLD_LOG_LEVEL` (`DEBUG`, `INFO`, `WARNING` ou `ERROR`) ; `docker compose logs shelfhold` suffit à les lire. Les commandes `shelfhold …` lancées à la main écrivent leurs journaux sur la sortie d'erreur : la sortie standard reste celle de la commande (un document JSON avec `--json`, une liste), sans ligne de journal mêlée.
 
 ## Les niveaux
 

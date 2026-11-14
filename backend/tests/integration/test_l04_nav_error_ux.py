@@ -191,10 +191,10 @@ def test_unknown_error_code_shows_request_id(
 ) -> None:
     """An unexpected failure has no catalog code of its own: it answers the generic internal
     problem, with a cause and an action, and always the request id a person can report."""
-    with (
-        auth_env(monkeypatch, settings) as api,
-        TestClient(api.app, base_url=HTTPS, raise_server_exceptions=False) as client,  # type: ignore[arg-type]
-    ):
+    with auth_env(monkeypatch, settings) as api:
+        # not entered (`with`): a second lifespan would start a second set of Huey workers on the
+        # app that `auth_env` already runs, and the test would leave them behind
+        client = TestClient(api.app, base_url=HTTPS, raise_server_exceptions=False)  # type: ignore[arg-type]
         assert api.login(client=client).status_code == 200
         from shelfhold.interfaces.http_api import me as me_module
 
