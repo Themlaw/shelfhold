@@ -2,7 +2,7 @@
 
 Each test states an invariant of the card (EF-BIB-030, EF-BIB-052, EF-BIB-054) and tries to break
 it the way an interleaving, a restore or a second volume would. They are expected to FAIL until the
-objection they carry (`docs/decisions/M3.md`, « L26 : contradicteur de la #233 (Opus) ») is fixed
+objection they carry (`docs/decisions/M3.md`, « L26 : contradicteur de la #233 ») is fixed
 or rejected in writing.
 """
 

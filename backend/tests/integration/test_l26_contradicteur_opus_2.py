@@ -1,6 +1,6 @@
 """M3 L26, second pass of the adversarial review of #233 (after the fixes): proofs of concept, red
-against the branch as reviewed. See `docs/decisions/M3.md`, « L26 : contradicteur de la #233
-(Opus) », second pass."""
+against the branch as reviewed. See `docs/decisions/M3.md`, « L26 : contradicteur de la #233 »,
+second pass."""
 
 import os
 from pathlib import Path

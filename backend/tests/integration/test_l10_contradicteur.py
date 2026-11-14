@@ -1,7 +1,7 @@
-"""M3 L10, contradicteur Opus de la #226: attacks on the read-only audit of the children's Kavita
+"""M3 L10, contradicteur de la #226: attacks on the read-only audit of the children's Kavita
 accounts. Each test is a proof of concept that is red on the PR as reviewed: an "ok" that the
 audit should never give (EF-EXP-036, EF-USR-017). See `docs/decisions/M3.md`, section
-"L10 : contradicteur de la #226 (Opus)".
+"L10 : contradicteur de la #226".
 """
 
 import contextlib

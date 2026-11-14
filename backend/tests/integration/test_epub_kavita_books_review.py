@@ -1,4 +1,4 @@
-"""M2 L09, Opus review of #140: each attack becomes a regression test that fails if it succeeds.
+"""M2 L09, review of #140: each attack becomes a regression test that fails if it succeeds.
 
 A first EPUB lands in Kavita as an "unknown" series until its age is pushed: an account restricted
 below its age that includes the unknowns would see it. A series Kavita split in two must be locked

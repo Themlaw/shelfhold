@@ -1,4 +1,4 @@
-"""M3 L27, contradicteur de la #234 (Opus) : PoC rouges contre `source migrate-ids`.
+"""M3 L27, contradicteur de la #234 : PoC rouges contre `source migrate-ids`.
 
 Chaque test décrit ce que la spec promet (EF-SRC-022, EF-BIB-054 (4), carte L27 : « intouchable :
 pierres tombales ») et échoue tant que le code de production ne le tient pas. Références

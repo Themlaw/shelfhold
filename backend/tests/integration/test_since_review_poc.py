@@ -1,6 +1,6 @@
 """Adversarial review of #208 (M3 L11, `?since=`): proofs of concept, red on the head of the PR.
 
-Each test is one objection of `docs/decisions/M3.md` (« L11 : contradicteur de la #208 (Opus) »)
+Each test is one objection of `docs/decisions/M3.md` (« L11 : contradicteur de la #208 »)
 and turns green when the objection is lifted. The production code is not touched here.
 """
 

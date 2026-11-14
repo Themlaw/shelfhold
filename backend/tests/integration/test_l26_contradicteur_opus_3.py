@@ -1,6 +1,6 @@
 """M3 L26, last pass of the adversarial review of #233: the early purge job takes the lease every
 ten minutes, even when no volume is under its mark. Red against the branch as reviewed. See
-`docs/decisions/M3.md`, « L26 : contradicteur de la #233 (Opus) », last pass."""
+`docs/decisions/M3.md`, « L26 : contradicteur de la #233 », last pass."""
 
 from pathlib import Path
 

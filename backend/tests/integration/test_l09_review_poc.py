@@ -2,7 +2,7 @@
 
 Each test below is a leak or a bypass of the parental barrier found in review. They are expected
 to FAIL on the branch as it stands; each one turns green when its objection is fixed (see
-`docs/decisions/M3.md`, "L09 : contradicteur de la #204 (Opus)"). The production code is not
+`docs/decisions/M3.md`, "L09 : contradicteur de la #204"). The production code is not
 touched here.
 """
 
