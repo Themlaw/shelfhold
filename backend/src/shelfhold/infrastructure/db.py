@@ -11,7 +11,13 @@ from shelfhold.infrastructure.write_guard import install_write_guard
 
 
 def create_db_engine(path: Path) -> Engine:
-    engine = create_engine(f"sqlite+pysqlite:///{path}", hide_parameters=True)
+    return configure_engine(create_engine(f"sqlite+pysqlite:///{path}", hide_parameters=True))
+
+
+def configure_engine(engine: Engine) -> Engine:
+    """The pragmas, the explicit `BEGIN` (or `BEGIN IMMEDIATE`) and the write guard. Every engine
+    that writes to the database has them: without the "begin" listener, the lock option of
+    `write_transaction` would do nothing."""
 
     @event.listens_for(engine, "connect")
     def _pragmas(dbapi_connection: Any, _record: object) -> None:
@@ -52,6 +58,32 @@ def write_transaction(engine: Engine) -> AbstractContextManager[Connection]:
     return engine.execution_options(shelfhold_begin="BEGIN IMMEDIATE").begin()
 
 
+@contextmanager
+def read_transaction(engine: Engine) -> Iterator[Connection]:
+    """A connection for reads only: no write lock, and the database refuses a write on it.
+
+    Under WAL a reader never waits for a writer, and a writer is never made to wait by a reader.
+    A read that took `write_transaction` would queue behind every writer (SQLite's busy handler
+    is not fair: eight such readers starve a writer) and fail with `database is locked` after the
+    busy timeout. `PRAGMA query_only=ON` turns a write slipped in here into an error at run time
+    (`attempt to write a readonly database`), not a lost update. The pragma is put back before
+    the connection returns to the pool.
+
+    "Read, and write only if something changed": read here, then open `write_transaction` and
+    read again under the lock before writing; what was read here may be out of date by then.
+    """
+    with engine.connect() as connection:
+        raw = connection.connection.dbapi_connection
+        if raw is None:
+            raise RuntimeError("no driver connection")
+        raw.execute("PRAGMA query_only=ON")
+        try:
+            yield connection
+        finally:
+            connection.rollback()  # a read: nothing to keep, the snapshot ends
+            raw.execute("PRAGMA query_only=OFF")
+
+
 class ForeignKeyViolationError(Exception):
     """A migration left rows that point nowhere."""
 
@@ -84,6 +116,11 @@ def foreign_keys_disabled(connection: Connection) -> Iterator[None]:
 
 
 def check_foreign_keys(connection: Connection) -> None:
-    violations = [tuple(row) for row in connection.exec_driver_sql("PRAGMA foreign_key_check")]
+    # On the driver connection, like `foreign_keys_disabled`: through SQLAlchemy a transaction
+    # that has ended would be followed by a new `BEGIN IMMEDIATE`, taken for a read.
+    raw = connection.connection.dbapi_connection
+    if raw is None:
+        raise RuntimeError("no driver connection")
+    violations = [tuple(row) for row in raw.execute("PRAGMA foreign_key_check")]
     if violations:
         raise ForeignKeyViolationError(violations)

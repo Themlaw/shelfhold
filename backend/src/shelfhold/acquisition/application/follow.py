@@ -107,7 +107,7 @@ from shelfhold.events.bus import EventBus, PublishedEvent
 from shelfhold.export.public import adopted_volumes, attach_to_volume
 from shelfhold.infrastructure.clock import Clock, FutureDateError, reject_future
 from shelfhold.infrastructure.content_trust import sanitize_upstream_text
-from shelfhold.infrastructure.db import write_transaction
+from shelfhold.infrastructure.db import read_transaction, write_transaction
 from shelfhold.infrastructure.follow_suspended import suspended_work_ids
 from shelfhold.infrastructure.logging import elapsed_ms
 from shelfhold.infrastructure.schema import acquisition, catalog
@@ -739,11 +739,12 @@ class FollowCycle:
     def _remember_buried(self) -> None:
         """What `shelfhold status` lists as "tombstoned upstream" until the admin removes the
         series from Suwayomi (the rows of the series that already have a binding)."""
-        with write_transaction(self._engine) as connection:
-            fresh = self._notices.sync(
-                connection, "tombstoned", self._buried,
-                own=lambda key: key.startswith(BOUND_PREFIX),
-            )  # fmt: skip
+        own = lambda key: key.startswith(BOUND_PREFIX)  # noqa: E731
+        with read_transaction(self._engine) as connection:
+            if not self._notices.differs(connection, "tombstoned", self._buried, own=own):
+                return  # the notices are right: no write lock
+        with write_transaction(self._engine) as connection:  # `sync` reads again under the lock
+            fresh = self._notices.sync(connection, "tombstoned", self._buried, own=own)
             for key in fresh:  # the notice is the memory: told once, whatever the processes
                 self._emit(connection, "series.tombstoned_upstream", self._buried_ids[key])
 
@@ -1118,7 +1119,10 @@ class FollowCycle:
         for edition_id, bindings in by_edition.items():
             if not all(b.id in self._looked for b in bindings):
                 continue
-            with write_transaction(self._engine) as connection:
+            with read_transaction(self._engine) as connection:
+                if not self._gaps.would_change(connection, edition_id):
+                    continue  # the gaps are as told: no write lock
+            with write_transaction(self._engine) as connection:  # `scan` reads again under the lock
                 report.gaps += self._gaps.scan(connection, edition_id, bindings[0].work_id, now)
 
     def _take(self, binding: _Binding, budget: RequestBudget, *, catch_up: bool = False) -> bool:
@@ -1163,14 +1167,23 @@ class FollowCycle:
             ]
             report.requested += self._round_robin(asked, mode, by_id, budget)
         report.requested += self._request_upgrades(by_id, budget)
-        with write_transaction(self._engine) as connection:
-            for edition in editions:
-                if modes.get(edition.edition_id) in ("gaps", "all") and not pending(
-                    connection, edition.edition_id, modes[edition.edition_id]
-                ):  # nothing left to bring back: the backfill is done
+
+        def finished(connection: sa.Connection) -> list[str]:
+            return [  # nothing left to bring back: the backfill is done
+                edition.edition_id
+                for edition in editions
+                if modes.get(edition.edition_id) in ("gaps", "all")
+                and not pending(connection, edition.edition_id, modes[edition.edition_id])
+            ]
+
+        with read_transaction(self._engine) as connection:
+            done = finished(connection)
+        if done:
+            with write_transaction(self._engine) as connection:  # asked again under the lock
+                for edition_id in finished(connection):
                     connection.execute(
                         sa.update(acquisition.series_follow)
-                        .where(acquisition.series_follow.c.edition_id == edition.edition_id)
+                        .where(acquisition.series_follow.c.edition_id == edition_id)
                         .values(backfill_mode="none")
                     )
 
@@ -1187,7 +1200,22 @@ class FollowCycle:
         reach the threshold, falls back to the next rank (told once); one that fell for an
         unloaded source that is loaded again goes back to its rank (a setting)."""
         for binding in self._bindings():
-            with write_transaction(self._engine) as connection:
+            with read_transaction(self._engine) as connection:  # most bindings: nothing to do
+                if binding.active:
+                    cycles = self._not_loaded_cycles.get(binding.source_key, 0)
+                    moves = bool(
+                        self._fallback.dead_reason(
+                            connection, binding.id,
+                            not_loaded_cycles=cycles if binding.source_key in unloaded else 0,
+                        )
+                    )  # fmt: skip
+                else:
+                    moves = binding.disabled_reason == "not_loaded" and (
+                        binding.source_key not in unloaded
+                    )
+            if not moves:
+                continue
+            with write_transaction(self._engine) as connection:  # judged again under the lock
                 if binding.active:
                     cycles = self._not_loaded_cycles.get(binding.source_key, 0)
                     reason = self._fallback.dead_reason(

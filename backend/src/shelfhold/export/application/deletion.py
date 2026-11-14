@@ -51,6 +51,7 @@ from shelfhold.infrastructure.fsops import Fsops
 from shelfhold.infrastructure.fsops.errors import FsopsError
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import catalog, export, platform, reading, storage
+from shelfhold.infrastructure.stable_hash import HashedFiles, retry_when_changed
 from shelfhold.library.public import (
     BinnedUnitFile,
     DeletionLevel,
@@ -551,6 +552,24 @@ class DeletionService:
         principal: Principal,
         now: datetime,
     ) -> list[tuple[str, str, str]]:
+        def attempt() -> list[tuple[str, str, str]]:
+            hashed = HashedFiles(self._fsops)
+            for item in scope.items:  # the files are read before the lock, never under it
+                hashed.hash(item.local)
+            return self._commit_locked(level, scope, deletion_id, journal, principal, now, hashed)
+
+        return retry_when_changed(attempt)
+
+    def _commit_locked(
+        self,
+        level: DeletionLevel,
+        scope: _Scope,
+        deletion_id: str,
+        journal: IntentJournal,
+        principal: Principal,
+        now: datetime,
+        hashed: HashedFiles,
+    ) -> list[tuple[str, str, str]]:
         deeds: list[tuple[str, str, str]] = []
         record = export.export_record
         with write_transaction(self._engine) as connection:
@@ -558,14 +577,14 @@ class DeletionService:
             if level is DeletionLevel.DELETE_CONTENT or level is DeletionLevel.UNFOLLOW:
                 follow_set = self._suppress(connection, scope.unit_id, now)
             for item in scope.items:
-                observed = self._fsops.observe(item.local)
-                if observed is None or observed[0] != "file":
+                checked = hashed.verified(item.local)  # one `stat` under the lock
+                if checked is None:
                     continue  # it left meanwhile (the locks say nobody of ours moved it)
-                digest = self._fsops.sha256_of(item.local)
+                identity, digest = checked
                 entry = uuid.uuid4().hex
                 intent = journal.record(
                     op="recycle", src=item.local, dst=entry, within=connection,
-                    expected_sha256=digest, expected_file_id=observed[1],
+                    expected_sha256=digest, expected_file_id=identity,
                 )  # fmt: skip
                 snapshot: dict[str, Any] = {
                     "unit_id": scope.unit_id,
@@ -586,7 +605,7 @@ class DeletionService:
                 record_binned_file(
                     connection, kind=kind, ref=owner or scope.unit_id,
                     level=level.value, deletion_id=deletion_id, root_id=item.impact.root_id,
-                    path=f"{entry}/{item.impact.rel_path}", size=observed[1].size,
+                    path=f"{entry}/{item.impact.rel_path}", size=identity.size,
                     snapshot=snapshot, now=now,
                 )  # fmt: skip
                 drop_replicas(connection, item.replica_ids)

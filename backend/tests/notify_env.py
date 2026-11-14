@@ -14,6 +14,7 @@ import sqlalchemy as sa
 
 from shelfhold.config import Settings
 from shelfhold.events.bus import EventBus, PublishedEvent
+from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import catalog, identity, platform
 from shelfhold.integrations.apprise.render import Message
@@ -64,14 +65,14 @@ class Env:
         from tests.integration.test_schema_catalog import add_edition, add_work
 
         extra: dict[str, Any] = {"age_rating": age, "rated_at": T0} if age is not None else {}
-        with self.engine.begin() as connection:
+        with write_transaction(self.engine) as connection:
             work_id = add_work(connection, title=title, sort_title=title.lower(), **extra)
             add_edition(connection, work_id)
         return work_id
 
     def series(self, title: str, work_ids: list[str]) -> str:
         series_id = new_ulid()
-        with self.engine.begin() as connection:
+        with write_transaction(self.engine) as connection:
             connection.execute(
                 sa.insert(catalog.series).values(
                     id=series_id, title=title, sort_title=title.lower()
@@ -86,7 +87,7 @@ class Env:
         return series_id
 
     def follow(self, user_id: str, work_id: str) -> None:
-        with self.engine.begin() as connection:
+        with write_transaction(self.engine) as connection:
             connection.execute(
                 sa.insert(identity.user_state).values(
                     user_id=user_id, work_id=work_id, followed=True
@@ -94,7 +95,7 @@ class Env:
             )
 
     def rate(self, work_id: str, age: int | None) -> None:
-        with self.engine.begin() as connection:
+        with write_transaction(self.engine) as connection:
             connection.execute(
                 sa.update(catalog.work)
                 .where(catalog.work.c.id == work_id)
@@ -102,7 +103,7 @@ class Env:
             )
 
     def profile(self, user_id: str, **columns: Any) -> None:
-        with self.engine.begin() as connection:
+        with write_transaction(self.engine) as connection:
             connection.execute(
                 sa.update(identity.user).where(identity.user.c.id == user_id).values(**columns)
             )
@@ -112,7 +113,7 @@ class Env:
         self, event_type: str, payload: dict[str, Any], *, actor: str | None = None,
         visibility: str = "ops",
     ) -> PublishedEvent:  # fmt: skip
-        with self.engine.begin() as connection:
+        with write_transaction(self.engine) as connection:
             published = self.bus.publish(
                 connection, event_type, payload, actor_id=actor, visibility=visibility
             )
@@ -129,7 +130,7 @@ class Env:
     def request_arrived(self, requester: str, work_id: str, *, visibility: str = "private") -> str:
         """An approved request that has arrived, as `RequestService.arrived` leaves it."""
         request_id = new_ulid()
-        with self.engine.begin() as connection:
+        with write_transaction(self.engine) as connection:
             connection.execute(
                 sa.insert(identity.request).values(
                     id=request_id, requester_user_id=requester, target_kind="work_id",

@@ -37,7 +37,7 @@ from shelfhold.export.targets.kavita.client import KavitaClient
 from shelfhold.export.targets.kavita.errors import ProtocolError
 from shelfhold.export.targets.kavita.series import SeriesAges
 from shelfhold.infrastructure.clock import Clock
-from shelfhold.infrastructure.db import write_transaction
+from shelfhold.infrastructure.db import read_transaction, write_transaction
 from shelfhold.infrastructure.schema import export
 
 __all__ = ["InstanceService", "ReconnectReport", "library_type_of"]
@@ -122,7 +122,7 @@ class InstanceService:
             raise ProtocolError("the server gives no installation id")
         libraries = await client.list_libraries()
         report = ReconnectReport()
-        with write_transaction(self._engine) as connection:
+        with read_transaction(self._engine) as connection:
             wanted = self._wanted(connection, target_id)
         resolved: dict[str, str] = {}
         for item in wanted:

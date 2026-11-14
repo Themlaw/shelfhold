@@ -17,6 +17,7 @@ import sqlalchemy as sa
 from shelfhold.export.application.pipeline import ExportPipeline
 from shelfhold.export.domain.naming import DEFAULT_TEMPLATE
 from shelfhold.export.domain.physical_roots import RECEIVED_DIR
+from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import catalog, export, platform
 from shelfhold.library.public import PassthroughStore
@@ -82,7 +83,7 @@ class ExportEnv:
         self, title: str = "Dr Stone", *, lang: str = "fr", shelf_id: str | None = None
     ) -> Series:
         """Another Work, with its Edition on the shelf (`shelf_id=""` leaves it unshelved)."""
-        with self.engine.begin() as connection:
+        with write_transaction(self.engine) as connection:
             work = add_work(connection, title=title, sort_title=title.lower())
             edition = add_edition(connection, work, lang=lang, shelf_id=shelf_id or self.shelf_id)
             item = add_source_item(connection, remote_id=f"series-{new_ulid()}")
@@ -91,7 +92,7 @@ class ExportEnv:
 
     def main_series(self) -> Series:
         chain = self.lib.chain
-        with self.engine.begin() as connection:
+        with write_transaction(self.engine) as connection:
             connection.execute(
                 sa.update(catalog.edition)
                 .where(catalog.edition.c.id == chain["edition"])
@@ -104,7 +105,7 @@ class ExportEnv:
     ) -> str:
         """A Unit with its Variant and its received archive (pages differ per chapter)."""
         self.count += 1
-        with self.engine.begin() as connection:
+        with write_transaction(self.engine) as connection:
             unit = add_unit(connection, series.edition_id, number)
             variant = add_variant(connection, unit, series.binding_id, f"ch-{new_ulid()}")
         pages = (
@@ -125,7 +126,7 @@ class ExportEnv:
             dest=str(received),
         )
         if watermarked:
-            with self.engine.begin() as connection:
+            with write_transaction(self.engine) as connection:
                 connection.execute(
                     sa.text("UPDATE content SET watermarked = 1 WHERE unit_id = :u"), {"u": unit}
                 )
@@ -149,7 +150,7 @@ def export_env_on(
     target_id, shelf_id = new_ulid(), new_ulid()
     destination_id, library_id = new_ulid(), new_ulid()
     path_map = [{"local": str(lib.manga), "remote": "/manga", "mode": "rw"}]
-    with lib.engine.begin() as connection:
+    with write_transaction(lib.engine) as connection:
         connection.execute(
             sa.insert(platform.instance).values(
                 instance_id=lib.instance_id or new_ulid(), jurisdiction="FR"
@@ -214,7 +215,7 @@ def add_second_shelf(env: ExportEnv, *, max_age_rating: int | None = 99) -> tupl
     """Another shelf with its own destination folder, linked to the same remote library."""
     shelf_id, destination_id = new_ulid(), new_ulid()
     (env.lib.manga / "Kavita2").mkdir(exist_ok=True)
-    with env.engine.begin() as connection:
+    with write_transaction(env.engine) as connection:
         connection.execute(
             sa.insert(export.shelf).values(
                 id=shelf_id, name="Adultes 2", phrase="Autres", max_age_rating=max_age_rating

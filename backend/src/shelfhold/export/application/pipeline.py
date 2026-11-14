@@ -85,7 +85,7 @@ from shelfhold.export.domain.planner import (
     plan_destination,
 )
 from shelfhold.infrastructure.clock import Clock
-from shelfhold.infrastructure.db import write_transaction
+from shelfhold.infrastructure.db import read_transaction, write_transaction
 from shelfhold.infrastructure.fsops import Fsops
 from shelfhold.infrastructure.logging import debug_enabled, elapsed_ms
 from shelfhold.infrastructure.schema import coherence, export
@@ -230,12 +230,20 @@ def mark_name_collisions(
         who = blocked.unit_id or blocked.export_item_id
         if blocked.code == "export.series_name_collision" and who in edition_of:
             colliding.setdefault(edition_of[who], blocked.detail)
-    with write_transaction(engine) as connection:
+    reasons = {
+        edition_id: f"another series is already called {name!r} in this library"
+        for edition_id, name in colliding.items()
+    }
+    with read_transaction(engine) as connection:  # the marks are already right: no write lock
+        if waiting_marks.scope_is_exactly(
+            connection, "series_name_collision", destination_id, reasons
+        ):
+            return
+    with write_transaction(engine) as connection:  # `clear_except` and `put` read under the lock
         waiting_marks.clear_except(connection, "series_name_collision", destination_id, colliding)
-        for edition_id, name in colliding.items():
+        for edition_id, reason in reasons.items():
             waiting_marks.put(
-                connection, "series_name_collision", edition_id,
-                f"another series is already called {name!r} in this library",
+                connection, "series_name_collision", edition_id, reason,
                 destination_id=destination_id,
             )  # fmt: skip
 

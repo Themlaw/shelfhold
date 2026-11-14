@@ -19,7 +19,7 @@ from ulid import ULID
 
 from shelfhold.export.domain.path_map import PathEntry, PathMap
 from shelfhold.export.domain.physical_roots import ExpectedRoot, SentinelDocument
-from shelfhold.infrastructure.db import create_db_engine
+from shelfhold.infrastructure.db import create_db_engine, write_transaction
 from shelfhold.infrastructure.fsops import Fsops, create_sentinel
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import platform
@@ -92,7 +92,7 @@ class LibEnv:
 
     def new_unit(self) -> tuple[str, str]:
         """Another Unit and Variant in the same Edition and binding."""
-        with self.engine.begin() as connection:
+        with write_transaction(self.engine) as connection:
             number = str(
                 int(connection.execute(sa.text("SELECT count(*) FROM unit")).scalar_one()) + 1
             )
@@ -128,7 +128,7 @@ def lib_env() -> Iterator[LibEnv]:
             )
         path_map = PathMap((PathEntry(str(manga), "/manga"), PathEntry(str(store), "/store")))
         engine = create_db_engine(db_path)
-        with engine.begin() as connection:
+        with write_transaction(engine) as connection:
             for root_id, path in ((library_root, library), (store_root, store)):
                 connection.execute(
                     sa.insert(platform.physical_root).values(

@@ -9,7 +9,7 @@ from pathlib import Path
 import sqlalchemy as sa
 from sqlalchemy import Engine
 
-from shelfhold.infrastructure.db import create_db_engine
+from shelfhold.infrastructure.db import create_db_engine, write_transaction
 from shelfhold.infrastructure.schema import metadata, platform
 from tests.fakes_clock import ManualClock
 from tests.fsops_env import INSTANCE_ID, Env, make_env
@@ -28,7 +28,7 @@ def prepare_database(
     `instance` row, whose `restore_epoch` is the counter intents are compared with."""
     engine = create_db_engine(path)
     metadata.create_all(engine)
-    with engine.begin() as conn:
+    with write_transaction(engine) as conn:
         conn.execute(
             sa.insert(platform.instance).values(
                 instance_id=instance_id, jurisdiction="FR", restore_epoch=restore_epoch
@@ -38,7 +38,7 @@ def prepare_database(
 
 
 def set_restore_epoch(engine: Engine, epoch: int) -> None:
-    with engine.begin() as conn:
+    with write_transaction(engine) as conn:
         conn.execute(sa.update(platform.instance).values(restore_epoch=epoch))
 
 

@@ -29,7 +29,7 @@ from shelfhold.acquisition.application.volume_cut import is_cut
 from shelfhold.acquisition.domain.failures import Disposition, classify, disposition_of
 from shelfhold.acquisition.domain.requests import RequestBudget
 from shelfhold.infrastructure.clock import Clock
-from shelfhold.infrastructure.db import write_transaction
+from shelfhold.infrastructure.db import read_transaction, write_transaction
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import acquisition, catalog, export
 from shelfhold.library.public import Received, readable_unit_ids
@@ -437,7 +437,7 @@ class RangeTickets:
 
     def _retry(self, request_id: str, attempts: int | None, report: RangeReport) -> None:
         r = acquisition.download_request
-        with self._engine.begin() as connection:
+        with read_transaction(self._engine) as connection:
             current = attempts
             if current is None:
                 current = connection.execute(

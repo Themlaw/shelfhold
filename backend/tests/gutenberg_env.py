@@ -28,6 +28,7 @@ from shelfhold.acquisition.public import NativeAcquirer
 from shelfhold.events.bus import EventBus
 from shelfhold.export.application.locks import work_lock_for
 from shelfhold.infrastructure.clock import SystemClock
+from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.schema import platform
 from shelfhold.library.public import PassthroughStore, UntrustedEpubStore
 from shelfhold.plugin_host import attestation
@@ -240,7 +241,7 @@ class Bench:
         return asyncio.run(go())
 
     def set_jurisdiction(self, country: str, *, confirmed: bool) -> None:
-        with self.lib.engine.begin() as connection:
+        with write_transaction(self.lib.engine) as connection:
             row = connection.execute(sa.select(platform.instance.c.instance_id)).first()
             stamp = SystemClock().now() if confirmed else None
             if row is None:

@@ -9,7 +9,7 @@ down: one `app_setting` row per subject (no migration), deleted when the way out
 from __future__ import annotations
 
 import json
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from typing import Final, NamedTuple
 
 import sqlalchemy as sa
@@ -30,6 +30,7 @@ __all__ = [
     "put",
     "read_all",
     "read_one",
+    "scope_is_exactly",
 ]
 
 PREFIX: Final = WAITING_PREFIX
@@ -108,6 +109,21 @@ def clear_except(connection: Connection, state: str, scope: str, keep: Iterable[
         one = read_one(connection, state, found.subject)
         if one is not None and one.get("destination_id") == scope:
             clear(connection, state, [found.subject])
+
+
+def scope_is_exactly(
+    connection: Connection, state: str, scope: str, wanted: Mapping[str, str]
+) -> bool:
+    """The marks of `state` written for `scope` are exactly `wanted` (`subject -> reason`), each
+    with the destination: nothing for `put` or `clear_except` to change."""
+    held: dict[str, str] = {}
+    for found in read_all(connection):
+        if found.state != state:
+            continue
+        one = read_one(connection, state, found.subject)
+        if one is not None and one.get("destination_id") == scope:
+            held[found.subject] = one.get("reason", "")
+    return held == dict(wanted)
 
 
 def read_all(connection: Connection) -> list[Mark]:

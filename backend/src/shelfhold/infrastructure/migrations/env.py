@@ -8,7 +8,11 @@ from alembic import context
 from sqlalchemy import engine_from_config, pool
 from sqlalchemy.engine import Connection
 
-from shelfhold.infrastructure.db import check_foreign_keys, foreign_keys_disabled
+from shelfhold.infrastructure.db import (
+    check_foreign_keys,
+    configure_engine,
+    foreign_keys_disabled,
+)
 from shelfhold.infrastructure.schema import metadata
 
 config = context.config
@@ -29,12 +33,16 @@ connection = config.attributes.get("connection")
 if connection is not None:
     run(connection)
 else:
-    engine = engine_from_config(
-        config.get_section(config.config_ini_section, {}),
-        prefix="sqlalchemy.",
-        poolclass=pool.NullPool,
-    )
-    with engine.connect() as connection, foreign_keys_disabled(connection):
+    engine = configure_engine(
+        engine_from_config(
+            config.get_section(config.config_ini_section, {}),
+            prefix="sqlalchemy.",
+            poolclass=pool.NullPool,
+        )
+    )  # the same pragmas and the same BEGIN as the application's engine
+    # a data migration reads and then writes: the write lock first, and waited for
+    immediate = engine.execution_options(shelfhold_begin="BEGIN IMMEDIATE")
+    with immediate.connect() as connection, foreign_keys_disabled(connection):
         run(connection)
         check_foreign_keys(connection)
         connection.commit()

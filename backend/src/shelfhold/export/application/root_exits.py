@@ -72,7 +72,7 @@ from shelfhold.export.domain.physical_roots import (
 )
 from shelfhold.identity.public import RESERVED_ACTIONS, Allowed, Principal, authorize_reserved
 from shelfhold.infrastructure.clock import Clock
-from shelfhold.infrastructure.db import write_transaction
+from shelfhold.infrastructure.db import read_transaction, write_transaction
 from shelfhold.infrastructure.freeze import FreezeState
 from shelfhold.infrastructure.fsops import Fsops
 from shelfhold.infrastructure.fsops.errors import FsopsError, SentinelFormatError
@@ -259,7 +259,7 @@ class RootWatcher:
             self._seen_ok[verdict.subject] = ok
         if back:
             self._on_root_ok()
-        with self._engine.connect() as connection:  # a look: nothing is locked for it
+        with read_transaction(self._engine) as connection:  # a look: nothing is locked for it
             owed = self._marks_owed(verdicts, FreezeState.stored_roots(connection))
         if owed:  # the write lock is taken once, for the marks only (`busy_timeout` waits for it)
             with write_transaction(self._engine) as conn:

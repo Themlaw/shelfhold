@@ -15,7 +15,7 @@ import sqlalchemy as sa
 
 from shelfhold.config import Settings
 from shelfhold.events.bus import EventBus
-from shelfhold.infrastructure.db import create_db_engine
+from shelfhold.infrastructure.db import create_db_engine, write_transaction
 from shelfhold.infrastructure.migrate import migrate
 from shelfhold.infrastructure.schema import platform
 from shelfhold.infrastructure.secrets import diagnostics
@@ -85,7 +85,7 @@ def backup_bench(root: Path, **overrides: Any) -> Iterator[BackupBench]:
         '{"unit": "a"}', encoding="utf-8"
     )
     engine = create_db_engine(settings.database_path)
-    with engine.begin() as connection:
+    with write_transaction(engine) as connection:
         connection.execute(sa.insert(platform.app_setting).values(key="test.marker", value=MARKER))
     clock = ManualClock(START)
     bus = EventBus(clock)

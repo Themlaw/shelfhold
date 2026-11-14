@@ -5,6 +5,7 @@ from typing import Any
 
 import sqlalchemy as sa
 
+from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import acquisition
 from tests.follow_env import START, Bench
@@ -35,7 +36,7 @@ def serve(bench: Bench, series: int, items: list[dict[str, Any]]) -> None:
 def bind_beta(bench: Bench, *, priority: int = 2) -> str:
     """Series Beta becomes a second binding of the bench's Edition, at `priority`."""
     item_id, binding_id = new_ulid(), new_ulid()
-    with bench.lib.engine.begin() as connection:
+    with write_transaction(bench.lib.engine) as connection:
         connection.execute(
             sa.insert(acquisition.source_item).values(
                 id=item_id, plugin_id="suwayomi", source_key="suwayomi:7002",
@@ -52,7 +53,7 @@ def bind_beta(bench: Bench, *, priority: int = 2) -> str:
 
 
 def watermark(bench: Bench, number: str = "0") -> None:
-    with bench.lib.engine.begin() as connection:
+    with write_transaction(bench.lib.engine) as connection:
         connection.execute(
             sa.text(
                 "UPDATE series_follow SET follow_from_segment = '', follow_from_number = :n, "
@@ -63,7 +64,7 @@ def watermark(bench: Bench, number: str = "0") -> None:
 
 
 def policy(bench: Bench, value: str) -> None:
-    with bench.lib.engine.begin() as connection:
+    with write_transaction(bench.lib.engine) as connection:
         connection.execute(sa.text("UPDATE series_follow SET upgrade_policy = :p"), {"p": value})
 
 

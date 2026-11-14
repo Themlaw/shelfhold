@@ -866,14 +866,24 @@ class TombstoneService:
         for root_id in sorted(report.truncated_roots):
             if self._state.mark_truncated(root_id, announce=True):
                 report.truncated_new.add(root_id)
-        with write_transaction(self._engine) as connection:
-            for kid, seq in sorted(heal):
-                self._register_kid(connection, kid, seq)
-            for values, cited in to_merge:
-                plaintext = encode_plaintext(values, cited)
-                self._insert_row(connection, plaintext, values.scope, reason="replayed")
-                report.merged += 1
-            published = self._announce(connection, report)
+        published: list[PublishedEvent] = []
+        # a replay that finds nothing to register, merge or tell (the usual one) takes no lock
+        if (
+            heal
+            or to_merge
+            or report.inert
+            or report.key_unknown
+            or report.root_mismatch
+            or (report.truncated_new)
+        ):
+            with write_transaction(self._engine) as connection:
+                for kid, seq in sorted(heal):
+                    self._register_kid(connection, kid, seq)
+                for values, cited in to_merge:
+                    plaintext = encode_plaintext(values, cited)
+                    self._insert_row(connection, plaintext, values.scope, reason="replayed")
+                    report.merged += 1
+                published = self._announce(connection, report)
         self._bus.deliver(published)
         index = MembershipIndex(self._normalizers)
         index.add_all(still_blocking(entries))

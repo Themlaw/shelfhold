@@ -24,7 +24,7 @@ from sqlalchemy import Engine
 
 from shelfhold.export.domain.path_map import PathMode, clean_absolute, within
 from shelfhold.export.domain.physical_roots import SentinelDocument
-from shelfhold.infrastructure.db import write_transaction
+from shelfhold.infrastructure.db import read_transaction, write_transaction
 from shelfhold.infrastructure.freeze import FreezeState
 from shelfhold.infrastructure.fsops import create_sentinel
 from shelfhold.infrastructure.fsops.confined import ConfinedRoot
@@ -60,9 +60,15 @@ log = structlog.get_logger(__name__)
 
 
 def ensure_instance(engine: Engine, *, jurisdiction: str | None = None) -> str:
+    with read_transaction(engine) as connection:  # the usual start: the instance exists
+        existing = connection.execute(
+            sa.select(platform.instance.c.instance_id)
+        ).scalar_one_or_none()
+    if existing is not None:
+        return str(existing)
     with write_transaction(engine) as connection:
         found = connection.execute(sa.select(platform.instance.c.instance_id)).scalar_one_or_none()
-        if found is not None:
+        if found is not None:  # made by another process since the look above
             return str(found)
         instance_id = new_ulid()
         chosen, confirmed = _chosen(connection)

@@ -19,6 +19,7 @@ import shelfhold.composition as composition
 import shelfhold.runtime_jobs as rj
 from shelfhold.acquisition.public import Backfill
 from shelfhold.config import Settings
+from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import acquisition, catalog, export
 from shelfhold.jobs.ledger import JobLedger
@@ -124,7 +125,7 @@ class Bench54:
         resources it takes belong to a job that exists)."""
         comp = self.env.inst.comp
         ledger = JobLedger(self.engine, comp.clock)
-        with self.engine.begin() as connection:
+        with write_transaction(self.engine) as connection:
             created = ledger.create(
                 connection, kind="export.run", dedupe_key=f"export.run.{new_ulid()}"
             )

@@ -16,7 +16,7 @@ from shelfhold.config import Settings
 from shelfhold.export.application.pipeline import ExportPipeline
 from shelfhold.export.targets.kavita import AdminKey, KavitaClient
 from shelfhold.export.targets.kavita.polling import ArrivalPoller, ArrivalReport
-from shelfhold.infrastructure.db import create_db_engine
+from shelfhold.infrastructure.db import create_db_engine, write_transaction
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import acquisition, export, platform
 from tests.export_env import ROOT_SUBPATH
@@ -49,7 +49,7 @@ def seed_activity(settings: Settings, *, now: datetime) -> None:
     still open, one resolved 40 days ago."""
     engine = create_db_engine(settings.database_path)
     try:
-        with engine.begin() as connection:
+        with write_transaction(engine) as connection:
             work = add_work(connection)
             edition = add_edition(connection, work)
             binding = add_binding(connection, work, edition, add_source_item(connection))
@@ -95,7 +95,7 @@ class Delivery:
             build_fetcher(self.kavita), BASE_URL, AdminKey(API_KEY), events=self.events,
             clock=bench.clock,
         )  # fmt: skip
-        with lib.engine.begin() as connection:
+        with write_transaction(lib.engine) as connection:
             destination = connection.execute(
                 sa.select(export.shelf_destination.c.id, export.shelf_destination.c.target_id)
             ).one()

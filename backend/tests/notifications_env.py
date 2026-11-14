@@ -12,7 +12,7 @@ from sqlalchemy import Engine
 
 from shelfhold.config import Settings
 from shelfhold.events.bus import EventBus
-from shelfhold.infrastructure.db import create_db_engine
+from shelfhold.infrastructure.db import create_db_engine, write_transaction
 from shelfhold.infrastructure.fetcher import LanTargets
 from shelfhold.infrastructure.migrate import migrate
 from shelfhold.infrastructure.secrets import registry
@@ -60,7 +60,7 @@ class NotifyEnv:
         checked = asyncio.run(
             validate_channel_url(url, lan=lan or LanTargets.empty(), resolver=self.resolver)
         )
-        with self.engine.begin() as connection:
+        with write_transaction(self.engine) as connection:
             self.store.save(connection, name, checked)
 
 
@@ -71,7 +71,7 @@ def notify_env(settings: Settings) -> Iterator[NotifyEnv]:
     try:
         clock = ManualClock(NOW)
         vault = SecretVault(Keyring.generate(NOW))
-        with engine.begin() as connection:
+        with write_transaction(engine) as connection:
             registry.sync_registry(connection, vault.keyring)
         store = ChannelStore(vault, clock)
         resolver = FakeResolver({"ntfy.example.org": [PUBLIC_IP], "nas.lan": ["192.168.1.20"]})

@@ -51,9 +51,7 @@ def writer_commits_before_the_first_write(
         except BaseException as error:
             state["errors"].append(error)
 
-    def before(
-        _conn: object, _cursor: object, statement: str, *_rest: object
-    ) -> None:
+    def before(_conn: object, _cursor: object, statement: str, *_rest: object) -> None:
         head = statement.lstrip().split(None, 1)[0].upper()
         if head == "SELECT":
             state["read"] = True

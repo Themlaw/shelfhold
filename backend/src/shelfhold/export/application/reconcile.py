@@ -11,6 +11,7 @@ the whole pass before anything is decided.
 import time
 from collections import defaultdict
 from dataclasses import dataclass
+from typing import Any
 
 import sqlalchemy as sa
 import structlog
@@ -42,11 +43,12 @@ from shelfhold.export.domain.reconcile import (
     thresholds_from,
 )
 from shelfhold.infrastructure.clock import Clock
-from shelfhold.infrastructure.db import write_transaction
+from shelfhold.infrastructure.db import read_transaction, write_transaction
 from shelfhold.infrastructure.fsops import Fsops
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.logging import elapsed_ms
 from shelfhold.infrastructure.schema import export, platform
+from shelfhold.infrastructure.stable_hash import FileChangedError, HashedFiles, retry_when_changed
 from shelfhold.library.public import (
     destination_identities,
     export_sources,
@@ -401,59 +403,87 @@ class Reconciler:
         """`shelfhold series resume` (EF-INT-023): the admin has done the switch-over. What is
         on disk now is the new baseline of the files the manifest knows; unknown files stay
         unknown, so the next pass pauses again if the third party is still there."""
+        series, record = export.export_series, export.export_record
+        self._probe_if_denied(export_series_id)
+
+        def attempt() -> bool:
+            hashed = HashedFiles(self._fsops)
+            with read_transaction(self._engine) as connection:
+                first = self._resume_targets(connection, export_series_id)
+            if first is None:
+                return False
+            for found in first[1]:  # the files are read before the lock, never under it
+                hashed.hash(f"{first[0].root_local}/{found.rel_path}")
+            with write_transaction(self._engine) as connection:
+                locked = self._resume_targets(connection, export_series_id)
+                if locked is None:
+                    return False
+                ctx, records = locked
+                if [(r.export_item_id, r.rel_path) for r in records] != [
+                    (r.export_item_id, r.rel_path) for r in first[1]
+                ]:
+                    raise FileChangedError(export_series_id)  # the rows moved: start over
+                for found in records:
+                    path = f"{ctx.root_local}/{found.rel_path}"
+                    checked = hashed.verified(path)  # one `stat` under the lock
+                    if checked is None:
+                        continue
+                    identity, digest = checked
+                    connection.execute(
+                        sa.update(record)
+                        .where(
+                            record.c.shelf_destination_id == ctx.destination_id,
+                            record.c.export_item_id == found.export_item_id,
+                        )
+                        .values(size=identity.size, mtime_ns=identity.mtime_ns, file_hash=digest)
+                    )  # fmt: skip
+                    refresh_destination_identity(
+                        connection, found.export_item_id,
+                        dev=self._fsops.device_of(path),
+                        ino=identity.ino, size=identity.size, mtime_ns=identity.mtime_ns,
+                        verified_at=self._clock.now(),
+                    )  # fmt: skip
+                connection.execute(
+                    sa.update(series)
+                    .where(series.c.id == export_series_id)
+                    .values(paused_reason=None)
+                )
+            return True
+
+        return retry_when_changed(attempt)
+
+    @staticmethod
+    def _resume_targets(
+        connection: Connection, export_series_id: str
+    ) -> tuple[Any, list[Any]] | None:
+        """The paused series' destination and the live records whose files are looked at."""
         series, record, item, link = (
             export.export_series, export.export_record, export.export_item,
             export.edition_export_series,
         )  # fmt: skip
-        self._probe_if_denied(export_series_id)
-        with write_transaction(self._engine) as connection:
-            row = connection.execute(
-                sa.select(series.c.shelf_destination_id).where(
-                    series.c.id == export_series_id, series.c.paused_reason.isnot(None)
-                )
-            ).one_or_none()
-            if row is None:
-                return False
-            ctx = load_context(connection, row.shelf_destination_id)
-            records = connection.execute(
-                sa.select(record.c.export_item_id, record.c.rel_path)
-                .select_from(
-                    record.join(item, item.c.id == record.c.export_item_id).join(
-                        link, link.c.edition_id == item.c.edition_id
-                    )
-                )
-                .where(
-                    record.c.shelf_destination_id == ctx.destination_id,
-                    record.c.rel_path.isnot(None),
-                    record.c.state.in_(LIVE_STATES),
-                    link.c.export_series_id == export_series_id,
-                )
-            ).all()
-            for found in records:
-                observed = self._fsops.observe(f"{ctx.root_local}/{found.rel_path}")
-                if observed is None or observed[0] != "file":
-                    continue
-                connection.execute(
-                    sa.update(record)
-                    .where(
-                        record.c.shelf_destination_id == ctx.destination_id,
-                        record.c.export_item_id == found.export_item_id,
-                    )
-                    .values(
-                        size=observed[1].size, mtime_ns=observed[1].mtime_ns,
-                        file_hash=self._fsops.sha256_of(f"{ctx.root_local}/{found.rel_path}"),
-                    )
-                )  # fmt: skip
-                refresh_destination_identity(
-                    connection, found.export_item_id,
-                    dev=self._fsops.device_of(f"{ctx.root_local}/{found.rel_path}"),
-                    ino=observed[1].ino, size=observed[1].size, mtime_ns=observed[1].mtime_ns,
-                    verified_at=self._clock.now(),
-                )  # fmt: skip
-            connection.execute(
-                sa.update(series).where(series.c.id == export_series_id).values(paused_reason=None)
+        row = connection.execute(
+            sa.select(series.c.shelf_destination_id).where(
+                series.c.id == export_series_id, series.c.paused_reason.isnot(None)
             )
-        return True
+        ).one_or_none()
+        if row is None:
+            return None
+        ctx = load_context(connection, row.shelf_destination_id)
+        records = connection.execute(
+            sa.select(record.c.export_item_id, record.c.rel_path)
+            .select_from(
+                record.join(item, item.c.id == record.c.export_item_id).join(
+                    link, link.c.edition_id == item.c.edition_id
+                )
+            )
+            .where(
+                record.c.shelf_destination_id == ctx.destination_id,
+                record.c.rel_path.isnot(None),
+                record.c.state.in_(LIVE_STATES),
+                link.c.export_series_id == export_series_id,
+            )
+        ).all()
+        return ctx, list(records)
 
     # -- reading ---------------------------------------------------------------------------------
 

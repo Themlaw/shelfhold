@@ -75,6 +75,28 @@ class Notices:
     def __init__(self, clock: Clock) -> None:
         self._clock = clock
 
+    @staticmethod
+    def _held(connection: sa.Connection, kind: str, own: Callable[[str], bool]) -> set[str]:
+        table = acquisition.follow_notice
+        return {
+            key
+            for key in connection.execute(
+                sa.select(table.c.key_hash).where(table.c.kind == kind)
+            ).scalars()
+            if own(key)
+        }
+
+    def differs(
+        self,
+        connection: sa.Connection,
+        kind: str,
+        current: Mapping[str, str],
+        *,
+        own: Callable[[str], bool] = lambda _key: True,
+    ) -> bool:
+        """`sync` would write: a row of `kind` is gone, or a key is new."""
+        return self._held(connection, kind, own) != set(current)
+
     def sync(
         self,
         connection: sa.Connection,
@@ -86,13 +108,7 @@ class Notices:
         """Make the rows of `kind` equal `current` (`key_hash -> subject`); the keys new now.
         Only the rows whose key satisfies `own` are looked at: two producers may share a kind."""
         table = acquisition.follow_notice
-        held = {
-            key
-            for key in connection.execute(
-                sa.select(table.c.key_hash).where(table.c.kind == kind)
-            ).scalars()
-            if own(key)
-        }
+        held = self._held(connection, kind, own)
         gone = held - current.keys()
         if gone:
             connection.execute(
