@@ -605,5 +605,7 @@
   "destinations.detach.leftover_tombstone_journal_erased": "Le journal des pierres tombales de {count, plural, one {# racine a été effacé} other {# racines ont été effacés}} avec le dossier réservé.",
   "destinations.detach.leftover_library_type_changed": "{count, plural, one {# bibliothèque a un autre type} other {# bibliothèques ont un autre type}} qu'avant l'adoption : non modifié.",
   "shelves.naming.error": "L'aperçu du nommage n'a pas pu être calculé.",
-  "shelves.no_destination": "{name} : aucune destination."
+  "shelves.no_destination": "{name} : aucune destination.",
+  "destinations.detach.scope": "Détache toute la cible Kavita, donc toutes ses destinations : {names}.",
+  "shelves.naming.unknown": "Les noms contestés n'ont pas pu être comptés pour cette destination. Elle reste retirable dans l'écran des destinations."
 }

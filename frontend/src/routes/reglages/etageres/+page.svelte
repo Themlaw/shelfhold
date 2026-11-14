@@ -17,7 +17,7 @@
     shelf_id: string;
     shelf_name: string;
     root_subpath: string;
-    flagged_names: number;
+    flagged_names: number | null; // null: the count failed for this destination
     template: Template;
   };
   type PreviewEntry = { key: string; rel_path: string; status: string };
@@ -83,14 +83,14 @@
       next[d.id] = {
         template: { ...d.template },
         preview: null,
-        previewOpen: d.flagged_names > 0,
+        previewOpen: (d.flagged_names ?? 0) > 0,
         asked: 0,
         plan: null,
         planEtag: null
       };
     }
     states = next;
-    for (const d of destinations) if (d.flagged_names > 0) void fetchPreview(d);
+    for (const d of destinations) if ((d.flagged_names ?? 0) > 0) void fetchPreview(d);
   }
 
   /** The names of the template as it stands in the fields; a late answer never replaces a later one. */
@@ -205,6 +205,9 @@
                 </label>
               {/each}
             </fieldset>
+            {#if dest.flagged_names === null}
+              <p>{t('shelves.naming.unknown')}</p>
+            {/if}
             <details open={st.previewOpen} ontoggle={(event) => (st.previewOpen = event.currentTarget.open)}>
               <summary>{t('shelves.naming.title')}</summary>
               {#if st.preview}

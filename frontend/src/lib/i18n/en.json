@@ -605,5 +605,7 @@
   "destinations.detach.leftover_tombstone_journal_erased": "The tombstone journal of {count, plural, one {# root was erased} other {# roots were erased}} with the reserved folder.",
   "destinations.detach.leftover_library_type_changed": "{count, plural, one {# library has another type} other {# libraries have another type}} than before the adoption: not changed.",
   "shelves.naming.error": "The naming preview could not be computed.",
-  "shelves.no_destination": "{name}: no destination."
+  "shelves.no_destination": "{name}: no destination.",
+  "destinations.detach.scope": "Detaches the whole Kavita target, so all its destinations: {names}.",
+  "shelves.naming.unknown": "The contested names could not be counted for this destination. It can still be removed from the destinations screen."
 }

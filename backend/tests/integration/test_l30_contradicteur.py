@@ -116,7 +116,12 @@ def test_remove_destination_refused_while_an_export_holds_a_series_of_it(d: Deta
         locks.hold(new_ulid(), work=new_ulid(), series=series),
         pytest.raises(RemovalRefusedError) as refused,
     ):
-        d.remover.apply(dest, RemovalMode.DELETE_FILES, principal=ADMIN, typed=removal_phrase(dest))
+        d.remover.apply(
+            dest,
+            RemovalMode.DELETE_FILES,
+            principal=ADMIN,
+            typed=removal_phrase(dest, RemovalMode.DELETE_FILES),
+        )
     assert refused.value.reason == "busy"
 
 
@@ -152,12 +157,22 @@ def test_remove_resume_never_deletes_a_file_changed_after_the_stop(
 
     monkeypatch.setattr(d.journal, "mark_applying", die)
     with pytest.raises(Killed):
-        d.remover.apply(dest, RemovalMode.DELETE_FILES, principal=ADMIN, typed=removal_phrase(dest))
+        d.remover.apply(
+            dest,
+            RemovalMode.DELETE_FILES,
+            principal=ADMIN,
+            typed=removal_phrase(dest, RemovalMode.DELETE_FILES),
+        )
     monkeypatch.undo()
     (open_intent,) = d.intents("applying")
     victim = Path(str(open_intent.src_path))
     victim.write_bytes(b"the admin's own edit, not what Shelfhold wrote")
-    d.remover.apply(dest, RemovalMode.DELETE_FILES, principal=ADMIN, typed=removal_phrase(dest))
+    d.remover.apply(
+        dest,
+        RemovalMode.DELETE_FILES,
+        principal=ADMIN,
+        typed=removal_phrase(dest, RemovalMode.DELETE_FILES),
+    )
     assert victim.exists(), "a file changed since the export was deleted on resume"
 
 

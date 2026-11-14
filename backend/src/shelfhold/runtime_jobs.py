@@ -896,19 +896,18 @@ class PlanService:
     def flagged_names(self, destination_id: str) -> int:
         """The names the destination's own template puts in question (two files on one path, a
         name cut or reserved, a Unit the planner refuses for its name): from the database
-        alone, no Kavita asked, so the list of the shelves is cheap to open and never waits on a
-        sleeping server."""
-        with self._lock:
-            items, existing, _kind, refused = self._pipeline().naming_state(destination_id)
-            with self._comp.engine.connect() as conn:
-                stored = conn.execute(
-                    sa.select(export.shelf_destination.c.template).where(
-                        export.shelf_destination.c.id == destination_id
-                    )
-                ).scalar_one()
-            preview = preview_names(
-                items, NamingTemplate.loads(stored), parse=None, verified=False, existing=existing
-            )
+        alone, no Kavita asked and no lock taken (the one of `preview` is held while Kavita
+        answers), so the list of the shelves never waits on a sleeping server."""
+        items, existing, _kind, refused = self._pipeline().naming_state(destination_id)
+        with self._comp.engine.connect() as conn:
+            stored = conn.execute(
+                sa.select(export.shelf_destination.c.template).where(
+                    export.shelf_destination.c.id == destination_id
+                )
+            ).scalar_one()
+        preview = preview_names(
+            items, NamingTemplate.loads(stored), parse=None, verified=False, existing=existing
+        )
         return contested_names(preview) + refused
 
     def naming_preview(

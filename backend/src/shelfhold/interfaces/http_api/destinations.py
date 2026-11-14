@@ -20,8 +20,10 @@ from shelfhold.ops import OpsServices
 
 __all__ = ["build_destinations_router"]
 
-_REMOVE_ALL = reserved_action(RESERVED_ACTIONS["destination.remove_all"])
-_DETACH_FULL = reserved_action(RESERVED_ACTIONS["detach.full"])
+# The service writes its own audit line, with its target, when it really removes or detaches: the
+# guard writes none (a preview or a refused phrase deletes nothing).
+_REMOVE_ALL = reserved_action(RESERVED_ACTIONS["destination.remove_all"], audit=False)
+_DETACH_FULL = reserved_action(RESERVED_ACTIONS["detach.full"], audit=False)
 
 
 def _admin_session(request: Request) -> Principal:

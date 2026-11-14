@@ -276,7 +276,8 @@ class FullDetacher:
         there is revoked as usual: the flag never leaves a live key behind."""
         self._authorize(principal)
         if typed is None or not hmac.compare_digest(
-            typed.strip().encode(), full_detach_phrase(target_id).encode()
+            typed.encode(),
+            full_detach_phrase(target_id).encode(),  # exactly: no trim, no case
         ):
             raise DetachRefusedError("confirmation_required")
         if key_gone and not credential:

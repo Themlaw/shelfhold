@@ -19,6 +19,8 @@ import contextlib
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
+import structlog
+
 from shelfhold.export.application.detach import (
     DetachRefusedError,
     DetachReport,
@@ -48,6 +50,8 @@ if TYPE_CHECKING:
     from shelfhold.ops.ports import HeadlessOps
 
 __all__ = ["DetachOps"]
+
+log = structlog.get_logger()
 
 _MODES = {m.value: m for m in RemovalMode}
 
@@ -173,6 +177,16 @@ class DetachOps:
                 template = json.loads(row.template)
             except (TypeError, ValueError):
                 template = {}
+            flagged: int | None = None
+            reason: str | None = None
+            if count is not None:
+                try:
+                    flagged = count(row.id)
+                except Exception as error:  # one destination that cannot be counted is still listed
+                    reason = type(error).__name__
+                    log.warning(
+                        "destination.flagged_names_failed", destination_id=row.id, reason=reason
+                    )
             items.append(
                 {
                     "id": row.id,
@@ -182,7 +196,8 @@ class DetachOps:
                     "root_subpath": row.root_subpath,
                     "transport": row.transport,
                     "adopted": bool(row.adopted),
-                    "flagged_names": count(row.id) if count else 0,
+                    "flagged_names": flagged,
+                    "flagged_reason": reason,  # why there is no count: the screen says it
                     "template": template,
                 }
             )

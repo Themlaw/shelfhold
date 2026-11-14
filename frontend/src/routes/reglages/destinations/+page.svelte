@@ -85,6 +85,13 @@
 
   const headers = () => ({ 'X-CSRF-Token': csrfToken() });
 
+  /** « Détacher » is the target's: every shelf bound to it goes with it. */
+  const concerned = (dest: Destination): string =>
+    destinations
+      .filter((other) => other.target_id === dest.target_id)
+      .map((other) => other.shelf_name)
+      .join(', ');
+
   const warningText = (line: Line): string => {
     const key = WARNINGS[line.code];
     return key ? t(key, { count: line.count }) : t('destinations.warn.unknown', line);
@@ -257,7 +264,10 @@
           <span>{dest.shelf_name}</span>
           <span>{dest.root_subpath}</span>
           <button type="button" onclick={() => startRemove(dest)}>{t('destinations.remove')}</button>
-          <button type="button" onclick={() => startDetach(dest)}>{t('destinations.detach')}</button>
+          <button type="button" aria-describedby="scope-{dest.id}" onclick={() => startDetach(dest)}>
+            {t('destinations.detach')}
+          </button>
+          <small id="scope-{dest.id}">{t('destinations.detach.scope', { names: concerned(dest) })}</small>
         </li>
       {/each}
     </ul>
@@ -297,6 +307,7 @@
     {#if detaching}
       <section aria-labelledby="detach-title">
         <h2 id="detach-title">{t('destinations.detach')}</h2>
+        <p>{t('destinations.detach.scope', { names: concerned(detaching) })}</p>
         {#if detachPreview}
           <ul>
             {#each detachPreview.warnings as line (line.code)}
