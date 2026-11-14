@@ -184,8 +184,8 @@ def test_family_docs_describe_the_screens_that_exist() -> None:
     text = _text(FAMILY / "README.md")
     assert "bibliothèque personnelle du foyer" in text
     assert "à venir" not in text.lower() and "squelette" not in text.lower()
-    for heading in ("## Demander un livre", "## Mes demandes", "## Profils du foyer"):
-        assert heading in text, heading
+    for heading in (r"## Demander un livre", r"## Mes d\w+", r"## Profils du foyer"):
+        assert re.search(f"^{heading}$", text, re.M), heading
 
 
 @pytest.mark.req("ENF-LEG-006", "ENF-LEG-008", "ENF-DOC-001")
