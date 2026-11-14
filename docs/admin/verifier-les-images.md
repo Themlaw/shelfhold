@@ -22,6 +22,10 @@ cosign verify ghcr.io/themlaw/shelfhold@sha256:<digest> \
 
 Le digest se lit avec `docker buildx imagetools inspect ghcr.io/themlaw/shelfhold:<tag> --format '{{.Manifest.Digest}}'`. **Vérifiez le digest, pas le tag** : un tag peut être déplacé, un digest non. Un `cosign verify` qui réussit imprime la signature et le certificat ; un échec (code de sortie non nul) veut dire « ne déployez pas ».
 
+## Tags internes `build-*`
+
+La CI pose des tags `build-<commit>` (manifeste, avant la signature) et `build-<commit>-<arch>` (images de plateforme) : ce sont des **tags internes, à ne pas déployer**. Une fois la publication terminée, `build-<commit>` porte le même digest que `sha-<commit>`, mais un registre étiquette des digests : supprimer ce tag supprimerait aussi `edge` et `sha-<commit>`, donc la CI ne le fait pas, et `cleanup.yml` n'y touche jamais. Seul le digest vérifié par `cosign verify` fait foi ; si la signature d'une publication échoue, le job est rouge et `build-<commit>` reste le seul tag de ce digest non signé.
+
 ## Second registre (optionnel)
 
 Le second registre sert si GitHub retire le dépôt (ENF-GOV-004). Il est publié **seulement si le mainteneur a fourni le secret `CODEBERG_TOKEN`** ; sans lui, rien n'y est publié, rien n'échoue, et l'image reste signée sur GHCR. Les mêmes digests y sont copiés, signés par le même workflow, donc la même commande marche en changeant le nom :

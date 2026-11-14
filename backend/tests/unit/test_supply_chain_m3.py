@@ -186,6 +186,15 @@ def test_second_registry_variable_overrides_the_default(tmp_path: Path) -> None:
         "evil example/x",
         "evil.example/`id`",
         "/leading-slash",
+        # the host is allowed: only the validation of the path stands between these and the outputs
+        "codeberg.org/a\nenabled=true",
+        "codeberg.org/../x",
+        "codeberg.org/a b",
+        "codeberg.org/a$b",
+        'codeberg.org/a"b',
+        "codeberg.org/a'b",
+        "quay.io/`id`",
+        "docker.io/a;b",
     ],
 )
 def test_second_registry_hostile_variable_never_reaches_the_outputs(

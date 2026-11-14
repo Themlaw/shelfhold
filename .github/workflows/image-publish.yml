@@ -192,8 +192,11 @@ jobs:
           args=()
           while read -r tag; do [ -n "$tag" ] && args+=(-t "${IMAGE}:${tag}"); done <<< "$tags"
           docker buildx imagetools create "${args[@]}" "${IMAGE}@${INDEX}"
-          published="$(docker buildx imagetools inspect "${IMAGE}:$(head -n1 <<< "$tags")" --format '{{.Manifest.Digest}}')"
-          [ "$published" = "$INDEX" ] || { echo "::error::tag points to ${published}, not ${INDEX}"; exit 1; }
+          while read -r tag; do
+            [ -n "$tag" ] || continue
+            published="$(docker buildx imagetools inspect "${IMAGE}:${tag}" --format '{{.Manifest.Digest}}')"
+            [ "$published" = "$INDEX" ] || { echo "::error::${IMAGE}:${tag} points to ${published}, not the signed ${INDEX}"; exit 1; }
+          done <<< "$tags"
       - name: Second registry, the script of this commit (nothing else is checked out)
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -262,3 +265,9 @@ jobs:
           args=()
           while read -r tag; do [ -n "$tag" ] && args+=(-t "${SECOND_IMAGE}:${tag}"); done <<< "$tags"
           docker buildx imagetools create "${args[@]}" "${SECOND_IMAGE}@${INDEX}"
+          # read every public tag back: it must point to the digest that was signed
+          while read -r tag; do
+            [ -n "$tag" ] || continue
+            published="$(docker buildx imagetools inspect "${SECOND_IMAGE}:${tag}" --format '{{.Manifest.Digest}}')"
+            [ "$published" = "$INDEX" ] || { echo "::error::${SECOND_IMAGE}:${tag} points to ${published}, not the signed ${INDEX}"; exit 1; }
+          done <<< "$tags"
