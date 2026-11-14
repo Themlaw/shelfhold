@@ -1,23 +1,27 @@
 <script lang="ts">
   // Wizard screen 1: the account. The administrator account is made at installation; this screen
   // says who is signed in and sends whoever is not to the sign-in page.
-  import { onMount } from 'svelte';
+  import { onDestroy, onMount } from 'svelte';
   import { me } from '#lib/api/index.ts';
   import WizardSteps from '#lib/components/WizardSteps.svelte';
   import { t } from '#lib/i18n/index.ts';
-  import { nextStep } from '#lib/wizard.ts';
+  import { advanceFrom, nextStep } from '#lib/wizard.ts';
 
   let name = $state<string | null>(null);
   let isAdmin = $state(false);
   let signedOut = $state(false);
   let loaded = $state(false);
   const next = nextStep('compte');
+  let cancelAdvance = () => {};
+  onDestroy(() => cancelAdvance());
 
   onMount(async () => {
     try {
       const { data } = await me({ throwOnError: true });
       name = data.username;
       isAdmin = data.role === 'admin';
+      // nothing to ask here: the admin goes on by itself (only an admin: the others stay and read why)
+      if (isAdmin) cancelAdvance = advanceFrom('compte');
     } catch {
       signedOut = true;
     } finally {

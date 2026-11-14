@@ -1,6 +1,7 @@
 // The first-run wizard (EF-UX-001): at most five screens in all; part 1 is the first three. The
 // screens only show what the server answers: every route behind them is the admin's, on a fresh
 // session (a stale one asks for the password in place, `ReauthPrompt`).
+import { goto } from '$app/navigation';
 import type { MessageKey } from '#lib/i18n/index.ts';
 import { problemView, type ProblemView } from '#lib/problems.ts';
 import { needsReauth, needsSession, problemOf } from '#lib/triage.ts';
@@ -56,3 +57,41 @@ export async function attempt(action: () => Promise<void>, outcome: Outcome): Pr
     return false;
   }
 }
+
+/** How long a finished screen stays in front of the admin before the wizard moves on by itself:
+ * long enough to read what was done, short enough that the journey does not wait on it. */
+export const ADVANCE_MS = 1200;
+
+/** Move to the screen after `id` once `ms` have passed, as nothing is left to ask on this one
+ * (the "Continuer" link stays for whoever does not want to wait). Returns what cancels the move:
+ * a screen that goes away first must not push the person somewhere they did not choose. */
+export function advanceFrom(id: WizardStep['id'], ms: number = ADVANCE_MS): () => void {
+  const target = nextStep(id);
+  if (!target) return () => {};
+  const timer = setTimeout(() => {
+    // eslint-disable-next-line svelte/no-navigation-without-resolve -- the app is served at the root of its origin
+    void goto(target.href);
+  }, ms);
+  return () => clearTimeout(timer);
+}
+
+export type PathPair = { local: string; remote: string; mode: string };
+
+/** "/library=/books, /other=/other" (the shared folder as seen here = as Kavita sees it) into the
+ * map the server takes; null when a pair is not `local=remote` with two absolute paths. An empty
+ * text is no map at all: the server's default applies. */
+export function parsePathMap(text: string): PathPair[] | null | undefined {
+  const items = text.split(',').map((item) => item.trim()).filter(Boolean);
+  if (items.length === 0) return undefined;
+  const pairs: PathPair[] = [];
+  for (const item of items) {
+    const [local, remote, ...rest] = item.split('=').map((part) => part.trim());
+    if (rest.length > 0 || !local?.startsWith('/') || !remote?.startsWith('/')) return null;
+    pairs.push({ local, remote, mode: 'rw' });
+  }
+  return pairs;
+}
+
+/** One plain name for the folder of a shelf under the shared one: never a path (the server holds
+ * the same rule; here it only spares the round trip). */
+export const SHELF_FOLDER = /^[A-Za-z0-9][A-Za-z0-9 _-]{0,63}$/;

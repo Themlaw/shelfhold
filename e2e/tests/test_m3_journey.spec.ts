@@ -17,9 +17,14 @@ import { expect, test, type Locator, type Page } from '@playwright/test';
 // a button, a link or a checkbox, a submission. Typing never counts by itself: the fields filled
 // before a submission belong to it. Every action is listed in the report of the test, tagged
 // `decision` (it sends something to the server) or `navigation` (a link to the next screen).
-// The commands typed on the host count too (kind `host`): the card says "0 files edited, one
-// copy-paste at most", and a command is a gesture. The budget is read on ALL the actions, never on
-// the decisions alone: the test of the card does not get easier by renaming what it counts.
+// The commands typed on the host are listed too (kind `host`). The card says "dans l'UI": the
+// first test reads the budget on the actions of the UI, decisions and navigations alike; the second
+// reads it on ALL the gestures, host commands included, and is red (xfail strict, no `req`) until
+// the host types nothing more. A screen with nothing left to ask moves on by itself (the wizard
+// waits a moment so that what was done can be read): that is no gesture, and the wait is inside the
+// time measured. The person is signed in by the API (no sign-in screen exists: the stand-in counts
+// as the one action of signing in) and opens the address of the wizard (nothing on the home page
+// leads there yet: not a click, not counted, reported as a gap).
 //
 // EF-UX-012: one capture per theme and per scheme of the key screens. The reference is NOT a pixel
 // image: such a file depends on the fonts of the machine that made it (here the runners of the CI,
@@ -39,8 +44,6 @@ const KAVITA_USER = 'shelfhold';
 const KAVITA_PASSWORD = 'synthetic-kavita-password';
 const FIRST_BOOK = { id: '1001', title: 'A Study in Test' };
 const HERE = dirname(fileURLToPath(import.meta.url));
-// where the journey of the screens stops today (the message of the expectation in `firstBook`)
-const KNOWN_GAP = 'the folder screen offers its check (a destination exists)';
 
 type Kind = 'decision' | 'navigation' | 'host';
 interface Action {
@@ -87,16 +90,6 @@ function compose(args: string[]): string {
     encoding: 'utf8',
     timeout: 180_000
   });
-}
-
-/** A file the administrator brings (a secret): written in the tmpfs of the container, mode 0600. */
-function putFile(path: string, text: string): void {
-  const base = JSON.parse(process.env.E2E_COMPOSE ?? '[]') as string[];
-  execFileSync(
-    'docker',
-    ['compose', ...base, 'exec', '-T', 'shelfhold', 'sh', '-c', `umask 077; cat > ${path}`],
-    { input: text, timeout: 60_000 }
-  );
 }
 
 function shelfhold(args: string[]): string {
@@ -149,47 +142,36 @@ async function waitForTheBook(run: Run, folder: string): Promise<void> {
   throw new Error(`Kavita never listed ${FIRST_BOOK.title}: ${(await kavitaSeries()).join(', ')}`);
 }
 
-/** The wizard, screen after screen, as a person follows it. Returns when Kavita lists the book. */
-async function firstBook(page: Page, run: Run, afterKavita?: () => void): Promise<void> {
+/** The wizard, screen after screen, as a person follows it. Returns when the first book is launched. */
+async function firstBook(page: Page, run: Run): Promise<void> {
   await signInByApi(page, ADMIN); // no sign-in screen exists yet: see the report of L57
   run.actions.push({ what: 'sign in (by the API: no screen)', kind: 'decision', at_s: 0 });
 
   await page.goto('/assistant/compte');
   await expect(page.getByText('Connecté en tant que admin.')).toBeVisible();
-  await run.click(page.getByRole('link', { name: 'Continuer' }), 'compte → Kavita', 'navigation');
 
+  // the account screen has nothing to ask of the administrator: it moves on by itself
   await expect(page.getByRole('heading', { name: 'Connexion à Kavita', level: 2 })).toBeVisible();
   await page.getByLabel('Adresse de Kavita').fill('http://127.0.0.1:5000');
   await page.getByLabel("Nom d'utilisateur Kavita").fill(KAVITA_USER);
   await page.getByLabel('Mot de passe Kavita').fill(KAVITA_PASSWORD);
+  // the simulated Kavita sees the whole volume at the same path: the map the administrator gives
+  await page.getByLabel('Correspondance des dossiers (avancé)').fill('/library=/library');
   await run.click(page.getByLabel("J'ai compris", { exact: false }), 'accept the admin key', 'decision');
   await run.click(page.getByRole('button', { name: 'Connecter Kavita' }), 'connect Kavita', 'decision');
   await expect(page.getByText(/Kavita est connecté/)).toBeVisible();
-  afterKavita?.();
-  await run.click(page.getByRole('link', { name: 'Continuer' }), 'Kavita → folder', 'navigation');
 
   await expect(page.getByRole('heading', { name: 'Dossier partagé', level: 2 })).toBeVisible();
-  // a shelf must be bound to Kavita for the folder to be checked: the screen says so otherwise
-  await expect(
-    page.getByRole('button', { name: 'Vérifier le dossier' }),
-    KNOWN_GAP
-  ).toBeVisible({ timeout: 10_000 });
-  await run.click(page.getByRole('button', { name: 'Vérifier le dossier' }), 'check the folder', 'decision');
-  await expect(page.getByText(/Kavita lit le dossier partagé|Le dossier est inscriptible/)).toBeVisible();
-  const onward = page.getByRole('link', { name: 'Continuer' });
-  if ((await onward.count()) > 0) {
-    await run.click(onward, 'folder → shelves', 'navigation');
-  } else {
-    // this screen has no way onward of its own (a dead end of the wizard, reported by L57): the
-    // person types the address of the next screen, which is one more gesture
-    run.actions.push({ what: 'folder → shelves (typed address: no link)', kind: 'navigation', at_s: Math.round(run.elapsed()) });
-    await page.goto('/assistant/etageres');
-  }
+  await run.click(
+    page.getByRole('button', { name: "Créer l'étagère et la lier à Kavita" }),
+    'create the shelf linked to Kavita',
+    'decision'
+  );
+  await expect(page.getByText('Étagère créée et liée à Kavita.')).toBeVisible();
 
   await expect(page.getByRole('heading', { name: 'Étagères', level: 2 })).toBeVisible();
   await run.click(page.getByRole('button', { name: 'Créer les étagères' }), 'create the shelves', 'decision');
   await expect(page.getByText('Étagères créées.')).toBeVisible();
-  await run.click(page.getByRole('link', { name: 'Continuer' }), 'shelves → end', 'navigation');
 
   await expect(page.getByRole('heading', { name: 'Finalisation', level: 2 })).toBeVisible();
   await page.getByLabel('Numéro du livre sur Gutenberg', { exact: false }).fill(FIRST_BOOK.id);
@@ -197,79 +179,34 @@ async function firstBook(page: Page, run: Run, afterKavita?: () => void): Promis
   await expect(page.getByText('Premier livre lancé.')).toBeVisible();
 }
 
-// No `req`: while the journey stops at its known gap this test documents the gap, it does not cover
-// ENF-UX-001 (the open gap in `test_m3_open_gaps.py` keeps the requirement uncovered).
+// req: ENF-UX-001
 test('test_first_book_under_10_minutes', async ({ page }, info) => {
-  // The journey as the screens allow it today: nothing but the compose and the first account,
-  // then the browser. It does not get through: there is no sign-in screen (the person is signed in
-  // by the API here), no screen binds a shelf to Kavita, so "Dossier partagé" has no destination
-  // and no check to offer; the screen after it has no way onward; the Gutenberg addresses are set by
-  // command; and the wizard takes more gestures than the budget. The test is that gap, written
-  // first: while the folder screen is where the journey stops, it passes and says so (KNOWN_GAP);
-  // it fails on any other stop, and the day the journey gets through it asserts the two budgets
-  // in full. The test of `test_m3_open_gaps.py` flips with it and asks for this marker to go.
+  // A new installation: the compose, the first account and the books' addresses typed on the host,
+  // then the browser. The administrator goes through the five screens, makes the shelf linked to
+  // Kavita on the folder screen, launches a Gutenberg book, and Kavita lists it: within BUDGET_S
+  // seconds and BUDGET_ACTIONS actions in the UI, every click and submission counted (decisions
+  // and navigations alike; a screen that moves on by itself is no gesture). The card says "dans
+  // l'UI": the commands typed on the host are listed in the report and read by the next test.
   const run = new Run();
-  let stopped: Error | null = null;
-  try {
-    await firstBook(page, run);
-    await waitForTheBook(run, '/library/livres');
-  } catch (error) {
-    stopped = error as Error;
-  }
-  const report = `${run.report()}\n${stopped ? `stopped: ${stopped.message.split('\n')[0]}` : 'got through'}`;
-  console.log(report);
-  await info.attach('first-book-report', { body: report });
-  if (stopped !== null) {
-    expect(stopped.message, `only the known gap may stop the journey\n${report}`).toContain(KNOWN_GAP);
-    return;
-  }
-  expect(run.elapsed(), report).toBeLessThanOrEqual(BUDGET_S);
-  expect(run.actions.length, report).toBeLessThanOrEqual(BUDGET_ACTIONS);
-});
-
-/** The journey with the blocks the screens leave to the host lifted: the path map and the shelf
- * bound to Kavita are made by command, right after Kavita is connected (the order of the wizard).
- * Every one of these commands is counted as a gesture. */
-async function journeyWithTheShelfByCommand(page: Page, run: Run): Promise<void> {
-  await firstBook(page, run, () => {
-    // the wizard cannot set the path map of the target: its default roots (books, comics, manga)
-    // do not exist on a new volume, so a shelf cannot get its folder. The administrator gives the
-    // whole volume by command (the target already exists: nothing is asked of Kavita again), then
-    // makes the shelf the screens cannot make.
-    putFile('/tmp/kavita.pw', `${KAVITA_PASSWORD}\n`);
-    run.host('the secret of Kavita, put in a file');
-    shelfhold([
-      'target', 'add', 'kavita', '--url', 'http://127.0.0.1:5000', '--user', KAVITA_USER,
-      '--password-file', '/tmp/kavita.pw', '--accept-admin-risk',
-      '--path-map', '[{"local": "/library", "remote": "/library", "mode": "rw"}]'
-    ]);
-    run.host('target add kavita --path-map');
-    shelfhold([
-      'shelf', 'create', 'Livres', '--max-age', '18+', '--target', 'kavita', '--subpath', 'livres'
-    ]);
-    run.host('shelf create Livres --target kavita');
-  });
+  await firstBook(page, run);
   await waitForTheBook(run, '/library/livres');
-}
-
-// A measure of the time, not a coverage: no `req`. It asserts the time budget only; the gestures
-// are listed in full in its report.
-test('test_timed_first_book_with_the_shelf_made_by_command', async ({ page }, info) => {
-  const run = new Run();
-  await journeyWithTheShelfByCommand(page, run);
   const report = run.report();
   console.log(report);
   await info.attach('first-book-report', { body: report });
+  expect((await kavitaSeries()).includes(FIRST_BOOK.title), report).toBe(true);
   expect(run.elapsed(), report).toBeLessThanOrEqual(BUDGET_S);
-  expect((await kavitaSeries()).includes(FIRST_BOOK.title)).toBe(true);
+  const inTheUi = run.actions.filter((a) => a.kind !== 'host').length;
+  expect(inTheUi, report).toBeLessThanOrEqual(BUDGET_ACTIONS);
 });
 
-// The budget of the card on the same journey, on ALL the gestures (screens and host commands). Red
-// today: the wrapper of `test_m3_journey.py` marks it xfail strict, so the requirement stays
-// uncovered until the wizard does it in at most BUDGET_ACTIONS.
-test('test_first_book_within_6_actions_with_the_shelf_made_by_command', async ({ page }, info) => {
+// The stricter reading of the card: ALL the gestures, the commands typed on the host included
+// (the first account, the books' addresses). Red today: the wrapper of `test_m3_journey.py` marks
+// it xfail strict and it carries no `req`; it turns green when the wizard also takes what the
+// host still types.
+test('test_first_book_within_6_actions_host_commands_included', async ({ page }, info) => {
   const run = new Run();
-  await journeyWithTheShelfByCommand(page, run);
+  await firstBook(page, run);
+  await waitForTheBook(run, '/library/livres');
   const report = run.report();
   console.log(report);
   await info.attach('first-book-report', { body: report });

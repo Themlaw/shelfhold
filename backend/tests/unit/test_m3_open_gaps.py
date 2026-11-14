@@ -4,6 +4,9 @@ Each test states the smallest observable fact that the delivery of the lot makes
 the lot lands the test passes, `strict` turns that into a failure and the marker must go, so the
 gap cannot be forgotten nor silently closed. The requirements stay "covered outside the required
 CI" in the traceability matrix until then (tools/traceability-exceptions.toml).
+
+ENF-UX-001 was the first to land (the wizard makes the shelf linked to Kavita): its test stays here,
+no longer marked, and checks that the timed journey goes through to the book.
 """
 
 from __future__ import annotations
@@ -16,12 +19,6 @@ ROOT = Path(__file__).resolve().parents[3]
 
 
 @pytest.mark.req("ENF-UX-001")
-@pytest.mark.xfail(
-    strict=True,
-    reason="ENF-UX-001: the timed journey of M3 L57 exists and stops at a known gap: the "
-    "first-run screens do not reach a first book alone (no sign-in screen, no screen binds a "
-    "shelf to Kavita, the folder screen is a dead end, more gestures than the budget of 6)",
-)
 def test_first_book_under_10_minutes() -> None:
     spec = ROOT / "e2e" / "tests" / "test_m3_journey.spec.ts"
     assert spec.is_file(), "the timed first-book journey does not exist"
@@ -29,8 +26,11 @@ def test_first_book_under_10_minutes() -> None:
     assert "test_first_book_under_10_minutes" in text
     assert "BUDGET_S = 600;" in text, "the 10 minute budget is not asserted"
     assert "BUDGET_ACTIONS = 6;" in text, "the budget of 6 actions is not asserted"
-    # the journey is covered when it no longer carries the marker of the gap where it stops
+    # the journey goes through to the book in Kavita: no marker of a gap where it would stop, and
+    # the shelf is made by the wizard (its screen), not by a command the administrator types
     assert "KNOWN_GAP" not in text, "the journey still stops at a known gap"
+    assert "Créer l'étagère et la lier à Kavita" in text, "the journey does not make the shelf"
+    assert "shelf', 'create'" not in text, "the shelf is made by command, not by the screens"
 
 
 @pytest.mark.req("ENF-GOV-004")

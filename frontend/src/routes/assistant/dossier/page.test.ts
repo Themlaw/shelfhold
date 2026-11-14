@@ -119,9 +119,12 @@ describe('Assistant : dossier partagé', () => {
 
   // req: EF-UX-001
   it('test_without_a_destination_the_screen_says_so_and_offers_no_action', async () => {
+    // ENF-UX-001: "no shelf yet, make one then come back" was the dead end of the journey; the
+    // screen now makes the shelf itself (shelf.test.ts) once Kavita is connected, and without a
+    // Kavita it sends back to the connection. The checks stay unavailable without a destination.
     server.use(withDestination([]));
     render(Page);
-    expect(await screen.findByText(/Aucune étagère n'existe encore/)).toBeInTheDocument();
+    expect(await screen.findByText(/Kavita n'est pas encore connecté/)).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Vérifier le dossier' })).toBeNull();
   });
 

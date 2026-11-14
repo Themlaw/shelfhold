@@ -293,7 +293,7 @@ def create_app(
         build_destinations_router(ops_services),
         build_edition_shelf_router(lambda: ShelfService(engine, clock=clock)),
         build_headless_router(headless_admin, lambda: resolved.public_url),
-        build_setup_router(ops_services),  # L39: the first-run wizard, screens 2 and 3
+        build_setup_router(ops_services, headless_admin),  # L39: the first-run wizard
         build_plans_router(plans),
         build_jobs_router(ops_services),  # EF-INT-001: the URL of a 202
         build_audit_router(ops_services),  # EF-EXP-036: the Kavita accounts of the children

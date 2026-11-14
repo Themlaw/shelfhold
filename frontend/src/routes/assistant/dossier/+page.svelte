@@ -4,12 +4,13 @@
   // is shown. Then: adopt the library Kavita already has (a preview first, nothing is written
   // until it is confirmed on what was shown) or make a new one. All text from the server is shown
   // as text, never as markup.
-  import { onMount } from 'svelte';
+  import { onDestroy, onMount } from 'svelte';
   import {
     wizardAdoptionConfirm,
     wizardAdoptionPreview,
     wizardNewLibrary,
     wizardProbe,
+    wizardShelf,
     wizardState
   } from '#lib/api/index.ts';
   import type {
@@ -24,8 +25,15 @@
   import { csrfToken } from '#lib/passkeys.ts';
   import { problemView, type ProblemView } from '#lib/problems.ts';
   import { needsReauth, needsSession, problemOf } from '#lib/triage.ts';
+  import { advanceFrom, SHELF_FOLDER } from '#lib/wizard.ts';
 
   let destinations = $state<WizardDestinationOut[]>([]);
+  let targetName = $state<string | null>(null);
+  let shelfName = $state('Livres');
+  let shelfFolder = $state('livres');
+  let shelfAge = $state('18+');
+  let cancelAdvance = () => {};
+  onDestroy(() => cancelAdvance());
   let loaded = $state(false);
   let destination = $state('');
   let probe = $state<WizardProbeOut | null>(null);
@@ -65,6 +73,7 @@
     guarded(async () => {
       const { data } = await wizardState({ throwOnError: true });
       destinations = data.destinations;
+      targetName = data.targets[0]?.name ?? null;
       destination = destinations[0]?.id ?? '';
       loaded = true;
     });
@@ -120,6 +129,30 @@
       libraryName = '';
     });
 
+  // The shelf linked to Kavita: the wizard's door to `shelfhold shelf create`, behind the same
+  // guards (a fresh admin session, the age ceiling, the audit of who reads the Kavita library).
+  const makeShelf = () =>
+    guarded(async () => {
+      message = '';
+      await wizardShelf({
+        headers: headers(),
+        body: {
+          name: shelfName.trim(),
+          target: targetName ?? 'kavita',
+          max_age: shelfAge,
+          subpath: shelfFolder.trim()
+        },
+        throwOnError: true
+      });
+      message = t('admin.wizard.dossier.shelf_created');
+      const { data } = await wizardState({ throwOnError: true });
+      destinations = data.destinations;
+      destination = destinations[0]?.id ?? '';
+      cancelAdvance = advanceFrom('dossier'); // nothing else is asked: the wizard goes on
+    });
+
+  const shelfReady = $derived(shelfName.trim() !== '' && SHELF_FOLDER.test(shelfFolder.trim()));
+
   async function afterReauth(): Promise<void> {
     const again = retry;
     retry = null;
@@ -157,8 +190,35 @@
       <p role="status">{message}</p>
     {/if}
 
-    {#if loaded && destinations.length === 0}
-      <p>{t('admin.wizard.dossier.no_destination')}</p>
+    {#if loaded && destinations.length === 0 && targetName === null}
+      <p>{t('admin.wizard.dossier.no_target')}</p>
+      <!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- the app is served at the root of its origin -->
+      <p><a href="/assistant/kavita">{t('admin.wizard.dossier.back_to_kavita')}</a></p>
+    {:else if loaded && destinations.length === 0}
+      <section aria-labelledby="shelf-title">
+        <h3 id="shelf-title">{t('admin.wizard.dossier.shelf_title')}</h3>
+        <p>{t('admin.wizard.dossier.shelf_explain')}</p>
+        <label>
+          {t('admin.wizard.dossier.shelf_name')}
+          <input type="text" bind:value={shelfName} maxlength="128" />
+        </label>
+        <label>
+          {t('admin.wizard.dossier.shelf_folder')}
+          <input type="text" bind:value={shelfFolder} maxlength="64" autocomplete="off" />
+        </label>
+        <p>{t('admin.wizard.dossier.shelf_folder_help')}</p>
+        <label>
+          {t('admin.wizard.dossier.shelf_age')}
+          <select bind:value={shelfAge}>
+            <option value="18+">{t('admin.wizard.dossier.shelf_age_adult')}</option>
+            <option value="13+">{t('admin.wizard.dossier.shelf_age_family')}</option>
+          </select>
+        </label>
+        <p>{t('admin.wizard.dossier.shelf_audit')}</p>
+        <button type="button" disabled={busy || !shelfReady} onclick={makeShelf}>
+          {t('admin.wizard.dossier.shelf_create')}
+        </button>
+      </section>
     {:else if loaded}
       <p>{t('admin.wizard.dossier.explain')}</p>
       {#if destinations.length > 1}
