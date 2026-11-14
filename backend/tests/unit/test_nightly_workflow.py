@@ -55,6 +55,7 @@ def test_nightly_actions_are_pinned_by_sha_and_permissions_are_minimal() -> None
                 assert step["with"]["persist-credentials"] is False
 
 
+@pytest.mark.req("ENF-PORT-003")
 def test_nightly_runs_the_image_journeys_on_both_architectures() -> None:
     call = _nightly()["jobs"]["image-journeys"]
     assert call["uses"] == "./.github/workflows/image.yml"  # the file of this repository, not a ref

@@ -20,7 +20,8 @@ import pytest
 from journey import KAVITA_PASSWORD, KAVITA_URL, Journey, wait_for
 from test_m1a_journey import install_by_commands
 from test_m1b_journey import discovered, family_files, family_install, ids_of, shelf_id
-from test_m2_journey import configure_sources, first_id, kavita_titles, library_epubs
+from test_m2_journey import configure_sources, first_id, library_epubs
+from test_m2_journey import kavita_titles as _kavita_titles
 
 E2E = Path(__file__).resolve().parents[1]
 KID = ("kid8", "synthetic-kid-password-1")
@@ -43,6 +44,11 @@ def make_profile(j: Journey, who: tuple[str, str], role: str, age: int | None = 
 
 def library_ids(j: Journey) -> dict[str, int]:
     return {str(lib["name"]): int(lib["id"]) for lib in j.kavita()["libraries"]}  # type: ignore[index,union-attr]
+
+
+def kavita_titles(j: Journey) -> list[str]:
+    """The series Kavita lists, without the folders it keeps for itself (`.shelfhold…`)."""
+    return [title for title in _kavita_titles(j) if not title.startswith(".")]
 
 
 def target_id(j: Journey) -> str:
