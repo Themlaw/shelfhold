@@ -9,7 +9,7 @@
 </script>
 
 {#if sources && sources.length > 0}
-  <section role="region" aria-label={t('searched.region')} class="searched-in">
+  <section aria-label={t('searched.region')} class="searched-in">
     <h2>{t('searched.region')}</h2>
     {#each sources as source (source.source_key)}
       <article data-testid="searched-source" class="searched-source">

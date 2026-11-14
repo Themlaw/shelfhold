@@ -108,8 +108,17 @@
   function onKeydown(event: KeyboardEvent) {
     if (event.key === 'Escape') {
       event.preventDefault();
-      onclose?.();
+      onclose();
     }
+  }
+
+  function refusalOf(problem: unknown, fallbackEstimate: number) {
+    const figures = problem as { estimated_bytes?: unknown; free_bytes?: unknown; reserve_bytes?: unknown };
+    return {
+      estimated: Number(figures.estimated_bytes ?? fallbackEstimate),
+      free: Number(figures.free_bytes ?? 0),
+      reserve: Number(figures.reserve_bytes ?? 0)
+    };
   }
 
   async function add() {
@@ -126,12 +135,7 @@
       });
       if (spaceError !== undefined) {
         if (problemOf(spaceError).code === 'library.space_insufficient') {
-          const refusal = spaceError as { estimated_bytes?: unknown; free_bytes?: unknown; reserve_bytes?: unknown };
-          spaceRefusal = {
-            estimated: Number(refusal.estimated_bytes ?? estimate.size_bytes),
-            free: Number(refusal.free_bytes ?? 0),
-            reserve: Number(refusal.reserve_bytes ?? 0)
-          };
+          spaceRefusal = refusalOf(spaceError, estimate.size_bytes);
         } else {
           actionProblem = problemView(spaceError);
         }
@@ -163,7 +167,7 @@
       }
       const state = (data as { state: string }).state;
       statusMessage = state === 'in_progress' ? t('add.in_progress') : t('add.added');
-      onadded?.(state);
+      onadded(state);
     } finally {
       busy = false;
     }
@@ -196,12 +200,7 @@
           throwOnError: false
         });
         if (spaceError !== undefined && problemOf(spaceError).code === 'library.space_insufficient') {
-          const refusal = spaceError as { estimated_bytes?: unknown; free_bytes?: unknown; reserve_bytes?: unknown };
-          spaceRefusal = {
-            estimated: Number(refusal.estimated_bytes ?? estimate.size_bytes),
-            free: Number(refusal.free_bytes ?? 0),
-            reserve: Number(refusal.reserve_bytes ?? 0)
-          };
+          spaceRefusal = refusalOf(spaceError, estimate.size_bytes);
         } else {
           spaceRefusal = null;
           statusMessage = t('add.trash_emptied');
@@ -230,7 +229,7 @@
   <header>
     <h2>{edition.title}</h2>
     <p class="source">{sourceName}</p>
-    <button type="button" class="close" onclick={() => onclose?.()}>{t('add.close')}</button>
+    <button type="button" class="close" onclick={() => onclose()}>{t('add.close')}</button>
   </header>
 
   {#if shelvesProblem}
@@ -284,9 +283,9 @@
 
   {#if spaceRefusal}
     <section role="alert" class="refusal">
-      <p>{formatNumber(spaceRefusal.estimated)}</p>
-      <p>{formatNumber(spaceRefusal.free)}</p>
-      <p>{formatNumber(spaceRefusal.reserve)}</p>
+      <p>{t('add.refusal.estimated', { bytes: formatNumber(spaceRefusal.estimated) })}</p>
+      <p>{t('add.refusal.free', { bytes: formatNumber(spaceRefusal.free) })}</p>
+      <p>{t('add.refusal.reserve', { bytes: formatNumber(spaceRefusal.reserve) })}</p>
       <button type="button" onclick={() => (trashConfirmOpen = true)}>{t('add.empty_trash')}</button>
       {#if trashConfirmOpen}
         <label>
