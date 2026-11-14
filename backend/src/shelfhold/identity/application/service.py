@@ -80,6 +80,8 @@ from shelfhold.infrastructure.clock import Clock
 from shelfhold.infrastructure.ids import new_ulid
 
 ADMIN_ROLE = "admin"
+# The door of the first account counts its wrong secrets under one key, whatever the address
+SETUP_THROTTLE_KEY = "\0setup-token"
 IDENTITY_HEADER_AUDIT = "auth.identity_header_stripped"  # read back by `shelfhold status`
 FORWARD_REJECTED_AUDIT = (
     "auth.forward_rejected_route"  # EF-USR-002: identity on a route with its own credentials
@@ -128,6 +130,16 @@ class PasswordLoginSuspendedError(AuthError):
 class AdminExistsError(AuthError):
     def __init__(self) -> None:
         super().__init__("admin_exists")
+
+
+class SetupTokenInvalidError(AuthError):
+    def __init__(self) -> None:
+        super().__init__("setup_token_invalid")
+
+
+class SetupTokenNotConfiguredError(AuthError):
+    def __init__(self) -> None:
+        super().__init__("setup_token_not_configured")
 
 
 class LastAdminError(AuthError):
@@ -349,15 +361,64 @@ class LocalAuth:
         if self._store.admins():
             raise AdminExistsError  # one local admin in M1a (EF-USR-021)
         user_id = new_ulid()
-        self._store.insert_user(
+        if not self._store.insert_first_admin(
             id=user_id,
             username=username,
-            role=ADMIN_ROLE,
             password_hash=self._hasher.hash(password),
             now=self.now(),
-        )
+        ):
+            raise AdminExistsError
         self._audit("user.created", by, target=user_id)
         return user_id
+
+    def needs_admin(self) -> bool:
+        """True on a new instance: no administrator yet."""
+        return not self._store.admins()
+
+    def bootstrap_admin(
+        self,
+        username: str,
+        password: str,
+        *,
+        presented_token: str,
+        expected_token: str | None,
+        ip: str,
+        user_agent: str | None = None,
+    ) -> IssuedSession:
+        """The first account of a new instance, made from the wizard (M3 ENF-UX-001, EF-UX-001).
+
+        Open only while no administrator exists and only to the one who holds the secret that the
+        compose gave to the instance. A guess is counted like a wrong password (per address and
+        for the door as a whole), before the secret is looked at; the account is made in one
+        transaction with the check that none exists, so a race makes one owner. Signs in."""
+        username = username.strip()
+        if self._store.admins():
+            raise AdminExistsError
+        if not expected_token:
+            raise SetupTokenNotConfiguredError
+        at = self._reserve_attempt(ip=ip, account=SETUP_THROTTLE_KEY)
+        if not same_secret(presented_token, expected_token):
+            structlog.get_logger().warning("auth.setup_token_refused", ip=ip)
+            raise SetupTokenInvalidError
+        self._throttle.release(ip=ip, account=SETUP_THROTTLE_KEY, at=at)
+        if not username or len(username) > 128:
+            raise ValueError("invalid_username")
+        check_password_shape(password)
+        user_id = new_ulid()
+        if not self._store.insert_first_admin(
+            id=user_id,
+            username=username,
+            password_hash=self._hasher.hash(password),
+            now=self.now(),
+        ):
+            raise AdminExistsError
+        user = self._store.user_by_id(user_id)
+        if user is None:  # pragma: no cover - just inserted
+            raise AdminExistsError
+        issued = self._issue(user, remember=False, ip=ip, user_agent=user_agent)
+        self._audit("user.created", issued.principal, target=user_id)
+        self._audit("auth.login", issued.principal)
+        return issued
 
     def delete_user(self, username: str, *, by: Principal | None = None) -> str:
         """Delete an account; its audit entries are kept under a pseudonym (EF-USR-013). The

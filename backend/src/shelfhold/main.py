@@ -51,6 +51,7 @@ from shelfhold.interfaces.http_api.app import HttpApplication, Routers, create_h
 from shelfhold.interfaces.http_api.audit import build_audit_router
 from shelfhold.interfaces.http_api.auth import AuthGate
 from shelfhold.interfaces.http_api.backfill import build_backfill_router
+from shelfhold.interfaces.http_api.bootstrap import build_bootstrap_router
 from shelfhold.interfaces.http_api.catalog_admin import build_catalog_admin_router
 from shelfhold.interfaces.http_api.catalog_lists import build_catalog_lists_router
 from shelfhold.interfaces.http_api.destinations import build_destinations_router
@@ -179,6 +180,7 @@ SECRET_SETTINGS = frozenset(
         "backup_passphrase_file",
         "metadata_contact",
         "auth_forward_secret",
+        "setup_token",
     }
 )  # never logged, whatever its value
 
@@ -293,6 +295,7 @@ def create_app(
         build_destinations_router(ops_services),
         build_edition_shelf_router(lambda: ShelfService(engine, clock=clock)),
         build_headless_router(headless_admin, lambda: resolved.public_url),
+        build_bootstrap_router(resolved.setup_token),  # the first account, behind a secret
         build_setup_router(ops_services, headless_admin),  # L39: the first-run wizard
         build_plans_router(plans),
         build_jobs_router(ops_services),  # EF-INT-001: the URL of a 202

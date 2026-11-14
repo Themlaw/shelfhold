@@ -1144,6 +1144,21 @@
     action = "On the host machine: “shelfhold admin reset-password” for each account, then “shelfhold restore acknowledge”."
     cause = "A restore may have brought back old passwords: the password connection remains closed until they have been changed."
 
+  [errors.setup_token_invalid]
+    title = "The setup secret is incorrect."
+    action = "Copy the value of SHELFHOLD_SETUP_TOKEN from the compose file again, with no space before or after."
+    cause = "The value typed does not match the one the compose file gives to Shelfhold."
+
+  [errors.setup_token_not_configured]
+    title = "The account cannot be created here yet: no setup secret is set."
+    action = "Add SHELFHOLD_SETUP_TOKEN (at least 24 characters, for example “openssl rand -hex 24”) to the compose file and restart, or run “shelfhold admin create” on the host machine."
+    cause = "Without a secret chosen by whoever installs, the first visitor could take the administrator account."
+
+  [errors.setup_closed]
+    title = "An administrator account already exists."
+    action = "Sign in with that account."
+    cause = "The first account can be made only while no administrator exists."
+
   [errors.invalid_credentials]
     title = "Incorrect username or password."
     action = "Check the username and password, then try again."

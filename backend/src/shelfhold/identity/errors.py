@@ -12,6 +12,10 @@ CODES: tuple[ErrorCode, ...] = (
     ErrorCode("too_many_attempts", 429, "user"),
     ErrorCode("password_login_suspended", 409, "admin"),  # a restore: passwords may be old ones
     ErrorCode("csrf_failed", 403, "user"),
+    # The first account made in the wizard (M3 ENF-UX-001): behind the secret of the compose
+    ErrorCode("setup_token_invalid", 403, "user"),
+    ErrorCode("setup_token_not_configured", 409, "admin"),
+    ErrorCode("setup_closed", 409, "user"),
     # Passkeys (EF-USR-025, ADR-0050)
     ErrorCode("passkey_unavailable", 409, "admin"),
     ErrorCode("passkey_refused", 422, "user"),

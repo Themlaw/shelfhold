@@ -61,6 +61,8 @@ PUBLIC = (
     "GET /login",
     "GET /login/passkey.js",
     "POST /api/v1/auth/login",
+    "GET /api/v1/setup/status",  # ENF-UX-001: a new instance says it waits for its first account
+    "POST /api/v1/setup/admin",  # ...and makes it, behind the secret of the compose
     "POST /api/v1/auth/passkeys/login",
     "POST /api/v1/auth/passkeys/login/options",
     "GET /healthz",
