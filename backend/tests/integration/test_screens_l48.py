@@ -1,5 +1,5 @@
 """M3 L48 (EF-USR-006, EF-UX-004, EF-BIB-021, EF-BIB-052): the doors behind the three screens
-"À classer" (one Edition alone), "Connecter un appareil" and "Corbeille".
+"À classer" (one Edition alone), "Connect a device" and "Corbeille".
 
 The services behind the routes are recorded: what is tried here is who may reach them, with which
 credential and how fresh, and that nothing secret or hidden comes back. Every "never" is a call

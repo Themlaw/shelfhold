@@ -10,12 +10,12 @@ The titles come from the sources: they are data for the client, which never read
 from collections.abc import Callable
 from typing import Annotated
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Path
 from pydantic import BaseModel, Field
 
 from shelfhold.identity.public import RESERVED_ACTIONS, Principal
 from shelfhold.interfaces.http_api.auth import reserved_action
-from shelfhold.interfaces.http_api.ops import EditionSuggestionOut, RatedOut, refusals
+from shelfhold.interfaces.http_api.ops import EditionSuggestionOut, RatedOut, RateIn, refusals
 from shelfhold.interfaces.http_api.stats import require_admin
 from shelfhold.ops import OpsServices
 
@@ -89,5 +89,19 @@ def build_triage_router(get_ops: Callable[[], OpsServices]) -> APIRouter:
         with refusals():
             done = get_ops().rating.rate_batch(body.age, confirm=body.confirm, principal=principal)
         return RateBatchOut(**done)
+
+    @router.post("/editions/{edition_id}/rating", response_model=RatedOut)
+    def rate_edition(
+        edition_id: Annotated[str, Path(min_length=26, max_length=26)],
+        body: RateIn,
+        principal: Annotated[Principal, Depends(_RATE)],
+    ) -> RatedOut:
+        """Fix the age of one Edition alone (EF-USR-006): the same reserved action as for a Work
+        (a fresh admin session holding the right to classify, never a key)."""
+        with refusals():
+            done = get_ops().rating.rate(
+                body.age, work_id=None, edition_id=edition_id, principal=principal
+            )
+        return RatedOut(**done)
 
     return router

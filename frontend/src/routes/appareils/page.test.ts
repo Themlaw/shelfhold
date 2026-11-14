@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { render, screen } from '@testing-library/svelte';
 import { http, HttpResponse } from 'msw';
 import { setupServer } from 'msw/node';
@@ -36,6 +37,7 @@ describe('Connecter un appareil', () => {
     server.use(serve(ENTRY));
     const { container } = render(Page);
     expect(await screen.findByRole('heading', { name: 'Connecter un appareil' })).toBeInTheDocument();
+    await screen.findAllByRole('img');
     const codes = [...container.querySelectorAll('svg[data-qr-text]')];
     expect(codes.map((c) => c.getAttribute('data-qr-text'))).toEqual([
       'https://kavita.example',
@@ -47,7 +49,7 @@ describe('Connecter un appareil', () => {
     // each address is also written, for whoever cannot scan
     expect(screen.getAllByText('https://kavita.example/api/opds')).toHaveLength(2);
     expect(screen.getByText(/Kover/)).toBeInTheDocument();
-    expect(screen.getByText(/KOReader/)).toBeInTheDocument();
+    expect(screen.getAllByText(/KOReader/)).toHaveLength(2);
     expect(screen.getByText(/liseuse/i)).toBeInTheDocument();
   });
 
@@ -55,7 +57,7 @@ describe('Connecter un appareil', () => {
   it('puts no token and no key in the page or in a code, and says where the key is made', async () => {
     server.use(serve(ENTRY));
     const { container } = render(Page);
-    await screen.findByRole('heading', { name: 'Connecter un appareil' });
+    await screen.findAllByRole('img');
     const text = container.innerHTML.toLowerCase();
     for (const word of ['apikey', 'api_key', 'token', 'secret', 'password', 'shk_', '@']) {
       expect(text).not.toContain(word);
@@ -75,7 +77,7 @@ describe('Connecter un appareil', () => {
       })
     );
     const { container } = render(Page);
-    await screen.findByRole('heading', { name: 'Connecter un appareil' });
+    await screen.findAllByRole('img');
     const drawn = [...container.querySelectorAll('svg[data-qr-text]')].map((c) =>
       c.getAttribute('data-qr-text')
     );
@@ -96,7 +98,7 @@ describe('Connecter un appareil', () => {
 
   // req: EF-UX-004
   it('the code is drawn locally: the generator source holds no network call', () => {
-    const source = readFileSync(new URL('../../lib/components/QrCode.svelte', import.meta.url), 'utf8');
+    const source = readFileSync(join(process.cwd(), 'src/lib/components/QrCode.svelte'), 'utf8');
     for (const word of ['fetch(', 'XMLHttpRequest', 'WebSocket', 'sendBeacon', 'http://', 'https://']) {
       expect(source).not.toContain(word);
     }

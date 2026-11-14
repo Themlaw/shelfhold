@@ -93,3 +93,17 @@ def library_is_dedicated(library: Mapping[str, Any], remote_root: str) -> bool:
         (base := _norm(str(folder))) == root or base.startswith(root.rstrip("/") + "/")
         for folder in folders
     )
+
+
+def device_entry_points(base_url: str) -> dict[str, str] | None:
+    """The addresses a device is told to open (EF-UX-004): Kavita's own, built from the address
+    of the instance and nothing else. No userinfo, no query, no fragment, and no key: the OPDS and
+    kosync keys belong to the reader's account and are made in Kavita. Anything that is not a web
+    address gives `None`."""
+    parts = urlsplit(base_url.strip())
+    if parts.scheme not in ("http", "https") or not parts.hostname:
+        return None
+    host = f"[{parts.hostname}]" if ":" in parts.hostname else parts.hostname
+    root = f"{parts.scheme}://{host}{f':{parts.port}' if parts.port else ''}"
+    root += parts.path.rstrip("/")
+    return {"kover": root, "opds": f"{root}/api/opds", "kosync": f"{root}/api/koreader"}

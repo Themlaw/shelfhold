@@ -28,7 +28,13 @@ def test_trash_listing_groups_one_deletion_per_line_and_flags_irreplaceable() ->
         for line in listed:
             assert line["files"] >= 1 and line["purge_after"] > line["deleted_at"]
             assert set(line) == {
-                "deletion_id", "unit_id", "level", "files", "bytes", "deleted_at", "purge_after",
+                "deletion_id",
+                "unit_id",
+                "level",
+                "files",
+                "bytes",
+                "deleted_at",
+                "purge_after",
                 "irreplaceable",
             }  # no path, no snapshot
 

@@ -1,20 +1,33 @@
 <script lang="ts">
-  // The minimal "À classer" screen (EF-USR-015): the Works that wait, an age selector per Work,
-  // and "Classer tout en lot" with the confirmation typed again. Everything shown comes from the
+  // The "À classer" screen (EF-USR-015, EF-USR-006): the Works that wait, filters that only narrow
+  // what is shown (no request, no change to the batch), an age selector per Work and per Edition
+  // alone, and "Classer tout en lot" with the confirmation typed again, on a fresh session (the
+  // password is asked in place). A role that is not the admin's is told so and sees no list. Everything shown comes from the
   // sources: it is text, never markup. A raised age shows the plan of the files to withdraw and
   // applies none of it (EF-BIB-037): withdrawing is its own explicit action.
   import { onMount } from 'svelte';
-  import { rateBatch, rateWork, toRateList } from '#lib/api/index.ts';
+  import { rateBatch, rateEdition, rateWork, toRateList } from '#lib/api/index.ts';
   import type { ToRateItem, WithdrawalOut } from '#lib/api/types.gen.ts';
   import AgePicker from '#lib/components/AgePicker.svelte';
   import ReauthPrompt from '#lib/components/ReauthPrompt.svelte';
   import { t, type MessageKey } from '#lib/i18n/index.ts';
   import { csrfToken } from '#lib/passkeys.ts';
-  import { ageLabel, needsReauth, needsSession, problemOf, type Age } from '#lib/triage.ts';
+  import {
+    ageLabel,
+    isForbidden,
+    needsReauth,
+    needsSession,
+    problemOf,
+    type Age
+  } from '#lib/triage.ts';
 
   let items = $state<ToRateItem[]>([]);
   let loaded = $state(false);
   let signedOut = $state(false);
+  let forbidden = $state(false);
+  let stateFilter = $state('');
+  let textFilter = $state('');
+  let editionAge = $state<Record<string, Age | null>>({});
   let message = $state('');
   let failed = $state(false);
   let chosen = $state<Record<string, Age | null>>({});
@@ -53,6 +66,9 @@
         reauthMethods = problemOf(error).reauth_methods ?? ['password'];
       } else if (needsSession(error)) {
         signedOut = true;
+      } else if (isForbidden(error)) {
+        forbidden = true;
+        items = [];
       } else {
         say(t('toRate.error'), true);
       }
@@ -97,6 +113,30 @@
     });
   }
 
+  async function rateOneEdition(edition: string): Promise<void> {
+    const age = editionAge[edition];
+    if (!age) return;
+    await guarded(async () => {
+      const { data } = await rateEdition({
+        headers: headers(),
+        path: { edition_id: edition },
+        body: { age },
+        throwOnError: true
+      });
+      plan = data.withdrawals;
+      say(t('toRate.edition_rated', { age: t(ageLabel(age)) }));
+      await load();
+    });
+  }
+
+  const shown = $derived(
+    items.filter(
+      (item) =>
+        (stateFilter === '' || item.state === stateFilter) &&
+        item.title.toLocaleLowerCase().includes(textFilter.trim().toLocaleLowerCase())
+    )
+  );
+
   async function prepareBatch(): Promise<void> {
     const age = batchAge;
     if (!age) return;
@@ -137,6 +177,8 @@
 
   {#if signedOut}
     <p role="alert" class="err">{t('toRate.signed_out')}</p>
+  {:else if forbidden}
+    <p role="alert" class="err">{t('toRate.forbidden')}</p>
   {:else}
     {#if reauthMethods}
       <ReauthPrompt methods={reauthMethods} ondone={afterReauth} oncancel={cancelReauth} />
@@ -161,8 +203,26 @@
     {#if loaded && items.length === 0}
       <p>{t('toRate.none')}</p>
     {:else if items.length > 0}
+      <div class="filters">
+        <label>
+          {t('toRate.filter_state')}
+          <select bind:value={stateFilter}>
+            <option value="">{t('toRate.filter_state_all')}</option>
+            {#each Object.keys(STATES) as state (state)}
+              <option value={state}>{stateLabel(state)}</option>
+            {/each}
+          </select>
+        </label>
+        <label>
+          {t('toRate.filter_text')}
+          <input type="search" bind:value={textFilter} autocomplete="off" spellcheck="false" />
+        </label>
+      </div>
+      {#if shown.length === 0}
+        <p>{t('toRate.filter_none')}</p>
+      {/if}
       <ul class="works">
-        {#each items as item (item.work_id)}
+        {#each shown as item (item.work_id)}
           <li>
             <div class="head">
               <strong>{item.title}</strong>
@@ -176,6 +236,18 @@
                   provenance: suggestion.provenance
                 })}
               </p>
+              <AgePicker
+                name={`age-edition-${suggestion.edition_id}`}
+                legend={t('toRate.edition_age', { edition: suggestion.edition_id })}
+                bind:value={editionAge[suggestion.edition_id]}
+              />
+              <button
+                type="button"
+                disabled={!editionAge[suggestion.edition_id]}
+                onclick={() => rateOneEdition(suggestion.edition_id)}
+              >
+                {t('toRate.edition_rate')}
+              </button>
             {/each}
             {#if item.state !== 'suggestion_above'}
             <AgePicker
@@ -193,6 +265,7 @@
 
       <section aria-labelledby="batch-title" class="batch">
         <h2 id="batch-title">{t('toRate.batch_title')}</h2>
+        <p class="muted">{t('toRate.batch_scope', { count: items.length })}</p>
         <AgePicker name="age-batch" legend={t('toRate.batch_age')} bind:value={batchAge} />
         <button type="button" disabled={!batchAge} onclick={prepareBatch}>
           {t('toRate.batch_prepare')}
@@ -254,6 +327,21 @@
   form {
     display: grid;
     gap: 0.5rem;
+  }
+  .filters {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem 1rem;
+    margin-top: 1rem;
+  }
+  .filters label {
+    display: grid;
+    gap: 0.25rem;
+  }
+  select,
+  input,
+  button {
+    min-height: 2.75rem;
   }
   .muted {
     color: var(--color-muted);

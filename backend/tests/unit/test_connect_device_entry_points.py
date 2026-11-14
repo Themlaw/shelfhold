@@ -1,4 +1,4 @@
-"""M3 L48 (EF-UX-004): the entry points of "Connecter un appareil" come from the Kavita address
+"""M3 L48 (EF-UX-004): the entry points of "Connect a device" come from the Kavita address
 and from nothing else: the address without its userinfo, the OPDS and kosync prefixes of Kavita,
 never a key, a token or a query."""
 

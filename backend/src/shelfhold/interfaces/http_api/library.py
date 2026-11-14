@@ -77,6 +77,38 @@ class TypedIn(BaseModel):
     typed: str = Field(min_length=1)  # the phrase, compared on the server
 
 
+class TrashEntryOut(BaseModel):
+    """One deletion of one Unit in the bins: never a path, never a title."""
+
+    deletion_id: str | None
+    unit_id: str
+    level: str
+    files: int
+    bytes: int
+    deleted_at: str
+    purge_after: str
+    irreplaceable: bool
+
+
+class TrashListOut(BaseModel):
+    entries: list[TrashEntryOut]
+    total_bytes: int
+
+
+class DeviceTargetOut(BaseModel):
+    """Kavita's own entry points: addresses only, never a key or a token."""
+
+    target_id: str
+    name: str
+    kover: str
+    opds: str
+    kosync: str
+
+
+class DeviceConnectOut(BaseModel):
+    targets: list[DeviceTargetOut]
+
+
 class SpaceCheckIn(BaseModel):
     estimated_bytes: int = Field(ge=0)
 
@@ -182,6 +214,19 @@ def build_library_router(get_ops: Callable[[], OpsServices]) -> APIRouter:
         """« Vider la corbeille »: the same method as `shelfhold trash empty`."""
         with refusals():
             return get_ops().library.trash_empty(typed=body.typed, principal=principal)
+
+    @router.get("/trash", response_model=TrashListOut)
+    def trash_list(_admin: Admin) -> TrashListOut:
+        """The « Corbeille » screen: what the bins hold and until when. No path, no title."""
+        with refusals():
+            return TrashListOut(**get_ops().library.trash_list())
+
+    @router.get("/devices/connect", response_model=DeviceConnectOut)
+    def device_connect(_admin: Admin) -> DeviceConnectOut:
+        """« Connect a device »: the addresses of Kavita's own entry points (Kover, KOReader
+        by kosync or OPDS, an OPDS reader). Addresses only: never a key or a token."""
+        with refusals():
+            return DeviceConnectOut(**get_ops().library.device_entry_points())
 
     @router.get("/tombstones", response_model=Body)
     def list_tombstones(_admin: Admin) -> Body:

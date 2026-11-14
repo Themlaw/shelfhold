@@ -36,6 +36,11 @@ ouvre une issue `dependency-risk` et fait basculer vers le repli décrit.
 
 Non critiques (remplaçables sans réécriture), listées pour mémoire :
 
+- **qrcode-generator** (MIT, 2.0.4, aucune dépendance) : dessine en local le QR de « Connecter un
+  appareil » (M3 L48, EF-UX-004). Il ne code que des adresses de Kavita, jamais une clé ni un
+  jeton, et n'ouvre aucune connexion : le composant `QrCode.svelte` ne contient aucun appel réseau
+  (test `frontend/src/routes/appareils/page.test.ts`). Repli : un encodeur maison (version 1 à 10,
+  correction L) ou l'adresse écrite seule, déjà affichée à côté de chaque code.
 - **httpx2** (BSD-3-Clause) : client HTTP sortant du fetcher (M1a) et du `TestClient` de
   Starlette, qui déprécie `httpx` ; repli : `httpx`. Le domaine ne l'importe jamais (contrat
   `domain-pure`).

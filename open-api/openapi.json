@@ -1282,6 +1282,56 @@
         "title": "DetachIn",
         "type": "object"
       },
+      "DeviceConnectOut": {
+        "properties": {
+          "targets": {
+            "items": {
+              "$ref": "#/components/schemas/DeviceTargetOut"
+            },
+            "title": "Targets",
+            "type": "array"
+          }
+        },
+        "required": [
+          "targets"
+        ],
+        "title": "DeviceConnectOut",
+        "type": "object"
+      },
+      "DeviceTargetOut": {
+        "description": "Kavita's own entry points: addresses only, never a key or a token.",
+        "properties": {
+          "kosync": {
+            "title": "Kosync",
+            "type": "string"
+          },
+          "kover": {
+            "title": "Kover",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "opds": {
+            "title": "Opds",
+            "type": "string"
+          },
+          "target_id": {
+            "title": "Target Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "target_id",
+          "name",
+          "kover",
+          "opds",
+          "kosync"
+        ],
+        "title": "DeviceTargetOut",
+        "type": "object"
+      },
       "Done": {
         "properties": {
           "ok": {
@@ -7552,6 +7602,83 @@
         "title": "ToShelveOut",
         "type": "object"
       },
+      "TrashEntryOut": {
+        "description": "One deletion of one Unit in the bins: never a path, never a title.",
+        "properties": {
+          "bytes": {
+            "title": "Bytes",
+            "type": "integer"
+          },
+          "deleted_at": {
+            "title": "Deleted At",
+            "type": "string"
+          },
+          "deletion_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Deletion Id"
+          },
+          "files": {
+            "title": "Files",
+            "type": "integer"
+          },
+          "irreplaceable": {
+            "title": "Irreplaceable",
+            "type": "boolean"
+          },
+          "level": {
+            "title": "Level",
+            "type": "string"
+          },
+          "purge_after": {
+            "title": "Purge After",
+            "type": "string"
+          },
+          "unit_id": {
+            "title": "Unit Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "deletion_id",
+          "unit_id",
+          "level",
+          "files",
+          "bytes",
+          "deleted_at",
+          "purge_after",
+          "irreplaceable"
+        ],
+        "title": "TrashEntryOut",
+        "type": "object"
+      },
+      "TrashListOut": {
+        "properties": {
+          "entries": {
+            "items": {
+              "$ref": "#/components/schemas/TrashEntryOut"
+            },
+            "title": "Entries",
+            "type": "array"
+          },
+          "total_bytes": {
+            "title": "Total Bytes",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "entries",
+          "total_bytes"
+        ],
+        "title": "TrashListOut",
+        "type": "object"
+      },
       "TrustCardOut": {
         "properties": {
           "level": {
@@ -11408,6 +11535,58 @@
         ]
       }
     },
+    "/api/v1/devices/connect": {
+      "get": {
+        "description": "« Connect a device »: the addresses of Kavita's own entry points (Kover, KOReader\nby kosync or OPDS, an OPDS reader). Addresses only: never a key or a token.",
+        "operationId": "device_connect",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeviceConnectOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Connexion requise, ou mot de passe à confirmer (reauth-required)."
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée)."
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Détail du problème (RFC 9457)."
+          }
+        },
+        "summary": "Device Connect",
+        "tags": [
+          "library"
+        ]
+      }
+    },
     "/api/v1/diagnostic/bundle": {
       "get": {
         "description": "The diagnostic bundle as a download (M3 L46): admin only, written to a temporary\nfile, never to a content root, and served as an attachment.",
@@ -12409,6 +12588,81 @@
         "summary": "Preferred Team Set",
         "tags": [
           "series-sheet"
+        ]
+      }
+    },
+    "/api/v1/editions/{edition_id}/rating": {
+      "post": {
+        "description": "Fix the age of one Edition alone (EF-USR-006): the same reserved action as for a Work\n(a fresh admin session holding the right to classify, never a key).",
+        "operationId": "rate_edition",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "edition_id",
+            "required": true,
+            "schema": {
+              "maxLength": 26,
+              "minLength": 26,
+              "title": "Edition Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RateIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RatedOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Connexion requise, ou mot de passe à confirmer (reauth-required)."
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée)."
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Détail du problème (RFC 9457)."
+          }
+        },
+        "summary": "Rate Edition",
+        "tags": [
+          "triage"
         ]
       }
     },
@@ -20333,6 +20587,58 @@
           }
         },
         "summary": "Lift Tombstone",
+        "tags": [
+          "library"
+        ]
+      }
+    },
+    "/api/v1/trash": {
+      "get": {
+        "description": "The « Corbeille » screen: what the bins hold and until when. No path, no title.",
+        "operationId": "trash_list",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TrashListOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Connexion requise, ou mot de passe à confirmer (reauth-required)."
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée)."
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Détail du problème (RFC 9457)."
+          }
+        },
+        "summary": "Trash List",
         "tags": [
           "library"
         ]

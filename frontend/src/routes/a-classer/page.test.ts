@@ -53,6 +53,8 @@ describe('À classer', () => {
     expect(rate).toBeDisabled();
     // keyboard: Tab into the group, arrows move, nothing chosen until a key does it
     const user = userEvent.setup();
+    await user.tab(); // the two filters come first: the state, then the search
+    await user.tab();
     await user.tab();
     expect(radios[0]).toHaveFocus();
     await user.keyboard('{ArrowRight}{ArrowRight}{ArrowRight}');
