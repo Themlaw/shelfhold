@@ -28,6 +28,7 @@ from shelfhold.export.application.intents import (
 from shelfhold.export.application.locks import (
     LockBusyError,
     ResourceLocks,
+    dest_resource,
     path_resource,
     work_resource,
 )
@@ -143,7 +144,7 @@ class IntentOps:
                 path_resource(f"{line.destination_id}/{line.rel_path.split('/', 1)[0]}"),
             ]
         else:
-            resources = [self._path_lock(intent)]
+            resources = self._path_locks(intent)
         locks = ResourceLocks(self._comp.engine, clock=self._comp.clock)
         try:
             with locks.hold_resources(new_ulid(), resources):
@@ -151,23 +152,40 @@ class IntentOps:
         except LockBusyError:
             raise StillWaitingError("a job is writing there: try again when it is over") from None
 
-    def _path_lock(self, intent: OpenIntent) -> str:
-        """The lock of an intent with no reserved line (a rename, a repatriation, a file of the
-        mirror): the one the writers of that folder hold, `path:<destination>/<series folder>`,
-        found from the destination whose root holds the path (the longest root wins). The shared
-        `dest:<id>` row follows from the name, so a removal or a detachment of the destination
-        is excluded too. A path under no destination (the store, `received/`, a library root)
-        has no export writer to meet: it keeps its own path as the name."""
-        path = intent.dst or intent.src or intent.id
-        best: tuple[int, str] | None = None
+    def _path_locks(self, intent: OpenIntent) -> list[str]:
+        """The locks of an intent with no reserved line (a rename, a repatriation, a file of the
+        mirror): the ones the writers of those folders hold, `path:<destination>/<series folder>`,
+        for the folder of the source **and** the one of the target (a rename plan holds both),
+        found from the destination whose root holds the path. The shared `dest:<id>` row follows
+        from the name, so a removal or a detachment of the destination is excluded too. The root
+        of a destination itself is held as the destination (`dest:<id>`, exclusive): it excludes
+        every writer of it. Destination roots cannot nest (`check_binding` refuses it), so at
+        most one destination holds a path. A path under no destination (the store, `received/`, a
+        library root) has no export writer to meet: it keeps its own path as the name."""
+        paths = [p for p in (intent.src, intent.dst) if p] or [intent.id]
+        roots: list[tuple[str, str]] = []
         with self._comp.engine.connect() as connection:
-            ids = connection.execute(sa.select(export.shelf_destination.c.id)).scalars().all()
-            for destination_id in ids:
+            for destination_id in connection.execute(
+                sa.select(export.shelf_destination.c.id)
+            ).scalars():
                 root = load_context(connection, destination_id).root_local
-                below = within(path, root) if root is not None else None
-                if below and (best is None or len(root or "") > best[0]):
-                    best = (len(root or ""), f"{destination_id}/{below.split('/', 1)[0]}")
-        return path_resource(best[1] if best is not None else path)
+                if root is not None:
+                    roots.append((destination_id, root))
+        names: set[str] = set()
+        for path in paths:
+            for destination_id, root in sorted(roots, key=lambda r: -len(r[1])):  # deepest first
+                below = within(path, root)
+                if below is None:
+                    continue
+                names.add(
+                    path_resource(f"{destination_id}/{below.split('/', 1)[0]}")
+                    if below
+                    else dest_resource(destination_id)
+                )
+                break
+            else:
+                names.add(path_resource(path))
+        return sorted(names)
 
     def _refuse_not_open(self, intent_id: str) -> None:
         with self._comp.engine.connect() as connection:

@@ -109,7 +109,7 @@ def test_the_lock_of_an_intent_without_a_line_is_the_one_of_its_destination() ->
         locks = ResourceLocks(env.engine, clock=env.clock)
         inside = _intent(str(env.root / "Dr Stone" / "Dr Stone - Ch.2.cbz"))
         name = path_resource(f"{env.destination_id}/Dr Stone")
-        assert ops._path_lock(inside) == name
+        assert ops._path_locks(inside) == [name]
         with (  # an export holding the series folder: the intent is not ours to settle
             locks.hold_resources(new_ulid(), [name]),
             pytest.raises(StillWaitingError),
@@ -125,4 +125,49 @@ def test_the_lock_of_an_intent_without_a_line_is_the_one_of_its_destination() ->
         with ops._held(inside):
             assert locks.is_held(name)  # and while it is settled, an export of the folder waits
         outside = _intent("/elsewhere/received/x.cbz")
-        assert ops._path_lock(outside) == "path:/elsewhere/received/x.cbz"
+        assert ops._path_locks(outside) == ["path:/elsewhere/received/x.cbz"]
+
+
+def test_the_root_of_a_destination_is_held_as_the_destination() -> None:
+    """A path that is the root itself (a rename of the root, a mirror file at its top) has no
+    series folder: it takes `dest:<id>`, which a removal or a detachment holds too."""
+    from types import SimpleNamespace
+
+    from shelfhold.export.application.locks import dest_resource
+    from shelfhold.ops.intents import IntentOps
+
+    with export_env() as env:
+        ops = IntentOps(SimpleNamespace(engine=env.engine, clock=env.clock))  # type: ignore[arg-type]
+        assert ops._path_locks(_intent(str(env.root))) == [dest_resource(env.destination_id)]
+
+
+def test_destinations_cannot_nest_so_one_destination_holds_a_path() -> None:
+    """The deepest-root rule of `_path_locks` never has two candidates: the creation of a
+    destination refuses a root inside, or around, the root of another writing one."""
+    from shelfhold.export.domain.bindings import BindingFacts, TreeOverlapError, check_binding
+
+    outer = BindingFacts("A", "s1", "t", "tree", "foyer", "/library/Kavita")
+    inner = BindingFacts("B", "s2", "t", "tree", "foyer", "/library/Kavita/Manga")
+    for new, other in ((inner, outer), (outer, inner)):
+        with pytest.raises(TreeOverlapError):
+            check_binding(new, [other], retention_mode="keep")
+
+
+def test_three_stale_attempts_end_with_a_message_about_the_export_not_a_preview(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from shelfhold.export.application.plans import StalePlanError
+
+    calls: list[int] = []
+
+    def stale(self: ExportPipeline, *args: Any, **kwargs: Any) -> Any:
+        calls.append(1)
+        raise StalePlanError("the preview changed: recompute it")
+
+    monkeypatch.setattr(ExportPipeline, "apply", stale)
+    with export_env() as env:
+        env.add_chapter(env.new_series(), "2")
+        with pytest.raises(StalePlanError, match="other exports") as raised:
+            env.pipeline.run(env.destination_id, job_id=new_ulid())
+        assert "preview" not in str(raised.value)
+        assert len(calls) == pipeline_module.RUN_ATTEMPTS

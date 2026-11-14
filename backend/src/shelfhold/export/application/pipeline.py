@@ -74,6 +74,7 @@ from shelfhold.export.domain.field_owner import AGE_RATING
 from shelfhold.export.domain.naming import FrozenAttrs, NamingTemplate, Parsed
 from shelfhold.export.domain.planner import (
     GATE_CLOSED,
+    GONE_STATES,
     AgeGateFacts,
     Blocked,
     Plan,
@@ -628,11 +629,13 @@ class ExportPipeline:
             self._log_plan(plan_id, plan)
             try:
                 return self.apply(plan_id, if_match=loaded.version, job_id=job_id)
-            except StalePlanError:
+            except StalePlanError as error:
                 # another export of the destination moved the manifest between this plan and its
                 # claim: start again from what is there now (nothing left to do ends the run)
                 if attempt == RUN_ATTEMPTS - 1:
-                    raise
+                    raise StalePlanError(  # not the "preview" of a person: nobody asked for one
+                        "other exports kept changing the destination while this export planned"
+                    ) from error
                 log.info("export.plan_stale_retry", destination_id=destination_id)
         raise AssertionError("unreachable")  # pragma: no cover
 
@@ -831,7 +834,10 @@ class ExportPipeline:
         ) as held:  # fmt: skip
             try:
                 if self._superseded(ctx, planned):  # planned before this lock: look again
-                    log.info("export.op_superseded", kind=planned.kind)
+                    log.warning(
+                        "export.op_superseded", kind=planned.kind, unit_id=planned.unit_id,
+                        rel_path=planned.rel_path,
+                    )  # fmt: skip
                     return REFUSED
                 if planned.kind == "register":
                     self._register(ctx, planned)
@@ -875,7 +881,7 @@ class ExportPipeline:
                         record.c.export_item_id == planned.export_item_id,
                     )
                 ).scalar()
-                return state is not None and state not in ("planned", "error")
+                return state is not None and state not in ("planned", "error", *GONE_STATES)
             covers = record.c.export_item_id.in_(
                 sa.select(coverage.c.carrier_id).where(
                     coverage.c.carrier_type == "export_item",
@@ -886,7 +892,9 @@ class ExportPipeline:
                 [record.c.rel_path == planned.rel_path] if planned.rel_path is not None else []
             )
             clash = sa.select(record.c.export_item_id).where(
-                record.c.shelf_destination_id == ctx.destination_id, sa.or_(covers, *same_path)
+                record.c.shelf_destination_id == ctx.destination_id,
+                record.c.state.not_in(GONE_STATES),  # a freed path is free, as the planner says
+                sa.or_(covers, *same_path),
             )
             return connection.execute(clash.limit(1)).first() is not None
 
