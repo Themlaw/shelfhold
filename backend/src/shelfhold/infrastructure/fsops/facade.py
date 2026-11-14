@@ -32,9 +32,11 @@ from shelfhold.export.domain.path_map import (
     within,
 )
 from shelfhold.export.domain.physical_roots import (
+    ERASING_DIR,
     LEASE_FILE,
     RECYCLE_DIR,
     RESERVED_DIR,
+    SENTINEL_FILE,
     STAGING_DIR,
     ExpectedRoot,
     RootState,
@@ -49,6 +51,7 @@ from shelfhold.infrastructure.freeze import FreezeState
 from shelfhold.infrastructure.fsops.capabilities import RootCapabilities, probe_root
 from shelfhold.infrastructure.fsops.confined import ConfinedRoot, Kind, Strategy
 from shelfhold.infrastructure.fsops.emitters import (
+    PROBE_PREFIX,
     TRASH_RETENTION_S,
     Perimeter,
     perimeter_of,
@@ -61,6 +64,8 @@ from shelfhold.infrastructure.fsops.errors import (
     CrossRootError,
     EmitterConditionError,
     EmitterPerimeterError,
+    ErasingNameTakenError,
+    FileChangedError,
     FsopsError,
     HashInterrupted,
     JournalChangedError,
@@ -1062,19 +1067,51 @@ class Fsops:
         with self._gated(located) as root:
             root.unlink(located.rel)
 
-    def purge_unlink(self, local: str) -> None:
+    def purge_unlink(
+        self,
+        local: str,
+        *,
+        expected_sha256: str | None = None,
+        expected_identity: FileIdentity | None = None,
+    ) -> None:
         """`purge --now` deletes one regular file: a copy of a Unit in a read-write root, or a
         file of that root's bin (EF-BIB-052). The caller has passed the reserved-action rule, has
         recorded the tombstone and has written the intent; this is the primitive, and it adds
         what only fsops can check: the path is under a writable root, never through a link, never
-        a directory, never the host's own files (sentinel, lease, tombstone journal, mirror)."""
+        a directory, never the host's own files (sentinel, lease, tombstone journal, mirror).
+        `expected_sha256` and `expected_identity` (L30): the file goes only if it is still the one
+        the caller looked at, read and compared here, in the same opened root, just before the
+        unlink; a file that changed raises `FileChangedError` and stays."""
         log.debug("fsops.purge_unlink", **self._where(local))
         located = self._locate(local, host=True)
         self._require_purgeable(located.rel)
         with self._gated(located) as root:
             if root.lstat_kind(located.rel) != "file":
                 raise NotRegularFileError(f"{local!r} is not a regular file")
+            if expected_sha256 is not None or expected_identity is not None:
+                self._require_unchanged(root, located.rel, expected_sha256, expected_identity)
             root.unlink(located.rel)
+
+    @staticmethod
+    def _require_unchanged(
+        root: ConfinedRoot,
+        rel: str,
+        expected_sha256: str | None,
+        expected_identity: FileIdentity | None,
+    ) -> None:
+        fd = root.open_file(rel, os.O_RDONLY)
+        with os.fdopen(fd, "rb") as stream:
+            opened = os.fstat(stream.fileno())
+            if expected_identity is not None and identity_of(opened) != expected_identity:
+                raise FileChangedError("the file is not the one that was looked at")
+            if expected_sha256 is not None:
+                digest = hashlib.sha256()
+                while chunk := stream.read(1 << 20):
+                    digest.update(chunk)
+                if "sha256:" + digest.hexdigest() != expected_sha256:
+                    raise FileChangedError("the file's content is not the one that was looked at")
+        if root.stat(rel).st_ino != opened.st_ino:  # swapped while it was read
+            raise FileChangedError("the file was replaced while it was read")
 
     def purge_remove_tree(self, local: str) -> None:
         """The same for one entry of a root's bin (`.shelfhold/recycle/<id>`) and what it holds,
@@ -1087,6 +1124,42 @@ class Fsops:
             if root.lstat_kind(located.rel) != "dir":
                 raise NotRegularFileError(f"{local!r} is not a bin entry")
             root.remove_tree(located.rel)
+
+    def erase_host_area(self, root_path: str, *, attested: bool = False) -> None:
+        """The full detachment's one erasure of a root (EF-EXP-031): the reserved folder
+        (`.shelfhold/`, with what it holds), the sentinel and the probe files that stayed, all at
+        the top of the root. The caller has passed the reserved action, has checked that nothing
+        in the folder is user data, and has written the intent; this adds what only fsops can
+        check: the root is a writable one with the right sentinel, and the reserved folder is a
+        real folder, never a link (a link is left alone, not followed, and refused).
+
+        The reserved folder is first moved, in one step, to `.shelfhold-erasing/.shelfhold`: what
+        is left of it while it is emptied (or after a stop) stays under a `.shelfhold` segment,
+        which Kavita's exclusion pattern still matches. A container of that name that the caller
+        does not vouch for (`attested`: an open intention of this erasure exists) or that holds
+        anything but `.shelfhold` may be the admin's own: it is left untouched and refused."""
+        log.debug("fsops.erase_host_area", root=root_path)
+        located = self._host_root(root_path)
+        with self._gated(located, lease=False, tombstone=True) as root:
+            container = root.lstat_kind(ERASING_DIR)
+            if container == "dir":
+                if not attested or any(n != RESERVED_DIR for n in root.listdir(ERASING_DIR)):
+                    raise ErasingNameTakenError(f"{ERASING_DIR} of {root_path!r} is not ours")
+                root.remove_tree(ERASING_DIR)  # a stop left it half emptied: finish it
+            elif container is not None:
+                raise NotRegularFileError(f"{ERASING_DIR} of {root_path!r} is not a folder")
+            kind = root.lstat_kind(RESERVED_DIR)
+            if kind not in (None, "dir"):
+                raise NotRegularFileError(f"{RESERVED_DIR} of {root_path!r} is not a folder")
+            if kind == "dir":
+                root.mkdir(ERASING_DIR)
+                root.rename(RESERVED_DIR, f"{ERASING_DIR}/{RESERVED_DIR}", replace=False)
+                root.remove_tree(ERASING_DIR)
+            names = root.listdir(".")
+            probes = [n for n in names if n.startswith(PROBE_PREFIX)]
+            for name in [*probes, *[n for n in names if n == SENTINEL_FILE]]:  # the sentinel last
+                if root.lstat_kind(name) == "file":
+                    root.unlink(name)
 
     @staticmethod
     def _require_purgeable(rel: str) -> None:

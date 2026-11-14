@@ -50,6 +50,15 @@ class FakeKavitaExchange:
         self.revoked.append({"url": url, "key": key, "key_name": key_name, "password": password})
         return True
 
+    def find_key_id(self, *, url: str, username: str, password: str, key: str) -> str | None:
+        return "1"
+
+    def revoke_key_id(
+        self, *, url: str, username: str, password: str, key_id: str, key: str | None = None
+    ) -> str:
+        self.revoked.append({"url": url, "key_id": key_id, "password": password})
+        return "revoked"
+
 
 @dataclass
 class FakeSuwayomiProbe:

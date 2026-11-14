@@ -312,10 +312,15 @@ def test_concurrent_export_and_rename_same_series_serialized(settings: Settings,
             assert worker.is_alive()  # the export waits, it does not write beside the rename
             assert env.exported_files() == []
             with env.inst.engine.connect() as connection:
-                held = connection.execute(
-                    sa.select(sa.func.count()).select_from(coherence.resource_lock)
-                ).scalar_one()
-            assert held == 2  # the rename's work and path locks only
+                held = sorted(
+                    connection.execute(sa.select(coherence.resource_lock.c.resource)).scalars()
+                )
+            # the rename's work lock, its path lock on the series folder, and the shared row of
+            # the destination (`dest:<id>#<holder>`): named, so that a fourth row is noticed
+            destination = env.destination_id
+            assert [r.split("#")[0].split(":")[0] for r in held] == ["dest", "path", "work"]
+            assert any(r.startswith(f"dest:{destination}#") for r in held)
+            assert any(r.startswith(f"path:{destination}/Dr Stone") for r in held)
         worker.join(30)
         assert not worker.is_alive()
         assert [p.name for p in env.exported_files()] == ["Dr Stone - Ch.2.cbz"]

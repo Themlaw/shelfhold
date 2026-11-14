@@ -3,6 +3,7 @@
 from tests.fakes.kavita.server import (
     API_KEY,
     BASE_URL,
+    OTHER_KEY,
     FakeKavita,
     RecordedRequest,
     build_fetcher,
@@ -13,6 +14,7 @@ from tests.fakes.kavita.server import (
 __all__ = [
     "API_KEY",
     "BASE_URL",
+    "OTHER_KEY",
     "FakeKavita",
     "RecordedRequest",
     "build_fetcher",

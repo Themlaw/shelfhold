@@ -9,6 +9,7 @@ password is sent once, in a JSON body, to the declared address only.
 from __future__ import annotations
 
 import asyncio
+import hmac
 import json
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
@@ -26,6 +27,10 @@ from shelfhold.infrastructure.fetcher import FetchError, GuardedFetcher
 
 SERVER_INFO = "/api/Server/server-info-slim"
 KEY_LENGTH = 32  # RotateAuthKeyRequestDto: 8 to 32
+
+
+class _KeyIdReused(Exception):
+    """The identifier on record now names a key whose value is not the sealed one."""
 
 
 def _json(body: bytes) -> dict[str, Any]:
@@ -65,6 +70,74 @@ class HttpKavitaKeyExchange:
             )
         except FetchError:
             raise TargetExchangeFailed("Kavita cannot be reached at this address") from None
+
+    def find_key_id(self, *, url: str, username: str, password: str, key: str) -> str | None:
+        try:
+            fetcher = self._fetchers(url)
+            found = asyncio.run(self._keys(fetcher, url.rstrip("/"), username, password, None))
+        except FetchError:
+            raise TargetExchangeFailed("Kavita cannot be reached at this address") from None
+        row = next((i for i in found if i.get("key") == key), None)
+        return None if row is None else str(row["id"])
+
+    def revoke_key_id(
+        self, *, url: str, username: str, password: str, key_id: str, key: str | None = None
+    ) -> str:
+        try:
+            fetcher = self._fetchers(url)
+            asked = asyncio.run(
+                self._keys(fetcher, url.rstrip("/"), username, password, key_id, key)
+            )
+        except FetchError:
+            raise TargetExchangeFailed("Kavita cannot be reached at this address") from None
+        except _KeyIdReused:
+            return "reused"
+        return "revoked" if asked == [] else "failed"
+
+    async def _keys(
+        self,
+        fetcher: GuardedFetcher,
+        base: str,
+        username: str,
+        password: str,
+        drop: str | None,
+        expected: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """Log in and list the account's keys; with `drop`, delete that identifier and only it
+        (nothing is deleted when it is not in the list, or when `expected`, the sealed value, is
+        given and the key now behind that identifier has another value). Returns the rows (empty
+        after a deletion that went through, or when the identifier was already gone)."""
+        try:
+            login = await fetcher.post(
+                base + LOGIN.path, json={"username": username, "password": password}
+            )
+            token = _json(login.body).get("token") if login.status == 200 else None
+            if not isinstance(token, str) or not token:
+                raise TargetExchangeFailed("Kavita refused these credentials")
+            auth = {"Authorization": f"Bearer {token}"}
+            listed = await fetcher.get(base + LIST_AUTH_KEYS.path, headers=auth)
+            try:
+                items = json.loads(listed.body) if listed.status == 200 else []
+            except ValueError:
+                items = []
+            if listed.status != 200:
+                raise TargetExchangeFailed("Kavita did not list the keys")
+            rows = [i for i in items if isinstance(i, dict) and isinstance(i.get("id"), int)]
+            if drop is None:
+                return rows
+            row = next((i for i in rows if str(i["id"]) == drop), None)
+            if row is None:
+                return []  # already gone
+            if expected is not None and not hmac.compare_digest(
+                str(row.get("key", "")).encode(), expected.encode()
+            ):
+                raise _KeyIdReused  # the identifier now names another key: it is not ours to delete
+            gone = await fetcher.delete(
+                base + DELETE_AUTH_KEY.path, headers=auth, params={"authKeyId": int(drop)}
+            )
+            return [] if 200 <= gone.status < 300 else rows
+        finally:
+            await fetcher.aclose()
 
     async def _revoke(
         self, fetcher: GuardedFetcher, base: str, username: str, password: str, key: str, name: str

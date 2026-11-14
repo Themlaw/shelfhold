@@ -9,6 +9,7 @@ __all__ = [
     "CrossRootError",
     "EmitterConditionError",
     "EmitterPerimeterError",
+    "FileChangedError",
     "FsopsError",
     "HashInterrupted",
     "JournalChangedError",
@@ -40,6 +41,15 @@ class PathEscapeError(FsopsError):
 
     def __init__(self, message: str) -> None:
         super().__init__(message, code=errno.ELOOP)
+
+
+class FileChangedError(FsopsError):
+    """The file is not the one the caller meant to delete (its content or identity moved)."""
+
+
+class ErasingNameTakenError(FsopsError):
+    """A folder named like the erasing container is at the top of the root and no open intention
+    of the detachment vouches for it: it may be the admin's, so it is left as it is."""
 
 
 class NotRegularFileError(FsopsError):

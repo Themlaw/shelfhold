@@ -17,6 +17,7 @@ from typing import Any, Self
 from shelfhold.export.domain.path_map import PathEntry, PathMap, clean_absolute, within
 
 __all__ = [
+    "ERASING_DIR",
     "LEASE_FILE",
     "MAX_RESTORE_EPOCH",
     "RECEIVED_DIR",
@@ -46,6 +47,7 @@ __all__ = [
 
 SENTINEL_FILE = ".shelfhold-mount-id"
 RESERVED_DIR = ".shelfhold"
+ERASING_DIR = f"{RESERVED_DIR}-erasing"  # holds `.shelfhold` while the detachment empties it
 LEASE_FILE = f"{RESERVED_DIR}/lease"  # the per-root write lease (ENF-OPS-015)
 STAGING_DIR = f"{RESERVED_DIR}/staging"
 RECYCLE_DIR = f"{RESERVED_DIR}/recycle"
@@ -222,7 +224,7 @@ def is_reserved(rel: str) -> bool:
                 parts.pop()
             continue
         parts.append(part)
-    return bool(parts) and parts[0] in (SENTINEL_FILE, RESERVED_DIR)
+    return bool(parts) and parts[0] in (SENTINEL_FILE, RESERVED_DIR, ERASING_DIR)
 
 
 @dataclass(frozen=True)

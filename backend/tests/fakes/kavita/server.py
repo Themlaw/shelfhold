@@ -18,6 +18,7 @@ import base64
 import binascii
 import copy
 import json
+import secrets
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -35,9 +36,11 @@ OPENAPI = TESTS / "fixtures" / "kavita" / "openapi"
 BASE_URL = "http://kavita.lan:5000"
 LAN_ADDRESS = "192.168.1.50"
 API_KEY = "synthetic-admin-key-0001"
+OTHER_KEY = "synthetic-admin-key-0002"  # another key of the same account
 
 # (method, lower-cased path) -> needs an administrator. Written here, not imported.
 ALLOWED: dict[tuple[str, str], bool] = {
+    ("POST", "/api/account/login"): False,
     ("GET", "/api/server/server-info-slim"): False,
     ("GET", "/api/plugin/authkey-expires"): False,
     ("GET", "/api/plugin/parse"): False,
@@ -160,6 +163,32 @@ class FakeKavita:
     asleep: bool = False  # stopped by Sablier: the connection is refused until `wake_up`
     drops_age_lock: bool = False  # takes a metadata update but forgets the lock of the age
     manga_parse_only: bool = True  # the replica of plugin/parse is the Manga one: refuse others
+    # the keys of the account, by identifier: a request is served only for a key still listed, and
+    # a revoked key answers 401 (the detachment of L30 revokes the dedicated one)
+    auth_keys: list[dict[str, Any]] = field(
+        default_factory=lambda: [
+            {"id": 1, "name": "shelfhold", "key": API_KEY},
+            {"id": 2, "name": "other-tool", "key": OTHER_KEY},
+        ]
+    )
+
+    account: tuple[str, str] = ("admin", "the account password")  # what the login accepts
+    sessions: set[str] = field(default_factory=set)  # the bearer tokens a login handed out
+
+    def key_is_valid(self, key: object) -> bool:
+        return any(k["key"] == key for k in self.auth_keys)
+
+    def _authenticated(self, headers: dict[str, str]) -> bool:
+        bearer = headers.get("authorization", "").removeprefix("Bearer ")
+        return self.key_is_valid(headers.get("x-api-key")) or bearer in self.sessions
+
+    def _login(self, recorded: RecordedRequest) -> httpx2.Response:
+        body = json.loads(recorded.body or b"{}")
+        if (body.get("username"), body.get("password")) != self.account:
+            return self._text(401, "Unauthorized")
+        session = secrets.token_hex(8)
+        self.sessions.add(session)
+        return self._json({"username": self.account[0], "token": session})
 
     # -- scenario helpers -------------------------------------------------------------------
     def demote(self) -> None:
@@ -288,7 +317,9 @@ class FakeKavita:
             return self._json({"title": "Not Found", "status": 404}, 404)
         if route in self.missing:
             return self._text(404, "Not Found")
-        if recorded.headers.get("x-api-key") != API_KEY:
+        if route[1] == "/api/account/login":
+            return self._login(recorded)
+        if not self._authenticated(recorded.headers):
             return self._text(401, "Unauthorized")
         if ALLOWED[route] and not self.is_admin:
             return self._text(403, "Forbidden")
@@ -427,7 +458,7 @@ class FakeKavita:
             return body
         # Kavita ignores the request (still 200) when the key of the body is not a valid one
         folder = body.get("folderPath") or ""
-        valid = body.get("apiKey") == API_KEY
+        valid = self.key_is_valid(body.get("apiKey"))
         (self.scans if valid else self.ignored_scans).append(folder)
         if valid and folder not in self.never_indexed:
             self._reveal(folder)
