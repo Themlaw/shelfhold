@@ -27,12 +27,11 @@ import { expect, test, type Locator, type Page } from '@playwright/test';
 // screen with nothing left to ask moves on by itself (the wizard waits a moment so that what was
 // done can be read: that is no gesture, and the wait is inside the time measured).
 //
-// Two things belong to the harness, not to the person, and are not counted:
-// - the two addresses of the simulated books project (catalogue and mirror) exist only in this
-//   stack, so the stack gives them to the plugin itself (`fakes/m3/serve_with_sources.py`); a real
-//   install talks to the real project and sets nothing;
-// - the turn of the scheduler (`jobs run export.run`, then the scan of Kavita), nudged by hand so
-//   that the wait for the first book does not depend on the period of the scheduler.
+// One thing belongs to the harness, not to the person, and is not counted: the two addresses of
+// the simulated books project (catalogue and mirror) exist only in this stack, so the stack gives
+// them to the plugin itself (`fakes/m3/serve_with_sources.py`); a real install talks to the real
+// project and sets nothing. Nothing else is nudged: the export and the scan of Kavita are the
+// product's own, and a wait past the budget is a defect of the product, not of the test.
 //
 // EF-UX-012: one capture per theme and per scheme of the key screens. The reference is NOT a pixel
 // image: such a file depends on the fonts of the machine that made it (here the runners of the CI,
@@ -96,14 +95,8 @@ function compose(args: string[]): string {
   });
 }
 
-function shelfhold(args: string[]): string {
-  return compose(['exec', '-T', 'shelfhold', 'shelfhold', ...args]);
-}
-
 const FAKE_GET =
   'import urllib.request as u,sys; sys.stdout.write(u.urlopen(sys.argv[1], timeout=5).read().decode())';
-const FAKE_POST =
-  "import urllib.request as u,sys; u.urlopen(u.Request(sys.argv[1], data=b'{}', method='POST'), timeout=5)";
 
 async function kavitaSeries(): Promise<string[]> {
   const state = JSON.parse(
@@ -112,36 +105,19 @@ async function kavitaSeries(): Promise<string[]> {
   return state.series.map((s) => s.name);
 }
 
-/** Kavita's own periodic scan of its folders, which the simulated server does when asked. */
-async function kavitaScans(folder: string): Promise<void> {
-  compose([
-    'exec', '-T', 'fake-kavita', 'python', '-c', FAKE_POST,
-    `${KAVITA_WINDOW}/_fake/index?folder=${encodeURIComponent(folder)}`
-  ]);
-}
-
-/** The scheduler's turn, asked by hand (the journeys of M1 and M2 do the same): export, then scan. */
-async function nudgeExport(folder: string): Promise<void> {
-  try {
-    shelfhold(['jobs', 'run', 'export.run']);
-  } catch {
-    // the server was busy with its own write: the next turn asks again
-  }
-  await kavitaScans(folder);
-}
-
 async function signInByApi(page: Page, who: { username: string; password: string }): Promise<void> {
   const answer = await page.request.post('/api/v1/auth/login', { data: who });
   expect(answer.status(), `sign in as ${who.username}`).toBe(200);
 }
 
-/** Wait for the first book to be listed by Kavita, nudging the export as the scheduler would. */
-async function waitForTheBook(run: Run, folder: string): Promise<void> {
-  const deadline = Date.now() + (BUDGET_S + 120) * 1000; // past the budget the assertion speaks
+/** Wait for the first book to be listed by Kavita: nobody nudges anything. The product has to
+ * bring it by itself (the export that follows the arrival of the book, then the scan it asks of
+ * Kavita); past the budget the assertion of the test speaks. */
+async function waitForTheBook(): Promise<void> {
+  const deadline = Date.now() + (BUDGET_S + 120) * 1000;
   while (Date.now() < deadline) {
-    await nudgeExport(folder);
     if ((await kavitaSeries()).includes(FIRST_BOOK.title)) return;
-    await new Promise((resolve) => setTimeout(resolve, 5000));
+    await new Promise((resolve) => setTimeout(resolve, 2000));
   }
   throw new Error(`Kavita never listed ${FIRST_BOOK.title}: ${(await kavitaSeries()).join(', ')}`);
 }
@@ -196,7 +172,7 @@ test('test_first_book_under_10_minutes', async ({ page }, info) => {
   // alike; a screen that moves on by itself is no gesture) plus any command typed on the host.
   const run = new Run();
   await firstBook(page, run);
-  await waitForTheBook(run, '/library/livres');
+  await waitForTheBook();
   const report = run.report();
   console.log(report);
   await info.attach('first-book-report', { body: report });

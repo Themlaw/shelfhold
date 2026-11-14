@@ -2,10 +2,11 @@
 
 The route is the door of the wizard to what `shelfhold shelf create` does on the host: the same
 service (`HeadlessAdmin.shelf_create`: the shelf, its destination under a registered root, the
-folder, the Kavita library with the audit of who may read it). The guard is the wizard's own (a
-fresh admin session, never a key, even before any child profile exists): never softer than that of
-`POST /shelves`. A shelf below 18+ stays refused unless Kavita keeps the accounts apart, and a name
-or a folder that climbs out of the library is refused before anything is written.
+folder, the Kavita library with the audit of who may read it). The guard is that of every other
+door that makes a shelf (`shelf.max_age_rating`, a parental decision: an admin session, never a
+key; a fresh one as soon as a child profile exists), and the audit line names it so. A shelf below 18+ stays refused unless Kavita keeps the accounts
+apart, and a name or a folder that climbs out of the library is refused before anything is
+written.
 """
 
 from __future__ import annotations
@@ -179,6 +180,7 @@ def test_refused_to_an_api_key_even_an_admin_one(
 def test_needs_a_session_and_a_fresh_one(world: World) -> None:
     body = {"name": "Livres", "max_age": "18+", "subpath": "livres"}
     assert world.api.other_client("10.0.0.8").post(ROUTE, json=body).status_code == 401
+    add_profile(world.api, "child", "child", "10.0.0.6", max_age_rating=10)  # a child exists
     world.api.clock.advance(timedelta(minutes=20))  # the password was typed 20 minutes ago
     stale = world.api.client.post(
         ROUTE, json=body, headers={"X-CSRF-Token": world.api.csrf(world.api.client)}
@@ -192,5 +194,6 @@ def test_the_creation_leaves_a_line_in_the_audit(world: World) -> None:
     assert world.make().status_code == 201
     with world.inst.engine.connect() as c:
         actions = c.execute(sa.text("SELECT action FROM audit")).scalars().all()
-    assert "admin_risk.accept" in actions  # the guard's line
+    assert "shelf.max_age_rating" in actions  # the guard's line: a parental decision
+    assert "admin_risk.accept" not in actions
     assert "shelf.create" in actions  # the service's own, in the transaction of the change

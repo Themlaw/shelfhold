@@ -104,4 +104,24 @@ describe('root layout load', () => {
     });
     await expect(load({ fetch: settled, url: new URL('http://x/') } as never)).resolves.toBeDefined();
   });
+
+  // req: ENF-UX-001
+  it('does not ask for the status of the instance once somebody is signed in', async () => {
+    const fetch = fetcher({
+      '/api/v1/source': () => json({}, 200),
+      '/api/v1/me/preferences': () => json({}, 200),
+      '/api/v1/me': () => json({ role: 'admin', nav: [] }),
+      '/api/v1/setup/status': () => json({ needs_admin: true })
+    });
+    await expect(load({ fetch, url: new URL('http://x/') } as never)).resolves.toBeDefined();
+    expect(fetch.mock.calls.map((c) => String(c[0]))).not.toContain('/api/v1/setup/status');
+  });
+
+  // req: ENF-UX-001
+  it('reads the address untracked, so that a navigation does not run the reads again', async () => {
+    const fetch = fetcher({ '/api/v1/setup/status': () => json({ needs_admin: false }) });
+    const untrack = vi.fn(<T,>(fn: () => T) => fn());
+    await load({ fetch, url: new URL('http://x/bibliotheque'), untrack } as never);
+    expect(untrack).toHaveBeenCalled();
+  });
 });

@@ -7,7 +7,7 @@ wizard adds no second door for them. Here: the state the screens read, the share
 that Kavita reads, the adoption of an existing library (preview, then confirmation on the
 fingerprint) and the making of a new one.
 
-Every route is the admin's, on a fresh session, never a key (`admin_risk.accept`, the reserved
+Every route is the admin's, never a key (`admin_risk.accept`, the reserved
 action of the Kavita connection itself): the member, the child and a key are refused, and so is
 an admin whose session is stale. Each call leaves a line in the audit.
 """
@@ -38,6 +38,12 @@ Admin = Annotated[Principal, Depends(reserved_action(_RISK))]  # one line in the
 # The two writes of part 2 that are reserved actions of their own, with their own audit line: the
 # keyring leaves the instance (a fresh session, never a key) and the sources a child may search
 # are chosen (parental control)
+# The shelf of the wizard is the parental decision of `shelf create` and `POST /shelves` (the age
+# ceiling of a new shelf): the same reserved action, so the audit and the rules of freshness are
+# theirs, not those of an acceptance of risk.
+CeilingAdmin = Annotated[
+    Principal, Depends(reserved_action(RESERVED_ACTIONS["shelf.max_age_rating"]))
+]
 KeyringAdmin = Annotated[Principal, Depends(reserved_action(RESERVED_ACTIONS["secrets.export"]))]
 FamilyAdmin = Annotated[Principal, Depends(reserved_action(RESERVED_ACTIONS["source.mark_family"]))]
 
@@ -191,12 +197,12 @@ def build_setup_router(
     @router.post("/shelf", status_code=201)
     def wizard_shelf(
         body: WizardShelfMakeIn,
-        principal: Admin,  # the wizard's own: a fresh admin session, as for the Kavita it reaches
+        principal: CeilingAdmin,  # the reserved action of every other door that makes a shelf
     ) -> WizardShelfMadeOut:
         """The shelf linked to Kavita, made as `shelfhold shelf create` makes it (same service):
         the age ceiling and the family cap, the folder under a registered root, the Kavita library
-        and the audit of who may read it. The guard is the wizard's (a fresh admin session, never a
-        key, even when no child profile exists): never softer than that of `POST /shelves`.
+        and the audit of who may read it. The guard is that of `POST /shelves` (the reserved
+        action `shelf.max_age_rating`: an admin session, never a key).
         """
         try:
             made = get_admin().shelf_create(

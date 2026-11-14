@@ -171,6 +171,27 @@ def test_neither_the_secret_nor_the_password_is_kept_or_answered(
 
 
 @pytest.mark.req("EF-UX-001", "ENF-SEC-008")
+def test_the_session_is_the_one_of_a_sign_in_with_its_device_cookie(fresh: AuthEnv) -> None:
+    """The same path as `login`: the browser gets the signed device cookie (so that its owner is
+    not locked out by third parties later), and it is a live session of the new account."""
+    owner = fresh.other_client("198.51.100.7")
+    assert owner.post(ROUTE, json=BODY).status_code == 201
+    assert "__Host-dev" in owner.cookies
+    assert owner.get("/api/v1/me").json()["username"] == "owner"
+    sessions = db_rows(fresh.settings, "SELECT user_id FROM session WHERE revoked_at IS NULL")
+    assert len(sessions) == 1
+
+
+@pytest.mark.req("EF-UX-001", "ENF-SEC-008")
+@pytest.mark.parametrize("secret", ["a" * 40, "ab" * 20, "012345678" * 4])
+def test_a_secret_made_of_few_characters_is_refused_at_start(
+    settings: Settings, secret: str
+) -> None:
+    with pytest.raises(ValueError, match="different characters"):
+        Settings.model_validate({**settings.model_dump(), "setup_token": secret})
+
+
+@pytest.mark.req("EF-UX-001", "ENF-SEC-008")
 def test_a_secret_that_is_chosen_not_generated_is_refused_at_start(settings: Settings) -> None:
     """Like the forward-auth secret: generated, long enough, never a word."""
     with pytest.raises(ValueError, match="setup_token"):

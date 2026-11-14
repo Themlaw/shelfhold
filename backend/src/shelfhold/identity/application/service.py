@@ -390,39 +390,26 @@ class LocalAuth:
         """The first account of a new instance, made from the wizard (M3 ENF-UX-001, EF-UX-001).
 
         Open only while no administrator exists and only to the one who holds the secret that the
-        compose gave to the instance. A guess is counted like a wrong password (per address and
-        for the door as a whole), before the secret is looked at; the account is made in one
-        transaction with the check that none exists, so a race makes one owner. Signs in."""
-        username = username.strip()
+        compose gave to the instance. A guess is counted per address, like a wrong password and
+        before the secret is looked at (the secret is long and generated: the limit of an address
+        is plenty, and a limit shared by all addresses would let anyone shut the door on the
+        installer). The account is made by `create_admin` (one transaction with the check that
+        none exists: a race makes one owner), then signed in as `login` signs in."""
         if self._store.admins():
             raise AdminExistsError
         if not expected_token:
             raise SetupTokenNotConfiguredError
-        at = self._reserve_attempt(ip=ip, account=SETUP_THROTTLE_KEY)
+        at = self._reserve_attempt(ip=ip, account=SETUP_THROTTLE_KEY, skip_account=True)
         if not same_secret(presented_token, expected_token):
             structlog.get_logger().warning("auth.setup_token_refused", ip=ip)
             raise SetupTokenInvalidError
-        self._throttle.release(ip=ip, account=SETUP_THROTTLE_KEY, at=at)
-        if not username or len(username) > 128:
-            raise ValueError("invalid_username")
-        check_password_shape(password)
-        user_id = new_ulid()
-        if not self._store.insert_user(
-            id=user_id,
-            username=username,
-            role=ADMIN_ROLE,
-            password_hash=self._hasher.hash(password),
-            now=self.now(),
-            only_if_no_admin=True,
-        ):
+        self._throttle.release(ip=ip, account=SETUP_THROTTLE_KEY, at=at, skip_account=True)
+        user = self._store.user_by_id(self.create_admin(username, password))
+        if user is None or user.password_hash is None:  # pragma: no cover - just inserted
             raise AdminExistsError
-        user = self._store.user_by_id(user_id)
-        if user is None:  # pragma: no cover - just inserted
-            raise AdminExistsError
-        issued = self._issue(user, remember=False, ip=ip, user_agent=user_agent)
-        self._audit("user.created", issued.principal, target=user_id)
-        self._audit("auth.login", issued.principal)
-        return issued
+        return self._open_password_session(
+            user, user.password_hash, remember=False, ip=ip, user_agent=user_agent
+        )
 
     def delete_user(self, username: str, *, by: Principal | None = None) -> str:
         """Delete an account; its audit entries are kept under a pseudonym (EF-USR-013). The
@@ -653,7 +640,23 @@ class LocalAuth:
                 raise self._fail(ip=ip)
         if presented_token:  # whatever the browser held is closed, never adopted
             self._store.revoke_session_by_token_hash(token_digest(presented_token), now=self.now())
-        try:  # the hash is read again under the write lock: a reset between the two refuses
+        return self._open_password_session(
+            user, checked_hash, remember=remember, ip=ip, user_agent=user_agent
+        )
+
+    def _open_password_session(
+        self,
+        user: UserRecord,
+        checked_hash: str,
+        *,
+        remember: bool,
+        ip: str,
+        user_agent: str | None,
+    ) -> IssuedSession:
+        """The session of a password that was just checked (sign-in, first account): tied to that
+        hash, read again under the write lock (a reset in between refuses), with the proof of the
+        device and the audit line."""
+        try:
             issued = self._issue(
                 user, remember=remember, ip=ip, user_agent=user_agent, password_hash=checked_hash
             )
@@ -661,7 +664,9 @@ class LocalAuth:
             raise self._fail(ip=ip) from None
         self._audit("auth.login", issued.principal)
         if self._device_proof is not None:
-            issued = replace(issued, device_proof=self._device_proof.issue(username, self.now()))
+            issued = replace(
+                issued, device_proof=self._device_proof.issue(user.username, self.now())
+            )
         return issued
 
     def authenticate_session(self, token: str) -> SessionAuth | None:

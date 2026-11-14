@@ -30,6 +30,7 @@ ENV_PREFIX = "SHELFHOLD_"
 MIN_FORWARD_SECRET_LENGTH = 32  # a shared secret is generated, not chosen
 FILE_SUFFIX = "_FILE"
 MIN_SETUP_TOKEN_LENGTH = 24
+MIN_SETUP_TOKEN_DISTINCT = 10  # a secret is generated: one character repeated is not one
 CONFIG_FILE_NAME = "config.toml"
 CONFIG_SCHEMA_VERSION = "1.0"  # "major.minor", ADR-0039
 SUPPORTED_CONFIG_MAJOR = 1
@@ -246,6 +247,14 @@ class Settings(BaseModel):
         token = self.setup_token
         if token is not None and 0 < len(token.get_secret_value()) < MIN_SETUP_TOKEN_LENGTH:
             raise ValueError(f"setup_token must hold at least {MIN_SETUP_TOKEN_LENGTH} characters")
+        if (
+            token is not None
+            and token.get_secret_value()
+            and len(set(token.get_secret_value())) < MIN_SETUP_TOKEN_DISTINCT
+        ):
+            raise ValueError(
+                f"setup_token must hold at least {MIN_SETUP_TOKEN_DISTINCT} different characters"
+            )
         networks = [ipaddress.ip_network(cidr) for cidr in self.http_trusted_proxies]
         if any(network.prefixlen == 0 for network in networks):
             # every address is "a proxy": any caller names herself, or is any visitor's address
