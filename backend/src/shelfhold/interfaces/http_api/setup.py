@@ -21,8 +21,8 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from shelfhold.export.domain.bindings import BindingError
 from shelfhold.headless import HeadlessAdmin
-from shelfhold.headless.admin import SHELF_SUBPATH_PATTERN
 from shelfhold.headless.actor import Actor
+from shelfhold.headless.admin import SHELF_SUBPATH_PATTERN
 from shelfhold.headless.errors import HeadlessError
 from shelfhold.identity.public import RESERVED_ACTIONS, Principal, audit_actor
 from shelfhold.infrastructure.http_headers import attachment_disposition
@@ -196,7 +196,8 @@ def build_setup_router(
         """The shelf linked to Kavita, made as `shelfhold shelf create` makes it (same service):
         the age ceiling and the family cap, the folder under a registered root, the Kavita library
         and the audit of who may read it. The guard is the wizard's (a fresh admin session, never a
-        key, even when no child profile exists), which is never softer than that of `POST /shelves`."""
+        key, even when no child profile exists): never softer than that of `POST /shelves`.
+        """
         try:
             made = get_admin().shelf_create(
                 name=body.name, max_age=body.max_age, target=body.target, subpath=body.subpath,
