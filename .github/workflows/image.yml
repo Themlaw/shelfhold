@@ -96,7 +96,7 @@ jobs:
       # One runner per shard, the same image artifact for all (e2e/shards.py: each under 10 minutes).
       matrix:
         arch: ${{ fromJSON(inputs.arm64 && '["amd64","arm64"]' || '["amd64"]') }}
-        shard: [smoke-install, redeploy, redeploy-export, detach-exits, exits-live-roots, detach-exclusion, name-collision, name-foreign, m1b-family, m1b-safeguard, m1b-wake, m1b-backup, m1b-ui-login, m1b-purge, m1b-rollback, m2-import, m2-age, m2-gutenberg, m2-encyclopedia, m2-opds, m2-lncrawl, m2-tree]
+        shard: [smoke-install, redeploy, redeploy-export, detach-exits, exits-live-roots, detach-exclusion, name-collision, name-foreign, m1b-family, m1b-safeguard, m1b-wake, m1b-backup, m1b-ui-login, m1b-purge, m1b-rollback, m2-import, m2-age, m2-gutenberg, m2-encyclopedia, m2-opds, m2-lncrawl, m2-tree, m3-first-book, m3-first-book-timed, m3-parental, m3-request, m3-rename, m3-detach, m3-unreachable, m3-themes]
     runs-on: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-24.04' }}
     timeout-minutes: 15
     permissions:
@@ -131,6 +131,21 @@ jobs:
             -t shelfhold:previous "$RUNNER_TEMP/previous"
         env:
           PREVIOUS_TAG: v0.2.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        if: startsWith(matrix.shard, 'm3-first-book') || matrix.shard == 'm3-themes'
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: e2e/package-lock.json
+      - name: Playwright and its browser (the journeys played in a browser on the image, M3 L57)
+        if: startsWith(matrix.shard, 'm3-first-book') || matrix.shard == 'm3-themes'
+        working-directory: e2e
+        run: |
+          npm ci
+          # apt waits ~10 min per unreachable mirror: bound it, then fall back to the browser alone.
+          timeout 180 npx playwright install --with-deps chromium && exit 0
+          echo "::warning::playwright --with-deps failed; installing the browser alone"
+          npx playwright install chromium
       - name: Smoke (up --wait, /readyz, SPA index) and no outbound request
         working-directory: e2e
         env:
@@ -138,3 +153,11 @@ jobs:
           SHELFHOLD_IMAGE_PREVIOUS: ${{ matrix.shard == 'm1b-rollback' && 'shelfhold:previous' || '' }}
           E2E_SHARD: ${{ matrix.shard }}
         run: uv run --project ../backend --locked pytest tests
+      - name: Keep what the browser saw (report, traces, screens of the themes)
+        if: ${{ !cancelled() && (startsWith(matrix.shard, 'm3-first-book') || matrix.shard == 'm3-themes') }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: e2e-browser-${{ matrix.arch }}-${{ matrix.shard }}
+          path: e2e/test-results
+          if-no-files-found: ignore
+          retention-days: 7

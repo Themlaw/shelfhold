@@ -18,15 +18,19 @@ ROOT = Path(__file__).resolve().parents[3]
 @pytest.mark.req("ENF-UX-001")
 @pytest.mark.xfail(
     strict=True,
-    reason="ENF-UX-001: M3 L57 (timed E2E 'first 10 minutes', ≤ 10 min and ≤ 6 actions) is "
-    "not delivered: no M3 journey spec",
+    reason="ENF-UX-001: the timed journey of M3 L57 exists but is an expected failure: the "
+    "first-run screens do not reach a first book alone (no sign-in screen, no screen binds a "
+    "shelf to Kavita, the folder screen is a dead end, 10 gestures against a budget of 6)",
 )
 def test_first_book_under_10_minutes() -> None:
     spec = ROOT / "e2e" / "tests" / "test_m3_journey.spec.ts"
     assert spec.is_file(), "the timed first-book journey does not exist"
     text = spec.read_text(encoding="utf-8")
     assert "test_first_book_under_10_minutes" in text
-    assert "600" in text, "the 10 minute budget is not asserted"
+    assert "BUDGET_S = 600;" in text, "the 10 minute budget is not asserted"
+    assert "BUDGET_ACTIONS = 6;" in text, "the budget of 6 actions is not asserted"
+    # the journey is covered when nothing marks it as a known gap any more
+    assert "test.fail(true" not in text, "the journey is still an expected failure"
 
 
 @pytest.mark.req("ENF-GOV-004")

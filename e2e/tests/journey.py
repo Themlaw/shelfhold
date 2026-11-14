@@ -114,15 +114,20 @@ class Journey:
         return done.stdout
 
     def api(
-        self, *steps: tuple[object, ...], mode: str = "session"
+        self,
+        *steps: tuple[object, ...],
+        mode: str = "session",
+        user: tuple[str, str] | None = None,
     ) -> list[tuple[int, object]]:
-        """Requests of the SPA, in one session: `(method, path[, body])`. `mode`: `session`
-        (login, then the CSRF header as the page sends it), `nocsrf` (the cookie alone, a forged
-        cross-site request), `anon` (nothing), `bearer:<key>` (an API key)."""
+        """Requests of the SPA, in one session: `(method, path[, body[, headers]])`. `mode`:
+        `session` (login, then the CSRF header as the page sends it), `nocsrf` (the cookie alone, a
+        forged cross-site request), `anon` (nothing), `bearer:<key>` (an API key). `user`: the
+        `(username, password)` of the profile that signs in (the administrator by default)."""
         self.put("/tmp/api_client.py", API_CLIENT)
+        who = user or (ADMIN_USER, ADMIN_PASSWORD)
         done = self.compose(
             "exec", "-T", "shelfhold", "python", "/tmp/api_client.py", json.dumps(steps), mode,
-            ADMIN_USER, ADMIN_PASSWORD,
+            who[0], who[1],
         )  # fmt: skip
         return [(int(code), body) for code, body in json.loads(done.stdout)]
 
@@ -362,5 +367,6 @@ if mode in ("session", "nocsrf"):
         extra["X-CSRF-Token"] = next(c.value for c in jar if c.name.endswith("csrf"))
 elif mode.startswith("bearer:"):
     extra["Authorization"] = "Bearer " + mode[len("bearer:"):]
-print(json.dumps([call(m, p, (rest[0] if rest else None), extra) for m, p, *rest in steps]))
+print(json.dumps([call(m, p, (rest[0] if rest else None), {**extra, **(rest[1] if len(rest) > 1 else {})})
+                  for m, p, *rest in steps]))
 """
