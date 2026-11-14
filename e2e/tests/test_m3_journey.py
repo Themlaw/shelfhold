@@ -381,26 +381,38 @@ def test_m3_rename_warning_journey(journey_m3: Journey) -> None:
     assert before and all(" - Ch." in f for f in before), before
 
     template = {"chapter": "{series} - Chapter {number}"}
-    [(code, plan)] = j.api(
-        ("POST", "/api/v1/plans/renames", {"shelf_destination_id": destination, "template": template})
-    )  # fmt: skip
-    assert code == 200, plan
-    assert plan["steps"] and plan["plan_id"], plan  # type: ignore[index]
-    [warning] = plan["warnings"]  # type: ignore[index]
-    assert warning["readers"] >= 2, warning  # the accounts that would lose their progress, counted
-    assert warning["exact"] is False, (
-        warning
-    )  # the members' own progress is read in M4: an upper bound
-    nothing_moved = sorted(f for f in j.library_files() if f.startswith("/library/manga/"))
+    nothing_moved: list[str] = []
+    accepted, job = 0, None
+    # A periodic export of the scheduler can land between the preview and the apply and change the
+    # destination: the plan is then stale (412), which is the product doing its job. The person
+    # reads the preview again; so does the journey (a few times at most).
+    for _attempt in range(4):
+        [(code, plan)] = j.api(
+            ("POST", "/api/v1/plans/renames", {"shelf_destination_id": destination, "template": template})
+        )  # fmt: skip
+        assert code == 200, plan
+        assert plan["steps"] and plan["plan_id"], plan  # type: ignore[index]
+        [warning] = plan["warnings"]  # type: ignore[index]
+        assert warning["readers"] >= 2, warning  # the accounts that would lose their progress
+        assert warning["exact"] is False, (
+            warning
+        )  # the members' own progress is read in M4: an upper bound
+        nothing_moved = sorted(f for f in j.library_files() if f.startswith("/library/manga/"))
 
-    etag = {"If-Match": f'"{plan["base_version"]}"'}  # type: ignore[index]
-    apply_path = f"/api/v1/plans/{plan['plan_id']}/apply"  # type: ignore[index]
-    [(refused, why)] = j.api(("POST", apply_path, {}, etag))
-    assert refused >= 400 and refused != 412, (refused, why)  # the confirmation is asked for
-    assert "readers" in json.dumps(why), why
-    assert sorted(f for f in j.library_files() if f.startswith("/library/manga/")) == nothing_moved
+        etag = {"If-Match": f'"{plan["base_version"]}"'}  # type: ignore[index]
+        apply_path = f"/api/v1/plans/{plan['plan_id']}/apply"  # type: ignore[index]
+        [(refused, why)] = j.api(("POST", apply_path, {}, etag))
+        if refused == 412:
+            continue
+        assert refused >= 400, (refused, why)  # the confirmation is asked for
+        assert "readers" in json.dumps(why), why
+        assert (
+            sorted(f for f in j.library_files() if f.startswith("/library/manga/")) == nothing_moved
+        )
 
-    [(accepted, job)] = j.api(("POST", apply_path, {"confirm_progress_loss": True}, etag))
+        [(accepted, job)] = j.api(("POST", apply_path, {"confirm_progress_loss": True}, etag))
+        if accepted != 412:
+            break
     assert accepted == 202, job
     renamed = wait_for(
         lambda: all(
