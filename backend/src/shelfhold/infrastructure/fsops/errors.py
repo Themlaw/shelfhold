@@ -47,6 +47,11 @@ class FileChangedError(FsopsError):
     """The file is not the one the caller meant to delete (its content or identity moved)."""
 
 
+class ErasingNameTakenError(FsopsError):
+    """A folder named like the erasing container is at the top of the root and no open intention
+    of the detachment vouches for it: it may be the admin's, so it is left as it is."""
+
+
 class NotRegularFileError(FsopsError):
     """A FIFO, a device, a socket or a directory where a file was expected: never opened."""
 

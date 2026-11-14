@@ -33,6 +33,7 @@ from shelfhold.export.application.remove_destination import (
     RemoveDestination,
 )
 from shelfhold.export.application.root_ref import RootRef
+from shelfhold.export.application.target_state import load_fingerprint
 from shelfhold.export.targets.kavita.account_session import KavitaAccountSession
 from shelfhold.export.targets.kavita.errors import TargetError
 from shelfhold.export.targets.kavita.settings_restore import restore_library_settings
@@ -60,18 +61,15 @@ class _Revoker:
     def revoke(self, target_id: str, *, credential: str | None) -> bool:
         key = self.key_id(target_id, credential=credential)
         return key is not None and (
-            self.revoke_id(target_id, credential=credential, key_id=key[0], key_digest=key[1])
-            == "revoked"
+            self.revoke_id(target_id, credential=credential, key_id=key) == "revoked"
         )
 
-    def key_id(self, target_id: str, *, credential: str | None) -> tuple[str, str] | None:
+    def key_id(self, target_id: str, *, credential: str | None) -> str | None:
         return self._headless.target_find_key(target=target_id, password=credential)
 
-    def revoke_id(
-        self, target_id: str, *, credential: str | None, key_id: str, key_digest: str | None = None
-    ) -> str:
+    def revoke_id(self, target_id: str, *, credential: str | None, key_id: str) -> str:
         return self._headless.target_revoke_key_id(
-            target=target_id, password=credential, key_id=key_id, key_digest=key_digest
+            target=target_id, password=credential, key_id=key_id
         )
 
 
@@ -199,11 +197,14 @@ class DetachOps:
                 )
             ).scalar_one()
         url = str(config["url"])
+        with self._comp.engine.connect() as conn:
+            stored = load_fingerprint(conn, target_id)
         return KavitaAccountSession(
             self._comp.network.integration_fetcher(url),
             url,
             str(config.get("username", "")),
             password,
+            stored_fingerprint=stored,
         )
 
     def full_preview(self, *, target_id: str) -> dict[str, Any]:

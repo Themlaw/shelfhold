@@ -47,7 +47,7 @@ Dans cet ordre, et chaque pas peut être refait si une coupure l'interrompt (rel
 3. la **clé dédiée est révoquée** dans Kavita **par son identifiant**, noté dans le journal avant la révocation (jamais
    son nom : une autre clé du même compte n'est jamais touchée). Si une coupure survient juste après, la même commande
    termine : une clé absente dont l'identifiant est noté compte comme révoquée, et un identifiant que Kavita a
-   entre-temps donné à une autre clé (valeur différente de celle notée, par somme de contrôle) est laissé en place et signalé
+   entre-temps donné à une autre clé (la valeur de la clé scellée, encore en base, est comparée : elle diffère) est laissé en place et signalé
    (`key_id_reused`) ;
 4. Shelfhold **oublie** son manifeste et la cible. **Aucun fichier exporté n'est touché** : mêmes octets, mêmes noms.
 
@@ -70,8 +70,13 @@ Si Shelfhold suit encore des séries, lancez d'abord `shelfhold detach --restore
 **La clé dédiée n'existe plus** (supprimée à la main dans Kavita, réponse 401) : sans option, le détachement ne
 finit pas et le message propose `--key-gone`. Avec `--key-gone --password-file <fichier>`, la révocation est sautée
 (le rapport dit `key_gone`) et les réglages de la bibliothèque sont rendus par une connexion du compte administrateur
-au lieu de la clé morte. Si le compte voit encore la clé, elle est révoquée comme d'habitude : l'option ne laisse
+au lieu de la clé morte, **après avoir vérifié que c'est bien le Kavita auquel la cible était liée** (empreinte de l'instance : une réinstallation, qui renumérote les bibliothèques, est refusée avec `instance_changed`). Si le compte voit encore la clé, elle est révoquée comme d'habitude : l'option ne laisse
 jamais une clé vivante. Sans mot de passe, l'option est refusée.
+
+Pendant l'effacement, le dossier réservé est d'abord déplacé d'un coup dans `.shelfhold-erasing/.shelfhold` : ce qu'il en
+reste (pendant le vidage, ou après une coupure) reste sous un dossier `.shelfhold`, donc exclu de Kavita. Un dossier
+nommé `.shelfhold-erasing` qui n'est pas celui du détachement (le vôtre) n'est jamais vidé : il est laissé tel quel et
+signalé (`erasing_name_taken`) ; renommez-le puis relancez.
 
 Un détachement **interrompu** (coupure de courant, arrêt forcé) : relancez la même commande pour le finir. Avant que
 l'effacement du dossier réservé commence, `shelfhold detach --full --target <id> --give-up` l'abandonne proprement et

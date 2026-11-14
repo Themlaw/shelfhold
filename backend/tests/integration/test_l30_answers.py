@@ -200,13 +200,13 @@ def test_detach_holds_the_destinations_alone_and_an_export_waits(
     seen: list[str] = []
     real = Fsops.erase_host_area
 
-    def spy(self: Fsops, root: str) -> None:
+    def spy(self: Fsops, root: str, **kw: Any) -> None:
         try:
             with locks.hold(new_ulid(), work=new_ulid(), series=series):
                 seen.append("export got in")
         except LockBusyError:
             seen.append("busy")
-        real(self, root)
+        real(self, root, **kw)
 
     monkeypatch.setattr(Fsops, "erase_host_area", spy)
     assert _detach(d).complete

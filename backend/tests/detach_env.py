@@ -16,7 +16,6 @@ from shelfhold.export.application.intents import IntentJournal
 from shelfhold.export.application.remove_destination import RemoveDestination
 from shelfhold.export.targets.kavita.account_session import KavitaAccountSession
 from shelfhold.export.targets.kavita.dto import HIDDEN_DIR_PATTERNS
-from shelfhold.headless.adapters import key_digest as _digest
 from shelfhold.identity.public import Credential, Principal
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import export
@@ -52,15 +51,13 @@ class Revoker:
     raises: BaseException | None = None
     seen_before: Callable[[], Any] | None = None  # looked at when the key is asked to go
 
-    def key_id(self, target_id: str, *, credential: str | None) -> tuple[str, str] | None:
+    def key_id(self, target_id: str, *, credential: str | None) -> str | None:
         if self.fake is None:
-            return "1", _digest(API_KEY)
+            return "1"
         row = next((k for k in self.fake.auth_keys if k["key"] == API_KEY), None)
-        return None if row is None else (str(row["id"]), _digest(API_KEY))
+        return None if row is None else str(row["id"])
 
-    def revoke_id(
-        self, target_id: str, *, credential: str | None, key_id: str, key_digest: str | None = None
-    ) -> str:
+    def revoke_id(self, target_id: str, *, credential: str | None, key_id: str) -> str:
         if self.seen_before is not None:
             self.seen_before()
         if self.raises is not None:
@@ -71,7 +68,7 @@ class Revoker:
             return "failed"
         if self.fake is not None:
             row = next((k for k in self.fake.auth_keys if str(k["id"]) == key_id), None)
-            if row is not None and key_digest is not None and _digest(row["key"]) != key_digest:
+            if row is not None and row["key"] != API_KEY:  # the sealed value is the dedicated key's
                 return "reused"  # the identifier now names another key: not ours
             # gone by this identifier only; already gone is still gone
             self.fake.auth_keys = [k for k in self.fake.auth_keys if str(k["id"]) != key_id]
@@ -80,8 +77,7 @@ class Revoker:
     def revoke(self, target_id: str, *, credential: str | None) -> bool:
         key = self.key_id(target_id, credential=credential)
         return key is not None and (
-            self.revoke_id(target_id, credential=credential, key_id=key[0], key_digest=key[1])
-            == "revoked"
+            self.revoke_id(target_id, credential=credential, key_id=key) == "revoked"
         )
 
 
@@ -100,10 +96,25 @@ class DetachEnv:
         """The physical root the destination lives in (its `.shelfhold` is here)."""
         return self.env.lib.library
 
-    def account_session(self) -> KavitaAccountSession:
+    def account_session(self, stored_fingerprint: str | None = None) -> KavitaAccountSession:
         """The admin account's login on the simulated Kavita (what `--key-gone` settles through)."""
         username, password = self.wired.fake.account
-        return KavitaAccountSession(build_fetcher(self.wired.fake), BASE_URL, username, password)
+        return KavitaAccountSession(
+            build_fetcher(self.wired.fake), BASE_URL, username, password,
+            stored_fingerprint=stored_fingerprint,
+        )  # fmt: skip
+
+    def instance_fingerprint(self) -> str | None:
+        """What the target was linked to: the fingerprint of the simulated Kavita as it is now."""
+        import asyncio
+
+        session = self.account_session()  # built outside the loop: the fetcher opens its own
+
+        async def read() -> str | None:
+            await session._headers()  # the login
+            return await session.fingerprint()
+
+        return asyncio.run(read())
 
     def kavita_patterns(self) -> list[str]:
         return list(self.wired.fake.libraries[0]["excludePatterns"])

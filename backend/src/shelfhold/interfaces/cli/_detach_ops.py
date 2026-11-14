@@ -43,6 +43,8 @@ _WARNINGS: dict[str, Callable[[object], str]] = {
 _LEFTOVERS: dict[str, Callable[[object], str]] = {
     "hidden_pattern_kept": lambda n: t("detach.leftover_hidden_pattern_kept", count=n),
     "key_id_reused": lambda n: t("detach.leftover_key_id_reused", count=n),
+    "erasing_name_taken": lambda n: t("detach.leftover_erasing_name_taken", count=n),
+    "instance_changed": lambda n: t("detach.leftover_instance_changed", count=n),
     "key_gone": lambda n: t("detach.leftover_key_gone", count=n),
     "library_gone": lambda n: t("detach.leftover_library_gone", count=n),
     "tombstone_journal_erased": lambda n: t("detach.leftover_tombstone_journal_erased", count=n),
@@ -135,7 +137,9 @@ def run_detach_full(args: argparse.Namespace, channel: OpsChannel) -> int:
     for line in report["leftovers"]:
         stream = (
             sys.stderr
-            if line["code"].endswith(("_not_erased", "_not_restored", "_not_revoked"))
+            if line["code"].endswith(
+                ("_not_erased", "_not_restored", "_not_revoked", "_name_taken", "_changed")
+            )
             else sys.stdout
         )
         print(_LEFTOVERS[line["code"]](line["count"]), file=stream)

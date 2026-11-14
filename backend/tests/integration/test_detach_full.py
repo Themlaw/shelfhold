@@ -285,7 +285,7 @@ def test_detach_every_erasure_goes_through_an_applying_intent(
     seen: list[str] = []
     real = Fsops.erase_host_area
 
-    def guard(self: Fsops, root_path: str) -> Any:
+    def guard(self: Fsops, root_path: str, **kw: Any) -> Any:
         with d.env.engine.connect() as conn:
             states = set(
                 conn.execute(
@@ -296,7 +296,7 @@ def test_detach_every_erasure_goes_through_an_applying_intent(
             )
         assert states == {"applying"}, "the hidden folder was erased without its intention"
         seen.append(root_path)
-        return real(self, root_path)
+        return real(self, root_path, **kw)
 
     monkeypatch.setattr(Fsops, "erase_host_area", guard)
     _run(d)

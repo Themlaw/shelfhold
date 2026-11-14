@@ -47,7 +47,7 @@ __all__ = [
 
 SENTINEL_FILE = ".shelfhold-mount-id"
 RESERVED_DIR = ".shelfhold"
-ERASING_DIR = f"{RESERVED_DIR}.erasing"  # the reserved folder while the detachment empties it
+ERASING_DIR = f"{RESERVED_DIR}-erasing"  # holds `.shelfhold` while the detachment empties it
 LEASE_FILE = f"{RESERVED_DIR}/lease"  # the per-root write lease (ENF-OPS-015)
 STAGING_DIR = f"{RESERVED_DIR}/staging"
 RECYCLE_DIR = f"{RESERVED_DIR}/recycle"

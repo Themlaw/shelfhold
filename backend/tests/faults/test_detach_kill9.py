@@ -158,8 +158,9 @@ def test_kill9_in_the_middle_of_the_emptying_of_the_reserved_folder(tmp_path: Pa
         capture_output=True,
     )  # fmt: skip
     assert result.returncode == -signal.SIGKILL, result.stderr.decode()
-    assert not (env.library / RESERVED_DIR).exists()  # renamed: not an untouched folder
-    left = sorted(p.name for p in (env.library / ERASING_DIR).rglob("*") if p.is_file())
+    assert not (env.library / RESERVED_DIR).exists()  # moved: not an untouched folder
+    inner = env.library / ERASING_DIR / RESERVED_DIR  # what is left stays under a `.shelfhold`
+    left = sorted(p.name for p in inner.rglob("*") if p.is_file())
     assert 0 < len(left) < 4  # half emptied
     assert (env.library / SENTINEL_FILE).exists()  # the sentinel goes last
 
@@ -173,7 +174,7 @@ def test_kill9_in_the_middle_of_the_emptying_of_the_reserved_folder(tmp_path: Pa
     )  # fmt: skip
     report = detacher.settle(TARGET, resume=False, principal=ADMIN)
     assert report.past_no_return and report.cancelled == 0  # nothing to undo, nothing "abandoned"
-    fsops.erase_host_area(str(env.library))  # the same command run again finishes
+    fsops.erase_host_area(str(env.library), attested=True)  # the same command run again finishes
     detacher.settle(TARGET, resume=True, principal=ADMIN)
     with ienv.engine.connect() as conn:
         assert open_intent_paths(conn) == frozenset()

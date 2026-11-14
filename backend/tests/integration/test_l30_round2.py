@@ -91,7 +91,9 @@ def test_nothing_kept_nothing_pinned(d: DetachEnv) -> None:
 
 def test_key_gone_gives_the_settings_back_through_the_account_and_says_so(d: DetachEnv) -> None:
     _kill_the_key(d)
-    report = _detach(d, key_gone=True, account=d.account_session())
+    report = _detach(
+        d, key_gone=True, account=d.account_session(stored_fingerprint=d.instance_fingerprint())
+    )
     assert report.complete and report.key_gone and not report.key_revoked
     assert "key_gone" in {x.code for x in report.leftovers}
     assert not _hidden_kept(d)  # the settings went back
@@ -139,3 +141,43 @@ def test_a_reused_identifier_is_left_alone_on_the_rerun(d: DetachEnv) -> None:
     assert second.complete and second.key_revoked
     assert "key_id_reused" in {x.code for x in second.leftovers}
     assert [k["key"] for k in d.wired.fake.auth_keys] == [OTHER_KEY]  # still there
+
+
+# -- F1: the folder a stop leaves is still under a `.shelfhold` segment ---------------------------
+
+
+def test_a_foreign_erasing_folder_is_left_alone_and_said(d: DetachEnv) -> None:
+    mine = d.root / ".shelfhold-erasing"
+    mine.mkdir()
+    (mine / "notes.txt").write_bytes(b"the admin's own")
+    report = _detach(d)
+    assert not report.complete
+    assert "erasing_name_taken" in {x.code for x in report.leftovers}
+    assert (mine / "notes.txt").read_bytes() == b"the admin's own"  # untouched
+    assert (d.root / ".shelfhold").exists()  # nothing was erased: the intention is given up
+    assert d.intents("pending", "applying") == []
+
+
+# -- f2: `--key-gone` writes nothing to another Kavita ---------------------------------------------
+
+
+def test_key_gone_refuses_a_kavita_that_is_not_the_linked_one(d: DetachEnv) -> None:
+    linked = d.instance_fingerprint()
+    _kill_the_key(d)
+    d.wired.fake.reinstall("synthetic-install-0002")  # a fresh install: library ids start again
+    before = list(d.wired.fake.libraries)
+    report = _detach(d, key_gone=True, account=d.account_session(stored_fingerprint=linked))
+    assert not report.complete
+    assert "instance_changed" in {x.code for x in report.leftovers}
+    assert d.wired.fake.libraries == before
+    assert d.wired.fake.requests_to("/api/Library/update") == []
+
+
+# -- f3: the intention holds the identifier and nothing of the key -----------------------------
+
+
+def test_the_revocation_intention_holds_no_trace_of_the_key_value(d: DetachEnv) -> None:
+    d.revoker.raises = RuntimeError("Kavita went away")
+    _detach(d)
+    rows = [str(i.expected_file_id) for i in d.intents() if "revoke_key" in str(i.expected_file_id)]
+    assert rows and all(API_KEY not in r and "digest" not in r for r in rows)

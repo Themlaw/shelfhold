@@ -2328,6 +2328,8 @@
   leftover_hidden_not_erased = "NOT done: the reserved folder of {count} root(s) could not be erased."
   leftover_settings_not_restored = "NOT done: the Kavita settings of {count} library(ies) could not be restored. If the dedicated key was deleted by hand in Kavita, run again with --key-gone and --password-file."
   leftover_key_not_revoked = "NOT done: the dedicated key was not revoked (give --password-file). If it was deleted by hand in Kavita, run again with --key-gone."
+  leftover_erasing_name_taken = "NOT done: a folder named .shelfhold-erasing, which is not the detachment's, is at the top of the root: it is left as it is. Rename or move it, then run the same command again."
+  leftover_instance_changed = "NOT done: this Kavita is no longer the one the target was linked to (reinstall? the library ids changed): no setting was written. Check the address, or run `target reconnect`."
   leftover_key_gone = "The dedicated key no longer existed in Kavita (deleted by hand): nothing to revoke; the settings were given back by the admin account."
   leftover_key_id_reused = "Kavita gave the identifier of the dedicated key to another key of the account: it is left in place, the dedicated key is already gone."
   leftover_hidden_pattern_kept = "The pattern that hides .shelfhold/ stays on {count} library(ies): a reserved folder stays inside their folders (shared root or Shelfhold's library), Kavita would otherwise index the bin and the receipts."

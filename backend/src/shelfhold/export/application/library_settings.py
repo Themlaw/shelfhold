@@ -10,7 +10,12 @@ from collections.abc import Callable, Coroutine, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
-__all__ = ["LibraryGoneError", "RestoreSettings", "SettingsRestored"]
+__all__ = ["InstanceChangedError", "LibraryGoneError", "RestoreSettings", "SettingsRestored"]
+
+
+class InstanceChangedError(Exception):
+    """The Kavita answering is not the one the target was linked to (a reinstall renumbers the
+    libraries): the settings are not written."""
 
 
 class LibraryGoneError(Exception):

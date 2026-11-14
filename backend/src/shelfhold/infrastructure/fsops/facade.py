@@ -64,6 +64,7 @@ from shelfhold.infrastructure.fsops.errors import (
     CrossRootError,
     EmitterConditionError,
     EmitterPerimeterError,
+    ErasingNameTakenError,
     FileChangedError,
     FsopsError,
     HashInterrupted,
@@ -1124,26 +1125,35 @@ class Fsops:
                 raise NotRegularFileError(f"{local!r} is not a bin entry")
             root.remove_tree(located.rel)
 
-    def erase_host_area(self, root_path: str) -> None:
+    def erase_host_area(self, root_path: str, *, attested: bool = False) -> None:
         """The full detachment's one erasure of a root (EF-EXP-031): the reserved folder
         (`.shelfhold/`, with what it holds), the sentinel and the probe files that stayed, all at
         the top of the root. The caller has passed the reserved action, has checked that nothing
         in the folder is user data, and has written the intent; this adds what only fsops can
         check: the root is a writable one with the right sentinel, and the reserved folder is a
-        real folder, never a link (a link is left alone, not followed, and refused)."""
+        real folder, never a link (a link is left alone, not followed, and refused).
+
+        The reserved folder is first moved, in one step, to `.shelfhold-erasing/.shelfhold`: what
+        is left of it while it is emptied (or after a stop) stays under a `.shelfhold` segment,
+        which Kavita's exclusion pattern still matches. A container of that name that the caller
+        does not vouch for (`attested`: an open intention of this erasure exists) or that holds
+        anything but `.shelfhold` may be the admin's own: it is left untouched and refused."""
         log.debug("fsops.erase_host_area", root=root_path)
         located = self._host_root(root_path)
         with self._gated(located, lease=False, tombstone=True) as root:
-            if root.lstat_kind(ERASING_DIR) == "dir":  # a stop left it half emptied: finish it
-                root.remove_tree(ERASING_DIR)
+            container = root.lstat_kind(ERASING_DIR)
+            if container == "dir":
+                if not attested or any(n != RESERVED_DIR for n in root.listdir(ERASING_DIR)):
+                    raise ErasingNameTakenError(f"{ERASING_DIR} of {root_path!r} is not ours")
+                root.remove_tree(ERASING_DIR)  # a stop left it half emptied: finish it
+            elif container is not None:
+                raise NotRegularFileError(f"{ERASING_DIR} of {root_path!r} is not a folder")
             kind = root.lstat_kind(RESERVED_DIR)
             if kind not in (None, "dir"):
                 raise NotRegularFileError(f"{RESERVED_DIR} of {root_path!r} is not a folder")
             if kind == "dir":
-                # one atomic step names the erasure that has begun: a stop in the middle of the
-                # emptying leaves `.shelfhold.erasing`, which a rerun finishes (a tree half
-                # emptied under its own name could not be told from an untouched one)
-                root.rename(RESERVED_DIR, ERASING_DIR, replace=False)
+                root.mkdir(ERASING_DIR)
+                root.rename(RESERVED_DIR, f"{ERASING_DIR}/{RESERVED_DIR}", replace=False)
                 root.remove_tree(ERASING_DIR)
             names = root.listdir(".")
             probes = [n for n in names if n.startswith(PROBE_PREFIX)]

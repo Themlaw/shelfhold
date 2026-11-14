@@ -83,15 +83,11 @@ class _LazyHeadless:
     def target_rotate_key(self, *, target: str, password: str) -> object:
         return self._admin().target_rotate_key(target=target, password=password)
 
-    def target_find_key(self, *, target: str, password: str | None) -> tuple[str, str] | None:
+    def target_find_key(self, *, target: str, password: str | None) -> str | None:
         return self._admin().target_find_key(target=target, password=password)
 
-    def target_revoke_key_id(
-        self, *, target: str, password: str | None, key_id: str, key_digest: str | None = None
-    ) -> str:
-        return self._admin().target_revoke_key_id(
-            target=target, password=password, key_id=key_id, key_digest=key_digest
-        )
+    def target_revoke_key_id(self, *, target: str, password: str | None, key_id: str) -> str:
+        return self._admin().target_revoke_key_id(target=target, password=password, key_id=key_id)
 
     def source_set_secret(self, secret: str) -> object:
         return self._admin().source_set_secret(secret)
