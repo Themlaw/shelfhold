@@ -47,6 +47,7 @@ from shelfhold.export.application.deletion import (
     DeletionService,
     DeletionUnknownError,
     RestoreBlockedError,
+    load_pending_folders,
 )
 from shelfhold.export.application.intents import IntentJournal
 from shelfhold.export.application.locks import LockBusyError
@@ -61,6 +62,14 @@ from shelfhold.export.application.pairing import (
     Pairing,
     PairingResult,
     Proposal,
+)
+from shelfhold.export.application.pending_scans import (
+    PENDING_SCANS_KEY,
+    ScanRefusedError,
+    ScanUnavailableError,
+    load_pending_scans,
+    remember_scans,
+    settle_entries,
 )
 from shelfhold.export.application.plans import StalePlanError
 from shelfhold.export.application.preflight import PermissionPreflight
@@ -99,7 +108,7 @@ from shelfhold.export.application.withdrawal import (
 )
 from shelfhold.export.domain.path_map import PathMapError
 from shelfhold.export.domain.physical_roots import RootState
-from shelfhold.export.targets.kavita.errors import TargetError
+from shelfhold.export.targets.kavita.errors import ProtocolError, TargetError
 from shelfhold.export.targets.kavita.series import refresh_names
 from shelfhold.identity.public import (
     RESERVED_ACTIONS,
@@ -134,6 +143,7 @@ from shelfhold.ops import reclaim
 from shelfhold.ops.backup.report import retained_since
 from shelfhold.ops.backup.scratch import sweep_orphans
 from shelfhold.ops.errors import CodedRefusal, ExitUnavailableError, OpsError, UnknownSubjectError
+from shelfhold.ops.events import BusTargetEvents
 from shelfhold.purge_upstream import connected_upstream
 from shelfhold.sdk.refs import SeriesRef
 from shelfhold.work_locks import index_holder
@@ -142,7 +152,7 @@ if TYPE_CHECKING:
     from shelfhold.composition import Composition, WriteContext
     from shelfhold.infrastructure.fsops import Fsops
 
-__all__ = ["LibraryOps"]
+__all__ = ["LibraryOps", "ScanRefusedError", "ScanUnavailableError"]
 
 _log = structlog.get_logger("shelfhold.export")
 
@@ -152,6 +162,15 @@ _KAVITA_UNAVAILABLE: tuple[type[Exception], ...] = (
 )  # fmt: skip
 SERVICE_ID = "suwayomi"  # the one connected service of M1a
 AUTO_MIN_SCORE = 0.9
+
+
+def _refuses_the_path(error: Exception) -> bool:
+    """A refusal of this path (a 4xx of `scan-folder`, a path the map cannot place), as against
+    Kavita being unavailable (network, asleep, paused, 5xx, no key, route missing)."""
+    if isinstance(error, ValueError):
+        return True
+    status = getattr(error, "status", None)
+    return isinstance(error, ProtocolError) and status is not None and 400 <= status < 500
 
 
 def _proposal(p: Proposal) -> dict[str, Any]:
@@ -1158,11 +1177,15 @@ class LibraryOps:
                 raise CodedRefusal("shelf.withdrawal_root_read_only", str(error)) from None
             except NotChildLibraryError as error:
                 raise CodedRefusal("shelf.not_child_library", str(error)) from None
-        self._scan_everywhere(asked)
+        _sent, refused, unsent = self._scan_each(asked)
+        scan_pending = bool(refused or unsent)  # a scan really not sent: asked again later
+        if scan_pending:
+            remember_scans(self._comp.engine, [*refused, *unsent])
         return {
             "withdrawn": list(report.withdrawn),
             "files": report.files,
             "pending": list(report.pending),
+            "scan_pending": scan_pending,
         }
 
     # -- deletion at three levels (L25, EF-BIB-021) ----------------------------------------------
@@ -1193,7 +1216,7 @@ class LibraryOps:
                 self._comp.engine, w.fsops, clock=self._comp.clock, locate=w.loaded.locate,
                 request_scan=lambda path: self._scan_everywhere([path]),
                 refresh_index=self._index_refresher(w),
-                fresh_auth_s=self._comp.settings.fresh_auth_s,
+                fresh_auth_s=self._comp.settings.fresh_auth_s, on_abandoned=self._scan_abandoned,
             )  # fmt: skip
             try:
                 report = service.apply(
@@ -1210,6 +1233,7 @@ class LibraryOps:
             "pending": len(report.pending),
             "folders_removed": len(report.folders_removed),
             "folders_kept": len(report.folders_kept),
+            "scan_pending": bool(report.folders_waiting),  # a scan not sent: asked again later
         }
 
     def _index_refresher(self, w: Any) -> Callable[[], object] | None:
@@ -1304,7 +1328,13 @@ class LibraryOps:
 
     def _scan_everywhere(self, remote_paths: list[str]) -> None:
         """Kavita forgets a series by scanning the folder: every Kavita target is asked (a scan of
-        a folder a library does not watch is a no-op there)."""
+        a folder a library does not watch is a no-op there). Nothing is swallowed, and every
+        target is asked before anything is raised:
+
+        - `ScanUnavailableError`: Kavita cannot be asked now (unreachable, asleep, paused, 5xx,
+          no key): the caller keeps what depends on the scan and asks again later;
+        - `ScanRefusedError`: Kavita refuses this path for good (a 4xx, a path the map cannot
+          place): the caller counts an attempt for this path only."""
         if not remote_paths:
             return
         table = export.export_target
@@ -1312,13 +1342,77 @@ class LibraryOps:
             targets = list(
                 connection.execute(sa.select(table.c.id).where(table.c.kind == "kavita")).scalars()
             )
+        unavailable: list[str] = []
+        refused: list[str] = []
         for target_id in targets:
             try:
                 client = self._comp.kavita_client(str(target_id))
                 for path in remote_paths:
                     asyncio.run(client.scan_folder(path))
-            except _KAVITA_UNAVAILABLE:
-                _log.warning("withdraw.scan_unavailable", target_id=str(target_id))
+            except _KAVITA_UNAVAILABLE as error:
+                _log.warning(
+                    "withdraw.scan_unavailable", target_id=str(target_id),
+                    reason=type(error).__name__,
+                )  # fmt: skip
+                (refused if _refuses_the_path(error) else unavailable).append(str(target_id))
+        if unavailable:
+            raise ScanUnavailableError(f"Kavita was not asked to scan: {', '.join(unavailable)}")
+        if refused:
+            raise ScanRefusedError(f"Kavita refuses the path: {', '.join(refused)}")
+
+    def _scan_each(self, paths: list[str]) -> tuple[list[str], list[str], list[str]]:
+        """`(sent, refused, unsent)`: each path on its own, so that one refused path never holds
+        the others; only the unavailability of Kavita stops the pass (the rest is `unsent`)."""
+        sent: list[str] = []
+        refused: list[str] = []
+        for index, path in enumerate(paths):
+            try:
+                self._scan_everywhere([path])
+            except ScanRefusedError:
+                refused.append(path)
+            except ScanUnavailableError:
+                return sent, refused, paths[index:]
+            else:
+                sent.append(path)
+        return sent, refused, []
+
+    def _scan_abandoned(self, count: int) -> None:
+        """A path Kavita kept refusing leaves the queue: the admin is told (event + log)."""
+        _log.warning("kavita.scan_abandoned", count=count)
+        bus = getattr(self._comp, "bus", None)
+        if bus is not None:
+            BusTargetEvents(self._comp.engine, bus).emit("kavita.scan_abandoned", count=count)
+
+    def retry_pending_scans(self) -> dict[str, int]:
+        """Ask again for the scans a failure left (empty folders of deleted series, folders a
+        withdrawal emptied), then remove the folders that are empty. Quiet when nothing waits.
+        Only what was sent leaves the queue (read again under the write lock): a scan written
+        down meanwhile by another writer is never lost."""
+        with self._comp.engine.connect() as connection:
+            folders = load_pending_folders(connection)
+        waiting = removed = 0
+        if folders:
+            with self._comp.write_context() as w:
+                service = DeletionService(
+                    self._comp.engine, w.fsops, clock=self._comp.clock, locate=w.loaded.locate,
+                    request_scan=lambda path: self._scan_everywhere([path]),
+                    refresh_index=self._index_refresher(w),
+                    fresh_auth_s=self._comp.settings.fresh_auth_s,
+                    on_abandoned=self._scan_abandoned,
+                )  # fmt: skip
+                gone, kept, _unsent = service.retry_pending()
+                removed, waiting = len(gone), len(kept)
+        with self._comp.engine.connect() as connection:
+            paths = load_pending_scans(connection)
+        if paths:
+            sent, refused, unsent = self._scan_each(paths)
+            abandoned = settle_entries(
+                self._comp.engine, PENDING_SCANS_KEY, done=sent, refused=refused
+            )
+            if abandoned:
+                self._scan_abandoned(len(abandoned))
+            waiting += len(unsent) + len(refused) - len(abandoned)
+        return {"removed": removed, "waiting": waiting}
 
     # -- the write probe (L37, EF-UX-002) ------------------------------------------------------
 

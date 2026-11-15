@@ -82,3 +82,39 @@ def test_ops_content_deletion_of_an_irreplaceable_unit_asks_for_its_word(
         assert len(served(env)) == 1
         done = ops.delete_apply(typed={unit: unit}, principal=ADMIN, **args)
         assert done["moved"] == 2 and served(env) == []
+
+
+@pytest.mark.req("EF-BIB-021")
+def test_a_scan_that_fails_keeps_the_folder_then_the_retry_removes_it(
+    settings: Settings, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Kavita cannot be asked: the series folder stays and is written down, the result says the
+    scan is pending, and the export run's retry removes the folder once Kavita answers."""
+    from shelfhold.ops.library import ScanUnavailableError
+
+    with seeded(settings, tmp_path) as env:
+        unit = env.add_chapter(env.new_series("Dr Stone"), "1")
+        env.export()
+        ops = LibraryOps(env.inst.comp)
+        preview = ops.delete_preview(level="remove_destinations", unit_ids=[unit])
+        asked: list[list[str]] = []
+
+        def down(_self: object, paths: list[str]) -> None:
+            asked.append(paths)
+            raise ScanUnavailableError("Kavita is down")
+
+        with monkeypatch.context() as down_for_now:
+            down_for_now.setattr(LibraryOps, "_scan_everywhere", down)
+            done = ops.delete_apply(
+                level="remove_destinations", unit_ids=[unit], if_match=preview["version"],
+                typed={}, principal=ADMIN,
+            )  # fmt: skip
+            assert ops.retry_pending_scans() == {"removed": 0, "waiting": 1}  # still down
+        folder = env.inst.library / "Kavita" / "Dr Stone"
+        assert asked and done["moved"] == 1
+        assert done["folders_removed"] == 0 and done["scan_pending"] is True
+        assert folder.is_dir()  # not removed without a scan
+        monkeypatch.setattr(LibraryOps, "_scan_everywhere", lambda _self, paths: None)
+        assert ops.retry_pending_scans() == {"removed": 1, "waiting": 0}
+        assert not folder.exists()
+        assert ops.retry_pending_scans() == {"removed": 0, "waiting": 0}

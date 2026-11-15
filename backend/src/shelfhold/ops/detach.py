@@ -28,6 +28,7 @@ from shelfhold.export.application.detach import (
 )
 from shelfhold.export.application.intents import IntentJournal
 from shelfhold.export.application.locks import ResourceLocks
+from shelfhold.export.application.pending_scans import remember_scans
 from shelfhold.export.application.remove_destination import (
     RemovalMode,
     RemovalRefusedError,
@@ -136,8 +137,10 @@ class DetachOps:
         client = self._comp.kavita_client(str(target))
 
         def scan(remote_folder: str) -> None:
-            with contextlib.suppress(TargetError):  # the periodic scan finds the change anyway
+            try:
                 asyncio.run(client.scan_folder(remote_folder))
+            except TargetError:  # not lost: asked again by the next export run
+                remember_scans(self._comp.engine, [remote_folder])
 
         return scan
 

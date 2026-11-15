@@ -30,10 +30,6 @@ from tests.null_tombstones import NONE_PURGED
 pytestmark = pytest.mark.req("EF-BIB-021", "EF-BIB-004")
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="M3 closure review M3: a swallowed TargetError removes the folder without a scan",
-)
 def test_closure_trace_poc_folder_kept_when_kavita_cannot_be_asked_through_the_real_wrapper() -> (
     None
 ):
@@ -64,6 +60,17 @@ def test_closure_trace_poc_folder_kept_when_kavita_cannot_be_asked_through_the_r
         # Kavita was never scanned: the folder must wait for a later pass (EF-BIB-021)
         assert folder.is_dir(), "the managed folder was removed although no scan happened"
         assert report.folders_removed == ()  # type: ignore[attr-defined]
+        # nothing is lost: the folder is written down, and removed once a scan goes through
+        assert service.pending_folders()
+        scanned: list[str] = []
+        retry = DeletionService(
+            env.lib.engine, env.lib.fsops, clock=env.clock, locate=env.lib.locate,
+            request_scan=scanned.append, refresh_index=index.rewrite, fresh_auth_s=900,
+        )  # fmt: skip
+        removed, kept, waiting = retry.retry_pending()
+        assert scanned and kept == () and waiting == () and removed
+        assert not folder.exists()
+        assert retry.pending_folders() == ()
 
 
 @pytest.fixture
@@ -72,10 +79,6 @@ def h() -> Iterator[Harness]:
         yield inside
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="M3 closure review M4: EF-BIB-004 (01) asks a suggestion on the title alone",
-)
 def test_closure_trace_poc_two_identical_titles_without_common_identifier_are_suggested(
     h: Harness,
 ) -> None:

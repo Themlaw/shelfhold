@@ -204,7 +204,7 @@ class KavitaClient:
         if response.status == 403:
             self._forbidden(route)
         if response.status not in expect:
-            raise ProtocolError(f"{route.label} answered {response.status}")
+            raise ProtocolError(f"{route.label} answered {response.status}", status=response.status)
         return CallResult(response.status, _decode(response.body, route))
 
     async def _awake(self, route: routes.Route) -> None:

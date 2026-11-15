@@ -1542,6 +1542,11 @@ title = "Le compte Kavita d'un profil enfant donne accès à plus que son âge n
 cause = "Un compte Kavita associé à un profil enfant atteint une bibliothèque qui n'est pas famille, n'a pas de restriction d'âge, inclut les inconnus ou n'atteint aucune bibliothèque famille."
 action = "Lisez le détail dans `GET /api/v1/audit/kavita-accounts` ou dans la page Santé, puis corrigez le compte dans Kavita (bibliothèques, restriction d'âge, « inclure les inconnus »). Shelfhold ne modifie rien dans Kavita ; l'audit se rejoue chaque jour."
 
+[errors."kavita.scan_abandoned"]
+title = "Un scan Kavita a été abandonné : Kavita refuse ce chemin."
+cause = "Kavita a refusé le même chemin plusieurs fois de suite (une réponse d'erreur propre à ce dossier). Le dossier n'est plus redemandé, mais rien n'a été supprimé de plus."
+action = "Lancez un scan de la bibliothèque depuis Kavita, ou vérifiez le nom du dossier concerné et la correspondance de chemins de la destination."
+
 [errors."target.child_exposure"]
 title = "Une bibliothèque Kavita est accessible à un compte enfant."
 action = "Retirez l'accès du compte enfant à cette bibliothèque dans Kavita, puis lancez « shelfhold target recheck »."
@@ -1614,7 +1619,7 @@ cause = "Un dossier de l'une des destinations en écriture contient ou recouvre 
 
 [errors."target.unreachable"]
 title = "Kavita ne répond pas."
-action = "Vérifiez que le conteneur Kavita tourne, ou reconnectez-le avec « shelfhold target reconnect »."
+action = "Vérifiez que le conteneur Kavita tourne, ou reconnectez-le avec « shelfhold target reconnect ». Les scans qui n'ont pas pu partir (suppression, retrait) sont gardés : le prochain export les redemande, et le dossier vide d'une série supprimée reste jusque-là."
 cause = "Le serveur Kavita ne répond pas : conteneur arrêté, adresse changée ou réseau coupé."
 
 [errors."target.version_unsupported"]

@@ -22688,6 +22688,10 @@
       "code": "kavita.account_audit",
       "status": 409
     },
+    "/api/v1/problems/kavita.scan-abandoned": {
+      "code": "kavita.scan_abandoned",
+      "status": 409
+    },
     "/api/v1/problems/last-login-factor": {
       "code": "last_login_factor",
       "status": 409

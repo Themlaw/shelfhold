@@ -1,4 +1,4 @@
-"""M3 L20: duplicate suggestions are never grounded on the title alone (EF-BIB-004), a field typed
+"""M3 L20: a title alone grounds a suggestion, never a merge (EF-BIB-004), a field typed
 by hand is locked and manual (EF-BIB-011), the preferred team of an Edition is the one exported
 (EF-BIB-005). Every "never" here is an attack that tries to break it."""
 
@@ -75,7 +75,7 @@ def test_dedup_suggests_never_merges_on_title_only(h: Harness) -> None:
     h.edition(second)
     before = (works_rows(h), h.rows("SELECT id, work_id FROM edition ORDER BY id"))
     created = scan(h)
-    assert len(created) == 1  # a suggestion: the same title and a person in common
+    assert len(created) == 1  # a suggestion: the same title
     (suggestion,) = open_suggestions(h.connection)
     assert {suggestion.a, suggestion.b} == {first, second} and suggestion.state == "open"
     assert suggestion.reason == REASON
@@ -85,38 +85,32 @@ def test_dedup_suggests_never_merges_on_title_only(h: Harness) -> None:
 
 
 @pytest.mark.req("EF-BIB-004")
-def test_same_title_other_authors_is_never_suggested(h: Harness) -> None:
+def test_same_title_other_authors_is_suggested_not_merged(h: Harness) -> None:
     work(h, "La Voie", "Alice Martin")
     work(h, "La Voie", "Bruno Durand")
-    assert scan(h) == []
+    assert len(scan(h)) == 1  # 01: two identical titles, no common identifier: a suggestion
+    assert h.scalar("SELECT count(*) FROM work") == 2  # and never a merge
 
 
 @pytest.mark.req("EF-BIB-004")
-def test_same_title_without_any_author_is_never_suggested(h: Harness) -> None:
+def test_same_title_without_any_author_is_suggested_for_each_pair(h: Harness) -> None:
     work(h, "La Voie")
     work(h, "La Voie")
+    assert len(scan(h)) == 1  # the title alone is a ground for a suggestion (01), never a merge
     work(h, "La Voie", "Alice Martin")
-    assert scan(h) == []  # the title alone is not a ground, even three times
+    assert len(scan(h)) == 2  # the new Work is asked against each of the two others
+    assert h.scalar("SELECT count(*) FROM work") == 3
 
 
 @pytest.mark.req("EF-BIB-004")
-def test_homonyms_in_case_or_nfd_with_other_authors_are_never_suggested(h: Harness) -> None:
+def test_homonyms_in_case_or_nfd_are_suggested_whoever_the_author(h: Harness) -> None:
     nfc = "Éternité"
     nfd = unicodedata.normalize("NFD", nfc)
     assert nfc != nfd
     work(h, nfc, "Alice Martin")
     work(h, nfd.upper(), "Bruno Durand")
     work(h, nfd.lower(), "Chloe Petit")
-    assert scan(h) == []
-
-
-@pytest.mark.req("EF-BIB-004")
-def test_homonyms_in_case_or_nfd_with_one_author_in_common_are_suggested(h: Harness) -> None:
-    nfc = "Éternité"
-    nfd = unicodedata.normalize("NFD", nfc)
-    work(h, nfc, "Alice Martin")
-    work(h, nfd.upper(), "Alice Martin")
-    assert len(scan(h)) == 1  # the spelling is not a reason to miss a real duplicate
+    assert len(scan(h)) == 3  # the spelling is not a reason to miss a duplicate: 3 pairs
 
 
 @pytest.mark.req("EF-BIB-004")
@@ -312,3 +306,15 @@ def test_a_team_of_another_edition_is_never_preferred(h: Harness) -> None:
     foreign = Catalog(h.connection).resolve_team(h.binding(other), "Team Z", at(9)).id
     with pytest.raises(ValueError, match="not a team of this edition"):
         Catalog(h.connection).prefer_team(edition.id, foreign)
+
+
+@pytest.mark.req("EF-BIB-004")
+def test_a_suggestion_stored_under_the_old_reason_is_read_and_not_asked_again(h: Harness) -> None:
+    from shelfhold.catalog.application.dedup import LEGACY_REASON
+
+    work(h, "La Voie", "Alice Martin")
+    work(h, "La Voie", "Alice Martin")
+    assert len(scan(h)) == 1
+    h.connection.execute(sa.text("UPDATE merge_suggestion SET reason = :r"), {"r": LEGACY_REASON})
+    assert [s.reason for s in open_suggestions(h.connection)] == [REASON]  # read as the new one
+    assert scan(h) == []  # the pair is already put to the admin, whatever the stored reason

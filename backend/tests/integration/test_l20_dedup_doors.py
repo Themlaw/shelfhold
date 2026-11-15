@@ -31,7 +31,7 @@ class _Dedup:
         return {"created": ["01JSUGGEST00000000000000001"]}
 
     def suggestions(self) -> list[dict[str, str]]:
-        return [{"id": "S", "a": A, "b": B, "reason": "same_title_same_author", "state": "open"}]
+        return [{"id": "S", "a": A, "b": B, "reason": "same_title", "state": "open"}]
 
 
 class _Ops:
@@ -88,7 +88,7 @@ def test_the_ops_scan_records_suggestions_and_fails_closed_without_a_screen() ->
                 _seed_pair(connection)
             ops = DedupOps(engine, _Screens(Screen()))
             assert len(ops.scan()["created"]) == 1
-            assert [s["reason"] for s in ops.suggestions()] == ["same_title_same_author"]
+            assert [s["reason"] for s in ops.suggestions()] == ["same_title"]
             assert ops.scan()["created"] == []
             with pytest.raises(ExitUnavailableError):
                 DedupOps(engine).scan()  # no tombstone screen: no scan

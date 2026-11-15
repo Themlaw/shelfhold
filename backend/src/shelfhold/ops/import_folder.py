@@ -29,6 +29,7 @@ from shelfhold.library.public import (
     UntrustedEpubStore,
     make_precheck,
 )
+from shelfhold.ops.dedup import suggest_on_arrival
 from shelfhold.ops.errors import CodedRefusal
 from shelfhold.ops.reclaim import require_space
 from shelfhold.plugin_host.adapters.meta.suwayomi.tree_import import SuwayomiTree
@@ -127,7 +128,10 @@ class ImportOps:
                 return _report(scan, [], dry_run=True)
             require_space(comp)  # copied into /data: not under the reserve
             scan, outcomes = folder.run(declared_purchase=declared_purchase)
-            return _report(scan, outcomes, dry_run=False)
+            report = _report(scan, outcomes, dry_run=False)
+        if any(o.state == "stored" for o in outcomes):
+            suggest_on_arrival(comp)  # EF-BIB-004: an identical title is suggested, not merged
+        return report
 
     def tree(self, path: str, *, dry_run: bool = False) -> dict[str, Any]:
         """`import tree <path>` (EF-INT-009): the Units of an existing Suwayomi download tree,
