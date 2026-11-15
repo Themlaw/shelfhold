@@ -1,7 +1,10 @@
 """The full open export `shelfhold-export/1` (EF-INT-016, EF-BIB-053 (5), EF-INT-027).
 
 A folder of versioned JSON (one file per table) and the file tree of the managed files, written
-for another program or another instance to read. What it never carries:
+for another program or another instance to read. The folder is a BagIt 1.0 bag (RFC 8493,
+EF-BIB-031): everything below `data/` is the payload, `manifest-sha256.txt` gives a `sha256` to
+each payload file and `tagmanifest-sha256.txt` to each tag file, so that a stranger can check the
+copy offline with nothing of ours. What it never carries:
 
 - **a tombstone**, nor anything that would name what one covers: no tombstone table, and no Unit,
   Variant, file, Work or upstream series that a tombstone covers, read from the tombstones
@@ -457,7 +460,7 @@ def _copy_files(
             continue
         done.add((root, copy.rel_path))
         below = [] if root in (_STORE, ".") else [root]
-        rel = "/".join(("files", copy.location, *below, copy.rel_path))
+        rel = "/".join(("data", "files", copy.location, *below, copy.rel_path))
         try:
             with opener(f"{copy.root_path.rstrip('/')}/{copy.rel_path}") as source:
                 digest, size = tree.put_stream(rel, source)
@@ -499,6 +502,7 @@ def export_all(
     kept = _decide(connection, screen, works)
     report.withheld_units, report.withheld_works = kept.withheld_units, kept.withheld_works
     tables: dict[str, dict[str, Any]] = {}
+    payload: list[tuple[str, str, int]] = []  # (path, "sha256:<hex>", size) of every payload file
     for table in _tables():
         if only is not None and table.name not in only:
             continue
@@ -507,7 +511,9 @@ def export_all(
         tree.put_bytes(f"data/{table.name}.json", data)
         report.rows[table.name] = len(rows)
         tables[table.name] = {"rows": len(rows), "sha256": _sha(data)}
+        payload.append((f"data/{table.name}.json", _sha(data), len(data)))
     entries, missing = _copy_files(connection, kept, tree, opener, library_dir, report)
+    payload.extend((e["file"], e["sha256"], e["size"]) for e in entries)
     manifest = {
         "format": FORMAT,
         "schema_version": FORMAT,
@@ -517,8 +523,43 @@ def export_all(
         "files_missing": missing,
         "excluded_tables": sorted(EXCLUDED_TABLES),
     }
-    tree.put_bytes(MANIFEST, (json.dumps(manifest, sort_keys=True, indent=1) + "\n").encode())
+    _write_bag(tree, payload, (json.dumps(manifest, sort_keys=True, indent=1) + "\n").encode(), now)
     return report
+
+
+def _bag_path(path: str) -> str:
+    """A path as BagIt writes it: `%`, LF and CR percent-encoded (RFC 8493 section 2.1.3)."""
+    return path.replace("%", "%25").replace("\n", "%0A").replace("\r", "%0D")
+
+
+def _bag_lines(entries: Iterable[tuple[str, str]]) -> bytes:
+    return "".join(f"{digest}  {_bag_path(path)}\n" for path, digest in sorted(entries)).encode()
+
+
+def _write_bag(
+    tree: ExportTree, payload: Sequence[tuple[str, str, int]], manifest: bytes, now: datetime
+) -> None:
+    """The BagIt tag files. Same instance, same bag, byte for byte (the date is the day). The
+    export's own `manifest.json` is a tag file, hashed here and still written last."""
+    declaration = b"BagIt-Version: 1.0\nTag-File-Character-Encoding: UTF-8\n"
+    octets = sum(size for _, _, size in payload)
+    info = (
+        f"Bagging-Date: {now.astimezone(UTC).date().isoformat()}\n"
+        f"Bag-Software-Agent: {FORMAT}\n"
+        f"Payload-Oxum: {octets}.{len(payload)}\n"
+    ).encode()
+    fixity = _bag_lines((path, digest.removeprefix("sha256:")) for path, digest, _ in payload)
+    tags = {
+        "bagit.txt": declaration, "bag-info.txt": info, "manifest-sha256.txt": fixity,
+        MANIFEST: manifest,
+    }  # fmt: skip
+    for name in ("bagit.txt", "bag-info.txt", "manifest-sha256.txt"):
+        tree.put_bytes(name, tags[name])
+    tree.put_bytes(
+        "tagmanifest-sha256.txt",
+        _bag_lines((name, hashlib.sha256(data).hexdigest()) for name, data in tags.items()),
+    )
+    tree.put_bytes(MANIFEST, manifest)  # last: a folder without it is not an export
 
 
 def _sha(data: bytes) -> str:

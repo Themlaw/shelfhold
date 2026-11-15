@@ -82,6 +82,10 @@ HTTP ([restauration.md](restauration.md)).
     shelfhold admin sessions revoke --user <compte>
     shelfhold admin reset-password --username <compte> --password-file <fichier>
 
+`--scope metrics` fait une clé qui ne lit que `/metrics` (admin seulement, pour elle-même) : toute autre
+route lui répond 403, même celles de son titulaire ([configuration](../configuration.md),
+`SHELFHOLD_METRICS_ENABLED`).
+
 Une clé d'API est affichée une seule fois et stockée hachée. `reset-password` change le mot de passe, ferme
 toutes les sessions du compte et révoque toutes ses passkeys ([passkeys.md](passkeys.md)).
 

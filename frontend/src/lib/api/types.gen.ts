@@ -13428,6 +13428,29 @@ export type KosyncAuthorizeResponses = {
 
 export type KosyncAuthorizeResponse = KosyncAuthorizeResponses[keyof KosyncAuthorizeResponses];
 
+export type MetricsData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/metrics';
+};
+
+export type MetricsErrors = {
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type MetricsError = MetricsErrors[keyof MetricsErrors];
+
+export type MetricsResponses = {
+    /**
+     * Successful Response
+     */
+    200: unknown;
+};
+
 export type ReadyzData = {
     body?: never;
     path?: never;

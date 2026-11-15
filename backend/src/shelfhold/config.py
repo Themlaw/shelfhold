@@ -84,6 +84,9 @@ class Settings(BaseModel):
     # a fresh password on every reserved action; never required. The invisible protections
     # (argon2id, CSRF, cookies, CSP, attempt limiting) have no setting at all.
     auth_hardened: bool = False
+    # ENF-OBS-002: `/metrics` (Prometheus text) answers only when the host turns it on; a key of
+    # scope `metrics` is then the only credential that reads it. Off: the route says 404.
+    metrics_enabled: bool = False
     fresh_auth_s: int = Field(default=900, ge=60, le=86_400)
     # EF-BIB-024: a new version of a chapter that counts less than this share of the pages of the
     # stored one is quarantined and the stored one stays exported. 0.5 by default.

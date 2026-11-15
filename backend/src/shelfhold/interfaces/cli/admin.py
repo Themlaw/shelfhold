@@ -112,7 +112,9 @@ def register(commands: argparse._SubParsersAction[argparse.ArgumentParser]) -> N
         "--expires-days", type=int, metavar="DAYS", help=t("cli.admin_key_expires_help")
     )
     create.add_argument(
-        "--scope", choices=("read", "request", "admin"), help=t("cli.admin_key_scope_help")
+        "--scope",
+        choices=("read", "request", "admin", "metrics"),
+        help=t("cli.admin_key_scope_help"),
     )
     create.add_argument("--subject", metavar="USERNAME", help=t("cli.admin_key_subject_help"))
     create.set_defaults(handler=run_keys_create, configure_logging=False)
