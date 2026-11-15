@@ -9,8 +9,10 @@ that lies."""
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
+import re
 import stat
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -494,6 +496,84 @@ def test_export_all_says_what_it_could_not_copy(home: Settings, tmp_path: Path) 
         assert report["files_off_registry"] >= 1
         assert any(f["matches_registry"] is False for f in manifest(out)["files"])
         assert shelved.kept_units
+
+
+def read_bag(root: Path) -> dict[str, dict[str, str]]:
+    """The manifests of a BagIt 1.0 bag (RFC 8493), read the way `bagit` reads them: one
+    `<hex> <path>` line per file, the path percent-encoded for `%`, LF and CR."""
+    found: dict[str, dict[str, str]] = {}
+    for name in ("manifest-sha256.txt", "tagmanifest-sha256.txt"):
+        entries: dict[str, str] = {}
+        for line in (root / name).read_text(encoding="utf-8").splitlines():
+            digest, _, path = line.partition(" ")
+            path = path.lstrip().replace("%0A", "\n").replace("%0D", "\r").replace("%25", "%")
+            assert len(digest) == 64 and path not in entries, line
+            entries[path] = digest
+        found[name] = entries
+    return found
+
+
+def sha256_of(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+@pytest.mark.req("EF-BIB-031")
+def test_export_all_fixity_bagit_manifest(home: Settings, tmp_path: Path) -> None:
+    """A BagIt 1.0 bag that a stranger can check with nothing of ours: every payload file (the
+    tables and the managed files, all below `data/`) has its `sha256`, the tag files have theirs,
+    the totals are the real ones, and what the export leaves out is not named anywhere."""
+    with seeded(home, tmp_path) as env:
+        shelved = shelve(env)
+        out = tmp_path / "out"
+        export_to(env, out)
+        again = tmp_path / "again"
+        export_to(env, again)
+    assert (out / "bagit.txt").read_text(encoding="utf-8") == (
+        "BagIt-Version: 1.0\nTag-File-Character-Encoding: UTF-8\n"
+    )
+    info = dict(
+        line.split(": ", 1)
+        for line in (out / "bag-info.txt").read_text(encoding="utf-8").splitlines()
+    )
+    assert {"Bagging-Date", "Payload-Oxum", "Bag-Software-Agent"} <= set(info)
+    assert re.fullmatch(r"\d{4}-\d{2}-\d{2}", info["Bagging-Date"])
+
+    bag = read_bag(out)
+    payload = bag["manifest-sha256.txt"]
+    on_disk = {p.relative_to(out).as_posix() for p in (out / "data").rglob("*") if p.is_file()}
+    assert set(payload) == on_disk  # the payload is `data/` and all of `data/`, nothing else
+    assert any(p.startswith("data/files/") for p in payload)  # the files are payload, not tags
+    for path, digest in payload.items():  # offline: hashlib and the folder, nothing of ours
+        assert sha256_of(out / path) == digest, path
+    octets = sum((out / p).stat().st_size for p in payload)
+    assert info["Payload-Oxum"] == f"{octets}.{len(payload)}"
+
+    tags = bag["tagmanifest-sha256.txt"]
+    assert set(tags) == {
+        "bagit.txt", "bag-info.txt", "manifest-sha256.txt", "manifest.json",
+    }  # fmt: skip
+    for path, digest in tags.items():
+        assert sha256_of(out / path) == digest, path
+
+    # the manifest of the export and the bag say the same thing about every file
+    for entry in manifest(out)["files"]:
+        assert payload[entry["file"]] == entry["sha256"].removeprefix("sha256:")
+        assert entry["file"].startswith("data/files/")
+    assert {e["unit_id"] for e in manifest(out)["files"]} == set(shelved.kept_units)
+
+    # what the export excludes is in no name and no line of the bag
+    names = "\n".join(sorted(payload) + sorted(tags))
+    for word in ("tombstone", "api_key", "session", "secret", "password", "webauthn"):
+        assert word not in names.lower(), word
+
+    # reproducible: the same instance gives the same bag, byte for byte (the date is the day)
+    for name in ("manifest-sha256.txt", "bag-info.txt", "bagit.txt"):
+        assert (again / name).read_bytes() == (out / name).read_bytes(), name
+
+    # a flipped byte is caught by the manifest alone
+    victim = out / next(p for p in sorted(payload) if p.startswith("data/files/"))
+    victim.write_bytes(victim.read_bytes() + b"x")
+    assert sha256_of(victim) != payload[victim.relative_to(out).as_posix()]
 
 
 # --- who may, and what is written -----------------------------------------------------------------
