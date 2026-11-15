@@ -406,7 +406,7 @@ def follow_handler(comp: Composition, pools: JobPools) -> Callable[[JobContext],
                     report = asyncio.run(once())
                     context.record(**{f"{prefix}{k}": v for k, v in report.counters().items()})
                     arrived.append(report.fetched)
-                    if report.created:  # EF-BIB-004: an identical title is suggested, not merged
+                    if report.counters().get("created"):  # EF-BIB-004: a title may repeat
                         suggest_on_arrival(comp)
         except (NoLibraryError, KeyringUnavailableError) as error:
             log.info("follow.cycle_skipped", reason=type(error).__name__)
