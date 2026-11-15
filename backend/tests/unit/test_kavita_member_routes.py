@@ -83,7 +83,13 @@ def test_member_client_sends_the_key_in_a_header_to_the_listed_routes_only() -> 
     client = _client(fake, mine)
     assert run(client.whoami()).username == "mum.kv"
     run(client.call("GET", "/api/Reader/get-progress", query={"chapterId": 4}))
-    run(client.call("POST", "/api/Reader/progress", body={"pageNum": 3}))
+    run(
+        client.call(
+            "POST",
+            "/api/Reader/progress",
+            body={"volumeId": 1, "chapterId": 4, "pageNum": 3, "seriesId": 2, "libraryId": 7},
+        )
+    )
     run(client.call("GET", "/api/Reader/continue-point", query={"seriesId": 2}))
     assert {(r.method, r.path) for r in fake.requests} == THE_CLOSED_LIST
     for request in fake.requests:

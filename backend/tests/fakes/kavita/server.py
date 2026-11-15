@@ -465,8 +465,11 @@ class FakeKavita:
         raw = recorded.query.get("chapterId", "")
         account = self._account_of(recorded)
         chapter = self._chapter(int(raw)) if raw.isdigit() else None
-        if account is None or chapter is None or (account, int(raw)) in self.inaccessible:
+        if account is None or (account, int(raw or 0)) in self.inaccessible:
             return self._text(403, "Forbidden")  # [ChapterAccess]
+        if chapter is None:  # a chapter the fake does not know: the stub of "no progress"
+            return self._json({"pageNum": 0, "chapterId": 0, "volumeId": 0, "seriesId": 0,
+                               "libraryId": 0})  # fmt: skip
         got = self.member_progress.get((account, int(raw)))
         if got is None:  # `GetProgress` answers a stub: page 0, no volume, no series
             return self._json({"pageNum": 0, "chapterId": int(raw), "volumeId": 0, "seriesId": 0,
@@ -488,6 +491,8 @@ class FakeKavita:
             return body
         account = self._account_of(recorded)
         chapter = self._chapter(int(body["chapterId"]))
+        if account is not None and chapter is None:  # a chapter the fake does not know: a no-op
+            return httpx2.Response(200)
         if (
             account is None
             or chapter is None
