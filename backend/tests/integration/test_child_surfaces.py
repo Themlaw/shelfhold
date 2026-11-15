@@ -12,6 +12,7 @@ fails the suite. A route that a child can use (OPEN) names the test that attacks
 
 from __future__ import annotations
 
+import base64
 import hashlib
 import sys
 from collections.abc import Iterator
@@ -103,8 +104,24 @@ OWN = (
 # DEVICE (M4 L46): behind a device token and nothing else, the credential of an e-reader. A session,
 # a child's or an adult's, and an API key are refused (401); the token of a child reads as that
 # child and the route answers no catalogue data. The attacks are in `test_l46_device_tokens.py`;
-# the feed (L48) and the other kosync routes (L47) join here, each with its own surface.
-DEVICE = ("GET /kosync/users/auth",)
+# the feed (L48, `tests/integration/test_l48_opds.py`) joins here with its own surface `opds`, and
+# the other kosync routes (L47) will.
+KOSYNC = ("GET /kosync/users/auth",)
+OPDS = (
+    "GET /opds",
+    "GET /opds/opensearch.xml",
+    "GET /opds/shelves",
+    "GET /opds/shelves/{shelf_id}",
+    "GET /opds/series",
+    "GET /opds/series/{series_id}",
+    "GET /opds/works",
+    "GET /opds/works/{work_id}",
+    "GET /opds/recent",
+    "GET /opds/search",
+    "GET /opds/covers/{content_hash}/{size}",
+    "GET /opds/editions/{edition_id}/complete",
+)
+DEVICE = (*KOSYNC, *OPDS)
 OPEN = {
     "GET /api/v1/activity": "activity",
     "GET /api/v1/events": "sse",
@@ -306,13 +323,12 @@ BODIES = {
 # with that word shows up in the OpenAPI document).
 PENDING_SURFACES = {
     "covers": ("L24", ("cover", "covers")),
-    "opds": ("M5", ("opds",)),
 }
 
 SURFACES = (
     "search", "search_pages", "search_key", "federated", "me_state_get", "me_state_put",
     "me_state_list", "me_title", "activity", "notification", "works_since", "sse", "thumbnail",
-    "work_redirect",
+    "work_redirect", "opds",
 )  # fmt: skip
 METHODS = ("get", "post", "put", "patch", "delete")
 HIDDEN_FROM_CEILING_10 = {*HIDDEN_TITLES, "twelve"}
@@ -434,7 +450,7 @@ def test_every_openapi_route_has_a_child_case(api: AuthEnv) -> None:
 
 @pytest.mark.req("EF-USR-006", "ENF-SEC-010")
 def test_pending_surfaces_get_a_real_child_case_when_they_arrive(api: AuthEnv) -> None:
-    """SSE (L12), thumbnails (L24), notifications (L14), OPDS (M5): the day a path of that
+    """SSE (L12), thumbnails (L24), notifications (L14): the day a path of that
     surface shows up in the OpenAPI document, this fails until its child case is written."""
     segments = {
         seg for route in _routes(api.app) for seg in route.split(" ", 1)[1].lower().split("/")
@@ -596,7 +612,10 @@ def test_device_routes_refuse_a_session_and_a_key_and_serve_a_child_token_no_dat
         by_token = env.other_client("10.0.0.54").get(
             path, headers={"x-auth-user": token.public_id, "x-auth-key": md5}
         )
-        assert by_token.status_code == 200 and by_token.json() == {"authorized": "OK"}
+        if route in KOSYNC:
+            assert by_token.status_code == 200 and by_token.json() == {"authorized": "OK"}
+        else:  # a feed answers 200, or the 404 of a filled-in identifier nobody has
+            assert by_token.status_code in (200, 404), (route, by_token.status_code)
         world.clean(by_token.text)
 
 
@@ -988,6 +1007,50 @@ def _surface_thumbnail(world: World) -> None:
     )
     assert by_key.status_code == 403
     world.clean(by_key.text)
+
+
+def _surface_opds(world: World) -> None:
+    """L48: the OPDS feed behind a device token is a projection like any other. Every feed of the
+    graph, every page and every search holds only what her ceiling lets through, and a hidden
+    identifier is one 404 with an absent one (the attacks: `tests/integration/test_l48_opds.py`)."""
+    from xml.etree import ElementTree as ET
+
+    token = world.env.app.state.auth_gate.auth.create_device_token(subject_username="kid")  # type: ignore[attr-defined]
+    client = world.env.other_client("10.0.0.61")
+    headers = {
+        "Authorization": "Basic "
+        + base64.b64encode(f"{token.public_id}:{token.secret}".encode()).decode()
+    }
+    atom = "{http://www.w3.org/2005/Atom}"
+    seen_titles: set[str] = set()
+    todo, done = ["/opds"], set()
+    while todo:
+        path = todo.pop()
+        if path in done:
+            continue
+        done.add(path)
+        got = client.get(path, headers=headers)
+        assert got.status_code == 200, (path, got.status_code)
+        world.clean(got.text)
+        root = ET.fromstring(got.content)  # noqa: S314
+        seen_titles |= {e.findtext(f"{atom}title") or "" for e in root.iter(f"{atom}entry")}
+        todo += [
+            x.attrib["href"]
+            for x in root.iter(f"{atom}link")
+            if x.attrib.get("type", "").startswith("application/atom+xml")
+            and "{" not in x.attrib["href"]
+        ]
+    for key in VISIBLE_FOR_CEILING_10:
+        assert world.seed.title_of(key) in seen_titles, key
+    for key in HIDDEN_FROM_CEILING_10:
+        assert world.seed.title_of(key) not in seen_titles, key
+        absent = client.get(f"/opds/works/{ULID}", headers=headers)
+        hidden = client.get(f"/opds/works/{world.seed.works[key]}", headers=headers)
+        assert _shape(hidden) == _shape(absent), key
+        found = client.get("/opds/search", params={"q": world.seed.title_of(key)}, headers=headers)
+        assert "<entry" not in found.text  # the query is echoed encoded in a link, never as a hit
+    paged = client.get("/opds/works", params={"limit": 1, "offset": 3}, headers=headers)
+    assert paged.status_code == 200 and "<entry" not in paged.text  # the visible ones are three
 
 
 def _surface_notification(world: World) -> None:
