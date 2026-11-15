@@ -4,8 +4,9 @@ import asyncio
 import contextlib
 import os
 import signal
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
+from datetime import datetime
 from functools import cache
 from pathlib import Path
 
@@ -44,6 +45,7 @@ from shelfhold.infrastructure.secrets.errors import (
     KeyringMissingError,
     KeyringPermissionsError,
 )
+from shelfhold.infrastructure.secrets.keyring import Keyring
 from shelfhold.infrastructure.settings_store import load_db_settings
 from shelfhold.infrastructure.volumes import ensure_volumes
 from shelfhold.interfaces.http_api.activity import build_activity_router
@@ -100,6 +102,7 @@ from shelfhold.ops.wiring import open_ops
 from shelfhold.plugin_host.attestation import AttestationStore
 from shelfhold.plugin_host.public import PluginRegistry, installed_versions, start_plugins
 from shelfhold.plugin_host.settings import SettingsSchema, SourceSettings, parse_settings_schema
+from shelfhold.reading.bundle import SeriesBundles
 from shelfhold.runtime import RETAKE_INTERVAL_S, InstanceRuntime
 from shelfhold.runtime_jobs import PlanService
 
@@ -127,10 +130,12 @@ _KEYRING_REASONS: tuple[tuple[type[KeyringError], str], ...] = (
 )  # anything else of the keyring is "unreadable"
 
 
-def series_bundles(_engine: Engine) -> SeriesBundleProvider | None:
-    """The block of a series for the OPDS feed (ADR-0053 §2, §3): none until lot L49a plugs it in
-    here. Without one, the feed lists the Editions a reader may see and offers no download."""
-    return None
+def series_bundles(
+    engine: Engine, keyring: Callable[[], Keyring], now: Callable[[], datetime]
+) -> SeriesBundleProvider | None:
+    """The block of a series for the OPDS feed (ADR-0053 §2, §3, §8): one provider for the whole
+    instance, since its limits (blocks at a time, per token) are counted in it."""
+    return SeriesBundles(engine, keyring, now=now)
 
 
 def announce_keyring_failure(engine: Engine, bus: EventBus, error: KeyringError) -> None:
@@ -314,6 +319,10 @@ def create_app(
 
     since_key = SinceKey(composition.keyring)  # `?since=` tokens and SSE cursors: one key
 
+    @cache
+    def bundles() -> SeriesBundleProvider | None:  # M4 L49a: one, its counters are the instance's
+        return series_bundles(engine, composition.keyring, clock.now)
+
     export_routers = (
         build_shelves_router(lambda: ShelfService(engine, clock=clock), ops_services),
         build_destinations_router(ops_services),
@@ -353,7 +362,7 @@ def create_app(
             lambda: engine, thumbnails
         ),
         build_opds_router(  # M4 L48: the e-reader's feed, behind a device token (ADR-0053)
-            lambda: engine, thumbnails, lambda: series_bundles(engine), clock.now
+            lambda: engine, thumbnails, bundles, clock.now
         ),
         build_search_router(
             lambda: engine, ops_services

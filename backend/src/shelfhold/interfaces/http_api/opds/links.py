@@ -103,8 +103,11 @@ class Paths:
     def cover(self, content_hash: str, size: int) -> str:
         return self._with(f"/covers/{content_hash}/{size}")
 
-    def complete(self, edition_id: str) -> str:
-        return self._with(f"/editions/{edition_id}/complete")
+    def complete(self, edition_id: str, part: int = 1) -> str:
+        return self._with(f"/editions/{edition_id}/complete", part=part if part > 1 else None)
+
+    def bundle(self, version_id: str) -> str:
+        return self._with(f"/bundles/{version_id}")
 
 
 def _page(offset: int, limit: int | None) -> dict[str, int | None]:

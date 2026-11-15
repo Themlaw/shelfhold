@@ -97,7 +97,17 @@ CLOSED_SITES: Mapping[str, frozenset[str]] = MappingProxyType(
         # `requested` and its cached `fetch_handle`s are forgotten. Reached only from
         # `reconnect`, which runs only when the service is paused for a changed fingerprint
         # (the admin's `source reconnect`); EF-SRC-036 (3) asks for exactly this purge.
-        DB_ROWS: frozenset({"shelfhold/acquisition/application/instance.py::_purge_orphans"}),
+        DB_ROWS: frozenset(
+            {
+                "shelfhold/acquisition/application/instance.py::_purge_orphans",
+                # The versions of a series block the retention no longer keeps, or whose boundary
+                # went, and the boundary itself with its alias carrier: database rows only, the
+                # block is virtual and holds no file (L49a).
+                "shelfhold/reading/bundle/store.py::purge",
+                "shelfhold/reading/bundle/store.py::purge_partition_versions",
+                "shelfhold/reading/bundle/plan.py::purge_stale_partitions",
+            }
+        ),
         # Rolls the database file (and its sidecars) back to the copy taken before a migration.
         RESTORE: frozenset({"shelfhold/infrastructure/migrate.py::_restore_database"}),
         # The integrated backup's own directory: archives past the retention, partial files and

@@ -1321,6 +1321,16 @@ title = "Le jeton de synchronisation est trop ancien."
 action = "Rechargez la liste complète puis repartez du nouveau jeton."
 cause = "Le jeton de reprise est trop ancien pour être rejoué."
 
+[errors."bundle_gone"]
+title = "Ce bloc n'est plus disponible."
+action = "Rouvrez la page de la série dans votre liseuse : une version à jour y est proposée."
+cause = "Un fichier a changé depuis la création de cette version, la version a été purgée, ou votre accès a pris fin."
+
+[errors."bundle_busy"]
+title = "Trop de blocs sont servis en ce moment."
+action = "Patientez quelques instants, puis relancez le téléchargement."
+cause = "Votre appareil, ou l'ensemble de l'instance, a atteint le nombre de téléchargements de blocs simultanés autorisé."
+
 [errors."too_many_streams"]
 title = "Trop de flux d'événements ouverts pour ce profil."
 action = "Fermez un onglet ou une application qui suit les événements, puis réessayez."
@@ -2546,3 +2556,4 @@ results = "Résultats de la recherche"
 search_description = "Chercher dans la bibliothèque"
 complete = "{title} — Série complète"
 complete_in = "{title} — Série complète ({lang})"
+excluded = "{count, plural, one {# chapitre exclu} other {# chapitres exclus}} : format non lisible sur liseuse ou fichier indisponible."

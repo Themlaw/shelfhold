@@ -64,6 +64,11 @@ EXPORTED_TABLES: Final = frozenset(
         "team_priority", "unit", "source_item", "source_binding", "unit_variant",
         "variant_revision", "content", "export_item", "unit_coverage", "series_follow",
         "shelf", "user", "user_state", "reading_position", "request", "profile_source_policy",
+        # The history of the series blocks (L49a): where each part begins, the numbers served
+        # and the aliases of the parts. A restore without them would cut the parts again from
+        # nothing and number the versions from 1, so that a file an e-reader holds is no longer
+        # found. The members (fingerprints of files) are rebuilt by the next download.
+        "bundle_partition", "bundle_version", "document_alias",
     }
 )  # fmt: skip
 
@@ -110,7 +115,7 @@ EXCLUDED_TABLES: Final[Mapping[str, str]] = {
     # rebuilt by the instance
     "replica": _REBUILT, "thumbnail": _REBUILT, "team_alias": _REBUILT,
     "export_record": _REBUILT, "export_series": _REBUILT, "edition_export_series": _REBUILT,
-    "export_upgrade": _REBUILT, "field_owner": _REBUILT, "document_alias": _REBUILT,
+    "export_upgrade": _REBUILT, "bundle_member": _REBUILT, "field_owner": _REBUILT,
     "work_relation": _REBUILT,
 }  # fmt: skip
 
@@ -194,6 +199,7 @@ class _Kept:
     volumes: set[str] = field(default_factory=set)
     contributors: set[str] = field(default_factory=set)
     items: set[str] = field(default_factory=set)
+    carriers: set[str] = field(default_factory=set)  # export items that carry a series block part
     bindings: set[str] = field(default_factory=set)
     variants: set[str] = field(default_factory=set)
     contents: set[str] = field(default_factory=set)
@@ -320,6 +326,13 @@ def _decide_files(connection: Connection, screen: ExportScreen, kept: _Kept) -> 
         and (r.content_id is None or r.content_id in kept.contents)
         and carried[str(r.id)] <= kept.units  # a file that also holds a covered chapter stays out
     }
+    kept.carriers = {
+        str(i)
+        for i in connection.execute(
+            sa.select(items.c.id).where(items.c.kind == "opds_bundle")
+        ).scalars()
+        if str(i) in kept.export_items
+    }
 
 
 def _decide_catalog(connection: Connection, kept: _Kept) -> None:
@@ -402,6 +415,16 @@ def _keep(table: str, row: Mapping[str, Any], kept: _Kept) -> bool:
                 "volume": kept.volumes,
             }.get(row["carrier_type"])
             return carrier is not None and row["carrier_id"] in carrier
+        case "bundle_partition":
+            return (
+                row["export_item_id"] in kept.carriers
+                and row["edition_id"] in kept.editions
+                and (row["first_unit_id"] is None or row["first_unit_id"] in kept.units)
+            )
+        case "bundle_version":
+            return row["edition_id"] in kept.editions
+        case "document_alias":  # only those of a series block; the others are rebuilt
+            return row["export_item_id"] in kept.carriers
         case "reading_position":
             carrier = {"export_item": kept.export_items, "content": kept.contents}.get(
                 row["carrier_type"]

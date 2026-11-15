@@ -10,6 +10,8 @@ CODES: tuple[ErrorCode, ...] = (
     ErrorCode("invalid_cursor", 400, "user"),
     ErrorCode("resync_required", 410, "user"),
     ErrorCode("too_many_streams", 429, "user"),
+    ErrorCode("bundle_gone", 410, "user"),  # M4 L49a: a block that cannot be served any more
+    ErrorCode("bundle_busy", 429, "user"),  # M4 L49a: too many blocks at a time
     ErrorCode("precondition_failed", 412, "user"),
     ErrorCode("precondition_required", 428, "user"),
     ErrorCode("idempotency_key_invalid", 400, "user"),

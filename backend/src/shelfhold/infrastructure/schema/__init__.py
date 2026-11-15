@@ -2,6 +2,7 @@
 
 from shelfhold.infrastructure.schema import (
     acquisition,
+    bundle,
     catalog,
     coherence,
     export,
@@ -16,6 +17,7 @@ from shelfhold.infrastructure.schema._base import UtcDateTime, metadata
 __all__ = [
     "UtcDateTime",
     "acquisition",
+    "bundle",
     "catalog",
     "coherence",
     "export",

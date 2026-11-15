@@ -75,7 +75,16 @@ laisse de côté (pierres tombales, secrets, jetons, destinations) : les listes 
 | Sources liées | `source_item`, `source_binding`, `series_follow` |
 | Fichiers | `content`, `export_item`, `unit_coverage` |
 | Étagères | `shelf` |
+| Blocs de série | `bundle_partition`, `bundle_version`, `document_alias` |
 | Profils | `user`, `user_state`, `reading_position`, `request`, `profile_source_policy` |
+
+Les blocs de série servis en OPDS (L49a) sont un **historique**, pas un cache : `bundle_partition`
+écrit où commence chaque partie, `bundle_version` garde les numéros déjà servis (jamais
+réutilisés), la taille et le MD5 partiel KOReader de chaque version, et `document_alias` ne
+porte ici que les alias de ces parties (les autres sont reconstruits). Sans eux, une restauration
+redécouperait les parties à neuf et renuméroterait les versions depuis 1 : un fichier qu'une
+liseuse garde ne serait plus retrouvé. Les membres des versions (`bundle_member`, des empreintes de
+fichiers) restent derrière : le téléchargement suivant les refait.
 
 La table `user` perd sa colonne `password_hash` : **aucun mot de passe** ne sort. Les profils
 importés n'en ont pas, et un administrateur en pose un avec `shelfhold admin reset-password`.

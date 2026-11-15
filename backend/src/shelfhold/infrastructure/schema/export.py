@@ -39,7 +39,9 @@ TRANSPORTS = ("tree", "dropbox", "push", "pull")
 EGRESSES = ("foyer", "externe")
 IMPORT_MODES = ("copy", "reflink", "hardlink")
 DESTINATION_MODES = ("normal", "degraded_readonly", "degraded_feature")
-EXPORT_ITEM_KINDS = ("unit", "volume", "bundle", "adopted")
+# `bundle` is the nameless volume of a range (EF-BIB-044); `opds_bundle` carries the aliases of a
+# part of a series block served on OPDS (M4 L49a) and is no volume: no export plan ever reads it.
+EXPORT_ITEM_KINDS = ("unit", "volume", "bundle", "adopted", "opds_bundle")
 CARRIER_TYPES = ("content", "export_item", "volume", "unit")  # `unit`: re-cut chapters (M2)
 COVERAGE_EXTENTS = ("full", "partial")
 COVERAGE_ORIGINS = ("comicinfo", "filename", "source_name", "provider", "manual")

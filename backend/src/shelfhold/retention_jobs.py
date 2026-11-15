@@ -1,7 +1,8 @@
 """The retention jobs (ENF-OPS-009).
 
 - `retention.expire` (daily): events, finished jobs and the audit past their age leave the
-  database. The database alone: no disk is woken, so it runs at any hour.
+  database, and so do the versions of a series block that the retention no longer keeps (L49a).
+  The database alone: no disk is woken, so it runs at any hour.
 - `retention.early_purge` (every 10 minutes, EF-BIB-030): while a volume is under its free-space
   mark, the bins are purged early, oldest first (see `BinReclaimer.early_purge`). It is not parked
   by the disk guard (it removes, never adds) and it is not a window job: a full disk waits for no
@@ -31,6 +32,7 @@ from shelfhold.export.application.recycle_sweep import (
 from shelfhold.jobs.public import JobContext, JobPools
 from shelfhold.jobs.retention import RetentionPolicy, expire_audit, expire_events_and_jobs
 from shelfhold.ops.reclaim import backups_of
+from shelfhold.reading.bundle import prune_versions
 
 __all__ = [
     "EARLY_PURGE_KIND",
@@ -89,7 +91,8 @@ def register_retention_jobs(pools: JobPools, comp: Composition) -> None:
         now = comp.clock.now()
         history = expire_events_and_jobs(comp.engine, now=now, policy=policy)
         audit = expire_audit(comp.engine, now=now, policy=policy)
-        context.record(events=history.events, jobs=history.jobs, audit=audit)
+        bundles = prune_versions(comp.engine, now)  # M4 L49a: 3 versions, or used in 90 days
+        context.record(events=history.events, jobs=history.jobs, audit=audit, bundles=bundles)
 
     def recycle(context: JobContext) -> None:
         try:

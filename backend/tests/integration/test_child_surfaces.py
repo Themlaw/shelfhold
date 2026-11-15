@@ -120,6 +120,7 @@ OPDS = (
     "GET /opds/search",
     "GET /opds/covers/{content_hash}/{size}",
     "GET /opds/editions/{edition_id}/complete",
+    "GET /opds/bundles/{version_id}",
 )
 DEVICE = (*KOSYNC, *OPDS)
 OPEN = {
