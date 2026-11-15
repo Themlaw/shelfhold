@@ -471,9 +471,13 @@ class FakeKavita:
         if got is None:  # `GetProgress` answers a stub: page 0, no volume, no series
             return self._json({"pageNum": 0, "chapterId": int(raw), "volumeId": 0, "seriesId": 0,
                                "libraryId": 0})  # fmt: skip
-        return self._json({"pageNum": got["page"], "chapterId": int(raw),
-                           "volumeId": chapter["volume"], "seriesId": chapter["series"],
-                           "libraryId": chapter["library"], "lastModifiedUtc": got["modified"]})  # fmt: skip
+        return self._json(
+            {
+                "pageNum": got["page"], "chapterId": int(raw), "volumeId": chapter["volume"],
+                "seriesId": chapter["series"], "libraryId": chapter["library"],
+                "lastModifiedUtc": got["modified"],
+            }
+        )  # fmt: skip
 
     def _progress(self, recorded: RecordedRequest) -> httpx2.Response:
         failing = self._failing()
@@ -484,10 +488,16 @@ class FakeKavita:
             return body
         account = self._account_of(recorded)
         chapter = self._chapter(int(body["chapterId"]))
-        if account is None or chapter is None or (account, int(body["chapterId"])) in self.inaccessible:
+        if (
+            account is None
+            or chapter is None
+            or (account, int(body["chapterId"])) in self.inaccessible
+        ):
             return self._text(403, "Forbidden")
         if (body["seriesId"], body["volumeId"], body["libraryId"]) != (
-            chapter["series"], chapter["volume"], chapter["library"]
+            chapter["series"],
+            chapter["volume"],
+            chapter["library"],
         ):  # a DTO that names another chapter's series: a client bug
             return self._violation("progress: the DTO does not match the chapter")
         page = min(max(int(body["pageNum"]), 0), chapter["pages"])  # CapPageToChapter

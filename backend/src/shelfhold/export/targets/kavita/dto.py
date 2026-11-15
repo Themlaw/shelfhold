@@ -84,6 +84,17 @@ class ChapterFile:
 
 
 @dataclass(frozen=True)
+class ChapterInfo:
+    """A chapter of a series as `series-detail` lists it: the ids a progress call names, the page
+    count (Kavita's « read » is `pageNum == pages`) and the files it holds."""
+
+    chapter_id: int
+    volume_id: int
+    pages: int
+    paths: tuple[str, ...]
+
+
+@dataclass(frozen=True)
 class LibraryUpdate:
     library_id: int
     changed: bool

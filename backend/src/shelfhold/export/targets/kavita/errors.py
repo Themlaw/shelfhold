@@ -60,9 +60,12 @@ class ProtocolError(TargetError):
     """Kavita answered something the contract does not describe. `status` is the HTTP status
     when there was one (a 4xx on one path is a refusal of that path, a 5xx is an outage)."""
 
-    def __init__(self, message: str = "", *, status: int | None = None) -> None:
+    def __init__(
+        self, message: str = "", *, status: int | None = None, retry_after: float | None = None
+    ) -> None:
         super().__init__(message)
         self.status = status
+        self.retry_after = retry_after  # seconds a 429 or 503 asked to wait, when it said
 
 
 class ListingIncomplete(ProtocolError):

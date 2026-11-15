@@ -46,17 +46,33 @@ def _seed(db: sqlite3.Connection) -> None:
     add_row(db, "user", id=USER, username="reader", role="member", can_rate=0)
     add_row(db, "export_target", id=TARGET, kind="kavita", name="k")
     add_row(db, "shelf", id=SHELF, name="s", phrase="Manga")
-    add_row(db, "shelf_destination", id=DEST, shelf_id=SHELF, target_id=TARGET, transport="tree",
-            egress="foyer", root_subpath="m", template="{series}", template_origin="default@1")  # fmt: skip
-    add_row(db, "destination_account", id=ACCOUNT, user_id=USER, shelf_destination_id=DEST,
-            remote_user="acct", secret_v=1, secret_kid="k1", secret_nonce=b"n" * 12,
-            secret_ct=b"c" * 32, token_fingerprint="abcd1234")  # fmt: skip
+    add_row(
+        db, "shelf_destination", id=DEST, shelf_id=SHELF, target_id=TARGET, transport="tree",
+        egress="foyer", root_subpath="m", template="{series}", template_origin="default@1",
+    )  # fmt: skip
+    sealed: dict[str, object] = {
+        "secret_v": 1, "secret_kid": "k1", "secret_nonce": b"n" * 12, "secret_ct": b"c" * 32,
+        "token_fingerprint": "abcd1234",
+    }  # fmt: skip
+    add_row(
+        db,
+        "destination_account",
+        id=ACCOUNT,
+        user_id=USER,
+        shelf_destination_id=DEST,
+        remote_user="acct",
+        **sealed,
+    )
 
 
 def _note(db: sqlite3.Connection, **override: object) -> None:
     row: dict[str, object] = {
-        "shelf_destination_id": DEST, "user_id": USER, "kavita_chapter_id": 101,
-        "account_id": ACCOUNT, "carrier_id": new_ulid(), "synced_at": "2026-11-15 12:00:00",
+        "shelf_destination_id": DEST,
+        "user_id": USER,
+        "kavita_chapter_id": 101,
+        "account_id": ACCOUNT,
+        "carrier_id": new_ulid(),
+        "synced_at": "2026-11-15 12:00:00",
     }
     row.update(override)
     db.execute(

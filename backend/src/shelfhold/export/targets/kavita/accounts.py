@@ -45,6 +45,7 @@ __all__ = [
     "MemberKey",
     "Verified",
     "WhoAmI",
+    "run_sync",
 ]
 
 log = structlog.get_logger(__name__)
@@ -119,6 +120,18 @@ class MemberKey:
     __str__ = __repr__
 
 
+def _retry_after(headers: Mapping[str, str]) -> float | None:
+    """`Retry-After` in seconds (the form Kavita and its proxies use), or None."""
+    for name, value in headers.items():
+        if name.lower() == "retry-after":
+            try:
+                seconds = float(value)
+            except ValueError:
+                return None
+            return seconds if seconds >= 0 else None
+    return None
+
+
 def _resolve(method: str, path: str) -> Route:
     route = _BY_KEY.get((method.upper(), path.lower()))
     if route is None:
@@ -162,7 +175,10 @@ class MemberKavitaClient:
             raise ProtocolError(f"{route.label}: unreachable") from None
         log.debug("kavita.member_call", route=route.label, status=response.status)
         if response.status != 200:  # a 401 or 403 is Kavita refusing the key
-            raise ProtocolError(f"{route.label} answered {response.status}", status=response.status)
+            raise ProtocolError(
+                f"{route.label} answered {response.status}", status=response.status,
+                retry_after=_retry_after(response.headers),
+            )  # fmt: skip
         try:
             data = json.loads(response.body) if response.body else None
         except ValueError:
@@ -248,7 +264,7 @@ class KavitaMemberVerifier:
             raise AccountCheckFailed("destination_not_supported")
         client = MemberKavitaClient(self._fetcher_for(target.url), target.url, MemberKey(token))
         try:
-            who = _run(client.whoami())
+            who = run_sync(client.whoami())
         except ProtocolError as exc:
             if exc.status in (401, 403):
                 raise AccountCheckFailed("token_refused") from None
@@ -266,14 +282,14 @@ class KavitaMemberVerifier:
         return Verified(who.is_admin)
 
 
-def _run(coro: Coroutine[Any, Any, WhoAmI]) -> WhoAmI:
+def run_sync[T](coro: Coroutine[Any, Any, T]) -> T:
     """Run a coroutine to its end from synchronous code, in a thread when a loop is already
     running in this one (a request handler runs in the pool of the server, not in a loop)."""
     try:
         asyncio.get_running_loop()
     except RuntimeError:
         return asyncio.run(coro)
-    box: list[WhoAmI] = []
+    box: list[T] = []
     failure: list[BaseException] = []
 
     def worker() -> None:

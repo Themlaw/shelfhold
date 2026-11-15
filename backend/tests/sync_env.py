@@ -9,12 +9,14 @@ Nothing sleeps: the adapter's pause is a recorded no-op and the clock is moved b
 
 from __future__ import annotations
 
+import json
 import sqlite3
 from collections.abc import Iterator
 from contextlib import closing, contextmanager
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import sqlalchemy as sa
@@ -97,8 +99,10 @@ class SyncEnv:
         with write_transaction(self.engine) as connection:
             connection.execute(
                 sa.text(
-                    "UPDATE destination_account SET revoked_at = :t, secret_ct = NULL, "
-                    "secret_nonce = NULL WHERE user_id = :u AND shelf_destination_id = :d"
+                    "UPDATE destination_account SET revoked_at = :t, secret_v = NULL, "
+                    "secret_kid = NULL, secret_ct = NULL, secret_nonce = NULL, "
+                    "token_fingerprint = NULL "
+                    "WHERE user_id = :u AND shelf_destination_id = :d"
                 ),
                 {"t": START, "u": user, "d": destination or self.destination},
             )
@@ -120,8 +124,11 @@ class SyncEnv:
         with write_transaction(self.engine) as connection:
             connection.execute(
                 sa.insert(export.export_record).values(
-                    shelf_destination_id=self.destination, export_item_id=item,
-                    locator_type="path", rel_path=rel, state="resolved",
+                    shelf_destination_id=self.destination,
+                    export_item_id=item,
+                    locator_type="path",
+                    rel_path=rel,
+                    state="resolved",
                 )
             )
         path = f"{REMOTE_ROOT}/manga/{rel}"
@@ -143,9 +150,14 @@ class SyncEnv:
         at the instant of the (hand-moved) server clock."""
         now = self.clock.now()
         return self.reading.position(
-            user, chapter.carrier, page=page, percent=page / chapter.pages,
-            content_hash=self.content_hash(chapter), client_ts=client_ts or now,
-            server_ts=server_ts or now, device_id=device,
+            user,
+            chapter.carrier,
+            page=page,
+            percent=page / chapter.pages,
+            content_hash=self.content_hash(chapter),
+            client_ts=client_ts or now,
+            server_ts=server_ts or now,
+            device_id=device,
         )
 
     def content_hash(self, chapter: Chapter) -> str:
@@ -186,21 +198,27 @@ class SyncEnv:
         )  # fmt: skip
 
     # ---------------------------------------------------------------- what is stored
-    def positions(self, user: str, *, source: str | None = None) -> list[sa.Row[Any]]:
+    def positions(self, user: str, *, source: str | None = None) -> list[SimpleNamespace]:
         query = "SELECT * FROM reading_position WHERE user_id = :u"
         params: dict[str, Any] = {"u": user}
         if source is not None:
             query += " AND source = :s"
             params["s"] = source
         with self.engine.connect() as connection:
-            return list(connection.execute(sa.text(query + " ORDER BY server_ts, id"), params))
+            found = connection.execute(sa.text(query + " ORDER BY server_ts, id"), params)
+            return [
+                SimpleNamespace(**{**row._mapping, "locator": json.loads(row.locator)})
+                for row in found
+            ]
 
     def state(self, user: str, chapter: Chapter) -> str:
         with self.engine.connect() as connection:
             states = [
                 str(r[0])
                 for r in connection.execute(
-                    sa.text("SELECT state FROM reading_progress WHERE user_id = :u AND unit_id = :n"),
+                    sa.text(
+                        "SELECT state FROM reading_progress WHERE user_id = :u AND unit_id = :n"
+                    ),
                     {"u": user, "n": chapter.units[0]},
                 )
             ]
@@ -216,9 +234,15 @@ class SyncEnv:
             dest = new_ulid()
             connection.execute(
                 sa.insert(export.shelf_destination).values(
-                    id=dest, shelf_id=shelf, target_id=self.target, transport="tree",
-                    egress="foyer", root_subpath="comics", template="{series}",
-                    template_origin="default@1", sync_progress=True,
+                    id=dest,
+                    shelf_id=shelf,
+                    target_id=self.target,
+                    transport="tree",
+                    egress="foyer",
+                    root_subpath="comics",
+                    template="{series}",
+                    template_origin="default@1",
+                    sync_progress=True,
                 )
             )
         return dest
@@ -248,9 +272,15 @@ def sync_env(tmp_path: Path, *, enabled: bool = True) -> Iterator[SyncEnv]:
             )  # fmt: skip
             connection.execute(
                 sa.insert(export.shelf_destination).values(
-                    id=dest, shelf_id=shelf, target_id=target, transport="tree", egress="foyer",
-                    root_subpath="manga", template="{series}/{series} - {number}",
-                    template_origin="default@1", sync_progress=enabled,
+                    id=dest,
+                    shelf_id=shelf,
+                    target_id=target,
+                    transport="tree",
+                    egress="foyer",
+                    root_subpath="manga",
+                    template="{series}/{series} - {number}",
+                    template_origin="default@1",
+                    sync_progress=enabled,
                 )
             )
             library = new_ulid()
@@ -264,9 +294,7 @@ def sync_env(tmp_path: Path, *, enabled: bool = True) -> Iterator[SyncEnv]:
                     shelf_destination_id=dest, export_target_id=target, remote_library_id=library
                 )
             )
-        admin = KavitaClient(
-            fetcher, BASE_URL, AdminKey(API_KEY), events=_Events(), clock=clock
-        )
+        admin = KavitaClient(fetcher, BASE_URL, AdminKey(API_KEY), events=_Events(), clock=clock)
         sleeps: list[float] = []
         remote = KavitaProgress(
             env.engine,

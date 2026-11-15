@@ -99,7 +99,7 @@ EXCLUDED_TABLES: Final[Mapping[str, str]] = {
     "sub_source": _HOST, "backup_run": _HOST,
     "work_kind": _SEEDED, "work_relation_kind": _SEEDED, "normalizer": _SEEDED,
     # queues, journals, caches, logs
-    "progress_sync_cursor": _NOISE,
+    "progress_sync_cursor": _NOISE, "progress_sync_note": _NOISE,
     "audit": _NOISE, "event": _NOISE, "job_view": _NOISE, "fs_intent": _NOISE,
     "resource_lock": _NOISE, "export_plan": _NOISE, "export_op": _NOISE,
     "notification_pending": _NOISE, "notification_digest": _NOISE, "domain_slot": _NOISE,

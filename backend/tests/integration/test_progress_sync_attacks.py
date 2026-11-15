@@ -98,12 +98,13 @@ def test_a_key_that_now_opens_another_account_stops_that_profile(tmp_path: Path)
         env.fake.key_accounts[env.keys[mine]] = env.names[theirs]  # the key now opens their account
         env.clock.advance(minutes=1)
         assert env.sync(mine).code == "account_mismatch"
-        assert [c.path.lower() for c in env.calls(fragment="/api/")] == ["/api/account"]
+        asked = env.calls(env.keys[mine], fragment="/api/")
+        assert [c.path.lower() for c in asked] == ["/api/account"]  # only who the key is
         assert env.fake.progress_writes == []
         assert env.positions(mine, source="server") == []
 
 
-# ------------------------------------------------------------------ one Kavita account, two profiles
+# ------------------------------------------------------------------ one account, two profiles
 
 
 @pytest.mark.req(*REQ)
@@ -246,3 +247,16 @@ def test_no_interface_imports_the_sync() -> None:
             if any(n.endswith(("reading.application.sync", "kavita.progress")) for n in names):
                 offenders.append(str(path.relative_to(root)))
     assert offenders == []
+
+
+@pytest.mark.req(*REQ)
+def test_a_chapter_the_kavita_account_may_not_open_is_skipped_not_a_stop(tmp_path: Path) -> None:
+    """Kavita answers 403 for a chapter of a library the account has no access to: that chapter is
+    left, the others of the member are synchronised. Only a 401 says the key is refused."""
+    with sync_env(tmp_path) as env:
+        reader = env.member("reader")
+        closed, open_ = env.chapter("Orchard Road", 1), env.chapter("Orchard Road", 2)
+        env.fake.inaccessible.add((env.names[reader], closed.chapter_id))
+        env.read_in_kavita(reader, open_, 6)
+        outcome = env.sync(reader)
+        assert (outcome.code, outcome.rejected, outcome.pulled) == ("ok", 1, 1)

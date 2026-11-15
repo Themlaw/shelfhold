@@ -157,9 +157,13 @@ class ReadingEnv:
             sa.text("SELECT id FROM unit_variant WHERE unit_id = :u LIMIT 1"), {"u": unit}
         ).scalar()
         if found is None:
+            taken = connection.execute(
+                sa.text("SELECT count(*) FROM source_binding WHERE edition_id = :e"),
+                {"e": self.seed.editions[edition_key]},
+            ).scalar()
             binding = add_binding(
                 connection, self.seed.works[edition_key], self.seed.editions[edition_key],
-                add_source_item(connection, new_ulid()),
+                add_source_item(connection, new_ulid()), priority=int(taken or 0) + 1,
             )  # fmt: skip
             found = add_variant(connection, unit, binding)
         variant = str(found)

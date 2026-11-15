@@ -66,7 +66,9 @@ def test_the_progress_bodies_are_the_progress_dto_of_the_pinned_openapi(name: st
         assert all(isinstance(body[f], int) for f in ("chapterId", "pageNum", "volumeId"))
 
 
-def replay(name: str, *, status: int | None = None) -> tuple[MemberProgress, list[float], list[Any]]:
+def replay(
+    name: str, *, status: int | None = None
+) -> tuple[MemberProgress, list[float], list[Any]]:
     interactions = cassette(name)["interactions"]
     seen: list[Any] = []
 

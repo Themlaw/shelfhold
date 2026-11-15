@@ -113,6 +113,7 @@ from shelfhold.export.targets.kavita.errors import (
 )
 from shelfhold.export.targets.kavita.library_type import LibraryTypeService
 from shelfhold.export.targets.kavita.polling import ArrivalPoller
+from shelfhold.export.targets.kavita.progress import KavitaProgress
 from shelfhold.export.targets.kavita.series import (
     SeriesAgeGate,
     SeriesAges,
@@ -144,11 +145,13 @@ from shelfhold.library.public import (
 )
 from shelfhold.ops.acquire import AcquireOps
 from shelfhold.ops.dedup import suggest_on_arrival
+from shelfhold.ops.destination_accounts import open_destination_accounts
 from shelfhold.ops.errors import ExitUnavailableError
 from shelfhold.ops.events import BusTargetEvents
 from shelfhold.ops.kavita_accounts import declared_children
 from shelfhold.ops.library import LibraryOps
 from shelfhold.ops.notifications import LazyNotificationSweep
+from shelfhold.reading.application.sync import ProgressRemote, sync_destination
 from shelfhold.retention_jobs import register_retention_jobs
 from shelfhold.safeguard_jobs import register_safeguard_job
 from shelfhold.store_jobs import register_store_jobs
@@ -161,9 +164,11 @@ __all__ = [
     "KEY_EXPIRY_KIND",
     "LIBRARY_TYPE_CHECK_KIND",
     "MAJOR_UPDATE_REPLAY_KIND",
+    "PROGRESS_SYNC_KIND",
     "RECONCILE_HASH_KIND",
     "RECONCILE_KIND",
     "PlanService",
+    "progress_sync_handler",
     "register_runtime_jobs",
     "settle_arrival",
 ]
@@ -176,6 +181,8 @@ RECONCILE_KIND = "reconcile.cycle"
 RECONCILE_HASH_KIND = "reconcile.hash"
 FOLLOW_CRON = "*/15 * * * *"
 EXPORT_CRON = "*/5 * * * *"
+PROGRESS_SYNC_KIND = "progress.sync"  # EF-EXP-026: the members' progress, with Kavita
+PROGRESS_SYNC_CRON = "*/10 * * * *"
 RECONCILE_CRON = "*/10 * * * *"  # window job: runs every 10 minutes of the window only
 INTENT_PRUNE_KIND = "intents.prune"
 KEY_EXPIRY_KIND = "target.key_expiry"
@@ -1137,6 +1144,68 @@ class LazyDispatcher:
 # -- registration -----------------------------------------------------------------
 
 
+def progress_sync_handler(
+    engine: sa.Engine, remote_of: Callable[[], ProgressRemote], clock: Any
+) -> Callable[[JobContext], None]:
+    """`progress.sync` (EF-EXP-026): for every destination with the synchronisation on, each linked
+    member in turn, pull then push. A Kavita that cannot be asked, a key Kavita refuses, a revoked
+    one: the member's pass ends with a closed code and is counted (`paused`, `stopped`), never
+    raised. Only a locked keyring leaves the job idle."""
+
+    def run(context: JobContext) -> None:
+        try:
+            remote = remote_of()
+            destinations = progress_destinations(engine)
+            if not destinations:
+                context.record(skipped="no_destination")
+                return
+            for destination in destinations:
+                if context.stop_requested:
+                    break
+                for outcome in sync_destination(
+                    engine, remote, destination_id=destination, clock=clock
+                ).values():
+                    if outcome.code == "ok":
+                        context.add(synchronised=1, pulled=outcome.pulled, pushed=outcome.pushed)
+                    elif outcome.code == "unavailable":
+                        context.add(paused=1)  # Kavita cannot be asked: the next run goes on
+                    else:
+                        context.add(stopped=1)  # a key to look at: the code is in the log
+        except KeyringUnavailableError as error:
+            log.info("progress_sync.skipped", reason=type(error).__name__)
+            context.record(skipped="keyring_unavailable")
+
+    return run
+
+
+def progress_destinations(engine: sa.Engine) -> list[str]:
+    table, target = export.shelf_destination, export.export_target
+    with engine.connect() as connection:
+        rows = connection.execute(
+            sa.select(table.c.id)
+            .join(target, target.c.id == table.c.target_id)
+            .where(
+                table.c.sync_progress.is_(True),
+                table.c.enabled.is_(True),
+                target.c.kind == "kavita",
+            )
+            .order_by(table.c.id)
+        )
+        return [str(r.id) for r in rows]
+
+
+def progress_remote(comp: Composition) -> ProgressRemote:
+    accounts = open_destination_accounts(
+        comp.engine, comp.vault, clock=comp.clock, fetcher_for=comp.network.one_shot
+    )
+    return KavitaProgress(
+        comp.engine,
+        admin_client=comp.kavita_client,
+        fetcher_for=comp.network.one_shot,
+        open_token=accounts.open_token,
+    )
+
+
 def register_runtime_jobs(pools: JobPools, comp: Composition) -> None:
     pools.register(FOLLOW_JOB_KIND, pool="io", handler=follow_handler(comp, pools))
     pools.scheduler.add(FOLLOW_JOB_KIND, FOLLOW_CRON, jitter_s=120)
@@ -1144,6 +1213,11 @@ def register_runtime_jobs(pools: JobPools, comp: Composition) -> None:
     pools.register(EXPORT_JOB_KIND, pool="io", handler=export_handler(comp))
     pools.register(APPLY_JOB_KIND, pool="io", handler=apply_handler(comp))
     pools.scheduler.add(EXPORT_JOB_KIND, EXPORT_CRON, jitter_s=60)
+    pools.register(
+        PROGRESS_SYNC_KIND, pool="io",
+        handler=progress_sync_handler(comp.engine, lambda: progress_remote(comp), comp.clock),
+    )  # fmt: skip
+    pools.scheduler.add(PROGRESS_SYNC_KIND, PROGRESS_SYNC_CRON, jitter_s=60)
     pools.register(
         RECONCILE_KIND, pool="maint", handler=reconcile_handler(comp, in_window=False),
         windowed=True, writes=False,

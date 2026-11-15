@@ -409,6 +409,36 @@ class KavitaClient:
             if isinstance(f, dict) and "filePath" in f
         ]  # fmt: skip
 
+    async def series_chapter_info(self, series_id: int) -> list[dto.ChapterInfo]:
+        """The chapters of a series with the ids a progress call needs (`id`, `volumeId`, `pages`).
+        Structure only: nothing of any account is read here."""
+        data = (await self._send(routes.SERIES_DETAIL, query={"seriesId": int(series_id)})).data
+        if not isinstance(data, dict):
+            raise ProtocolError("series-detail did not answer an object")
+        found: list[tuple[Any, Any]] = [(None, c) for c in data.get("specials") or []]
+        found += [(None, c) for c in data.get("chapters") or []]
+        for volume in data.get("volumes") or []:
+            if isinstance(volume, dict):
+                found += [(volume.get("id"), c) for c in volume.get("chapters") or []]
+        infos: list[dto.ChapterInfo] = []
+        for volume_id, chapter in found:
+            if not isinstance(chapter, dict) or not isinstance(chapter.get("id"), int):
+                continue
+            owner = chapter.get("volumeId", volume_id)
+            files = chapter.get("files") or []
+            paths = tuple(
+                str(f["filePath"]) for f in files if isinstance(f, dict) and "filePath" in f
+            )
+            infos.append(
+                dto.ChapterInfo(
+                    chapter["id"],
+                    owner if isinstance(owner, int) else 0,
+                    _count(chapter.get("pages")),
+                    paths,
+                )
+            )
+        return infos
+
     async def series_age(self, series_id: int) -> dto.SeriesAge:
         data = (await self._send(routes.SERIES_METADATA, query={"seriesId": int(series_id)})).data
         return dto.SeriesAge.from_json(data)

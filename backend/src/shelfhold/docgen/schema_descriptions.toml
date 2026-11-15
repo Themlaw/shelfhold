@@ -1233,3 +1233,14 @@ pages_digest = "Digest of the names, sizes and CRC-32 of the pages; NULL when wi
 first_page = "Number of the chapter's first page in the block, from 1."
 page_count = "Pages the chapter holds in the block."
 page_map_state = "`candidate` (canonical names) or `unverified`; `verified` will come with L50."
+[tables.progress_sync_note]
+description = "What the progress synchronisation noted of each Kavita chapter of an account: the page it last pushed, the state it last saw and when it last ran."
+[tables.progress_sync_note.columns]
+account_id = "The account row the note was made for; a re-linked account starts afresh."
+carrier_id = "The export item the Kavita chapter holds."
+kavita_chapter_id = "The chapter, as Kavita numbers it."
+pushed_at = "When Shelfhold last wrote this chapter's page to Kavita (UTC); NULL: never."
+pushed_page = "The page Shelfhold last wrote; a state equal to it is the echo of that write and is not read back."
+seen_modified = "Kavita's own stamp of the state last seen: compared for equality only, never with Shelfhold's clock."
+seen_page = "The page Kavita held at the last pass."
+synced_at = "Shelfhold's clock at the start of the last pass over this chapter (UTC)."
