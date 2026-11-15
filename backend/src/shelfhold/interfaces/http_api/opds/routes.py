@@ -37,7 +37,7 @@ from shelfhold.catalog.public import (
     visible_series_title,
     visible_work_title,
 )
-from shelfhold.export.application.shelves import list_shelves
+from shelfhold.export.application.shelves import list_shelves_open_to
 from shelfhold.i18n import t_lang
 from shelfhold.identity.public import Principal, reader_scope
 from shelfhold.infrastructure.http_headers import CSP_SANDBOX, attachment_disposition
@@ -212,9 +212,11 @@ def build_opds_router(
         )
         return Response(body, media_type="application/opensearchdescription+xml", headers=_HEADERS)
 
-    def _listed_shelves(connection: Connection, scope: ReaderScope) -> list[tuple[str, str]]:
+    def _listed_shelves(
+        connection: Connection, scope: ReaderScope, user_id: str
+    ) -> list[tuple[str, str]]:
         found = []
-        for shelf in list_shelves(connection):
+        for shelf in list_shelves_open_to(connection, user_id):
             if shelf_open_to(scope, shelf.max_age_rating) and count_visible_works(
                 connection, scope, shelf_id=shelf.id
             ):
@@ -225,7 +227,7 @@ def build_opds_router(
     def shelves(request: Request, principal: Device) -> Response:
         paths = _paths(request)
         with get_engine().connect() as connection:
-            listed = _listed_shelves(connection, _scope(connection, principal))
+            listed = _listed_shelves(connection, _scope(connection, principal), principal.user_id)
         entries = [
             Entry(f"urn:shelfhold:shelf:{shelf_id}", name, _stamp(),
                   [Link(_SUBSECTION, paths.shelf(shelf_id), feed_type("acquisition"))])
@@ -246,7 +248,7 @@ def build_opds_router(
     ) -> Response:
         _ulid(shelf_id)
         with get_engine().connect() as connection:
-            listed = _listed_shelves(connection, _scope(connection, principal))
+            listed = _listed_shelves(connection, _scope(connection, principal), principal.user_id)
         name = dict(listed).get(shelf_id)
         if name is None:  # a shelf the reader is not shown is a shelf that does not exist
             raise _absent()

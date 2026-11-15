@@ -29,7 +29,7 @@ from fastapi.testclient import TestClient
 
 from shelfhold.config import Settings
 from shelfhold.infrastructure.ids import new_ulid
-from shelfhold.infrastructure.schema import catalog
+from shelfhold.infrastructure.schema import catalog, export
 from tests.auth_env import AuthEnv, auth_env, run_cli
 from tests.thumbnail_env import put_cover
 from tests.visibility_env import HIDDEN_TITLES, VISIBLE_TITLES, Seed, add_profile, seed_catalogue
@@ -295,7 +295,19 @@ def test_the_root_names_the_doors_and_a_search_and_nothing_of_the_catalogue(worl
     )
 
 
+def _open_family_shelf_to_everyone(world: World) -> None:
+    """The seed reserves "Family" to another profile (see test_l48_contradicteur.py); this test
+    is about the ceiling, so the shelf is opened to every profile first."""
+    with world.seed.engine.begin() as conn:
+        conn.execute(
+            sa.update(export.shelf)
+            .where(export.shelf.c.id == world.seed.shelves["family"])
+            .values(allowed_profiles=[])
+        )
+
+
 def test_a_shelf_shows_only_when_it_is_the_readers_to_see(world: World) -> None:
+    _open_family_shelf_to_everyone(world)
     kid = parse(world.kid.get("/opds/shelves"))
     assert titles(kid) == ["Family"]  # the adult shelf has no ceiling: it is not a child's
     mum = parse(world.mum.get("/opds/shelves"))

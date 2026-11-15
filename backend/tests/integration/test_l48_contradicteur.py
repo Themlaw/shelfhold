@@ -39,14 +39,12 @@ def world(monkeypatch: pytest.MonkeyPatch, settings: Settings) -> Iterator[World
         yield made
 
 
-@pytest.mark.xfail(strict=True, reason=_ALLOWED_PROFILES)
 def test_a_child_is_not_shown_a_shelf_reserved_to_another_profile(world: World) -> None:
     shelf = world.seed.shelves["family"]  # allowed_profiles == ["someone-else"]
     assert "Family" not in titles(parse(world.kid.get("/opds/shelves")))
     assert world.kid.get(f"/opds/shelves/{shelf}").status_code == 404
 
 
-@pytest.mark.xfail(strict=True, reason=_ALLOWED_PROFILES)
 def test_a_member_is_not_shown_a_shelf_reserved_to_another_profile(world: World) -> None:
     shelf = world.seed.shelves["family"]
     assert "Family" not in titles(parse(world.mum.get("/opds/shelves")))
