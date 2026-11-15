@@ -1,7 +1,7 @@
 """M4 L46: the secret of a device token (ADR-0053 §4, EF-USR-008, EF-LEC-009, ENF-SEC-013).
 
-Generated, never chosen: 128 bits or more, an alphabet without confusable characters, typed once on an
-e-reader. The database keeps one SHA-256 of `md5(secret)` and nothing else: the md5 that KOReader
+Generated, never chosen: 128 bits or more, an alphabet without similar-looking characters, typed
+once on an e-reader. The database keeps one SHA-256 of `md5(secret)` and nothing else: the md5 that KOReader
 sends as `x-auth-key` and the secret a Basic client sends both lead to that single digest.
 """
 

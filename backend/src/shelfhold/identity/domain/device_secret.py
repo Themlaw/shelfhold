@@ -1,8 +1,8 @@
 """The secret of a device token (ADR-0053 §4, EF-USR-008, EF-LEC-009, ENF-SEC-013).
 
 Generated, never chosen: 26 characters of a 32-symbol alphabet, 130 random bits, typed once on
-the keyboard of an e-reader. The alphabet has no confusable characters (no `i`, `l`, `o`, `u`) and is lower
-case, the state an e-reader keyboard starts in. The public identifier (`x-auth-user`, the name of
+the keyboard of an e-reader. The alphabet has no similar-looking characters (no `i`, `l`, `o`,
+`u`) and is lower case, the state an e-reader keyboard starts in. The public identifier (`x-auth-user`, the name of
 an HTTP Basic user) is 8 characters of the same alphabet and says nothing of the secret.
 
 What is stored: one SHA-256 of `md5(secret)` in lower-case hexadecimal, and nothing else. KOReader
