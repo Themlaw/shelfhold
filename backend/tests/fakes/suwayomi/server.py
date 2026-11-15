@@ -53,6 +53,7 @@ ALLOWED_FIELDS = frozenset({
     "user",  # M1b L20: the roles of the logged-in account (D1), when the server exposes them
     "downloadStatus",  # M1b L22: the download queue, read before a chapter is asked again
     "setSettings",  # owner decision 2026-11-12: the two update filters, in one exact form
+    "updateChapters",  # M4 L17: `isRead` of a batch of chapters, nothing else in the patch
 })  # fmt: skip
 FORBIDDEN_FIELDS = frozenset({
     "fetchChapterPages", "fetchManga", "fetchSourceManga", "updateLibrary",
@@ -60,6 +61,11 @@ FORBIDDEN_FIELDS = frozenset({
     "clearDownloader", "startDownloader", "restoreBackup",
     "installExternalExtension", "updateExtension", "addExtensionStore",
 })  # fmt: skip
+# M4 L17: the one chapter write, literal ids (no schema type is named) and `isRead` alone.
+_UPDATE_CHAPTERS = re.compile(
+    r"^\s*mutation\s*\{\s*updateChapters\(input:\s*\{ids:\s*\[(?P<ids>[\d,\s]*)\],\s*"
+    r"patch:\s*\{isRead:\s*(?P<read>true|false)\}\}\)\s*\{\s*chapters\s*\{[^{}]*\}\s*\}\s*\}\s*$"
+)
 # The only settings write: both global update filters switched off, nothing else (pinned schema:
 # `setSettings(input: SetSettingsInput!)`, `SetSettingsInput { settings: <partial settings> }`).
 _SET_SETTINGS = re.compile(
@@ -150,6 +156,7 @@ class FakeSuwayomi:
     settings_writes: list[dict[str, bool]] = field(default_factory=list)
     ignore_settings_writes: bool = False  # accepts `setSettings` but keeps the old values
     exclude_not_started: bool = False  # global update filter "exclude not started" (M1b L22)
+    read_updates: list[tuple[list[int], bool]] = field(default_factory=list)  # `updateChapters`
 
     # -- scenario helpers -------------------------------------------------------------------
     def add_account(
@@ -385,6 +392,8 @@ class FakeSuwayomi:
         found = frozenset(_TOKEN.findall(query)) & (ALLOWED_FIELDS | FORBIDDEN_FIELDS)
         if query.lstrip().startswith("mutation"):
             found = found - {"downloadStatus"}  # the sub-selection of the download mutations
+            if "updateChapters" in found:
+                found = found - {"chapters"}  # the sub-selection of `updateChapters`
             if "setSettings" in found:
                 found = found - {"settings"}  # the sub-selection of `setSettings`
         recorded.fields = found
@@ -569,6 +578,7 @@ class FakeSuwayomi:
         node = {k: v for k, v in chapter.items() if k != "cbz"}
         node["mangaId"] = next(m["id"] for m in self.state["mangas"] if chapter in m["chapters"])
         node["isDownloaded"] = chapter["id"] in self._downloaded
+        node["isRead"] = bool(chapter.get("isRead", False))
         return node
 
     def _q_chapters(self, query: str, variables: dict[str, Any]) -> dict[str, Any]:
@@ -576,6 +586,27 @@ class FakeSuwayomi:
         manga = next((m for m in self.state["mangas"] if m["id"] == wanted), None)
         chapters = manga["chapters"] if manga else []
         return {"nodes": [self._chapter_node(c) for c in chapters]}
+
+    def _q_updateChapters(self, query: str, variables: dict[str, Any]) -> dict[str, Any]:
+        """`updateChapters(input: {ids, patch: {isRead}})`, as read in `ChapterMutation.kt`
+        (tag v2.4.2366): `UpdateChaptersInput { clientMutationId, ids: [Int!]!, patch }` and
+        `UpdateChapterPatch { isBookmarked, isRead, lastPageRead }`. The host only ever sends
+        `isRead`: any other patch key is a violation. Unknown ids are ignored, as the server's
+        `inList` update does."""
+        match = _UPDATE_CHAPTERS.match(query)
+        if match is None:
+            self.violations.append("updateChapters outside the exact form (ids, patch isRead)")
+            return {"chapters": []}
+        ids = [int(i) for i in match.group("ids").replace(" ", "").split(",") if i]
+        patch = {"isRead": match.group("read") == "true"}
+        self.read_updates.append((ids, bool(patch["isRead"])))
+        found = []
+        for manga in self.state["mangas"]:
+            for chapter in manga["chapters"]:
+                if chapter["id"] in ids:
+                    chapter["isRead"] = bool(patch["isRead"])
+                    found.append({"id": chapter["id"], "isRead": chapter["isRead"]})
+        return {"chapters": found}
 
     def _q_fetchChapters(self, query: str, variables: dict[str, Any]) -> dict[str, Any]:
         """`fetchChapters(input: {mangaId})`: the server asks the source and learns the news."""
