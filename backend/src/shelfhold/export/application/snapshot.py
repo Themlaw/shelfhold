@@ -492,7 +492,11 @@ def _world(
     return {
         "records": sorted(
             [
-                r.export_item_id, r.unit_id, _plan_state(r.state), r.rel_path, r.content_hash,
+                r.export_item_id,
+                r.unit_id,
+                _plan_state(r.state),
+                r.rel_path,
+                r.content_hash,
                 r.sidecar_sha256,
             ]
             for r in records.values()
