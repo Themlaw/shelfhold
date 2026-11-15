@@ -174,36 +174,17 @@ symbols = [
 ]
 
 [[allow]]
-category = "unwired-m4-member-key"
-reason = "2026-11-15 (M4 L12, EF-USR-012): `DestinationAccounts.open_token` is the one reader of a member's sealed Kavita key. The routes seal, verify, rotate and revoke it; nothing yet reads it back, because the first reader is the progress synchronisation of the member (pull then push, L14), which asks Kavita with that key through `MemberKavitaClient` and its closed list of routes."
-until = "M4"  # settled by M4 lot L14b
-symbols = [
-  "shelfhold.identity.application.destination_accounts:DestinationAccounts.open_token",
-]
-
-[[allow]]
 category = "unwired-m4"
 reason = "2026-11-15 (M4 L14a): the sweep of the aliases a crash left without hashes (`heal_alias_hashes`), the internal door of a server state (`record_server_state`) and the live read of a member's key (`live_member_account`, `MemberKeyRevokedError`), and the refusal of a carrier the reader may not see (`UnknownCarrierError`), are the contract of the reading service that L14b (the push of progress to a member's account), L47 and L50 (the kosync relay) are the first callers of: L14a adds no route and no job of its own, the route of each of them enters the surfaces meta-test in its own PR. The sweep takes its locator from the caller, which knows the physical roots. `reading.domain.merge` and `projection` state the rule that the SQL view `reading_progress` implements; a test proves the two equal, and the relays of L14b and L47 are their first production callers (the kosync answer picks the furthest position with `furthest`)."
 until = "M4"  # settled by M4 lots L14b and L47
 symbols = [
   "shelfhold.export.application.render_hooks:heal_alias_hashes",
   "shelfhold.reading.domain.document_hash:verified_hashes",
-  "shelfhold.reading.application.member_keys:MemberKeyRevokedError",
-  "shelfhold.reading.application.member_keys:live_member_account",
-  "shelfhold.reading.application.progress:UnknownCarrierError",
   "shelfhold.reading.application.progress:position_of",
-  "shelfhold.reading.application.progress:InvalidLocatorError",
   "shelfhold.reading.application.progress:record_delivery",
   "shelfhold.reading.application.progress:record_position",
-  "shelfhold.reading.application.server_state:record_server_state",
   "shelfhold.reading.application.progress:undo_read_mark",
   "shelfhold.reading.domain.merge:latest",
-  "shelfhold.reading.domain.traversal:Span",
-  "shelfhold.reading.domain.traversal:Step",
-  "shelfhold.reading.domain.traversal:traversed_units",
-  "shelfhold.reading.domain.traversal:PAGES",
-  "shelfhold.reading.domain.traversal:SHARE",
-  "shelfhold.reading.domain.merge:bounded_ts",
   "shelfhold.reading.domain.merge:furthest",
   "shelfhold.reading.domain.projection:Bounds",
   "shelfhold.reading.domain.projection:Projected",

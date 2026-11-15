@@ -186,7 +186,7 @@ class FakeKavita:
     member_profiles: dict[str, dict[str, Any]] = field(default_factory=dict)
     # Reading progress per ACCOUNT (not per key), as Kavita keeps it (`AppUserProgress`):
     # (user name, chapter id) -> {"page": int, "modified": ISO UTC string}. `clock_skew` is how far
-    # this server's own clock is from the real one (a Kavita whose host is mis-set).
+    # this server's own clock is from the real one (a Kavita whose host has a wrong clock).
     member_progress: dict[tuple[str, int], dict[str, Any]] = field(default_factory=dict)
     clock_skew: timedelta = timedelta(0)
     chapter_pages: dict[str, int] = field(default_factory=dict)  # file path -> page count
@@ -421,7 +421,7 @@ class FakeKavita:
 
     # -- the reading progress of a member's account (`ReaderController`, tag v0.9.1.4) -----------
     def _stamp(self) -> str:
-        """Kavita's own clock (possibly mis-set), the way `LastModifiedUtc` is written."""
+        """Kavita's own clock (possibly wrong), the way `LastModifiedUtc` is written."""
         base = self.wall() if self.wall is not None else datetime.now(UTC)
         return (base + self.clock_skew).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
 
