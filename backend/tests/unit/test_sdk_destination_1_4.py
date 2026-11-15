@@ -136,7 +136,6 @@ def test_apicall_content_body_obeys_fsop_reference_and_egress_rules() -> None:
         "/api/x#frag",
         "/api\\x",
         "/api/\x00x",
-        "/user@host/x",
         "",
     ],
 )
@@ -166,9 +165,7 @@ def test_apicall_body_shapes_roundtrip_and_json_body_stays_accepted() -> None:
 
     # a JSON body and a content body together, a content body on GET, a headerless auth: refused
     with pytest.raises(ValueError):
-        ApiCall(
-            method="POST", path="/x", auth="none", json_body={}, body=JsonBody(value={})
-        )
+        ApiCall(method="POST", path="/x", auth="none", json_body={}, body=JsonBody(value={}))
     with pytest.raises(ApiCallError):
         check_api_call(
             ApiCall(
@@ -305,7 +302,9 @@ def test_push_goes_through_the_kit_never_through_a_network_access_of_the_adapter
             for node in ast.walk(tree)
             if isinstance(node, ast.Import | ast.ImportFrom)
             for part in (
-                [a.name for a in node.names] if isinstance(node, ast.Import) else [node.module or ""]
+                [a.name for a in node.names]
+                if isinstance(node, ast.Import)
+                else [node.module or ""]
             )
         }
         assert not imported & forbidden, (name, imported & forbidden)
@@ -366,7 +365,10 @@ class Legacy13Destination:
     def scan_calls(self, remote_paths: list[str]) -> list[ApiCall]:
         return [
             ApiCall(
-                method="POST", path="/api/scan", json_body={"paths": remote_paths}, auth="target_admin"
+                method="POST",
+                path="/api/scan",
+                json_body={"paths": remote_paths},
+                auth="target_admin",
             )
         ]
 

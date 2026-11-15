@@ -1,4 +1,4 @@
-# Écrire un fournisseur de métadonnées (SDK 1.3)
+# Écrire un fournisseur de métadonnées (SDK 1.4)
 
 Un fournisseur de métadonnées répond à la question « que sait-on de cette entité ? ». Il propose
 des valeurs avec leur provenance ; l'hôte décide ce qu'il garde et ne remplace jamais un champ
@@ -6,7 +6,7 @@ verrouillé (EF-BIB-008). Le contrat vit dans `shelfhold.sdk.metadata` (licence 
 le **SDK 1.2** : c'est un ajout, un plugin écrit pour le SDK 1.1 continue de fonctionner (`api` N ou
 N-1, voir l'ADR-0024). Un fournisseur déclare `min_sdk = "1.2"`.
 
-Le contrat reste celui du SDK 1.2 dans le **SDK 1.3** courant (ajouts compatibles seulement). Le kit est décrit
+Le contrat reste celui du SDK 1.2 dans le **SDK 1.4** courant (ajouts compatibles seulement). Le kit est décrit
 dans [kit.md](kit.md), le parcours dans [parcours.md](parcours.md).
 
 La forme s'inspire du concept de source de métadonnées (identifier, couverture, correspondance

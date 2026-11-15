@@ -1,4 +1,4 @@
-# Le kit de conformité (SDK 1.3)
+# Le kit de conformité (SDK 1.4)
 
 Le kit est livré **dans le SDK** (`shelfhold.sdk.testing`, licence MIT) comme outil pytest. Il tourne hors
 réseau (`record_mode = "none"`) sur des cassettes synthétiques : toute requête non scriptée échoue.
@@ -52,3 +52,16 @@ disponible est celle du plan d'opérations : `parse_destination_plan` et `check_
 Une cassette est un JSON synthétique : `{"interactions": [{"method", "url", "status", "body"}]}`. Aucun contenu
 copié d'un site, aucune adresse réelle : utilisez des hôtes `.invalid`. Le test du gabarit ajoute un
 **test d'attaque** : une source qui joint un hôte hors cassette doit faire échouer le kit.
+
+## Destinations
+
+Le kit complet des destinations arrive en M4 (lot L05). Une première vérification existe déjà avec le SDK 1.4,
+`run_destination_declaration_check(capabilities)` :
+
+| Contrôle | Ce qu'il vérifie |
+| --- | --- |
+| `transport_push_requires_content_body` | le transport `push` est **refusé** tant que la destination ne déclare pas `content_body` (`ApiCall.body`) ; aucun autre transport n'est concerné |
+| `update_metadata_declares_fields` | une capacité `update_metadata` déclarée nomme au moins un champ |
+
+Un transport `push` passe par le kit, jamais par un accès réseau de l'adaptateur : l'adaptateur décrit des
+`ApiCall`, l'hôte les exécute par son `Fetcher` et sa garde SSRF.

@@ -25,7 +25,7 @@ def test_export_target_deprecated_members_still_resolve() -> None:
         member = getattr(ExportTarget, name)  # a destination written for SDK 1.0 still resolves
         assert callable(member)
         message = member.__deprecated__
-        assert DEPRECATED_SINCE in message and "M4" in message, name
+        assert DEPRECATED_SINCE in message and "SDK 2.0" in message, name
 
 
 def test_export_target_members_of_every_adapter_are_not_deprecated() -> None:

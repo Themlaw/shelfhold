@@ -51,7 +51,7 @@ def test_no_allowlist_entry_until_past_milestone() -> None:
     late = [
         e["category"]
         for e in entries
-        if e["until"] not in ("permanent", "M4", "M5") and not e["until"].startswith("M1b")
+        if e["until"] not in ("permanent", "M4", "M5", "M6") and not e["until"].startswith("M1b")
     ]
     assert not late, f"entries for a milestone nobody planned: {late}"
     undated = [

@@ -1,7 +1,7 @@
-# Écrire une source (SDK 1.3)
+# Écrire une source (SDK 1.4)
 
 Une **source** donne à Shelfhold des séries et des fichiers : elle cherche, décrit, liste les Unités et fournit leur
-contenu. Le contrat vit dans `shelfhold.sdk.source` (licence MIT) et s'appuie sur le **SDK 1.3** (`SDK_VERSION`). Le parcours complet, du gabarit à l'index, est dans
+contenu. Le contrat vit dans `shelfhold.sdk.source` (licence MIT) et s'appuie sur le **SDK 1.4** (`SDK_VERSION`). Le parcours complet, du gabarit à l'index, est dans
 [parcours.md](parcours.md).
 Un fournisseur de métadonnées, qui ne fournit pas de fichier, est un autre plugin : voir
 [metadata-provider.md](metadata-provider.md). Un plugin tiers est désactivé par défaut et tourne avec les droits de

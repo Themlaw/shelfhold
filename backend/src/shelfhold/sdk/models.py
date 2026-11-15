@@ -28,11 +28,13 @@ from shelfhold.sdk.lang import LanguageTag
 API_VERSION = 1
 """Major of the plugin data contract. The host accepts API_VERSION and API_VERSION - 1 (shim)."""
 
-SDK_VERSION = "1.3"
-"""Major.minor of the SDK. 1.3 freezes the plugin boundary (M3 L34): the serialisable `FsOp` plan,
-plugin event spaces, declared exits of plugin waiting states, `fetch_range` optional. 1.2 adds
-MetadataProvider (EF-BIB-013, D16). A minor only adds optional
-fields and new contracts, so a plugin written for 1.1 keeps loading (ADR-0024)."""
+SDK_VERSION = "1.4"
+"""Major.minor of the SDK. 1.4 is the destination contract (M4 L03): `ApiCall.body`, optional
+`update_metadata`, `content_body`; all optional, a 1.3 destination loads unchanged. 1.3 froze the
+plugin boundary (M3 L34): the serialisable `FsOp` plan, plugin event spaces, declared exits of
+plugin waiting states, `fetch_range` optional. 1.2 added MetadataProvider (EF-BIB-013, D16). A
+minor only adds optional fields and new contracts, so a plugin written for 1.1 keeps loading
+(ADR-0024)."""
 
 
 def sdk_supports(min_sdk: str, host: str = SDK_VERSION) -> bool:

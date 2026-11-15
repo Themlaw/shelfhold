@@ -2,14 +2,14 @@
 
 Cette page dit dans quel ordre faire les choses pour écrire une **source** ou une **destination** pour
 Shelfhold, et ce que le projet promet en retour. Elle renvoie aux pages de détail ; chaque affirmation sur
-le SDK a été relue contre le code (`backend/src/shelfhold/sdk/`, version **SDK 1.3**).
+le SDK a été relue contre le code (`backend/src/shelfhold/sdk/`, version **SDK 1.4**).
 
 Ce qui existe aujourd'hui et ce qui est à venir :
 
 | Étape | Sources | Destinations |
 | --- | --- | --- |
-| Contrat | stable, SDK 1.3 ([source.md](source.md)) | **provisoire jusqu'à M4** ([destination.md](destination.md)) |
-| Kit de conformité | livré ([kit.md](kit.md)) | à venir en M4 : seul le contrôle du plan d'opérations existe |
+| Contrat | stable, SDK 1.4 ([source.md](source.md)) | contrat 1.4 : plan `FsOp` et `ApiCall.body` figés, le reste **provisoire jusqu'à M4** ([destination.md](destination.md)) |
+| Kit de conformité | livré ([kit.md](kit.md)) | à venir en M4 : seuls le contrôle du plan d'opérations et celui des déclarations existent |
 | Index officiel, hébergement d'un index tiers, migrations d'état | à venir en M6 | à venir en M6 |
 
 Un plugin tiers est **désactivé par défaut** et tourne avec les droits de Shelfhold : lisez

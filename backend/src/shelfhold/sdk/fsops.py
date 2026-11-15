@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: MIT
-"""The file operation plan a destination describes and the host executes (SDK 1.3, frozen).
+"""The file operation plan a destination describes and the host executes (SDK 1.3, frozen; the
+content reference rules are shared with `ApiCall.body` from SDK 1.4).
 
 A destination never touches a file. It returns a plan: JSON, every path relative to the binding
 root, no content (a `ContentRef` names bytes the host owns). The host parses the plan with
@@ -54,6 +55,23 @@ class ContentRef(StrictSdkModel):
 
     kind: Literal["export_item", "sidecar"]
     ref: str
+
+
+class PlannedContent(StrictSdkModel):
+    """What the host planned for one call and one binding: the bytes a destination may name.
+
+    One rule for every way out (SDK 1.4): a `write` of an `FsOp` and an `ApiCall.body` cite a
+    content reference only if it is an `export_item` planned for this call and this binding.
+    A watermarked file never goes to an `externe` destination, and the provenance mirror (the
+    host's own copy of what was planned, kept under `.shelfhold`) is never sent at all.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    planned_refs: frozenset[str]
+    egress: Literal["foyer", "externe"]
+    watermarked_refs: frozenset[str] = frozenset()
+    mirror_refs: frozenset[str] = frozenset()
 
 
 class FsOp(StrictSdkModel):
@@ -126,6 +144,19 @@ def _check_shape(op: FsOp) -> None:
         raise FsOpPlanError(f"{kind}: mtime is not allowed")
 
 
+def check_content_ref(ref: ContentRef, planned: PlannedContent) -> None:
+    """Raise `FsOpPlanError` unless `ref` is bytes the host planned for this call and binding and
+    may send to this destination. The message names the rule, never the reference."""
+    if type(ref) is not ContentRef or ref.kind != "export_item":
+        raise FsOpPlanError("a content reference is an export_item the host planned")
+    if ref.ref in planned.mirror_refs or is_reserved_path(ref.ref):
+        raise FsOpPlanError("the provenance mirror is never sent")
+    if ref.ref not in planned.planned_refs:
+        raise FsOpPlanError("the content is not an export_item planned for this binding")
+    if planned.egress == "externe" and ref.ref in planned.watermarked_refs:
+        raise FsOpPlanError("a watermarked file does not leave for an external destination")
+
+
 def check_destination_operation(op: FsOp) -> None:
     """The host calls this on each operation just before it runs it."""
     if type(op) is not FsOp or (
@@ -150,10 +181,13 @@ def _target(op: FsOp) -> str | None:
     return None if path is None else "/".join(_fold(part) for part in path.split("/"))
 
 
-def check_destination_plan(plan: "FsOpPlan") -> None:
+def check_destination_plan(plan: "FsOpPlan", planned: PlannedContent | None = None) -> None:
     """Raise `FsOpPlanError` unless every operation of `plan` is one a destination may ask for.
     It re-reads the fields as they are now, so it also catches a plan built with `model_construct`
-    or altered after validation. Run it on the host's copy, right before executing."""
+    or altered after validation. Run it on the host's copy, right before executing.
+
+    With `planned` (what the host planned for this call and binding), every `write` must also
+    cite content that `check_content_ref` accepts; the executor always passes it."""
     if type(plan) is not FsOpPlan:
         raise FsOpPlanError("a plan is an exact FsOpPlan, never a subclass")
     if len(plan.ops) > MAX_PLAN_OPS:
@@ -161,6 +195,8 @@ def check_destination_plan(plan: "FsOpPlan") -> None:
     created: set[str] = set()
     for op in plan.ops:
         check_destination_operation(op)
+        if planned is not None and op.op == "write" and op.content_ref is not None:
+            check_content_ref(op.content_ref, planned)
         target = _target(op)
         if target is None:
             continue
@@ -207,6 +243,8 @@ __all__ = [
     "FsOp",
     "FsOpPlan",
     "FsOpPlanError",
+    "PlannedContent",
+    "check_content_ref",
     "check_destination_operation",
     "check_destination_plan",
     "is_reserved_path",

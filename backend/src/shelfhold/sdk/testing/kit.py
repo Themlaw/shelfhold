@@ -136,6 +136,27 @@ def _leaks_secret(value: str) -> bool:
     return bool(_USERINFO.search(value) or _SECRET_PARAM.search(value))
 
 
+def run_destination_declaration_check(capabilities: Any) -> ConformanceReport:
+    """Check what a destination declares (SDK 1.4). The transport `push` is refused for any
+    destination that does not declare `ApiCall.body` (`content_body`): nothing else sends bytes
+    through a call, and the core runs every call through its Fetcher and the SSRF guard."""
+    report = ConformanceReport()
+    transport = getattr(capabilities, "transport", None)
+    sends = getattr(capabilities, "content_body", False) is True
+    report.add(
+        "transport_push_requires_content_body",
+        transport != "push" or sends,
+        "transport `push` needs a declared ApiCall.body (content_body)",
+    )
+    update = getattr(capabilities, "update_metadata", None)
+    report.add(
+        "update_metadata_declares_fields",
+        update is None or bool(getattr(update, "fields", None)),
+        "update_metadata is declared without any field",
+    )
+    return report
+
+
 async def _discover(source: Source, f: Fetcher, series_ref: SeriesRef | None) -> _Discovery:
     models: list[BaseModel] = []
     refs: list[SeriesRef] = []

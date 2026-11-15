@@ -9,7 +9,7 @@ from typing import Any
 import pytest
 from pydantic import BaseModel, ValidationError
 
-from shelfhold.sdk import connected, export_target, fetcher, models, refs, source
+from shelfhold.sdk import api_call, connected, export_target, fetcher, fsops, models, refs, source
 from shelfhold.sdk.age import AgeRating
 
 OPAQUE = "opaque-handle"
@@ -134,6 +134,15 @@ def _samples() -> dict[type[BaseModel], BaseModel]:
         fetcher.CookieJarView(cookies={"sid": "snapshot"}),
         export_target.ApiCall(method="GET", path="/api/x", query={"a": 1}, auth="target_admin"),
         export_target.ContentRef(kind="export_item", ref=OPAQUE),
+        api_call.JsonBody(value={"a": [1, 2]}),
+        api_call.RawEncoding(content_type="application/zip"),
+        api_call.MultipartEncoding(file_field="file", fields={"name": "Vol 1"}),
+        api_call.ContentBody(content_ref=export_target.ContentRef(kind="export_item", ref=OPAQUE)),
+        export_target.MetadataUpdateSupport(fields={"title"}, lock=True),
+        export_target.MetadataChangeRoute(
+            update={"title"}, rewrite_proposal={"cover"}, warn_rewrite=True
+        ),
+        fsops.PlannedContent(planned_refs={OPAQUE}, egress="foyer"),
         export_target.TargetCapabilities(
             media_kinds={"manga"},
             formats={"cbz"},
@@ -167,12 +176,13 @@ def _samples() -> dict[type[BaseModel], BaseModel]:
 
 def _exported_models() -> list[type[BaseModel]]:
     found: list[type[BaseModel]] = []
-    for module in (models, refs, source, connected, export_target, fetcher):
+    for module in (models, refs, source, connected, export_target, fetcher, api_call):
         for _, cls in inspect.getmembers(module, inspect.isclass):
             if (
                 issubclass(cls, BaseModel)
                 and cls.__module__ == module.__name__
                 and cls not in (models.SdkModel, models.StrictSdkModel)
+                and not cls.__name__.startswith("_")  # a private base, never a wire type
                 and not cls.__pydantic_generic_metadata__["parameters"]  # unparametrised generic
             ):
                 found.append(cls)
