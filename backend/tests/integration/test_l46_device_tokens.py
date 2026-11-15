@@ -13,12 +13,13 @@ import base64
 import hashlib
 import json
 import sqlite3
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
+from dataclasses import dataclass
 from datetime import timedelta
-from typing import Annotated, Any
+from typing import Any
 
 import pytest
-from fastapi import APIRouter, Depends
+from fastapi import Request
 
 from shelfhold.config import Settings
 from shelfhold.identity.domain.device_secret import format_secret, normalise_secret
@@ -40,13 +41,14 @@ from shelfhold.interfaces.http_api.device_auth import (
     require_device_basic,
     require_device_kosync,
 )
+from shelfhold.interfaces.http_api.problems import ProblemError
 from shelfhold.interfaces.http_api.ratelimit import credential_label
 from tests.auth_env import ADMIN, PASSWORD, AuthEnv, auth_env, db_dump, db_rows, run_cli
 
 pytestmark = pytest.mark.req("EF-USR-008", "EF-USR-024", "ENF-SEC-008")
 
 KOSYNC_AUTH = "/kosync/users/auth"
-OPDS_PROBE = "/opds/_probe"
+OPDS_PATH = "/opds/series"
 PER_PAIR = 5
 PER_ADDRESS = 30
 ADMIN_ROUTES = (
@@ -56,7 +58,7 @@ ADMIN_ROUTES = (
     "/api/v1/stats",
     "/api/v1/shelves",
 )
-OUTSIDE_PROBE = "/api/v1/_device_probe"
+OUTSIDE_PATH = "/api/v1/profiles"
 
 
 def md5(text: str) -> str:
@@ -77,28 +79,56 @@ def basic(user: str, secret: str) -> dict[str, str]:
     return {"Authorization": f"Basic {raw}"}
 
 
-probe = APIRouter()
+@dataclass
+class Answer:
+    """What a dependency answered, in the shape of a response (`status_code`, `json()`)."""
+
+    status_code: int
+    body: dict[str, Any]
+    headers: dict[str, str]
+
+    def json(self) -> dict[str, Any]:
+        return self.body
 
 
-@probe.get(OUTSIDE_PROBE)
-def outside_probe(
-    principal: Annotated[Principal, Depends(require_device_kosync)],
-) -> dict[str, str]:
-    return {"user": principal.user_id}  # a route that takes a token where it must not
-
-
-@probe.get(OPDS_PROBE)
-def opds_probe(principal: Annotated[Principal, Depends(require_device_basic)]) -> dict[str, Any]:
-    return {
-        "user": principal.user_id,
-        "role": principal.role,
-        "credential": principal.credential.value,
-    }
+def device_get(
+    env: AuthEnv,
+    headers: dict[str, str] | None = None,
+    *,
+    path: str = OPDS_PATH,
+    ip: str = "203.0.113.50",
+    check: Callable[[Request], Principal] = require_device_basic,
+) -> Answer:
+    """The dependency of an OPDS or kosync route, called with a real request: no route is
+    declared in a test, the dependency is what every such route will name (L47, L48)."""
+    scope = {
+        "type": "http", "method": "GET", "path": path, "query_string": b"", "scheme": "https",
+        "server": ("testserver", 443), "client": (ip, 40000), "app": env.app,
+        "state": {"client_ip": ip},
+        "headers": [(k.lower().encode(), v.encode()) for k, v in (headers or {}).items()],
+    }  # fmt: skip
+    try:
+        principal = check(Request(scope))
+    except ProblemError as refused:
+        return Answer(
+            refused.status,
+            {"code": str(refused), **refused.extensions},
+            {k.lower(): v for k, v in refused.headers.items()},
+        )
+    return Answer(
+        200,
+        {
+            "user": principal.user_id,
+            "role": principal.role,
+            "credential": principal.credential.value,
+        },
+        {},
+    )
 
 
 @pytest.fixture
 def api(monkeypatch: pytest.MonkeyPatch, settings: Settings) -> Iterator[AuthEnv]:
-    with auth_env(monkeypatch, settings, routers=[probe]) as env:
+    with auth_env(monkeypatch, settings) as env:
         yield env
 
 
@@ -200,8 +230,8 @@ def test_kosync_auth_uses_device_token_secret(api: AuthEnv) -> None:
     # the account password is never a secret here, as a key or as a Basic password
     wrong = api.client.get(KOSYNC_AUTH, headers=kosync("kid", PASSWORD))
     assert wrong.status_code == 401
-    assert api.client.get(OPDS_PROBE, headers=basic("kid", PASSWORD)).status_code == 401
-    assert api.client.get(OPDS_PROBE, headers=basic(created.public_id, PASSWORD)).status_code == 401
+    assert device_get(api, basic("kid", PASSWORD)).status_code == 401
+    assert device_get(api, basic(created.public_id, PASSWORD)).status_code == 401
     # the md5 of the account password is no key either
     assert (
         api.client.get(
@@ -216,7 +246,7 @@ def test_one_token_opens_both_doors_basic_for_opds_and_md5_for_kosync(api: AuthE
     created = issue(api, "kid")
     typed = format_secret(created.secret).upper().replace(" ", "-")  # grouped as it is displayed
     for secret in (created.secret, typed):
-        answer = api.client.get(OPDS_PROBE, headers=basic(created.public_id, secret))
+        answer = device_get(api, basic(created.public_id, secret))
         assert answer.status_code == 200, answer.text
         assert answer.json() == {"user": kid, "role": "child", "credential": "device_token"}
     # KOReader sends md5 of exactly what was typed: the canonical form only
@@ -232,8 +262,8 @@ def test_identical_answer_for_an_unknown_identifier_and_a_wrong_key(api: AuthEnv
     assert unknown.status_code == wrong.status_code == 401
     assert _same_problem(unknown, wrong)
     assert unknown.headers.get("www-authenticate") == wrong.headers.get("www-authenticate")
-    basic_unknown = api.client.get(OPDS_PROBE, headers=basic("zzzzzzzz", created.secret))
-    basic_wrong = api.client.get(OPDS_PROBE, headers=basic(created.public_id, "x" * 26))
+    basic_unknown = device_get(api, basic("zzzzzzzz", created.secret))
+    basic_wrong = device_get(api, basic(created.public_id, "x" * 26))
     assert basic_unknown.status_code == basic_wrong.status_code == 401
     assert _same_problem(basic_unknown, basic_wrong)
     assert "basic" in basic_wrong.headers["www-authenticate"].lower()
@@ -247,7 +277,7 @@ def test_no_secret_in_logs_audit_or_errors(
     wrong = "q" * 26
     api.client.get(KOSYNC_AUTH, headers=kosync(created.public_id, created.secret))
     api.client.get(KOSYNC_AUTH, headers=kosync(created.public_id, wrong))
-    api.client.get(OPDS_PROBE, headers=basic(created.public_id, wrong))
+    device_get(api, basic(created.public_id, wrong))
     auth_of(api).revoke_device_token(created.public_id)
     seen = capsys.readouterr()
     everything = (
@@ -275,10 +305,7 @@ def test_revoked_token_is_refused_at_once_and_stays_refused(api: AuthEnv) -> Non
     assert api.client.get(KOSYNC_AUTH, headers=headers).status_code == 200
     assert auth_of(api).revoke_device_token(created.public_id) is True
     assert api.client.get(KOSYNC_AUTH, headers=headers).status_code == 401  # no cache
-    assert (
-        api.client.get(OPDS_PROBE, headers=basic(created.public_id, created.secret)).status_code
-        == 401
-    )
+    assert device_get(api, basic(created.public_id, created.secret)).status_code == 401
     assert auth_of(api).revoke_device_token(created.public_id) is False  # already revoked
     assert auth_of(api).revoke_device_token("zzzzzzzz") is False
     revoked_at = db_rows(api.settings, "SELECT revoked_at FROM device_token")[0][0]
@@ -428,8 +455,12 @@ def test_a_route_outside_opds_and_kosync_never_takes_a_device_token(api: AuthEnv
     be mounted: a route that names the dependency outside `/opds` and `/kosync` refuses it."""
     profile(api, "kid", "child", max_age_rating=7)
     created = issue(api, "kid")
-    answer = api.client.get(OUTSIDE_PROBE, headers=kosync(created.public_id, created.secret))
-    assert answer.status_code == 403 and answer.json()["code"] == "credential_not_allowed"
+    for check, headers in (
+        (require_device_kosync, kosync(created.public_id, created.secret)),
+        (require_device_basic, basic(created.public_id, created.secret)),
+    ):
+        answer = device_get(api, headers, path=OUTSIDE_PATH, check=check)
+        assert answer.status_code == 403 and answer.json()["code"] == "credential_not_allowed"
     assert api.client.get(KOSYNC_AUTH, headers=kosync(created.public_id, created.secret)).is_success
     assert set(DEVICE_ROUTE_PREFIXES) == {"/opds", "/kosync"}
 
@@ -439,8 +470,8 @@ def test_an_api_key_is_no_device_token_and_a_device_token_is_no_api_key(api: Aut
     created = issue(api, "kid")
     key = auth_of(api).create_api_key(name="k", scope="admin").value
     assert api.client.get(KOSYNC_AUTH, headers=kosync(created.public_id, key)).status_code == 401
-    assert api.client.get(OPDS_PROBE, headers={"Authorization": f"Bearer {key}"}).status_code == 401
-    assert api.client.get(OPDS_PROBE, headers=basic(created.public_id, key)).status_code == 401
+    assert device_get(api, {"Authorization": f"Bearer {key}"}).status_code == 401
+    assert device_get(api, basic(created.public_id, key)).status_code == 401
     assert (
         api.client.get("/api/v1/stats", headers={"Authorization": f"Bearer {key}"}).status_code
         != 401
@@ -451,7 +482,7 @@ def test_an_api_key_is_no_device_token_and_a_device_token_is_no_api_key(api: Aut
 def test_a_session_cookie_does_not_open_the_device_routes(api: AuthEnv) -> None:
     assert api.login().status_code == 200
     assert api.client.get(KOSYNC_AUTH).status_code == 401
-    assert api.client.get(OPDS_PROBE).status_code == 401
+    assert device_get(api).status_code == 401
 
 
 # --- IDOR: another profile's token -------------------------------------------------------------
@@ -468,13 +499,10 @@ def test_another_profiles_token_never_opens_a_door_as_someone_else(api: AuthEnv)
         ).status_code
         == 401
     )
-    assert (
-        api.client.get(OPDS_PROBE, headers=basic(mum_token.public_id, kid_token.secret)).status_code
-        == 401
-    )
+    assert device_get(api, basic(mum_token.public_id, kid_token.secret)).status_code == 401
     # each token is exactly its own profile, whatever else is asked
-    one = api.client.get(OPDS_PROBE, headers=basic(kid_token.public_id, kid_token.secret)).json()
-    two = api.client.get(OPDS_PROBE, headers=basic(mum_token.public_id, mum_token.secret)).json()
+    one = device_get(api, basic(kid_token.public_id, kid_token.secret)).json()
+    two = device_get(api, basic(mum_token.public_id, mum_token.secret)).json()
     assert (one["user"], two["user"]) == (kid, mum)
     # the identifier is the profile's username: it never names a profile
     assert api.client.get(KOSYNC_AUTH, headers=kosync("kid", kid_token.secret)).status_code == 401
@@ -521,7 +549,7 @@ def test_thirty_wrong_attempts_per_address_whatever_the_identifier(api: AuthEnv)
         assert answer.status_code == 401
     assert attacker.get(KOSYNC_AUTH, headers=kosync("23232323", "n" * 26)).status_code == 429
     assert (
-        attacker.get(OPDS_PROBE, headers=basic(created.public_id, created.secret)).status_code
+        device_get(api, basic(created.public_id, created.secret), ip="198.51.100.8").status_code
         == 429
     )
     other = api.other_client("192.0.2.21")
@@ -587,7 +615,7 @@ def test_an_accepted_token_buys_its_own_budget_a_guess_does_not(api: AuthEnv) ->
 def test_cli_issues_lists_and_revokes_without_ever_listing_the_secret(
     monkeypatch: pytest.MonkeyPatch, settings: Settings, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    with auth_env(monkeypatch, settings, routers=[probe]) as api:
+    with auth_env(monkeypatch, settings) as api:
         profile(api, "kid", "child", max_age_rating=7)
         capsys.readouterr()
     assert (

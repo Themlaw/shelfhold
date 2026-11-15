@@ -12,6 +12,7 @@ fails the suite. A route that a child can use (OPEN) names the test that attacks
 
 from __future__ import annotations
 
+import hashlib
 import sys
 from collections.abc import Iterator
 from typing import Any
@@ -99,6 +100,11 @@ OWN = (
     "GET /api/v1/requests/{request_id}",
     "POST /api/v1/requests/{request_id}/cancel",
 )
+# DEVICE (M4 L46): behind a device token and nothing else, the credential of an e-reader. A session,
+# a child's or an adult's, and an API key are refused (401); the token of a child reads as that
+# child and the route answers no catalogue data. The attacks are in `test_l46_device_tokens.py`;
+# the feed (L48) and the other kosync routes (L47) join here, each with its own surface.
+DEVICE = ("GET /kosync/users/auth",)
 OPEN = {
     "GET /api/v1/activity": "activity",
     "GET /api/v1/events": "sse",
@@ -410,7 +416,7 @@ def _titles(response: Any) -> list[str]:
 @pytest.mark.req("EF-USR-006", "ENF-SEC-010")
 def test_every_openapi_route_has_a_child_case(api: AuthEnv) -> None:
     """A route added with no child case fails the suite (the end condition of L09)."""
-    declared = [*PUBLIC, *OWN, *OPEN, *CLOSED]
+    declared = [*PUBLIC, *OWN, *OPEN, *CLOSED, *DEVICE]
     assert len(declared) == len(set(declared)), "a route holds two child cases"
     routes = _routes(api.app)
     assert not routes - set(declared), (
@@ -441,7 +447,7 @@ def test_pending_surfaces_get_a_real_child_case_when_they_arrive(api: AuthEnv) -
 @pytest.mark.req("EF-USR-006", "ENF-SEC-010")
 def test_new_route_without_a_child_case_is_caught(api: AuthEnv) -> None:
     """The meta-test is not decoration: a route that no registry names is reported as missing."""
-    known = set([*PUBLIC, *OWN, *OPEN, *CLOSED])
+    known = set([*PUBLIC, *OWN, *OPEN, *CLOSED, *DEVICE])
     assert _routes(api.app) - known == set()  # today: every route has its case
     assert ({*_routes(api.app), "GET /api/v1/zz-new-surface"} - known) == {
         "GET /api/v1/zz-new-surface"
@@ -568,6 +574,29 @@ def test_own_and_public_routes_carry_no_catalogue_data(world: World) -> None:
             continue
         for client in (world.kid, world.env.other_client("10.0.0.51")):
             world.clean(client.get(path).text)
+
+
+@pytest.mark.req("EF-USR-006", "ENF-SEC-010", "EF-USR-008")
+def test_device_routes_refuse_a_session_and_a_key_and_serve_a_child_token_no_data(
+    world: World,
+) -> None:
+    env = world.env
+    key = env.app.state.auth_gate.auth.create_api_key(name="k", scope="admin").value  # type: ignore[attr-defined]
+    for route in DEVICE:
+        method, path = _fill(route)
+        assert method == "GET"
+        by_session = world.kid.get(path)  # the child's own session
+        by_admin = env.client.get(path)  # and the admin's
+        by_key = env.other_client("10.0.0.53").get(path, headers={"Authorization": f"Bearer {key}"})
+        assert (by_session.status_code, by_admin.status_code, by_key.status_code) == (401, 401, 401)
+        world.clean(by_session.text + by_admin.text + by_key.text)
+        token = env.app.state.auth_gate.auth.create_device_token(subject_username="kid")  # type: ignore[attr-defined]
+        md5 = hashlib.md5(token.secret.encode(), usedforsecurity=False).hexdigest()
+        by_token = env.other_client("10.0.0.54").get(
+            path, headers={"x-auth-user": token.public_id, "x-auth-key": md5}
+        )
+        assert by_token.status_code == 200 and by_token.json() == {"authorized": "OK"}
+        world.clean(by_token.text)
 
 
 # -- one test, every surface -----------------------------------------------------------------

@@ -22637,6 +22637,42 @@
         "summary": "Healthz"
       }
     },
+    "/kosync/users/auth": {
+      "get": {
+        "description": "What KOReader asks when the reader taps \"Login\": 200 if the token is good. The other\nroutes of kosync (L47) take the same dependency.",
+        "operationId": "kosync_authorize",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "title": "Response Kosync Authorize",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Détail du problème (RFC 9457)."
+          }
+        },
+        "summary": "Authorize",
+        "tags": [
+          "kosync"
+        ]
+      }
+    },
     "/readyz": {
       "get": {
         "operationId": "readyz",

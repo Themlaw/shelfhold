@@ -13399,6 +13399,35 @@ export type HealthzResponses = {
 
 export type HealthzResponse2 = HealthzResponses[keyof HealthzResponses];
 
+export type KosyncAuthorizeData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/kosync/users/auth';
+};
+
+export type KosyncAuthorizeErrors = {
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type KosyncAuthorizeError = KosyncAuthorizeErrors[keyof KosyncAuthorizeErrors];
+
+export type KosyncAuthorizeResponses = {
+    /**
+     * Response Kosync Authorize
+     *
+     * Successful Response
+     */
+    200: {
+        [key: string]: string;
+    };
+};
+
+export type KosyncAuthorizeResponse = KosyncAuthorizeResponses[keyof KosyncAuthorizeResponses];
+
 export type ReadyzData = {
     body?: never;
     path?: never;
