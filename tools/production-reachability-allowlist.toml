@@ -47,7 +47,7 @@ symbols = [
 [[allow]]
 category = "unwired-m4"
 reason = "Related Works (EF-BIB-039): M1b holds the model and the service (a typed link, never a merge). The admin API that links two Works, the page that shows the relation and the push to the \"related series\" of Kavita are M4's, the first callers."
-until = "M4"
+until = "M4"  # settled by M4 lot L06a (present_in) and L19 (relate_works)
 symbols = [
   "shelfhold.acquisition.application.presence:present_in",
   "shelfhold.catalog.application.relations:RelatedWork",
@@ -81,7 +81,7 @@ tests = [
 [[allow]]
 category = "deferred-l31-adoption-and-preview"
 reason = "2026-11-13 (M3 L29): `apply_rename`, `RenameStep` and `SeriesResolver` left this list: the rename plans (template change, reshelving, binding migration) apply through them and the reader count resolves the series of its folders. `Resolution.renamed` and `SeriesResolver.collision` stay (the planner's collision check of a renamed series is M4's, with the progress carried over). `Resolution.renamed`: it tells that Kavita shows another name than the one Shelfhold froze, which the re-resolution after a move (`resolve_remote`, with the progress carried over) reads in M4; before M4 a rename plan only warns (EF-EXP-037)."
-until = "M4"
+until = "M4"  # settled by M4 lot L16
 symbols = [
   "shelfhold.export.targets.kavita.series:Resolution.renamed",
   "shelfhold.export.targets.kavita.series:SeriesResolver.collision",
@@ -90,7 +90,7 @@ symbols = [
 [[allow]]
 category = "deferred-l31-bulk-parse-for-plan"
 reason = "2026-11-12 (M3 L31): `BulkParse.for_plan` reads the names a plan asks `plugin/parse` about, in bulk, for the adoption of a foreign library (EF-EXP-045, EF-EXP-060). The export job reads them with `wanted_names` and the replay of EF-EXP-049 asks the names of the manifest (`Revalidator`), both through `BulkParse.fetch`: no caller needs the pipeline form before the adoption screen; redated to M4 with the cut, as the sheet of L31 allows."
-until = "M4"
+until = "M4"  # settled by M4 lot L36
 symbols = [
   "shelfhold.export.targets.kavita.adopt:BulkParse.for_plan",
 ]
@@ -98,7 +98,7 @@ symbols = [
 [[allow]]
 category = "deferred-l31-normalizer-migration"
 reason = "The preview of a migration to a new version of a normalizer (`normalize migrate`, EF-BIB-054, ENF-OPS-021): every normalizer is still at its first version, so no command runs it. It is proved by its tests and comes with the first version bump."
-until = "M4"
+until = "M4"  # settled by M4 lot L43
 symbols = [
   "shelfhold.catalog.domain.normalizers:NormalizerRegistry.plan_migration",
 ]
@@ -106,7 +106,7 @@ symbols = [
 [[allow]]
 category = "published-sdk-contract"
 reason = "ExportTarget is the destination contract published under MIT (SDK 1.1: the Kavita-only members are deprecated and kept, N-1). The host builds its Kavita destination without going through the Protocol; the contract is read by third parties. The reduction is decided in M4 with the second adapter (PLAN-M1b D9)."
-until = "M4"
+until = "M4"  # settled by M4 lot L03
 symbols = [
   "shelfhold.sdk.export_target:ExportTarget",
 ]
@@ -116,7 +116,7 @@ symbols = [
 [[allow]]
 category = "m2-l31-deferred-m4-decode-probe"
 reason = "2026-11-12 (M2 closure, L10 and L29 merged): `probe_image` (format and size of an untrusted image, decoded once in the worker) and `diagnose_worker` (what the sandbox really allows) have no production caller after L10: the rasterizer and `make_thumbnail` (OpenLibrary cover) go through `run_worker` directly, and no M2 requirement asks the pages of an arriving CBZ to be probed or the sandbox report to be exposed. They stay as the proof surface of ENF-SEC-003 (decode caps, no network, RLIMIT_AS), tested in test_decode_worker*.py and test_imaging_*.py. Written down for M3 (2026-11-12), where no screen came to call them: the diagnostic bundle (L46) reports the sandbox through its own checks, and no M3 lot probes an arriving CBZ. 2026-11-14 (M3 L56): redated M4, where the adoption of a foreign library (EF-EXP-045) reads untrusted images and is their natural first caller; deleted there if it does not need them. They are the proof surface of ENF-SEC-003, a sensitive one: not deleted at a milestone closure."
-until = "M4"
+until = "M4"  # settled by M4 lot L36
 symbols = [
   "shelfhold.infrastructure.imaging.client:diagnose_worker",
   "shelfhold.infrastructure.imaging.client:probe_image",
@@ -125,7 +125,7 @@ symbols = [
 [[allow]]
 category = "m3-l34-sdk-freeze"
 reason = "2026-11-12 (M3 L34): the SDK 1.3 boundary a third-party destination or plugin is written against: the serialisable `FsOp` plan and its checks (`parse_destination_plan`, `check_destination_plan`, `is_reserved_path`), the event space of a plugin (`plugin_event_type`, `check_plugin_event`, `publish_plugin_event`), the closed list of exits of a plugin waiting state, and the optional `fetch_range`. Nothing in production runs a destination plan or lets a plugin raise an event before the first destination adapter plan executor (M4) and the first plugin that declares an event or a waiting state, so the checks are proved by tests and listed until then. End-of-lot criterion of the M4 destination lot: its executor calls `check_destination_plan` on the copy `parse_destination_plan` returned, right before each operation (docs/decisions/M3.md)."
-until = "M4"
+until = "M4"  # settled by M4 lot L04
 symbols = [
   "shelfhold.plugin_host.registry:publish_plugin_event",
   "shelfhold.sdk.events:PluginEventError",
@@ -145,7 +145,7 @@ symbols = [
 [[allow]]
 category = "m3-l56-deferred-team-switch"
 reason = "2026-11-14 (M3 L56): redated M4. Wiring it means that a click on the series sheet replaces served files, which is an upgrade under intent on a write context with its lease, its guards and its screen of outcomes (`SwitchReport`: switched, blocked, pending): a feature of its own, not a wiring, and the sheet of L43 decided that choosing a team replaces nothing. M4 builds it with the upgrader of the follow cycle (`runtime_jobs._LazyUpgrader`). Before: 2026-11-12: the preferred team is stored and the switch is tested end to end (the files served are replaced by the upgrade under intent), but the upgrader of the running instance is not wired yet: the route of the series sheet only chooses the team (`CatalogService.prefer_team`), nothing already served is replaced."
-until = "M4"
+until = "M4"  # settled by M4 lot L35
 symbols = [
   "shelfhold.acquisition.application.team_switch:switch_to_preferred_team",
 ]
@@ -162,7 +162,7 @@ symbols = [
 [[allow]]
 category = "m3-l32-kavita-event-transport"
 reason = "2026-11-13: the reading of Kavita's scan events (EF-EXP-034, D11) is pinned by tests in M3: the frames, the handshake, and the rule that an event is a reason to look and never a proof. No WebSocket client is bundled (a new dependency needs wheels for amd64 and arm64 and a way to authenticate by key): the transport that feeds `HubSession` and calls `ArrivalEventWatcher.on_events` is M4, and until then the polling alone confirms, as D11 allows."
-until = "M4"
+until = "M4"  # settled by M4 lot L37 (cuttable)
 symbols = [
   "shelfhold.export.targets.kavita.events:ArrivalEventWatcher",
   "shelfhold.export.targets.kavita.events:HubSession",

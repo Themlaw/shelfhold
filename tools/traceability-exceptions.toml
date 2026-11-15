@@ -69,6 +69,16 @@ requirement = "EF-BIB-029"
 milestone = "M4"
 reason = "détection d'une migration Suwayomi et API livrées (test_m3_l21_suwayomi_migration.py) ; l'écran « Même œuvre ? » (proposition, plan de fusion ou de réaffectation) est reporté en M4 (L58 contradicteur M2)"
 
+[[partial]]
+requirement = "EF-EXP-023"
+milestone = "Plus tard"
+reason = "aspect « adaptateur » : M4 prouve seulement que la déclaration de la destination Calibre (routes /cdb/*, corps brut par `ApiCall.body`, `lock` ignoré et déclaré) passe le contrat et le kit (D9, M4 L11) ; aucun adaptateur n'est livré avant « Plus tard »"
+
+[[partial]]
+requirement = "EF-EXP-035"
+milestone = "Plus tard"
+reason = "aspect « adaptateur » : M4 prouve seulement que la déclaration de la destination Audiobookshelf (un dossier feuille par item, scan ciblé, jamais la route d'upload) passe le contrat et le kit (D9, M4 L11) ; aucun adaptateur n'est livré avant « Plus tard »"
+
 # Tests that do not run in the required CI (`ci-success`): accepted for M0 only when the
 # workflow that runs them is named and justified.
 [[out_of_required_ci]]

@@ -325,6 +325,14 @@ VIOLATIONS = [
      "from shelfhold.export import public\n", "jobs/synthetic.py"),
     ("identity-not-export-acquisition", "identity/adapters/synthetic.py",
      "import shelfhold.acquisition.application\n", None),
+    # M4 L00: one violation per new contract (a destination that describes, providers apart)
+    ("export-targets-describe-only", "export/targets/synthetic/other.py",
+     "import shelfhold.infrastructure.fsops\n", "export/application/other.py"),
+    ("export-targets-describe-only", "export/targets/synthetic/other.py",
+     "from shelfhold.infrastructure.db import write_transaction\n", None),
+    ("native-providers-independent", "plugin_host/adapters/native/opds/other.py",
+     "import shelfhold.plugin_host.adapters.native.wikisource\n",
+     "plugin_host/adapters/native/wikisource/other.py"),
 ]  # fmt: skip
 
 
