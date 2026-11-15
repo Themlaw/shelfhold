@@ -11,7 +11,12 @@ vi.mock('$app/state', () => ({ page: { params: { id: 'ED1' } } }));
 
 const BASE = 'http://shelfhold.test';
 const API = `${BASE}/api/v1/editions/ED1`;
-const server = setupServer();
+// the section « Soutenir l'auteur » asks for its own links: none by default (SupportAuthor.test.ts)
+const server = setupServer(
+  http.get(`${API}/support-author`, () =>
+    HttpResponse.json({ edition_id: 'ED1', links: [], pause_suggestions: [] })
+  )
+);
 
 const binding = (id: string, rank: number, over: Record<string, unknown> = {}) => ({
   id,
