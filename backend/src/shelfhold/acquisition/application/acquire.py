@@ -61,6 +61,7 @@ from shelfhold.catalog.public import (
     translation_type_for,
 )
 from shelfhold.events.bus import EventBus, PublishedEvent
+from shelfhold.export.public import adult_clause
 from shelfhold.infrastructure.binding_priority import next_binding_priority
 from shelfhold.infrastructure.clock import Clock
 from shelfhold.infrastructure.content_trust import (
@@ -119,7 +120,6 @@ WORK_KIND = "novel"
 TITLE_MAX = 200
 RIGHTS_MAX = 2000
 UNKNOWN_LANGUAGE = "x-unknown"
-ADULT_FROM = 18
 OPEN_STATES = ("requested", "downloaded")
 # What the host takes of a file handed over whole: images in an archive, or an EPUB. A PDF waits
 # for the import folder (M2 L20, D9), audio for its own edition key.
@@ -958,7 +958,7 @@ def _shelf(connection: Connection) -> str | None:
         .join(destination, destination.c.shelf_id == shelf.c.id)
         .where(
             destination.c.enabled,
-            sa.or_(shelf.c.max_age_rating.is_(None), shelf.c.max_age_rating >= ADULT_FROM),
+            adult_clause(shelf.c.max_age_rating),
         )
         .order_by(shelf.c.id)
         .limit(1)

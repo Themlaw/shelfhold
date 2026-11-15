@@ -44,10 +44,6 @@ def ports(monkeypatch: pytest.MonkeyPatch) -> FakePorts:
 # -- 1. a request says "available" for a Work the child may not see ------------------------------
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="M3 closure review M1: a request is `available` for a Work hidden from its requester",
-)
 def test_closure_poc_a_request_never_says_available_for_a_work_hidden_from_her(
     monkeypatch: pytest.MonkeyPatch, settings: Settings, ports: FakePorts
 ) -> None:

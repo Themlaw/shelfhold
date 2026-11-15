@@ -19,6 +19,7 @@ from shelfhold.export.application.library_repair import barrier_closed_for
 from shelfhold.export.application.target_health import TargetHealth
 from shelfhold.export.application.to_rate import to_rate
 from shelfhold.export.application.withdrawal import build_plan
+from shelfhold.export.domain.bindings import family_clause
 from shelfhold.export.domain.kavita_compat import (
     KNOWN_BAD_LISTED_ON,
     KNOWN_BAD_OUTDATED_AFTER,
@@ -194,7 +195,7 @@ def _withdrawals(connection: Connection) -> list[WaitingItem]:
     the withdrawal is not empty. Its only exit is `shelf withdraw`, a reserved action, so a file
     that was refused (a rating raised, a ceiling lowered) shows here until an admin applies it."""
     family = connection.execute(
-        sa.select(export.shelf.c.id).where(export.shelf.c.max_age_rating < 18).limit(1)
+        sa.select(export.shelf.c.id).where(family_clause(export.shelf.c.max_age_rating)).limit(1)
     ).first()
     if family is None:
         return []

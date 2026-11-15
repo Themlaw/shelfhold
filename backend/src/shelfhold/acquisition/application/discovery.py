@@ -35,7 +35,12 @@ from shelfhold.catalog.public import (
     track_work_changes,
     translation_type_for,
 )
-from shelfhold.export.public import forget_coverage_unknown, pending_pairing
+from shelfhold.export.public import (
+    adult_clause,
+    family_clause,
+    forget_coverage_unknown,
+    pending_pairing,
+)
 from shelfhold.infrastructure.binding_priority import next_binding_priority
 from shelfhold.infrastructure.clock import Clock
 from shelfhold.infrastructure.content_trust import Destination, sanitize_upstream_text
@@ -54,7 +59,6 @@ log = structlog.get_logger(__name__)
 WORK_KIND = "manga"
 UNKNOWN_LANGUAGE = "x-unknown"  # `edition set-lang` leaves it (language_unknown)
 TITLE_MAX = 200
-ADULT_FROM = 18  # a ceiling of 18 or more, or none, is an adult shelf; below is a family shelf
 
 Emit = Callable[[sa.Connection, str, dict[str, object]], None]
 ListUnits = Callable[[SeriesRef], Awaitable[list[UnitInfo]]]
@@ -331,7 +335,7 @@ class SeriesDiscovery:
                 .where(
                     destination.c.enabled,
                     shelf.c.hold_until_rated,
-                    shelf.c.max_age_rating < ADULT_FROM,
+                    family_clause(shelf.c.max_age_rating),
                 )
             ).scalar_one()
         )
@@ -345,7 +349,7 @@ class SeriesDiscovery:
             .join(destination, destination.c.shelf_id == shelf.c.id)
             .where(
                 destination.c.enabled,
-                sa.or_(shelf.c.max_age_rating.is_(None), shelf.c.max_age_rating >= ADULT_FROM),
+                adult_clause(shelf.c.max_age_rating),
             )
             .order_by(shelf.c.id)
             .limit(1)

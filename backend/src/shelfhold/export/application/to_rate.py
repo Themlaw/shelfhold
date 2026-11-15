@@ -18,6 +18,7 @@ import sqlalchemy as sa
 from sqlalchemy import Connection
 
 from shelfhold.catalog.public import EditionSuggestion, RatingService
+from shelfhold.export.domain.bindings import family_clause
 from shelfhold.infrastructure.follow_suspended import suspended_work_ids
 from shelfhold.infrastructure.schema import catalog, export
 
@@ -70,7 +71,9 @@ def to_rate(connection: Connection) -> list[ToRate]:
         if w in titles and not titles[w][1]
     ]  # fmt: skip
     family = (
-        connection.execute(sa.select(shelf.c.id).where(shelf.c.max_age_rating < 18)).scalars().all()
+        connection.execute(sa.select(shelf.c.id).where(family_clause(shelf.c.max_age_rating)))
+        .scalars()
+        .all()
     )
     if not family:
         return found

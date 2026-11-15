@@ -10,7 +10,8 @@ from __future__ import annotations
 from collections.abc import Iterable
 from dataclasses import dataclass
 
-ADULT = 18
+from shelfhold.export.domain.bindings import is_family
+
 NOT_APPLICABLE = -1  # AgeRating.NotApplicable: Kavita's value for "no restriction"
 
 
@@ -95,7 +96,6 @@ def check_link(shelf_ceiling: int | None, exposed: tuple[Account, ...]) -> tuple
     the library, the shelf is refused, whatever the tier of that account (13, 18 or 99). A
     shelf under 18 (M1b) is refused only by the accounts whose tier is below its ceiling.
     """
-    ceiling = 100 if shelf_ceiling is None else shelf_ceiling
-    if ceiling >= ADULT:
+    if shelf_ceiling is None or not is_family(shelf_ceiling):
         return tuple(a.username for a in exposed)
-    return tuple(a.username for a in exposed if ceiling > tier(a))
+    return tuple(a.username for a in exposed if shelf_ceiling > tier(a))

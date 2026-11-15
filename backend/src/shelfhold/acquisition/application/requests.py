@@ -16,7 +16,7 @@ so a replay or a second worker cannot follow twice; a failure puts the request b
 from __future__ import annotations
 
 import unicodedata
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime
 from typing import Any, Protocol
 
@@ -33,7 +33,7 @@ from shelfhold.acquisition.domain.request_target import (
     parse_target,
     pick_edition,
 )
-from shelfhold.catalog.public import RatingService
+from shelfhold.catalog.public import RatingService, visible_edition_ids, visible_work_ids
 from shelfhold.events.bus import EventBus, PublishedEvent
 from shelfhold.identity.public import (
     RESERVED_ACTIONS,
@@ -44,6 +44,7 @@ from shelfhold.identity.public import (
     audit_insert,
     authorize_reserved,
     effective_visibility,
+    reader_scope,
 )
 from shelfhold.infrastructure.clock import Clock
 from shelfhold.infrastructure.db import write_transaction
@@ -313,7 +314,7 @@ class RequestService:
             ).first()
             if row is None:
                 raise RequestRefusedError("not_found")
-            return self._view(connection, request_id)
+            return self._as_she_sees_it(connection, user_id, self._view(connection, request_id))
 
     def mine(self, user_id: str) -> list[RequestView]:
         with self._engine.connect() as connection:
@@ -323,7 +324,33 @@ class RequestService:
                 .order_by(request.c.created_at.desc(), request.c.id.desc())
                 .limit(_LIST)
             ).scalars()
-            return [self._view(connection, i) for i in ids]
+            return [
+                self._as_she_sees_it(connection, user_id, self._view(connection, i)) for i in ids
+            ]
+
+    def _as_she_sees_it(
+        self, connection: Connection, user_id: str, view: RequestView
+    ) -> RequestView:
+        """The state a reader with a ceiling really lives (M3 closure M1). An arrived request
+        whose Work or Edition is hidden from her is exactly an absent book: she is told
+        `not_found` (EF-USR-010, "introuvable"), with no title, no reason and no link. Hidden
+        and absent are one answer; the admin's own steps are untouched."""
+        if view.state != "arrived":
+            return view
+        scope = reader_scope(connection, user_id)
+        if scope.unrestricted:
+            return view
+        row = connection.execute(
+            sa.select(request.c.work_id, request.c.edition_id).where(request.c.id == view.id)
+        ).one()
+        seen = scope.kind == "ceiling" and row.work_id is not None
+        if seen and visible_work_ids(connection, scope, {row.work_id}) != {row.work_id}:
+            seen = False
+        if seen and row.edition_id is not None:
+            seen = visible_edition_ids(connection, scope, {row.edition_id}) == {row.edition_id}
+        if seen:
+            return view
+        return replace(view, state="not_found", title=None, reject_reason=None)
 
     def queue(self, principal: Principal) -> list[RequestView]:
         """What waits for an admin, oldest first. The title of a private request of an adult is
