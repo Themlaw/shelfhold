@@ -1150,6 +1150,7 @@ target_id = "Server instance of the binding, kept equal to its own: a server ind
 [tables.destination_account]
 description = "A member's account on a destination and the sealed token that reads and writes their progress."
 [tables.destination_account.columns]
+id = "Account identifier (ULID)."
 remote_user = "Name of the account on the server; one member's per destination."
 token_fingerprint = "Short keyed digest of the token shown instead of it; NULL once the token is erased."
 verified_at = "When the token was last checked to open the declared account (UTC)."
