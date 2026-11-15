@@ -296,8 +296,8 @@ def test_every_table_is_either_exported_or_left_out_with_a_reason() -> None:
     assert all(reason for reason in EXCLUDED_TABLES.values())
     for name in ("content_tombstone", "tombstone_kid", "tombstone_lost_kid",
                  "tombstone_pending_root", "api_key", "device_token", "session",
-                 "webauthn_credential", "secret_key", "source_secret", "source_account", "source_config",
-                 "export_target", "idempotency_key"):  # fmt: skip
+                 "webauthn_credential", "secret_key", "source_secret", "source_account",
+                 "source_config", "export_target", "idempotency_key"):  # fmt: skip
         assert name in EXCLUDED_TABLES, name
     assert {"user": frozenset({"password_hash"})} == DROPPED_COLUMNS
 
