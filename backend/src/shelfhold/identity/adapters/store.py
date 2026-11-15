@@ -51,6 +51,43 @@ _key = identity.api_key
 _passkey = identity.webauthn_credential
 
 
+_account = identity.destination_account
+_NO_SECRET = {
+    "secret_kid": None,
+    "secret_v": None,
+    "secret_nonce": None,
+    "secret_ct": None,
+    "token_fingerprint": None,
+}
+
+
+def erase_accounts(
+    connection: Any,
+    user_id: str,
+    *,
+    now: datetime,
+    entry: Callable[[str], AuditEntry],
+    destination_id: str | None = None,
+) -> int:
+    """Revoke the live accounts of a user (of one destination, or all), in the caller's
+    transaction, one audit line each. The name is replaced by the row's own id, so that the
+    account is free again for whoever it belongs to."""
+    query = sa.select(_account.c.id, _account.c.shelf_destination_id).where(
+        _account.c.user_id == user_id, _account.c.revoked_at.is_(None)
+    )
+    if destination_id is not None:
+        query = query.where(_account.c.shelf_destination_id == destination_id)
+    rows = connection.execute(query).all()
+    for row in rows:
+        connection.execute(
+            sa.update(_account)
+            .where(_account.c.id == row.id)
+            .values(revoked_at=now, remote_user=f"~{row.id}", verified_at=None, **_NO_SECRET)
+        )
+        connection.execute(audit_insert(entry(row.shelf_destination_id)))
+    return len(rows)
+
+
 def _user_of(row: Any) -> UserRecord:
     return UserRecord(
         id=row.u_id,
@@ -729,8 +766,13 @@ class SqlIdentityStore:
     def set_kavita_username(
         self, user_id: str, name: str | None, *, actor_id: str | None = None,
         audit: Callable[[bool, bool], AuditEntry | None] | None = None,
+        now: datetime | None = None,
+        revoked_audit: Callable[[str], AuditEntry] | None = None,
     ) -> tuple[bool, bool]:  # fmt: skip
         """Name (or clear) the Kavita account of a child: `(was mapped, is mapped)`.
+
+        A key sealed for the account that was declared opens that account and no other: when the
+        name changes, the child's keys are revoked in the same transaction (EF-USR-012).
 
         The caller is re-read as an admin under the lock that writes, the role of the profile is
         read there too, and no other profile may hold the same name (Kavita does not tell "Lea"
@@ -758,6 +800,8 @@ class SqlIdentityStore:
                 if any(same_kavita_username(other, name) for other in held):
                     raise ProfileError("kavita_username_taken")
             conn.execute(sa.update(_user).where(_user.c.id == user_id).values(kavita_username=name))
+            if revoked_audit is not None and now is not None:
+                erase_accounts(conn, user_id, now=now, entry=revoked_audit)
             entry = None if audit is None else audit(was, name is not None)
             if entry is not None:
                 conn.execute(self._audit_insert(entry))

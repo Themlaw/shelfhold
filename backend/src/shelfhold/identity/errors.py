@@ -29,6 +29,11 @@ CODES: tuple[ErrorCode, ...] = (
     ErrorCode("profile_refused", 422, "user"),
     # Per-user state (M3 L36): a claim from the future, a language tag that is not one
     ErrorCode("user_state_refused", 422, "user"),
+    # A member's Kavita account (M4 L12): another's answers like one that is not there; the rule
+    # that refused is in the `reason` extension (never the key, never a name)
+    ErrorCode("destination_account_not_found", 404, "user"),
+    ErrorCode("destination_account_conflict", 409, "user"),
+    ErrorCode("destination_account_refused", 422, "user"),
     # Notification preferences (M3 L14): a mode, quiet hours or a time zone that is not one
     ErrorCode("notification_prefs_refused", 422, "user"),
 )

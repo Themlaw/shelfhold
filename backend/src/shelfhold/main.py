@@ -54,6 +54,9 @@ from shelfhold.interfaces.http_api.backfill import build_backfill_router
 from shelfhold.interfaces.http_api.bootstrap import build_bootstrap_router
 from shelfhold.interfaces.http_api.catalog_admin import build_catalog_admin_router
 from shelfhold.interfaces.http_api.catalog_lists import build_catalog_lists_router
+from shelfhold.interfaces.http_api.destination_accounts import (
+    build_destination_accounts_router,
+)
 from shelfhold.interfaces.http_api.destinations import build_destinations_router
 from shelfhold.interfaces.http_api.follows import build_follows_router
 from shelfhold.interfaces.http_api.headless import build_headless_router
@@ -293,6 +296,7 @@ def create_app(
     export_routers = (
         build_shelves_router(lambda: ShelfService(engine, clock=clock), ops_services),
         build_destinations_router(ops_services),
+        build_destination_accounts_router(ops_services),  # M4 L12: a member's own Kavita key
         build_edition_shelf_router(lambda: ShelfService(engine, clock=clock)),
         build_headless_router(headless_admin, lambda: resolved.public_url),
         build_bootstrap_router(resolved.setup_token),  # the first account, behind a secret

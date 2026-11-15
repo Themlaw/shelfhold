@@ -17,7 +17,6 @@ from datetime import UTC, datetime
 from typing import Any
 
 import pytest
-from shelfhold.ops.destination_accounts import open_destination_accounts
 
 from shelfhold.config import Settings
 from shelfhold.events.bus import EventBus
@@ -28,6 +27,7 @@ from shelfhold.infrastructure.migrate import migrate
 from shelfhold.infrastructure.secrets.diagnostics import boot_check
 from shelfhold.infrastructure.secrets.vault import SecretVault
 from shelfhold.ops import OpsServices
+from shelfhold.ops.destination_accounts import open_destination_accounts
 from tests.auth_env import ADMIN, CSRF_HEADER, PASSWORD, AuthEnv, auth_env
 from tests.fakes.kavita import BASE_URL, FakeKavita, build_fetcher
 from tests.fakes_clock import ManualClock
@@ -81,17 +81,17 @@ class Fixture:
             body["remote_user"] = remote_user
         return self.send("PUT", accounts_path(user_id, destination_id), body)
 
-    def rows(self, sql: str, *params: object) -> list[tuple[object, ...]]:
+    def rows(self, sql: str, *params: object) -> list[tuple[Any, ...]]:
         with closing(sqlite3.connect(self.settings.database_path)) as db:
             return db.execute(sql, params).fetchall()
 
-    def accounts(self) -> list[tuple[object, ...]]:
+    def accounts(self) -> list[tuple[Any, ...]]:
         return self.rows(
             "SELECT user_id, shelf_destination_id, remote_user, token_fingerprint, "
             "revoked_at IS NOT NULL FROM destination_account ORDER BY created_at, id"
         )
 
-    def audit(self, like: str = "destination_account.%") -> list[tuple[object, ...]]:
+    def audit(self, like: str = "destination_account.%") -> list[tuple[Any, ...]]:
         return self.rows("SELECT action, target FROM audit WHERE action LIKE ? ORDER BY id", like)
 
 
@@ -111,7 +111,7 @@ def _seed_destinations(settings: Settings) -> tuple[str, str, str]:
         def destination(shelf_id: str, target_id: str, subpath: str) -> str:
             destination_id = new_ulid()
             add_row(db, "shelf_destination", id=destination_id, shelf_id=shelf_id,
-                    target_id=target_id, transport="api", egress="foyer", root_subpath=subpath,
+                    target_id=target_id, transport="tree", egress="foyer", root_subpath=subpath,
                     template="{series}", template_origin="default@1")  # fmt: skip
             return destination_id
 

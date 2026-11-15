@@ -34,7 +34,13 @@ from shelfhold.export.application.target_state import load_health
 from shelfhold.export.domain.naming import normalize_series_name, series_name_refusal
 from shelfhold.export.domain.physical_roots import RootState
 from shelfhold.export.domain.planner import SeriesRef
-from shelfhold.identity.public import RESERVED_ACTIONS, Allowed, Principal, authorize_reserved
+from shelfhold.identity.public import (
+    RESERVED_ACTIONS,
+    Allowed,
+    DestinationAccounts,
+    Principal,
+    authorize_reserved,
+)
 from shelfhold.infrastructure.clock import Clock
 from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.fsops import Fsops
@@ -232,6 +238,7 @@ class OpsServices:
         roots: RootOps | None = None,
         maintenance: MaintenanceOps | None = None,
         kavita_accounts: KavitaAccountsOps | None = None,
+        destination_accounts: DestinationAccounts | None = None,
         teardown: DetachOps | None = None,
         window: MaintenanceWindow | None = None,
     ) -> None:
@@ -273,6 +280,7 @@ class OpsServices:
         self._roots = roots
         self._maintenance = maintenance
         self._kavita_accounts = kavita_accounts
+        self._destination_accounts = destination_accounts
         self._teardown = teardown
 
     @property
@@ -819,6 +827,13 @@ class OpsServices:
         if self._kavita_accounts is None:
             raise ExitUnavailableError("the Kavita accounts audit is not connected")
         return self._kavita_accounts
+
+    @property
+    def destination_accounts(self) -> DestinationAccounts:
+        """The members' own Kavita accounts, keys sealed (EF-USR-012)."""
+        if self._destination_accounts is None:
+            raise ExitUnavailableError("the member accounts are not connected")
+        return self._destination_accounts
 
     @property
     def teardown(self) -> DetachOps:

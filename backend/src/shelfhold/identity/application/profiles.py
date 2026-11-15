@@ -298,9 +298,18 @@ class ProfileService:
             written.append(states)
             return self._entry("profile.kavita_mapping_set", by, f"{profile_id}|{states}")
 
-        self._store.set_kavita_username(
-            profile_id, chosen, actor_id=self._actor_id(by), audit=trace
+        make = self._entry
+        revoked = (
+            None
+            if make is None
+            else lambda destination_id: make(
+                "destination_account.revoked", by, f"{profile_id}|{destination_id}"
+            )
         )
+        self._store.set_kavita_username(
+            profile_id, chosen, actor_id=self._actor_id(by), audit=trace, now=self._now(),
+            revoked_audit=revoked,
+        )  # fmt: skip
         if written:
             self._log("profile.kavita_mapping_set", by)
         return chosen

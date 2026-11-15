@@ -16,3 +16,5 @@ seul le contrat d'API réduit est versionné ici.
 stable. Le jour où elles divergent, `latest.json` est remplacé par le nouveau tag (la dérive
 éventuelle fait échouer le job nightly, qui n'ouvre aucune issue : l'échec se lit dans l'onglet Actions, non bloquant pour les PR). Le minimum `0.9.1.0` n'est pas testé sur image réelle : Docker Hub ne publie que le tag `0.9.1` (= v0.9.1.4) ; les trois lignes de la matrice du nightly (tag `0.9.1`, digest, `latest`) sont aujourd'hui la même image. Le champ `info.version` du fichier du
 tag `v0.9.1.4` dit `0.9.1.1` : Kavita ne le met pas à jour à chaque tag, le tag fait foi.
+
+**2026-11-15 (M4 L12).** Les trois fichiers ont été réduits de nouveau, depuis les mêmes tags (`v0.9.1.0` pour `0.9.1.json`, `v0.9.1.4` pour les deux autres), pour y ajouter les quatre routes de la clé d'un membre (`GET /api/Account`, `GET /api/Reader/get-progress`, `POST /api/Reader/progress`, `GET /api/Reader/continue-point`) qu'ajoute `docs/kavita-routes.md`. Aucune autre route n'est entrée.

@@ -1278,6 +1278,21 @@
     action = "A child always has a maximum age and never the right to classify; an adult has no maximum age; a child can only add or request from a “family” source."
     cause = "The requested settings violate a profile rule: a child has a maximum age and does not classify, an adult has no maximum age."
 
+  [errors.destination_account_not_found]
+    title = "This Kavita account does not exist for you."
+    action = "Refresh the list of your accounts."
+    cause = "The account is not linked, was already revoked, or is not yours."
+
+  [errors.destination_account_conflict]
+    title = "This Kavita account is already linked to another profile."
+    action = "Check the name of the Kavita account: an account links to one profile only per destination."
+    cause = "Another profile already uses this account on this destination."
+
+  [errors.destination_account_refused]
+    title = "This Kavita account cannot be linked."
+    action = "Read the reason given: the key must open exactly the declared account, on a reachable Kavita."
+    cause = "The key is refused by Kavita or opens another account, the declared account is missing or badly written, or the destination is not a reachable Kavita."
+
   [errors.user_state_refused]
     title = "This value is not accepted."
     action = "A sent date cannot exceed the server time by more than a few minutes; a title language is a code like \"ja\" or \"en-US\", eight at most, without \"und\" or \"mul\"."

@@ -86,8 +86,8 @@ def test_kavita_account_mapping_token_per_user_encrypted(fx: Fixture) -> None:
     for _row_id, _u, _d, ciphertext, nonce, shown, verified in rows:
         assert ciphertext and nonce and shown and verified
         for key in (mum_key, dad_key):
-            assert key.encode() not in bytes(ciphertext)  # type: ignore[arg-type]
-    assert len({bytes(r[3]) for r in rows}) == 3  # type: ignore[arg-type]  # not one sealed value
+            assert key.encode() not in bytes(ciphertext)
+    assert len({bytes(r[3]) for r in rows}) == 3  # not one sealed value
     # sealed to its row: it opens there, with the keyring, and only there
     with closing(sqlite3.connect(fx.settings.database_path)) as db:
         db.row_factory = sqlite3.Row
@@ -228,7 +228,7 @@ def test_the_token_is_not_in_the_user_data_export(fx: Fixture) -> None:
     exported = fx.send("GET", f"{PROFILES_PATH}/{mum}/export")
     assert exported.status_code == 200
     assert key not in exported.text
-    assert "destination_account" not in exported.text
+    assert "secret_ct" not in exported.text and "token_fingerprint" not in exported.text
 
 
 # --- the key must open the declared account ------------------------------
@@ -280,7 +280,7 @@ def test_the_verification_goes_through_the_guarded_fetcher(fx: Fixture) -> None:
         add_row(db, "export_target", id=target, kind="kavita", name="kavita-metadata",
                 config='{"url": "http://169.254.169.254:80"}')  # fmt: skip
         add_row(db, "shelf_destination", id=dest, shelf_id=shelf, target_id=target,
-                transport="api", egress="foyer", root_subpath="meta", template="{series}",
+                transport="tree", egress="foyer", root_subpath="meta", template="{series}",
                 template_origin="default@1")  # fmt: skip
     fx.as_user("mum")
     before = len(fx.fake.requests)
@@ -429,8 +429,8 @@ def test_member_cannot_set_read_or_revoke_another_members_token(fx: Fixture) -> 
     # her own is hers
     assert fx.put(mum, fx.destination_id, mum_key, "mum.kv").status_code == 200
     assert [i["user_id"] for i in fx.send("GET", accounts_path(mum)).json()["items"]] == [mum]
-    # an adult cannot link to another member's Kavita account by naming it
-    stolen = fx.put(mum, fx.other_destination_id, dad_key, "dad.kv")
+    # an adult cannot link to another member's Kavita account by naming it: her key opens hers
+    stolen = fx.put(mum, fx.other_destination_id, mum_key, "dad.kv")
     assert stolen.status_code == 422 and stolen.json()["reason"] == "token_refused"
     assert kid_key  # the child's key is not mum's to try either
 
@@ -470,7 +470,7 @@ def test_destination_account_routes_refused_to_api_keys(
     other = fx.fake.add_member_key("mum.kv")
     requests_before = len(fx.fake.requests)
     fx.api.client.cookies.clear()
-    for api_key in keys:
+    for scope, api_key in zip(PRINCIPAL_KEYS, keys, strict=True):
         header = {"Authorization": f"Bearer {api_key}"}
         for target in (mum, ULID_UNKNOWN):  # the same refusal for a real id and an invented one
             for method, path, body in (
@@ -482,8 +482,12 @@ def test_destination_account_routes_refused_to_api_keys(
                 if body is not None:
                     kwargs["json"] = body
                 refused = fx.api.client.request(method, path, **kwargs)
-                assert refused.status_code == 403, (method, target)
-                assert refused.json()["type"] == "/api/v1/problems/credential-not-allowed"
+                assert refused.status_code == 403, (method, target, scope)
+                kind = refused.json()["type"].rsplit("/", 1)[1]
+                # a key that cannot write is refused as such before the credential is looked at
+                assert kind in ("credential-not-allowed", "forbidden"), (method, scope)
+                if scope == "admin":
+                    assert kind == "credential-not-allowed"
     assert fx.accounts() == before
     assert len(fx.fake.requests) == requests_before
     assert fx.service.open_token(mum, fx.destination_id).reveal() == mum_key

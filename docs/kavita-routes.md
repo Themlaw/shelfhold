@@ -54,6 +54,25 @@ chez Kavita : le message d'erreur donne son nom et son identifiant, à révoquer
 | GET | `/api/Account/auth-keys` | Lister les clés du compte (`AuthKeyDto` : `id`, `name`, `key`), à la rotation, pour retrouver l'ancienne | M1a |
 | DELETE | `/api/Account/auth-key` | Révoquer l'ancienne clé après la rotation (`authKeyId` en requête) | M1a |
 
+## Routes de la clé d'un membre (EF-USR-012, D8)
+
+Chaque membre colle **sa propre clé** Kavita, scellée par le coffre, par utilisateur et par
+destination. Elle n'est pas la clé dédiée : elle n'atteint que cette liste fermée
+(`MEMBER_ROUTES`, `export/targets/kavita/accounts.py`), jamais une bibliothèque, un scan, une
+couverture, la liste des utilisateurs, les métadonnées d'une série ni une route de clés. Le client
+d'exploitation refuse ces routes à son tour : les deux clés ne se croisent jamais. La clé voyage
+dans l'en-tête `x-api-key`, jamais dans une URL, par le Fetcher et sa garde SSRF.
+
+`GET /api/Account` répond un `UserDto` : le nom du compte, mais aussi un jeton de session et la clé
+par défaut du compte. Seul le nom est lu ; le reste est jeté avec la réponse, sans journal ni copie.
+
+| Méthode | Route | Usage | Jalon |
+| --- | --- | --- | --- |
+| GET | `/api/Account` | Dire à quel compte la clé ouvre : vérifié une fois, à l'enregistrement de la clé | M4 |
+| GET | `/api/Reader/get-progress` | Lire la progression de ce membre pour un chapitre (sync de progression, L14) | M4 |
+| POST | `/api/Reader/progress` | Écrire la progression de ce membre ; ne recule jamais une position plus avancée (L14) | M4 |
+| GET | `/api/Reader/continue-point` | Lire où ce membre en est dans une série (L14) | M4 |
+
 ## Fixtures `openapi.json`
 
 `backend/tests/fixtures/kavita/openapi/{0.9.1,pinned,latest}.json` : le `openapi.json` publié à la

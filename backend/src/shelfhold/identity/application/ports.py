@@ -278,8 +278,11 @@ class IdentityStore(Protocol):
         *,
         actor_id: str | None = None,
         audit: Callable[[bool, bool], AuditEntry | None] | None = None,
+        now: datetime | None = None,
+        revoked_audit: Callable[[str], AuditEntry] | None = None,
     ) -> tuple[bool, bool]:
-        """Name or clear the Kavita account of a child in one transaction with its audit entry:
+        """Name or clear the Kavita account of a child in one transaction with its audit entry
+        (and the revocation of the keys sealed for the account that was declared, EF-USR-012):
         `(was mapped, is mapped)`. The admin caller and the role are re-read under the lock
         (`not_allowed`, `not_found`, `not_a_child`); a name held by another profile is
         `kavita_username_taken`."""

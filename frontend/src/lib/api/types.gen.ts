@@ -19,6 +19,50 @@ export type About = {
 };
 
 /**
+ * AccountList
+ */
+export type AccountList = {
+    /**
+     * Items
+     */
+    items: Array<AccountOut>;
+};
+
+/**
+ * AccountOut
+ */
+export type AccountOut = {
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Remote User
+     */
+    remote_user: string | null;
+    /**
+     * Revoked At
+     */
+    revoked_at: string | null;
+    /**
+     * Shelf Destination Id
+     */
+    shelf_destination_id: string;
+    /**
+     * Token Fingerprint
+     */
+    token_fingerprint: string | null;
+    /**
+     * User Id
+     */
+    user_id: string;
+    /**
+     * Verified At
+     */
+    verified_at: string | null;
+};
+
+/**
  * AccountsAuditOut
  */
 export type AccountsAuditOut = {
@@ -1841,6 +1885,23 @@ export type LanguagesOut = {
      * Languages
      */
     languages: Array<string>;
+};
+
+/**
+ * LinkIn
+ *
+ * The key and, for an adult, the name of the Kavita account it opens. Nothing else: a child's
+ * account is the one her parent declared.
+ */
+export type LinkIn = {
+    /**
+     * Remote User
+     */
+    remote_user?: string | null;
+    /**
+     * Token
+     */
+    token: string;
 };
 
 /**
@@ -9989,6 +10050,128 @@ export type SetVisibilityResponses = {
 };
 
 export type SetVisibilityResponse = SetVisibilityResponses[keyof SetVisibilityResponses];
+
+export type ListAccountsData = {
+    body?: never;
+    path: {
+        /**
+         * User Id
+         */
+        user_id: string;
+    };
+    query?: never;
+    url: '/api/v1/profiles/{user_id}/destination-accounts';
+};
+
+export type ListAccountsErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type ListAccountsError = ListAccountsErrors[keyof ListAccountsErrors];
+
+export type ListAccountsResponses = {
+    /**
+     * Successful Response
+     */
+    200: AccountList;
+};
+
+export type ListAccountsResponse = ListAccountsResponses[keyof ListAccountsResponses];
+
+export type RevokeAccountData = {
+    body?: never;
+    path: {
+        /**
+         * User Id
+         */
+        user_id: string;
+        /**
+         * Shelf Destination Id
+         */
+        shelf_destination_id: string;
+    };
+    query?: never;
+    url: '/api/v1/profiles/{user_id}/destination-accounts/{shelf_destination_id}';
+};
+
+export type RevokeAccountErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type RevokeAccountError = RevokeAccountErrors[keyof RevokeAccountErrors];
+
+export type RevokeAccountResponses = {
+    /**
+     * Successful Response
+     */
+    204: void;
+};
+
+export type RevokeAccountResponse = RevokeAccountResponses[keyof RevokeAccountResponses];
+
+export type LinkAccountData = {
+    body: LinkIn;
+    path: {
+        /**
+         * User Id
+         */
+        user_id: string;
+        /**
+         * Shelf Destination Id
+         */
+        shelf_destination_id: string;
+    };
+    query?: never;
+    url: '/api/v1/profiles/{user_id}/destination-accounts/{shelf_destination_id}';
+};
+
+export type LinkAccountErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type LinkAccountError = LinkAccountErrors[keyof LinkAccountErrors];
+
+export type LinkAccountResponses = {
+    /**
+     * Successful Response
+     */
+    200: AccountOut;
+};
+
+export type LinkAccountResponse = LinkAccountResponses[keyof LinkAccountResponses];
 
 export type QueuePauseData = {
     body: ScopeIn;

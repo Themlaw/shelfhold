@@ -1247,6 +1247,21 @@ title = "Ce profil ne respecte pas les règles du foyer."
 action = "Un enfant a toujours un âge maximal et jamais le droit de classer ; un adulte n'a pas d'âge maximal ; un enfant ne peut ajouter ou demander que sur une source « famille »."
 cause = "Les réglages demandés enfreignent une règle des profils : un enfant a un âge maximal et ne classe pas, un adulte n'a pas d'âge maximal."
 
+[errors."destination_account_not_found"]
+title = "Ce compte Kavita n'existe pas pour vous."
+action = "Actualisez la liste de vos comptes."
+cause = "Le compte n'est pas lié, a déjà été révoqué, ou n'est pas le vôtre."
+
+[errors."destination_account_conflict"]
+title = "Ce compte Kavita est déjà lié à un autre profil."
+action = "Vérifiez le nom du compte Kavita : un compte ne se lie qu'à un seul profil par destination."
+cause = "Un autre profil utilise déjà ce compte sur cette destination."
+
+[errors."destination_account_refused"]
+title = "Ce compte Kavita ne peut pas être lié."
+action = "Lisez la raison indiquée : la clé doit ouvrir exactement le compte déclaré, sur un Kavita joignable."
+cause = "La clé est refusée par Kavita ou ouvre un autre compte, le compte déclaré manque ou est mal écrit, ou la destination n'est pas un Kavita joignable."
+
 [errors."user_state_refused"]
 title = "Cette valeur n'est pas acceptée."
 action = "Une date envoyée ne peut pas dépasser l'heure du serveur de plus de quelques minutes ; une langue de titre est un code comme « ja » ou « en-US », huit au plus, sans « und » ni « mul »."
