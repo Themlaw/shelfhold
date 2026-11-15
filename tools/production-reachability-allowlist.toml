@@ -179,3 +179,14 @@ until = "M4"  # settled by M4 lot L14b
 symbols = [
   "shelfhold.identity.application.destination_accounts:DestinationAccounts.open_token",
 ]
+
+[[allow]]
+category = "unwired-m4"
+reason = "2026-11-15 (M4 L14a): the sweep of the aliases a crash left without hashes (`heal_alias_hashes`) and the live read of a member's key (`live_member_account`, `MemberKeyRevokedError`), and the refusal of a carrier the reader may not see (`UnknownCarrierError`), are the contract of the reading service that L14b (the push of progress to a member's account), L47 and L50 (the kosync relay) are the first callers of: L14a adds no route and no job of its own, the route of each of them enters the surfaces meta-test in its own PR. The sweep takes its locator from the caller, which knows the physical roots."
+until = "M4"  # settled by M4 lots L14b and L47
+symbols = [
+  "shelfhold.export.application.render_hooks:heal_alias_hashes",
+  "shelfhold.reading.application.member_keys:MemberKeyRevokedError",
+  "shelfhold.reading.application.member_keys:live_member_account",
+  "shelfhold.reading.application.progress:UnknownCarrierError",
+]

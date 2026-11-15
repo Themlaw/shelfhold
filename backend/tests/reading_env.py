@@ -15,6 +15,7 @@ import sqlalchemy as sa
 from sqlalchemy import Connection, Engine
 
 from shelfhold.config import load_settings
+from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.migrate import migrate
 from shelfhold.infrastructure.schema import export, identity, reading, storage
@@ -51,13 +52,13 @@ class ReadingEnv:
         }  # fmt: skip
         if role == "child" and "max_age_rating" not in extra:
             values["max_age_rating"] = 10
-        with self.engine.begin() as connection:
+        with write_transaction(self.engine) as connection:
             connection.execute(sa.insert(identity.user).values(**values))
         self.users[key] = str(values["id"])
         return str(values["id"])
 
     def units(self, edition_key: str, count: int, first: int = 1) -> list[str]:
-        with self.engine.begin() as connection:
+        with write_transaction(self.engine) as connection:
             return [
                 add_unit(connection, self.seed.editions[edition_key], str(n + first))
                 for n in range(count)
@@ -69,7 +70,7 @@ class ReadingEnv:
     ) -> str:  # fmt: skip
         """An exported file that covers `units` in order; `bounds` are their pages (first, last).
         With `content_hash`, its current content has that hash."""
-        with self.engine.begin() as connection:
+        with write_transaction(self.engine) as connection:
             content_id = None
             if content_hash is not None:
                 content_id = self._content(connection, edition_key, units[0], content_hash)
@@ -100,7 +101,7 @@ class ReadingEnv:
         """A position written straight into the table (what a client reported, server date
         included), the way an earlier version or a restore would have left it."""
         row_id = new_ulid()
-        with self.engine.begin() as connection:
+        with write_transaction(self.engine) as connection:
             connection.execute(
                 sa.insert(reading.reading_position).values(
                     id=row_id, user_id=user, carrier_type=carrier_type, carrier_id=carrier,
@@ -131,7 +132,7 @@ class ReadingEnv:
 
     def alias(self, item: str, old_hash: str, content_hash: str) -> None:
         """`document_alias` remembers the file hash an old content had (a rewrite of the file)."""
-        with self.engine.begin() as connection:
+        with write_transaction(self.engine) as connection:
             connection.execute(
                 sa.insert(export.document_alias).values(
                     export_item_id=item, file_hash=old_hash, content_hash=old_hash
@@ -145,7 +146,7 @@ class ReadingEnv:
 
     def destination(self) -> str:
         """A binding of a shelf to a server (a tree transport)."""
-        with self.engine.begin() as connection:
+        with write_transaction(self.engine) as connection:
             target = add_target(connection)
             return add_destination(connection, self.seed.shelves["family"], target)
 
@@ -153,7 +154,7 @@ class ReadingEnv:
         """The account of a member on that binding, with a sealed token (random bytes: no secret
         is ever written in a test)."""
         account_id = new_ulid()
-        with self.engine.begin() as connection:
+        with write_transaction(self.engine) as connection:
             if (
                 connection.execute(sa.text("SELECT 1 FROM secret_key WHERE kid = 'k1'")).first()
                 is None
@@ -164,7 +165,8 @@ class ReadingEnv:
             connection.execute(
                 sa.insert(identity.destination_account).values(
                     id=account_id, user_id=user, shelf_destination_id=destination,
-                    remote_user=f"remote-{account_id[-6:]}", secret_kid="k1",  # noqa: S106 (a key id, not a secret) secret_v=1,
+                    remote_user=f"remote-{account_id[-6:]}", secret_v=1,
+                    secret_kid="k1",  # noqa: S106 (a key id, not a secret)
                     secret_nonce=os.urandom(12), secret_ct=os.urandom(32),
                     token_fingerprint=account_id[-12:],
                 )
