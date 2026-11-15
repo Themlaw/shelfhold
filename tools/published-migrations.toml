@@ -191,6 +191,11 @@ sha256 = "d9a0e64ae3b4db1a55f69d51ea78ac9761621516dfe56cdafd8d331045bfece3"
 since = "1.0"
 
 [[migration]]
+file = "0065_reading_progress_merge.py"
+sha256 = "4b30c7df367351edd4b0f2072f8e7ed54572afa85d0fc43c29a33bbc0b8ce828"
+since = "1.1"
+
+[[migration]]
 file = "0071_provider_quota.py"
 sha256 = "b0fcdec029d88e520919d7e5c0189ec1fb5b5e274c9ee0ec73687707a35da115"
 since = "1.0"

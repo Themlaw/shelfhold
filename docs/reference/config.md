@@ -48,6 +48,7 @@ Version du schéma de `config.toml` : `1.0`. Précédence : variable d'environne
 | `SHELFHOLD_DISK_PAUSE_GIB` | `disk_pause_gib` | float | `10.0` | >= 0 | `SHELFHOLD_DISK_PAUSE_GIB_FILE` en lit la valeur dans un fichier |
 | `SHELFHOLD_DISK_RESUME_PERCENT` | `disk_resume_percent` | float | `8.0` | >= 0, <= 60 | `SHELFHOLD_DISK_RESUME_PERCENT_FILE` en lit la valeur dans un fichier |
 | `SHELFHOLD_DISK_RESUME_GIB` | `disk_resume_gib` | float | `15.0` | >= 0 | `SHELFHOLD_DISK_RESUME_GIB_FILE` en lit la valeur dans un fichier |
+| `SHELFHOLD_READING_MAX_PAGES_PER_MINUTE` | `reading_max_pages_per_minute` | float | `20.0` | > 0, <= 10000 | `SHELFHOLD_READING_MAX_PAGES_PER_MINUTE_FILE` en lit la valeur dans un fichier |
 | `SHELFHOLD_WAKE_URL` | `wake_url` | str (optionnel) | aucun |  | `SHELFHOLD_WAKE_URL_FILE` en lit la valeur dans un fichier |
 | `SHELFHOLD_WAKE_TOKEN` | `wake_token` | secret (optionnel) | aucun |  | secret, masqué partout; `SHELFHOLD_WAKE_TOKEN_FILE` en lit la valeur dans un fichier |
 | `SHELFHOLD_WAKE_SUWAYOMI` | `wake_suwayomi` | liste de str | aucun |  | `SHELFHOLD_WAKE_SUWAYOMI_FILE` en lit la valeur dans un fichier |

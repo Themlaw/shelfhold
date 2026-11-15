@@ -97,3 +97,40 @@ def koreader_partial_md5(source: Path | BinaryIO) -> str:
 def kavita_hash(source: Path | BinaryIO) -> str:
     """Kavita's `KoreaderHelper.HashContents`: uppercase hex, 11 samples (none at 1 Gi)."""
     return _hexdigest(source, KAVITA_OFFSETS).upper()
+
+
+def verified_hashes(stream: BinaryIO) -> tuple[str, str, str]:
+    """SHA-256, KOReader's partial MD5 and Kavita's, **in one pass** over one open file.
+
+    Returns `(sha256_hex, koreader_hex, kavita_hex)`, the last two lowercase. The sample offsets
+    are known beforehand, so the samples are taken from the very blocks that feed the SHA-256: the
+    bytes that were sampled are, by construction, the bytes that were verified, whatever happens
+    to the file while it is read. Equal to `koreader_partial_md5` and `kavita_hash` (lowercased)
+    for the same bytes, `test_one_pass_hashes_equal_the_two_sources` proves it.
+    """
+    wanted = sorted({*KOREADER_OFFSETS, *KAVITA_OFFSETS})
+    taken: dict[int, bytearray] = {offset: bytearray() for offset in wanted}
+    sha = hashlib.sha256()
+    position = 0
+    while block := stream.read(1 << 20):
+        end = position + len(block)
+        for offset in wanted:
+            if offset >= end:
+                break
+            sample = taken[offset]
+            have = len(sample)
+            if have < SAMPLE_SIZE and offset + have < end:
+                begin = max(offset + have, position)
+                sample += block[begin - position : min(offset + SAMPLE_SIZE, end) - position]
+        sha.update(block)
+        position = end
+
+    def digest(offsets: Sequence[int]) -> str:
+        md5 = hashlib.md5(usedforsecurity=False)
+        for offset in offsets:
+            if not taken[offset]:
+                break
+            md5.update(bytes(taken[offset]))
+        return md5.hexdigest()
+
+    return sha.hexdigest(), digest(KOREADER_OFFSETS), digest(KAVITA_OFFSETS)

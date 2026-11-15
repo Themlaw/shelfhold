@@ -62,8 +62,8 @@ def _mark_read(api: Live, unit_id: str) -> None:
         connection.execute(
             sa.text(
                 "INSERT INTO reading_position (id, user_id, carrier_type, carrier_id, "
-                "content_hash, locator, percent, client_ts, server_ts) VALUES "
-                "(:id, :user, 'content', :c, :hash, '{}', 1.0, :ts, :ts)"
+                "content_hash, locator, percent, client_ts, server_ts, source) VALUES "
+                "(:id, :user, 'content', :c, :hash, '{}', 1.0, :ts, :ts, 'server')"
             ),
             {
                 "id": new_ulid(), "user": user_id, "c": carrier, "hash": "sha256:" + "0" * 64,

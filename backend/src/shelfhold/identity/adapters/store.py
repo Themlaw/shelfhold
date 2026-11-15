@@ -526,7 +526,7 @@ class SqlIdentityStore:
                 "reading_positions": rows(
                     conn, "reading_positions", positions, positions.c.user_id == user_id,
                     "id", "carrier_type", "carrier_id", "content_hash", "locator", "percent",
-                    "client_ts", "server_ts", "device_id",
+                    "client_ts", "server_ts", "device_id", "source", "read_units", "undone_units",
                 ),
                 "sessions": rows(
                     conn, "sessions", _session, _session.c.user_id == user_id,

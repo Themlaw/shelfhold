@@ -1238,8 +1238,10 @@ def test_reading_progress_is_a_recomputable_projection(
             )
         )
         # halfway through a volume of three Units: the first is read, the second under way
-        latest = add_position(connection, user, volume, percent=0.5, server_ts=NOW)
-        add_position(connection, user, volume, percent=0.1, server_ts=NOW.replace(hour=1))
+        latest = add_position(connection, user, volume, percent=0.5, server_ts=NOW, source="server")
+        add_position(
+            connection, user, volume, percent=0.1, server_ts=NOW.replace(hour=1), source="server"
+        )
         got = {
             r.unit_id: r
             for r in connection.execute(sa.select(progress).where(progress.c.user_id == user))
@@ -1250,7 +1252,7 @@ def test_reading_progress_is_a_recomputable_projection(
         assert all(got[u].approximate for u in units)  # bounds unknown: proportional
         assert {got[u].last_position_id for u in units} == {latest}
         # a file that carries one Unit gives an exact answer
-        add_position(connection, user, alone, percent=1.0)
+        add_position(connection, user, alone, percent=1.0, source="server")
         lone = connection.execute(sa.select(progress).where(progress.c.unit_id == lone_unit)).one()
         assert lone.state == "read"
         assert not lone.approximate
@@ -1262,7 +1264,7 @@ def test_reading_progress_is_a_recomputable_projection(
         )
         add_position(
             connection, user, volume, locator={"page": 15}, percent=0.5,
-            server_ts=NOW.replace(hour=23),
+            server_ts=NOW.replace(hour=23), source="server",
         )  # fmt: skip
         exact = connection.execute(sa.select(progress).where(progress.c.unit_id == units[1])).one()
         assert exact.state == "in_progress"

@@ -81,7 +81,7 @@ def read_by_a_reader(lib: LibEnv, item_id: str) -> None:
             sa.insert(reading.reading_position).values(
                 id=new_ulid(), user_id=user, carrier_type="export_item", carrier_id=item_id,
                 content_hash="sha256:" + "a" * 64, locator={"progression": 1.0}, percent=1.0,
-                client_ts=sa.func.current_timestamp(),
+                client_ts=sa.func.current_timestamp(), source="server",
             )
         )  # fmt: skip
 

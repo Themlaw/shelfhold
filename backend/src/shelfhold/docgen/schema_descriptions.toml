@@ -449,6 +449,10 @@ percent = "Progress, 0 to 100."
 client_ts = "Client clock when the position was recorded (UTC)."
 server_ts = "Server clock when the position arrived (UTC)."
 device_id = "Device that recorded the position."
+source = "Who said it: `device` (a reader's own report) or `server` (the read state a server keeps)."
+covered_units = "The Units the file covered when the position was written (ordered ids)."
+read_units = "The Units a page-by-page traversal marked read at this position (a journal)."
+undone_units = "Marks a member undid, by Unit, with the time (UTC)."
 
 [tables.session]
 description = "Login sessions. Only the hash of the token is stored."
