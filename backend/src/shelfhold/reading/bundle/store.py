@@ -171,6 +171,55 @@ def reusable(
     return _row(row) if row else None
 
 
+def heal(
+    connection: Connection,
+    version: VersionRow,
+    members: Sequence[MemberRow],
+    alias_item_id: str,
+) -> None:
+    """A version restored from an export has its row, its number and its digests, but neither the
+    members (they carry file fingerprints, never exported) nor, if the carrier is new, its alias.
+    Serving the same content again gives both back."""
+    held = connection.execute(
+        sa.select(sa.func.count())
+        .select_from(bundle.bundle_member)
+        .where(bundle.bundle_member.c.version_id == version.id)
+    ).scalar_one()
+    if not held:
+        _insert_members(connection, version.id, members)
+    connection.execute(
+        sa.insert(export.document_alias)
+        .prefix_with("OR IGNORE")
+        .values(
+            export_item_id=alias_item_id,
+            file_hash=f"sha256:{version.content_fp}",
+            content_hash=f"sha256:{version.content_fp}",
+            koreader_partial_md5=version.koreader_md5,
+        )
+    )
+
+
+def _insert_members(connection: Connection, version_id: str, members: Sequence[MemberRow]) -> None:
+    connection.execute(
+        sa.insert(bundle.bundle_member),
+        [
+            {
+                "version_id": version_id,
+                "rank": m.rank,
+                "export_item_id": m.item_id,
+                "unit_id": m.unit_id,
+                "chapter_label": m.label,
+                "content_fp": m.fp,
+                "pages_digest": m.pages_digest,
+                "first_page": m.first_page,
+                "page_count": m.page_count,
+                "page_map_state": "candidate" if m.canonical else "unverified",
+            }
+            for m in members
+        ],
+    )
+
+
 def create(
     connection: Connection,
     *,
@@ -207,24 +256,7 @@ def create(
             last_used_at=now,
         )
     )
-    connection.execute(
-        sa.insert(bundle.bundle_member),
-        [
-            {
-                "version_id": version_id,
-                "rank": m.rank,
-                "export_item_id": m.item_id,
-                "unit_id": m.unit_id,
-                "chapter_label": m.label,
-                "content_fp": m.fp,
-                "pages_digest": m.pages_digest,
-                "first_page": m.first_page,
-                "page_count": m.page_count,
-                "page_map_state": "candidate" if m.canonical else "unverified",
-            }
-            for m in members
-        ],
-    )
+    _insert_members(connection, version_id, members)
     connection.execute(
         sa.insert(export.document_alias)
         .prefix_with("OR IGNORE")
@@ -262,11 +294,11 @@ def prune_one_profile(
     cutoff = now - timedelta(days=limits.keep_days)
     doomed = [r for r in rows[limits.keep_versions :] if (r.last_used_at or r.created_at) < cutoff]
     for r in doomed:
-        retire(connection, r.id, r.content_fp, edition_id, part_index, now)
+        purge(connection, r.id, r.content_fp, edition_id, part_index, now)
     return len(doomed)
 
 
-def retire(
+def purge(
     connection: Connection,
     version_id: str,
     fp: str,
@@ -297,6 +329,21 @@ def retire(
                 ),
             )
         )
+
+
+def purge_partition_versions(
+    connection: Connection, edition_id: str, part_index: int, now: datetime
+) -> None:
+    """A boundary that goes takes the versions made on it out of service. Their rows stay, with
+    their numbers: the counter of the part never goes back."""
+    v = bundle.bundle_version
+    live = connection.execute(
+        sa.select(v.c.id, v.c.content_fp).where(
+            v.c.edition_id == edition_id, v.c.part_index == part_index, v.c.purged_at.is_(None)
+        )
+    ).all()
+    for row in live:
+        purge(connection, row.id, row.content_fp, edition_id, part_index, now)
 
 
 def prune_all(connection: Connection, now: datetime, limits: BundleLimits) -> int:

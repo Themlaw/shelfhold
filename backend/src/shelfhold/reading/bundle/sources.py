@@ -15,6 +15,7 @@ Sizes and CRC-32 come from the central directory.
 import hashlib
 import os
 import re
+import zlib
 from dataclasses import dataclass
 from typing import IO, Any, Final
 
@@ -116,6 +117,22 @@ class OpenSource:
 
     def page_reader(self, page: Page) -> IO[bytes]:
         return self._archive.open(page.name)  # type: ignore[return-value]
+
+    def pages_match(self, scan: Scan, chunk_bytes: int = 65_536) -> bool:
+        """Read every page once, a chunk at a time: does the data have the size and the CRC-32 the
+        directory announced? An archive that cannot be read to the end does not."""
+        for page in scan.pages:
+            crc, seen = 0, 0
+            try:
+                with self._archive.open(page.name) as stream:
+                    while chunk := stream.read(chunk_bytes):
+                        crc = zlib.crc32(chunk, crc)
+                        seen += len(chunk)
+            except (UnsafeArchiveError, zlib.error, EOFError, OSError):
+                return False
+            if seen != page.size or crc != page.crc:
+                return False
+        return True
 
     def scan(self, limits: BundleLimits) -> Scan:
         kept: list[tuple[list[Any], int, Page]] = []

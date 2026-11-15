@@ -34,7 +34,7 @@ from shelfhold.reading.bundle.errors import (
     BundleGoneError,
     BundleNotFoundError,
 )
-from shelfhold.reading.bundle.gate import Gate
+from shelfhold.reading.bundle.gate import Gate, Lease
 from shelfhold.reading.bundle.limits import BundleLimits
 from shelfhold.reading.bundle.model import BundleDownload, BundleOffer
 from shelfhold.reading.bundle.plan import Candidate, Part
@@ -76,6 +76,17 @@ class _Built:
             source.close()
 
 
+@dataclass
+class _Laid:
+    """The entries of a part laid out: what the zip is made of, and its fingerprint."""
+
+    entries: list[ZipEntry]
+    refs: list[tuple[int, Page]]
+    starts: set[int]
+    rows: list[store.MemberRow]
+    fp: str
+
+
 class SeriesBundles:
     """Implements `interfaces.http_api.opds.bundle.SeriesBundleProvider`."""
 
@@ -91,7 +102,13 @@ class SeriesBundles:
         self._engine, self._keyring, self._now = engine, keyring, now
         self.limits = limits or BundleLimits()
         self._monotonic = monotonic
-        self._gate = Gate(per_token=self.limits.per_token, per_instance=self.limits.per_instance)
+        self._gate = Gate(
+            per_token=self.limits.per_token,
+            per_instance=self.limits.per_instance,
+            send_timeout_s=self.limits.send_timeout_s,
+            max_duration_s=self.limits.max_duration_s,
+            monotonic=monotonic,
+        )
 
     # -- the feed: the database only ------------------------------------------------------------
     def offers(self, *, user_id: str, scope: Any, edition_id: str) -> list[BundleOffer]:
@@ -157,7 +174,7 @@ class SeriesBundles:
             parts = planning.plan_parts(
                 planning.stored_boundaries(connection, edition_id), eligible, self.limits
             )
-            alias_items = planning.ensure_partitions(connection, edition_id, parts)
+            alias_items = planning.ensure_partitions(connection, edition_id, parts, self._now())
         if not 1 <= part <= len(parts):
             raise BundleNotFoundError("part")
         chosen = parts[part - 1]
@@ -165,7 +182,7 @@ class SeriesBundles:
         for c in candidates:
             if c.left_out is not None and part == 1:
                 left_out[c.left_out] = left_out.get(c.left_out, 0) + 1
-        release = self._gate.acquire(token_id)
+        lease = self._gate.acquire(token_id)
         try:
             built = self._open_members(chosen.members, left_out)
             return self._serve(
@@ -177,10 +194,10 @@ class SeriesBundles:
                 total=len(parts),
                 alias_item_id=alias_items[chosen.index],
                 token_id=token_id,
-                release=release,
+                lease=lease,
             )
         except BaseException:
-            release()
+            lease.release()
             raise
 
     # -- a block by its version -----------------------------------------------------------------
@@ -222,7 +239,7 @@ class SeriesBundles:
             if held is None or row.fp is None or row.fp != store.member_fp(key, held.file_hash):
                 raise BundleGoneError("a chapter is gone or was replaced")
             members.append(held)
-        release = self._gate.acquire(token_id)
+        lease = self._gate.acquire(token_id)
         try:
             built = self._open_members(members, {}, strict=True)
             for scan, row in zip(built.scans, rows, strict=True):
@@ -238,11 +255,11 @@ class SeriesBundles:
                 total=max(total, version.part_index),
                 alias_item_id=None,
                 token_id=token_id,
-                release=release,
+                lease=lease,
                 known=version,
             )
         except BaseException:
-            release()
+            lease.release()
             raise
 
     # -- retention ------------------------------------------------------------------------------
@@ -294,21 +311,7 @@ class SeriesBundles:
             raise BundleGoneError("a file does not match the manifest") from None
         return source
 
-    def _serve(
-        self,
-        built: _Built,
-        *,
-        user_id: str,
-        edition_id: str,
-        title: str,
-        part: Part,
-        total: int,
-        alias_item_id: str | None,
-        token_id: str | None,
-        release: Callable[[], None],
-        known: store.VersionRow | None = None,
-    ) -> BundleDownload:
-        key = store.fingerprint_key(self._keyring())
+    def _assemble(self, built: _Built, key: bytes) -> "_Laid":
         entries: list[ZipEntry] = []
         refs: list[tuple[int, Page]] = []
         starts: set[int] = set()
@@ -336,7 +339,50 @@ class SeriesBundles:
                 )
             )
             first_page += len(scan.pages)
-        fp = store.content_fp(key, entries)
+        return _Laid(entries, refs, starts, rows, store.content_fp(key, entries))
+
+    def _checked(
+        self, built: _Built, key: bytes, laid: "_Laid", edition_id: str, part: Part, user_id: str
+    ) -> "_Laid":
+        """A version about to be made reads every page once, and a chapter whose archive lies
+        (a CRC the data does not have) is left out with the others served, instead of cutting
+        every download at the same page. A content already made was checked then."""
+        with self._engine.connect() as connection:
+            if store.reusable(connection, edition_id, part.index, user_id, laid.fp) is not None:
+                return laid
+        bad = [i for i, (src, scan) in enumerate(zip(built.sources, built.scans, strict=True))
+               if not src.pages_match(scan, self.limits.chunk_bytes)]  # fmt: skip
+        if not bad:
+            return laid
+        for i in reversed(bad):
+            built.sources.pop(i).close()
+            built.members.pop(i)
+            built.scans.pop(i)
+        built.excluded["unreadable"] = built.excluded.get("unreadable", 0) + len(bad)
+        log.warning("opds.bundle.chapters_left_out", reason="crc", count=len(bad))
+        if not built.members:
+            raise BundleGoneError("nothing to serve")
+        return self._assemble(built, key)
+
+    def _serve(
+        self,
+        built: _Built,
+        *,
+        user_id: str,
+        edition_id: str,
+        title: str,
+        part: Part,
+        total: int,
+        alias_item_id: str | None,
+        token_id: str | None,
+        lease: Lease,
+        known: store.VersionRow | None = None,
+    ) -> BundleDownload:
+        key = store.fingerprint_key(self._keyring())
+        laid = self._assemble(built, key)
+        if known is None:
+            laid = self._checked(built, key, laid, edition_id, part, user_id)
+        entries, refs, starts, rows, fp = laid.entries, laid.refs, laid.starts, laid.rows, laid.fp
         try:
             layout = BundleZip(entries, bytes.fromhex(fp))
         except PartTooLargeError:
@@ -357,7 +403,7 @@ class SeriesBundles:
             limits=self.limits,
             token_alive=self._token_alive(token_id),
             still_visible=self._visible(user_id, edition_id),
-            release=release,
+            lease=lease,
             monotonic=self._monotonic,
         )
         return BundleDownload(
@@ -386,6 +432,7 @@ class SeriesBundles:
         if same is not None:
             with write_transaction(self._engine) as connection:
                 store.mark_served(connection, same.id, self._now())
+                store.heal(connection, same, rows, alias_item_id)
             return same
 
         def read_entry(index: int, start: int, length: int) -> bytes:
@@ -398,6 +445,7 @@ class SeriesBundles:
             same = store.reusable(connection, edition_id, part.index, user_id, fp)
             if same is not None:
                 store.mark_served(connection, same.id, now)
+                store.heal(connection, same, rows, alias_item_id)
                 return same
             made = store.create(
                 connection,

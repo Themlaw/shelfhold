@@ -16,6 +16,8 @@ class BundleLimits:
     per_instance: int = 2  # and for the whole instance
     min_rate_bps: int = 32 * 1024  # below this over `rate_window_s`, the reader is cut
     rate_window_s: float = 60.0
+    send_timeout_s: float = 120.0  # no chunk taken for this long: the slot is taken back
+    max_duration_s: float = 8 * 3600.0  # a transfer is cut after this, whatever its rate
     keep_versions: int = 3  # per (Edition, part, profile)
     keep_days: int = 90  # plus any version used this recently
     max_entries_per_source: int = 5_000  # entries of one chapter's archive
@@ -27,3 +29,5 @@ class BundleLimits:
             raise ValueError("a part is under 2^31 bytes")
         if self.chunk_bytes < 1 or self.members_per_part < 1:
             raise ValueError("chunk and members are positive")
+        if self.send_timeout_s <= 0 or self.max_duration_s <= 0:
+            raise ValueError("the timeouts are positive")

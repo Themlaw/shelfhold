@@ -12,6 +12,7 @@ has gone (the series was re-cut) ends the written prefix: what follows is planne
 
 import hashlib
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Any, Final
 
 import sqlalchemy as sa
@@ -19,11 +20,16 @@ from sqlalchemy import Connection
 
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import bundle, catalog, export
+from shelfhold.reading.bundle import store
 from shelfhold.reading.bundle.limits import BundleLimits
 from shelfhold.reading.bundle.sources import clean_relative, root_of
 
 LIVE: Final = ("written", "scanned", "resolved", "adopted")
-ITEM_KINDS: Final = ("unit", "volume")
+# A chapter is the file of a Unit, of a volume or of a range's nameless volume (`bundle`,
+# EF-BIB-044). The carrier of a part's aliases is of another kind (`opds_bundle`): no export plan
+# ever reads it.
+ITEM_KINDS: Final = ("unit", "volume", "bundle")
+CARRIER_KIND: Final = "opds_bundle"
 
 
 @dataclass(frozen=True)
@@ -189,7 +195,24 @@ def plan_parts(
     ]
 
 
-def ensure_partitions(connection: Connection, edition_id: str, parts: list[Part]) -> dict[int, str]:
+def purge_stale_partitions(
+    connection: Connection, edition_id: str, stale: list[int], carriers: list[str], now: datetime
+) -> None:
+    """Database rows only. The versions made on a boundary that went are taken out of service (they
+    answer 410, their rows and numbers stay), then the boundary and its carrier go; the aliases
+    go with the carrier."""
+    table = bundle.bundle_partition
+    for index in stale:
+        store.purge_partition_versions(connection, edition_id, index, now)
+    connection.execute(
+        sa.delete(table).where(table.c.edition_id == edition_id, table.c.part_index.in_(stale))
+    )
+    connection.execute(sa.delete(export.export_item).where(export.export_item.c.id.in_(carriers)))
+
+
+def ensure_partitions(
+    connection: Connection, edition_id: str, parts: list[Part], now: datetime
+) -> dict[int, str]:
     """Write the boundaries the plan has and the table lacks; drop those a gone Unit invalidated
     (their versions go with them). Returns `part_index -> export_item_id`. Call in a write
     transaction."""
@@ -201,11 +224,7 @@ def ensure_partitions(connection: Connection, edition_id: str, parts: list[Part]
     wanted = {p.index: p.first_unit_id for p in parts}
     stale = sorted(i for i, (unit, _) in held.items() if i not in wanted or wanted[i] != unit)
     if stale:
-        doomed = [held[i][1] for i in stale]
-        connection.execute(
-            sa.delete(table).where(table.c.edition_id == edition_id, table.c.part_index.in_(stale))
-        )
-        connection.execute(sa.delete(export.export_item).where(export.export_item.c.id.in_(doomed)))
+        purge_stale_partitions(connection, edition_id, stale, [held[i][1] for i in stale], now)
         for i in stale:
             held.pop(i)
     for part in parts:
@@ -214,7 +233,10 @@ def ensure_partitions(connection: Connection, edition_id: str, parts: list[Part]
         item_id = new_ulid()
         connection.execute(
             sa.insert(export.export_item).values(
-                id=item_id, edition_id=edition_id, kind="bundle", frozen_attrs={"part": part.index}
+                id=item_id,
+                edition_id=edition_id,
+                kind=CARRIER_KIND,
+                frozen_attrs={"part": part.index},
             )
         )
         connection.execute(

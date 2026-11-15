@@ -10,7 +10,10 @@ already exported.
   holds the exact size, the keyed fingerprint of the whole (`content_fp`), KOReader's partial MD5
   of the bytes (computed without materialising them), and a `state_key`, a digest of the manifest
   rows it was made from, so the feed can tell whether a version is still current without opening a
-  file. A purged version keeps its row (`purged_at`) and loses its members: it answers 410.
+  file. A purged version keeps its row (`purged_at`) and loses its members: it answers 410. The
+  row has no foreign key to its partition: a boundary that goes (the series was re-cut) purges its
+  versions but not their rows, so the number of the next version never goes back (a number is
+  never served twice for the same Edition, part and profile).
 - `bundle_member`: what a version is made of, in rank order, with the table of pages computed by
   Shelfhold (`first_page`, `page_count`) and a keyed fingerprint of the file (`content_fp`), never
   a clear hash (ADR-0048). When the exported file's row is deleted the member stays as an orphan
@@ -67,8 +70,10 @@ bundle_version = sa.Table(
     "bundle_version",
     metadata,
     ulid_column("id", primary_key=True),
-    sa.Column("edition_id", sa.String(26), nullable=False),
-    sa.Column("part_index", sa.Integer(), nullable=False),
+    sa.Column(
+        "edition_id", sa.String(26), sa.ForeignKey("edition.id", ondelete="CASCADE"), nullable=False
+    ),
+    sa.Column("part_index", sa.Integer(), nullable=False),  # no foreign key: see below
     sa.Column(
         "profile_user_id",
         sa.String(26),
@@ -87,11 +92,6 @@ bundle_version = sa.Table(
     now_column(),
     sa.Column("last_used_at", UtcDateTime(), nullable=True),
     sa.Column("purged_at", UtcDateTime(), nullable=True),
-    sa.ForeignKeyConstraint(
-        ["edition_id", "part_index"],
-        ["bundle_partition.edition_id", "bundle_partition.part_index"],
-        ondelete="CASCADE",
-    ),
     ulid_check("id"),
     positive_check("number", minimum=1),
     _hex_check("content_fp"),

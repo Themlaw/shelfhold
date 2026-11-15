@@ -69,11 +69,14 @@ class Library:
     items: list[Exported] = field(default_factory=list)
     _order: int = 0
 
-    def add(self, chapter: Chapter, *, rel_path: str | None = None) -> Exported:
+    def add(
+        self, chapter: Chapter, *, rel_path: str | None = None, kind: str = "unit", covers: int = 1
+    ) -> Exported:
+        """`kind="bundle"` with `covers` Units is the nameless volume of a range (EF-BIB-044)."""
         rel = rel_path or f"Series/ch-{chapter.number}.{chapter.fmt}"
         path = self.root / rel
         write_cbz(path, chapter)
-        return self._record(chapter, rel, path)
+        return self._record(chapter, rel, path, kind=kind, covers=covers)
 
     def add_raw(self, chapter: Chapter, rel_path: str, *, at: Path | None = None) -> Exported:
         """A record whose `rel_path` is as given (a climbing path, an absolute one), whatever
@@ -82,7 +85,9 @@ class Library:
             write_cbz(at, chapter)
         return self._record(chapter, rel_path, at or self.root / "missing.cbz")
 
-    def _record(self, chapter: Chapter, rel: str, path: Path) -> Exported:
+    def _record(
+        self, chapter: Chapter, rel: str, path: Path, *, kind: str = "unit", covers: int = 1
+    ) -> Exported:
         self._order += 1
         item_id, unit_id = new_ulid(), new_ulid()
         data = path.read_bytes() if path.is_file() else b""
@@ -91,24 +96,28 @@ class Library:
             # the schema already refuses a climbing path (a CHECK); a row that got in anyway (a
             # corrupt or edited database) is what the block must still not follow
             c.execute(sa.text("PRAGMA ignore_check_constraints = ON"))
-            c.execute(
-                sa.insert(catalog.unit).values(
-                    id=unit_id, edition_id=self.edition_id, number_raw=chapter.number,
-                    number_norm=chapter.number, number_sort=float(chapter.number),
-                    source_order=self._order,
-                )
-            )  # fmt: skip
+            covered = [unit_id] + [new_ulid() for _ in range(covers - 1)]
+            for position, covered_id in enumerate(covered, start=1):
+                number = float(chapter.number) + (position - 1) / 100
+                c.execute(
+                    sa.insert(catalog.unit).values(
+                        id=covered_id, edition_id=self.edition_id, number_raw=chapter.number,
+                        number_norm=chapter.number if position == 1 else f"{number}",
+                        number_sort=number, source_order=self._order * 100 + position,
+                    )
+                )  # fmt: skip
             c.execute(
                 sa.insert(export.export_item).values(
-                    id=item_id, edition_id=self.edition_id, kind="unit"
+                    id=item_id, edition_id=self.edition_id, kind=kind
                 )
             )
-            c.execute(
-                sa.insert(export.unit_coverage).values(
-                    carrier_type="export_item", carrier_id=item_id, unit_id=unit_id,
-                    position=1, origin="manual",
-                )
-            )  # fmt: skip
+            for position, covered_id in enumerate(covered, start=1):
+                c.execute(
+                    sa.insert(export.unit_coverage).values(
+                        carrier_type="export_item", carrier_id=item_id, unit_id=covered_id,
+                        position=position, origin="manual",
+                    )
+                )  # fmt: skip
             c.execute(
                 sa.insert(export.export_record).values(
                     shelf_destination_id=self.destination_id, export_item_id=item_id,

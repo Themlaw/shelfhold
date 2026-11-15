@@ -16,13 +16,14 @@ the name it gets.
 """
 
 import re
-from collections.abc import Callable
+from collections.abc import AsyncIterator, Callable
 from datetime import datetime
-from typing import Annotated
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import Response, StreamingResponse
 from sqlalchemy import Connection, Engine
+from starlette.concurrency import iterate_in_threadpool
 
 from shelfhold.catalog.public import (
     ReaderScope,
@@ -112,6 +113,19 @@ class _Page:
         if has_next:
             found.append(Link("next", self._href(self.offset + self.limit), kind_type))
         return found
+
+
+async def _closing(chunks: Any) -> AsyncIterator[bytes]:
+    """The bytes of a block, and the slot and descriptors given back the moment the response ends
+    for any reason: done, failed, or the client gone (the task is cancelled, or the send fails).
+    Starlette never closes a synchronous iterator it is handed."""
+    try:
+        async for piece in iterate_in_threadpool(chunks):
+            yield piece
+    finally:
+        close = getattr(chunks, "close", None)
+        if close is not None:
+            close()
 
 
 def build_opds_router(
@@ -524,7 +538,9 @@ def build_opds_router(
             "Content-Disposition": attachment_disposition(safe_filename(download.filename)),
             "Content-Security-Policy": CSP_SANDBOX,
         }
-        return StreamingResponse(download.chunks, media_type=download.media_type, headers=headers)
+        return StreamingResponse(
+            _closing(download.chunks), media_type=download.media_type, headers=headers
+        )
 
     def _asked(call: Callable[[], BundleDownload]) -> Response:
         """What a provider may say, as the answers of this feed: absent is 404 like any hidden

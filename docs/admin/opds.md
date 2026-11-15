@@ -88,6 +88,28 @@ réécrit sur place arrête le flux.
 au-delà), 256 chapitres par partie, un lecteur qui reçoit moins de 32 Kio/s pendant 60 s est coupé. La
 mémoire d'un flux est de l'ordre de quelques morceaux de 64 Kio, quelle que soit la taille du bloc.
 
+Le créneau d'un téléchargement est un **bail**. Il est rendu à la fin du transfert, à son échec, et
+dès que le client coupe sa connexion (la route ferme le flux, sans attendre le ramasse-miettes). Il
+expire aussi tout seul : un client qui ne lit plus rien (fenêtre TCP à zéro) garde son créneau au
+plus `send_timeout_s` (120 s par défaut) sans progrès, puis le prochain téléchargement le reprend, ses
+descripteurs sont fermés et son flux s'arrête. Un transfert ne dure jamais plus de `max_duration_s`
+(8 h), quel que soit son débit. Ces deux durées, comme les autres bornes, sont dans `BundleLimits`
+(`reading/bundle/limits.py`).
+
+**Chapitre au CRC faux.** Avant de fabriquer une nouvelle version, chaque page est lue une fois et
+son CRC-32 comparé à celui que l'archive annonce. Un chapitre dont l'archive ment est **laissé hors
+du bloc** (« non lisible ») et le reste est servi, au lieu de couper chaque téléchargement à la même
+page.
+
+**Historique, sauvegarde et restauration.** Les limites des parties et les numéros de version sont
+un **historique**, pas un cache. Un numéro n'est jamais servi deux fois pour la même Édition, la
+même partie et le même profil, même quand une limite disparaît (la série a été recoupée) : les
+versions de cette partie sont retirées (410) mais leurs lignes restent, et la suivante porte le
+numéro d'après. L'export intégral (`shelfhold export-all`) emporte `bundle_partition`,
+`bundle_version` et les alias des parties ; une restauration retrouve donc les mêmes parties, les
+mêmes numéros et les mêmes empreintes KOReader. Les membres de chaque version (des empreintes de
+fichiers) restent derrière : le prochain téléchargement les refait.
+
 **Rétention.** Une version est créée au premier téléchargement d'un contenu. On garde les 3 dernières
 par (Édition, partie, profil) et toute version utilisée depuis moins de 90 jours ; le reste est purgé
 chaque jour (aucune empreinte de fichier n'est conservée). Ce que la purge de la bibliothèque

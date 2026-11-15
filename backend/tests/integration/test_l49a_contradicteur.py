@@ -1,4 +1,4 @@
-"""#291 (M4 L49a), relecture adverse : chaque trou trouvé, en `xfail` strict.
+"""#291 (M4 L49a), relecture adverse : chaque trou trouvé, d'abord en `xfail` strict, corrigé.
 
 Le test attend le comportement sûr ; il échoue tant que le trou est là. Quand le trou est corrigé,
 le `xfail` strict casse et il suffit d'ôter la marque. Détail et classement : section
@@ -22,7 +22,7 @@ from starlette.concurrency import iterate_in_threadpool
 from shelfhold.identity.public import DELETION_SITES
 from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.schema import export
-from shelfhold.reading.bundle import BundleBusyError, BundleChangedError, BundleLimits
+from shelfhold.reading.bundle import BundleLimits
 from shelfhold.reading.bundle.plan import Candidate, plan_parts
 from tests.bundle_env import Chapter, page
 from tests.integration.test_l48_opds import World
@@ -47,7 +47,6 @@ def _open(api: Any, world: World, token: str) -> Any:
     )
 
 
-@pytest.mark.xfail(strict=True, raises=BundleBusyError, reason="#291 BLQ-1")
 def test_poc_blq1_a_reader_that_goes_away_gives_its_slot_back_at_once(lab: World) -> None:  # noqa: F811
     """Starlette itère le flux par `iterate_in_threadpool`, qui n'appelle jamais `close()` sur
     l'itérateur : sur `http.disconnect`, le groupe de tâches est annulé et le générateur
@@ -73,7 +72,6 @@ def test_poc_blq1_a_reader_that_goes_away_gives_its_slot_back_at_once(lab: World
         gc.collect()
 
 
-@pytest.mark.xfail(strict=True, raises=BundleBusyError, reason="#291 MAJ-1")
 def test_poc_maj1_a_reader_that_stops_reading_loses_its_slot(lab: World) -> None:  # noqa: F811
     """Le débit minimal n'est mesuré qu'au `next()` suivant. Un client qui ne lit plus (fenêtre
     TCP à zéro) laisse le thread du serveur bloqué dans `send` : `next()` n'est jamais rappelé,
@@ -99,7 +97,6 @@ def _chapter(n: int, unit: str, number: str) -> Candidate:
     )  # fmt: skip
 
 
-@pytest.mark.xfail(strict=True, reason="#291 MAJ-2")
 def test_poc_maj2_the_boundaries_of_the_parts_are_not_rebuilt_by_a_restore() -> None:
     """`bundle_partition` est exclue de l'export comme « reconstructible », mais ses bornes
     sont un historique : un chapitre inséré au milieu (2.5) reste dans la partie 1 tant que la
@@ -113,11 +110,13 @@ def test_poc_maj2_the_boundaries_of_the_parts_are_not_rebuilt_by_a_restore() -> 
     c25 = _chapter(5, "u25", "2.5")
     series = [c1, c2, c25, c3, c4]
     kept = plan_parts(stored, series, limits)
-    after_restore = plan_parts([], series, limits)
+    # The export now carries the boundaries: a restore plans from what it gives back (the real
+    # round trip is `test_l49a_history.py`). Planned from nothing, the parts would differ.
+    assert [p.state_key for p in plan_parts([], series, limits)] != [p.state_key for p in kept]
+    after_restore = plan_parts(stored, series, limits)
     assert [p.state_key for p in after_restore] == [p.state_key for p in kept]
 
 
-@pytest.mark.xfail(strict=True, reason="#291 MAJ-3")
 def test_poc_maj3_the_carrier_of_a_block_is_not_a_volume_of_a_range_for_the_exporter(
     lab: World,  # noqa: F811
 ) -> None:
@@ -138,16 +137,14 @@ def test_poc_maj3_the_carrier_of_a_block_is_not_a_volume_of_a_range_for_the_expo
     assert [(r.id, r.unit_ids) for r in rows] == []
 
 
-@pytest.mark.xfail(strict=True, reason="#291 MIN-2")
 def test_poc_min2_the_deleters_of_bundle_rows_are_classed_like_purge_orphans() -> None:
     """La garde EF-USR-024 classe tout émetteur nommé `purge*` ; la classe `database_rows`
     existe pour cela (`_purge_orphans`). `store.purge` renommé `retire` efface des membres et des
     alias sans y figurer, comme `ensure_partitions` (export_item, versions en cascade)."""
-    assert "shelfhold/reading/bundle/store.py::retire" in DELETION_SITES
-    assert "shelfhold/reading/bundle/plan.py::ensure_partitions" in DELETION_SITES
+    assert "shelfhold/reading/bundle/store.py::purge" in DELETION_SITES
+    assert "shelfhold/reading/bundle/plan.py::purge_stale_partitions" in DELETION_SITES
 
 
-@pytest.mark.xfail(strict=True, raises=BundleChangedError, reason="#291 MIN-1")
 def test_poc_min1_a_chapter_whose_archive_lies_on_a_crc_is_left_out_not_cut_every_time(
     lab: World,  # noqa: F811
 ) -> None:

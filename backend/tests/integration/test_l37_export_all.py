@@ -319,6 +319,7 @@ def test_no_exported_table_holds_a_column_that_looks_like_a_secret() -> None:
         ("unit", "follow_suppressed_by"),  # a profile's id
         ("source_item", "source_key"),  # the name of an upstream source, not a key
         ("profile_source_policy", "source_key"),
+        ("bundle_version", "state_key"),  # a digest of the manifest rows, not a key
     }, found
 
 

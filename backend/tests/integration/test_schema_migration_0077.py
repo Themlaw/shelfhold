@@ -106,8 +106,8 @@ def test_a_number_is_counted_once_per_edition_part_and_profile_and_a_fingerprint
             version(conn, ids, number=3, content_fp="not-hex")
         with pytest.raises(sqlite3.IntegrityError):
             version(conn, ids, number=0)
-        with pytest.raises(sqlite3.IntegrityError):
-            version(conn, ids, number=4, part_index=2)  # no such part
+        # no foreign key to the partition: a version outlives its boundary, and so its number
+        version(conn, ids, number=4, part_index=2)
 
 
 def test_deleting_the_profile_or_the_edition_deletes_the_versions_and_their_members(

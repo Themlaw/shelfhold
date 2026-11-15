@@ -207,5 +207,5 @@ since = "1.1"
 
 [[migration]]
 file = "0077_series_bundle.py"
-sha256 = "9a912ffc7d0f1f908a39494e4b08c22879a5cb3664f9b9e319941ce5440252f3"
+sha256 = "f5ef5e2614c6d360a7cb9c01c0d60e5683e729fe3925a1773d1d384e442044c1"
 since = "1.1"
