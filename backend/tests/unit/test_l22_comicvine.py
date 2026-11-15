@@ -8,6 +8,7 @@ provider returns, raises or logs. Nothing leaves the machine.
 from __future__ import annotations
 
 import json
+import re
 import secrets
 from urllib.parse import parse_qs
 
@@ -56,7 +57,7 @@ def test_comicvine_manifest_states_its_conditions() -> None:
     assert manifest.terms_url == "https://comicvine.gamespot.com/api/documentation"
     assert manifest.homepage == "https://comicvine.gamespot.com"
     assert "non-commercial" in (manifest.attribution or "").lower()
-    assert "comicvine.gamespot.com" in (manifest.attribution or "")
+    assert re.search(r"\(comicvine\.gamespot\.com\)", manifest.attribution or "")
     assert [d.pattern for d in manifest.permissions.domains] == ["comicvine.gamespot.com"]
     assert manifest.respects_robots is True
     assert manifest.capabilities == ProviderCapability.IDENTIFY  # no cover, no account

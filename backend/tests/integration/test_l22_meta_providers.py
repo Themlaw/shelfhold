@@ -9,6 +9,7 @@ operator's command), so the child, member, API key and IDOR attacks have no surf
 from __future__ import annotations
 
 import json
+import re
 import secrets
 from collections.abc import Iterator
 from datetime import UTC, datetime
@@ -242,7 +243,7 @@ def test_comicvine_backlink_displayed(bench: Bench, key: str) -> None:
     edition = bench.edition()
     report = bench.comicvine(edition, TITLE, key)
     assert report.outcome == "enriched" and report.written
-    assert "comicvine.gamespot.com" in (report.attribution or "")
+    assert re.search(r"\(comicvine\.gamespot\.com\)", report.attribution or "")
     assert "non-commercial" in (report.attribution or "").lower()
     assert report.source_url == VOLUME_URL
     rows = bench.rows(
