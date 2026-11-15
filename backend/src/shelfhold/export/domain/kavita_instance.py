@@ -95,12 +95,26 @@ def library_is_dedicated(library: Mapping[str, Any], remote_root: str) -> bool:
     )
 
 
+def _proxy_prefix(path: str) -> str:
+    """The reverse-proxy prefix of a configured address: its segments up to the first `api` one.
+    Kavita's own paths start at `/api/`, so whatever follows (`/api/opds/<reader key>`) is cut."""
+    kept: list[str] = []
+    for raw in path.split("/"):
+        segment = raw.partition(";")[0]  # a path parameter (`;apiKey=...`) is not part of the name
+        if segment.casefold() == "api":
+            break
+        if segment:
+            kept.append(segment)
+    return "".join(f"/{segment}" for segment in kept)
+
+
 def device_entry_points(base_url: str) -> dict[str, str] | None:
-    """The addresses a device is told to open (EF-UX-004): Kavita's own, built here from the
-    origin of the configured address (scheme, host, port) and nothing else. No path, parameter,
-    fragment, query or userinfo that was given gets in: a path may hold a reader's key (Kavita
-    shows `/api/opds/<key>`), so the known Kavita paths are written by this function. Anything
-    that is not a web address, or whose port is out of range, gives `None`."""
+    """The addresses a device is told to open (EF-UX-004): Kavita's own, built from the
+    **configured** address: its origin (scheme, host, port) and its sub-path, the reverse-proxy
+    prefix (`/kavita`). The path is cut at the first `/api/` (Kavita shows `/api/opds/<key>`, a
+    reader's key), and no userinfo, query or fragment gets in. The known Kavita paths are written
+    by this function. Anything that is not a web address, or whose port is out of range, gives
+    `None`."""
     parts = urlsplit(base_url.strip())
     if parts.scheme not in ("http", "https") or not parts.hostname:
         return None
@@ -109,5 +123,5 @@ def device_entry_points(base_url: str) -> dict[str, str] | None:
     except ValueError:  # `:99999`, `:abc`: no such address
         return None
     host = f"[{parts.hostname}]" if ":" in parts.hostname else parts.hostname
-    root = f"{parts.scheme}://{host}{f':{port}' if port else ''}"
+    root = f"{parts.scheme}://{host}{f':{port}' if port else ''}{_proxy_prefix(parts.path)}"
     return {"kover": root, "opds": f"{root}/api/opds", "kosync": f"{root}/api/koreader"}

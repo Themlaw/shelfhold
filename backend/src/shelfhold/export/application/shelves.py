@@ -457,6 +457,21 @@ class ShelfService:
         ).scalar()
         return None if found is None else str(found)
 
+    def default_shelf_of_kind(self, kind: str) -> str | None:
+        """The shelf a kind of Work proposes (`work_kind.default_shelf`, a shelf name), before any
+        Work exists: what a result not yet acquired will be filed in. Admission is not asked."""
+        with self._engine.connect() as connection:
+            found = connection.execute(
+                sa.select(export.shelf.c.id)
+                .select_from(
+                    catalog.work_kind.join(
+                        export.shelf, export.shelf.c.name == catalog.work_kind.c.default_shelf
+                    )
+                )
+                .where(catalog.work_kind.c.key == kind)
+            ).scalar()
+        return None if found is None else str(found)
+
     def proposed_shelf(self, edition_id: str) -> str | None:
         """The shelf the kind of the Work proposes (`work_kind.default_shelf`, a shelf name), unless
         it is a shelf below 18+ that would not take the Edition (EF-EXP-002)."""

@@ -56,7 +56,7 @@ from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.requesters import still_a_user
 from shelfhold.infrastructure.schema import acquisition, catalog, identity
-from shelfhold.sdk.age import AgeRating
+from shelfhold.sdk.age import AgeRating, is_family_ceiling
 
 __all__ = [
     "MAX_PENDING",
@@ -154,6 +154,9 @@ class ApprovalPreview:
     # Work's own) is above the ceiling of the child who asked, so she will not see it arrive.
     above_requester_ceiling: bool = False
     requester_ceiling: int | None = None
+    # A warning, never a refusal: the source is not marked "family" and the proposed shelf is a
+    # family one (`is_family_ceiling`), so the admin files it where children will look.
+    non_family_source_into_family_shelf: bool = False
 
 
 class Ports(Protocol):
@@ -180,6 +183,18 @@ class Ports(Protocol):
         ...
 
     def proposed_shelf(self, edition_id: str) -> str | None: ...
+
+    def default_shelf(self, kind: str) -> str | None:
+        """The shelf a kind of Work proposes before any Work exists (None: none is set up)."""
+        ...
+
+    def source_is_family(self, source_key: str) -> bool:
+        """The source is marked "family" by the admin (`source_config.family_safe`)."""
+        ...
+
+    def shelf_ceiling(self, shelf_id: str) -> int | None:
+        """`shelf.max_age_rating` (None: no ceiling, or no such shelf)."""
+        ...
 
     def settle(
         self, work_id: str, edition_id: str | None, rating: AgeRating | None,
@@ -397,6 +412,14 @@ class RequestService:
             ceiling = _requester_ceiling(connection, row.requester_user_id)
             asked = _rating_of(age, x) or decided or current
             above = ceiling is not None and asked is not None and not asked.allowed_under(ceiling)
+            fed = self._fed_shelf(resolved, edition, shelf)
+            mixed = (
+                resolved.source is not None
+                and fed is not None
+                and not masked
+                and is_family_ceiling(self._ports.shelf_ceiling(fed))
+                and not self._ports.source_is_family(resolved.source[0])
+            )
             return ApprovalPreview(
                 estimate.units, estimate.size_bytes,
                 needs_age=needs_age(owner.role) and not rated,
@@ -412,7 +435,17 @@ class RequestService:
                 current_x=bool(current and current.x),
                 above_requester_ceiling=above,
                 requester_ceiling=None if ceiling is None else ceiling.min_age,
+                non_family_source_into_family_shelf=mixed,
             )  # fmt: skip
+
+    def _fed_shelf(self, resolved: _Resolved, edition: str | None, shelf: str | None) -> str | None:
+        """The shelf this source will feed: the one proposed for the Edition when the Work exists,
+        else the one its kind proposes (a result is only a Work at approval)."""
+        if resolved.source is None:
+            return None
+        if edition is not None:
+            return shelf
+        return self._ports.default_shelf(self._ports.kind_of(resolved.source[0]))
 
     # -- deciding -------------------------------------------------------------------------------
 

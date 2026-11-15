@@ -419,6 +419,10 @@
             "title": "Needs Age",
             "type": "boolean"
           },
+          "non_family_source_into_family_shelf": {
+            "title": "Non Family Source Into Family Shelf",
+            "type": "boolean"
+          },
           "requester_ceiling": {
             "anyOf": [
               {
@@ -479,7 +483,8 @@
           "shelf_id",
           "resolved",
           "above_requester_ceiling",
-          "requester_ceiling"
+          "requester_ceiling",
+          "non_family_source_into_family_shelf"
         ],
         "title": "ApprovalOut",
         "type": "object"

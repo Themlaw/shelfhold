@@ -127,6 +127,10 @@
       </label>
     {/if}
 
+    {#if preview.non_family_source_into_family_shelf}
+      <p class="hint" role="status">{t('approve.non_family_source')}</p>
+    {/if}
+
     {#if reauthMethods}
       <ReauthPrompt
         methods={reauthMethods}
