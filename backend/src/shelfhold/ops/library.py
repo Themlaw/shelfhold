@@ -1351,20 +1351,18 @@ class LibraryOps:
         """Ask again for the scans a failure left (empty folders of deleted series, folders a
         withdrawal emptied), then remove the folders that are empty. Quiet when nothing waits."""
         with self._comp.engine.connect() as connection:
-            idle = not load_pending_folders(connection) and not load_pending_scans(connection)
-        if idle:
-            return {"removed": 0, "waiting": 0}
-        waiting = 0
-        removed = 0
-        with self._comp.write_context() as w:
-            service = DeletionService(
-                self._comp.engine, w.fsops, clock=self._comp.clock, locate=w.loaded.locate,
-                request_scan=lambda path: self._scan_everywhere([path]),
-                refresh_index=self._index_refresher(w),
-                fresh_auth_s=self._comp.settings.fresh_auth_s,
-            )  # fmt: skip
-            gone, kept = service.retry_pending()
-            removed, waiting = len(gone), len(kept)
+            folders = load_pending_folders(connection)
+        waiting = removed = 0
+        if folders:
+            with self._comp.write_context() as w:
+                service = DeletionService(
+                    self._comp.engine, w.fsops, clock=self._comp.clock, locate=w.loaded.locate,
+                    request_scan=lambda path: self._scan_everywhere([path]),
+                    refresh_index=self._index_refresher(w),
+                    fresh_auth_s=self._comp.settings.fresh_auth_s,
+                )  # fmt: skip
+                gone, kept = service.retry_pending()
+                removed, waiting = len(gone), len(kept)
         with self._comp.engine.connect() as connection:
             paths = load_pending_scans(connection)
         if paths:
