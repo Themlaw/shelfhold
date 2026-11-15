@@ -77,23 +77,25 @@ class Reader:
 
 
 class FakeBundles:
-    """What L49a will plug in: it offers a block for an Edition and streams it."""
+    """A provider that offers a block for an Edition and streams it (the contract of L49a)."""
 
     def __init__(self) -> None:
         self.offered: list[str] = []
         self.opened: list[str] = []
         self.filename = "Tale — Série complète v1.cbz"
 
-    def offer(self, *, user_id: str, scope: Any, edition_id: str) -> Any:
+    def offers(self, *, user_id: str, scope: Any, edition_id: str) -> list[Any]:
         from shelfhold.interfaces.http_api.opds.bundle import BundleOffer
 
         self.offered.append(edition_id)
-        return BundleOffer(
-            filename=self.filename, size=len(PAYLOAD), media_type=ZIP,
-            notice="3 chapitres exclus : format non lisible sur liseuse",
-        )  # fmt: skip
+        return [
+            BundleOffer(
+                filename=self.filename, size=len(PAYLOAD), media_type=ZIP,
+                notice="3 chapitres exclus : format non lisible sur liseuse",
+            )
+        ]  # fmt: skip
 
-    def open(self, *, user_id: str, scope: Any, edition_id: str) -> Any:
+    def open(self, *, user_id: str, scope: Any, edition_id: str, part: int = 1, token_id: Any = None) -> Any:
         from shelfhold.interfaces.http_api.opds.bundle import BundleDownload
 
         self.opened.append(edition_id)
@@ -148,7 +150,7 @@ def make_world(
     monkeypatch: pytest.MonkeyPatch, settings: Settings, bundles: FakeBundles | None = None
 ) -> Iterator[World]:
     if bundles is not None:
-        monkeypatch.setattr("shelfhold.main.series_bundles", lambda _engine: bundles)
+        monkeypatch.setattr("shelfhold.main.series_bundles", lambda *_a, **_k: bundles)
     with auth_env(monkeypatch, settings) as env:
         seed = seed_catalogue(env)
         kid_session = add_profile(env, "kid", "child", "10.0.0.2", max_age_rating=10)
