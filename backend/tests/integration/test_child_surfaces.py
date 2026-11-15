@@ -104,9 +104,11 @@ OWN = (
 # DEVICE (M4 L46): behind a device token and nothing else, the credential of an e-reader. A session,
 # a child's or an adult's, and an API key are refused (401); the token of a child reads as that
 # child and the route answers no catalogue data. The attacks are in `test_l46_device_tokens.py`;
-# the feed (L48, `tests/integration/test_l48_opds.py`) joins here with its own surface `opds`, and
-# the other kosync routes (L47) will.
-KOSYNC = ("GET /kosync/users/auth",)
+# the feed (L48, `tests/integration/test_l48_opds.py`) joins here with its own surface `opds`. The
+# kosync routes of L47 (`PUT /kosync/syncs/progress`, `POST /kosync/users/create`) are not GET: their
+# attacks are in `test_l47_kosync.py`, and the read of a position is here, where it answers a child
+# with `{}` for any fingerprint and no catalogue data.
+KOSYNC = ("GET /kosync/users/auth", "GET /kosync/syncs/progress/{document}")
 OPDS = (
     "GET /opds",
     "GET /opds/opensearch.xml",
@@ -624,7 +626,8 @@ def test_device_routes_refuse_a_session_and_a_key_and_serve_a_child_token_no_dat
         )
         by_token = env.other_client("10.0.0.54").get(path, headers=presented)
         if route in KOSYNC:
-            assert by_token.status_code == 200 and by_token.json() == {"authorized": "OK"}
+            expected = {"authorized": "OK"} if route.endswith("/auth") else {}
+            assert by_token.status_code == 200 and by_token.json() == expected
         else:  # a feed answers 200, or the 404 of a filled-in identifier nobody has
             assert by_token.status_code in (200, 404), (route, by_token.status_code)
         world.clean(by_token.text)
