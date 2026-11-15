@@ -577,6 +577,24 @@ export type BindingOrderOut = {
 };
 
 /**
+ * BindingPausedOut
+ */
+export type BindingPausedOut = {
+    /**
+     * Binding Id
+     */
+    binding_id: string;
+    /**
+     * Edition Id
+     */
+    edition_id: string;
+    /**
+     * Paused
+     */
+    paused: true;
+};
+
+/**
  * CancelOut
  */
 export type CancelOut = {
@@ -2291,6 +2309,32 @@ export type NotificationPrefsOut = {
      * Timezone
      */
     timezone: string;
+};
+
+/**
+ * OfficialLinkOut
+ */
+export type OfficialLinkOut = {
+    /**
+     * Fetched At
+     */
+    fetched_at: string | null;
+    /**
+     * Kind
+     */
+    kind: 'official_read' | 'buy' | 'licensed_in';
+    /**
+     * Lang
+     */
+    lang: string;
+    /**
+     * Provider
+     */
+    provider: string;
+    /**
+     * Url
+     */
+    url: string;
 };
 
 /**
@@ -4678,6 +4722,24 @@ export type SuggestionsOut = {
      * Items
      */
     items: Array<SuggestionOut>;
+};
+
+/**
+ * SupportAuthorOut
+ */
+export type SupportAuthorOut = {
+    /**
+     * Edition Id
+     */
+    edition_id: string;
+    /**
+     * Links
+     */
+    links: Array<OfficialLinkOut>;
+    /**
+     * Pause Suggestions
+     */
+    pause_suggestions: Array<string>;
 };
 
 /**
@@ -7781,6 +7843,48 @@ export type BindingsOrderResponses = {
 
 export type BindingsOrderResponse = BindingsOrderResponses[keyof BindingsOrderResponses];
 
+export type SupportAuthorPauseData = {
+    body?: never;
+    path: {
+        /**
+         * Edition Id
+         */
+        edition_id: string;
+        /**
+         * Binding Id
+         */
+        binding_id: string;
+    };
+    query?: never;
+    url: '/api/v1/editions/{edition_id}/bindings/{binding_id}/pause';
+};
+
+export type SupportAuthorPauseErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type SupportAuthorPauseError = SupportAuthorPauseErrors[keyof SupportAuthorPauseErrors];
+
+export type SupportAuthorPauseResponses = {
+    /**
+     * Successful Response
+     */
+    200: BindingPausedOut;
+};
+
+export type SupportAuthorPauseResponse = SupportAuthorPauseResponses[keyof SupportAuthorPauseResponses];
+
 export type FollowCheckData = {
     body?: never;
     path: {
@@ -8252,6 +8356,44 @@ export type ShelfProposalResponses = {
 };
 
 export type ShelfProposalResponse = ShelfProposalResponses[keyof ShelfProposalResponses];
+
+export type SupportAuthorReadData = {
+    body?: never;
+    path: {
+        /**
+         * Edition Id
+         */
+        edition_id: string;
+    };
+    query?: never;
+    url: '/api/v1/editions/{edition_id}/support-author';
+};
+
+export type SupportAuthorReadErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type SupportAuthorReadError = SupportAuthorReadErrors[keyof SupportAuthorReadErrors];
+
+export type SupportAuthorReadResponses = {
+    /**
+     * Successful Response
+     */
+    200: SupportAuthorOut;
+};
+
+export type SupportAuthorReadResponse = SupportAuthorReadResponses[keyof SupportAuthorReadResponses];
 
 export type UpstreamStatusSetData = {
     body: UpstreamStatusIn;

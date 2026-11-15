@@ -134,6 +134,8 @@ OPEN = {
     "GET /api/v1/works": "works_since",  # M3 L11: the list of Works and its `?since=` removals
     # M3 L24: a cover's thumbnail, by session only; hers when an Edition she may see points at it
     "GET /api/v1/thumbnails/{content_hash}/{size}": "thumbnail",
+    # M4 L23: the official links of an Edition she may see; a hidden one is an absent one
+    "GET /api/v1/editions/{edition_id}/support-author": "support_author",
 }
 CLOSED = (
     "GET /api/v1/openapi.json",
@@ -185,6 +187,7 @@ CLOSED = (
     "POST /api/v1/editions/{edition_id}/bindings/order",
     "POST /api/v1/editions/{edition_id}/upstream-status",
     "POST /api/v1/editions/{edition_id}/preferred-team",
+    "POST /api/v1/editions/{edition_id}/bindings/{binding_id}/pause",  # M4 L23: the admin's act
     "POST /api/v1/attachments/{attach_id}/plan",
     "POST /api/v1/attachments/{attach_id}/confirm",
     "POST /api/v1/editions/{edition_id}/external-ids/renumber",
@@ -329,7 +332,7 @@ PENDING_SURFACES: dict[
 SURFACES = (
     "search", "search_pages", "search_key", "federated", "me_state_get", "me_state_put",
     "me_state_list", "me_title", "activity", "notification", "works_since", "sse", "thumbnail",
-    "work_redirect", "opds",
+    "work_redirect", "opds", "support_author",
 )  # fmt: skip
 METHODS = ("get", "post", "put", "patch", "delete")
 HIDDEN_FROM_CEILING_10 = {*HIDDEN_TITLES, "twelve"}
@@ -828,6 +831,24 @@ def _surface_me_state_list(world: World) -> None:
     answer = world.kid.get(f"{ME}/state")
     assert [i["work_id"] for i in answer.json()["items"]] == [world.seed.works["ok"]]
     world.clean(answer.text)
+
+
+def _surface_support_author(world: World) -> None:
+    """M4 L23: the links of an Edition she may not see are those of an absent one; the ones she
+    may see carry no proposal about a binding (the full attacks: `test_l23_support_author_http`)."""
+    from tests.integration.test_l23_support_author_http import _link
+
+    for key in ("above", "adult_edition", "misfiled", "mixed_new"):
+        _link(world, world.seed.editions[key], f"https://hidden.example.org/{key}")
+    absent = world.kid.get(f"/api/v1/editions/{MISSING}/support-author")
+    assert absent.status_code == 404
+    for key in ("above", "adult_edition", "misfiled", "mixed_new"):
+        answer = world.kid.get(f"/api/v1/editions/{world.seed.editions[key]}/support-author")
+        assert _shape(answer) == _shape(absent), key
+        assert "hidden.example.org" not in answer.text
+        world.clean(answer.text)
+    shown = world.kid.get(f"/api/v1/editions/{world.seed.editions['ok']}/support-author")
+    assert shown.status_code == 200 and shown.json()["pause_suggestions"] == []
 
 
 def _surface_me_title(world: World) -> None:

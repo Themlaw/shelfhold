@@ -635,5 +635,16 @@
   "shelves.naming.error": "L'aperçu du nommage n'a pas pu être calculé.",
   "shelves.no_destination": "{name} : aucune destination.",
   "destinations.detach.scope": "Détache toute la cible Kavita, donc toutes ses destinations : {names}.",
-  "shelves.naming.unknown": "Les noms contestés n'ont pas pu être comptés pour cette destination. Elle reste retirable dans l'écran des destinations."
+  "shelves.naming.unknown": "Les noms contestés n'ont pas pu être comptés pour cette destination. Elle reste retirable dans l'écran des destinations.",
+  "support.title": "Soutenir l'auteur",
+  "support.intro": "Liens officiels pour lire ou acheter cette série. Aucun n'est affilié.",
+  "support.kind.official_read": "Lire",
+  "support.kind.buy": "Acheter",
+  "support.kind.licensed_in": "Édition licenciée",
+  "support.link": "{kind} : {provider}",
+  "support.provenance": "Source : {provider}, relevé le {date}",
+  "support.lang": "Langue : {lang}",
+  "support.pause.hint": "Une édition officielle existe dans la langue du foyer. Vous pouvez suspendre le suivi de la source communautaire ; rien n'est suspendu sans votre accord.",
+  "support.pause.action": "Suspendre le suivi communautaire",
+  "support.pause.done": "Suivi communautaire suspendu."
 }

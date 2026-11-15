@@ -30,6 +30,7 @@
   import { csrfToken } from '#lib/passkeys.ts';
   import { problemView, type ProblemView } from '#lib/problems.ts';
   import { needsReauth, problemOf } from '#lib/triage.ts';
+  import SupportAuthor from './SupportAuthor.svelte';
 
   type Status = UpstreamStatusIn['status'];
   const STATUSES: readonly Status[] = ['ongoing', 'finished', 'paused', 'unknown'];
@@ -241,6 +242,8 @@
       canReorder={sheet.can.reorder}
       onreload={load}
     />
+
+    <SupportAuthor editionId={sheet.edition_id} />
 
     {#if sheet.can.acknowledge_gap}
       <Gaps gaps={sheet.gaps} editionId={sheet.edition_id} />

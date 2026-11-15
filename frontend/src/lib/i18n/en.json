@@ -635,5 +635,16 @@
   "shelves.naming.error": "The naming preview could not be computed.",
   "shelves.no_destination": "{name}: no destination.",
   "destinations.detach.scope": "Detaches the whole Kavita target, so all its destinations: {names}.",
-  "shelves.naming.unknown": "The contested names could not be counted for this destination. It can still be removed from the destinations screen."
+  "shelves.naming.unknown": "The contested names could not be counted for this destination. It can still be removed from the destinations screen.",
+  "support.title": "Support the author",
+  "support.intro": "Official links to read or buy this series. None is an affiliate link.",
+  "support.kind.official_read": "Read",
+  "support.kind.buy": "Buy",
+  "support.kind.licensed_in": "Licensed edition",
+  "support.link": "{kind}: {provider}",
+  "support.provenance": "Source: {provider}, fetched on {date}",
+  "support.lang": "Language: {lang}",
+  "support.pause.hint": "An official edition exists in your household's language. You can pause following the community source; nothing is paused without your approval.",
+  "support.pause.action": "Pause community following",
+  "support.pause.done": "Community following paused."
 }

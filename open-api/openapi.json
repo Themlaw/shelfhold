@@ -951,6 +951,30 @@
         "title": "BindingOrderOut",
         "type": "object"
       },
+      "BindingPausedOut": {
+        "properties": {
+          "binding_id": {
+            "title": "Binding Id",
+            "type": "string"
+          },
+          "edition_id": {
+            "title": "Edition Id",
+            "type": "string"
+          },
+          "paused": {
+            "const": true,
+            "title": "Paused",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "edition_id",
+          "binding_id",
+          "paused"
+        ],
+        "title": "BindingPausedOut",
+        "type": "object"
+      },
       "CancelOut": {
         "properties": {
           "id": {
@@ -3794,6 +3818,52 @@
           "effective_quiet"
         ],
         "title": "NotificationPrefsOut",
+        "type": "object"
+      },
+      "OfficialLinkOut": {
+        "properties": {
+          "fetched_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fetched At"
+          },
+          "kind": {
+            "enum": [
+              "official_read",
+              "buy",
+              "licensed_in"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "lang": {
+            "title": "Lang",
+            "type": "string"
+          },
+          "provider": {
+            "title": "Provider",
+            "type": "string"
+          },
+          "url": {
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "url",
+          "kind",
+          "lang",
+          "provider",
+          "fetched_at"
+        ],
+        "title": "OfficialLinkOut",
         "type": "object"
       },
       "PairAutoIn": {
@@ -7650,6 +7720,35 @@
           "items"
         ],
         "title": "SuggestionsOut",
+        "type": "object"
+      },
+      "SupportAuthorOut": {
+        "properties": {
+          "edition_id": {
+            "title": "Edition Id",
+            "type": "string"
+          },
+          "links": {
+            "items": {
+              "$ref": "#/components/schemas/OfficialLinkOut"
+            },
+            "title": "Links",
+            "type": "array"
+          },
+          "pause_suggestions": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Pause Suggestions",
+            "type": "array"
+          }
+        },
+        "required": [
+          "edition_id",
+          "links",
+          "pause_suggestions"
+        ],
+        "title": "SupportAuthorOut",
         "type": "object"
       },
       "TargetAuditOut": {
@@ -12728,6 +12827,77 @@
         ]
       }
     },
+    "/api/v1/editions/{edition_id}/bindings/{binding_id}/pause": {
+      "post": {
+        "operationId": "support_author_pause",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "edition_id",
+            "required": true,
+            "schema": {
+              "title": "Edition Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "binding_id",
+            "required": true,
+            "schema": {
+              "title": "Binding Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BindingPausedOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Connexion requise, ou mot de passe à confirmer (reauth-required)."
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée)."
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Détail du problème (RFC 9457)."
+          }
+        },
+        "summary": "Support Author Pause",
+        "tags": [
+          "support-author"
+        ]
+      }
+    },
     "/api/v1/editions/{edition_id}/check": {
       "post": {
         "description": "\"Check now\" (EF-SRC-038): looked at at the next pass, in the news class.",
@@ -13596,6 +13766,68 @@
         "summary": "Shelf Proposal",
         "tags": [
           "shelves"
+        ]
+      }
+    },
+    "/api/v1/editions/{edition_id}/support-author": {
+      "get": {
+        "operationId": "support_author_read",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "edition_id",
+            "required": true,
+            "schema": {
+              "title": "Edition Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SupportAuthorOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Connexion requise, ou mot de passe à confirmer (reauth-required)."
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée)."
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Détail du problème (RFC 9457)."
+          }
+        },
+        "summary": "Support Author Read",
+        "tags": [
+          "support-author"
         ]
       }
     },

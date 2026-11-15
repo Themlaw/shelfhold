@@ -25,6 +25,7 @@ CATALOG_TABLES = {
     "metadata_field", "edition_attach",
     "merge_log", "work_redirect",  # migration 0046 (M3 L01)
     "provider_release_calendar",  # migration 0071 (M4 L20)
+    "external_link",  # migration 0079 (M4 L23)
 }  # fmt: skip
 ACQUISITION_TABLES = {
     "follow_notice",
