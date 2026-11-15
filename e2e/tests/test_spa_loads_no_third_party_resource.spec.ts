@@ -1,4 +1,4 @@
-import { expect, refuseOutsideBaseUrl, test, type Page } from '../workshop/fixtures';
+import { expect, refuseOutsideBaseUrl, test } from '../workshop/fixtures';
 
 // ENF-PRIV-001: no third-party resource in the browser. Every request outside the
 // instance origin is refused, and the tests fail if one is even attempted.
