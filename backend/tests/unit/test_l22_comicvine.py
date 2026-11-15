@@ -15,8 +15,13 @@ import pytest
 import structlog
 
 from shelfhold.plugin_host.adapters.native.comicvine import ComicVineProvider, build_manifest
-from shelfhold.sdk.metadata import EntityRef, IdentifyResult, MatchHints, ProviderCapability
-from shelfhold.sdk.metadata import ProviderUnavailable
+from shelfhold.sdk.metadata import (
+    EntityRef,
+    IdentifyResult,
+    MatchHints,
+    ProviderCapability,
+    ProviderUnavailable,
+)
 from tests.fakes.cassette_server import CassetteServer
 from tests.fakes.comicvine.server import ABSENT, HOSTILE, TITLE, VOLUME_URL, fake_comicvine
 from tests.l21b_bench import EDITION, FakeTime, run, worker
@@ -38,7 +43,7 @@ def identify(
     target = EntityRef(entity_type="work", entity_id=EDITION, ids=ids or {})
     hints = MatchHints(title=title) if title else MatchHints()
     fetcher = worker(build_manifest(), server, time)
-    return run(ComicVineProvider(api_key=key).identify(fetcher, target, hints))
+    return run(ComicVineProvider(api_key=key).identify(fetcher, target, hints))  # type: ignore[arg-type]
 
 
 def asked(server: CassetteServer, index: int = -1) -> dict[str, list[str]]:
@@ -150,7 +155,7 @@ def test_comicvine_says_an_error_in_a_200_answer_too(cassette: str, reason: str,
     with pytest.raises(ProviderUnavailable) as raised:
         identify(fake_comicvine(cassette), FakeTime(), key)
     assert raised.value.reason == reason  # the text of its error is never repeated
-    assert "Invalid" not in str(raised.value) and "limit" not in str(raised.value).lower()
+    assert str(raised.value) == reason  # not one word of its own message
 
 
 @pytest.mark.req("ENF-LEG-005")
@@ -160,7 +165,7 @@ def test_comicvine_spends_no_more_than_200_requests_an_hour(key: str) -> None:
     provider = ComicVineProvider(api_key=key)
     target = EntityRef(entity_type="work", entity_id=EDITION)
     for _ in range(260):  # a loop that does not wait: the host's bucket does it
-        run(provider.identify(fetcher, target, MatchHints(title=TITLE)))
+        run(provider.identify(fetcher, target, MatchHints(title=TITLE)))  # type: ignore[arg-type]
     times = [c.at for c in server.calls()]
     assert len(times) == 260  # a request that carries a key is never served from a cache
     window = max(sum(1 for x in times if start <= x < start + 3600) for start in times)

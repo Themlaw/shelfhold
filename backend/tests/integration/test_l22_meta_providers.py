@@ -8,15 +8,16 @@ operator's command), so the child, member, API key and IDOR attacks have no surf
 
 from __future__ import annotations
 
+import json
 import secrets
 from collections.abc import Iterator
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
 import pytest
 import sqlalchemy as sa
 import structlog
-from pydantic import SecretStr
 from sqlalchemy import Engine
 
 from shelfhold.catalog.application.enrich import EnrichReport, EnrichService
@@ -70,13 +71,18 @@ class Bench:
             )
         )  # fmt: skip
 
+    def rows(self, sql: str, **params: object) -> list[dict[str, Any]]:
+        with self.engine.connect() as c:
+            return [dict(r) for r in c.execute(sa.text(sql), params).mappings()]
+
     def dump(self) -> str:
         """Every row of every table, as text: the key must be in none of them."""
         with self.engine.connect() as c:
-            names = sa.inspect(c).get_table_names()
-            return "\n".join(
-                repr(row) for n in names for row in c.execute(sa.text(f'SELECT * FROM "{n}"'))
-            )
+            lines = []
+            for name in sa.inspect(c).get_table_names():
+                query = sa.select(sa.table(name)).with_only_columns(sa.text("*"))
+                lines += [repr(row) for row in c.execute(query.select_from(sa.table(name)))]
+        return "\n".join(lines)
 
 
 @pytest.fixture
@@ -85,6 +91,13 @@ def bench(tmp_path: Path) -> Iterator[Bench]:
     metadata.create_all(engine)
     yield Bench(engine, tmp_path / "data")
     engine.dispose()
+
+
+def switch_on(monkeypatch: pytest.MonkeyPatch, key: str | None = None) -> None:
+    """What the operator does: the two variables of the instance."""
+    monkeypatch.setenv("SHELFHOLD_COMICVINE_ENABLED", "1")
+    if key is not None:
+        monkeypatch.setenv("SHELFHOLD_COMICVINE_API_KEY", key)
 
 
 @pytest.fixture
@@ -121,7 +134,8 @@ def test_comicvine_enabled_without_a_key_asks_nothing(
     settings: Settings,
     tmp_path: Path,
 ) -> None:
-    with bench54(monkeypatch, settings.model_copy(update={"comicvine_enabled": True}), tmp_path) as b:
+    switch_on(monkeypatch)
+    with bench54(monkeypatch, settings, tmp_path) as b:
         fake = fake_comicvine()
         edition = wire(b, fake, monkeypatch)
         capsys.readouterr()
@@ -138,10 +152,8 @@ def test_comicvine_enrich_by_cli_prints_the_reminder_and_the_link_back(
     tmp_path: Path,
     key: str,
 ) -> None:
-    on = settings.model_copy(
-        update={"comicvine_enabled": True, "comicvine_api_key": SecretStr(key)}
-    )
-    with bench54(monkeypatch, on, tmp_path) as b:
+    switch_on(monkeypatch, key)
+    with bench54(monkeypatch, settings, tmp_path) as b:
         fake = fake_comicvine()
         edition = wire(b, fake, monkeypatch)
         capsys.readouterr()
@@ -153,7 +165,8 @@ def test_comicvine_enrich_by_cli_prints_the_reminder_and_the_link_back(
         assert VOLUME_URL in out  # the link back, to the volume's page
         assert "ComicVine" in out and "non-commercial" in out.lower()
         assert "https://comicvine.gamespot.com/api/documentation" in out  # terms_url
-        assert field(b, edition, "title") == TITLE and field(b, edition, "published_on")
+        assert json.loads(field(b, edition, "title") or "null") == TITLE
+        assert field(b, edition, "published_on")
         assert [c.host for c in fake.calls()] == ["comicvine.gamespot.com"]
         assert key not in out and key not in shown.err and key not in repr(events)
         assert key not in b.rows("SELECT group_concat(value) AS v FROM metadata_field")[0]["v"]
@@ -167,10 +180,8 @@ def test_comicvine_enrich_by_cli_needs_a_title_and_names_its_errors(
     tmp_path: Path,
     key: str,
 ) -> None:
-    on = settings.model_copy(
-        update={"comicvine_enabled": True, "comicvine_api_key": SecretStr(key)}
-    )
-    with bench54(monkeypatch, on, tmp_path) as b:
+    switch_on(monkeypatch, key)
+    with bench54(monkeypatch, settings, tmp_path) as b:
         fake = fake_comicvine()
         edition = wire(b, fake, monkeypatch)
         assert b.cli("meta", "enrich", edition, "--provider", "comicvine") != 0
@@ -178,7 +189,8 @@ def test_comicvine_enrich_by_cli_needs_a_title_and_names_its_errors(
         capsys.readouterr()
         for status, word in ((401, "unauthorized"), (429, "rate_limited"), (500, "http_503")):
             fake.status = status
-            assert b.cli("meta", "enrich", edition, "--provider", "comicvine", "--title", TITLE) == 1
+            args = ("meta", "enrich", edition, "--provider", "comicvine", "--title", TITLE)
+            assert b.cli(*args) == 1
             err = capsys.readouterr().err
             assert "comicvine" in err and word in err and key not in err
         assert field(b, edition, "title") is None
@@ -186,7 +198,6 @@ def test_comicvine_enrich_by_cli_needs_a_title_and_names_its_errors(
 
 @pytest.mark.req("ENF-SEC-005", "ENF-LEG-005")
 def test_comicvine_key_is_never_in_the_settings_dump_or_the_diagnostic(key: str) -> None:
-    import json
 
     from shelfhold.ops.diagnostic import SETTING_CLASSES, reduce_config
 

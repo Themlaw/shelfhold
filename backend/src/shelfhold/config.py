@@ -188,6 +188,11 @@ class Settings(BaseModel):
     # at OpenLibrary instead of 1). Never a default, never an address of the maintainer; never
     # logged: it is an address of the owner.
     metadata_contact: str | None = None
+    # M4 L22 (EF-BIB-013, ENF-LEG-005): ComicVine is a non-commercial source with a key of its own
+    # per instance: off until the operator switches it on and gives its key. Never a key of the
+    # project; never logged, never in a diagnostic bundle (presence only).
+    comicvine_enabled: bool = False
+    comicvine_api_key: SecretStr | None = None
 
     @field_validator("source_url")
     @classmethod
@@ -202,6 +207,18 @@ class Settings(BaseModel):
 
             identifiable_user_agent(value)  # ValueError: not an address nor an https URL
         return value
+
+    @field_validator("comicvine_api_key")
+    @classmethod
+    def _comicvine_key_is_a_key(cls, value: SecretStr | None) -> SecretStr | None:
+        if value is None:
+            return None
+        text = value.get_secret_value().strip()
+        if not text:
+            return None  # an empty variable is no key
+        if len(text) > 128 or not text.isascii() or not text.isprintable() or " " in text:
+            raise ValueError("comicvine_api_key is not shaped like an API key")
+        return SecretStr(text)
 
     @field_validator("umask", mode="before")
     @classmethod

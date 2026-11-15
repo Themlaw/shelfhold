@@ -115,12 +115,12 @@ _AS_IS = (
     "wake_timeout_s", "wake_session_s", "maintenance_window_start", "maintenance_window_end",
     "timezone", "retention_events_days", "retention_audit_days", "backup_retention",
     "stream_max_per_profile",
-    "backup_stale_hours", "fetcher_cache",
+    "backup_stale_hours", "fetcher_cache", "comicvine_enabled",
 )  # fmt: skip
 _PRESENCE = (
     "public_url", "api_token", "secret_key_file", "frontend_dir", "source_url", "wake_url",
     "wake_token", "auth_forward_secret", "setup_token", "backup_dir", "backup_passphrase_file",
-    "metadata_contact", "import_dir",
+    "metadata_contact", "import_dir", "comicvine_api_key",
 )  # fmt: skip
 _VOLUMES = ("data_dir", "store_dir", "library_dir")
 _COUNTS = ("plugin_repos", "active_sources", "http_trusted_proxies", "wake_suwayomi",

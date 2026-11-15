@@ -71,7 +71,7 @@
   meta_rebuild_help = "Rewrites divergent, missing or illegible projections from the base; The unexplained lines of the mirror remain “unresolved”."
   meta_enrich_help = "Ask OpenLibrary what it knows about an Edition: the proposed values ​​keep their origin, no locked or manually entered fields are replaced, an age is never applied."
   meta_target_help = "An ISBN (10 or 13 digits) or the identifier of an Edition."
-  meta_provider_help = "Provider asked: openlibrary (by ISBN), bnf (by title or ISBN), anilist, mangaupdates or wikidata (by title)."
+  meta_provider_help = "Provider asked: openlibrary (by ISBN), bnf (by title or ISBN), anilist, mangaupdates, wikidata or comicvine (by title)."
   meta_title_help = "Title to search for, for a provider that answers by title."
   meta_calendar_help = "Shows the cached release calendar with its provider's credit; nothing is requested from the network."
   meta_lock_help = "Locks a field of an Edition: with a value, yours (typed by hand); without one, the one already recorded. No provider replaces it afterwards."

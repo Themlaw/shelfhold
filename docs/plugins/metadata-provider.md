@@ -61,6 +61,11 @@ Tome) ; ce que le fournisseur sait de l'Œuvre (rattachement, auteur d'Œuvre) p
   `safe_parse_xml`. La saisie d'une personne qui entre dans une requête (CQL, SPARQL) est nettoyée
   (pas de caractère de contrôle, 200 caractères au plus) puis échappée ; un identifiant (ISBN, QID) qui
   n'a pas la forme attendue n'est jamais envoyé.
+- Un fournisseur qui a besoin d'une **clé d'API de l'instance** (ComicVine) la reçoit de l'hôte à la
+  construction, dans un `SecretStr`, et la passe au Fetcher en `params`, jamais collée à une adresse :
+  le Fetcher ne journalise que la route et ne range pas une requête qui porte un identifiant. Il ne la
+  met dans aucun message, aucune erreur ni aucun résultat. Il dit `ProviderUnavailable("unauthorized")`
+  quand elle est refusée et `("rate_limited")` quand la limite est celle du fournisseur.
 - Un fournisseur injoignable (5xx, 429, réponse qui n'est pas celle qu'il documente) lève
   `ProviderUnavailable(reason)` : l'hôte prévient l'administrateur (`metadata.provider_down`, au plus
   une fois par heure) et ne change rien d'autre.

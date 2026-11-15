@@ -45,6 +45,7 @@ _FREE_CODE_KEYS: Final = frozenset({"job_kind"})  # a job kind is named in code,
 GENERIC_REASONS: Final = frozenset(
     {
         "unreachable", "timeout", "unauthorized", "forbidden", "not_found", "http_503",
+        "rate_limited",
         "version_unsupported", "schema_mismatch", "retries_exhausted", "handler_error", "unknown",
     }
 )  # fmt: skip

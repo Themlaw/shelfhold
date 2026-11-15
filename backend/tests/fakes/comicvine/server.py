@@ -1,4 +1,4 @@
-"""A simulated ComicVine search service replaying the fabricated cassettes of `cassettes/comicvine`."""
+"""A simulated ComicVine search service replaying the cassettes of `cassettes/comicvine`."""
 
 from __future__ import annotations
 

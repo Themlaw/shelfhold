@@ -23,13 +23,15 @@ from shelfhold.export.application.mirror import ProvenanceMirror
 from shelfhold.identity.domain.visibility import ALL
 from shelfhold.infrastructure.fetcher.quota_store import SqlBucketStore
 from shelfhold.infrastructure.ids import is_ulid
+from shelfhold.infrastructure.logging import register_secret_value
 from shelfhold.infrastructure.schema import export
 from shelfhold.library.public import MetaProjection
-from shelfhold.ops.errors import UnknownSubjectError
+from shelfhold.ops.errors import ExitUnavailableError, UnknownSubjectError
 from shelfhold.ops.library import refusal_of
 from shelfhold.plugin_host import provider_fetcher
 from shelfhold.plugin_host.adapters.native.anilist import AniListProvider
 from shelfhold.plugin_host.adapters.native.bnf import BnFProvider
+from shelfhold.plugin_host.adapters.native.comicvine import NOTICE, ComicVineProvider
 from shelfhold.plugin_host.adapters.native.mangaupdates import MangaUpdatesProvider
 from shelfhold.plugin_host.adapters.native.openlibrary import OpenLibraryProvider
 from shelfhold.plugin_host.adapters.native.wikidata import WikidataProvider
@@ -71,8 +73,9 @@ PROVIDERS: dict[str, Callable[[], MetadataProvider]] = {
     "mangaupdates": MangaUpdatesProvider,
     "bnf": lambda: BnFProvider(reader=read_sru),  # the host's own reader of XML (ENF-SEC-014)
     "wikidata": WikidataProvider,
+    "comicvine": ComicVineProvider,
 }
-BY_TITLE = frozenset({"anilist", "mangaupdates", "wikidata"})  # a title is required
+BY_TITLE = frozenset({"anilist", "mangaupdates", "wikidata", "comicvine"})  # a title is required
 TITLE_OPTIONAL = frozenset({"bnf"})  # a title when given, else the ISBN
 
 
@@ -132,6 +135,8 @@ class MetaOps:
         settings = self._comp.settings
         if provider not in PROVIDERS:
             raise UnknownSubjectError(f"no such provider: {provider}")
+        if provider == "comicvine":
+            self._comicvine_ready()
         if provider in BY_TITLE and not (title and title.strip()):
             raise UnknownSubjectError(f"{provider} is asked by title: give --title")
         target = self._pasted(target) if provider == "openlibrary" else target
@@ -144,12 +149,37 @@ class MetaOps:
             report = asyncio.run(self._enrich(service, edition_id, provider, title))
         except (UnknownTargetError, LookupError) as error:
             raise UnknownSubjectError(str(error)) from None
-        return _report(report)
+        done = _report(report)
+        if provider == "comicvine":
+            done["notice"] = NOTICE  # the terms are said with every answer, not only the first
+        return done
+
+    def _comicvine_ready(self) -> None:
+        """ComicVine is off until the operator switches it on and brings the key of the instance
+        (EF-BIB-013): otherwise nothing is asked, and the terms are what the refusal says."""
+        settings = self._comp.settings
+        if not settings.comicvine_enabled:
+            raise ExitUnavailableError(
+                "comicvine is off. Switch it on with SHELFHOLD_COMICVINE_ENABLED=1 and give the "
+                f"key of this instance in SHELFHOLD_COMICVINE_API_KEY. {NOTICE}"
+            )
+        if settings.comicvine_api_key is None:
+            raise ExitUnavailableError(
+                "comicvine needs the key of this instance: give it in SHELFHOLD_COMICVINE_API_KEY"
+            )
+
+    def _provider(self, key: str) -> MetadataProvider:
+        if key != "comicvine":
+            return PROVIDERS[key]()
+        secret = self._comp.settings.comicvine_api_key
+        if secret is not None:
+            register_secret_value(secret.get_secret_value())  # the scrubbers know it before use
+        return ComicVineProvider(api_key=secret)
 
     async def _enrich(
         self, service: EnrichService, edition_id: str, key: str, title: str | None
     ) -> EnrichReport:
-        provider = PROVIDERS[key]()
+        provider = self._provider(key)
         hints = (
             MatchHints(title=title.strip())
             if title and title.strip() and key in BY_TITLE | TITLE_OPTIONAL
