@@ -1614,7 +1614,7 @@ cause = "Un dossier de l'une des destinations en écriture contient ou recouvre 
 
 [errors."target.unreachable"]
 title = "Kavita ne répond pas."
-action = "Vérifiez que le conteneur Kavita tourne, ou reconnectez-le avec « shelfhold target reconnect »."
+action = "Vérifiez que le conteneur Kavita tourne, ou reconnectez-le avec « shelfhold target reconnect ». Les scans qui n'ont pas pu partir (suppression, retrait) sont gardés : le prochain export les redemande, et le dossier vide d'une série supprimée reste jusque-là."
 cause = "Le serveur Kavita ne répond pas : conteneur arrêté, adresse changée ou réseau coupé."
 
 [errors."target.version_unsupported"]

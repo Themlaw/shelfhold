@@ -66,3 +66,50 @@ def test_the_pending_scans_can_be_replaced_and_emptied() -> None:
             replace_pending_scans(connection, [])
         with env.engine.connect() as connection:
             assert load_pending_scans(connection) == []
+
+
+def test_withdraw_apply_keeps_the_scan_when_kavita_is_down_and_the_retry_asks_it() -> None:
+    """The files left the library of the children but Kavita could not be asked: the result says
+    the scan is pending, the folder to scan is written down, the next export run asks for it."""
+    from contextlib import contextmanager
+    from typing import Any
+
+    import shelfhold.ops.library as library
+    from shelfhold.identity.public import Credential, Principal
+
+    class Service:
+        def __init__(self, *_a: Any, request_scan: Any, **_k: Any) -> None:
+            self._scan = request_scan
+
+        def apply(self, **_k: Any) -> Any:
+            self._scan("/data/Kavita/Dr Stone")
+            return SimpleNamespace(withdrawn=("e1",), files=2, pending=())
+
+    with export_env() as env:
+        client = _Client(up=False)
+        write = SimpleNamespace(fsops=None, loaded=SimpleNamespace(locate=None))
+
+        @contextmanager
+        def write_context() -> Any:
+            yield write
+
+        runtime = SimpleNamespace(
+            engine=env.engine, kavita_client=lambda _target: client, write_context=write_context,
+            clock=env.clock, settings=SimpleNamespace(store_dir="/store", fresh_auth_s=900),
+        )  # fmt: skip
+        ops = LibraryOps(runtime)  # type: ignore[arg-type]
+        admin = Principal("01J00000000000000000000ADM", "admin", "admin", Credential.LOCAL_CLI)
+        original = library.WithdrawalService
+        library.WithdrawalService = Service  # type: ignore[misc,assignment]
+        try:
+            done = ops.withdraw_apply(if_match="v", principal=admin)
+        finally:
+            library.WithdrawalService = original  # type: ignore[misc]
+        assert done["withdrawn"] == ["e1"] and done["scan_pending"] is True
+        with env.engine.connect() as connection:
+            assert load_pending_scans(connection) == ["/data/Kavita/Dr Stone"]
+        client.up = True
+        ops.retry_pending_scans()
+        assert client.scanned == ["/data/Kavita/Dr Stone"]
+        with env.engine.connect() as connection:
+            assert load_pending_scans(connection) == []

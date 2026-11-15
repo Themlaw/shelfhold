@@ -58,6 +58,7 @@ from shelfhold.catalog.public import (
     edition_key_lang,
     file_new_edition,
     suggest_age,
+    suggest_duplicates,
     translation_type_for,
 )
 from shelfhold.events.bus import EventBus, PublishedEvent
@@ -482,6 +483,8 @@ class NativeAcquirer:
                 )
                 if created:  # the warning of the rights review is announced, never blocking
                     announced = self._review_rights(connection, edition_id, now)
+                    if screen is not None:  # EF-BIB-004: an identical title is suggested only
+                        suggest_duplicates(connection, screen=screen)
                 ingested = Catalog(connection).ingest(
                     IncomingUnit(
                         binding=BindingRef(binding_id, edition_id),

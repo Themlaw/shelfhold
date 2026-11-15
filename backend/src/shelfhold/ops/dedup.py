@@ -1,6 +1,6 @@
 """The suggestions of duplicate Works on the admin door (EF-BIB-004).
 
-`scan` looks for pairs that share a title and a credited person, and for a series that moved
+`scan` looks for pairs that share a title, and for a series that moved
 sources in Suwayomi (EF-BIB-029), and records them as suggestions;
 `suggestions` lists the open ones. Nothing is merged here: a merge is the admin's own decision,
 through the merge plan. The Work tombstones are asked first (fails closed: with no screen there
@@ -23,7 +23,23 @@ from shelfhold.ops.errors import ExitUnavailableError
 if TYPE_CHECKING:
     from sqlalchemy import Engine
 
-__all__ = ["DedupOps"]
+    from shelfhold.composition import Composition
+
+__all__ = ["DedupOps", "suggest_on_arrival"]
+
+
+def suggest_on_arrival(comp: Composition) -> int:
+    """EF-BIB-004 (01): what has just arrived is looked at for a title already held, and a
+    suggestion is made, never a merge. The Work tombstones are asked first; with no screen
+    nothing is suggested (the manual scan stays)."""
+    from shelfhold.ops.tombstone_screens import CatalogScreens
+
+    try:
+        screen = CatalogScreens(comp).open()
+    except ExitUnavailableError:
+        return 0
+    with write_transaction(comp.engine) as connection:
+        return len(suggest_duplicates(connection, screen=screen))
 
 
 class Screens(Protocol):

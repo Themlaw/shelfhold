@@ -141,6 +141,7 @@ from shelfhold.library.public import (
     UntrustedEpubStore,
 )
 from shelfhold.ops.acquire import AcquireOps
+from shelfhold.ops.dedup import suggest_on_arrival
 from shelfhold.ops.errors import ExitUnavailableError
 from shelfhold.ops.events import BusTargetEvents
 from shelfhold.ops.kavita_accounts import declared_children
@@ -405,6 +406,8 @@ def follow_handler(comp: Composition, pools: JobPools) -> Callable[[JobContext],
                     report = asyncio.run(once())
                     context.record(**{f"{prefix}{k}": v for k, v in report.counters().items()})
                     arrived.append(report.fetched)
+                    if report.created:  # EF-BIB-004: an identical title is suggested, not merged
+                        suggest_on_arrival(comp)
         except (NoLibraryError, KeyringUnavailableError) as error:
             log.info("follow.cycle_skipped", reason=type(error).__name__)
             context.record(skipped=type(error).__name__)

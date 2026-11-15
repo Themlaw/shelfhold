@@ -306,3 +306,15 @@ def test_a_team_of_another_edition_is_never_preferred(h: Harness) -> None:
     foreign = Catalog(h.connection).resolve_team(h.binding(other), "Team Z", at(9)).id
     with pytest.raises(ValueError, match="not a team of this edition"):
         Catalog(h.connection).prefer_team(edition.id, foreign)
+
+
+@pytest.mark.req("EF-BIB-004")
+def test_a_suggestion_stored_under_the_old_reason_is_read_and_not_asked_again(h: Harness) -> None:
+    from shelfhold.catalog.application.dedup import LEGACY_REASON
+
+    work(h, "La Voie", "Alice Martin")
+    work(h, "La Voie", "Alice Martin")
+    assert len(scan(h)) == 1
+    h.connection.execute(sa.text("UPDATE merge_suggestion SET reason = :r"), {"r": LEGACY_REASON})
+    assert [s.reason for s in open_suggestions(h.connection)] == [REASON]  # read as the new one
+    assert scan(h) == []  # the pair is already put to the admin, whatever the stored reason

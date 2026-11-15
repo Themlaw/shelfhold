@@ -27,6 +27,7 @@ from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import catalog
 
 __all__ = [
+    "LEGACY_REASON",
     "REASON",
     "SAME_WORK_REASON",
     "Suggestion",
@@ -36,7 +37,8 @@ __all__ = [
     "tombstoned",
 ]
 
-REASON = "same_title_same_author"
+REASON = "same_title"
+LEGACY_REASON = "same_title_same_author"  # persisted before the author stopped being required
 SAME_WORK_REASON = "suwayomi_migration"  # "Même œuvre ?" (EF-BIB-029)
 
 
@@ -131,7 +133,10 @@ def open_suggestions(connection: Connection) -> list[Suggestion]:
         .where(m.c.entity_type == "work", m.c.state == "open")
         .order_by(m.c.created_at, m.c.id)
     )
-    return [Suggestion(r.id, r.a, r.b, r.reason, r.state) for r in rows]
+    return [
+        Suggestion(r.id, r.a, r.b, REASON if r.reason == LEGACY_REASON else r.reason, r.state)
+        for r in rows
+    ]
 
 
 def open_offset_suggestion(
