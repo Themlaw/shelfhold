@@ -76,7 +76,7 @@ EXCLUDED_TABLES: Final[Mapping[str, str]] = {
     # secrets
     "api_key": _CREDENTIAL, "webauthn_credential": _CREDENTIAL, "session": _CREDENTIAL,
     "secret_key": _CREDENTIAL, "export_target": _CREDENTIAL, "source_account": _CREDENTIAL,
-    "destination_account": _CREDENTIAL,
+    "destination_account": _CREDENTIAL, "device_token": _CREDENTIAL,
     "source_secret": _CREDENTIAL, "source_config": _CREDENTIAL, "plugin_attestation": _CREDENTIAL,
     "idempotency_key": _CREDENTIAL,
     # tombstones
