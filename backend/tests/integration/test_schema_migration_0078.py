@@ -25,20 +25,20 @@ USER, DEST, TARGET, SHELF, ACCOUNT = (new_ulid() for _ in range(5))
 
 
 @pytest.mark.req("ENF-OPS-002")
-def test_single_alembic_head_with_0078_on_0065() -> None:
+def test_single_alembic_head_with_0078_on_0077() -> None:
     script = ScriptDirectory(str(default_script_location()))
     assert script.get_heads() == ["0078"]
-    assert script.get_revision("0078").down_revision == "0065"
+    assert script.get_revision("0078").down_revision == "0077"
 
 
 @pytest.mark.req("ENF-OPS-002")
 def test_upgrade_adds_the_table_and_downgrade_drops_it(settings: Settings) -> None:
     settings.data_dir.mkdir(parents=True, exist_ok=True)
-    command.upgrade(alembic_config(settings.database_path), "0065")
+    command.upgrade(alembic_config(settings.database_path), "0077")
     assert "progress_sync_note" not in tables(settings.database_path)
     assert "0078" in migrate(settings).applied
     assert "progress_sync_note" in tables(settings.database_path)
-    command.downgrade(alembic_config(settings.database_path), "0065")
+    command.downgrade(alembic_config(settings.database_path), "0077")
     assert "progress_sync_note" not in tables(settings.database_path)
 
 

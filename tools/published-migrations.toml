@@ -209,3 +209,8 @@ since = "1.1"
 file = "0077_series_bundle.py"
 sha256 = "f5ef5e2614c6d360a7cb9c01c0d60e5683e729fe3925a1773d1d384e442044c1"
 since = "1.1"
+
+[[migration]]
+file = "0078_progress_sync_note.py"
+sha256 = "b6dc54f535e59be66c30b2f26c6da4ce431fd0f4c0a048f4eafe1a7b5a12a9a8"
+since = "1.1"
