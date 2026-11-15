@@ -34,6 +34,7 @@ et ne change rien à l'installation (voir [vérifier les images](verifier-les-im
 | Plusieurs disques sous `/library` | [topologie-racines-physiques.md](topologie-racines-physiques.md), [montage-adopt-ro.md](montage-adopt-ro.md) |
 | Se connecter avec une clé d'accès, la révoquer, que faire si l'appareil est perdu | [passkeys.md](passkeys.md) |
 | Jetons d'appareil des liseuses (OPDS, kosync), émission et révocation | [jetons-appareil.md](jetons-appareil.md) |
+| Le flux OPDS de Shelfhold pour une liseuse : ce qu'il montre, réglage de KOReader, derrière un mandataire | [opds.md](opds.md) |
 | Retrouver l'accès (`admin reset-password`), fermer des sessions, imprimer le kit de secours | [secours.md](secours.md) |
 | Durcir, exposer sur Internet | [durcir.md](durcir.md), [exposition-publique.md](exposition-publique.md) |
 | Plugins tiers (désactivés par défaut, installation, activation, attestation) | [plugins-tiers.md](plugins-tiers.md) |

@@ -703,3 +703,20 @@ def list_shelves(connection: Connection) -> list[ShelfSummary]:
         sa.select(shelf.id, shelf.name, shelf.max_age_rating).order_by(shelf.name, shelf.id)
     )
     return [ShelfSummary(r.id, r.name, r.max_age_rating) for r in rows]
+
+
+def list_shelves_open_to(connection: Connection, user_id: str) -> list[ShelfSummary]:
+    """The shelves this profile may be named (OPDS, M4 L48): a shelf whose `allowed_profiles` is
+    not empty and does not name the profile is left out, as the shelf is reserved to others (a
+    parental control action, `shelf.allowed_profiles`). The ceiling is the caller's to apply."""
+    shelf = export.shelf.c
+    rows = connection.execute(
+        sa.select(shelf.id, shelf.name, shelf.max_age_rating, shelf.allowed_profiles).order_by(
+            shelf.name, shelf.id
+        )
+    )
+    return [
+        ShelfSummary(r.id, r.name, r.max_age_rating)
+        for r in rows
+        if not r.allowed_profiles or user_id in r.allowed_profiles
+    ]

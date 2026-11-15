@@ -2537,3 +2537,14 @@
   keyring_body = "The keychain export file, which the documentation calls {export}: If you saved it under another name (the --out option), note that name below. It is encrypted by the passphrase, it is kept off the host, in a location other than the passphrase. Without it, after a loss of /data, the deletion log no longer protects anything."
   rotation = "Redo the export of the keychain, and reprint this kit, after each rotation of the keychain."
   no_secret = "This kit contains no secrets."
+
+[opds]
+  root_title = "Shelfhold"
+  shelves = "Shelves"
+  series = "Series"
+  works = "All works"
+  recent = "Latest"
+  results = "Search results"
+  search_description = "Search the library"
+  complete = "{title} — Complete series"
+  complete_in = "{title} — Complete series ({lang})"

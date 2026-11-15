@@ -210,6 +210,7 @@ class ClientIpMiddleware:
             state = scope.setdefault("state", {})
             state["client_ip"] = ip
             state["client_scheme"] = self._scheme(scope, client[0] if client else None)
+            state["client_prefix"] = self._prefix(scope, client[0] if client else None)
         await self.app(scope, receive, send)
 
     def _scheme(self, scope: Scope, peer: str | None) -> str:
@@ -222,6 +223,16 @@ class ClientIpMiddleware:
         lines = Headers(scope=scope).getlist("x-forwarded-proto")
         said = lines[-1].split(",")[-1].strip().lower() if lines else ""
         return said if said in {"http", "https"} else scheme
+
+    def _prefix(self, scope: Scope, peer: str | None) -> str | None:
+        """The mount prefix a trusted proxy announced in `X-Forwarded-Prefix` (the last line), for
+        the links of a feed. Raw: whoever builds a link checks it (`opds.links.mount_prefix`).
+        From any other peer the header means nothing."""
+        parsed = normalize_ip(peer) if peer else None
+        if parsed is None or not any(parsed in network for network in self.trusted):
+            return None
+        lines = Headers(scope=scope).getlist("x-forwarded-prefix")
+        return lines[-1].strip() if lines else None
 
 
 def client_ip_of(scope: Scope) -> str:

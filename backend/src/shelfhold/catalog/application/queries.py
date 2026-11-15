@@ -28,21 +28,27 @@ import sqlalchemy as sa
 
 from shelfhold.catalog.domain.provenance import encode_value
 from shelfhold.infrastructure.schema import catalog
+from shelfhold.sdk.age import is_family_ceiling
 
 __all__ = [
     "MAX_PAGE",
     "ReaderScope",
+    "VisibleEdition",
     "VisibleWork",
     "count_visible_works",
     "cover_ref_visible",
     "list_visible_series",
     "list_visible_works",
     "referenced_cover_refs",
+    "shelf_open_to",
     "visible_edition_ids",
     "visible_editions_clause",
+    "visible_editions_of_work",
     "visible_series_ids",
+    "visible_series_title",
     "visible_unit_ids",
     "visible_work_ids",
+    "visible_work_title",
     "visible_works_clause",
 ]
 
@@ -432,3 +438,70 @@ def list_visible_works(
     ).all()
     covers = _first_covers(connection, scope, [str(r.id) for r in rows]) if rows else {}
     return [VisibleWork(r.id, r.title, r.kind, *covers.get(str(r.id), (None, None))) for r in rows]
+
+
+@dataclass(frozen=True)
+class VisibleEdition:
+    edition_id: str
+    lang: str
+    cover_ref: str | None
+
+
+def visible_work_title(connection: sa.Connection, scope: ReaderScope, work_id: str) -> str | None:
+    """The title of a Work this reader may see; hidden and absent are the same answer: None."""
+    return connection.execute(
+        sa.select(catalog.work.c.title).where(
+            catalog.work.c.id == work_id, visible_works_clause(scope)
+        )
+    ).scalar()
+
+
+def visible_series_title(
+    connection: sa.Connection, scope: ReaderScope, series_id: str
+) -> str | None:
+    """The title of a series this reader may open (`visible_series_ids`), else None."""
+    if not visible_series_ids(connection, scope, [series_id]):
+        return None
+    return connection.execute(
+        sa.select(catalog.series.c.title).where(catalog.series.c.id == series_id)
+    ).scalar()
+
+
+def visible_editions_of_work(
+    connection: sa.Connection, scope: ReaderScope, work_id: str
+) -> list[VisibleEdition]:
+    """The Editions of a Work this reader may see, with their language and cover. A Work she may
+    not see has none (an Edition is visible only through a visible Work), so an absent and a
+    hidden Work give the same empty list."""
+    edition, field = catalog.edition.c, catalog.metadata_field.c
+    rows = connection.execute(
+        sa.select(edition.id, edition.lang, field.value)
+        .select_from(
+            catalog.edition.outerjoin(
+                catalog.metadata_field,
+                sa.and_(field.entity_id == edition.id, *_COVER_FIELD_ROWS),
+            )
+        )
+        .where(edition.work_id == work_id, visible_editions_clause(scope))
+        .order_by(edition.lang, edition.id)
+    ).all()
+    found: list[VisibleEdition] = []
+    for row in rows:
+        ref: str | None = None
+        if row.value is not None:
+            try:
+                decoded = json.loads(row.value)
+            except ValueError:
+                decoded = None
+            ref = decoded if isinstance(decoded, str) else None
+        found.append(VisibleEdition(str(row.id), str(row.lang), ref))
+    return found
+
+
+def shelf_open_to(scope: ReaderScope, shelf_max_age: int | None) -> bool:
+    """Whether a shelf may be named to this reader (the name of a shelf is household data): an
+    unrestricted reader sees every shelf; a reader with a ceiling only the shelves that declare an
+    audience below the adult tiers. What a shelf holds is filtered Work by Work, never here."""
+    if scope.unrestricted:
+        return True
+    return is_family_ceiling(shelf_max_age)
