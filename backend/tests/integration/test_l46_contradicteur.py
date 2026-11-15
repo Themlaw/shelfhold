@@ -1,7 +1,7 @@
-"""PR #282 (M4 L46), relecture adverse : les trous réels des jetons d'appareil, en rouge.
+"""PR #282 (M4 L46), adversarial review: the real gaps of the device tokens, now closed.
 
-Les deux objections majeures (MAJ-1, MAJ-2) sont levées : les preuves tournent au vert
-(docs/decisions/M4.md, « #282 : contradicteur »).
+Both major objections (MAJ-1, MAJ-2) are lifted and their proofs run green
+(docs/decisions/M4.md, "#282 : contradicteur").
 """
 
 from collections.abc import Iterator
@@ -33,11 +33,10 @@ def _paired(env: AuthEnv) -> tuple[str, str]:
 
 
 def test_poc_guesses_from_a_shared_address_never_lock_out_the_right_key(api: AuthEnv) -> None:
-    """Derrière un NAT, un CGNAT ou un proxy mal déclaré (`http_trusted_proxies` vide), toutes les
-    liseuses partagent une adresse. 30 essais faux par minute, chacun sous un identifiant inventé,
-    suffisent à tenir en 429 toutes les liseuses de cette adresse, indéfiniment. Avec 130 bits de
-    secret, le plafond par adresse ne protège rien qu'il faille payer de ce déni de service :
-    le plafond par couple suffit à borner un jeton précis."""
+    """Behind a NAT, a CGNAT or a badly declared proxy (empty `http_trusted_proxies`) every e-reader
+    shares one address. Thirty wrong tries a minute, each under an invented identifier, used to
+    keep all of them at 429. With 130 bits of secret the address limit buys nothing worth that
+    denial of service: the pair limit bounds one token, and a right secret always passes."""
     public_id, secret = _paired(api)
     shared = api.other_client("198.51.100.30")
     for index in range(PER_ADDRESS):
@@ -47,9 +46,9 @@ def test_poc_guesses_from_a_shared_address_never_lock_out_the_right_key(api: Aut
 
 
 def test_poc_device_routes_refuse_plain_http_by_default(api: AuthEnv) -> None:
-    """ADR-0053 §4 : « TLS obligatoire (HTTP simple seulement par réglage explicite de l'admin) ».
-    En HTTP simple, le secret Basic et le md5 de kosync passent en clair et se rejouent tels quels.
-    Aucun réglage ne l'autorise ici : la requête doit être refusée, pas servie."""
+    """ADR-0053 §4: TLS is required, plain HTTP only by an explicit admin setting. In clear the
+    Basic secret and the kosync md5 would travel and replay as they are: the request is refused,
+    not served."""
     public_id, secret = _paired(api)
     plain = api.other_client("192.0.2.40", base_url="http://testserver")
     assert plain.get(KOSYNC_AUTH, headers=kosync(public_id, secret)).status_code != 200
