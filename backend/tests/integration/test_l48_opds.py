@@ -410,7 +410,7 @@ def test_the_search_finds_the_visible_and_only_the_visible(world: World) -> None
 def test_a_search_cannot_tell_a_hidden_title_from_one_that_does_not_exist(world: World) -> None:
     nothing = parse(world.kid.get("/opds/search?q=Zzzzqx"))
     known = {
-        w.lower() for t in VISIBLE_TITLES.values() for w in t.split()
+        w.lower() for k in SEEN_KID for w in world.seed.title_of(k).split()
     }  # a visible title's words
     for key in HIDDEN_KID:
         title = world.seed.title_of(key)

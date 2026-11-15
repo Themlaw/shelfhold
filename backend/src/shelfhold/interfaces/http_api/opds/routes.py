@@ -68,7 +68,7 @@ _THUMBNAIL = "http://opds-spec.org/image/thumbnail"
 _IMAGE = "http://opds-spec.org/image"
 _SUBSECTION = "subsection"
 _HEADERS = {
-    "Cache-Control": "private, no-cache",
+    "Cache-Control": "private,no-cache",
     "Vary": "Authorization",
     "X-Content-Type-Options": "nosniff",
 }
@@ -176,7 +176,7 @@ def build_opds_router(
 
     @router.get(
         "", operation_id="opds_root", response_class=Response,
-        responses={200: {"content": {FEED_TYPE: {}}, "description": "navigation feed"}},
+        responses={200: {"content": {FEED_TYPE: {}}, "description": "feed"}},
     )  # fmt: skip
     def root(request: Request, principal: Device) -> Response:
         paths = _paths(request)
