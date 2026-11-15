@@ -189,7 +189,6 @@ def test_an_adult_with_an_administrator_account_is_told_once(
 @pytest.mark.parametrize(
     ("kwargs", "reason"),
     [
-        ({"roles": ("Login", "Download")}, "child_account_privileged"),
         ({"roles": ("Login", "Promote")}, "child_account_privileged"),
         ({"roles": ("Login", "Change Restriction")}, "child_account_privileged"),
         ({"roles": ("Login", "Surprise")}, "child_account_privileged"),

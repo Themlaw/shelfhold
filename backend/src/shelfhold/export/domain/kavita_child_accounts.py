@@ -140,10 +140,12 @@ def assess_child(
     return ChildReport(child.profile_id, ALERT if findings else OK, tuple(findings))
 
 
-# What a child's own key may hold in Kavita 0.9.1: signing in, reading, progress, bookmarks. The
-# list is closed: any other role (download, promote, change of password or of restriction, an
-# administrator, one a later Kavita adds) is refused. Compared without case, space or dash.
-CHILD_ROLES = frozenset({"login", "pleb", "readonly", "readonlyrole", "bookmark"})
+# What a child's own key may hold in Kavita 0.9.1 (`Kavita.Models/Constants/PolicyConstants.cs`):
+# signing in, reading, downloading (OPDS needs it to hand a file to a reader), bookmarks and
+# changing its own password. The list is closed: `Change Restriction` (the child would lift its
+# own age restriction), `Promote`, `Admin` and any role a later Kavita adds are refused.
+# Compared without case, space or dash.
+CHILD_ROLES = frozenset({"login", "pleb", "readonly", "bookmark", "download", "changepassword"})
 
 CHILD_ACCOUNT_ADMIN = "child_account_admin"
 CHILD_ACCOUNT_PRIVILEGED = "child_account_privileged"
