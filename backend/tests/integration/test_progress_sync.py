@@ -16,14 +16,12 @@ import pytest
 from tests.fakes.kavita import API_KEY
 from tests.sync_env import START, sync_env
 
-REQ = ("EF-EXP-026", "EF-LEC-014")
-
 
 def progress_calls(env, key: str | None = None):  # type: ignore[no-untyped-def]
     return env.calls(key, fragment="/api/reader/")
 
 
-@pytest.mark.req(*REQ)
+@pytest.mark.req("EF-EXP-026", "EF-LEC-014")
 def test_pull_progress_from_kavita_first(tmp_path: Path) -> None:
     """Kavita holds page 7, a reader of Shelfhold is at page 12: the page of Kavita is read before
     anything is written, and only then is the newer position pushed."""
@@ -46,7 +44,7 @@ def test_pull_progress_from_kavita_first(tmp_path: Path) -> None:
         assert env.fake.violations == []
 
 
-@pytest.mark.req(*REQ)
+@pytest.mark.req("EF-EXP-026", "EF-LEC-014")
 def test_push_progress_lww_server_timestamp(tmp_path: Path) -> None:
     """Two devices: the later one by the server's clock wins, whatever its `client_ts` says."""
     with sync_env(tmp_path) as env:
@@ -62,7 +60,7 @@ def test_push_progress_lww_server_timestamp(tmp_path: Path) -> None:
         assert [w[2] for w in env.fake.progress_writes] == [8]
 
 
-@pytest.mark.req(*REQ)
+@pytest.mark.req("EF-EXP-026", "EF-LEC-014")
 def test_sync_uses_each_member_token(tmp_path: Path) -> None:
     with sync_env(tmp_path) as env:
         one, two = env.member("one"), env.member("two")
@@ -78,7 +76,7 @@ def test_sync_uses_each_member_token(tmp_path: Path) -> None:
         assert env.kavita_page(two, chapter) == 9
 
 
-@pytest.mark.req(*REQ)
+@pytest.mark.req("EF-EXP-026", "EF-LEC-014")
 def test_pulled_position_written_only_to_token_owner(tmp_path: Path) -> None:
     with sync_env(tmp_path) as env:
         one, two, bystander = env.member("one"), env.member("two"), env.member("by", link=False)
@@ -91,7 +89,7 @@ def test_pulled_position_written_only_to_token_owner(tmp_path: Path) -> None:
         assert env.positions(bystander) == []  # no key, no state, nothing written for them
 
 
-@pytest.mark.req(*REQ)
+@pytest.mark.req("EF-EXP-026", "EF-LEC-014")
 def test_push_never_moves_kavita_position_backwards(tmp_path: Path) -> None:
     with sync_env(tmp_path) as env:
         reader = env.member("reader")
@@ -108,7 +106,7 @@ def test_push_never_moves_kavita_position_backwards(tmp_path: Path) -> None:
         assert env.kavita_page(reader, finished) == 20
 
 
-@pytest.mark.req(*REQ)
+@pytest.mark.req("EF-EXP-026", "EF-LEC-014")
 def test_progress_written_as_opds_pse_client_is_pulled(tmp_path: Path) -> None:
     """The proof of D-P5: what an OPDS-PSE client leaves in Kavita (Kavita saves the page it served,
     `OPDSController`, with the series, volume and chapter of the file) is what Shelfhold pulls, and
@@ -136,7 +134,7 @@ def test_progress_written_as_opds_pse_client_is_pulled(tmp_path: Path) -> None:
         assert env.fake.violations == []
 
 
-@pytest.mark.req(*REQ)
+@pytest.mark.req("EF-EXP-026", "EF-LEC-014")
 def test_kavita_unfinished_chapter_never_reads_as_a_look_at_the_end(tmp_path: Path) -> None:
     """Kavita at its last page index (not finished) is `in_progress` here, whichever way the pages
     of a file are counted: only the page count, Kavita's own "read", makes a server state read."""
@@ -151,7 +149,7 @@ def test_kavita_unfinished_chapter_never_reads_as_a_look_at_the_end(tmp_path: Pa
 # ------------------------------------------------------------------ the contract of L14a
 
 
-@pytest.mark.req(*REQ)
+@pytest.mark.req("EF-EXP-026", "EF-LEC-014")
 def test_a_look_at_the_last_page_pushed_to_kavita_does_not_come_back_as_read(
     tmp_path: Path,
 ) -> None:
@@ -170,7 +168,7 @@ def test_a_look_at_the_last_page_pushed_to_kavita_does_not_come_back_as_read(
         assert env.positions(reader, source="server") == []  # the echo was dropped
 
 
-@pytest.mark.req(*REQ)
+@pytest.mark.req("EF-EXP-026", "EF-LEC-014")
 def test_a_chapter_a_traversal_marked_read_is_pushed_as_read(tmp_path: Path) -> None:
     with sync_env(tmp_path) as env:
         reader = env.member("reader")
@@ -189,7 +187,7 @@ def test_a_chapter_a_traversal_marked_read_is_pushed_as_read(tmp_path: Path) -> 
         assert env.positions(reader, source="server") == []  # the echo is dropped, not re-read
 
 
-@pytest.mark.req(*REQ)
+@pytest.mark.req("EF-EXP-026", "EF-LEC-014")
 def test_what_kavita_marks_read_by_itself_is_taken_as_it_is(tmp_path: Path) -> None:
     with sync_env(tmp_path) as env:
         reader = env.member("reader")
@@ -203,7 +201,7 @@ def test_what_kavita_marks_read_by_itself_is_taken_as_it_is(tmp_path: Path) -> N
 # ------------------------------------------------------------------ races and clocks
 
 
-@pytest.mark.req(*REQ)
+@pytest.mark.req("EF-EXP-026", "EF-LEC-014")
 def test_race_kavita_behind_shelfhold_ahead_is_pushed(tmp_path: Path) -> None:
     with sync_env(tmp_path) as env:
         reader = env.member("reader")
@@ -216,7 +214,7 @@ def test_race_kavita_behind_shelfhold_ahead_is_pushed(tmp_path: Path) -> None:
         assert env.kavita_page(reader, chapter) == 12
 
 
-@pytest.mark.req(*REQ)
+@pytest.mark.req("EF-EXP-026", "EF-LEC-014")
 def test_race_kavita_ahead_is_pulled_and_not_overwritten(tmp_path: Path) -> None:
     with sync_env(tmp_path) as env:
         reader = env.member("reader")
@@ -232,7 +230,7 @@ def test_race_kavita_ahead_is_pulled_and_not_overwritten(tmp_path: Path) -> None
         assert [p.locator["page"] for p in server] == [18]
 
 
-@pytest.mark.req(*REQ)
+@pytest.mark.req("EF-EXP-026", "EF-LEC-014")
 @pytest.mark.parametrize("skew_days", [3, -3, 400])
 def test_a_skewed_kavita_clock_decides_nothing(tmp_path: Path, skew_days: int) -> None:
     """Kavita's `lastModifiedUtc` is its own clock: it only says "this changed". The order is the
@@ -255,7 +253,7 @@ def test_a_skewed_kavita_clock_decides_nothing(tmp_path: Path, skew_days: int) -
         assert env.kavita_page(reader, chapter) == 15
 
 
-@pytest.mark.req(*REQ)
+@pytest.mark.req("EF-EXP-026", "EF-LEC-014")
 def test_no_oscillation_between_shelfhold_and_kavita(tmp_path: Path) -> None:
     """Whatever the starting point, the two sides settle: a pass that finds nothing new writes
     nothing, and a push is never read back as news."""
@@ -282,7 +280,7 @@ def test_no_oscillation_between_shelfhold_and_kavita(tmp_path: Path) -> None:
 # ------------------------------------------------------------------ resilience
 
 
-@pytest.mark.req(*REQ)
+@pytest.mark.req("EF-EXP-026", "EF-LEC-014")
 def test_a_429_is_waited_for_then_retried_within_a_cap(tmp_path: Path) -> None:
     with sync_env(tmp_path) as env:
         reader = env.member("reader")
@@ -300,7 +298,7 @@ def test_a_429_is_waited_for_then_retried_within_a_cap(tmp_path: Path) -> None:
         assert max(env.sleeps) <= 30
 
 
-@pytest.mark.req(*REQ)
+@pytest.mark.req("EF-EXP-026", "EF-LEC-014")
 def test_kavita_down_pauses_the_synchronisation_and_never_fails(tmp_path: Path) -> None:
     with sync_env(tmp_path) as env:
         reader = env.member("reader")
@@ -319,7 +317,7 @@ def test_kavita_down_pauses_the_synchronisation_and_never_fails(tmp_path: Path) 
         assert env.kavita_page(reader, chapter) == 9
 
 
-@pytest.mark.req(*REQ)
+@pytest.mark.req("EF-EXP-026", "EF-LEC-014")
 def test_a_dead_kavita_connection_is_a_pause(tmp_path: Path) -> None:
     with sync_env(tmp_path) as env:
         reader = env.member("reader")
@@ -329,7 +327,7 @@ def test_a_dead_kavita_connection_is_a_pause(tmp_path: Path) -> None:
         assert env.sync(reader).code == "unavailable"
 
 
-@pytest.mark.req(*REQ)
+@pytest.mark.req("EF-EXP-026", "EF-LEC-014")
 def test_a_destination_without_progress_sync_is_left_alone(tmp_path: Path) -> None:
     with sync_env(tmp_path, enabled=False) as env:
         reader = env.member("reader")

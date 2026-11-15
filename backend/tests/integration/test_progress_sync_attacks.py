@@ -19,8 +19,6 @@ from shelfhold.infrastructure.db import write_transaction
 from tests.fakes.kavita import API_KEY
 from tests.sync_env import sync_env
 
-REQ = ("EF-EXP-026", "EF-USR-012", "EF-USR-006")
-
 
 def reader_calls(env, key: str):  # type: ignore[no-untyped-def]
     return env.calls(key, fragment="/api/reader/")
@@ -29,7 +27,7 @@ def reader_calls(env, key: str):  # type: ignore[no-untyped-def]
 # ------------------------------------------------------------------ IDOR between profiles
 
 
-@pytest.mark.req(*REQ)
+@pytest.mark.req("EF-EXP-026", "EF-USR-012", "EF-USR-006")
 def test_idor_a_profiles_positions_are_never_pushed_with_another_profiles_key(
     tmp_path: Path,
 ) -> None:
@@ -45,7 +43,7 @@ def test_idor_a_profiles_positions_are_never_pushed_with_another_profiles_key(
         assert env.fake.progress_writes == [(env.names[theirs], chapter.chapter_id, 15)]
 
 
-@pytest.mark.req(*REQ)
+@pytest.mark.req("EF-EXP-026", "EF-USR-012", "EF-USR-006")
 def test_idor_a_state_pulled_for_one_profile_never_lands_on_another(tmp_path: Path) -> None:
     with sync_env(tmp_path) as env:
         mine, theirs = env.member("mine"), env.member("theirs")
@@ -60,7 +58,7 @@ def test_idor_a_state_pulled_for_one_profile_never_lands_on_another(tmp_path: Pa
 # ------------------------------------------------------------------ another member's key
 
 
-@pytest.mark.req(*REQ)
+@pytest.mark.req("EF-EXP-026", "EF-USR-012", "EF-USR-006")
 def test_a_sealed_key_moved_to_another_profiles_row_opens_nothing(tmp_path: Path) -> None:
     """The vault binds a key to its row: copied under another profile it cannot be opened, and the
     synchronisation says so with a closed code, without a single call."""
@@ -87,7 +85,7 @@ def test_a_sealed_key_moved_to_another_profiles_row_opens_nothing(tmp_path: Path
         assert env.calls() == []
 
 
-@pytest.mark.req(*REQ)
+@pytest.mark.req("EF-EXP-026", "EF-USR-012", "EF-USR-006")
 def test_a_key_that_now_opens_another_account_stops_that_profile(tmp_path: Path) -> None:
     """A rotated or swapped key that opens somebody else's Kavita account: the profile's own name
     on file is compared with who the key says it is, before anything is read or written."""
@@ -107,7 +105,7 @@ def test_a_key_that_now_opens_another_account_stops_that_profile(tmp_path: Path)
 # ------------------------------------------------------------------ one account, two profiles
 
 
-@pytest.mark.req(*REQ)
+@pytest.mark.req("EF-EXP-026", "EF-USR-012", "EF-USR-006")
 def test_a_kavita_account_shared_by_two_profiles_is_not_synchronised(tmp_path: Path) -> None:
     """The schema keeps a name unique per binding; two bindings of the same Kavita may still be
     given the same account by two profiles. Its progress would then be read as both, so neither
@@ -127,7 +125,7 @@ def test_a_kavita_account_shared_by_two_profiles_is_not_synchronised(tmp_path: P
 # ------------------------------------------------------------------ revoked, expired, refused
 
 
-@pytest.mark.req(*REQ)
+@pytest.mark.req("EF-EXP-026", "EF-USR-012", "EF-USR-006")
 def test_a_revoked_key_stops_the_profile_with_a_closed_code(tmp_path: Path) -> None:
     with sync_env(tmp_path) as env:
         reader, steady = env.member("reader"), env.member("steady")
@@ -143,7 +141,7 @@ def test_a_revoked_key_stops_the_profile_with_a_closed_code(tmp_path: Path) -> N
         assert [w[0] for w in env.fake.progress_writes] == [env.names[steady]]
 
 
-@pytest.mark.req(*REQ)
+@pytest.mark.req("EF-EXP-026", "EF-USR-012", "EF-USR-006")
 def test_a_key_revoked_during_a_run_is_not_used_for_the_next_call(tmp_path: Path) -> None:
     """`revoked_at` is read again before each call: a key revoked after the first chapter does not
     serve for the second."""
@@ -166,7 +164,7 @@ def test_a_key_revoked_during_a_run_is_not_used_for_the_next_call(tmp_path: Path
         assert len(seen) == 1  # the first call was made, none after the revocation
 
 
-@pytest.mark.req(*REQ)
+@pytest.mark.req("EF-EXP-026", "EF-USR-012", "EF-USR-006")
 def test_a_key_kavita_refuses_stops_that_profile_with_no_fallback(tmp_path: Path) -> None:
     """Expired or deleted on the Kavita side: 401. The profile stops (`token_refused`); the
     dedicated key is never tried in its place, and the other profiles go on."""
@@ -187,7 +185,7 @@ def test_a_key_kavita_refuses_stops_that_profile_with_no_fallback(tmp_path: Path
 # ------------------------------------------------------------------ a child
 
 
-@pytest.mark.req(*REQ)
+@pytest.mark.req("EF-EXP-026", "EF-USR-012", "EF-USR-006")
 def test_a_child_is_neither_pulled_nor_pushed_above_her_ceiling(tmp_path: Path) -> None:
     with sync_env(tmp_path) as env:
         child = env.member("child", role="child")
@@ -203,7 +201,7 @@ def test_a_child_is_neither_pulled_nor_pushed_above_her_ceiling(tmp_path: Path) 
         assert env.kavita_page(child, hidden) == 15  # untouched
 
 
-@pytest.mark.req(*REQ)
+@pytest.mark.req("EF-EXP-026", "EF-USR-012", "EF-USR-006")
 def test_a_position_a_child_has_above_a_lowered_ceiling_is_not_pushed(tmp_path: Path) -> None:
     with sync_env(tmp_path) as env:
         child = env.member("child", role="child", max_age_rating=16)
@@ -219,7 +217,7 @@ def test_a_position_a_child_has_above_a_lowered_ceiling_is_not_pushed(tmp_path: 
         assert env.fake.progress_writes == []
 
 
-@pytest.mark.req(*REQ)
+@pytest.mark.req("EF-EXP-026", "EF-USR-012", "EF-USR-006")
 def test_a_pulled_state_on_a_hidden_series_is_not_stored_by_any_path(tmp_path: Path) -> None:
     with sync_env(tmp_path) as env:
         child = env.member("child", role="child")
@@ -233,7 +231,7 @@ def test_a_pulled_state_on_a_hidden_series_is_not_stored_by_any_path(tmp_path: P
 # ------------------------------------------------------------------ the door stays shut
 
 
-@pytest.mark.req(*REQ)
+@pytest.mark.req("EF-EXP-026", "EF-USR-012", "EF-USR-006")
 def test_no_interface_imports_the_sync() -> None:
     root = Path(__file__).resolve().parents[2] / "src" / "shelfhold" / "interfaces"
     offenders = []
@@ -249,7 +247,7 @@ def test_no_interface_imports_the_sync() -> None:
     assert offenders == []
 
 
-@pytest.mark.req(*REQ)
+@pytest.mark.req("EF-EXP-026", "EF-USR-012", "EF-USR-006")
 def test_a_chapter_the_kavita_account_may_not_open_is_skipped_not_a_stop(tmp_path: Path) -> None:
     """Kavita answers 403 for a chapter of a library the account has no access to: that chapter is
     left, the others of the member are synchronised. Only a 401 says the key is refused."""
