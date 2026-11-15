@@ -306,6 +306,7 @@ FRESHNESS_LINE = {
             "maintenance.exit",
             "queue.cancel_repair",  # M3 L13: a stolen session stops what protects the library
             "session.revoke_others",  # M3 L07: a stolen session must not lock the owner out
+            "destination_account.link",  # M4 L12: a member's Kavita key is a secret
         ),
         "p3",
     ),
@@ -334,6 +335,7 @@ FRESHNESS_LINE = {
             "session.list_all",  # M3 L07: a read of every profile's sessions
             "session.revoke_other",  # M3 L07: undone by signing in again; hardened profile only
             "recovery_kit.read",  # M3 L07: a page with no secret in it
+            "destination_account.revoke",  # M4 L12: erases a key, undone by pasting it again
         ),
         "none",
     ),

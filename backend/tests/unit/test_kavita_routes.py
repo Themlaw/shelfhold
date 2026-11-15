@@ -12,6 +12,7 @@ from shelfhold.export.targets.kavita import (
     LibraryType,
     RouteNotAllowed,
 )
+from shelfhold.export.targets.kavita.accounts import MEMBER_ROUTES
 from shelfhold.sdk.export_target import ApiCall
 from tests.fakes.kavita import API_KEY
 from tests.kavita_env import OPENAPI_DIR, documented_routes, harness, run
@@ -29,7 +30,9 @@ def _openapi(name: str) -> dict[str, object]:
 def test_kavita_allowlisted_routes_exist_in_pinned_openapi(fixture: str) -> None:
     documented = documented_routes()
     assert documented, "docs/kavita-routes.md lists no route"
-    assert documented == {(r.method, r.path) for r in (*ALLOWED_ROUTES, *SETUP_ROUTES)}  # one list
+    assert documented == {
+        (r.method, r.path) for r in (*ALLOWED_ROUTES, *SETUP_ROUTES, *MEMBER_ROUTES)
+    }  # one list
     paths = _openapi(fixture)["paths"]
     assert isinstance(paths, dict)
     for method, route in sorted(documented):
@@ -78,7 +81,8 @@ def test_kavita_adapter_calls_only_allowlisted_routes() -> None:
     seen = {(r.method, r.path) for r in h.fake.requests}
     assert h.fake.violations == []  # the referee's own list agrees
     setup = {(r.method, r.path) for r in SETUP_ROUTES}  # used once, by `target add`, not here
-    assert seen == documented_routes() - setup  # every route is used, none else is
+    member = {(r.method, r.path) for r in MEMBER_ROUTES}  # a member's own key, never this client
+    assert seen == documented_routes() - setup - member  # every route is used, none else is
     assert API_KEY not in "".join(r.raw_url for r in h.fake.requests)  # never in a URL
 
 

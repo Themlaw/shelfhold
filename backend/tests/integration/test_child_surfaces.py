@@ -208,6 +208,10 @@ CLOSED = (
     "PUT /api/v1/profiles/{profile_id}/source-policies/{source_key}",
     "PUT /api/v1/profiles/{profile_id}/family-search",
     "PUT /api/v1/profiles/{profile_id}/kavita-account",  # M3 L10: reserved, a name, never a token
+    # M4 L12 (EF-USR-012): a member's Kavita key: her own, a parent's for a child; never a child's
+    "GET /api/v1/profiles/{user_id}/destination-accounts",
+    "PUT /api/v1/profiles/{user_id}/destination-accounts/{shelf_destination_id}",
+    "DELETE /api/v1/profiles/{user_id}/destination-accounts/{shelf_destination_id}",
     "GET /api/v1/audit/kavita-accounts",  # M3 L10: the audit of the Kavita accounts, the admin's
     "POST /api/v1/audit/kavita-accounts",
     "PUT /api/v1/profiles/{profile_id}/visibility",
