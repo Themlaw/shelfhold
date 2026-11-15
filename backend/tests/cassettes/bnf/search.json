@@ -1,0 +1,111 @@
+{
+  "interactions": [
+    {
+      "request": {
+        "method": "GET",
+        "uri": "https://catalogue.bnf.fr/api/SRU",
+        "headers": {
+          "Accept": "*/*",
+          "User-Agent": "Shelfhold/0.0 (+https://github.com/Themlaw/shelfhold)"
+        },
+        "query_contains": "bib.title all \"The Synthetic Chronicle"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/xml"
+        },
+        "body": "<?xml version=\"1.0\" encoding=\"UTF-8\"?><srw:searchRetrieveResponse xmlns:srw=\"http://www.loc.gov/zing/srw/\" xmlns:oai_dc=\"http://www.openarchives.org/OAI/2.0/oai_dc/\" xmlns:dc=\"http://purl.org/dc/elements/1.1/\" xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"><srw:version>1.2</srw:version><srw:numberOfRecords>3</srw:numberOfRecords><srw:records><srw:record><srw:recordSchema>dc</srw:recordSchema><srw:recordPacking>xml</srw:recordPacking><srw:recordData><oai_dc:dc><dc:identifier>http://catalogue.bnf.fr/ark:/12148/cb00000002b</dc:identifier><dc:title>The Synthetic Chronicle, classification table</dc:title><dc:type xml:lang=\"eng\">Dewey classification notice</dc:type></oai_dc:dc></srw:recordData><srw:recordPosition>2</srw:recordPosition></srw:record><srw:record><srw:recordSchema>dc</srw:recordSchema><srw:recordPacking>xml</srw:recordPacking><srw:recordData><oai_dc:dc><dc:identifier>http://catalogue.bnf.fr/ark:/12148/cb00000001a</dc:identifier><dc:identifier>https://gallica.bnf.fr/ark:/12148/bpt6k0000001</dc:identifier><dc:title>The Synthetic Chronicle / by Ada Example ; illustrated by Bo Sample</dc:title><dc:creator>Example, Ada (1970-....). Auteur du texte</dc:creator><dc:creator>Sample, Bo (1980-....). Illustrateur</dc:creator><dc:publisher>Example Press</dc:publisher><dc:date>2001</dc:date><dc:subject>Fiction</dc:subject><dc:subject xsi:type=\"dcterms:DDC\">843.914</dc:subject><dc:subject>Dewey 843.914</dc:subject><dc:subject>Fantasy</dc:subject><dc:type xml:lang=\"eng\">text</dc:type><dc:language>fra</dc:language></oai_dc:dc></srw:recordData><srw:recordPosition>1</srw:recordPosition></srw:record><srw:record><srw:recordSchema>dc</srw:recordSchema><srw:recordPacking>xml</srw:recordPacking><srw:recordData><oai_dc:dc><dc:identifier>http://catalogue.bnf.fr/ark:/12148/cb00000003c</dc:identifier><dc:title>The Synthetic Chronicle, second edition</dc:title><dc:date>2010</dc:date></oai_dc:dc></srw:recordData><srw:recordPosition>3</srw:recordPosition></srw:record></srw:records></srw:searchRetrieveResponse>"
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "uri": "https://catalogue.bnf.fr/api/SRU",
+        "headers": {
+          "Accept": "*/*",
+          "User-Agent": "Shelfhold/0.0 (+https://github.com/Themlaw/shelfhold)"
+        },
+        "query_contains": "bib.isbn all \"9780306406157\""
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/xml"
+        },
+        "body": "<?xml version=\"1.0\" encoding=\"UTF-8\"?><srw:searchRetrieveResponse xmlns:srw=\"http://www.loc.gov/zing/srw/\" xmlns:oai_dc=\"http://www.openarchives.org/OAI/2.0/oai_dc/\" xmlns:dc=\"http://purl.org/dc/elements/1.1/\" xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"><srw:version>1.2</srw:version><srw:numberOfRecords>1</srw:numberOfRecords><srw:records><srw:record><srw:recordSchema>dc</srw:recordSchema><srw:recordPacking>xml</srw:recordPacking><srw:recordData><oai_dc:dc><dc:identifier>http://catalogue.bnf.fr/ark:/12148/cb00000001a</dc:identifier><dc:identifier>https://gallica.bnf.fr/ark:/12148/bpt6k0000001</dc:identifier><dc:title>The Synthetic Chronicle / by Ada Example ; illustrated by Bo Sample</dc:title><dc:creator>Example, Ada (1970-....). Auteur du texte</dc:creator><dc:creator>Sample, Bo (1980-....). Illustrateur</dc:creator><dc:publisher>Example Press</dc:publisher><dc:date>2001</dc:date><dc:subject>Fiction</dc:subject><dc:subject xsi:type=\"dcterms:DDC\">843.914</dc:subject><dc:subject>Dewey 843.914</dc:subject><dc:subject>Fantasy</dc:subject><dc:type xml:lang=\"eng\">text</dc:type><dc:language>fra</dc:language></oai_dc:dc></srw:recordData><srw:recordPosition>1</srw:recordPosition></srw:record></srw:records></srw:searchRetrieveResponse>"
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "uri": "https://catalogue.bnf.fr/api/SRU",
+        "headers": {
+          "Accept": "*/*",
+          "User-Agent": "Shelfhold/0.0 (+https://github.com/Themlaw/shelfhold)"
+        },
+        "query_contains": "Nothing Recorded"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/xml"
+        },
+        "body": "<?xml version=\"1.0\" encoding=\"UTF-8\"?><srw:searchRetrieveResponse xmlns:srw=\"http://www.loc.gov/zing/srw/\" xmlns:oai_dc=\"http://www.openarchives.org/OAI/2.0/oai_dc/\" xmlns:dc=\"http://purl.org/dc/elements/1.1/\" xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"><srw:version>1.2</srw:version><srw:numberOfRecords>0</srw:numberOfRecords><srw:records></srw:records></srw:searchRetrieveResponse>"
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "uri": "https://catalogue.bnf.fr/api/SRU",
+        "headers": {
+          "Accept": "*/*",
+          "User-Agent": "Shelfhold/0.0 (+https://github.com/Themlaw/shelfhold)"
+        },
+        "query_contains": "bib.isbn all \"9781402894626\""
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/xml"
+        },
+        "body": "<?xml version=\"1.0\" encoding=\"UTF-8\"?><srw:searchRetrieveResponse xmlns:srw=\"http://www.loc.gov/zing/srw/\" xmlns:oai_dc=\"http://www.openarchives.org/OAI/2.0/oai_dc/\" xmlns:dc=\"http://purl.org/dc/elements/1.1/\" xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"><srw:version>1.2</srw:version><srw:numberOfRecords>0</srw:numberOfRecords><srw:records></srw:records></srw:searchRetrieveResponse>"
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "uri": "https://data.bnf.fr/sparql",
+        "headers": {
+          "Accept": "*/*",
+          "User-Agent": "Shelfhold/0.0 (+https://github.com/Themlaw/shelfhold)"
+        },
+        "query_contains": "9781402894626"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/sparql-results+json"
+        },
+        "body": "{\"head\": {\"vars\": [\"title\"]}, \"results\": {\"bindings\": [{\"title\": {\"type\": \"literal\", \"value\": \"Sparql Synthetic Title\"}, \"creator\": {\"type\": \"literal\", \"value\": \"Example, Ada\"}, \"publisher\": {\"type\": \"literal\", \"value\": \"Example Press\"}, \"date\": {\"type\": \"literal\", \"value\": \"1999\"}, \"subject\": {\"type\": \"literal\", \"value\": \"Dewey 800\"}, \"work\": {\"type\": \"uri\", \"value\": \"https://data.bnf.fr/ark:/12148/cb00000004d\"}}]}}"
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "uri": "https://catalogue.bnf.fr/api/SRU",
+        "headers": {
+          "Accept": "*/*",
+          "User-Agent": "Shelfhold/0.0 (+https://github.com/Themlaw/shelfhold)"
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/xml"
+        },
+        "body": "<?xml version=\"1.0\" encoding=\"UTF-8\"?><srw:searchRetrieveResponse xmlns:srw=\"http://www.loc.gov/zing/srw/\" xmlns:oai_dc=\"http://www.openarchives.org/OAI/2.0/oai_dc/\" xmlns:dc=\"http://purl.org/dc/elements/1.1/\" xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"><srw:version>1.2</srw:version><srw:numberOfRecords>0</srw:numberOfRecords><srw:records></srw:records></srw:searchRetrieveResponse>"
+      }
+    }
+  ]
+}

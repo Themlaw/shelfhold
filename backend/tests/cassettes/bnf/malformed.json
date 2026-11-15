@@ -1,0 +1,21 @@
+{
+  "interactions": [
+    {
+      "request": {
+        "method": "GET",
+        "uri": "https://catalogue.bnf.fr/api/SRU",
+        "headers": {
+          "Accept": "*/*",
+          "User-Agent": "Shelfhold/0.0 (+https://github.com/Themlaw/shelfhold)"
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/xml"
+        },
+        "body": "<srw:searchRetrieveResponse><srw:records><oops>"
+      }
+    }
+  ]
+}

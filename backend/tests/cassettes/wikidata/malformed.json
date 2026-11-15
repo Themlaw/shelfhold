@@ -1,0 +1,21 @@
+{
+  "interactions": [
+    {
+      "request": {
+        "method": "GET",
+        "uri": "https://query.wikidata.org/sparql",
+        "headers": {
+          "Accept": "*/*",
+          "User-Agent": "Shelfhold/0.0 (+https://github.com/Themlaw/shelfhold)"
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/sparql-results+json"
+        },
+        "body": "{\"results\": {\"bindings\": \"no\"}}"
+      }
+    }
+  ]
+}

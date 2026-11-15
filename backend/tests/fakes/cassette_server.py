@@ -1,7 +1,8 @@
 """A simulated provider that replays a fabricated cassette (`record_mode` none: nothing leaves).
 
 A request is answered by the first interaction of the cassette with the same method, the same
-address and a body that holds the text the interaction asks for (`body_contains`); anything else
+address, a body that holds the text the interaction asks for (`body_contains`) and a decoded query
+string that holds the text it asks for (`query_contains`, for a GET); anything else
 is a test failure, never a network call. Every request is recorded with its fake instant so that
 a test can prove the rate. Synthetic data only.
 """
@@ -13,6 +14,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
+from urllib.parse import unquote_plus
 
 import httpx2
 
@@ -28,6 +30,7 @@ class Seen:
     host: str
     path: str
     body: str
+    query: str  # raw, as it went on the wire
     headers: dict[str, str]
     at: float
 
@@ -42,6 +45,7 @@ class CassetteServer:
     limit: int | None = None
     status: int | None = None
     retry_after: int | None = None
+    extra_hosts: tuple[str, ...] = ()  # a provider that has more than one door
     seen: list[Seen] = field(default_factory=list)
 
     def __post_init__(self) -> None:
@@ -63,13 +67,15 @@ class CassetteServer:
 
     @property
     def resolver(self) -> FakeResolver:
-        return FakeResolver({self.host: [PUBLIC]})
+        return FakeResolver({h: [PUBLIC] for h in (self.host, *self.extra_hosts)})
 
     def _handle(self, request: httpx2.Request) -> httpx2.Response:
         host, path = request.headers["host"], request.url.path
         body = request.content.decode("utf-8", "replace")
+        raw = request.url.query.decode("ascii", "replace")  # as sent: a test parses it itself
+        query = unquote_plus(raw)
         self.seen.append(
-            Seen(request.method, host, path, body, dict(request.headers), self.clock())
+            Seen(request.method, host, path, body, raw, dict(request.headers), self.clock())
         )
         if path == "/robots.txt":
             return httpx2.Response(404)
@@ -80,9 +86,12 @@ class CassetteServer:
                 and asked["uri"].split("://", 1)[1].split("/", 1)[0] == host
                 and "/" + asked["uri"].split("://", 1)[1].split("/", 1)[1] == path
                 and asked.get("body_contains", "") in body
+                and asked.get("query_contains", "") in query
             ):
                 return self._answer(item["response"])
-        raise AssertionError(f"no recorded answer for {request.method} {host}{path} {body[:80]}")
+        raise AssertionError(
+            f"no recorded answer for {request.method} {host}{path} {query[:80]} {body[:80]}"
+        )
 
     def _answer(self, recorded: dict[str, Any]) -> httpx2.Response:
         headers = dict(recorded.get("headers", {}))

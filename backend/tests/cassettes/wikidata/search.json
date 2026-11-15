@@ -1,0 +1,129 @@
+{
+  "interactions": [
+    {
+      "request": {
+        "method": "GET",
+        "uri": "https://query.wikidata.org/sparql",
+        "headers": {
+          "Accept": "*/*",
+          "User-Agent": "Shelfhold/0.0 (+https://github.com/Themlaw/shelfhold)"
+        },
+        "query_contains": "\"The Synthetic Chronicle\"@"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/sparql-results+json"
+        },
+        "body": "{\"head\": {\"vars\": []}, \"results\": {\"bindings\": [{\"item\": {\"type\": \"uri\", \"value\": \"http://www.wikidata.org/entity/Q900001\"}, \"itemLabel\": {\"type\": \"literal\", \"value\": \"The Synthetic Chronicle\"}, \"itemDescription\": {\"type\": \"literal\", \"value\": \"A novel invented for the tests.\"}, \"viaf\": {\"type\": \"literal\", \"value\": \"100000001\"}, \"bnf\": {\"type\": \"literal\", \"value\": \"00000001a\"}, \"openlibrary\": {\"type\": \"literal\", \"value\": \"OL1W\"}}]}}"
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "uri": "https://query.wikidata.org/sparql",
+        "headers": {
+          "Accept": "*/*",
+          "User-Agent": "Shelfhold/0.0 (+https://github.com/Themlaw/shelfhold)"
+        },
+        "query_contains": "\"Twin Title\"@"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/sparql-results+json"
+        },
+        "body": "{\"head\": {\"vars\": []}, \"results\": {\"bindings\": [{\"item\": {\"type\": \"uri\", \"value\": \"http://www.wikidata.org/entity/Q900002\"}, \"itemLabel\": {\"type\": \"literal\", \"value\": \"Twin Title\"}}, {\"item\": {\"type\": \"uri\", \"value\": \"http://www.wikidata.org/entity/Q900003\"}, \"itemLabel\": {\"type\": \"literal\", \"value\": \"Twin Title\"}}]}}"
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "uri": "https://query.wikidata.org/sparql",
+        "headers": {
+          "Accept": "*/*",
+          "User-Agent": "Shelfhold/0.0 (+https://github.com/Themlaw/shelfhold)"
+        },
+        "query_contains": "\"Nothing Recorded\"@"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/sparql-results+json"
+        },
+        "body": "{\"head\": {\"vars\": []}, \"results\": {\"bindings\": []}}"
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "uri": "https://query.wikidata.org/sparql",
+        "headers": {
+          "Accept": "*/*",
+          "User-Agent": "Shelfhold/0.0 (+https://github.com/Themlaw/shelfhold)"
+        },
+        "query_contains": "wd:Q900001"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/sparql-results+json"
+        },
+        "body": "{\"head\": {\"vars\": []}, \"results\": {\"bindings\": [{\"item\": {\"type\": \"uri\", \"value\": \"http://www.wikidata.org/entity/Q900001\"}, \"itemLabel\": {\"type\": \"literal\", \"value\": \"The Synthetic Chronicle\"}, \"viaf\": {\"type\": \"literal\", \"value\": \"100000001\"}}]}}"
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "uri": "https://query.wikidata.org/sparql",
+        "headers": {
+          "Accept": "*/*",
+          "User-Agent": "Shelfhold/0.0 (+https://github.com/Themlaw/shelfhold)"
+        },
+        "query_contains": "\"Hostile Item\"@"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/sparql-results+json"
+        },
+        "body": "{\"head\": {\"vars\": []}, \"results\": {\"bindings\": [{\"item\": {\"type\": \"uri\", \"value\": \"http://www.wikidata.org/entity/Q900009\"}, \"itemLabel\": {\"type\": \"literal\", \"value\": \"Hostile Item\"}, \"viaf\": {\"type\": \"literal\", \"value\": \"not a number\"}, \"bnf\": {\"type\": \"literal\", \"value\": \"x\\\"y\"}, \"openlibrary\": {\"type\": \"literal\", \"value\": \"OL1W> <script\"}}]}}"
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "uri": "https://query.wikidata.org/sparql",
+        "headers": {
+          "Accept": "*/*",
+          "User-Agent": "Shelfhold/0.0 (+https://github.com/Themlaw/shelfhold)"
+        },
+        "query_contains": "\"Foreign Item\"@"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/sparql-results+json"
+        },
+        "body": "{\"head\": {\"vars\": []}, \"results\": {\"bindings\": [{\"item\": {\"type\": \"uri\", \"value\": \"https://evil.example/entity/Q900010\"}, \"itemLabel\": {\"type\": \"literal\", \"value\": \"Foreign Item\"}}]}}"
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "uri": "https://query.wikidata.org/sparql",
+        "headers": {
+          "Accept": "*/*",
+          "User-Agent": "Shelfhold/0.0 (+https://github.com/Themlaw/shelfhold)"
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/sparql-results+json"
+        },
+        "body": "{\"head\":{\"vars\":[]},\"results\":{\"bindings\":[]}}"
+      }
+    }
+  ]
+}
