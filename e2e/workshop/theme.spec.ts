@@ -125,6 +125,9 @@ test('test_theme_attribute_is_set_before_the_first_render', async ({ page, conte
   expect(first, 'the attribute is set by the boot script').toBeDefined();
   expect(first!.bodyExisted).toBe(false);
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'bibliotheque');
+  // The boot script sets the theme before hydration, the <title> only comes with it: wait for it so axe never sees a bare shell.
+  await expect(page).toHaveTitle(/\S/);
+  await expect(page.getByRole('contentinfo')).toBeVisible();
   await expectNoBlockingViolations(page); // dark; L02 plays both schemes on "A classer"
   expect((await patch('light')).status()).toBe(200);
   await page.goto('/');
