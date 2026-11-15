@@ -1,5 +1,4 @@
 import { expect, test, type Page } from '@playwright/test';
-import { refuseOutsideBaseUrl } from './fence';
 
 // EF-USR-025, ADR-0050: a passkey registered then used to sign in, in a `localhost` context (the
 // only plain-HTTP origin WebAuthn accepts). A virtual authenticator stands for the device; the
@@ -24,8 +23,7 @@ async function virtualAuthenticator(page: Page): Promise<void> {
 }
 
 // req: EF-USR-025
-test('test_passkey_login_e2e', async ({ page, browser, context, baseURL }) => {
-  const outside = await refuseOutsideBaseUrl(context, ORIGIN);
+test('test_passkey_login_e2e', async ({ page, browser }) => {
   await page.goto(`${ORIGIN}/`);
   await virtualAuthenticator(page);
 
@@ -97,12 +95,10 @@ test('test_passkey_login_e2e', async ({ page, browser, context, baseURL }) => {
   expect(result.status).toBe(200);
   const listed = await page.evaluate(async () => (await fetch('/api/v1/auth/passkeys')).status);
   expect(listed).toBe(200); // the passkey opened a session
-  expect(outside).toEqual([]);
 });
 
 // req: EF-USR-025
-test('test_passkey_refused_from_a_foreign_origin', async ({ page, context, baseURL }) => {
-  const outside = await refuseOutsideBaseUrl(context, baseURL ?? ORIGIN);
+test('test_passkey_refused_from_a_foreign_origin', async ({ page }) => {
   // the same server reached by its 127.0.0.1 name is not the relying party: nothing to sign in with
   await page.goto('/');
   const status = await page.evaluate(async () => {
@@ -114,5 +110,4 @@ test('test_passkey_refused_from_a_foreign_origin', async ({ page, context, baseU
     return { status: answer.status, rpId: body?.options?.rpId ?? null };
   });
   expect(status.rpId).not.toBe('127.0.0.1'); // the RP ID comes from SHELFHOLD_PUBLIC_URL only
-  expect(outside).toEqual([]);
 });

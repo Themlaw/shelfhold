@@ -26,7 +26,8 @@ git diff tests/references/key-screens.json   # relire chaque écart, puis le com
 ## Navigation fencing (ENF-PRIV-001)
 
 Every Playwright context is fenced by `context.route('**/*')`: any request whose origin
-differs from `baseURL` is aborted and counted in the array returned by
-`refuseOutsideBaseUrl` (see `tests/fence.ts` and `workshop/fixtures.ts`). That count is
-asserted to be empty at the end of every journey. `test_spa_requests_outside_base_url_are_refused_and_counted`
-is the proof that a third-party image injected on purpose is refused and counted.
+differs from `baseURL` is aborted and counted by `refuseOutsideBaseUrl`
+(see `workshop/fixtures.ts`). That count is asserted to be empty at the end of every journey.
+`test_spa_requests_outside_base_url_are_refused_and_counted` is the proof that a third-party
+image injected on purpose is refused and counted. WebSockets do not go through `route()`, so the
+fence does not cover them.

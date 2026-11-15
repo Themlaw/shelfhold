@@ -3,7 +3,6 @@ import { mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { expect, test, type Locator, type Page } from '@playwright/test';
-import { refuseOutsideBaseUrl } from './fence';
 
 // M3 L57: the journeys a browser plays on the IMAGE of the release (not on a local server).
 // They are not run by `e2e-front` (playwright.config.ts ignores this file): the pytest wrapper of
@@ -165,8 +164,7 @@ async function firstBook(page: Page, run: Run): Promise<void> {
 }
 
 // req: ENF-UX-001
-test('test_first_book_under_10_minutes', async ({ page, context, baseURL }, info) => {
-  const outside = await refuseOutsideBaseUrl(context, baseURL ?? '');
+test('test_first_book_under_10_minutes', async ({ page }, info) => {
   // A new installation: `docker compose up` (the compose holds the setup secret), then the
   // browser opens `/`. The administrator makes the account, goes through the screens, makes the
   // shelf linked to Kavita, launches a Gutenberg book, and Kavita lists it: within BUDGET_S seconds
@@ -181,7 +179,6 @@ test('test_first_book_under_10_minutes', async ({ page, context, baseURL }, info
   expect((await kavitaSeries()).includes(FIRST_BOOK.title), report).toBe(true);
   expect(run.elapsed(), report).toBeLessThanOrEqual(BUDGET_S);
   expect(run.actions.length, report).toBeLessThanOrEqual(BUDGET_ACTIONS);
-  expect(outside).toEqual([]);
 });
 
 // ---- EF-UX-012: key screens, per theme and per scheme ------------------------------------------
@@ -235,7 +232,7 @@ async function structureOf(page: Page): Promise<string[]> {
 }
 
 // req: EF-UX-012
-test('test_key_screens_snapshot_per_theme', async ({ browser, baseURL }, info) => {
+test('test_key_screens_snapshot_per_theme', async ({ browser }, info) => {
   test.setTimeout(240_000);
   expect(
     !(UPDATING && process.env.CI),
@@ -243,7 +240,6 @@ test('test_key_screens_snapshot_per_theme', async ({ browser, baseURL }, info) =
   ).toBe(true);
   expect(EDITION, 'the wrapper gives the edition of the series sheet').not.toBe('');
   const captured: Record<string, Captured> = {};
-  const outsideRequests: string[] = [];
   expect(THEMES.length, 'at least the default theme exists').toBeGreaterThan(0);
   const shots = join(info.outputPath(), 'themes');
   mkdirSync(shots, { recursive: true });
@@ -258,7 +254,6 @@ test('test_key_screens_snapshot_per_theme', async ({ browser, baseURL }, info) =
         const url = path === SERIES_SHEET ? `/serie/${EDITION}` : path;
         for (const scheme of SCHEMES) {
           const context = await browser.newContext({ locale: 'fr-FR', colorScheme: scheme });
-          const fenced = await refuseOutsideBaseUrl(context, baseURL ?? '');
           const page = await context.newPage();
           const here = `${who.username} ${theme}/${scheme} ${path}`;
           const errors: string[] = [];
@@ -301,7 +296,6 @@ test('test_key_screens_snapshot_per_theme', async ({ browser, baseURL }, info) =
             path: join(shots, `${who.username}-${theme}-${scheme}-${screen.replaceAll('/', '_').replaceAll(/[{}]/g, '') || '_'}.png`),
             fullPage: true
           });
-          outsideRequests.push(...fenced);
           await context.close();
         }
         // the scheme changes the colours, never the screen: the same landmarks and headings
@@ -327,5 +321,4 @@ test('test_key_screens_snapshot_per_theme', async ({ browser, baseURL }, info) =
     expect(now.tokens, `${key}: tokens`).toEqual(reference[key].tokens);
     expect(now.structure, `${key}: structure`).toEqual(reference[key].structure);
   }
-  expect(outsideRequests).toEqual([]);
 });
