@@ -66,3 +66,17 @@ def test_lncrawl_settings_carry_an_admin_rights_warning(store) -> None:
     assert LNCRAWL_RIGHTS_WARNING in view.warnings
     other = settings_store.view("another-source", parse_settings_schema(None))
     assert LNCRAWL_RIGHTS_WARNING not in other.warnings  # the notice is lncrawl's alone
+
+
+@pytest.mark.req("ENF-LEG-003")
+def test_lncrawl_settings_in_the_cli_print_the_rights_notice(
+    store, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from shelfhold.i18n import t
+    from shelfhold.interfaces.cli.plugin import _show
+
+    _engine, settings_store = store
+    _show(
+        settings_store, "lncrawl", parse_settings_schema(LncrawlService().manifest.settings_schema)
+    )
+    assert t("plugin.lncrawl_rights") in capsys.readouterr().err
