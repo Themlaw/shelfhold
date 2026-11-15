@@ -356,7 +356,7 @@ def test_release_workflow_accepts_rc_tags_and_checks_the_prerelease_flag() -> No
         assert "-rc" in _text(jobs[name]) or name == "image-tags", name
     flat = _text(jobs["image-tags"])
     assert "github.event.release.prerelease" in yaml.safe_dump(jobs["image-tags"])
-    assert "latest" not in flat
+    assert ":latest" not in flat  # the tag is written by release-retag.sh, final releases only
     assert "-rc" in (ROOT / ".github/scripts/release-retag.sh").read_text()
 
 
@@ -370,8 +370,13 @@ def test_docs_workflow_skips_a_release_candidate() -> None:
 
 
 @pytest.mark.req("ENF-SEC-007", "ENF-OPS-002")
-def test_release_workflows_never_publish_a_latest_tag() -> None:
-    for name in ("release.yml", "docs.yml"):
-        assert ":latest" not in (ROOT / ".github/workflows" / name).read_text()
-    for script in ("release-retag.sh", "release-proofs.sh"):
-        assert ":latest" not in (ROOT / ".github/scripts" / script).read_text()
+def test_only_the_release_retag_path_publishes_a_latest_tag() -> None:
+    # maintainer's decision of 2026-11-15: a final release moves `latest` (never a release
+    # candidate, never backwards); no other workflow or script may write it
+    assert ":latest" not in (ROOT / ".github/workflows/docs.yml").read_text()
+    assert ":latest" not in (ROOT / ".github/scripts/release-proofs.sh").read_text()
+    retag = (ROOT / ".github/scripts/release-retag.sh").read_text()
+    assert retag.count(':latest"') == 1
+    # the write sits after the release-candidate exit and behind the "never backwards" check
+    assert retag.index("exit 0") < retag.index(':latest"')
+    assert 'highest_final" = "$VERSION"' in retag

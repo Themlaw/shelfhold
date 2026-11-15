@@ -1,7 +1,8 @@
 name: release
 
-# Adds the version tags X.Y.Z and X.Y to the image already published for the tagged commit
-# (retag of sha-<long>: no rebuild, no "latest"), once ci-success is green on that commit.
+# Adds the version tags X.Y.Z and X.Y, and "latest", to the image already published for the tagged
+# commit (retag of sha-<long>: no rebuild), once ci-success is green on that commit. X.Y and latest
+# never move backwards (a fix of an older minor moves neither).
 # A release candidate vX.Y.Z-rc.N (a GitHub pre-release) gets NO image tag (neither X.Y.Z-rc.N, nor
 # X.Y, nor latest) and no second-registry tag: it is installed from sha-<commit>, already signed and
 # attested. Its release still gets the proofs (SBOM, provenance, test report, schema assets).
@@ -54,7 +55,7 @@ jobs:
         run: |
           case "$TAG" in *-rc.*) want=true ;; *) want=false ;; esac
           [ "$PRERELEASE" = "$want" ] || { echo "::error::${TAG}: pre-release is ${PRERELEASE}, it must be ${want} (gh release create --prerelease for a vX.Y.Z-rc.N tag, never for vX.Y.Z)"; exit 1; }
-      - name: Add X.Y.Z and X.Y to the image of the tagged commit (nothing for a release candidate)
+      - name: Add X.Y.Z, X.Y and latest to the image of the tagged commit (nothing for a release candidate)
         env:
           GH_TOKEN: ${{ github.token }}
           IMAGE: ghcr.io/${{ github.repository }}  # lowercased by the script
@@ -134,7 +135,7 @@ jobs:
               echo "\`${digest}\` is absent from \`${SECOND_IMAGE}\` or not signed (the token was added after the build of this commit?). Nothing was tagged there; ENF-GOV-004 stays open."
             } >> "$GITHUB_STEP_SUMMARY"
           fi
-      - name: Second registry, add X.Y.Z and X.Y to the signed digest
+      - name: Second registry, add X.Y.Z, X.Y and latest to the signed digest
         if: steps.second.outputs.enabled == 'true' && steps.signed.outputs.signed == 'true'
         env:
           SECOND_IMAGE: ${{ steps.second.outputs.image }}
@@ -152,6 +153,9 @@ jobs:
           # X.Y follows GHCR: it moves only if GHCR's X.Y is this very digest (never backwards)
           ghcr_minor="$(docker buildx imagetools inspect "${IMAGE}:${minor}" --format '{{.Manifest.Digest}}' 2>/dev/null || true)"
           [ "$ghcr_minor" = "$DIGEST" ] && args+=(-t "${SECOND_IMAGE}:${minor}")
+          # latest follows GHCR the same way
+          ghcr_latest="$(docker buildx imagetools inspect "${IMAGE}:latest" --format '{{.Manifest.Digest}}' 2>/dev/null || true)"
+          [ "$ghcr_latest" = "$DIGEST" ] && args+=(-t "${SECOND_IMAGE}:latest")
           docker buildx imagetools create "${args[@]}" "${SECOND_IMAGE}@${DIGEST}"
           echo "### Second registry: tagged ${args[*]}" >> "$GITHUB_STEP_SUMMARY"
 
