@@ -114,6 +114,8 @@ class ApprovalOut(BaseModel):
     resolved: bool
     above_requester_ceiling: bool  # a warning: the age is above the child's ceiling (not a refusal)
     requester_ceiling: int | None
+    # a warning: a source not marked "family" feeds a family shelf (not a refusal)
+    non_family_source_into_family_shelf: bool
 
     @classmethod
     def of(cls, preview: ApprovalPreview) -> "ApprovalOut":

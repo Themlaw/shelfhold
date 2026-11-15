@@ -325,6 +325,7 @@
   "approve.approve": "Approve",
   "approve.choose_age": "Choose an age to be able to approve.",
   "approve.above_ceiling": "This age is above what the child may see: they will not see the book arrive.",
+  "approve.non_family_source": "This source is not marked “family” but feeds a family shelf: children will see its content there.",
   "approve.age_for_child": "Age for this request",
   "approve.size_summary": "{volumes, plural, one {# volume} other {# volumes}}, {bytes} bytes",
   "approve.more_to_come": "more will follow",

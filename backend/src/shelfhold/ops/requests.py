@@ -29,6 +29,7 @@ from shelfhold.catalog.public import RatingRefusedError, RatingService
 from shelfhold.events.bus import PublishedEvent
 from shelfhold.export.application.shelves import ShelfService
 from shelfhold.identity.public import Principal
+from shelfhold.infrastructure.schema import acquisition, export
 from shelfhold.ops.acquire import AcquireOps
 from shelfhold.ops.errors import CodedRefusal
 from shelfhold.ops.follows import FollowOps
@@ -101,6 +102,24 @@ class _Ports:
 
     def proposed_shelf(self, edition_id: str) -> str | None:
         return self._shelves.proposed_shelf(edition_id)
+
+    def default_shelf(self, kind: str) -> str | None:
+        return self._shelves.default_shelf_of_kind(kind)
+
+    def source_is_family(self, source_key: str) -> bool:
+        with self._comp.engine.connect() as connection:
+            marked = connection.execute(
+                sa.select(acquisition.source_config.c.family_safe).where(
+                    acquisition.source_config.c.plugin_id == source_key
+                )
+            ).scalar()
+        return marked is True  # a source nobody configured is not a family one
+
+    def shelf_ceiling(self, shelf_id: str) -> int | None:
+        with self._comp.engine.connect() as connection:
+            return connection.execute(
+                sa.select(export.shelf.c.max_age_rating).where(export.shelf.c.id == shelf_id)
+            ).scalar()
 
     def settle(
         self, work_id: str, edition_id: str | None, rating: AgeRating | None,

@@ -268,6 +268,10 @@ export type ApprovalOut = {
      */
     needs_age: boolean;
     /**
+     * Non Family Source Into Family Shelf
+     */
+    non_family_source_into_family_shelf: boolean;
+    /**
      * Requester Ceiling
      */
     requester_ceiling: number | null;

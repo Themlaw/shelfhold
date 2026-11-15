@@ -66,6 +66,8 @@ class FakePorts:
     acquired: list[tuple[str, str, str | None, str]] = field(default_factory=list)
     filed: list[tuple[str, str, str]] = field(default_factory=list)
     shelf: str | None = None
+    family_sources: set[str] = field(default_factory=set)  # sources marked "family"
+    shelf_ceilings: dict[str, int | None] = field(default_factory=dict)  # shelf id -> ceiling
     engine: sa.Engine | None = None
     fail_follow: Exception | None = None
     fail_start: Exception | None = None
@@ -105,6 +107,15 @@ class FakePorts:
 
     def proposed_shelf(self, edition_id: str) -> str | None:
         return self.shelf
+
+    def default_shelf(self, kind: str) -> str | None:
+        return self.shelf
+
+    def source_is_family(self, source_key: str) -> bool:
+        return source_key in self.family_sources
+
+    def shelf_ceiling(self, shelf_id: str) -> int | None:
+        return self.shelf_ceilings.get(shelf_id)
 
     def settle(
         self, work_id: str, edition_id: str | None, rating: AgeRating | None,

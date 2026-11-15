@@ -480,3 +480,22 @@ def test_the_approval_preview_warns_of_an_age_above_the_child_ceiling(
         assert admin.get(path, params={"age": 18, "x": "true"}).json()["above_requester_ceiling"]
         done = api.post(f"{REQUESTS}/{rid}/approve", client=admin, json={"age": 16})
         assert done.status_code == 200, done.text  # the warning does not refuse
+
+
+@pytest.mark.req("EF-USR-010", "EF-USR-014")
+def test_the_approval_preview_warns_of_a_non_family_source_into_a_family_shelf(
+    monkeypatch: pytest.MonkeyPatch, settings: Settings, ports: FakePorts
+) -> None:
+    """A warning on the wire (`non_family_source_into_family_shelf`), never a refusal."""
+    ports.shelf, ports.shelf_ceilings = "KIDS", {"KIDS": 10}
+    with instance(monkeypatch, settings, alpha()) as api:
+        kid = family(api)
+        rid = ask_as_child(api, kid)
+        admin = admin_client(api)
+        path = f"{REQUESTS}/{rid}/approval"
+        assert admin.get(path).json()["non_family_source_into_family_shelf"] is True
+        ports.family_sources.add("alpha")
+        assert admin.get(path).json()["non_family_source_into_family_shelf"] is False
+        ports.family_sources.clear()
+        done = api.post(f"{REQUESTS}/{rid}/approve", client=admin, json={"age": 10})
+        assert done.status_code == 200, done.text

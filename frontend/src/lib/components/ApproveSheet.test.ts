@@ -126,6 +126,30 @@ describe('ApproveSheet', () => {
     expect(approveButton()).toBeEnabled();
   });
 
+  // req: EF-USR-010, EF-USR-014
+  it('warns, without blocking, that a non-family source feeds a family shelf', async () => {
+    answer(preview({ needs_age: false, non_family_source_into_family_shelf: true }));
+    render(ApproveSheet, {
+      item: item({ needs_age: false, requester_role: 'member' }),
+      onapproved: vi.fn()
+    });
+    expect(await screen.findByRole('status')).toHaveTextContent(
+      /source n’est pas marquée « famille »/
+    );
+    expect(approveButton()).toBeEnabled();
+  });
+
+  // req: EF-USR-010, EF-USR-014
+  it('shows no source warning when the source is family or the shelf is not', async () => {
+    answer(preview({ needs_age: false, non_family_source_into_family_shelf: false }));
+    render(ApproveSheet, {
+      item: item({ needs_age: false, requester_role: 'member' }),
+      onapproved: vi.fn()
+    });
+    await screen.findByText(/3\svolumes/);
+    expect(screen.queryByRole('status')).toBeNull();
+  });
+
   // req: EF-USR-010
   it('an adult request is approved in one gesture, with no age asked', async () => {
     answer(preview({ needs_age: false }));
