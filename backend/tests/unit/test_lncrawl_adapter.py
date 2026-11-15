@@ -536,3 +536,13 @@ def test_a_refused_answer_is_untrusted_never_a_pause_of_the_service() -> None:
 
     failure = classify(RangeAnswerRefused("the file is not an EPUB container"))
     assert failure == "untrusted" and disposition_of(failure) is Disposition.REFUSE
+
+
+@pytest.mark.req("ENF-LEG-003")
+def test_lncrawl_rate_limit_one_request_per_second() -> None:
+    service = LncrawlService(BASE_URL)
+    assert service.manifest.rate_limit.requests_per_second == 1.0
+    assert service.manifest.rate_limit.concurrency == 1
+    on_disk = SourceManifest.model_validate_json(MANIFEST.read_text("utf-8"))
+    assert on_disk.rate_limit.requests_per_second == 1.0
+    assert on_disk.rate_limit.concurrency == 1
