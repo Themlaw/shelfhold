@@ -438,6 +438,8 @@ def require_principal(request: Request) -> Principal:
     principal = current_principal(request)
     if principal is None:
         raise LoginRequiredError
+    if principal.credential is Credential.DEVICE_TOKEN:  # never resolved here; belt and braces
+        raise ProblemError("credential_not_allowed")
     if request.method not in SAFE_METHODS and not principal.may_write:
         raise ProblemError("forbidden")
     return principal

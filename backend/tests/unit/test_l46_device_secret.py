@@ -36,7 +36,7 @@ def test_device_secret_is_generated_with_at_least_128_bits() -> None:
 
 def test_device_secret_alphabet_has_no_look_alike_characters() -> None:
     assert not set("iloOILU") & set(ALPHABET)  # 0/o, 1/l/i, u/v are told apart on a small screen
-    assert ALPHABET == ALPHABET.lower()  # an e-reader keyboard starts in lower case
+    assert ALPHABET.lower() == ALPHABET  # an e-reader keyboard starts in lower case
 
 
 def test_public_identifier_is_short_unique_and_not_derived_from_the_secret() -> None:

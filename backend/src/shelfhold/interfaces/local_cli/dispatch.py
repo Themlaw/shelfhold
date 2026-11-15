@@ -159,6 +159,40 @@ def _keys_list(auth: LocalAuth, _by: Principal, _params: Params) -> object:
     ]
 
 
+def _device_tokens_create(auth: LocalAuth, by: Principal, params: Params) -> object:
+    created = auth.create_device_token(
+        subject_username=str(_text(params, "subject")),
+        name=_text(params, "name", required=False),
+        expires_days=_days(params),
+        by=by,
+    )
+    return {
+        "public_id": created.public_id,
+        "secret": created.secret,  # the one time it leaves: the caller prints it once
+        "subject_user_id": created.subject_user_id,
+        "expires_at": _iso(created.expires_at),
+    }
+
+
+def _device_tokens_revoke(auth: LocalAuth, by: Principal, params: Params) -> object:
+    return auth.revoke_device_token(str(_text(params, "public_id")), by=by)
+
+
+def _device_tokens_list(auth: LocalAuth, _by: Principal, _params: Params) -> object:
+    return [
+        {
+            "public_id": token.public_id,
+            "profile": token.subject.username,
+            "name": token.name,
+            "created_at": _iso(token.created_at),
+            "expires_at": _iso(token.expires_at),
+            "last_used_at": _iso(token.last_used_at),
+            "revoked_at": _iso(token.revoked_at),
+        }  # never `secret_digest`
+        for token in auth.device_tokens()
+    ]
+
+
 def _optional_int(params: Params, name: str) -> int | None:
     value = params.get(name)
     if value is None:
@@ -247,6 +281,9 @@ METHODS: Mapping[str, tuple[Method, str | None]] = {
     "identity.keys_rotate": (_keys_rotate, "keys.rotate"),
     "identity.keys_revoke": (_keys_revoke, "keys.revoke"),
     "identity.keys_list": (_keys_list, None),
+    "identity.device_tokens_create": (_device_tokens_create, "device_token.manage"),
+    "identity.device_tokens_revoke": (_device_tokens_revoke, "device_token.manage"),
+    "identity.device_tokens_list": (_device_tokens_list, None),
     "identity.profile_add": (_profile_add, "profile.create"),
     "identity.profile_list": (_profile_list, None),
     "identity.profile_set": (_profile_set, "profile.update"),

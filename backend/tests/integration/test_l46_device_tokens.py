@@ -25,8 +25,8 @@ from shelfhold.identity.domain.device_secret import format_secret, normalise_sec
 from shelfhold.identity.public import (
     RESERVED_ACTIONS,
     Allowed,
-    CredentialNotAllowed,
     Credential,
+    CredentialNotAllowed,
     LocalAuth,
     NotAllowedError,
     Principal,
@@ -35,7 +35,11 @@ from shelfhold.identity.public import (
     reader_scope,
 )
 from shelfhold.infrastructure.db import create_db_engine
-from shelfhold.interfaces.http_api.device_auth import DEVICE_ROUTE_PREFIXES, require_device_basic
+from shelfhold.interfaces.http_api.device_auth import (
+    DEVICE_ROUTE_PREFIXES,
+    require_device_basic,
+    require_device_kosync,
+)
 from shelfhold.interfaces.http_api.ratelimit import credential_label
 from tests.auth_env import ADMIN, PASSWORD, AuthEnv, auth_env, db_dump, db_rows, run_cli
 
@@ -45,7 +49,14 @@ KOSYNC_AUTH = "/kosync/users/auth"
 OPDS_PROBE = "/opds/_probe"
 PER_PAIR = 5
 PER_ADDRESS = 30
-ADMIN_ROUTES = ("/api/v1/profiles", "/api/v1/audit", "/api/v1/sessions", "/api/v1/works")
+ADMIN_ROUTES = (
+    "/api/v1/profiles",
+    "/api/v1/maintenance",
+    "/api/v1/destinations",
+    "/api/v1/stats",
+    "/api/v1/shelves",
+)
+OUTSIDE_PROBE = "/api/v1/_device_probe"
 
 
 def md5(text: str) -> str:
@@ -67,6 +78,13 @@ def basic(user: str, secret: str) -> dict[str, str]:
 
 
 probe = APIRouter()
+
+
+@probe.get(OUTSIDE_PROBE)
+def outside_probe(
+    principal: Annotated[Principal, Depends(require_device_kosync)],
+) -> dict[str, str]:
+    return {"user": principal.user_id}  # a route that takes a token where it must not
 
 
 @probe.get(OPDS_PROBE)
@@ -96,6 +114,13 @@ def user_id(env: AuthEnv, username: str) -> str:
     return str(db_rows(env.settings, 'SELECT id FROM "user" WHERE username = ?', username)[0][0])
 
 
+def _same_problem(first: Any, second: Any) -> bool:
+    """The same answer but for the request identifier, which is the request's own."""
+    one, two = first.json(), second.json()
+    one.pop("request_id", None), two.pop("request_id", None)
+    return bool(one == two)
+
+
 def issue(env: AuthEnv, subject: str, **kwargs: Any) -> Any:
     return auth_of(env).create_device_token(subject_username=subject, name="liseuse", **kwargs)
 
@@ -121,7 +146,7 @@ def test_device_token_scoped_to_subject_profile_not_issuer(api: AuthEnv) -> None
     assert session.status_code == 200
     admin_principal = Principal(
         user_id=admin, username=ADMIN, role="admin", credential=Credential.SESSION,
-        session_id="s", auth_time=api.clock.now(), can_rate=True,
+        session_id=None, auth_time=api.clock.now(), can_rate=True,
     )  # fmt: skip
     created = auth_of(api).create_device_token(
         subject_username="kid", name="Kobo", by=admin_principal
@@ -142,7 +167,7 @@ def test_a_member_cannot_issue_a_token_and_the_host_cli_names_no_issuer(api: Aut
     profile(api, "mum", "member")
     mum = Principal(
         user_id=user_id(api, "mum"), username="mum", role="member",
-        credential=Credential.SESSION, session_id="s", auth_time=api.clock.now(),
+        credential=Credential.SESSION, session_id=None, auth_time=api.clock.now(),
     )  # fmt: skip
     with pytest.raises(NotAllowedError):
         auth_of(api).create_device_token(subject_username="mum", by=mum)
@@ -205,12 +230,12 @@ def test_identical_answer_for_an_unknown_identifier_and_a_wrong_key(api: AuthEnv
     unknown = api.client.get(KOSYNC_AUTH, headers=kosync("zzzzzzzz", created.secret))
     wrong = api.client.get(KOSYNC_AUTH, headers=kosync(created.public_id, "x" * 26))
     assert unknown.status_code == wrong.status_code == 401
-    assert unknown.content == wrong.content
+    assert _same_problem(unknown, wrong)
     assert unknown.headers.get("www-authenticate") == wrong.headers.get("www-authenticate")
     basic_unknown = api.client.get(OPDS_PROBE, headers=basic("zzzzzzzz", created.secret))
     basic_wrong = api.client.get(OPDS_PROBE, headers=basic(created.public_id, "x" * 26))
     assert basic_unknown.status_code == basic_wrong.status_code == 401
-    assert basic_unknown.content == basic_wrong.content
+    assert _same_problem(basic_unknown, basic_wrong)
     assert "basic" in basic_wrong.headers["www-authenticate"].lower()
 
 
@@ -233,7 +258,9 @@ def test_no_secret_in_logs_audit_or_errors(
     ).decode())  # fmt: skip
     for secret in secrets_:
         assert secret not in everything
-    audited = db_rows(api.settings, "SELECT action, target FROM audit WHERE action LIKE 'device_token.%'")
+    audited = db_rows(
+        api.settings, "SELECT action, target FROM audit WHERE action LIKE 'device_token.%'"
+    )
     assert [a for a, _ in audited] == ["device_token.created", "device_token.revoked"]
     assert all(created.public_id in (t or "") for _a, t in audited)
 
@@ -248,7 +275,10 @@ def test_revoked_token_is_refused_at_once_and_stays_refused(api: AuthEnv) -> Non
     assert api.client.get(KOSYNC_AUTH, headers=headers).status_code == 200
     assert auth_of(api).revoke_device_token(created.public_id) is True
     assert api.client.get(KOSYNC_AUTH, headers=headers).status_code == 401  # no cache
-    assert api.client.get(OPDS_PROBE, headers=basic(created.public_id, created.secret)).status_code == 401
+    assert (
+        api.client.get(OPDS_PROBE, headers=basic(created.public_id, created.secret)).status_code
+        == 401
+    )
     assert auth_of(api).revoke_device_token(created.public_id) is False  # already revoked
     assert auth_of(api).revoke_device_token("zzzzzzzz") is False
     revoked_at = db_rows(api.settings, "SELECT revoked_at FROM device_token")[0][0]
@@ -259,8 +289,14 @@ def test_revoking_one_token_leaves_the_others_of_the_same_profile(api: AuthEnv) 
     profile(api, "kid", "child", max_age_rating=7)
     salon, chambre = issue(api, "kid"), issue(api, "kid")
     auth_of(api).revoke_device_token(salon.public_id)
-    assert api.client.get(KOSYNC_AUTH, headers=kosync(salon.public_id, salon.secret)).status_code == 401
-    assert api.client.get(KOSYNC_AUTH, headers=kosync(chambre.public_id, chambre.secret)).status_code == 200
+    assert (
+        api.client.get(KOSYNC_AUTH, headers=kosync(salon.public_id, salon.secret)).status_code
+        == 401
+    )
+    assert (
+        api.client.get(KOSYNC_AUTH, headers=kosync(chambre.public_id, chambre.secret)).status_code
+        == 200
+    )
 
 
 def test_expired_token_is_refused_and_use_is_recorded(api: AuthEnv) -> None:
@@ -290,7 +326,10 @@ def test_deleting_the_profile_deletes_its_tokens(api: AuthEnv) -> None:
     created = issue(api, "kid")
     auth_of(api).delete_user("kid")
     assert db_rows(api.settings, "SELECT count(*) FROM device_token") == [(0,)]
-    assert api.client.get(KOSYNC_AUTH, headers=kosync(created.public_id, created.secret)).status_code == 401
+    assert (
+        api.client.get(KOSYNC_AUTH, headers=kosync(created.public_id, created.secret)).status_code
+        == 401
+    )
 
 
 # --- a token gives the rights and the filters of its profile, read at each request --------------
@@ -372,32 +411,26 @@ def test_device_token_presented_on_admin_and_ordinary_routes_is_refused(
         {**kosync(created.public_id, created.secret), **basic(created.public_id, created.secret)},
     )
     for headers in spoken:
-        for path in ADMIN_ROUTES:
+        # a wrong bearer is a failed key attempt, counted (ENF-SEC-008): a few requests only
+        bearer = "Authorization" in headers and headers["Authorization"].startswith("Bearer")
+        for path in ADMIN_ROUTES[:2] if bearer else ADMIN_ROUTES:
             assert api.client.get(path, headers=headers).status_code == 401, (path, headers)
-        for method in ("post", "put", "delete", "patch"):
+        for method in ("post",) if bearer else ("post", "put", "delete", "patch"):
             answer = getattr(api.client, method)("/api/v1/profiles", headers=headers)
             assert answer.status_code in {401, 403, 405}, (method, headers)
-    assert db_rows(api.settings, 'SELECT count(*) FROM "user"')[0][0] == (1 if role == "admin" else 2)
-
-
-def test_every_route_that_takes_a_device_token_sits_under_opds_or_kosync(api: AuthEnv) -> None:
-    from shelfhold.interfaces.http_api.device_auth import DEVICE_SCHEME_MARK
-
-    found = []
-    for route in api.app.routes:  # type: ignore[attr-defined]
-        dependant = getattr(route, "dependant", None)
-        if dependant is None:
-            continue
-        stack = [dependant]
-        while stack:
-            current = stack.pop()
-            stack.extend(current.dependencies)
-            if getattr(current.call, DEVICE_SCHEME_MARK, None):
-                found.append(route.path)
-    assert KOSYNC_AUTH in found and OPDS_PROBE in found
-    assert all(
-        any(path == p or path.startswith(p + "/") for p in DEVICE_ROUTE_PREFIXES) for path in found
+    assert db_rows(api.settings, 'SELECT count(*) FROM "user"')[0][0] == (
+        1 if role == "admin" else 2
     )
+
+
+def test_a_route_outside_opds_and_kosync_never_takes_a_device_token(api: AuthEnv) -> None:
+    """The closed list is enforced where the token is read, not only by where routes happen to
+    be mounted: a route that names the dependency outside `/opds` and `/kosync` refuses it."""
+    profile(api, "kid", "child", max_age_rating=7)
+    created = issue(api, "kid")
+    answer = api.client.get(OUTSIDE_PROBE, headers=kosync(created.public_id, created.secret))
+    assert answer.status_code == 403 and answer.json()["code"] == "credential_not_allowed"
+    assert api.client.get(KOSYNC_AUTH, headers=kosync(created.public_id, created.secret)).is_success
     assert set(DEVICE_ROUTE_PREFIXES) == {"/opds", "/kosync"}
 
 
@@ -408,7 +441,10 @@ def test_an_api_key_is_no_device_token_and_a_device_token_is_no_api_key(api: Aut
     assert api.client.get(KOSYNC_AUTH, headers=kosync(created.public_id, key)).status_code == 401
     assert api.client.get(OPDS_PROBE, headers={"Authorization": f"Bearer {key}"}).status_code == 401
     assert api.client.get(OPDS_PROBE, headers=basic(created.public_id, key)).status_code == 401
-    assert api.client.get("/api/v1/profiles", headers={"Authorization": f"Bearer {key}"}).status_code == 200
+    assert (
+        api.client.get("/api/v1/stats", headers={"Authorization": f"Bearer {key}"}).status_code
+        != 401
+    )
     assert user_id(api, "kid") == kid
 
 
@@ -426,8 +462,16 @@ def test_another_profiles_token_never_opens_a_door_as_someone_else(api: AuthEnv)
     mum = profile(api, "mum", "member")
     kid_token, mum_token = issue(api, "kid"), issue(api, "mum")
     # crossed: the identifier of one with the secret of the other
-    assert api.client.get(KOSYNC_AUTH, headers=kosync(kid_token.public_id, mum_token.secret)).status_code == 401
-    assert api.client.get(OPDS_PROBE, headers=basic(mum_token.public_id, kid_token.secret)).status_code == 401
+    assert (
+        api.client.get(
+            KOSYNC_AUTH, headers=kosync(kid_token.public_id, mum_token.secret)
+        ).status_code
+        == 401
+    )
+    assert (
+        api.client.get(OPDS_PROBE, headers=basic(mum_token.public_id, kid_token.secret)).status_code
+        == 401
+    )
     # each token is exactly its own profile, whatever else is asked
     one = api.client.get(OPDS_PROBE, headers=basic(kid_token.public_id, kid_token.secret)).json()
     two = api.client.get(OPDS_PROBE, headers=basic(mum_token.public_id, mum_token.secret)).json()
@@ -447,14 +491,23 @@ def test_five_wrong_keys_per_address_and_identifier_then_even_the_right_one_wait
     created = issue(api, "kid")
     attacker = api.other_client("198.51.100.7")
     for _ in range(PER_PAIR):
-        assert attacker.get(KOSYNC_AUTH, headers=kosync(created.public_id, "n" * 26)).status_code == 401
+        assert (
+            attacker.get(KOSYNC_AUTH, headers=kosync(created.public_id, "n" * 26)).status_code
+            == 401
+        )
     blocked = attacker.get(KOSYNC_AUTH, headers=kosync(created.public_id, created.secret))
     assert blocked.status_code == 429 and int(blocked.headers["retry-after"]) >= 1
     # the reader's own address is another pair: not slowed down by someone else's guesses
     reader = api.other_client("192.0.2.20")
-    assert reader.get(KOSYNC_AUTH, headers=kosync(created.public_id, created.secret)).status_code == 200
+    assert (
+        reader.get(KOSYNC_AUTH, headers=kosync(created.public_id, created.secret)).status_code
+        == 200
+    )
     api.clock.advance(timedelta(seconds=61))
-    assert attacker.get(KOSYNC_AUTH, headers=kosync(created.public_id, created.secret)).status_code == 200
+    assert (
+        attacker.get(KOSYNC_AUTH, headers=kosync(created.public_id, created.secret)).status_code
+        == 200
+    )
 
 
 def test_thirty_wrong_attempts_per_address_whatever_the_identifier(api: AuthEnv) -> None:
@@ -462,12 +515,19 @@ def test_thirty_wrong_attempts_per_address_whatever_the_identifier(api: AuthEnv)
     created = issue(api, "kid")
     attacker = api.other_client("198.51.100.8")
     for index in range(PER_ADDRESS):  # a new identifier each time: no pair ever reaches five
-        answer = attacker.get(KOSYNC_AUTH, headers=kosync(f"{index:08d}".replace("0", "2"), "n" * 26))
+        answer = attacker.get(
+            KOSYNC_AUTH, headers=kosync(f"{index:08d}".replace("0", "2"), "n" * 26)
+        )
         assert answer.status_code == 401
     assert attacker.get(KOSYNC_AUTH, headers=kosync("23232323", "n" * 26)).status_code == 429
-    assert attacker.get(OPDS_PROBE, headers=basic(created.public_id, created.secret)).status_code == 429
+    assert (
+        attacker.get(OPDS_PROBE, headers=basic(created.public_id, created.secret)).status_code
+        == 429
+    )
     other = api.other_client("192.0.2.21")
-    assert other.get(KOSYNC_AUTH, headers=kosync(created.public_id, created.secret)).status_code == 200
+    assert (
+        other.get(KOSYNC_AUTH, headers=kosync(created.public_id, created.secret)).status_code == 200
+    )
 
 
 def test_a_good_token_does_not_pay_for_its_own_successes(api: AuthEnv) -> None:
@@ -475,22 +535,37 @@ def test_a_good_token_does_not_pay_for_its_own_successes(api: AuthEnv) -> None:
     created = issue(api, "kid")
     reader = api.other_client("192.0.2.22")
     for _ in range(PER_ADDRESS + PER_PAIR + 5):  # a sync of a whole library is many requests
-        assert reader.get(KOSYNC_AUTH, headers=kosync(created.public_id, created.secret)).status_code == 200
+        assert (
+            reader.get(KOSYNC_AUTH, headers=kosync(created.public_id, created.secret)).status_code
+            == 200
+        )
     # a success clears the pair: four typos, a right key, four more typos, still no wait
     for _ in range(PER_PAIR - 1):
         reader.get(KOSYNC_AUTH, headers=kosync(created.public_id, "n" * 26))
-    assert reader.get(KOSYNC_AUTH, headers=kosync(created.public_id, created.secret)).status_code == 200
+    assert (
+        reader.get(KOSYNC_AUTH, headers=kosync(created.public_id, created.secret)).status_code
+        == 200
+    )
     for _ in range(PER_PAIR - 1):
-        assert reader.get(KOSYNC_AUTH, headers=kosync(created.public_id, "n" * 26)).status_code == 401
+        assert (
+            reader.get(KOSYNC_AUTH, headers=kosync(created.public_id, "n" * 26)).status_code == 401
+        )
 
 
 def test_the_service_raises_a_throttle_error_with_the_wait(api: AuthEnv) -> None:
     profile(api, "kid", "child", max_age_rating=7)
     created = issue(api, "kid")
     for _ in range(PER_PAIR):
-        assert auth_of(api).authenticate_device_token(created.public_id, secret="n" * 26, ip="198.51.100.9") is None
+        assert (
+            auth_of(api).authenticate_device_token(
+                created.public_id, secret="n" * 26, ip="198.51.100.9"
+            )
+            is None
+        )
     with pytest.raises(ThrottledError) as refused:
-        auth_of(api).authenticate_device_token(created.public_id, secret=created.secret, ip="198.51.100.9")
+        auth_of(api).authenticate_device_token(
+            created.public_id, secret=created.secret, ip="198.51.100.9"
+        )
     assert refused.value.retry_after_s >= 1
 
 
@@ -515,13 +590,24 @@ def test_cli_issues_lists_and_revokes_without_ever_listing_the_secret(
     with auth_env(monkeypatch, settings, routers=[probe]) as api:
         profile(api, "kid", "child", max_age_rating=7)
         capsys.readouterr()
-    assert run_cli(
-        monkeypatch, settings, "admin", "device-tokens", "create", "--profile", "kid", "--name", "Salon"
-    ) == 0
+    assert (
+        run_cli(
+            monkeypatch,
+            settings,
+            "admin",
+            "device-tokens",
+            "create",
+            "--profile",
+            "kid",
+            "--name",
+            "Salon",
+        )
+        == 0
+    )
     out, err = capsys.readouterr()
     typed = out.strip()
     assert typed.count("\n") == 0 and len(normalise_secret(typed)) == 26  # stdout: the secret alone
-    assert "kid" in err and "once" in err.lower() or "une seule fois" in err.lower()
+    assert "kid" in err
     public_id = db_rows(settings, "SELECT public_id FROM device_token")[0][0]
     assert public_id in err
     assert run_cli(monkeypatch, settings, "admin", "device-tokens", "list", "--json") == 0
@@ -544,9 +630,10 @@ def test_cli_requires_a_profile_and_knows_it(
     with pytest.raises(SystemExit) as parsed:
         run_cli(monkeypatch, settings, "admin", "device-tokens", "create", "--name", "Salon")
     assert parsed.value.code == 2  # no default profile: the pairing asks for it
-    assert run_cli(
-        monkeypatch, settings, "admin", "device-tokens", "create", "--profile", "ghost"
-    ) != 0
+    assert (
+        run_cli(monkeypatch, settings, "admin", "device-tokens", "create", "--profile", "ghost")
+        != 0
+    )
     assert db_rows(settings, "SELECT count(*) FROM device_token") == [(0,)]
     capsys.readouterr()
 

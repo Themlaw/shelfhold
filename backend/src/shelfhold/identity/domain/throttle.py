@@ -114,3 +114,10 @@ class LoginThrottle:
                 stamps = self._failures.get(key)
                 if stamps is not None and at in stamps:
                     stamps.remove(at)
+
+    def reset_account(self, account: str) -> None:
+        """Back to zero for this account key alone: the one that failed and then succeeded (a
+        device token whose reader typed a wrong secret and then the right one). The address keeps
+        what it has counted, so a guess elsewhere from the same address is still counted."""
+        with self._lock:
+            self._failures.pop("account:" + account.casefold()[:256], None)

@@ -15,8 +15,10 @@ from shelfhold.identity.application.ports import (
     ApiKeyRecord,
     AuditEntry,
     ChildKavitaAccount,
+    DeviceTokenRecord,
     KeyConflictError,
     NewApiKey,
+    NewDeviceToken,
     NewPasskey,
     NewSession,
     PasskeyGoneError,
@@ -48,6 +50,7 @@ from shelfhold.infrastructure.schema import acquisition, coherence, identity, pl
 _user = identity.user
 _session = identity.session
 _key = identity.api_key
+_device = identity.device_token
 _passkey = identity.webauthn_credential
 
 
@@ -131,12 +134,15 @@ def revoke_all_credentials(
     keys = connection.execute(
         sa.update(_key).where(_key.c.revoked_at.is_(None)).values(revoked_at=now)
     ).rowcount
+    devices = connection.execute(  # an e-reader of the backup is a credential of a past, too
+        sa.update(_device).where(_device.c.revoked_at.is_(None)).values(revoked_at=now)
+    ).rowcount
     connection.execute(
         audit_insert(
             AuditEntry(
                 actor_id=None,
                 action="restore.credentials_revoked",
-                target=f"sessions={sessions} api_keys={keys}",
+                target=f"sessions={sessions} api_keys={keys} device_tokens={devices}",
                 at=now,
             )
         )
@@ -1018,6 +1024,11 @@ class SqlIdentityStore:
                 .where(_key.c.user_id == user_id, _key.c.revoked_at.is_(None))
                 .values(revoked_at=now)
             ).rowcount
+            conn.execute(  # a lost e-reader goes with the rest: the profile's tokens close too
+                sa.update(_device)
+                .where(_device.c.subject_user_id == user_id, _device.c.revoked_at.is_(None))
+                .values(revoked_at=now)
+            )
         return int(sessions), int(passkeys), int(keys)
 
     # --- sessions ----------------------------------------------------------------------------
@@ -1160,6 +1171,77 @@ class SqlIdentityStore:
         )
         with self._changing() as conn:
             return conn.execute(query.values(revoked_at=now)).rowcount > 0
+
+    # --- device tokens (M4 L46) --------------------------------------------------------------
+
+    def insert_device_token(self, token: NewDeviceToken, audit: AuditEntry) -> None:
+        try:
+            with self._changing() as conn:
+                conn.execute(
+                    sa.insert(_device).values(
+                        id=token.id,
+                        public_id=token.public_id,
+                        name=token.name,
+                        subject_user_id=token.subject_user_id,
+                        issued_by=token.issued_by,
+                        secret_digest=token.secret_digest,
+                        created_at=token.now,
+                        expires_at=token.expires_at,
+                    )
+                )
+                conn.execute(self._audit_insert(audit))
+        except sa.exc.IntegrityError as error:
+            if "device_token.public_id" in str(error.orig):  # a taken identifier, drawn again
+                raise KeyConflictError from error
+            raise
+
+    def _device_tokens(
+        self, where: sa.ColumnElement[bool] | None = None
+    ) -> list[DeviceTokenRecord]:
+        query = sa.select(_device, *_USER_COLUMNS).join(
+            _user, _user.c.id == _device.c.subject_user_id
+        )
+        if where is not None:
+            query = query.where(where)
+        with self._engine.connect() as conn:
+            rows = conn.execute(query.order_by(_device.c.created_at, _device.c.id)).all()
+        return [
+            DeviceTokenRecord(
+                id=row.id,
+                public_id=row.public_id,
+                name=row.name,
+                subject=_user_of(row),
+                issued_by=row.issued_by,
+                created_at=row.created_at,
+                expires_at=row.expires_at,
+                last_used_at=row.last_used_at,
+                revoked_at=row.revoked_at,
+                secret_digest=row.secret_digest,
+            )
+            for row in rows
+        ]
+
+    def device_token_by_public_id(self, public_id: str) -> DeviceTokenRecord | None:
+        found = self._device_tokens(_device.c.public_id == public_id)
+        return found[0] if found else None
+
+    def device_tokens(self) -> Sequence[DeviceTokenRecord]:
+        return self._device_tokens()
+
+    def touch_device_token(self, token_id: str, *, now: datetime) -> None:
+        with write_transaction(self._engine) as conn:
+            conn.execute(
+                sa.update(_device).where(_device.c.id == token_id).values(last_used_at=now)
+            )
+
+    def revoke_device_token(self, public_id: str, *, now: datetime) -> bool:
+        with self._changing() as conn:
+            result = conn.execute(
+                sa.update(_device)
+                .where(_device.c.public_id == public_id, _device.c.revoked_at.is_(None))
+                .values(revoked_at=now)
+            )
+        return result.rowcount > 0
 
     # --- API keys ----------------------------------------------------------------------------
 

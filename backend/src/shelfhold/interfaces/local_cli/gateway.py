@@ -25,6 +25,7 @@ from shelfhold.identity.public import (
     PROFILE_ERRORS,
     AdminExistsError,
     CreatedApiKey,
+    CreatedDeviceToken,
     ProfileError,
     ProfileRecord,
     UnknownUserError,
@@ -59,6 +60,25 @@ class KeyView(Protocol):
     def revoked_at(self) -> datetime | None: ...
 
 
+class DeviceTokenView(Protocol):
+    """What a listing of device tokens carries: never the secret or the digest that verifies it."""
+
+    @property
+    def public_id(self) -> str: ...
+    @property
+    def profile(self) -> str: ...
+    @property
+    def name(self) -> str | None: ...
+    @property
+    def created_at(self) -> datetime: ...
+    @property
+    def expires_at(self) -> datetime | None: ...
+    @property
+    def last_used_at(self) -> datetime | None: ...
+    @property
+    def revoked_at(self) -> datetime | None: ...
+
+
 class IdentityCommands(Protocol):
     def create_admin(self, username: str, password: str) -> str: ...
     def reset_password(self, username: str, password: str) -> int: ...
@@ -75,6 +95,11 @@ class IdentityCommands(Protocol):
     ) -> CreatedApiKey | None: ...
     def api_keys(self) -> Sequence[KeyView]: ...
     def revoke_api_key(self, prefix: str) -> bool: ...
+    def create_device_token(
+        self, *, subject_username: str, name: str | None = None, expires_days: int | None = None
+    ) -> CreatedDeviceToken: ...
+    def device_tokens(self) -> Sequence[DeviceTokenView]: ...
+    def revoke_device_token(self, public_id: str) -> bool: ...
     def profile_add(
         self, username: str, password: str, role: str, *,
         max_age_rating: int | None = None, can_rate: bool | None = None,
@@ -96,6 +121,17 @@ class _Key:
     name: str | None
     scopes: tuple[str, ...]
     read_only: bool
+    created_at: datetime
+    expires_at: datetime | None
+    last_used_at: datetime | None
+    revoked_at: datetime | None
+
+
+@dataclass(frozen=True)
+class _DeviceToken:
+    public_id: str
+    profile: str
+    name: str | None
     created_at: datetime
     expires_at: datetime | None
     last_used_at: datetime | None
@@ -190,6 +226,44 @@ class SocketIdentity:
 
     def revoke_api_key(self, prefix: str) -> bool:
         return bool(self._call("identity.keys_revoke", prefix=prefix))
+
+    def create_device_token(
+        self, *, subject_username: str, name: str | None = None, expires_days: int | None = None
+    ) -> CreatedDeviceToken:
+        raw = self._call(
+            "identity.device_tokens_create",
+            subject=subject_username,
+            name=name,
+            expires_days=expires_days,
+        )
+        if not isinstance(raw, dict):
+            raise ValueError("malformed_reply")
+        return CreatedDeviceToken(
+            public_id=raw["public_id"],
+            secret=raw["secret"],
+            subject_user_id=raw["subject_user_id"],
+            expires_at=_when(raw["expires_at"]),
+        )
+
+    def device_tokens(self) -> Sequence[DeviceTokenView]:
+        rows = self._call("identity.device_tokens_list")
+        if not isinstance(rows, list):
+            raise ValueError("malformed_reply")
+        return [
+            _DeviceToken(
+                public_id=row["public_id"],
+                profile=row["profile"],
+                name=row["name"],
+                created_at=datetime.fromisoformat(row["created_at"]),
+                expires_at=_when(row["expires_at"]),
+                last_used_at=_when(row["last_used_at"]),
+                revoked_at=_when(row["revoked_at"]),
+            )
+            for row in rows
+        ]
+
+    def revoke_device_token(self, public_id: str) -> bool:
+        return bool(self._call("identity.device_tokens_revoke", public_id=public_id))
 
     def profile_add(
         self, username: str, password: str, role: str, *,

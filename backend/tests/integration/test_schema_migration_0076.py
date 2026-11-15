@@ -3,7 +3,8 @@
 The columns M3 laid on `api_key` (`subject_user_id`, `issued_by`) do not suffice: an API key is an
 `shk_…` bearer secret with scopes, listed, rotated and refused by shape, while a device token has
 a public identifier, one stored digest and a closed reach. Two tables, so that neither can ever
-be taken for the other. The DDL parity of the whole database is `test_migrated_ddl_equals_create_all`.
+be taken for the other. The DDL parity of the whole database is
+`test_migrated_ddl_equals_create_all`.
 """
 
 import sqlite3
@@ -66,7 +67,7 @@ def _token(conn: sqlite3.Connection, **override: object) -> None:
     }
     row.update(override)
     conn.execute(
-        f"INSERT INTO device_token ({', '.join(row)}) VALUES ({', '.join('?' * len(row))})",
+        f"INSERT INTO device_token ({', '.join(row)}) VALUES ({', '.join('?' * len(row))})",  # noqa: S608
         tuple(row.values()),
     )
 

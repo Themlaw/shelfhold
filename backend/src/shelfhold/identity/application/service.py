@@ -11,7 +11,7 @@ Invariants this module keeps (EF-USR-021, EF-USR-022, EF-USR-003, ENF-SEC-008):
 import math
 import os
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta
 from typing import Any
 
@@ -29,9 +29,11 @@ from shelfhold.identity.application.ports import (
     AuditEntry,
     ChildKavitaAccount,
     DeviceProofPort,
+    DeviceTokenRecord,
     IdentityStore,
     KeyConflictError,
     NewApiKey,
+    NewDeviceToken,
     NewSession,
     PasskeyGoneError,
     PasskeyRecord,
@@ -58,6 +60,13 @@ from shelfhold.identity.domain.credentials import (
     session_policy,
     slid_expiry,
 )
+from shelfhold.identity.domain.device_secret import (
+    PUBLIC_ID_LENGTH,
+    key_digest,
+    new_device_credential,
+    secret_digest,
+)
+from shelfhold.identity.domain.device_token import device_token, token_principal
 from shelfhold.identity.domain.reserved import (
     DEFAULT_FRESH_AUTH_S,
     DEFAULT_RESERVED_ROLES,
@@ -68,7 +77,7 @@ from shelfhold.identity.domain.reserved import (
     authorize_reserved,
 )
 from shelfhold.identity.domain.roles import ProfileError
-from shelfhold.identity.domain.throttle import LoginThrottle
+from shelfhold.identity.domain.throttle import LoginThrottle, address_key
 from shelfhold.identity.domain.tokens import (
     new_api_key,
     new_token,
@@ -93,6 +102,10 @@ KEY_SCOPES = (
 )  # `destructive` is reserved, not implemented (EF-USR-024 (6))
 API_KEY_TOUCH_INTERVAL = timedelta(minutes=1)
 OPTIONS_PER_MINUTE = 30  # passkey sign-in options per address
+# ADR-0053 §4 (MIN-4): wrong device-token secrets, per (address, identifier) and per address alone
+DEVICE_FAILURES_PER_PAIR = 5
+DEVICE_FAILURES_PER_ADDRESS = 30
+_NO_TOKEN_DIGEST = "sha256:" + "0" * 64  # compared when the identifier is unknown: same work
 
 
 class AuthError(Exception):
@@ -204,6 +217,19 @@ class SessionAuth:
 
 
 @dataclass(frozen=True)
+class CreatedDeviceToken:
+    """What is shown once, at pairing. `secret` stays out of the `repr` and `str`."""
+
+    public_id: str
+    secret: str = field(repr=False)
+    subject_user_id: str
+    expires_at: datetime | None
+
+    def __str__(self) -> str:
+        return f"CreatedDeviceToken(public_id={self.public_id!r})"
+
+
+@dataclass(frozen=True)
 class CreatedApiKey:
     value: str  # shown once
     prefix: str
@@ -297,6 +323,9 @@ class LocalAuth:
         self.hardened = hardened
         self.fresh_auth_s = fresh_auth_s
         self._throttle = throttle or LoginThrottle()
+        self._device_throttle = LoginThrottle(
+            per_address=DEVICE_FAILURES_PER_ADDRESS, per_account=DEVICE_FAILURES_PER_PAIR
+        )
         self._device_proof = device_proof
         methods = list(reauth_methods if reauth_methods is not None else [PasswordReauth(hasher)])
         self._passkeys = passkeys
@@ -1139,6 +1168,127 @@ class LocalAuth:
             read_only=record.read_only,
             can_rate=acts_as.can_rate and "admin" in record.scopes,
             locale=acts_as.locale,
+        )
+
+    # --- device tokens (M4 L46, ADR-0053 §4, EF-USR-008) -------------------------------------
+
+    def create_device_token(
+        self,
+        *,
+        subject_username: str,
+        name: str | None = None,
+        expires_days: int | None = None,
+        by: Principal | None = None,
+    ) -> CreatedDeviceToken:
+        """A token for the reader profile `subject_username`, which has no default: the pairing
+        asks for the profile (EF-USR-022 (4)). Every right and every filter of the token is the
+        subject's; the issuer is kept for the audit and nothing else. An admin or the host issues
+        it, nobody else. The secret is generated, returned once and never stored: only the
+        SHA-256 of its md5 is."""
+        if not isinstance(subject_username, str) or not subject_username.strip():
+            raise ValueError("subject_required")
+        if by is not None and by.role != "admin":
+            raise NotAllowedError
+        subject = self._store.user_by_name(subject_username.strip())
+        if subject is None:
+            raise UnknownUserError
+        if expires_days is not None and expires_days < 1:
+            raise ValueError("invalid_expiry")
+        now = self.now()
+        expires_at = now + timedelta(days=expires_days) if expires_days is not None else None
+        issuer = by.user_id if by is not None and by.credential is Credential.SESSION else None
+        label = (name or "").strip()[:80] or None
+        for _attempt in range(3):  # a taken identifier (1 in 10^12) is drawn again
+            credential = new_device_credential()
+            try:
+                self._store.insert_device_token(
+                    NewDeviceToken(
+                        id=new_ulid(),
+                        public_id=credential.public_id,
+                        name=label,
+                        subject_user_id=subject.id,
+                        issued_by=issuer,
+                        secret_digest=secret_digest(credential.secret),
+                        now=now,
+                        expires_at=expires_at,
+                    ),
+                    self._entry(
+                        "device_token.created", by, _by_host_user(credential.public_id, by)
+                    ),
+                )
+            except KeyConflictError:
+                continue
+            return CreatedDeviceToken(
+                public_id=credential.public_id,
+                secret=credential.secret,
+                subject_user_id=subject.id,
+                expires_at=expires_at,
+            )
+        raise RuntimeError("device_token_id_exhausted")
+
+    def device_tokens(self) -> Sequence[DeviceTokenRecord]:
+        return self._store.device_tokens()
+
+    def revoke_device_token(self, public_id: str, *, by: Principal | None = None) -> bool:
+        """Immediate: the next request with it is refused. False: unknown or already revoked."""
+        revoked = self._store.revoke_device_token(public_id.strip().lower(), now=self.now())
+        if revoked:
+            self._audit("device_token.revoked", by, target=_by_host_user(public_id, by))
+        return revoked
+
+    def authenticate_device_token(
+        self,
+        public_id: str,
+        *,
+        ip: str,
+        secret: str | None = None,
+        md5_key: str | None = None,
+    ) -> Principal | None:
+        """The profile a device token acts as, or None. One of `secret` (HTTP Basic, OPDS) or
+        `md5_key` (`x-auth-key` of KOReader, kosync). The answer is the same for an unknown
+        identifier and a wrong key. A wrong attempt is counted before the check, per (address,
+        identifier) and per address alone, and a right one withdraws its count and clears its
+        pair; while a pair or an address is over its limit even the right key waits
+        (`ThrottledError`). Rights and filters are read from the subject at each request."""
+        wanted = public_id.strip().lower() if isinstance(public_id, str) else ""
+        wanted = wanted[: PUBLIC_ID_LENGTH + 8]
+        account = f"{address_key(ip)}|{wanted}"
+        at = self.now()
+        wait = self._device_throttle.reserve(ip=ip, account=account, now=at)
+        if wait is not None:
+            raise ThrottledError(max(1, math.ceil(wait)))
+        presented = (
+            secret_digest(secret)
+            if secret is not None and len(secret) <= 256
+            else key_digest(md5_key)
+        )
+        record = (
+            self._store.device_token_by_public_id(wanted)
+            if len(wanted) == PUBLIC_ID_LENGTH
+            else None
+        )
+        expected = record.secret_digest if record is not None else _NO_TOKEN_DIGEST
+        matched = presented is not None and same_secret(expected, presented)
+        if record is None or not matched:
+            structlog.get_logger().warning("auth.device_token_failed", ip=ip)  # never the key
+            return None
+        now = self.now()
+        if record.revoked_at is not None or (
+            record.expires_at is not None and now >= record.expires_at
+        ):
+            return None  # counted like any wrong attempt: the guess had the right shape
+        self._device_throttle.release(ip=ip, account=account, at=at)
+        self._device_throttle.reset_account(account)
+        if record.last_used_at is None or now - record.last_used_at >= API_KEY_TOUCH_INTERVAL:
+            self._store.touch_device_token(record.id, now=now)
+        held = device_token(
+            subject_user_id=record.subject.id,
+            issued_by=record.issued_by or "host",  # the host operator names no account
+            token_id=record.id,
+        )
+        # the subject's role from the database now; a token never rates (EF-USR-024)
+        return token_principal(
+            held, username=record.subject.username, role=record.subject.role, can_rate=False
         )
 
     def authenticate_forward(self, username: str) -> Principal | None:

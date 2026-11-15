@@ -31,6 +31,7 @@ from shelfhold.identity.public import (
     AdminExistsError,
     LocalAuth,
     UnknownUserError,
+    format_secret,
     local_auth,
 )
 from shelfhold.infrastructure.db import create_db_engine
@@ -129,6 +130,24 @@ def register(commands: argparse._SubParsersAction[argparse.ArgumentParser]) -> N
         "--expires-days", type=int, metavar="DAYS", help=t("cli.admin_key_rotate_expires_help")
     )
     rotate.set_defaults(handler=run_keys_rotate, configure_logging=False)
+
+    devices = actions.add_parser("device-tokens", help=t("cli.admin_devices_help"))
+    device_actions = devices.add_subparsers(dest="device_tokens_command", required=True)
+    issue = device_actions.add_parser(
+        "create", help=t("cli.admin_devices_create_help"), allow_abbrev=False
+    )
+    issue.add_argument("--profile", required=True, help=t("cli.admin_device_profile_help"))
+    issue.add_argument("--name", help=t("cli.admin_device_name_help"))
+    issue.add_argument(
+        "--expires-days", type=int, metavar="DAYS", help=t("cli.admin_device_expires_help")
+    )
+    issue.set_defaults(handler=run_device_tokens_create, configure_logging=False)
+    device_list = device_actions.add_parser("list", help=t("cli.admin_devices_list_help"))
+    device_list.add_argument("--json", action="store_true", help=t("cli.json_help"))
+    device_list.set_defaults(handler=run_device_tokens_list)
+    device_revoke = device_actions.add_parser("revoke", help=t("cli.admin_devices_revoke_help"))
+    device_revoke.add_argument("public_id", help=t("cli.admin_device_id_help"))
+    device_revoke.set_defaults(handler=run_device_tokens_revoke)
 
 
 def _fail(message: str) -> int:
@@ -385,4 +404,70 @@ def run_keys_revoke(args: argparse.Namespace, auth: IdentityCommands) -> int:
     if not auth.revoke_api_key(args.prefix):
         return _fail(t("admin.key_unknown", prefix=args.prefix))
     print(t("admin.key_revoked", prefix=args.prefix))
+    return 0
+
+
+@_command
+def run_device_tokens_create(args: argparse.Namespace, auth: IdentityCommands) -> int:
+    try:
+        created = auth.create_device_token(
+            subject_username=args.profile, name=args.name, expires_days=args.expires_days
+        )
+    except UnknownUserError:
+        return _fail(t("admin.unknown_user", username=args.profile))
+    except ValueError:
+        return _fail(t("cli.admin_device_expires_help"))
+    print(
+        t("admin.device_created", profile=args.profile, public_id=created.public_id),
+        file=sys.stderr,
+    )
+    print(format_secret(created.secret))  # stdout carries the secret alone, once
+    print(t("admin.device_hint"), file=sys.stderr)
+    if created.expires_at is not None:
+        print(t("admin.device_expires", date=created.expires_at.isoformat()), file=sys.stderr)
+    else:
+        print(t("admin.device_never_expires"), file=sys.stderr)
+    return 0
+
+
+@_command
+def run_device_tokens_list(args: argparse.Namespace, auth: IdentityCommands) -> int:
+    tokens = auth.device_tokens()  # once: through the socket, each call is a round trip
+    rows: list[dict[str, object]] = [
+        {
+            "id": token.public_id,
+            "profile": token.profile,
+            "name": token.name,
+            "created_at": token.created_at.isoformat(),
+            "expires_at": token.expires_at.isoformat() if token.expires_at else None,
+            "last_used_at": token.last_used_at.isoformat() if token.last_used_at else None,
+            "revoked": token.revoked_at is not None,
+        }
+        for token in tokens
+    ]
+    if args.json:
+        print(json.dumps(rows, ensure_ascii=False, indent=2))
+        return 0
+    if not rows:
+        print(t("admin.no_devices"))
+    for token in tokens:
+        expiry = token.expires_at.isoformat() if token.expires_at else "-"
+        state = "revoked" if token.revoked_at is not None else expiry
+        print(
+            t(
+                "admin.device_line",
+                public_id=token.public_id,
+                profile=token.profile,
+                name=token.name or "-",
+                state=state,
+            )
+        )
+    return 0
+
+
+@_revocation
+def run_device_tokens_revoke(args: argparse.Namespace, auth: IdentityCommands) -> int:
+    if not auth.revoke_device_token(args.public_id):
+        return _fail(t("admin.device_unknown", public_id=args.public_id))
+    print(t("admin.device_revoked", public_id=args.public_id))
     return 0
