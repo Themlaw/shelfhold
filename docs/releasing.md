@@ -34,3 +34,23 @@ Une release est une action manuelle du mainteneur, en quatre étapes. Aucun jeto
 
 **Reprise** : si le job a échoué (CI encore rouge, image absente, erreur du registre), relancer le workflow `release` depuis l'onglet
 Actions (`workflow_dispatch`, entrée `tag` = `vX.Y.Z`). Le script est idempotent.
+
+## Candidate de version (`vX.Y.Z-rc.N`)
+
+Une rc est une **pré-version GitHub** : `gh release create vX.Y.Z-rc.N --target main --prerelease --title vX.Y.Z-rc.N --notes ...`.
+Sans `--prerelease`, elle deviendrait la « Latest release » ; le workflow `release` refuse l'incohérence entre le drapeau et le tag.
+
+- **Aucun tag d'image** : ni `X.Y.Z-rc.N`, ni `X.Y`, ni `latest`. `release.yml` attend le `ci-success` vert, vérifie la signature
+  cosign du digest de `sha-<commit>`, puis s'arrête sans rien écrire dans le registre. `X.Y` ne peut donc pas avancer vers une rc.
+- Les preuves sont jointes comme pour une version : SBOM, provenance (lues sur l'image `sha-<commit>`, attestations vérifiées),
+  rapport de tests, `schema.sql` et dictionnaire.
+- Sautés sans échec : le second registre (`second-registry`) et la documentation (`docs.yml` ne construit ni ne publie une rc).
+- **Installer la rc** avec l'image du commit, déjà signée et attestée (`<commit>` : les 40 caractères du commit du tag) :
+  ```sh
+  digest="$(docker buildx imagetools inspect ghcr.io/themlaw/shelfhold:sha-<commit> --format '{{.Manifest.Digest}}')"
+  cosign verify "ghcr.io/themlaw/shelfhold@${digest}" \
+    --certificate-identity-regexp '^https://github\.com/Themlaw/shelfhold/\.github/workflows/image-publish\.yml@refs/heads/main$' \
+    --certificate-oidc-issuer https://token.actions.githubusercontent.com
+  ```
+  puis fixer `ghcr.io/themlaw/shelfhold@${digest}` (ou `:sha-<commit>`) comme image dans `compose.yaml`, à la place de `:1.0`
+  qui n'existe qu'à partir de `v1.0.0`.

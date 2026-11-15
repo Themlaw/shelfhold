@@ -1,14 +1,19 @@
 #!/usr/bin/env bash
 # Adds the version tags X.Y.Z and X.Y to the image ALREADY published for a release tag (digest of
 # sha-<long>, built and tested by the ci run of the tagged commit): no rebuild, no "latest".
+# A release candidate (vX.Y.Z-rc.N) gets NO image tag at all (no X.Y.Z-rc.N, no X.Y, no latest): the
+# script only checks what the release needs (green ci-success, signed image of the commit) and stops
+# before the first write. The candidate is installed from sha-<commit>.
 # Idempotent. X.Y.Z is immutable (refused if it exists with another digest, checked before anything
 # is written); X.Y is the floating minor tag and never moves backwards.
 set -euo pipefail
 : "${IMAGE:?}" "${REPO:?}" "${TAG:?}" "${GH_TOKEN:?}"
 IMAGE="${IMAGE,,}"
-[[ "$TAG" =~ ^v([0-9]+)\.([0-9]+)\.([0-9]+)$ ]] || { echo "::error::tag must be vX.Y.Z, got ${TAG}"; exit 1; }
+[[ "$TAG" =~ ^v([0-9]+)\.([0-9]+)\.([0-9]+)(-rc\.[1-9][0-9]*)?$ ]] || { echo "::error::tag must be vX.Y.Z or vX.Y.Z-rc.N, got ${TAG}"; exit 1; }
 VERSION="${TAG#v}"
 minor="${BASH_REMATCH[1]}.${BASH_REMATCH[2]}"
+rc=false
+[ -n "${BASH_REMATCH[4]}" ] && rc=true
 deadline=$((SECONDS + ${WAIT_SECONDS:-2400}))
 
 # Prints the digest of a ref; prints nothing when the ref does not exist (404 / unknown manifest);
@@ -48,6 +53,16 @@ while [ -z "$digest" ]; do
   digest="$(digest_of "$src")"
 done
 
+# 2b. a release candidate stops here: the digest must carry a valid signature, nothing is tagged
+if [ "$rc" = true ]; then
+  identity="^https://github\.com/${REPO//./\.}/\.github/workflows/image-publish\.yml@refs/heads/main$"
+  cosign verify "${IMAGE}@${digest}" --certificate-identity-regexp "$identity" \
+    --certificate-oidc-issuer https://token.actions.githubusercontent.com > /dev/null 2>&1 \
+    || { echo "::error::${IMAGE}@${digest} has no valid cosign signature from image-publish.yml"; exit 1; }
+  echo "${TAG} is a release candidate: no image tag written; install ${IMAGE}:sha-${SHA} (${digest})"
+  exit 0
+fi
+
 # 3. X.Y.Z: verified BEFORE anything is written
 existing="$(digest_of "${IMAGE}:${VERSION}")"
 if [ -n "$existing" ] && [ "$existing" != "$digest" ]; then
@@ -71,7 +86,7 @@ fi
 name="${IMAGE#ghcr.io/}"
 token="$(curl -fsS -u "token:${GH_TOKEN}" "https://ghcr.io/token?service=ghcr.io&scope=repository:${name}:pull" | jq -r .token)"
 tags="$(curl -fsS -H "Authorization: Bearer ${token}" "https://ghcr.io/v2/${name}/tags/list?n=1000" | jq -r '.tags[]?')"
-highest="$( { grep -E "^${minor//./\\.}\.[0-9]+$" <<< "$tags" || true; echo "$VERSION"; } | sort -V | tail -n1)"
+highest="$( { grep -E "^${minor//./\.}\.[0-9]+$" <<< "$tags" || true; echo "$VERSION"; } | sort -V | tail -n1)"
 args=(-t "${IMAGE}:${VERSION}")
 if [ "$highest" = "$VERSION" ]; then args+=(-t "${IMAGE}:${minor}")
 else echo "keeping ${minor} on ${highest} (newer than ${VERSION})"; fi

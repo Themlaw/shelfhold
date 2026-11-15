@@ -16,7 +16,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Existing release tag, vX.Y.Z (builds only; the site is published by a release)"
+        description: "Existing release tag, vX.Y.Z (a -rc.N tag is skipped; builds only; the site is published by a release)"
         type: string
         required: true
 
@@ -29,6 +29,9 @@ concurrency:
 jobs:
   build:
     name: build (strict)
+    # A release candidate (vX.Y.Z-rc.N) neither builds nor publishes the site: the job is skipped, not failed
+    # (the site shows the version that stays, and a pre-release must not replace it on Pages).
+    if: ${{ !contains(github.event.release.tag_name || inputs.tag, '-rc.') }}
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
