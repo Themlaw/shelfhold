@@ -72,8 +72,16 @@ def suggest_duplicates(connection: Connection, *, screen: TombstoneScreen) -> li
     created: list[str] = []
     for ids in (g for g in groups.values() if len(g) > 1):
         barred = tombstoned(connection, screen, ids)
+        asked = {
+            (str(r.a), str(r.b))
+            for r in connection.execute(
+                sa.select(m.c.a, m.c.b).where(m.c.entity_type == "work", m.c.a.in_(ids))
+            )
+        }  # a pair already put to the admin, whatever the reason, is not asked a second time
         for first, second in combinations(ids, 2):
             if first in barred or second in barred:
+                continue
+            if (first, second) in asked or (second, first) in asked:
                 continue
             if told_apart(connection, first, second):
                 continue

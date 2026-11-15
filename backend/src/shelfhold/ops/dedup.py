@@ -40,9 +40,10 @@ class DedupOps:
             raise ExitUnavailableError("the Work tombstones cannot be checked here")
         screen = self._screens.open()  # opened before the write transaction: the replay may write
         with write_transaction(self._engine) as connection:
-            created = suggest_duplicates(connection, screen=screen)
-            # a series that moved sources in Suwayomi: "Même œuvre ?", never a creation
-            created += detect_suwayomi_migrations(connection, screen=screen)
+            # a series that moved sources in Suwayomi: "Même œuvre ?", never a creation; asked
+            # first, so that its reason wins over the title alone for the same pair
+            created = detect_suwayomi_migrations(connection, screen=screen)
+            created += suggest_duplicates(connection, screen=screen)
         return {"created": created}
 
     def suggestions(self) -> list[dict[str, str]]:
