@@ -6,6 +6,7 @@ for its `content`.
 """
 
 import hashlib
+import json
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -122,12 +123,14 @@ def mark_read(env: ExportEnv, exported: Exported) -> None:
         connection.execute(
             sa.text(
                 "INSERT INTO reading_position (id, user_id, carrier_type, carrier_id, "
-                "content_hash, locator, percent, client_ts, server_ts) VALUES "
-                "(:id, :user, 'export_item', :item, :hash, '{}', 1.0, :ts, :ts)"
+                "content_hash, locator, percent, client_ts, server_ts, source, covered_units) "
+                "VALUES "
+                "(:id, :user, 'export_item', :item, :hash, '{}', 1.0, :ts, :ts, 'server', :units)"
             ),
             {
                 "id": new_ulid(), "user": user_id, "item": exported.export_item_id,
                 "hash": exported.old_content_hash, "ts": env.clock.now(),
+                "units": json.dumps([exported.unit_id]),
             },
         )  # fmt: skip
 

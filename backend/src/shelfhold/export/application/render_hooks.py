@@ -12,6 +12,7 @@ uppercase form is the one it prints, not one worth storing, and comparing is cas
 """
 
 import hashlib
+import os
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -77,12 +78,32 @@ def record_rewrite(
         log.warning("document_alias.write_failed", destination=destination_id)
 
 
-def _sha256(path: Path) -> str:
-    digest = hashlib.sha256()
+# (item, file hash) -> (size, mtime_ns) of the file that was found NOT to be the one the alias
+# names: not read again until the file changes. Bounded; a full table starts again empty.
+_NOT_THE_FILE: dict[tuple[str, str], tuple[int, int]] = {}
+_NOT_THE_FILE_MAX = 10_000
+
+
+def _hash_once(path: Path, file_hash: str) -> DocumentHashes | bool | None:
+    """SHA-256 and the sample hashes from ONE open file: False when the file is not the one named
+    (its size and date are then remembered by the caller), None when it cannot be hashed. The
+    bytes that were verified are the bytes that are hashed, and a file that changed while it was
+    read is refused (size and date seen before and after)."""
     with path.open("rb") as stream:
+        before = os.fstat(stream.fileno())
+        digest = hashlib.sha256()
         for block in iter(lambda: stream.read(1 << 20), b""):
             digest.update(block)
-    return "sha256:" + digest.hexdigest()
+        if "sha256:" + digest.hexdigest() != file_hash:
+            return False
+        stream.seek(0)
+        koreader = "md5:" + koreader_partial_md5(stream)
+        stream.seek(0)
+        kavita = "md5:" + kavita_hash(stream).lower()
+        after = os.fstat(stream.fileno())
+    if (before.st_size, before.st_mtime_ns) != (after.st_size, after.st_mtime_ns):
+        return None
+    return DocumentHashes(koreader, kavita)
 
 
 def heal_alias_hashes(
@@ -95,16 +116,21 @@ def heal_alias_hashes(
 
     For each alias with an empty KOReader or Kavita hash, `locate(export_item_id, file_hash)` says
     where the file is, or None when it is gone (a replaced file is often not kept: its hashes stay
-    empty rather than invented). The file is hashed with SHA-256 first and must be the one the
-    alias names, so a file rewritten since never lends its hashes to another's alias. A locator or
-    a file that fails skips that alias, never the sweep. With `export_item_id` only that item is
-    healed (a lazy read by the kosync relay); without it, all of them (the sweep). Returns the
-    number of aliases filled; never raises.
+    empty rather than invented). **Contract of `locate`** (the caller's, L47): a path **under the
+    physical roots** of the item's binding, never a symbolic link (resolve it and refuse one that
+    leaves the roots; the sweep opens what it is given), and None for anything else.
+
+    The file is opened **once**: SHA-256 and the sample hashes come from the same descriptor, so
+    the bytes that were verified are the bytes that are hashed, and the file must be the one the
+    alias names (a file rewritten since never lends its hashes to another's alias). The write is
+    conditional on the hashes still being empty. A file found not to match is not read again until
+    its size or date changes. A locator or a file that fails skips that alias, never the sweep.
+    With `export_item_id` only that item is healed (a lazy read by the kosync relay); without it,
+    all of them (the sweep). Returns the number of aliases filled; never raises.
     """
     alias = export.document_alias
-    query = sa.select(alias.c.export_item_id, alias.c.file_hash).where(
-        sa.or_(alias.c.koreader_partial_md5.is_(None), alias.c.kavita_md5.is_(None))
-    )
+    empty = sa.or_(alias.c.koreader_partial_md5.is_(None), alias.c.kavita_md5.is_(None))
+    query = sa.select(alias.c.export_item_id, alias.c.file_hash).where(empty)
     if export_item_id is not None:
         query = query.where(alias.c.export_item_id == export_item_id)
     try:
@@ -117,21 +143,29 @@ def heal_alias_hashes(
     for item_id, file_hash in pending:
         try:
             path = locate(item_id, file_hash)
-            if path is None or _sha256(path) != file_hash:
+            if path is None:
                 continue
-            hashes = sample_hashes(path)
-            if hashes is None:
+            seen = path.stat()
+            if _NOT_THE_FILE.get((item_id, file_hash)) == (seen.st_size, seen.st_mtime_ns):
+                continue
+            hashes = _hash_once(path, file_hash)
+            if hashes is False:
+                if len(_NOT_THE_FILE) >= _NOT_THE_FILE_MAX:
+                    _NOT_THE_FILE.clear()
+                _NOT_THE_FILE[(item_id, file_hash)] = (seen.st_size, seen.st_mtime_ns)
+                continue
+            if not isinstance(hashes, DocumentHashes):
                 continue
             with write_transaction(engine) as connection:
-                connection.execute(
+                done = connection.execute(
                     sa.update(alias)
-                    .where(alias.c.export_item_id == item_id, alias.c.file_hash == file_hash)
+                    .where(alias.c.export_item_id == item_id, alias.c.file_hash == file_hash, empty)
                     .values(
                         koreader_partial_md5=hashes.koreader_partial_md5,
                         kavita_md5=hashes.kavita_md5,
                     )
                 )
-            filled += 1
+            filled += done.rowcount
         except Exception:
             log.warning("document_alias.heal_failed", export_item=item_id)
     return filled

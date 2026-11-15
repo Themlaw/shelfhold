@@ -6,14 +6,22 @@ covers it, the one that got the furthest wins:
 1. the highest state (`read` > `in_progress` > `unread`): a Unit that was read never goes back to
    unread because a reader reopened the book at the start, restored an old backup or sent late
    what it had read before;
-2. then the highest percent of the file;
-3. then the latest date, `client_ts` **bounded by `server_ts`** (a clock set in the future counts
+2. then an exact position before an approximate one (a position on the file as it is now beats one
+   on a replaced content, or a proportion);
+3. then how far it got **in the Unit** (`Projected.within`), never the percent of the file: the
+   percents of two files are not the same quantity;
+4. then the latest date, `client_ts` **bounded by `server_ts`** (a clock set in the future counts
    as the date the server received the position);
-4. then the highest position id, so that the answer is total.
+5. then the highest position id, so that the answer is total.
 
-The state and `last_position_id` of `reading_progress` come from this rule. The rule never marks a
-Unit that no position reaches: a relay that records a position on the chapter it falls in marks
-nothing in the chapters it skipped (ADR-0053).
+`furthest` gives `last_position_id`, the position to hand to a reader that asks where the furthest
+point is (the kosync answer, ADR-0053 section 5). `latest` gives `latest_position_id`: the last
+position written, which is where the reader is now, even if it went back (resume, "continue
+reading"). A relay that needs the furthest point reads the first; one that needs the current point
+reads the second.
+
+The rule never marks a Unit that no position reaches: a relay that records a position on the
+chapter it falls in marks nothing in the chapters it skipped (ADR-0053).
 """
 
 from collections.abc import Sequence
@@ -34,7 +42,6 @@ class Observation:
 
     position_id: str
     projected: Projected
-    percent: float | None
     client_ts: datetime
     server_ts: datetime
 
@@ -46,8 +53,15 @@ def furthest(observations: Sequence[Observation]) -> Observation:
         observations,
         key=lambda o: (
             STATE_RANK[o.projected.state],
-            -1.0 if o.percent is None else o.percent,
+            not o.projected.approximate,
+            -1.0 if o.projected.within is None else o.projected.within,
             bounded_ts(o.client_ts, o.server_ts),
             o.position_id,
         ),
     )
+
+
+def latest(observations: Sequence[Observation]) -> Observation:
+    if not observations:
+        raise ValueError("no position to merge")
+    return max(observations, key=lambda o: (bounded_ts(o.client_ts, o.server_ts), o.position_id))

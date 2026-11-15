@@ -29,6 +29,7 @@ pytestmark = pytest.mark.req("EF-LEC-014", "EF-USR-006")
 
 
 def put(env, who: str, subject: str, carrier: str, **kw):  # type: ignore[no-untyped-def]
+    kw.setdefault("source", "server")  # these tests are about who, not about how a Unit is read
     with env.engine.begin() as connection:
         return record_position(
             connection, reader_id=who, subject_id=subject, carrier_type="export_item",

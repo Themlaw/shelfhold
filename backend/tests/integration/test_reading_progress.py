@@ -10,8 +10,10 @@ from datetime import timedelta
 from pathlib import Path
 
 import pytest
+import sqlalchemy as sa
 
 from shelfhold.reading.domain.projection import Bounds, project
+from shelfhold.reading.public import InvalidLocatorError, record_position
 from tests.reading_env import NEW_HASH, OLD_HASH, T0, hours, reading_env
 
 pytestmark = pytest.mark.req("EF-LEC-014")
@@ -135,13 +137,19 @@ def test_position_on_replaced_content_marked_approximate(tmp_path: Path) -> None
 
 
 @pytest.mark.req("EF-LEC-014")
+@pytest.mark.parametrize("source", ["server", "device"])
 @pytest.mark.parametrize("bounded", [True, False])
 @pytest.mark.parametrize("replaced", [True, False])
 @pytest.mark.parametrize(
     ("page", "percent"), [(None, None), (None, 0.0), (None, 0.4), (None, 1.0), (7, 0.2), (25, 0.9)]
 )
 def test_the_view_is_the_domain_rule(
-    tmp_path: Path, bounded: bool, replaced: bool, page: int | None, percent: float | None
+    tmp_path: Path,
+    source: str,
+    bounded: bool,
+    replaced: bool,
+    page: int | None,
+    percent: float | None,
 ) -> None:
     with reading_env(tmp_path) as env:
         reader = env.user("reader")
@@ -150,17 +158,68 @@ def test_the_view_is_the_domain_rule(
         item = env.file("ok", units, bounds=pages if bounded else None, content_hash=NEW_HASH)
         env.alias(item, OLD_HASH, NEW_HASH)
         env.position(
-            reader,
-            item,
-            page=page,
-            percent=percent,
+            reader, item, page=page, percent=percent, source=source,
             content_hash=OLD_HASH if replaced else NEW_HASH,
-        )
+        )  # fmt: skip
         got = env.progress(reader)
         for rank0, unit in enumerate(units):
             first, last = pages[rank0] if bounded else (None, None)
             want = project(
-                page=page, percent=percent, replaced=replaced,
+                page=page, percent=percent, replaced=replaced, trusted=source == "server",
                 bounds=Bounds(start_page=first, end_page=last, rank0=rank0, count=3),
             )  # fmt: skip
             assert (got[unit].state, bool(got[unit].approximate)) == (want.state, want.approximate)
+
+
+@pytest.mark.req("EF-LEC-014")
+@pytest.mark.parametrize("sent", ["12", 12, 12.0, None, "  12 "])
+def test_a_page_sent_as_text_integer_float_or_absent_reads_the_same(
+    tmp_path: Path, sent: object
+) -> None:
+    """The page is an integer once written, whatever it arrived as, and the view equals the
+    domain rule for it (the PoC of the review: a text page sorted above every number)."""
+    with reading_env(tmp_path) as env:
+        reader = env.user("reader")
+        units = env.units("ok", 3)
+        pages = [(1, 10), (11, 20), (21, 30)]
+        item = env.file("ok", units, bounds=pages)
+        locator = {} if sent is None else {"page": sent}
+        with env.engine.begin() as connection:
+            record_position(
+                connection, reader_id=reader, subject_id=reader, carrier_type="export_item",
+                carrier_id=item, content_hash=NEW_HASH, locator=locator, percent=None,
+                client_ts=hours(1), source="server",
+            )  # fmt: skip
+        got = env.progress(reader)
+        page = None if sent is None else 12
+        for rank0, unit in enumerate(units):
+            want = project(
+                page=page, percent=None,
+                bounds=Bounds(pages[rank0][0], pages[rank0][1], rank0=rank0, count=3),
+            )  # fmt: skip
+            assert (got[unit].state, bool(got[unit].approximate)) == (want.state, want.approximate)
+
+
+@pytest.mark.req("EF-LEC-014")
+@pytest.mark.parametrize("bad", ["abc", "1.5", 1.5, [1], {"n": 1}, True, -3, "-3", 10**12])
+def test_a_page_that_is_not_an_integer_is_refused_on_the_way_in(
+    tmp_path: Path, bad: object
+) -> None:
+    with reading_env(tmp_path) as env:
+        reader = env.user("reader")
+        item = env.file("ok", env.units("ok", 1))
+        with env.engine.begin() as connection, pytest.raises(InvalidLocatorError):
+            record_position(
+                connection, reader_id=reader, subject_id=reader, carrier_type="export_item",
+                carrier_id=item, content_hash=NEW_HASH, locator={"page": bad}, percent=None,
+                client_ts=hours(1),
+            )  # fmt: skip
+
+
+@pytest.mark.req("EF-LEC-014")
+def test_the_database_refuses_a_page_that_is_not_an_integer(tmp_path: Path) -> None:
+    with reading_env(tmp_path) as env:
+        reader = env.user("reader")
+        item = env.file("ok", env.units("ok", 1))
+        with pytest.raises(sa.exc.IntegrityError, match="page_integer"):
+            env.position(reader, item, page="1")

@@ -94,36 +94,81 @@ class ReadingEnv:
         return item
 
     def position(
-        self, user: str, carrier: str, *, percent: float | None = None, page: int | None = None,
+        self, user: str, carrier: str, *, percent: float | None = None, page: Any = None,
         content_hash: str = NEW_HASH, client_ts: datetime = T0, server_ts: datetime | None = None,
-        carrier_type: str = "export_item",
+        carrier_type: str = "export_item", source: str = "server", device_id: str | None = None,
+        covered: list[str] | str | None = "now", read_units: list[str] | None = None,
     ) -> str:  # fmt: skip
         """A position written straight into the table (what a client reported, server date
-        included), the way an earlier version or a restore would have left it."""
+        included), the way an earlier version or a restore would have left it. By default it is a
+        `server` position (the state is taken as it is) that remembers the Units the carrier
+        covers now, as the service does."""
         row_id = new_ulid()
         with write_transaction(self.engine) as connection:
+            if covered == "now":
+                covered = [
+                    str(r[0])
+                    for r in connection.execute(
+                        sa.select(export.unit_coverage.c.unit_id)
+                        .where(
+                            export.unit_coverage.c.carrier_type == carrier_type,
+                            export.unit_coverage.c.carrier_id == carrier,
+                        )
+                        .order_by(export.unit_coverage.c.position)
+                    )
+                ]
             connection.execute(
                 sa.insert(reading.reading_position).values(
                     id=row_id, user_id=user, carrier_type=carrier_type, carrier_id=carrier,
                     content_hash=content_hash, locator={} if page is None else {"page": page},
                     percent=percent, client_ts=client_ts, server_ts=server_ts or client_ts,
+                    source=source, device_id=device_id, covered_units=covered,
+                    read_units=read_units or [],
                 )
             )  # fmt: skip
         return row_id
 
+    def recut(
+        self, item: str, units: list[str], content_hash: str, edition_key: str = "ok"
+    ) -> None:
+        """The file is replaced by another cut (a better copy): new content, new coverage."""
+        with write_transaction(self.engine) as connection:
+            content_id = self._content(connection, edition_key, units[0], content_hash)
+            connection.execute(
+                sa.update(export.export_item)
+                .where(export.export_item.c.id == item)
+                .values(content_id=content_id)
+            )
+            connection.execute(
+                sa.delete(export.unit_coverage).where(export.unit_coverage.c.carrier_id == item)
+            )
+            for position, unit in enumerate(units):
+                connection.execute(
+                    sa.insert(export.unit_coverage).values(
+                        carrier_type="export_item", carrier_id=item, unit_id=unit,
+                        position=position, extent="full", origin="manual",
+                    )
+                )  # fmt: skip
+
     def _content(
         self, connection: Connection, edition_key: str, unit: str, content_hash: str
     ) -> str:
-        binding = add_binding(
-            connection, self.seed.works[edition_key], self.seed.editions[edition_key],
-            add_source_item(connection, new_ulid()),
-        )  # fmt: skip
-        variant = add_variant(connection, unit, binding)
+        found = connection.execute(
+            sa.text("SELECT id FROM unit_variant WHERE unit_id = :u LIMIT 1"), {"u": unit}
+        ).scalar()
+        if found is None:
+            binding = add_binding(
+                connection, self.seed.works[edition_key], self.seed.editions[edition_key],
+                add_source_item(connection, new_ulid()),
+            )  # fmt: skip
+            found = add_variant(connection, unit, binding)
+        variant = str(found)
         content_id = new_ulid()
         connection.execute(
             sa.insert(storage.content).values(
                 id=content_id, unit_id=unit, variant_id=variant, kind="images",
-                media_type="application/vnd.comicbook+zip", format="cbz", retention="keep",
+                media_type=f"application/vnd.comicbook+zip;cut={content_hash[-8:]}", format="cbz",
+                retention="keep",
                 path=f"x/{content_id}.cbz", original_sha256=content_hash,
                 content_hash=content_hash, store_provenance="received", size=10,
             )
