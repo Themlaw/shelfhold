@@ -95,7 +95,8 @@ EXCLUDED_TABLES: Final[Mapping[str, str]] = {
     "audit": _NOISE, "event": _NOISE, "job_view": _NOISE, "fs_intent": _NOISE,
     "resource_lock": _NOISE, "export_plan": _NOISE, "export_op": _NOISE,
     "notification_pending": _NOISE, "notification_digest": _NOISE, "domain_slot": _NOISE,
-    "provider_quota": _NOISE, "http_cache": _NOISE, "metadata_cache": _NOISE,
+    "provider_quota": _NOISE, "provider_release_calendar": _NOISE,  # a cache, asked again
+    "http_cache": _NOISE, "metadata_cache": _NOISE,
     "follow_notice": _NOISE, "follow_request": _NOISE, "download_request": _NOISE,
     "download_request_unit": _NOISE, "source_failure": _NOISE, "series_gap": _NOISE,
     "gap_ack": _NOISE, "binding_release_sample": _NOISE, "revision_pending": _NOISE,

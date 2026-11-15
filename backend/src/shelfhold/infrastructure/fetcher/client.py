@@ -343,6 +343,9 @@ class GuardedFetcher:
             if self._limiter is not None:
                 await self._limiter.acquire()  # robots.txt and every hop count, a cache hit not
             response = await self._send(method, url, addresses, sent, body, cap, tally)
+            observe = getattr(self._limiter, "observe", None)
+            if observe is not None:  # the rate the provider announces, a 429's Retry-After
+                observe(response.headers, response.status)
             if self._cache is not None and hop == 0:
                 settled = self._settle(cache_key, entry, method, url, headers, response)
                 if settled is not None:

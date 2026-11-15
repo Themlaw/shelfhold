@@ -1,0 +1,25 @@
+{
+  "interactions": [
+    {
+      "request": {
+        "method": "POST",
+        "uri": "https://graphql.anilist.co/",
+        "headers": {
+          "Content-Type": "application/json",
+          "Accept": "application/json",
+          "User-Agent": "Shelfhold/0.0 (+https://github.com/Themlaw/shelfhold)"
+        },
+        "body_contains": "Page"
+      },
+      "response": {
+        "status": 429,
+        "headers": {
+          "Retry-After": "60",
+          "X-RateLimit-Limit": "30",
+          "X-RateLimit-Remaining": "0"
+        },
+        "body": "{\"errors\":[{\"message\":\"Too Many Requests.\",\"status\":429}]}"
+      }
+    }
+  ]
+}
