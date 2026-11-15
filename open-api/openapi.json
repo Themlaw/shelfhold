@@ -22727,6 +22727,45 @@
         ]
       }
     },
+    "/opds/bundles/{version_id}": {
+      "get": {
+        "description": "A version made earlier, by its identifier: the profile's own only (any other is an\nabsent one), and every chapter is checked again against the manifest and the scope.",
+        "operationId": "opds_bundle_version",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "version_id",
+            "required": true,
+            "schema": {
+              "title": "Version Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/vnd.comicbook+zip": {}
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Détail du problème (RFC 9457)."
+          }
+        },
+        "summary": "Bundle Version",
+        "tags": [
+          "opds"
+        ]
+      }
+    },
     "/opds/covers/{content_hash}/{size}": {
       "get": {
         "operationId": "opds_cover",
@@ -22788,6 +22827,18 @@
             "schema": {
               "title": "Edition Id",
               "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "part",
+            "required": false,
+            "schema": {
+              "default": 1,
+              "maximum": 999,
+              "minimum": 1,
+              "title": "Part",
+              "type": "integer"
             }
           }
         ],
@@ -23326,6 +23377,14 @@
     "/api/v1/problems/bad-request": {
       "code": "bad_request",
       "status": 400
+    },
+    "/api/v1/problems/bundle-busy": {
+      "code": "bundle_busy",
+      "status": 429
+    },
+    "/api/v1/problems/bundle-gone": {
+      "code": "bundle_gone",
+      "status": 410
     },
     "/api/v1/problems/config.file-invalid": {
       "code": "config.file_invalid",

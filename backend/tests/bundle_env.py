@@ -88,6 +88,9 @@ class Library:
         data = path.read_bytes() if path.is_file() else b""
         stat = path.stat() if path.is_file() else None
         with write_transaction(self.engine) as c:
+            # the schema already refuses a climbing path (a CHECK); a row that got in anyway (a
+            # corrupt or edited database) is what the block must still not follow
+            c.execute(sa.text("PRAGMA ignore_check_constraints = ON"))
             c.execute(
                 sa.insert(catalog.unit).values(
                     id=unit_id, edition_id=self.edition_id, number_raw=chapter.number,
@@ -114,6 +117,7 @@ class Library:
                     file_hash="sha256:" + hashlib.sha256(data).hexdigest(),
                 )
             )  # fmt: skip
+            c.execute(sa.text("PRAGMA ignore_check_constraints = OFF"))
         found = Exported(item_id, unit_id, path, rel)
         self.items.append(found)
         return found
@@ -154,7 +158,7 @@ def write_cbz(path: Path, chapter: Chapter) -> None:
 
 
 def library_for(engine: Engine, root: Path, edition_id: str) -> Library:
-    """A destination on `root` (a tree) for the shelf of the Edition's Work, and nothing exported."""
+    """A destination on `root` (a tree) for the Edition, and nothing exported yet."""
     root.mkdir(parents=True, exist_ok=True)
     target_id, shelf_id, destination_id = new_ulid(), new_ulid(), new_ulid()
     with write_transaction(engine) as c:
@@ -164,9 +168,7 @@ def library_for(engine: Engine, root: Path, edition_id: str) -> Library:
                 path_map=[{"local": str(root), "remote": "/m", "mode": "rw"}],
             )
         )  # fmt: skip
-        c.execute(
-            sa.insert(export.shelf).values(id=shelf_id, name=f"s-{shelf_id}", phrase="manga")
-        )
+        c.execute(sa.insert(export.shelf).values(id=shelf_id, name=f"s-{shelf_id}", phrase="manga"))
         c.execute(
             sa.insert(export.shelf_destination).values(
                 id=destination_id, shelf_id=shelf_id, target_id=target_id, transport="tree",

@@ -95,7 +95,9 @@ class FakeBundles:
             )
         ]  # fmt: skip
 
-    def open(self, *, user_id: str, scope: Any, edition_id: str, part: int = 1, token_id: Any = None) -> Any:
+    def open(
+        self, *, user_id: str, scope: Any, edition_id: str, part: int = 1, token_id: Any = None
+    ) -> Any:
         from shelfhold.interfaces.http_api.opds.bundle import BundleDownload
 
         self.opened.append(edition_id)

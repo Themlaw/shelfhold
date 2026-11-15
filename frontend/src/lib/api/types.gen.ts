@@ -13474,6 +13474,34 @@ export type OpdsRootResponses = {
     200: unknown;
 };
 
+export type OpdsBundleVersionData = {
+    body?: never;
+    path: {
+        /**
+         * Version Id
+         */
+        version_id: string;
+    };
+    query?: never;
+    url: '/opds/bundles/{version_id}';
+};
+
+export type OpdsBundleVersionErrors = {
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type OpdsBundleVersionError = OpdsBundleVersionErrors[keyof OpdsBundleVersionErrors];
+
+export type OpdsBundleVersionResponses = {
+    /**
+     * Successful Response
+     */
+    200: unknown;
+};
+
 export type OpdsCoverData = {
     body?: never;
     path: {
@@ -13514,7 +13542,12 @@ export type OpdsCompleteData = {
          */
         edition_id: string;
     };
-    query?: never;
+    query?: {
+        /**
+         * Part
+         */
+        part?: number;
+    };
     url: '/opds/editions/{edition_id}/complete';
 };
 

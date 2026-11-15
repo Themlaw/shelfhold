@@ -192,7 +192,9 @@ def test_page_names_are_five_digits_with_a_lowercase_extension() -> None:
 
 
 def test_entries_are_in_rank_order_which_is_the_natural_order_of_the_names() -> None:
-    names = [chapter_folder(n, str(n)) + "/" + page_name(p, "png") for n in (1, 2, 10) for p in (1, 2)]
+    names = [
+        chapter_folder(n, str(n)) + "/" + page_name(p, "png") for n in (1, 2, 10) for p in (1, 2)
+    ]
     assert names == sorted(names)
 
 

@@ -110,7 +110,8 @@ EXCLUDED_TABLES: Final[Mapping[str, str]] = {
     # rebuilt by the instance
     "replica": _REBUILT, "thumbnail": _REBUILT, "team_alias": _REBUILT,
     "export_record": _REBUILT, "export_series": _REBUILT, "edition_export_series": _REBUILT,
-    "export_upgrade": _REBUILT, "field_owner": _REBUILT, "document_alias": _REBUILT,
+    "export_upgrade": _REBUILT, "bundle_partition": _REBUILT, "bundle_version": _REBUILT,
+    "bundle_member": _REBUILT, "field_owner": _REBUILT, "document_alias": _REBUILT,
     "work_relation": _REBUILT,
 }  # fmt: skip
 

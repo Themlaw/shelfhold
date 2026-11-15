@@ -75,6 +75,9 @@ class ArchiveEntry:
     size: int
     compressed_size: int
     is_dir: bool
+    crc32: int = 0  # of the uncompressed bytes, as the central directory declares it
+    stored: bool = False  # method 0 (stored)
+    encrypted: bool = False
 
 
 def _check_name(name: str) -> None:
@@ -257,7 +260,15 @@ class SafeArchive:
         self._audit_layout(infos)
         self._by_name = {i.filename: i for i in infos}
         self.entries = tuple(
-            ArchiveEntry(i.filename, i.file_size, i.compress_size, i.filename.endswith("/"))
+            ArchiveEntry(
+                i.filename,
+                i.file_size,
+                i.compress_size,
+                i.filename.endswith("/"),
+                i.CRC,
+                i.compress_type == zipfile.ZIP_STORED,
+                bool(i.flag_bits & 0x1),
+            )
             for i in infos
         )
 

@@ -22,20 +22,26 @@ from tests.integration.test_schema_migration_0002 import alembic_config, tables
 pytestmark = pytest.mark.req("ENF-OPS-002", "EF-INT-007")
 
 FP = "ab" * 32
+_COLUMNS = (
+    "INSERT INTO bundle_member (version_id, rank, export_item_id, chapter_label, content_fp, "
+    "pages_digest, first_page, page_count, page_map_state) VALUES "
+)
+MEMBER_NO_ITEM = _COLUMNS + "(?, 1, NULL, '1', ?, ?, 1, 1, 'candidate')"
+MEMBER_WITH_ITEM = _COLUMNS + "(?, 1, ?, '1', ?, ?, 1, 1, 'candidate')"
 
 
 @pytest.mark.req("ENF-OPS-002")
-def test_single_alembic_head_with_0077_on_0076() -> None:
+def test_single_alembic_head_with_0077_on_0065() -> None:
     script = ScriptDirectory(str(default_script_location()))
     assert script.get_heads() == ["0077"]
-    assert script.get_revision("0077").down_revision == "0076"
+    assert script.get_revision("0077").down_revision == "0065"
 
 
 @pytest.mark.req("ENF-OPS-002")
-def test_upgrade_from_0076_keeps_data_and_adds_the_tables(settings: Settings) -> None:
+def test_upgrade_from_0065_keeps_data_and_adds_the_tables(settings: Settings) -> None:
     database = settings.database_path
     settings.data_dir.mkdir(parents=True, exist_ok=True)
-    command.upgrade(alembic_config(database), "0076")
+    command.upgrade(alembic_config(database), "0065")
     assert "bundle_version" not in tables(database)
     assert "0077" in migrate(settings).applied
     assert {"bundle_partition", "bundle_version", "bundle_member"} <= set(tables(database))
@@ -46,7 +52,8 @@ def seed(conn: sqlite3.Connection) -> dict[str, str]:
     conn.execute("PRAGMA foreign_keys = ON")
     kind = conn.execute("SELECT key FROM work_kind LIMIT 1").fetchone()[0]
     conn.execute(
-        "INSERT INTO work (id, kind, title, sort_title) VALUES (?, ?, 't', 't')", (ids["work"], kind)
+        "INSERT INTO work (id, kind, title, sort_title) VALUES (?, ?, 't', 't')",
+        (ids["work"], kind),
     )
     conn.execute(
         "INSERT INTO edition (id, work_id, lang, translation_type, media) "
@@ -111,8 +118,7 @@ def test_deleting_the_profile_or_the_edition_deletes_the_versions_and_their_memb
         ids = seed(conn)
         made = version(conn, ids)
         conn.execute(
-            "INSERT INTO bundle_member (version_id, rank, export_item_id, chapter_label, content_fp, "
-            "pages_digest, first_page, page_count, page_map_state) VALUES (?, 1, NULL, '1', ?, ?, 1, 1, 'candidate')",
+            MEMBER_NO_ITEM,
             (made, FP, FP),
         )
         conn.execute('DELETE FROM "user" WHERE id = ?', (ids["user"],))
@@ -132,8 +138,7 @@ def test_a_purged_file_wipes_its_fingerprints_and_the_member_stays_as_an_orphan(
             (ids["unit"], ids["edition"]),
         )
         conn.execute(
-            "INSERT INTO bundle_member (version_id, rank, export_item_id, chapter_label, content_fp, "
-            "pages_digest, first_page, page_count, page_map_state) VALUES (?, 1, ?, '1', ?, ?, 1, 1, 'candidate')",
+            MEMBER_WITH_ITEM,
             (made, ids["unit"], FP, FP),
         )
         conn.execute("DELETE FROM export_item WHERE id = ?", (ids["unit"],))
@@ -149,16 +154,16 @@ def test_a_member_with_an_unknown_page_state_is_refused(settings: Settings) -> N
         made = version(conn, ids)
         with pytest.raises(sqlite3.IntegrityError):
             conn.execute(
-                "INSERT INTO bundle_member (version_id, rank, chapter_label, first_page, page_count, "
-                "page_map_state) VALUES (?, 1, '1', 1, 1, 'verified-by-magic')",
+                "INSERT INTO bundle_member (version_id, rank, chapter_label, first_page, "
+                "page_count, page_map_state) VALUES (?, 1, '1', 1, 1, 'verified-by-magic')",
                 (made,),
             )
 
 
 @pytest.mark.req("ENF-OPS-002")
-def test_downgrade_to_0076_drops_the_tables(settings: Settings) -> None:
+def test_downgrade_to_0065_drops_the_tables(settings: Settings) -> None:
     migrate(settings)
-    command.downgrade(alembic_config(settings.database_path), "0076")
+    command.downgrade(alembic_config(settings.database_path), "0065")
     assert "bundle_version" not in tables(settings.database_path)
     assert "bundle_member" not in tables(settings.database_path)
     assert "bundle_partition" not in tables(settings.database_path)

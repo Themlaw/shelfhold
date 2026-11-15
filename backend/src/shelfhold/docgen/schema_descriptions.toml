@@ -1192,3 +1192,44 @@ description = "Where the progress synchronisation of an account with its destina
 [tables.progress_sync_cursor.columns]
 last_pull_server_ts = "Server time of the last progress read from the destination (UTC); NULL: never."
 last_push_at = "When progress was last sent to the destination (UTC); NULL: never."
+
+[tables.bundle_partition]
+description = "Where each part of a series block begins, written once and never moved (M4 L49a)."
+[tables.bundle_partition.columns]
+edition_id = "Edition whose series the block holds (`edition.id`)."
+part_index = "Number of the part, from 1."
+first_unit_id = "First Unit of the part; NULL when the part opens the series."
+export_item_id = "Exported item of kind `bundle` the part's document aliases hang on (`export_item.id`)."
+
+[tables.bundle_version]
+description = "One downloadable file of a series block for one profile, numbered and never reused (M4 L49a). A purged version keeps its row and answers 410."
+[tables.bundle_version.columns]
+id = "Version identifier (ULID)."
+edition_id = "Edition of the block."
+part_index = "Part of the block."
+profile_user_id = "Profile the version was made for (`user.id`)."
+number = "Counter of the version per Edition, part and profile."
+content_fp = "Keyed fingerprint (HMAC, hex) of the whole file, never a clear hash."
+koreader_md5 = "Partial MD5 KOReader computes on the file, worked out without building it."
+state_key = "Digest of the manifest rows the version was made from."
+size = "Exact size of the file, in bytes."
+entry_count = "Number of entries in the zip."
+page_count = "Number of pages in the zip."
+member_count = "Number of chapters in the version."
+excluded = "JSON: reason a chapter was left out, with the chapters concerned."
+last_used_at = "When the version was last served (UTC); NULL if never."
+purged_at = "When the retention purged the version (UTC); NULL while it is kept."
+
+[tables.bundle_member]
+description = "What a version is made of, in order: one row per chapter, with its page table computed by Shelfhold (M4 L49a)."
+[tables.bundle_member.columns]
+version_id = "Version concerned (`bundle_version.id`)."
+rank = "Position of the chapter in the version, from 1."
+export_item_id = "Exported file of the chapter; NULL once that row is deleted (`export_item.id`)."
+unit_id = "Unit of the chapter; NULL once it is deleted (`unit.id`)."
+chapter_label = "Chapter number as shown in the folder name."
+content_fp = "Keyed fingerprint of the file; NULL when wiped."
+pages_digest = "Digest of the names, sizes and CRC-32 of the pages; NULL when wiped."
+first_page = "Number of the chapter's first page in the block, from 1."
+page_count = "Pages the chapter holds in the block."
+page_map_state = "`candidate` (canonical names) or `unverified`; `verified` will come with L50."
