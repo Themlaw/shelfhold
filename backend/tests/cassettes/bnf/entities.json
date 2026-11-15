@@ -1,0 +1,21 @@
+{
+  "interactions": [
+    {
+      "request": {
+        "method": "GET",
+        "uri": "https://catalogue.bnf.fr/api/SRU",
+        "headers": {
+          "Accept": "*/*",
+          "User-Agent": "Shelfhold/0.0 (+https://github.com/Themlaw/shelfhold)"
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/xml"
+        },
+        "body": "<?xml version=\"1.0\"?><!DOCTYPE lol [<!ENTITY a \"aaaaaaaaaa\"><!ENTITY b \"&a;&a;&a;&a;&a;&a;&a;&a;\">]><srw:searchRetrieveResponse xmlns:srw=\"http://www.loc.gov/zing/srw/\"><srw:records>&b;</srw:records></srw:searchRetrieveResponse>"
+      }
+    }
+  ]
+}
