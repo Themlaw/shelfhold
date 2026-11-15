@@ -55,7 +55,9 @@ ALLOWED_ROUTES: Final = (
     LIBRARY_UPDATE, SCAN_FOLDER, UPLOAD_SERIES_COVER, USERS, SERIES_OF_LIBRARY, SERIES_BY_IDS,
     SERIES_DETAIL, SERIES_METADATA, SERIES_METADATA_UPDATE,
 )  # fmt: skip
-_BY_KEY: Final[dict[tuple[str, str], Route]] = {(r.method, r.path.lower()): r for r in ALLOWED_ROUTES}
+_BY_KEY: Final[dict[tuple[str, str], Route]] = {
+    (r.method, r.path.lower()): r for r in ALLOWED_ROUTES
+}
 # Routes that need an administrator, so that a 403 means "the account was demoted".
 PARSE_ROUTES: Final = frozenset({PARSE.label, PARSE_BULK.label})
 

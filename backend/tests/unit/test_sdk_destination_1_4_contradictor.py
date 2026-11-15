@@ -57,6 +57,7 @@ def _content_call(**over: Any) -> ApiCall:
 # -- FsOp plan: the content rule of 1.4 only looks at `write` ----------------------------------
 
 
+@pytest.mark.req("EF-EXP-001", "EF-EXP-065")
 @pytest.mark.parametrize("ref", ["not-planned", "item-wm", "mirror-1"])
 def test_write_inline_citing_an_export_item_obeys_the_content_rule(ref: str) -> None:
     plan = FsOpPlan(
@@ -75,6 +76,7 @@ def test_write_inline_citing_an_export_item_obeys_the_content_rule(ref: str) -> 
 # -- ApiCall: the host check fails open on what it does not recognise ---------------------------
 
 
+@pytest.mark.req("EF-EXP-001", "EF-EXP-065")
 def test_check_api_call_refuses_a_body_that_is_not_an_exact_sdk_body() -> None:
     forged = SimpleNamespace(
         kind="content",
@@ -88,6 +90,7 @@ def test_check_api_call_refuses_a_body_that_is_not_an_exact_sdk_body() -> None:
         check_api_call(call, _planned())
 
 
+@pytest.mark.req("EF-EXP-001", "EF-EXP-065")
 def test_api_call_cannot_be_altered_after_validation() -> None:
     call = _content_call()
     check_api_call(call, _planned())
@@ -95,6 +98,7 @@ def test_api_call_cannot_be_altered_after_validation() -> None:
         call.path = "//attacker.invalid/x"
 
 
+@pytest.mark.req("EF-EXP-001", "EF-EXP-065")
 @pytest.mark.parametrize("method", ["get ", "TRACE", "CONNECT", "POST\r\nX-Injected: 1"])
 def test_check_api_call_refuses_a_method_outside_the_closed_list(method: str) -> None:
     with pytest.raises((ValidationError, ApiCallError)):  # refused at the model, then at the check
@@ -104,6 +108,7 @@ def test_check_api_call_refuses_a_method_outside_the_closed_list(method: str) ->
 # -- ApiCall path: what the guard lets through ------------------------------------------------
 
 
+@pytest.mark.req("EF-EXP-001", "EF-EXP-065")
 @pytest.mark.parametrize(
     "path",
     [
@@ -125,6 +130,7 @@ def test_api_call_path_refuses_encoded_and_unicode_traversal(path: str) -> None:
 # -- secrets: a guard, not a hole (green on #275): nested validation keeps the values hidden ----
 
 
+@pytest.mark.req("EF-EXP-001", "EF-EXP-065")
 def test_secret_of_a_nested_api_call_never_appears_in_a_validation_error() -> None:
     class CallBatch(BaseModel):  # what a host or the kit does with the list a destination returns
         calls: list[ApiCall]
@@ -150,6 +156,7 @@ def test_secret_of_a_nested_api_call_never_appears_in_a_validation_error() -> No
 # -- the one way out of Kavita ignores the 1.4 body --------------------------------------------
 
 
+@pytest.mark.req("EF-EXP-001", "EF-EXP-065")
 def test_kavita_client_does_not_silently_drop_a_1_4_body() -> None:
     h = harness()
     run(h.client.probe())
@@ -168,6 +175,7 @@ def test_kavita_client_does_not_silently_drop_a_1_4_body() -> None:
 # -- minor: a media type the header cannot carry -----------------------------------------------
 
 
+@pytest.mark.req("EF-EXP-001", "EF-EXP-065")
 def test_content_type_is_ascii_only() -> None:
     call = _content_call(
         body=ContentBody(
