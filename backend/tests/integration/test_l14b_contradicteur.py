@@ -167,7 +167,7 @@ def test_m2_a_stop_requested_during_a_destination_stops_the_next_member(tmp_path
 
 def test_an_undone_kavita_read_is_not_imposed_again_while_kavita_stays_put(tmp_path: Path) -> None:
     """Contrôle (vert) : Kavita ne ré-impose pas un « lu » annulé ici tant qu'il ne bouge pas ;
-    l'annulation n'est pas non plus propagée à Kavita, qui reste « lu »."""
+    l'annulation n'est pas non plus propagée à Kavita, qui garde « lu »."""
 
     with sync_env(tmp_path) as env:
         reader = env.member("reader")
