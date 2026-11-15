@@ -68,6 +68,7 @@ describe('Nav logout (EF-USR-021)', () => {
     document.cookie = 'csrf=tok123';
   });
 
+  // req: EF-USR-022
   it('shows a logout button for an admin, a member and a child', () => {
     for (const ids of [
       ['home', 'search', 'requests', 'approve', 'activity', 'settings'],
@@ -80,11 +81,13 @@ describe('Nav logout (EF-USR-021)', () => {
     }
   });
 
+  // req: EF-USR-022
   it('does not show a logout button when nobody is signed in', () => {
     render(Nav, { ids: [] });
     expect(screen.queryByRole('button', { name: 'Se déconnecter' })).toBeNull();
   });
 
+  // req: EF-USR-022
   it('calls the logout route with the CSRF token then goes to /login', async () => {
     let called = false;
     let csrf: string | null = null;
@@ -103,6 +106,7 @@ describe('Nav logout (EF-USR-021)', () => {
     expect(csrf).toBe('tok123');
   });
 
+  // req: EF-USR-022
   it('shows a message on a network error and does not claim the session is closed', async () => {
     server.use(http.post(`${BASE}/api/v1/auth/logout`, () => HttpResponse.error()));
     const user = userEvent.setup();
