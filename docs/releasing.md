@@ -15,8 +15,10 @@ Une release est une action manuelle du mainteneur, en quatre étapes. Aucun jeto
    ou `--notes-from-tag` avec un tag annoté porteur des notes.
 4. **Le workflow `release.yml`** se déclenche sur `release: published` et, dans un seul job `packages: write` :
    vérifie que le tag est `vX.Y.Z`, résout son commit, attend (borné) un `ci-success` vert sur ce commit, puis ajoute les tags
-   `X.Y.Z` et `X.Y` au **digest déjà publié** (`sha-<commit>`) : jamais de reconstruction, jamais de `latest`.
-   `X.Y.Z` est immuable (refus s'il existe avec un autre digest) ; `X.Y` ne recule jamais.
+   `X.Y.Z`, `X.Y` et `latest` au **digest déjà publié** (`sha-<commit>`) : jamais de reconstruction.
+   `X.Y.Z` est immuable (refus s'il existe avec un autre digest) ; `X.Y` et `latest` ne reculent jamais : un correctif d'une
+   ancienne mineure, publié après une version plus récente, ne les déplace pas. `latest` n'est posé que par une release finale
+   (décision du porteur du 15/11, [docs/decisions/M4.md](decisions/M4.md)).
 5. **Assets de release** (EF-INT-027) : un second job de `release.yml` (`schema-assets`, `contents: write`) génère `schema.sql` et
    `data-dictionary.md` avec `.github/scripts/release-assets.sh` et les attache à la release (`gh release upload --clobber`).
    `schema.sql` vient des migrations Alembic appliquées à une base vide ; le dictionnaire ajoute une description par table et par colonne
@@ -26,7 +28,7 @@ Une release est une action manuelle du mainteneur, en quatre étapes. Aucun jeto
    `sbom-arm64.spdx.json`, `provenance.intoto.jsonl`, `test-report.xml` et `bench-reference.json` (la référence versionnée dans
    `.github/bench-reference.json`, car les artefacts expirent). Vérification à la main : `gh attestation verify oci://ghcr.io/themlaw/shelfhold@<digest> --repo Themlaw/shelfhold`.
 7. **Signatures et second registre** (ENF-SEC-007, ENF-GOV-004) : les images sont signées par cosign à la publication sur `main`
-   (`image-publish.yml`), pas par `release.yml`. Le job `second-registry` de `release.yml` ajoute les tags de version sur le second registre
+   (`image-publish.yml`), pas par `release.yml`. Le job `second-registry` de `release.yml` ajoute les tags de version (et `latest`, quand il suit GHCR) sur le second registre
    si `CODEBERG_TOKEN` existe et si le digest y est déjà signé, sinon il l'indique dans son résumé et réussit. Vérification, réglages
    et limites : [docs/admin/verifier-les-images.md](admin/verifier-les-images.md).
 8. **Site de documentation** (D17) : `docs.yml` construit le site du tag avec Zensical (mode strict) et le publie sur GitHub Pages.
@@ -40,7 +42,7 @@ Actions (`workflow_dispatch`, entrée `tag` = `vX.Y.Z`). Le script est idempoten
 Une rc est une **pré-version GitHub** : `gh release create vX.Y.Z-rc.N --target main --prerelease --title vX.Y.Z-rc.N --notes ...`.
 Sans `--prerelease`, elle deviendrait la « Latest release » ; le workflow `release` refuse l'incohérence entre le drapeau et le tag.
 
-- **Aucun tag d'image** : ni `X.Y.Z-rc.N`, ni `X.Y`, ni `latest`. `release.yml` attend le `ci-success` vert, vérifie la signature
+- **Aucun tag d'image** : ni `X.Y.Z-rc.N`, ni `X.Y`, ni `latest` (jamais d'écriture pour une rc). `release.yml` attend le `ci-success` vert, vérifie la signature
   cosign du digest de `sha-<commit>`, puis s'arrête sans rien écrire dans le registre. `X.Y` ne peut donc pas avancer vers une rc.
 - Les preuves sont jointes comme pour une version : SBOM, provenance (lues sur l'image `sha-<commit>`, attestations vérifiées),
   rapport de tests, `schema.sql` et dictionnaire.

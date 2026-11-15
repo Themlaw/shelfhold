@@ -205,7 +205,7 @@ Toutes les actions sont **épinglées par SHA complet** avec commentaire `# vX.Y
 
 Retirés par rapport à la v1 du document : Postgres en nightly (ENF-PORT-002 retirée), mutation hebdomadaire obligatoire, benchmarks nocturnes, variante d'image `:full`.
 
-Images publiées : `ghcr.io/<org>/shelfhold:{X.Y.Z, X.Y, edge, sha-<long>}` et, à partir de M1b, les mêmes tags sur le second registre (`<registre2>/<org>/shelfhold`, même digest, même signature) ; avant 1.0 les tags sont `0.Y.Z` / `0.Y`. **Pas de tag `latest` ni de tag majeur seul** : on épingle `X.Y` (A24). Un tag de version n'est jamais réécrit.
+Images publiées : `ghcr.io/<org>/shelfhold:{X.Y.Z, X.Y, latest, edge, sha-<long>}` et, à partir de M1b, les mêmes tags sur le second registre (`<registre2>/<org>/shelfhold`, même digest, même signature) ; avant 1.0 les tags sont `0.Y.Z` / `0.Y`. **`latest`** (décision du porteur, 15/11, `docs/decisions/M4.md`) est posé par une release finale, jamais par une rc, et ne recule jamais, comme `X.Y` ; **pas de tag majeur seul** : on épingle `X.Y` (A24). Un tag de version n'est jamais réécrit.
 
 ---
 
@@ -254,7 +254,7 @@ Réglages de l'organisation et du dépôt :
 | Commits | Commit rouge séparé recommandé (`test: … (red)`) ; e-mail `noreply` conseillé ; `Signed-off-by:` obligatoire sur chaque commit (DCO, `dco.yml`) dès le premier commit public |
 | Versionnage app | SemVer ; `0.x` jusqu'à M3 (`0.1` M0, `0.2` M1a, `0.3` M1b, `0.4` M2) ; **`1.0.0` à la fin de M3**, et aucune promotion publique avant ; dépréciation d'API par en-têtes `Deprecation`/`Sunset`, au moins une mineure et 6 mois après 1.0 ; release-please décide le bump ; le mainteneur choisit quand fusionner la PR de release |
 | Versionnage SDK | Interne en V1 (entier `api` + shim N-1) ; publié en M6 avec SemVer indépendant ; support d'une `api` dépréciée pendant 12 mois (à valider, Q20) |
-| Tags d'image | `edge` = `main` ; `X.Y.Z` et `X.Y` = releases ; `sha-<long>` = traçabilité ; ni `latest` ni majeur seul ; jamais de réécriture d'un tag de version |
+| Tags d'image | `edge` = `main` ; `X.Y.Z`, `X.Y` et `latest` = releases finales (`X.Y` et `latest` ne reculent jamais, décision du porteur du 15/11) ; `sha-<long>` = traçabilité ; pas de majeur seul ; jamais de réécriture d'un tag de version |
 | Migrations | Uniquement en avant, idempotentes ; `shelfhold migrate` (service dédié du compose) ; sauvegarde pré-migration nommée par révision, hors rotation ; **jamais de migration dans une release patch** (contrôle CI) ; Shelfhold **refuse de démarrer** sur un schéma plus récent que le sien (ENF-OPS-002) |
 | Retour arrière | Revenir au tag `X.Y` précédent + restaurer la sauvegarde pré-migration ; procédure testée en E2E (ENF-OPS-008) ; notes de version « migration : oui/non, réversible : oui/non » |
 | Correctifs | Correctif sur `main` puis release patch ; pas de branche de maintenance avant 1.x ; correctifs de sécurité pour `X.Y` courante et précédente |

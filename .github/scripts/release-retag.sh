@@ -1,11 +1,13 @@
 #!/usr/bin/env bash
-# Adds the version tags X.Y.Z and X.Y to the image ALREADY published for a release tag (digest of
-# sha-<long>, built and tested by the ci run of the tagged commit): no rebuild, no "latest".
+# Adds the version tags X.Y.Z, X.Y and latest to the image ALREADY published for a release tag
+# (digest of sha-<long>, built and tested by the ci run of the tagged commit): no rebuild.
 # A release candidate (vX.Y.Z-rc.N) gets NO image tag at all (no X.Y.Z-rc.N, no X.Y, no latest): the
 # script only checks what the release needs (green ci-success, signed image of the commit) and stops
 # before the first write. The candidate is installed from sha-<commit>.
 # Idempotent. X.Y.Z is immutable (refused if it exists with another digest, checked before anything
-# is written); X.Y is the floating minor tag and never moves backwards.
+# is written); X.Y is the floating minor tag and latest the floating final-release tag (decision of
+# the maintainer, 2026-11-15, docs/decisions/M4.md): neither ever moves backwards, so a fix of an
+# older minor published after a newer release moves neither.
 set -euo pipefail
 : "${IMAGE:?}" "${REPO:?}" "${TAG:?}" "${GH_TOKEN:?}"
 IMAGE="${IMAGE,,}"
@@ -82,14 +84,18 @@ else
   echo "${VERSION} already carries ${digest}: signature not checked again"
 fi
 
-# 4. X.Y only moves forward: skip it when a higher patch of this minor is already published
+# 4. X.Y and latest only move forward: each is skipped when a higher version of its scope (the same
+# minor for X.Y, any final release for latest) is already published
 name="${IMAGE#ghcr.io/}"
 token="$(curl -fsS -u "token:${GH_TOKEN}" "https://ghcr.io/token?service=ghcr.io&scope=repository:${name}:pull" | jq -r .token)"
 tags="$(curl -fsS -H "Authorization: Bearer ${token}" "https://ghcr.io/v2/${name}/tags/list?n=1000" | jq -r '.tags[]?')"
 highest="$( { grep -E "^${minor//./\.}\.[0-9]+$" <<< "$tags" || true; echo "$VERSION"; } | sort -V | tail -n1)"
+highest_final="$( { grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' <<< "$tags" || true; echo "$VERSION"; } | sort -V | tail -n1)"
 args=(-t "${IMAGE}:${VERSION}")
 if [ "$highest" = "$VERSION" ]; then args+=(-t "${IMAGE}:${minor}")
 else echo "keeping ${minor} on ${highest} (newer than ${VERSION})"; fi
+if [ "$highest_final" = "$VERSION" ]; then args+=(-t "${IMAGE}:latest")
+else echo "keeping latest on ${highest_final} (newer than ${VERSION})"; fi
 docker buildx imagetools create "${args[@]}" "${IMAGE}@${digest}"
 [ "$(digest_of "${IMAGE}:${VERSION}")" = "$digest" ] || { echo "::error::tag ${VERSION} does not point to ${digest}"; exit 1; }
 echo "tagged ${args[*]} -> ${digest}"

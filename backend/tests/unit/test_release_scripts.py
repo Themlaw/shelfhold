@@ -126,7 +126,34 @@ def test_retag_uses_the_given_sha_and_tags_version_and_minor(env: dict[str, str]
     put(env, f"{IMG}:sha-{'c' * 40}", DIGEST)
     r = run("release-retag.sh", env)
     assert r.returncode == 0, r.stderr
-    assert created(env) == {f"{IMG}:0.1.0", f"{IMG}:0.1"}
+    assert created(env) == {f"{IMG}:0.1.0", f"{IMG}:0.1", f"{IMG}:latest"}
+
+
+@pytest.mark.req("ENF-SEC-007", "ENF-OPS-002")
+def test_retag_of_a_final_release_tags_version_minor_and_latest_on_one_digest(
+    env: dict[str, str],
+) -> None:
+    env["TAG"] = "v1.0.0"
+    put(env, f"{IMG}:sha-{'c' * 40}", DIGEST)
+    assert run("release-retag.sh", env).returncode == 0
+    assert created(env) == {f"{IMG}:1.0.0", f"{IMG}:1.0", f"{IMG}:latest"}
+    for tag in ("1.0.0", "1.0", "latest"):
+        assert (Path(env["STUB_STATE"]) / ref(f"{IMG}:{tag}")).read_text() == DIGEST
+
+
+@pytest.mark.req("ENF-SEC-007", "ENF-OPS-002")
+def test_retag_of_an_older_minor_fix_moves_neither_minor_nor_latest(env: dict[str, str]) -> None:
+    # 1.1.0 is published; a fix 1.0.1 comes after: X.Y.Z and 1.0 move, latest stays on 1.1.0
+    env["TAG"] = "v1.0.1"
+    put(env, f"{IMG}:sha-{'c' * 40}", DIGEST)
+    put(env, f"{IMG}:latest", OTHER)
+    (Path(env["STUB_STATE"]) / "tags.json").write_text(
+        json.dumps({"tags": ["1.0.0", "1.0", "1.1.0", "1.1", "latest", "edge"]})
+    )
+    r = run("release-retag.sh", env)
+    assert r.returncode == 0, r.stderr
+    assert created(env) == {f"{IMG}:1.0.1", f"{IMG}:1.0"}
+    assert (Path(env["STUB_STATE"]) / ref(f"{IMG}:latest")).read_text() == OTHER
 
 
 @pytest.mark.req("ENF-SEC-007")
@@ -256,6 +283,7 @@ def test_retag_of_a_release_candidate_writes_no_image_tag_at_all(
     assert created(env) == set()  # no X.Y.Z-rc.N, no X.Y, no latest
     log = (Path(env["STUB_STATE"]) / "log").read_text()
     assert " create " not in log and ":latest" not in log
+    assert not (Path(env["STUB_STATE"]) / ref(f"{IMG}:latest")).exists()
     assert f"{IMG}:sha-{'c' * 40}" in r.stdout  # the way to install it is named
 
 
