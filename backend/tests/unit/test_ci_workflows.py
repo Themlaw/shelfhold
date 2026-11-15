@@ -33,9 +33,23 @@ def test_traceability_blocks_every_delivered_milestone() -> None:
         for s in ci["jobs"]["traceability"]["steps"]
         if "run" in s and "traceability.py" in s["run"]
     )
-    assert "for ms in M0 M1a M1b M2 M3; do" in run
+    assert "for ms in M0 M1a M1b M2 M3 M4; do" in run
     assert "case " not in run, "a milestone is exempted from the blocking status"
     assert "[ $code -eq 0 ] || status=1" in run
+
+
+@pytest.mark.req("ENF-SEC-007")
+def test_traceability_reports_m4_without_blocking() -> None:
+    """M4 is in the matrix and its summary, but only the delivered milestones fail the job."""
+    ci: dict[str, Any] = yaml.safe_load(CI.read_text(encoding="utf-8"))
+    run = next(
+        s["run"]
+        for s in ci["jobs"]["traceability"]["steps"]
+        if "run" in s and "traceability.py" in s["run"]
+    )
+    assert 'if [ "$ms" = M4 ]; then' in run
+    block = run.split('if [ "$ms" = M4 ]; then')[1].split("else")[0]
+    assert "status=1" not in block
 
 
 @pytest.mark.req("ENF-SEC-007")
