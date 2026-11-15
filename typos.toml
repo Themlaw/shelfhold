@@ -8,6 +8,7 @@ extend-exclude = ["*.md", "e2e/tests/references/key-screens.json", "docs/", "bac
 cours = "cours"
 sur = "sur"
 opf = "opf"
+reste = "reste"
 
 # Exact identifiers: a pydantic setting and the in-toto provenance file name.
 [default.extend-identifiers]

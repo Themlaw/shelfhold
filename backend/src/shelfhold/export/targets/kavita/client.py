@@ -400,10 +400,17 @@ class KavitaClient:
         chapters = list(data.get("chapters") or []) + list(data.get("specials") or [])
         for volume in data.get("volumes") or []:
             chapters.extend(volume.get("chapters") or [] if isinstance(volume, dict) else [])
+        seen: set[Any] = set()
+        unique: list[Any] = []
+        for chapter in chapters:  # `chapters` repeats a numbered volume's chapters (0.9.1)
+            key = chapter.get("id") if isinstance(chapter, dict) else None
+            if key is None or key not in seen:
+                unique.append(chapter)
+                seen.add(key)
         return [
             dto.ChapterFile(str(f["filePath"]), _count(chapter.get("pages")),
                             _count(chapter.get("pagesRead")))
-            for chapter in chapters
+            for chapter in unique
             if isinstance(chapter, dict)
             for f in chapter.get("files") or []
             if isinstance(f, dict) and "filePath" in f
