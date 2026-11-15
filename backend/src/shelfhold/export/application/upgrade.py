@@ -43,6 +43,7 @@ from sqlalchemy import Connection, Engine
 
 from shelfhold.catalog.public import DEFAULT_MIN_PAGE_RATIO, suspect_reason
 from shelfhold.events.bus import EventBus, PublishedEvent
+from shelfhold.export.application import render_hooks
 from shelfhold.export.application.intents import (
     IntentJournal,
     ManifestHook,
@@ -606,12 +607,18 @@ class SamePathUpgrade:
                 ("spine_count", new.spine_count),
             ),
         )  # fmt: skip
+        old_hashes = render_hooks.sample_hashes(Path(target))  # the file about to be replaced
         intent = place_under_intent(
             self._journal, self._fsops, target, mark=mark, new_hash=new.file_hash, data=new.data
         )
         with write_transaction(self._engine) as connection:
             upgrade_id, event = self._complete(connection, intent, mark.to_json())
             self._journal.mark_done(intent, within=connection)
+        render_hooks.record_rewrite(  # best effort: the rewrite is committed, whatever this does
+            self._engine, destination_id=served.ctx.destination_id,
+            export_item_id=served.export_item_id, path=Path(target), old_file_hash=old_sha,
+            old_hashes=old_hashes, new_file_hash=new.file_hash,
+        )  # fmt: skip
         if event is not None:
             self._bus.deliver([event])
         self._after(served)

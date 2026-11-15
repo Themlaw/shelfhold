@@ -1,4 +1,6 @@
-"""ENF-QUAL-005: KOReader's partial MD5 and Kavita's variant, against vectors this code did not make.
+"""ENF-QUAL-005: KOReader's partial MD5 and Kavita's variant, against outside vectors.
+
+The expected values were not made by the module under test.
 
 Where the expected values come from (frozen below, never recomputed by the module under test):
 
@@ -7,11 +9,12 @@ Where the expected values come from (frozen below, never recomputed by the modul
   The function text was cut out of that file verbatim and run under LuaJIT 2.1 (`bit.lshift`
   included, through `lupa`), with `md5` bridged to `hashlib` and `io` left as Lua's own. The run
   also logged every `lshift` result: the offsets below are what it observed.
-* Kavita: `KoreaderHelper.HashContents` of Kareadita/Kavita, `Kavita.Services/Helpers/KoreaderHelper.cs`
-  lines 38-70 (develop e844b64f2d64, file last changed by c62b20f54bec; the same loop sits at lines
-  52-54 of the v0.9.1.4 tag, 879b8b73eb41). No .NET runtime was at hand: the vectors come from a
-  line-by-line port written from that source, with C# `int << int` semantics (count masked to
-  5 bits, 32-bit wrap) and `ToUpper()`, kept apart from this repository.
+* Kavita: `KoreaderHelper.HashContents` of Kareadita/Kavita,
+  `Kavita.Services/Helpers/KoreaderHelper.cs` lines 38-70 (develop e844b64f2d64, file last
+  changed by c62b20f54bec; the same loop sits at lines 52-54 of the v0.9.1.4 tag, 879b8b73eb41).
+  No .NET runtime was at hand: the vectors come from a line-by-line port written from that
+  source, with C# `int << int` semantics (count masked to 5 bits, 32-bit wrap) and `ToUpper()`,
+  kept apart from this repository.
 
 What the two sources say, and what a first reading would get wrong:
 
@@ -24,16 +27,16 @@ What the two sources say, and what a first reading would get wrong:
 * KOReader's digest is lowercase hex, Kavita's uppercase.
 
 The synthetic files are deterministic (`pattern`): whole below 64 KiB, and above that only the
-windows at the offsets are written and the rest is a hole (`truncate`), so the 3 GiB file costs a few
-KiB. `file_id` is the SHA-256 of the size and of every possible window: it proves the reference
-run and this test read the same bytes.
+windows at the offsets are written and the rest is a hole (`truncate`), so the 3 GiB file costs
+a few KiB. `file_id` is the SHA-256 of the size and of every possible window: it proves that the
+reference run and this test read the same bytes.
 """
 
 import hashlib
 import io
 import struct
 from pathlib import Path
-from typing import BinaryIO
+from typing import BinaryIO, cast
 
 import pytest
 
@@ -233,7 +236,9 @@ def test_sample_offsets_follow_the_reference_trace() -> None:
 
 
 @pytest.mark.parametrize(
-    ("size", "expected_file", "koreader_hex", "_kavita"), VECTORS, ids=[_label(v[0]) for v in VECTORS]
+    ("size", "expected_file", "koreader_hex", "_kavita"),
+    VECTORS,
+    ids=[_label(v[0]) for v in VECTORS],
 )
 def test_koreader_partial_md5_vectors(
     tmp_path: Path, size: int, expected_file: str, koreader_hex: str, _kavita: str
@@ -247,7 +252,9 @@ def test_koreader_partial_md5_vectors(
 
 
 @pytest.mark.parametrize(
-    ("size", "expected_file", "koreader_hex", "kavita_hex"), VECTORS, ids=[_label(v[0]) for v in VECTORS]
+    ("size", "expected_file", "koreader_hex", "kavita_hex"),
+    VECTORS,
+    ids=[_label(v[0]) for v in VECTORS],
 )
 def test_kavita_hash_compat_uppercase_and_11_samples_divergence_over_1gib(
     tmp_path: Path, size: int, expected_file: str, koreader_hex: str, kavita_hex: str
@@ -301,7 +308,7 @@ def test_only_the_samples_are_read_never_the_whole_file(tmp_path: Path) -> None:
     path = synthetic_file(tmp_path / "f.bin", size)
     with path.open("rb", buffering=0) as raw:
         spy = _Spy(raw)
-        koreader_partial_md5(spy)
+        koreader_partial_md5(cast(BinaryIO, spy))
     assert 0 < sum(spy.reads) <= 12 * SAMPLE_SIZE
     assert max(spy.reads) <= SAMPLE_SIZE
 
@@ -311,9 +318,9 @@ def test_a_short_read_in_the_middle_of_a_sample_does_not_end_it(tmp_path: Path) 
     size = 17408  # four samples, the last one 1 KiB exactly
     path = synthetic_file(tmp_path / "f.bin", size)
     with path.open("rb", buffering=0) as raw:
-        assert koreader_partial_md5(_Spy(raw, chunk=100)) == by_size[size][2]
+        assert koreader_partial_md5(cast(BinaryIO, _Spy(raw, chunk=100))) == by_size[size][2]
         raw.seek(0)
-        assert kavita_hash(_Spy(raw, chunk=100)) == by_size[size][3]
+        assert kavita_hash(cast(BinaryIO, _Spy(raw, chunk=100))) == by_size[size][3]
 
 
 def test_a_path_is_a_path_not_a_content(tmp_path: Path) -> None:

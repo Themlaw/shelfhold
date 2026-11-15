@@ -17,7 +17,15 @@ from shelfhold.export.application.upgrade import UpgradeOutcome
 from shelfhold.infrastructure.schema import export
 from shelfhold.reading.domain.document_hash import kavita_hash, koreader_partial_md5
 from tests.export_env import export_env
-from tests.upgrade_env import better_copy, bin_files, digest, export_one, record_of, request, service
+from tests.upgrade_env import (
+    better_copy,
+    bin_files,
+    digest,
+    export_one,
+    record_of,
+    request,
+    service,
+)
 
 pytestmark = pytest.mark.req("ENF-QUAL-005")
 
@@ -25,7 +33,9 @@ pytestmark = pytest.mark.req("ENF-QUAL-005")
 def _aliases(env: object, item_id: str) -> dict[str, sa.Row[tuple[object, ...]]]:
     with env.engine.connect() as connection:  # type: ignore[attr-defined]
         rows = connection.execute(
-            sa.select(export.document_alias).where(export.document_alias.c.export_item_id == item_id)
+            sa.select(export.document_alias).where(
+                export.document_alias.c.export_item_id == item_id
+            )
         )
         return {str(row.file_hash): row for row in rows}
 
@@ -75,4 +85,6 @@ def test_alias_failure_never_fails_nor_rolls_back_an_export(
         assert scans  # the rest of the run went on
         aliases = _aliases(env, exported.export_item_id)  # the transaction's own aliases are there
         assert exported.old_file_hash in aliases and row.file_hash in aliases
-        assert all(a.koreader_partial_md5 is None and a.kavita_md5 is None for a in aliases.values())
+        assert all(
+            a.koreader_partial_md5 is None and a.kavita_md5 is None for a in aliases.values()
+        )
