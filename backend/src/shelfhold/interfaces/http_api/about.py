@@ -17,13 +17,19 @@ from shelfhold.interfaces.http_api.stats import require_admin
 SOURCE_REPOSITORY = "https://github.com/Themlaw/shelfhold"
 
 
+def release_tag(version: str) -> str:
+    """The git tag of a package version: PEP 440 `1.0.0rc1` is the SemVer tag `v1.0.0-rc.1`
+    (`release.yml` accepts only `vX.Y.Z` and `vX.Y.Z-rc.N`)."""
+    return "v" + re.sub(r"rc(\d+)$", r"-rc.\1", version)
+
+
 def default_source_url(version: str, *, revision: str | None = None, release: bool = True) -> str:
     """The code that is really served (AGPL section 13): the tag of the version for a release
     build, the commit for any other build (a version number there names code that differs).
     A fork sets `source_url` instead."""
     if not release and revision and re.fullmatch(r"[0-9a-f]{40}", revision):
         return f"{SOURCE_REPOSITORY}/tree/{revision}"
-    return f"{SOURCE_REPOSITORY}/tree/v{version}"
+    return f"{SOURCE_REPOSITORY}/tree/{release_tag(version)}"
 
 
 def build_source_url(version: str) -> str:

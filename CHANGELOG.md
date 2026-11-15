@@ -8,6 +8,12 @@ Format : [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/). Versionnement
 
 Mise à jour depuis 0.2.0 : les migrations 0013 à 0063 (détail par jalon ci-dessous) s'appliquent au démarrage et ne sont pas réversibles automatiquement. `shelfhold migrate` sauvegarde la base avant de migrer (`/data/backups/pre-migration`) ; un retour à la 0.2.0 passe par cette sauvegarde et par `shelfhold reconcile --adopt-after-restore` (`docs/admin/retour-arriere.md`, `docs/admin/sauvegarde.md`). Version minimale de Kavita : 0.9.1.
 
+### 1.0.0-rc.1 - 2026-11-15
+
+Première candidate de la 1.0.0 : pré-version GitHub `v1.0.0-rc.1` (version du paquet `1.0.0rc1`), sans tag d'image de version (`docs/releasing.md`, « Candidate de version »). Elle porte le contenu de 1.0.0 décrit ici, sans rien y ajouter ; la section `[1.0.0]` reste à paraître et sera datée avec le tag final.
+
+Migration : oui, réversible : non (les migrations 0013 à 0063 de 1.0.0, voir les paragraphes de mise à jour ci-dessus et ci-dessous ; `shelfhold migrate` sauvegarde la base avant de migrer, retour à la 0.2.0 par cette sauvegarde, `docs/admin/retour-arriere.md`).
+
 ### M3
 
 Migration : oui (de 0046 à 0063 : 0046, 0047, 0053, 0054, 0055, 0056, 0057, 0059, 0060, 0062 et 0063), réversible : non automatiquement. `shelfhold migrate` sauvegarde la base avant de migrer (`/data/backups/pre-migration`) ; un retour à la 0.2.0 passe par cette sauvegarde (`docs/admin/retour-arriere.md`). Version minimale de Kavita : 0.9.1, inchangée.

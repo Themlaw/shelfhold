@@ -98,7 +98,7 @@ def log_file(path: Path, traps: Traps) -> Path:
     lines = [
         {"event": "startup.config", "level": "info",
          "logger": "shelfhold.main",
-         "timestamp": "2026-11-11T08:00:00Z", "version": "0.2.0",
+         "timestamp": "2026-11-11T08:00:00Z", "version": "1.0.0rc1",
          "config": {"public_url": f"https://{PUBLIC_HOST}", "host": SERVICE_IP}},
         {"event": "fsops.write_atomic", "level": "debug",
          "logger": "shelfhold.infrastructure.fsops.facade",
