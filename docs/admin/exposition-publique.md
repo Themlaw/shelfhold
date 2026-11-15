@@ -1,8 +1,10 @@
 # Exposer Shelfhold hors de chez vous
 
 Par défaut le compose publie le port sur `127.0.0.1:8080` seulement. Rien n'est pensé pour être
-exposé directement à Internet, et l'interface web se limite pour l'instant aux écrans « À classer » et
-« À ranger » : l'administration se fait en ligne de commande, qui ne passe pas par le réseau.
+exposé directement à Internet : **en 1.0, l'atelier n'est pas fait pour Internet.** Le flux d'événements
+(SSE) n'a pas de plafond par instance (seulement par profil) et le transport WebSocket est reporté en M4
+(D11) ; ce plafond est posé avant toute exposition publique. L'administration se fait en ligne de
+commande, qui ne passe pas par le réseau.
 
 Si vous avez besoin d'atteindre l'API à distance (clé d'API, outil tiers) :
 

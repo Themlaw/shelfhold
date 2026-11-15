@@ -25,6 +25,7 @@ et ne change rien à l'installation (voir [vérifier les images](verifier-les-im
 | Remplacer un chapitre par une meilleure version, ce que voient Kavita et KOReader | [mise-a-niveau.md](mise-a-niveau.md) |
 | Révisions republiées par une source, version suspecte, chapitre retiré à la source | [revisions-en-attente.md](revisions-en-attente.md) |
 | Effacer pour de bon (`purge --now`, `--checkpoint`, `--leftovers`) | [purge.md](purge.md) |
+| Supprimer, restaurer, fusionner ou relier une Œuvre ou une Édition sans écran | [sans-ecran.md](sans-ecran.md) |
 | Récupérer de l'espace : vider la corbeille, purge anticipée, ajout refusé, lever une pierre tombale | [corbeille.md](corbeille.md) |
 | Garder une copie dans `/store`, « Mettre à l'abri », purge chez Suwayomi, l'index de `/store` | [copie-conservee.md](copie-conservee.md) |
 | Importer vos propres fichiers, fichiers protégés et audio refusés, tatouage | [dossier-import.md](dossier-import.md) |
