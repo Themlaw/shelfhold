@@ -1,7 +1,7 @@
 """PR #282 (M4 L46), relecture adverse : les trous réels des jetons d'appareil, en rouge.
 
-Chaque test est un `xfail` strict : il passe au vert le jour où l'objection est levée, et il
-faut alors retirer la marque (docs/decisions/M4.md, « #282 : contradicteur »).
+Les deux objections majeures (MAJ-1, MAJ-2) sont levées : les preuves tournent au vert
+(docs/decisions/M4.md, « #282 : contradicteur »).
 """
 
 from collections.abc import Iterator
@@ -32,10 +32,6 @@ def _paired(env: AuthEnv) -> tuple[str, str]:
     return created.public_id, created.secret
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="contradicteur #282 MAJ-1 : le plafond par adresse refuse aussi le bon secret",
-)
 def test_poc_guesses_from_a_shared_address_never_lock_out_the_right_key(api: AuthEnv) -> None:
     """Derrière un NAT, un CGNAT ou un proxy mal déclaré (`http_trusted_proxies` vide), toutes les
     liseuses partagent une adresse. 30 essais faux par minute, chacun sous un identifiant inventé,
@@ -50,10 +46,6 @@ def test_poc_guesses_from_a_shared_address_never_lock_out_the_right_key(api: Aut
     assert shared.get(KOSYNC_AUTH, headers=kosync(public_id, secret)).status_code == 200
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="contradicteur #282 MAJ-2 : ADR-0053 §4 impose TLS, la route l'accepte en clair",
-)
 def test_poc_device_routes_refuse_plain_http_by_default(api: AuthEnv) -> None:
     """ADR-0053 §4 : « TLS obligatoire (HTTP simple seulement par réglage explicite de l'admin) ».
     En HTTP simple, le secret Basic et le md5 de kosync passent en clair et se rejouent tels quels.

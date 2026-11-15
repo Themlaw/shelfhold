@@ -23,7 +23,8 @@ import pytest
 from fastapi import Request
 
 from shelfhold.config import Settings
-from shelfhold.identity.domain.device_secret import format_secret, normalise_secret
+from shelfhold.identity.domain.device_secret import normalise_secret
+from shelfhold.identity.domain.roles import ProfileError
 from shelfhold.identity.public import (
     RESERVED_ACTIONS,
     Allowed,
@@ -215,7 +216,7 @@ def test_secret_is_shown_once_and_never_stored(api: AuthEnv) -> None:
     profile(api, "kid", "child", max_age_rating=7)
     created = issue(api, "kid")
     dump = db_dump(api.settings)
-    for forbidden in (created.secret, format_secret(created.secret), md5(created.secret)):
+    for forbidden in (created.secret, md5(created.secret)):
         assert forbidden not in dump
     digest = db_rows(api.settings, "SELECT secret_digest FROM device_token")[0][0]
     assert digest == "sha256:" + hashlib.sha256(md5(created.secret).encode()).hexdigest()
@@ -247,7 +248,7 @@ def test_kosync_auth_uses_device_token_secret(api: AuthEnv) -> None:
 def test_one_token_opens_both_doors_basic_for_opds_and_md5_for_kosync(api: AuthEnv) -> None:
     kid = profile(api, "kid", "child", max_age_rating=7)
     created = issue(api, "kid")
-    typed = format_secret(created.secret).upper().replace(" ", "-")  # grouped as it is displayed
+    typed = created.secret.upper()  # a Basic client may type capitals; kosync takes the displayed form
     for secret in (created.secret, typed):
         answer = device_get(api, basic(created.public_id, secret))
         assert answer.status_code == 200, answer.text
@@ -387,18 +388,12 @@ def test_the_ceiling_and_the_role_are_read_at_each_request(api: AuthEnv) -> None
         engine.dispose()
 
 
-@pytest.mark.parametrize("role", ["child", "member", "admin"])
+@pytest.mark.parametrize("role", ["child", "member"])
 def test_a_device_token_is_refused_every_reserved_action_whatever_its_profile(
     api: AuthEnv, role: str
 ) -> None:
-    extra = {"max_age_rating": 7} if role == "child" else {}
-    name = "reader"
-    if role == "admin":
-        subject = ADMIN
-    else:
-        profile(api, name, role, **extra)
-        subject = name
-    created = issue(api, subject)
+    profile(api, "reader", role, **({"max_age_rating": 7} if role == "child" else {}))
+    created = issue(api, "reader")
     principal = auth_of(api).authenticate_device_token(
         created.public_id, secret=created.secret, ip="203.0.113.9"
     )
@@ -419,15 +414,12 @@ def test_a_device_token_is_refused_every_reserved_action_whatever_its_profile(
 # --- the reach is closed: OPDS and kosync, never an administration or an ordinary route -------
 
 
-@pytest.mark.parametrize("role", ["child", "member", "admin"])
+@pytest.mark.parametrize("role", ["child", "member"])
 def test_device_token_presented_on_admin_and_ordinary_routes_is_refused(
     api: AuthEnv, role: str
 ) -> None:
-    subject = ADMIN
-    if role != "admin":
-        profile(api, "reader", role, **({"max_age_rating": 7} if role == "child" else {}))
-        subject = "reader"
-    created = issue(api, subject)
+    profile(api, "reader", role, **({"max_age_rating": 7} if role == "child" else {}))
+    created = issue(api, "reader")
     login = api.login()
     assert login.status_code == 200
     for path in ADMIN_ROUTES:  # the routes exist: the admin's own session is not told "absent"
@@ -448,9 +440,7 @@ def test_device_token_presented_on_admin_and_ordinary_routes_is_refused(
         for method in ("post",) if bearer else ("post", "put", "delete", "patch"):
             answer = getattr(api.client, method)("/api/v1/profiles", headers=headers)
             assert answer.status_code in {401, 403, 405}, (method, headers)
-    assert db_rows(api.settings, 'SELECT count(*) FROM "user"')[0][0] == (
-        1 if role == "admin" else 2
-    )
+    assert db_rows(api.settings, 'SELECT count(*) FROM "user"')[0][0] == 2
 
 
 def test_a_route_outside_opds_and_kosync_never_takes_a_device_token(api: AuthEnv) -> None:
@@ -542,6 +532,8 @@ def test_five_wrong_keys_per_address_and_identifier_then_even_the_right_one_wait
 
 
 def test_thirty_wrong_attempts_per_address_whatever_the_identifier(api: AuthEnv) -> None:
+    """The address limit slows failures only (MAJ-1 of the adversarial review): past it a wrong
+    guess is a 429, a right secret is still served."""
     profile(api, "kid", "child", max_age_rating=7)
     created = issue(api, "kid")
     attacker = api.other_client("198.51.100.8")
@@ -551,14 +543,29 @@ def test_thirty_wrong_attempts_per_address_whatever_the_identifier(api: AuthEnv)
         )
         assert answer.status_code == 401
     assert attacker.get(KOSYNC_AUTH, headers=kosync("23232323", "n" * 26)).status_code == 429
-    assert (
-        device_get(api, basic(created.public_id, created.secret), ip="198.51.100.8").status_code
-        == 429
-    )
+    assert device_get(api, basic("23232323", "n" * 26), ip="198.51.100.8").status_code == 429
     other = api.other_client("192.0.2.21")
     assert (
         other.get(KOSYNC_AUTH, headers=kosync(created.public_id, created.secret)).status_code == 200
     )
+
+
+def test_the_right_reader_passes_after_thirty_failures_under_invented_identifiers(
+    api: AuthEnv,
+) -> None:
+    profile(api, "kid", "child", max_age_rating=7)
+    created = issue(api, "kid")
+    shared = api.other_client("198.51.100.30")
+    for index in range(PER_ADDRESS):
+        guess = f"{index:08d}".replace("0", "x")
+        assert shared.get(KOSYNC_AUTH, headers=kosync(guess, "n" * 26)).status_code == 401
+    assert shared.get(KOSYNC_AUTH, headers=kosync("23232323", "n" * 26)).status_code == 429
+    assert shared.get(KOSYNC_AUTH, headers=kosync(created.public_id, created.secret)).status_code == 200
+    assert device_get(api, basic(created.public_id, created.secret), ip="198.51.100.30").status_code == 200
+    # the pair limit stays: a reader's own identifier guessed wrongly five times waits, even right
+    for _ in range(PER_PAIR):
+        shared.get(KOSYNC_AUTH, headers=kosync(created.public_id, "n" * 26))
+    assert shared.get(KOSYNC_AUTH, headers=kosync(created.public_id, created.secret)).status_code == 429
 
 
 def test_a_good_token_does_not_pay_for_its_own_successes(api: AuthEnv) -> None:
@@ -699,7 +706,7 @@ def test_the_diagnostic_bundle_holds_no_device_token_secret_md5_or_digest(
     digest = db_rows(settings, "SELECT secret_digest FROM device_token")[0][0]
     needles = {
         created.secret,
-        format_secret(created.secret),
+        created.secret,
         md5(created.secret),
         str(digest),
         str(digest).removeprefix("sha256:"),
@@ -707,3 +714,99 @@ def test_the_diagnostic_bundle_holds_no_device_token_secret_md5_or_digest(
     for view in _views(out.read_bytes()):
         for needle in needles:
             assert needle not in view
+
+
+# --- TLS is required unless the admin says otherwise (ADR-0053 §4, MAJ-2) ----------------------
+
+
+def _scheme_scope(env: AuthEnv, headers: dict[str, str], *, scheme: str, peer: str) -> Answer:
+    scope = {
+        "type": "http", "method": "GET", "path": KOSYNC_AUTH, "query_string": b"",
+        "scheme": scheme, "server": ("testserver", 80), "client": (peer, 40000), "app": env.app,
+        "state": {"client_ip": peer},
+        "headers": [(k.lower().encode(), v.encode()) for k, v in headers.items()],
+    }  # fmt: skip
+    try:
+        principal = require_device_kosync(Request(scope))
+    except ProblemError as refused:
+        return Answer(refused.status, {"code": str(refused)}, {})
+    return Answer(200, {"user": principal.user_id}, {})
+
+
+def test_plain_http_is_refused_before_the_secret_is_checked(api: AuthEnv) -> None:
+    profile(api, "kid", "child", max_age_rating=7)
+    created = issue(api, "kid")
+    plain = api.other_client("192.0.2.40", base_url="http://testserver")
+    for headers in (kosync(created.public_id, created.secret), kosync(created.public_id, "n" * 26)):
+        answer = plain.get(KOSYNC_AUTH, headers=headers)
+        assert answer.status_code == 403
+        assert answer.json()["code"] == "device_tls_required"  # the same, right key or wrong
+    answer = plain.get("/opds", headers=basic(created.public_id, created.secret))
+    assert answer.status_code != 200
+    # nothing was counted against the reader: the secret was never looked at
+    secure = api.other_client("192.0.2.40")
+    assert secure.get(KOSYNC_AUTH, headers=kosync(created.public_id, created.secret)).status_code == 200
+    assert (
+        device_get(api, basic(created.public_id, created.secret), ip="192.0.2.40").status_code == 200
+    )
+
+
+def test_plain_http_is_allowed_by_the_explicit_setting_only(
+    monkeypatch: pytest.MonkeyPatch, settings: Settings
+) -> None:
+    assert Settings.model_fields["device_allow_plain_http"].default is False
+    with auth_env(monkeypatch, settings.model_copy(update={"device_allow_plain_http": True})) as env:
+        profile(env, "kid", "child", max_age_rating=7)
+        created = issue(env, "kid")
+        plain = env.other_client("192.0.2.41", base_url="http://testserver")
+        assert plain.get(KOSYNC_AUTH, headers=kosync(created.public_id, created.secret)).status_code == 200
+
+
+def test_the_forwarded_scheme_counts_only_behind_a_trusted_proxy(
+    monkeypatch: pytest.MonkeyPatch, settings: Settings
+) -> None:
+    forwarded = {"X-Forwarded-Proto": "https"}
+    # no trusted proxy: the header is ignored, a plain request stays plain
+    with auth_env(monkeypatch, settings) as env:
+        profile(env, "kid", "child", max_age_rating=7)
+        created = issue(env, "kid")
+        plain = env.other_client("192.0.2.42", base_url="http://testserver")
+        headers = {**kosync(created.public_id, created.secret), **forwarded}
+        assert plain.get(KOSYNC_AUTH, headers=headers).status_code == 403
+    trusted = settings.model_copy(update={"http_trusted_proxies": ("192.0.2.0/24",)})
+    with auth_env(monkeypatch, trusted) as env:
+        profile(env, "kid", "child", max_age_rating=7)
+        created = issue(env, "kid")
+        headers = kosync(created.public_id, created.secret)
+        proxy = env.other_client("192.0.2.43", base_url="http://testserver")
+        assert proxy.get(KOSYNC_AUTH, headers={**headers, **forwarded}).status_code == 200
+        assert proxy.get(KOSYNC_AUTH, headers={**headers, "X-Forwarded-Proto": "http"}).status_code == 403
+        assert proxy.get(KOSYNC_AUTH, headers=headers).status_code == 403  # a proxy that says nothing
+        stranger = env.other_client("198.51.100.44", base_url="http://testserver")  # not the proxy
+        assert stranger.get(KOSYNC_AUTH, headers={**headers, **forwarded}).status_code == 403
+
+
+# --- an admin profile carries no device token; a change of role closes the tokens ---------------
+
+
+def test_an_admin_profile_cannot_be_the_subject_of_a_token(api: AuthEnv) -> None:
+    with pytest.raises(ProfileError) as refused:
+        issue(api, ADMIN)
+    assert refused.value.code == "device_subject_is_admin"
+    assert db_rows(api.settings, "SELECT count(*) FROM device_token")[0][0] == 0
+
+
+def test_a_change_of_role_closes_the_device_tokens_of_the_profile_and_audits_it(
+    api: AuthEnv,
+) -> None:
+    kid = profile(api, "kid", "child", max_age_rating=7)
+    other = profile(api, "mum", "member")
+    mine, theirs = issue(api, "kid"), issue(api, "mum")
+    auth_of(api).profile_set(kid, role="member", max_age_rating=None)
+    assert device_get(api, basic(mine.public_id, mine.secret)).status_code == 401
+    assert device_get(api, basic(theirs.public_id, theirs.secret)).status_code == 200
+    assert other and db_rows(
+        api.settings, "SELECT count(*) FROM device_token WHERE revoked_at IS NOT NULL"
+    )[0][0] == 1
+    audited = db_rows(api.settings, "SELECT action, target FROM audit_log WHERE action LIKE 'device_token.%'")
+    assert any("device_tokens=1" in str(row[1]) for row in audited), audited

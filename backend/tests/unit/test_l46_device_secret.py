@@ -15,7 +15,6 @@ import pytest
 from shelfhold.identity.domain.device_secret import (
     ALPHABET,
     SECRET_LENGTH,
-    format_secret,
     key_digest,
     md5_key,
     new_device_credential,
@@ -47,13 +46,13 @@ def test_public_identifier_is_short_unique_and_not_derived_from_the_secret() -> 
     assert first.public_id not in first.secret
 
 
-def test_secret_is_displayed_in_groups_of_four_and_typed_without_separators() -> None:
+def test_secret_is_displayed_as_typed_and_basic_tolerates_separators() -> None:
+    """kosync gets `md5(typed text)`, which the server cannot normalise: the secret is shown in
+    its one canonical form, without separators. Only HTTP Basic reduces what was typed."""
     credential = new_device_credential()
-    shown = format_secret(credential.secret)
-    groups = shown.split(" ")
-    assert all(len(g) == 4 for g in groups[:-1]) and 1 <= len(groups[-1]) <= 4
-    assert normalise_secret(shown) == credential.secret
-    assert normalise_secret(shown.upper().replace(" ", "-")) == credential.secret
+    assert normalise_secret(credential.secret) == credential.secret
+    spaced = " ".join(credential.secret[i : i + 4] for i in range(0, SECRET_LENGTH, 4))
+    assert normalise_secret(spaced.upper().replace(" ", "-")) == credential.secret
 
 
 def test_stored_digest_is_sha256_of_md5_and_never_the_md5_itself() -> None:
