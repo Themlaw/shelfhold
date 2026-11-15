@@ -59,6 +59,16 @@ requirement = "ENF-GOV-006"
 milestone = "M3"
 reason = "porte P0 et règles d'arrêt documentées (portes.md), relevé de départ documentaire générique (docs/recherche/releve-depart.md) et porte P2 franchie par délégation du porteur le 2026-11-13 (M3 complet, portes.md) ; mais les entretiens utilisateurs, le test concierge de 8 semaines et le prototype cliquable n'ont pas eu lieu : aucun chiffre n'est mesuré. Le test d'utilisabilité de la rc.1 (D3, docs/governance/test-utilisabilite.md) en tient lieu et la porte se relit au bilan de M3"
 
+[[partial]]
+requirement = "EF-BIB-005"
+milestone = "M4"
+reason = "remplacement par l'équipe préférée non branché : switch_to_preferred_team (acquisition/application/team_switch.py) n'a aucun appelant en production, seuls les nouveaux chapitres suivent la préférence (preference.py) ; un chapitre déjà servi n'est jamais remplacé ; reporté en M4 (L56, L58 contradicteur M5)"
+
+[[partial]]
+requirement = "EF-BIB-029"
+milestone = "M4"
+reason = "détection d'une migration Suwayomi et API livrées (test_m3_l21_suwayomi_migration.py) ; l'écran « Même œuvre ? » (proposition, plan de fusion ou de réaffectation) est reporté en M4 (L58 contradicteur M2)"
+
 # Tests that do not run in the required CI (`ci-success`): accepted for M0 only when the
 # workflow that runs them is named and justified.
 [[out_of_required_ci]]
