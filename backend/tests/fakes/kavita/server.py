@@ -183,6 +183,7 @@ class FakeKavita:
     key_accounts: dict[str, str] = field(
         default_factory=lambda: {API_KEY: "admin", OTHER_KEY: "admin"}
     )
+    member_profiles: dict[str, dict[str, Any]] = field(default_factory=dict)
     sessions: set[str] = field(default_factory=set)  # the bearer tokens a login handed out
 
     def key_is_valid(self, key: object) -> bool:
@@ -201,9 +202,23 @@ class FakeKavita:
         return self._json({"username": self.account[0], "token": session})
 
     # -- scenario helpers -------------------------------------------------------------------
-    def add_member_key(self, username: str) -> str:
-        """A new key of the account `username`, random each time (a test holds no literal key)."""
+    def add_member_key(
+        self,
+        username: str,
+        *,
+        roles: tuple[str, ...] = ("Login",),
+        age_rating: int | None = 2,
+        include_unknowns: bool = False,
+    ) -> str:
+        """A new key of the account `username`, random each time (a test holds no literal key).
+        The account is a restricted reader by default (rating 2: age 3, no unknowns);
+        `age_rating=None` leaves the restriction out of `GET /api/Account`, -1 is none."""
         key = secrets.token_urlsafe(24)
+        restriction = (
+            None if age_rating is None
+            else {"ageRating": age_rating, "includeUnknowns": include_unknowns}
+        )  # fmt: skip
+        self.member_profiles[key] = {"roles": list(roles), "ageRestriction": restriction}
         self.auth_keys.append({"id": 100 + len(self.auth_keys), "name": username, "key": key})
         self.key_accounts[key] = username
         return key
@@ -381,11 +396,14 @@ class FakeKavita:
     def _account(self, recorded: RecordedRequest) -> httpx2.Response:
         """`GET /api/Account`: the `UserDto` of the key, which carries a session token and the
         account's default key (a trap: Shelfhold reads the name and nothing else)."""
-        name = self.key_accounts.get(recorded.headers.get("x-api-key", ""), self.account[0])
-        return self._json(
-            {"id": 1, "username": name, "roles": ["Login"], "token": "synthetic-session-token",
-             "apiKey": "synthetic-default-key"}
-        )  # fmt: skip
+        key = recorded.headers.get("x-api-key", "")
+        name = self.key_accounts.get(key, self.account[0])
+        profile = self.member_profiles.get(key, {"roles": ["Login"], "ageRestriction": None})
+        answer = {"id": 1, "username": name, "token": "synthetic-session-token",
+                  "apiKey": "synthetic-default-key", "roles": profile["roles"]}  # fmt: skip
+        if profile["ageRestriction"] is not None:
+            answer["ageRestriction"] = profile["ageRestriction"]
+        return self._json(answer)
 
     def _get_progress(self, recorded: RecordedRequest) -> httpx2.Response:
         return self._json({"pageNum": 0})

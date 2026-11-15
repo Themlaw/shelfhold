@@ -230,13 +230,15 @@ class IdentityStore(Protocol):
         max_admins: int,
         now: datetime,
         actor_id: str | None = None,
+        revoked_audit: Callable[[str], AuditEntry] | None = None,
     ) -> ProfileRecord:
         """One transaction, answering with what it wrote: `ProfileError` `changed_meanwhile` (the
         role moved since it was read),
         `last_admin`, `too_many_admins`; the same `changed_meanwhile` when the ceiling or the
         right to classify differ from what was read. `actor_id`: an admin caller is re-read under
         the lock (`not_allowed`). A change of role closes the sessions and keys of the profile and
-        drops its stored policies (D14 again)."""
+        drops its stored policies (D14 again) and revokes its Kavita keys, one `revoked_audit` line
+        each (EF-USR-012)."""
         ...
 
     def visibility_state(self, user_id: str) -> tuple[str, str | None] | None:

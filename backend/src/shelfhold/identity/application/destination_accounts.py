@@ -20,7 +20,7 @@ verify. Audit lines name the user and the destination, never a key and never an 
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime
 from typing import Final, Protocol
 
@@ -37,11 +37,13 @@ __all__ = [
     "DestinationAccountError",
     "DestinationAccounts",
     "DestinationRef",
+    "RemoteAccount",
     "SecretToken",
     "UserFacts",
 ]
 
 MAX_TOKEN: Final = 512
+MIN_TOKEN: Final = 8  # what the vault registers as a secret; a shorter one is no Kavita key
 ADULTS: Final = frozenset({"admin", "member"})
 
 ERRORS: Final = frozenset(
@@ -49,7 +51,8 @@ ERRORS: Final = frozenset(
         "not_allowed", "not_found", "remote_user_taken", "remote_user_required",
         "invalid_remote_user", "invalid_token", "child_account_not_declared",
         "child_account_mismatch", "token_refused", "destination_not_supported",
-        "destination_unreachable",
+        "destination_unreachable", "child_account_admin", "child_account_privileged",
+        "child_account_unrestricted", "child_account_restriction_too_open",
     }
 )  # fmt: skip
 
@@ -64,7 +67,9 @@ class DestinationAccountError(Exception):
 
 class AccountRefused(Exception):
     """What a verifier says when the key is not accepted (`token_refused`,
-    `destination_unreachable`, `destination_not_supported`)."""
+    `destination_unreachable`, `destination_not_supported`, and for a child `child_account_admin`,
+    `child_account_privileged`, `child_account_unrestricted`,
+    `child_account_restriction_too_open`)."""
 
     def __init__(self, code: str) -> None:
         super().__init__(code)
@@ -99,6 +104,7 @@ class AccountView:
     token_fingerprint: str | None
     verified_at: datetime | None
     revoked_at: datetime | None
+    warnings: tuple[str, ...] = ()  # said once, when the key is linked; never part of a list
 
 
 @dataclass(frozen=True)
@@ -106,19 +112,36 @@ class UserFacts:
     id: str
     role: str
     kavita_username: str | None
+    max_age_rating: int | None = None  # the ceiling of a child
 
 
 @dataclass(frozen=True)
 class DestinationRef:
     id: str
     supported: bool  # a binding to a Kavita
+    allowed_profiles: tuple[str, ...] = ()  # the shelf's own list; empty: open to everyone
+
+    def open_to(self, user_id: str) -> bool:
+        return not self.allowed_profiles or user_id in self.allowed_profiles
+
+
+@dataclass(frozen=True)
+class RemoteAccount:
+    """What the verifier learned of the account a key opens, and nothing else."""
+
+    is_admin: bool
 
 
 class AccountVerifier(Protocol):
     def destination(self, destination_id: str) -> DestinationRef | None: ...
 
-    def verify(self, destination_id: str, remote_user: str, token: str) -> None:
-        """Returns when `token` opens the account `remote_user`, raises `AccountRefused`."""
+    def verify(
+        self, destination_id: str, remote_user: str, token: str, *, child_max_age: int | None
+    ) -> RemoteAccount:
+        """Returns when `token` opens the account `remote_user`, raises `AccountRefused`. With
+        `child_max_age` (the ceiling of a child) the account must also be one a child may hold:
+        not an administrator, no right beyond reading and progress, a restriction at or below
+        the ceiling."""
         ...
 
 
@@ -154,7 +177,7 @@ AuditEntryFactory = Callable[[], AuditEntry]
 
 
 def _check_token(token: object) -> str:
-    if not isinstance(token, str) or not token or len(token) > MAX_TOKEN:
+    if not isinstance(token, str) or not MIN_TOKEN <= len(token) <= MAX_TOKEN:
         raise DestinationAccountError("invalid_token")
     if token != token.strip() or any(not c.isprintable() or c.isspace() for c in token):
         raise DestinationAccountError("invalid_token")
@@ -217,6 +240,8 @@ class DestinationAccounts:
         destination = self._verifier.destination(destination_id)
         if destination is None:
             raise DestinationAccountError("not_found")
+        if target.role != "admin" and not destination.open_to(target.id):
+            raise DestinationAccountError("not_found")  # a shelf closed to them: as if not there
         if not destination.supported:
             raise DestinationAccountError("destination_not_supported")
         declared: str | None = None
@@ -241,7 +266,10 @@ class DestinationAccounts:
             name = checked
         secret = _check_token(token)
         try:
-            self._verifier.verify(destination_id, name, secret)
+            remote = self._verifier.verify(
+                destination_id, name, secret,
+                child_max_age=target.max_age_rating if target.role == "child" else None,
+            )  # fmt: skip
         except AccountRefused as refused:
             raise DestinationAccountError(refused.code) from None
         self._store.save(
@@ -253,7 +281,8 @@ class DestinationAccounts:
         )  # fmt: skip
         for view in self._store.accounts_of(user_id):
             if view.shelf_destination_id == destination_id:
-                return view
+                # an adult's key of an administrator account: allowed, said once (a child's never)
+                return replace(view, warnings=("kavita_admin",) if remote.is_admin else ())
         raise DestinationAccountError("not_found")  # pragma: no cover  (saved a moment ago)
 
     # --- read, revoke ------------------------------

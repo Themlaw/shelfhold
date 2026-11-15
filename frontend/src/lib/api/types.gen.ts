@@ -1905,6 +1905,47 @@ export type LinkIn = {
 };
 
 /**
+ * LinkedOut
+ *
+ * The answer to a link: the account, and what was worth saying once (`kavita_admin`: the key
+ * is of an administrator account of Kavita, which an adult may hold).
+ */
+export type LinkedOut = {
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Remote User
+     */
+    remote_user: string | null;
+    /**
+     * Revoked At
+     */
+    revoked_at: string | null;
+    /**
+     * Shelf Destination Id
+     */
+    shelf_destination_id: string;
+    /**
+     * Token Fingerprint
+     */
+    token_fingerprint: string | null;
+    /**
+     * User Id
+     */
+    user_id: string;
+    /**
+     * Verified At
+     */
+    verified_at: string | null;
+    /**
+     * Warnings
+     */
+    warnings: Array<string>;
+};
+
+/**
  * LoginRequest
  */
 export type LoginRequest = {
@@ -10168,7 +10209,7 @@ export type LinkAccountResponses = {
     /**
      * Successful Response
      */
-    200: AccountOut;
+    200: LinkedOut;
 };
 
 export type LinkAccountResponse = LinkAccountResponses[keyof LinkAccountResponses];

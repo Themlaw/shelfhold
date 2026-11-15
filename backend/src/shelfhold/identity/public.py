@@ -22,6 +22,7 @@ from shelfhold.identity.application.destination_accounts import (
     DestinationAccountError,
     DestinationAccounts,
     DestinationRef,
+    RemoteAccount,
     SecretToken,
 )
 from shelfhold.identity.application.passkeys import (
@@ -207,6 +208,7 @@ __all__ = [
     "ReauthRequired",
     "RelyingParty",
     "RememberNeedsConfirmationError",
+    "RemoteAccount",
     "ReservedAction",
     "RoleNotAllowed",
     "SecretToken",

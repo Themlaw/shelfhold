@@ -3123,6 +3123,88 @@
         "title": "LinkIn",
         "type": "object"
       },
+      "LinkedOut": {
+        "description": "The answer to a link: the account, and what was worth saying once (`kavita_admin`: the key\nis of an administrator account of Kavita, which an adult may hold).",
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "remote_user": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Remote User"
+          },
+          "revoked_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Revoked At"
+          },
+          "shelf_destination_id": {
+            "title": "Shelf Destination Id",
+            "type": "string"
+          },
+          "token_fingerprint": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Token Fingerprint"
+          },
+          "user_id": {
+            "title": "User Id",
+            "type": "string"
+          },
+          "verified_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Verified At"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Warnings",
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "user_id",
+          "shelf_destination_id",
+          "remote_user",
+          "token_fingerprint",
+          "verified_at",
+          "revoked_at",
+          "warnings"
+        ],
+        "title": "LinkedOut",
+        "type": "object"
+      },
       "LoginRequest": {
         "properties": {
           "confirm_remember": {
@@ -16842,7 +16924,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/AccountOut"
+                  "$ref": "#/components/schemas/LinkedOut"
                 }
               }
             },
@@ -22691,6 +22773,10 @@
     "/api/v1/problems/deletion.blocked": {
       "code": "deletion.blocked",
       "status": 409
+    },
+    "/api/v1/problems/destination-account-child-refused": {
+      "code": "destination_account_child_refused",
+      "status": 422
     },
     "/api/v1/problems/destination-account-conflict": {
       "code": "destination_account_conflict",

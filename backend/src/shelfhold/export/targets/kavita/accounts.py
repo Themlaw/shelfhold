@@ -24,11 +24,12 @@ import sqlalchemy as sa
 import structlog
 from sqlalchemy import Engine
 
+from shelfhold.export.domain.kavita_child_accounts import child_key_refusal, role_key
 from shelfhold.export.targets.kavita.client import CallResult
 from shelfhold.export.targets.kavita.errors import ProtocolError, RouteNotAllowed, TargetError
 from shelfhold.export.targets.kavita.routes import Route
 from shelfhold.infrastructure.fetcher import FetchError, GuardedFetcher
-from shelfhold.infrastructure.logging import register_secret_value
+from shelfhold.infrastructure.kavita_names import same_kavita_username
 from shelfhold.infrastructure.schema import export
 
 __all__ = [
@@ -42,7 +43,8 @@ __all__ = [
     "KavitaMemberVerifier",
     "MemberKavitaClient",
     "MemberKey",
-    "same_account",
+    "Verified",
+    "WhoAmI",
 ]
 
 log = structlog.get_logger(__name__)
@@ -55,7 +57,9 @@ POST_PROGRESS: Final = Route("POST", "/api/Reader/progress", write=True)
 CONTINUE_POINT: Final = Route("GET", "/api/Reader/continue-point", write=False)
 
 MEMBER_ROUTES: Final = (WHOAMI, GET_PROGRESS, POST_PROGRESS, CONTINUE_POINT)
-_BY_KEY: Final = {(r.method, r.path.lower()): r for r in MEMBER_ROUTES}
+_BY_KEY: Final[dict[tuple[str, str], Route]] = {
+    (r.method, r.path.lower()): r for r in MEMBER_ROUTES
+}
 _MAX_NAME: Final = 128
 
 
@@ -73,15 +77,27 @@ class AccountCheckFailed(TargetError):
 class DestinationInfo:
     id: str
     is_kavita: bool
+    allowed_profiles: tuple[str, ...] = ()  # the shelf's own list; empty: open to everyone
 
 
-def _key(name: str) -> str:
-    """Kavita's comparison of names: upper case, character by character (as the audit does)."""
-    return "".join(c.upper() if len(c.upper()) == 1 else c for c in name)
+@dataclass(frozen=True)
+class WhoAmI:
+    """What of `GET /api/Account` is read: the name, the roles and the restriction. The session
+    token and the account's own key are never read."""
+
+    username: str
+    roles: tuple[str, ...]
+    age_rating: int | None  # None: the answer carries no restriction
+    include_unknowns: bool
+
+    @property
+    def is_admin(self) -> bool:
+        return any(role_key(r) == "admin" for r in self.roles)
 
 
-def same_account(left: str, right: str) -> bool:
-    return bool(left) and bool(right) and _key(left) == _key(right)
+@dataclass(frozen=True)
+class Verified:
+    is_admin: bool
 
 
 class MemberKey:
@@ -93,7 +109,6 @@ class MemberKey:
         if not value:
             raise ValueError("an empty Kavita key")
         self._value = value
-        register_secret_value(value)  # scrubbed by value from every later log line
 
     def reveal(self) -> str:
         return self._value
@@ -154,14 +169,28 @@ class MemberKavitaClient:
             raise ProtocolError(f"{route.label}: the answer is not JSON") from None
         return CallResult(response.status, data)
 
-    async def whoami(self) -> str:
-        """The name of the account the key opens. Nothing else of the answer leaves this method."""
+    async def whoami(self) -> WhoAmI:
+        """The account the key opens. Nothing else of the answer leaves this method."""
         result = await self.call(WHOAMI.method, WHOAMI.path)
         data = result.data
-        name = data.get("username") if isinstance(data, dict) else None
+        if not isinstance(data, dict):
+            raise ProtocolError("GET /api/Account: no account in the answer")
+        name = data.get("username")
         if not isinstance(name, str) or not name or len(name) > _MAX_NAME:
             raise ProtocolError("GET /api/Account: no account name in the answer")
-        return name
+        roles = data.get("roles")
+        restriction = data.get("ageRestriction")
+        rating: int | None = None
+        unknowns = True
+        if isinstance(restriction, dict) and isinstance(restriction.get("ageRating"), int):
+            rating = restriction["ageRating"]
+            unknowns = bool(restriction.get("includeUnknowns", True))
+        return WhoAmI(
+            name,
+            tuple(str(r) for r in roles) if isinstance(roles, list) else (),
+            rating,
+            unknowns,
+        )
 
 
 @dataclass(frozen=True)
@@ -184,14 +213,18 @@ class KavitaMemberVerifier:
 
     def destination(self, destination_id: str) -> DestinationInfo | None:
         """The binding and what kind of server it points at, or `None` when there is none."""
-        table, target = export.shelf_destination, export.export_target
+        table, target, shelf = export.shelf_destination, export.export_target, export.shelf
         with self._engine.connect() as connection:
             row = connection.execute(
-                sa.select(table.c.id, target.c.kind)
+                sa.select(table.c.id, target.c.kind, shelf.c.allowed_profiles)
                 .join(target, target.c.id == table.c.target_id)
+                .join(shelf, shelf.c.id == table.c.shelf_id)
                 .where(table.c.id == destination_id)
             ).first()
-        return None if row is None else DestinationInfo(row.id, row.kind == "kavita")
+        if row is None:
+            return None
+        listed = row.allowed_profiles if isinstance(row.allowed_profiles, list) else []
+        return DestinationInfo(row.id, row.kind == "kavita", tuple(str(p) for p in listed))
 
     def _target(self, destination_id: str) -> _Target:
         table, target = export.shelf_destination, export.export_target
@@ -207,31 +240,40 @@ class KavitaMemberVerifier:
         url = config.get("url")
         return _Target(row.kind, url if isinstance(url, str) else None)
 
-    def verify(self, destination_id: str, remote_user: str, token: str) -> None:
+    def verify(
+        self, destination_id: str, remote_user: str, token: str, *, child_max_age: int | None = None
+    ) -> Verified:
         target = self._target(destination_id)
         if target.kind != "kavita" or not target.url or not urlsplit(target.url).hostname:
             raise AccountCheckFailed("destination_not_supported")
         client = MemberKavitaClient(self._fetcher_for(target.url), target.url, MemberKey(token))
         try:
-            name = _run(client.whoami())
+            who = _run(client.whoami())
         except ProtocolError as exc:
             if exc.status in (401, 403):
                 raise AccountCheckFailed("token_refused") from None
             raise AccountCheckFailed("destination_unreachable") from None
-        if not same_account(name, remote_user):
+        if not same_kavita_username(who.username, remote_user):
             raise AccountCheckFailed(
                 "token_refused"
             )  # a real key, of another account: not said whose
+        if child_max_age is not None:
+            refusal = child_key_refusal(
+                who.roles, who.age_rating, who.include_unknowns, child_max_age
+            )
+            if refusal is not None:  # a child's key opens an account that is a child's
+                raise AccountCheckFailed(refusal)
+        return Verified(who.is_admin)
 
 
-def _run(coro: Coroutine[Any, Any, str]) -> str:
+def _run(coro: Coroutine[Any, Any, WhoAmI]) -> WhoAmI:
     """Run a coroutine to its end from synchronous code, in a thread when a loop is already
     running in this one (a request handler runs in the pool of the server, not in a loop)."""
     try:
         asyncio.get_running_loop()
     except RuntimeError:
         return asyncio.run(coro)
-    box: list[str] = []
+    box: list[WhoAmI] = []
     failure: list[BaseException] = []
 
     def worker() -> None:

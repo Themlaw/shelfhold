@@ -8,6 +8,14 @@ not tell "Lea" from "lea" (it compares in upper case), so neither does the rule 
 from typing import Final
 
 from shelfhold.identity.domain.roles import ProfileError
+from shelfhold.infrastructure.kavita_names import kavita_name_key, same_kavita_username
+
+__all__ = [
+    "MAX_KAVITA_USERNAME",
+    "check_kavita_username",
+    "kavita_name_key",
+    "same_kavita_username",
+]
 
 MAX_KAVITA_USERNAME: Final = 128
 
@@ -26,14 +34,6 @@ def check_kavita_username(value: object) -> str | None:
         raise ProfileError("invalid_kavita_username")
     if any(not char.isprintable() for char in name):
         raise ProfileError("invalid_kavita_username")
+    if name.startswith("~"):  # `~<id>` is what a revoked account is renamed to, never a real name
+        raise ProfileError("invalid_kavita_username")
     return name
-
-
-def _key(name: str) -> str:
-    """Kavita's comparison: upper case character by character ("ß" stays "ß", unlike `casefold`),
-    the same one the audit uses to find the account."""
-    return "".join(c.upper() if len(c.upper()) == 1 else c for c in name)
-
-
-def same_kavita_username(left: str, right: str) -> bool:
-    return _key(left) == _key(right)

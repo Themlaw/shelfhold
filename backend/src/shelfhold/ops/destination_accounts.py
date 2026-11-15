@@ -24,6 +24,7 @@ from shelfhold.identity.public import (
     DestinationAccounts,
     DestinationAccountStore,
     DestinationRef,
+    RemoteAccount,
     audit_actor,
 )
 from shelfhold.infrastructure.clock import Clock
@@ -40,11 +41,21 @@ class _Verifier:
 
     def destination(self, destination_id: str) -> DestinationRef | None:
         found: DestinationInfo | None = self._kavita.destination(destination_id)
-        return None if found is None else DestinationRef(found.id, found.is_kavita)
+        return (
+            None
+            if found is None
+            else DestinationRef(found.id, found.is_kavita, found.allowed_profiles)
+        )
 
-    def verify(self, destination_id: str, remote_user: str, token: str) -> None:
+    def verify(
+        self, destination_id: str, remote_user: str, token: str, *, child_max_age: int | None
+    ) -> RemoteAccount:
         try:
-            self._kavita.verify(destination_id, remote_user, token)
+            return RemoteAccount(
+                is_admin=self._kavita.verify(
+                    destination_id, remote_user, token, child_max_age=child_max_age
+                ).is_admin
+            )
         except AccountCheckFailed as failed:
             raise AccountRefused(failed.code) from None
 

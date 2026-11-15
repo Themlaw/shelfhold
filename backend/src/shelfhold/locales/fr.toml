@@ -1262,6 +1262,11 @@ title = "Ce compte Kavita ne peut pas être lié."
 action = "Lisez la raison indiquée : la clé doit ouvrir exactement le compte déclaré, sur un Kavita joignable."
 cause = "La clé est refusée par Kavita ou ouvre un autre compte, le compte déclaré manque ou est mal écrit, ou la destination n'est pas un Kavita joignable."
 
+[errors."destination_account_child_refused"]
+title = "Ce compte Kavita n'est pas de ceux qu'un enfant peut porter."
+action = "Créez ou corrigez le compte de l'enfant dans Kavita : aucun rôle d'administrateur, aucun droit au-delà de la lecture et de la progression, une restriction d'âge au plus égale à l'âge maximal de l'enfant, inconnus exclus."
+cause = "Le compte est administrateur, porte un rôle au-delà de la lecture (téléchargement, promotion, changement de mot de passe ou de restriction), n'a pas de restriction d'âge, ou sa restriction est plus permissive que le plafond de l'enfant. La raison dit lequel."
+
 [errors."user_state_refused"]
 title = "Cette valeur n'est pas acceptée."
 action = "Une date envoyée ne peut pas dépasser l'heure du serveur de plus de quelques minutes ; une langue de titre est un code comme « ja » ou « en-US », huit au plus, sans « und » ni « mul »."

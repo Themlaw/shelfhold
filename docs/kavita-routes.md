@@ -64,7 +64,9 @@ d'exploitation refuse ces routes à son tour : les deux clés ne se croisent jam
 dans l'en-tête `x-api-key`, jamais dans une URL, par le Fetcher et sa garde SSRF.
 
 `GET /api/Account` répond un `UserDto` : le nom du compte, mais aussi un jeton de session et la clé
-par défaut du compte. Seul le nom est lu ; le reste est jeté avec la réponse, sans journal ni copie.
+par défaut du compte. Sont lus le nom, les rôles (`roles`) et la restriction d'âge (`ageRestriction`), pour refuser à un enfant
+le compte d'un administrateur ou d'un compte plus ouvert que lui ; le reste, jeton et clé par défaut
+compris, est jeté avec la réponse, sans journal ni copie.
 
 | Méthode | Route | Usage | Jalon |
 | --- | --- | --- | --- |

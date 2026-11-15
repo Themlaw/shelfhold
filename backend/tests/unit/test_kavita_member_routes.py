@@ -10,6 +10,7 @@ import pytest
 
 from shelfhold.export.targets.kavita import accounts, routes
 from shelfhold.export.targets.kavita.errors import RouteNotAllowed
+from shelfhold.infrastructure.kavita_names import same_kavita_username
 from tests.fakes.kavita import BASE_URL, FakeKavita, build_fetcher
 from tests.kavita_env import documented_routes, run
 
@@ -80,7 +81,7 @@ def test_member_client_sends_the_key_in_a_header_to_the_listed_routes_only() -> 
     fake = FakeKavita()
     mine = fake.add_member_key("mum.kv")
     client = _client(fake, mine)
-    assert run(client.whoami()) == "mum.kv"
+    assert run(client.whoami()).username == "mum.kv"
     run(client.call("GET", "/api/Reader/get-progress", query={"chapterId": 4}))
     run(client.call("POST", "/api/Reader/progress", body={"pageNum": 3}))
     run(client.call("GET", "/api/Reader/continue-point", query={"seriesId": 2}))
@@ -104,8 +105,9 @@ def test_the_member_key_does_not_print_and_the_answer_is_only_a_name() -> None:
     assert mine not in repr(client) and mine not in str(client)
     # `GET /api/Account` carries a session token and the account's own key: neither is returned
     answer = run(client.whoami())
-    assert answer == "mum.kv"
+    assert answer.username == "mum.kv"
     assert "synthetic-session-token" not in repr(answer)
+    assert "synthetic-default-key" not in repr(answer)
     with pytest.raises(ValueError, match="empty"):
         accounts.MemberKey("")
 
@@ -113,6 +115,6 @@ def test_the_member_key_does_not_print_and_the_answer_is_only_a_name() -> None:
 @pytest.mark.req("EF-USR-012")
 @pytest.mark.parametrize("name", ["mum.kv", "MUM.KV", "Mum.Kv"])
 def test_kavita_compares_the_account_name_without_case(name: str) -> None:
-    assert accounts.same_account("mum.kv", name)
-    assert not accounts.same_account("mum.kv", "mum.kv2")
-    assert not accounts.same_account("mum.kv", "")
+    assert same_kavita_username("mum.kv", name)
+    assert not same_kavita_username("mum.kv", "mum.kv2")
+    assert not same_kavita_username("mum.kv", "")

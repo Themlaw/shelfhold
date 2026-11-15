@@ -62,11 +62,15 @@ class DestinationAccountStore:
     def user(self, user_id: str) -> UserFacts | None:
         with self._engine.connect() as connection:
             row = connection.execute(
-                sa.select(_user.c.id, _user.c.role, _user.c.kavita_username).where(
-                    _user.c.id == user_id
-                )
+                sa.select(
+                    _user.c.id, _user.c.role, _user.c.kavita_username, _user.c.max_age_rating
+                ).where(_user.c.id == user_id)
             ).first()
-        return None if row is None else UserFacts(row.id, row.role, row.kavita_username)
+        return (
+            None
+            if row is None
+            else UserFacts(row.id, row.role, row.kavita_username, row.max_age_rating)
+        )
 
     def accounts_of(self, user_id: str) -> list[AccountView]:
         with self._engine.connect() as connection:

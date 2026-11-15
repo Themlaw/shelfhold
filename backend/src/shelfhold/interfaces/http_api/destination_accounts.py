@@ -35,6 +35,14 @@ _REVOKE = reserved_action(
     RESERVED_ACTIONS["destination_account.revoke"], roles=_ADULTS, audit=False
 )
 _CONFLICTS = frozenset({"remote_user_taken"})
+# the four ways a Kavita account is not one a child may hold (the others are about the
+# declaration, not the account)
+_CHILD_REFUSALS = frozenset(
+    {
+        "child_account_admin", "child_account_privileged", "child_account_unrestricted",
+        "child_account_restriction_too_open",
+    }
+)  # fmt: skip
 
 
 class LinkIn(BaseModel):
@@ -54,6 +62,13 @@ class AccountOut(BaseModel):
     token_fingerprint: str | None
     verified_at: datetime | None
     revoked_at: datetime | None
+
+
+class LinkedOut(AccountOut):
+    """The answer to a link: the account, and what was worth saying once (`kavita_admin`: the key
+    is of an administrator account of Kavita, which an adult may hold)."""
+
+    warnings: list[str]
 
 
 class AccountList(BaseModel):
@@ -78,6 +93,8 @@ def _problem(error: DestinationAccountError) -> ProblemError:
         return ProblemError("forbidden")
     if code == "not_found":
         return ProblemError("destination_account_not_found")
+    if code.startswith("child_account_") and code in _CHILD_REFUSALS:
+        return ProblemError("destination_account_child_refused", extensions={"reason": code})
     kind = "destination_account_conflict" if code in _CONFLICTS else "destination_account_refused"
     return ProblemError(kind, extensions={"reason": code})
 
@@ -103,7 +120,7 @@ def build_destination_accounts_router(get_ops: Callable[[], OpsServices]) -> API
         views = run(lambda: get_ops().destination_accounts.list_accounts(principal, user_id))
         return AccountList(items=[_out(v) for v in views])
 
-    @router.put("/{user_id}/destination-accounts/{shelf_destination_id}", response_model=AccountOut)
+    @router.put("/{user_id}/destination-accounts/{shelf_destination_id}", response_model=LinkedOut)
     def link_account(
         user_id: str,
         shelf_destination_id: str,
@@ -116,7 +133,7 @@ def build_destination_accounts_router(get_ops: Callable[[], OpsServices]) -> API
                 token=body.token, remote_user=body.remote_user,
             )
         )  # fmt: skip
-        return _out(view)
+        return LinkedOut(**_out(view).model_dump(), warnings=list(view.warnings))
 
     @router.delete("/{user_id}/destination-accounts/{shelf_destination_id}", status_code=204)
     def revoke_account(

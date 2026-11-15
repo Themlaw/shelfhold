@@ -66,7 +66,7 @@ def erase_accounts(
     user_id: str,
     *,
     now: datetime,
-    entry: Callable[[str], AuditEntry],
+    entry: Callable[[str], AuditEntry] | None,
     destination_id: str | None = None,
 ) -> int:
     """Revoke the live accounts of a user (of one destination, or all), in the caller's
@@ -84,7 +84,8 @@ def erase_accounts(
             .where(_account.c.id == row.id)
             .values(revoked_at=now, remote_user=f"~{row.id}", verified_at=None, **_NO_SECRET)
         )
-        connection.execute(audit_insert(entry(row.shelf_destination_id)))
+        if entry is not None:
+            connection.execute(audit_insert(entry(row.shelf_destination_id)))
     return len(rows)
 
 
@@ -595,6 +596,7 @@ class SqlIdentityStore:
         self, user_id: str, *, expected_role: str, expected_max_age_rating: int | None,
         expected_can_rate: bool, role: str, max_age_rating: int | None, can_rate: bool,
         max_admins: int, now: datetime, actor_id: str | None = None,
+        revoked_audit: Callable[[str], AuditEntry] | None = None,
     ) -> ProfileRecord:  # fmt: skip
         with self._changing(immediate=True) as conn:
             _require_admin_caller(conn, actor_id)
@@ -644,6 +646,9 @@ class SqlIdentityStore:
                     .where(_key.c.user_id == user_id, _key.c.revoked_at.is_(None))
                     .values(revoked_at=now)
                 )
+                # nor the Kavita keys of the old one: a key was pasted for a role, in the same
+                # transaction, one audit line each (EF-USR-012)
+                erase_accounts(conn, user_id, now=now, entry=revoked_audit)
             written = conn.execute(
                 sa.select(_user.c.id, _user.c.username, _user.c.role, _user.c.max_age_rating,
                           _user.c.can_rate, _user.c.visibility, _user.c.hide_unrated_remote,
@@ -791,7 +796,12 @@ class SqlIdentityStore:
             was = row.kavita_username is not None
             if row.kavita_username == name:
                 return was, was
-            if name is not None:
+            same = (
+                row.kavita_username is not None
+                and name is not None
+                and same_kavita_username(row.kavita_username, name)
+            )  # only the case differs: Kavita sees one account, the keys stay valid
+            if name is not None and not same:
                 held = conn.execute(
                     sa.select(_user.c.kavita_username).where(
                         _user.c.id != user_id, _user.c.kavita_username.is_not(None)
@@ -800,7 +810,7 @@ class SqlIdentityStore:
                 if any(same_kavita_username(other, name) for other in held):
                     raise ProfileError("kavita_username_taken")
             conn.execute(sa.update(_user).where(_user.c.id == user_id).values(kavita_username=name))
-            if revoked_audit is not None and now is not None:
+            if now is not None and not same:
                 erase_accounts(conn, user_id, now=now, entry=revoked_audit)
             entry = None if audit is None else audit(was, name is not None)
             if entry is not None:

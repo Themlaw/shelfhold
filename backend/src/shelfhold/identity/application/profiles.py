@@ -179,9 +179,20 @@ class ProfileService:
             expected_max_age_rating=current.max_age_rating, expected_can_rate=current.can_rate,
             role=new_role, max_age_rating=ceiling, can_rate=rate, max_admins=MAX_ADMINS,
             now=self._now(), actor_id=self._actor_id(by),
+            revoked_audit=self._revoked_audit(by, profile_id),
         )  # fmt: skip
         self._audit("profile.updated", by, profile_id)
         return written
+
+    def _revoked_audit(
+        self, by: Principal | None, profile_id: str
+    ) -> Callable[[str], AuditEntry] | None:
+        make = self._entry
+        if make is None:
+            return None
+        return lambda destination_id: make(
+            "destination_account.revoked", by, f"{profile_id}|{destination_id}"
+        )
 
     def remove(self, profile_id: str, *, by: Principal | None = None) -> None:
         """Delete a profile; its traces in the audit stay, under a pseudonym (EF-USR-013)."""
@@ -298,17 +309,9 @@ class ProfileService:
             written.append(states)
             return self._entry("profile.kavita_mapping_set", by, f"{profile_id}|{states}")
 
-        make = self._entry
-        revoked = (
-            None
-            if make is None
-            else lambda destination_id: make(
-                "destination_account.revoked", by, f"{profile_id}|{destination_id}"
-            )
-        )
         self._store.set_kavita_username(
             profile_id, chosen, actor_id=self._actor_id(by), audit=trace, now=self._now(),
-            revoked_audit=revoked,
+            revoked_audit=self._revoked_audit(by, profile_id),
         )  # fmt: skip
         if written:
             self._log("profile.kavita_mapping_set", by)
