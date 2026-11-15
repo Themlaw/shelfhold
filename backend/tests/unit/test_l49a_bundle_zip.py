@@ -42,10 +42,10 @@ def entries_of(pages: Sequence[tuple[str, bytes]]) -> tuple[list[ZipEntry], list
     )
 
 
-def materialise(block: BundleZip, datas: Sequence[bytes]) -> bytes:
+def materialise(block: BundleZip, payloads: Sequence[bytes]) -> bytes:
     out = io.BytesIO()
     for piece in block.pieces():
-        out.write(datas[piece] if isinstance(piece, int) else piece)
+        out.write(payloads[piece] if isinstance(piece, int) else piece)
     return out.getvalue()
 
 
@@ -58,8 +58,8 @@ PAGES = [
 
 
 def test_the_block_opens_with_the_standard_library_as_a_stored_zip_in_page_order() -> None:
-    entries, datas = entries_of(PAGES)
-    raw = materialise(BundleZip(entries, IDENTITY), datas)
+    entries, payloads = entries_of(PAGES)
+    raw = materialise(BundleZip(entries, IDENTITY), payloads)
     with zipfile.ZipFile(io.BytesIO(raw)) as archive:
         assert [i.filename for i in archive.infolist()] == [n for n, _ in PAGES]
         assert {i.compress_type for i in archive.infolist()} == {zipfile.ZIP_STORED}
@@ -69,21 +69,21 @@ def test_the_block_opens_with_the_standard_library_as_a_stored_zip_in_page_order
 
 
 def test_the_declared_size_is_the_exact_size_of_the_bytes() -> None:
-    entries, datas = entries_of(PAGES)
+    entries, payloads = entries_of(PAGES)
     block = BundleZip(entries, IDENTITY)
-    assert block.size == len(materialise(block, datas))
+    assert block.size == len(materialise(block, payloads))
 
 
 def test_two_layouts_of_the_same_members_are_the_same_bytes() -> None:
-    entries, datas = entries_of(PAGES)
-    first = materialise(BundleZip(entries, IDENTITY), datas)
-    second = materialise(BundleZip(list(entries), bytes(IDENTITY)), list(datas))
+    entries, payloads = entries_of(PAGES)
+    first = materialise(BundleZip(entries, IDENTITY), payloads)
+    second = materialise(BundleZip(list(entries), bytes(IDENTITY)), list(payloads))
     assert first == second
 
 
 def test_every_variable_field_of_the_zip_is_fixed() -> None:
-    entries, datas = entries_of(PAGES)
-    raw = materialise(BundleZip(entries, IDENTITY), datas)
+    entries, payloads = entries_of(PAGES)
+    raw = materialise(BundleZip(entries, IDENTITY), payloads)
     with zipfile.ZipFile(io.BytesIO(raw)) as archive:
         for info in archive.infolist():
             assert info.date_time == (1980, 1, 1, 0, 0, 0)
@@ -94,9 +94,9 @@ def test_every_variable_field_of_the_zip_is_fixed() -> None:
 
 
 def test_the_identity_sits_in_the_first_kibibyte_and_is_what_tells_two_versions_apart() -> None:
-    entries, datas = entries_of(PAGES)
-    one = materialise(BundleZip(entries, IDENTITY), datas)
-    two = materialise(BundleZip(entries, bytes(reversed(IDENTITY))), datas)
+    entries, payloads = entries_of(PAGES)
+    one = materialise(BundleZip(entries, IDENTITY), payloads)
+    two = materialise(BundleZip(entries, bytes(reversed(IDENTITY))), payloads)
     assert IDENTITY in one[:1024]
     assert one[:1024] != two[:1024]
     assert koreader_partial_md5(io.BytesIO(one)) != koreader_partial_md5(io.BytesIO(two))
@@ -104,14 +104,14 @@ def test_the_identity_sits_in_the_first_kibibyte_and_is_what_tells_two_versions_
 
 def test_the_koreader_digest_is_computed_without_materialising_the_zip() -> None:
     big = [(f"{n:05d} ch{n}/00001.png", bytes([n % 251]) * (300_000 + n)) for n in range(1, 40)]
-    entries, datas = entries_of(big)
+    entries, payloads = entries_of(big)
     block = BundleZip(entries, IDENTITY)
-    raw = materialise(block, datas)
+    raw = materialise(block, payloads)
     reads: list[tuple[int, int, int]] = []
 
     def read_entry(index: int, start: int, length: int) -> bytes:
         reads.append((index, start, length))
-        return datas[index][start : start + length]
+        return payloads[index][start : start + length]
 
     streamed = koreader_partial_md5(LayoutStream(block, read_entry))
     assert streamed == koreader_partial_md5(io.BytesIO(raw))
@@ -119,20 +119,20 @@ def test_the_koreader_digest_is_computed_without_materialising_the_zip() -> None
 
 
 def test_a_range_is_what_the_whole_stream_holds_at_that_place() -> None:
-    entries, datas = entries_of(PAGES)
+    entries, payloads = entries_of(PAGES)
     block = BundleZip(entries, IDENTITY)
-    raw = materialise(block, datas)
+    raw = materialise(block, payloads)
     for offset, length in [(0, 10), (5, 300), (len(raw) - 50, 50), (100, 0), (len(raw), 10)]:
-        got = block.read_range(offset, length, lambda i, s, n: datas[i][s : s + n])
+        got = block.read_range(offset, length, lambda i, s, n: payloads[i][s : s + n])
         assert got == raw[offset : offset + length]
 
 
 def test_zip64_begins_above_65535_entries_and_not_before() -> None:
     def build(count: int) -> tuple[BundleZip, bytes]:
         pages = [(f"{(n // 500) + 1:05d} ch1/{n % 500 + 1:05d}.png", b"x") for n in range(count)]
-        entries, datas = entries_of(pages)
+        entries, payloads = entries_of(pages)
         block = BundleZip(entries, IDENTITY)
-        return block, materialise(block, datas)
+        return block, materialise(block, payloads)
 
     below, raw_below = build(ZIP64_ENTRIES)
     above, raw_above = build(ZIP64_ENTRIES + 1)
@@ -206,8 +206,8 @@ def test_a_crc_or_a_size_that_does_not_fit_a_32_bit_field_is_refused() -> None:
 
 
 def test_the_local_header_of_the_first_entry_carries_the_private_field() -> None:
-    entries, datas = entries_of(PAGES)
-    raw = materialise(BundleZip(entries, IDENTITY), datas)
+    entries, payloads = entries_of(PAGES)
+    raw = materialise(BundleZip(entries, IDENTITY), payloads)
     signature, _v, flags, method, _t, _d, _crc, _cs, _us, name_length, extra_length = struct.unpack(
         "<4sHHHHHIIIHH", raw[:30]
     )

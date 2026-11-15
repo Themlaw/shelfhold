@@ -404,7 +404,7 @@ def test_a_child_asking_for_a_hidden_edition_gets_what_an_absent_one_gets(
     assert complete(lab.mum, lab, key).status_code == 200  # the member's own scope is wider
 
 
-def test_the_offer_of_a_hidden_edition_is_nowhere_in_a_childs_feed(lab: World) -> None:
+def test_the_offer_of_a_hidden_edition_is_nowhere_in_a_child_feed(lab: World) -> None:
     library(lab, "above").add(Chapter.simple("1", count=1))
     library(lab, "ok").add(Chapter.simple("1", count=1))
     mixed = parse(lab.kid.get(f"/opds/works/{lab.seed.works['ok']}"))
@@ -731,7 +731,7 @@ def test_revoking_the_token_cuts_a_transfer_at_the_next_block_of_bytes(lab: Worl
     assert taken < download.size / 2
 
 
-def test_lowering_the_ceiling_cuts_a_childs_transfer_too(lab: World) -> None:
+def test_lowering_the_ceiling_cuts_the_transfer_of_a_child_too(lab: World) -> None:
     lib = library(lab)
     for n in range(1, 4):
         lib.add(Chapter(str(n), [("1.png", page("png", f"p{n}", 150_000))]))
