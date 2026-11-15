@@ -33,7 +33,7 @@ MEMBER_WITH_ITEM = _COLUMNS + "(?, 1, ?, '1', ?, ?, 1, 1, 'candidate')"
 @pytest.mark.req("ENF-OPS-002")
 def test_single_alembic_head_with_0077_on_0065() -> None:
     script = ScriptDirectory(str(default_script_location()))
-    assert script.get_heads() == ["0077"]
+    assert len(script.get_heads()) == 1  # later migrations move the head, never fork it
     assert script.get_revision("0077").down_revision == "0065"
 
 
