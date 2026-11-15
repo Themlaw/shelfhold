@@ -57,11 +57,16 @@ class LoginThrottle:
         self._failures: OrderedDict[str, deque[datetime]] = OrderedDict()
         self._lock = threading.Lock()
 
-    def _keys(self, ip: str, account: str) -> tuple[tuple[str, int], tuple[str, int]]:
-        return (
+    def _keys(
+        self, ip: str, account: str, *, skip_account: bool = False, skip_address: bool = False
+    ) -> list[tuple[str, int]]:
+        keys = [
             (address_key(ip), self._limits["ip"]),
             ("account:" + account.casefold()[:256], self._limits["account"]),
-        )
+        ]
+        if skip_address:
+            keys = keys[1:]
+        return keys[:-1] if skip_account else keys
 
     def _recent(self, key: str, now: datetime) -> deque[datetime] | None:
         stamps = self._failures.get(key)
@@ -74,16 +79,36 @@ class LoginThrottle:
             return None
         return stamps
 
-    def _wait(self, ip: str, account: str, now: datetime, *, skip_account: bool) -> float | None:
+    def _wait(
+        self,
+        ip: str,
+        account: str,
+        now: datetime,
+        *,
+        skip_account: bool,
+        skip_address: bool = False,
+    ) -> float | None:
         waits: list[float] = []
-        for key, limit in self._keys(ip, account)[: 1 if skip_account else 2]:
+        for key, limit in self._keys(
+            ip, account, skip_account=skip_account, skip_address=skip_address
+        ):
             stamps = self._recent(key, now)
             if stamps is not None and len(stamps) >= limit:
                 waits.append((stamps[-limit] + self._window - now).total_seconds())
         return max(waits) if waits else None
 
-    def _record(self, ip: str, account: str, now: datetime, *, skip_account: bool = False) -> None:
-        for key, _limit in self._keys(ip, account)[: 1 if skip_account else 2]:
+    def _record(
+        self,
+        ip: str,
+        account: str,
+        now: datetime,
+        *,
+        skip_account: bool = False,
+        skip_address: bool = False,
+    ) -> None:
+        for key, _limit in self._keys(
+            ip, account, skip_account=skip_account, skip_address=skip_address
+        ):
             stamps = self._failures.setdefault(key, deque(maxlen=max(self._limits.values())))
             stamps.append(now)
             self._failures.move_to_end(key)
@@ -98,19 +123,54 @@ class LoginThrottle:
             return self._wait(ip, account, now, skip_account=skip_account)
 
     def reserve(
-        self, *, ip: str, account: str, now: datetime, skip_account: bool = False
+        self,
+        *,
+        ip: str,
+        account: str,
+        now: datetime,
+        skip_account: bool = False,
+        skip_address: bool = False,
     ) -> float | None:
         """Atomically: refuse (seconds to wait) or count this attempt as a failure (None)."""
         with self._lock:
-            wait = self._wait(ip, account, now, skip_account=skip_account)
+            wait = self._wait(
+                ip, account, now, skip_account=skip_account, skip_address=skip_address
+            )
             if wait is None:
-                self._record(ip, account, now, skip_account=skip_account)
+                self._record(ip, account, now, skip_account=skip_account, skip_address=skip_address)
             return wait
 
-    def release(self, *, ip: str, account: str, at: datetime, skip_account: bool = False) -> None:
+    def fail_address(self, *, ip: str, now: datetime) -> float | None:
+        """A failure, counted against the address alone: seconds to wait if the address is over
+        its limit (the failure is then not counted), else None. For a caller whose per-account
+        key is reserved before the check and whose address limit slows only the failures."""
+        with self._lock:
+            wait = self._wait(ip, "", now, skip_account=True)
+            if wait is None:
+                self._record(ip, "", now, skip_account=True)
+            return wait
+
+    def release(
+        self,
+        *,
+        ip: str,
+        account: str,
+        at: datetime,
+        skip_account: bool = False,
+        skip_address: bool = False,
+    ) -> None:
         """Withdraw the attempt reserved at `at` (its password was right), from the same keys."""
         with self._lock:
-            for key, _limit in self._keys(ip, account)[: 1 if skip_account else 2]:
+            for key, _limit in self._keys(
+                ip, account, skip_account=skip_account, skip_address=skip_address
+            ):
                 stamps = self._failures.get(key)
                 if stamps is not None and at in stamps:
                     stamps.remove(at)
+
+    def reset_account(self, account: str) -> None:
+        """Back to zero for this account key alone: the one that failed and then succeeded (a
+        device token whose reader typed a wrong secret and then the right one). The address keeps
+        what it has counted, so a guess elsewhere from the same address is still counted."""
+        with self._lock:
+            self._failures.pop("account:" + account.casefold()[:256], None)

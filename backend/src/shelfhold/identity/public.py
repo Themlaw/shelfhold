@@ -35,6 +35,7 @@ from shelfhold.identity.application.ports import (
     ApiKeyRecord,
     AuditEntry,
     ChildKavitaAccount,
+    DeviceTokenRecord,
     PasskeyRecord,
     ProfileRecord,
     ReauthMethod,
@@ -51,6 +52,7 @@ from shelfhold.identity.application.service import (
     AdminExistsError,
     AuthError,
     CreatedApiKey,
+    CreatedDeviceToken,
     InvalidCredentialsError,
     IssuedSession,
     LastLoginFactorError,
@@ -84,6 +86,7 @@ from shelfhold.identity.domain.credentials import (
     credential_axis,
     session_policy,
 )
+from shelfhold.identity.domain.device_secret import normalise_secret
 from shelfhold.identity.domain.device_token import DeviceToken, device_token, token_principal
 from shelfhold.identity.domain.emitters import (
     CLOSED_SITES,
@@ -178,6 +181,7 @@ __all__ = [
     "AuthError",
     "ChildKavitaAccount",
     "CreatedApiKey",
+    "CreatedDeviceToken",
     "Credential",
     "CredentialNotAllowed",
     "DestinationAccountError",
@@ -185,6 +189,7 @@ __all__ = [
     "DestinationAccounts",
     "DestinationRef",
     "DeviceToken",
+    "DeviceTokenRecord",
     "Effect",
     "ExitRoute",
     "FamilyProfile",
@@ -245,6 +250,7 @@ __all__ = [
     "family_source_keys",
     "holds_rate_right",
     "local_auth",
+    "normalise_secret",
     "reader_scope",
     "reconcile_identity_counter",
     "relying_party",

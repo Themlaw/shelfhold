@@ -123,6 +123,10 @@ class Settings(BaseModel):
     # ENF-SEC-008: the routes that keep their own credentials (`/opds`, `/kosync`, `/kobo`: a device
     # token or Basic) are limited per credential, not per address, and not by the figure above.
     http_device_rate_per_minute: int = Field(default=600, ge=10, le=100_000)
+    # M4 L46, ADR-0053 §4: the e-reader routes (`/opds`, `/kosync`) refuse plain HTTP, where the
+    # secret and the kosync key would travel and replay as they are. True only for a trusted
+    # local network without TLS: whoever can read that network can read the secret.
+    device_allow_plain_http: bool = False
     # EF-USR-024 (GAP-13-07): the local CLI socket refuses a peer outside the PID namespace of the
     # container (the host, another container that mounts /data) unless this is set. The uid of
     # Shelfhold on the host is then as powerful as an admin.

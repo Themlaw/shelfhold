@@ -18,6 +18,7 @@ from shelfhold.interfaces.http_api.auth import (
     install_auth,
 )
 from shelfhold.interfaces.http_api.auth import actor_of as principal_actor
+from shelfhold.interfaces.http_api.device_auth import build_device_router
 from shelfhold.interfaces.http_api.health import HealthPort, build_health_router
 from shelfhold.interfaces.http_api.idempotency import (
     ActorOf,
@@ -78,6 +79,7 @@ def create_http_app(
     forward_auth: ForwardAuth | None = None,  # EF-USR-002: None = off (the default)
     public_rate_per_minute: int | None = None,  # ENF-SEC-008; None: no limit (bare tests)
     device_rate_per_minute: int = 600,
+    device_allow_plain_http: bool = False,  # M4 L46, ADR-0053 §4: TLS unless the admin says so
     maintenance_active: Callable[[], bool | None] | None = None,
 ) -> FastAPI:
     """Without `auth` (offline schema export, protocol tests) the authentication routes are still
@@ -134,6 +136,7 @@ def create_http_app(
     app.add_middleware(RequestContextMiddleware)
     app.add_middleware(SecurityHeadersMiddleware)  # wraps every response
     networks = parse_networks(trusted_proxies)
+    app.state.device_allow_plain_http = device_allow_plain_http
     app.add_middleware(ClientIpMiddleware, trusted=networks)  # the real address, for the limits
     app.add_middleware(  # outermost: nothing below ever sees a proxy identity header (P5)
         IdentityHeaderFilter,
@@ -155,6 +158,7 @@ def create_http_app(
     app.include_router(build_profiles_router())
     app.include_router(build_own_visibility_router())  # EF-USR-016
     app.include_router(build_about_router(version=version, source_url=resolved_source))
+    app.include_router(build_device_router())  # M4 L46: the e-reader's own credential
     for router in routers:
         app.include_router(router)
     if frontend_dir is not None:

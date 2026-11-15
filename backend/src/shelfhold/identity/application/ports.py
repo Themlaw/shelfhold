@@ -1,7 +1,7 @@
 """What the local authentication needs from storage and from a password hasher."""
 
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Protocol
 
@@ -108,6 +108,39 @@ class NewApiKey:
     expires_at: datetime | None
     subject_user_id: str | None = None
     issued_by: str | None = None
+
+
+@dataclass(frozen=True)
+class DeviceTokenRecord:
+    """A device token as stored. `secret_digest` verifies a secret and is never shown: it is out
+    of the `repr`, so that no log line or error can carry it."""
+
+    id: str
+    public_id: str
+    name: str | None
+    subject: UserRecord
+    issued_by: str | None
+    created_at: datetime
+    expires_at: datetime | None
+    last_used_at: datetime | None
+    revoked_at: datetime | None
+    secret_digest: str = field(repr=False, default="")
+
+    @property
+    def profile(self) -> str:
+        return self.subject.username
+
+
+@dataclass(frozen=True)
+class NewDeviceToken:
+    id: str
+    public_id: str
+    name: str | None
+    subject_user_id: str
+    issued_by: str | None
+    secret_digest: str = field(repr=False)
+    now: datetime
+    expires_at: datetime | None
 
 
 @dataclass(frozen=True)
@@ -337,6 +370,14 @@ class IdentityStore(Protocol):
         """One statement on (owner, id): a session of someone else is False, like an unknown one."""
         ...
 
+    def insert_device_token(self, token: NewDeviceToken, audit: AuditEntry) -> None:
+        """The token and its audit line, all or nothing. `KeyConflictError`: identifier taken."""
+        ...
+
+    def device_token_by_public_id(self, public_id: str) -> DeviceTokenRecord | None: ...
+    def device_tokens(self) -> Sequence[DeviceTokenRecord]: ...
+    def touch_device_token(self, token_id: str, *, now: datetime) -> None: ...
+    def revoke_device_token(self, public_id: str, *, now: datetime) -> bool: ...
     def insert_api_key(self, key: NewApiKey) -> None: ...
     def api_key_by_prefix(self, prefix: str) -> ApiKeyRecord | None: ...
     def api_keys(self) -> Sequence[ApiKeyRecord]: ...

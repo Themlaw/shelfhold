@@ -194,3 +194,8 @@ since = "1.0"
 file = "0071_provider_quota.py"
 sha256 = "b0fcdec029d88e520919d7e5c0189ec1fb5b5e274c9ee0ec73687707a35da115"
 since = "1.0"
+
+[[migration]]
+file = "0076_device_token.py"
+sha256 = "6e9bfe5b1eae3eb29effb1004136d7bdecbbf920dd78855d65be875e0b4ad432"
+since = "1.1"

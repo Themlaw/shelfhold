@@ -166,6 +166,36 @@ api_key = sa.Table(
     sa.Index("ix_api_key_user", "user_id"),
 )
 
+# A device token (M4 L46, ADR-0053 §4, ADR-0049): the credential of an e-reader (OPDS, kosync).
+# It is issued FOR a reader profile (`subject_user_id`, no default, the rights and the filters are
+# the subject's) and the issuer is kept for the audit and nothing else. `public_id` is the short
+# identifier of `x-auth-user`; the secret is shown once and only `sha256(md5(secret))` is stored.
+# Apart from `api_key` on purpose: a token never reads as a key, and a key never as a token.
+device_token = sa.Table(
+    "device_token",
+    metadata,
+    ulid_column("id", primary_key=True),
+    sa.Column("public_id", sa.String(8), nullable=False),
+    sa.Column("name", sa.String(), nullable=True),
+    sa.Column(
+        "subject_user_id",
+        sa.String(26),
+        sa.ForeignKey("user.id", ondelete="CASCADE"),
+        nullable=False,
+    ),
+    sa.Column("issued_by", sa.String(26), sa.ForeignKey("user.id", ondelete="SET NULL")),
+    sa.Column("secret_digest", sa.String(), nullable=False),
+    sa.Column("expires_at", UtcDateTime(), nullable=True),
+    sa.Column("last_used_at", UtcDateTime(), nullable=True),
+    sa.Column("revoked_at", UtcDateTime(), nullable=True),
+    now_column(),
+    ulid_check("id"),
+    prefixed_hash_check("secret_digest"),
+    sa.CheckConstraint('length("public_id") = 8', name="public_id_length"),
+    sa.UniqueConstraint("public_id"),
+    sa.Index("ix_device_token_subject", "subject_user_id"),
+)
+
 # `actor_id` is deliberately not a foreign key: it becomes an opaque token when the user is
 # deleted (EF-USR-013). An entry never holds a title (I36).
 audit = sa.Table(

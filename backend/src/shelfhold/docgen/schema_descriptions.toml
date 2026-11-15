@@ -378,6 +378,19 @@ rotated_from = "Key this one replaces."
 subject_user_id = "User the key acts as."
 issued_by = "Actor that issued the key."
 
+[tables.device_token]
+description = "Device tokens: the credential of an e-reader (OPDS, kosync), issued for a reader profile. Only the SHA-256 of the md5 of the secret is stored; the secret is shown once."
+[tables.device_token.columns]
+id = "Token identifier (ULID)."
+public_id = "Short public identifier: the x-auth-user header and the HTTP Basic user name."
+name = "Name given when it was issued (the device)."
+subject_user_id = "Reader profile the token acts as; its rights and filters are this profile's."
+issued_by = "Account that issued the token (audit only); empty when the host operator did."
+secret_digest = "SHA-256 of the md5 of the secret, never the secret or its md5."
+expires_at = "When the token stops working (UTC); empty: it does not expire."
+last_used_at = "When the token was last accepted (UTC)."
+revoked_at = "When the token was revoked (UTC); a revoked token is refused at once."
+
 [tables.content_tombstone]
 description = "Tombstones of purged content: encrypted raw identifiers only, never a title."
 [tables.content_tombstone.columns]

@@ -22,6 +22,7 @@ DATA_CSP = "default-src 'none'"
 CSP_SANDBOX = "sandbox"
 ROBOTS_TXT = "User-agent: *\nDisallow: /\n"
 BEARER_CHALLENGE = 'Bearer realm="api"'
+BASIC_CHALLENGE = 'Basic realm="Shelfhold", charset="UTF-8"'  # the e-reader's OPDS (L46)
 _INLINE = {"script-src": "script", "style-src": "style"}
 
 _FRAME_ANCESTORS_DIRECTIVE = re.compile(r"frame-ancestors[^;]*", re.IGNORECASE)

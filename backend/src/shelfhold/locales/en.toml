@@ -165,6 +165,14 @@
   admin_key_read_only_help = "Read-only key (any request that modifies is refused)."
   admin_key_expires_help = "Validity period in days (optional; capped at 90 by the hardened profile)."
   admin_key_prefix_help = "Key prefix (8 hexadecimal characters)."
+  admin_devices_help = "Manages e-reader device tokens (OPDS, kosync): stored hashed, displayed only once."
+  admin_devices_create_help = "Issues a token for a reader profile (the secret is displayed only once)."
+  admin_devices_list_help = "Lists the tokens (identifier, profile, name, expiry, last use), never their secret."
+  admin_devices_revoke_help = "Revokes a token: the e-reader is refused at its next request."
+  admin_device_profile_help = "Reader profile whose rights and filters the token carries (required, no default)."
+  admin_device_name_help = "Device name (for example \"Living-room e-reader\")."
+  admin_device_expires_help = "Validity period in days (optional)."
+  admin_device_id_help = "Public identifier of the token (8 characters)."
 
 [migrate]
   up_to_date = "The database is already up to date."
@@ -754,6 +762,15 @@
   key_unknown = "No active key with prefix {prefix}."
   no_keys = "No API key."
   key_line = "{prefix} {name} {scopes} {state}"
+  device_created = "Token created for profile {profile} (identifier {public_id}). The secret will never be displayed again; type it exactly as shown, without spaces or dashes:"
+  device_admin_subject = "An administrator profile carries no device token: a lost e-reader would open the whole catalogue. Choose a reader profile."
+  device_hint = "Same identifier and same secret in OPDS (HTTP Basic) and in kosync. Revocation is the only remedy for a lost e-reader."
+  device_expires = "Expires on {date}."
+  device_never_expires = "Without expiration."
+  device_revoked = "Token {public_id} revoked."
+  device_unknown = "No active token with identifier {public_id}."
+  no_devices = "No device tokens."
+  device_line = "{public_id} {profile} {name} {state}"
   database_missing = "Database missing or not up to date: first run “shelfhold migrate”."
   socket_refused = "The running server refused this command: {detail}."
   socket_untrusted = "Unreliable local socket, nothing was sent: {detail}."
@@ -1168,6 +1185,11 @@
     title = "Incorrect username or password."
     action = "Check the username and password, then try again."
     cause = "The username or password does not correspond to any account; Shelfhold does not say which of the two is false."
+
+  [errors.device_tls_required]
+    title = "An e-reader must connect over HTTPS."
+    action = "Serve Shelfhold behind TLS (and declare the proxy in http_trusted_proxies) or, on a trusted local network only, set device_allow_plain_http to true."
+    cause = "The e-reader's secret would travel in clear and replay as it is; the request is refused before any check."
 
   [errors.invalid_cursor]
     title = "The pagination cursor is invalid."

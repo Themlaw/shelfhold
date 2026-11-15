@@ -37,7 +37,10 @@ EXPORT_TABLES = {
     "tree", "tree_indexer",  # migration 0064 (M4 L02, ADR-0052)
 }  # fmt: skip
 READING_TABLES = {"reading_position", "progress_sync_cursor"}  # the cursor: 0064 (M4 L02)
-M4_TABLES = {"destination_account"}  # migration 0064 (M4 L02); the others sit in their modules
+M4_TABLES = {
+    "destination_account",
+    "device_token",
+}  # migration 0064 (M4 L02); the others sit in their modules
 M1B_TABLES = {"webauthn_credential", "backup_run"}  # migration 0013
 M2_TABLES = {  # migration 0020, the tables of the other modules included
     "provider_quota", "metadata_cache", "http_cache",
