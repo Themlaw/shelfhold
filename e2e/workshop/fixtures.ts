@@ -1,5 +1,5 @@
 import AxeBuilder from '@axe-core/playwright';
-import { expect, test as base, type Page } from '@playwright/test';
+import { expect, test as base, type BrowserContext, type Page, type Route } from '@playwright/test';
 
 // Sign-in by role on the synthetic base of `seed.py` (M3 L02): the administrator, a member and a
 // child of 8. The passwords are invented for this base and mean nothing anywhere else.
@@ -50,5 +50,30 @@ export async function expectNoHorizontalScroll(page: Page): Promise<void> {
   expect(overflow, 'horizontal overflow in px').toBeLessThanOrEqual(0);
 }
 
-export const test = base;
+/** Refuse and count every request whose origin is not the instance's (ENF-PRIV-001). */
+export async function refuseOutsideBaseUrl(
+  target: Page | BrowserContext,
+  base: string
+): Promise<string[]> {
+  const origin = new URL(base || 'http://localhost').origin;
+  const attempted: string[] = [];
+  await target.route('**/*', async (route: Route) => {
+    const url = route.request().url();
+    if (url.startsWith('data:') || new URL(url).origin === origin) {
+      await route.continue();
+    } else {
+      attempted.push(url);
+      await route.abort();
+    }
+  });
+  return attempted;
+}
+
+export const test = base.extend({
+  context: async ({ context, baseURL }, use) => {
+    const outside = await refuseOutsideBaseUrl(context, baseURL ?? '');
+    await use(context);
+    expect(outside, 'requests outside baseURL').toEqual([]);
+  }
+});
 export { expect };
