@@ -60,9 +60,11 @@ test('the index carries the CSP header with frame-ancestors', async ({ request }
 
 // Proof that the fence counts: an image whose origin is not the instance's is refused and counted.
 // A separate context is fenced explicitly, so the automatic fence of the extended test is not doubled.
+// It bypasses the CSP: the CSP already blocks a third-party image before any request is made, so
+// without the bypass the fence would never see one and this proof would prove nothing.
 // req: ENF-PRIV-001
 test('test_spa_requests_outside_base_url_are_refused_and_counted', async ({ browser, baseURL }) => {
-  const context = await browser.newContext({ baseURL });
+  const context = await browser.newContext({ baseURL, bypassCSP: true });
   const page = await context.newPage();
   const outside = await refuseOutsideBaseUrl(context, baseURL ?? '');
   await page.goto('/');
