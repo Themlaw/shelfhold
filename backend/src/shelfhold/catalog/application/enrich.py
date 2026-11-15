@@ -87,7 +87,9 @@ COVER_FIELD: Final = "cover"  # the host's own field: a provider never proposes 
 DOWN_NOTICE_INTERVAL: Final = timedelta(hours=1)
 COVER_MAX_EDGE: Final = 1200
 PROVIDER_DOWN: Final = "metadata.provider_down"
-_REASONS: Final = frozenset({"unreachable", "timeout", "http_503", "schema_mismatch"})
+_REASONS: Final = frozenset(
+    {"unreachable", "timeout", "http_503", "schema_mismatch", "unauthorized", "rate_limited"}
+)
 _ISBN_SCHEMES: Final = (("isbn13", 13), ("isbn10", 10))
 
 

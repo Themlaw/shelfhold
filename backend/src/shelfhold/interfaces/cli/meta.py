@@ -26,9 +26,11 @@ def register(commands: argparse._SubParsersAction[argparse.ArgumentParser]) -> N
     rebuild.set_defaults(handler=run_rebuild)
     enrich = actions.add_parser("enrich", help=t("cli.meta_enrich_help"), allow_abbrev=False)
     enrich.add_argument("target", help=t("cli.meta_target_help"))
-    enrich.add_argument("--provider", default="openlibrary",
-                        choices=("openlibrary", "anilist", "mangaupdates", "bnf", "wikidata"),
-                        help=t("cli.meta_provider_help"))  # fmt: skip
+    enrich.add_argument(
+        "--provider", default="openlibrary",
+        choices=("openlibrary", "anilist", "mangaupdates", "bnf", "wikidata", "comicvine"),
+        help=t("cli.meta_provider_help"),
+    )  # fmt: skip
     enrich.add_argument("--title", default=None, help=t("cli.meta_title_help"))
     enrich.set_defaults(handler=run_enrich)
     calendar = actions.add_parser("calendar", help=t("cli.meta_calendar_help"),
@@ -141,6 +143,8 @@ def run_enrich(args: argparse.Namespace, channel: OpsChannel) -> int:
     print(
         t("meta.enrich_attribution", text=done["attribution"] or "", url=done["source_url"] or "")
     )
+    if done.get("notice"):  # a provider with terms of use says them every time
+        print(done["notice"])
     return 0
 
 

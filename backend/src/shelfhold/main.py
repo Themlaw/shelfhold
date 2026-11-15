@@ -185,6 +185,7 @@ LOGGED_SETTINGS: dict[str, str] = {
     "retention_events_days": "retention_events_days",
     "retention_audit_days": "retention_audit_days",
     "stream_max_per_profile": "stream_max_per_profile",
+    "comicvine_enabled": "comicvine_enabled",  # a switch
 }  # fmt: skip
 SECRET_SETTINGS = frozenset(
     {
@@ -192,6 +193,7 @@ SECRET_SETTINGS = frozenset(
         "wake_token",
         "backup_passphrase_file",
         "metadata_contact",
+        "comicvine_api_key",
         "auth_forward_secret",
         "setup_token",
     }
@@ -204,6 +206,10 @@ def log_effective_config(settings: Settings) -> None:
     dump = settings.model_dump(mode="json")
     config = {shown: strip_url_queries(dump[field]) for field, shown in LOGGED_SETTINGS.items()}
     structlog.get_logger().info("startup.config", version=__version__, config=config)
+    if settings.comicvine_enabled:  # the terms, said once whenever the source is switched on
+        from shelfhold.plugin_host.adapters.native.comicvine import NOTICE, TERMS_URL
+
+        structlog.get_logger().info("startup.comicvine", notice=NOTICE, terms_url=TERMS_URL)
 
 
 def create_app(

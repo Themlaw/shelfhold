@@ -31,6 +31,17 @@ relation proposée, pas par un champ. La commande ne remplace **aucun champ verr
 n'applique **jamais un âge** : un âge proposé est enregistré comme suggestion et ne change aucun classement
 ([a-classer.md](a-classer.md), `shelfhold rate`).
 
+## ComicVine (optionnel, éteint par défaut)
+
+ComicVine est une source à usage **non commercial** : elle demande un lien retour vers son site, 200 requêtes par heure et par ressource, et **une clé par instance**. Shelfhold n'en fournit aucune et ne l'interroge pas tant que vous ne l'avez pas allumée :
+
+```
+SHELFHOLD_COMICVINE_ENABLED=1
+SHELFHOLD_COMICVINE_API_KEY=<la clé de votre compte ComicVine>
+```
+
+Ensuite : `shelfhold meta enrich <ISBN ou édition> --provider comicvine --title "<titre>"`. Elle répond par titre seulement et ne propose ni couverture ni âge. Chaque valeur garde sa provenance, la mention de la source et l'adresse de la page du volume (le lien retour) ; la commande les affiche avec le rappel des conditions (<https://comicvine.gamespot.com/api/documentation>). Un champ verrouillé ou saisi à la main n'est jamais remplacé. Shelfhold tient le plafond de 200 requêtes par heure, et ne garde pas ces réponses en cache. Si la clé est refusée ou le plafond atteint, la commande le dit (`unauthorized`, `rate_limited`) et rien n'est enregistré. La clé n'apparaît dans aucun journal ni paquet de diagnostic (« présente » seulement).
+
 ## Provenance et verrous
 
 Chaque valeur garde son fournisseur, son origine (fournisseur, source, saisie à la main), sa confiance et sa date.
