@@ -26,12 +26,12 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Request, Response
 
 from shelfhold.identity.public import Principal, ThrottledError
+from shelfhold.infrastructure.http_headers import BASIC_CHALLENGE
 from shelfhold.interfaces.http_api.auth import gate_of
 from shelfhold.interfaces.http_api.problems import ProblemError
 from shelfhold.interfaces.http_api.ratelimit import client_ip_of, recognise_device_credential
 
 DEVICE_ROUTE_PREFIXES = ("/opds", "/kosync")  # closed: a device token reaches nothing else
-BASIC_CHALLENGE = 'Basic realm="Shelfhold", charset="UTF-8"'
 _MAX_HEADER = 512
 
 
@@ -41,8 +41,11 @@ def _refuse(headers: dict[str, str] | None = None) -> ProblemError:
 
 def _basic(request: Request) -> tuple[str, str] | None:
     raw = request.headers.get("authorization", "")
-    scheme, _, value = raw.partition(" ")
-    if scheme.lower() != "basic" or not value.strip() or len(value) > _MAX_HEADER:
+    parts = raw.split(maxsplit=1)
+    if len(parts) != 2 or parts[0].lower() != "basic":
+        return None
+    value = parts[1]
+    if not value.strip() or len(value) > _MAX_HEADER:
         return None
     try:
         decoded = base64.b64decode(value.strip(), validate=True).decode("utf-8")

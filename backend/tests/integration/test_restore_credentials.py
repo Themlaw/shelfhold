@@ -102,7 +102,7 @@ def test_restore_refuses_the_key_revoked_after_the_backup(tmp_path: Path) -> Non
             assert restored.authenticate_session(token) is None
             restored.login("admin", PASSWORD, ip="10.0.0.2")  # the account itself is intact
             assert restored.recent_audit_targets("restore.credentials_revoked") == [
-                "sessions=1 api_keys=2"
+                "sessions=1 api_keys=2 device_tokens=0"
             ]
             made_again = restored.create_api_key(name="again")  # they can be made again
             assert restored.authenticate_api_key(made_again.value) is not None

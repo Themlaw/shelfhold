@@ -16,6 +16,7 @@ import sqlite3
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from datetime import timedelta
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -33,6 +34,7 @@ from shelfhold.identity.public import (
     Principal,
     ThrottledError,
     UnknownUserError,
+    local_auth,
     reader_scope,
 )
 from shelfhold.infrastructure.db import create_db_engine
@@ -44,6 +46,7 @@ from shelfhold.interfaces.http_api.device_auth import (
 from shelfhold.interfaces.http_api.problems import ProblemError
 from shelfhold.interfaces.http_api.ratelimit import credential_label
 from tests.auth_env import ADMIN, PASSWORD, AuthEnv, auth_env, db_dump, db_rows, run_cli
+from tests.diagnostic_env import _views, trap_instance
 
 pytestmark = pytest.mark.req("EF-USR-008", "EF-USR-024", "ENF-SEC-008")
 
@@ -677,3 +680,30 @@ def test_the_database_holds_no_token_secret_after_a_whole_life(api: AuthEnv) -> 
     finally:
         connection.close()
     assert created.secret not in dump and md5(created.secret) not in dump
+
+
+def test_the_diagnostic_bundle_holds_no_device_token_secret_md5_or_digest(
+    monkeypatch: pytest.MonkeyPatch, settings: Settings, tmp_path: Path
+) -> None:
+    traps = trap_instance(monkeypatch, settings, tmp_path)
+    engine = create_db_engine(settings.database_path)
+    try:
+        created = local_auth(engine, settings).create_device_token(
+            subject_username=traps.values["email"], name="liseuse"
+        )
+    finally:
+        engine.dispose()
+    out = tmp_path / "out" / "bundle.zip"
+    out.parent.mkdir()
+    assert run_cli(monkeypatch, settings, "diagnostic", "bundle", "--out", str(out)) == 0
+    digest = db_rows(settings, "SELECT secret_digest FROM device_token")[0][0]
+    needles = {
+        created.secret,
+        format_secret(created.secret),
+        md5(created.secret),
+        str(digest),
+        str(digest).removeprefix("sha256:"),
+    }
+    for view in _views(out.read_bytes()):
+        for needle in needles:
+            assert needle not in view
