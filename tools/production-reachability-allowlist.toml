@@ -116,7 +116,8 @@ symbols = [
   "shelfhold.sdk.export_target:copy_can_serve_bytes",
   "shelfhold.sdk.api_call:ApiCallError",
   "shelfhold.sdk.api_call:ContentBody",
-  "shelfhold.sdk.api_call:JsonBody",
+  "shelfhold.sdk.api_call:parse_api_call",
+  "shelfhold.sdk.fsops:check_destination_plan_before_run",
   "shelfhold.sdk.api_call:check_api_call",
   "shelfhold.sdk.fsops:ContentRef",
 ]

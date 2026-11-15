@@ -14,7 +14,10 @@ No value of a call (query, body, multipart field) appears in a `repr`, in a vali
 a refusal of the host: they may hold a secret, so they are never echoed.
 """
 
+import json
 import re
+import typing
+import unicodedata
 from collections.abc import Iterator
 from typing import Annotated, Any, Final, Literal
 
@@ -23,10 +26,14 @@ from pydantic import ConfigDict, Field, model_validator
 from shelfhold.sdk.fsops import ContentRef, FsOpPlanError, PlannedContent, check_content_ref
 from shelfhold.sdk.models import StrictSdkModel
 
-_CONTENT_TYPE: Final = re.compile(r"[A-Za-z0-9][\w.+-]{0,126}/[A-Za-z0-9][\w.+-]{0,126}")
-_FIELD_NAME: Final = re.compile(r"[\w.\-\[\]]{1,128}")
-_DOT_SEGMENT: Final = re.compile(r"(\.|%2e){1,2}", re.IGNORECASE)
-_ENCODED_SEPARATOR: Final = re.compile(r"%(2f|5c)", re.IGNORECASE)
+_CONTENT_TYPE: Final = re.compile(
+    r"[A-Za-z0-9][\w.+-]{0,126}/[A-Za-z0-9][\w.+-]{0,126}", re.ASCII
+)  # a header is ASCII: `\w` must not match Unicode letters
+_FIELD_NAME: Final = re.compile(r"[\w.\-\[\]]{1,128}", re.ASCII)
+_PERCENT: Final = re.compile(r"%([0-9A-Fa-f]{2})")
+_BAD_PERCENT: Final = re.compile(r"%(?![0-9A-Fa-f]{2})")
+MAX_DECODE_PASSES: Final = 4
+Method = Literal["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE"]
 MAX_MULTIPART_FIELDS: Final = 64
 
 
@@ -85,9 +92,14 @@ class ContentBody(_Quiet):
 
 
 class ApiCall(_Quiet):
-    """Described, not executed: the core runs it with its own secrets through its Fetcher."""
+    """Described, not executed: the core runs it with its own secrets through its Fetcher.
 
-    method: str
+    Frozen and revalidated (SDK 1.4): the host never executes the object a plugin handed over but
+    the copy `parse_api_call` returns, as `parse_destination_plan` does for a plan."""
+
+    model_config = ConfigDict(frozen=True, revalidate_instances="always")
+
+    method: Method
     path: str  # relative: the host is fixed by the configuration
     query: dict[str, Any] = Field(default_factory=dict)
     json_body: Any = None  # SDK 1.3 shape, still accepted
@@ -109,14 +121,35 @@ class ApiCall(_Quiet):
         yield "body", self.body if self.body is not None else self.json_body is not None
 
 
+def _decoded(path: str) -> str:
+    """The path as the last server in a chain would read it: percent-decoded as long as a `%`
+    remains (a proxy may decode twice). An escape that is not two hex digits, or that stands for a
+    byte beyond ASCII (an overlong form of `.` or `/`), is refused."""
+    current = path
+    for _ in range(MAX_DECODE_PASSES):
+        if "%" not in current:
+            return current
+        if _BAD_PERCENT.search(current):
+            raise ApiCallError("path has a malformed percent escape")
+        if any(int(m[1], 16) > 0x7F for m in _PERCENT.finditer(current)):
+            raise ApiCallError("path has a percent escape beyond ASCII")
+        current = _PERCENT.sub(lambda m: chr(int(m[1], 16)), current)
+    raise ApiCallError("path is percent-encoded too many times")
+
+
 def _check_path(path: str) -> None:
     if not isinstance(path, str) or not path.startswith("/") or path.startswith("//"):
         raise ApiCallError("path is relative to the configured host: one leading slash, no host")
-    if any(ord(ch) < 0x20 or ord(ch) == 0x7F for ch in path):
-        raise ApiCallError("control character in path")
-    if any(ch in path for ch in ("\\", "?", "#")) or _ENCODED_SEPARATOR.search(path):
-        raise ApiCallError("path carries no query, fragment, backslash or encoded separator")
-    if any(_DOT_SEGMENT.fullmatch(part) for part in path.split("/")):
+    decoded = _decoded(path)
+    if unicodedata.normalize("NFKC", decoded) != decoded:
+        raise ApiCallError("path is not in NFKC form: full-width or compatibility characters")
+    if any(unicodedata.category(ch) in ("Cc", "Cf", "Cs") for ch in decoded):
+        raise ApiCallError("control character in path")  # C0, DEL, C1, zero-width, bidi
+    if any(ch in decoded for ch in ("\\", "?", "#", ";")):
+        raise ApiCallError("path carries no query, fragment, backslash or `;` parameter")
+    if decoded.count("/") != path.count("/") or decoded.startswith("//"):
+        raise ApiCallError("path carries no encoded separator")
+    if any(part in (".", "..") for part in decoded.split("/")):
         raise ApiCallError("path has a `.` or `..` segment")
 
 
@@ -133,22 +166,61 @@ def _check_encoding(encoding: RawEncoding | MultipartEncoding) -> None:
         raise ApiCallError("a multipart field name is not a plain name")
 
 
-def check_api_call(call: ApiCall, planned: PlannedContent) -> None:
-    """Raise `ApiCallError` unless `call` is one a destination may ask for. The host calls it on
-    its own copy of the call, right before it runs it, with what it planned for this binding."""
+def _exact(call: object) -> ApiCall:
+    """The call, if every part of it is exactly an SDK type (never a subclass, a stand-in or an
+    object built around the validation); `ApiCallError` otherwise."""
     if type(call) is not ApiCall:
         raise ApiCallError("a call is an exact ApiCall, never a subclass")
+    body = call.body
+    if body is not None and type(body) not in (JsonBody, ContentBody):
+        raise ApiCallError("a body is an exact JsonBody or ContentBody")
+    encodings = (RawEncoding, MultipartEncoding)
+    if isinstance(body, ContentBody) and type(body.encoding) not in encodings:
+        raise ApiCallError("an encoding is an exact RawEncoding or MultipartEncoding")
+    if call.method not in typing.get_args(Method):
+        raise ApiCallError("method is not one of the closed list")
+    if call.auth not in ("target_admin", "target_user", "none"):
+        raise ApiCallError("auth is not one of the closed list")
+    if call.json_body is not None and body is not None:
+        raise ApiCallError("an ApiCall has json_body or body, not both")
+    return call
+
+
+def check_api_call(call: ApiCall, planned: PlannedContent, *, can_purge: bool = False) -> None:
+    """Raise `ApiCallError` unless `call` is one a destination may ask for. The host calls it on
+    its own copy of the call (`parse_api_call`), right before it runs it, with what it planned for
+    this binding. `planned` is required: its `egress` must be the one the instance attested, not
+    the default the plugin declared. A `DELETE` is accepted only for a destination that declares
+    `can_purge` (pass `capabilities.can_purge`); the host's own purge is another path."""
+    _exact(call)
     _check_path(call.path)
+    if call.method == "DELETE" and not can_purge:
+        raise ApiCallError("DELETE needs a destination that declares can_purge")
     body = call.body
     if not isinstance(body, ContentBody):
         return
-    if call.method.upper() in ("GET", "HEAD"):
+    if call.method in ("GET", "HEAD"):
         raise ApiCallError("a content body does not go with GET or HEAD")
     _check_encoding(body.encoding)
     try:
         check_content_ref(body.content_ref, planned)
     except FsOpPlanError as error:
         raise ApiCallError(str(error)) from None
+
+
+def parse_api_call(raw: str | bytes | object) -> ApiCall:
+    """The call a destination returned, as JSON text or as an object. What comes back is the
+    host's own copy: an object is checked for exact types, then passed through JSON."""
+    if isinstance(raw, str | bytes | bytearray):
+        return ApiCall.model_validate_json(raw)
+    if isinstance(raw, ApiCall):
+        try:
+            return ApiCall.model_validate_json(_exact(raw).model_dump_json())
+        except (ValueError, TypeError) as error:
+            if isinstance(error, ApiCallError):
+                raise
+            raise ApiCallError("the call cannot be read back as JSON") from None
+    return ApiCall.model_validate_json(json.dumps(raw))
 
 
 __all__ = [
@@ -159,4 +231,5 @@ __all__ = [
     "MultipartEncoding",
     "RawEncoding",
     "check_api_call",
+    "parse_api_call",
 ]

@@ -17,6 +17,8 @@ parts (version ranges, events, progress) are fixed by the lot that implements th
 from typing import Any, Literal, Protocol
 from warnings import deprecated
 
+from pydantic import field_serializer
+
 from shelfhold.sdk.api_call import ApiCall
 from shelfhold.sdk.fsops import ContentRef, FsOp
 from shelfhold.sdk.models import SdkModel
@@ -83,6 +85,12 @@ class TargetCapabilities(SdkModel):
     naming: NamingConstraints
     name_normalizer: str
     series_grouping: Literal["name", "folder"] = "name"
+    indexes_tree: bool = False  # SDK 1.4 (ADR-0052): may index a tree it did not create
+    forbidden_sidecars: frozenset[str] = frozenset()  # SDK 1.4: sidecars that harm it
+
+    @field_serializer("forbidden_sidecars")
+    def _sorted_sidecars(self, value: frozenset[str]) -> list[str]:
+        return sorted(value)  # a stable JSON round trip
 
 
 def copy_can_verify(caps: TargetCapabilities) -> bool:

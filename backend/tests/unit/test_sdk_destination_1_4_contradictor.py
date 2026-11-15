@@ -1,8 +1,8 @@
 """Adversarial review of the destination contract 1.4 (PR #275, M4 L03): one red proof per hole.
 
-Each test states the behaviour the contract promises and is marked `xfail(strict=True)`: it turns
-green, and therefore fails the run, as soon as the hole is closed, so the mark has to go with the
-fix. Every secret below is a made-up placeholder, never a real credential.
+Each test states the behaviour the contract promises. They were red proofs (`xfail(strict=True)`)
+on the head of the PR; every hole is closed and the marks went with the fixes. Every secret below
+is a made-up placeholder, never a real credential.
 """
 
 from types import SimpleNamespace
@@ -57,7 +57,6 @@ def _content_call(**over: Any) -> ApiCall:
 # -- FsOp plan: the content rule of 1.4 only looks at `write` ----------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason="#275: write_inline carrying an export_item is not checked")
 @pytest.mark.parametrize("ref", ["not-planned", "item-wm", "mirror-1"])
 def test_write_inline_citing_an_export_item_obeys_the_content_rule(ref: str) -> None:
     plan = FsOpPlan(
@@ -76,7 +75,6 @@ def test_write_inline_citing_an_export_item_obeys_the_content_rule(ref: str) -> 
 # -- ApiCall: the host check fails open on what it does not recognise ---------------------------
 
 
-@pytest.mark.xfail(strict=True, reason="#275: a body of an unknown type skips check_content_ref")
 def test_check_api_call_refuses_a_body_that_is_not_an_exact_sdk_body() -> None:
     forged = SimpleNamespace(
         kind="content",
@@ -90,7 +88,6 @@ def test_check_api_call_refuses_a_body_that_is_not_an_exact_sdk_body() -> None:
         check_api_call(call, _planned())
 
 
-@pytest.mark.xfail(strict=True, reason="#275: ApiCall is mutable after its validation")
 def test_api_call_cannot_be_altered_after_validation() -> None:
     call = _content_call()
     check_api_call(call, _planned())
@@ -98,17 +95,15 @@ def test_api_call_cannot_be_altered_after_validation() -> None:
         call.path = "//attacker.invalid/x"
 
 
-@pytest.mark.xfail(strict=True, reason="#275: method is a free string, never checked")
 @pytest.mark.parametrize("method", ["get ", "TRACE", "CONNECT", "POST\r\nX-Injected: 1"])
 def test_check_api_call_refuses_a_method_outside_the_closed_list(method: str) -> None:
-    with pytest.raises(ApiCallError):
+    with pytest.raises((ValidationError, ApiCallError)):  # refused at the model, then at the check
         check_api_call(_content_call(method=method), _planned())
 
 
 # -- ApiCall path: what the guard lets through ------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason="#275: double encoding, `..;` and Unicode dots pass")
 @pytest.mark.parametrize(
     "path",
     [
@@ -155,7 +150,6 @@ def test_secret_of_a_nested_api_call_never_appears_in_a_validation_error() -> No
 # -- the one way out of Kavita ignores the 1.4 body --------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason="#275: KavitaClient.execute reads json_body only")
 def test_kavita_client_does_not_silently_drop_a_1_4_body() -> None:
     h = harness()
     run(h.client.probe())
@@ -174,7 +168,6 @@ def test_kavita_client_does_not_silently_drop_a_1_4_body() -> None:
 # -- minor: a media type the header cannot carry -----------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason="#275: `\\w` is Unicode, a header is ASCII")
 def test_content_type_is_ascii_only() -> None:
     call = _content_call(
         body=ContentBody(

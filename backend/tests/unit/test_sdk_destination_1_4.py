@@ -402,3 +402,115 @@ def test_export_target_sdk_1_4_is_n_minus_1_compatible() -> None:
     for name in ("parse_name_call", "ensure_library_call", "resolve_remote_calls",
                  "event_subscription", "progress_calls"):  # fmt: skip
         assert hasattr(ExportTarget, name)
+
+
+# --- review of #275: a frozen call, the host's own copy, the closed lists --------------------
+
+
+@pytest.mark.req("EF-EXP-001")
+def test_parse_api_call_returns_the_hosts_own_copy_and_refuses_what_it_does_not_know() -> None:
+    from types import SimpleNamespace
+
+    from shelfhold.sdk.api_call import parse_api_call
+
+    call = _content_call()
+    copy = parse_api_call(call)
+    assert copy == call and copy is not call
+    assert parse_api_call(call.model_dump_json()) == call
+    with pytest.raises(ValidationError):
+        call.method = "PUT"  # frozen
+    forged = ApiCall.model_construct(
+        method="POST", path="/x", auth="none", body=SimpleNamespace(kind="content")
+    )
+    for refused in (forged, ApiCall.model_construct(method="TRACE", path="/x", auth="none")):
+        with pytest.raises(ApiCallError):
+            parse_api_call(refused)
+        with pytest.raises(ApiCallError):
+            check_api_call(refused, _planned())
+
+    class Sub(ApiCall):
+        pass
+
+    with pytest.raises(ApiCallError):
+        parse_api_call(Sub(method="GET", path="/x", auth="none"))
+
+
+@pytest.mark.req("EF-EXP-001")
+def test_delete_call_needs_a_destination_that_declares_can_purge() -> None:
+    call = ApiCall(method="DELETE", path="/api/series/1", auth="target_admin")
+    with pytest.raises(ApiCallError):
+        check_api_call(call, _planned())
+    with pytest.raises(ApiCallError):
+        check_api_call(call, _planned(), can_purge=False)
+    check_api_call(call, _planned(), can_purge=True)
+
+
+@pytest.mark.req("EF-EXP-001")
+def test_executor_entry_requires_planned_content() -> None:
+    from shelfhold.sdk.fsops import check_destination_plan_before_run
+
+    ref = ContentRef(kind="export_item", ref="x")
+    plan = FsOpPlan(ops=(FsOp(op="write", rel_path="a.cbz", content_ref=ref),))
+    with pytest.raises(TypeError):
+        check_destination_plan_before_run(plan)  # type: ignore[call-arg]
+    with pytest.raises(FsOpPlanError):
+        check_destination_plan_before_run(plan, planned=_planned())  # `x` is not planned
+    check_destination_plan_before_run(plan, planned=_planned(planned_refs={"x"}))
+
+
+@pytest.mark.req("EF-EXP-001", "EF-EXP-065")
+def test_kit_indexes_tree_defaults_false() -> None:
+    caps = _caps()
+    assert caps.indexes_tree is False and caps.forbidden_sidecars == frozenset()
+    one = _caps(indexes_tree=True, forbidden_sidecars={"series.json", "metadata.json"})
+    listed = json.loads(one.model_dump_json())["forbidden_sidecars"]
+    assert listed == ["metadata.json", "series.json"]
+    assert TargetCapabilities.model_validate_json(one.model_dump_json()) == one
+
+
+@pytest.mark.req("EF-EXP-001", "EF-EXP-065")
+def test_kit_indexes_tree_requires_grouping_and_normalizer() -> None:
+    assert run_destination_declaration_check(_caps(indexes_tree=True)).ok
+    no_normalizer = _caps(indexes_tree=True, name_normalizer="")
+    failed = {c.name for c in run_destination_declaration_check(no_normalizer).failures}
+    assert failed == {"indexes_tree_requires_grouping_and_normalizer"}
+    for transport in ("dropbox", "pull"):
+        report = run_destination_declaration_check(_caps(indexes_tree=True, transport=transport))
+        assert "indexes_tree_needs_a_tree" in {c.name for c in report.failures}
+    assert "indexes_tree_needs_a_tree" in {
+        c.name
+        for c in run_destination_declaration_check(
+            _caps(indexes_tree=True, transport="push", content_body=True)
+        ).failures
+    }
+
+
+@pytest.mark.req("EF-EXP-001", "EF-EXP-065")
+def test_kit_indexer_emits_no_fsop_write() -> None:
+    from shelfhold.sdk.testing.kit import run_indexer_plan_check
+
+    writing = FsOpPlan(ops=(FsOp(op="mkdir", rel_path="Series"),))
+    assert not run_indexer_plan_check(_caps(indexes_tree=True), writing).ok
+    assert run_indexer_plan_check(_caps(indexes_tree=True), FsOpPlan(ops=())).ok
+    assert run_indexer_plan_check(_caps(), writing).ok  # an owner writes its own tree
+
+
+@pytest.mark.req("EF-EXP-001", "EF-EXP-065")
+def test_write_inline_sidecar_stays_allowed_and_export_item_is_checked() -> None:
+    inline = FsOpPlan(
+        ops=(
+            FsOp(
+                op="write_inline",
+                rel_path="S/series.json",
+                content_ref=ContentRef(kind="sidecar", ref="series-json"),
+            ),
+        )
+    )
+    check_destination_plan(inline, _planned())
+
+
+@pytest.mark.req("EF-EXP-001")
+def test_push_stays_outside_the_supported_transports_until_the_destination_kit() -> None:
+    from shelfhold.export.domain.planner import SUPPORTED_TRANSPORTS
+
+    assert "push" not in SUPPORTED_TRANSPORTS  # L05 opens it, with the kit of the destinations

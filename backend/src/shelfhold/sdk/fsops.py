@@ -146,7 +146,9 @@ def _check_shape(op: FsOp) -> None:
 
 def check_content_ref(ref: ContentRef, planned: PlannedContent) -> None:
     """Raise `FsOpPlanError` unless `ref` is bytes the host planned for this call and binding and
-    may send to this destination. The message names the rule, never the reference."""
+    may send to this destination. The message names the rule, never the reference.
+    `planned.egress` is the egress the instance attested for the binding (passe 7), never
+    `capabilities.egress`, which is only the default the plugin declares (L04 passes it)."""
     if type(ref) is not ContentRef or ref.kind != "export_item":
         raise FsOpPlanError("a content reference is an export_item the host planned")
     if ref.ref in planned.mirror_refs or is_reserved_path(ref.ref):
@@ -181,13 +183,26 @@ def _target(op: FsOp) -> str | None:
     return None if path is None else "/".join(_fold(part) for part in path.split("/"))
 
 
+def _needs_planned_ref(op: FsOp) -> bool:
+    """A `write` always cites bytes the host owns. A `write_inline` is for generated annexes
+    (kind `sidecar`); when it cites an `export_item` it is the same rule, not a way around it."""
+    inline_export_item = (
+        op.op == "write_inline"
+        and op.content_ref is not None
+        and op.content_ref.kind == "export_item"
+    )
+    return op.op == "write" or inline_export_item
+
+
 def check_destination_plan(plan: "FsOpPlan", planned: PlannedContent | None = None) -> None:
     """Raise `FsOpPlanError` unless every operation of `plan` is one a destination may ask for.
     It re-reads the fields as they are now, so it also catches a plan built with `model_construct`
     or altered after validation. Run it on the host's copy, right before executing.
 
     With `planned` (what the host planned for this call and binding), every `write` must also
-    cite content that `check_content_ref` accepts; the executor always passes it."""
+    cite content that `check_content_ref` accepts, and so must a `write_inline` that cites an
+    `export_item`. Without `planned` the content is not checked (a static check): the executor
+    does not call this but `check_destination_plan_before_run`, where `planned` is required."""
     if type(plan) is not FsOpPlan:
         raise FsOpPlanError("a plan is an exact FsOpPlan, never a subclass")
     if len(plan.ops) > MAX_PLAN_OPS:
@@ -195,7 +210,7 @@ def check_destination_plan(plan: "FsOpPlan", planned: PlannedContent | None = No
     created: set[str] = set()
     for op in plan.ops:
         check_destination_operation(op)
-        if planned is not None and op.op == "write" and op.content_ref is not None:
+        if planned is not None and op.content_ref is not None and _needs_planned_ref(op):
             check_content_ref(op.content_ref, planned)
         target = _target(op)
         if target is None:
@@ -203,6 +218,16 @@ def check_destination_plan(plan: "FsOpPlan", planned: PlannedContent | None = No
         if target in created:
             raise FsOpPlanError("the plan would overwrite a path it already wrote or moved onto")
         created.add(target)
+
+
+def check_destination_plan_before_run(plan: "FsOpPlan", *, planned: PlannedContent) -> None:
+    """The entry of the executor (M4 L04), the only caller: `planned` (what the host planned for
+    this call and binding, with the egress the instance attested) is required, so the content of
+    every operation is checked right before it runs. Call it on the copy `parse_destination_plan`
+    returned. L04 tests that the executor goes through here and never through the static check."""
+    if type(planned) is not PlannedContent:
+        raise FsOpPlanError("planned is an exact PlannedContent")
+    check_destination_plan(plan, planned)
 
 
 class FsOpPlan(StrictSdkModel):
@@ -247,6 +272,7 @@ __all__ = [
     "check_content_ref",
     "check_destination_operation",
     "check_destination_plan",
+    "check_destination_plan_before_run",
     "is_reserved_path",
     "parse_destination_plan",
 ]

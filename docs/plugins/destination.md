@@ -76,6 +76,15 @@ destination `egress = externe` ; le miroir de provenance n'est jamais envoyé. U
 requête ou fragment est refusé. Aucune valeur d'un appel (query, corps, champ multipart) n'apparaît dans un
 `repr`, une erreur de validation ou un refus de l'hôte.
 
+L'hôte n'exécute jamais l'objet remis par le plugin mais la copie que rend `parse_api_call` (comme
+`parse_destination_plan`) : `ApiCall` est figé, `method` est l'une de GET, HEAD, POST, PUT, PATCH, DELETE. Un
+`DELETE` n'est accepté que d'une destination qui déclare `can_purge`. Le chemin est décodé (tant qu'il reste du
+`%`) puis refusé s'il contient `..`, `;`, un caractère de contrôle ou un caractère de compatibilité NFKC.
+`write_inline` sert aux annexes générées ; s'il cite un `export_item`, il suit la même règle que `write`.
+
+Deux capacités d'arbre, à défaut sûr : `indexes_tree` (faux : la destination reste propriétaire de son arbre ;
+vrai, elle accepte d'indexer un arbre qu'elle n'a pas créé, sans y écrire) et `forbidden_sidecars` (vide).
+
 ## Le transport `push`
 
 `push` reste refusé par le kit (`run_destination_declaration_check`) tant que la destination ne déclare pas
