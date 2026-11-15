@@ -377,7 +377,7 @@ def test_child_token_set_by_parent_as_reserved_action(
     [(user, _d, remote, fingerprint, _r)] = fx.accounts()
     assert (user, remote) == (kid, "kid.kv") and fingerprint
     assert fx.service.open_token(kid, fx.destination_id).reveal() == kid_key
-    assert RESERVED_ACTIONS["destination_account.link"].effects
+    assert RESERVED_ACTIONS["destination_account.bind"].effects
     [(action, target)] = fx.audit("destination_account.linked")
     assert action and kid_key not in target and "kid.kv" not in target
     # the child cannot read what her parent entered, nor undo it
@@ -509,7 +509,7 @@ def test_the_routes_need_a_session_and_the_csrf_token(fx: Fixture) -> None:
 
 @pytest.mark.req("EF-USR-012", "EF-USR-024")
 def test_link_and_revoke_are_declared_reserved_actions(fx: Fixture) -> None:
-    link = RESERVED_ACTIONS["destination_account.link"]
+    link = RESERVED_ACTIONS["destination_account.bind"]
     revoke = RESERVED_ACTIONS["destination_account.revoke"]
     assert link.needs_fresh_auth(restricted_profile_exists=False, hardened=False)  # a secret
     assert not revoke.needs_fresh_auth(restricted_profile_exists=False, hardened=False)

@@ -137,7 +137,7 @@ def accounts_env(monkeypatch: pytest.MonkeyPatch, settings: Settings) -> Iterato
         fetches.append(url)
         return fetcher
 
-    service = open_destination_accounts(engine, vault, clock=clock, fetcher_for=fetcher_for)
+    service = open_destination_accounts(engine, lambda: vault, clock=clock, fetcher_for=fetcher_for)
     ops = OpsServices(engine, clock=clock, bus=EventBus(clock), destination_accounts=service)
     with auth_env(monkeypatch, settings, ops_services=ops) as api:
         assert api.login(ADMIN).status_code == 200

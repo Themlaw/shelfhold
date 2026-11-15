@@ -306,7 +306,7 @@ FRESHNESS_LINE = {
             "maintenance.exit",
             "queue.cancel_repair",  # M3 L13: a stolen session stops what protects the library
             "session.revoke_others",  # M3 L07: a stolen session must not lock the owner out
-            "destination_account.link",  # M4 L12: a member's Kavita key is a secret
+            "destination_account.bind",  # M4 L12: a member's Kavita key is a secret
         ),
         "p3",
     ),

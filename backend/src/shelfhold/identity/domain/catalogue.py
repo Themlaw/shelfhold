@@ -87,7 +87,7 @@ _DECLARED = (
     _action("recovery_kit.read", Effect.MANAGES_CREDENTIALS),
     # A member's own Kavita key (M4 L12, EF-USR-012, D8): pasting one is handing over a secret, so
     # it is fresh in every profile and never a key's; erasing one is undone by pasting it again
-    _action("destination_account.link", Effect.TOUCHES_SECRETS),
+    _action("destination_account.bind", Effect.TOUCHES_SECRETS),
     _action("destination_account.revoke", Effect.MANAGES_CREDENTIALS),
     # Parental control
     _action("shelf.max_age_rating", Effect.PARENTAL_CONTROL),

@@ -192,7 +192,7 @@ def open_ops(
             children=lambda: child_kavita_accounts(engine),
         ),
         destination_accounts=open_destination_accounts(
-            engine, composition.vault(), clock=clock, fetcher_for=composition.network.one_shot
+            engine, composition.vault, clock=clock, fetcher_for=composition.network.one_shot
         ),
         maintenance=MaintenanceOps(
             engine, clock, fresh_auth_s=settings.fresh_auth_s, hardened=settings.auth_hardened,

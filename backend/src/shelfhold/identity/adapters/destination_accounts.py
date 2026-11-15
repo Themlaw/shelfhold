@@ -50,9 +50,11 @@ def _view(row: Any) -> AccountView:
 
 
 class DestinationAccountStore:
-    def __init__(self, engine: Engine, vault: SecretVault) -> None:
+    def __init__(self, engine: Engine, vault_of: Callable[[], SecretVault]) -> None:
+        """`vault_of` opens the vault when a key is sealed or opened, not before: a command that
+        never touches a key must not need the keyring."""
         self._engine = engine
-        self._vault = vault
+        self._vault_of = vault_of
 
     def __repr__(self) -> str:
         return "DestinationAccountStore()"
@@ -76,7 +78,9 @@ class DestinationAccountStore:
             return [_view(row) for row in rows]
 
     def _fingerprint(self, row_id: str, token: str) -> str:
-        subkey = hmac.new(self._vault.keyring.active.material, _FINGERPRINT_INFO, hashlib.sha256)
+        subkey = hmac.new(
+            self._vault_of().keyring.active.material, _FINGERPRINT_INFO, hashlib.sha256
+        )
         digest = hmac.new(subkey.digest(), f"{row_id}\x00{token}".encode(), hashlib.sha256)
         return digest.hexdigest()[:8]
 
@@ -120,8 +124,9 @@ class DestinationAccountStore:
             ).first()
             row_id = existing.id if existing is not None else new_ulid()
             replaced = existing is not None and existing.revoked_at is None
-            registry.register_active_key(connection, self._vault.keyring)
-            envelope = self._vault.seal(
+            vault = self._vault_of()
+            registry.register_active_key(connection, vault.keyring)
+            envelope = vault.seal(
                 token.encode(), table=TABLE, column=registry.SEALED_COLUMN, row_id=row_id
             )
             values: dict[str, Any] = {
@@ -172,4 +177,4 @@ class DestinationAccountStore:
             ).first()
             if row is None:
                 return None
-            return self._vault.open_row(connection, TABLE, row.id).decode()
+            return self._vault_of().open_row(connection, TABLE, row.id).decode()

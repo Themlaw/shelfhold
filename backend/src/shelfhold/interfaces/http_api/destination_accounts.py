@@ -1,7 +1,7 @@
 """`/api/v1/profiles/{user_id}/destination-accounts` (M4 L12, EF-USR-012, D8): a member's own Kavita
 key, per destination: link or rotate, list, revoke.
 
-Pasting a key is a reserved action (`destination_account.link`: a fresh session in every profile,
+Pasting a key is a reserved action (`destination_account.bind`: a fresh session in every profile,
 never an API key, never a device token); so is revoking one. An adult handles their own; a parent
 (an admin) enters a child's, for the account declared in the profile; the admin revokes any and
 reads none. The key is in the request body once and nowhere else: the answers carry its
@@ -30,7 +30,7 @@ __all__ = ["build_destination_accounts_router"]
 _ADULTS = ("admin", "member")
 # the guard writes no line: the service writes it, with its target, in the transaction that
 # changes the account (a refusal or a key that did not verify leaves none)
-_LINK = reserved_action(RESERVED_ACTIONS["destination_account.link"], roles=_ADULTS, audit=False)
+_BIND = reserved_action(RESERVED_ACTIONS["destination_account.bind"], roles=_ADULTS, audit=False)
 _REVOKE = reserved_action(
     RESERVED_ACTIONS["destination_account.revoke"], roles=_ADULTS, audit=False
 )
@@ -108,10 +108,10 @@ def build_destination_accounts_router(get_ops: Callable[[], OpsServices]) -> API
         user_id: str,
         shelf_destination_id: str,
         body: LinkIn,
-        principal: Annotated[Principal, Depends(_LINK)],
+        principal: Annotated[Principal, Depends(_BIND)],
     ) -> Any:
         view = run(
-            lambda: get_ops().destination_accounts.link(
+            lambda: get_ops().destination_accounts.bind(
                 principal, user_id, shelf_destination_id,
                 token=body.token, remote_user=body.remote_user,
             )

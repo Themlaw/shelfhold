@@ -203,7 +203,7 @@ class DestinationAccounts:
 
     # --- link, rotate ------------------------------
 
-    def link(
+    def bind(
         self,
         principal: Principal,
         user_id: str,

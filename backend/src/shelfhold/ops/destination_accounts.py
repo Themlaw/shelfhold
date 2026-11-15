@@ -51,12 +51,13 @@ class _Verifier:
 
 def open_destination_accounts(
     engine: Engine,
-    vault: SecretVault,
+    vault_of: Callable[[], SecretVault],
     *,
     clock: Clock,
     fetcher_for: Callable[[str], Any],
 ) -> DestinationAccounts:
-    """`fetcher_for(url)` is the guarded fetcher of a target (declared address, SSRF guard)."""
+    """`vault_of()` opens the vault on first use. `fetcher_for(url)` is the guarded fetcher of a
+    target (declared address, SSRF guard)."""
 
     def entry(action: str, principal: Any, target: str | None) -> AuditEntry:
         return AuditEntry(
@@ -69,7 +70,7 @@ def open_destination_accounts(
         )
 
     return DestinationAccounts(
-        DestinationAccountStore(engine, vault),
+        DestinationAccountStore(engine, vault_of),
         _Verifier(KavitaMemberVerifier(engine, fetcher_for)),
         now=clock.now,
         audit_entry=entry,
