@@ -116,6 +116,16 @@ describe('ApproveSheet', () => {
     expect(approveButton()).toBeEnabled();
   });
 
+  // req: EF-USR-010, EF-USR-006
+  it('warns, without blocking, that the age is above what the child may see', async () => {
+    answer(preview({ above_requester_ceiling: true, requester_ceiling: 6 }));
+    render(ApproveSheet, { item: item(), onapproved: vi.fn() });
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole('radio', { name: '16+' }));
+    expect(await screen.findByRole('status')).toHaveTextContent(/dépasse ce que l’enfant peut voir/);
+    expect(approveButton()).toBeEnabled();
+  });
+
   // req: EF-USR-010
   it('an adult request is approved in one gesture, with no age asked', async () => {
     answer(preview({ needs_age: false }));

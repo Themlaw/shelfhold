@@ -11,12 +11,11 @@
 
 from collections.abc import Iterable
 from dataclasses import dataclass
-from typing import Literal
+from typing import Any, Literal
 
 from shelfhold.export.domain.path_map import clean_absolute, within
-from shelfhold.sdk.age import AGE_TIERS
+from shelfhold.sdk.age import ADULT_MIN_AGE, AGE_TIERS, is_family_ceiling
 
-ADULT_MIN_AGE = 18
 X_CEILING = 99  # `shelf.max_age_rating` stores X as 99
 FAMILY_SHELF_NAME = "Famille"  # the pre-created shelf for children (EF-UX-007)
 FAMILY_SHELF_MAX_AGE = 13  # its ceiling can never be above 13+
@@ -84,7 +83,17 @@ class PullNeedsReadableCopyError(BindingError):
 
 def is_family(max_age_rating: int | None) -> bool:
     """A shelf below 18+: the barrier of the parental control applies to it."""
-    return max_age_rating is not None and max_age_rating < ADULT_MIN_AGE
+    return is_family_ceiling(max_age_rating)
+
+
+def family_clause(ceiling: Any) -> Any:
+    """`is_family` for a SQL column (`shelf.max_age_rating`): a ceiling below 18+. NULL is not."""
+    return ceiling < ADULT_MIN_AGE
+
+
+def adult_clause(ceiling: Any) -> Any:
+    """The complement of `family_clause`: no ceiling, or 18+ and above."""
+    return ceiling.is_(None) | (ceiling >= ADULT_MIN_AGE)
 
 
 def check_ceiling(max_age_rating: int | None) -> None:

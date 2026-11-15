@@ -111,10 +111,36 @@ def test_family_state_has_no_link_without_a_kavita_target(world: World) -> None:
 @pytest.mark.req("EF-UX-010")
 def test_activity_arrival_is_one_state_with_the_link_for_a_child(world: World) -> None:
     add_kavita(world)
-    publish(world, "ops.request_arrived", {"request_id": new_ulid()})
+    arrived = add_request(world, world.kid_id, "arrived")
+    publish(world, "ops.request_arrived", {"request_id": arrived})
     [item] = world.kid.get(ACTIVITY).json()
     assert (item["family_state"], item["open_url"]) == ("available", KAVITA)
     assert "koreader_reset" not in item["payload"]
+
+
+@pytest.mark.req("EF-UX-010", "EF-USR-006")
+def test_an_arrival_of_a_request_nobody_can_find_is_hidden_from_a_child(world: World) -> None:
+    """The event names no Work the child could see: absent and hidden are one answer."""
+    publish(world, "ops.request_arrived", {"request_id": new_ulid()})
+    assert world.kid.get(ACTIVITY).json() == []
+
+
+@pytest.mark.req("EF-UX-010", "ENF-SEC-010")
+def test_an_arrival_serves_its_stored_payload_and_nothing_named_for_the_filter(
+    world: World,
+) -> None:
+    """The Work and the Edition the filter checks are not served: the admin and the integration
+    role read `{request_id}`, as stored, never a made-up `work_id`."""
+    from shelfhold.interfaces.http_api.activity import family_payload
+
+    arrived = add_request(world, world.kid_id, "arrived")
+    publish(world, "ops.request_arrived", {"request_id": arrived})
+    publish(world, "ops.request_arrived", {"request_id": new_ulid()})  # a request nobody finds
+    seen = [i for i in world.env.client.get(ACTIVITY).json() if i["type"] == "ops.request_arrived"]
+    assert len(seen) == 2
+    assert all(set(i["payload"]) == {"request_id"} for i in seen)
+    stored = {"request_id": arrived}
+    assert family_payload("integration", "ops.request_arrived", stored) == stored
 
 
 @pytest.mark.req("EF-UX-010")
@@ -228,7 +254,8 @@ def test_recent_for_a_child_with_nothing_visible_is_an_empty_page_not_a_clue(
 def test_activity_of_another_profile_stays_private(world: World) -> None:
     mum = member_client(world)
     other = add_profile(world.env, "sister", "child", "10.0.0.5", max_age_rating=10)
-    publish(world, "ops.request_arrived", {"request_id": new_ulid()}, visibility="private")
+    arrived = add_request(world, world.kid_id, "arrived", visibility="private")
+    publish(world, "ops.request_arrived", {"request_id": arrived}, visibility="private")
     assert [i["type"] for i in world.kid.get(ACTIVITY).json()] == ["ops.request_arrived"]
     assert other.get(ACTIVITY).json() == []  # a sibling's request is not hers to read
     assert mum.get(ACTIVITY).json() == []  # nor a parent's, for a private one (the admin masks)

@@ -20,6 +20,7 @@ import structlog
 from sqlalchemy import Connection
 
 from shelfhold.catalog.public import ContributorName, NameKind, effective_age, parse_partial_date
+from shelfhold.export.domain.bindings import is_family
 from shelfhold.infrastructure.archives import SafeArchive, safe_open_archive
 from shelfhold.infrastructure.fsops import Fsops
 from shelfhold.infrastructure.packaging.cbz import repackage_cbz
@@ -31,9 +32,7 @@ from shelfhold.infrastructure.packaging.comicinfo import (
 from shelfhold.infrastructure.packaging.epub import OpfEdit, repackage_epub
 from shelfhold.infrastructure.schema import catalog, export
 from shelfhold.library.public import content_hash
-from shelfhold.sdk.age import AgeRating
-
-_ADULT_FROM = 18  # M1a has adult shelves only (a ceiling of 18 or more, or none)
+from shelfhold.sdk.age import ADULT_MIN_AGE, AgeRating
 
 __all__ = [
     "CbzRenderer",
@@ -101,7 +100,7 @@ def _unrated_age(connection: Connection, row: Any) -> AgeRating | None:
     explicit shelf below 18+ keeps the value empty: nothing unrated is exported there.
     """
     ceilings = _shelf_ceilings(connection, row.edition_id, row.shelf_id)
-    if any(c is not None and c < _ADULT_FROM for c in ceilings):
+    if any(is_family(c) for c in ceilings):
         return None
     suggestion = catalog.age_suggestion
     flagged = connection.execute(
@@ -118,7 +117,7 @@ def _unrated_age(connection: Connection, row: Any) -> AgeRating | None:
         )
         .limit(1)
     ).first()
-    return AgeRating(_ADULT_FROM, x=flagged is not None)
+    return AgeRating(ADULT_MIN_AGE, x=flagged is not None)
 
 
 def _shelf_ceilings(

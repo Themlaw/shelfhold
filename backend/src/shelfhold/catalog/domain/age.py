@@ -10,7 +10,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from enum import StrEnum
 
-from shelfhold.sdk.age import X_MIN_AGE, AgeRating, max_rating
+from shelfhold.sdk.age import X_MIN_AGE, AgeRating, is_family_ceiling, max_rating
 
 UNRATED_FLOOR = AgeRating(X_MIN_AGE)  # what a Work nobody rated counts for, whatever it says
 _X_CEILING = 99  # `shelf.max_age_rating` stores X as 99
@@ -77,7 +77,7 @@ def admission(edition: EditionAge, ceiling: AgeRating | None) -> Admission:
     """
     if ceiling is None:
         return Admission.ALLOWED
-    guarded = ceiling < UNRATED_FLOOR
+    guarded = is_family_ceiling(ceiling.min_age)
     if guarded and not edition.rated:
         return Admission.UNRATED_EDITION
     age = edition.age

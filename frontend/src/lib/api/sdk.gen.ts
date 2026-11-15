@@ -1105,6 +1105,9 @@ export const one = <ThrowOnError extends boolean = false>(options: Options<OneDa
 
 /**
  * Approval
+ *
+ * `age`, `x`: the age the admin is about to choose, to be told if it is above the
+ * ceiling of the child who asked.
  */
 export const approval = <ThrowOnError extends boolean = false>(options: Options<ApprovalData, ThrowOnError>): RequestResult<ApprovalResponses, ApprovalErrors, ThrowOnError> => (options.client ?? client).get<ApprovalResponses, ApprovalErrors, ThrowOnError>({ url: '/api/v1/requests/{request_id}/approval', ...options });
 

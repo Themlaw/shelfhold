@@ -21,8 +21,9 @@ import sqlalchemy as sa
 from sqlalchemy import Connection
 
 from shelfhold.catalog.application.rating import RatingService
-from shelfhold.catalog.domain.age import UNRATED_FLOOR, Admission, ceiling_of
+from shelfhold.catalog.domain.age import Admission
 from shelfhold.infrastructure.schema import catalog, export
+from shelfhold.sdk.age import is_family_ceiling
 
 __all__ = ["Filing", "file_new_edition"]
 
@@ -38,8 +39,7 @@ def _family(connection: Connection, shelf_id: str) -> bool:
     ceiling = connection.execute(
         sa.select(export.shelf.c.max_age_rating).where(export.shelf.c.id == shelf_id)
     ).one()[0]
-    age = ceiling_of(ceiling)
-    return age is not None and age < UNRATED_FLOOR
+    return is_family_ceiling(ceiling)
 
 
 def _work_rated(connection: Connection, edition_id: str) -> bool:

@@ -18,7 +18,8 @@ from __future__ import annotations
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 
-from shelfhold.export.domain.kavita_access import ADULT, Account, reaches, tier
+from shelfhold.export.domain.bindings import is_family
+from shelfhold.export.domain.kavita_access import Account, reaches, tier
 
 OK = "ok"
 ALERT = "alert"
@@ -64,7 +65,7 @@ class LibraryClass:
 
     @property
     def family(self) -> bool:
-        return self.ceiling is not None and self.ceiling < ADULT
+        return is_family(self.ceiling)
 
 
 @dataclass(frozen=True)

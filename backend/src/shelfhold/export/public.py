@@ -12,15 +12,19 @@ from shelfhold.export.application.export_items import (
 )
 from shelfhold.export.application.pairing import pending_pairing
 from shelfhold.export.application.waiting_marks import clear as _clear_marks
+from shelfhold.export.domain.bindings import adult_clause, family_clause, is_family
 
 __all__ = [
     "SeriesMove",
     "SeriesReassignmentPlan",
     "SeriesReassignmentRefusedError",
     "adopted_volumes",
+    "adult_clause",
     "apply_series_reassignment",
     "attach_to_volume",
+    "family_clause",
     "forget_coverage_unknown",
+    "is_family",
     "pending_pairing",
     "plan_series_reassignment",
 ]

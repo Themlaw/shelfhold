@@ -236,6 +236,10 @@ export type AppliedOut = {
  */
 export type ApprovalOut = {
     /**
+     * Above Requester Ceiling
+     */
+    above_requester_ceiling: boolean;
+    /**
      * Confirmation Required
      */
     confirmation_required: boolean;
@@ -263,6 +267,10 @@ export type ApprovalOut = {
      * Needs Age
      */
     needs_age: boolean;
+    /**
+     * Requester Ceiling
+     */
+    requester_ceiling: number | null;
     /**
      * Resolved
      */
@@ -10255,7 +10263,16 @@ export type ApprovalData = {
          */
         request_id: string;
     };
-    query?: never;
+    query?: {
+        /**
+         * Age
+         */
+        age?: number | null;
+        /**
+         * X
+         */
+        x?: boolean;
+    };
     url: '/api/v1/requests/{request_id}/approval';
 };
 

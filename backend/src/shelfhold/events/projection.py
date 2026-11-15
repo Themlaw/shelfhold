@@ -110,7 +110,7 @@ def project_event(
     item = activity_view(viewer, event)
     if item is None or scope.unrestricted:
         return item
-    refs = event_refs(event.payload)
+    refs = event_refs({**event.payload, **event.refs})
     extra = frozenset(editions)
     if extra:
         refs = EventRefs(refs.works, refs.editions | extra, refs.series, refs.units, refs.opaque)

@@ -16,7 +16,7 @@ so a replay or a second worker cannot follow twice; a failure puts the request b
 from __future__ import annotations
 
 import unicodedata
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime
 from typing import Any, Protocol
 
@@ -33,7 +33,12 @@ from shelfhold.acquisition.domain.request_target import (
     parse_target,
     pick_edition,
 )
-from shelfhold.catalog.public import RatingService
+from shelfhold.catalog.public import (
+    RatingService,
+    ceiling_of,
+    visible_edition_ids,
+    visible_work_ids,
+)
 from shelfhold.events.bus import EventBus, PublishedEvent
 from shelfhold.identity.public import (
     RESERVED_ACTIONS,
@@ -44,6 +49,7 @@ from shelfhold.identity.public import (
     audit_insert,
     authorize_reserved,
     effective_visibility,
+    reader_scope,
 )
 from shelfhold.infrastructure.clock import Clock
 from shelfhold.infrastructure.db import write_transaction
@@ -144,6 +150,10 @@ class ApprovalPreview:
     decided_x: bool = False
     current_age: int | None = None  # the age the Work already has, when it is rated
     current_x: bool = False
+    # A warning, never a refusal: the age (the one asked about, else the one decided, else the
+    # Work's own) is above the ceiling of the child who asked, so she will not see it arrive.
+    above_requester_ceiling: bool = False
+    requester_ceiling: int | None = None
 
 
 class Ports(Protocol):
@@ -313,7 +323,7 @@ class RequestService:
             ).first()
             if row is None:
                 raise RequestRefusedError("not_found")
-            return self._view(connection, request_id)
+            return self._as_she_sees_it(connection, user_id, self._view(connection, request_id))
 
     def mine(self, user_id: str) -> list[RequestView]:
         with self._engine.connect() as connection:
@@ -323,7 +333,36 @@ class RequestService:
                 .order_by(request.c.created_at.desc(), request.c.id.desc())
                 .limit(_LIST)
             ).scalars()
-            return [self._view(connection, i) for i in ids]
+            return [
+                self._as_she_sees_it(connection, user_id, self._view(connection, i)) for i in ids
+            ]
+
+    def _as_she_sees_it(
+        self, connection: Connection, user_id: str, view: RequestView
+    ) -> RequestView:
+        """The state a reader with a ceiling really lives (M3 closure M1). An arrived request
+        whose Work or Edition is hidden from her is exactly an absent book: she is told
+        `not_found` (EF-USR-010, "introuvable"), with no title, no reason and no link. Hidden
+        and absent are one answer; the admin's own steps are untouched."""
+        if view.state != "arrived":
+            return view
+        scope = reader_scope(connection, user_id)
+        if scope.unrestricted:
+            return view
+        row = connection.execute(
+            sa.select(request.c.work_id, request.c.edition_id).where(request.c.id == view.id)
+        ).one()
+        seen = scope.kind == "ceiling" and row.work_id is not None
+        if seen and visible_work_ids(connection, scope, {row.work_id}) != {row.work_id}:
+            seen = False
+        if seen and row.edition_id is not None:
+            seen = visible_edition_ids(connection, scope, {row.edition_id}) == {row.edition_id}
+        if seen:
+            return view
+        # what she typed or was shown (`target_value`, `shown_title`) stays, as in a real
+        # `not_found`; only the title the catalogue gives for a Work she may not see goes
+        title = None if view.target_kind == "work_id" else view.title
+        return replace(view, state="not_found", title=title, reject_reason=None)
 
     def queue(self, principal: Principal) -> list[RequestView]:
         """What waits for an admin, oldest first. The title of a private request of an adult is
@@ -338,7 +377,9 @@ class RequestService:
             ).scalars()
             return [self._view(connection, i, for_admin=True) for i in ids]
 
-    def preview(self, request_id: str, principal: Principal) -> ApprovalPreview:
+    def preview(
+        self, request_id: str, principal: Principal, *, age: int | None = None, x: bool = False
+    ) -> ApprovalPreview:
         self._admin_session(principal)
         with self._engine.connect() as connection:
             row = self._approvable(connection, request_id)
@@ -353,6 +394,9 @@ class RequestService:
             decided = _decided(connection, row, work)
             held = work or _bound_work(connection, resolved.source)
             current = _current_rating(connection, held) if held else None
+            ceiling = _requester_ceiling(connection, row.requester_user_id)
+            asked = _rating_of(age, x) or decided or current
+            above = ceiling is not None and asked is not None and not asked.allowed_under(ceiling)
             return ApprovalPreview(
                 estimate.units, estimate.size_bytes,
                 needs_age=needs_age(owner.role) and not rated,
@@ -366,6 +410,8 @@ class RequestService:
                 decided_x=bool(decided and decided.x),
                 current_age=None if current is None else current.min_age,
                 current_x=bool(current and current.x),
+                above_requester_ceiling=above,
+                requester_ceiling=None if ceiling is None else ceiling.min_age,
             )  # fmt: skip
 
     # -- deciding -------------------------------------------------------------------------------
@@ -738,6 +784,14 @@ class RequestService:
 class _Owner:
     role: str
     visibility: str | None
+
+
+def _requester_ceiling(connection: Connection, user_id: str) -> AgeRating | None:
+    """The ceiling of a requester who has one (a child), as an age; 99 is X."""
+    scope = reader_scope(connection, user_id)
+    if scope.kind != "ceiling" or scope.ceiling is None:
+        return None
+    return ceiling_of(scope.ceiling)
 
 
 def _masked(row: Any, owner_role: str) -> bool:

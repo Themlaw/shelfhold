@@ -25,6 +25,8 @@
   let confirmed = $state(false);
   let busy = $state(false);
   let reauthMethods = $state<string[] | null>(null);
+  /** A warning from the server, never a refusal: the age is above the child's ceiling. */
+  let above = $state(false);
 
   /** The age already decided for this request, as the selector writes it. */
   function decided(view: ApprovalOut): Age | null {
@@ -42,7 +44,22 @@
       return;
     }
     preview = data;
+    above = data.above_requester_ceiling;
     age = decided(data);
+  });
+
+  // The server says whether the age being chosen is above the ceiling of the child who asked.
+  async function checkAge(chosen: Age | null) {
+    const { age: years, x } = rating(chosen);
+    if (years === null) return;
+    const { data } = await fetchApproval({
+      path: { request_id: item.id },
+      query: { age: years, x }
+    });
+    if (data !== undefined) above = data.above_requester_ceiling;
+  }
+  $effect(() => {
+    if (preview !== null) void checkAge(age);
   });
 
   const needsAge = $derived(preview?.needs_age ?? item.needs_age);
@@ -97,6 +114,9 @@
       <AgePicker name={`age-${item.id}`} legend={t('approve.age_for_child')} bind:value={age} />
       {#if age === null}
         <p class="hint">{t('approve.choose_age')}</p>
+      {/if}
+      {#if above}
+        <p class="hint" role="status">{t('approve.above_ceiling')}</p>
       {/if}
     {/if}
 

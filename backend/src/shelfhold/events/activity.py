@@ -64,6 +64,9 @@ class ActivityEvent:
     owner_id: str | None = None
     owner_role: str | None = None
     title: str | None = field(default=None, repr=False)  # never in a log line
+    # What the event is about beyond its stored payload (read at display time): checked by the
+    # visibility filter, never served.
+    refs: Mapping[str, object] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)

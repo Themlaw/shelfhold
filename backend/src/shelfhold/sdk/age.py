@@ -11,7 +11,14 @@ from dataclasses import dataclass
 from functools import total_ordering
 
 AGE_TIERS: tuple[int, ...] = (0, 10, 12, 13, 16, 18)
-X_MIN_AGE = 18
+ADULT_MIN_AGE = 18  # the one place where the adult age, and so "family shelf", is written
+X_MIN_AGE = ADULT_MIN_AGE
+
+
+def is_family_ceiling(max_age_rating: int | None) -> bool:
+    """A shelf below 18+ (`shelf.max_age_rating`; `None` is no ceiling, 99 is X): the barrier of
+    the parental control applies to it. The one definition: everything else calls it."""
+    return max_age_rating is not None and max_age_rating < ADULT_MIN_AGE
 
 
 @total_ordering
