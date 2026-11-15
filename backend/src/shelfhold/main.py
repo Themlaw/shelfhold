@@ -70,6 +70,7 @@ from shelfhold.interfaces.http_api.identity import (
 from shelfhold.interfaces.http_api.identity_headers import ForwardAuth
 from shelfhold.interfaces.http_api.intents import build_intents_router
 from shelfhold.interfaces.http_api.jobs import build_jobs_router
+from shelfhold.interfaces.http_api.kosync import build_kosync_router
 from shelfhold.interfaces.http_api.library import build_library_router
 from shelfhold.interfaces.http_api.maintenance import build_maintenance_router
 from shelfhold.interfaces.http_api.me import build_me_router
@@ -104,6 +105,7 @@ from shelfhold.plugin_host.attestation import AttestationStore
 from shelfhold.plugin_host.public import PluginRegistry, installed_versions, start_plugins
 from shelfhold.plugin_host.settings import SettingsSchema, SourceSettings, parse_settings_schema
 from shelfhold.reading.bundle import SeriesBundles
+from shelfhold.reading.public import Kosync
 from shelfhold.runtime import RETAKE_INTERVAL_S, InstanceRuntime
 from shelfhold.runtime_jobs import PlanService
 
@@ -324,6 +326,10 @@ def create_app(
     def bundles() -> SeriesBundleProvider | None:  # M4 L49a: one, its counters are the instance's
         return series_bundles(engine, composition.keyring, clock.now)
 
+    @cache
+    def kosync() -> Kosync:  # one: it counts the unknown fingerprints of each token
+        return Kosync(engine, composition.keyring, clock.now)
+
     export_routers = (
         build_shelves_router(lambda: ShelfService(engine, clock=clock), ops_services),
         build_destinations_router(ops_services),
@@ -365,6 +371,9 @@ def create_app(
         ),
         build_opds_router(  # M4 L48: the e-reader's feed, behind a device token (ADR-0053)
             lambda: engine, thumbnails, bundles, clock.now
+        ),
+        build_kosync_router(  # M4 L47: where the e-reader is, behind the same device token
+            kosync, clock.now
         ),
         build_search_router(
             lambda: engine, ops_services

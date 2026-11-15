@@ -327,6 +327,7 @@ def insert_position(
     source: str,
     now: datetime | None,
     max_pages_per_minute: float = DEFAULT_MAX_PAGES_PER_MINUTE,
+    traverse: bool = True,
 ) -> str:
     """The one writer of `reading_position`, after the caller has checked who may write what.
     Internal to `reading.application`: `record_position` (a reader's own report) and
@@ -347,7 +348,7 @@ def insert_position(
             covered_units=covered,
         )
     )  # fmt: skip
-    if source == "device":
+    if source == "device" and traverse:
         _mark_traversed(connection, position_id, max_pages_per_minute)
     return position_id
 
@@ -376,8 +377,12 @@ def record_position(
     device_id: str | None = None,
     now: datetime | None = None,
     max_pages_per_minute: float = DEFAULT_MAX_PAGES_PER_MINUTE,
+    traverse: bool = True,
 ) -> str:
     """Record where `subject_id` is in a file, as that same reader; returns the position id.
+
+    `traverse=False` stores the position and looks for no traversal: a locator the server cannot
+    measure (an EPUB xpointer, until L51) is a place, never a proof of reading.
 
     This is a reader's own report (KOReader, the integrated reader, a device token): it never
     makes a Unit read by itself, only a plausible pass over it does (`reading.domain.traversal`).
@@ -390,6 +395,7 @@ def record_position(
         connection, user_id=reader_id, carrier_type=carrier_type, carrier_id=carrier_id,
         content_hash=content_hash, locator=locator, percent=percent, client_ts=client_ts,
         device_id=device_id, source="device", now=now, max_pages_per_minute=max_pages_per_minute,
+        traverse=traverse,
     )  # fmt: skip
 
 

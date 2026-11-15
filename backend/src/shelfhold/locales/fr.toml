@@ -1326,6 +1326,16 @@ title = "Ce bloc n'est plus disponible."
 action = "Rouvrez la page de la série dans votre liseuse : une version à jour y est proposée."
 cause = "Un fichier a changé depuis la création de cette version, la version a été purgée, ou votre accès a pris fin."
 
+[errors."kosync_registration_disabled"]
+title = "La liseuse ne crée pas de compte."
+action = "Demandez à l'administrateur de Shelfhold un jeton d'appareil, puis saisissez-le dans les réglages de synchronisation de la liseuse."
+cause = "Les comptes sont les profils de Shelfhold : une liseuse ne peut pas en créer, elle se connecte avec un jeton d'appareil."
+
+[errors."kosync_ambiguous_document"]
+title = "Deux fichiers portent la même empreinte."
+action = "Gardez un seul de ces fichiers sur la liseuse, ou demandez à l'administrateur de relancer le calcul des empreintes."
+cause = "Shelfhold ne devine pas sur quel fichier écrire la position : rien n'a été enregistré ni lu."
+
 [errors."bundle_busy"]
 title = "Trop de blocs sont servis en ce moment."
 action = "Patientez quelques instants, puis relancez le téléchargement."

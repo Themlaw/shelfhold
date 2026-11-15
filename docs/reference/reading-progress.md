@@ -19,6 +19,10 @@ ou un changement de sens attend la 2.0. Aucune écriture : un lecteur enregistre
 - **Où le lecteur est arrivé le plus loin** (réponse à une liseuse qui demande la position, ADR-0053
   §5, « une seule règle : la plus avancée ») : `last_position_id`, avec le `timestamp` de cet
   enregistrement, jamais « maintenant ».
+- Le `GET /kosync/syncs/progress/:document` (L47) lit `last_position_id`, mais ne la rend que dans le
+  repère du **document demandé** : sur le même fichier, ou retraduite par `bundle_member` pour un
+  bloc ; une position tenue sur un autre fichier de l'Œuvre que l'on ne sait pas traduire n'est pas
+  rendue, et une plus ancienne ne la remplace pas.
 - **Où le lecteur en est maintenant** (reprise, « continuer la lecture »), même s'il est revenu en
   arrière : `latest_position_id`.
 

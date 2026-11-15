@@ -19,6 +19,12 @@
         "title": "About",
         "type": "object"
       },
+      "Accepted": {
+        "description": "`{}`: accepted, nothing stored.",
+        "properties": {},
+        "title": "Accepted",
+        "type": "object"
+      },
       "AccountList": {
         "properties": {
           "items": {
@@ -4796,6 +4802,97 @@
           "profiles"
         ],
         "title": "ProfilesOut",
+        "type": "object"
+      },
+      "ProgressRead": {
+        "description": "A position, or nothing at all (`{}`): KOReader then says \"no progress found\".",
+        "properties": {
+          "device": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Device"
+          },
+          "device_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Device Id"
+          },
+          "document": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Document"
+          },
+          "percentage": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Percentage"
+          },
+          "progress": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Progress"
+          },
+          "timestamp": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Timestamp"
+          }
+        },
+        "title": "ProgressRead",
+        "type": "object"
+      },
+      "ProgressStored": {
+        "properties": {
+          "document": {
+            "title": "Document",
+            "type": "string"
+          },
+          "timestamp": {
+            "title": "Timestamp",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "document",
+          "timestamp"
+        ],
+        "title": "ProgressStored",
         "type": "object"
       },
       "PurgeIn": {
@@ -22869,6 +22966,150 @@
         "summary": "Healthz"
       }
     },
+    "/kosync/syncs/progress": {
+      "put": {
+        "description": "Where the device is. The page arrives in text; a document the profile does not know,\nmay not see or whose chapter is gone is accepted and nothing is stored.",
+        "operationId": "kosync_update_progress",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "description": "What KOReader sends (`api.json`): `progress` is the page in text, or an xpointer.",
+                "properties": {
+                  "device": {
+                    "title": "Device",
+                    "type": "string"
+                  },
+                  "device_id": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "title": "Device Id"
+                  },
+                  "document": {
+                    "title": "Document",
+                    "type": "string"
+                  },
+                  "metadata": {
+                    "anyOf": [
+                      {
+                        "additionalProperties": true,
+                        "type": "object"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "title": "Metadata"
+                  },
+                  "percentage": {
+                    "title": "Percentage",
+                    "type": "number"
+                  },
+                  "progress": {
+                    "title": "Progress",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "document",
+                  "progress",
+                  "percentage",
+                  "device"
+                ],
+                "title": "ProgressBody",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProgressStored"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Accepted"
+                }
+              }
+            },
+            "description": "Accepted"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Détail du problème (RFC 9457)."
+          }
+        },
+        "summary": "Update Progress",
+        "tags": [
+          "kosync"
+        ]
+      }
+    },
+    "/kosync/syncs/progress/{document}": {
+      "get": {
+        "description": "The furthest position of the profile in this document, in its own pages, or `{}`.",
+        "operationId": "kosync_get_progress",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "document",
+            "required": true,
+            "schema": {
+              "title": "Document",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProgressRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Détail du problème (RFC 9457)."
+          }
+        },
+        "summary": "Get Progress",
+        "tags": [
+          "kosync"
+        ]
+      }
+    },
     "/kosync/users/auth": {
       "get": {
         "description": "What KOReader asks when the reader taps \"Login\": 200 if the token is good. The other\nroutes of kosync (L47) take the same dependency.",
@@ -22900,6 +23141,36 @@
           }
         },
         "summary": "Authorize",
+        "tags": [
+          "kosync"
+        ]
+      }
+    },
+    "/kosync/users/create": {
+      "post": {
+        "description": "The \"Register\" button of KOReader: refused, whoever asks and whatever it sends.",
+        "operationId": "kosync_register",
+        "responses": {
+          "402": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Détail du problème (RFC 9457)."
+          }
+        },
+        "summary": "Register",
         "tags": [
           "kosync"
         ]
@@ -24005,6 +24276,14 @@
     "/api/v1/problems/kavita.scan-abandoned": {
       "code": "kavita.scan_abandoned",
       "status": 409
+    },
+    "/api/v1/problems/kosync-ambiguous-document": {
+      "code": "kosync_ambiguous_document",
+      "status": 409
+    },
+    "/api/v1/problems/kosync-registration-disabled": {
+      "code": "kosync_registration_disabled",
+      "status": 402
     },
     "/api/v1/problems/last-login-factor": {
       "code": "last_login_factor",
