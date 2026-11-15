@@ -11,6 +11,7 @@ from argon2 import PasswordHasher
 from shelfhold import __version__
 from shelfhold.config import Settings, load_settings
 from shelfhold.infrastructure.migrate import migrate
+from shelfhold.interfaces.http_api.about import release_tag
 from tests.auth_env import (
     ADMIN,
     CSRF_COOKIE,
@@ -25,7 +26,7 @@ from tests.auth_env import (
     run_cli,
 )
 
-DEFAULT_SOURCE = f"https://github.com/Themlaw/shelfhold/tree/v{__version__}"
+DEFAULT_SOURCE = f"https://github.com/Themlaw/shelfhold/tree/{release_tag(__version__)}"
 
 
 def _set_cookie_headers(response: object) -> list[str]:
