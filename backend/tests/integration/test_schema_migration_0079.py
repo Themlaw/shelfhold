@@ -18,10 +18,10 @@ from tests.integration.test_schema_migration_0002 import alembic_config, tables
 pytestmark = pytest.mark.req("ENF-OPS-002", "EF-BIB-032")
 
 
-def test_single_alembic_head_with_0079_on_0077() -> None:
+def test_single_alembic_head_with_0079_on_0078() -> None:
     script = ScriptDirectory(str(default_script_location()))
     assert script.get_heads() == ["0079"]
-    assert script.get_revision("0079").down_revision == "0077"
+    assert script.get_revision("0079").down_revision == "0078"
 
 
 def test_upgrade_adds_the_table_and_downgrade_drops_it(settings: Settings) -> None:
