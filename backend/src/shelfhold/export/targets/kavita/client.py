@@ -51,6 +51,7 @@ from shelfhold.infrastructure.clock import Clock
 from shelfhold.infrastructure.fetcher import FetchError, GuardedFetcher
 from shelfhold.infrastructure.logging import elapsed_ms
 from shelfhold.infrastructure.wake import WakeDeferred
+from shelfhold.sdk.api_call import JsonBody
 from shelfhold.sdk.export_target import ApiCall
 
 BULK_BATCH: Final = 100  # `parse-bulk` takes 100 names at most
@@ -142,6 +143,10 @@ class KavitaClient:
         """Run a call described by a destination, if and only if its route is on the list."""
         route = routes.resolve(call.method, call.path)
         body = call.json_body
+        if call.body is not None:  # SDK 1.4: a JSON body is read like `json_body`
+            if not isinstance(call.body, JsonBody):
+                raise ProtocolError("Kavita takes no content body")
+            body = call.body.value
         if route is routes.SCAN_FOLDER:
             if body is not None and not isinstance(body, dict):
                 raise ProtocolError("scan-folder takes a JSON object")

@@ -105,10 +105,21 @@ symbols = [
 
 [[allow]]
 category = "published-sdk-contract"
-reason = "ExportTarget is the destination contract published under MIT (SDK 1.1: the Kavita-only members are deprecated and kept, N-1). The host builds its Kavita destination without going through the Protocol; the contract is read by third parties. The reduction is decided in M4 with the second adapter (PLAN-M1b D9)."
-until = "M4"  # settled by M4 lot L03
+reason = "ExportTarget is the destination contract published under MIT (SDK 1.1: the Kavita-only members are deprecated and kept, N-1). The host builds its Kavita destination without going through the Protocol; the contract is read by third parties. 2026-11-15 (M4 L03, D7): redated M6. SDK 1.4 adds to the contract without breaking it (ApiCall.body, optional update_metadata), and the Kavita-only members stay deprecated through the whole 1.x series; their removal is the SDK 2.0 break, published in M6 with the kit, once the second adapter has designed their generic replacements (PLAN-M1b D9)."
+until = "M6"  # settled by the publication of SDK 2.0
 symbols = [
   "shelfhold.sdk.export_target:ExportTarget",
+  "shelfhold.sdk.export_target:MetadataUpdater.update_metadata",
+  "shelfhold.sdk.export_target:MetadataUpdateSupport",
+  "shelfhold.sdk.export_target:metadata_change_route",
+  "shelfhold.sdk.export_target:copy_can_verify",
+  "shelfhold.sdk.export_target:copy_can_serve_bytes",
+  "shelfhold.sdk.api_call:ApiCallError",
+  "shelfhold.sdk.api_call:ContentBody",
+  "shelfhold.sdk.api_call:parse_api_call",
+  "shelfhold.sdk.fsops:check_destination_plan_before_run",
+  "shelfhold.sdk.api_call:check_api_call",
+  "shelfhold.sdk.fsops:ContentRef",
 ]
 
 # What waited for M2 and is neither wired nor deleted (M2 L31 and closure, 2026-11-12): each group

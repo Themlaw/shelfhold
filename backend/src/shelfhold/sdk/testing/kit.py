@@ -136,6 +136,59 @@ def _leaks_secret(value: str) -> bool:
     return bool(_USERINFO.search(value) or _SECRET_PARAM.search(value))
 
 
+def run_destination_declaration_check(capabilities: Any) -> ConformanceReport:
+    """Check what a destination declares (SDK 1.4). The transport `push` is refused for any
+    destination that does not declare `ApiCall.body` (`content_body`): nothing else sends bytes
+    through a call, and the core runs every call through its Fetcher and the SSRF guard."""
+    report = ConformanceReport()
+    transport = getattr(capabilities, "transport", None)
+    sends = getattr(capabilities, "content_body", False) is True
+    report.add(
+        "transport_push_requires_content_body",
+        transport != "push" or sends,
+        "transport `push` needs a declared ApiCall.body (content_body)",
+    )
+    indexes = getattr(capabilities, "indexes_tree", False) is True
+    report.add(
+        "indexes_tree_needs_a_tree",
+        not indexes or transport == "tree",
+        "indexes_tree needs the transport `tree`: dropbox, push and pull have no tree to index",
+    )
+    report.add(
+        "indexes_tree_requires_grouping_and_normalizer",
+        not indexes
+        or (
+            bool(getattr(capabilities, "name_normalizer", ""))
+            and getattr(capabilities, "series_grouping", None) in ("name", "folder")
+        ),
+        "an indexer declares series_grouping and a versioned name_normalizer",
+    )
+    update = getattr(capabilities, "update_metadata", None)
+    report.add(
+        "update_metadata_declares_fields",
+        update is None or bool(getattr(update, "fields", None)),
+        "update_metadata is declared without any field",
+    )
+    return report
+
+
+_WRITING_OPS = frozenset({"mkdir", "write", "write_inline", "rename", "recycle", "touch_mtime"})
+
+
+def run_indexer_plan_check(capabilities: Any, plan: Any) -> ConformanceReport:
+    """An indexer writes nothing into a tree it does not own: its plan for an attached tree has no
+    operation that changes the tree (SDK 1.4, ADR-0052)."""
+    report = ConformanceReport()
+    indexes = getattr(capabilities, "indexes_tree", False) is True
+    writes = [op.op for op in plan.ops if op.op in _WRITING_OPS] if indexes else []
+    report.add(
+        "indexer_emits_no_fsop_write",
+        not writes,
+        f"an indexer plan carries operations that write: {', '.join(sorted(set(writes)))}",
+    )
+    return report
+
+
 async def _discover(source: Source, f: Fetcher, series_ref: SeriesRef | None) -> _Discovery:
     models: list[BaseModel] = []
     refs: list[SeriesRef] = []

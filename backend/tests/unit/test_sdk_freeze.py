@@ -322,9 +322,9 @@ def test_kit_checks_every_plugin_waiting_state_has_an_exit() -> None:
 
 
 @pytest.mark.req("EF-SRC-036", "ENF-QUAL-003")
-def test_sdk_is_1_3_and_a_1_2_plugin_still_loads() -> None:
-    assert SDK_VERSION == "1.3"
-    assert sdk_supports("1.2") and sdk_supports("1.3") and not sdk_supports("1.4")
+def test_sdk_is_1_4_and_a_1_2_plugin_still_loads() -> None:
+    assert SDK_VERSION == "1.4"  # M4 L03: the destination contract, a minor
+    assert sdk_supports("1.2") and sdk_supports("1.3") and not sdk_supports("1.5")
     assert not sdk_supports("2.0")
 
 
