@@ -1,24 +1,14 @@
 import { expect, test, type Page } from '@playwright/test';
+import { refuseOutsideBaseUrl } from './fence';
 
 // ENF-PRIV-001: no third-party resource in the browser. Every request outside the
 // instance origin is refused, and the tests fail if one is even attempted.
-async function refuseThirdParties(page: Page, origin: string): Promise<string[]> {
-  const attempted: string[] = [];
-  await page.route('**/*', async (route) => {
-    const url = route.request().url();
-    if (url.startsWith('data:') || new URL(url).origin === origin) {
-      await route.continue();
-    } else {
-      attempted.push(url);
-      await route.abort();
-    }
-  });
-  return attempted;
-}
+// The fence is installed on the context: requests whose origin differs from baseURL
+// are aborted and counted in the returned array.
 
 // req: ENF-PRIV-001
-test('test_spa_loads_no_third_party_resource', async ({ page, baseURL }) => {
-  const attempted = await refuseThirdParties(page, new URL(baseURL ?? '').origin);
+test('test_spa_loads_no_third_party_resource', async ({ page, context, baseURL }) => {
+  const attempted = await refuseOutsideBaseUrl(context, baseURL ?? '');
   const cspViolations: string[] = [];
   page.on('console', (msg) => {
     if (/content security policy/i.test(msg.text())) cspViolations.push(msg.text());
@@ -40,8 +30,8 @@ for (const [path, heading] of [
   ['/a-ranger', 'À ranger']
 ] as const) {
   // req: ENF-PRIV-001, EF-USR-015, EF-EXP-046
-  test(`test_spa_loads_no_third_party_resource ${path}`, async ({ page, baseURL }) => {
-    const attempted = await refuseThirdParties(page, new URL(baseURL ?? '').origin);
+  test(`test_spa_loads_no_third_party_resource ${path}`, async ({ page, context, baseURL }) => {
+    const attempted = await refuseOutsideBaseUrl(context, baseURL ?? '');
     const cspViolations: string[] = [];
     page.on('console', (msg) => {
       if (/content security policy/i.test(msg.text())) cspViolations.push(msg.text());
@@ -71,4 +61,18 @@ test('the index carries the CSP header with frame-ancestors', async ({ request }
     expect(csp).toContain(directive);
   }
   expect(response.headers()['x-content-type-options']).toBe('nosniff');
+});
+
+// Proof that the fence counts: an image whose origin is not the instance's is refused and counted.
+// req: ENF-PRIV-001
+test('test_spa_requests_outside_base_url_are_refused_and_counted', async ({ page, context, baseURL }) => {
+  const outside = await refuseOutsideBaseUrl(context, baseURL ?? '');
+  await page.goto('/');
+  await page.evaluate(() => {
+    const img = document.createElement('img');
+    img.src = 'https://example.com/shelfhold-outside.png';
+    document.body.append(img);
+  });
+  await expect.poll(() => outside.length, { timeout: 5000 }).toBe(1);
+  expect(outside[0]).toContain('example.com');
 });
