@@ -51,6 +51,23 @@ def test_device_entry_points_read_the_kavita_targets_and_leave_every_secret_out(
     ]  # one bad row never turns the screen into a 500 and never hides the others
 
 
+def test_qr_of_a_target_uses_the_configured_sub_path_and_never_a_key(
+    settings: Settings, tmp_path: Path
+) -> None:
+    with instance(settings, tmp_path) as inst:
+        with inst.engine.begin() as connection:
+            connection.execute(
+                sa.insert(export.export_target).values(
+                    id=new_ulid(), kind="kavita", name="proxied",
+                    config={"url": "https://home.example/kavita/api/opds/SECRETKEY?x=1"},
+                )
+            )  # fmt: skip
+        [target] = LibraryOps(inst.comp).device_entry_points()["targets"]
+    assert target["kover"] == "https://home.example/kavita"
+    assert target["opds"] == "https://home.example/kavita/api/opds"
+    assert "SECRETKEY" not in repr(target)
+
+
 def test_device_entry_points_without_a_target_is_empty(settings: Settings, tmp_path: Path) -> None:
     with instance(settings, tmp_path) as inst:
         assert LibraryOps(inst.comp).device_entry_points() == {"targets": [], "skipped": []}

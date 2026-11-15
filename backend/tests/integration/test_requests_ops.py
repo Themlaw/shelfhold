@@ -129,6 +129,41 @@ def test_a_shelf_that_does_not_exist_or_refuses_is_a_refusal_of_the_approval(
         assert r.rows("SELECT rated_at FROM work WHERE id = :w", w=other)[0][0] is None
 
 
+@pytest.mark.req("EF-USR-010", "EF-USR-014")
+def test_the_ports_read_the_family_mark_of_a_source_and_the_ceiling_of_a_shelf(
+    settings: Settings,
+) -> None:
+    import sqlalchemy as sa
+
+    from shelfhold.infrastructure.schema import acquisition, export
+
+    with rig(settings) as r:
+        ports = ops_requests.build_ports(comp_of(r))
+        shelf = new_ulid()
+        with r.engine.begin() as connection:
+            connection.execute(
+                sa.insert(acquisition.source_config),
+                [{"plugin_id": "kids", "family_safe": True},
+                 {"plugin_id": "grown", "family_safe": False}],
+            )  # fmt: skip
+            connection.execute(
+                sa.insert(export.shelf).values(id=shelf, name="Jeunesse", phrase="x",
+                                               max_age_rating=10)
+            )  # fmt: skip
+        assert ports.source_is_family("kids") is True
+        assert ports.source_is_family("grown") is False
+        assert ports.source_is_family("nobody-configured") is False
+        assert ports.shelf_ceiling(shelf) == 10
+        assert ports.shelf_ceiling("01J0000000000000000000NOPE") is None
+        with r.engine.begin() as connection:
+            connection.execute(
+                sa.text("UPDATE work_kind SET default_shelf = 'Jeunesse' WHERE key = 'novel'")
+            )
+        assert ports.default_shelf("novel") == shelf  # the shelf a kind proposes, by name
+        assert ports.default_shelf("manga") is None  # a kind with no default shelf
+        assert ports.default_shelf("nothing") is None
+
+
 class _Acquire:
     def __init__(self, ref: FamilyRef | None, open_: bool = True) -> None:
         self.ref, self.open_ = ref, open_

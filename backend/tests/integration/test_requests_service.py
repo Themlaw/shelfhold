@@ -34,6 +34,7 @@ from tests.request_env import (
 )
 
 REF = SourceRef(source_key="alpha", remote_id="r1", title="A Quiet Tale", memo={"entry": "e1"})
+REF2 = SourceRef(source_key="alpha", remote_id="r2", title="Another Tale", memo={"entry": "e2"})
 ULID = "01ARZ3NDEKTSV4RRFFQ69G5FAV"
 
 
@@ -323,6 +324,60 @@ def test_approval_preview_prefills_edition_source_and_shelf(settings: Settings) 
         assert preview.shelf_id == "SHELF" and preview.needs_age is False
         child = r.service.create_from_ref(requester(CHILD_ID, "child"), REF)
         assert r.service.preview(child.id, admin()).needs_age is True
+
+
+@pytest.mark.req("EF-USR-010", "EF-USR-014")
+def test_preview_warns_non_family_source_into_family_shelf(settings: Settings) -> None:
+    """A warning for the admin, never a refusal: approving still works."""
+    ports = FakePorts(kinds={"alpha": "novel"}, shelf="KIDS", shelf_ceilings={"KIDS": 10})
+    with rig(settings, ports=ports) as r:
+        rid = ask(r)
+        preview = r.service.preview(rid, admin())
+        assert preview.non_family_source_into_family_shelf is True
+        assert r.service.approve(rid, admin(), age=10).state == "approved"
+
+
+@pytest.mark.req("EF-USR-010", "EF-USR-014")
+@pytest.mark.parametrize(
+    ("source_family", "shelf_ceiling", "warns"),
+    [
+        (False, 10, True),  # not family into a family shelf: the warning
+        (True, 10, False),  # family into a family shelf
+        (False, None, False),  # not family into an adult shelf (no ceiling)
+        (True, None, False),  # family into an adult shelf
+        (False, 18, False),  # 18+ is the adult shelf, not a family one (`is_family_ceiling`)
+    ],
+)
+def test_preview_source_and_shelf_four_combinations(
+    settings: Settings, source_family: bool, shelf_ceiling: int | None, warns: bool
+) -> None:
+    ports = FakePorts(
+        kinds={"alpha": "novel"}, shelf="SHELF", shelf_ceilings={"SHELF": shelf_ceiling},
+        family_sources={"alpha"} if source_family else set(),
+    )  # fmt: skip
+    with rig(settings, ports=ports) as r:
+        preview = r.service.preview(ask(r), admin())
+        assert preview.non_family_source_into_family_shelf is warns
+
+
+@pytest.mark.req("EF-USR-010", "EF-USR-014")
+def test_preview_without_a_shelf_or_a_source_does_not_warn(settings: Settings) -> None:
+    ports = FakePorts(kinds={"alpha": "novel"}, shelf=None, shelf_ceilings={"SHELF": 10})
+    with rig(settings, ports=ports) as r:
+        no_shelf = r.service.preview(ask(r), admin())
+        assert no_shelf.non_family_source_into_family_shelf is False  # no shelf is proposed
+        ports.shelf = "SHELF"
+        assert r.service.preview(ask(r, ref=REF2), admin()).non_family_source_into_family_shelf
+        r.rows("SELECT 1")
+        with r.engine.begin() as connection:
+            connection.execute(
+                sa.text("UPDATE \"user\" SET visibility = 'household' WHERE id = :u"),
+                {"u": MEMBER_ID},
+            )
+        work = r.work()
+        rid = r.service.create(requester(MEMBER_ID, "member"), RequestTarget("work_id", work)).id
+        # a request for a Work the library holds names no source: nothing to warn about
+        assert r.service.preview(rid, admin()).non_family_source_into_family_shelf is False
 
 
 # -- refusal, not found, cancellation, and who may see what ------------------------------
