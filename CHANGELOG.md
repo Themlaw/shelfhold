@@ -2,6 +2,21 @@
 
 Format : [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/). Versionnement : [SemVer](https://semver.org/lang/fr/). Procédure de release : `docs/releasing.md`.
 
+## 1.1.0-rc.1 - 2026-11-15
+
+Candidate de la 1.1.0 : pré-version GitHub `v1.1.0-rc.1` (version du paquet `1.1.0rc1`), sans tag d'image de version. Porte les lots M4 fusionnés depuis la 1.0.1.
+
+### Ajouté
+
+- **Liseuse** : jetons d'appareil pour liseuses (secret généré, authentification OPDS Basic et kosync, limites de débit, révocation, CLI) ; catalogue OPDS Shelfhold accessible derrière ces jetons ; téléchargement d'une série complète en un seul bloc pour KOReader.
+- **Progression de lecture fusionnée** : la position la plus avancée est conservée, l'horloge client est bornée par l'horloge serveur, on ne revient jamais à « non lu » ; la page du volume est projetée sur les unités couvertes. Un chapitre n'est marqué lu qu'après une lecture à vitesse plausible (`reading.max_pages_per_minute`, 20 par défaut), jamais par un saut à la dernière page, et la marque s'annule.
+- **Métadonnées** : fournisseur ComicVine optionnel (désactivé par défaut) ; source BnF avec date et correspondances Wikidata optionnelles.
+- **SDK et destinations** : déclarations Calibre et Audiobookshelf exprimables sans rupture de contrat.
+- **Exploitation** : métriques Prometheus optionnelles, sans titres ni labels utilisateur ; manifeste de fixité BagIt pour l'export complet.
+- **Identité** : liaison de compte Kavita par membre (jeton chiffré par utilisateur et destination, vérification, rotation, révocation).
+
+Migration : oui (0065, 0076 et 0077)
+
 ## 1.0.1 - 2026-11-15
 
 Correctif de publication, sans changement de comportement : l'image `1.0.0` a été publiée, mais son job `schema-assets` a échoué (deux migrations de M4 n'étaient pas figées) et `release-proofs` a été sauté. Cette version fige ces migrations, ajoute la garde manquante à la CI de PR, et porte les preuves de la 1.0.0.
