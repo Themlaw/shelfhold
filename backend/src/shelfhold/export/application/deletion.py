@@ -30,7 +30,6 @@ touched. The expiry of the bin is the retention sweep's (`RecycleSweeper`).
 
 import contextlib
 import hashlib
-import json
 import uuid
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
@@ -43,6 +42,13 @@ from sqlalchemy import Connection, Engine
 
 from shelfhold.export.application.intents import BIN_LOCK, IntentJournal, open_intent_paths
 from shelfhold.export.application.locks import ResourceLocks, path_resource, work_resource
+from shelfhold.export.application.pending_scans import (
+    FOLDERS_KEY,
+    ScanRefusedError,
+    load_entries,
+    remember_entries,
+    settle_entries,
+)
 from shelfhold.export.application.plans import StalePlanError
 from shelfhold.export.application.snapshot import DestinationContext, load_context
 from shelfhold.export.domain.physical_roots import is_reserved
@@ -135,7 +141,8 @@ class DeletionReport:
     moved: int  # files now in a bin
     pending: tuple[str, ...]  # files whose move waits for the next start (an intent is open)
     folders_removed: tuple[str, ...] = ()
-    folders_kept: tuple[str, ...] = ()  # an empty folder left for a later pass (the scan failed)
+    folders_kept: tuple[str, ...] = ()  # an empty folder left for a later pass
+    folders_waiting: tuple[str, ...] = ()  # of those, the ones whose scan was NOT sent
 
 
 @dataclass(frozen=True)
@@ -174,25 +181,8 @@ class _Scope:
     blocked: list[str]
 
 
-PENDING_FOLDERS_KEY: Final = "deletion.folders_pending_scan"
-
-
 def load_pending_folders(connection: Connection) -> list[str]:
-    value = connection.execute(
-        sa.select(platform.app_setting.c.value).where(
-            platform.app_setting.c.key == PENDING_FOLDERS_KEY
-        )
-    ).scalar()
-    return [str(x) for x in json.loads(value)] if value else []
-
-
-def _save_pending(connection: Connection, labels: Sequence[str]) -> None:
-    t = platform.app_setting
-    connection.execute(sa.delete(t).where(t.c.key == PENDING_FOLDERS_KEY))
-    if labels:
-        connection.execute(
-            sa.insert(t).values(key=PENDING_FOLDERS_KEY, value=json.dumps(list(labels)))
-        )
+    return list(load_entries(connection, FOLDERS_KEY))
 
 
 class DeletionService:
@@ -207,10 +197,12 @@ class DeletionService:
         refresh_index: Callable[[], object] | None = None,
         fresh_auth_s: int = 900,
         lock_wait: float = 5.0,
+        on_abandoned: Callable[[int], None] | None = None,
     ) -> None:
         self._engine = engine
         self._fsops = fsops
         self._clock = clock
+        self._abandoned = on_abandoned
         self._locate = locate
         self._scan = request_scan
         self._index = refresh_index
@@ -564,15 +556,16 @@ class DeletionService:
             self._refresh_index()  # /store/INDEX.jsonl stops citing the copies now in the bin
         removed: tuple[str, ...] = ()
         kept: tuple[str, ...] = ()
+        waiting: tuple[str, ...] = ()
         if folders and not pending:
-            removed, kept = self._after_scan(plan, scopes, journal)
+            removed, kept, waiting = self._after_scan(plan, scopes, journal)
         log.info(
             "deletion.applied", level=level.value, units=len(done), files=moved,
             pending=len(pending), folders=len(removed),
         )  # fmt: skip
         return DeletionReport(
             level, deletion_id, tuple(s.unit_id for s in done), moved, tuple(pending),
-            removed, kept,
+            removed, kept, waiting,
         )  # fmt: skip
 
     def _commit(
@@ -693,7 +686,7 @@ class DeletionService:
 
     def _after_scan(
         self, plan: DeletionPlan, scopes: Sequence[_Scope], journal: IntentJournal
-    ) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    ) -> tuple[tuple[str, ...], tuple[str, ...], tuple[str, ...]]:
         wanted = [tuple(f.split("/", 1)) for f in plan.folders]
         contexts: dict[str, DestinationContext] = {}
         with self._engine.connect() as connection:
@@ -707,31 +700,65 @@ class DeletionService:
         wanted: Sequence[tuple[str, ...]],
         contexts: Mapping[str, DestinationContext],
         journal: IntentJournal,
-    ) -> tuple[tuple[str, ...], tuple[str, ...]]:
-        """Scan the series folders, and only then remove the empty ones. A scan that fails leaves
-        every folder where it is **and writes it down** (`PENDING_FOLDERS_KEY`): `retry_pending`
-        takes it again when Kavita answers, so a failed scan loses nothing and removes nothing."""
-        labels = tuple(f"{d}/{r}" for d, r in wanted)
-        if self._scan is not None:
-            seen: set[str] = set()
-            for destination_id, rel in wanted:
-                top = rel.split("/", 1)[0]
+    ) -> tuple[tuple[str, ...], tuple[str, ...], tuple[str, ...]]:
+        """Scan the series folders, one by one, then remove the empty ones that were scanned.
+        Returns `(removed, kept, waiting)`; `waiting` are the folders whose scan was not sent.
+
+        - Kavita unavailable: this folder and the ones after it wait, written down; the ones
+          already scanned are removed all the same.
+        - A path Kavita refuses for good: only this folder is kept; it counts an attempt and
+          leaves the queue past `MAX_ATTEMPTS`, with an event.
+        A scan that did not happen never removes its folder (`retry_pending` takes it again)."""
+        groups: dict[tuple[str, str], list[tuple[str, str]]] = {}
+        for destination_id, rel in wanted:
+            top = rel.split("/", 1)[0]
+            groups.setdefault((destination_id, top), []).append((destination_id, rel))
+        ready: list[tuple[str, str]] = []
+        refused: list[str] = []
+        waiting: list[str] = []
+        seen: set[str] = set()
+        stopped = False
+        for (destination_id, top), members in groups.items():
+            labels = [f"{d}/{r}" for d, r in members]
+            if stopped:
+                waiting += labels
+                continue
+            if self._scan is None:
+                ready += members
+                continue
+            try:
                 ctx = contexts[destination_id]
                 local = ctx.local(top)
-                if local in seen:
+                if local in seen:  # two destinations may map to one folder: scanned once
+                    ready += members
                     continue
+                self._scan(ctx.remote_folder(local))
                 seen.add(local)
-                try:
-                    self._scan(ctx.remote_folder(local))
-                except Exception as error:
-                    log.warning("deletion.scan_failed", reason=type(error).__name__)
-                    self._remember(labels)
-                    return (), labels  # the folders stay: `retry_pending` takes them
-        removed, kept = self.remove_empty_folders(
-            [(d, r) for d, r in wanted], contexts=contexts, journal=journal
-        )
-        self._forget(labels)
-        return removed, kept
+                ready += members
+            except (ScanRefusedError, ValueError) as error:
+                log.warning("deletion.path_refused", reason=type(error).__name__)
+                refused += labels
+            except Exception as error:  # Kavita cannot be asked: the rest waits for the next pass
+                log.warning("deletion.scan_failed", reason=type(error).__name__)
+                waiting += labels
+                stopped = True
+        removed: tuple[str, ...] = ()
+        kept: list[str] = []
+        unmounted: list[str] = []
+        if ready:
+            removed, left = self.remove_empty_folders(
+                ready, contexts=contexts, journal=journal, unmounted=unmounted
+            )
+            kept += left
+        remember_entries(self._engine, FOLDERS_KEY, [*waiting, *refused, *unmounted])  # a root not
+        # mounted: nothing is known of its folders, the label stays
+        abandoned = settle_entries(
+            self._engine, FOLDERS_KEY,
+            done=[f"{d}/{r}" for d, r in ready if f"{d}/{r}" not in unmounted], refused=refused,
+        )  # fmt: skip
+        if abandoned and self._abandoned is not None:
+            self._abandoned(len(abandoned))
+        return removed, tuple([*kept, *refused, *waiting]), tuple([*refused, *waiting])
 
     # -- the folders that wait for a scan (the scan failed) -------------------------------------
 
@@ -739,25 +766,15 @@ class DeletionService:
         with self._engine.connect() as connection:
             return tuple(load_pending_folders(connection))
 
-    def _remember(self, labels: Sequence[str]) -> None:
-        with write_transaction(self._engine) as connection:
-            held = load_pending_folders(connection)
-            _save_pending(connection, held + [x for x in labels if x not in held])
-
-    def _forget(self, labels: Sequence[str]) -> None:
-        with write_transaction(self._engine) as connection:
-            held = load_pending_folders(connection)
-            if any(x in held for x in labels):
-                _save_pending(connection, [x for x in held if x not in labels])
-
     def retry_pending(
         self, journal: IntentJournal | None = None
-    ) -> tuple[tuple[str, ...], tuple[str, ...]]:
-        """Ask the scan again for the folders a failed scan left, then remove the empty ones. A
-        scan that fails again keeps them written down; a folder that is gone is forgotten."""
+    ) -> tuple[tuple[str, ...], tuple[str, ...], tuple[str, ...]]:
+        """Ask the scan again for the folders a failed scan left, then remove the empty ones.
+        `(removed, kept, waiting)` as `_scan_then_remove`; a folder that is gone is forgotten, but
+        one whose destination root is not mounted stays written down."""
         pending = self.pending_folders()
         if not pending:
-            return (), ()
+            return (), (), ()
         wanted = [tuple(label.split("/", 1)) for label in pending]
         contexts: dict[str, DestinationContext] = {}
         with self._engine.connect() as connection:
@@ -766,11 +783,12 @@ class DeletionService:
                     # a destination that is gone leaves nothing to scan or remove
                     with contextlib.suppress(LookupError, sa.exc.NoResultFound):
                         contexts[destination_id] = load_context(connection, destination_id)
+        gone = [f"{d}/{r}" for d, r in wanted if d not in contexts]
+        if gone:
+            settle_entries(self._engine, FOLDERS_KEY, done=gone)
         wanted = [w for w in wanted if w[0] in contexts]
         journal = journal or IntentJournal(self._engine, self._fsops, clock=self._clock)
-        removed, kept = self._scan_then_remove(wanted, contexts, journal)
-        self._forget([label for label in pending if label not in kept])
-        return removed, kept
+        return self._scan_then_remove(wanted, contexts, journal)
 
     def remove_empty_folders(
         self,
@@ -778,11 +796,13 @@ class DeletionService:
         *,
         contexts: Mapping[str, DestinationContext] | None = None,
         journal: IntentJournal | None = None,
+        unmounted: list[str] | None = None,
     ) -> tuple[tuple[str, ...], tuple[str, ...]]:
         """Remove the folders of destinations Shelfhold wrote that are empty **now** (an `rmdir`
         intent each, and `rmdir` itself refuses a folder that holds anything). Never the root of
         a destination, a reserved folder or a folder of an adopted destination. Returns
-        `(removed, kept)` as `<destination>/<folder>`."""
+        `(removed, kept)` as `<destination>/<folder>`. A folder that cannot be listed because the
+        root of its destination is not there (not mounted) is kept, and named in `unmounted`."""
         journal = journal or IntentJournal(self._engine, self._fsops, clock=self._clock)
         removed: list[str] = []
         kept: list[str] = []
@@ -804,6 +824,10 @@ class DeletionService:
             try:
                 entries = self._fsops.list_dir(folder)
             except (FileNotFoundError, NotADirectoryError):
+                if self._root_is_missing(ctx.root_local):
+                    kept.append(label)  # not mounted: the folder is not known to be gone
+                    if unmounted is not None:
+                        unmounted.append(label)
                 continue
             if entries:
                 kept.append(label)  # something is in it that is not ours to remove
@@ -818,6 +842,15 @@ class DeletionService:
             except (FsopsError, OSError):
                 kept.append(label)
         return tuple(removed), tuple(kept)
+
+    def _root_is_missing(self, root_local: str) -> bool:
+        try:
+            self._fsops.list_dir(root_local)
+        except (FileNotFoundError, NotADirectoryError):
+            return True
+        except (FsopsError, OSError):
+            return False
+        return False
 
     # -- level 1 --------------------------------------------------------------------------------
 

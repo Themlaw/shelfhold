@@ -1573,6 +1573,11 @@
     cause = "A Kavita account associated with a child profile reaches a library that is not family, has no age restriction, includes unknowns, or does not reach any family libraries."
     action = "Read the details in `GET /api/v1/audit/kavita-accounts` or in the Health page, then correct the account in Kavita (libraries, age restriction, “include unknowns”). Shelfhold does not modify anything in Kavita; the audit is replayed every day."
 
+  [errors."kavita.scan_abandoned"]
+    title = "A Kavita scan was given up: Kavita refuses this path."
+    cause = "Kavita refused the same path several times in a row (an error answer specific to that folder). The folder is no longer asked, but nothing more was deleted."
+    action = "Start a library scan from Kavita, or check the name of the folder concerned and the path mapping of the destination."
+
   [errors."target.child_exposure"]
     title = "A Kavita library is accessible to a child account."
     action = "Remove the child account's access to this library in Kavita, then run \"shelfhold target recheck\"."

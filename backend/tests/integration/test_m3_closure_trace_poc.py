@@ -67,8 +67,8 @@ def test_closure_trace_poc_folder_kept_when_kavita_cannot_be_asked_through_the_r
             env.lib.engine, env.lib.fsops, clock=env.clock, locate=env.lib.locate,
             request_scan=scanned.append, refresh_index=index.rewrite, fresh_auth_s=900,
         )  # fmt: skip
-        removed, kept = retry.retry_pending()
-        assert scanned and kept == () and removed
+        removed, kept, waiting = retry.retry_pending()
+        assert scanned and kept == () and waiting == () and removed
         assert not folder.exists()
         assert retry.pending_folders() == ()
 

@@ -38,6 +38,7 @@ from typing import Any, cast
 
 import sqlalchemy as sa
 import structlog
+from sqlalchemy import Engine
 from structlog.contextvars import bound_contextvars
 
 from shelfhold.acquisition.public import (
@@ -68,6 +69,7 @@ from shelfhold.export.application.naming_preview import (
     contested_names,
     preview_names,
 )
+from shelfhold.export.application.pending_scans import remember_scans
 from shelfhold.export.application.pipeline import (
     ExportPipeline,
     PlanPreview,
@@ -429,9 +431,14 @@ def follow_handler(comp: Composition, pools: JobPools) -> Callable[[JobContext],
 class ScanRelay:
     """`request_scan` of the pipeline, forwarded to the client of the destination being exported."""
 
-    def __init__(self) -> None:
+    def __init__(self, engine: Engine | None = None) -> None:
         self.client: KavitaClient | None = None
         self.asked: list[str] = []
+        self._engine = engine  # where a scan that could not be sent is written down
+
+    def lost(self, paths: list[str]) -> None:
+        if self._engine is not None and paths:
+            remember_scans(self._engine, paths)
 
     def __call__(self, remote_path: str) -> None:
         if self.client is not None:
@@ -442,18 +449,20 @@ class ScanRelay:
         """Send the scans asked so far, now: the end of a batch of a rename plan (EF-EXP-030), so
         that Kavita sees each batch when it is done and not when the whole plan is. The plan code
         is synchronous and runs inside the loop of the job: the call has its own loop, in its own
-        thread. Kavita lost: the scans are asked again by the next run."""
+        thread. Kavita lost: the scans are written down, and asked again by the next run."""
         client = self.client
         if client is None or not self.asked:
             return
         from concurrent.futures import ThreadPoolExecutor
 
+        paths = list(self.asked)
         self.asked.clear()
         try:
             with ThreadPoolExecutor(max_workers=1) as pool:
                 pool.submit(lambda: asyncio.run(client.flush_scans(allowed, now=True))).result()
         except TargetError as error:
             log.info("export.scan_failed", reason=type(error).__name__)
+            self.lost(paths)
 
 
 def build_pipeline(
@@ -514,7 +523,7 @@ def export_handler(comp: Composition) -> Callable[[JobContext], None]:
             context.add(scans_retried=sum(LibraryOps(comp).retry_pending_scans().values()))
         except Exception as error:  # never stops the export itself
             log.info("export.scan_retry_failed", reason=type(error).__name__)
-        scans = ScanRelay()
+        scans = ScanRelay(comp.engine)
         disks = _Disks(comp, scans)
         for destination in destinations:
             if context.stop_requested:
@@ -673,9 +682,10 @@ async def _export_bound(
                 await asyncio.sleep(1)
             try:
                 await client.flush_scans(_scan_guard(comp, disks, destination.id))
-            except TargetError as error:  # Kavita lost after the writing: the next run scans again
+            except TargetError as error:  # Kavita lost after the writing: written down, asked again
                 log.info("export.scan_failed", destination_id=destination.id,
                          reason=type(error).__name__)  # fmt: skip
+                scans.lost(list(scans.asked))
     await settle_arrival(comp, client, destination.id, fsops=disks.fsops)
     return applied
 
@@ -814,7 +824,7 @@ def apply_handler(comp: Composition) -> Callable[[JobContext], None]:
         plan_id, version = _plan_of(context.dedupe_key)
         plan = export_plan_destination(comp, plan_id)
         destination = _destination_of(comp, plan)
-        scans = ScanRelay()
+        scans = ScanRelay(comp.engine)
         disks = _Disks(comp, scans)
         try:
             client = comp.kavita_client(destination.target_id)

@@ -483,8 +483,6 @@ class NativeAcquirer:
                 )
                 if created:  # the warning of the rights review is announced, never blocking
                     announced = self._review_rights(connection, edition_id, now)
-                    if screen is not None:  # EF-BIB-004: an identical title is suggested only
-                        suggest_duplicates(connection, screen=screen)
                 ingested = Catalog(connection).ingest(
                     IncomingUnit(
                         binding=BindingRef(binding_id, edition_id),
@@ -501,16 +499,26 @@ class NativeAcquirer:
                         storage.content.c.variant_id == ingested.variant_id
                     )
                 ).first()
-                if stored is not None:
-                    self._bus.deliver(announced)
-                    return Prepared(None, work_id, edition_id, ingested.unit_id,
-                                    ingested.variant_id, created)  # fmt: skip
-                request_id = self._open_request(
-                    connection, binding_id, ingested.variant_id, requester_user_id, visibility, now
-                )
+                request_id = None
+                if stored is None:
+                    request_id = self._open_request(
+                        connection, binding_id, ingested.variant_id, requester_user_id,
+                        visibility, now,
+                    )  # fmt: skip
         self._bus.deliver(announced)
+        if created and screen is not None:
+            self._suggest_titles(screen)  # after the commit: never a condition of the acquisition
         return Prepared(request_id, work_id, edition_id, ingested.unit_id, ingested.variant_id,
                         created)  # fmt: skip
+
+    def _suggest_titles(self, screen: TombstoneScreen) -> None:
+        """EF-BIB-004 (01): an identical title is suggested, never merged. Its own transaction,
+        after the arrival is committed; a failure is logged and the manual scan stays the net."""
+        try:
+            with write_transaction(self._engine) as connection:
+                suggest_duplicates(connection, screen=screen)
+        except Exception as error:
+            log.warning("acquire.suggest_failed", reason=type(error).__name__)
 
     def _review_rights(
         self, connection: Connection, edition_id: str, now: datetime

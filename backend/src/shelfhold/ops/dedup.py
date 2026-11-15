@@ -11,6 +11,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, Protocol
 
+import structlog
+
 from shelfhold.catalog.public import (
     TombstoneScreen,
     detect_suwayomi_migrations,
@@ -25,6 +27,8 @@ if TYPE_CHECKING:
 
     from shelfhold.composition import Composition
 
+log = structlog.get_logger("shelfhold.catalog")
+
 __all__ = ["DedupOps", "suggest_on_arrival"]
 
 
@@ -36,10 +40,13 @@ def suggest_on_arrival(comp: Composition) -> int:
 
     try:
         screen = CatalogScreens(comp).open()
+        with write_transaction(comp.engine) as connection:
+            return len(suggest_duplicates(connection, screen=screen))
     except ExitUnavailableError:
         return 0
-    with write_transaction(comp.engine) as connection:
-        return len(suggest_duplicates(connection, screen=screen))
+    except Exception as error:  # never a condition of the import, the acquisition, the follow
+        log.warning("dedup.suggest_failed", reason=type(error).__name__)
+        return 0
 
 
 class Screens(Protocol):

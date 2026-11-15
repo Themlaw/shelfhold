@@ -12,7 +12,6 @@ Nothing here ever touches a Kavita credential: they do not reach this class.
 from __future__ import annotations
 
 import asyncio
-import contextlib
 from collections.abc import Coroutine
 from dataclasses import asdict
 from typing import TYPE_CHECKING, Any
@@ -21,6 +20,7 @@ import sqlalchemy as sa
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
 from shelfhold.export.application.migration_detect import SwitchoverDetector
+from shelfhold.export.application.pending_scans import remember_scans
 from shelfhold.export.application.precreate import PRECREATED
 from shelfhold.export.application.snapshot import DestinationContext, load_context
 from shelfhold.export.domain.kavita_instance import covering_libraries
@@ -221,10 +221,11 @@ class WizardOps:
         remote_probe = f"{remote.rstrip('/')}/{probe_path.rsplit('/', 1)[1]}"
         return await kavita_reads(client, library, remote, remote_probe)
 
-    @staticmethod
-    async def _forget(client: KavitaClient, remote: str) -> None:
-        with contextlib.suppress(TargetError):  # the probe is gone from the disk either way
+    async def _forget(self, client: KavitaClient, remote: str) -> None:
+        try:
             await client.scan_folder(remote)
+        except TargetError:  # the probe is gone from the disk, but Kavita still lists it: not lost
+            remember_scans(self._comp.engine, [remote])
 
     async def _library_of(
         self, client: KavitaClient, ctx: DestinationContext, remote: str

@@ -32,6 +32,7 @@ OPERATING_EVENTS: frozenset[str] = frozenset(
         "instance.restored_behind",
         "job.dead_lettered",
         "kavita.account_audit",  # M3 L10 (EF-EXP-036): a child's Kavita account reaches too much
+        "kavita.scan_abandoned",  # M3 #263: a path Kavita kept refusing left the scan queue
         "metadata.provider_down",
         "mount.sentinel_missing",
         "notify.failed",
