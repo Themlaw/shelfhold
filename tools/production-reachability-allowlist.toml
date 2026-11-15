@@ -120,6 +120,7 @@ symbols = [
   "shelfhold.sdk.fsops:check_destination_plan_before_run",
   "shelfhold.sdk.api_call:check_api_call",
   "shelfhold.sdk.fsops:ContentRef",
+  "shelfhold.sdk.fsops:PlannedContent",
 ]
 
 # What waited for M2 and is neither wired nor deleted (M2 L31 and closure, 2026-11-12): each group
