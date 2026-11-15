@@ -1,0 +1,17 @@
+{
+  "interactions": [
+    {
+      "request": {
+        "method": "GET",
+        "uri": "https://comicvine.gamespot.com/api/search/"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json; charset=utf-8"
+        },
+        "body": "{\"error\": \"OK\", \"limit\": 5, \"offset\": 0, \"number_of_page_results\": 1, \"number_of_total_results\": 1, \"status_code\": 1, \"results\": [\"no\"]}"
+      }
+    }
+  ]
+}
