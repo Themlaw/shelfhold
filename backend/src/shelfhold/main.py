@@ -185,6 +185,7 @@ LOGGED_SETTINGS: dict[str, str] = {
     "retention_events_days": "retention_events_days",
     "retention_audit_days": "retention_audit_days",
     "stream_max_per_profile": "stream_max_per_profile",
+    "comicvine_enabled": "comicvine_enabled",  # a switch
 }  # fmt: skip
 SECRET_SETTINGS = frozenset(
     {
