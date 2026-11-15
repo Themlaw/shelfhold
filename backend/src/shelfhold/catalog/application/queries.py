@@ -28,6 +28,7 @@ import sqlalchemy as sa
 
 from shelfhold.catalog.domain.provenance import encode_value
 from shelfhold.infrastructure.schema import catalog
+from shelfhold.sdk.age import is_family_ceiling
 
 __all__ = [
     "MAX_PAGE",
@@ -497,13 +498,10 @@ def visible_editions_of_work(
     return found
 
 
-_ADULT_TIER = 18  # a shelf rated 18+ (or X, stored as 99) is an adult's, whatever it holds today
-
-
 def shelf_open_to(scope: ReaderScope, shelf_max_age: int | None) -> bool:
     """Whether a shelf may be named to this reader (the name of a shelf is household data): an
     unrestricted reader sees every shelf; a reader with a ceiling only the shelves that declare an
     audience below the adult tiers. What a shelf holds is filtered Work by Work, never here."""
     if scope.unrestricted:
         return True
-    return shelf_max_age is not None and shelf_max_age < _ADULT_TIER
+    return is_family_ceiling(shelf_max_age)

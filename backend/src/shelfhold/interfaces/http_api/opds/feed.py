@@ -1,6 +1,6 @@
-"""The Atom writer lives in `infrastructure.atom_feed` (no user-facing text here)."""
+"""The Atom writer lives in `platform.atom_feed` (no user-facing text here)."""
 
-from shelfhold.infrastructure.atom_feed import (
+from shelfhold.platform.atom_feed import (
     ATOM,
     ENTRY_TYPE,
     FEED_TYPE,
