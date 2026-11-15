@@ -58,3 +58,4 @@ Chaque ADR contient : Contexte, Facteurs, Options (≥ 2, avantages/inconvénien
 | [0050](0050-passkeys-webauthn.md) | Passkeys (WebAuthn) pour la connexion et la ré-authentification | accepté (porteur 1) | P7, P8 (porteur 1) |
 | [0051](0051-themes-du-front.md) | Thèmes du front : quatre directions sur un socle unique, « Bibliothèque » par défaut | accepté (porteur 2) | Q2 (porteur 2) |
 | [0052](0052-arbre-et-indexeurs.md) | Arbre et indexeurs : un arbre écrit une fois, lu par un ou plusieurs serveurs | accepté après relecture adverse (amende 0011 et 0024, contrat v1.4) | Q48, D6 (M4) |
+| [0053](0053-opds-shelfhold-bloc-serie-relais-kosync.md) | OPDS Shelfhold avec bloc série, et relais kosync vers Kavita | proposée (avance une tranche de M5 ; propose de mettre L10 en option) | EF-LEC-009, EF-INT-007, EF-UX-004, O4 |
