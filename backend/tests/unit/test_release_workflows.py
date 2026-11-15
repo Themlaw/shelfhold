@@ -339,6 +339,7 @@ def test_ghcr_cleanup_is_scheduled_with_a_dry_run() -> None:
 # --- release candidates: the YAML skips what does not apply, and tags nothing ---------------------
 
 
+@pytest.mark.req("ENF-SEC-007", "ENF-OPS-002")
 def test_release_workflow_gives_a_release_candidate_no_second_registry_tag() -> None:
     jobs = _load("release.yml")["jobs"]
     assert "-rc." in str(jobs["second-registry"]["if"])  # skipped, not failed
@@ -347,6 +348,7 @@ def test_release_workflow_gives_a_release_candidate_no_second_registry_tag() -> 
     assert taggers == {"image-tags", "second-registry"}
 
 
+@pytest.mark.req("ENF-SEC-007", "ENF-OPS-002")
 def test_release_workflow_accepts_rc_tags_and_checks_the_prerelease_flag() -> None:
     wf = _load("release.yml")
     jobs = wf["jobs"]
@@ -358,6 +360,7 @@ def test_release_workflow_accepts_rc_tags_and_checks_the_prerelease_flag() -> No
     assert "-rc" in (ROOT / ".github/scripts/release-retag.sh").read_text()
 
 
+@pytest.mark.req("ENF-SEC-007", "ENF-OPS-002")
 def test_docs_workflow_skips_a_release_candidate() -> None:
     build = _load("docs.yml")["jobs"]["build"]
     assert "-rc." in str(build["if"])
@@ -366,6 +369,7 @@ def test_docs_workflow_skips_a_release_candidate() -> None:
     assert "(-rc" not in _text(build)  # the tag check stays strict: only vX.Y.Z is built
 
 
+@pytest.mark.req("ENF-SEC-007", "ENF-OPS-002")
 def test_release_workflows_never_publish_a_latest_tag() -> None:
     for name in ("release.yml", "docs.yml"):
         assert ":latest" not in (ROOT / ".github/workflows" / name).read_text()
