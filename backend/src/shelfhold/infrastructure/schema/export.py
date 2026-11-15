@@ -306,9 +306,9 @@ sa.Index(
 )
 _OTHER_SHELF = (
     "EXISTS (SELECT 1 FROM tree_indexer AS o "
-    "JOIN shelf_destination AS od ON od.id = o.shelf_destination_id "
-    "JOIN shelf_destination AS nd ON nd.id = NEW.shelf_destination_id "
-    "WHERE o.tree_id = NEW.tree_id AND od.shelf_id <> nd.shelf_id)"
+    "JOIN shelf_destination AS old_d ON old_d.id = o.shelf_destination_id "
+    "JOIN shelf_destination AS new_d ON new_d.id = NEW.shelf_destination_id "
+    "WHERE o.tree_id = NEW.tree_id AND old_d.shelf_id <> new_d.shelf_id)"
 )
 _NOT_A_TREE = (
     "(SELECT transport FROM shelf_destination WHERE id = NEW.shelf_destination_id) <> 'tree'"
