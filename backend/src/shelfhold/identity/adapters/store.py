@@ -655,6 +655,22 @@ class SqlIdentityStore:
                 # nor the Kavita keys of the old one: a key was pasted for a role, in the same
                 # transaction, one audit line each (EF-USR-012)
                 erase_accounts(conn, user_id, now=now, entry=revoked_audit)
+                closed = conn.execute(  # an e-reader of the old role: same rule, same transaction
+                    sa.update(_device)
+                    .where(_device.c.subject_user_id == user_id, _device.c.revoked_at.is_(None))
+                    .values(revoked_at=now)
+                ).rowcount
+                if closed:
+                    conn.execute(
+                        audit_insert(
+                            AuditEntry(
+                                actor_id=actor_id,
+                                action="device_token.revoked_role_change",
+                                target=f"{user_id} device_tokens={closed}",
+                                at=now,
+                            )
+                        )
+                    )
             written = conn.execute(
                 sa.select(_user.c.id, _user.c.username, _user.c.role, _user.c.max_age_rating,
                           _user.c.can_rate, _user.c.visibility, _user.c.hide_unrated_remote,

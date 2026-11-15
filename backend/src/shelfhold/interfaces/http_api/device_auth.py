@@ -12,9 +12,14 @@ What the dependency gives back is the **subject** profile of the token, read fro
 this request (role and ceiling are never kept), with the credential `device_token`. Nothing here
 writes a library, a secret or a setting.
 
+TLS is required: over plain HTTP (after `http_trusted_proxies` has said what the proxy saw) the
+request is refused with `device_tls_required` before any secret is looked at, unless the admin set
+`device_allow_plain_http` (a trusted local network, at their risk).
+
 Failures are one answer, 401, for an unknown identifier, a wrong key, a revoked and an expired
 token. A wrong guess is counted per (address, identifier) and per address; over the limit the
-answer is 429 with `Retry-After`, even for the right key (a guess cannot be told from it).
+answer is 429 with `Retry-After`, even for the right key. The address limit alone slows failures
+(past it a wrong guess is a 429) and never refuses a right secret.
 Nothing about the credential is logged: the audit and the logs name the token by its public
 identifier at most, and never the secret, the md5 or the header.
 """
@@ -29,7 +34,11 @@ from shelfhold.identity.public import Principal, ThrottledError
 from shelfhold.infrastructure.http_headers import BASIC_CHALLENGE
 from shelfhold.interfaces.http_api.auth import gate_of
 from shelfhold.interfaces.http_api.problems import ProblemError
-from shelfhold.interfaces.http_api.ratelimit import client_ip_of, recognise_device_credential
+from shelfhold.interfaces.http_api.ratelimit import (
+    client_ip_of,
+    client_scheme_of,
+    recognise_device_credential,
+)
 
 DEVICE_ROUTE_PREFIXES = ("/opds", "/kosync")  # closed: a device token reaches nothing else
 _MAX_HEADER = 512
@@ -71,6 +80,10 @@ def _resolve(request: Request, *, basic: bool) -> Principal:
     if not _in_reach(str(request.scope.get("path", ""))):
         # the closed list holds where the token is read: a route mounted elsewhere never gets one
         raise ProblemError("credential_not_allowed")
+    if client_scheme_of(request.scope) != "https" and not getattr(
+        request.app.state, "device_allow_plain_http", False
+    ):  # before the secret is read: in clear it would travel, and replay, as it is (ADR-0053 §4)
+        raise ProblemError("device_tls_required")
     challenge = {"WWW-Authenticate": BASIC_CHALLENGE} if basic else None
     presented = _basic(request) if basic else _kosync(request)
     if presented is None:  # nothing to guess: not counted against anyone

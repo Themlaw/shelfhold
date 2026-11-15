@@ -207,8 +207,21 @@ class ClientIpMiddleware:
             client = scope.get("client")
             forwarded = Headers(scope=scope).getlist("x-forwarded-for") if self.trusted else []
             ip = real_client_ip(client[0] if client else None, forwarded, self.trusted)
-            scope.setdefault("state", {})["client_ip"] = ip
+            state = scope.setdefault("state", {})
+            state["client_ip"] = ip
+            state["client_scheme"] = self._scheme(scope, client[0] if client else None)
         await self.app(scope, receive, send)
+
+    def _scheme(self, scope: Scope, peer: str | None) -> str:
+        """The scheme the caller used: the socket's, unless the peer is a trusted proxy, which
+        names it in `X-Forwarded-Proto` (the last line, the one the nearest proxy wrote)."""
+        scheme = str(scope.get("scheme", "http"))
+        parsed = normalize_ip(peer) if peer else None
+        if parsed is None or not any(parsed in network for network in self.trusted):
+            return scheme
+        lines = Headers(scope=scope).getlist("x-forwarded-proto")
+        said = lines[-1].split(",")[-1].strip().lower() if lines else ""
+        return said if said in {"http", "https"} else scheme
 
 
 def client_ip_of(scope: Scope) -> str:
@@ -218,6 +231,12 @@ def client_ip_of(scope: Scope) -> str:
     client = scope.get("client")
     parsed = normalize_ip(client[0]) if client else None
     return str(parsed) if parsed is not None else UNKNOWN
+
+
+def client_scheme_of(scope: Scope) -> str:
+    """`https` or `http` as the caller reached us (after `http_trusted_proxies`)."""
+    value = scope.get("state", {}).get("client_scheme")
+    return value if isinstance(value, str) else str(scope.get("scheme", "http"))
 
 
 def retry_after_header(wait: float) -> int:

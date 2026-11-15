@@ -22830,6 +22830,10 @@
       "code": "detach.refused",
       "status": 409
     },
+    "/api/v1/problems/device-tls-required": {
+      "code": "device_tls_required",
+      "status": 403
+    },
     "/api/v1/problems/disk.low": {
       "code": "disk.low",
       "status": 503

@@ -27,11 +27,11 @@ from pathlib import Path
 
 from shelfhold.config import ResolvedSettings, Settings
 from shelfhold.i18n import t
+from shelfhold.identity.domain.roles import ProfileError
 from shelfhold.identity.public import (
     AdminExistsError,
     LocalAuth,
     UnknownUserError,
-    format_secret,
     local_auth,
 )
 from shelfhold.infrastructure.db import create_db_engine
@@ -415,13 +415,15 @@ def run_device_tokens_create(args: argparse.Namespace, auth: IdentityCommands) -
         )
     except UnknownUserError:
         return _fail(t("admin.unknown_user", username=args.profile))
+    except ProfileError:  # the subject is an administrator
+        return _fail(t("admin.device_admin_subject"))
     except ValueError:
         return _fail(t("cli.admin_device_expires_help"))
     print(
         t("admin.device_created", profile=args.profile, public_id=created.public_id),
         file=sys.stderr,
     )
-    print(format_secret(created.secret))  # stdout carries the secret alone, once
+    print(created.secret)  # stdout carries the secret alone, once
     print(t("admin.device_hint"), file=sys.stderr)
     if created.expires_at is not None:
         print(t("admin.device_expires", date=created.expires_at.isoformat()), file=sys.stderr)

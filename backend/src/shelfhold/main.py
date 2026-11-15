@@ -170,6 +170,7 @@ LOGGED_SETTINGS: dict[str, str] = {
     "auth_forward_enabled": "proxy_identity_enabled",  # a switch
     "http_public_rate_per_minute": "public_rate_per_minute",
     "http_device_rate_per_minute": "device_rate_per_minute",  # networks, not credentials
+    "device_allow_plain_http": "device_allow_plain_http",  # a switch
     "maintenance_window_start": "maintenance_window_start",
     "maintenance_window_end": "maintenance_window_end", "timezone": "timezone",
     "retention_events_days": "retention_events_days",
@@ -499,6 +500,7 @@ def create_app(
         ),
         public_rate_per_minute=resolved.http_public_rate_per_minute,
         device_rate_per_minute=resolved.http_device_rate_per_minute,
+        device_allow_plain_http=resolved.device_allow_plain_http,
         maintenance_active=MaintenanceMode(engine, clock).probe,  # EF-INT-018
     )
 

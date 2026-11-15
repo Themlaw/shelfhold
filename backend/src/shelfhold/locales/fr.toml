@@ -751,7 +751,8 @@ key_revoked = "Clé {prefix} révoquée."
 key_unknown = "Aucune clé active avec le préfixe {prefix}."
 no_keys = "Aucune clé d'API."
 key_line = "{prefix}  {name}  {scopes}  {state}"
-device_created = "Jeton créé pour le profil {profile} (identifiant {public_id}). Le secret ne sera plus jamais affiché ; saisissez-le sans espaces ni tirets :"
+device_created = "Jeton créé pour le profil {profile} (identifiant {public_id}). Le secret ne sera plus jamais affiché ; à saisir tel quel, sans espace ni tiret :"
+device_admin_subject = "Un profil administrateur ne porte pas de jeton d'appareil : une liseuse perdue ouvrirait tout le catalogue. Choisissez un profil lecteur."
 device_hint = "Même identifiant et même secret dans OPDS (HTTP Basic) et dans kosync. La révocation est la seule parade à la perte de la liseuse."
 device_expires = "Expire le {date}."
 device_never_expires = "Sans expiration."
@@ -1153,6 +1154,11 @@ cause = "La création du premier compte n'est possible que tant qu'aucun adminis
 title = "Identifiant ou mot de passe incorrect."
 action = "Vérifiez l'identifiant et le mot de passe, puis recommencez."
 cause = "L'identifiant ou le mot de passe ne correspond à aucun compte ; Shelfhold ne dit pas lequel des deux est faux."
+
+[errors."device_tls_required"]
+title = "Une liseuse doit se connecter en HTTPS."
+action = "Servez Shelfhold derrière TLS (et déclarez le proxy dans http_trusted_proxies), ou, sur un réseau local de confiance seulement, mettez device_allow_plain_http à vrai."
+cause = "Le secret d'une liseuse circulerait en clair et se rejouerait tel quel ; la requête est refusée avant toute vérification."
 
 [errors."invalid_cursor"]
 title = "Le curseur de pagination est invalide."

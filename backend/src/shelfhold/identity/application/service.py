@@ -1192,6 +1192,8 @@ class LocalAuth:
         subject = self._store.user_by_name(subject_username.strip())
         if subject is None:
             raise UnknownUserError
+        if subject.role == "admin":  # a lost e-reader would open the whole catalogue, unfiltered
+            raise ProfileError("device_subject_is_admin")
         if expires_days is not None and expires_days < 1:
             raise ValueError("invalid_expiry")
         now = self.now()
@@ -1247,14 +1249,17 @@ class LocalAuth:
         """The profile a device token acts as, or None. One of `secret` (HTTP Basic, OPDS) or
         `md5_key` (`x-auth-key` of KOReader, kosync). The answer is the same for an unknown
         identifier and a wrong key. A wrong attempt is counted before the check, per (address,
-        identifier) and per address alone, and a right one withdraws its count and clears its
-        pair; while a pair or an address is over its limit even the right key waits
-        (`ThrottledError`). Rights and filters are read from the subject at each request."""
+        identifier); a right one withdraws its count and clears its pair. While a pair is over its
+        limit even the right key waits (`ThrottledError`). The address limit counts failures
+        alone: past it a wrong guess is a `ThrottledError`, a right secret is still served (with
+        130 bits nobody guesses, and a shared address must not lock every e-reader out).
+        Rights and filters are read from the subject at each request."""
         wanted = public_id.strip().lower() if isinstance(public_id, str) else ""
         wanted = wanted[: PUBLIC_ID_LENGTH + 8]
         account = f"{address_key(ip)}|{wanted}"
         at = self.now()
-        wait = self._device_throttle.reserve(ip=ip, account=account, now=at)
+        # only the pair is reserved here: the address limit slows failures, never a right secret
+        wait = self._device_throttle.reserve(ip=ip, account=account, now=at, skip_address=True)
         if wait is not None:
             raise ThrottledError(max(1, math.ceil(wait)))
         presented = (
@@ -1271,13 +1276,15 @@ class LocalAuth:
         matched = presented is not None and same_secret(expected, presented)
         if record is None or not matched:
             structlog.get_logger().warning("auth.device_token_failed", ip=ip)  # never the key
+            self._device_failed(ip, at)
             return None
         now = self.now()
         if record.revoked_at is not None or (
             record.expires_at is not None and now >= record.expires_at
         ):
-            return None  # counted like any wrong attempt: the guess had the right shape
-        self._device_throttle.release(ip=ip, account=account, at=at)
+            self._device_failed(ip, at)  # the guess had the right shape: counted
+            return None
+        self._device_throttle.release(ip=ip, account=account, at=at, skip_address=True)
         self._device_throttle.reset_account(account)
         if record.last_used_at is None or now - record.last_used_at >= API_KEY_TOUCH_INTERVAL:
             self._store.touch_device_token(record.id, now=now)
@@ -1290,6 +1297,12 @@ class LocalAuth:
         return token_principal(
             held, username=record.subject.username, role=record.subject.role, can_rate=False
         )
+
+    def _device_failed(self, ip: str, at: datetime) -> None:
+        """A wrong attempt: counted against the address; past its limit it is a 429, not a 401."""
+        wait = self._device_throttle.fail_address(ip=ip, now=at)
+        if wait is not None:
+            raise ThrottledError(max(1, math.ceil(wait)))
 
     def authenticate_forward(self, username: str) -> Principal | None:
         """The account a believed proxy named, or None: nobody is created from a header.

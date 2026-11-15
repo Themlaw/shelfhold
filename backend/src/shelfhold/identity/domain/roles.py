@@ -36,7 +36,7 @@ PROFILE_ERRORS: Final = frozenset(
         "ceiling_above_creator", "username_taken", "too_many_admins", "last_admin",
         "cannot_remove_self", "cannot_change_own_role", "changed_meanwhile", "invalid_visibility",
         "child_visibility_household", "not_a_child", "invalid_kavita_username",
-        "kavita_username_taken",
+        "kavita_username_taken", "device_subject_is_admin",
     }
 )  # fmt: skip
 

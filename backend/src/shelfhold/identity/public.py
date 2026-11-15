@@ -86,7 +86,7 @@ from shelfhold.identity.domain.credentials import (
     credential_axis,
     session_policy,
 )
-from shelfhold.identity.domain.device_secret import format_secret, normalise_secret
+from shelfhold.identity.domain.device_secret import normalise_secret
 from shelfhold.identity.domain.device_token import DeviceToken, device_token, token_principal
 from shelfhold.identity.domain.emitters import (
     CLOSED_SITES,
@@ -248,7 +248,6 @@ __all__ = [
     "family_profile",
     "family_search_mode",
     "family_source_keys",
-    "format_secret",
     "holds_rate_right",
     "local_auth",
     "normalise_secret",

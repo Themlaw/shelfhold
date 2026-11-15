@@ -95,6 +95,12 @@ class Answer:
         return self.body
 
 
+def kosync_status(client: Any, created: Any, headers: dict[str, str] | None = None) -> int:
+    """The status kosync answers `client` with the token's own key (or the given headers)."""
+    sent = headers if headers is not None else kosync(created.public_id, created.secret)
+    return int(client.get(KOSYNC_AUTH, headers=sent).status_code)
+
+
 def device_get(
     env: AuthEnv,
     headers: dict[str, str] | None = None,
@@ -248,7 +254,7 @@ def test_kosync_auth_uses_device_token_secret(api: AuthEnv) -> None:
 def test_one_token_opens_both_doors_basic_for_opds_and_md5_for_kosync(api: AuthEnv) -> None:
     kid = profile(api, "kid", "child", max_age_rating=7)
     created = issue(api, "kid")
-    typed = created.secret.upper()  # a Basic client may type capitals; kosync takes the displayed form
+    typed = created.secret.upper()  # a Basic client may type capitals; kosync, the form shown
     for secret in (created.secret, typed):
         answer = device_get(api, basic(created.public_id, secret))
         assert answer.status_code == 200, answer.text
@@ -560,12 +566,13 @@ def test_the_right_reader_passes_after_thirty_failures_under_invented_identifier
         guess = f"{index:08d}".replace("0", "x")
         assert shared.get(KOSYNC_AUTH, headers=kosync(guess, "n" * 26)).status_code == 401
     assert shared.get(KOSYNC_AUTH, headers=kosync("23232323", "n" * 26)).status_code == 429
-    assert shared.get(KOSYNC_AUTH, headers=kosync(created.public_id, created.secret)).status_code == 200
-    assert device_get(api, basic(created.public_id, created.secret), ip="198.51.100.30").status_code == 200
+    assert kosync_status(shared, created) == 200
+    opds = device_get(api, basic(created.public_id, created.secret), ip="198.51.100.30")
+    assert opds.status_code == 200
     # the pair limit stays: a reader's own identifier guessed wrongly five times waits, even right
     for _ in range(PER_PAIR):
         shared.get(KOSYNC_AUTH, headers=kosync(created.public_id, "n" * 26))
-    assert shared.get(KOSYNC_AUTH, headers=kosync(created.public_id, created.secret)).status_code == 429
+    assert kosync_status(shared, created) == 429
 
 
 def test_a_good_token_does_not_pay_for_its_own_successes(api: AuthEnv) -> None:
@@ -692,12 +699,12 @@ def test_the_database_holds_no_token_secret_after_a_whole_life(api: AuthEnv) -> 
 def test_the_diagnostic_bundle_holds_no_device_token_secret_md5_or_digest(
     monkeypatch: pytest.MonkeyPatch, settings: Settings, tmp_path: Path
 ) -> None:
-    traps = trap_instance(monkeypatch, settings, tmp_path)
+    trap_instance(monkeypatch, settings, tmp_path)
     engine = create_db_engine(settings.database_path)
     try:
-        created = local_auth(engine, settings).create_device_token(
-            subject_username=traps.values["email"], name="liseuse"
-        )
+        auth = local_auth(engine, settings)
+        auth.profile_add("reader", PASSWORD, "member")  # an admin carries no token
+        created = auth.create_device_token(subject_username="reader", name="liseuse")
     finally:
         engine.dispose()
     out = tmp_path / "out" / "bundle.zip"
@@ -745,45 +752,46 @@ def test_plain_http_is_refused_before_the_secret_is_checked(api: AuthEnv) -> Non
     assert answer.status_code != 200
     # nothing was counted against the reader: the secret was never looked at
     secure = api.other_client("192.0.2.40")
-    assert secure.get(KOSYNC_AUTH, headers=kosync(created.public_id, created.secret)).status_code == 200
-    assert (
-        device_get(api, basic(created.public_id, created.secret), ip="192.0.2.40").status_code == 200
-    )
+    assert kosync_status(secure, created) == 200
+    opds = device_get(api, basic(created.public_id, created.secret), ip="192.0.2.40")
+    assert opds.status_code == 200
 
 
 def test_plain_http_is_allowed_by_the_explicit_setting_only(
     monkeypatch: pytest.MonkeyPatch, settings: Settings
 ) -> None:
     assert Settings.model_fields["device_allow_plain_http"].default is False
-    with auth_env(monkeypatch, settings.model_copy(update={"device_allow_plain_http": True})) as env:
+    allowed = settings.model_copy(update={"device_allow_plain_http": True})
+    with auth_env(monkeypatch, allowed) as env:
         profile(env, "kid", "child", max_age_rating=7)
         created = issue(env, "kid")
         plain = env.other_client("192.0.2.41", base_url="http://testserver")
-        assert plain.get(KOSYNC_AUTH, headers=kosync(created.public_id, created.secret)).status_code == 200
+        assert kosync_status(plain, created) == 200
 
 
-def test_the_forwarded_scheme_counts_only_behind_a_trusted_proxy(
+def test_the_forwarded_scheme_is_ignored_without_a_trusted_proxy(api: AuthEnv) -> None:
+    profile(api, "kid", "child", max_age_rating=7)
+    created = issue(api, "kid")
+    plain = api.other_client("192.0.2.42", base_url="http://testserver")
+    headers = {**kosync(created.public_id, created.secret), "X-Forwarded-Proto": "https"}
+    assert kosync_status(plain, created, headers) == 403
+
+
+def test_the_forwarded_scheme_counts_behind_a_trusted_proxy(
     monkeypatch: pytest.MonkeyPatch, settings: Settings
 ) -> None:
-    forwarded = {"X-Forwarded-Proto": "https"}
-    # no trusted proxy: the header is ignored, a plain request stays plain
-    with auth_env(monkeypatch, settings) as env:
-        profile(env, "kid", "child", max_age_rating=7)
-        created = issue(env, "kid")
-        plain = env.other_client("192.0.2.42", base_url="http://testserver")
-        headers = {**kosync(created.public_id, created.secret), **forwarded}
-        assert plain.get(KOSYNC_AUTH, headers=headers).status_code == 403
     trusted = settings.model_copy(update={"http_trusted_proxies": ("192.0.2.0/24",)})
     with auth_env(monkeypatch, trusted) as env:
         profile(env, "kid", "child", max_age_rating=7)
         created = issue(env, "kid")
         headers = kosync(created.public_id, created.secret)
         proxy = env.other_client("192.0.2.43", base_url="http://testserver")
-        assert proxy.get(KOSYNC_AUTH, headers={**headers, **forwarded}).status_code == 200
-        assert proxy.get(KOSYNC_AUTH, headers={**headers, "X-Forwarded-Proto": "http"}).status_code == 403
-        assert proxy.get(KOSYNC_AUTH, headers=headers).status_code == 403  # a proxy that says nothing
-        stranger = env.other_client("198.51.100.44", base_url="http://testserver")  # not the proxy
-        assert stranger.get(KOSYNC_AUTH, headers={**headers, **forwarded}).status_code == 403
+        assert kosync_status(proxy, created, {**headers, "X-Forwarded-Proto": "https"}) == 200
+        said_http = {**headers, "X-Forwarded-Proto": "http"}
+        assert kosync_status(proxy, created, said_http) == 403
+        assert kosync_status(proxy, created, headers) == 403  # a proxy that says nothing
+        stranger = env.other_client("198.51.100.44", base_url="http://testserver")  # not a proxy
+        assert kosync_status(stranger, created, {**headers, "X-Forwarded-Proto": "https"}) == 403
 
 
 # --- an admin profile carries no device token; a change of role closes the tokens ---------------
@@ -805,8 +813,14 @@ def test_a_change_of_role_closes_the_device_tokens_of_the_profile_and_audits_it(
     auth_of(api).profile_set(kid, role="member", max_age_rating=None)
     assert device_get(api, basic(mine.public_id, mine.secret)).status_code == 401
     assert device_get(api, basic(theirs.public_id, theirs.secret)).status_code == 200
-    assert other and db_rows(
-        api.settings, "SELECT count(*) FROM device_token WHERE revoked_at IS NOT NULL"
-    )[0][0] == 1
-    audited = db_rows(api.settings, "SELECT action, target FROM audit_log WHERE action LIKE 'device_token.%'")
+    assert (
+        other
+        and db_rows(api.settings, "SELECT count(*) FROM device_token WHERE revoked_at IS NOT NULL")[
+            0
+        ][0]
+        == 1
+    )
+    audited = db_rows(
+        api.settings, "SELECT action, target FROM audit WHERE action LIKE 'device_token.%'"
+    )
     assert any("device_tokens=1" in str(row[1]) for row in audited), audited

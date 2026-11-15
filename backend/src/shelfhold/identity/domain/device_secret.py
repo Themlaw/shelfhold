@@ -43,11 +43,6 @@ def new_device_credential() -> DeviceCredential:
     return DeviceCredential(public_id=_draw(PUBLIC_ID_LENGTH), secret=_draw(SECRET_LENGTH))
 
 
-def format_secret(secret: str) -> str:
-    """Groups of four, as displayed. They are typed without the separators."""
-    return " ".join(secret[i : i + 4] for i in range(0, len(secret), 4))
-
-
 def normalise_secret(typed: str) -> str:
     """What a person typed (with the groups' separators, in capitals) reduced to the canonical
     secret. For HTTP Basic only: KOReader's `x-auth-key` is the md5 of exactly what was typed."""
