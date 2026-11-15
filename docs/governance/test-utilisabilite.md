@@ -2,7 +2,7 @@
 
 Source : [`docs/spec/03-roadmap-tdd.md`](../spec/03-roadmap-tdd.md) (définition de fini de la 1.0), ENF-UX-001, ENF-COMP-002, D3 de [`docs/decisions/M3.md`](../decisions/M3.md).
 
-Le tag `v1.0.0-rc.1` est posé à la fin de M3. Ce test, tenu par le mainteneur, décide du tag `v1.0.0` : **chaque tâche doit être réussie sans aide par au moins 4 personnes sur 5**. Sinon, une itération ciblée précède le tag (pas de 1.0 sans ≥ 4/5). Aucun outil ne le remplace : le parcours chronométré de la CI (`test_first_book_under_10_minutes`) mesure le produit, pas la compréhension d'une personne.
+Le tag `v1.0.0-rc.1` est posé à la fin de M3. Le porteur, seul utilisateur pour l'instant, a décidé le 15/11 que ce test n'est plus une condition du tag `v1.0.0` (voir `docs/decisions/M4.md`) : il devient une condition de l'**annonce publique**. Tenu par le mainteneur, il exige que **chaque tâche soit réussie sans aide par au moins 4 personnes sur 5**. Sinon, une itération ciblée précède l'annonce (pas d'annonce publique sans ≥ 4/5). Aucun outil ne le remplace : le parcours chronométré de la CI (`test_first_book_under_10_minutes`) mesure le produit, pas la compréhension d'une personne.
 
 ## Avant la séance
 
@@ -67,13 +67,13 @@ Les familles : navigateur de bureau, Safari iOS, Boox, Kindle, Kobo, KOReader, K
 
 ## Après la séance
 
-1. Agréger, décider : ≥ 4/5 sur les cinq tâches → `v1.0.0` ; sinon, lister les correctifs, les faire, puis refaire **seulement les tâches échouées** avec de nouvelles personnes.
+1. Agréger, décider : ≥ 4/5 sur les cinq tâches → l'annonce publique peut avoir lieu (le tag `v1.0.0` ne l'attend pas) ; sinon, lister les correctifs, les faire, puis refaire **seulement les tâches échouées** avec de nouvelles personnes.
 2. Mettre à jour la [matrice des clients](../admin/clients.md) avec les familles vérifiées.
 3. Consigner le résultat dans `docs/decisions/M3.md` (section « Clôture ») et le journal des portes ([portes](portes.md)) : c'est le test de substitution à la porte P2 (le test concierge n'a pas eu lieu).
 
 ## Questions au juriste (D4, Q27b)
 
-Le tag `v1.0.0` n'attend pas l'avis ; **l'annonce publique l'attend** (porte P3). Le dépôt reste public et non promu jusqu'à l'avis. Les questions, à remettre avec la politique écrite ([`docs/legal/`](../legal/cra.md), ADR-0015, ENF-LEG-001 à 007) :
+Le tag `v1.0.0` n'attend pas l'avis ; **l'annonce publique l'attend** (porte P3), comme elle attend le test d'utilisabilité. Le dépôt reste public et non promu jusqu'à l'avis. Les questions, à remettre avec la politique écrite ([`docs/legal/`](../legal/cra.md), ADR-0015, ENF-LEG-001 à 007) :
 
 **1. Cadre familial (bibliothèque personnelle du foyer).**
 - Une copie faite par l'utilisateur depuis une source licite, puis lue par les membres de son foyer via Kavita, relève-t-elle de la copie privée (CPI L122-5 2° ; CJUE, C-435/12 : source licite seulement) ou de la représentation dans le cercle de famille (L122-5 1°) ? À quelles conditions (même foyer, pas d'accès hors du cercle) ?
