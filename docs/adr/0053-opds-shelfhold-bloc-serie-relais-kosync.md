@@ -1,5 +1,5 @@
 ---
-status: proposée
+status: acceptée
 date: 2026-11-15
 decision-makers: mainteneur
 ---
@@ -297,3 +297,6 @@ EF-LEC-009, EF-LEC-014, EF-LEC-007, EF-INT-007, EF-UX-004, EF-USR-006, EF-USR-02
 - https://github.com/Kareadita/Kavita/blob/e844b64/Kavita.Models/DTOs/Koreader/KoreaderBookDto.cs
 - `docs/decisions/M4.md` (L13), ADR-0045, ADR-0049, ADR-0052
 - `~/shelfhold-spec/PLAN-M4.md` (L10, L12, L13, L14a, L14b, §6 D8 et D11)
+
+## Acceptation (2026-11-15)
+Acceptée par le mainteneur, qui a demandé cette voie, avec la révision qui répond au contradicteur. Points tranchés par défaut, révisables : L10 passe en « Plus tard » (EF-EXP-019 redatée) ; plafond de 500 Mio par partie avec découpage « (1 sur N) » ; secret de jeton saisi une fois sur la liseuse ; EPUB hors du relais (L51). Ordre : le premier incrément (L46, L46b, L48, L49a) passe dès que L12 et L13 sont fusionnés ; L50 n'ouvre qu'après les vérifications sur appareil réel listées plus haut.
