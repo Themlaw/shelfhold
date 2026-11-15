@@ -1,11 +1,31 @@
 <script lang="ts">
   // EF-UX-005: the tabs the server offered to the signed-in role (see `nav.ts`).
-  import { navItems } from '#lib/nav.ts';
+  import { goto } from '$app/navigation';
+  import { logout } from '#lib/api/index.ts';
   import { t } from '#lib/i18n/index.ts';
+  import { csrfToken } from '#lib/passkeys.ts';
+  import { navItems } from '#lib/nav.ts';
 
   let { ids, current = null }: { ids: readonly string[]; current?: string | null } = $props();
 
   const items = $derived(navItems(ids));
+
+  let busy = $state(false);
+  let failed = $state(false);
+
+  async function signOut(): Promise<void> {
+    busy = true;
+    failed = false;
+    try {
+      await logout({ headers: { 'X-CSRF-Token': csrfToken() }, throwOnError: true });
+      // eslint-disable-next-line svelte/no-navigation-without-resolve -- the app is served at the root of its origin
+      await goto('/login');
+    } catch {
+      failed = true;
+    } finally {
+      busy = false;
+    }
+  }
 </script>
 
 {#if items.length > 0}
@@ -19,7 +39,13 @@
           </a>
         </li>
       {/each}
+      <li>
+        <button type="button" disabled={busy} onclick={signOut}>{t('nav.logout')}</button>
+      </li>
     </ul>
+    {#if failed}
+      <p role="alert" class="err">{t('nav.logout_failed')}</p>
+    {/if}
   </nav>
 {/if}
 
@@ -37,6 +63,7 @@
     list-style: none;
     margin: 0;
     padding: 0;
+    align-items: center;
   }
   a {
     color: var(--color-accent);
@@ -48,5 +75,15 @@
   }
   a[aria-current='page'] {
     font-weight: 600;
+  }
+  button {
+    min-height: 2.75rem;
+    min-width: 2.75rem;
+    display: inline-flex;
+    align-items: center;
+  }
+  .err {
+    color: var(--color-err);
+    margin: 0.5rem 0 0;
   }
 </style>

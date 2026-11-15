@@ -64,6 +64,8 @@
   "rights.translation_may_be_protected": "La traduction peut être encore protégée dans votre pays ({country}). Ce calcul est indicatif et ne bloque rien.",
   "rights.no_information": "Aucune information sur les droits dans votre pays.",
   "nav.label": "Navigation principale",
+  "nav.logout": "Se déconnecter",
+  "nav.logout_failed": "La déconnexion a échoué. Réessayez.",
   "nav.home": "Accueil",
   "nav.search": "Chercher",
   "nav.requests": "Mes demandes",
