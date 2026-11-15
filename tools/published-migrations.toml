@@ -192,7 +192,7 @@ since = "1.0"
 
 [[migration]]
 file = "0065_reading_progress_merge.py"
-sha256 = "fd4d10af22d29c539078f3d2d69cb3e15595231f29bd98555c533d991622637e"
+sha256 = "4b30c7df367351edd4b0f2072f8e7ed54572afa85d0fc43c29a33bbc0b8ce828"
 since = "1.1"
 
 [[migration]]

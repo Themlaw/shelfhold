@@ -1025,6 +1025,39 @@ class PurgeService:
                 connection.execute(sa.delete(plan_table).where(plan_table.c.plan_id == row.plan_id))
 
     @staticmethod
+    def _scrub_positions(connection: Connection, plan: _Plan) -> None:
+        """The positions of other files keep Unit ids (coverage, read journal, undo overlay):
+        the ones of the erased Work go out of them."""
+        gone = set(plan.unit_ids)
+        if not gone:
+            return
+        position = reading.reading_position
+        for row in connection.execute(
+            sa.select(
+                position.c.id, position.c.covered_units, position.c.read_units,
+                position.c.undone_units,
+            )
+        ).all():
+            covered = row.covered_units
+            read = row.read_units or []
+            undone = row.undone_units or {}
+            if not (
+                gone.intersection(covered or [])
+                or gone.intersection(read)
+                or gone.intersection(undone)
+            ):
+                continue
+            connection.execute(
+                sa.update(position).where(position.c.id == row.id).values(
+                    covered_units=(
+                        None if covered is None else [u for u in covered if u not in gone]
+                    ),
+                    read_units=[u for u in read if u not in gone],
+                    undone_units={u: t for u, t in undone.items() if u not in gone},
+                )
+            )
+
+    @staticmethod
     def _erase_rows(connection: Connection, plan: _Plan, allowed: PurgeAuthorization) -> None:
         position = reading.reading_position
         connection.execute(
@@ -1041,6 +1074,7 @@ class PurgeService:
                 )
             )
         )
+        PurgeService._scrub_positions(connection, plan)
         connection.execute(
             sa.delete(export.export_item).where(export.export_item.c.id.in_(plan.items))
         )

@@ -11,8 +11,6 @@ Hashes are stored like every digest of the schema, `md5:<lowercase hex>`, Kavita
 uppercase form is the one it prints, not one worth storing, and comparing is case-blind.
 """
 
-import hashlib
-import os
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -24,7 +22,11 @@ from sqlalchemy import Engine
 from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.logging import escaped
 from shelfhold.infrastructure.schema import export
-from shelfhold.reading.domain.document_hash import kavita_hash, koreader_partial_md5
+from shelfhold.reading.domain.document_hash import (
+    kavita_hash,
+    koreader_partial_md5,
+    verified_hashes,
+)
 
 log = structlog.get_logger(__name__)
 
@@ -79,31 +81,21 @@ def record_rewrite(
 
 
 # (item, file hash) -> (size, mtime_ns) of the file that was found NOT to be the one the alias
-# names: not read again until the file changes. Bounded; a full table starts again empty.
+# names: not read again until the file changes. Bounded; a full table starts again empty. A
+# known false negative (« #284 : second passage », m1): the right file put back with the same size
+# and its date kept (a restore with `rsync -a`) is skipped until the next start.
 _NOT_THE_FILE: dict[tuple[str, str], tuple[int, int]] = {}
 _NOT_THE_FILE_MAX = 10_000
 
 
-def _hash_once(path: Path, file_hash: str) -> DocumentHashes | bool | None:
-    """SHA-256 and the sample hashes from ONE open file: False when the file is not the one named
-    (its size and date are then remembered by the caller), None when it cannot be hashed. The
-    bytes that were verified are the bytes that are hashed, and a file that changed while it was
-    read is refused (size and date seen before and after)."""
+def _hash_once(path: Path, file_hash: str) -> DocumentHashes | bool:
+    """SHA-256 and both sample hashes in ONE pass over ONE open file (`verified_hashes`): the
+    sampled bytes are the verified bytes. False when the file is not the one named."""
     with path.open("rb") as stream:
-        before = os.fstat(stream.fileno())
-        digest = hashlib.sha256()
-        for block in iter(lambda: stream.read(1 << 20), b""):
-            digest.update(block)
-        if "sha256:" + digest.hexdigest() != file_hash:
-            return False
-        stream.seek(0)
-        koreader = "md5:" + koreader_partial_md5(stream)
-        stream.seek(0)
-        kavita = "md5:" + kavita_hash(stream).lower()
-        after = os.fstat(stream.fileno())
-    if (before.st_size, before.st_mtime_ns) != (after.st_size, after.st_mtime_ns):
-        return None
-    return DocumentHashes(koreader, kavita)
+        sha, koreader, kavita = verified_hashes(stream)
+    if "sha256:" + sha != file_hash:
+        return False
+    return DocumentHashes("md5:" + koreader, "md5:" + kavita)
 
 
 def heal_alias_hashes(
@@ -120,8 +112,8 @@ def heal_alias_hashes(
     physical roots** of the item's binding, never a symbolic link (resolve it and refuse one that
     leaves the roots; the sweep opens what it is given), and None for anything else.
 
-    The file is opened **once**: SHA-256 and the sample hashes come from the same descriptor, so
-    the bytes that were verified are the bytes that are hashed, and the file must be the one the
+    The file is read **once**, in one pass: SHA-256 and the samples come from the same blocks, so
+    the bytes that were sampled are the bytes that were verified, and the file must be the one the
     alias names (a file rewritten since never lends its hashes to another's alias). The write is
     conditional on the hashes still being empty. A file found not to match is not read again until
     its size or date changes. A locator or a file that fails skips that alias, never the sweep.
@@ -149,12 +141,10 @@ def heal_alias_hashes(
             if _NOT_THE_FILE.get((item_id, file_hash)) == (seen.st_size, seen.st_mtime_ns):
                 continue
             hashes = _hash_once(path, file_hash)
-            if hashes is False:
+            if isinstance(hashes, bool):
                 if len(_NOT_THE_FILE) >= _NOT_THE_FILE_MAX:
                     _NOT_THE_FILE.clear()
                 _NOT_THE_FILE[(item_id, file_hash)] = (seen.st_size, seen.st_mtime_ns)
-                continue
-            if not isinstance(hashes, DocumentHashes):
                 continue
             with write_transaction(engine) as connection:
                 done = connection.execute(

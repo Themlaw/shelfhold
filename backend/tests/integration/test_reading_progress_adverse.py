@@ -6,6 +6,7 @@ Each test states what the merge rule or the alias sweep must do (see `docs/decis
 markers are gone. The second pass (« #284 : second passage ») adds red ones again, at the end.
 """
 
+import contextlib
 import hashlib
 from pathlib import Path
 
@@ -16,6 +17,7 @@ from shelfhold.catalog.application.revisions import default_is_read
 from shelfhold.export.application import render_hooks
 from shelfhold.export.application.render_hooks import heal_alias_hashes
 from shelfhold.infrastructure.schema import export
+from shelfhold.reading.application.server_state import record_server_state
 from shelfhold.reading.domain.document_hash import koreader_partial_md5
 from shelfhold.reading.public import record_position, undo_read_mark
 from tests.reading_env import NEW_HASH, OLD_HASH, hours, reading_env
@@ -120,11 +122,20 @@ def test_m3_a_replaced_position_never_marks_a_chapter_the_old_file_did_not_hold(
         first, inserted, last = env.units("ok", 3)
         volume = env.file("ok", [first, last], content_hash=OLD_HASH)
         with env.engine.begin() as connection:
-            record_position(
-                connection, reader_id=reader, subject_id=reader, carrier_type="export_item",
-                carrier_id=volume, content_hash=OLD_HASH, locator={}, percent=1.0,
-                client_ts=hours(1), source=source,  # type: ignore[arg-type]
-            )  # fmt: skip
+            if source == "server":
+                destination = env.destination()
+                env.account(reader, destination)
+                record_server_state(
+                    connection, user_id=reader, shelf_destination_id=destination,
+                    carrier_type="export_item", carrier_id=volume, content_hash=OLD_HASH,
+                    locator={}, percent=1.0, client_ts=hours(1),
+                )  # fmt: skip
+            else:
+                record_position(
+                    connection, reader_id=reader, subject_id=reader, carrier_type="export_item",
+                    carrier_id=volume, content_hash=OLD_HASH, locator={}, percent=1.0,
+                    client_ts=hours(1),
+                )  # fmt: skip
         env.recut(volume, [first, inserted, last], NEW_HASH)
         got = env.progress(reader)
         assert inserted not in got  # no position of the old file reaches a chapter it never held
@@ -190,9 +201,10 @@ def test_m4_a_gap_of_more_than_three_pages_breaks_the_chain(tmp_path: Path) -> N
         reader = env.user("reader")
         units = env.units("ok", 2)
         volume = env.file("ok", units, bounds=[(1, 10), (11, 20)], content_hash=NEW_HASH)
-        for hour, page in enumerate([1, 4, 7, 10, 14, 17, 20]):  # 10 -> 14 skips pages
+        # 10 -> 14 skips pages, and at once: not a plausible speed (the speed rule, N3)
+        for hour, page in [(0, 1), (1, 4), (2, 7), (3, 10), (3, 14), (4, 17), (5, 20)]:
             _record(env, reader, volume, page, hour)
-        assert states(env, reader, units) == ["in_progress", "in_progress"]
+        assert states(env, reader, units) == ["read", "in_progress"]  # the skipped chapter is not
 
 
 def test_m4_nobody_undoes_the_mark_of_another_profile(tmp_path: Path) -> None:
@@ -279,10 +291,11 @@ def test_m6_a_file_known_not_to_match_is_not_hashed_again_at_each_sweep(
 # ----------------------------------------------------------------------------------------------
 # Second pass (« #284 : second passage »): red again, `xfail` strict until fixed.
 
-RED = pytest.mark.xfail(strict=True, reason="#284 second pass: open objection")
+RED = pytest.mark.xfail(
+    strict=True, reason="#284 second pass: m1, known limit (see docs/decisions/M4.md)"
+)
 
 
-@RED
 def test_m3_original_attack_a_replaced_position_written_after_the_recut(tmp_path: Path) -> None:
     """The first-pass attack, as written: the old position arrives once the file is re-cut (a
     device that kept the old file, ADR-0053 « l'appareil garde son fichier »). `covered_units` is
@@ -296,24 +309,33 @@ def test_m3_original_attack_a_replaced_position_written_after_the_recut(tmp_path
         assert env.progress(reader)[inserted].state != "read"
 
 
-@RED
 @pytest.mark.parametrize("source", ["server", "device"])
 def test_m3_through_record_position_after_the_recut(tmp_path: Path, source: str) -> None:
+    """The `server` case goes through the internal door (a linked, live account), the `device`
+    case through the public service: neither reaches the chapter the old file never held."""
     with reading_env(tmp_path) as env:
         reader = env.user("reader")
         first, inserted, last = env.units("ok", 3)
         volume = env.file("ok", [first, last], content_hash=OLD_HASH)
         env.recut(volume, [first, inserted, last], NEW_HASH)
         with env.engine.begin() as connection:
-            record_position(
-                connection, reader_id=reader, subject_id=reader, carrier_type="export_item",
-                carrier_id=volume, content_hash=OLD_HASH, locator={}, percent=1.0,
-                client_ts=hours(1), source=source,  # type: ignore[arg-type]
-            )  # fmt: skip
+            if source == "server":
+                destination = env.destination()
+                env.account(reader, destination)
+                record_server_state(
+                    connection, user_id=reader, shelf_destination_id=destination,
+                    carrier_type="export_item", carrier_id=volume, content_hash=OLD_HASH,
+                    locator={}, percent=1.0, client_ts=hours(1),
+                )  # fmt: skip
+            else:
+                record_position(
+                    connection, reader_id=reader, subject_id=reader, carrier_type="export_item",
+                    carrier_id=volume, content_hash=OLD_HASH, locator={}, percent=1.0,
+                    client_ts=hours(1),
+                )  # fmt: skip
         assert inserted not in env.progress(reader)
 
 
-@RED
 def test_m5_a_same_size_rewrite_that_keeps_its_date_lends_its_hashes(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -325,15 +347,16 @@ def test_m5_a_same_size_rewrite_that_keeps_its_date_lends_its_hashes(
     good, other = b"G" * 4096, b"O" * 4096
     file = tmp_path / "volume.cbz"
     file.write_bytes(good)
-    real = render_hooks.koreader_partial_md5  # type: ignore[attr-defined]
+    real = render_hooks.verified_hashes
 
     def rewritten_in_between(stream):  # type: ignore[no-untyped-def]
+        # the same rewrite, once the file is open and before anything is read from it
         seen = os.stat(file)
         file.write_bytes(other)
         os.utime(file, ns=(seen.st_atime_ns, seen.st_mtime_ns))
         return real(stream)
 
-    monkeypatch.setattr(render_hooks, "koreader_partial_md5", rewritten_in_between)
+    monkeypatch.setattr(render_hooks, "verified_hashes", rewritten_in_between)
     with reading_env(tmp_path) as env:
         item = env.file("ok", env.units("ok", 1))
         file_hash = _alias(env, item, good)
@@ -368,7 +391,6 @@ def test_m1_cache_a_right_file_restored_with_its_date_is_healed(tmp_path: Path) 
         assert heal_alias_hashes(env.engine, locate=lambda *_: file) == 1
 
 
-@RED
 def test_n1_a_reader_cannot_write_a_server_read_state(tmp_path: Path) -> None:
     """`source` is a free argument of the public `record_position`: whoever calls it as a reader
     (a route of L47 that forwards a field, a device token) writes « read » with no traversal."""
@@ -376,16 +398,17 @@ def test_n1_a_reader_cannot_write_a_server_read_state(tmp_path: Path) -> None:
         reader = env.user("reader")
         units = env.units("ok", 3)
         volume = env.file("ok", units, bounds=[(1, 10), (11, 20), (21, 30)], content_hash=NEW_HASH)
-        with env.engine.begin() as connection:
+        with env.engine.begin() as connection, contextlib.suppress(TypeError):
+            # the attack as written: the argument is gone, the call is refused (or, were it
+            # still there, nothing may come out as read)
             record_position(
                 connection, reader_id=reader, subject_id=reader, carrier_type="export_item",
                 carrier_id=volume, content_hash=NEW_HASH, locator={"page": 30}, percent=1.0,
-                client_ts=hours(1), source="server",
+                client_ts=hours(1), source="server",  # type: ignore[call-arg]
             )  # fmt: skip
         assert [s for s in states(env, reader, units) if s == "read"] == []
 
 
-@RED
 def test_n2_a_read_state_from_a_server_can_be_undone(tmp_path: Path) -> None:
     """A peek at the last page in Kavita's own reader comes back as a `server` read: the member's
     undo (ADR-0053, MAJ-2: « journal et annulation ») does nothing on it."""
@@ -400,7 +423,6 @@ def test_n2_a_read_state_from_a_server_can_be_undone(tmp_path: Path) -> None:
         assert states(env, reader, units) != ["read"]
 
 
-@RED
 def test_n3_the_export_of_a_profile_holds_her_read_marks(tmp_path: Path) -> None:
     """EF-USR-013: the export holds everything that is hers. `read_units`, `undone_units` (the
     journal of what she read and undid) and `source` are not in it."""

@@ -29,7 +29,6 @@ pytestmark = pytest.mark.req("EF-LEC-014", "EF-USR-006")
 
 
 def put(env, who: str, subject: str, carrier: str, **kw):  # type: ignore[no-untyped-def]
-    kw.setdefault("source", "server")  # these tests are about who, not about how a Unit is read
     with env.engine.begin() as connection:
         return record_position(
             connection, reader_id=who, subject_id=subject, carrier_type="export_item",
@@ -49,7 +48,7 @@ def test_a_profile_records_and_reads_its_own_position(tmp_path: Path) -> None:
         units = env.units("ok", 2)
         item = env.file("ok", units)
         position = put(env, reader, reader, item, percent=1.0)
-        assert {p.unit_id: p.state for p in mine(env, reader)} == {u: "read" for u in units}
+        assert {p.unit_id: p.state for p in mine(env, reader)} == {u: "in_progress" for u in units}
         with env.engine.connect() as connection:
             assert position_of(connection, viewer_id=reader, position_id=position) is not None
 

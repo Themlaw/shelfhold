@@ -96,12 +96,12 @@ class ReadingEnv:
     def position(
         self, user: str, carrier: str, *, percent: float | None = None, page: Any = None,
         content_hash: str = NEW_HASH, client_ts: datetime = T0, server_ts: datetime | None = None,
-        carrier_type: str = "export_item", source: str = "server", device_id: str | None = None,
+        carrier_type: str = "export_item", source: str = "device", device_id: str | None = None,
         covered: list[str] | str | None = "now", read_units: list[str] | None = None,
     ) -> str:  # fmt: skip
         """A position written straight into the table (what a client reported, server date
         included), the way an earlier version or a restore would have left it. By default it is a
-        `server` position (the state is taken as it is) that remembers the Units the carrier
+        `device` position (it never exceeds in_progress) that remembers the Units the carrier
         covers now, as the service does."""
         row_id = new_ulid()
         with write_transaction(self.engine) as connection:

@@ -182,16 +182,19 @@ symbols = [
 
 [[allow]]
 category = "unwired-m4"
-reason = "2026-11-15 (M4 L14a): the sweep of the aliases a crash left without hashes (`heal_alias_hashes`) and the live read of a member's key (`live_member_account`, `MemberKeyRevokedError`), and the refusal of a carrier the reader may not see (`UnknownCarrierError`), are the contract of the reading service that L14b (the push of progress to a member's account), L47 and L50 (the kosync relay) are the first callers of: L14a adds no route and no job of its own, the route of each of them enters the surfaces meta-test in its own PR. The sweep takes its locator from the caller, which knows the physical roots. `reading.domain.merge` and `projection` state the rule that the SQL view `reading_progress` implements; a test proves the two equal, and the relays of L14b and L47 are their first production callers (the kosync answer picks the furthest position with `furthest`)."
+reason = "2026-11-15 (M4 L14a): the sweep of the aliases a crash left without hashes (`heal_alias_hashes`), the internal door of a server state (`record_server_state`) and the live read of a member's key (`live_member_account`, `MemberKeyRevokedError`), and the refusal of a carrier the reader may not see (`UnknownCarrierError`), are the contract of the reading service that L14b (the push of progress to a member's account), L47 and L50 (the kosync relay) are the first callers of: L14a adds no route and no job of its own, the route of each of them enters the surfaces meta-test in its own PR. The sweep takes its locator from the caller, which knows the physical roots. `reading.domain.merge` and `projection` state the rule that the SQL view `reading_progress` implements; a test proves the two equal, and the relays of L14b and L47 are their first production callers (the kosync answer picks the furthest position with `furthest`)."
 until = "M4"  # settled by M4 lots L14b and L47
 symbols = [
   "shelfhold.export.application.render_hooks:heal_alias_hashes",
+  "shelfhold.reading.domain.document_hash:verified_hashes",
   "shelfhold.reading.application.member_keys:MemberKeyRevokedError",
   "shelfhold.reading.application.member_keys:live_member_account",
   "shelfhold.reading.application.progress:UnknownCarrierError",
   "shelfhold.reading.application.progress:position_of",
   "shelfhold.reading.application.progress:InvalidLocatorError",
+  "shelfhold.reading.application.progress:record_delivery",
   "shelfhold.reading.application.progress:record_position",
+  "shelfhold.reading.application.server_state:record_server_state",
   "shelfhold.reading.application.progress:undo_read_mark",
   "shelfhold.reading.domain.merge:latest",
   "shelfhold.reading.domain.traversal:Span",

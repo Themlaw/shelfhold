@@ -9,6 +9,7 @@ from shelfhold.reading.application.progress import (
     normalise_locator,
     position_of,
     progress_of,
+    record_delivery,
     record_position,
     undo_read_mark,
 )
@@ -23,6 +24,7 @@ __all__ = [
     "normalise_locator",
     "position_of",
     "progress_of",
+    "record_delivery",
     "record_position",
     "undo_read_mark",
 ]

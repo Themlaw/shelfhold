@@ -29,11 +29,15 @@ def test_read_unit_never_goes_back_to_unread(tmp_path: Path) -> None:
         reader = env.user("reader")
         units = env.units("ok", 3)
         volume = env.file("ok", units)
-        finished = env.position(reader, volume, percent=1.0, client_ts=hours(0))
+        finished = env.position(reader, volume, percent=1.0, client_ts=hours(0), source="server")
         assert states(env, reader, units) == ["read", "read", "read"]
         # reopened at the very start, later: a restart, a different device, a restore
-        env.position(reader, volume, percent=0.0, client_ts=hours(5), server_ts=hours(5))
-        env.position(reader, volume, percent=0.05, client_ts=hours(6), server_ts=hours(6))
+        env.position(
+            reader, volume, percent=0.0, client_ts=hours(5), server_ts=hours(5), source="server"
+        )
+        env.position(
+            reader, volume, percent=0.05, client_ts=hours(6), server_ts=hours(6), source="server"
+        )
         assert states(env, reader, units) == ["read", "read", "read"]
         assert {r.last_position_id for r in env.progress(reader).values()} == {finished}
 
@@ -44,8 +48,12 @@ def test_an_older_position_arriving_late_changes_nothing(tmp_path: Path) -> None
         reader = env.user("reader")
         units = env.units("ok", 4)
         volume = env.file("ok", units)
-        env.position(reader, volume, percent=0.8, client_ts=hours(10), server_ts=hours(10))
-        late = env.position(reader, volume, percent=0.3, client_ts=hours(1), server_ts=hours(11))
+        env.position(
+            reader, volume, percent=0.8, client_ts=hours(10), server_ts=hours(10), source="server"
+        )
+        late = env.position(
+            reader, volume, percent=0.3, client_ts=hours(1), server_ts=hours(11), source="server"
+        )
         got = env.progress(reader)
         assert states(env, reader, units) == ["read", "read", "read", "in_progress"]
         assert late not in {r.last_position_id for r in got.values()}
@@ -56,9 +64,9 @@ def test_a_position_further_on_moves_the_state_forward(tmp_path: Path) -> None:
         reader = env.user("reader")
         units = env.units("ok", 4)
         volume = env.file("ok", units)
-        env.position(reader, volume, percent=0.3, client_ts=hours(1))
+        env.position(reader, volume, percent=0.3, client_ts=hours(1), source="server")
         assert states(env, reader, units) == ["read", "in_progress", "unread", "unread"]
-        env.position(reader, volume, percent=0.9, client_ts=hours(2))
+        env.position(reader, volume, percent=0.9, client_ts=hours(2), source="server")
         assert states(env, reader, units) == ["read", "read", "read", "in_progress"]
 
 
@@ -68,9 +76,16 @@ def test_client_ts_in_the_future_is_bounded_by_server_ts(tmp_path: Path) -> None
         reader = env.user("reader")
         units = env.units("ok", 1)
         item = env.file("ok", units)
-        honest = env.position(reader, item, percent=0.5, client_ts=hours(5), server_ts=hours(5))
+        honest = env.position(
+            reader, item, percent=0.5, client_ts=hours(5), server_ts=hours(5), source="server"
+        )
         env.position(
-            reader, item, percent=0.5, client_ts=T0 + timedelta(days=365), server_ts=hours(2)
+            reader,
+            item,
+            percent=0.5,
+            client_ts=T0 + timedelta(days=365),
+            server_ts=hours(2),
+            source="server",
         )  # bounded to hour 2: older than the honest one
         assert env.progress(reader)[units[0]].last_position_id == honest
 
@@ -80,8 +95,10 @@ def test_furthest_position_is_the_one_kept(tmp_path: Path) -> None:
         reader = env.user("reader")
         units = env.units("ok", 1)
         item = env.file("ok", units)
-        far = env.position(reader, item, percent=0.9, client_ts=hours(1))
-        env.position(reader, item, percent=0.2, client_ts=hours(9), server_ts=hours(9))
+        far = env.position(reader, item, percent=0.9, client_ts=hours(1), source="server")
+        env.position(
+            reader, item, percent=0.2, client_ts=hours(9), server_ts=hours(9), source="server"
+        )
         assert env.progress(reader)[units[0]].last_position_id == far
 
 
@@ -95,7 +112,7 @@ def test_kavita_volume_progress_projects_to_covered_units(tmp_path: Path) -> Non
         reader = env.user("reader")
         units = env.units("ok", 8)
         volume = env.file("ok", units, bounds=pages)
-        env.position(reader, volume, page=143, percent=143 / 230)
+        env.position(reader, volume, page=143, percent=143 / 230, source="server")
         assert states(env, reader, units) == ["read"] * 5 + ["in_progress", "unread", "unread"]
         assert not any(r.approximate for r in env.progress(reader).values())
 
@@ -108,7 +125,9 @@ def test_a_position_on_one_chapter_never_marks_the_chapters_it_skipped(tmp_path:
         reader = env.user("reader")
         units = env.units("ok", 4)
         chapters = [env.file("ok", [u]) for u in units]
-        env.position(reader, chapters[3], percent=1.0)  # jumped to the last chapter
+        env.position(
+            reader, chapters[3], percent=1.0, source="server"
+        )  # jumped to the last chapter
         got = env.progress(reader)
         assert got[units[3]].state == "read"
         assert all(u not in got for u in units[:3])  # the others have no state at all
@@ -123,14 +142,13 @@ def test_position_on_replaced_content_marked_approximate(tmp_path: Path) -> None
         units = env.units("ok", 2)
         item = env.file("ok", units, bounds=[(1, 10), (11, 20)], content_hash=NEW_HASH)
         env.alias(item, OLD_HASH, NEW_HASH)
-        env.position(reader, item, page=15, percent=0.6, content_hash=OLD_HASH)
+        env.position(reader, item, page=15, percent=0.6, content_hash=OLD_HASH, source="server")
         got = env.progress(reader)
         assert [got[u].approximate for u in units] == [1, 1]
         assert got[units[0]].state == "read"  # by the proportion (0.6 > 0.5), not by the page
         env.position(
             reader, item, page=12, percent=0.6, content_hash=NEW_HASH,
-            client_ts=hours(2), server_ts=hours(2),
-        )  # fmt: skip
+            client_ts=hours(2), server_ts=hours(2), source="server")  # fmt: skip
         got = env.progress(reader)
         assert got[units[1]].approximate == 0  # a position on the current content is exact
         assert got[units[1]].state == "in_progress"
@@ -188,13 +206,13 @@ def test_a_page_sent_as_text_integer_float_or_absent_reads_the_same(
             record_position(
                 connection, reader_id=reader, subject_id=reader, carrier_type="export_item",
                 carrier_id=item, content_hash=NEW_HASH, locator=locator, percent=None,
-                client_ts=hours(1), source="server",
+                client_ts=hours(1),
             )  # fmt: skip
         got = env.progress(reader)
         page = None if sent is None else 12
         for rank0, unit in enumerate(units):
             want = project(
-                page=page, percent=None,
+                page=page, percent=None, trusted=False,
                 bounds=Bounds(pages[rank0][0], pages[rank0][1], rank0=rank0, count=3),
             )  # fmt: skip
             assert (got[unit].state, bool(got[unit].approximate)) == (want.state, want.approximate)
@@ -222,4 +240,4 @@ def test_the_database_refuses_a_page_that_is_not_an_integer(tmp_path: Path) -> N
         reader = env.user("reader")
         item = env.file("ok", env.units("ok", 1))
         with pytest.raises(sa.exc.IntegrityError, match="page_integer"):
-            env.position(reader, item, page="1")
+            env.position(reader, item, page="1", source="server")

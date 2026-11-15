@@ -84,8 +84,9 @@ reading_position = sa.Table(
 #     content, `document_alias`) never uses its page and reaches only the Units the file covered
 #     when it was written (`covered_units`); one with no such list reaches nothing;
 #   * a `device` position never says `read` by itself (a look at the last page is a position, not
-#     a reading): at most `in_progress`. A Unit is read by a `server` position, or by a live
-#     entry of `read_units`, the journal of a page-by-page traversal (ADR-0053);
+#     a reading): at most `in_progress`. A Unit is read by a `server` position (unless the member
+#     undid it: `undone_units` is a local overlay that wins), or by a live entry of `read_units`,
+#     the journal of a plausible pass over it (ADR-0053, speed rule on `server_ts`);
 #   * per reader and Unit, the furthest wins: state, then exact before approximate, then the
 #     fraction of the UNIT reached (never the percent of two different files), then the bounded
 #     `client_ts`, then the id. A Unit that was read never goes back to unread, unless the member
@@ -114,7 +115,9 @@ FROM (
           WHEN o.page >= o.end_page THEN 1.0 ELSE 0.0 END
         WHEN o.percent IS NULL THEN NULL
         ELSE min(1.0, max(0.0, o.percent * o.n - o.rank0)) END AS within,
-      CASE WHEN o.done AND o.source = 'server' THEN 2 WHEN o.done OR o.started THEN 1
+      CASE WHEN o.done AND o.source = 'server'
+          AND json_type(o.undone_units, '$."' || o.unit_id || '"') IS NULL THEN 2
+        WHEN o.done OR o.started THEN 1
         ELSE 0 END AS srank,
       CASE WHEN o.replaced THEN 1 WHEN o.exact THEN 0 ELSE o.n > 1 OR o.percent IS NULL END
         AS approximate
@@ -132,10 +135,11 @@ FROM (
         SELECT q.id AS position_id, q.user_id AS user_id, c.unit_id AS unit_id,
           q.percent AS percent, q.client_ts AS client_ts, q.server_ts AS server_ts,
           q.source AS source, q.page AS page, q.replaced AS replaced,
-          c.rank0 AS rank0, c.n AS n, c.start_page AS start_page, c.end_page AS end_page
+          c.rank0 AS rank0, c.n AS n, c.start_page AS start_page, c.end_page AS end_page,
+          q.undone_units AS undone_units
         FROM (
           SELECT id, user_id, carrier_type, carrier_id, percent, client_ts, server_ts, source,
-            covered_units,
+            covered_units, undone_units,
             CASE WHEN json_type(locator, '$.page') = 'integer'
               THEN json_extract(locator, '$.page') END AS page,
             coalesce(content_hash <> CASE carrier_type
@@ -161,10 +165,10 @@ FROM (
         WHERE NOT q.replaced
         UNION ALL
         SELECT q.id, q.user_id, u.id, q.percent, q.client_ts, q.server_ts, q.source, q.page,
-          1, CAST(j.key AS INTEGER), json_array_length(q.covered_units), NULL, NULL
+          1, CAST(j.key AS INTEGER), json_array_length(q.covered_units), NULL, NULL, q.undone_units
         FROM (
           SELECT id, user_id, carrier_type, carrier_id, percent, client_ts, server_ts, source,
-            covered_units, NULL AS page,
+            covered_units, undone_units, NULL AS page,
             coalesce(content_hash <> CASE carrier_type
               WHEN 'export_item' THEN coalesce(
                 (SELECT ct.content_hash FROM export_item AS e

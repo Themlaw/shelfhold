@@ -142,6 +142,10 @@ class Settings(BaseModel):
     disk_pause_gib: float = Field(default=10.0, ge=0)
     disk_resume_percent: float = Field(default=8.0, ge=0, le=60)
     disk_resume_gib: float = Field(default=15.0, ge=0)
+    # M4 L14a (ADR-0053 as amended): the fastest pass over a Unit that still counts as having
+    # read it, in pages per minute, measured on the server's clock. Wide for a manga or a
+    # webtoon; a look at 200 pages in 30 seconds is far above it.
+    reading_max_pages_per_minute: float = Field(default=20.0, gt=0, le=10_000)
     # EF-INT-022 (ADR-0025): the WakeHook, optional. `wake_url` is the API of Sablier (a declared
     # LAN address of the owner, like Suwayomi and Kavita); `wake_suwayomi` and `wake_kavita` name
     # the containers to start for each tool, or `group:<name>` alone. Without them nothing is woken.

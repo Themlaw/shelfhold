@@ -22,7 +22,7 @@ import re
 from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Any, Literal
+from typing import Any
 
 import sqlalchemy as sa
 import structlog
@@ -33,9 +33,18 @@ from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import catalog as catalog_schema
 from shelfhold.infrastructure.schema import export, reading, storage
 from shelfhold.reading.domain.merge import bounded_ts
-from shelfhold.reading.domain.traversal import PAGES, SHARE, Span, Step, traversed_units
+from shelfhold.reading.domain.traversal import (
+    DEFAULT_MAX_PAGES_PER_MINUTE,
+    PAGES,
+    SHARE,
+    Span,
+    Step,
+    traversed_units,
+)
 
 log = structlog.get_logger(__name__)
+
+HISTORY_LIMIT = 1000
 
 __all__ = [
     "InvalidLocatorError",
@@ -45,6 +54,7 @@ __all__ = [
     "normalise_locator",
     "position_of",
     "progress_of",
+    "record_delivery",
     "record_position",
     "undo_read_mark",
 ]
@@ -175,13 +185,57 @@ def _current_hash(connection: sa.Connection, carrier_type: str, carrier_id: str)
     return None if found is None else str(found)
 
 
-def _mark_traversed(
-    connection: sa.Connection, position_id: str, now: datetime, *, history_limit: int = 1000
-) -> list[str]:
-    """Mark read the Units the chain of this device's positions has now traversed (ADR-0053).
+def _page_count(connection: sa.Connection, carrier_type: str, carrier_id: str) -> int | None:
+    content = storage.content
+    if carrier_type == "content":
+        query = sa.select(content.c.page_count).where(content.c.id == carrier_id)
+    else:
+        query = (
+            sa.select(content.c.page_count)
+            .select_from(
+                export.export_item.join(content, content.c.id == export.export_item.c.content_id)
+            )
+            .where(export.export_item.c.id == carrier_id)
+        )
+    found = connection.execute(query).scalar()
+    return int(found) if isinstance(found, int) and found > 0 else None
 
-    Only on the content the carrier carries now, from `device` positions of the same device; a
-    Unit already marked, or whose mark was undone after the evidence, is left alone."""
+
+def snapshot_covered_units(
+    connection: sa.Connection, carrier_type: str, carrier_id: str, content_hash: str
+) -> list[str] | None:
+    """The Units a position on `content_hash` reaches: what that content covered.
+
+    On the content the carrier carries now, the coverage now. On another one (a device that kept
+    the file that was replaced) the coverage is not known any more: it is taken from an earlier
+    position on that very content, and without one the position reaches nothing (`None`). It never
+    takes the coverage of the content that replaced it."""
+    current = _current_hash(connection, carrier_type, carrier_id)
+    if current is None or current == content_hash:
+        return [str(c.unit_id) for c in _coverage(connection, carrier_type, carrier_id)]
+    table = reading.reading_position
+    earlier = connection.execute(
+        sa.select(table.c.covered_units)
+        .where(
+            table.c.carrier_type == carrier_type,
+            table.c.carrier_id == carrier_id,
+            table.c.content_hash == content_hash,
+            table.c.covered_units.is_not(None),
+        )
+        .order_by(table.c.server_ts.asc(), table.c.id.asc())
+        .limit(1)
+    ).scalar()
+    return None if earlier is None else [str(u) for u in earlier]
+
+
+def _mark_traversed(
+    connection: sa.Connection, position_id: str, max_pages_per_minute: float
+) -> list[str]:
+    """Mark read the Units the plausible moves of this profile on this content now cover
+    (`reading.domain.traversal`: a speed rule on `server_ts`, ADR-0053 as amended).
+
+    Only on the content the carrier carries now; a Unit already marked, or whose mark was undone
+    after the evidence, is left alone."""
     table = reading.reading_position
     row = connection.execute(sa.select(table).where(table.c.id == position_id)).one()
     current = _current_hash(connection, row.carrier_type, row.carrier_id)
@@ -191,61 +245,121 @@ def _mark_traversed(
     if not cover:
         return []
     paged = all(isinstance(c.start_page, int) and isinstance(c.end_page, int) for c in cover)
+    scale: float | None = None
     if paged and isinstance(row.locator.get("page"), int):
         mode = PAGES
         spans = [Span(c.unit_id, float(c.start_page), float(c.end_page)) for c in cover]
     elif len(cover) == 1 and row.percent is not None:
         mode = SHARE
         spans = [Span(cover[0].unit_id, 0.0, 1.0)]
+        count = _page_count(connection, row.carrier_type, row.carrier_id)
+        scale = None if count is None else float(count)
     else:
         return []
-    history = connection.execute(
-        sa.select(table)
-        .where(
-            table.c.user_id == row.user_id,
-            table.c.carrier_type == row.carrier_type,
-            table.c.carrier_id == row.carrier_id,
-            table.c.content_hash == row.content_hash,
-            table.c.source == "device",
-            table.c.device_id.is_(None)
-            if row.device_id is None
-            else table.c.device_id == row.device_id,
+    history = list(
+        connection.execute(
+            sa.select(table)
+            .where(
+                table.c.user_id == row.user_id,
+                table.c.carrier_type == row.carrier_type,
+                table.c.carrier_id == row.carrier_id,
+                table.c.content_hash == row.content_hash,
+                table.c.source == "device",
+            )
+            .order_by(table.c.server_ts.desc(), table.c.id.desc())
+            .limit(HISTORY_LIMIT)
         )
-        .order_by(table.c.server_ts.desc(), table.c.id.desc())
-        .limit(history_limit)
-    ).all()
-    steps = [
-        (bounded_ts(_ts(h.client_ts), _ts(h.server_ts)), h.id, h.locator.get("page"), h.percent)
-        for h in history
-    ]
-    steps.sort(key=lambda t: (t[0], t[1]))
+    )
+    history.reverse()  # oldest first: only the server's date orders them
     chain = [
-        Step(float(page if mode == PAGES else percent), ts)
-        for ts, _id, page, percent in steps
-        if (isinstance(page, int) if mode == PAGES else percent is not None)
+        Step(float(h.locator["page"] if mode == PAGES else h.percent), _ts(h.server_ts))
+        for h in history
+        if (isinstance(h.locator.get("page"), int) if mode == PAGES else h.percent is not None)
     ]
     spans_ids = {span.unit_id for span in spans}
     after: dict[str, datetime] = {}
     already: set[str] = set()
     for other in connection.execute(
         sa.select(table.c.read_units, table.c.undone_units).where(
-            table.c.user_id == row.user_id, sa.func.json_array_length(table.c.read_units) > 0
+            table.c.user_id == row.user_id,
+            sa.or_(
+                sa.func.json_array_length(table.c.read_units) > 0,
+                table.c.undone_units != "{}",
+            ),
         )
     ):
         for unit, when in other.undone_units.items():
             if unit in spans_ids:
-                after[unit] = max(
-                    after.get(unit, _ts(datetime.fromisoformat(when))),
-                    _ts(datetime.fromisoformat(when)),
-                )
+                stamp = _ts(datetime.fromisoformat(when))
+                after[unit] = max(after.get(unit, stamp), stamp)
         already.update(u for u in other.read_units if u not in other.undone_units)
-    marked = [u for u in traversed_units(chain, spans, mode=mode, after=after) if u not in already]
+    marked = [
+        u
+        for u in traversed_units(
+            chain,
+            spans,
+            mode=mode,
+            max_pages_per_minute=max_pages_per_minute,
+            pages_per_unit_of_x=scale,
+            after=after,
+        )
+        if u not in already
+    ]
     if marked:
         connection.execute(
             sa.update(table).where(table.c.id == position_id).values(read_units=marked)
         )
         log.info("reading.read_marked", position=position_id, units=len(marked))
     return marked
+
+
+def insert_position(
+    connection: sa.Connection,
+    *,
+    user_id: str,
+    carrier_type: str,
+    carrier_id: str,
+    content_hash: str,
+    locator: dict[str, Any],
+    percent: float | None,
+    client_ts: datetime,
+    device_id: str | None,
+    source: str,
+    now: datetime | None,
+    max_pages_per_minute: float = DEFAULT_MAX_PAGES_PER_MINUTE,
+) -> str:
+    """The one writer of `reading_position`, after the caller has checked who may write what.
+    Internal to `reading.application`: `record_position` (a reader's own report) and
+    `server_state.record_server_state` (the read state of a linked account) are its only
+    callers, and only the first is public."""
+    locator = normalise_locator(locator)
+    if percent is not None and not 0.0 <= percent <= 1.0:
+        raise ValueError("percent is between 0 and 1")
+    server_ts = now or datetime.now(UTC)
+    position_id = new_ulid()
+    covered = snapshot_covered_units(connection, carrier_type, carrier_id, content_hash)
+    connection.execute(
+        sa.insert(reading.reading_position).values(
+            id=position_id, user_id=user_id, carrier_type=carrier_type, carrier_id=carrier_id,
+            content_hash=content_hash, locator=locator, percent=percent,
+            client_ts=bounded_ts(client_ts, server_ts), server_ts=server_ts, device_id=device_id,
+            source=source,
+            covered_units=covered,
+        )
+    )  # fmt: skip
+    if source == "device":
+        _mark_traversed(connection, position_id, max_pages_per_minute)
+    return position_id
+
+
+def check_carrier(
+    connection: sa.Connection, user_id: str, carrier_type: str, carrier_id: str
+) -> None:
+    """The carrier exists and the profile may see it, else `UnknownCarrierError` (one answer)."""
+    scope = reader_scope(connection, user_id)
+    edition = _edition_of(connection, carrier_type, carrier_id)
+    if edition is None or edition not in visible_edition_ids(connection, scope, [edition]):
+        raise UnknownCarrierError
 
 
 def record_position(
@@ -260,37 +374,44 @@ def record_position(
     percent: float | None,
     client_ts: datetime,
     device_id: str | None = None,
-    source: Literal["device", "server"] = "device",
     now: datetime | None = None,
+    max_pages_per_minute: float = DEFAULT_MAX_PAGES_PER_MINUTE,
 ) -> str:
     """Record where `subject_id` is in a file, as that same reader; returns the position id.
 
-    `source="server"` is for the read state a server keeps itself (the pull from Kavita): it is
-    taken as it is. A reader's own report (KOReader, the integrated reader, a device token) is
-    `device`, the default: it marks a Unit read only by a page-by-page traversal."""
+    This is a reader's own report (KOReader, the integrated reader, a device token): it never
+    makes a Unit read by itself, only a plausible pass over it does (`reading.domain.traversal`).
+    The read state a server keeps has its own door, `server_state.record_server_state`, which no
+    interface imports."""
     if reader_id != subject_id:
         raise UnknownCarrierError
-    scope = reader_scope(connection, reader_id)
-    edition = _edition_of(connection, carrier_type, carrier_id)
-    if edition is None or edition not in visible_edition_ids(connection, scope, [edition]):
-        raise UnknownCarrierError
-    locator = normalise_locator(locator)
-    if percent is not None and not 0.0 <= percent <= 1.0:
-        raise ValueError("percent is between 0 and 1")
-    server_ts = now or datetime.now(UTC)
-    position_id = new_ulid()
-    connection.execute(
-        sa.insert(reading.reading_position).values(
-            id=position_id, user_id=reader_id, carrier_type=carrier_type, carrier_id=carrier_id,
-            content_hash=content_hash, locator=locator, percent=percent,
-            client_ts=bounded_ts(client_ts, server_ts), server_ts=server_ts, device_id=device_id,
-            source=source,
-            covered_units=[c.unit_id for c in _coverage(connection, carrier_type, carrier_id)],
-        )
+    check_carrier(connection, reader_id, carrier_type, carrier_id)
+    return insert_position(
+        connection, user_id=reader_id, carrier_type=carrier_type, carrier_id=carrier_id,
+        content_hash=content_hash, locator=locator, percent=percent, client_ts=client_ts,
+        device_id=device_id, source="device", now=now, max_pages_per_minute=max_pages_per_minute,
     )  # fmt: skip
-    if source == "device":
-        _mark_traversed(connection, position_id, server_ts)
-    return position_id
+
+
+def record_delivery(
+    connection: sa.Connection,
+    *,
+    user_id: str,
+    carrier_type: str,
+    carrier_id: str,
+    content_hash: str,
+    now: datetime | None = None,
+) -> str:
+    """The file was handed to the profile (an OPDS download, the first known opening): page 0, the
+    anchor from which the first move of a reader is measured. Called by the server with the
+    authenticated profile, never with a value from a request."""
+    check_carrier(connection, user_id, carrier_type, carrier_id)
+    when = now or datetime.now(UTC)
+    return insert_position(
+        connection, user_id=user_id, carrier_type=carrier_type, carrier_id=carrier_id,
+        content_hash=content_hash, locator={"page": 0}, percent=0.0, client_ts=when,
+        device_id="delivery", source="device", now=when,
+    )  # fmt: skip
 
 
 def undo_read_mark(
@@ -312,11 +433,23 @@ def undo_read_mark(
     table = reading.reading_position
     undone = 0
     for row in connection.execute(
-        sa.select(table.c.id, table.c.read_units, table.c.undone_units).where(
-            table.c.user_id == viewer_id, sa.func.json_array_length(table.c.read_units) > 0
+        sa.select(
+            table.c.id, table.c.read_units, table.c.undone_units, table.c.source,
+            table.c.covered_units,
+        ).where(
+            table.c.user_id == viewer_id,
+            sa.or_(
+                sa.func.json_array_length(table.c.read_units) > 0,
+                sa.and_(table.c.source == "server", table.c.covered_units.is_not(None)),
+            ),
         )
-    ).all():
-        if unit_id in row.read_units and unit_id not in row.undone_units:
+    ).all():  # fmt: skip
+        # a mark of a traversal, or a read state a server gave (a local overlay: it wins over that
+        # state until a later position of the server gets past it)
+        marked = unit_id in row.read_units or (
+            row.source == "server" and unit_id in (row.covered_units or [])
+        )
+        if marked and unit_id not in row.undone_units:
             connection.execute(
                 sa.update(table)
                 .where(table.c.id == row.id)

@@ -5,12 +5,15 @@ reopened at the start (or an old backup, or a reader that sent late what it had 
 read Unit back to unread (M1a, decision 10). The view now keeps, per reader and Unit, the furthest
 position (`reading.domain.merge`); a position on a replaced content is `approximate` and reaches
 only the Units its file covered when it was written; a reader's own report never marks a Unit read
-by itself, a page-by-page traversal does (ADR-0053). EF-LEC-014, EF-BIB-026.
+by itself, a plausible pass over it does (ADR-0053, speed rule on `server_ts`). EF-LEC-014,
+EF-BIB-026.
 
 `reading_position` gets four columns (`source`, `covered_units`, `read_units`, `undone_units`) and
 a check: `page`, when there is one, is an integer (a text sorts above every number in SQLite). A
 page already written as something else is removed from its locator first: the position stays, its
-page is ignored. The view holds no data; the downgrade restores the view of the 0004 and drops the
+page is ignored. A position written before this migration becomes a `device` one with no mark: a
+read state computed from it before comes back as `in_progress` (no production code wrote a
+position before this lot). The view holds no data; the downgrade restores the view of the 0004 and drops the
 columns.
 """
 
@@ -50,7 +53,9 @@ FROM (
           WHEN o.page >= o.end_page THEN 1.0 ELSE 0.0 END
         WHEN o.percent IS NULL THEN NULL
         ELSE min(1.0, max(0.0, o.percent * o.n - o.rank0)) END AS within,
-      CASE WHEN o.done AND o.source = 'server' THEN 2 WHEN o.done OR o.started THEN 1
+      CASE WHEN o.done AND o.source = 'server'
+          AND json_type(o.undone_units, '$."' || o.unit_id || '"') IS NULL THEN 2
+        WHEN o.done OR o.started THEN 1
         ELSE 0 END AS srank,
       CASE WHEN o.replaced THEN 1 WHEN o.exact THEN 0 ELSE o.n > 1 OR o.percent IS NULL END
         AS approximate
@@ -68,10 +73,11 @@ FROM (
         SELECT q.id AS position_id, q.user_id AS user_id, c.unit_id AS unit_id,
           q.percent AS percent, q.client_ts AS client_ts, q.server_ts AS server_ts,
           q.source AS source, q.page AS page, q.replaced AS replaced,
-          c.rank0 AS rank0, c.n AS n, c.start_page AS start_page, c.end_page AS end_page
+          c.rank0 AS rank0, c.n AS n, c.start_page AS start_page, c.end_page AS end_page,
+          q.undone_units AS undone_units
         FROM (
           SELECT id, user_id, carrier_type, carrier_id, percent, client_ts, server_ts, source,
-            covered_units,
+            covered_units, undone_units,
             CASE WHEN json_type(locator, '$.page') = 'integer'
               THEN json_extract(locator, '$.page') END AS page,
             coalesce(content_hash <> CASE carrier_type
@@ -97,10 +103,10 @@ FROM (
         WHERE NOT q.replaced
         UNION ALL
         SELECT q.id, q.user_id, u.id, q.percent, q.client_ts, q.server_ts, q.source, q.page,
-          1, CAST(j.key AS INTEGER), json_array_length(q.covered_units), NULL, NULL
+          1, CAST(j.key AS INTEGER), json_array_length(q.covered_units), NULL, NULL, q.undone_units
         FROM (
           SELECT id, user_id, carrier_type, carrier_id, percent, client_ts, server_ts, source,
-            covered_units, NULL AS page,
+            covered_units, undone_units, NULL AS page,
             coalesce(content_hash <> CASE carrier_type
               WHEN 'export_item' THEN coalesce(
                 (SELECT ct.content_hash FROM export_item AS e
