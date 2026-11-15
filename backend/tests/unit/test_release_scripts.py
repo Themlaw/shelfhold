@@ -219,7 +219,19 @@ def test_retag_never_moves_the_minor_tag_backwards(env: dict[str, str]) -> None:
     assert created(env) == {f"{IMG}:0.1.1"}
 
 
-@pytest.mark.parametrize("tag", ["0.1.0", "v0.1", "v0.1.0-rc1", "vX.Y.Z", "v1.2.3; id"])
+@pytest.mark.parametrize(
+    "tag",
+    [
+        "0.1.0",
+        "v0.1",
+        "v0.1.0-rc1",
+        "v0.1.0-rc.0",
+        "v0.1.0-rc.",
+        "v0.1.0-beta.1",
+        "vX.Y.Z",
+        "v1.2.3; id",
+    ],
+)
 @pytest.mark.req("ENF-SEC-007", "ENF-OPS-002")
 def test_retag_refuses_anything_but_a_vx_y_z_tag(env: dict[str, str], tag: str) -> None:
     put(env, f"{IMG}:sha-{'c' * 40}", DIGEST)
@@ -227,3 +239,87 @@ def test_retag_refuses_anything_but_a_vx_y_z_tag(env: dict[str, str], tag: str) 
     r = run("release-retag.sh", env)
     assert r.returncode != 0 and "vX.Y.Z" in r.stdout + r.stderr
     assert created(env) == set()
+
+
+# --- release candidates (vX.Y.Z-rc.N): no image tag, ever ---------------------------------------
+
+
+@pytest.mark.parametrize("tag", ["v0.1.0-rc.1", "v1.0.0-rc.12", "v0.1.1-rc.3"])
+@pytest.mark.req("ENF-SEC-007", "ENF-OPS-002")
+def test_retag_of_a_release_candidate_writes_no_image_tag_at_all(
+    env: dict[str, str], tag: str
+) -> None:
+    env["TAG"] = tag
+    put(env, f"{IMG}:sha-{'c' * 40}", DIGEST)
+    r = run("release-retag.sh", env)
+    assert r.returncode == 0, r.stderr
+    assert created(env) == set()  # no X.Y.Z-rc.N, no X.Y, no latest
+    log = (Path(env["STUB_STATE"]) / "log").read_text()
+    assert " create " not in log and ":latest" not in log
+    assert f"{IMG}:sha-{'c' * 40}" in r.stdout  # the way to install it is named
+
+
+@pytest.mark.req("ENF-SEC-007", "ENF-OPS-002")
+def test_retag_of_a_release_candidate_never_moves_the_minor_tag(env: dict[str, str]) -> None:
+    # the `sort -V` trap: 1.0.0-rc.1 sorts after 1.0.0, so X.Y would jump to the candidate
+    env["TAG"] = "v0.1.0-rc.1"
+    put(env, f"{IMG}:sha-{'c' * 40}", DIGEST)
+    put(env, f"{IMG}:0.1", OTHER)
+    (Path(env["STUB_STATE"]) / "tags.json").write_text(
+        json.dumps({"tags": ["0.1.0", "0.1", "edge"]})
+    )
+    assert run("release-retag.sh", env).returncode == 0
+    assert created(env) == set()
+    assert (Path(env["STUB_STATE"]) / ref(f"{IMG}:0.1")).read_text() == OTHER
+
+
+@pytest.mark.req("ENF-SEC-007")
+def test_retag_of_a_release_candidate_still_requires_ci_and_a_signature(
+    env: dict[str, str],
+) -> None:
+    env["TAG"] = "v0.1.0-rc.1"
+    put(env, f"{IMG}:sha-{'c' * 40}", DIGEST)
+    (Path(env["STUB_STATE"]) / "cosign_fail").write_text("")
+    r = run("release-retag.sh", env)
+    assert r.returncode != 0 and "no valid cosign signature" in r.stdout + r.stderr
+    (Path(env["STUB_STATE"]) / "cosign_fail").unlink()
+    (Path(env["STUB_STATE"]) / "ci").write_text("failure")
+    assert run("release-retag.sh", env).returncode != 0
+    assert created(env) == set()
+
+
+@pytest.mark.req("ENF-SEC-007")
+def test_proofs_of_a_release_candidate_read_the_image_of_the_commit(
+    env: dict[str, str], tmp_path: Path
+) -> None:
+    """No version tag exists for a candidate: the SBOM and the provenance come from sha-<commit>."""
+    env["TAG"] = "v0.1.0-rc.1"
+    env["OUT"] = str(tmp_path / "out")
+    raw = {
+        "manifests": [
+            {"digest": "sha256:" + "1" * 64, "platform": {"os": "linux", "architecture": "amd64"}},
+            {"digest": "sha256:" + "2" * 64, "platform": {"os": "linux", "architecture": "arm64"}},
+        ]
+    }
+    state = Path(env["STUB_STATE"])
+    (state / "raw_index").write_text(json.dumps(raw))
+    put(env, f"{IMG}:sha-{'c' * 40}", DIGEST)
+    gh = Path(env["PATH"].split(":")[0]) / "gh"
+    docker = Path(env["PATH"].split(":")[0]) / "docker"
+    docker.write_text(
+        DOCKER.replace(
+            'if [ "$3" = inspect ] && [ "$4" != "--raw" ]',
+            'if [ "$3" = inspect ] && [ "$5" != "--raw" ]',
+        ).replace('if [ "$3" = inspect ]; then cat', 'if [ "$3" = inspect ]; then cat')
+    )
+    statement = '[{"verificationResult":{"statement":{"predicate":{"a":1}}}}]'
+    gh.write_text(
+        GH.replace(
+            "case", f"case \"$*\" in *attestation*) echo '{statement}'; exit 0;; esac\ncase", 1
+        )
+    )
+    r = run("release-proofs.sh", env)
+    assert r.returncode == 0, r.stderr
+    log = (state / "log").read_text()
+    assert f"inspect {IMG}:sha-{'c' * 40}" in log
+    assert ":0.1.0-rc.1" not in log and ":0.1.0 " not in log

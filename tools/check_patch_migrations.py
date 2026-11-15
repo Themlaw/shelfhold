@@ -6,9 +6,9 @@ migration of `main` and the minor line (`since = "X.Y"`) that first shipped it. 
 - a migration whose fingerprint differs from the list fails, whatever the release;
 - a migration missing from the list fails (add it with `--freeze`, which is the review point);
 - a list entry whose file is gone fails;
-- for a patch release `vX.Y.Z` (Z > 0), any migration that `since` places after X.Y fails.
+- for a patch release `vX.Y.Z` or its candidate `vX.Y.Z-rc.N` (Z > 0), any migration that `since` places after X.Y fails.
 
-Usage: check_patch_migrations.py [--tag vX.Y.Z] | --freeze SINCE
+Usage: check_patch_migrations.py [--tag vX.Y.Z[-rc.N]] | --freeze SINCE
 """
 
 from __future__ import annotations
@@ -23,7 +23,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 VERSIONS = "backend/src/shelfhold/infrastructure/migrations/versions"
 FROZEN = "tools/published-migrations.toml"
-_TAG = re.compile(r"^v(\d+)\.(\d+)\.(\d+)$")
+_TAG = re.compile(r"^v(\d+)\.(\d+)\.(\d+)(?:-rc\.[1-9]\d*)?$")
 _SINCE = re.compile(r"^(\d+)\.(\d+)$")
 
 
@@ -35,7 +35,8 @@ def fingerprint(path: Path) -> str:
 
 def current(root: Path) -> dict[str, str]:
     return {
-        p.name: fingerprint(p) for p in sorted((root / VERSIONS).glob("[0-9][0-9][0-9][0-9]_*.py"))
+        p.name: fingerprint(p)
+        for p in sorted((root / VERSIONS).glob("[0-9][0-9][0-9][0-9]_*.py"))
     }
 
 
@@ -57,29 +58,39 @@ def check(root: Path, tag: str | None = None) -> list[str]:
     for name, digest in now.items():
         entry = frozen.get(name)
         if entry is None:
-            problems.append(f"{name}: not in {FROZEN}; a new migration is frozen with --freeze")
+            problems.append(
+                f"{name}: not in {FROZEN}; a new migration is frozen with --freeze"
+            )
         elif entry["sha256"] != digest:
-            problems.append(f"{name}: published migration modified (add a new migration instead)")
+            problems.append(
+                f"{name}: published migration modified (add a new migration instead)"
+            )
     for name in frozen.keys() - now.keys():
         problems.append(f"{name}: published migration removed")
     if tag is not None:
         m = _TAG.match(tag)
         if not m:
-            problems.append(f"{tag}: not a vX.Y.Z tag")
-        elif int(m.group(3)) > 0:  # a patch release: no migration newer than its minor line
+            problems.append(f"{tag}: not a vX.Y.Z or vX.Y.Z-rc.N tag")
+        elif (
+            int(m.group(3)) > 0
+        ):  # a patch release: no migration newer than its minor line
             line = (int(m.group(1)), int(m.group(2)))
             for name in sorted(now):
                 entry = frozen.get(name)
                 since = entry["since"] if entry else None
                 if since is None or _line(since) > line:
-                    problems.append(f"{name}: a patch release {tag} must not carry this migration")
+                    problems.append(
+                        f"{name}: a patch release {tag} must not carry this migration"
+                    )
     return problems
 
 
 def freeze(root: Path, since: str) -> None:
     _line(since)
     frozen = load_frozen(root)
-    lines = ["# Fingerprints of published migrations (tools/check_patch_migrations.py).\n"]
+    lines = [
+        "# Fingerprints of published migrations (tools/check_patch_migrations.py).\n"
+    ]
     for name, digest in current(root).items():
         entry = frozen.get(name)
         lines.append(
@@ -91,8 +102,10 @@ def freeze(root: Path, since: str) -> None:
 
 def main(argv: list[str]) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
-    ap.add_argument("--tag", help="release tag vX.Y.Z")
-    ap.add_argument("--freeze", metavar="SINCE", help="add the new migrations, as shipped from X.Y")
+    ap.add_argument("--tag", help="release tag vX.Y.Z or vX.Y.Z-rc.N")
+    ap.add_argument(
+        "--freeze", metavar="SINCE", help="add the new migrations, as shipped from X.Y"
+    )
     ap.add_argument("--root", default=str(ROOT))
     args = ap.parse_args(argv)
     root = Path(args.root)

@@ -64,3 +64,13 @@ def test_the_oldest_migration_is_the_one_of_the_first_release() -> None:
     entry = guard.load_frozen(REPO)["0001_initial.py"]
     assert entry["since"] == "0.1"
     assert entry["sha256"] == "f0630dd5a5c56d4823365640e660846d461885861f7e27fd9fb7ab8dd047748c"
+
+
+@pytest.mark.req("ENF-OPS-002")
+def test_release_candidate_tag_is_accepted_and_keeps_the_rules(tmp_path: Path) -> None:
+    root = _copy(tmp_path)
+    for plain, candidate in (("v0.2.0", "v0.2.0-rc.1"), ("v0.2.1", "v0.2.1-rc.2")):
+        expected = [p.replace(plain, candidate) for p in guard.check(root, plain)]
+        assert guard.check(root, candidate) == expected
+    for bad in ("v0.2.0-rc1", "v0.2.0-rc.0", "v0.2.0-beta.1", "0.2.0-rc.1"):
+        assert any("not a vX.Y.Z" in p for p in guard.check(root, bad)), bad

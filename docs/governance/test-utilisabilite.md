@@ -6,7 +6,9 @@ Le tag `v1.0.0-rc.1` est posé à la fin de M3. Ce test, tenu par le mainteneur,
 
 ## Avant la séance
 
-- Une installation neuve de la `rc.1` sur l'image de release, avec Kavita connecté et une source de livres (Project Gutenberg ou Wikisource, libre de droits aux États-Unis) active. Un compte administrateur, un profil enfant (plafond 13+) et un profil membre.
+- Avant d'installer, vérifier l'image par son digest (voir [Publier une version](../releasing.md#candidate-de-version-vxyz-rcn)) :
+  `cosign verify ghcr.io/themlaw/shelfhold@<digest> --certificate-identity-regexp '^https://github\.com/Themlaw/shelfhold/\.github/workflows/image-publish\.yml@refs/heads/main$' --certificate-oidc-issuer https://token.actions.githubusercontent.com`.
+- Une installation neuve de la `rc.1` sur l'image du commit de la rc, `ghcr.io/themlaw/shelfhold:sha-<commit>` (déjà signée et attestée ; une rc n'a aucun tag `1.0` ni `latest`), avec Kavita connecté et une source de livres (Project Gutenberg ou Wikisource, libre de droits aux États-Unis) active. Un compte administrateur, un profil enfant (plafond 13+) et un profil membre.
 - Au moins **5 personnes** du foyer ou proches, dont un enfant si possible. Une personne par séance, l'une après l'autre : personne ne voit la séance d'une autre.
 - Une personne qui observe et chronomètre (le mainteneur) ; elle ne parle que pour lire la consigne.
 - Une liseuse ou une tablette pour la tâche 5. Un appareil par famille de la [matrice des clients](../admin/clients.md) (navigateur de bureau, Safari iOS, Boox, Kindle, Kobo, KOReader), au moins un par famille que le foyer possède vraiment.

@@ -334,3 +334,44 @@ def test_ghcr_cleanup_is_scheduled_with_a_dry_run() -> None:
     (job,) = workflow["jobs"].values()
     assert "DRY_RUN" in _text(job)
     assert not (workflow.get("permissions") or {})
+
+
+# --- release candidates: the YAML skips what does not apply, and tags nothing ---------------------
+
+
+@pytest.mark.req("ENF-SEC-007", "ENF-OPS-002")
+def test_release_workflow_gives_a_release_candidate_no_second_registry_tag() -> None:
+    jobs = _load("release.yml")["jobs"]
+    assert "-rc." in str(jobs["second-registry"]["if"])  # skipped, not failed
+    # the jobs that tag or retag are only these two; every other job only reads the image
+    taggers = {n for n, j in jobs.items() if "imagetools create" in _text(j) or "retag" in _text(j)}
+    assert taggers == {"image-tags", "second-registry"}
+
+
+@pytest.mark.req("ENF-SEC-007", "ENF-OPS-002")
+def test_release_workflow_accepts_rc_tags_and_checks_the_prerelease_flag() -> None:
+    wf = _load("release.yml")
+    jobs = wf["jobs"]
+    for name in ("image-tags", "second-registry", "schema-assets", "test-report", "release-proofs"):
+        assert "-rc" in _text(jobs[name]) or name == "image-tags", name
+    flat = _text(jobs["image-tags"])
+    assert "github.event.release.prerelease" in yaml.safe_dump(jobs["image-tags"])
+    assert "latest" not in flat
+    assert "-rc" in (ROOT / ".github/scripts/release-retag.sh").read_text()
+
+
+@pytest.mark.req("ENF-SEC-007", "ENF-OPS-002")
+def test_docs_workflow_skips_a_release_candidate() -> None:
+    build = _load("docs.yml")["jobs"]["build"]
+    assert "-rc." in str(build["if"])
+    # a candidate must not reach Pages: the deploy needs the (skipped) build
+    assert _load("docs.yml")["jobs"]["deploy"]["needs"] == "build"
+    assert "(-rc" not in _text(build)  # the tag check stays strict: only vX.Y.Z is built
+
+
+@pytest.mark.req("ENF-SEC-007", "ENF-OPS-002")
+def test_release_workflows_never_publish_a_latest_tag() -> None:
+    for name in ("release.yml", "docs.yml"):
+        assert ":latest" not in (ROOT / ".github/workflows" / name).read_text()
+    for script in ("release-retag.sh", "release-proofs.sh"):
+        assert ":latest" not in (ROOT / ".github/scripts" / script).read_text()
