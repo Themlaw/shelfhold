@@ -2,16 +2,15 @@
 
 from __future__ import annotations
 
-import sqlalchemy as sa
-
 import pytest
 
 from shelfhold.config import Settings
-from shelfhold.infrastructure.db import create_db_engine, migrate
+from shelfhold.infrastructure.db import create_db_engine
+from shelfhold.infrastructure.migrate import migrate
+from shelfhold.infrastructure.secrets.diagnostics import boot_check
 from shelfhold.infrastructure.secrets.vault import SecretVault
 from shelfhold.plugin_host.adapters.meta.lncrawl import LncrawlService
 from shelfhold.plugin_host.settings import SourceSettings, parse_settings_schema
-from shelfhold.infrastructure.secrets.diagnostics import boot_check
 
 
 @pytest.fixture
@@ -30,9 +29,10 @@ def test_lncrawl_rate_limit_is_one_request_per_second() -> None:
     service = LncrawlService()
     assert service.manifest.rate_limit.requests_per_second == 1.0
     assert service.manifest.rate_limit.concurrency == 1
-    manifest_path = Path(__file__).resolve().parents[2] / "sources" / "meta_lncrawl" / "manifest.json"
-    import json
-    from shelfhold.sdk.models import SourceManifest
+    manifest_path = (
+        Path(__file__).resolve().parents[3] / "sources" / "meta_lncrawl" / "manifest.json"
+    )
+    from shelfhold.sdk.source import SourceManifest
 
     on_disk = SourceManifest.model_validate_json(manifest_path.read_text())
     assert on_disk.rate_limit.requests_per_second == 1.0
