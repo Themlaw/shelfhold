@@ -119,10 +119,8 @@ def build_opds_router(
     def _stamp() -> str:
         return now().strftime("%Y-%m-%dT%H:%M:%SZ")
 
-    def _say(request: Request, principal: Principal, key: str, **params: object) -> str:
-        return t_lang(
-            f"opds.{key}", language=language_from_headers(request.headers, principal), **params
-        )
+    def _lang(request: Request, principal: Principal) -> str:
+        return language_from_headers(request.headers, principal)
 
     def _scope(connection: Connection, principal: Principal) -> ReaderScope:
         return reader_scope(connection, principal.user_id)
@@ -183,18 +181,21 @@ def build_opds_router(
     def root(request: Request, principal: Device) -> Response:
         paths = _paths(request)
         nav = feed_type("navigation")
+        lang = _lang(request, principal)
+        acquisition = feed_type("acquisition")
         door = [
-            ("shelves", paths.shelves(), nav), ("series", paths.series_list(), nav),
-            ("works", paths.works(), feed_type("acquisition")),
-            ("recent", paths.recent(), feed_type("acquisition")),
-        ]  # fmt: skip
+            ("shelves", t_lang("opds.shelves", language=lang), paths.shelves(), nav),
+            ("series", t_lang("opds.series", language=lang), paths.series_list(), nav),
+            ("works", t_lang("opds.works", language=lang), paths.works(), acquisition),
+            ("recent", t_lang("opds.recent", language=lang), paths.recent(), acquisition),
+        ]
         entries = [
-            Entry(f"urn:shelfhold:opds:{key}", _say(request, principal, key), _stamp(),
-                  [Link(_SUBSECTION, href, kind)])
-            for key, href, kind in door
-        ]  # fmt: skip
+            Entry(f"urn:shelfhold:opds:{key}", label, _stamp(), [Link(_SUBSECTION, href, kind)])
+            for key, label, href, kind in door
+        ]
         body = build_feed(
-            feed_id="urn:shelfhold:opds:root", title=_say(request, principal, "root_title"),
+            feed_id="urn:shelfhold:opds:root",
+            title=t_lang("opds.root_title", language=_lang(request, principal)),
             updated=_stamp(), kind="navigation",
             links=[Link("self", paths.root(), nav), *_start(paths)], entries=entries,
         )  # fmt: skip
@@ -207,7 +208,7 @@ def build_opds_router(
     def opensearch(request: Request, principal: Device) -> Response:
         body = opensearch_description(
             template=_paths(request).search_template(),
-            title=_say(request, principal, "search_description"),
+            title=t_lang("opds.search_description", language=_lang(request, principal)),
         )
         return Response(body, media_type="application/opensearchdescription+xml", headers=_HEADERS)
 
@@ -231,7 +232,8 @@ def build_opds_router(
             for shelf_id, name in listed
         ]  # fmt: skip
         body = build_feed(
-            feed_id="urn:shelfhold:opds:shelves", title=_say(request, principal, "shelves"),
+            feed_id="urn:shelfhold:opds:shelves",
+            title=t_lang("opds.shelves", language=_lang(request, principal)),
             updated=_stamp(), kind="navigation",
             links=[Link("self", paths.shelves(), feed_type("navigation")), *_start(paths)],
             entries=entries,
@@ -274,7 +276,8 @@ def build_opds_router(
             *_start(paths),
         ]
         body = build_feed(
-            feed_id="urn:shelfhold:opds:series", title=_say(request, principal, "series"),
+            feed_id="urn:shelfhold:opds:series",
+            title=t_lang("opds.series", language=_lang(request, principal)),
             updated=_stamp(), kind="navigation", links=links, entries=entries,
             total=len(every), start=offset, per_page=limit,
         )  # fmt: skip
@@ -302,7 +305,7 @@ def build_opds_router(
     ) -> Response:
         return _works_feed(
             request, principal, feed_id="urn:shelfhold:opds:works",
-            title=_say(request, principal, "works"),
+            title=t_lang("opds.works", language=_lang(request, principal)),
             make=lambda **q: _paths(request).works(**q), offset=offset, limit=limit,
         )  # fmt: skip
 
@@ -312,7 +315,7 @@ def build_opds_router(
     ) -> Response:
         return _works_feed(
             request, principal, feed_id="urn:shelfhold:opds:recent",
-            title=_say(request, principal, "recent"),
+            title=t_lang("opds.recent", language=_lang(request, principal)),
             make=lambda **q: _paths(request).recent(**q), offset=offset, limit=limit, recent=True,
         )  # fmt: skip
 
@@ -341,9 +344,14 @@ def build_opds_router(
             if offer is not None:
                 label = safe_filename(offer.filename).rsplit(".", 1)[0]
             elif len(editions) > 1:
-                label = _say(request, principal, "complete_in", title=title, lang=edition.lang)
+                label = t_lang(
+                    "opds.complete_in",
+                    language=_lang(request, principal),
+                    title=title,
+                    lang=edition.lang,
+                )
             else:
-                label = _say(request, principal, "complete", title=title)
+                label = t_lang("opds.complete", language=_lang(request, principal), title=title)
             entry_links: list[Link] = []
             digest = cover_hash(edition.cover_ref) if edition.cover_ref else None
             if digest:
@@ -388,7 +396,8 @@ def build_opds_router(
             *_start(paths),
         ]
         body = build_feed(
-            feed_id="urn:shelfhold:opds:search", title=_say(request, principal, "results"),
+            feed_id="urn:shelfhold:opds:search",
+            title=t_lang("opds.results", language=_lang(request, principal)),
             updated=_stamp(), kind="acquisition", links=links,
             entries=_work_entries(works, paths), total=found.total, start=offset, per_page=limit,
         )  # fmt: skip

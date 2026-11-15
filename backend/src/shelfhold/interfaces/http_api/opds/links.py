@@ -47,7 +47,7 @@ def safe_filename(raw: str) -> str:
     kept = "".join(c for c in raw if c not in _FORBIDDEN and c.isprintable())
     while ".." in kept:
         kept = kept.replace("..", ".")
-    kept = kept.strip(" .")
+    kept = kept.strip(chr(32) + ".")
     if len(kept) > _MAX_NAME:
         stem, dot, ext = kept.rpartition(".")
         if dot and 0 < len(ext) <= 8:
