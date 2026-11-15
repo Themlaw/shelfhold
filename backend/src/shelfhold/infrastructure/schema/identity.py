@@ -15,6 +15,7 @@ from shelfhold.infrastructure.schema._base import (
     ulid_check,
     ulid_column,
 )
+from shelfhold.infrastructure.schema.acquisition import sealed_secret_columns
 
 ROLES = ("admin", "member", "child")
 THEMES = ("bibliotheque", "console", "galerie", "calme")
@@ -295,4 +296,40 @@ notification_digest = sa.Table(
     sa.Column("payload", sa.JSON(), nullable=False, server_default="{}"),
     sa.PrimaryKeyConstraint("user_id", "due_at"),
     json_shape_check("payload", "object"),
+)
+
+# A member's account on a destination (EF-USR-012, M4): who they are on the server and the token
+# that reads and writes their progress. The token is a sealed envelope, as in `export_target`
+# (ENF-SEC-005); the API shows `token_fingerprint` and nothing reads the token back. Revoking
+# erases the token: a live account always holds one. A remote account is one member's, per
+# destination.
+destination_account = sa.Table(
+    "destination_account",
+    metadata,
+    ulid_column("id", primary_key=True),  # a sealed table has a single-column key (rotation)
+    sa.Column(
+        "user_id", sa.String(26), sa.ForeignKey("user.id", ondelete="CASCADE"), nullable=False
+    ),
+    sa.Column(
+        "shelf_destination_id",
+        sa.String(26),
+        sa.ForeignKey("shelf_destination.id", ondelete="CASCADE"),
+        nullable=False,
+    ),
+    sa.Column("remote_user", sa.String(), nullable=False),
+    *sealed_secret_columns(),
+    sa.Column("token_fingerprint", sa.String(), nullable=True),
+    sa.Column("verified_at", UtcDateTime(), nullable=True),
+    sa.Column("revoked_at", UtcDateTime(), nullable=True),
+    now_column(),
+    ulid_check("id"),
+    sa.UniqueConstraint("user_id", "shelf_destination_id"),
+    sa.CheckConstraint("\"remote_user\" <> ''", name="remote_user_not_empty"),
+    sa.CheckConstraint(
+        '"revoked_at" IS NOT NULL OR "secret_ct" IS NOT NULL', name="live_has_token"
+    ),
+    sa.CheckConstraint(
+        '("token_fingerprint" IS NULL) = ("secret_ct" IS NULL)', name="fingerprint_iff_sealed"
+    ),
+    sa.UniqueConstraint("shelf_destination_id", "remote_user"),
 )

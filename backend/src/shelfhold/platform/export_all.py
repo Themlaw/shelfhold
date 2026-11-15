@@ -76,6 +76,7 @@ EXCLUDED_TABLES: Final[Mapping[str, str]] = {
     # secrets
     "api_key": _CREDENTIAL, "webauthn_credential": _CREDENTIAL, "session": _CREDENTIAL,
     "secret_key": _CREDENTIAL, "export_target": _CREDENTIAL, "source_account": _CREDENTIAL,
+    "destination_account": _CREDENTIAL,
     "source_secret": _CREDENTIAL, "source_config": _CREDENTIAL, "plugin_attestation": _CREDENTIAL,
     "idempotency_key": _CREDENTIAL,
     # tombstones
@@ -85,10 +86,12 @@ EXCLUDED_TABLES: Final[Mapping[str, str]] = {
     "physical_root": _HOST, "mount_sentinel": _HOST, "instance": _HOST, "app_setting": _HOST,
     "schedule": _HOST, "time_window": _HOST, "plugin_install": _HOST, "plugin_state": _HOST,
     "shelf_destination": _HOST, "shelf_destination_remote_library": _HOST,
+    "tree": _HOST, "tree_indexer": _HOST,
     "remote_library": _HOST, "kavita_instance": _HOST, "kavita_access_audit": _HOST,
     "sub_source": _HOST, "backup_run": _HOST,
     "work_kind": _SEEDED, "work_relation_kind": _SEEDED, "normalizer": _SEEDED,
     # queues, journals, caches, logs
+    "progress_sync_cursor": _NOISE,
     "audit": _NOISE, "event": _NOISE, "job_view": _NOISE, "fs_intent": _NOISE,
     "resource_lock": _NOISE, "export_plan": _NOISE, "export_op": _NOISE,
     "notification_pending": _NOISE, "notification_digest": _NOISE, "domain_slot": _NOISE,

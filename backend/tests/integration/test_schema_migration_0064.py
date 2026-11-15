@@ -20,9 +20,9 @@ from shelfhold.config import Settings
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.migrate import default_script_location, migrate
 from shelfhold.infrastructure.schema import metadata
+from tests.integration.test_schema_catalog import edition_values
 from tests.integration.test_schema_migration_0002 import alembic_config, tables
 from tests.integration.test_schema_migration_0046 import add_row, add_user
-from tests.integration.test_schema_catalog import add_edition, add_work
 
 M4_TABLES = {"tree", "tree_indexer", "destination_account", "progress_sync_cursor"}
 HASH = "sha256:" + "ab" * 32
@@ -165,10 +165,7 @@ def add_work_row(conn: sqlite3.Connection) -> str:
 
 def edition_row(conn: sqlite3.Connection, work_id: str) -> str:
     edition = new_ulid()
-    add_row(
-        conn, "edition", id=edition, work_id=work_id, lang="en", publisher="", text_version="",
-        performance="", packaging="",
-    )  # fmt: skip
+    add_row(conn, "edition", **edition_values(work_id, id=edition))
     return edition
 
 
@@ -181,7 +178,9 @@ def test_downgrade_to_0063_drops_the_m4_schema(settings: Settings) -> None:
     assert not (M4_TABLES & tables(database))
     with closing(sqlite3.connect(database)) as conn:
         columns = {r[1] for r in conn.execute('PRAGMA table_info("document_alias")')}
-        triggers = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='trigger'")}
+        triggers = {
+            r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='trigger'")
+        }
     assert not ({"kavita_md5", "shelf_destination_id"} & columns)
     assert not {t for t in triggers if t.startswith(("tree_indexer_", "link_one_library"))}
 
@@ -374,7 +373,8 @@ def test_moving_a_link_onto_a_library_of_the_shelf_is_refused_too(db: sqlite3.Co
     with pytest.raises(sqlite3.DatabaseError, match="already linked"):
         db.execute(
             "UPDATE shelf_destination_remote_library SET remote_library_id = ? "
-            "WHERE shelf_destination_id = ?", (one, second),
+            "WHERE shelf_destination_id = ?",
+            (one, second),
         )
 
 
@@ -383,9 +383,12 @@ def test_moving_a_link_onto_a_library_of_the_shelf_is_refused_too(db: sqlite3.Co
 
 def account(db: sqlite3.Connection, user_id: str, dest: str, **extra: Any) -> None:
     values: dict[str, Any] = {
-        "user_id": user_id, "shelf_destination_id": dest, "remote_user": f"r-{user_id[-6:]}",
+        "id": new_ulid(),
+        "user_id": user_id,
+        "shelf_destination_id": dest,
+        "remote_user": f"r-{user_id[-6:]}",
         **extra,
-    }  # fmt: skip
+    }
     if "secret_ct" not in values and "revoked_at" not in values:
         values.update(sealed(key(db)))
     add_row(db, "destination_account", **values)
@@ -427,7 +430,7 @@ def test_destination_account_needs_a_real_user_and_destination_and_a_name(
 def test_a_live_account_holds_a_sealed_token_with_its_fingerprint(db: sqlite3.Connection) -> None:
     dest = destination(db, shelf(db), target(db))
     user = add_user(db)
-    base = {"user_id": user, "shelf_destination_id": dest, "remote_user": "r"}
+    base = {"id": new_ulid(), "user_id": user, "shelf_destination_id": dest, "remote_user": "r"}
     # no token and not revoked: refused
     with pytest.raises(sqlite3.IntegrityError, match="ck_destination_account_live_has_token"):
         add_row(db, "destination_account", **base)

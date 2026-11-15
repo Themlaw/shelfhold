@@ -861,6 +861,8 @@ content_id = "Content the item was made from."
 description = "One row per rewrite of an exported file: a hash of a volume resolves one carrier. Filled from M4."
 [tables.document_alias.columns]
 koreader_partial_md5 = "Partial MD5 KOReader computes."
+kavita_md5 = "MD5 of the file as Kavita keeps it, computed for the binding in `shelf_destination_id`."
+shelf_destination_id = "Binding the hashes were computed for; NULL for a rewrite older than M4 or once the binding is gone."
 
 [tables.export_upgrade]
 description = "One replacement of an exported file at its path: what was served before and after, and the bin entry of the old version."
@@ -1130,3 +1132,31 @@ scope = "What the window applies to (a kind of job)."
 start_utc = "Start of the window, `HH:MM` UTC."
 end_utc = "End of the window, `HH:MM` UTC."
 tz = "IANA time zone used to show the window."
+
+[tables.tree]
+description = "A folder Shelfhold writes, identified by its physical root and subpath; one or more servers index it (ADR-0052)."
+[tables.tree.columns]
+id = "Tree identifier (ULID)."
+root_subpath = "Folder of the tree under its root, relative and normalized; empty for the root itself."
+render_profile = "JSON: the common rendering every indexer of the tree accepts (layout, naming, sidecars, formats)."
+
+[tables.tree_indexer]
+description = "A binding attached to a tree: the one that made it renders, the others only index it."
+[tables.tree_indexer.columns]
+tree_id = "Tree the binding indexes (`tree.id`); the row goes with the tree."
+role = "`primary` (made the tree, renders its plan; exactly one per tree) or `secondary`."
+target_id = "Server instance of the binding, kept equal to its own: a server indexes a tree once."
+
+[tables.destination_account]
+description = "A member's account on a destination and the sealed token that reads and writes their progress."
+[tables.destination_account.columns]
+remote_user = "Name of the account on the server; one member's per destination."
+token_fingerprint = "Short keyed digest of the token shown instead of it; NULL once the token is erased."
+verified_at = "When the token was last checked to open the declared account (UTC)."
+revoked_at = "When the account was revoked (UTC); the token is erased then."
+
+[tables.progress_sync_cursor]
+description = "Where the progress synchronisation of an account with its destination stopped."
+[tables.progress_sync_cursor.columns]
+last_pull_server_ts = "Server time of the last progress read from the destination (UTC); NULL: never."
+last_push_at = "When progress was last sent to the destination (UTC); NULL: never."

@@ -87,3 +87,20 @@ FROM (
 """
 
 add_view(reading_position, "reading_progress", READING_PROGRESS_SELECT)
+
+# Where each synchronisation of a member's progress with a destination stopped (EF-USR-012, M4):
+# one cursor per account, so one server being down never moves another's. NULL = never run.
+progress_sync_cursor = sa.Table(
+    "progress_sync_cursor",
+    metadata,
+    sa.Column("shelf_destination_id", sa.String(26), nullable=False),
+    sa.Column("user_id", sa.String(26), nullable=False),
+    sa.Column("last_pull_server_ts", UtcDateTime(), nullable=True),
+    sa.Column("last_push_at", UtcDateTime(), nullable=True),
+    sa.ForeignKeyConstraint(
+        ["user_id", "shelf_destination_id"],
+        ["destination_account.user_id", "destination_account.shelf_destination_id"],
+        ondelete="CASCADE",
+    ),
+    sa.PrimaryKeyConstraint("shelf_destination_id", "user_id"),
+)
