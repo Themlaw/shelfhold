@@ -13,17 +13,17 @@ from tests.integration.test_schema_migration_0002 import alembic_config
 
 
 @pytest.mark.req("ENF-OPS-002", "EF-LEC-014")
-def test_single_alembic_head_with_0065_on_0071() -> None:
+def test_single_alembic_head_with_0065_on_0076() -> None:
     script = ScriptDirectory(str(default_script_location()))
     assert script.get_heads() == ["0065"]
-    assert script.get_revision("0065").down_revision == "0071"
+    assert script.get_revision("0065").down_revision == "0076"
 
 
 @pytest.mark.req("ENF-OPS-002", "EF-LEC-014")
 def test_upgrade_replaces_the_view_and_downgrade_restores_the_old_one(settings: Settings) -> None:
     database = settings.database_path
     settings.data_dir.mkdir(parents=True, exist_ok=True)
-    command.upgrade(alembic_config(database), "0071")
+    command.upgrade(alembic_config(database), "0076")
     with closing(sqlite3.connect(database)) as conn:
         before = conn.execute(
             "SELECT sql FROM sqlite_master WHERE name = 'reading_progress'"
@@ -36,7 +36,7 @@ def test_upgrade_replaces_the_view_and_downgrade_restores_the_old_one(settings: 
         ).fetchone()[0]
         assert "min(" in after.lower()  # `client_ts` bounded by `server_ts`
         assert conn.execute("SELECT * FROM reading_progress").fetchall() == []
-    command.downgrade(alembic_config(database), "0071")
+    command.downgrade(alembic_config(database), "0076")
     with closing(sqlite3.connect(database)) as conn:
         again = conn.execute(
             "SELECT sql FROM sqlite_master WHERE name = 'reading_progress'"
@@ -52,7 +52,7 @@ def test_a_page_written_as_text_before_the_migration_is_ignored_after_it(
     (the position stays, its page is ignored), and the view cannot see it any more."""
     database = settings.database_path
     settings.data_dir.mkdir(parents=True, exist_ok=True)
-    command.upgrade(alembic_config(database), "0071")
+    command.upgrade(alembic_config(database), "0076")
     ulid, sha = "01HZZZZZZZZZZZZZZZZZZZZZZ1", "sha256:" + "a" * 64
     with closing(sqlite3.connect(database, isolation_level=None)) as conn:
         conn.execute(
