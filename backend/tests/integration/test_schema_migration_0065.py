@@ -25,14 +25,20 @@ def test_upgrade_replaces_the_view_and_downgrade_restores_the_old_one(settings: 
     settings.data_dir.mkdir(parents=True, exist_ok=True)
     command.upgrade(alembic_config(database), "0071")
     with closing(sqlite3.connect(database)) as conn:
-        before = conn.execute("SELECT sql FROM sqlite_master WHERE name = 'reading_progress'").fetchone()[0]
+        before = conn.execute(
+            "SELECT sql FROM sqlite_master WHERE name = 'reading_progress'"
+        ).fetchone()[0]
         assert "min(" not in before.lower()
     assert "0065" in migrate(settings).applied
     with closing(sqlite3.connect(database)) as conn:
-        after = conn.execute("SELECT sql FROM sqlite_master WHERE name = 'reading_progress'").fetchone()[0]
+        after = conn.execute(
+            "SELECT sql FROM sqlite_master WHERE name = 'reading_progress'"
+        ).fetchone()[0]
         assert "min(" in after.lower()  # `client_ts` bounded by `server_ts`
         assert conn.execute("SELECT * FROM reading_progress").fetchall() == []
     command.downgrade(alembic_config(database), "0071")
     with closing(sqlite3.connect(database)) as conn:
-        again = conn.execute("SELECT sql FROM sqlite_master WHERE name = 'reading_progress'").fetchone()[0]
+        again = conn.execute(
+            "SELECT sql FROM sqlite_master WHERE name = 'reading_progress'"
+        ).fetchone()[0]
     assert again == before

@@ -7,16 +7,20 @@ from datetime import UTC, datetime, timedelta
 import pytest
 
 from shelfhold.reading.domain.merge import Observation, bounded_ts, furthest
-from shelfhold.reading.domain.projection import Bounds, Projected, project
+from shelfhold.reading.domain.projection import Bounds, Projected, State, project
 
 T = datetime(2026, 11, 1, 10, 0, tzinfo=UTC)
 
 
 def seen(
-    pid: str, state: str, percent: float | None = None, *, client: float = 0, server: float = 0
+    pid: str, state: State, percent: float | None = None, *, client: float = 0, server: float = 0
 ) -> Observation:
     return Observation(
-        pid, Projected(state, False), percent, T + timedelta(hours=client), T + timedelta(hours=server)  # type: ignore[arg-type]
+        pid,
+        Projected(state, False),
+        percent,
+        T + timedelta(hours=client),
+        T + timedelta(hours=server),
     )
 
 
@@ -43,9 +47,13 @@ def test_same_state_the_furthest_percent_then_the_latest_bounded_date() -> None:
     assert furthest([tie_old, tie_new]).position_id == "new"
     liar = seen("liar", "in_progress", 0.5, client=900, server=3)  # bounded: 3, not 900
     assert furthest([liar, tie_new]).position_id == "liar"  # 3 > 2 once bounded, not by 900
-    assert furthest([seen("x", "in_progress", 0.5, client=900, server=1), tie_new]).position_id == "new"
+    assert (
+        furthest([seen("x", "in_progress", 0.5, client=900, server=1), tie_new]).position_id
+        == "new"
+    )
 
 
+@pytest.mark.req("EF-LEC-014")
 def test_furthest_of_nothing_is_an_error() -> None:
     with pytest.raises(ValueError, match="no position"):
         furthest([])

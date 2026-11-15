@@ -107,7 +107,7 @@ def test_a_lazy_read_fills_one_item_only(tmp_path: Path) -> None:
     file.write_bytes(b"volume bytes")
     with reading_env(tmp_path) as env:
         one = env.file("ok", env.units("ok", 1))
-        two = env.file("ok", env.units("ok", 1))
+        two = env.file("ok", env.units("ok", 1, first=2))
         h1, h2 = alias_row(env, one, b"volume bytes"), alias_row(env, two, b"volume bytes")
         assert heal_alias_hashes(env.engine, locate=lambda *_: file, export_item_id=one) == 1
         assert read(env, one, h1).kavita_md5 is not None

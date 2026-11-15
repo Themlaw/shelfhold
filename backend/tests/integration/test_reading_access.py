@@ -61,9 +61,7 @@ def test_a_future_client_ts_is_stored_bounded_by_the_server_date(tmp_path: Path)
         position = put(env, reader, reader, item, client_ts=far)
         with env.engine.connect() as connection:
             row = connection.execute(
-                sa.select(reading.reading_position).where(
-                    reading.reading_position.c.id == position
-                )
+                sa.select(reading.reading_position).where(reading.reading_position.c.id == position)
             ).one()
         assert row.client_ts <= row.server_ts.replace(tzinfo=row.client_ts.tzinfo)
 
@@ -148,7 +146,7 @@ def test_an_admin_reads_her_own_progress_on_any_work(tmp_path: Path) -> None:
         assert [p.unit_id for p in mine(env, adult)] == units
 
 
-@pytest.mark.parametrize("who", ["", "not-a-ulid", new_ulid()])
+@pytest.mark.parametrize("who", ["", "not-a-ulid", "01HZZZZZZZZZZZZZZZZZZZZZZM"])
 def test_a_profile_that_is_not_there_reads_and_writes_nothing(tmp_path: Path, who: str) -> None:
     """A key or a device token whose profile was erased: the principal has no profile."""
     with reading_env(tmp_path) as env:
@@ -184,7 +182,9 @@ def test_the_progress_of_a_profile_goes_with_the_profile(tmp_path: Path) -> None
         with env.engine.begin() as connection:
             connection.execute(sa.delete(identity.user).where(identity.user.c.id == reader))
         with env.engine.connect() as connection:
-            assert connection.execute(sa.text("SELECT count(*) FROM reading_progress")).scalar() == 0
+            assert (
+                connection.execute(sa.text("SELECT count(*) FROM reading_progress")).scalar() == 0
+            )
 
 
 def test_a_member_key_revoked_between_two_calls_is_refused_at_the_second(tmp_path: Path) -> None:
@@ -194,16 +194,21 @@ def test_a_member_key_revoked_between_two_calls_is_refused_at_the_second(tmp_pat
         destination = env.destination()
         account = env.account(member, destination)
         with env.engine.connect() as connection:
-            assert live_member_account(
-                connection, user_id=member, shelf_destination_id=destination
-            ) == account
+            assert (
+                live_member_account(connection, user_id=member, shelf_destination_id=destination)
+                == account
+            )
         with env.engine.begin() as connection:
             connection.execute(
                 sa.update(identity.destination_account)
                 .where(identity.destination_account.c.id == account)
                 .values(
-                    revoked_at=hours(3), secret_kid=None, secret_v=None, secret_nonce=None,
-                    secret_ct=None, token_fingerprint=None,
+                    revoked_at=hours(3),
+                    secret_kid=None,
+                    secret_v=None,
+                    secret_nonce=None,
+                    secret_ct=None,
+                    token_fingerprint=None,
                 )
             )
         with env.engine.connect() as connection, pytest.raises(MemberKeyRevokedError):

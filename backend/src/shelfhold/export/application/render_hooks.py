@@ -11,6 +11,8 @@ Hashes are stored like every digest of the schema, `md5:<lowercase hex>`, Kavita
 uppercase form is the one it prints, not one worth storing, and comparing is case-blind.
 """
 
+import hashlib
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -73,3 +75,63 @@ def record_rewrite(
                 )
     except Exception:
         log.warning("document_alias.write_failed", destination=destination_id)
+
+
+def _sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        for block in iter(lambda: stream.read(1 << 20), b""):
+            digest.update(block)
+    return "sha256:" + digest.hexdigest()
+
+
+def heal_alias_hashes(
+    engine: Engine,
+    *,
+    locate: Callable[[str, str], Path | None],
+    export_item_id: str | None = None,
+) -> int:
+    """Fill the aliases a crash left without hashes (the hook above runs after the commit).
+
+    For each alias with an empty KOReader or Kavita hash, `locate(export_item_id, file_hash)` says
+    where the file is, or None when it is gone (a replaced file is often not kept: its hashes stay
+    empty rather than invented). The file is hashed with SHA-256 first and must be the one the
+    alias names, so a file rewritten since never lends its hashes to another's alias. A locator or
+    a file that fails skips that alias, never the sweep. With `export_item_id` only that item is
+    healed (a lazy read by the kosync relay); without it, all of them (the sweep). Returns the
+    number of aliases filled; never raises.
+    """
+    alias = export.document_alias
+    query = sa.select(alias.c.export_item_id, alias.c.file_hash).where(
+        sa.or_(alias.c.koreader_partial_md5.is_(None), alias.c.kavita_md5.is_(None))
+    )
+    if export_item_id is not None:
+        query = query.where(alias.c.export_item_id == export_item_id)
+    try:
+        with engine.connect() as connection:
+            pending = [(str(r.export_item_id), str(r.file_hash)) for r in connection.execute(query)]
+    except Exception:
+        log.warning("document_alias.heal_read_failed")
+        return 0
+    filled = 0
+    for item_id, file_hash in pending:
+        try:
+            path = locate(item_id, file_hash)
+            if path is None or _sha256(path) != file_hash:
+                continue
+            hashes = sample_hashes(path)
+            if hashes is None:
+                continue
+            with write_transaction(engine) as connection:
+                connection.execute(
+                    sa.update(alias)
+                    .where(alias.c.export_item_id == item_id, alias.c.file_hash == file_hash)
+                    .values(
+                        koreader_partial_md5=hashes.koreader_partial_md5,
+                        kavita_md5=hashes.kavita_md5,
+                    )
+                )
+            filled += 1
+        except Exception:
+            log.warning("document_alias.heal_failed", export_item=item_id)
+    return filled

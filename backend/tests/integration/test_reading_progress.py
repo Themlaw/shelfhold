@@ -1,8 +1,8 @@
-"""M4 L14a: `reading_progress` merges the positions of a reader (EF-LEC-014, EF-LEC-007, EF-BIB-026).
+"""M4 L14a: `reading_progress` merges the positions of a reader (EF-LEC-014, EF-LEC-007).
 
 The view keeps, per Unit, the furthest state any position reached, `client_ts` bounded by
-`server_ts`; a Unit that was read never goes back to unread; a volume page is projected on the
-Units the file covers; a position taken on a replaced content is `approximate`. The pure rule of
+`server_ts`; a Unit that was read never goes back to unread; a volume page is projected on
+the Units the file covers; a position taken on a replaced content is `approximate`. The pure rule of
 `reading.domain` and the SQL view are proved equal on a grid.
 """
 
@@ -45,7 +45,7 @@ def test_an_older_position_arriving_late_changes_nothing(tmp_path: Path) -> None
         env.position(reader, volume, percent=0.8, client_ts=hours(10), server_ts=hours(10))
         late = env.position(reader, volume, percent=0.3, client_ts=hours(1), server_ts=hours(11))
         got = env.progress(reader)
-        assert states(env, reader, units) == ["read", "read", "read", "unread"]
+        assert states(env, reader, units) == ["read", "read", "read", "in_progress"]
         assert late not in {r.last_position_id for r in got.values()}
 
 
@@ -150,13 +150,17 @@ def test_the_view_is_the_domain_rule(
         item = env.file("ok", units, bounds=pages if bounded else None, content_hash=NEW_HASH)
         env.alias(item, OLD_HASH, NEW_HASH)
         env.position(
-            reader, item, page=page, percent=percent, content_hash=OLD_HASH if replaced else NEW_HASH
+            reader,
+            item,
+            page=page,
+            percent=percent,
+            content_hash=OLD_HASH if replaced else NEW_HASH,
         )
         got = env.progress(reader)
         for rank0, unit in enumerate(units):
+            first, last = pages[rank0] if bounded else (None, None)
             want = project(
-                page=page, percent=percent,
-                bounds=Bounds(*(pages[rank0] if bounded else (None, None)), rank0=rank0, count=3),
-                replaced=replaced,
+                page=page, percent=percent, replaced=replaced,
+                bounds=Bounds(start_page=first, end_page=last, rank0=rank0, count=3),
             )  # fmt: skip
             assert (got[unit].state, bool(got[unit].approximate)) == (want.state, want.approximate)

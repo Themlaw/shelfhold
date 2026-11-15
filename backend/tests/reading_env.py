@@ -1,6 +1,5 @@
 """A small library for the reading tests (M4 L14a): profiles, a Work with Units, files that
-cover them, and positions, over a database made by `create_all` (the migrated one is proved equal
-in `test_migrated_ddl_equals_create_all`)."""
+cover them, and positions, over the migrated database."""
 
 from __future__ import annotations
 
@@ -15,10 +14,16 @@ from typing import Any
 import sqlalchemy as sa
 from sqlalchemy import Connection, Engine
 
-from shelfhold.infrastructure.db import create_db_engine
+from shelfhold.config import load_settings
 from shelfhold.infrastructure.ids import new_ulid
-from shelfhold.infrastructure.schema import export, identity, metadata, reading, storage
-from tests.integration.test_schema_catalog import add_unit
+from shelfhold.infrastructure.migrate import migrate
+from shelfhold.infrastructure.schema import export, identity, reading, storage
+from tests.integration.test_schema_catalog import (
+    add_binding,
+    add_source_item,
+    add_unit,
+    add_variant,
+)
 from tests.integration.test_schema_storage_export import add_destination, add_target
 from tests.visibility_env import Seed, seed_database
 
@@ -51,10 +56,10 @@ class ReadingEnv:
         self.users[key] = str(values["id"])
         return str(values["id"])
 
-    def units(self, edition_key: str, count: int) -> list[str]:
+    def units(self, edition_key: str, count: int, first: int = 1) -> list[str]:
         with self.engine.begin() as connection:
             return [
-                add_unit(connection, self.seed.editions[edition_key], str(n + 1))
+                add_unit(connection, self.seed.editions[edition_key], str(n + first))
                 for n in range(count)
             ]
 
@@ -67,7 +72,7 @@ class ReadingEnv:
         with self.engine.begin() as connection:
             content_id = None
             if content_hash is not None:
-                content_id = _content(connection, content_hash)
+                content_id = self._content(connection, edition_key, units[0], content_hash)
             item = new_ulid()
             connection.execute(
                 sa.insert(export.export_item).values(
@@ -105,6 +110,25 @@ class ReadingEnv:
             )  # fmt: skip
         return row_id
 
+    def _content(
+        self, connection: Connection, edition_key: str, unit: str, content_hash: str
+    ) -> str:
+        binding = add_binding(
+            connection, self.seed.works[edition_key], self.seed.editions[edition_key],
+            add_source_item(connection, new_ulid()),
+        )  # fmt: skip
+        variant = add_variant(connection, unit, binding)
+        content_id = new_ulid()
+        connection.execute(
+            sa.insert(storage.content).values(
+                id=content_id, unit_id=unit, variant_id=variant, kind="images",
+                media_type="application/vnd.comicbook+zip", format="cbz", retention="keep",
+                path=f"x/{content_id}.cbz", original_sha256=content_hash,
+                content_hash=content_hash, store_provenance="received", size=10,
+            )
+        )  # fmt: skip
+        return content_id
+
     def alias(self, item: str, old_hash: str, content_hash: str) -> None:
         """`document_alias` remembers the file hash an old content had (a rewrite of the file)."""
         with self.engine.begin() as connection:
@@ -130,12 +154,17 @@ class ReadingEnv:
         is ever written in a test)."""
         account_id = new_ulid()
         with self.engine.begin() as connection:
-            if connection.execute(sa.text("SELECT 1 FROM secret_key WHERE kid = 'k1'")).first() is None:
-                connection.execute(sa.text("INSERT INTO secret_key (kid, state) VALUES ('k1', 'active')"))
+            if (
+                connection.execute(sa.text("SELECT 1 FROM secret_key WHERE kid = 'k1'")).first()
+                is None
+            ):
+                connection.execute(
+                    sa.text("INSERT INTO secret_key (kid, state) VALUES ('k1', 'active')")
+                )
             connection.execute(
                 sa.insert(identity.destination_account).values(
                     id=account_id, user_id=user, shelf_destination_id=destination,
-                    remote_user=f"remote-{account_id[-6:]}", secret_kid="k1", secret_v=1,
+                    remote_user=f"remote-{account_id[-6:]}", secret_kid="k1",  # noqa: S106 (a key id, not a secret) secret_v=1,
                     secret_nonce=os.urandom(12), secret_ct=os.urandom(32),
                     token_fingerprint=account_id[-12:],
                 )
@@ -150,26 +179,19 @@ class ReadingEnv:
             return {str(r.unit_id): r for r in rows}
 
 
-def _content(connection: Connection, content_hash: str) -> str:
-    content_id = new_ulid()
-    connection.execute(
-        sa.insert(storage.content).values(
-            id=content_id, kind="images", media_type="application/vnd.comicbook+zip",
-            format="cbz", retention="keep", path=f"x/{content_id}.cbz",
-            original_sha256=content_hash, content_hash=content_hash, store_provenance="received",
-            size=10,
-        )
-    )  # fmt: skip
-    return content_id
-
-
 @contextmanager
 def reading_env(tmp_path: Path) -> Iterator[ReadingEnv]:
-    path = tmp_path / "reading.db"
-    engine = create_db_engine(path)
-    metadata.create_all(engine)
-    engine.dispose()
-    seed = seed_database(path)
+    settings = load_settings(
+        {
+            "SHELFHOLD_DISK_PAUSE_PERCENT": "0",
+            "SHELFHOLD_DISK_PAUSE_GIB": "0",
+            "SHELFHOLD_DATA_DIR": str(tmp_path / "data"),
+            "SHELFHOLD_STORE_DIR": str(tmp_path / "store"),
+        }
+    ).values
+    settings.data_dir.mkdir(parents=True, exist_ok=True)
+    migrate(settings)  # the migrated schema, 0065 included: what the instance really runs
+    seed = seed_database(settings.database_path)
     try:
         yield ReadingEnv(seed.engine, seed)
     finally:
