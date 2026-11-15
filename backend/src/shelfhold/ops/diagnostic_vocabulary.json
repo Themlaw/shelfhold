@@ -2566,6 +2566,7 @@
   "metadata_field",
   "metadata_only",
   "metrics",
+  "metrics_enabled",
   "migrate",
   "migrate.lock",
   "migrates_identity",

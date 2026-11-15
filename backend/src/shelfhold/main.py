@@ -160,6 +160,7 @@ LOGGED_SETTINGS: dict[str, str] = {
     "disk_pause_percent": "disk_pause_percent", "disk_pause_gib": "disk_pause_gib",
     "disk_resume_percent": "disk_resume_percent", "disk_resume_gib": "disk_resume_gib",
     "auth_hardened": "hardened_profile",  # a switch
+    "metrics_enabled": "metrics_enabled",  # a switch
     "fresh_auth_s": "recent_login_window_s",  # a duration
     "revision_min_page_ratio": "revision_min_page_ratio",
     "follow_fallback_return": "follow_fallback_return",
