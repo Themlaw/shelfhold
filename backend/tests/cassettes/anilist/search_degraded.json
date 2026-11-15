@@ -1,0 +1,25 @@
+{
+  "interactions": [
+    {
+      "request": {
+        "method": "POST",
+        "uri": "https://graphql.anilist.co/",
+        "headers": {
+          "Content-Type": "application/json",
+          "Accept": "application/json",
+          "User-Agent": "Shelfhold/0.0 (+https://github.com/Themlaw/shelfhold)"
+        },
+        "body_contains": "Page"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json",
+          "X-RateLimit-Limit": "30",
+          "X-RateLimit-Remaining": "29"
+        },
+        "body": "{\"data\": {\"Page\": {\"media\": [{\"id\": 900001, \"siteUrl\": \"https://anilist.co/manga/900001\", \"title\": {\"romaji\": \"Tsuki no Todokanai Basho\", \"english\": \"Where the Moon Never Reaches\", \"native\": \"\\u6708\\u306e\\u5c4a\\u304b\\u306a\\u3044\\u5834\\u6240\"}, \"format\": \"MANGA\", \"status\": \"RELEASING\", \"description\": \"A synthetic summary invented for the tests.\", \"startDate\": {\"year\": 2019, \"month\": 4, \"day\": 12}, \"genres\": [\"Fantasy\", \"Slice of Life\"], \"isAdult\": false, \"volumes\": 8, \"chapters\": null, \"staff\": {\"edges\": [{\"role\": \"Story & Art\", \"node\": {\"name\": {\"full\": \"Ada Example\"}}}]}, \"externalLinks\": [{\"url\": \"https://publisher.example.org/where-the-moon\", \"site\": \"Publisher Example\", \"type\": \"STREAMING\"}]}]}}}"
+      }
+    }
+  ]
+}

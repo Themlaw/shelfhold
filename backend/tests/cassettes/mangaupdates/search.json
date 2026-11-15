@@ -1,0 +1,42 @@
+{
+  "interactions": [
+    {
+      "request": {
+        "method": "POST",
+        "uri": "https://api.mangaupdates.com/v1/series/search",
+        "headers": {
+          "Content-Type": "application/json",
+          "Accept": "application/json",
+          "User-Agent": "Shelfhold/0.0 (+https://github.com/Themlaw/shelfhold)"
+        },
+        "body_contains": "search"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "body": "{\"total_hits\": 1, \"page\": 1, \"per_page\": 5, \"results\": [{\"record\": {\"series_id\": 700001, \"title\": \"Where the Moon Never Reaches\", \"url\": \"https://www.mangaupdates.com/series/700001\", \"description\": \"A synthetic summary invented for the tests.\", \"year\": \"2019\", \"genres\": [{\"genre\": \"Fantasy\"}], \"status\": \"8 Volumes (Ongoing)\", \"latest_chapter\": 61, \"completed\": false}, \"hit_title\": \"Where the Moon Never Reaches\"}]}"
+      }
+    },
+    {
+      "request": {
+        "method": "POST",
+        "uri": "https://api.mangaupdates.com/v1/releases/search",
+        "headers": {
+          "Content-Type": "application/json",
+          "Accept": "application/json",
+          "User-Agent": "Shelfhold/0.0 (+https://github.com/Themlaw/shelfhold)"
+        },
+        "body_contains": "700001"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "body": "{\"total_hits\": 2, \"page\": 1, \"per_page\": 5, \"results\": [{\"record\": {\"id\": 1, \"title\": \"Where the Moon Never Reaches\", \"volume\": \"8\", \"chapter\": \"61\", \"release_date\": \"2026-11-02\", \"groups\": [{\"name\": \"Synthetic Group\", \"group_id\": 1}]}, \"metadata\": {\"series\": {\"series_id\": 700001}}}, {\"record\": {\"id\": 2, \"title\": \"Where the Moon Never Reaches\", \"volume\": \"8\", \"chapter\": \"60\", \"release_date\": \"2026-10-12\", \"groups\": []}, \"metadata\": {\"series\": {\"series_id\": 700001}}}]}"
+      }
+    }
+  ]
+}
