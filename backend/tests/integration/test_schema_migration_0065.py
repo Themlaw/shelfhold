@@ -15,7 +15,7 @@ from tests.integration.test_schema_migration_0002 import alembic_config
 @pytest.mark.req("ENF-OPS-002", "EF-LEC-014")
 def test_single_alembic_head_with_0065_on_0076() -> None:
     script = ScriptDirectory(str(default_script_location()))
-    assert script.get_heads() == ["0077"]  # L49a follows it: a branch elsewhere would show
+    assert len(script.get_heads()) == 1  # later migrations move the head, never fork it
     assert script.get_revision("0065").down_revision == "0076"
 
 

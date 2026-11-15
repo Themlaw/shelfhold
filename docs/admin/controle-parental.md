@@ -205,3 +205,13 @@ connecte. Avant de donner l'adresse à une liseuse d'enfant :
 5. Ouvrez le flux OPDS de ce compte (clé d'API du compte, jamais celle de l'administrateur) : seules les
    bibliothèques famille apparaissent ; une série non classée n'apparaît pas.
 6. Rejouez l'audit après chaque modification des bibliothèques ou des comptes dans Kavita.
+
+## Progression de lecture envoyée à Kavita
+
+La synchronisation de la progression (page lue, par membre, avec sa propre clé) écrit dans Kavita.
+Avec Kavita+, Kavita transmet cette lecture au service de suivi du compte (`scrobbling`), **y compris
+pour le compte d'un enfant**. Shelfhold n'a pas de réglage propre pour couper l'envoi d'un seul
+enfant : désactiver la synchronisation de la destination (`sync_progress`) l'arrête pour tous, et un
+parent qui ne veut pas que la lecture de son enfant parte plus loin coupe le suivi du compte de cet
+enfant dans Kavita. Les chapitres au-dessus du plafond d'âge de l'enfant ne sont jamais lus ni
+écrits. Détails : [progress-sync.md](../reference/progress-sync.md).

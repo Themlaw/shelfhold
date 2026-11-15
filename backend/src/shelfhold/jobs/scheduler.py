@@ -23,6 +23,7 @@ from shelfhold.infrastructure.freeze import FreezeState
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import platform
 from shelfhold.jobs.cron import CronSpec
+from shelfhold.jobs.kinds import traits_of
 from shelfhold.jobs.ledger import JobLedger, PendingJob
 from shelfhold.jobs.mode import MaintenanceMode
 from shelfhold.jobs.window import DEFAULT_WINDOW, MaintenanceWindow, Span, window_rank
@@ -35,6 +36,12 @@ class Dispatcher(Protocol):
     def dispatch(self, job: PendingJob) -> str:
         """Put the job on its queue; return the queue's task id."""
         ...
+
+
+def priority_class_of(kind: str, *, windowed: bool) -> str:
+    """The class a periodic runs in: the window jobs and the kinds declared `background` go last,
+    after anything a person asked for."""
+    return "backfill" if windowed or traits_of(kind).background else "new"
 
 
 def jitter_for(seed: str, kind: str, scope_key: str, base: datetime, jitter_s: int) -> int:
@@ -261,7 +268,7 @@ class Scheduler:
         )
         windowed = row.window is not None
         dedupe_key = f"periodic:{row.job_kind}:{row.scope_key}"
-        priority_class = "backfill" if windowed else "new"
+        priority_class = priority_class_of(row.job_kind, windowed=windowed)
         with write_transaction(self._engine) as conn:
             won = conn.execute(
                 sa.update(schedule)

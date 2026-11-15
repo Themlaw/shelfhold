@@ -7,6 +7,8 @@ Two traits matter to the control of the queue, and neither is a list of names ke
   runs above every class a user can pick, a pause does not park it, and only a fresh session may
   cancel it. A new kind that protects something is declared here, with its trait, or it is a
   user job: `test_every_declared_kind_is_a_registered_kind` fails for a name nobody registers.
+- `background`: nobody waits for the job; it runs in the lowest class (`backfill`) so that
+  anything a person asked for goes first (the progress synchronisation with a Kavita).
 - `cancellable`: the handler reads `JobContext.stop` between two steps, so that a cancel asked
   while it runs really stops it. For any other kind a cancel of a running job is answered `too_late`
   (it finishes, and the ledger says what happened), never recorded as a cancellation that stopped
@@ -25,6 +27,7 @@ __all__ = ["KindTraits", "security_repair_kinds", "traits_of"]
 class KindTraits:
     security_repair: bool = False
     cancellable: bool = False
+    background: bool = False
 
 
 _REPAIR: Final = KindTraits(security_repair=True, cancellable=True)
@@ -39,6 +42,7 @@ DECLARED: Final[dict[str, KindTraits]] = {
     "integrity_rolling": _REPAIR,  # replaces the damaged copies (L23)
     "target.access_audit": KindTraits(security_repair=True),  # EF-EXP-055; registered by L26/L37
     "export.run": _STEPS,
+    "progress.sync": KindTraits(background=True),  # EF-EXP-026: Kavita's progress, member by member
     "vacuum_monthly": _STEPS,
     "thumbnail_gc": _STEPS,  # stops between two files when the window closes (L24)
     "thumbnail_catchup": _STEPS,

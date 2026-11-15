@@ -81,7 +81,10 @@ def test_kavita_adapter_calls_only_allowlisted_routes() -> None:
     seen = {(r.method, r.path) for r in h.fake.requests}
     assert h.fake.violations == []  # the referee's own list agrees
     setup = {(r.method, r.path) for r in SETUP_ROUTES}  # used once, by `target add`, not here
-    member = {(r.method, r.path) for r in MEMBER_ROUTES}  # a member's own key, never this client
+    admin = {(r.method, r.path) for r in ALLOWED_ROUTES}
+    member = {
+        (r.method, r.path) for r in MEMBER_ROUTES
+    } - admin  # a member's key, never this client
     assert seen == documented_routes() - setup - member  # every route is used, none else is
     assert API_KEY not in "".join(r.raw_url for r in h.fake.requests)  # never in a URL
 

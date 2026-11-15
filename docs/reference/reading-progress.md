@@ -69,7 +69,7 @@ ou un changement de sens attend la 2.0. Aucune écriture : un lecteur enregistre
   commande, ni un jeton d'appareil n'importent (contrat import-linter et test d'architecture) ;
   elle exige un compte membre lié et vivant (`live_member_account`, `revoked_at` relu à chaque
   appel) et note la destination (`device_id = "server:<destination>"`).
-- Contrat pour L14b (envoi et tirage Kavita) : Shelfhold **note ce qu'il envoie** à Kavita ; l'écho
+- Contrat pour L14b (envoi et tirage Kavita, écrit dans `docs/reference/progress-sync.md`) : Shelfhold **note ce qu'il envoie** à Kavita ; l'écho
   de son propre envoi n'est **jamais relu** comme un « lu » `server` ; la dernière page d'un
   chapitre n'est envoyée comme lue que si une traversée a marqué l'Unité, sinon Kavita reçoit la
   page, pas la marque.

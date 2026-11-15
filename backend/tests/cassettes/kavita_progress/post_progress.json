@@ -1,0 +1,25 @@
+{
+  "synthetic": "Synthetic cassette (no recording, no real server). The shapes follow Kavita v0.9.1.4 as read on GitHub: Kavita.Models/DTOs/Progress/ProgressDto.cs, ReaderController.GetProgress / SaveProgress, ReaderService.SaveReadingProgress and CapPageToChapter. Every name, id and key below is made up.",
+  "interactions": [
+    {
+      "request": {
+        "method": "POST",
+        "uri": "http://kavita.example/api/Reader/progress",
+        "body": {
+          "volumeId": 10100,
+          "chapterId": 10101,
+          "pageNum": 12,
+          "seriesId": 101,
+          "libraryId": 7
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json; charset=utf-8"
+        },
+        "body": ""
+      }
+    }
+  ]
+}

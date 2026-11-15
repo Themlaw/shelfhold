@@ -20,7 +20,7 @@ import copy
 import json
 import secrets
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -184,6 +184,18 @@ class FakeKavita:
         default_factory=lambda: {API_KEY: "admin", OTHER_KEY: "admin"}
     )
     member_profiles: dict[str, dict[str, Any]] = field(default_factory=dict)
+    # Reading progress per ACCOUNT (not per key), as Kavita keeps it (`AppUserProgress`):
+    # (user name, chapter id) -> {"page": int, "modified": ISO UTC string}. `clock_skew` is how far
+    # this server's own clock is from the real one (a Kavita whose host has a wrong clock).
+    member_progress: dict[tuple[str, int], dict[str, Any]] = field(default_factory=dict)
+    clock_skew: timedelta = timedelta(0)
+    chapter_pages: dict[str, int] = field(default_factory=dict)  # file path -> page count
+    wall: Any = None  # a `now()` provider (the tests' manual clock); real time when None
+    progress_failures: list[tuple[int, dict[str, str]]] = field(default_factory=list)
+    # (account, chapter, page) of every write that changed something
+    progress_writes: list[tuple[str, int, int]] = field(default_factory=list)
+    hook: Any = None  # called with each recorded request, before it is answered (a race)
+    inaccessible: set[tuple[str, int]] = field(default_factory=set)  # (account, chapter id): 403
     sessions: set[str] = field(default_factory=set)  # the bearer tokens a login handed out
 
     def key_is_valid(self, key: object) -> bool:
@@ -343,6 +355,8 @@ class FakeKavita:
             str(url),
         )
         self.requests.append(recorded)
+        if self.hook is not None:
+            self.hook(recorded)
         route = (request.method, url.path.lower())
         if route not in ALLOWED:
             return self._violation(f"{request.method} {url.path} is not an allow-listed route")
@@ -405,11 +419,102 @@ class FakeKavita:
             answer["ageRestriction"] = profile["ageRestriction"]
         return self._json(answer)
 
+    # -- the reading progress of a member's account (`ReaderController`, tag v0.9.1.4) -----------
+    def _stamp(self) -> str:
+        """Kavita's own clock (possibly wrong), the way `LastModifiedUtc` is written."""
+        base = self.wall() if self.wall is not None else datetime.now(UTC)
+        return (base + self.clock_skew).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+
+    def _chapter(self, chapter_id: int) -> dict[str, Any] | None:
+        for sid, files in self.files.items():
+            for i, path in enumerate(files):
+                if sid * 100 + i + 1 == chapter_id:
+                    library = next((x["libraryId"] for x in self.series if x["id"] == sid), 7)
+                    return {"series": sid, "volume": sid * 100, "library": library,
+                            "pages": self.chapter_pages.get(path, 20), "path": path}  # fmt: skip
+        return None
+
+    def chapter_id(self, path: str) -> int:
+        for sid, files in self.files.items():
+            if path in files:
+                return sid * 100 + files.index(path) + 1
+        raise KeyError(path)
+
+    def read_in_kavita(self, account: str, chapter_id: int, page: int) -> None:
+        """What Kavita's reader, or an OPDS-PSE client served by it, leaves behind: the page of the
+        chapter against the account, stamped with Kavita's clock."""
+        self.member_progress[(account, chapter_id)] = {"page": page, "modified": self._stamp()}
+
+    def fail_progress(self, status: int, *, times: int = 1, retry_after: str | None = None) -> None:
+        headers = {} if retry_after is None else {"retry-after": retry_after}
+        self.progress_failures += [(status, headers)] * times
+
+    def _failing(self) -> httpx2.Response | None:
+        if not self.progress_failures:
+            return None
+        status, headers = self.progress_failures.pop(0)
+        return httpx2.Response(status, content=b"synthetic failure", headers=headers)
+
+    def _account_of(self, recorded: RecordedRequest) -> str | None:
+        return self.key_accounts.get(recorded.headers.get("x-api-key", ""))
+
     def _get_progress(self, recorded: RecordedRequest) -> httpx2.Response:
-        return self._json({"pageNum": 0})
+        failing = self._failing()
+        if failing is not None:
+            return failing
+        raw = recorded.query.get("chapterId", "")
+        account = self._account_of(recorded)
+        chapter = self._chapter(int(raw)) if raw.isdigit() else None
+        if account is None or (account, int(raw or 0)) in self.inaccessible:
+            return self._text(403, "Forbidden")  # [ChapterAccess]
+        if chapter is None:  # a chapter the fake does not know: the stub of "no progress"
+            return self._json({"pageNum": 0, "chapterId": 0, "volumeId": 0, "seriesId": 0,
+                               "libraryId": 0})  # fmt: skip
+        got = self.member_progress.get((account, int(raw)))
+        if got is None:  # `GetProgress` answers a stub: page 0, no volume, no series
+            return self._json({"pageNum": 0, "chapterId": int(raw), "volumeId": 0, "seriesId": 0,
+                               "libraryId": 0})  # fmt: skip
+        return self._json(
+            {
+                "pageNum": got["page"], "chapterId": int(raw), "volumeId": chapter["volume"],
+                "seriesId": chapter["series"], "libraryId": chapter["library"],
+                "lastModifiedUtc": got["modified"],
+            }
+        )  # fmt: skip
 
     def _progress(self, recorded: RecordedRequest) -> httpx2.Response:
-        return self._json({})
+        failing = self._failing()
+        if failing is not None:
+            return failing
+        body = self._body(recorded, "ProgressDto")
+        if isinstance(body, httpx2.Response):
+            return body
+        account = self._account_of(recorded)
+        chapter = self._chapter(int(body["chapterId"]))
+        if account is not None and chapter is None:  # a chapter the fake does not know: a no-op
+            return httpx2.Response(200)
+        if (
+            account is None
+            or chapter is None
+            or (account, int(body["chapterId"])) in self.inaccessible
+        ):
+            return self._text(403, "Forbidden")
+        if (body["seriesId"], body["volumeId"], body["libraryId"]) != (
+            chapter["series"],
+            chapter["volume"],
+            chapter["library"],
+        ):  # a DTO that names another chapter's series: a client bug
+            return self._violation("progress: the DTO does not match the chapter")
+        page = min(max(int(body["pageNum"]), 0), chapter["pages"])  # CapPageToChapter
+        key = (account, int(body["chapterId"]))
+        old = self.member_progress.get(key)
+        if old is None and page == 0:
+            return httpx2.Response(200)  # no empty progress record is created
+        if old is not None and old["page"] == page:
+            return httpx2.Response(200)  # nothing changes, the date neither
+        self.member_progress[key] = {"page": page, "modified": self._stamp()}
+        self.progress_writes.append((account, key[1], page))
+        return httpx2.Response(200)
 
     def _continue_point(self, recorded: RecordedRequest) -> httpx2.Response:
         return self._json({"id": 1})
@@ -550,7 +655,21 @@ class FakeKavita:
         }  # Libraries, Equal
         found = [s for s in self.series if not wanted or s["libraryId"] in wanted]
         start = (int(number) - 1) * int(size)
-        return self._json(copy.deepcopy(found[start : start + int(size)]))
+        page = copy.deepcopy(found[start : start + int(size)])
+        key = recorded.headers.get("x-api-key", "")
+        if key in self.member_profiles:  # `PagesRead` and `LatestReadDate` are the key's account's
+            account = self.key_accounts[key]
+            for item in page:
+                mine = [
+                    self.member_progress[(account, self.chapter_id(p))]
+                    for p in self.files.get(item["id"], [])
+                    if (account, self.chapter_id(p)) in self.member_progress
+                ]
+                item["pagesRead"] = sum(int(m["page"]) for m in mine)
+                item["latestReadDate"] = max(
+                    (str(m["modified"]) for m in mine), default="0001-01-01"
+                )
+        return self._json(page)
 
     def _series_by_ids(self, recorded: RecordedRequest) -> httpx2.Response:
         body = self._body(recorded, "SeriesByIdsDto")
@@ -563,16 +682,22 @@ class FakeKavita:
         sid = recorded.query.get("seriesId", "")
         if not sid.isdigit() or int(sid) not in self.files:
             return self._json({"title": "Not Found", "status": 404}, 404)
+        volume_id = int(sid) * 100
         chapters = [
             {
-                "id": i,
-                "pages": 20,
+                "id": volume_id + i + 1,
+                "volumeId": volume_id,
+                "pages": self.chapter_pages.get(p, 20),
                 "pagesRead": self.progress.get(p, 0),
                 "files": [{"id": i, "filePath": p}],
             }
             for i, p in enumerate(self.files[int(sid)])
         ]
-        return self._json({"specials": [], "chapters": [], "volumes": [{"chapters": chapters}]})
+        # `GetSeriesDetail` lists a numbered volume's chapters in `Chapters` too (0.9.1)
+        return self._json(
+            {"specials": [], "chapters": copy.deepcopy(chapters),
+             "volumes": [{"id": volume_id, "chapters": chapters}]}
+        )  # fmt: skip
 
     def _metadata(self, recorded: RecordedRequest) -> httpx2.Response:
         if recorded.method == "POST":
