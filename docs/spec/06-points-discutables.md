@@ -627,7 +627,7 @@ Ce que l'utilisateur fait chez lui de son côté ne regarde pas le projet. Le pr
 | Komga en destination secondaire sans écriture, simple lecture de l'arbre Kavita | Rien à écrire pour Komga | Pas de scan ciblé ni de préservation de progression pour Komga |
 
 **Recommandation.** Première option, à écrire comme ADR **avant M4** ; d'ici là, refus des recouvrements.
-**Statut.** Tranché (H3, D6 de M4, 2026-11-15) : première option, ADR-0052 « Arbre et indexeurs » (statut proposée, relecture adverse avant acceptation). Le refus `target.tree_overlap` reste pour tout recouvrement qui n'est pas une identité d'arbre ; un dossier identique, de la même Étagère, se rattache comme indexeur si un rendu commun existe (`target.tree_render_conflict` sinon). Contrat de destination v1.4 : ajouts compatibles N-1 (ADR-0011 et ADR-0024 amendées) ; membres propres à Kavita dépréciés jusqu'au SDK 2.0 (M6).
+**Statut.** Tranché (H3, D6 de M4, 2026-11-15) : première option, ADR-0052 « Arbre et indexeurs » (acceptée après relecture adverse le 2026-11-15). Le refus `target.tree_overlap` reste pour tout recouvrement qui n'est pas une identité d'arbre ; un dossier identique, de la même Étagère, se rattache comme indexeur si un rendu commun existe (`target.tree_render_conflict` sinon). Contrat de destination v1.4 : ajouts compatibles N-1 (ADR-0011 et ADR-0024 amendées) ; membres propres à Kavita dépréciés jusqu'au SDK 2.0 (M6).
 
 ## Q49 — Provenance des fichiers exportés : annexe dans l'archive ou miroir à côté
 
@@ -1092,7 +1092,7 @@ Chaque risque résiduel accepté a un **responsable** et un jalon de revue (GAP-
 | Q45 | Contenu de `/store` | Toujours l'original ; extraction vérifiée à défaut de source | Tranché (G1) |
 | Q46 | Roman web traduit par des équipes | Discriminant selon `translation_nature` : communautaire → Équipe | Tranché (G6) |
 | Q47 | Positions hors ligne | `client_ts` borné, historique, conflit proposé | Tranché sur le principe (G10) ; seuil M5 |
-| Q48 | Kavita et Komga sur le même arbre | Séparer arbre et indexeurs (ADR-0052) ; recouvrements sans identité refusés | Tranché (H3, D6 de M4) ; ADR proposée |
+| Q48 | Kavita et Komga sur le même arbre | Séparer arbre et indexeurs (ADR-0052) ; recouvrements sans identité refusés | Tranché (H3, D6 de M4) ; ADR-0052 acceptée |
 | Q49 | Provenance des fichiers exportés | Miroir par racine physique, rien dans les fichiers (ADR-0046) | Tranché (H1) |
 | Q50 | Nommage d'un segment de numérotation | Dossier ou track, tranché par golden `plugin/parse` ; `numbering_conflict` d'ici là | Ouvert : M1a |
 | Q51 | Boîte de M1a (passe 8) | 200 h conservées, 2 exigences et volets de schéma absorbés, aucun nouveau coupable | Ouvert, M0 |
