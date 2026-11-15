@@ -36,7 +36,7 @@ from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
 from shelfhold.infrastructure.clock import Clock
 from shelfhold.infrastructure.db import write_transaction
-from shelfhold.infrastructure.schema import acquisition, identity, platform
+from shelfhold.infrastructure.schema import identity, platform, reading
 from shelfhold.library.public import has_readable_copy
 
 log = structlog.get_logger(__name__)
@@ -169,7 +169,7 @@ def _to_unread(connection: sa.Connection, owner: str) -> list[_Want]:
 
 
 def _note(engine: sa.Engine, owner: str, wants: Sequence[_Want], state: str, clock: Clock) -> None:
-    table = acquisition.read_state_push_note
+    table = reading.read_state_push_note
     with write_transaction(engine) as connection:
         for want in wants:
             connection.execute(

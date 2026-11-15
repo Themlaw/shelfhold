@@ -36,7 +36,9 @@ EXPORT_TABLES = {
     "export_upgrade",  # migration 0021 (M2 L16, EF-EXP-016)
     "tree", "tree_indexer",  # migration 0064 (M4 L02, ADR-0052)
 }  # fmt: skip
-READING_TABLES = {"reading_position", "progress_sync_cursor", "progress_sync_note"}  # 0064, 0078
+READING_TABLES = {
+    "reading_position", "progress_sync_cursor", "progress_sync_note", "read_state_push_note",
+}  # 0064, 0078, 0080  # fmt: skip
 M4_TABLES = {
     "destination_account",
     "device_token",
