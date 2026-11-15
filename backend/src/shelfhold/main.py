@@ -72,6 +72,7 @@ from shelfhold.interfaces.http_api.library import build_library_router
 from shelfhold.interfaces.http_api.maintenance import build_maintenance_router
 from shelfhold.interfaces.http_api.me import build_me_router
 from shelfhold.interfaces.http_api.metrics import build_metrics_router
+from shelfhold.interfaces.http_api.opds import SeriesBundleProvider, build_opds_router
 from shelfhold.interfaces.http_api.ops import build_ops_router
 from shelfhold.interfaces.http_api.plans import build_plans_router
 from shelfhold.interfaces.http_api.plugins import build_plugins_router
@@ -124,6 +125,12 @@ _KEYRING_REASONS: tuple[tuple[type[KeyringError], str], ...] = (
     (KeyringPermissionsError, "keyring_permissions"),
     (KeyringMissingError, "keyring_missing"),
 )  # anything else of the keyring is "unreadable"
+
+
+def series_bundles(_engine: Engine) -> SeriesBundleProvider | None:
+    """The block of a series for the OPDS feed (ADR-0053 §2, §3): none until lot L49a plugs it in
+    here. Without one, the feed lists the Editions a reader may see and offers no download."""
+    return None
 
 
 def announce_keyring_failure(engine: Engine, bus: EventBus, error: KeyringError) -> None:
@@ -276,6 +283,10 @@ def create_app(
         composition.plugins = lambda: plugins[0] if plugins else None
 
     @cache
+    def thumbnails() -> ThumbnailService:  # the session route and the OPDS one share it
+        return ThumbnailService(engine, resolved.data_dir, clock)
+
+    @cache
     def headless_admin() -> HeadlessAdmin:
         return wiring.open_headless(resolved)  # opened at first use, after the keyring check
 
@@ -332,7 +343,10 @@ def create_app(
             max_per_profile=resolved.stream_max_per_profile,
         ),  # M3 L12 (EF-INT-002): typed SSE, one filter per reader
         build_thumbnails_router(  # M3 L24: a cover at 160/320/640, session only, authorised first
-            lambda: engine, cache(lambda: ThumbnailService(engine, resolved.data_dir, clock))
+            lambda: engine, thumbnails
+        ),
+        build_opds_router(  # M4 L48: the e-reader's feed, behind a device token (ADR-0053)
+            lambda: engine, thumbnails, lambda: series_bundles(engine), clock.now
         ),
         build_search_router(
             lambda: engine, ops_services

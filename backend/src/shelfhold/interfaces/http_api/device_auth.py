@@ -29,6 +29,7 @@ import binascii
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Request, Response
+from starlette.types import Scope
 
 from shelfhold.identity.public import Principal, ThrottledError
 from shelfhold.infrastructure.http_headers import BASIC_CHALLENGE
@@ -72,12 +73,19 @@ def _kosync(request: Request) -> tuple[str, str] | None:
     return user, key
 
 
-def _in_reach(path: str) -> bool:
+def _in_reach(scope: Scope) -> bool:
+    """Whether the path, taken from the mount point, is under `/opds` or `/kosync`. A server may
+    keep the `root_path` in `path` or not: both are read the same, and a path that only looks like
+    one after a different cut (`/x/opds`) is outside."""
+    path = str(scope.get("path", ""))
+    root = str(scope.get("root_path", "")).rstrip("/")
+    if root and (path == root or path.startswith(root + "/")):
+        path = path[len(root) :] or "/"
     return any(path == prefix or path.startswith(prefix + "/") for prefix in DEVICE_ROUTE_PREFIXES)
 
 
 def _resolve(request: Request, *, basic: bool) -> Principal:
-    if not _in_reach(str(request.scope.get("path", ""))):
+    if not _in_reach(request.scope):
         # the closed list holds where the token is read: a route mounted elsewhere never gets one
         raise ProblemError("credential_not_allowed")
     if client_scheme_of(request.scope) != "https" and not getattr(

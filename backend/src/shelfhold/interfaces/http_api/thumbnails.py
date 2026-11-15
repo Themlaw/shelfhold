@@ -36,7 +36,7 @@ from shelfhold.library.public import (
     etag_of,
 )
 
-__all__ = ["build_thumbnails_router"]
+__all__ = ["build_thumbnails_router", "thumbnail_response"]
 
 _HEADERS = {"Cache-Control": CACHE_CONTROL, "Vary": "Cookie", "X-Content-Type-Options": "nosniff"}
 _ABSENT = {"Cache-Control": "no-store"}
@@ -61,6 +61,47 @@ def _matches(header: str | None, etag: str) -> bool:
     return any(tag.strip().removeprefix("W/") == etag for tag in header.split(","))
 
 
+def thumbnail_response(
+    *,
+    engine: Engine,
+    service: ThumbnailService,
+    user_id: str,
+    content_hash: str,
+    size: str,
+    if_none_match: str | None,
+    vary: str,
+) -> Response:
+    """The checks of the module docstring, in that order, for whoever has already authenticated
+    `user_id` (a session for the web route, a device token for the OPDS one): the reader's own
+    scope first, the tag and the disk only after."""
+    headers = {**_HEADERS, "Vary": vary}
+    width = _size_of(size)
+    if width is None or len(content_hash) != 64 or not set(content_hash) <= _HEX:
+        raise _absent()
+    with engine.connect() as connection:
+        scope = reader_scope(connection, user_id)
+        visible = cover_ref_visible(connection, scope, f"covers/{content_hash}.webp")
+    if not visible:  # before the tag, before the disk, before the worker
+        raise _absent()
+    tag = etag_of(content_hash, width)
+    if _matches(if_none_match, tag):
+        return Response(status_code=304, headers={**headers, "ETag": tag})
+    try:
+        made = service.get(content_hash, width)
+    except Pending:  # being made: no thread is held for it. The cover itself, never cached
+        shown = service.fallback(content_hash)
+        if shown is None:
+            raise _absent() from None
+        return Response(
+            shown, media_type="image/webp",
+            headers={"Cache-Control": "no-store", "Vary": vary,
+                     "X-Content-Type-Options": "nosniff"},
+        )  # fmt: skip
+    if made is None:
+        raise _absent()
+    return Response(made.data, media_type="image/webp", headers={**headers, "ETag": made.etag})
+
+
 def build_thumbnails_router(
     get_engine: Callable[[], Engine], get_service: Callable[[], ThumbnailService]
 ) -> APIRouter:
@@ -81,31 +122,10 @@ def build_thumbnails_router(
         request: Request,
         principal: Annotated[Principal, Depends(require_session)],
     ) -> Response:
-        width = _size_of(size)
-        if width is None or len(content_hash) != 64 or not set(content_hash) <= _HEX:
-            raise _absent()
-        with get_engine().connect() as connection:
-            scope = reader_scope(connection, principal.user_id)
-            visible = cover_ref_visible(connection, scope, f"covers/{content_hash}.webp")
-        if not visible:  # before the tag, before the disk, before the worker
-            raise _absent()
-        tag = etag_of(content_hash, width)
-        if _matches(request.headers.get("if-none-match"), tag):
-            return Response(status_code=304, headers={**_HEADERS, "ETag": tag})
-        service = get_service()
-        try:
-            made = service.get(content_hash, width)
-        except Pending:  # being made: no thread is held for it. The cover itself, never cached
-            shown = service.fallback(content_hash)
-            if shown is None:
-                raise _absent() from None
-            return Response(
-                shown, media_type="image/webp",
-                headers={"Cache-Control": "no-store", "Vary": "Cookie",
-                         "X-Content-Type-Options": "nosniff"},
-            )  # fmt: skip
-        if made is None:
-            raise _absent()
-        return Response(made.data, media_type="image/webp", headers={**_HEADERS, "ETag": made.etag})
+        return thumbnail_response(
+            engine=get_engine(), service=get_service(), user_id=principal.user_id,
+            content_hash=content_hash, size=size,
+            if_none_match=request.headers.get("if-none-match"), vary="Cookie",
+        )  # fmt: skip
 
     return router

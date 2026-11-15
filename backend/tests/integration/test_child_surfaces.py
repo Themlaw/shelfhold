@@ -321,9 +321,9 @@ BODIES = {
 # Surfaces that do not exist yet: the lot that builds each one adds its child case, and this
 # list is where the suite notices that the surface has arrived (the meta-test fails when a path
 # with that word shows up in the OpenAPI document).
-PENDING_SURFACES = {
-    "covers": ("L24", ("cover", "covers")),
-}
+PENDING_SURFACES: dict[
+    str, tuple[str, tuple[str, ...]]
+] = {}  # none: covers (L24) and OPDS (L48) are in
 
 SURFACES = (
     "search", "search_pages", "search_key", "federated", "me_state_get", "me_state_put",
@@ -450,7 +450,8 @@ def test_every_openapi_route_has_a_child_case(api: AuthEnv) -> None:
 
 @pytest.mark.req("EF-USR-006", "ENF-SEC-010")
 def test_pending_surfaces_get_a_real_child_case_when_they_arrive(api: AuthEnv) -> None:
-    """SSE (L12), thumbnails (L24), notifications (L14): the day a path of that
+    """A surface announced here (none today: SSE L12, covers L24, notifications L14 and OPDS L48
+    have their case): the day a path of that
     surface shows up in the OpenAPI document, this fails until its child case is written."""
     segments = {
         seg for route in _routes(api.app) for seg in route.split(" ", 1)[1].lower().split("/")
@@ -609,9 +610,15 @@ def test_device_routes_refuse_a_session_and_a_key_and_serve_a_child_token_no_dat
         world.clean(by_session.text + by_admin.text + by_key.text)
         token = env.app.state.auth_gate.auth.create_device_token(subject_username="kid")  # type: ignore[attr-defined]
         md5 = hashlib.md5(token.secret.encode(), usedforsecurity=False).hexdigest()
-        by_token = env.other_client("10.0.0.54").get(
-            path, headers={"x-auth-user": token.public_id, "x-auth-key": md5}
+        presented = (  # the two doors of one token: kosync takes the md5, OPDS the secret (Basic)
+            {"x-auth-user": token.public_id, "x-auth-key": md5}
+            if route in KOSYNC
+            else {
+                "Authorization": "Basic "
+                + base64.b64encode(f"{token.public_id}:{token.secret}".encode()).decode()
+            }
         )
+        by_token = env.other_client("10.0.0.54").get(path, headers=presented)
         if route in KOSYNC:
             assert by_token.status_code == 200 and by_token.json() == {"authorized": "OK"}
         else:  # a feed answers 200, or the 404 of a filled-in identifier nobody has

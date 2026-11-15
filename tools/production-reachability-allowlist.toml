@@ -179,11 +179,3 @@ until = "M4"  # settled by M4 lot L14b
 symbols = [
   "shelfhold.identity.application.destination_accounts:DestinationAccounts.open_token",
 ]
-
-[[allow]]
-category = "m4-l46-device-basic"
-reason = "2026-11-15 (M4 L46): the OPDS door of a device token (HTTP Basic). Its tests pin the refusals and the closed reach; the first route that names it is the OPDS feed of L48, which wires it. The kosync door is wired by `GET /kosync/users/auth`."
-until = "M4"  # settled by M4 lot L48
-symbols = [
-  "shelfhold.interfaces.http_api.device_auth:require_device_basic",
-]

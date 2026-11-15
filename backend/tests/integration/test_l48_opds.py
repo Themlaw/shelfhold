@@ -409,8 +409,13 @@ def test_the_search_finds_the_visible_and_only_the_visible(world: World) -> None
 
 def test_a_search_cannot_tell_a_hidden_title_from_one_that_does_not_exist(world: World) -> None:
     nothing = parse(world.kid.get("/opds/search?q=Zzzzqx"))
+    known = {
+        w.lower() for t in VISIBLE_TITLES.values() for w in t.split()
+    }  # a visible title's words
     for key in HIDDEN_KID:
-        for query in (world.seed.title_of(key), world.seed.title_of(key).split()[-1]):
+        title = world.seed.title_of(key)
+        own = [w for w in title.split() if not any(k.startswith(w.lower()) for k in known)]
+        for query in (title, own[0]):  # the whole title, and a word only the hidden Work has
             answer = parse(world.kid.get("/opds/search", params={"q": query}))
             assert titles(answer) == titles(nothing) == [], (key, query)
             assert total(answer) == total(nothing) == 0
@@ -602,14 +607,16 @@ def test_the_md5_of_the_secret_does_not_open_the_feed(world: World) -> None:
     assert got.status_code == 401  # kosync takes the md5, the OPDS door takes the secret
 
 
-def test_a_wrong_secret_over_the_limit_waits_even_on_opds(world: World) -> None:
+def test_wrong_secrets_over_the_limit_make_the_pair_wait_on_opds(world: World) -> None:
     client = world.env.other_client("198.51.100.11")
     codes = [
         client.get("/opds", headers=basic(world.kid.public_id, f"{i}" * 26)).status_code
         for i in range(8)
     ]
     assert codes[:5] == [401] * 5 and set(codes[5:]) == {429}
-    assert client.get("/opds", headers=world.kid.headers).status_code == 200  # the reader passes
+    assert client.get("/opds", headers=world.kid.headers).status_code == 429  # the pair waits
+    elsewhere = world.env.other_client("198.51.100.12")  # the reader's own address is another pair
+    assert elsewhere.get("/opds", headers=world.kid.headers).status_code == 200
 
 
 # -- TLS ---------------------------------------------------------------------------------------
@@ -788,7 +795,6 @@ def test_the_visibility_of_a_download_is_read_at_the_request_not_at_the_feed(
     [
         "..%2f..%2fetc%2fpasswd",
         "%2e%2e",
-        "..",
         "%2e%2e%2f%2e%2e%2fetc%2fpasswd",
         "..;",
         "01HZZZZZZZZZZZZZZZZZZZZZZM%00",

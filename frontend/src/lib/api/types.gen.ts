@@ -13451,6 +13451,369 @@ export type MetricsResponses = {
     200: unknown;
 };
 
+export type OpdsRootData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/opds';
+};
+
+export type OpdsRootErrors = {
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type OpdsRootError = OpdsRootErrors[keyof OpdsRootErrors];
+
+export type OpdsRootResponses = {
+    /**
+     * navigation feed
+     */
+    200: unknown;
+};
+
+export type OpdsCoverData = {
+    body?: never;
+    path: {
+        /**
+         * Content Hash
+         */
+        content_hash: string;
+        /**
+         * Size
+         */
+        size: string;
+    };
+    query?: never;
+    url: '/opds/covers/{content_hash}/{size}';
+};
+
+export type OpdsCoverErrors = {
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type OpdsCoverError = OpdsCoverErrors[keyof OpdsCoverErrors];
+
+export type OpdsCoverResponses = {
+    /**
+     * Successful Response
+     */
+    200: unknown;
+};
+
+export type OpdsCompleteData = {
+    body?: never;
+    path: {
+        /**
+         * Edition Id
+         */
+        edition_id: string;
+    };
+    query?: never;
+    url: '/opds/editions/{edition_id}/complete';
+};
+
+export type OpdsCompleteErrors = {
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type OpdsCompleteError = OpdsCompleteErrors[keyof OpdsCompleteErrors];
+
+export type OpdsCompleteResponses = {
+    /**
+     * Successful Response
+     */
+    200: unknown;
+};
+
+export type OpdsOpensearchData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/opds/opensearch.xml';
+};
+
+export type OpdsOpensearchErrors = {
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type OpdsOpensearchError = OpdsOpensearchErrors[keyof OpdsOpensearchErrors];
+
+export type OpdsOpensearchResponses = {
+    /**
+     * Successful Response
+     */
+    200: unknown;
+};
+
+export type OpdsRecentData = {
+    body?: never;
+    path?: never;
+    query?: {
+        /**
+         * Limit
+         */
+        limit?: number;
+        /**
+         * Offset
+         */
+        offset?: number;
+    };
+    url: '/opds/recent';
+};
+
+export type OpdsRecentErrors = {
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type OpdsRecentError = OpdsRecentErrors[keyof OpdsRecentErrors];
+
+export type OpdsRecentResponses = {
+    /**
+     * Successful Response
+     */
+    200: unknown;
+};
+
+export type OpdsSearchData = {
+    body?: never;
+    path?: never;
+    query?: {
+        /**
+         * Q
+         */
+        q?: string;
+        /**
+         * Limit
+         */
+        limit?: number;
+        /**
+         * Offset
+         */
+        offset?: number;
+    };
+    url: '/opds/search';
+};
+
+export type OpdsSearchErrors = {
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type OpdsSearchError = OpdsSearchErrors[keyof OpdsSearchErrors];
+
+export type OpdsSearchResponses = {
+    /**
+     * Successful Response
+     */
+    200: unknown;
+};
+
+export type OpdsSeriesListData = {
+    body?: never;
+    path?: never;
+    query?: {
+        /**
+         * Limit
+         */
+        limit?: number;
+        /**
+         * Offset
+         */
+        offset?: number;
+    };
+    url: '/opds/series';
+};
+
+export type OpdsSeriesListErrors = {
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type OpdsSeriesListError = OpdsSeriesListErrors[keyof OpdsSeriesListErrors];
+
+export type OpdsSeriesListResponses = {
+    /**
+     * Successful Response
+     */
+    200: unknown;
+};
+
+export type OpdsSeriesData = {
+    body?: never;
+    path: {
+        /**
+         * Series Id
+         */
+        series_id: string;
+    };
+    query?: {
+        /**
+         * Limit
+         */
+        limit?: number;
+        /**
+         * Offset
+         */
+        offset?: number;
+    };
+    url: '/opds/series/{series_id}';
+};
+
+export type OpdsSeriesErrors = {
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type OpdsSeriesError = OpdsSeriesErrors[keyof OpdsSeriesErrors];
+
+export type OpdsSeriesResponses = {
+    /**
+     * Successful Response
+     */
+    200: unknown;
+};
+
+export type OpdsShelvesData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/opds/shelves';
+};
+
+export type OpdsShelvesErrors = {
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type OpdsShelvesError = OpdsShelvesErrors[keyof OpdsShelvesErrors];
+
+export type OpdsShelvesResponses = {
+    /**
+     * Successful Response
+     */
+    200: unknown;
+};
+
+export type OpdsShelfData = {
+    body?: never;
+    path: {
+        /**
+         * Shelf Id
+         */
+        shelf_id: string;
+    };
+    query?: {
+        /**
+         * Limit
+         */
+        limit?: number;
+        /**
+         * Offset
+         */
+        offset?: number;
+    };
+    url: '/opds/shelves/{shelf_id}';
+};
+
+export type OpdsShelfErrors = {
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type OpdsShelfError = OpdsShelfErrors[keyof OpdsShelfErrors];
+
+export type OpdsShelfResponses = {
+    /**
+     * Successful Response
+     */
+    200: unknown;
+};
+
+export type OpdsWorksData = {
+    body?: never;
+    path?: never;
+    query?: {
+        /**
+         * Limit
+         */
+        limit?: number;
+        /**
+         * Offset
+         */
+        offset?: number;
+    };
+    url: '/opds/works';
+};
+
+export type OpdsWorksErrors = {
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type OpdsWorksError = OpdsWorksErrors[keyof OpdsWorksErrors];
+
+export type OpdsWorksResponses = {
+    /**
+     * Successful Response
+     */
+    200: unknown;
+};
+
+export type OpdsWorkData = {
+    body?: never;
+    path: {
+        /**
+         * Work Id
+         */
+        work_id: string;
+    };
+    query?: never;
+    url: '/opds/works/{work_id}';
+};
+
+export type OpdsWorkErrors = {
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type OpdsWorkError = OpdsWorkErrors[keyof OpdsWorkErrors];
+
+export type OpdsWorkResponses = {
+    /**
+     * Successful Response
+     */
+    200: unknown;
+};
+
 export type ReadyzData = {
     body?: never;
     path?: never;
