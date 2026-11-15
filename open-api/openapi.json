@@ -366,6 +366,10 @@
       },
       "ApprovalOut": {
         "properties": {
+          "above_requester_ceiling": {
+            "title": "Above Requester Ceiling",
+            "type": "boolean"
+          },
           "confirmation_required": {
             "title": "Confirmation Required",
             "type": "boolean"
@@ -415,6 +419,17 @@
             "title": "Needs Age",
             "type": "boolean"
           },
+          "requester_ceiling": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Requester Ceiling"
+          },
           "resolved": {
             "title": "Resolved",
             "type": "boolean"
@@ -462,7 +477,9 @@
           "confirmation_required",
           "edition_id",
           "shelf_id",
-          "resolved"
+          "resolved",
+          "above_requester_ceiling",
+          "requester_ceiling"
         ],
         "title": "ApprovalOut",
         "type": "object"
@@ -17009,6 +17026,7 @@
     },
     "/api/v1/requests/{request_id}/approval": {
       "get": {
+        "description": "`age`, `x`: the age the admin is about to choose, to be told if it is above the\nceiling of the child who asked.",
         "operationId": "approval",
         "parameters": [
           {
@@ -17018,6 +17036,34 @@
             "schema": {
               "title": "Request Id",
               "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "age",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maximum": 99,
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Age"
+            }
+          },
+          {
+            "in": "query",
+            "name": "x",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "X",
+              "type": "boolean"
             }
           }
         ],

@@ -91,10 +91,6 @@ def test_closure_poc_a_request_never_says_available_for_a_work_hidden_from_her(
 # -- 2. a digest counts a chapter of an Edition the child may not see ----------------------------
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="M3 closure review m1: the digest counts a chapter of an Edition hidden from her",
-)
 def test_closure_poc_a_digest_never_counts_a_chapter_hidden_from_her(settings: Settings) -> None:
     """Notifications (Apprise digest) x activity and the catalogue: a counter says what the list
     hides.

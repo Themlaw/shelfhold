@@ -14,7 +14,7 @@ from collections.abc import Callable
 from datetime import datetime
 from typing import Annotated, Literal
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, ConfigDict, Field
 
 from shelfhold.acquisition.application.requests import (
@@ -112,6 +112,8 @@ class ApprovalOut(BaseModel):
     edition_id: str | None
     shelf_id: str | None
     resolved: bool
+    above_requester_ceiling: bool  # a warning: the age is above the child's ceiling (not a refusal)
+    requester_ceiling: int | None
 
     @classmethod
     def of(cls, preview: ApprovalPreview) -> "ApprovalOut":
@@ -197,8 +199,15 @@ def build_requests_router(
         return RequestOut.of(run(lambda s: s.cancel(principal.user_id, request_id)))
 
     @router.get("/{request_id}/approval")
-    def approval(request_id: str, principal: Admin) -> ApprovalOut:
-        return ApprovalOut.of(run(lambda s: s.preview(request_id, principal)))
+    def approval(
+        request_id: str,
+        principal: Admin,
+        age: Annotated[int | None, Query(ge=0, le=99)] = None,
+        x: bool = False,
+    ) -> ApprovalOut:
+        """`age`, `x`: the age the admin is about to choose, to be told if it is above the
+        ceiling of the child who asked."""
+        return ApprovalOut.of(run(lambda s: s.preview(request_id, principal, age=age, x=x)))
 
     @router.post("/{request_id}/approve")
     def approve(request_id: str, body: ApproveIn, principal: Approver) -> RequestOut:

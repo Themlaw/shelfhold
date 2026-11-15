@@ -67,7 +67,7 @@ class Env:
         extra: dict[str, Any] = {"age_rating": age, "rated_at": T0} if age is not None else {}
         with write_transaction(self.engine) as connection:
             work_id = add_work(connection, title=title, sort_title=title.lower(), **extra)
-            add_edition(connection, work_id)
+            add_edition(connection, work_id, **({"rated_at": T0} if age is not None else {}))
         return work_id
 
     def series(self, title: str, work_ids: list[str]) -> str:
@@ -121,9 +121,20 @@ class Env:
         return published
 
     def chapter(self, work_id: str, *, actor: str | None = None, visibility: str = "ops") -> None:
+        """A chapter stored under the first Edition of the Work, a real Unit: the event names them
+        and the visibility filter checks them like the Work."""
+        from tests.integration.test_schema_catalog import add_unit
+
+        with write_transaction(self.engine) as connection:
+            edition_id = connection.execute(
+                sa.select(catalog.edition.c.id)
+                .where(catalog.edition.c.work_id == work_id)
+                .order_by(catalog.edition.c.id)
+            ).scalar()
+            unit_id = add_unit(connection, edition_id) if edition_id else new_ulid()
+            edition_id = edition_id or new_ulid()
         self.publish(
-            "unit.stored",
-            {"unit_id": new_ulid(), "edition_id": new_ulid(), "work_id": work_id},
+            "unit.stored", {"unit_id": unit_id, "edition_id": edition_id, "work_id": work_id},
             actor=actor, visibility=visibility,
         )  # fmt: skip
 

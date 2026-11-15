@@ -322,6 +322,7 @@
   "approve.title": "À approuver",
   "approve.approve": "Approuver",
   "approve.choose_age": "Choisissez un âge pour pouvoir approuver.",
+  "approve.above_ceiling": "Cet âge dépasse ce que l’enfant peut voir : le livre ne lui apparaîtra pas.",
   "approve.age_for_child": "Âge pour cette demande",
   "approve.size_summary": "{volumes, plural, one {# volume} other {# volumes}}, {bytes} octets",
   "approve.more_to_come": "d'autres suivront",

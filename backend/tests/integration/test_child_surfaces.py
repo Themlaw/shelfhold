@@ -998,7 +998,7 @@ def _notification_built_for_a_child(world: World) -> None:
     sees the hidden ones). What leaves on the whole channel, for anyone, names no title, no
     series, no identifier of a hidden Work; the child's own notice counts only what is hers."""
     from shelfhold.events.bus import EventBus
-    from shelfhold.infrastructure.schema import identity
+    from shelfhold.infrastructure.schema import catalog, identity
     from shelfhold.integrations.notify import NotificationRouter, NotificationSender
     from tests.auth_env import ManualClock
 
@@ -1023,11 +1023,19 @@ def _notification_built_for_a_child(world: World) -> None:
                         user_id=who, work_id=work_id, followed=True
                     )
                 )
+    from tests.integration.test_schema_catalog import add_unit
+
     for work_id in world.seed.works.values():
-        with engine.begin() as connection:
+        with engine.begin() as connection:  # the event names a real Edition and Unit of the Work
+            edition_id = connection.execute(
+                sa.select(catalog.edition.c.id)
+                .where(catalog.edition.c.work_id == work_id)
+                .order_by(catalog.edition.c.id)
+            ).scalar()
+            unit_id = add_unit(connection, edition_id) if edition_id else new_ulid()
             published = bus.publish(
                 connection, "unit.stored",
-                {"unit_id": new_ulid(), "edition_id": new_ulid(), "work_id": work_id},
+                {"unit_id": unit_id, "edition_id": edition_id or new_ulid(), "work_id": work_id},
             )  # fmt: skip
         bus.deliver([published])
     NotificationSender(engine, clock, deliver=deliver, pending_withdrawals=lambda _c: 0).run_once()

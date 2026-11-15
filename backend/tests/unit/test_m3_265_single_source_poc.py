@@ -11,21 +11,21 @@ from tests.unit.test_family_shelf_single_source import SRC, second_definitions
 pytestmark = pytest.mark.req("EF-USR-006", "ENF-SEC-010")
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#265 contradicteur M-c: `new_edition_gate._family` is a second family rule, unseen",
-)
 def test_265_poc_the_admission_gate_is_a_second_family_rule_the_scan_misses() -> None:
     """`catalog/application/new_edition_gate.py:_family` says "family shelf" as
     `ceiling_of(c) < UNRATED_FLOOR` (an `AgeRating(X_MIN_AGE)`), and `catalog/domain/age.py`
     `admission` says it again as `guarded = ceiling < UNRATED_FLOOR`. That is the rule of
     `bindings.is_family`, written twice more, in the gate that decides what a family shelf takes.
     The anti-copy scan sees neither: it only knows the literal 18 and the names ADULT/FAMILY."""
-    source = (SRC / "catalog/application/new_edition_gate.py").read_text("utf-8")
-    assert second_definitions(source), "the scan does not see `new_edition_gate._family`"
+    # The copy is gone from the gate (it calls `is_family_ceiling`), so the scan is shown the
+    # text it used to hold, and the real file is shown to be clean.
+    copy = "def _family(age):\n    return age is not None and age < UNRATED_FLOOR\n"
+    assert second_definitions(copy), "the scan does not see the old `new_edition_gate._family`"
+    gate = (SRC / "catalog/application/new_edition_gate.py").read_text("utf-8")
+    assert not second_definitions(gate)
+    assert not second_definitions((SRC / "catalog/domain/age.py").read_text("utf-8"))
 
 
-@pytest.mark.xfail(strict=True, reason="#265 contradicteur m-d: the anti-copy scan is bypassed")
 @pytest.mark.parametrize(
     "copy",
     [

@@ -125,6 +125,24 @@ def test_an_arrival_of_a_request_nobody_can_find_is_hidden_from_a_child(world: W
     assert world.kid.get(ACTIVITY).json() == []
 
 
+@pytest.mark.req("EF-UX-010", "ENF-SEC-010")
+def test_an_arrival_serves_its_stored_payload_and_nothing_named_for_the_filter(
+    world: World,
+) -> None:
+    """The Work and the Edition the filter checks are not served: the admin and the integration
+    role read `{request_id}`, as stored, never a made-up `work_id`."""
+    from shelfhold.interfaces.http_api.activity import family_payload
+
+    arrived = add_request(world, world.kid_id, "arrived")
+    publish(world, "ops.request_arrived", {"request_id": arrived})
+    publish(world, "ops.request_arrived", {"request_id": new_ulid()})  # a request nobody finds
+    seen = [i for i in world.env.client.get(ACTIVITY).json() if i["type"] == "ops.request_arrived"]
+    assert len(seen) == 2
+    assert all(set(i["payload"]) == {"request_id"} for i in seen)
+    stored = {"request_id": arrived}
+    assert family_payload("integration", "ops.request_arrived", stored) == stored
+
+
 @pytest.mark.req("EF-UX-010")
 def test_family_never_reads_a_step_in_the_activity_payload(world: World) -> None:
     """A request of the activity feed carries its raw step only for the admin."""

@@ -454,3 +454,29 @@ def test_requests_are_in_the_openapi_and_the_reserved_registry(
             assert path.replace("{id}", "{request_id}") in paths, path
     assert "request.approve" in RESERVED_ACTIONS
     assert MEMBER_ID  # the member of the instance exists for the attacks above
+
+
+@pytest.mark.req("EF-USR-010", "EF-USR-006")
+def test_the_approval_preview_warns_of_an_age_above_the_child_ceiling(
+    monkeypatch: pytest.MonkeyPatch, settings: Settings
+) -> None:
+    """A warning for the admin, never a refusal: the child will not see the book arrive."""
+    with instance(monkeypatch, settings, alpha()) as api:
+        kid = family(api)
+        rid = ask_as_child(api, kid)
+        admin = admin_client(api)
+        path = f"{REQUESTS}/{rid}/approval"
+        plain = admin.get(path).json()
+        assert plain["above_requester_ceiling"] is False  # no age known yet
+        over = admin.get(path, params={"age": 16}).json()
+        assert over["above_requester_ceiling"] is True
+        assert over["requester_ceiling"] is not None
+        assert (
+            admin.get(path, params={"age": over["requester_ceiling"]}).json()[
+                "above_requester_ceiling"
+            ]
+            is False
+        )
+        assert admin.get(path, params={"age": 18, "x": "true"}).json()["above_requester_ceiling"]
+        done = api.post(f"{REQUESTS}/{rid}/approve", client=admin, json={"age": 16})
+        assert done.status_code == 200, done.text  # the warning does not refuse

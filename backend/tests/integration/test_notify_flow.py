@@ -456,6 +456,8 @@ def test_a_work_purged_between_the_event_and_the_digest_sends_nothing(ctx: Env) 
         connection.execute(
             sa.delete(identity.user_state).where(identity.user_state.c.work_id == work)
         )
+        editions = sa.select(catalog.edition.c.id).where(catalog.edition.c.work_id == work)
+        connection.execute(sa.delete(catalog.unit).where(catalog.unit.c.edition_id.in_(editions)))
         connection.execute(sa.delete(catalog.edition).where(catalog.edition.c.work_id == work))
         connection.execute(sa.delete(catalog.work).where(catalog.work.c.id == work))
     ctx.at(8, day=6)

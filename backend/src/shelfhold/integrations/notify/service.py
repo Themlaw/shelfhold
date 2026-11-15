@@ -172,6 +172,7 @@ class NotificationRouter:
             sa.select(
                 identity.request.c.requester_user_id,
                 identity.request.c.work_id,
+                identity.request.c.edition_id,
                 identity.request.c.visibility,
             ).where(identity.request.c.id == request_id)
         ).first()
@@ -182,6 +183,7 @@ class NotificationRouter:
             return False
         item: Item = {
             "kind": "request_arrived", "request_id": request_id, "work_id": row.work_id,
+            "edition_id": row.edition_id,
             "vis": row.visibility, "owner_id": person.user_id, "owner_role": person.role,
         }  # fmt: skip
         if not _visible(connection, person, item):
@@ -200,6 +202,7 @@ class NotificationRouter:
             .where(state.c.work_id == work_id, state.c.followed.is_(True))
         ).all()
         series = _series_of(connection, work_id)
+        edition_id, unit_id = event.payload.get("edition_id"), event.payload.get("unit_id")
         owner_role = None
         if event.visibility != "ops" and actor is not None:
             person = _person(connection, actor)
@@ -215,7 +218,8 @@ class NotificationRouter:
                 vis, owner_id, role = event.visibility, actor, owner_role
             item: Item = {
                 "kind": "chapters", "work_id": work_id, "series_id": series[0] if series else None,
-                "series_ids": series, "vis": vis, "owner_id": owner_id, "owner_role": role,
+                "series_ids": series, "edition_id": edition_id, "unit_id": unit_id,
+                "vis": vis, "owner_id": owner_id, "owner_role": role,
                 "count": 1,
             }  # fmt: skip
             if _visible(connection, person, item):
@@ -233,6 +237,9 @@ def _activity(item: Item) -> ActivityEvent:
     refs: dict[str, object] = {}
     if item.get("work_id"):
         refs["work_id"] = item["work_id"]
+    for key in ("edition_id", "unit_id"):  # what the event names is checked like the Work
+        if isinstance(item.get(key), str):
+            refs[key] = item[key]
     if item.get("series_ids"):
         refs["series_ids"] = list(item["series_ids"])
     event_type = {"chapters": "unit.stored", "request_arrived": "ops.request_arrived"}.get(

@@ -125,30 +125,30 @@ def activity_event_of(
     """`payload`: the row's own, unless a reader of an older row has moved it to the current
     version (the SSE stream)."""
     body = row.payload or {} if payload is None else payload
-    named = _with_arrival_refs(connection, body) if row.type == "ops.request_arrived" else body
+    refs = _arrival_refs(connection, body) if row.type == "ops.request_arrived" else {}
     owner_id, owner_role = owner_and_role(connection, row.actor_id)
     return ActivityEvent(
-        id=row.id, type=row.type, visibility=row.visibility, payload=named,
+        id=row.id, type=row.type, visibility=row.visibility, payload=body,
         owner_id=owner_id, owner_role=owner_role,
         title=title_of(connection, body),  # the title of the event as stored, not of the refs
+        refs=refs,
     )  # fmt: skip
 
 
-def _with_arrival_refs(connection: Connection, body: Mapping[str, object]) -> dict[str, object]:
+def _arrival_refs(connection: Connection, body: Mapping[str, object]) -> dict[str, object]:
     """`ops.request_arrived` stores the request alone. The Work and the Edition it arrived as are
-    read now and named in the projected payload, so the one filter of L09 hides the event from a
-    reader who may not see them (M3 closure M1). A request that cannot be found names a Work that
-    is not found: hidden from a child, like any absent thing."""
+    read now and handed to the projection, so the one filter of L09 hides the event from a reader
+    who may not see them (M3 closure M1); the served payload stays the stored one. A request that
+    cannot be found names a Work that is not found: hidden from a child, like any absent thing."""
     found = connection.execute(
         sa.select(identity.request.c.work_id, identity.request.c.edition_id).where(
             identity.request.c.id == body.get("request_id")
         )
     ).first()
-    named: dict[str, object] = dict(body)
-    named["work_id"] = found.work_id if found is not None and found.work_id else ""
+    refs: dict[str, object] = {"work_id": found.work_id if found and found.work_id else ""}
     if found is not None and found.edition_id:
-        named["edition_id"] = found.edition_id
-    return named
+        refs["edition_id"] = found.edition_id
+    return refs
 
 
 def request_event(connection: Connection, row: Any) -> ActivityEvent:

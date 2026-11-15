@@ -43,10 +43,6 @@ def _request(world: World, state: str, work_id: str | None) -> str:
 # -- 1. "introuvable" (hidden) is not the same answer as "introuvable" (absent) ------------------
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#265 contradicteur M-a: a masked `not_found` has no title, a real one keeps hers",
-)
 def test_265_poc_hidden_and_absent_are_one_answer_in_her_requests(world: World) -> None:
     """She asked twice for the same text. The admin closed one `not_found` (nothing exists); the
     other arrived as a Work rated 16 (above her ceiling of 10), so #265 shows it `not_found`. The
@@ -67,10 +63,6 @@ def test_265_poc_hidden_and_absent_are_one_answer_in_her_requests(world: World) 
 # -- 2. the Apprise notice counts an arrival the request says is introuvable ---------------------
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#265 contradicteur M-b: the notice of an arrival checks the Work, not the Edition",
-)
 def test_265_poc_no_notice_for_an_arrival_she_reads_as_introuvable(settings: Settings) -> None:
     """Notifications x requests. A Work rated 6+ (under her ceiling of 6) arrives as a second
     Edition nobody rated: the Edition is out of her sight. #265 shows her request `not_found`
