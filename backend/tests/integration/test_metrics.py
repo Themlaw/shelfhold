@@ -35,9 +35,9 @@ LABEL_VALUES: dict[str, Any] = {
     "state": {*JOB_STATUSES, *PLAN_STATUSES, *REQUEST_STATES},
     "version": re.compile(r"[0-9][0-9A-Za-z.+-]*"),
 }
-SECRET_SOURCE = "secretsrc"
-SECRET_HOST = "books.example.org"
-SECRET_ERROR = "could not reach https://books.example.org/series/42"
+PRIVATE_SOURCE = "secretsrc"
+PRIVATE_HOST = "books.example.org"
+PRIVATE_ERROR = "could not reach https://books.example.org/series/42"
 
 
 def bearer(key: str) -> dict[str, str]:
@@ -119,8 +119,8 @@ def test_metrics_labels_carry_no_title_nor_user(
                     ":host, :error, '2026-11-01 10:00:00', '2026-11-01 10:00:05', "
                     "'2026-11-01 10:00:00')"
                 ),
-                {"id": new_ulid(), "status": status, "source": SECRET_SOURCE, "host": SECRET_HOST,
-                 "error": SECRET_ERROR},
+                {"id": new_ulid(), "status": status, "source": PRIVATE_SOURCE, "host": PRIVATE_HOST,
+                 "error": PRIVATE_ERROR},
             )  # fmt: skip
         users = [r[0] for r in connection.execute(sa.text("SELECT id FROM user"))]
         names = [r[0] for r in connection.execute(sa.text("SELECT username FROM user"))]
@@ -131,7 +131,7 @@ def test_metrics_labels_carry_no_title_nor_user(
 
     forbidden = [
         *VISIBLE_TITLES.values(), *HIDDEN_TITLES.values(), *seed.works.values(), *users, *names,
-        "kid", "maya", SECRET_SOURCE, SECRET_HOST, SECRET_ERROR, "/store", "/library", "/data",
+        "kid", "maya", PRIVATE_SOURCE, PRIVATE_HOST, PRIVATE_ERROR, "/store", "/library", "/data",
         "http://", "https://", str(api.settings.data_dir),
     ]  # fmt: skip
     leaked = [word for word in forbidden if word and word in body]
@@ -162,7 +162,7 @@ def test_metrics_refused_to_sessions_and_keys_without_metrics_scope(
     kid = add_profile(api, "kid", "child", "10.0.0.2", max_age_rating=10)
     member = add_profile(api, "mia", "member", "10.0.0.3")
     assert api.login().status_code == 200
-    auth = api.app.state.auth_gate.auth
+    auth = api.app.state.auth_gate.auth  # type: ignore[attr-defined]
     admin_key = make_key(monkeypatch, capsys, api.settings)  # the default: scope `admin`
     read_key = make_key(monkeypatch, capsys, api.settings, "--scope", "read")
     request_key = auth.create_api_key(
@@ -185,7 +185,9 @@ def test_metrics_refused_to_sessions_and_keys_without_metrics_scope(
         assert response.status_code == 403, who
         assert "shelfhold_" not in response.text
 
-    token = Principal("u", "admin", "admin", Credential.DEVICE_TOKEN, key_id="d", scopes=("metrics",))
+    token = Principal(
+        "u", "admin", "admin", Credential.DEVICE_TOKEN, key_id="d", scopes=("metrics",)
+    )
     with pytest.raises(ProblemError) as refusal:
         require_metrics_key(token)
     assert refusal.value.spec.code == "credential_not_allowed"
@@ -203,7 +205,9 @@ def test_metrics_key_opens_nothing_else(
         ("GET", "/api/v1/profiles"), ("GET", "/api/v1/config"), ("GET", "/api/v1/jobs"),
         ("POST", "/api/v1/queue/pause"), ("PATCH", "/api/v1/config"), ("GET", "/healthz/"),
     ):  # fmt: skip
-        response = other.request(method, path, headers=bearer(key), json={} if method != "GET" else None)
+        response = other.request(
+            method, path, headers=bearer(key), json={} if method != "GET" else None
+        )
         assert response.status_code in (403, 404), (method, path, response.status_code)
         assert response.status_code != 200 or path.startswith("/healthz")
     assert other.get("/api/v1/about", headers=bearer(key)).status_code == 403
@@ -216,7 +220,7 @@ def test_metrics_scope_is_the_admin_own_and_for_herself(
     """Who may hold one: an admin, for herself. A member, a child, or a key made for another."""
     add_profile(api, "kid", "child", "10.0.0.2", max_age_rating=10)
     add_profile(api, "mia", "member", "10.0.0.3")
-    auth = api.app.state.auth_gate.auth
+    auth = api.app.state.auth_gate.auth  # type: ignore[attr-defined]
     for who in ("kid", "mia"):
         with pytest.raises(ValueError, match="scope_requires_admin"):
             auth.create_api_key(name="x", username=who, scope="metrics")
@@ -228,3 +232,26 @@ def test_metrics_scope_is_the_admin_own_and_for_herself(
     ]
     assert scopes == ("metrics",)
     assert read_only is True
+
+
+def test_a_metrics_key_reaches_one_route_and_nothing_else(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], api: AuthEnv
+) -> None:
+    """Every route of the application (the ones left out of the OpenAPI document and the SPA
+    included), every verb: 403 for the key of scope `metrics`, but for `GET /metrics`."""
+    from tests.integration.test_child_surfaces import _fill, _routes
+
+    key = make_key(monkeypatch, capsys, api.settings, "--scope", "metrics")
+    other = api.other_client("10.0.0.9")
+    reached, routes = [], sorted(_routes(api.app))
+    assert "GET /metrics" in routes and len(routes) > 50
+    for route in routes:
+        method, path = _fill(route)
+        if method in ("MOUNT", "WEBSOCKET"):
+            continue
+        response = other.request(
+            method, path, headers=bearer(key), json={} if method != "GET" else None
+        )
+        if response.status_code != 403:
+            reached.append((route, response.status_code))
+    assert reached == [("GET /metrics", 200)]

@@ -45,8 +45,24 @@ colonne inconnue.
   - `excluded_tables` : les tables laissées de côté, par nom.
 - `data/<table>.json` — une liste d'objets JSON par table, clés triées. Les dates sont en ISO 8601
   avec fuseau, les identifiants sont des ULID, les valeurs JSON de la base restent du JSON.
-- `files/library/<racine>/…` et `files/store/…` — l'arbre des fichiers gérés, à leur chemin
-  relatif dans leur racine.
+- `data/files/library/<racine>/…` et `data/files/store/…` — l'arbre des fichiers gérés, à leur
+  chemin relatif dans leur racine.
+- `bagit.txt`, `bag-info.txt`, `manifest-sha256.txt`, `tagmanifest-sha256.txt` — le dossier est un
+  sac BagIt 1.0 (RFC 8493), voir plus bas.
+
+## Empreintes de fixité (BagIt)
+
+Tout ce qui est sous `data/` (les tables et les fichiers gérés) est la charge utile du sac.
+`manifest-sha256.txt` donne une ligne `<sha256 hexadécimal>  <chemin>` par fichier de la charge ;
+`tagmanifest-sha256.txt` en donne une pour `bagit.txt`, `bag-info.txt`, `manifest-sha256.txt` et
+`manifest.json`. `bag-info.txt` porte `Bagging-Date` (le jour de l'export), `Bag-Software-Agent` et
+`Payload-Oxum` (octets et nombre de fichiers de la charge).
+
+Une personne qui n'a rien de Shelfhold vérifie la copie avec n'importe quel outil BagIt (par
+exemple `bagit.py --validate <dossier>`) ou à la main avec `sha256sum -c`. Le sac est reproductible :
+la même instance donne les mêmes octets, à la ligne de date près. Il ne cite rien de ce que l'export
+laisse de côté (pierres tombales, secrets, jetons, destinations) : les listes sont celles de
+`excluded_tables` du manifeste.
 
 ## Tables exportées
 

@@ -265,6 +265,7 @@ CLOSED = (
     "GET /api/v1/sources/{source_key}/search",
     "GET /api/v1/sources/{source_key}/series/{remote_id}/estimate",  # M3 L42
     "GET /api/v1/stats",
+    "GET /metrics",  # M4 L25: a key of scope `metrics` alone
     "GET /api/v1/status",
     "POST /api/v1/store/reinit",
     "POST /api/v1/targets",

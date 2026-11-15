@@ -71,6 +71,7 @@ from shelfhold.interfaces.http_api.jobs import build_jobs_router
 from shelfhold.interfaces.http_api.library import build_library_router
 from shelfhold.interfaces.http_api.maintenance import build_maintenance_router
 from shelfhold.interfaces.http_api.me import build_me_router
+from shelfhold.interfaces.http_api.metrics import build_metrics_router
 from shelfhold.interfaces.http_api.ops import build_ops_router
 from shelfhold.interfaces.http_api.plans import build_plans_router
 from shelfhold.interfaces.http_api.plugins import build_plugins_router
@@ -342,6 +343,8 @@ def create_app(
             lambda: NotificationPrefsService(SqlNotificationPrefsStore(engine))
         ),  # EF-INT-021: how a person wants to be told, their own row only
         build_stats_router(lambda: engine, clock.now),  # EF-INT-025: admin only, local only
+        # ENF-OBS-002: opt-in; a key of scope `metrics` alone reads it; no title, no user in it
+        build_metrics_router(lambda: engine, enabled=resolved.metrics_enabled, version=__version__),
         build_status_router(ops_services),  # EF-INT-023: what waits, with the command
         build_health_page_router(lambda: engine, resolved, clock.now),  # M3 L15: admin only
         build_ops_router(ops_services),  # EF-INT-023: the exits

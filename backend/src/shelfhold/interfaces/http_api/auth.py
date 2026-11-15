@@ -240,6 +240,24 @@ def is_request_key(principal: Principal | None) -> bool:
     )
 
 
+# ENF-OBS-002: a key of scope `metrics` reads `/metrics` and nothing else. Like the request key, it
+# is stopped here, before any route or guard: an admin's key that opens one door must not open any
+# other, whatever the guards of the other routes look at.
+METRICS_PATH = "/metrics"
+
+
+def is_metrics_key(principal: Principal | None) -> bool:
+    return (
+        principal is not None
+        and principal.credential is Credential.API_KEY
+        and "metrics" in principal.scopes
+    )
+
+
+def metrics_key_may_reach(method: str, path: str) -> bool:
+    return method == "GET" and path == METRICS_PATH
+
+
 PROBE_PATHS = frozenset({"/healthz", "/readyz"})
 # The probes resolve their session on threads of their own: the server's pool (40) may be full of
 # decodes and long reads, and a liveness probe that waits for it is not one (ENF-OPS-003).
@@ -283,6 +301,11 @@ class AuthMiddleware:
         )
         state["principal"] = principal
         if is_request_key(principal) and not request_key_may_reach(
+            scope["method"], str(scope["path"])
+        ):
+            await self._problem(scope, receive, send, "credential_not_allowed")
+            return
+        if is_metrics_key(principal) and not metrics_key_may_reach(
             scope["method"], str(scope["path"])
         ):
             await self._problem(scope, receive, send, "credential_not_allowed")

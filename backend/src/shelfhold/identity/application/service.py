@@ -99,6 +99,7 @@ KEY_SCOPES = (
     "read",
     "request",
     "admin",
+    "metrics",  # ENF-OBS-002: reads `/metrics` and nothing else; an admin's own, for herself
 )  # `destructive` is reserved, not implemented (EF-USR-024 (6))
 API_KEY_TOUCH_INTERVAL = timedelta(minutes=1)
 OPTIONS_PER_MINUTE = 30  # passkey sign-in options per address
@@ -1016,7 +1017,8 @@ class LocalAuth:
         subject_username: str | None = None,
         by: Principal | None = None,
     ) -> CreatedApiKey:
-        """`scope`: `read`, `request` or `admin` (default: `read` when `read_only`, else `admin`).
+        """`scope`: `read`, `request`, `admin` or `metrics` (default: `read` when `read_only`, else
+        `admin`).
 
         EF-USR-024 (4): the key acts as its **subject** (default: the one who holds it). An adult
         issues `read` or `request` for herself; for a profile it takes an admin. The `admin` scope
@@ -1033,7 +1035,7 @@ class LocalAuth:
             raise ValueError("subject_required")  # a request key acts as someone: she is named
         if scope not in KEY_SCOPES:
             raise ValueError("invalid_scope")
-        if scope == "admin" and owner.role != "admin":  # the `admin` scope is an admin's alone
+        if scope in ("admin", "metrics") and owner.role != "admin":  # an admin's alone
             raise ValueError("scope_requires_admin")
         subject = owner
         if subject_username is not None:
@@ -1041,7 +1043,7 @@ class LocalAuth:
             if found is None:
                 raise UnknownUserError
             subject = found
-        if subject.id != owner.id and scope == "admin":
+        if subject.id != owner.id and scope in ("admin", "metrics"):
             raise ValueError("subject_not_allowed")
         if (
             by is not None
@@ -1049,7 +1051,7 @@ class LocalAuth:
             and (subject.id != by.user_id or owner.id != by.user_id)
         ):
             raise ValueError("subject_not_allowed")
-        read_only = scope == "read"
+        read_only = scope in ("read", "metrics")
         now = self.now()
         if expires_days is not None and expires_days < 1:
             raise ValueError("invalid_expiry")
