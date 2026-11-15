@@ -1829,6 +1829,8 @@
   "shelfhold.sdk.testing.corpus.trapped_epubs.detect",
   "shelfhold.sdk.testing.corpus.trapped_epubs.standard",
   "shelfhold.sdk.testing.fakes",
+  "shelfhold.sdk.testing.fixtures",
+  "shelfhold.sdk.testing.fixtures.reserved_targets",
   "shelfhold.sdk.testing.kit",
   "shelfhold.sdk.testing.pytest_plugin",
   "shelfhold.store_jobs",
