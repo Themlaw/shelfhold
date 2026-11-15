@@ -1,6 +1,6 @@
 # Feuille de route
 
-Source : [`docs/spec/03-roadmap-tdd.md`](docs/spec/03-roadmap-tdd.md) (jalons détaillés, tests écrits d'abord, matrice de traçabilité). Statut actuel : **V1 close (M0 à M3 livrés)**, `v1.0.0-rc.1` puis `v1.0.0` après le test d'utilisabilité du porteur ([guide](docs/governance/test-utilisabilite.md)). Aucune version 0.3 à 0.5 n'a été publiée : la 1.0.0 regroupe M1b, M2 et M3.
+Source : [`docs/spec/03-roadmap-tdd.md`](docs/spec/03-roadmap-tdd.md) (jalons détaillés, tests écrits d'abord, matrice de traçabilité). Statut actuel : **V1 close (M0 à M3 livrés)**, `v1.0.0-rc.1` puis `v1.0.0` ; le test d'utilisabilité ([guide](docs/governance/test-utilisabilite.md)) conditionne l'annonce publique, plus le tag. Aucune version 0.3 à 0.5 n'a été publiée : la 1.0.0 regroupe M1b, M2 et M3.
 
 Le développement est mené par des agents (voir [AI_POLICY.md](AI_POLICY.md)) : les estimations en heures-homme de la spécification ne s'appliquent pas telles quelles. L'effort est converti en « effort agent » et **suivi dans `docs/governance/velocite.md`**.
 
