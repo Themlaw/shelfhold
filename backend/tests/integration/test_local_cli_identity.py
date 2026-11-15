@@ -178,3 +178,30 @@ def test_loopback_http_never_counts_as_local_cli(api: AuthEnv, effects: list[str
         assert keyed.json()["type"] == "/api/v1/problems/credential-not-allowed"
     assert effects == []
     assert not any(row[0] == ACTOR and row[1] == "purge.now" for row in _audit(api))
+
+
+@pytest.mark.req("EF-USR-008", "EF-USR-024", "ENF-OPS-015")
+def test_device_tokens_via_socket_audited_as_local_cli_and_listed_without_secret(
+    api: AuthEnv,
+) -> None:
+    api.app.state.auth_gate.auth.profile_add(  # type: ignore[attr-defined]
+        "kid", PASSWORD, "child", max_age_rating=7
+    )
+    created = call(
+        _socket(api), "identity.device_tokens_create", {"subject": "kid", "name": "Salon"}
+    )
+    assert isinstance(created, dict) and len(created["secret"]) == 26
+    listed = call(_socket(api), "identity.device_tokens_list", {})
+    assert isinstance(listed, list) and listed[0]["profile"] == "kid"
+    assert created["secret"] not in str(listed) and "digest" not in str(listed)
+    assert call(_socket(api), "identity.device_tokens_revoke", {"public_id": created["public_id"]})
+    assert not call(
+        _socket(api), "identity.device_tokens_revoke", {"public_id": created["public_id"]}
+    )
+    rows = [row for row in _audit(api) if str(row[1]).startswith("device_token.")]
+    assert rows == [
+        (ACTOR, "device_token.created", created["public_id"]),
+        (ACTOR, "device_token.revoked", created["public_id"]),
+    ]
+    with pytest.raises(RpcFailure):  # no profile named: no default, the pairing refuses
+        call(_socket(api), "identity.device_tokens_create", {"name": "x"})
