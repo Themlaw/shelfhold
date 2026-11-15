@@ -289,7 +289,7 @@ EF-LEC-009, EF-LEC-014, EF-LEC-007, EF-INT-007, EF-UX-004, EF-USR-006, EF-USR-02
 - https://github.com/koreader/koreader/blob/457a968/frontend/apps/reader/modules/readerpaging.lua
 - https://github.com/koreader/koreader/blob/457a968/frontend/apps/reader/readerui.lua (l. 497-500)
 - https://github.com/koreader/koreader/blob/457a968/frontend/docsettings.lua (fichier annexe lié au chemin)
-- https://github.com/koreader/koreader/blob/457a968/frontend/ui/widget/opdsbrowser.lua (téléchargement, nom du fichier, écrasement)
+- https://github.com/koreader/koreader/blob/457a968/plugins/opds.koplugin/opdsbrowser.lua (téléchargement, nom du fichier, écrasement)
 - https://github.com/Kareadita/Kavita/blob/e844b64/Kavita.Server/Controllers/KoreaderController.cs
 - https://github.com/Kareadita/Kavita/blob/e844b64/Kavita.Services/KoreaderService.cs
 - https://github.com/Kareadita/Kavita/blob/e844b64/Kavita.Services/Helpers/KoreaderHelper.cs
