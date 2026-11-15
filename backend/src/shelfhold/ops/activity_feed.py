@@ -125,12 +125,12 @@ def activity_event_of(
     """`payload`: the row's own, unless a reader of an older row has moved it to the current
     version (the SSE stream)."""
     body = row.payload or {} if payload is None else payload
-    if row.type == "ops.request_arrived":
-        body = _with_arrival_refs(connection, body)
+    named = _with_arrival_refs(connection, body) if row.type == "ops.request_arrived" else body
     owner_id, owner_role = owner_and_role(connection, row.actor_id)
     return ActivityEvent(
-        id=row.id, type=row.type, visibility=row.visibility, payload=body,
-        owner_id=owner_id, owner_role=owner_role, title=title_of(connection, body),
+        id=row.id, type=row.type, visibility=row.visibility, payload=named,
+        owner_id=owner_id, owner_role=owner_role,
+        title=title_of(connection, body),  # the title of the event as stored, not of the refs
     )  # fmt: skip
 
 
