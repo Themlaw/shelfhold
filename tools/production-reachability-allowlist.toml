@@ -189,3 +189,11 @@ symbols = [
   "shelfhold.interfaces.http_api.ratelimit:RecognisedCredentials.add_raw",
   "shelfhold.interfaces.http_api.ratelimit:recognise_device_credential",
 ]
+
+[[allow]]
+category = "unwired-m4-member-key"
+reason = "2026-11-15 (M4 L12, EF-USR-012): `DestinationAccounts.open_token` is the one reader of a member's sealed Kavita key. The routes seal, verify, rotate and revoke it; nothing yet reads it back, because the first reader is the progress synchronisation of the member (pull then push, L14), which asks Kavita with that key through `MemberKavitaClient` and its closed list of routes."
+until = "M4"  # settled by M4 lot L14b
+symbols = [
+  "shelfhold.identity.application.destination_accounts:DestinationAccounts.open_token",
+]

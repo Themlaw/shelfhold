@@ -1245,6 +1245,47 @@
      "Location"
     ]
    },
+   "ProgressDto": {
+    "additionalProperties": false,
+    "properties": {
+     "bookScrollId": {
+      "nullable": true,
+      "type": "string"
+     },
+     "chapterId": {
+      "format": "int32",
+      "type": "integer"
+     },
+     "lastModifiedUtc": {
+      "format": "date-time",
+      "type": "string"
+     },
+     "libraryId": {
+      "format": "int32",
+      "type": "integer"
+     },
+     "pageNum": {
+      "format": "int32",
+      "type": "integer"
+     },
+     "seriesId": {
+      "format": "int32",
+      "type": "integer"
+     },
+     "volumeId": {
+      "format": "int32",
+      "type": "integer"
+     }
+    },
+    "required": [
+     "chapterId",
+     "libraryId",
+     "pageNum",
+     "seriesId",
+     "volumeId"
+    ],
+    "type": "object"
+   },
    "PublicationStatus": {
     "description": "Members:\n- `0` \u2014 Ongoing (OnGoing)\n- `1` \u2014 Hiatus\n- `2` \u2014 Completed\n- `3` \u2014 Cancelled\n- `4` \u2014 Ended",
     "enum": [
@@ -2667,6 +2708,37 @@
  },
  "openapi": "3.0.4",
  "paths": {
+  "/api/Account": {
+   "get": {
+    "description": "Does not return tokens for the user",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/UserDto"
+        }
+       },
+       "text/json": {
+        "schema": {
+         "$ref": "#/components/schemas/UserDto"
+        }
+       },
+       "text/plain": {
+        "schema": {
+         "$ref": "#/components/schemas/UserDto"
+        }
+       }
+      },
+      "description": "OK"
+     }
+    },
+    "summary": "Returns the current user, as it would from login",
+    "tags": [
+     "Account"
+    ]
+   }
+  },
   "/api/Account/auth-key": {
    "delete": {
     "parameters": [
@@ -3153,6 +3225,120 @@
     },
     "tags": [
      "Plugin"
+    ]
+   }
+  },
+  "/api/Reader/continue-point": {
+   "get": {
+    "parameters": [
+     {
+      "in": "query",
+      "name": "seriesId",
+      "schema": {
+       "format": "int32",
+       "type": "integer"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ChapterDto"
+        }
+       },
+       "text/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ChapterDto"
+        }
+       },
+       "text/plain": {
+        "schema": {
+         "$ref": "#/components/schemas/ChapterDto"
+        }
+       }
+      },
+      "description": "OK"
+     }
+    },
+    "summary": "Continue point is the chapter which you should start reading again from. If there is no progress on a series, then the first chapter will be returned (non-special unless only specials).\nOtherwise, loop through the chapters and volumes in order to find the next chapter which has progress.",
+    "tags": [
+     "Reader"
+    ]
+   }
+  },
+  "/api/Reader/get-progress": {
+   "get": {
+    "parameters": [
+     {
+      "description": "",
+      "in": "query",
+      "name": "chapterId",
+      "schema": {
+       "format": "int32",
+       "type": "integer"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProgressDto"
+        }
+       },
+       "text/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProgressDto"
+        }
+       },
+       "text/plain": {
+        "schema": {
+         "$ref": "#/components/schemas/ProgressDto"
+        }
+       }
+      },
+      "description": "OK"
+     }
+    },
+    "summary": "Returns Progress (page number) for a chapter for the logged in user",
+    "tags": [
+     "Reader"
+    ]
+   }
+  },
+  "/api/Reader/progress": {
+   "post": {
+    "requestBody": {
+     "content": {
+      "application/*+json": {
+       "schema": {
+        "$ref": "#/components/schemas/ProgressDto"
+       }
+      },
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ProgressDto"
+       }
+      },
+      "text/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ProgressDto"
+       }
+      }
+     },
+     "description": ""
+    },
+    "responses": {
+     "200": {
+      "description": "OK"
+     }
+    },
+    "summary": "Save page against Chapter for authenticated user",
+    "tags": [
+     "Reader"
     ]
    }
   },

@@ -19,7 +19,8 @@ from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 
 from shelfhold.export.domain.bindings import is_family
-from shelfhold.export.domain.kavita_access import Account, reaches, tier
+from shelfhold.export.domain.kavita_access import NOT_APPLICABLE, Account, reaches, tier
+from shelfhold.infrastructure.kavita_names import kavita_name_key
 
 OK = "ok"
 ALERT = "alert"
@@ -89,12 +90,6 @@ def library_ceiling(ceilings: Iterable[int | None]) -> int | None:
     return max(value for value in seen if value is not None)
 
 
-def kavita_name_key(name: str) -> str:
-    """How Kavita compares user names: upper case, character by character (the invariant culture),
-    so "ß" stays "ß" where `casefold` makes it "ss" and finds a second account in a first."""
-    return "".join(c.upper() if len(c.upper()) == 1 else c for c in name)
-
-
 def _find_account(name: str, accounts: Sequence[Account]) -> list[Account]:
     """The account an exact name designates; else every account Kavita's own comparison confuses
     with it (zero: absent, several: ambiguous, never the first)."""
@@ -143,3 +138,38 @@ def assess_child(
         if account.include_unknowns:
             findings.append(Finding(INCLUDES_UNKNOWNS))
     return ChildReport(child.profile_id, ALERT if findings else OK, tuple(findings))
+
+
+# What a child's own key may hold in Kavita 0.9.1 (`Kavita.Models/Constants/PolicyConstants.cs`):
+# signing in, reading, downloading (OPDS needs it to hand a file to a reader), bookmarks and
+# changing its own password. The list is closed: `Change Restriction` (the child would lift its
+# own age restriction), `Promote`, `Admin` and any role a later Kavita adds are refused.
+# Compared without case, space or dash.
+CHILD_ROLES = frozenset({"login", "pleb", "readonly", "bookmark", "download", "changepassword"})
+
+CHILD_ACCOUNT_ADMIN = "child_account_admin"
+CHILD_ACCOUNT_PRIVILEGED = "child_account_privileged"
+CHILD_ACCOUNT_UNRESTRICTED = "child_account_unrestricted"
+CHILD_ACCOUNT_TOO_OPEN = "child_account_restriction_too_open"
+
+
+def role_key(name: str) -> str:
+    return "".join(c for c in name.lower() if c.isalnum())
+
+
+def child_key_refusal(
+    roles: Iterable[str], age_rating: int | None, include_unknowns: bool, max_age: int
+) -> str | None:
+    """Why a key may not be a child's, as a closed code; None when it may. An absent restriction
+    (`age_rating` None) or `NotApplicable` is no restriction at all."""
+    names = [str(r) for r in roles]
+    if any(role_key(r) == "admin" for r in names):
+        return CHILD_ACCOUNT_ADMIN
+    if any(role_key(r) not in CHILD_ROLES for r in names):
+        return CHILD_ACCOUNT_PRIVILEGED
+    if age_rating is None or age_rating == NOT_APPLICABLE:
+        return CHILD_ACCOUNT_UNRESTRICTED
+    account = Account("", False, age_rating, include_unknowns, frozenset())
+    if tier(account) > max_age or include_unknowns:
+        return CHILD_ACCOUNT_TOO_OPEN
+    return None

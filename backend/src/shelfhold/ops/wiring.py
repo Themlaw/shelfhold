@@ -38,6 +38,7 @@ from shelfhold.ops.backfill import BackfillOps
 from shelfhold.ops.content import ContentOps
 from shelfhold.ops.contributors import ContributorOps
 from shelfhold.ops.dedup import DedupOps
+from shelfhold.ops.destination_accounts import open_destination_accounts
 from shelfhold.ops.detach import DetachOps
 from shelfhold.ops.edition_merge import EditionMergeOps
 from shelfhold.ops.editions import EditionOps
@@ -189,6 +190,9 @@ def open_ops(
             engine, ChildAccountsAuditor(engine, clock, events), clock=clock,
             targets=composition.kavita_targets, client_for=composition.kavita_client,
             children=lambda: child_kavita_accounts(engine),
+        ),
+        destination_accounts=open_destination_accounts(
+            engine, composition.vault, clock=clock, fetcher_for=composition.network.one_shot
         ),
         maintenance=MaintenanceOps(
             engine, clock, fresh_auth_s=settings.fresh_auth_s, hardened=settings.auth_hardened,

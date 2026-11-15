@@ -230,13 +230,15 @@ class IdentityStore(Protocol):
         max_admins: int,
         now: datetime,
         actor_id: str | None = None,
+        revoked_audit: Callable[[str], AuditEntry] | None = None,
     ) -> ProfileRecord:
         """One transaction, answering with what it wrote: `ProfileError` `changed_meanwhile` (the
         role moved since it was read),
         `last_admin`, `too_many_admins`; the same `changed_meanwhile` when the ceiling or the
         right to classify differ from what was read. `actor_id`: an admin caller is re-read under
         the lock (`not_allowed`). A change of role closes the sessions and keys of the profile and
-        drops its stored policies (D14 again)."""
+        drops its stored policies (D14 again) and revokes its Kavita keys, one `revoked_audit` line
+        each (EF-USR-012)."""
         ...
 
     def visibility_state(self, user_id: str) -> tuple[str, str | None] | None:
@@ -278,8 +280,11 @@ class IdentityStore(Protocol):
         *,
         actor_id: str | None = None,
         audit: Callable[[bool, bool], AuditEntry | None] | None = None,
+        now: datetime | None = None,
+        revoked_audit: Callable[[str], AuditEntry] | None = None,
     ) -> tuple[bool, bool]:
-        """Name or clear the Kavita account of a child in one transaction with its audit entry:
+        """Name or clear the Kavita account of a child in one transaction with its audit entry
+        (and the revocation of the keys sealed for the account that was declared, EF-USR-012):
         `(was mapped, is mapped)`. The admin caller and the role are re-read under the lock
         (`not_allowed`, `not_found`, `not_a_child`); a name held by another profile is
         `kavita_username_taken`."""

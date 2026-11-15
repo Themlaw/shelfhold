@@ -1,5 +1,6 @@
 """What the interfaces and the composition root may use from the identity context."""
 
+from shelfhold.identity.adapters.destination_accounts import DestinationAccountStore
 from shelfhold.identity.adapters.factory import local_auth
 from shelfhold.identity.adapters.liveness import credential_is_live
 from shelfhold.identity.adapters.reader_scope import (
@@ -13,6 +14,16 @@ from shelfhold.identity.adapters.store import (
     child_kavita_accounts,
     reconcile_identity_counter,
     revoke_all_credentials,
+)
+from shelfhold.identity.application.destination_accounts import (
+    AccountRefused,
+    AccountVerifier,
+    AccountView,
+    DestinationAccountError,
+    DestinationAccounts,
+    DestinationRef,
+    RemoteAccount,
+    SecretToken,
 )
 from shelfhold.identity.application.passkeys import (
     PasskeyError,
@@ -156,6 +167,9 @@ __all__ = [
     "SYSTEM_EMITTERS",
     "TABLE_ROLES",
     "VISIBILITIES",
+    "AccountRefused",
+    "AccountVerifier",
+    "AccountView",
     "ActionNotDeclared",
     "AdminExistsError",
     "Allowed",
@@ -166,6 +180,10 @@ __all__ = [
     "CreatedApiKey",
     "Credential",
     "CredentialNotAllowed",
+    "DestinationAccountError",
+    "DestinationAccountStore",
+    "DestinationAccounts",
+    "DestinationRef",
     "DeviceToken",
     "Effect",
     "ExitRoute",
@@ -190,8 +208,10 @@ __all__ = [
     "ReauthRequired",
     "RelyingParty",
     "RememberNeedsConfirmationError",
+    "RemoteAccount",
     "ReservedAction",
     "RoleNotAllowed",
+    "SecretToken",
     "SessionAuth",
     "SessionPolicy",
     "SessionView",

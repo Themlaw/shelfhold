@@ -57,6 +57,11 @@ ALLOWED: dict[tuple[str, str], bool] = {
     ("GET", "/api/series/series-detail"): False,
     ("GET", "/api/series/metadata"): False,
     ("POST", "/api/series/metadata"): True,
+    # the routes a member's own key may reach (EF-USR-012, D8): who the key is, and progress
+    ("GET", "/api/account"): False,
+    ("GET", "/api/reader/get-progress"): False,
+    ("POST", "/api/reader/progress"): False,
+    ("GET", "/api/reader/continue-point"): False,
 }
 LIBRARY_TYPES = {"Manga": 0, "Comic": 1, "Book": 2, "Image": 3, "LightNovel": 4, "ComicVine": 5}
 
@@ -173,6 +178,12 @@ class FakeKavita:
     )
 
     account: tuple[str, str] = ("admin", "the account password")  # what the login accepts
+    # key -> the user name of the account it opens (`GET /api/Account`); the dedicated keys are
+    # the administrator's. Members' keys are added by `add_member_key`.
+    key_accounts: dict[str, str] = field(
+        default_factory=lambda: {API_KEY: "admin", OTHER_KEY: "admin"}
+    )
+    member_profiles: dict[str, dict[str, Any]] = field(default_factory=dict)
     sessions: set[str] = field(default_factory=set)  # the bearer tokens a login handed out
 
     def key_is_valid(self, key: object) -> bool:
@@ -191,6 +202,30 @@ class FakeKavita:
         return self._json({"username": self.account[0], "token": session})
 
     # -- scenario helpers -------------------------------------------------------------------
+    def add_member_key(
+        self,
+        username: str,
+        *,
+        roles: tuple[str, ...] = ("Login",),
+        age_rating: int | None = 2,
+        include_unknowns: bool = False,
+    ) -> str:
+        """A new key of the account `username`, random each time (a test holds no literal key).
+        The account is a restricted reader by default (rating 2: age 3, no unknowns);
+        `age_rating=None` leaves the restriction out of `GET /api/Account`, -1 is none."""
+        key = secrets.token_urlsafe(24)
+        restriction = (
+            None if age_rating is None
+            else {"ageRating": age_rating, "includeUnknowns": include_unknowns}
+        )  # fmt: skip
+        self.member_profiles[key] = {"roles": list(roles), "ageRestriction": restriction}
+        self.auth_keys.append({"id": 100 + len(self.auth_keys), "name": username, "key": key})
+        self.key_accounts[key] = username
+        return key
+
+    def requests_with_key(self, key: str) -> list[RecordedRequest]:
+        return [r for r in self.requests if r.headers.get("x-api-key") == key]
+
     def demote(self) -> None:
         """The dedicated account loses its administrator role (EF-EXP-009, 403)."""
         self.is_admin = False
@@ -358,6 +393,27 @@ class FakeKavita:
         return body
 
     # -- routes -----------------------------------------------------------------------------
+    def _account(self, recorded: RecordedRequest) -> httpx2.Response:
+        """`GET /api/Account`: the `UserDto` of the key, which carries a session token and the
+        account's default key (a trap: Shelfhold reads the name and nothing else)."""
+        key = recorded.headers.get("x-api-key", "")
+        name = self.key_accounts.get(key, self.account[0])
+        profile = self.member_profiles.get(key, {"roles": ["Login"], "ageRestriction": None})
+        answer = {"id": 1, "username": name, "token": "synthetic-session-token",
+                  "apiKey": "synthetic-default-key", "roles": profile["roles"]}  # fmt: skip
+        if profile["ageRestriction"] is not None:
+            answer["ageRestriction"] = profile["ageRestriction"]
+        return self._json(answer)
+
+    def _get_progress(self, recorded: RecordedRequest) -> httpx2.Response:
+        return self._json({"pageNum": 0})
+
+    def _progress(self, recorded: RecordedRequest) -> httpx2.Response:
+        return self._json({})
+
+    def _continue_point(self, recorded: RecordedRequest) -> httpx2.Response:
+        return self._json({"id": 1})
+
     def _server_info_slim(self, recorded: RecordedRequest) -> httpx2.Response:
         return self._json({"installId": self.install_id, "kavitaVersion": self.version})
 

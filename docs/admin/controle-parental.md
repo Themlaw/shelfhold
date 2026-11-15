@@ -126,9 +126,44 @@ shelfhold profile map-kavita lea --clear                # retire la correspondan
 L'équivalent HTTP est `PUT /api/v1/profiles/{id}/kavita-account`. C'est une **action réservée** : une
 session d'administrateur de moins de 15 minutes, ou la CLI de l'hôte ; jamais une clé d'API (portée
 `admin` comprise), un jeton d'appareil, un membre ni un enfant. On y saisit un **nom**, jamais un jeton
-ni un mot de passe : Shelfhold ne se connecte pas à Kavita en tant qu'enfant. Kavita ne distingue pas
+ni un mot de passe : ce nom sert à l'audit, et la clé de l'enfant se saisit à part (section suivante). Kavita ne distingue pas
 « Lea » de « lea » ; un même compte ne peut être associé qu'à un seul profil. Seul un profil enfant peut
 être associé. Chaque changement est journalisé (le profil, `none`/`set`, jamais le nom).
+
+### Saisir la clé Kavita d'un enfant (synchronisation de la progression)
+
+Pour que la progression de lecture suive l'enfant entre Kavita et Shelfhold, **le parent** colle la clé
+Kavita du compte de l'enfant, une fois par destination :
+
+```
+PUT    /api/v1/profiles/{id}/destination-accounts/{destination_id}    {"token": "…"}
+DELETE /api/v1/profiles/{id}/destination-accounts/{destination_id}
+GET    /api/v1/profiles/{id}/destination-accounts
+```
+
+- C'est une **action réservée** : une session d'administrateur de moins de 15 minutes, dans tous les
+  profils ; jamais une clé d'API, un jeton d'appareil, un membre ni l'enfant lui-même.
+- Le compte est **celui que vous avez nommé** ci-dessus : sans nom déclaré, la saisie est refusée
+  (`child_account_not_declared`). Shelfhold demande à Kavita à quel compte la clé ouvre, par son
+  Fetcher et sa garde SSRF, et ne garde rien si ce n'est pas le compte déclaré. Si vous changez le nom
+  déclaré (autre que par la casse), la clé de l'ancien compte est révoquée ; elle l'est aussi si le
+  rôle du profil change.
+- Le compte Kavita d'un enfant doit en être un : ni administrateur, aucun droit au-delà de la lecture
+  et de la progression (pas de téléchargement, de promotion, de changement de mot de passe ou de
+  restriction), une restriction d'âge au plus égale à l'âge maximal de l'enfant, « inconnus »
+  exclus. Sinon la saisie est refusée (`destination_account_child_refused`, avec la raison).
+  Le nom ne peut pas commencer par `~`.
+- Une clé de moins de 8 signes est refusée ; la destination doit appartenir à une étagère ouverte à
+  ce profil (`allowed_profiles`).
+- La clé est scellée par le coffre, par utilisateur et par destination. Elle n'est **jamais** montrée :
+  ni par l'API (on voit son empreinte), ni dans les journaux, l'audit, le paquet de diagnostic ou
+  l'export intégral. L'administrateur peut la révoquer, jamais la lire.
+- Les adultes collent leur propre clé de la même façon (leur session, `remote_user` = le nom de leur
+  compte Kavita ; un compte administrateur de Kavita est accepté et signalé par `warnings`) ; personne ne
+  gère le compte d'un autre adulte. Sans clé, un membre est hors
+  synchronisation.
+- Cette clé n'atteint qu'une liste fermée de routes Kavita (qui est la clé, et la progression de ce
+  membre : `docs/kavita-routes.md`), jamais une bibliothèque, un scan ni la liste des comptes.
 
 ### Ce que l'audit vérifie
 
