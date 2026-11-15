@@ -33,6 +33,12 @@ Toute contribution est reçue sous **AGPL-3.0-or-later avec l'exception de plugi
 
 Utilisez de préférence l'adresse **noreply** de GitHub (`<id>+<pseudo>@users.noreply.github.com`) : l'historique est public et définitif.
 
+## Migrations Alembic
+
+Une migration publiée ne change jamais. Une PR qui en ajoute une la fige elle-même, avec la prochaine mineure :
+`python3 tools/check_patch_migrations.py --freeze 1.1` (remplacer `1.1` par la mineure qui la livrera), puis commiter
+`tools/published-migrations.toml`. La CI de PR lance `python3 tools/check_patch_migrations.py` et échoue sinon (`docs/releasing.md`).
+
 ## Fixtures synthétiques uniquement
 
 Tests, fixtures et cassettes sont **synthétiques ou du domaine public**. Jamais de contenu protégé, jamais de capture d'un site tiers. Ne citez dans le code, la documentation, les issues ou les PR **aucun nom de site non autorisé** ni lien vers du contenu non autorisé : ces éléments sont supprimés.

@@ -5,6 +5,9 @@ Une release est une action manuelle du mainteneur, en quatre étapes. Aucun jeto
 1. **Préparer la PR de version** (titre `chore(release): X.Y.Z`) :
    - `CHANGELOG.md` : nouvelle section `## X.Y.Z - AAAA-MM-JJ` avec les changements, et la ligne
      `Migration : oui|non, réversible : oui|non` (ENF-OPS-002) ;
+   - `tools/published-migrations.toml` : toute migration est déjà figée ; la CI de PR (étape du job `lint`, sans `--tag`) échoue sinon.
+     Une PR qui ajoute une migration la fige elle-même : `python3 tools/check_patch_migrations.py --freeze 1.1`, où `1.1` est la
+     prochaine mineure (la ligne qui la livrera) ; une release `X.Y.Z` avec Z > 0 refuse toute migration dont `since` dépasse `X.Y` ;
    - la version dans `backend/pyproject.toml` et `backend/src/shelfhold/__init__.py` (`__version__`) ;
    - le champ `info.version` de `open-api/openapi.json` (sinon le job `openapi` échoue).
 2. **Fusionner la PR** : `ci-success` doit être vert sur le commit fusionné, l'image `sha-<commit>` est alors publiée sur GHCR.
