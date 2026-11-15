@@ -41,14 +41,13 @@ def _member(fx: Fixture, username: str, role: str = "member", **kwargs: Any) -> 
 @pytest.mark.req("EF-USR-012")
 @pytest.mark.parametrize("paste", ["event", "user_id", "url"])
 def test_a_refused_paste_does_not_poison_the_known_secrets(fx: Fixture, paste: str) -> None:
-    """`MemberKey(token)` appelle `register_secret_value` avant toute vérification : n'importe
-    quelle chaîne d'au moins 8 signes collée par un membre devient un « secret connu » pour toute
-    la vie du processus. Le garde d'écriture refuse alors toute écriture qui la contient (ici la
-    ligne d'audit d'un autre membre), et le nettoyeur la masque dans tous les journaux."""
+    """Once, `MemberKey(token)` registered its value before any check: any string of 8 characters
+    or more pasted by a member became a known secret for the life of the process, refused by the
+    write guard (here the audit line of another member) and masked from every log."""
     _member(fx, "eve")
     _mum, mum_key = _member(fx, "mum")
     fx.as_user("eve")
-    # pas une clé : le nom d'une action d'audit, un identifiant, une adresse ; Kavita les refuse
+    # not keys: an audit action name, an identifier, a URL; Kavita refuses them
     poison_value = {
         "event": "destination_account.linked",
         "user_id": fx.users["eve"],
