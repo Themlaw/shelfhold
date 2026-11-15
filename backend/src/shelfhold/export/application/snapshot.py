@@ -58,6 +58,15 @@ from shelfhold.sdk.age import X_MIN_AGE, AgeRating
 
 _HOLDING = ("written", "scanned", "resolved")  # a record whose file is in the library
 _DONE = ("written", "scanned", "resolved", "adopted")
+
+
+def _plan_state(state: str) -> str:
+    """The state of a record as a plan sees it: `written`, `scanned` and `resolved` are one thing
+    (the file is in the library; only Kavita's arrival poll tells them apart, and it runs on every
+    export, even one that writes nothing). A plan must not go stale because Kavita indexed it."""
+    return "held" if state in _HOLDING else state
+
+
 RangedHash = Callable[[str], str | None]  # export item id -> fingerprint of the kept file
 
 __all__ = [
@@ -482,7 +491,14 @@ def _world(
 ) -> dict[str, object]:
     return {
         "records": sorted(
-            [r.export_item_id, r.unit_id, r.state, r.rel_path, r.content_hash, r.sidecar_sha256]
+            [
+                r.export_item_id,
+                r.unit_id,
+                _plan_state(r.state),
+                r.rel_path,
+                r.content_hash,
+                r.sidecar_sha256,
+            ]
             for r in records.values()
         ),
         "series": sorted(
