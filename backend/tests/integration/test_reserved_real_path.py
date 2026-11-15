@@ -122,9 +122,17 @@ WHEN_CLOSED_AUDITED = {
     # M3 L45: the doors of the removal and the detachment write none (`audit=False`): the service
     # writes the line, with its target, when it really acts; a preview or an empty body leaves none
     "destination.remove_all", "detach.full",
+    # M4 L12: a member's Kavita key: the service writes the line, with its target, in the
+    # transaction that seals or erases the key; the empty body below is refused (422) or finds
+    # nothing (404): no line
+    "destination_account.bind", "destination_account.revoke",
 }  # fmt: skip
 # any role may do it on its own account (the guard names KNOWN_ROLES): the role loop skips it
-EVERY_ROLE_OWN_ACCOUNT = {"session.revoke_others"}
+# M4 L12: an adult handles their own Kavita key (a member's session is not refused by role: the
+# profile of another answers 404, tested in test_destination_accounts.py); a child is refused there
+EVERY_ROLE_OWN_ACCOUNT = {
+    "session.revoke_others", "destination_account.bind", "destination_account.revoke",
+}  # fmt: skip
 
 
 @pytest.mark.req("EF-USR-022", "EF-USR-024", "ENF-SEC-010")
