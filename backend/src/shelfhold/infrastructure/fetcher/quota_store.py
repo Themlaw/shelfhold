@@ -14,8 +14,10 @@ import sqlalchemy as sa
 from sqlalchemy import Engine, exc
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
+from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.fetcher.errors import ProviderQuotaExceeded
 from shelfhold.infrastructure.schema import platform
+from shelfhold.sdk.metadata import AdaptiveLimit
 
 __all__ = ["SqlBucketStore"]
 
@@ -33,15 +35,18 @@ class SqlBucketStore:
         return id(self._engine)
 
     def reserve(
-        self, provider: str, rate: float, burst: int, daily_cap: int | None, now: float
-    ) -> float:
+        self, provider: str, rate: float, burst: int, daily_cap: int | None, now: float,
+        adaptive: AdaptiveLimit | None = None,
+    ) -> float:  # fmt: skip
         for attempt in range(1, _ATTEMPTS + 1):
             try:
                 with self._engine.connect() as connection:
                     connection.execution_options(shelfhold_begin="BEGIN IMMEDIATE")
                     connection.begin()
                     try:
-                        wait = self._take(connection, provider, rate, burst, daily_cap, now)
+                        wait = self._take(
+                            connection, provider, rate, burst, daily_cap, now, adaptive
+                        )
                         connection.commit()
                     except BaseException:
                         connection.rollback()
@@ -56,7 +61,7 @@ class SqlBucketStore:
     @staticmethod
     def _take(
         connection: sa.Connection, provider: str, rate: float, burst: int,
-        daily_cap: int | None, now: float,
+        daily_cap: int | None, now: float, adaptive: AdaptiveLimit | None = None,
     ) -> float:  # fmt: skip
         table = platform.provider_quota
         day_key = f"{provider}:day:{datetime.fromtimestamp(now, UTC).date().isoformat()}"
@@ -67,8 +72,13 @@ class SqlBucketStore:
             if used is not None and used >= daily_cap:
                 raise ProviderQuotaExceeded(f"the daily ceiling of {daily_cap} requests is reached")
         row = connection.execute(
-            sa.select(table.c.tokens, table.c.refilled_at).where(table.c.provider == provider)
+            sa.select(table.c.tokens, table.c.refilled_at, table.c.announced_limit).where(
+                table.c.provider == provider
+            )
         ).first()
+        if adaptive is not None:  # the rate every worker last heard, read with the token it takes
+            heard = row.announced_limit if row is not None else None
+            rate = min(adaptive.max_per_minute, heard or adaptive.start_per_minute) / 60
         if row is None:
             tokens = float(burst)
         else:
@@ -94,3 +104,27 @@ class SqlBucketStore:
             .on_conflict_do_update(index_elements=[table.c.provider], set_=count)
         )
         return wait
+
+    # -- what a response said (the rate it announced, the wait it asked for) ------------------
+    def announce(self, provider: str, limit: int) -> None:
+        table = platform.provider_quota
+        with write_transaction(self._engine) as connection:
+            connection.execute(
+                sqlite_insert(table)
+                .values(provider=provider, tokens=0.0, refilled_at=datetime.now(UTC),
+                        announced_limit=limit)
+                .on_conflict_do_update(index_elements=[table.c.provider],
+                                       set_={"announced_limit": limit})
+            )  # fmt: skip
+
+    def defer(self, provider: str, seconds: float, now: float) -> None:
+        """No token before `seconds` from `now`, for every worker."""
+        table = platform.provider_quota
+        until = datetime.fromtimestamp(now + seconds, UTC)
+        with write_transaction(self._engine) as connection:
+            connection.execute(
+                sqlite_insert(table)
+                .values(provider=provider, tokens=0.0, refilled_at=until)
+                .on_conflict_do_update(index_elements=[table.c.provider],
+                                       set_={"tokens": 0.0, "refilled_at": until})
+            )  # fmt: skip

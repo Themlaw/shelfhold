@@ -24,6 +24,7 @@ CATALOG_TABLES = {
     "merge_suggestion", "age_suggestion", "normalizer", "work_relation", "work_relation_kind",
     "metadata_field", "edition_attach",
     "merge_log", "work_redirect",  # migration 0046 (M3 L01)
+    "provider_release_calendar",  # migration 0071 (M4 L20)
 }  # fmt: skip
 ACQUISITION_TABLES = {
     "follow_notice",

@@ -40,6 +40,17 @@ Tome) ; ce que le fournisseur sait de l'Œuvre (rattachement, auteur d'Œuvre) p
   plus haut qu'un fournisseur accorde à un agent qui donne un contact : l'hôte ne l'ouvre que si
   l'instance a configuré `metadata_contact`. Le seau est celui du fournisseur, partagé par tous ses
   `Fetcher`, et son solde survit au processus (`provider_quota`) ; robots.txt compte comme une requête.
+- `quota.adaptive` (ajout compatible) déclare un fournisseur qui annonce lui-même son rythme dans un
+  en-tête de réponse (`header`) : le seau suit la dernière annonce, jamais au-dessus de
+  `max_per_minute`, et démarre à `start_per_minute` tant qu'il n'en a pas entendu. L'annonce est
+  rangée dans `provider_quota` avec le solde : tous les workers la lisent dans la transaction qui
+  prend le jeton. Un 429 avec `Retry-After` suspend le seau pour tous les workers. AniList l'utilise
+  (30 par minute tant que l'API est dégradée, 90 en nominal), recherche seulement : aucune donnée de
+  compte n'est lue ni écrite.
+- Un fournisseur qui connaît les sorties d'une série les rend en `RelationProposal` de genre
+  `release` (`series_id`, `released_on`, `chapter`, `volume`). L'hôte garde le dernier état dans
+  `provider_release_calendar` (12 h) avec l'attribution du fournisseur ; `series.stale` le lit sans
+  réseau, et un profil ne reçoit que les séries que son plafond lui laisse voir. MangaUpdates le fait.
 - Un fournisseur injoignable (5xx, 429, réponse qui n'est pas celle qu'il documente) lève
   `ProviderUnavailable(reason)` : l'hôte prévient l'administrateur (`metadata.provider_down`, au plus
   une fois par heure) et ne change rien d'autre.

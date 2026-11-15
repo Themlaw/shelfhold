@@ -394,7 +394,13 @@ def _meta_check(ops: OpsServices, _by: Principal, _p: Params) -> object:
 
 
 def _meta_enrich(ops: OpsServices, _by: Principal, p: Params) -> object:
-    return ops.meta.enrich(_text(p, "target"))
+    return ops.meta.enrich(
+        _text(p, "target"), _optional(p, "provider") or "openlibrary", _optional(p, "title")
+    )
+
+
+def _meta_calendar(ops: OpsServices, _by: Principal, _p: Params) -> object:
+    return ops.meta.release_calendar()
 
 
 def _texts(params: Params, name: str) -> list[str]:
@@ -764,6 +770,7 @@ OPS_METHODS: Mapping[str, tuple[OpsMethod, str | None]] = {
     "ops.meta_rebuild": (_meta_rebuild, None),
     "ops.meta_check": (_meta_check, None),
     "ops.meta_enrich": (_meta_enrich, None),
+    "ops.meta_calendar": (_meta_calendar, None),
     "ops.meta_lock": (_meta_lock, None),
     "ops.meta_unlock": (_meta_unlock, None),
     "ops.edition_renumber_id": (_edition_renumber_id, None),

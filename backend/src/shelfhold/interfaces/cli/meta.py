@@ -25,7 +25,14 @@ def register(commands: argparse._SubParsersAction[argparse.ArgumentParser]) -> N
     rebuild.set_defaults(handler=run_rebuild)
     enrich = actions.add_parser("enrich", help=t("cli.meta_enrich_help"), allow_abbrev=False)
     enrich.add_argument("target", help=t("cli.meta_target_help"))
+    enrich.add_argument("--provider", default="openlibrary",
+                        choices=("openlibrary", "anilist", "mangaupdates"),
+                        help=t("cli.meta_provider_help"))  # fmt: skip
+    enrich.add_argument("--title", default=None, help=t("cli.meta_title_help"))
     enrich.set_defaults(handler=run_enrich)
+    calendar = actions.add_parser("calendar", help=t("cli.meta_calendar_help"),
+                                  allow_abbrev=False)  # fmt: skip
+    calendar.set_defaults(handler=run_calendar)
     for name, help_text in (
         ("lock", t("cli.meta_lock_help")),
         ("unlock", t("cli.meta_unlock_help")),
@@ -102,7 +109,8 @@ def run_unlock(args: argparse.Namespace, channel: OpsChannel) -> int:
 
 @ops_command
 def run_enrich(args: argparse.Namespace, channel: OpsChannel) -> int:
-    done = channel.call("ops.meta_enrich", target=args.target)
+    done = channel.call("ops.meta_enrich", target=args.target, provider=args.provider,
+                        title=args.title)  # fmt: skip
     outcome = done["outcome"]
     if outcome != "enriched":
         reason = done["reason"] or ""
@@ -129,4 +137,13 @@ def run_enrich(args: argparse.Namespace, channel: OpsChannel) -> int:
     print(
         t("meta.enrich_attribution", text=done["attribution"] or "", url=done["source_url"] or "")
     )
+    return 0
+
+
+@ops_command
+def run_calendar(args: argparse.Namespace, channel: OpsChannel) -> int:
+    for entry in channel.call("ops.meta_calendar"):
+        print(t("meta.calendar_line", title=entry["title"], on=entry["last_release_on"] or "-",
+                chapter=entry["chapter"] or "-"))  # fmt: skip
+        print(t("meta.enrich_attribution", text=entry["attribution"], url=entry["source_url"]))
     return 0

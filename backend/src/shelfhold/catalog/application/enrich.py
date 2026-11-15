@@ -217,18 +217,30 @@ class EnrichService:
 
     # -- the enrichment -----------------------------------------------------------------------
     async def enrich(
-        self, provider: MetadataProvider, fetcher: _Fetcher, *, edition_id: str
+        self,
+        provider: MetadataProvider,
+        fetcher: _Fetcher,
+        *,
+        edition_id: str,
+        hints: MatchHints | None = None,
     ) -> EnrichReport:
+        """`hints` carries the title of a lookup by title (AniList, MangaUpdates): an Edition
+        with no identifier to ask by is still asked about by its title."""
         if not is_identifiable(getattr(fetcher, "user_agent", "")):
             raise UserAgentNotIdentifiable("a provider is only called with an identifying agent")
         fetcher = CachingFetcher(fetcher, self._payloads, provider.manifest.key)
         with self._engine.connect() as connection:
-            ids = self._ids_of(connection, edition_id)
+            try:
+                ids = self._ids_of(connection, edition_id)
+            except UnknownTargetError:
+                if hints is None or not hints.title:
+                    raise
+                ids = {}  # asked by title
             cover_open = self._cover_open(connection, edition_id)
         target = EntityRef(entity_type="edition", ids=ids, entity_id=edition_id)
         manifest = provider.manifest
         try:
-            result = await provider.identify(fetcher, target, MatchHints())
+            result = await provider.identify(fetcher, target, hints or MatchHints())
         except RobotsUnavailable:  # the site's robots.txt cannot be read: its outage, not its no
             return self._down(edition_id, "unreachable")
         except RobotsDisallowed:

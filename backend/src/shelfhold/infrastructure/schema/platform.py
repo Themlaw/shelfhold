@@ -274,7 +274,11 @@ provider_quota = sa.Table(
     sa.Column("provider", sa.String(), primary_key=True),
     sa.Column("tokens", sa.Float(), nullable=False),
     sa.Column("refilled_at", UtcDateTime(), nullable=False),
+    # The rate the provider last announced, per minute (AniList: 30 degraded, 90 nominal), read by
+    # every worker inside the same transaction as the token (M4 L20). NULL: none heard yet.
+    sa.Column("announced_limit", sa.Integer(), nullable=True),
     sa.CheckConstraint('"tokens" >= 0', name="tokens_min"),
+    sa.CheckConstraint('"announced_limit" IS NULL OR "announced_limit" > 0', name="limit_positive"),
 )
 
 # Validators of a cached HTTP answer (ETag, Last-Modified); the body is a file under

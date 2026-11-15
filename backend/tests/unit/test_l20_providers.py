@@ -71,13 +71,15 @@ def worker(server: CassetteServer, time: FakeTime, engine: Engine | None = None)
 
 def ask(fetcher: ProviderFetcher) -> None:
     target = EntityRef(entity_type="edition", entity_id=EDITION)
-    run(AniListProvider().identify(fetcher, target, MatchHints(title=TITLE)))
+    hints = MatchHints(title=TITLE)
+    run(AniListProvider().identify(fetcher, target, hints))  # type: ignore[arg-type]
 
 
 def busiest_minute(server: CassetteServer) -> int:
     """The most requests that arrived inside any window of 60 seconds."""
     times = [c.at for c in server.calls()]
-    return max(sum(1 for x in times if start <= x < start + 60) for start in times)
+    # (a hair under 60 s: the spacing of 90 a minute is exactly 2/3 s, and floats round)
+    return max(sum(1 for x in times if start <= x < start + 59.999) for start in times)
 
 
 @pytest.fixture
@@ -135,7 +137,7 @@ def test_anilist_429_waits_for_retry_after() -> None:
     with pytest.raises(ProviderUnavailable):
         ask(fetcher)
     refused_at = server.calls()[-1].at
-    server.status = 200  # the API answers again
+    server.use("search_degraded")  # the API answers again
     ask(fetcher)
     assert server.calls()[-1].at - refused_at >= 60
 

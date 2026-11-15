@@ -81,19 +81,23 @@ class Bench:
             transport=self.server.transport,
         )  # fmt: skip
 
-    def edition(self, *, age: int | None = 0, followed: bool = False, seen_days_ago: int = 17) -> str:
+    def edition(
+        self, *, age: int | None = 0, followed: bool = False, seen_days_ago: int = 17
+    ) -> str:
         """An Edition of a Work rated `age`; a followed one has a source and one discovery."""
         with self.engine.begin() as c:
-            work = add_work(c, age_rating=age)
-            edition = add_edition(c, work)
+            rated = {"rated_at": NOW} if age is not None else {}
+            work = add_work(c, age_rating=age, **rated)
+            edition = add_edition(c, work, **rated)
             if followed:
                 item = add_source_item(c, remote_id=f"series-{edition}")
                 binding = add_binding(c, work, edition, item)
                 variant = add_variant(c, add_unit(c, edition), binding)
-                c.execute(sa.update(catalog.unit_variant).where(catalog.unit_variant.c.id == variant)
-                          .values(first_seen_at=NOW - timedelta(days=seen_days_ago)))  # fmt: skip
-                c.execute(sa.insert(acquisition.series_follow).values(edition_id=edition,
-                                                                      work_id=work))  # fmt: skip
+                seen = NOW - timedelta(days=seen_days_ago)
+                v = catalog.unit_variant
+                c.execute(sa.update(v).where(v.c.id == variant).values(first_seen_at=seen))
+                follow = acquisition.series_follow
+                c.execute(sa.insert(follow).values(edition_id=edition, work_id=work))
         return edition
 
     def refresh(self, edition: str) -> Any:

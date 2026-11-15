@@ -37,7 +37,8 @@ class CassetteServer:
     host: str
     cassettes: tuple[Path, ...]
     clock: Callable[[], float] = lambda: 0.0
-    # What a test may force: the announced limit (0: none), a status for every answer, a Retry-After.
+    # What a test may force: the announced limit (0: none), a status for every answer,
+    # a Retry-After.
     limit: int | None = None
     status: int | None = None
     retry_after: int | None = None
@@ -47,6 +48,14 @@ class CassetteServer:
         self._interactions: list[dict[str, Any]] = []
         for path in self.cassettes:
             self._interactions += json.loads(path.read_text(encoding="utf-8"))["interactions"]
+
+    def use(self, name: str) -> None:
+        """Answer from another cassette of the same provider from now on."""
+        folder = self.cassettes[0].parent
+        self._interactions = json.loads((folder / f"{name}.json").read_text("utf-8"))[
+            "interactions"
+        ]
+        self.status = self.retry_after = None
 
     @property
     def transport(self) -> httpx2.MockTransport:

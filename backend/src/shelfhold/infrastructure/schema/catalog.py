@@ -771,6 +771,24 @@ normalizer = sa.Table(
 
 # One value of one field of one entity, with where it comes from (EF-BIB-008, EF-SRC-012). The
 # key is the unit of override: `locked` keeps a hand-edited value from being refreshed.
+# The release calendar a metadata provider gave for a followed series (M4 L20): cached, so that
+# `series.stale` reads it without any request. One row per provider and Edition.
+provider_release_calendar = sa.Table(
+    "provider_release_calendar",
+    metadata,
+    sa.Column("provider", sa.String(), nullable=False),
+    _fk("edition_id", "edition.id", ondelete="CASCADE"),
+    sa.Column("remote_id", sa.String(), nullable=False),
+    sa.Column("last_release_on", sa.Date(), nullable=True),  # NULL: the provider lists none
+    sa.Column("chapter", sa.String(), nullable=True),
+    sa.Column("volume", sa.String(), nullable=True),
+    sa.Column("source_url", sa.String(), nullable=False),
+    sa.Column("attribution", sa.String(), nullable=False),
+    sa.Column("fetched_at", UtcDateTime(), nullable=False),
+    sa.PrimaryKeyConstraint("provider", "edition_id"),
+    sa.CheckConstraint("\"provider\" <> '' AND \"remote_id\" <> ''", name="provider_remote_named"),
+)
+
 metadata_field = sa.Table(
     "metadata_field",
     metadata,

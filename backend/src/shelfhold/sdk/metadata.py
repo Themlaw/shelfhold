@@ -58,6 +58,16 @@ ProviderCapabilitySet = Annotated[
 ]
 
 
+class AdaptiveLimit(SdkModel):
+    """A provider that announces its own rate in a response header (AniList: 30 a minute while
+    degraded, 90 in nominal times). The host's bucket follows the last announcement, never above
+    `max_per_minute`, and starts at `start_per_minute` until it has heard one."""
+
+    header: str
+    start_per_minute: int
+    max_per_minute: int
+
+
 class ProviderQuota(SdkModel):
     """Token bucket plus an optional daily ceiling, declared in the manifest (ENF-LEG-005)."""
 
@@ -67,13 +77,19 @@ class ProviderQuota(SdkModel):
     # The higher rate a provider grants to an agent that gives a contact (OpenLibrary: 3 instead
     # of 1); the host uses it only when the instance configured one, and `None` means no such tier.
     requests_per_second_with_contact: float | None = None
+    adaptive: AdaptiveLimit | None = None  # the rate the provider announces, when it does
 
     def effective(self, with_contact: bool) -> "ProviderQuota":
         """The quota the host applies: the contact tier only for an instance that gave a contact."""
         rate = self.requests_per_second
         if with_contact and self.requests_per_second_with_contact is not None:
             rate = max(rate, self.requests_per_second_with_contact)
-        return ProviderQuota(requests_per_second=rate, burst=self.burst, daily_cap=self.daily_cap)
+        return ProviderQuota(
+            requests_per_second=rate,
+            burst=self.burst,
+            daily_cap=self.daily_cap,
+            adaptive=self.adaptive,
+        )
 
 
 class MetadataManifest(PluginManifest):
@@ -190,6 +206,7 @@ class MetadataProvider(Protocol):
 __all__ = [
     "ISBN_SCHEMES",
     "ISBN_TARGETS",
+    "AdaptiveLimit",
     "EntityRef",
     "EntityType",
     "FieldProposal",

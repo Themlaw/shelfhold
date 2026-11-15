@@ -16,8 +16,10 @@ from typing import TYPE_CHECKING, Any
 
 import sqlalchemy as sa
 
+from shelfhold.catalog.application.release_calendar import ReleaseCalendar
 from shelfhold.catalog.public import EnrichReport, EnrichService, UnknownTargetError
 from shelfhold.export.application.mirror import ProvenanceMirror
+from shelfhold.identity.domain.visibility import ALL
 from shelfhold.infrastructure.fetcher.quota_store import SqlBucketStore
 from shelfhold.infrastructure.ids import is_ulid
 from shelfhold.infrastructure.schema import export
@@ -25,7 +27,10 @@ from shelfhold.library.public import MetaProjection
 from shelfhold.ops.errors import UnknownSubjectError
 from shelfhold.ops.library import refusal_of
 from shelfhold.plugin_host import provider_fetcher
+from shelfhold.plugin_host.adapters.native.anilist import AniListProvider
+from shelfhold.plugin_host.adapters.native.mangaupdates import MangaUpdatesProvider
 from shelfhold.plugin_host.adapters.native.openlibrary import OpenLibraryProvider
+from shelfhold.sdk.metadata import MatchHints, MetadataProvider
 
 if TYPE_CHECKING:
     from shelfhold.composition import Composition
@@ -46,6 +51,16 @@ def _report(report: EnrichReport) -> dict[str, Any]:
         "cover": report.cover, "cover_rejected": report.cover_rejected,
         "attribution": report.attribution, "source_url": report.source_url,
     }  # fmt: skip
+
+
+# The providers an operator may ask. OpenLibrary answers by ISBN; the two others by title, and
+# AniList is only ever asked (a lookup): the registry holds no account, no token, no list.
+PROVIDERS: dict[str, type[MetadataProvider]] = {
+    "openlibrary": OpenLibraryProvider,
+    "anilist": AniListProvider,
+    "mangaupdates": MangaUpdatesProvider,
+}
+BY_TITLE = frozenset({"anilist", "mangaupdates"})
 
 
 class MetaOps:
@@ -91,26 +106,37 @@ class MetaOps:
             raise UnknownSubjectError("that address names no ISBN: give the ISBN or the Edition")
         return isbn
 
-    def enrich(self, target: str) -> dict[str, Any]:
-        """`meta enrich <isbn|edition>`: ask OpenLibrary about one Edition (EF-BIB-013).
+    def enrich(
+        self, target: str, provider: str = "openlibrary", title: str | None = None
+    ) -> dict[str, Any]:
+        """`meta enrich <isbn|edition>`: ask a provider about one Edition (EF-BIB-013).
 
         The proposals are stored with their provenance and the age only as a suggestion; a
-        provider that is down is a notification and a refusal of this command, nothing else."""
+        provider that is down is a notification and a refusal of this command, nothing else.
+        A provider that answers by title (`BY_TITLE`) needs `title`; the release calendar of the
+        series is kept at the same time when the provider gives one."""
         settings = self._comp.settings
-        target = self._pasted(target)
+        if provider not in PROVIDERS:
+            raise UnknownSubjectError(f"no such provider: {provider}")
+        if provider in BY_TITLE and not (title and title.strip()):
+            raise UnknownSubjectError(f"{provider} is asked by title: give --title")
+        target = self._pasted(target) if provider == "openlibrary" else target
         service = EnrichService(
             self._comp.engine, self._comp.clock, self._comp.bus, data_dir=settings.data_dir
         )
         try:
             with self._comp.engine.connect() as connection:
                 edition_id = service.resolve(connection, target)
-            report = asyncio.run(self._enrich(service, edition_id))
+            report = asyncio.run(self._enrich(service, edition_id, provider, title))
         except (UnknownTargetError, LookupError) as error:
             raise UnknownSubjectError(str(error)) from None
         return _report(report)
 
-    async def _enrich(self, service: EnrichService, edition_id: str) -> EnrichReport:
-        provider = OpenLibraryProvider()
+    async def _enrich(
+        self, service: EnrichService, edition_id: str, key: str, title: str | None
+    ) -> EnrichReport:
+        provider = PROVIDERS[key]()
+        hints = MatchHints(title=title.strip()) if title and key in BY_TITLE else None
         network = self._comp.network
         runtime = provider_fetcher.default_runtime()
         runtime.buckets.use_store(SqlBucketStore(self._comp.engine))  # the balance outlives us
@@ -119,9 +145,27 @@ class MetaOps:
             runtime=runtime, transport=network.transport,
         )  # fmt: skip
         try:
-            return await service.enrich(provider, fetcher, edition_id=edition_id)
+            report = await service.enrich(provider, fetcher, edition_id=edition_id, hints=hints)
+            if key == "mangaupdates" and report.outcome == "enriched" and title:
+                calendar = ReleaseCalendar(self._comp.engine, self._comp.clock)
+                await calendar.refresh(provider, fetcher, edition_id=edition_id, title=title)
+            return report
         finally:
             await fetcher.aclose()
+
+    def release_calendar(self) -> list[dict[str, Any]]:
+        """The cached release calendars, with the credit their provider asks for (operator
+        reading: no profile scope, hence all of them). Nothing is requested."""
+        entries = ReleaseCalendar(self._comp.engine, self._comp.clock).entries(ALL)
+        return [
+            {
+                "edition_id": e.edition_id, "title": e.title, "provider": e.provider,
+                "last_release_on": e.last_release_on.isoformat() if e.last_release_on else None,
+                "chapter": e.chapter, "volume": e.volume, "attribution": e.attribution,
+                "source_url": e.source_url,
+            }
+            for e in entries
+        ]  # fmt: skip
 
     def check(self) -> dict[str, Any]:
         """What `rebuild` would write; nothing is."""

@@ -51,4 +51,6 @@ def test_downgrade_to_0064_drops_what_0071_added(settings: Settings) -> None:
     command.downgrade(alembic_config(database), "0064")
     assert "provider_release_calendar" not in tables(database)
     with closing(sqlite3.connect(database)) as conn:
-        assert "announced_limit" not in {r[1] for r in conn.execute("PRAGMA table_info(provider_quota)")}
+        assert "announced_limit" not in {
+            r[1] for r in conn.execute("PRAGMA table_info(provider_quota)")
+        }

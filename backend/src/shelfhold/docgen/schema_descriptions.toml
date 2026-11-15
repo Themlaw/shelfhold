@@ -983,6 +983,20 @@ description = "Token bucket of a metadata provider: the rate budget `domain_slot
 provider = "Metadata provider the bucket belongs to."
 tokens = "Tokens left in the bucket."
 refilled_at = "When the bucket was last refilled (UTC)."
+announced_limit = "Requests per minute the provider last announced in a response header; empty until one was heard."
+
+[tables.provider_release_calendar]
+description = "Release calendar a metadata provider gave for a followed series, cached for `series.stale`."
+[tables.provider_release_calendar.columns]
+provider = "Metadata provider that gave the calendar."
+edition_id = "Edition (series) the calendar is about."
+remote_id = "Identifier of the series at the provider."
+last_release_on = "Day of the latest release the provider lists; empty when it lists none."
+chapter = "Chapter of that release."
+volume = "Volume of that release, when there is one."
+source_url = "Page of the provider the calendar comes from."
+attribution = "Credit the provider asks to be shown wherever its data is."
+fetched_at = "When the calendar was fetched (UTC)."
 
 [tables.http_cache]
 description = "Validators of a cached HTTP answer; the body is a file under `/data/cache/http/`."
