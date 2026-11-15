@@ -985,6 +985,18 @@ reason = "`external_id` (automatic) or `age_raise` (would raise the age of the W
 prior = "What the undo puts back: rating stamp and shelf of the Edition, the fields written before and after, the identifiers never written (JSON object)."
 decided_at = "When an admin confirmed, declined or undid it (UTC); who is in the audit."
 
+[tables.external_link]
+description = "Official link to read or buy a series (« Soutenir l'auteur »), with its provenance; never an affiliate link, always https."
+[tables.external_link.columns]
+id = "Identifier of the link (ULID)."
+entity_type = "Kind of record the link is about (today `edition`)."
+entity_id = "Identifier of that record."
+kind = "`official_read`, `buy` or `licensed_in`."
+url = "The https address, cleaned of any tracking or affiliate parameter."
+lang = "Language the link is offered in (BCP 47), `und` when the provider does not say."
+provider = "Metadata provider that gave the link."
+fetched_at = "When the provider gave it (UTC)."
+
 [tables.metadata_cache]
 description = "Answers of the metadata providers, kept until they expire so a refresh does not ask twice."
 [tables.metadata_cache.columns]

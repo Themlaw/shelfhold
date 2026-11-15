@@ -110,6 +110,7 @@ EXCLUDED_TABLES: Final[Mapping[str, str]] = {
     "gap_ack": _NOISE, "binding_release_sample": _NOISE, "revision_pending": _NOISE,
     "merge_log": _NOISE, "merge_suggestion": _NOISE, "age_suggestion": _NOISE,
     "edition_attach": _NOISE, "source_alias": _NOISE, "source_alias_migration": _NOISE,
+    "external_link": _NOISE,  # the links a provider gave: the next enrichment gives them again
     "pending_source_item": _NOISE, "upstream_snapshot": _NOISE, "trash_item": _NOISE,
     "safeguard_backlog": _NOISE, "import_entry": _NOISE, "work_redirect": _NOISE,
     # rebuilt by the instance

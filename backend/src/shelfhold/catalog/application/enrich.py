@@ -34,6 +34,11 @@ from sqlalchemy import Connection, Engine
 
 from shelfhold.catalog.application.external_ids import external_ids_of, holder_of
 from shelfhold.catalog.application.fields import keys_of, propose_fields, read_field, suggest_age
+from shelfhold.catalog.application.official_links import (
+    LINK_PROVIDERS,
+    official_links,
+    store_official_links,
+)
 from shelfhold.catalog.application.rating import RatingService, Withdrawal
 from shelfhold.catalog.domain.external_ids import ExternalId, ExternalIdError, normalize_external_id
 from shelfhold.catalog.domain.provenance import FieldKey, StoredField, is_age_field
@@ -313,6 +318,11 @@ class EnrichService:
             keep, manual = self._split_manual(connection, edition_id, proposals)
             report = propose_fields(connection, {"edition": edition_id}, keep, now=now)
             withdrawals: list[Withdrawal] = []
+            if manifest.key in LINK_PROVIDERS:  # « Soutenir l'auteur »: the links, cleaned
+                store_official_links(
+                    connection, edition_id, official_links(result, edition_id=edition_id),
+                    provider=manifest.key, now=now,
+                )  # fmt: skip
             for age in ages:
                 withdrawals += suggest_age(
                     connection, "edition", edition_id, age, provenance="provider", now=now,

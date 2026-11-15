@@ -214,3 +214,8 @@ since = "1.1"
 file = "0078_progress_sync_note.py"
 sha256 = "b6dc54f535e59be66c30b2f26c6da4ce431fd0f4c0a048f4eafe1a7b5a12a9a8"
 since = "1.1"
+
+[[migration]]
+file = "0079_external_link.py"
+sha256 = "f006f37a8728f3d9a6f74dcbf4b5883495e5f1ee2e4bfea23468732114ac5d89"
+since = "1.1"

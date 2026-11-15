@@ -88,6 +88,7 @@ from shelfhold.interfaces.http_api.sources import build_sources_router
 from shelfhold.interfaces.http_api.stats import build_stats_router
 from shelfhold.interfaces.http_api.status import build_status_router
 from shelfhold.interfaces.http_api.stream import build_stream_router
+from shelfhold.interfaces.http_api.support_author import build_support_author_router
 from shelfhold.interfaces.http_api.thumbnails import build_thumbnails_router
 from shelfhold.interfaces.http_api.triage import build_triage_router
 from shelfhold.interfaces.local_cli import IdentityDispatcher
@@ -342,6 +343,7 @@ def create_app(
         build_catalog_admin_router(ops_services),
         build_follows_router(ops_services),  # EF-SRC-029: follow, unfollow
         build_series_sheet_router(ops_services),  # M3 L43: the series sheet and its settings
+        build_support_author_router(lambda: engine),  # M4 L23: official links, pause proposal
         build_requests_router(  # EF-USR-010: ask, approve, refuse, follow a request
             lambda: ops_services().requests,
             lambda token, owner: resolve_request_ref(ops_services().acquire, token, owner),

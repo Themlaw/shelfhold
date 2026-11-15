@@ -44,6 +44,8 @@ UNIT_KINDS = ("chapter", "episode", "book")
 UNIT_AVAILABILITIES = ("free", "purchased", "expiring", "locked", "stubbed", "removed")
 UPSTREAM_STATUSES = ("ongoing", "finished", "paused", "unknown")
 METADATA_ENTITIES = ("series", "work", "edition", "volume", "contributor")
+
+EXTERNAL_LINK_KINDS = ("official_read", "buy", "licensed_in")
 METADATA_PROVENANCES = ("provider", "source", "embedded", "import", "manual")
 UNIT_STATES = (
     "known", "wanted", "queued", "stored", "exported", "adopted", "missing", "store_missing",
@@ -846,4 +848,27 @@ edition_attach = sa.Table(
     json_shape_check("prior", "object"),
     sa.CheckConstraint('"from_work_id" <> "to_work_id"', name="distinct_works"),
     sa.Index("ix_edition_attach_edition", "edition_id"),
+)
+
+# « Soutenir l'auteur » (EF-BIB-032, M4): official read/buy/licensed links, with their
+# provenance, never an affiliate parameter. One row per link a provider handed over.
+external_link = sa.Table(
+    "external_link",
+    metadata,
+    ulid_column("id", primary_key=True),
+    sa.Column("entity_type", sa.String(), nullable=False),
+    sa.Column("entity_id", sa.String(26), nullable=False),
+    sa.Column("kind", sa.String(), nullable=False, server_default="official_read"),
+    sa.Column("url", sa.String(), nullable=False),
+    sa.Column("lang", sa.String(), nullable=False, server_default="und"),
+    sa.Column("provider", sa.String(), nullable=False),
+    sa.Column("fetched_at", UtcDateTime(), nullable=False),
+    ulid_check("entity_id"),
+    in_check("entity_type", METADATA_ENTITIES),
+    in_check("kind", EXTERNAL_LINK_KINDS),
+    lang_check("lang", allow_wildcards=True),
+    sa.CheckConstraint(
+        "\"url\" LIKE 'https://%' AND \"provider\" <> ''", name="external_link_https_provider_named"
+    ),
+    sa.Index("ix_external_link_entity", "entity_type", "entity_id"),
 )
