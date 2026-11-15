@@ -48,6 +48,7 @@ RECORD_STATES = (
     "planned", "written", "scanned", "resolved", "adopted", "missing", "recycled", "error",
 )  # fmt: skip
 SERIES_ASSIGNERS = ("first_export", "plan")
+INDEXER_ROLES = ("primary", "secondary")
 
 
 def _age_ceiling(column: str) -> sa.CheckConstraint:
@@ -206,6 +207,35 @@ shelf_destination_remote_library = sa.Table(
     sa.Index("ix_shelf_destination_remote_library_library", "remote_library_id"),
 )
 
+# A remote library is linked once per shelf (EF-EXP-026, ADR-0052 T6): SQLite cannot state a
+# UNIQUE across the join with `shelf_destination`, and a `shelf_id` copied into the link would
+# break every insertion point, so two triggers say it.
+_LINKED_ON_SHELF = (
+    "EXISTS (SELECT 1 FROM shelf_destination_remote_library AS l "
+    "JOIN shelf_destination AS d ON d.id = l.shelf_destination_id "
+    "JOIN shelf_destination AS n ON n.id = NEW.shelf_destination_id "
+    "WHERE l.remote_library_id = NEW.remote_library_id AND d.shelf_id = n.shelf_id%s)"
+)
+_ALREADY_LINKED = "SELECT RAISE(ABORT, 'a remote library is already linked on this shelf');"
+add_trigger(
+    shelf_destination_remote_library,
+    "link_one_library_per_shelf_insert",
+    f"BEFORE INSERT ON shelf_destination_remote_library WHEN {_LINKED_ON_SHELF % ''} "
+    f"BEGIN {_ALREADY_LINKED} END",
+)
+add_trigger(
+    shelf_destination_remote_library,
+    "link_one_library_per_shelf_update",
+    "BEFORE UPDATE OF shelf_destination_id, remote_library_id ON shelf_destination_remote_library "
+    "WHEN "
+    + _LINKED_ON_SHELF
+    % (
+        " AND NOT (l.shelf_destination_id = OLD.shelf_destination_id "
+        "AND l.remote_library_id = OLD.remote_library_id)"
+    )
+    + f" BEGIN {_ALREADY_LINKED} END",
+)
+
 # Last read-only audit of the accounts that reach a library of the server (EF-EXP-055):
 # `age_restriction` and `include_unknowns` are the loosest values among those accounts.
 kavita_access_audit = sa.Table(
@@ -225,6 +255,88 @@ kavita_access_audit = sa.Table(
     sa.Column("audited_at", UtcDateTime(), nullable=False),
     json_shape_check("accounts", "array"),
     _age_ceiling("age_restriction"),
+)
+
+# A folder Shelfhold writes, identified by (physical root, normalized subpath): ADR-0052 T1. The
+# sentinel, the lease and the provenance mirror stay per root (ADR-0022, ADR-0046). `render_profile`
+# is the common rendering every indexer accepts (two levels, naming, sidecars, formats). A root
+# that holds trees is not dropped silently.
+tree = sa.Table(
+    "tree",
+    metadata,
+    ulid_column("id", primary_key=True),
+    sa.Column("root_id", sa.String(26), sa.ForeignKey("physical_root.root_id"), nullable=False),
+    sa.Column("root_subpath", sa.String(), nullable=False, server_default=sa.text("''")),
+    sa.Column("render_profile", sa.JSON(), nullable=False, server_default="{}"),
+    now_column(),
+    ulid_check("id"),
+    relative_path_check("root_subpath"),
+    json_shape_check("render_profile", "object"),
+    sa.UniqueConstraint("root_id", "root_subpath"),
+)
+
+# A binding attached to a tree. `primary` made the tree and renders its plan; `secondary` only
+# indexes it. SQL states: one tree per binding, one primary per tree, one indexer per server
+# instance and tree (T9), a primary with secondaries is not removed. The same-shelf rule (T2) and
+# the `tree` transport are triggers. `target_id` is the binding's own, kept by a composite key.
+tree_indexer = sa.Table(
+    "tree_indexer",
+    metadata,
+    sa.Column(
+        "tree_id", sa.String(26), sa.ForeignKey("tree.id", ondelete="CASCADE"), nullable=False
+    ),
+    sa.Column("shelf_destination_id", sa.String(26), nullable=False),
+    sa.Column("target_id", sa.String(26), nullable=False),
+    sa.Column("role", sa.String(), nullable=False),
+    now_column(),
+    sa.ForeignKeyConstraint(
+        ["shelf_destination_id", "target_id"],
+        ["shelf_destination.id", "shelf_destination.target_id"],
+        ondelete="RESTRICT",
+    ),
+    sa.PrimaryKeyConstraint("shelf_destination_id"),
+    in_check("role", INDEXER_ROLES),
+    sa.UniqueConstraint("tree_id", "target_id"),
+)
+sa.Index(
+    "uq_tree_indexer_primary",
+    tree_indexer.c.tree_id,
+    unique=True,
+    sqlite_where=sa.text("\"role\" = 'primary'"),
+)
+_OTHER_SHELF = (
+    "EXISTS (SELECT 1 FROM tree_indexer AS o "
+    "JOIN shelf_destination AS old_d ON old_d.id = o.shelf_destination_id "
+    "JOIN shelf_destination AS new_d ON new_d.id = NEW.shelf_destination_id "
+    "WHERE o.tree_id = NEW.tree_id AND old_d.shelf_id <> new_d.shelf_id)"
+)
+_NOT_A_TREE = (
+    "(SELECT transport FROM shelf_destination WHERE id = NEW.shelf_destination_id) <> 'tree'"
+)
+for _event, _of in (("INSERT", ""), ("UPDATE", " OF tree_id, shelf_destination_id")):
+    add_trigger(
+        tree_indexer,
+        f"tree_indexer_same_shelf_{_event.lower()}",
+        f"BEFORE {_event}{_of} ON tree_indexer WHEN {_OTHER_SHELF} BEGIN "
+        "SELECT RAISE(ABORT, 'tree_indexer: the indexers of a tree belong to the same shelf'); END",
+    )
+    add_trigger(
+        tree_indexer,
+        f"tree_indexer_tree_transport_{_event.lower()}",
+        f"BEFORE {_event}{_of} ON tree_indexer WHEN {_NOT_A_TREE} BEGIN "
+        "SELECT RAISE(ABORT, 'tree_indexer: only a tree transport has a tree'); END",
+    )
+del _event, _of
+# Detach the secondaries first (ADR-0052 cycle de vie). Deleting the tree itself is not blocked:
+# its row is gone when the cascade deletes the indexers.
+add_trigger(
+    tree_indexer,
+    "tree_indexer_keep_primary",
+    "BEFORE DELETE ON tree_indexer WHEN OLD.role = 'primary' "
+    "AND EXISTS (SELECT 1 FROM tree WHERE id = OLD.tree_id) "
+    "AND EXISTS (SELECT 1 FROM tree_indexer AS o WHERE o.tree_id = OLD.tree_id "
+    "AND o.shelf_destination_id <> OLD.shelf_destination_id) "
+    "BEGIN SELECT RAISE(ABORT, 'tree_indexer: the primary still has secondaries'); END",
 )
 
 # A file or object exported, independent of the destination (F1). It covers one or more Units
@@ -465,12 +577,24 @@ document_alias = sa.Table(
     sa.Column("koreader_partial_md5", sa.String(), nullable=True),
     sa.Column("content_hash", sa.String(), nullable=False),
     now_column(),
+    # M4 (0064): the binding the hashes were computed for, and the hash Kavita keeps. The alias
+    # outlives the binding: the old hash still resolves the file.
+    sa.Column(
+        "shelf_destination_id",
+        sa.String(26),
+        sa.ForeignKey("shelf_destination.id", ondelete="SET NULL"),
+        nullable=True,
+    ),
+    sa.Column("kavita_md5", sa.String(), nullable=True),
     sa.PrimaryKeyConstraint("export_item_id", "file_hash"),
     prefixed_hash_check("file_hash"),
     prefixed_hash_check("content_hash"),
     prefixed_hash_check("koreader_partial_md5", "md5", 32),
+    prefixed_hash_check("kavita_md5", "md5", 32),
     sa.Index("ix_document_alias_file_hash", "file_hash"),
     sa.Index("ix_document_alias_md5", "koreader_partial_md5"),
+    sa.Index("ix_document_alias_kavita_md5", "kavita_md5"),
+    sa.Index("ix_document_alias_destination", "shelf_destination_id"),
 )
 
 # EF-EXP-016: why a served file was replaced at its path. `restore` puts a binned version back.

@@ -34,8 +34,10 @@ EXPORT_TABLES = {
     "export_series", "edition_export_series", "field_owner", "kavita_access_audit",
     "document_alias",
     "export_upgrade",  # migration 0021 (M2 L16, EF-EXP-016)
+    "tree", "tree_indexer",  # migration 0064 (M4 L02, ADR-0052)
 }  # fmt: skip
-READING_TABLES = {"reading_position"}
+READING_TABLES = {"reading_position", "progress_sync_cursor"}  # the cursor: 0064 (M4 L02)
+M4_TABLES = {"destination_account"}  # migration 0064 (M4 L02); the others sit in their modules
 M1B_TABLES = {"webauthn_credential", "backup_run"}  # migration 0013
 M2_TABLES = {  # migration 0020, the tables of the other modules included
     "provider_quota", "metadata_cache", "http_cache",
@@ -98,6 +100,7 @@ def test_metadata_covers_exactly_the_migrated_tables(tmp_path: Path) -> None:
         | M1B_TABLES
         | M2_TABLES
         | M3_TABLES
+        | M4_TABLES
     )
     assert tables(database) == {t.name for t in metadata.sorted_tables} == expected
     # `replica` moved to its own module (M3 L00) without changing the migrated DDL

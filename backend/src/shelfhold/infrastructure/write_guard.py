@@ -46,6 +46,7 @@ _SETTING = "a setting or an identity of the instance: not a reference"
 _LOCK = "a lock, a sentinel, a slot or a schedule: no text from a source"
 EXEMPT_TABLES: Final[dict[str, str]] = {
     "api_key": _SEALED, "app_setting": _SETTING, "backup_run": _SETTING,
+    "destination_account": _SEALED,
     "contribution": _CATALOG, "contributor": _CATALOG, "contributor_name": _CATALOG,
     "domain_slot": _LOCK, "edition": _CATALOG, "edition_export_series": _CATALOG,
     "export_series": _CATALOG, "export_target": _SEALED, "external_id": _CATALOG,
@@ -60,6 +61,7 @@ EXEMPT_TABLES: Final[dict[str, str]] = {
     "shelf_destination_remote_library": _SETTING, "source_account": _SEALED,
     "source_config": _SEALED, "source_secret": _SEALED, "team": _CATALOG,
     "team_alias": _CATALOG, "team_priority": _CATALOG,
+    "tree": _SETTING, "tree_indexer": _SETTING,
     "tombstone_kid": _SEALED, "tombstone_lost_kid": _SEALED, "tombstone_pending_root": _LOCK,
     "content_tombstone": _SEALED, "unit": _CATALOG, "unit_coverage": _CATALOG, "user": _SEALED,
     "volume": _CATALOG, "webauthn_credential": _SEALED, "work": _CATALOG,
