@@ -317,14 +317,14 @@ def test_revoked_token_is_refused_at_once_and_stays_refused(api: AuthEnv) -> Non
 
 def test_revoking_one_token_leaves_the_others_of_the_same_profile(api: AuthEnv) -> None:
     profile(api, "kid", "child", max_age_rating=7)
-    salon, chambre = issue(api, "kid"), issue(api, "kid")
+    salon, bedroom = issue(api, "kid"), issue(api, "kid")
     auth_of(api).revoke_device_token(salon.public_id)
     assert (
         api.client.get(KOSYNC_AUTH, headers=kosync(salon.public_id, salon.secret)).status_code
         == 401
     )
     assert (
-        api.client.get(KOSYNC_AUTH, headers=kosync(chambre.public_id, chambre.secret)).status_code
+        api.client.get(KOSYNC_AUTH, headers=kosync(bedroom.public_id, bedroom.secret)).status_code
         == 200
     )
 
