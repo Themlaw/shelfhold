@@ -13469,7 +13469,7 @@ export type OpdsRootError = OpdsRootErrors[keyof OpdsRootErrors];
 
 export type OpdsRootResponses = {
     /**
-     * navigation feed
+     * feed
      */
     200: unknown;
 };

@@ -1326,6 +1326,7 @@
   "shelfhold.infrastructure.archives",
   "shelfhold.infrastructure.archives.safe_open",
   "shelfhold.infrastructure.archives.writer",
+  "shelfhold.infrastructure.atom_feed",
   "shelfhold.infrastructure.binding_priority",
   "shelfhold.infrastructure.clock",
   "shelfhold.infrastructure.content_trust",

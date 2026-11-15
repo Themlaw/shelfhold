@@ -22708,7 +22708,7 @@
             "content": {
               "application/atom+xml": {}
             },
-            "description": "navigation feed"
+            "description": "feed"
           },
           "default": {
             "content": {
