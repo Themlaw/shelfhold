@@ -181,7 +181,6 @@ symbols = [
   "shelfhold.reading.domain.document_hash:verified_hashes",
   "shelfhold.reading.application.progress:position_of",
   "shelfhold.reading.application.progress:record_delivery",
-  "shelfhold.reading.application.progress:record_position",
   "shelfhold.reading.application.progress:undo_read_mark",
   "shelfhold.reading.domain.merge:latest",
   "shelfhold.reading.domain.merge:furthest",
