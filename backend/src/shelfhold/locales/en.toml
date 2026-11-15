@@ -181,6 +181,7 @@
 
 [plugin]
   use_readback = "Please note: this address is that of an active destination. Use “readback”: Shelfhold does not reimport its own exports."
+  lncrawl_rights = "lncrawl fetches sites the administrator configures; the administrator is responsible for the rights to those sites."
   no_database = "The database does not exist: first run “shelfhold migrate”."
   audit_failed = "The audit log is not written ({detail}): nothing is modified."
   install_refused = "Installation refused ({code}): {detail}"

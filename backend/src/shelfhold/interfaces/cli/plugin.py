@@ -37,6 +37,7 @@ from shelfhold.plugin_host.attestation import (
 )
 from shelfhold.plugin_host.public import installed_versions, start_plugins
 from shelfhold.plugin_host.settings import (
+    LNCRAWL_RIGHTS_WARNING,
     USE_READBACK,
     SettingsSchema,
     SettingValueError,
@@ -318,6 +319,8 @@ def _show(store: SourceSettings, key: str, schema: SettingsSchema) -> None:
         print(t("plugin.setting_row", name=name, value=shown))
     if USE_READBACK in view.warnings:
         print(t("plugin.use_readback"), file=sys.stderr)
+    if LNCRAWL_RIGHTS_WARNING in view.warnings:
+        print(t("plugin.lncrawl_rights"), file=sys.stderr)
 
 
 def _with_store(

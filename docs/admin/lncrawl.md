@@ -14,7 +14,7 @@ référence distante) est rangé dans votre bibliothèque ([EF-BIB-051](../adr/0
 
 - `terms_url` : la licence du logiciel lncrawl (`https://github.com/lncrawl/lightnovel-crawler/blob/dev/LICENSE`). Les
   conditions réelles sont celles des textes que **votre** instance rapporte : Shelfhold ne les voit pas et ne les juge pas.
-- Débit déclaré : 5 requêtes par seconde au plus, une à la fois, vers votre instance seulement.
+- Débit déclaré : 1 requête par seconde au plus, une à la fois, vers votre instance seulement.
 - Contenu toujours non fiable ([neutraliseur.md](neutraliseur.md)) ; `robots.txt` ne s'applique pas, puisque Shelfhold ne
   contacte aucun site.
 - Capacités : suivi (`FOLLOW`), contenu par plage (`RANGED_CONTENT`), recherche (`SEARCH`), en service connecté avec

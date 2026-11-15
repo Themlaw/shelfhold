@@ -180,6 +180,7 @@ row_readonly = "{name} = {value} [{source}] (lecture seule, définie par l'envir
 
 [plugin]
 use_readback = "Attention : cette adresse est celle d'une destination active. Utilisez « readback » : Shelfhold ne réimporte pas ses propres exports."
+lncrawl_rights = "lncrawl récupère des sites que l'administrateur configure lui-même ; l'administrateur répond des droits de ces sites."
 no_database = "La base n'existe pas : lancez d'abord « shelfhold migrate »."
 audit_failed = "Le journal d'audit n'est pas écrit ({detail}) : rien n'est modifié."
 install_refused = "Installation refusée ({code}) : {detail}"

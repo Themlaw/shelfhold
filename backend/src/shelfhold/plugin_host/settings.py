@@ -45,6 +45,7 @@ from shelfhold.infrastructure.secrets.vault import SecretVault
 
 __all__ = [
     "COOKIES_FIELD",
+    "LNCRAWL_RIGHTS_WARNING",
     "RESERVED_SETTINGS",
     "USE_READBACK",
     "Actor",
@@ -281,6 +282,7 @@ def parse_settings_schema(raw: Mapping[str, Any] | None) -> SettingsSchema:
 
 
 USE_READBACK: Final = "source.use_readback"
+LNCRAWL_RIGHTS_WARNING: Final = "source.lncrawl_rights"
 _PORTS: Final = {"http": 80, "https": 443}
 
 
@@ -432,6 +434,8 @@ class SourceSettings:
         jar = rows.get(("cookies", _JAR))
         with self.engine.connect() as connection:
             warnings = readback_warnings(connection, values)
+        if plugin_id == "lncrawl":
+            warnings = (*warnings, LNCRAWL_RIGHTS_WARNING)
         return SettingsView(values, secrets, SecretState(jar is not None, jar), warnings)
 
     def load(self, plugin_id: str) -> LoadedSecrets:

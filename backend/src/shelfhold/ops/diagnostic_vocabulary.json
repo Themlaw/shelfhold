@@ -3093,6 +3093,7 @@
   "source.error",
   "source.fallback",
   "source.instance_changed",
+  "source.lncrawl_rights",
   "source.migrate_ids",
   "source.not_loaded",
   "source.ref_has_secret",
