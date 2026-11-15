@@ -144,6 +144,7 @@ from shelfhold.ops.acquire import AcquireOps
 from shelfhold.ops.errors import ExitUnavailableError
 from shelfhold.ops.events import BusTargetEvents
 from shelfhold.ops.kavita_accounts import declared_children
+from shelfhold.ops.library import LibraryOps
 from shelfhold.ops.notifications import LazyNotificationSweep
 from shelfhold.retention_jobs import register_retention_jobs
 from shelfhold.safeguard_jobs import register_safeguard_job
@@ -506,6 +507,10 @@ def export_handler(comp: Composition) -> Callable[[JobContext], None]:
         context.record(destinations=len(destinations))
         if not destinations:
             return
+        try:  # scans a failure left (deleted series, withdrawals, detachments): asked again here
+            context.add(scans_retried=sum(LibraryOps(comp).retry_pending_scans().values()))
+        except Exception as error:  # never stops the export itself
+            log.info("export.scan_retry_failed", reason=type(error).__name__)
         scans = ScanRelay()
         disks = _Disks(comp, scans)
         for destination in destinations:

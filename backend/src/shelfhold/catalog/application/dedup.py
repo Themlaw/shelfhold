@@ -1,8 +1,9 @@
-"""Suggestions of duplicate Works, never grounded on the title alone (EF-BIB-004).
+"""Suggestions of duplicate Works, never a merge on the title alone (EF-BIB-004).
 
-Two Works are suggested to the admin only when the title (case, accents and spacing set aside) is
-the same **and** a contributor is credited on both, **and** nothing says they are two: not the
-same kind, a place each in one Series, two identifiers of one provider. A translation has another
+Two Works are suggested to the admin when the title (case, accents and spacing set aside) is the
+same and nothing says they are two: not the same kind, a place each in one Series, two
+identifiers of one provider. The title is a ground for a suggestion, never for a merge: the
+admin decides. A translation has another
 title, a volume N and N+1 either; a Work whose identifier a `work` tombstone covers is never
 proposed. A suggestion is a row of `merge_suggestion` and nothing else: no Work, Edition or
 credit is touched, and a pair already decided (rejected or accepted) is not asked again.
@@ -62,27 +63,18 @@ def tombstoned(
 
 
 def suggest_duplicates(connection: Connection, *, screen: TombstoneScreen) -> list[str]:
-    """Open a suggestion for each new pair of Works that share a title and a contributor; returns
+    """Open a suggestion for each new pair of Works that share a title; returns
     the ids of the suggestions made now. `screen` is the Work tombstones: never optional."""
-    w, c, m = catalog.work, catalog.contribution, catalog.merge_suggestion
+    w, m = catalog.work, catalog.merge_suggestion
     groups: dict[tuple[str, str], list[str]] = defaultdict(list)
     for work in connection.execute(sa.select(w.c.id, w.c.kind, w.c.title).order_by(w.c.id)):
         groups[(work.kind, sort_title(work.title))].append(str(work.id))
     created: list[str] = []
     for ids in (g for g in groups.values() if len(g) > 1):
-        credited: dict[str, set[str]] = defaultdict(set)
-        for row in connection.execute(
-            sa.select(c.c.entity_id, c.c.contributor_id).where(
-                c.c.entity_type == "work", c.c.entity_id.in_(ids)
-            )
-        ):
-            credited[str(row.entity_id)].add(str(row.contributor_id))
         barred = tombstoned(connection, screen, ids)
         for first, second in combinations(ids, 2):
             if first in barred or second in barred:
                 continue
-            if not credited[first] & credited[second]:
-                continue  # the title alone is not a ground
             if told_apart(connection, first, second):
                 continue
             suggestion_id = new_ulid()

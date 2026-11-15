@@ -29,6 +29,7 @@ touched. The expiry of the bin is the retention sweep's (`RecycleSweeper`).
 """
 
 import hashlib
+import json
 import uuid
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
@@ -81,6 +82,7 @@ __all__ = [
     "DeletionUnknownError",
     "RestoreBlockedError",
     "RestoreReport",
+    "load_pending_folders",
 ]
 
 log = structlog.get_logger(__name__)
@@ -169,6 +171,27 @@ class _Scope:
     progress: int
     export_item_ids: list[str]
     blocked: list[str]
+
+
+PENDING_FOLDERS_KEY: Final = "deletion.folders_pending_scan"
+
+
+def load_pending_folders(connection: Connection) -> list[str]:
+    value = connection.execute(
+        sa.select(platform.app_setting.c.value).where(
+            platform.app_setting.c.key == PENDING_FOLDERS_KEY
+        )
+    ).scalar()
+    return [str(x) for x in json.loads(value)] if value else []
+
+
+def _save_pending(connection: Connection, labels: Sequence[str]) -> None:
+    t = platform.app_setting
+    connection.execute(sa.delete(t).where(t.c.key == PENDING_FOLDERS_KEY))
+    if labels:
+        connection.execute(
+            sa.insert(t).values(key=PENDING_FOLDERS_KEY, value=json.dumps(list(labels)))
+        )
 
 
 class DeletionService:
@@ -676,6 +699,18 @@ class DeletionService:
             for destination_id, _rel in wanted:
                 if destination_id not in contexts:
                     contexts[destination_id] = load_context(connection, destination_id)
+        return self._scan_then_remove(wanted, contexts, journal)
+
+    def _scan_then_remove(
+        self,
+        wanted: Sequence[tuple[str, ...]],
+        contexts: Mapping[str, DestinationContext],
+        journal: IntentJournal,
+    ) -> tuple[tuple[str, ...], tuple[str, ...]]:
+        """Scan the series folders, and only then remove the empty ones. A scan that fails leaves
+        every folder where it is **and writes it down** (`PENDING_FOLDERS_KEY`): `retry_pending`
+        takes it again when Kavita answers, so a failed scan loses nothing and removes nothing."""
+        labels = tuple(f"{d}/{r}" for d, r in wanted)
         if self._scan is not None:
             seen: set[str] = set()
             for destination_id, rel in wanted:
@@ -687,12 +722,55 @@ class DeletionService:
                 seen.add(local)
                 try:
                     self._scan(ctx.remote_folder(local))
-                except Exception:
-                    log.warning("deletion.scan_failed")
-                    return (), tuple(plan.folders)  # the folders stay: a later pass takes them
-        return self.remove_empty_folders(
+                except Exception as error:
+                    log.warning("deletion.scan_failed", reason=type(error).__name__)
+                    self._remember(labels)
+                    return (), labels  # the folders stay: `retry_pending` takes them
+        removed, kept = self.remove_empty_folders(
             [(d, r) for d, r in wanted], contexts=contexts, journal=journal
         )
+        self._forget(labels)
+        return removed, kept
+
+    # -- the folders that wait for a scan (the scan failed) -------------------------------------
+
+    def pending_folders(self) -> tuple[str, ...]:
+        with self._engine.connect() as connection:
+            return tuple(load_pending_folders(connection))
+
+    def _remember(self, labels: Sequence[str]) -> None:
+        with write_transaction(self._engine) as connection:
+            held = load_pending_folders(connection)
+            _save_pending(connection, held + [x for x in labels if x not in held])
+
+    def _forget(self, labels: Sequence[str]) -> None:
+        with write_transaction(self._engine) as connection:
+            held = load_pending_folders(connection)
+            if any(x in held for x in labels):
+                _save_pending(connection, [x for x in held if x not in labels])
+
+    def retry_pending(
+        self, journal: IntentJournal | None = None
+    ) -> tuple[tuple[str, ...], tuple[str, ...]]:
+        """Ask the scan again for the folders a failed scan left, then remove the empty ones. A
+        scan that fails again keeps them written down; a folder that is gone is forgotten."""
+        pending = self.pending_folders()
+        if not pending:
+            return (), ()
+        wanted = [tuple(label.split("/", 1)) for label in pending]
+        contexts: dict[str, DestinationContext] = {}
+        with self._engine.connect() as connection:
+            for destination_id, _rel in wanted:
+                if destination_id not in contexts:
+                    try:
+                        contexts[destination_id] = load_context(connection, destination_id)
+                    except (LookupError, sa.exc.NoResultFound):
+                        pass  # the destination is gone: nothing left to scan or remove
+        wanted = [w for w in wanted if w[0] in contexts]
+        journal = journal or IntentJournal(self._engine, self._fsops, clock=self._clock)
+        removed, kept = self._scan_then_remove(wanted, contexts, journal)
+        self._forget([label for label in pending if label not in kept])
+        return removed, kept
 
     def remove_empty_folders(
         self,

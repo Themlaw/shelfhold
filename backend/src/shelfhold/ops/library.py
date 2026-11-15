@@ -47,6 +47,7 @@ from shelfhold.export.application.deletion import (
     DeletionService,
     DeletionUnknownError,
     RestoreBlockedError,
+    load_pending_folders,
 )
 from shelfhold.export.application.intents import IntentJournal
 from shelfhold.export.application.locks import LockBusyError
@@ -61,6 +62,11 @@ from shelfhold.export.application.pairing import (
     Pairing,
     PairingResult,
     Proposal,
+)
+from shelfhold.export.application.pending_scans import (
+    load_pending_scans,
+    remember_scans,
+    replace_pending_scans,
 )
 from shelfhold.export.application.plans import StalePlanError
 from shelfhold.export.application.preflight import PermissionPreflight
@@ -152,6 +158,10 @@ _KAVITA_UNAVAILABLE: tuple[type[Exception], ...] = (
 )  # fmt: skip
 SERVICE_ID = "suwayomi"  # the one connected service of M1a
 AUTO_MIN_SCORE = 0.9
+
+
+class ScanUnavailableError(Exception):
+    """A Kavita target could not be asked for a scan (unreachable, no key): the scan is not done."""
 
 
 def _proposal(p: Proposal) -> dict[str, Any]:
@@ -1158,11 +1168,17 @@ class LibraryOps:
                 raise CodedRefusal("shelf.withdrawal_root_read_only", str(error)) from None
             except NotChildLibraryError as error:
                 raise CodedRefusal("shelf.not_child_library", str(error)) from None
-        self._scan_everywhere(asked)
+        scan_pending = False
+        try:
+            self._scan_everywhere(asked)
+        except ScanUnavailableError:
+            scan_pending = True  # said to the caller, and asked again by the next export run
+            remember_scans(self._comp.engine, asked)
         return {
             "withdrawn": list(report.withdrawn),
             "files": report.files,
             "pending": list(report.pending),
+            "scan_pending": scan_pending,
         }
 
     # -- deletion at three levels (L25, EF-BIB-021) ----------------------------------------------
@@ -1210,6 +1226,7 @@ class LibraryOps:
             "pending": len(report.pending),
             "folders_removed": len(report.folders_removed),
             "folders_kept": len(report.folders_kept),
+            "scan_pending": bool(report.folders_kept),  # Kavita was not asked: asked again later
         }
 
     def _index_refresher(self, w: Any) -> Callable[[], object] | None:
@@ -1304,7 +1321,10 @@ class LibraryOps:
 
     def _scan_everywhere(self, remote_paths: list[str]) -> None:
         """Kavita forgets a series by scanning the folder: every Kavita target is asked (a scan of
-        a folder a library does not watch is a no-op there)."""
+        a folder a library does not watch is a no-op there). A target that cannot be asked is
+        **not** swallowed: every other target is still asked, then `ScanUnavailableError` says the
+        scan did not happen, so that the caller keeps what depends on it (the empty folder of a
+        deleted series) and the scan is asked again later."""
         if not remote_paths:
             return
         table = export.export_target
@@ -1312,13 +1332,49 @@ class LibraryOps:
             targets = list(
                 connection.execute(sa.select(table.c.id).where(table.c.kind == "kavita")).scalars()
             )
+        failed: list[str] = []
         for target_id in targets:
             try:
                 client = self._comp.kavita_client(str(target_id))
                 for path in remote_paths:
                     asyncio.run(client.scan_folder(path))
-            except _KAVITA_UNAVAILABLE:
-                _log.warning("withdraw.scan_unavailable", target_id=str(target_id))
+            except _KAVITA_UNAVAILABLE as error:
+                _log.warning(
+                    "withdraw.scan_unavailable", target_id=str(target_id),
+                    reason=type(error).__name__,
+                )  # fmt: skip
+                failed.append(str(target_id))
+        if failed:
+            raise ScanUnavailableError(f"Kavita was not asked to scan: {', '.join(failed)}")
+
+    def retry_pending_scans(self) -> dict[str, int]:
+        """Ask again for the scans a failure left (empty folders of deleted series, folders a
+        withdrawal emptied), then remove the folders that are empty. Quiet when nothing waits."""
+        with self._comp.engine.connect() as connection:
+            idle = not load_pending_folders(connection) and not load_pending_scans(connection)
+        if idle:
+            return {"removed": 0, "waiting": 0}
+        waiting = 0
+        removed = 0
+        with self._comp.write_context() as w:
+            service = DeletionService(
+                self._comp.engine, w.fsops, clock=self._comp.clock, locate=w.loaded.locate,
+                request_scan=lambda path: self._scan_everywhere([path]),
+                refresh_index=self._index_refresher(w),
+                fresh_auth_s=self._comp.settings.fresh_auth_s,
+            )  # fmt: skip
+            gone, kept = service.retry_pending()
+            removed, waiting = len(gone), len(kept)
+        with self._comp.engine.connect() as connection:
+            paths = load_pending_scans(connection)
+        if paths:
+            try:
+                self._scan_everywhere(paths)
+            except ScanUnavailableError:
+                return {"removed": removed, "waiting": waiting + len(paths)}
+            with write_transaction(self._comp.engine) as connection:
+                replace_pending_scans(connection, [])
+        return {"removed": removed, "waiting": waiting}
 
     # -- the write probe (L37, EF-UX-002) ------------------------------------------------------
 
