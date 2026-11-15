@@ -25,7 +25,7 @@ async function virtualAuthenticator(page: Page): Promise<void> {
 
 // req: EF-USR-025
 test('test_passkey_login_e2e', async ({ page, browser, context, baseURL }) => {
-  const outside = await refuseOutsideBaseUrl(context, baseURL ?? ORIGIN);
+  const outside = await refuseOutsideBaseUrl(context, ORIGIN);
   await page.goto(`${ORIGIN}/`);
   await virtualAuthenticator(page);
 
