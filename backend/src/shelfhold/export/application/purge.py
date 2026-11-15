@@ -1034,7 +1034,9 @@ class PurgeService:
         position = reading.reading_position
         for row in connection.execute(
             sa.select(
-                position.c.id, position.c.covered_units, position.c.read_units,
+                position.c.id,
+                position.c.covered_units,
+                position.c.read_units,
                 position.c.undone_units,
             )
         ).all():
@@ -1048,7 +1050,9 @@ class PurgeService:
             ):
                 continue
             connection.execute(
-                sa.update(position).where(position.c.id == row.id).values(
+                sa.update(position)
+                .where(position.c.id == row.id)
+                .values(
                     covered_units=(
                         None if covered is None else [u for u in covered if u not in gone]
                     ),
