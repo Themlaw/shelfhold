@@ -52,7 +52,7 @@
     "SEARCH"
   ],
   "rate_limit": {
-    "requests_per_second": 5.0,
+    "requests_per_second": 1.0,
     "concurrency": 1
   },
   "auth": [

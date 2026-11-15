@@ -114,7 +114,7 @@ def build_manifest() -> SourceManifest:
         content_kinds={"file"},
         url_patterns=[],
         capabilities=Capability.SEARCH | Capability.FOLLOW | Capability.RANGED_CONTENT,
-        rate_limit=RateLimit(requests_per_second=5.0, concurrency=1),
+        rate_limit=RateLimit(requests_per_second=1.0, concurrency=1),
         auth=[AuthApiKey(location="header", name="X-API-Key")],
         translation_nature="community",  # chapters relayed by fan teams (EF-BIB-049)
         content_trust="untrusted",  # the EPUB is kept as it came, only its derivative leaves
