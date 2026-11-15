@@ -10,7 +10,11 @@ from shelfhold.infrastructure.migrate import migrate
 from shelfhold.infrastructure.secrets.diagnostics import boot_check
 from shelfhold.infrastructure.secrets.vault import SecretVault
 from shelfhold.plugin_host.adapters.meta.lncrawl import LncrawlService
-from shelfhold.plugin_host.settings import SourceSettings, parse_settings_schema
+from shelfhold.plugin_host.settings import (
+    LNCRAWL_RIGHTS_WARNING,
+    SourceSettings,
+    parse_settings_schema,
+)
 
 
 @pytest.fixture
@@ -59,4 +63,6 @@ def test_lncrawl_settings_carry_an_admin_rights_warning(store) -> None:
     _engine, settings_store = store
     schema = parse_settings_schema(LncrawlService().manifest.settings_schema)
     view = settings_store.view("lncrawl", schema)
-    assert view.warnings  # an admin-facing warning is present
+    assert LNCRAWL_RIGHTS_WARNING in view.warnings
+    other = settings_store.view("another-source", parse_settings_schema(None))
+    assert LNCRAWL_RIGHTS_WARNING not in other.warnings  # the notice is lncrawl's alone
