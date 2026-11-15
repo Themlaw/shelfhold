@@ -64,6 +64,8 @@
   "rights.translation_may_be_protected": "The translation may still be protected in your country ({country}). This calculation is indicative and does not block anything.",
   "rights.no_information": "No information on rights in your country.",
   "nav.label": "Main navigation",
+  "nav.logout": "Log out",
+  "nav.logout_failed": "Log out failed. Try again.",
   "nav.home": "Home",
   "nav.search": "Search",
   "nav.requests": "My requests",
