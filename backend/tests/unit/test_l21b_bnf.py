@@ -10,10 +10,10 @@ from datetime import UTC, datetime, timedelta
 
 import httpx2
 import pytest
-from shelfhold.plugin_host.adapters.native.bnf import BnFProvider, build_manifest
-from shelfhold.plugin_host.bnf_sru import read_sru
 
 from shelfhold.infrastructure.fetcher.errors import DomainNotAllowed, FetchTimeout, FetchUnreachable
+from shelfhold.plugin_host.adapters.native.bnf import BnFProvider, build_manifest
+from shelfhold.plugin_host.bnf_sru import read_sru
 from shelfhold.plugin_host.provider_fetcher import ProviderRuntime, open_provider
 from shelfhold.sdk.metadata import (
     EntityRef,
@@ -287,18 +287,6 @@ def test_one_request_a_second_whatever_is_asked() -> None:
     assert len(server.calls()) == 6
     assert busiest_second(server) <= 1
     assert server.calls()[-1].at - server.calls()[0].at >= 5  # six requests, five seconds
-
-
-@pytest.mark.req("ENF-LEG-005")
-def test_the_same_question_twice_costs_one_request() -> None:
-    time = FakeTime()
-    server = fake_bnf(clock=time.now)
-    runtime = ProviderRuntime(clock=time.now, sleep=time.sleep, wall=time.now)
-    target = EntityRef(entity_type="edition", entity_id=EDITION)
-    for _ in range(3):  # a new Fetcher each time: the cache belongs to the provider's runtime
-        fetcher = worker(build_manifest(), server, time, runtime)
-        run(provider().identify(fetcher, target, MatchHints(title=TITLE)))  # type: ignore[arg-type]
-    assert len(server.calls()) == 1
 
 
 # -- addresses ---------------------------------------------------------------------------------

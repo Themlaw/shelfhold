@@ -10,9 +10,9 @@ from datetime import UTC, datetime, timedelta
 
 import httpx2
 import pytest
-from shelfhold.plugin_host.adapters.native.wikidata import WikidataProvider, build_manifest
 
 from shelfhold.infrastructure.fetcher.errors import FetchTimeout, FetchUnreachable
+from shelfhold.plugin_host.adapters.native.wikidata import WikidataProvider, build_manifest
 from shelfhold.plugin_host.provider_fetcher import ProviderRuntime, open_provider
 from shelfhold.sdk.metadata import (
     EntityRef,
@@ -66,7 +66,8 @@ def test_an_item_comes_back_as_one_low_confidence_link_with_its_correspondences(
 @pytest.mark.req("EF-BIB-003")
 def test_the_qid_is_never_put_among_the_identifiers_of_the_target() -> None:
     time = FakeTime()
-    result = identify(fake_wikidata(clock=time.now), time, ids={"isbn13": "9780306406157"})
+    server = fake_wikidata(clock=time.now)
+    result = identify(server, time, ids={"isbn13": "9780306406157"}, entity_type="edition")
     (link,) = result.relations
     assert link.subject.ids == {"isbn13": "9780306406157"}  # unchanged: Wikidata is not a pivot
     assert QID not in repr(link.subject)
@@ -193,16 +194,17 @@ def test_a_network_failure_reaches_the_host_as_a_fetch_error(
 
 
 @pytest.mark.req("ENF-LEG-005")
-def test_one_request_a_second_and_the_same_question_is_asked_once() -> None:
+def test_one_request_a_second_whatever_is_asked() -> None:
     time = FakeTime()
     server = fake_wikidata(clock=time.now)
     runtime = ProviderRuntime(clock=time.now, sleep=time.sleep, wall=time.now)
     target = EntityRef(entity_type="work", entity_id=EDITION)
     fetcher = worker(build_manifest(), server, time, runtime)
-    for title in (TITLE, TITLE, ABSENT, TWIN, TITLE, HOSTILE):
+    for title in (TITLE, ABSENT, TWIN, HOSTILE, FOREIGN):
         run(WikidataProvider().identify(fetcher, target, MatchHints(title=title)))  # type: ignore[arg-type]
-    assert len(server.calls()) == 4  # the two repeats came from the cache
+    assert len(server.calls()) == 5
     assert busiest_second(server) <= 1
+    assert server.calls()[-1].at - server.calls()[0].at >= 4  # five requests, four seconds
 
 
 @pytest.mark.req("EF-BIB-003")

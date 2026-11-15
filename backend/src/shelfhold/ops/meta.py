@@ -12,6 +12,7 @@ journal. `check` writes nothing.
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
 import sqlalchemy as sa
@@ -28,8 +29,11 @@ from shelfhold.ops.errors import UnknownSubjectError
 from shelfhold.ops.library import refusal_of
 from shelfhold.plugin_host import provider_fetcher
 from shelfhold.plugin_host.adapters.native.anilist import AniListProvider
+from shelfhold.plugin_host.adapters.native.bnf import BnFProvider
 from shelfhold.plugin_host.adapters.native.mangaupdates import MangaUpdatesProvider
 from shelfhold.plugin_host.adapters.native.openlibrary import OpenLibraryProvider
+from shelfhold.plugin_host.adapters.native.wikidata import WikidataProvider
+from shelfhold.plugin_host.bnf_sru import read_sru
 from shelfhold.sdk.metadata import MatchHints, MetadataProvider
 
 if TYPE_CHECKING:
@@ -50,17 +54,26 @@ def _report(report: EnrichReport) -> dict[str, Any]:
         "withdrawals": len(report.withdrawals),
         "cover": report.cover, "cover_rejected": report.cover_rejected,
         "attribution": report.attribution, "source_url": report.source_url,
+        "suggestions": [
+            {"provider": s.provider, "url": s.url, "correspondences": dict(s.correspondences)}
+            for s in report.suggestions
+        ],
     }  # fmt: skip
 
 
-# The providers an operator may ask. OpenLibrary answers by ISBN; the two others by title, and
-# AniList is only ever asked (a lookup): the registry holds no account, no token, no list.
-PROVIDERS: dict[str, type[MetadataProvider]] = {
+# The providers an operator may ask. OpenLibrary answers by ISBN; AniList, MangaUpdates and
+# Wikidata by title; the BnF by title or, without one, by the ISBN of the Edition. AniList is only
+# ever asked (a lookup) and Wikidata only gives suggestions: the registry holds no account, no
+# token, no list.
+PROVIDERS: dict[str, Callable[[], MetadataProvider]] = {
     "openlibrary": OpenLibraryProvider,
     "anilist": AniListProvider,
     "mangaupdates": MangaUpdatesProvider,
+    "bnf": lambda: BnFProvider(reader=read_sru),  # the host's own reader of XML (ENF-SEC-014)
+    "wikidata": WikidataProvider,
 }
-BY_TITLE = frozenset({"anilist", "mangaupdates"})
+BY_TITLE = frozenset({"anilist", "mangaupdates", "wikidata"})  # a title is required
+TITLE_OPTIONAL = frozenset({"bnf"})  # a title when given, else the ISBN
 
 
 class MetaOps:
@@ -113,8 +126,9 @@ class MetaOps:
 
         The proposals are stored with their provenance and the age only as a suggestion; a
         provider that is down is a notification and a refusal of this command, nothing else.
-        A provider that answers by title (`BY_TITLE`) needs `title`; the release calendar of the
-        series is kept at the same time when the provider gives one."""
+        A provider that answers by title (`BY_TITLE`) needs `title` (the BnF takes one when
+        given); the release calendar of the series is kept at the same time when the provider
+        gives one. A provider that only suggests (Wikidata) records nothing: the report says it."""
         settings = self._comp.settings
         if provider not in PROVIDERS:
             raise UnknownSubjectError(f"no such provider: {provider}")
@@ -136,7 +150,11 @@ class MetaOps:
         self, service: EnrichService, edition_id: str, key: str, title: str | None
     ) -> EnrichReport:
         provider = PROVIDERS[key]()
-        hints = MatchHints(title=title.strip()) if title and key in BY_TITLE else None
+        hints = (
+            MatchHints(title=title.strip())
+            if title and title.strip() and key in BY_TITLE | TITLE_OPTIONAL
+            else None
+        )
         network = self._comp.network
         runtime = provider_fetcher.default_runtime()
         runtime.buckets.use_store(SqlBucketStore(self._comp.engine))  # the balance outlives us

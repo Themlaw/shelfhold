@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+from typing import Any
 
 from shelfhold.i18n import t
 from shelfhold.interfaces.cli._ops import ops_command
@@ -26,7 +27,7 @@ def register(commands: argparse._SubParsersAction[argparse.ArgumentParser]) -> N
     enrich = actions.add_parser("enrich", help=t("cli.meta_enrich_help"), allow_abbrev=False)
     enrich.add_argument("target", help=t("cli.meta_target_help"))
     enrich.add_argument("--provider", default="openlibrary",
-                        choices=("openlibrary", "anilist", "mangaupdates"),
+                        choices=("openlibrary", "anilist", "mangaupdates", "bnf", "wikidata"),
                         help=t("cli.meta_provider_help"))  # fmt: skip
     enrich.add_argument("--title", default=None, help=t("cli.meta_title_help"))
     enrich.set_defaults(handler=run_enrich)
@@ -112,16 +113,19 @@ def run_enrich(args: argparse.Namespace, channel: OpsChannel) -> int:
     done = channel.call("ops.meta_enrich", target=args.target, provider=args.provider,
                         title=args.title)  # fmt: skip
     outcome = done["outcome"]
+    if outcome == "suggested":  # a correspondence, told and recorded nowhere
+        _print_suggestions(done)
+        return 0
     if outcome != "enriched":
         reason = done["reason"] or ""
         if outcome == "provider_down":
-            message = t("meta.enrich_provider_down", reason=reason)
+            message = t("meta.enrich_provider_down", provider=args.provider, reason=reason)
         elif outcome == "robots_disallowed":
-            message = t("meta.enrich_robots_disallowed")
+            message = t("meta.enrich_robots_disallowed", provider=args.provider)
         elif outcome == "quota":
-            message = t("meta.enrich_quota")
+            message = t("meta.enrich_quota", provider=args.provider)
         else:
-            message = t("meta.enrich_not_found")
+            message = t("meta.enrich_not_found", provider=args.provider)
         print(message, file=sys.stderr)
         return 1
     print(t("meta.enriched", edition=done["edition_id"], count=len(done["written"])))
@@ -138,6 +142,16 @@ def run_enrich(args: argparse.Namespace, channel: OpsChannel) -> int:
         t("meta.enrich_attribution", text=done["attribution"] or "", url=done["source_url"] or "")
     )
     return 0
+
+
+def _print_suggestions(done: dict[str, Any]) -> None:
+    for suggestion in done["suggestions"]:
+        print(t("meta.enrich_suggested", provider=suggestion["provider"], url=suggestion["url"]))
+        for scheme, value in suggestion["correspondences"].items():
+            print(t("meta.enrich_correspondence", scheme=scheme, value=value))
+    print(
+        t("meta.enrich_attribution", text=done["attribution"] or "", url=done["source_url"] or "")
+    )
 
 
 @ops_command

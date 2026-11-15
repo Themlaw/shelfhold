@@ -51,6 +51,16 @@ Tome) ; ce que le fournisseur sait de l'Œuvre (rattachement, auteur d'Œuvre) p
   `release` (`series_id`, `released_on`, `chapter`, `volume`). L'hôte garde le dernier état dans
   `provider_release_calendar` (12 h) avec l'attribution du fournisseur ; `series.stale` le lit sans
   réseau, et un profil ne reçoit que les séries que son plafond lui laisse voir. MangaUpdates le fait.
+- Un fournisseur qui ne fait que **suggérer** une correspondance (Wikidata) ne déclare aucun champ
+  (`touched_fields` vide) et rend un `RelationProposal` de genre `official_link` de confiance basse :
+  `data.url` (une adresse `https`) et, si elles sont connues, `data.correspondences` (identifiants
+  d'autres catalogues). L'hôte la dit à l'administrateur (`outcome = suggested`) et ne la range nulle
+  part : ni champ, ni `external_id`. Une correspondance n'est jamais un pivot d'identité (EF-BIB-003).
+- Un fournisseur dont la réponse est du XML ne l'analyse pas lui-même : un fournisseur natif n'importe
+  que le SDK (ENF-SEC-014). L'hôte lui remet un lecteur (`SruReader`, `plugin_host/bnf_sru.py`) bâti sur
+  `safe_parse_xml`. La saisie d'une personne qui entre dans une requête (CQL, SPARQL) est nettoyée
+  (pas de caractère de contrôle, 200 caractères au plus) puis échappée ; un identifiant (ISBN, QID) qui
+  n'a pas la forme attendue n'est jamais envoyé.
 - Un fournisseur injoignable (5xx, 429, réponse qui n'est pas celle qu'il documente) lève
   `ProviderUnavailable(reason)` : l'hôte prévient l'administrateur (`metadata.provider_down`, au plus
   une fois par heure) et ne change rien d'autre.

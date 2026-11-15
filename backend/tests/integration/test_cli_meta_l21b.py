@@ -9,8 +9,8 @@ from pathlib import Path
 import pytest
 
 from shelfhold.config import Settings
+from tests.fakes.bnf.server import ABSENT, fake_bnf
 from tests.fakes.bnf.server import TITLE as BNF_TITLE
-from tests.fakes.bnf.server import fake_bnf
 from tests.fakes.wikidata.server import QID, fake_wikidata
 from tests.fakes.wikidata.server import TITLE as WIKIDATA_TITLE
 from tests.integration.test_cli_meta_enrich import field
@@ -72,3 +72,22 @@ def test_cli_meta_enrich_refuses_a_lookup_by_title_without_a_title(
         assert b.cli("meta", "enrich", edition, "--provider", provider) != 0
         assert b.cli("meta", "enrich", edition, "--provider", provider, "--title", " ") != 0
         assert fake.calls() == []
+
+
+@pytest.mark.req("EF-BIB-013")
+@pytest.mark.parametrize("provider", ["bnf", "wikidata"])
+def test_cli_meta_enrich_names_the_provider_that_does_not_know_the_title(
+    provider: str,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    settings: Settings,
+    tmp_path: Path,
+) -> None:
+    with bench54(monkeypatch, settings, tmp_path) as b:
+        fake = fake_bnf() if provider == "bnf" else fake_wikidata()
+        edition = wire(b, fake, monkeypatch)
+        capsys.readouterr()
+        assert b.cli("meta", "enrich", edition, "--provider", provider, "--title", ABSENT) == 1
+        err = capsys.readouterr().err
+        assert provider in err and "OpenLibrary" not in err
+        assert field(b, edition, "title") is None

@@ -9,6 +9,7 @@ reaches it. Control characters never travel; a very long input is cut.
 from __future__ import annotations
 
 import pytest
+
 from shelfhold.plugin_host.adapters.native.bnf import MAX_QUERY, escape_sparql, escape_sru
 from shelfhold.plugin_host.adapters.native.wikidata import escape_sparql as wikidata_escape
 

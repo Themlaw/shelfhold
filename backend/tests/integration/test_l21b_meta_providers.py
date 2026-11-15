@@ -15,19 +15,20 @@ from urllib.parse import parse_qs
 
 import pytest
 import sqlalchemy as sa
-from shelfhold.plugin_host.adapters.native.bnf import BnFProvider
-from shelfhold.plugin_host.adapters.native.bnf import build_manifest as bnf_manifest
-from shelfhold.plugin_host.adapters.native.wikidata import WikidataProvider
-from shelfhold.plugin_host.adapters.native.wikidata import build_manifest as wikidata_manifest
-from shelfhold.plugin_host.bnf_sru import read_sru
 from sqlalchemy import Engine
 
 from shelfhold.catalog.application.enrich import EnrichReport, EnrichService
 from shelfhold.catalog.public import FieldKey, lock_field
 from shelfhold.events.bus import EventBus
 from shelfhold.infrastructure.db import create_db_engine
+from shelfhold.infrastructure.fetcher.payload_cache import METADATA_CACHE_TTL
 from shelfhold.infrastructure.imaging import WorkerLimits
 from shelfhold.infrastructure.schema import metadata
+from shelfhold.plugin_host.adapters.native.bnf import BnFProvider
+from shelfhold.plugin_host.adapters.native.bnf import build_manifest as bnf_manifest
+from shelfhold.plugin_host.adapters.native.wikidata import WikidataProvider
+from shelfhold.plugin_host.adapters.native.wikidata import build_manifest as wikidata_manifest
+from shelfhold.plugin_host.bnf_sru import read_sru
 from shelfhold.plugin_host.provider_fetcher import ProviderFetcher
 from shelfhold.sdk.metadata import MatchHints
 from tests.fakes.bnf import server as bnf_server
@@ -53,7 +54,7 @@ class Bench:
     def __init__(self, engine: Engine, data_dir: Path) -> None:
         self.engine = engine
         self.time = FakeTime()
-        clock = ManualClock(NOW)
+        clock = self.clock = ManualClock(NOW)
         self.service = EnrichService(
             engine, clock, EventBus(clock, channels=Channels()), data_dir=data_dir, limits=LIMITS
         )
@@ -227,3 +228,23 @@ def test_nothing_known_or_ambiguous_is_not_found(bench: Bench) -> None:
     assert bench.wikidata(edition, wikidata_server.ABSENT).outcome == "not_found"
     twin = bench.wikidata(edition, wikidata_server.TWIN)  # two items, one label: no guess
     assert (twin.outcome, twin.suggestions) == ("not_found", ())
+
+
+@pytest.mark.req("ENF-LEG-005")
+def test_the_same_question_is_asked_once_within_the_life_of_the_cache(bench: Bench) -> None:
+    edition = bench.edition()
+    bnf, wd = (
+        bnf_server.fake_bnf(clock=bench.time.now),
+        wikidata_server.fake_wikidata(clock=bench.time.now),
+    )
+    for _ in range(3):
+        assert bench.bnf(edition, BNF, bnf).outcome == "enriched"
+        assert bench.wikidata(edition, wikidata_server.TITLE, wd).outcome == "suggested"
+    assert (len(bnf.calls()), len(wd.calls())) == (
+        1,
+        1,
+    )  # the cache is mandatory: a hit costs nothing
+    bench.clock.advance(seconds=METADATA_CACHE_TTL.total_seconds() + 1)
+    bench.bnf(edition, BNF, bnf)
+    bench.wikidata(edition, wikidata_server.TITLE, wd)
+    assert (len(bnf.calls()), len(wd.calls())) == (2, 2)  # expired: asked again

@@ -79,6 +79,7 @@ __all__ = [
     "DOWN_NOTICE_INTERVAL",
     "EnrichReport",
     "EnrichService",
+    "Suggestion",
     "UnknownTargetError",
 ]
 
@@ -101,7 +102,19 @@ class _Fetcher(Protocol):
     async def fetch_image(self, req: ImageRequest, *, max_bytes: int) -> bytes | None: ...
 
 
-Outcome = Literal["enriched", "not_found", "provider_down", "robots_disallowed", "quota"]
+Outcome = Literal[
+    "enriched", "suggested", "not_found", "provider_down", "robots_disallowed", "quota"
+]
+
+
+@dataclass(frozen=True)
+class Suggestion:
+    """A correspondence a provider points at (a link, identifiers of other catalogues). Told to
+    the admin and kept nowhere: not a field, and never an identifier of the Edition (EF-BIB-003)."""
+
+    provider: str
+    url: str
+    correspondences: tuple[tuple[str, str], ...] = ()
 
 
 @dataclass(frozen=True)
@@ -118,6 +131,30 @@ class EnrichReport:
     cover_rejected: str | None = None  # the code of the image the worker refused
     attribution: str | None = None
     source_url: str | None = None
+    suggestions: tuple[Suggestion, ...] = ()  # told, never stored
+
+
+def _suggestions_of(
+    result: Any, provider: MetadataProvider, edition_id: str
+) -> tuple[Suggestion, ...]:
+    """The links the provider points at, about the Edition asked and under its own name."""
+    found: list[Suggestion] = []
+    for r in result.relations:
+        url, data = r.data.get("url"), r.data
+        if (
+            r.kind != "official_link" or r.provenance.provider != provider.manifest.key
+            or r.subject.entity_id not in (None, edition_id)
+            or not isinstance(url, str) or not url.startswith("https://")
+        ):  # fmt: skip
+            continue
+        raw = data.get("correspondences")
+        pairs = (
+            tuple((str(k), str(v)) for k, v in raw.items() if isinstance(v, str))
+            if isinstance(raw, dict)
+            else ()
+        )
+        found.append(Suggestion(provider.manifest.key, url, pairs))
+    return tuple(found)
 
 
 def _down_reason(error: Exception) -> str:
@@ -251,7 +288,13 @@ class EnrichService:
                 DnsBlocked) as error:  # fmt: skip
             return self._down(edition_id, _down_reason(error))
         proposals = [p for p in result.proposals if self._acceptable(p, provider)]
+        suggestions = _suggestions_of(result, provider, edition_id)
         if not proposals and not any(r.kind == "age_suggestion" for r in result.relations):
+            if suggestions:  # only correspondences: told, nothing is recorded
+                return EnrichReport(
+                    "suggested", edition_id, attribution=manifest.attribution,
+                    source_url=suggestions[0].url, suggestions=suggestions,
+                )  # fmt: skip
             return EnrichReport("not_found", edition_id)  # nothing known: no cover is asked for
         cover_ref, rejected, cover_source = None, None, None
         if cover_open and ProviderCapability.COVER in manifest.capabilities:
@@ -288,6 +331,7 @@ class EnrichService:
             attribution=(first.attribution if first else None) or manifest.attribution,
             source_url=next((p.provenance.source_url for p in proposals
                              if p.provenance.source_url), None),
+            suggestions=suggestions,
         )  # fmt: skip
 
     @staticmethod
