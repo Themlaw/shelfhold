@@ -3,7 +3,7 @@ purpose (`xfail` strict until fixed: the fix makes them pass, then the marker go
 
 Each test states what the merge rule or the alias sweep must do (see `docs/decisions/M4.md`,
 « #284 : contradicteur »). They were red proofs of concept; the objections are corrected and the
-markers are gone.
+markers are gone. The second pass (« #284 : second passage ») adds red ones again, at the end.
 """
 
 import hashlib
@@ -274,3 +274,145 @@ def test_m6_a_file_known_not_to_match_is_not_hashed_again_at_each_sweep(
         first = len(calls)
         heal_alias_hashes(env.engine, locate=lambda *_: file)
         assert len(calls) == first
+
+
+# ----------------------------------------------------------------------------------------------
+# Second pass (« #284 : second passage »): red again, `xfail` strict until fixed.
+
+RED = pytest.mark.xfail(strict=True, reason="#284 second pass: open objection")
+
+
+@RED
+def test_m3_original_attack_a_replaced_position_written_after_the_recut(tmp_path: Path) -> None:
+    """The first-pass attack, as written: the old position arrives once the file is re-cut (a
+    device that kept the old file, ADR-0053 « l'appareil garde son fichier »). `covered_units` is
+    the coverage of the carrier NOW, not of the content the position was on: it reaches the
+    inserted chapter."""
+    with reading_env(tmp_path) as env:
+        reader = env.user("reader")
+        first, inserted, last = env.units("ok", 3)
+        volume = env.file("ok", [first, inserted, last], content_hash=NEW_HASH)
+        env.position(reader, volume, percent=1.0, content_hash=OLD_HASH, client_ts=hours(1))
+        assert env.progress(reader)[inserted].state != "read"
+
+
+@RED
+@pytest.mark.parametrize("source", ["server", "device"])
+def test_m3_through_record_position_after_the_recut(tmp_path: Path, source: str) -> None:
+    with reading_env(tmp_path) as env:
+        reader = env.user("reader")
+        first, inserted, last = env.units("ok", 3)
+        volume = env.file("ok", [first, last], content_hash=OLD_HASH)
+        env.recut(volume, [first, inserted, last], NEW_HASH)
+        with env.engine.begin() as connection:
+            record_position(
+                connection, reader_id=reader, subject_id=reader, carrier_type="export_item",
+                carrier_id=volume, content_hash=OLD_HASH, locator={}, percent=1.0,
+                client_ts=hours(1), source=source,  # type: ignore[arg-type]
+            )  # fmt: skip
+        assert inserted not in env.progress(reader)
+
+
+@RED
+def test_m5_a_same_size_rewrite_that_keeps_its_date_lends_its_hashes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The guard is (size, mtime) seen before and after on the same descriptor. A rewrite in place
+    of the same size that keeps the date (`rsync -a`, `cp -p`, `touch -r`) passes it: the sample
+    hashes of another file land on the alias that was verified."""
+    import os
+
+    good, other = b"G" * 4096, b"O" * 4096
+    file = tmp_path / "volume.cbz"
+    file.write_bytes(good)
+    real = render_hooks.koreader_partial_md5  # type: ignore[attr-defined]
+
+    def rewritten_in_between(stream):  # type: ignore[no-untyped-def]
+        seen = os.stat(file)
+        file.write_bytes(other)
+        os.utime(file, ns=(seen.st_atime_ns, seen.st_mtime_ns))
+        return real(stream)
+
+    monkeypatch.setattr(render_hooks, "koreader_partial_md5", rewritten_in_between)
+    with reading_env(tmp_path) as env:
+        item = env.file("ok", env.units("ok", 1))
+        file_hash = _alias(env, item, good)
+        heal_alias_hashes(env.engine, locate=lambda *_: file)
+        with env.engine.connect() as connection:
+            row = connection.execute(
+                sa.select(export.document_alias).where(
+                    export.document_alias.c.file_hash == file_hash
+                )
+            ).one()
+        reference = tmp_path / "reference.cbz"
+        reference.write_bytes(good)
+        assert row.koreader_partial_md5 in (None, "md5:" + koreader_partial_md5(reference))
+
+
+@RED
+def test_m1_cache_a_right_file_restored_with_its_date_is_healed(tmp_path: Path) -> None:
+    """The cache of files that do not match is keyed by (size, mtime). The right file put back
+    with the same size and its date kept (a restore with `rsync -a`) is skipped until restart."""
+    import os
+
+    good, wrong = b"G" * 4096, b"W" * 4096
+    file = tmp_path / "volume.cbz"
+    file.write_bytes(wrong)
+    seen = os.stat(file)
+    with reading_env(tmp_path) as env:
+        item = env.file("ok", env.units("ok", 1))
+        _alias(env, item, good)
+        assert heal_alias_hashes(env.engine, locate=lambda *_: file) == 0
+        file.write_bytes(good)
+        os.utime(file, ns=(seen.st_atime_ns, seen.st_mtime_ns))
+        assert heal_alias_hashes(env.engine, locate=lambda *_: file) == 1
+
+
+@RED
+def test_n1_a_reader_cannot_write_a_server_read_state(tmp_path: Path) -> None:
+    """`source` is a free argument of the public `record_position`: whoever calls it as a reader
+    (a route of L47 that forwards a field, a device token) writes « read » with no traversal."""
+    with reading_env(tmp_path) as env:
+        reader = env.user("reader")
+        units = env.units("ok", 3)
+        volume = env.file("ok", units, bounds=[(1, 10), (11, 20), (21, 30)], content_hash=NEW_HASH)
+        with env.engine.begin() as connection:
+            record_position(
+                connection, reader_id=reader, subject_id=reader, carrier_type="export_item",
+                carrier_id=volume, content_hash=NEW_HASH, locator={"page": 30}, percent=1.0,
+                client_ts=hours(1), source="server",
+            )  # fmt: skip
+        assert [s for s in states(env, reader, units) if s == "read"] == []
+
+
+@RED
+def test_n2_a_read_state_from_a_server_can_be_undone(tmp_path: Path) -> None:
+    """A peek at the last page in Kavita's own reader comes back as a `server` read: the member's
+    undo (ADR-0053, MAJ-2: « journal et annulation ») does nothing on it."""
+    with reading_env(tmp_path) as env:
+        reader = env.user("reader")
+        units = env.units("ok", 1)
+        volume = env.file("ok", units, bounds=[(1, 30)], content_hash=NEW_HASH)
+        env.position(reader, volume, page=30, percent=1.0, source="server")
+        assert states(env, reader, units) == ["read"]
+        with env.engine.begin() as connection:
+            undo_read_mark(connection, viewer_id=reader, subject_id=reader, unit_id=units[0])
+        assert states(env, reader, units) != ["read"]
+
+
+@RED
+def test_n3_the_export_of_a_profile_holds_her_read_marks(tmp_path: Path) -> None:
+    """EF-USR-013: the export holds everything that is hers. `read_units`, `undone_units` (the
+    journal of what she read and undid) and `source` are not in it."""
+    from shelfhold.identity.adapters.store import SqlIdentityStore
+
+    with reading_env(tmp_path) as env:
+        reader = env.user("reader")
+        units = env.units("ok", 1)
+        volume = env.file("ok", units, bounds=[(1, 3)], content_hash=NEW_HASH)
+        for hour, page in enumerate([1, 2, 3]):
+            _record(env, reader, volume, page, hour)
+        exported = SqlIdentityStore(env.engine).export_rows(reader, limit=1000)
+        assert exported is not None
+        columns = set().union(*(dict(r).keys() for r in exported["reading_positions"]))
+        assert {"source", "read_units", "undone_units"} <= columns
