@@ -28,6 +28,7 @@ from shelfhold.export.application.detach import (
 )
 from shelfhold.export.application.intents import IntentJournal
 from shelfhold.export.application.locks import ResourceLocks
+from shelfhold.export.application.pending_scans import remember_scans
 from shelfhold.export.application.remove_destination import (
     RemovalMode,
     RemovalRefusedError,
@@ -37,7 +38,6 @@ from shelfhold.export.application.remove_destination import (
 from shelfhold.export.application.root_ref import RootRef
 from shelfhold.export.application.target_state import load_fingerprint
 from shelfhold.export.targets.kavita.account_session import KavitaAccountSession
-from shelfhold.export.application.pending_scans import remember_scans
 from shelfhold.export.targets.kavita.errors import TargetError
 from shelfhold.export.targets.kavita.settings_restore import restore_library_settings
 from shelfhold.identity.public import Principal

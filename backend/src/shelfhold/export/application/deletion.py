@@ -28,6 +28,7 @@ A file the registry does not know, a folder it did not create and a read-only ro
 touched. The expiry of the bin is the retention sweep's (`RecycleSweeper`).
 """
 
+import contextlib
 import hashlib
 import json
 import uuid
@@ -762,10 +763,9 @@ class DeletionService:
         with self._engine.connect() as connection:
             for destination_id, _rel in wanted:
                 if destination_id not in contexts:
-                    try:
+                    # a destination that is gone leaves nothing to scan or remove
+                    with contextlib.suppress(LookupError, sa.exc.NoResultFound):
                         contexts[destination_id] = load_context(connection, destination_id)
-                    except (LookupError, sa.exc.NoResultFound):
-                        pass  # the destination is gone: nothing left to scan or remove
         wanted = [w for w in wanted if w[0] in contexts]
         journal = journal or IntentJournal(self._engine, self._fsops, clock=self._clock)
         removed, kept = self._scan_then_remove(wanted, contexts, journal)
