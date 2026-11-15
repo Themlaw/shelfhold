@@ -120,6 +120,8 @@ jobs:
       - name: i18n parity (missing key = failure, ENF-I18N-001)
         working-directory: backend
         run: uv run --locked python ../tools/i18n_parity.py
+      - name: published migrations frozen (a new migration is frozen by its own PR, ENF-OPS-002)
+        run: python3 tools/check_patch_migrations.py
       - name: typos
         id: typos-first
         continue-on-error: true  # the action downloads its binary from a release: one more try below

@@ -19,16 +19,10 @@ def _copy(tmp_path: Path) -> Path:
 
 
 @pytest.mark.req("ENF-OPS-002")
-def test_published_migrations_match_the_frozen_list() -> None:
-    # A migration of the milestone in progress is frozen at the release that ships it (and the
-    # release workflow runs the strict check): here only the published ones are held.
-    last_published = max(guard.load_frozen(REPO))
-    problems = [
-        p
-        for p in guard.check(REPO)
-        if not (": not in " in p and p.split(":", 1)[0] > last_published)
-    ]
-    assert problems == []
+def test_every_migration_of_main_is_frozen() -> None:
+    # The pull-request CI runs the same check without --tag: a PR that adds a migration freezes it
+    # itself (`--freeze 1.1`, the next minor line), so a release never finds one unfrozen.
+    assert guard.check(REPO) == []
 
 
 @pytest.mark.req("ENF-OPS-002")

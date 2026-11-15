@@ -2,11 +2,24 @@
 
 Format : [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/). Versionnement : [SemVer](https://semver.org/lang/fr/). Procédure de release : `docs/releasing.md`.
 
+## 1.0.1 - 2026-11-15
+
+Correctif de publication, sans changement de comportement : l'image `1.0.0` a été publiée, mais son job `schema-assets` a échoué (deux migrations de M4 n'étaient pas figées) et `release-proofs` a été sauté. Cette version fige ces migrations, ajoute la garde manquante à la CI de PR, et porte les preuves de la 1.0.0.
+
+### Corrigé
+
+- **Migrations figées** : `0064_m4_schema.py` et `0071_provider_quota.py`, déjà livrées dans l'image 1.0.0, entrent dans `tools/published-migrations.toml` avec `since = "1.0"`. `check_patch_migrations.py --tag v1.0.1` passe.
+- **Garde en CI de PR** : le job `lint` lance `tools/check_patch_migrations.py` sans `--tag` (donc dans `ci-success`). Une PR qui ajoute une migration la fige elle-même, avec la prochaine mineure (`--freeze 1.1`) ; `docs/releasing.md` et `CONTRIBUTING.md` le décrivent, et un test tient la liste complète.
+
+Migration : non
+
 ## 1.0.0 - 2026-11-15
 
 1.0.0 regroupe les jalons M1b, M2 et M3 ; aucune version 0.3 à 0.5 n'a été publiée ; on passe de 0.2.0 à 1.0.0.
 
 Mise à jour depuis 0.2.0 : les migrations 0013 à 0063 (détail par jalon ci-dessous) s'appliquent au démarrage et ne sont pas réversibles automatiquement. `shelfhold migrate` sauvegarde la base avant de migrer (`/data/backups/pre-migration`) ; un retour à la 0.2.0 passe par cette sauvegarde et par `shelfhold reconcile --adopt-after-restore` (`docs/admin/retour-arriere.md`, `docs/admin/sauvegarde.md`). Version minimale de Kavita : 0.9.1.
+
+Précisions ajoutées avec la 1.0.1 (l'histoire de la 1.0.0 n'est pas réécrite) : l'image `1.0.0` contient aussi les premiers lots de M4 déjà fusionnés sur `main` au moment du tag : L02 (schéma partagé de M4, migration 0064), L03 (contrat de destination 1.4), L13 (empreintes KOReader et Kavita, alias de document), L20 (AniList en lecture seule et MangaUpdates, migration 0071), L38 (sous-chemin Kavita dans le QR de l'appareil) et L40 (navigateur clôturé des tests de bout en bout). Les migrations 0064 et 0071 s'ajoutent donc à 0013 à 0063. Les preuves de la 1.0.0 (SBOM, provenance, rapport de tests) n'ont pas pu être jointes à sa release (`release-proofs` sauté) : elles sont jointes à la 1.0.1.
 
 Migration : oui, réversible : non
 

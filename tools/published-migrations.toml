@@ -184,3 +184,13 @@ since = "1.0"
 file = "0063_follow_request_choice.py"
 sha256 = "1fa4b9e78c799550278f55daeebcf12a89fe8f4f62ab13e2989d0569b3e0a334"
 since = "1.0"
+
+[[migration]]
+file = "0064_m4_schema.py"
+sha256 = "d9a0e64ae3b4db1a55f69d51ea78ac9761621516dfe56cdafd8d331045bfece3"
+since = "1.0"
+
+[[migration]]
+file = "0071_provider_quota.py"
+sha256 = "b0fcdec029d88e520919d7e5c0189ec1fb5b5e274c9ee0ec73687707a35da115"
+since = "1.0"
