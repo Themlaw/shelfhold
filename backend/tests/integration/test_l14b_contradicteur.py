@@ -41,11 +41,6 @@ def koreader_page_stream(pages: int, kavita_page: int) -> int:
 # ------------------------------------------------------------------ B1 : blanchiment du « lu »
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="B1: un coup d'oeil poussé en pages-1 devient « lu » "
-    "dès que KOReader ouvre le flux OPDS-PSE",
-)
 def test_b1_a_look_pushed_to_kavita_is_not_washed_by_opening_the_koreader_stream(
     tmp_path: Path,
 ) -> None:
@@ -55,7 +50,7 @@ def test_b1_a_look_pushed_to_kavita_is_not_washed_by_opening_the_koreader_stream
         env.device_position(reader, chapter, chapter.pages)  # un coup d'oeil à la fin
         env.clock.advance(minutes=1)
         env.sync(reader)
-        assert env.kavita_page(reader, chapter) == chapter.pages - 1  # « la page, pas la marque »
+        assert env.kavita_page(reader, chapter) == chapter.pages - 2  # « la page, pas la marque »
         # Le membre ouvre ce chapitre dans KOReader par le flux de Kavita, sans tourner une page.
         kept = koreader_page_stream(chapter.pages, env.kavita_page(reader, chapter))
         env.read_in_kavita(reader, chapter, kept)
@@ -67,9 +62,6 @@ def test_b1_a_look_pushed_to_kavita_is_not_washed_by_opening_the_koreader_stream
 # ------------------------------------------------------------------ M1 : nouvelle liaison
 
 
-@pytest.mark.xfail(
-    strict=True, reason="M1: la note survit au changement de compte Kavita (même id de ligne)"
-)
 def test_m1_a_member_relinked_to_another_kavita_account_starts_afresh(tmp_path: Path) -> None:
     with sync_env(tmp_path) as env:
         reader = env.member("reader", kavita_name="first-account")
@@ -87,11 +79,6 @@ def test_m1_a_member_relinked_to_another_kavita_account_starts_afresh(tmp_path: 
 # ------------------------------------------------------------------ M2 : coût d'un passage
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="M2: un passage sans aucun changement écrit une note par "
-    "chapitre et rouvre la clé du membre à chaque chapitre",
-)
 def test_m2_an_idle_pass_neither_writes_per_chapter_nor_reopens_the_key(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -128,11 +115,6 @@ def test_m2_an_idle_pass_neither_writes_per_chapter_nor_reopens_the_key(
 # ------------------------------------------------------------------ m1 : series-detail réel
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="m1: series-detail de Kavita 0.9.1 liste un chapitre de "
-    "volume numéroté dans `chapters` et dans `volumes[].chapters`",
-)
 def test_m1_a_chapter_listed_twice_by_series_detail_is_synchronised_once() -> None:
     import asyncio
 
@@ -160,7 +142,6 @@ def test_m1_a_chapter_listed_twice_by_series_detail_is_synchronised_once() -> No
 # ------------------------------------------------------------------ m2 : pause et maintenance
 
 
-@pytest.mark.xfail(strict=True, reason="m2: `stop_requested` n'est lu qu'entre deux destinations")
 def test_m2_a_stop_requested_during_a_destination_stops_the_next_member(tmp_path: Path) -> None:
     with sync_env(tmp_path) as env:
         first, second = env.member("first"), env.member("second")

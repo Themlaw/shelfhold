@@ -215,8 +215,9 @@ progress_sync_cursor = sa.Table(
 # What the synchronisation noted of each Kavita chapter of an account (M4 L14b, 0078): the page
 # Shelfhold last PUSHED (so that the echo of its own push is never read back as news), the state it
 # last SAW (Kavita's page and its own stamp, only compared for equality, never with Shelfhold's
-# clock), and when the chapter was last synchronised (Shelfhold's clock). `account_id` is the row of
-# the account the note was made for: a re-linked account starts afresh.
+# clock), and when the chapter was last synchronised (Shelfhold's clock). `account_ref` says which
+# Kavita account and which key the note was made for (the row of an account survives a re-link, the
+# note does not); `series_stamp` is what the series list said of the series at the last pass.
 progress_sync_note = sa.Table(
     "progress_sync_note",
     metadata,
@@ -224,7 +225,10 @@ progress_sync_note = sa.Table(
     sa.Column("user_id", sa.String(26), nullable=False),
     sa.Column("kavita_chapter_id", sa.Integer(), nullable=False),
     sa.Column("account_id", sa.String(26), nullable=False),
+    sa.Column("account_ref", sa.String(), nullable=False),
     sa.Column("carrier_id", sa.String(26), nullable=False),
+    sa.Column("kavita_series_id", sa.Integer(), nullable=True),
+    sa.Column("series_stamp", sa.String(), nullable=True),
     sa.Column("pushed_page", sa.Integer(), nullable=True),
     sa.Column("pushed_at", UtcDateTime(), nullable=True),
     sa.Column("seen_page", sa.Integer(), nullable=True),

@@ -163,7 +163,7 @@ def test_a_look_at_the_last_page_pushed_to_kavita_does_not_come_back_as_read(
         for _ in range(3):  # and again: the round trip is stable
             env.sync(reader)
             env.clock.advance(minutes=10)
-        assert env.kavita_page(reader, chapter) == chapter.pages - 1  # the page, not the mark
+        assert env.kavita_page(reader, chapter) == chapter.pages - 2  # the page, not the mark
         assert env.state(reader, chapter) == "in_progress"
         assert env.positions(reader, source="server") == []  # the echo was dropped
 

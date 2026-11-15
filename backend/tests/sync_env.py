@@ -111,6 +111,7 @@ class SyncEnv:
     def chapter(
         self, series: str, number: int, *, pages: int = 20, edition_key: str = "ok",
         units: list[str] | None = None, bounds: list[tuple[int, int]] | None = None,
+        ext: str = "cbz",
     ) -> Chapter:  # fmt: skip
         """A file of the shelf, held by Kavita as a chapter of `series` (one Unit by default)."""
         if units is None:
@@ -120,7 +121,7 @@ class SyncEnv:
             edition_key, units, bounds=bounds or [(0, pages - 1)] * len(units),
             content_hash="sha256:" + f"{self._count:02x}" * 32,
         )  # fmt: skip
-        rel = f"{series}/{series} - {number:03d}.cbz"
+        rel = f"{series}/{series} - {number:03d}.{ext}"
         with write_transaction(self.engine) as connection:
             connection.execute(
                 sa.insert(export.export_record).values(
@@ -299,9 +300,10 @@ def sync_env(tmp_path: Path, *, enabled: bool = True) -> Iterator[SyncEnv]:
         remote = KavitaProgress(
             env.engine,
             admin_client=lambda _target: admin,
-            fetcher_for=lambda _url: fetcher,
+            fetcher_for=lambda _url: build_fetcher(fake),
             open_token=lambda user, destination: store_open(store, user, destination),
             sleep=sleeps.append,
+            structure_ttl_s=0.0,  # a test moves Kavita's files at will
         )
         yield SyncEnv(env, fake, clock, store, remote, dest, target, sleeps)
 

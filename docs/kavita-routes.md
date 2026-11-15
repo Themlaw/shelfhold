@@ -56,6 +56,11 @@ chez Kavita : le message d'erreur donne son nom et son identifiant, à révoquer
 
 ## Routes de la clé d'un membre (EF-USR-012, D8)
 
+La liste : `GET /api/Account`, `GET /api/Reader/get-progress`, `POST /api/Reader/progress`,
+`GET /api/Reader/continue-point` et `POST /api/Series/all-v2` (une lecture malgré le `POST`, la
+même route que lit la clé dédiée, mais avec la clé du membre : `pagesRead` et `latestReadDate` sont
+alors ceux de son compte, ce qui dit quelles séries ont bougé sans lire chaque chapitre).
+
 Chaque membre colle **sa propre clé** Kavita, scellée par le coffre, par utilisateur et par
 destination. Elle n'est pas la clé dédiée : elle n'atteint que cette liste fermée
 (`MEMBER_ROUTES`, `export/targets/kavita/accounts.py`), jamais une bibliothèque, un scan, une

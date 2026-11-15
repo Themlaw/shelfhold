@@ -1236,11 +1236,14 @@ page_map_state = "`candidate` (canonical names) or `unverified`; `verified` will
 [tables.progress_sync_note]
 description = "What the progress synchronisation noted of each Kavita chapter of an account: the page it last pushed, the state it last saw and when it last ran."
 [tables.progress_sync_note.columns]
-account_id = "The account row the note was made for; a re-linked account starts afresh."
+account_id = "The account row the note was made for."
+account_ref = "The Kavita account and key the note was made for; a member linked to another account, or with another key, starts afresh."
 carrier_id = "The export item the Kavita chapter holds."
 kavita_chapter_id = "The chapter, as Kavita numbers it."
+kavita_series_id = "The series of the chapter, as Kavita numbers it; NULL: not known yet."
 pushed_at = "When Shelfhold last wrote this chapter's page to Kavita (UTC); NULL: never."
 pushed_page = "The page Shelfhold last wrote; a state equal to it is the echo of that write and is not read back."
 seen_modified = "Kavita's own stamp of the state last seen: compared for equality only, never with Shelfhold's clock."
 seen_page = "The page Kavita held at the last pass."
+series_stamp = "What the series list said of the series (pages read and last read date) at the last pass: opaque, compared for equality only; NULL: not known."
 synced_at = "Shelfhold's clock at the start of the last pass over this chapter (UTC)."

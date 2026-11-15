@@ -71,6 +71,7 @@ def _note(db: sqlite3.Connection, **override: object) -> None:
         "user_id": USER,
         "kavita_chapter_id": 101,
         "account_id": ACCOUNT,
+        "account_ref": "reader|abcd1234",
         "carrier_id": new_ulid(),
         "synced_at": "2026-11-15 12:00:00",
     }

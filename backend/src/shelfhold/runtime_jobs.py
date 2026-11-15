@@ -1163,7 +1163,11 @@ def progress_sync_handler(
                 if context.stop_requested:
                     break
                 for outcome in sync_destination(
-                    engine, remote, destination_id=destination, clock=clock
+                    engine,
+                    remote,
+                    destination_id=destination,
+                    clock=clock,
+                    should_stop=lambda: bool(context.stop_requested),
                 ).values():
                     if outcome.code == "ok":
                         context.add(synchronised=1, pulled=outcome.pulled, pushed=outcome.pushed)

@@ -655,7 +655,21 @@ class FakeKavita:
         }  # Libraries, Equal
         found = [s for s in self.series if not wanted or s["libraryId"] in wanted]
         start = (int(number) - 1) * int(size)
-        return self._json(copy.deepcopy(found[start : start + int(size)]))
+        page = copy.deepcopy(found[start : start + int(size)])
+        key = recorded.headers.get("x-api-key", "")
+        if key in self.member_profiles:  # `PagesRead` and `LatestReadDate` are the key's account's
+            account = self.key_accounts[key]
+            for item in page:
+                mine = [
+                    self.member_progress[(account, self.chapter_id(p))]
+                    for p in self.files.get(item["id"], [])
+                    if (account, self.chapter_id(p)) in self.member_progress
+                ]
+                item["pagesRead"] = sum(int(m["page"]) for m in mine)
+                item["latestReadDate"] = max(
+                    (str(m["modified"]) for m in mine), default="0001-01-01"
+                )
+        return self._json(page)
 
     def _series_by_ids(self, recorded: RecordedRequest) -> httpx2.Response:
         body = self._body(recorded, "SeriesByIdsDto")
@@ -679,9 +693,11 @@ class FakeKavita:
             }
             for i, p in enumerate(self.files[int(sid)])
         ]
+        # `GetSeriesDetail` lists a numbered volume's chapters in `Chapters` too (0.9.1)
         return self._json(
-            {"specials": [], "chapters": [], "volumes": [{"id": volume_id, "chapters": chapters}]}
-        )
+            {"specials": [], "chapters": copy.deepcopy(chapters),
+             "volumes": [{"id": volume_id, "chapters": chapters}]}
+        )  # fmt: skip
 
     def _metadata(self, recorded: RecordedRequest) -> httpx2.Response:
         if recorded.method == "POST":

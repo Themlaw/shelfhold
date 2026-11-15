@@ -29,7 +29,7 @@ The reading context knows nothing of HTTP: `ProgressRemote` is the port the Kavi
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any, Final, Protocol
@@ -110,6 +110,15 @@ class MemberRemote(Protocol):
 
     def account_name(self) -> str: ...
 
+    def series_stamps(self, library_ids: Sequence[int]) -> dict[int, str]:
+        """What the account's series list says of each series (opaque, compared for equality):
+        empty when it cannot be read whole, and then every chapter is asked."""
+        ...
+
+    def close(self) -> None:
+        """End the pass: the connection is closed."""
+        ...
+
     def get(self, chapter: ChapterRef) -> RemotePosition: ...
 
     def save(self, chapter: ChapterRef, page: int) -> None: ...
@@ -161,12 +170,15 @@ def server_page(page: int, pages: int) -> int:
 
 def push_page(page: int, pages: int, *, finished: bool) -> int:
     """The page written to Kavita for a local page: never the count (Kavita's « read ») unless the
-    Unit was marked read by a traversal."""
+    Unit was marked read by a traversal, and without one never past `pages - 2`, the cap
+    `server_page` applies on the way back. A KOReader that opens Kavita's page stream asks for the
+    image after the saved page, and Kavita adds one to a page within two of the end
+    (`OPDSController`): a look pushed at `pages - 1` would come back as « read » unturned."""
     if pages <= 0:
         return max(page, 0)
     if finished and page >= pages - 1:
         return pages
-    return min(max(page, 0), pages - 1)
+    return min(max(page, 0), max(pages - 2, 0))
 
 
 # ----------------------------------------------------------------------------- entry points
@@ -180,6 +192,7 @@ def sync_member(
     destination_id: str,
     clock: Any,
     chapters: Sequence[ChapterRef] | None = None,
+    should_stop: Callable[[], bool] | None = None,
 ) -> MemberOutcome:
     """One pass for one member. Never raises for what Kavita or the key does: it says why."""
     outcome = MemberOutcome("ok")
@@ -187,7 +200,7 @@ def sync_member(
         _check_enabled(engine, destination_id)
         if chapters is None:
             chapters = _chapters(remote, destination_id)
-        _pass(engine, remote, user_id, destination_id, clock, chapters, outcome)
+        _pass(engine, remote, user_id, destination_id, clock, chapters, outcome, should_stop)
     except _Stop as stop:
         outcome.code = stop.code
     log.info(
@@ -198,7 +211,12 @@ def sync_member(
 
 
 def sync_destination(
-    engine: sa.Engine, remote: ProgressRemote, *, destination_id: str, clock: Any
+    engine: sa.Engine,
+    remote: ProgressRemote,
+    *,
+    destination_id: str,
+    clock: Any,
+    should_stop: Callable[[], bool] | None = None,
 ) -> dict[str, MemberOutcome]:
     """Every member with a live key on the destination, one after the other. A member whose key
     stops does not stop the others; a Kavita that cannot be asked stops them all, quietly."""
@@ -216,12 +234,14 @@ def sync_destination(
     results: dict[str, MemberOutcome] = {}
     down = False
     for user in members:
+        if should_stop is not None and should_stop():
+            break  # a pause or a maintenance window: the members left wait for the next run
         if down:
             results[user] = MemberOutcome("unavailable")
             continue
         results[user] = sync_member(
             engine, remote, user_id=user, destination_id=destination_id, clock=clock,
-            chapters=chapters,
+            chapters=chapters, should_stop=should_stop,
         )  # fmt: skip
         down = results[user].code == "unavailable"
     return results
@@ -317,6 +337,24 @@ def _open(
         raise _Stop("token_unreadable") from None
 
 
+NOTE_BATCH: Final = 200  # chapters whose notes are written in one transaction
+
+
+def _account_ref(engine: sa.Engine, account_id: str) -> str:
+    """Which Kavita account and which key a note is made for. The row of an account survives a new
+    link (another account, another key): the note must not."""
+    account = identity.destination_account
+    with engine.connect() as connection:
+        row = connection.execute(
+            sa.select(account.c.remote_user, account.c.token_fingerprint).where(
+                account.c.id == account_id
+            )
+        ).first()
+    if row is None:
+        return ""
+    return f"{str(row.remote_user).casefold()}|{row.token_fingerprint or ''}"
+
+
 def _pass(
     engine: sa.Engine,
     remote: ProgressRemote,
@@ -325,36 +363,114 @@ def _pass(
     clock: Any,
     chapters: Sequence[ChapterRef],
     outcome: MemberOutcome,
+    should_stop: Callable[[], bool] | None = None,
 ) -> None:
     started = clock.now()
     account_id = _live(engine, user_id, destination_id)
     declared = _declared_name(engine, account_id)
     if _shared(engine, user_id, destination_id, declared):
         raise _Stop("account_shared")
+    member = _open(engine, remote, user_id, destination_id)  # the key is opened once per pass
     try:
-        who = _open(engine, remote, user_id, destination_id).account_name()
+        _pass_open(
+            engine, member, user_id, destination_id, account_id, declared, clock, started,
+            chapters, outcome, should_stop,
+        )  # fmt: skip
+    finally:
+        member.close()
+
+
+def _pass_open(
+    engine: sa.Engine,
+    member: MemberRemote,
+    user_id: str,
+    destination_id: str,
+    account_id: str,
+    declared: str,
+    clock: Any,
+    started: datetime,
+    chapters: Sequence[ChapterRef],
+    outcome: MemberOutcome,
+    should_stop: Callable[[], bool] | None,
+) -> None:
+    try:
+        who = member.account_name()
     except TokenRefused:
         raise _Stop("token_refused") from None
     except (RemoteUnavailable, ChapterRejected):
         raise _Stop("unavailable") from None
     if not same_kavita_username(who, declared):
         raise _Stop("account_mismatch")  # the key opens another account than the one on file
+    who_for = _account_ref(engine, account_id)
+    notes = _load_notes(engine, user_id, destination_id, who_for)
+    visible: list[ChapterRef] = []
     for ref in chapters:
-        if not _visible(engine, user_id, ref):
+        if _visible(engine, user_id, ref):
+            visible.append(ref)
+        else:
             outcome.hidden += 1
-            continue
-        try:
-            _chapter(engine, remote, user_id, destination_id, account_id, ref, clock, started,
-                     outcome)  # fmt: skip
-        except ChapterRejected:
-            outcome.rejected += 1  # this chapter only: the account may not open it, or it is gone
-        except TokenRefused:
-            raise _Stop("token_refused") from None
-        except RemoteUnavailable:
-            raise _Stop("unavailable") from None
-        except MemberKeyRevokedError:
-            raise _Stop("member_key_revoked") from None
-    _note_pass(engine, user_id, destination_id, started, pushed=outcome.pushed > 0)
+    pending = _pending_chapters(engine, user_id, visible, notes)
+    stamps = _stamps(member, visible)
+    writer = _NoteWriter(engine, user_id, destination_id, account_id, who_for)
+    stopped = False
+    try:
+        for series in _by_series(visible):
+            if should_stop is not None and should_stop():
+                stopped = True  # a pause or a maintenance window: what is done stays done
+                break
+            stamp = stamps.get(series[0].series_id)
+            if stamp is not None and all(
+                (n := notes.get(r.chapter_id)) is not None
+                and n.series_stamp == stamp
+                and n.carrier_id == r.carrier_id
+                and r.chapter_id not in pending
+                for r in series
+            ):
+                continue  # nothing moved in Kavita, nothing new here: no call, no write
+            for ref in series:
+                _live(engine, user_id, destination_id)
+                pushed_before = outcome.pushed
+                try:
+                    changed = _chapter(
+                        engine, member, user_id, destination_id, ref, clock, started, outcome,
+                        notes.get(ref.chapter_id), ref.chapter_id in pending, stamp,
+                    )  # fmt: skip
+                except ChapterRejected:
+                    outcome.rejected += 1  # this chapter only: not for the account, or gone
+                    continue
+                except TokenRefused:
+                    raise _Stop("token_refused") from None
+                except RemoteUnavailable:
+                    raise _Stop("unavailable") from None
+                except MemberKeyRevokedError:
+                    raise _Stop("member_key_revoked") from None
+                if changed is not None:
+                    writer.add(changed)
+                    if outcome.pushed > pushed_before:
+                        writer.flush()  # an echo must never be lost to a crash
+    finally:
+        writer.flush(cursor_at=None if stopped else started, pushed=outcome.pushed > 0)
+
+
+def _by_series(chapters: Sequence[ChapterRef]) -> list[list[ChapterRef]]:
+    groups: dict[int, list[ChapterRef]] = {}
+    for ref in chapters:
+        groups.setdefault(ref.series_id, []).append(ref)
+    return list(groups.values())
+
+
+def _stamps(member: MemberRemote, chapters: Sequence[ChapterRef]) -> dict[int, str]:
+    """What the member's own series list says of each series: the way to know which series moved
+    without asking about every chapter. Whatever goes wrong, every chapter is asked instead
+    (a refused key is still seen by the first call that follows)."""
+    if not chapters:
+        return {}
+    try:
+        return member.series_stamps(sorted({r.library_id for r in chapters}))
+    except (RemoteUnavailable, ChapterRejected):
+        return {}
+    except TokenRefused:
+        raise _Stop("token_refused") from None
 
 
 def _visible(engine: sa.Engine, user_id: str, ref: ChapterRef) -> bool:
@@ -370,72 +486,151 @@ def _visible(engine: sa.Engine, user_id: str, ref: ChapterRef) -> bool:
 
 @dataclass(frozen=True)
 class _Note:
+    chapter_id: int
+    carrier_id: str
+    series_id: int
+    series_stamp: str | None
     pushed_page: int | None
+    pushed_at: datetime | None
     seen_page: int | None
     seen_modified: str | None
     synced_at: datetime
 
 
-def _load_note(
-    engine: sa.Engine, user_id: str, destination_id: str, chapter_id: int, account_id: str
-) -> _Note | None:
+def _utc(value: datetime | None) -> datetime | None:
+    return value if value is None or value.tzinfo else value.replace(tzinfo=UTC)
+
+
+def _load_notes(
+    engine: sa.Engine, user_id: str, destination_id: str, account_ref: str
+) -> dict[int, _Note]:
+    """The member's notes made for the Kavita account and key linked now: the notes of another
+    account (or another key) are not read, and are replaced as the chapters are visited."""
     note = reading.progress_sync_note
     with engine.connect() as connection:
-        row = connection.execute(
+        rows = connection.execute(
             sa.select(note).where(
                 note.c.shelf_destination_id == destination_id,
                 note.c.user_id == user_id,
-                note.c.kavita_chapter_id == chapter_id,
+                note.c.account_ref == account_ref,
             )
-        ).first()
-    if row is None or row.account_id != account_id:  # a re-linked account starts afresh
-        return None
-    synced = row.synced_at if row.synced_at.tzinfo else row.synced_at.replace(tzinfo=UTC)
-    return _Note(row.pushed_page, row.seen_page, row.seen_modified, synced)
-
-
-def _save_note(
-    engine: sa.Engine, user_id: str, destination_id: str, account_id: str, ref: ChapterRef,
-    *, pushed_page: int | None, pushed_at: datetime | None, seen_page: int | None,
-    seen_modified: str | None, synced_at: datetime,
-) -> None:  # fmt: skip
-    note = reading.progress_sync_note
-    values: dict[str, Any] = {
-        "shelf_destination_id": destination_id, "user_id": user_id,
-        "kavita_chapter_id": ref.chapter_id, "account_id": account_id,
-        "carrier_id": ref.carrier_id, "pushed_page": pushed_page, "pushed_at": pushed_at,
-        "seen_page": seen_page, "seen_modified": seen_modified, "synced_at": synced_at,
+        ).all()
+    return {
+        r.kavita_chapter_id: _Note(
+            r.kavita_chapter_id, r.carrier_id, r.kavita_series_id or 0, r.series_stamp,
+            r.pushed_page, _utc(r.pushed_at), r.seen_page, r.seen_modified,
+            _utc(r.synced_at) or EPOCH,
+        )
+        for r in rows
     }  # fmt: skip
-    statement = sqlite_insert(note).values(**values)
-    statement = statement.on_conflict_do_update(
-        index_elements=["shelf_destination_id", "user_id", "kavita_chapter_id"],
-        set_={k: v for k, v in values.items() if k not in {"shelf_destination_id", "user_id",
-                                                           "kavita_chapter_id"}},
-    )  # fmt: skip
-    with write_transaction(engine) as connection:
-        connection.execute(statement)
+
+
+class _NoteWriter:
+    """Notes that changed, written together (with the cursor of the pass) in one transaction: a
+    pass that finds nothing new writes at most the cursor."""
+
+    def __init__(
+        self,
+        engine: sa.Engine,
+        user_id: str,
+        destination_id: str,
+        account_id: str,
+        account_ref: str,
+    ) -> None:
+        self._engine = engine
+        self._user = user_id
+        self._destination = destination_id
+        self._account = account_id
+        self._ref = account_ref
+        self._waiting: list[_Note] = []
+
+    def add(self, note: _Note) -> None:
+        self._waiting.append(note)
+        if len(self._waiting) >= NOTE_BATCH:
+            self.flush()
+
+    def flush(self, *, cursor_at: datetime | None = None, pushed: bool = False) -> None:
+        if not self._waiting and cursor_at is None:
+            return
+        keys = ("shelf_destination_id", "user_id", "kavita_chapter_id")
+        with write_transaction(self._engine) as connection:
+            for n in self._waiting:
+                values: dict[str, Any] = {
+                    "shelf_destination_id": self._destination, "user_id": self._user,
+                    "kavita_chapter_id": n.chapter_id, "account_id": self._account,
+                    "account_ref": self._ref, "carrier_id": n.carrier_id,
+                    "kavita_series_id": n.series_id, "series_stamp": n.series_stamp,
+                    "pushed_page": n.pushed_page, "pushed_at": n.pushed_at,
+                    "seen_page": n.seen_page, "seen_modified": n.seen_modified,
+                    "synced_at": n.synced_at,
+                }  # fmt: skip
+                connection.execute(
+                    sqlite_insert(reading.progress_sync_note)
+                    .values(**values)
+                    .on_conflict_do_update(
+                        index_elements=list(keys),
+                        set_={k: v for k, v in values.items() if k not in keys},
+                    )
+                )
+            if cursor_at is not None:
+                _upsert_cursor(connection, self._user, self._destination, cursor_at, pushed)
+        self._waiting = []
+
+
+def _pending_chapters(
+    engine: sa.Engine, user_id: str, refs: Sequence[ChapterRef], notes: dict[int, _Note]
+) -> set[int]:
+    """The chapters with a device position newer than their note (one read for all of them): only
+    these can have something to say to Kavita."""
+    if not refs:
+        return set()
+    since = {r.chapter_id: (notes[r.chapter_id].synced_at if r.chapter_id in notes else EPOCH)
+             for r in refs}  # fmt: skip
+    for r in refs:
+        if r.chapter_id in notes and notes[r.chapter_id].carrier_id != r.carrier_id:
+            since[r.chapter_id] = EPOCH  # another file under the same id: nothing is known of it
+    position = reading.reading_position
+    with engine.connect() as connection:
+        rows = connection.execute(
+            sa.select(position.c.carrier_id, sa.func.max(position.c.server_ts).label("last"))
+            .where(
+                position.c.user_id == user_id,
+                position.c.carrier_type == "export_item",
+                position.c.source == "device",
+                position.c.server_ts >= min(since.values()),
+            )
+            .group_by(position.c.carrier_id)
+        ).all()
+    last = {str(r.carrier_id): _utc(r.last) for r in rows}
+    return {
+        r.chapter_id
+        for r in refs
+        if (at := last.get(r.carrier_id)) is not None and at >= since[r.chapter_id]
+    }
 
 
 def _chapter(
     engine: sa.Engine,
-    remote: ProgressRemote,
+    member: MemberRemote,
     user_id: str,
     destination_id: str,
-    account_id: str,
     ref: ChapterRef,
     clock: Any,
     started: datetime,
     outcome: MemberOutcome,
-) -> None:
-    note = _load_note(engine, user_id, destination_id, ref.chapter_id, account_id)
-    # ---- pull
-    member = _open(engine, remote, user_id, destination_id)
-    _live(engine, user_id, destination_id)
+    old: _Note | None,
+    has_pending: bool,
+    stamp: str | None,
+) -> _Note | None:
+    """Pull, then push, one chapter. The note to write, or `None` when it would be the same."""
+    if old is not None and old.carrier_id != ref.carrier_id:
+        old = None  # another file under the same id: its echo and its date are not this one's
     seen = member.get(ref)
-    pushed_page = note.pushed_page if note else None
+    pushed_page = old.pushed_page if old else None
+    pushed_at = old.pushed_at if old else None
     echo = pushed_page is not None and seen.page == pushed_page
     unchanged = (
-        note is not None and note.seen_page == seen.page and note.seen_modified == seen.modified
+        old is not None and old.seen_page == seen.page and old.seen_modified == seen.modified
     )
     if echo:
         outcome.echoes += 1
@@ -447,23 +642,25 @@ def _chapter(
         outcome.pulled += 1
     if not echo:
         pushed_page = None  # Kavita moved on its own: what we pushed is no longer what it holds
-    # ---- push
-    wanted = _pending_page(engine, user_id, ref, note.synced_at if note else EPOCH)
-    pushed_at = None
+    wanted = (
+        _pending_page(engine, user_id, ref, old.synced_at if old else EPOCH)
+        if has_pending or old is None
+        else None
+    )
     if wanted is not None and wanted > seen.page:
         _live(engine, user_id, destination_id)
-        member = _open(engine, remote, user_id, destination_id)
         latest = member.get(ref)  # read again just before writing: never back from what it holds
         if wanted > latest.page:
             member.save(ref, wanted)
             outcome.pushed += 1
             pushed_page, pushed_at = wanted, clock.now()
             seen = RemotePosition(wanted, None)
-    _save_note(
-        engine, user_id, destination_id, account_id, ref,
-        pushed_page=pushed_page, pushed_at=pushed_at, seen_page=seen.page,
-        seen_modified=seen.modified, synced_at=started,
+    touched = has_pending or old is None
+    new = _Note(
+        ref.chapter_id, ref.carrier_id, ref.series_id, stamp, pushed_page, pushed_at,
+        seen.page, seen.modified, started if touched else old.synced_at if old else started,
     )  # fmt: skip
+    return None if new == old else new
 
 
 def _record_pull(
@@ -538,8 +735,8 @@ def _all_read(connection: sa.Connection, user_id: str, carrier_id: str) -> bool:
     return read == len(units)
 
 
-def _note_pass(
-    engine: sa.Engine, user_id: str, destination_id: str, started: datetime, *, pushed: bool
+def _upsert_cursor(
+    connection: sa.Connection, user_id: str, destination_id: str, started: datetime, pushed: bool
 ) -> None:
     cursor = reading.progress_sync_cursor
     values: dict[str, Any] = {
@@ -554,5 +751,4 @@ def _note_pass(
         index_elements=["shelf_destination_id", "user_id"],
         set_={k: v for k, v in values.items() if k not in {"shelf_destination_id", "user_id"}},
     )
-    with write_transaction(engine) as connection:
-        connection.execute(statement)
+    connection.execute(statement)

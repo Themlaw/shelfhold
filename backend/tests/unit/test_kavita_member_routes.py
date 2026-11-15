@@ -9,6 +9,7 @@ The list is written here on purpose, independently of the code under test.
 import pytest
 
 from shelfhold.export.targets.kavita import accounts, routes
+from shelfhold.export.targets.kavita.dto import library_filter
 from shelfhold.export.targets.kavita.errors import RouteNotAllowed
 from shelfhold.infrastructure.kavita_names import same_kavita_username
 from tests.fakes.kavita import BASE_URL, FakeKavita, build_fetcher
@@ -19,7 +20,9 @@ THE_CLOSED_LIST = {
     ("GET", "/api/Reader/get-progress"),
     ("POST", "/api/Reader/progress"),
     ("GET", "/api/Reader/continue-point"),
+    ("POST", "/api/Series/all-v2"),  # the series list with the account's own pages read
 }
+SHARED = {("POST", "/api/Series/all-v2")}  # a read both keys make, each with its own key
 
 
 def _client(fake: FakeKavita, key: str) -> accounts.MemberKavitaClient:
@@ -31,8 +34,8 @@ def test_member_token_only_used_for_progress_routes() -> None:
     assert {(r.method, r.path) for r in accounts.MEMBER_ROUTES} == THE_CLOSED_LIST
     # none is a route of the dedicated key, and the dedicated client refuses all of them
     admin = {(r.method, r.path) for r in (*routes.ALLOWED_ROUTES, *routes.SETUP_ROUTES)}
-    assert not admin & THE_CLOSED_LIST
-    for method, path in THE_CLOSED_LIST:
+    assert not admin & (THE_CLOSED_LIST - SHARED)
+    for method, path in THE_CLOSED_LIST - SHARED:
         with pytest.raises(RouteNotAllowed):
             routes.resolve(method, path)
     # no member route changes a library or a series: the only writes are progress
@@ -45,7 +48,11 @@ def test_member_token_only_used_for_progress_routes() -> None:
 @pytest.mark.parametrize(
     ("method", "path"),
     [
-        *[(r.method, r.path) for r in (*routes.ALLOWED_ROUTES, *routes.SETUP_ROUTES)],
+        *[
+            (r.method, r.path)
+            for r in (*routes.ALLOWED_ROUTES, *routes.SETUP_ROUTES)
+            if (r.method, r.path) not in SHARED
+        ],
         ("GET", "/api/Users"),
         ("POST", "/api/Library/scan-folder"),
         ("DELETE", "/api/Account/auth-key"),
@@ -91,6 +98,14 @@ def test_member_client_sends_the_key_in_a_header_to_the_listed_routes_only() -> 
         )
     )
     run(client.call("GET", "/api/Reader/continue-point", query={"seriesId": 2}))
+    run(
+        client.call(
+            "POST",
+            "/api/Series/all-v2",
+            query={"PageNumber": 1, "PageSize": 100},
+            body=library_filter(7),
+        )
+    )
     assert {(r.method, r.path) for r in fake.requests} == THE_CLOSED_LIST
     for request in fake.requests:
         assert request.headers["x-api-key"] == mine

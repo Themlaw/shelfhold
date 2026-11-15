@@ -18,7 +18,7 @@ import threading
 from collections.abc import Callable, Coroutine, Mapping
 from dataclasses import dataclass
 from typing import Any, Final
-from urllib.parse import urlsplit
+from urllib.parse import urlencode, urlsplit
 
 import sqlalchemy as sa
 import structlog
@@ -37,6 +37,7 @@ __all__ = [
     "GET_PROGRESS",
     "MEMBER_ROUTES",
     "POST_PROGRESS",
+    "SERIES_PROGRESS",
     "WHOAMI",
     "AccountCheckFailed",
     "DestinationInfo",
@@ -56,8 +57,12 @@ WHOAMI: Final = Route("GET", "/api/Account", write=False)
 GET_PROGRESS: Final = Route("GET", "/api/Reader/get-progress", write=False)
 POST_PROGRESS: Final = Route("POST", "/api/Reader/progress", write=True)
 CONTINUE_POINT: Final = Route("GET", "/api/Reader/continue-point", write=False)
+# The series list of a library, read with the member's key: `pagesRead` and `latestReadDate` are the
+# account's own, a cheap sign of which series moved (the same route the dedicated key reads, a read
+# despite the POST).
+SERIES_PROGRESS: Final = Route("POST", "/api/Series/all-v2", write=False)
 
-MEMBER_ROUTES: Final = (WHOAMI, GET_PROGRESS, POST_PROGRESS, CONTINUE_POINT)
+MEMBER_ROUTES: Final = (WHOAMI, GET_PROGRESS, POST_PROGRESS, CONTINUE_POINT, SERIES_PROGRESS)
 _BY_KEY: Final[dict[tuple[str, str], Route]] = {
     (r.method, r.path.lower()): r for r in MEMBER_ROUTES
 }
@@ -167,6 +172,8 @@ class MemberKavitaClient:
                     url, headers=headers, params=dict(query or {}) or None
                 )
             else:
+                if query:  # the fetcher takes the parameters of a POST in the URL
+                    url += "?" + urlencode(dict(query))
                 response = await self._fetcher.post(
                     url, json=body if body is not None else {}, headers=headers
                 )

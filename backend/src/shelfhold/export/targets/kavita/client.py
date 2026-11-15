@@ -420,7 +420,7 @@ class KavitaClient:
         for volume in data.get("volumes") or []:
             if isinstance(volume, dict):
                 found += [(volume.get("id"), c) for c in volume.get("chapters") or []]
-        infos: list[dto.ChapterInfo] = []
+        infos: dict[int, dto.ChapterInfo] = {}  # by id: `chapters` repeats a numbered volume's
         for volume_id, chapter in found:
             if not isinstance(chapter, dict) or not isinstance(chapter.get("id"), int):
                 continue
@@ -429,15 +429,15 @@ class KavitaClient:
             paths = tuple(
                 str(f["filePath"]) for f in files if isinstance(f, dict) and "filePath" in f
             )
-            infos.append(
-                dto.ChapterInfo(
-                    chapter["id"],
-                    owner if isinstance(owner, int) else 0,
-                    _count(chapter.get("pages")),
-                    paths,
-                )
+            info = dto.ChapterInfo(
+                chapter["id"],
+                owner if isinstance(owner, int) else 0,
+                _count(chapter.get("pages")),
+                paths,
             )
-        return infos
+            if chapter["id"] not in infos or infos[chapter["id"]].volume_id == 0:
+                infos[chapter["id"]] = info
+        return list(infos.values())
 
     async def series_age(self, series_id: int) -> dto.SeriesAge:
         data = (await self._send(routes.SERIES_METADATA, query={"seriesId": int(series_id)})).data

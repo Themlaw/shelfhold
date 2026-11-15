@@ -11,7 +11,8 @@ Two things, kept apart on purpose:
   `ProgressDto` is `volumeId`, `chapterId`, `pageNum`, `seriesId`, `libraryId` (read in the source
   of Kavita, tag v0.9.1.4; `docs/reference/progress-sync.md`).
 
-Each operation uses a fetcher of its own, closed with its loop. Failures are sorted into the three
+A member's pass uses **one** client: one fetcher, so one connection pool, on one event loop kept for
+the pass (`_Session`) and closed with it. Failures are sorted into the three
 things the synchronisation reacts to: the key is refused (401, or 403 on `GET /api/Account`), Kavita
 cannot be asked now (no answer, 429 and 5xx, retried with a cap), or this one chapter is not
 available to the account (403, 404, an answer that is not a progress): skipped.
@@ -19,8 +20,10 @@ available to the account (403, 404, an answer that is not a progress): skipped.
 
 from __future__ import annotations
 
+import asyncio
+import threading
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Coroutine, Sequence
 from typing import Any, Final, Protocol
 
 import sqlalchemy as sa
@@ -31,11 +34,18 @@ from shelfhold.export.domain.path_map import PathEntry, PathMap, PathMode, clean
 from shelfhold.export.targets.kavita.accounts import (
     GET_PROGRESS,
     POST_PROGRESS,
+    SERIES_PROGRESS,
     MemberKavitaClient,
     MemberKey,
     run_sync,
 )
-from shelfhold.export.targets.kavita.client import CallResult, KavitaClient
+from shelfhold.export.targets.kavita.client import (
+    MAX_SERIES_PAGES,
+    SERIES_PAGE,
+    CallResult,
+    KavitaClient,
+)
+from shelfhold.export.targets.kavita.dto import library_filter
 from shelfhold.export.targets.kavita.errors import ProtocolError, TargetError
 from shelfhold.infrastructure.schema import export
 from shelfhold.infrastructure.secrets.errors import SecretsError
@@ -56,7 +66,9 @@ __all__ = ["KavitaProgress", "MemberProgress"]
 MAX_ATTEMPTS: Final = 3  # tries of one call, the first included
 BASE_WAIT_S: Final = 1.0  # first wait after a failure; doubled each time
 MAX_WAIT_S: Final = 30.0  # no wait is longer, whatever `Retry-After` asked
+STRUCTURE_TTL_S: Final = 1800.0  # the structure is read again after this long, or when files change
 _HOLDING: Final = ("written", "scanned", "resolved")  # a record whose file is in the library
+MAX_STAMP_PAGES: Final = MAX_SERIES_PAGES  # of 100 series: a bigger list is not read
 
 
 class _Client(Protocol):
@@ -77,8 +89,12 @@ class MemberProgress:
         sleep: Callable[[float], None] = time.sleep,
         max_attempts: int = MAX_ATTEMPTS,
         max_wait_s: float = MAX_WAIT_S,
+        run: Callable[[Coroutine[Any, Any, Any]], Any] = run_sync,
+        close: Callable[[], None] = lambda: None,
     ) -> None:
         self._client = client
+        self._run = run
+        self._close = close
         self._sleep = sleep
         self._attempts = max_attempts
         self._max_wait = max_wait_s
@@ -89,7 +105,7 @@ class MemberProgress:
     def _retrying(self, make: Callable[[], Any], *, on_forbidden: type[Exception]) -> Any:
         for attempt in range(1, self._attempts + 1):
             try:
-                return run_sync(make())
+                return self._run(make())
             except ProtocolError as error:
                 status = error.status
                 if status == 401:
@@ -106,6 +122,38 @@ class MemberProgress:
                 wait = BASE_WAIT_S * 2 ** (attempt - 1) if asked is None else asked
                 self._sleep(float(min(wait, self._max_wait)))
         raise RemoteUnavailable  # pragma: no cover  (the loop always returns or raises)
+
+    def close(self) -> None:
+        """End the pass: the connection and the loop it ran on."""
+        self._close()
+
+    def series_stamps(self, library_ids: Sequence[int]) -> dict[int, str]:
+        """What the account's own series list says of each series (pages read, last read date): one
+        read per hundred series. Empty when it cannot be read whole: then every chapter is asked."""
+        stamps: dict[int, str] = {}
+        for library in sorted(set(library_ids)):
+            body = library_filter(int(library))
+            for number in range(1, MAX_STAMP_PAGES + 1):
+                result: CallResult = self._retrying(
+                    lambda number=number, body=body: self._client.call(  # type: ignore[misc]
+                        SERIES_PROGRESS.method,
+                        SERIES_PROGRESS.path,
+                        query={"PageNumber": number, "PageSize": SERIES_PAGE},
+                        body=body,
+                    ),
+                    on_forbidden=ChapterRejected,
+                )
+                data = result.data
+                if not isinstance(data, list):
+                    raise ChapterRejected
+                for item in data:
+                    if isinstance(item, dict) and isinstance(item.get("id"), int):
+                        stamps[item["id"]] = f"{item.get('pagesRead')}|{item.get('latestReadDate')}"
+                if len(data) < SERIES_PAGE:
+                    break
+            else:
+                return {}  # more series than the cap: never a silently cut list
+        return stamps
 
     def account_name(self) -> str:
         who = self._retrying(lambda: self._client.whoami(), on_forbidden=TokenRefused)
@@ -136,28 +184,42 @@ class MemberProgress:
         )
 
 
-class _FreshClient:
-    """A member's client that opens a new fetcher for every operation (a fetcher keeps a
-    connection pool bound to the loop that made it, and each operation runs in its own)."""
+class _Session:
+    """The event loop of one member's pass, in a thread of its own, and the one client that runs on
+    it: its connections are reused from call to call and closed with the pass."""
 
-    def __init__(self, fetcher_for: Callable[..., Any], url: str, key: MemberKey) -> None:
-        self._fetcher_for = fetcher_for
-        self._url = url
-        self._key = key
+    def __init__(self, fetcher: Any, url: str, key: MemberKey) -> None:
+        self._fetcher = fetcher
+        self._loop = asyncio.new_event_loop()
+        self._thread = threading.Thread(target=self._loop.run_forever, daemon=True)
+        self._thread.start()
+        self._member = MemberKavitaClient(fetcher, url, key)
 
-    def _client(self) -> MemberKavitaClient:
-        return MemberKavitaClient(self._fetcher_for(self._url), self._url, self._key)
+    def run(self, coro: Coroutine[Any, Any, Any]) -> Any:
+        return asyncio.run_coroutine_threadsafe(coro, self._loop).result()
 
     async def call(
         self, method: str, path: str, *, query: Any = None, body: Any = None
     ) -> CallResult:
-        return await self._client().call(method, path, query=query, body=body)
+        return await self._member.call(method, path, query=query, body=body)
 
     async def whoami(self) -> Any:
-        return await self._client().whoami()
+        return await self._member.whoami()
+
+    def close(self) -> None:
+        closer = getattr(self._fetcher, "aclose", None)
+        if closer is not None:
+            try:
+                self.run(closer())
+            except Exception:
+                log.debug("progress_sync.close_failed")
+        self._loop.call_soon_threadsafe(self._loop.stop)
+        self._thread.join(timeout=5)
+        if not self._loop.is_running():
+            self._loop.close()
 
     def __repr__(self) -> str:
-        return "_FreshClient(<redacted>)"
+        return "_Session(<redacted>)"
 
 
 class KavitaProgress:
@@ -178,7 +240,12 @@ class KavitaProgress:
         sleep: Callable[[float], None] = time.sleep,
         max_attempts: int = MAX_ATTEMPTS,
         max_wait_s: float = MAX_WAIT_S,
+        structure_ttl_s: float = STRUCTURE_TTL_S,
+        monotonic: Callable[[], float] = time.monotonic,
     ) -> None:
+        self._structure_ttl = structure_ttl_s
+        self._monotonic = monotonic
+        self._structures: dict[str, tuple[float, frozenset[tuple[str, str]], list[ChapterRef]]] = {}
         self._engine = engine
         self._admin_client = admin_client
         self._fetcher_for = fetcher_for
@@ -210,8 +277,15 @@ class KavitaProgress:
         wanted = {
             path_map.to_remote(f"{root_local}/{r.rel_path}"): str(r.export_item_id) for r in records
         }
+        key = frozenset(wanted.items())
+        cached = self._structures.get(destination_id)
+        now = self._monotonic()
+        if cached is not None and cached[1] == key and now - cached[0] < self._structure_ttl:
+            return list(cached[2])  # the same files, read lately: `all-v2` and `series-detail` rest
         try:
-            return run_sync(self._structure(target_id, library, wanted))
+            found = run_sync(self._structure(target_id, library, wanted))
+            self._structures[destination_id] = (now, key, found)
+            return list(found)
         except TargetError:  # unreachable, asleep, paused, refused: Kavita cannot be asked now
             raise RemoteUnavailable from None
 
@@ -265,6 +339,8 @@ class KavitaProgress:
                 carriers = {wanted[p] for p in chapter.paths if p in wanted}
                 if len(chapter.paths) != 1 or len(carriers) != 1:
                     continue  # a chapter of several files, or not ours: never guessed
+                if chapter.paths[0].lower().endswith(".epub"):
+                    continue  # Kavita counts an EPUB in book documents, not in pages of ours
                 found.append(
                     ChapterRef(
                         chapter.chapter_id, chapter.volume_id, series.id, series.library_id,
@@ -282,9 +358,14 @@ class KavitaProgress:
         if token is None:
             raise MemberKeyRevokedError
         url = self._url(destination_id)
-        client = _FreshClient(self._fetcher_for, url, MemberKey(token.reveal()))
+        session = _Session(self._fetcher_for(url), url, MemberKey(token.reveal()))
         return MemberProgress(
-            client, sleep=self._sleep, max_attempts=self._attempts, max_wait_s=self._max_wait
+            session,
+            sleep=self._sleep,
+            max_attempts=self._attempts,
+            max_wait_s=self._max_wait,
+            run=session.run,
+            close=session.close,
         )
 
     def _url(self, destination_id: str) -> str:
