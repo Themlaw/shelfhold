@@ -1,4 +1,4 @@
-"""M3 requirements whose lot is not delivered yet: the test exists, red on purpose (xfail strict).
+"""Requirements whose lot is not delivered yet: the test exists, red on purpose (xfail strict).
 
 Each test states the smallest observable fact that the delivery of the lot makes true. As soon as
 the lot lands the test passes, `strict` turns that into a failure and the marker must go, so the
@@ -36,8 +36,8 @@ def test_first_book_under_10_minutes() -> None:
 @pytest.mark.req("ENF-GOV-004")
 @pytest.mark.xfail(
     strict=True,
-    reason="ENF-GOV-004 (M2, deferred by the maintainer on 2026-11-11): no update checker "
-    "(SHELFHOLD_UPDATE_CHECK_URL) and no `publish-mirror` workflow yet",
+    reason="ENF-GOV-004 (M4, deferred by the maintainer in writing on 2026-11-14): "
+    "no update checker (SHELFHOLD_UPDATE_CHECK_URL) and no `publish-mirror` workflow yet",
 )
 def test_update_check_failure_is_silent() -> None:
     sources = "\n".join(

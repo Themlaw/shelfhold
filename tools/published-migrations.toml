@@ -59,3 +59,128 @@ since = "0.2"
 file = "0012_m1a_norm_arrival.py"
 sha256 = "ca8dcddcd7d6df3774f5149188399f00d680dd720cc189ce965c7e030b4189bc"
 since = "0.2"
+
+[[migration]]
+file = "0013_m1b_schema.py"
+sha256 = "2dd3d87cc543b1d2123b6c373a94d885ed07c5af39756e42bc4cd10870e218d9"
+since = "1.0"
+
+[[migration]]
+file = "0014_download_request_visibility.py"
+sha256 = "90492039b73bc5f69568c7dc2fb1cea1a517e0552ed45fa9412e58660057374b"
+since = "1.0"
+
+[[migration]]
+file = "0015_passkey_rp_and_session_origin.py"
+sha256 = "1eb0ac973665cf3a049ad70296835cbd1c0574c3a6ec14b444bd46ac76a6bcb9"
+since = "1.0"
+
+[[migration]]
+file = "0016_follow_request.py"
+sha256 = "c0d29f2fddf77766935848ed2e5d6d0b3d12498467b179e8350c4bac6fb2e1c0"
+since = "1.0"
+
+[[migration]]
+file = "0017_safeguard_backlog.py"
+sha256 = "865d8c98e40c4aa4ee378c7fda3e6e2ca9673a948c11c44ca7435bb24cba5303"
+since = "1.0"
+
+[[migration]]
+file = "0020_m2_schema.py"
+sha256 = "20a18a3c1c5fccce0e4abceea0f001ad1b8badb6c8f7442be294df2ebe710b15"
+since = "1.0"
+
+[[migration]]
+file = "0021_export_upgrade.py"
+sha256 = "30bf34444ff16f199d683c8748802a0a1c70e8b81920f7eec7e5ff98aefc6379"
+since = "1.0"
+
+[[migration]]
+file = "0025_reopen_edition_age_suggestions.py"
+sha256 = "21de176f1d8e9ec197bf9fe0ccd042b85a71d0f61e74843644754e97d0c9e4a1"
+since = "1.0"
+
+[[migration]]
+file = "0026_edition_attach.py"
+sha256 = "899cf691efdba18b3a4f068a106f926453307d99a47322d38eb5e116b80d6b62"
+since = "1.0"
+
+[[migration]]
+file = "0027_plugin_settings.py"
+sha256 = "c4b961f8018aa178d413d3ffbdfb4aca69407c050e3bdbafc0f74bef618e89d7"
+since = "1.0"
+
+[[migration]]
+file = "0028_revision_queue.py"
+sha256 = "c9b2835f48e86e80ea6052dc0a72493a7dfc6cb9ce4bf25c0e1bb34ec93a8bad"
+since = "1.0"
+
+[[migration]]
+file = "0035_one_open_request_per_unit.py"
+sha256 = "e68124cfa1fcda91a6aaebae5b9a906a39288fead78120a2de8d1cc22ddc7e12"
+since = "1.0"
+
+[[migration]]
+file = "0037_export_record_spine_count.py"
+sha256 = "67d6c15824bfa83ce0c9a6873a623e51837585c7dda2cb93e0f063cdc169d8c3"
+since = "1.0"
+
+[[migration]]
+file = "0040_binding_last_refreshed_at.py"
+sha256 = "6739ac6284580c4c7be00a14af28806a92a49776cee2677c0be9bda8affc5ca2"
+since = "1.0"
+
+[[migration]]
+file = "0046_m3_schema.py"
+sha256 = "505e1536c7e9c34e7bda419bee181a74d0c8ccbb4445540a412e33f39ba3df57"
+since = "1.0"
+
+[[migration]]
+file = "0047_contributor_died_for_france.py"
+sha256 = "5e85c3b48499b2711ffce0707068849ea143dca891d6bc625b1a8e7f6b0cb21e"
+since = "1.0"
+
+[[migration]]
+file = "0053_search_index.py"
+sha256 = "d4b206798fc1964889e3537e5f6bdb8dde3afce1eeb5c123048c15d40685d12c"
+since = "1.0"
+
+[[migration]]
+file = "0054_replica_damaged_at.py"
+sha256 = "2ff20eaae18c943ff423aba5b34ee66f97aa05577f07f2b7289048f336f559bd"
+since = "1.0"
+
+[[migration]]
+file = "0055_trash_item_restore.py"
+sha256 = "d499e61371a6534ca698dd6416f65f1d895155ec40b14b1322394a302811e8fa"
+since = "1.0"
+
+[[migration]]
+file = "0056_user_visibility.py"
+sha256 = "fceccce181a171f7368d5233cedabc87aed04acc86d01cad49c9a105677e66ec"
+since = "1.0"
+
+[[migration]]
+file = "0057_request_approval.py"
+sha256 = "512b5b09f9d9322ee5617f1c42158e9cfdb3ccd41d9482573a7876d706c78d14"
+since = "1.0"
+
+[[migration]]
+file = "0059_since_token_support.py"
+sha256 = "9ebe7e01e8f35910ef9a95b831b7e671882580b086b1cbdd0ff3134d080a574c"
+since = "1.0"
+
+[[migration]]
+file = "0060_user_deletion_traces.py"
+sha256 = "97eb50a0e55752227ca7c2bd36c6aacdf332a6fb9bc575eb828ee6c632f32841"
+since = "1.0"
+
+[[migration]]
+file = "0062_cover_value_index.py"
+sha256 = "4a95f7234c8e05e36bbdd4c6e547e1691419d2aa3638bad17278d1ef80ef0fdc"
+since = "1.0"
+
+[[migration]]
+file = "0063_follow_request_choice.py"
+sha256 = "1fa4b9e78c799550278f55daeebcf12a89fe8f4f62ab13e2989d0569b3e0a334"
+since = "1.0"

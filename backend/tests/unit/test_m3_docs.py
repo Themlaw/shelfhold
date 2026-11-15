@@ -178,15 +178,14 @@ def test_uninstall_guide_never_deletes_store_without_warning() -> None:
 
 
 @pytest.mark.req("ENF-DOC-001")
-def test_family_docs_do_not_describe_missing_screens_as_existing() -> None:
+def test_family_docs_describe_the_screens_that_exist() -> None:
+    """The family page is no longer a skeleton (L58): each M3 screen has its section, and the page
+    keeps the household wording."""
     text = _text(FAMILY / "README.md")
-    assert "à venir" in text.lower()
-    assert "L56" in text  # the skeleton is flagged for the debts lot
     assert "bibliothèque personnelle du foyer" in text
-    # every heading that describes a screen of M3 carries the mark
-    for heading in re.findall(r"^##+ .*$", text, re.M):
-        if re.search(r"écran|assistant|demande|profil", heading, re.I):
-            assert "à venir" in heading.lower(), heading
+    assert "à venir" not in text.lower() and "squelette" not in text.lower()
+    for heading in (r"## Demander un livre", r"## Mes d\w+", r"## Profils du foyer"):
+        assert re.search(f"^{heading}$", text, re.M), heading
 
 
 @pytest.mark.req("ENF-LEG-006", "ENF-LEG-008", "ENF-DOC-001")

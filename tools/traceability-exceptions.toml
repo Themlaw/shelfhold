@@ -57,7 +57,7 @@ reason = "contrôle du texte de la matrice du nightly (trois lignes, image épin
 [[partial]]
 requirement = "ENF-GOV-006"
 milestone = "M3"
-reason = "porte P0 et règles d'arrêt documentées (portes.md) et relevé de départ documentaire générique (docs/recherche/releve-depart.md) ; les entretiens utilisateurs dépendent du porteur et sont reportés (décision M0 9) ; la porte P2 (test concierge, prototype cliquable) tombe avant M3, qui complète l'exigence"
+reason = "porte P0 et règles d'arrêt documentées (portes.md), relevé de départ documentaire générique (docs/recherche/releve-depart.md) et porte P2 franchie par délégation du porteur le 2026-11-13 (M3 complet, portes.md) ; mais les entretiens utilisateurs, le test concierge de 8 semaines et le prototype cliquable n'ont pas eu lieu : aucun chiffre n'est mesuré. Le test d'utilisabilité de la rc.1 (D3, docs/governance/test-utilisabilite.md) en tient lieu et la porte se relit au bilan de M3"
 
 # Tests that do not run in the required CI (`ci-success`): accepted for M0 only when the
 # workflow that runs them is named and justified.
@@ -120,4 +120,4 @@ reason = "M4 : passe 2, B15 ; avant M4, l'avertissement EF-EXP-037 s'applique"
 [[deferred]]
 requirement = "ENF-GOV-004"
 aspect = "second registre d'images, miroir du dépôt, vérificateur de mises à jour non bloquant"
-reason = "M4 : le porteur a tranché D5 le 2026-11-14, la v1.0.0 est signée sur GHCR seul ; le code « avec ou sans jeton » est prêt (L54), le second registre s'active dès que le secret CODEBERG_TOKEN existe"
+reason = "M4, accord écrit du porteur du 2026-11-14 (D5) : la v1.0.0 est signée sur GHCR seul, ENF-GOV-004 est sortie des matrices de M1b et de M2 (01 et 03) ; son test `test_update_check_failure_is_silent` reste en échec attendu dans test_m3_open_gaps.py jusqu'à M4 ; le code « avec ou sans jeton » est prêt (L54), le second registre s'active dès que le secret CODEBERG_TOKEN existe"

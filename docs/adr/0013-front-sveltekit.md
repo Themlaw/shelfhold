@@ -67,6 +67,10 @@ Moyenne avant M2 (peu d'écrans), faible après M3 (lecteur et écrans à rééc
 - **Linter** : ESLint (plugin Svelte) et `svelte-check`, Biome ne couvrant pas Svelte entièrement.
 - Reste à évaluer en M3/M5 : le lecteur foliate, le TTI sur matériel modeste et `@vite-pwa/sveltekit`.
 
+## Amendement M3 (2026-11-15) : mécanisme de thèmes
+
+Les jetons vivent dans `frontend/src/lib/themes/<thème>/tokens.json` (format W3C), compilés par `scripts/build-tokens.ts`, comme l'amendement du porteur le prévoit ; `src/lib/tokens.css` n'existe plus. L'attribut de thème est posé avant le premier rendu par un script en ligne dont l'empreinte est ajoutée à la CSP (jamais `unsafe-inline`, pas de nonce). Les écarts de détail sont consignés dans l'amendement M3 d'ADR-0051.
+
 ## Exigences liées
 EF-UX-001, EF-UX-005, ENF-A11Y-001, ENF-A11Y-004, ENF-I18N-001, ENF-I18N-004, ENF-PERF-004, ENF-PERF-010, ENF-SEC-004, ENF-COMP-002.
 
