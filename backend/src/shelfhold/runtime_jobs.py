@@ -49,11 +49,14 @@ from shelfhold.acquisition.public import (
     FollowCycle,
     FollowReport,
     LeasedReceiver,
+    ReadStateRemote,
     bounded_receiver,
     epub_only,
+    push_read_state,
 )
 from shelfhold.composition import (
     KAVITA_WAKE,
+    SUWAYOMI_WAKE,
     Composition,
     KeyringUnavailableError,
     NoLibraryError,
@@ -165,10 +168,12 @@ __all__ = [
     "LIBRARY_TYPE_CHECK_KIND",
     "MAJOR_UPDATE_REPLAY_KIND",
     "PROGRESS_SYNC_KIND",
+    "READ_STATE_PUSH_KIND",
     "RECONCILE_HASH_KIND",
     "RECONCILE_KIND",
     "PlanService",
     "progress_sync_handler",
+    "read_state_push_handler",
     "register_runtime_jobs",
     "settle_arrival",
 ]
@@ -183,6 +188,8 @@ FOLLOW_CRON = "*/15 * * * *"
 EXPORT_CRON = "*/5 * * * *"
 PROGRESS_SYNC_KIND = "progress.sync"  # EF-EXP-026: the members' progress, with Kavita
 PROGRESS_SYNC_CRON = "*/10 * * * *"
+READ_STATE_PUSH_KIND = "read_state.push"  # EF-SRC-026: the owner's « read », pushed to Suwayomi
+READ_STATE_PUSH_CRON = "*/10 * * * *"
 RECONCILE_CRON = "*/10 * * * *"  # window job: runs every 10 minutes of the window only
 INTENT_PRUNE_KIND = "intents.prune"
 KEY_EXPIRY_KIND = "target.key_expiry"
@@ -1182,6 +1189,42 @@ def progress_sync_handler(
     return run
 
 
+def read_state_push_handler(
+    engine: sa.Engine,
+    remote_of: Callable[[], ReadStateRemote | None],
+    clock: Any,
+    awake: Callable[[], bool] = lambda: True,
+) -> Callable[[JobContext], None]:
+    """`read_state.push` (EF-SRC-026): the owner profile's « read » to Suwayomi, in batches. A
+    Suwayomi that sleeps or cannot be asked is a pause (`paused`), a refusal or a stop is counted
+    (`stopped`); nothing raises, and nothing is lost: the notes follow what was written."""
+
+    def run(context: JobContext) -> None:
+        try:
+            remote = remote_of()
+        except KeyringUnavailableError as error:
+            log.info("read_state_push.skipped", reason=type(error).__name__)
+            context.record(skipped="keyring_unavailable")
+            return
+        if remote is None:
+            context.record(skipped="no_suwayomi")
+            return
+        report = asyncio.run(
+            push_read_state(
+                engine, remote, clock=clock, awake=awake,
+                should_stop=lambda: bool(context.stop_requested),
+            )
+        )  # fmt: skip
+        context.add(pushed_read=report.pushed_read, pushed_unread=report.pushed_unread)
+        if report.code in ("asleep", "unavailable"):
+            context.add(paused=1)
+        elif report.code != "ok":
+            context.add(stopped=1)  # an owner to look at, a refusal, a stop: the code is in the log
+            log.info("read_state_push.ended", code=report.code)
+
+    return run
+
+
 def progress_destinations(engine: sa.Engine) -> list[str]:
     table, target = export.shelf_destination, export.export_target
     with engine.connect() as connection:
@@ -1222,6 +1265,14 @@ def register_runtime_jobs(pools: JobPools, comp: Composition) -> None:
         handler=progress_sync_handler(comp.engine, lambda: progress_remote(comp), comp.clock),
     )  # fmt: skip
     pools.scheduler.add(PROGRESS_SYNC_KIND, PROGRESS_SYNC_CRON, jitter_s=60)
+    pools.register(
+        READ_STATE_PUSH_KIND, pool="io",
+        handler=read_state_push_handler(
+            comp.engine, comp.suwayomi_read_state, comp.clock,
+            lambda: comp.wakes().is_awake(SUWAYOMI_WAKE),
+        ),
+    )  # fmt: skip
+    pools.scheduler.add(READ_STATE_PUSH_KIND, READ_STATE_PUSH_CRON, jitter_s=60)
     pools.register(
         RECONCILE_KIND, pool="maint", handler=reconcile_handler(comp, in_window=False),
         windowed=True, writes=False,

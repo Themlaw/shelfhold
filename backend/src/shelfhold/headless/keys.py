@@ -74,6 +74,13 @@ def _check_mode(value: str) -> str:
     return value
 
 
+def _owner(value: str) -> str:
+    name = value.strip()
+    if len(name) > 64:
+        raise InvalidConfigValue("source.read_state_owner is a user name, 64 characters at most")
+    return name
+
+
 def _whole(name: str) -> Callable[[str], str]:
     def check(value: str) -> str:
         if not value.strip().isdigit() or not 1 <= int(value) <= MAX_CEILING:
@@ -110,6 +117,10 @@ KEYS: Final = {
                   _check_mode,
                   level="essential",
                   default_doc="`always_on`, ou `piloted` quand un réveil (Sablier) est configuré"),
+        ConfigKey("source.read_state_owner", "",
+                  "The profile whose « read » is pushed back to Suwayomi (EF-SRC-026): a user "
+                  "name; empty is the administrator. A child is never pushed.", _owner,
+                  level="advanced", default_doc="vide : l'administrateur"),
         ConfigKey("export.missing_floor", FLOOR_MISSING,
                   "Sentinel: files missing in a shelf destination before the share counts "
                   "(EF-EXP-029).", _whole("export.missing_floor"), level="advanced"),

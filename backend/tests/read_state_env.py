@@ -33,6 +33,7 @@ START = datetime(2026, 11, 15, 12, 0, tzinfo=UTC)
 SOURCE_KEY = "suwayomi:7001"
 SERIES_URL = "/series-alpha"
 PAGES = 20
+_HASH = "sha256:" + "c3" * 32
 
 
 @dataclass(frozen=True)
@@ -89,9 +90,7 @@ class ReadStateEnv:
              "uploadDate": "1760000000000"}
         )  # fmt: skip
         (unit,) = self.reading.units("ok", 1, first=100 + number)
-        item = self.reading.file(
-            "ok", [unit], bounds=[(0, PAGES - 1)], content_hash="sha256:" + f"{number:02x}" * 32
-        )
+        item = self.reading.file("ok", [unit], bounds=[(0, PAGES - 1)])
         with write_transaction(self.engine) as connection:
             connection.execute(
                 sa.insert(catalog.unit_variant).values(
@@ -115,6 +114,7 @@ class ReadStateEnv:
         self.reading.position(
             user, chapter.item, page=PAGES - 1, percent=1.0, server_ts=self.clock.now(),
             client_ts=self.clock.now(), device_id="reader-1", read_units=[chapter.unit],
+            content_hash=_HASH,
         )  # fmt: skip
 
     def server_read(self, user: str, chapter: Chapter) -> None:
@@ -122,13 +122,14 @@ class ReadStateEnv:
         self.reading.position(
             user, chapter.item, page=PAGES, percent=1.0, server_ts=self.clock.now(),
             client_ts=self.clock.now(), source="server", device_id="server:kavita",
+            content_hash=_HASH,
         )  # fmt: skip
 
     def peek(self, user: str, chapter: Chapter) -> None:
         """A look at the last page: a position, never a reading."""
         self.reading.position(
             user, chapter.item, page=PAGES - 1, percent=1.0, server_ts=self.clock.now(),
-            client_ts=self.clock.now(), device_id="reader-1",
+            client_ts=self.clock.now(), device_id="reader-1", content_hash=_HASH,
         )  # fmt: skip
 
     def state(self, user: str, chapter: Chapter) -> str:
@@ -177,7 +178,11 @@ class ReadStateEnv:
         remote = SuwayomiReadState(SuwayomiService(BASE_URL), self.fetcher)
         return asyncio.run(
             push_read_state(
-                self.engine, remote, clock=self.clock, awake=awake, should_stop=should_stop,
+                self.engine,
+                remote,
+                clock=self.clock,
+                awake=awake,
+                should_stop=should_stop,
                 batch_size=batch,
             )
         )

@@ -9,6 +9,8 @@ a child, never another member. The simulated server follows `ChapterMutation.kt`
 from __future__ import annotations
 
 from pathlib import Path
+from types import SimpleNamespace
+from typing import Any
 
 import pytest
 
@@ -23,7 +25,11 @@ def undo(env: ReadStateEnv, user: str, chapter_unit: str) -> None:
     with write_transaction(env.engine) as connection:
         assert (
             undo_read_mark(
-                connection, viewer_id=user, subject_id=user, unit_id=chapter_unit, now=env.clock.now()
+                connection,
+                viewer_id=user,
+                subject_id=user,
+                unit_id=chapter_unit,
+                now=env.clock.now(),
             )
             == 1
         )
@@ -241,3 +247,119 @@ def test_a_stop_is_read_between_two_series(tmp_path: Path) -> None:
         env.traversal(env.reading.users["root"], env.chapter())
         assert env.push(should_stop=lambda: True).code == "stopped"
         assert env.calls() == 0
+
+
+def context() -> Any:
+    counters: dict[str, object] = {}
+
+    def add(**counts: int) -> None:
+        for name, amount in counts.items():
+            counters[name] = int(str(counters.get(name, 0))) + amount
+
+    return SimpleNamespace(counters=counters, record=counters.update, add=add, stop_requested=False)
+
+
+def test_the_job_pushes_and_counts(tmp_path: Path) -> None:
+    from shelfhold.plugin_host.adapters.meta.suwayomi import SuwayomiReadState, SuwayomiService
+    from shelfhold.runtime_jobs import read_state_push_handler
+    from tests.fakes.suwayomi import BASE_URL
+
+    with read_state_env(tmp_path) as env:
+        chapter = env.chapter()
+        env.traversal(env.reading.users["root"], chapter)
+        remote = SuwayomiReadState(SuwayomiService(BASE_URL), env.fetcher)
+        ctx = context()
+        read_state_push_handler(env.engine, lambda: remote, env.clock)(ctx)
+        assert ctx.counters["pushed_read"] == 1 and env.is_read_there(chapter)
+        asleep = context()
+        env.traversal(env.reading.users["root"], env.chapter())
+        read_state_push_handler(env.engine, lambda: remote, env.clock, lambda: False)(asleep)
+        assert asleep.counters["paused"] == 1 and "stopped" not in asleep.counters
+        child = env.user("kid", role="child")
+        env.set_owner("kid")
+        refused = context()
+        read_state_push_handler(env.engine, lambda: remote, env.clock)(refused)
+        assert refused.counters["stopped"] == 1
+        assert child
+
+
+def test_the_job_is_idle_without_suwayomi_or_with_a_locked_keyring(tmp_path: Path) -> None:
+    from shelfhold.composition import KeyringUnavailableError
+    from shelfhold.runtime_jobs import read_state_push_handler
+
+    with read_state_env(tmp_path) as env:
+        none = context()
+        read_state_push_handler(env.engine, lambda: None, env.clock)(none)
+        assert none.counters["skipped"] == "no_suwayomi"
+
+        def locked() -> Any:
+            raise KeyringUnavailableError
+
+        sealed = context()
+        read_state_push_handler(env.engine, locked, env.clock)(sealed)
+        assert sealed.counters["skipped"] == "keyring_unavailable"
+
+
+def test_a_series_gone_from_suwayomi_is_skipped_and_the_others_go_on(tmp_path: Path) -> None:
+    with read_state_env(tmp_path) as env:
+        chapter = env.chapter()
+        env.traversal(env.reading.users["root"], chapter)
+        manga = next(m for m in env.fake.state["mangas"] if m["url"] == "/series-alpha")
+        manga["url"] = "/moved"  # the series is no longer where the binding says
+        report = env.push()
+        assert (report.code, report.missing) == ("ok", 1)
+        assert env.notes() == []
+
+
+def test_a_refusal_of_suwayomi_ends_the_pass_with_its_class(tmp_path: Path) -> None:
+    import asyncio
+
+    from shelfhold.acquisition.application.read_state_push import RemoteRefused, push_read_state
+
+    class Refusing:
+        async def chapters(self, source_key: str, remote_id: str) -> dict[str, Any]:
+            raise RemoteRefused("auth")
+
+        async def set_read(self, chapter_ids: Any, *, read: bool) -> None:
+            raise AssertionError("nothing is written after a refusal")
+
+    with read_state_env(tmp_path) as env:
+        env.traversal(env.reading.users["root"], env.chapter())
+        report = asyncio.run(push_read_state(env.engine, Refusing(), clock=env.clock))
+        assert report.code == "refused" and env.notes() == []
+
+
+def test_a_wake_session_decides_whether_the_service_is_awake() -> None:
+    from datetime import timedelta
+    from unittest.mock import Mock
+
+    import sqlalchemy as sa
+
+    from shelfhold.infrastructure.wake import Wakes
+    from tests.fakes_clock import ManualClock
+    from tests.read_state_env import START
+
+    clock = ManualClock(START)
+    engine = sa.create_engine("sqlite://")
+    wakes = Wakes(
+        Mock(), frozenset({"suwayomi"}), engine=engine, bus=Mock(), clock=clock,
+        session_duration=timedelta(minutes=10),
+    )  # fmt: skip
+    assert wakes.is_awake("anything-else")  # not behind the hook: always up
+    assert not wakes.is_awake("suwayomi")  # attached, no session open
+    wakes._awake_until["suwayomi"] = clock.now() + timedelta(minutes=5)
+    assert wakes.is_awake("suwayomi")
+    clock.advance(minutes=6)
+    assert not wakes.is_awake("suwayomi")
+
+
+def test_no_administrator_means_no_owner(tmp_path: Path) -> None:
+    import sqlalchemy as sa
+
+    from shelfhold.acquisition.application.read_state_push import resolve_owner
+
+    with read_state_env(tmp_path) as env:
+        with write_transaction(env.engine) as connection:
+            connection.execute(sa.text("DELETE FROM user WHERE role = 'admin'"))
+        with env.engine.connect() as connection:
+            assert resolve_owner(connection) == (None, "owner_unknown")

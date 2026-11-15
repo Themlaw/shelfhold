@@ -20,7 +20,7 @@ pytestmark = pytest.mark.req("ENF-OPS-002", "EF-BIB-032")
 
 def test_single_alembic_head_with_0079_on_0078() -> None:
     script = ScriptDirectory(str(default_script_location()))
-    assert script.get_heads() == ["0079"]
+    assert len(script.get_heads()) == 1  # the head is pinned by the newest migration test
     assert script.get_revision("0079").down_revision == "0078"
 
 

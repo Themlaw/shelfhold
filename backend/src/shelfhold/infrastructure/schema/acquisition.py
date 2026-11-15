@@ -583,3 +583,31 @@ source_alias_migration = sa.Table(
     sa.CheckConstraint("\"source_key\" <> ''", name="source_key_not_empty"),
     sa.Index("ix_source_alias_migration_source", "source_key"),
 )
+
+
+# M4 L17 (EF-SRC-026): what was pushed of a profile's read state to a Suwayomi series, per owner,
+# binding and chapter (`remote_unit_id` is the unit key of the follow). It is the cursor of the
+# push: the view's difference with these notes is what is sent. It goes with the profile and the
+# binding.
+READ_PUSH_STATES = ("read", "unread")
+read_state_push_note = sa.Table(
+    "read_state_push_note",
+    metadata,
+    sa.Column(
+        "user_id", sa.String(26), sa.ForeignKey("user.id", ondelete="CASCADE"), nullable=False
+    ),
+    sa.Column(
+        "source_binding_id",
+        sa.String(26),
+        sa.ForeignKey("source_binding.id", ondelete="CASCADE"),
+        nullable=False,
+    ),
+    sa.Column("remote_unit_id", sa.String(), nullable=False),
+    sa.Column("unit_id", sa.String(26), nullable=False),
+    sa.Column("state", sa.String(), nullable=False),
+    sa.Column("pushed_at", UtcDateTime(), nullable=False),
+    sa.PrimaryKeyConstraint("user_id", "source_binding_id", "remote_unit_id"),
+    ulid_check("unit_id"),
+    in_check("state", READ_PUSH_STATES),
+    sa.Index("ix_read_state_push_note_binding", "source_binding_id"),
+)  # fmt: skip

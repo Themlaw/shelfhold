@@ -541,6 +541,13 @@ class Composition:
         )
         return SuwayomiLink(checked, fetcher, guarded, url)
 
+    def suwayomi_read_state(self) -> Any:
+        """The port of the read state push (M4 L17) on the configured Suwayomi, or None."""
+        from shelfhold.plugin_host.adapters.meta.suwayomi import SuwayomiReadState
+
+        link = self.suwayomi()
+        return None if link is None else SuwayomiReadState(link.service, link.fetcher)
+
     # -- lncrawl -----------------------------------------------------------------------------
 
     def lncrawl(self) -> ConnectedLink | None:

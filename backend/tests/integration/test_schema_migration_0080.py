@@ -24,16 +24,16 @@ pytestmark = pytest.mark.req("ENF-OPS-002", "EF-SRC-026")
 def test_the_revision_is_0080_and_follows_the_head_of_main() -> None:
     script = ScriptDirectory(str(default_script_location()))
     assert script.get_heads() == ["0080"]
-    assert script.get_revision("0080").down_revision in {"0078", "0079"}
+    assert script.get_revision("0080").down_revision == "0079"
 
 
 def test_upgrade_adds_the_table_and_downgrade_drops_it(settings: Settings) -> None:
     settings.data_dir.mkdir(parents=True, exist_ok=True)
-    command.upgrade(alembic_config(settings.database_path), "0078")
+    command.upgrade(alembic_config(settings.database_path), "0079")
     assert "read_state_push_note" not in tables(settings.database_path)
     assert "0080" in migrate(settings).applied
     assert "read_state_push_note" in tables(settings.database_path)
-    command.downgrade(alembic_config(settings.database_path), "0078")
+    command.downgrade(alembic_config(settings.database_path), "0079")
     assert "read_state_push_note" not in tables(settings.database_path)
 
 
