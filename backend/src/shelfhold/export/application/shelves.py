@@ -51,6 +51,7 @@ from shelfhold.export.domain.bindings import (
     check_dropbox_folder,
     check_family_cap,
     check_partitioning,
+    effective_partitioning,
     is_family,
     resolve_egress,
 )
