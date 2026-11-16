@@ -119,6 +119,7 @@ WHEN_CLOSED_AUDITED = {
     "session.revoke_other", "session.revoke_others",
     "work.merge", "work.separate", "series.reassign", "edition.merge",
     "source.migrate_ids",  # M3 L27: the ops layer writes it, in the transaction that moves the rows
+    "source.migrate",  # M4 L27: the service writes one line per step done, none for a refusal
     # M3 L45: the doors of the removal and the detachment write none (`audit=False`): the service
     # writes the line, with its target, when it really acts; a preview or an empty body leaves none
     "destination.remove_all", "detach.full",

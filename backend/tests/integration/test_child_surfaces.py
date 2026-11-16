@@ -331,6 +331,10 @@ CLOSED = (
     "POST /api/v1/tombstones/set-aside-journal",
     "POST /api/v1/units/{unit_id}/purge",
     "POST /api/v1/units/{unit_id}/restore",
+    "POST /api/v1/editions/{edition_id}/source-migrations",  # M4 L27: a reserved action
+    "GET /api/v1/editions/{edition_id}/source-migrations/{migration_id}",
+    "POST /api/v1/editions/{edition_id}/source-migrations/{migration_id}/validation",
+    "POST /api/v1/editions/{edition_id}/source-migrations/{migration_id}/application",
     "POST /api/v1/works/{work_id}/relations",  # M4 L19: the admin's (session or `admin` key)
     "DELETE /api/v1/works/{work_id}/relations/{kind}/{to_work_id}",
     "POST /api/v1/works/rating-batch",
@@ -358,6 +362,15 @@ BODIES = {
     "POST /api/v1/destinations/{destination_id}/removal-preview": {"mode": "keep_files"},
     "POST /api/v1/targets/{target_id}/detach": {"typed": "x"},
     "POST /api/v1/works/{work_id}/relations": {"to_work_id": ULID, "kind": "sequel_of"},
+    "POST /api/v1/editions/{edition_id}/source-migrations": {
+        "source_key": "x:1", "remote_id": "r"
+    },
+    "POST /api/v1/editions/{edition_id}/source-migrations/{migration_id}/validation": {
+        "digest": "d" * 64, "overrides": []
+    },
+    "POST /api/v1/editions/{edition_id}/source-migrations/{migration_id}/application": {
+        "digest": "d" * 64
+    },
 }
 
 # Surfaces that do not exist yet: the lot that builds each one adds its child case, and this

@@ -281,6 +281,7 @@ FRESHNESS_LINE = {
             "revisions.force",
             "normalize.migrate",
             "source.migrate_ids",  # M3 L27: the ids of a source's series, in bulk
+            "source.migrate",  # M4 L27: a series moves to another source (EF-BIB-014)
             "edition.merge",
             "work.merge",  # M3 L22: the age and the shelves of what a merge moves
             "work.separate",
