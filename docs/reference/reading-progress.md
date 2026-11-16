@@ -44,8 +44,15 @@ ou un changement de sens attend la 2.0. Aucune écriture : un lecteur enregistre
    admis), ou si `pages / (server_ts(B) − server_ts(A))` reste sous `reading.max_pages_per_minute`
    (20 par défaut). Seule la date du **serveur** compte : le `client_ts` n'entre jamais dans la
    vitesse. KOReader ne pousse pas à chaque page (`auto_sync` éteint et `pages_before_update = nil`
-   par défaut, `plugins/kosync.koplugin/main.lua`) : une position arrive à la fermeture ou à la
-   mise en veille, un chapitre plus loin, et l'ancienne règle (3 pages) ne marquait rien.
+   par défaut, `plugins/kosync.koplugin/main.lua`) : **sans `auto_sync`, la liseuse n'envoie rien d'elle-même**
+   (ni à l'ouverture, ni à la fermeture, ni à la mise en veille) ; avec lui, elle demande la position à
+   l'ouverture et au réveil, et l'envoie à la fermeture, à la mise en veille et périodiquement. Une
+   position arrive donc un chapitre plus loin, et l'ancienne règle (3 pages) ne marquait rien.
+   Dans le repère d'un **bloc de série**, le point de départ est celui du **même appareil**
+   (`device_id`, sinon son jeton) : jamais la position d'un autre. Une position qui renvoie la page
+   que la lecture (`GET`) vient de donner à ce jeton, ou une page plus tôt du même chapitre, est un
+   point de départ et non une lecture (la liseuse revient là où on l'a envoyée) : elle ne marque
+   rien. La dernière page donnée est gardée en mémoire (bornée, perdue au redémarrage).
    Le point de départ A est la dernière position connue du profil sur ce contenu, sinon la
    **remise du fichier** au profil (page 0, `record_delivery`), sinon rien : un premier rapport
    sans point de départ n'atteint rien. Fichier sans bornes de page et à une seule Unité : mêmes

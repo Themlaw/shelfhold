@@ -36,6 +36,21 @@ from tests.fakes.kavita import API_KEY, BASE_URL, FakeKavita, build_fetcher
 from tests.integration.test_l48_opds import World
 from tests.sync_env import LIBRARY_ID, _Events, store_open
 
+_IMAGES = frozenset({"png", "jpeg", "jpg", "webp", "gif", "avif"})
+
+
+def _is_image(name: str) -> bool:
+    """What Kavita (0.9.1.4) counts as a page of an archive: an image whose name does not start
+    with a dot, outside a `__MACOSX`-type folder. Nothing else (a manifest, a thumbnail list)."""
+    parts = name.replace("\\", "/").split("/")
+    return (
+        not any(p.startswith("__MACOSX") for p in parts[:-1])
+        and not parts[-1].startswith(".")
+        and parts[-1].rsplit(".", 1)[-1].lower() in _IMAGES
+        and "." in parts[-1]
+    )
+
+
 REMOTE = "/m"
 
 
@@ -65,7 +80,7 @@ class Relay:
     def add_chapter(self, chapter: Chapter) -> Exported:
         item = self.lib.add(chapter)
         remote = f"{REMOTE}/{item.rel_path}"
-        self.fake.chapter_pages[remote] = sum(1 for n, _ in chapter.pages if not n.endswith(".xml"))
+        self.fake.chapter_pages[remote] = sum(1 for n, _ in chapter.pages if _is_image(n))
         if not self.items:
             self.series_id = self.fake.add_series(
                 "Series", f"{REMOTE}/Series", [remote], library_id=LIBRARY_ID

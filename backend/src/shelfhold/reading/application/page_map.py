@@ -89,11 +89,18 @@ def verify_page_maps(engine: sa.Engine, chapters: Sequence[_Chapter], key: bytes
                 files.setdefault(str(held.export_item_id), set()).add(
                     store.member_fp(key, str(held.file_hash))
                 )
-    writes: list[tuple[str, int, str, int]] = []
+    writes: list[tuple[str, int, str, int | None]] = []
     for r in rows:
         item = str(r.export_item_id)
         if r.content_fp is None or str(r.content_fp) not in files.get(item, set()):
-            continue  # purged, or the file was replaced: Kavita's count is another file's
+            # Purged, or the file was replaced: Kavita's count is another file's, and what was
+            # verified of the old one says nothing of this one (it is told apart again if the file
+            # comes back, by the comparison above).
+            if r.page_map_state == "verified":
+                kept = None if r.kavita_pages is None else int(r.kavita_pages)
+                writes.append((str(r.version_id), int(r.rank), "unverified", kept))
+                report.unverified += 1
+            continue
         announced = pages[item]
         if r.page_map_state == "unverified" and r.kavita_pages is None:
             report.unverified += 1  # never a candidate: never compared
@@ -109,11 +116,11 @@ def verify_page_maps(engine: sa.Engine, chapters: Sequence[_Chapter], key: bytes
             writes.append((str(r.version_id), int(r.rank), state, announced))
     if writes:
         with write_transaction(engine) as connection:
-            for version_id, rank, state, announced in writes:
+            for version_id, rank, state, counted in writes:
                 connection.execute(
                     sa.update(m)
                     .where(m.c.version_id == version_id, m.c.rank == rank)
-                    .values(page_map_state=state, kavita_pages=announced)
+                    .values(page_map_state=state, kavita_pages=counted)
                 )
     if report.mismatched:
         log.info("progress_sync.page_map", code=PAGE_COUNT_MISMATCH, chapters=report.mismatched)

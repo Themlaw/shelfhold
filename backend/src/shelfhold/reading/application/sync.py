@@ -55,6 +55,7 @@ from shelfhold.reading.bundle import store
 log = structlog.get_logger(__name__)
 
 __all__ = [
+    "DEFAULT_MAX_SESSION_HOURS",
     "ChapterRef",
     "ChapterRejected",
     "MemberOutcome",
@@ -185,6 +186,9 @@ def push_page(page: int, pages: int, *, finished: bool) -> int:
     return min(max(page, 0), max(pages - 2, 0))
 
 
+DEFAULT_MAX_SESSION_HOURS: Final = 24.0  # `reading.relay_max_session_hours`
+
+
 # ----------------------------------------------------------------------------- entry points
 
 
@@ -198,6 +202,7 @@ def sync_member(
     chapters: Sequence[ChapterRef] | None = None,
     should_stop: Callable[[], bool] | None = None,
     page_map_keyring: Callable[[], Keyring] | None = None,
+    max_session_hours: float = DEFAULT_MAX_SESSION_HOURS,
 ) -> MemberOutcome:
     """One pass for one member. Never raises for what Kavita or the key does: it says why.
 
@@ -210,7 +215,17 @@ def sync_member(
         if chapters is None:
             chapters = _chapters(remote, destination_id)
             _verify(engine, chapters, page_map_keyring)
-        _pass(engine, remote, user_id, destination_id, clock, chapters, outcome, should_stop)
+        _pass(
+            engine,
+            remote,
+            user_id,
+            destination_id,
+            clock,
+            chapters,
+            outcome,
+            should_stop,
+            max_session_hours * 3600,
+        )
     except _Stop as stop:
         outcome.code = stop.code
     log.info(
@@ -228,6 +243,7 @@ def sync_destination(
     clock: Any,
     should_stop: Callable[[], bool] | None = None,
     page_map_keyring: Callable[[], Keyring] | None = None,
+    max_session_hours: float = DEFAULT_MAX_SESSION_HOURS,
 ) -> dict[str, MemberOutcome]:
     """Every member with a live key on the destination, one after the other. A member whose key
     stops does not stop the others; a Kavita that cannot be asked stops them all, quietly."""
@@ -254,6 +270,7 @@ def sync_destination(
         results[user] = sync_member(
             engine, remote, user_id=user, destination_id=destination_id, clock=clock,
             chapters=chapters, should_stop=should_stop, page_map_keyring=page_map_keyring,
+            max_session_hours=max_session_hours,
         )  # fmt: skip
         down = results[user].code == "unavailable"
     return results
@@ -391,6 +408,7 @@ def _pass(
     chapters: Sequence[ChapterRef],
     outcome: MemberOutcome,
     should_stop: Callable[[], bool] | None = None,
+    max_session_s: float = DEFAULT_MAX_SESSION_HOURS * 3600,
 ) -> None:
     started = clock.now()
     account_id = _live(engine, user_id, destination_id)
@@ -401,7 +419,7 @@ def _pass(
     try:
         _pass_open(
             engine, member, user_id, destination_id, account_id, declared, clock, started,
-            chapters, outcome, should_stop,
+            chapters, outcome, should_stop, max_session_s,
         )  # fmt: skip
     finally:
         member.close()
@@ -419,6 +437,7 @@ def _pass_open(
     chapters: Sequence[ChapterRef],
     outcome: MemberOutcome,
     should_stop: Callable[[], bool] | None,
+    max_session_s: float,
 ) -> None:
     try:
         who = member.account_name()
@@ -456,11 +475,15 @@ def _pass_open(
                 continue  # nothing moved in Kavita, nothing new here: no call, no write
             for ref in series:
                 _live(engine, user_id, destination_id)
+                if not _visible(engine, user_id, ref):
+                    outcome.hidden += 1  # the ceiling was lowered during the pass: nothing more
+                    continue
                 pushed_before = outcome.pushed
                 try:
                     changed = _chapter(
                         engine, member, user_id, destination_id, ref, clock, started, outcome,
                         notes.get(ref.chapter_id), ref.chapter_id in pending, stamp,
+                        max_session_s,
                     )  # fmt: skip
                 except ChapterRejected:
                     outcome.rejected += 1  # this chapter only: not for the account, or gone
@@ -684,6 +707,7 @@ def _chapter(
     old: _Note | None,
     has_pending: bool,
     stamp: str | None,
+    max_session_s: float = DEFAULT_MAX_SESSION_HOURS * 3600,
 ) -> _Note | None:
     """Pull, then push, one chapter. The note to write, or `None` when it would be the same."""
     if old is not None and old.carrier_id != ref.carrier_id:
@@ -706,7 +730,7 @@ def _chapter(
     if not echo:
         pushed_page = None  # Kavita moved on its own: what we pushed is no longer what it holds
     wanted = (
-        _pending_page(engine, user_id, ref, old.synced_at if old else EPOCH, outcome)
+        _pending_page(engine, user_id, ref, old.synced_at if old else EPOCH, outcome, max_session_s)
         if has_pending or old is None
         else None
     )
@@ -745,7 +769,12 @@ def _record_pull(
 
 
 def _pending_page(
-    engine: sa.Engine, user_id: str, ref: ChapterRef, since: datetime, outcome: MemberOutcome
+    engine: sa.Engine,
+    user_id: str,
+    ref: ChapterRef,
+    since: datetime,
+    outcome: MemberOutcome,
+    max_session_s: float = DEFAULT_MAX_SESSION_HOURS * 3600,
 ) -> int | None:
     """What to say to Kavita: the page of the member's **latest** device position since the last
     pass (the server's clock, `id` for a tie), on the content the file carries now; or, when a
@@ -786,7 +815,11 @@ def _pending_page(
                 if page is not None:
                     speaking.append(locator)
         finished = _all_read(connection, user_id, ref.carrier_id)
-        marks = _marking_locators(connection, user_id, ref.carrier_id, since) if finished else []
+        marks = (
+            _marking_locators(connection, user_id, ref.carrier_id, since, max_session_s)
+            if finished
+            else []
+        )
         if page is None and not marks:
             return None
         for locator in [*speaking, *marks]:
@@ -801,7 +834,11 @@ def _pending_page(
 
 
 def _marking_locators(
-    connection: sa.Connection, user_id: str, carrier_id: str, since: datetime
+    connection: sa.Connection,
+    user_id: str,
+    carrier_id: str,
+    since: datetime,
+    max_session_s: float = DEFAULT_MAX_SESSION_HOURS * 3600,
 ) -> list[dict[str, Any]]:
     """The locators of the positions, since `since`, whose traversal marked a Unit of this file
     read (the position that closed the move may be on another file of the block)."""
@@ -817,7 +854,12 @@ def _marking_locators(
         )
     ):
         if units & set(row.read_units):
-            found.append(row.locator if isinstance(row.locator, dict) else {})
+            locator = row.locator if isinstance(row.locator, dict) else {}
+            gap = locator.get("gap")
+            if isinstance(gap, int | float) and not isinstance(gap, bool) and gap > max_session_s:
+                log.info("progress_sync.chapter_not_relayed", code="session_too_long")
+                continue  # the move did not start from a recent contact: it stays local
+            found.append(locator)
     return found
 
 

@@ -33,7 +33,13 @@ Shelfhold.
   à Kavita et ne la rend pas à la liseuse. Retéléchargez le bloc.
 - **EPUB** : la position (un xpointer) est conservée telle quelle ; elle ne marque pas le chapitre lu.
 - Un bloc lu d'un trait marque « lu » les chapitres franchis, même si la liseuse n'envoie qu'à la mise
-  en veille : la traversée est calculée dans le repère du bloc, à la même vitesse plausible.
+  en veille : la traversée est calculée dans le repère du bloc, à la même vitesse plausible, **par
+  appareil** (deux liseuses ne s'enchaînent jamais). Une page que Shelfhold vient de rendre à la
+  liseuse et qu'elle renvoie ensuite est un point de départ, pas une lecture.
+- **KOReader n'envoie rien de lui-même par défaut** : `auto_sync` est éteint, il n'y a donc ni demande
+  à l'ouverture, ni envoi à la fermeture. Activez la synchronisation automatique du module
+  (*Progress sync* → *Automatically keep documents in sync*), ou poussez à la main. Sans cela,
+  Shelfhold ne voit une position que quand vous la poussez.
 - Une page lue ne marque un chapitre « lu » que si la lecture l'a traversé à une vitesse plausible
   (`docs/reference/reading-progress.md`) ; l'heure d'une position est toujours celle du serveur.
 
@@ -60,7 +66,12 @@ la page que Kavita tient pour ce compte. La page revient à la liseuse dans le r
   n'est envoyée que si elle dépasse celle de Kavita ; la dernière page d'un chapitre n'est envoyée
   comme « lu » que si la lecture a traversé le chapitre, sinon Kavita reçoit l'avant-dernière.
 - **Un bloc lu d'un trait** : chaque chapitre franchi est marqué « lu » dans Kavita, même s'il n'a
-  jamais reçu de position.
+  jamais reçu de position, **si le déplacement part d'un contact récent du même appareil** : au plus
+  `SHELFHOLD_READING_RELAY_MAX_SESSION_HOURS` heures (24 par défaut) entre la position précédente et
+  celle qui franchit les chapitres. Au-delà (page 1 lundi, chapitre 3 jeudi), le chapitre est marqué
+  « lu » chez vous (annulable) mais Kavita n'en est pas informée.
+- **Le plafond d'un enfant est relu avant chaque chapitre** : s'il est abaissé pendant une passe,
+  plus rien n'est envoyé ni demandé pour les chapitres qui suivent.
 - **Un enfant** : rien au-dessus de son plafond n'est lu, ni écrit, ni demandé à Kavita.
 - **Compte Kavita partagé** par deux profils : aucun des deux n'est synchronisé.
 

@@ -203,7 +203,9 @@ def build_kosync_router(service: Callable[[], Kosync], now: Callable[[], datetim
     def get_progress(request: Request, document: str, principal: Device) -> JSONResponse:
         """The furthest position of the profile in this document, in its own pages, or `{}`."""
         _announce(request)
-        found = service().pull(user_id=principal.user_id, document=document[:256])
+        found = service().pull(
+            user_id=principal.user_id, document=document[:256], token=_token(request)
+        )
         return JSONResponse({} if found is None else found.body(), headers=_NO_STORE)
 
     return router

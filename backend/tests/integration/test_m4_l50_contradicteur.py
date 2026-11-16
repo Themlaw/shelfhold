@@ -1,8 +1,8 @@
 """PR #301 (M4 L50): the adversarial review's proofs, against the whole chain.
 
-Each case is a hole found on the head of the PR and is kept red (`xfail(strict=True)`): when the
-hole is closed, the case turns green and its marker goes with the fix. The production code is not
-touched here. Details in `docs/decisions/M4.md`, « #301 : contradicteur ».
+Each case is a hole found on the head of the PR; they were red (`xfail(strict=True)`) until the
+hole was closed, and the marker went with the fix. Details in `docs/decisions/M4.md`,
+« #301 : contradicteur ».
 """
 
 from __future__ import annotations
@@ -24,11 +24,6 @@ __all__ = ["lab"]  # the fixture, shared with the relay's own tests
 pytestmark = pytest.mark.req("EF-LEC-009", "EF-LEC-014", "EF-EXP-026", "EF-USR-006")
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="B1: the page of Kavita given back by a GET, echoed by KOReader's next PUT, is taken "
-    "for a reading of the chapters between, and those are pushed « read » to Kavita",
-)
 def test_the_echo_of_a_kavita_page_given_by_a_get_never_pushes_a_skipped_chapter_read(
     lab: Any,
 ) -> None:
@@ -45,11 +40,6 @@ def test_the_echo_of_a_kavita_page_given_by_a_get_never_pushes_a_skipped_chapter
     assert relay.unit_state("mum", items[1]) != "read"  # nobody turned a page of it
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="M1: the traversal of a block chains the positions of two e-readers: the anchor of "
-    "one device and the page of another make a move nobody made",
-)
 def test_two_e_readers_never_make_one_move_that_pushes_a_chapter_read(lab: Any) -> None:
     relay, items, digest = three(lab)
 
@@ -68,11 +58,6 @@ def test_two_e_readers_never_make_one_move_that_pushes_a_chapter_read(lab: Any) 
     assert relay.unit_state("mum", items[1]) != "read"
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="m1: the ceiling is read once, at the start of the pass, not before each chapter: a "
-    "ceiling lowered during a pass still lets the chapters after it be pushed",
-)
 def test_a_ceiling_lowered_during_a_pass_stops_the_next_chapters(lab: Any) -> None:
     relay = build_relay(lab)
     items = [relay.add_chapter(Chapter.simple(str(n), count=PAGES)) for n in (1, 2, 3)]
