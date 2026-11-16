@@ -5,7 +5,8 @@ first). Making another one preferred moves a flag and nothing else: no file is r
 Unit is touched. The reading of each profile is carried over by the reading context
 (`reading.application.transfer`), which asks this module which Units an Edition is made of, in
 reading order, and by which number a Unit corresponds to its twin in another Edition
-(EF-BIB-044: the number is what a volume and its chapters share; the files that carry the Units
+(EF-BIB-044: a number links only Units of the same kind, a chapter with a chapter, a volume with a
+volume: chapter 2 is not volume 2; the files that carry the Units
 and the bounds of each Unit in them are `unit_coverage`).
 """
 
@@ -29,6 +30,7 @@ class PreferredChange:
 class EditionPart:
     unit_id: str
     number: float
+    kind: str  # `unit.kind`: a number only means something among Units of the same kind
 
 
 def set_preferred_edition(connection: sa.Connection, edition_id: str) -> PreferredChange:
@@ -61,7 +63,7 @@ def edition_parts(connection: sa.Connection, edition_id: str) -> list[EditionPar
     (an extra, a special) has no twin to find: it is left out."""
     unit = catalog.unit
     rows = connection.execute(
-        sa.select(unit.c.id, unit.c.number_sort)
+        sa.select(unit.c.id, unit.c.number_sort, unit.c.kind)
         .where(
             unit.c.edition_id == edition_id,
             unit.c.track == "main",
@@ -69,4 +71,4 @@ def edition_parts(connection: sa.Connection, edition_id: str) -> list[EditionPar
         )
         .order_by(unit.c.number_sort, unit.c.number_segment_ordinal, unit.c.source_order, unit.c.id)
     )
-    return [EditionPart(str(r.id), float(r.number_sort)) for r in rows]
+    return [EditionPart(str(r.id), float(r.number_sort), str(r.kind)) for r in rows]

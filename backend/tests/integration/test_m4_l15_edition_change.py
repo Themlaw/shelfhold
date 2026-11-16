@@ -377,3 +377,50 @@ def test_the_view_and_the_domain_agree_on_a_transposed_position(tmp_path: Path) 
                 transposed=flag,
             )  # fmt: skip
             assert bool(got[unit].approximate) is want.approximate is flag
+
+
+def test_the_proven_view_leaves_out_a_transposed_mark_and_keeps_every_proof(
+    tmp_path: Path,
+) -> None:
+    """`reading_progress_proven` is the one criterion of what goes out as read (Suwayomi, Kavita):
+    a state the server holds and a traversal count, a mark carried over never does; it stays in
+    `reading_progress`, where the member sees it and can undo it."""
+    from shelfhold.reading.public import progress_of
+
+    with reading_env(tmp_path) as env:
+        reader = env.user("reader")
+        _work, _en, fr = bilingual(env)
+        _eu, en_files = chapters(env, "en", 3, hashed=NEW_HASH)
+        fr_units, fr_files = chapters(env, "fr", 3, hashed=FR_HASH)
+        env.position(reader, en_files[0], percent=1.0, source="server")
+        env.position(reader, en_files[1], percent=0.5)
+        change(env, fr)  # French chapter 1 is a transposed mark
+        env.position(reader, fr_files[2], percent=1.0, source="server")  # a real state
+        with env.engine.connect() as connection:
+            plain = {p.unit_id: p.state for p in progress_of(
+                connection, viewer_id=reader, subject_id=reader)}  # fmt: skip
+            proven = {p.unit_id: p.state for p in progress_of(
+                connection, viewer_id=reader, subject_id=reader, proven=True)}  # fmt: skip
+        assert plain[fr_units[0]] == "read" and fr_units[0] not in proven
+        assert proven[fr_units[2]] == "read"  # a server's state is a proof
+        assert fr_units[1] not in proven  # the transposed position alone is not even a start
+
+
+def test_a_chapter_is_only_linked_to_a_chapter(tmp_path: Path) -> None:
+    with reading_env(tmp_path) as env:
+        reader = env.user("reader")
+        _work, _en, fr = bilingual(env)
+        _eu, en_files = chapters(env, "en", 2, hashed=NEW_HASH)
+        fr_units, _ = chapters(env, "fr", 2, hashed=FR_HASH)
+        with env.engine.begin() as connection:
+            connection.execute(
+                sa.update(catalog.unit).where(catalog.unit.c.id == fr_units[1]).values(kind="book")
+            )
+        env.position(reader, en_files[1], percent=0.5)
+        done = change(env, fr)
+        assert done.transferred == 1
+        (row,) = transposed(env, reader)
+        assert row.carrier_id != "" and env.progress(reader)[fr_units[0]].state == "in_progress"
+        assert fr_units[1] not in env.progress(reader) or (
+            env.progress(reader)[fr_units[1]].state == "unread"
+        )

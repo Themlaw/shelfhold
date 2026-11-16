@@ -876,8 +876,11 @@ def _marking_locators(
 def _all_read(connection: sa.Connection, user_id: str, carrier_id: str) -> bool:
     cover, view = (
         export.unit_coverage,
-        sa.table(
-            "reading_progress", sa.column("user_id"), sa.column("unit_id"), sa.column("state")
+        sa.table(  # the proven view: a mark carried over from another Edition is not a reading
+            "reading_progress_proven",
+            sa.column("user_id"),
+            sa.column("unit_id"),
+            sa.column("state"),
         ),
     )
     units = [

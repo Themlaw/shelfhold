@@ -6,7 +6,8 @@ A child is never the owner and never pushed: a setting that names one stops the 
 (`owner_is_child`) and no other profile takes over. A member who is not the owner is not pushed
 either.
 
-What is pushed is read from `reading_progress`, the one view that already knows what « read »
+What is pushed is read from `reading_progress_proven` (`reading_progress` without the positions
+carried over from another Edition, M4 L15), the one view that already knows what « read »
 means (a plausible traversal, or a state a server holds and that is not the echo of Shelfhold's own
 push; a look at the last page is never « read ») and from nothing else. Nothing is ever read back
 from Suwayomi's `isRead`: no echo to drop, no loop with the check of the updates (piloted mode: the
@@ -136,7 +137,8 @@ SELECT b.id AS binding_id, i.source_key, i.remote_id, v.remote_unit_id, v.unit_i
 FROM source_binding b
 JOIN source_item i ON i.id = b.source_item_id AND i.plugin_id = :plugin
 JOIN unit_variant v ON v.source_binding_id = b.id AND v.removed_at IS NULL
-JOIN reading_progress rp ON rp.unit_id = v.unit_id AND rp.user_id = :owner AND rp.state = 'read'
+JOIN reading_progress_proven rp ON rp.unit_id = v.unit_id AND rp.user_id = :owner
+  AND rp.state = 'read'
 LEFT JOIN read_state_push_note n ON n.user_id = :owner AND n.source_binding_id = b.id
   AND n.remote_unit_id = v.remote_unit_id
 WHERE b.active AND (n.state IS NULL OR n.state <> 'read')
@@ -151,7 +153,7 @@ JOIN source_item i ON i.id = b.source_item_id AND i.plugin_id = :plugin
 JOIN read_state_push_note n ON n.source_binding_id = b.id AND n.user_id = :owner
   AND n.state = 'read'
 WHERE b.active AND NOT EXISTS (
-  SELECT 1 FROM reading_progress rp
+  SELECT 1 FROM reading_progress_proven rp
   WHERE rp.user_id = :owner AND rp.unit_id = n.unit_id AND rp.state = 'read')
 ORDER BY b.id, n.remote_unit_id
 """

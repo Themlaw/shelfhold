@@ -89,6 +89,8 @@ dans la nouvelle Édition (`reading.application.transfer`). La réponse compte l
   vue la dit toujours `approximate` (0084), ainsi que les Unités qu'elle journalise en `read_units`.
   Une Unité n'est journalisée lue que si l'ancienne Édition la disait lue (même numéro) : jamais
   un chapitre sauté. La marque reste annulable (`undo_read_mark`).
+- **Un seul critère de « lu » qui sort** : la vue `reading_progress_proven` (mêmes colonnes, sans les positions transposées). Suwayomi, Kavita (page « lue » de `_all_read`) et le `GET` kosync la lisent ; une marque transposée reste visible et annulable dans `reading_progress`, jamais poussée.
+- **Même genre seulement** : un numéro ne relie que des Unités de même `kind` ; une Unité couverte en partie (`extent`) n'est jamais reportée « lue ».
 - **Jamais une preuve** : une position transposée n'est pas l'ancre d'une traversée, n'est jamais
   une page à pousser vers Kavita, et ses marques ne sont jamais relayées comme « lu ».
 - **Portée** : un profil qui ne voit pas la nouvelle Édition (enfant au-dessus de son plafond), ou

@@ -79,6 +79,7 @@ def carry_over(
     target = edition_parts(connection, change.edition_id)
     sources = {other: edition_parts(connection, other) for other in change.others}
     sources = {k: v for k, v in sources.items() if v}
+    kinds = {p.kind for p in target}
     transferred = pending = 0
     if target and sources:
         for user_id in _readers(connection, sources):
@@ -87,13 +88,14 @@ def carry_over(
                 continue
             if change.edition_id not in visible_edition_ids(connection, scope, [change.edition_id]):
                 continue
-            found = _neutral(connection, user_id, change.work_id, sources)
+            found = _neutral(connection, user_id, change.work_id, sources, kinds)
             if found is None:
                 continue
-            neutral, read_numbers = found
+            neutral, read_numbers, kind = found
             wrote = _land(
-                connection, user_id, change.edition_id, neutral, read_numbers, target, now
-            )
+                connection, user_id, change.edition_id, neutral, read_numbers,
+                [p for p in target if p.kind == kind], now,
+            )  # fmt: skip
             transferred += wrote is True
             pending += wrote is None
     log.info("reading.edition_transferred", work=change.work_id, profiles=transferred)
@@ -115,38 +117,84 @@ def _readers(connection: sa.Connection, sources: dict[str, list[EditionPart]]) -
 
 
 def _neutral(
-    connection: sa.Connection, user_id: str, work_id: str, sources: dict[str, list[EditionPart]]
-) -> tuple[NeutralPosition, set[float]] | None:
-    """The furthest neutral position over the old Editions the profile may see, and the numbers it
-    read in that Edition."""
-    best: tuple[NeutralPosition, set[float]] | None = None
-    for parts in sources.values():
+    connection: sa.Connection,
+    user_id: str,
+    work_id: str,
+    sources: dict[str, list[EditionPart]],
+    kinds: set[str],
+) -> tuple[NeutralPosition, set[float], str] | None:
+    """The furthest neutral position over the old Editions, the numbers it read there and the kind
+    of Unit they number.
+
+    Only the old Editions the profile may see feed it: `progress_of` reads the scope again and
+    leaves the rest out. A number links Units of the same kind and no others (chapter 2 is not
+    volume 2): the Units are taken kind by kind, and only kinds the new Edition also has. Nothing
+    links a chapter to a volume here; the files of one Edition (`unit_coverage`) say which chapters
+    a volume holds, not which volume of another Edition they are. A Unit that a file covers only in
+    part is never read from that file (`extent`): at most it is in progress."""
+    best: tuple[NeutralPosition, set[float], str] | None = None
+    for all_parts in sources.values():
+        partial = _partly_covered(connection, [p.unit_id for p in all_parts])
         rows = {
             r.unit_id: r
             for r in progress_of(
                 connection, viewer_id=user_id, subject_id=user_id,
-                unit_ids=[p.unit_id for p in parts],
+                unit_ids=[p.unit_id for p in all_parts],
             )
         }  # fmt: skip
-        source = []
-        for p in parts:
-            row = rows.get(p.unit_id)
-            source.append(
-                SourcePart(
-                    p.number,
-                    row.state if row else "unread",
-                    _within(connection, row.last_position_id, p.unit_id) if row else None,
+        for kind in sorted({p.kind for p in all_parts} & kinds):
+            source = []
+            for p in (p for p in all_parts if p.kind == kind):
+                row = rows.get(p.unit_id)
+                state = row.state if row else "unread"
+                if state == "read" and p.unit_id in partial:
+                    state = "in_progress"
+                source.append(
+                    SourcePart(
+                        p.number,
+                        state,
+                        _within(connection, row.last_position_id, p.unit_id) if row else None,
+                    )
+                )
+            neutral = neutral_of(work_id, source)
+            if neutral is None:
+                continue
+            read = {s.number for s in source if s.state == "read"}
+            if best is None or (neutral.completed, neutral.total_progression) > (
+                best[0].completed, best[0].total_progression,
+            ):  # fmt: skip
+                best = (neutral, read, kind)
+    return best
+
+
+def _partly_covered(connection: sa.Connection, unit_ids: list[str]) -> set[str]:
+    """The Units some file covers only in part: a read volume does not read them whole."""
+    cover = export.unit_coverage
+    found: set[str] = set()
+    for start in range(0, len(unit_ids), 500):
+        found.update(
+            str(r[0])
+            for r in connection.execute(
+                sa.select(cover.c.unit_id).where(
+                    cover.c.unit_id.in_(unit_ids[start : start + 500]), cover.c.extent != "full"
                 )
             )
-        neutral = neutral_of(work_id, source)
-        if neutral is None:
-            continue
-        read = {s.number for s in source if s.state == "read"}
-        if best is None or (neutral.completed, neutral.total_progression) > (
-            best[0].completed, best[0].total_progression,
-        ):  # fmt: skip
-            best = (neutral, read)
-    return best
+        )
+    return found
+
+
+def _undone(connection: sa.Connection, user_id: str) -> set[str]:
+    """The Units whose mark the profile undid (the trace is `undone_units` of her positions): a
+    second call never brings such a mark back."""
+    table = reading.reading_position
+    found: set[str] = set()
+    for row in connection.execute(
+        sa.select(table.c.undone_units).where(
+            table.c.user_id == user_id, table.c.undone_units != "{}"
+        )
+    ):
+        found.update(str(u) for u in row.undone_units)
+    return found
 
 
 def _within(connection: sa.Connection, position_id: str, unit_id: str) -> float | None:
@@ -259,7 +307,8 @@ def _write(
         client_ts=now if now.tzinfo else now.replace(tzinfo=UTC), device_id=DEVICE,
         source="device", now=now, traverse=False,
     )  # fmt: skip
-    read = [u for u in cover if u in marks]
+    undone = _undone(connection, user_id)
+    read = [u for u in cover if u in marks and u not in undone]
     if read:
         connection.execute(sa.update(table).where(table.c.id == position).values(read_units=read))
     return True

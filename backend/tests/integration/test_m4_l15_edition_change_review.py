@@ -31,10 +31,6 @@ from tests.visibility_env import RATED
 pytestmark = pytest.mark.req("EF-BIB-026", "EF-BIB-044")
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#306 B1: a number shared by a chapter and a volume marks a volume nobody read",
-)
 def test_a_chapter_number_never_marks_read_the_volume_of_the_same_number(tmp_path: Path) -> None:
     """English in chapters (1 to 10), French in volumes (1 to 3, EPUB `book` Units, as an import
     of volume files makes them). Chapters 1 to 3 read, chapter 4 half way: volumes 2 and 3 cover
@@ -60,10 +56,6 @@ def test_a_chapter_number_never_marks_read_the_volume_of_the_same_number(tmp_pat
         assert progress.get(fr_units[2]) is None or progress[fr_units[2]].state != "read"
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#306 B2: a transposed mark is in reading_progress, and L17 pushes it read to Suwayomi",
-)
 def test_a_transposed_mark_is_never_pushed_read_to_suwayomi(tmp_path: Path) -> None:
     """L17 pushes what the view says read, "a plausible traversal, or a state a server holds, and
     nothing else". A mark carried over from another Edition is neither."""
@@ -103,10 +95,6 @@ def test_a_transposed_mark_is_never_pushed_read_to_suwayomi(tmp_path: Path) -> N
         assert env.fake.read_updates == []
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#306 M1: _all_read counts a transposed mark, a look at the last page goes out as read",
-)
 def test_a_look_at_the_last_page_never_becomes_read_in_kavita_through_a_transposed_mark(
     tmp_path: Path,
 ) -> None:
@@ -136,10 +124,6 @@ def test_a_look_at_the_last_page_never_becomes_read_in_kavita_through_a_transpos
         assert wanted != 10  # 10 is Kavita's "read"; a look is at most `pages - 2`
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#306 M2: a Unit half covered by a read volume is carried over as a whole read chapter",
-)
 def test_a_chapter_half_covered_by_a_read_volume_is_not_carried_over_read(tmp_path: Path) -> None:
     """The English volume holds chapter 1 and the first half of chapter 2 (`extent = partial`);
     Kavita says the volume read. The second half of chapter 2 was never read: the French chapter 2
@@ -166,10 +150,6 @@ def test_a_chapter_half_covered_by_a_read_volume_is_not_carried_over_read(tmp_pa
         assert env.progress(reader)[fr_units[1]].state != "read"
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#306 m1: a second carrying over writes the undone mark again in a new position",
-)
 def test_a_mark_the_member_undid_does_not_come_back_with_a_second_call(tmp_path: Path) -> None:
     """The member undoes the transposed mark of French chapter 1, then reads on in English (the old
     Edition stays readable); the administrator calls the door again (the documented way out of

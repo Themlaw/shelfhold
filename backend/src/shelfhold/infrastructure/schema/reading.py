@@ -202,6 +202,32 @@ FROM (
 
 add_view(reading_position, "reading_progress", READING_PROGRESS_SELECT)
 
+
+def _without_transposed(select: str) -> str:
+    """The same rule over the positions that are not a guess carried over from another Edition."""
+    plain = "coalesce(json_extract(locator, '$.transposed'), 0) = 0"
+    edits = (
+        ("          FROM reading_position\n        ) AS q",
+         f"          FROM reading_position\n          WHERE {plain}\n        ) AS q"),
+        ("FROM reading_position WHERE covered_units IS NOT NULL",
+         f"FROM reading_position WHERE covered_units IS NOT NULL\n          AND {plain}"),
+        ("    WHERE json_type(p.undone_units",
+         f"    WHERE {plain.replace('locator', 'p.locator')}\n      AND json_type(p.undone_units"),
+    )  # fmt: skip
+    for old, new in edits:
+        if select.count(old) != 1:
+            raise AssertionError(old)
+        select = select.replace(old, new)
+    return select
+
+
+# What may be pushed OUTSIDE Shelfhold as read (Suwayomi L17, Kavita L14b and L50): the same view
+# with no transposed position (M4 L15, 0084). A Unit is read here only by a proven traversal or by
+# the state a server holds; a mark carried over from another Edition stays in `reading_progress`
+# (visible, undoable) and never goes out. The one criterion: every outward path reads this view.
+READING_PROGRESS_PROVEN_SELECT = _without_transposed(READING_PROGRESS_SELECT)
+add_view(reading_position, "reading_progress_proven", READING_PROGRESS_PROVEN_SELECT)
+
 # Where each synchronisation of a member's progress with a destination stopped (EF-USR-012, M4):
 # one cursor per account, so one server being down never moves another's. NULL = never run.
 progress_sync_cursor = sa.Table(

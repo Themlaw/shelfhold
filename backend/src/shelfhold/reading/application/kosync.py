@@ -596,7 +596,7 @@ class Kosync:
                 r.unit_id: r
                 for r in progress_of(
                     connection, viewer_id=user_id, subject_id=user_id,
-                    unit_ids=[str(u) for u, _m in order],
+                    unit_ids=[str(u) for u, _m in order], proven=True,  # never a guess
                 )
             }  # fmt: skip
             for unit_id, member in order:
