@@ -1,0 +1,38 @@
+# Shelfhold, simple compose: the shortest setup that works, for a first try on a trusted home network.
+# For a library you care about, use the hardened reference instead: compose.yaml (read-only root
+# filesystem, no capabilities, memory and process limits, log rotation, no core dumps).
+#
+# Same image and tag as compose.yaml (`1.0` follows the 1.0.x releases; `edge` is the development
+# image). Host directories must be writable by uid 1000:
+#   mkdir -p data store && sudo chown 1000:1000 data store
+
+x-shelfhold: &shelfhold
+  image: ghcr.io/themlaw/shelfhold:1.0
+  user: "1000:1000"
+  # Settings: copy .env.example to .env and edit it (optional; Compose 2.24 or later).
+  env_file:
+    - path: .env
+      required: false
+  environment:
+    TZ: ${TZ:-Etc/UTC}
+  volumes:
+    - ./data:/data     # database, config, thumbnails (local disk, not NFS)
+    - ./store:/store   # kept copies, a separate folder from ./data
+
+services:
+  # Applies the database migrations, then exits. Shelfhold starts once it has succeeded.
+  shelfhold-migrate:
+    <<: *shelfhold
+    command: ["shelfhold", "migrate"]
+    restart: "no"
+
+  shelfhold:
+    <<: *shelfhold
+    container_name: shelfhold
+    depends_on:
+      shelfhold-migrate:
+        condition: service_completed_successfully
+    init: true
+    ports:
+      - "8080:8080"
+    restart: unless-stopped
