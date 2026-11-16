@@ -429,7 +429,7 @@ def test_a_child_cannot_put_a_hidden_work_in_her_list_and_a_later_rating_hides_i
 
 
 @pytest.mark.req("EF-BIB-016", "ENF-SEC-010")
-def test_a_childs_list_is_read_by_her_and_the_admin_only(world: World) -> None:
+def test_a_child_list_is_read_by_her_and_the_admin_only(world: World) -> None:
     works = world.seed.works
     mine = _make(world, world.kid, "Kid list", "profile", [works["ok"]])
     other = add_profile(world.env, "kid2", "child", "10.0.0.15", max_age_rating=10)
