@@ -30,14 +30,14 @@ def _add_users(api: AuthEnv) -> None:
     (admin_hash,) = db_rows(api.settings, "SELECT password_hash FROM user WHERE role = 'admin'")[0]
     connection = sqlite3.connect(api.settings.database_path)
     try:
-        for user_id, username, role in (
-            (MEMBER_ID, "membre", "member"),
-            (CHILD_ID, "enfant", "child"),
+        for user_id, username, role, ceiling in (
+            (MEMBER_ID, "membre", "member", None),
+            (CHILD_ID, "enfant", "child", 8),
         ):
             connection.execute(
-                "INSERT INTO user (id, username, password_hash, role, can_rate) "
-                "VALUES (?, ?, ?, ?, 0)",
-                (user_id, username, admin_hash, role),
+                "INSERT INTO user (id, username, password_hash, role, can_rate, max_age_rating) "
+                "VALUES (?, ?, ?, ?, 0, ?)",
+                (user_id, username, admin_hash, role, ceiling),
             )
         connection.commit()
     finally:
