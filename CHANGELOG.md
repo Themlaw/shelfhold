@@ -2,6 +2,23 @@
 
 Format : [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/). Versionnement : [SemVer](https://semver.org/lang/fr/). Procédure de release : `docs/releasing.md`.
 
+## 1.1.0-rc.2 - 2026-11-16
+
+Candidate de la 1.1.0 : pré-version GitHub `v1.1.0-rc.2` (version du paquet `1.1.0rc2`), sans tag d'image de version. Porte les lots M4 fusionnés depuis la 1.1.0-rc.1.
+
+### Ajouté
+
+- **Relais kosync (L47)** : KOReader envoie et lit sa progression.
+- **Liseuse (L46b)** : écran « Connecter un appareil » pour apparier, lister et révoquer les jetons de liseuse.
+- **Progression KOReader → Kavita (L50)** : la progression est relayée à Kavita, y compris par le bloc série ; les chapitres franchis sont poussés « lu » si le mouvement part d'un contact du même appareil depuis moins de 24 h (`reading.relay_max_session_hours`), et une page renvoyée par le serveur ne compte jamais comme une lecture. Un chapitre dont Kavita annonce un autre nombre de pages n'est pas poussé et apparaît dans Santé.
+- **Blocs série (L49b)** : tranches (nombre fixe de chapitres par partie) réglables depuis la fiche de série.
+- **Suwayomi (L17)** : la lecture marquée est renvoyée à Suwayomi.
+- **Catalogue (L23)** : liens officiels « Soutenir l'auteur » avec provenance, sans lien d'affiliation, proposition de mise en pause.
+- **Kavita (L14b)** : synchronisation de progression (lecture d'abord, puis écriture dernier-écrit-gagne sur l'horloge serveur, avec le jeton de chaque membre).
+- **SDK et destinations (L05, L04, L06a)** : kit de conformité des destinations, exécuteur de plans, fan-out ; interne, sans effet visible encore.
+
+Migration : oui (0078 à 0083)
+
 ## 1.1.0-rc.1 - 2026-11-15
 
 Candidate de la 1.1.0 : pré-version GitHub `v1.1.0-rc.1` (version du paquet `1.1.0rc1`), sans tag d'image de version. Porte les lots M4 fusionnés depuis la 1.0.1.
