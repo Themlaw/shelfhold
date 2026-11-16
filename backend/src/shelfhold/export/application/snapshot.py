@@ -20,6 +20,7 @@ import sqlalchemy as sa
 from sqlalchemy import Connection
 
 from shelfhold.catalog.public import BOOK_KINDS, Admission, RatingService
+from shelfhold.export.application import fan_out
 from shelfhold.export.application.foreign_names import load_foreign_names
 from shelfhold.export.application.intents import within_any
 from shelfhold.export.application.rendering import comicinfo_sha256
@@ -28,8 +29,8 @@ from shelfhold.export.application.target_state import (
     ensure_active,
     load_health,
 )
-from shelfhold.export.domain.bindings import PARTITIONED, effective_partitioning, is_family
-from shelfhold.export.domain.kavita_compat import TargetMode, blocks_family_shelf
+from shelfhold.export.domain.bindings import PARTITIONED, is_family
+from shelfhold.export.domain.kavita_compat import TargetMode
 from shelfhold.export.domain.naming import FrozenAttrs, NamingTemplate
 from shelfhold.export.domain.path_map import PathEntry, PathMap, PathMode, clean_absolute
 from shelfhold.export.domain.planner import (
@@ -142,10 +143,6 @@ def load_context(connection: Connection, destination_id: str) -> DestinationCont
             s.c.max_age_rating,
             s.c.retention_mode,
             t.c.path_map,
-            t.c.kind,
-            t.c.access_partitioning,
-            t.c.access_partitioning_attested_at,
-            t.c.version_seen,
         )
         .select_from(d.join(s, s.c.id == d.c.shelf_id).join(t, t.c.id == d.c.target_id))
         .where(d.c.id == destination_id)
@@ -156,6 +153,7 @@ def load_context(connection: Connection, destination_id: str) -> DestinationCont
     if writable:
         base = writable[0].local
         root = clean_absolute(f"{base}/{row.root_subpath}") if row.root_subpath else base
+    mates = fan_out.tree_mates(connection, destination_id)
     library = connection.execute(
         sa.select(export.shelf_destination_remote_library.c.remote_library_id)
         .where(export.shelf_destination_remote_library.c.shelf_destination_id == destination_id)
@@ -167,11 +165,9 @@ def load_context(connection: Connection, destination_id: str) -> DestinationCont
         template=NamingTemplate.loads(row.template), max_age_rating=row.max_age_rating,
         retention_mode=row.retention_mode, root_local=root, remote_library_id=library,
         path_map=path_map,
-        partitioning=effective_partitioning(
-            row.kind, row.access_partitioning,
-            attested=row.access_partitioning_attested_at is not None,
-        ),
-        access_control_known_bad=blocks_family_shelf(row.version_seen),
+        # the weakest server of the tree decides (T10): writing a file delivers it to every indexer
+        partitioning=fan_out.weakest_partitioning(mates),
+        access_control_known_bad=fan_out.tree_known_bad(mates),
         library_type=row.kavita_library_type,
     )  # fmt: skip
 

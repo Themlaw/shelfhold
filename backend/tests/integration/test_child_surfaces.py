@@ -283,6 +283,7 @@ CLOSED = (
     "GET /api/v1/shelves/withdrawals",
     "POST /api/v1/shelves/withdrawals",
     "POST /api/v1/shelves/{shelf_id}/allowed-profiles",
+    "GET /api/v1/shelves/{shelf_id}/destinations",  # M4 L06a: the bindings, the admin's
     "POST /api/v1/shelves/{shelf_id}/destinations",
     "POST /api/v1/shelves/{shelf_id}/max-age",
     "POST /api/v1/shelves/{shelf_id}/skip-read-upgrades",

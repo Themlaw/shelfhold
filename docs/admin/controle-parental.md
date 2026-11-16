@@ -215,3 +215,13 @@ enfant : désactiver la synchronisation de la destination (`sync_progress`) l'ar
 parent qui ne veut pas que la lecture de son enfant parte plus loin coupe le suivi du compte de cet
 enfant dans Kavita. Les chapitres au-dessus du plafond d'âge de l'enfant ne sont jamais lus ni
 écrits. Détails : [progress-sync.md](../reference/progress-sync.md).
+
+## Plusieurs destinations pour une étagère (fan-out)
+
+Une étagère peut être liée à plusieurs destinations (`POST /api/v1/shelves/{id}/destinations`, action réservée
+`shelf.bind_destination` : session d'administration fraîche, jamais une clé, jamais un profil enfant ou membre).
+Pour une étagère de moins de 18+, **chaque** liaison doit tenir ses comptes à l'écart (par bibliothèque ou par
+utilisateur) ; la règle est relue à chaque passage d'export, et un serveur qui ne cloisonne plus (attestation
+retirée, version fautive) arrête ce qui est écrit pour sa liaison. Quand deux serveurs lisent le **même dossier**,
+le second est rattaché à l'arbre du premier (`tree_id`) : il ne reçoit rien en plus, il lit le même fichier, et
+le plus faible des deux décide pour l'arbre entier.

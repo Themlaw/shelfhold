@@ -47,7 +47,11 @@ from shelfhold.acquisition.application.lncrawl_ranges import (
 )
 from shelfhold.acquisition.application.planning import held_numbers, pending
 from shelfhold.acquisition.application.preference import TeamPreference
-from shelfhold.acquisition.application.presence import present_for_acquisition, present_in
+from shelfhold.acquisition.application.presence import (
+    present_for_acquisition,
+    present_in,
+    present_units_in,
+)
 from shelfhold.acquisition.application.ranges import (
     RangeReport,
     RangeRequest,
@@ -190,6 +194,7 @@ __all__ = [
     "pending",
     "present_for_acquisition",
     "present_in",
+    "present_units_in",
     "push_read_state",
     "request_check_job",
     "series_key",

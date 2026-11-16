@@ -1,7 +1,8 @@
 """`/api/v1/shelves`: create, bind, set the ceiling and the profiles of a shelf (EF-EXP-047).
 
 Every change of what a shelf below 18+ may hold is a reserved action (admin session, fresh, never
-a key): the ceiling (`shelf.max_age_rating`, which answers with the removal plan of what no longer
+a key): the binding of a destination (`shelf.bind_destination`, EF-EXP-002), the ceiling
+(`shelf.max_age_rating`, which answers with the removal plan of what no longer
 fits), the allowed profiles (`shelf.allowed_profiles`), choosing a family shelf for an Edition
 (`shelf.choose_family`) and applying a removal plan (`shelf.withdraw`). The audit entry is written
 in the transaction of the change.
@@ -11,6 +12,7 @@ session (admin or member, never a child, a key or a token): an Edition nobody ra
 a family shelf, and an adult without the right to classify does not choose one.
 """
 
+import contextlib
 from collections.abc import Callable
 from typing import Any, Literal
 
@@ -34,6 +36,7 @@ _CEILING = RESERVED_ACTIONS["shelf.max_age_rating"]
 _PROFILES = RESERVED_ACTIONS["shelf.allowed_profiles"]
 _FAMILY = RESERVED_ACTIONS["shelf.choose_family"]
 _WITHDRAW = RESERVED_ACTIONS["shelf.withdraw"]
+_BIND = RESERVED_ACTIONS["shelf.bind_destination"]
 
 
 def _actor(principal: Principal) -> Actor:
@@ -109,10 +112,26 @@ class DestinationIn(BaseModel):
     plugin_egress: Literal["foyer", "externe"] = "foyer"
     attested_egress: Literal["foyer", "externe"] | None = None
     root_subpath: str = ""
+    # a folder that already is a tree is taken on purpose (ADR-0052): the server indexes it
+    tree_id: str | None = Field(default=None, min_length=26, max_length=26)
 
 
 class DestinationOut(BaseModel):
     id: str
+
+
+class BindingOut(BaseModel):
+    id: str
+    target_id: str
+    transport: str
+    tree_id: str | None
+    role: Literal["primary", "secondary"] | None
+    partitioning: Literal["none", "library", "user"]
+    present_units: list[str] | None = None  # with `edition_id`: what this binding holds of it
+
+
+class BindingsOut(BaseModel):
+    destinations: list[BindingOut]
 
 
 def build_shelves_router(
@@ -166,17 +185,55 @@ def build_shelves_router(
     def bind_destination(
         shelf_id: str,
         body: DestinationIn,
-        _principal: Principal = Depends(reserved_action(_CEILING)),  # noqa: B008
+        principal: Principal = Depends(reserved_action(_BIND)),  # noqa: B008
     ) -> DestinationOut:
+        """A shelf takes one binding per folder and server (fan-out): each is looked at for the
+        barrier of a shelf below 18+, and a folder that is a tree is attached to on purpose."""
+        with contextlib.suppress(LookupError):  # an unknown shelf is answered by the bind below
+            # a write route: a binding made before trees existed gets its tree first, so that it
+            # can be attached to (the read route above never writes)
+            get_service().list_bindings(shelf_id)
         try:
             destination_id = get_service().bind_destination(
                 shelf_id=shelf_id, target_id=body.target_id, transport=body.transport,
                 plugin_egress=body.plugin_egress, attested_egress=body.attested_egress,
-                root_subpath=body.root_subpath,
+                root_subpath=body.root_subpath, attach_to_tree=body.tree_id,
+                actor=_actor(principal),
             )  # fmt: skip
         except BindingError as error:
             raise ProblemError(error.code) from None
+        except sa.exc.NoResultFound:
+            raise ProblemError("not_found") from None
         return DestinationOut(id=destination_id)
+
+    @router.get("/{shelf_id}/destinations")
+    def list_destinations(
+        shelf_id: str,
+        edition_id: str | None = None,
+        _principal: Principal = Depends(reserved_action(_BIND)),  # noqa: B008
+    ) -> BindingsOut:
+        """The bindings of a shelf, with their tree and role; with `edition_id`, the Units of that
+        Edition each binding holds (`present_in`, per binding: a tree is one copy, its indexers
+        say what its primary says)."""
+        try:
+            views = get_service().read_bindings(shelf_id)
+        except LookupError:
+            raise ProblemError("not_found") from None
+        held = get_ops().library.present_units(edition_id, [v.destination_id for v in views])
+        return BindingsOut(
+            destinations=[
+                BindingOut(
+                    id=v.destination_id,
+                    target_id=v.target_id,
+                    transport=v.transport,
+                    tree_id=v.tree_id,
+                    role=v.role,  # type: ignore[arg-type]
+                    partitioning=v.partitioning,  # type: ignore[arg-type]
+                    present_units=None if held is None else sorted(held[v.destination_id]),
+                )
+                for v in views
+            ]
+        )
 
     @router.post("/{shelf_id}/max-age")
     def set_max_age(

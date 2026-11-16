@@ -32,7 +32,7 @@ Nothing of a call (query, body, field) is ever logged: no `model_dump` of an `Ap
 import hashlib
 import threading
 from collections.abc import Callable, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import PurePosixPath
 from typing import Any, Final, Protocol
@@ -75,6 +75,7 @@ from shelfhold.sdk.fsops import (
 )
 
 __all__ = [
+    "Barrier",
     "ContentStore",
     "ExecutionReport",
     "InstanceProbe",
@@ -82,6 +83,7 @@ __all__ = [
     "PlanExecutor",
     "PlanRefusedError",
     "PlannedLedger",
+    "WrittenFile",
 ]
 
 FILE_TRANSPORTS: Final = FOLDER_TRANSPORTS  # one list with `check_binding`: the folder transports
@@ -95,6 +97,13 @@ class PlanRefusedError(Exception):
     def __init__(self, reason: str) -> None:
         super().__init__(reason)
         self.reason = reason
+
+
+class Barrier(Protocol):
+    """What is looked at again while a plan runs (a shelf below 18+: the partitioning of the
+    tree, the ceiling). `holds` is False when what was planned may no longer be written."""
+
+    def holds(self, destination_id: str, planned: PlannedContent) -> bool: ...
 
 
 class ContentStore(Protocol):
@@ -158,9 +167,26 @@ class PlanBinding:
 
 
 @dataclass(frozen=True)
+class WrittenFile:
+    """A file of the plan that is on the disk now, by the bytes of an `export_item`: what the
+    manifest of the tree is made from. Listed whether this run wrote it or an earlier one did."""
+
+    export_item_id: str
+    rel_path: str
+    file_hash: str
+    size: int
+    mtime_ns: int
+
+
+@dataclass(frozen=True)
 class ExecutionReport:
     executed: int
     skipped: int  # already done: by an intent of an earlier run, or already in place (a folder)
+    files: tuple[WrittenFile, ...] = ()
+    moved: tuple[tuple[str, str], ...] = ()  # `(from, to)` rel paths the plan renamed
+    recycled: tuple[
+        str, ...
+    ] = ()  # rel paths the plan sent to the bin (or moved away, see `_write`)
 
 
 @dataclass(frozen=True)
@@ -185,6 +211,9 @@ class _Run:
     executed: int = 0
     skipped: int = 0
     since_probe: int = 0
+    files: list[WrittenFile] = field(default_factory=list)
+    moved: list[tuple[str, str]] = field(default_factory=list)
+    recycled: list[str] = field(default_factory=list)
 
 
 class PlanExecutor:
@@ -200,7 +229,9 @@ class PlanExecutor:
         clock: Clock | None = None,
         events: TargetEvents | None = None,
         recheck_every: int = 1,
+        barrier: Barrier | None = None,
     ) -> None:
+        self._barrier = barrier
         self._recheck_every = max(1, recheck_every)
         self._engine = engine
         self._disk = disk
@@ -234,7 +265,9 @@ class PlanExecutor:
             self._screen(run, op)  # every operation, before the first one runs
         for index in range(len(run.snapshot)):
             self._run_op(run, index)
-        return ExecutionReport(run.executed, run.skipped)
+        return ExecutionReport(
+            run.executed, run.skipped, tuple(run.files), tuple(run.moved), tuple(run.recycled)
+        )
 
     def run_calls(
         self,
@@ -398,12 +431,13 @@ class PlanExecutor:
 
     def _run_op(self, run: _Run, index: int) -> None:
         op = self._checked(run, index)
+        where = f"{run.tree.local}/{op.rel_path}"
         if run.keys[index] in run.done:
             run.skipped += 1
+            self._note(run, op, where)  # done by an earlier run: still part of the manifest
             return
         if op.op != "mkdir":
             self._probe_again(run)
-        where = f"{run.tree.local}/{op.rel_path}"
         meta = {"exec": run.call_id, "dest": run.binding.destination_id, "op_key": run.keys[index]}
         match op.op:
             case "mkdir":
@@ -412,9 +446,11 @@ class PlanExecutor:
                 self._write(run, op, where, meta)
             case "rename":
                 self._rename(run, op, where, meta)
+                self._note(run, op, where)
             case "recycle":
                 self._recycle(where, meta)
                 run.executed += 1
+                self._note(run, op, where)
             case "touch_mtime":
                 self._touch(op, where, meta)
                 run.executed += 1
@@ -430,6 +466,10 @@ class PlanExecutor:
         if run.since_probe >= self._recheck_every:
             run.since_probe = 0
             self._gate(run.binding)
+            if self._barrier is not None and not self._barrier.holds(
+                run.binding.destination_id, run.planned
+            ):
+                raise PlanRefusedError("the barrier of the shelf no longer holds")
 
     def _screen(self, run: _Run, op: FsOp) -> None:
         """What the SDK check does not know: a sidecar the host did not make for this call and
@@ -473,6 +513,7 @@ class PlanExecutor:
         if self._disk.observe(where) is not None:
             raise PlanRefusedError("the path is taken by a file the host did not write")
         data = self._contents.read(run.binding.destination_id, op.content_ref)
+        self._move_away_old(run, op, meta)
         intent = self._journal.record(
             op="write", dst=where, expected_sha256=_digest(data), extra=meta
         )
@@ -486,6 +527,56 @@ class PlanExecutor:
             raise PlanRefusedError("the disk refused the write") from None
         self._journal.mark_done(intent)
         run.executed += 1
+        self._note(run, op, where)
+
+    def _move_away_old(self, run: _Run, op: FsOp, meta: dict[str, Any]) -> None:
+        """An item the manifest of this binding already holds at another path is moved, never
+        copied: the old file goes to the bin under an intent of its own before the new one is
+        written, so no copy exists that the manifest does not know. Only what the host wrote, and
+        still the file the manifest names (a file that changed is left, and the write refused)."""
+        ref = op.content_ref
+        if ref is None or ref.kind != "export_item":
+            return
+        record = export.export_record
+        with self._engine.connect() as connection:
+            line = connection.execute(
+                sa.select(record.c.rel_path, record.c.file_hash).where(
+                    record.c.shelf_destination_id == run.binding.destination_id,
+                    record.c.export_item_id == ref.ref,
+                    record.c.state.in_(("written", "scanned", "resolved")),
+                    record.c.rel_path.is_not(None),
+                )
+            ).first()
+        if line is None or line.rel_path == op.rel_path:
+            return
+        old = f"{run.tree.local}/{line.rel_path}"
+        found = self._disk.observe(old)
+        if found is None or found[0] != "file":
+            return  # already gone (an earlier run of this very move): the new file may be written
+        if line.file_hash and self._disk.sha256_of(old) != line.file_hash:
+            raise PlanRefusedError("the file the manifest names changed since it was written")
+        self._recycle(old, {**meta, "op_key": meta["op_key"] + ":move"})
+        run.recycled.append(line.rel_path)
+
+    def _note(self, run: _Run, op: FsOp, where: str) -> None:
+        """A file the plan put there by an item of the host: kept for the manifest of the tree. The
+        hash is the one of the disk now, never one a plan said."""
+        if op.op == "rename" and op.dst_rel_path is not None:
+            run.moved.append((op.rel_path, op.dst_rel_path))
+            return
+        if op.op == "recycle":
+            run.recycled.append(op.rel_path)
+            return
+        ref = op.content_ref
+        if op.op != "write" or ref is None or ref.kind != "export_item":
+            return
+        found = self._disk.observe(where)
+        if found is None or found[0] != "file":
+            return  # moved or binned since: the manifest follows what is there
+        digest = self._disk.sha256_of(where)  # `sha256:<hex>`
+        run.files.append(
+            WrittenFile(ref.ref, op.rel_path, digest, found[1].size, found[1].mtime_ns)
+        )
 
     def _rename(self, run: _Run, op: FsOp, where: str, meta: dict[str, Any]) -> None:
         if op.dst_rel_path is None:

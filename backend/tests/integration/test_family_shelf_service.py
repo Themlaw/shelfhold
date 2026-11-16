@@ -212,7 +212,7 @@ def _fresh_required_once_restricted(api: AuthEnv) -> bool:
     from shelfhold.identity.public import RESERVED_ACTIONS
 
     names = ("shelf.max_age_rating", "shelf.allowed_profiles", "shelf.choose_family",
-             "shelf.withdraw")  # fmt: skip
+             "shelf.withdraw", "shelf.bind_destination")  # fmt: skip
     return all(
         RESERVED_ACTIONS[n].needs_fresh_auth(restricted_profile_exists=True, hardened=False)
         and not RESERVED_ACTIONS[n].needs_fresh_auth(

@@ -40,6 +40,7 @@ import sqlalchemy as sa
 import structlog
 from sqlalchemy import Connection, Engine
 
+from shelfhold.export.application.fan_out import indexers_of, is_secondary, mark_indexers_missing
 from shelfhold.export.application.intents import (
     IntentJournal,
     OpenIntent,
@@ -179,6 +180,10 @@ class RemoveDestination:
         with self._engine.connect() as conn:
             self._context(conn, destination_id)
             records = _records(conn, destination_id)
+            indexer = is_secondary(conn, destination_id)
+            others = len(indexers_of(conn, destination_id))
+        if indexer:  # the files are the primary's: an indexer leaves them where they are
+            mode = RemovalMode.KEEP_FILES
         managed = len([r for r in records if _is_managed(r)])
         adopted = len([r for r in records if r.state == "adopted"])
         warnings: list[RemovalWarning] = []
@@ -189,6 +194,8 @@ class RemoveDestination:
             warnings.append(RemovalWarning("past_the_bin", managed))  # deleted for good
             if adopted:
                 warnings.append(RemovalWarning("adopted_kept", adopted))
+        if others and mode is RemovalMode.DELETE_FILES:  # their folder goes empty as well
+            warnings.append(RemovalWarning("indexed_elsewhere", others))
         warnings.append(RemovalWarning("manifest_forgotten", len(records)))
         return RemovalPreview(
             destination_id, mode, tuple(warnings), removal_phrase(destination_id, mode)
@@ -220,7 +227,9 @@ class RemoveDestination:
             with self._engine.connect() as conn:
                 self._require_free(conn, ctx, destination_id)
                 records = _records(conn, destination_id)  # read once the destination is ours
-            if mode is RemovalMode.DELETE_FILES:
+            with self._engine.connect() as conn:
+                indexer = is_secondary(conn, destination_id)
+            if mode is RemovalMode.DELETE_FILES and not indexer:  # an indexer never deletes (T3)
                 self._delete_files(ctx, records, report, left)
             report.left = tuple(left)
             if report.complete:
@@ -539,6 +548,7 @@ def _forget_line(
             record.c.shelf_destination_id == destination_id, record.c.export_item_id == item_id
         )
     )
+    mark_indexers_missing(conn, destination_id, item_id)  # the file is gone for them as well
     _forget_copies(conn, item_id, scope)
 
 
@@ -583,7 +593,47 @@ def forget_destination(
     conn.execute(sa.delete(export.shelf_destination_remote_library).where(
         export.shelf_destination_remote_library.c.shelf_destination_id == destination_id
     ))  # fmt: skip
+    leave_tree(conn, destination_id)
     conn.execute(
         sa.delete(export.shelf_destination).where(export.shelf_destination.c.id == destination_id)
     )
     return len(items)
+
+
+def leave_tree(conn: Connection, destination_id: str) -> None:
+    """A binding leaves its tree. A secondary just goes. A primary hands the tree to the first of
+    its secondaries (by id) in this very transaction, so that the tree, its folder and its
+    indexers stay one: no pass ever meets two orphans on one folder. The last indexer takes the
+    tree down with it."""
+    indexer = export.tree_indexer
+    row = conn.execute(
+        sa.select(indexer.c.tree_id, indexer.c.role).where(
+            indexer.c.shelf_destination_id == destination_id
+        )
+    ).first()
+    if row is None:
+        return
+    heir = None
+    if row.role == "primary":
+        heir = conn.execute(
+            sa.select(indexer.c.shelf_destination_id)
+            .where(
+                indexer.c.tree_id == row.tree_id, indexer.c.shelf_destination_id != destination_id
+            )
+            .order_by(indexer.c.shelf_destination_id)
+            .limit(1)
+        ).scalar()
+    if heir is not None:
+        # one primary per tree and a primary with secondaries is never deleted: the old one steps
+        # down first, the heir takes the writing, then the old row goes
+        conn.execute(
+            sa.update(indexer)
+            .where(indexer.c.shelf_destination_id == destination_id)
+            .values(role="secondary")
+        )
+        conn.execute(
+            sa.update(indexer).where(indexer.c.shelf_destination_id == heir).values(role="primary")
+        )
+    conn.execute(sa.delete(indexer).where(indexer.c.shelf_destination_id == destination_id))
+    if row.role == "primary" and heir is None:
+        conn.execute(sa.delete(export.tree).where(export.tree.c.id == row.tree_id))

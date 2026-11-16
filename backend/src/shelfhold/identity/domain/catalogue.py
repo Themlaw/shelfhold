@@ -96,6 +96,9 @@ _DECLARED = (
     _action("target.recheck_child_exposure", Effect.PARENTAL_CONTROL),
     _action("shelf.choose_family", Effect.PARENTAL_CONTROL),  # EF-BIB-036: file on a family shelf
     _action("shelf.withdraw", Effect.PARENTAL_CONTROL),  # EF-BIB-037: apply a removal plan
+    # M4 L06a (EF-EXP-002, EF-EXP-047): binding a shelf to a destination decides which server
+    # holds what and who can read it there, so it is a parental decision of the admin's
+    _action("shelf.bind_destination", Effect.PARENTAL_CONTROL),
     # Household profiles (M3 L05, EF-USR-001, EF-USR-005): the role, the ceiling, the right to
     # classify and the per-source policy; a fresh session in every profile, never a key
     _action("profile.create", Effect.MANAGES_PROFILES),

@@ -22,6 +22,7 @@ import sqlalchemy as sa
 from sqlalchemy import Connection, Engine
 
 from shelfhold.catalog.public import Admission, RatingService, file_new_edition
+from shelfhold.export.application import fan_out
 from shelfhold.export.application.precreate import (
     AdoptedLibrary,
     Precreated,
@@ -34,6 +35,7 @@ from shelfhold.export.domain.bindings import (
     WRITING_TRANSPORTS,
     BindingFacts,
     Egress,
+    TreeOverlapError,
     check_binding,
     check_ceiling,
     check_family_cap,
@@ -527,12 +529,20 @@ class ShelfService:
         root_subpath: str = "",
         library_type: str = "manga",
         default: NamingTemplate = DEFAULT_TEMPLATE,
+        attach_to_tree: str | None = None,
+        actor: Actor | None = None,
     ) -> str:
-        """Link a shelf to a destination; the egress is what the instance attests, else the
-        plugin's default. Refused: a shelf below 18+ on a destination that does not partition
-        access, overlapping `tree` roots, one remote folder for two shelves, a `pull` without a
-        readable copy. The naming template of the default is copied into the binding (EF-EXP-004):
-        a later default is only proposed, the binding keeps its own copy."""
+        """Link a shelf to a destination (a shelf takes as many as it has folders and servers);
+        the egress is what the instance attests, else the plugin's default. Refused: a shelf below
+        18+ on a destination that does not partition access (looked at for this binding, whatever
+        the others are), overlapping `tree` roots, one remote folder for two shelves, a `pull`
+        without a readable copy. The naming template of the default is copied into the binding
+        (EF-EXP-004): a later default is only proposed, the binding keeps its own copy.
+
+        A folder that already is a tree is taken only on purpose: `attach_to_tree` names it, the
+        binding becomes an indexer of that tree, and it is the folder of that tree, of the shelf
+        of its primary, that it must be (ADR-0052, T1 and T2). The binding and its tree are one
+        transaction."""
         destination_id = new_ulid()
         template = copy_template_into_binding(default)
         with write_transaction(self._engine) as connection:
@@ -575,16 +585,86 @@ class ShelfService:
                 resolve_egress(plugin_default=plugin_egress, attested=attested_egress), real,
                 identity, _remote(path_map, root),
             )  # fmt: skip
-            check_binding(new, self._existing(connection), retention_mode=shelf.retention_mode)
-            connection.execute(
-                sa.insert(export.shelf_destination).values(
-                    id=destination_id, shelf_id=shelf_id, target_id=target_id,
-                    transport=transport, egress=new.egress, root_subpath=root_subpath,
-                    template=template.text, template_origin=template.origin,
-                    kavita_library_type=library_type,
-                )
-            )  # fmt: skip
+            others = self._existing(connection)
+            if attach_to_tree is not None:
+                others = self._without_tree(connection, others, attach_to_tree, shelf_id, real)
+            check_binding(new, others, retention_mode=shelf.retention_mode)
+            try:
+                with connection.begin_nested():
+                    connection.execute(
+                        sa.insert(export.shelf_destination).values(
+                            id=destination_id, shelf_id=shelf_id, target_id=target_id,
+                            transport=transport, egress=new.egress, root_subpath=root_subpath,
+                            template=template.text, template_origin=template.origin,
+                            kavita_library_type=library_type,
+                        )
+                    )  # fmt: skip
+            except sa.exc.IntegrityError:
+                if attach_to_tree is None:
+                    raise
+                raise TreeOverlapError("this server already indexes this folder") from None
+            if transport == "tree":
+                if attach_to_tree is None:
+                    fan_out.ensure_tree(
+                        connection, destination_id=destination_id, target_id=target_id,
+                        local_root=real,
+                    )  # fmt: skip
+                else:
+                    fan_out.attach_secondary(
+                        connection, tree_id=attach_to_tree, destination_id=destination_id,
+                        target_id=target_id,
+                    )  # fmt: skip
+            self._audit(connection, actor, "shelf.bind", f"{shelf_id}|{destination_id}")
         return destination_id
+
+    @staticmethod
+    def _without_tree(
+        connection: Connection,
+        existing: list[BindingFacts],
+        tree_id: str,
+        shelf_id: str,
+        root: str | None,
+    ) -> list[BindingFacts]:
+        """The bindings that overlap are the ones of the tree itself, which the explicit choice
+        takes in: the tree must be one of this shelf, and the folder the very one of the tree."""
+        placed = fan_out.tree_place(connection, tree_id)
+        if placed is None or placed[2] != shelf_id:
+            raise TreeOverlapError("a tree is attached to by the shelf of its primary only")
+        found = None if root is None else fan_out.locate_root(connection, root)
+        if found is None or found != (placed[0], placed[1]):
+            raise TreeOverlapError("the folder is not the one of the tree")
+        mine = set(
+            connection.execute(
+                sa.select(export.tree_indexer.c.shelf_destination_id).where(
+                    export.tree_indexer.c.tree_id == tree_id
+                )
+            ).scalars()
+        )
+        return [b for b in existing if b.shelf_destination_id not in mine]
+
+    def list_bindings(self, shelf_id: str) -> list[fan_out.BindingView]:
+        """The bindings of a shelf with their tree and their role. A binding made before trees
+        existed gets its tree here, once (idempotent), from the folder it writes: a write, for the
+        callers that are one (the pass, the tests). A read route uses `read_bindings`."""
+        with write_transaction(self._engine) as connection:
+            self._require_shelf(connection, shelf_id)
+            return fan_out.ensure_trees(connection, shelf_id)
+
+    def read_bindings(self, shelf_id: str) -> list[fan_out.BindingView]:
+        """The same, as the database holds it: nothing is written (a safe method writes nothing)."""
+        with self._engine.connect() as connection:
+            self._require_shelf(connection, shelf_id)
+            return fan_out.bindings_of(connection, shelf_id)
+
+    @staticmethod
+    def _require_shelf(connection: Connection, shelf_id: str) -> None:
+        if (
+            connection.execute(
+                sa.select(export.shelf.c.id).where(export.shelf.c.id == shelf_id)
+            ).first()
+            is None
+        ):
+            raise LookupError(shelf_id)
 
     def pause_family_of_target(self, target_id: str) -> list[str]:
         """A new path map moves the folders a Kavita library reads, so who can read what has to be

@@ -35,6 +35,7 @@
     'removal:files_deleted': 'destinations.removal.files_deleted',
     'removal:past_the_bin': 'destinations.warn.removal_past_the_bin',
     'removal:adopted_kept': 'destinations.warn.removal_adopted_kept',
+    'removal:indexed_elsewhere': 'destinations.warn.removal_indexed_elsewhere',
     'detach:files_kept': 'destinations.warn.detach_files_kept',
     'detach:hidden_erased': 'destinations.detach.hidden_erased',
     'detach:key_revoked': 'destinations.warn.detach_key_revoked',

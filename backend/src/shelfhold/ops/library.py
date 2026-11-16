@@ -12,7 +12,7 @@ from __future__ import annotations
 import asyncio
 import functools
 import sqlite3
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
 from dataclasses import asdict
 from datetime import datetime
@@ -27,7 +27,7 @@ from shelfhold.acquisition.application.upstream import (
     DetachScope,
     UpstreamSnapshots,
 )
-from shelfhold.acquisition.public import decline_pairing
+from shelfhold.acquisition.public import decline_pairing, present_units_in
 from shelfhold.catalog.public import (
     ListedUnit,
     RelinkRefusedError,
@@ -1116,6 +1116,17 @@ class LibraryOps:
             )  # fmt: skip
 
     # -- the removal plan of the family shelves (L10, EF-BIB-037) --------------------------------
+
+    def present_units(
+        self, edition_id: str | None, destination_ids: Sequence[str]
+    ) -> dict[str, frozenset[str]] | None:
+        """`present_in` of an Edition for each binding of a shelf (None without an Edition): what
+        the screen of the bindings shows, and what the purge reads. Per binding: a tree is one
+        copy, and the indexers of a tree say what its primary says."""
+        if edition_id is None:
+            return None
+        with self._comp.engine.connect() as connection:
+            return {d: present_units_in(connection, edition_id, d) for d in destination_ids}
 
     @_refused
     def withdraw_plan(

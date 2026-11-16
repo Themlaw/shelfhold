@@ -21,7 +21,7 @@ from sqlalchemy import Engine
 from structlog.contextvars import bound_contextvars
 
 from shelfhold.events.bus import EventBus
-from shelfhold.export.application import blocked_memo, waiting_marks
+from shelfhold.export.application import blocked_memo, fan_out, waiting_marks
 from shelfhold.export.application.export_items import create_export_item, ensure_export_series
 from shelfhold.export.application.intents import IntentJournal, open_intent_paths
 from shelfhold.export.application.locks import ResourceLocks, library_resource
@@ -29,6 +29,7 @@ from shelfhold.export.application.manifest_write import complete_write
 from shelfhold.export.application.mirror import ProvenanceMirror
 from shelfhold.export.application.naming_preview import NAMING_BLOCKS, NamingItem
 from shelfhold.export.application.plan_executor import (
+    Barrier,
     ContentStore,
     ExecutionReport,
     InstanceProbe,
@@ -111,6 +112,7 @@ from shelfhold.library.public import (
     servable_epub,
 )
 from shelfhold.sdk.age import AgeRating
+from shelfhold.sdk.api_call import ApiCall
 
 __all__ = [
     "ApplyReport",
@@ -491,7 +493,12 @@ class ExportPipeline:
         self._preflight = preflight
 
     def use_plan_executor(
-        self, *, contents: ContentStore, probe: InstanceProbe, events: TargetEvents | None = None
+        self,
+        *,
+        contents: ContentStore,
+        probe: InstanceProbe,
+        events: TargetEvents | None = None,
+        barrier: Barrier | None = None,
     ) -> None:
         """The executor of the plans destinations describe (M4 L04), over this pipeline's
         database, files, journal and ledger. The composition root sets it once, with the bytes the
@@ -505,6 +512,7 @@ class ExportPipeline:
             probe=probe,
             clock=self._clock,
             events=events,
+            barrier=barrier,
         )
 
     def execute_destination_plan(
@@ -517,6 +525,22 @@ class ExportPipeline:
         self._require_writable()
         with self._root_session(binding.destination_id):
             return self._plan_executor.execute(binding, call_id, raw_plan)
+
+    def send_destination_calls(
+        self,
+        binding: PlanBinding,
+        call_id: str,
+        calls: Sequence[object],
+        *,
+        send: Callable[[ApiCall], object],
+    ) -> int:
+        """Send the calls a destination described for one binding: the other door of the executor,
+        with the same gate (never on an instance that waits for an adoption) and the same rules
+        (parsed, checked right before each send, `can_purge` from the capabilities)."""
+        if self._plan_executor is None:
+            raise PlanExecutorUnboundError("no executor of destination plans is set")
+        self._require_writable()
+        return self._plan_executor.run_calls(binding, call_id, calls, send=send)
 
     def _require_writable(self) -> None:
         if self._gate is not None:
@@ -656,6 +680,9 @@ class ExportPipeline:
         self._require_verified()
         with self._engine.connect() as connection:
             ensure_active(connection, destination_id)
+            if fan_out.is_secondary(connection, destination_id):
+                log.debug("export.indexer_writes_nothing", destination_id=destination_id)
+                return ApplyReport(None, ())  # the primary of its tree writes (T3)
         _ctx, wanted, first = self._compute(destination_id, disk=False)
         if not first.ops:
             log.debug("export.nothing_to_write", destination_id=destination_id)
@@ -1257,6 +1284,7 @@ class ExportPipeline:
             self._require_barrier(connection, ctx, planned)
             item_id = self._item(connection, ctx, planned, source)
             self._record(connection, ctx, planned, item_id, reserved)
+            fan_out.mirror_to_indexers(connection, ctx.destination_id, item_id)  # T9
         journal = IntentJournal(self._engine, self._fsops, clock=self._clock)
         intent = journal.record(
             op="write", dst=target, expected_sha256=rendered.file_hash, plan_id=plan_id

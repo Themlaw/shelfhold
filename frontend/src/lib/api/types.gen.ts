@@ -577,6 +577,40 @@ export type BindingOrderOut = {
 };
 
 /**
+ * BindingOut
+ */
+export type BindingOut = {
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Partitioning
+     */
+    partitioning: 'none' | 'library' | 'user';
+    /**
+     * Present Units
+     */
+    present_units?: Array<string> | null;
+    /**
+     * Role
+     */
+    role: 'primary' | 'secondary' | null;
+    /**
+     * Target Id
+     */
+    target_id: string;
+    /**
+     * Transport
+     */
+    transport: string;
+    /**
+     * Tree Id
+     */
+    tree_id: string | null;
+};
+
+/**
  * BindingPausedOut
  */
 export type BindingPausedOut = {
@@ -592,6 +626,16 @@ export type BindingPausedOut = {
      * Paused
      */
     paused: true;
+};
+
+/**
+ * BindingsOut
+ */
+export type BindingsOut = {
+    /**
+     * Destinations
+     */
+    destinations: Array<BindingOut>;
 };
 
 /**
@@ -932,6 +976,10 @@ export type DestinationIn = {
      * Transport
      */
     transport?: 'tree' | 'dropbox' | 'pull';
+    /**
+     * Tree Id
+     */
+    tree_id?: string | null;
 };
 
 /**
@@ -12246,6 +12294,49 @@ export type SetProfilesResponses = {
 };
 
 export type SetProfilesResponse = SetProfilesResponses[keyof SetProfilesResponses];
+
+export type ListDestinations2Data = {
+    body?: never;
+    path: {
+        /**
+         * Shelf Id
+         */
+        shelf_id: string;
+    };
+    query?: {
+        /**
+         * Edition Id
+         */
+        edition_id?: string | null;
+    };
+    url: '/api/v1/shelves/{shelf_id}/destinations';
+};
+
+export type ListDestinations2Errors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type ListDestinations2Error = ListDestinations2Errors[keyof ListDestinations2Errors];
+
+export type ListDestinations2Responses = {
+    /**
+     * Successful Response
+     */
+    200: BindingsOut;
+};
+
+export type ListDestinations2Response = ListDestinations2Responses[keyof ListDestinations2Responses];
 
 export type BindDestinationData = {
     body: DestinationIn;

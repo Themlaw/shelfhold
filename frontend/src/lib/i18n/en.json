@@ -610,6 +610,7 @@
   "destinations.warn.removal_manifest_forgotten": "Shelfhold forgets {count} manifest rows and this destination.",
   "destinations.warn.removal_past_the_bin": "They do not go through the bin: there is no way back.",
   "destinations.warn.removal_adopted_kept": "{count} files you already had stay: Shelfhold never had to delete them.",
+  "destinations.warn.removal_indexed_elsewhere": "{count} other servers read this folder: it will be empty for them as well.",
   "destinations.warn.detach_files_kept": "Your {count} files stay exactly where they are.",
   "destinations.warn.detach_key_revoked": "The dedicated Kavita key is revoked: Shelfhold can no longer reach Kavita.",
   "destinations.warn.detach_manifest_forgotten": "Shelfhold forgets its manifest ({count} rows) and this target.",
