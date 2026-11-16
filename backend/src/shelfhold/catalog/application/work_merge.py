@@ -52,6 +52,7 @@ __all__ = [
     "WorkMerged",
     "apply_work_merge",
     "move_collection_items",
+    "move_work_relations",
     "plan_work_merge",
     "resolve_work",
 ]
@@ -292,6 +293,44 @@ def move_collection_items(connection: Connection, *, drop_id: str, keep_id: str)
     )
 
 
+def move_work_relations(connection: Connection, *, drop_id: str, keep_id: str) -> None:
+    """The relations of the absorbed Work go to the survivor (EF-BIB-039): a merge does not lose
+    what the admin said of the Work. The relation between the two Works is dropped (a Work is
+    not related to itself), and a relation the survivor already has is not doubled. "Séparer"
+    does not take them back: a relation is the admin's statement about the Work, kept with it."""
+    table = catalog.work_relation
+    rows = connection.execute(
+        sa.select(table).where(
+            sa.or_(table.c.from_work_id == drop_id, table.c.to_work_id == drop_id)
+        )
+    ).all()
+    for row in rows:
+        source, target = (
+            keep_id if row.from_work_id == drop_id else row.from_work_id,
+            keep_id if row.to_work_id == drop_id else row.to_work_id,
+        )
+        if source == target:
+            continue  # the relation of the two merged Works: it has no meaning any more
+        taken = connection.execute(
+            sa.select(table.c.kind).where(
+                table.c.from_work_id == source, table.c.to_work_id == target,
+                table.c.kind == row.kind,
+            )
+        ).first()  # fmt: skip
+        if taken is None:
+            connection.execute(
+                sa.insert(table).values(
+                    from_work_id=source, to_work_id=target, kind=row.kind, origin=row.origin,
+                    created_at=row.created_at,
+                )
+            )  # fmt: skip
+    connection.execute(
+        sa.delete(table).where(
+            sa.or_(table.c.from_work_id == drop_id, table.c.to_work_id == drop_id)
+        )
+    )
+
+
 def _move_states(connection: Connection, drop_id: str, keep_id: str) -> list[dict[str, Any]]:
     """The flags of each user. Where the user holds both, the survivor's row takes the union and
     the latest stamp; the absorbed row is in the snapshot either way."""
@@ -388,6 +427,7 @@ def _apply(connection: Connection, plan: WorkMergePlan, now: datetime) -> WorkMe
             .values(work_id=keep_id)
         )
         move_collection_items(connection, drop_id=drop_id, keep_id=keep_id)
+        move_work_relations(connection, drop_id=drop_id, keep_id=keep_id)
         have = {r.series_id for r in _series_of(connection, keep_id)}
         for m in members:
             if m["series_id"] in have:  # the same Series: the survivor's place stays

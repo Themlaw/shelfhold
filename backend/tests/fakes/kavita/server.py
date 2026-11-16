@@ -748,24 +748,24 @@ class FakeKavita:
         return {"id": series_id, "name": found["name"] if found else f"series-{series_id}"}
 
     def _update_related(self, recorded: RecordedRequest) -> httpx2.Response:
-        """`UpdateRelatedSeriesDto`: the lists replace the stored ones, as Kavita applies them (a
-        list the document leaves out is left alone, a list it sends is the whole of that kind)."""
+        """`UpdateRelatedSeriesDto`: Kavita's DTO starts every list empty and applies each one as
+        it is, so a list the document leaves out is emptied: a faithful update sends them all."""
         body = recorded.json() if recorded.body else None
         if not isinstance(body, dict):
             return self._violation("related update without a JSON object")
-        schema = _schema("UpdateRelatedSeriesDto")["properties"]
-        unknown = set(body) - set(schema)
+        kinds = set(_schema("UpdateRelatedSeriesDto")["properties"]) - {"seriesId"}
         sid = body.get("seriesId")
-        if unknown or sid not in self.ages:
-            return self._violation(f"related update: unknown={sorted(unknown)} series={sid!r}")
-        for kind, ids in body.items():
-            if kind == "seriesId" or ids is None:
-                continue
+        if set(body) - kinds - {"seriesId"} or sid not in self.ages:
+            return self._violation(f"related update: unknown fields or series {sid!r}")
+        replaced: dict[str, list[int]] = {}
+        for kind in kinds:
+            ids = body.get(kind) or []
             if not isinstance(ids, list) or not all(isinstance(i, int) for i in ids):
                 return self._violation(f"related update: {kind} is not a list of ids")
             if sid in ids or any(i not in self.ages for i in ids):
                 return self._violation(f"related update: {kind} names itself or an unknown series")
-            self.relations.setdefault(sid, {})[kind] = sorted(set(ids))
+            replaced[kind] = sorted(set(ids))
+        self.relations[sid] = replaced
         self.related_posts.append(copy.deepcopy(body))
         return self._text(200, "")
 

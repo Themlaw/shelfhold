@@ -1985,6 +1985,16 @@
     action = "A list holds at most 5,000 items: remove some or make another list."
     cause = "The largest number of items of a collection or reading list is reached."
 
+  [errors."relation.invalid"]
+    title = "These two works cannot be related that way."
+    action = "Pick two different works and one of the known kinds of relation."
+    cause = "A work cannot be related to itself, and the kind of relation must be one the catalogue knows."
+
+  [errors."relation.cycle"]
+    title = "This relation would close a loop."
+    action = "Check the order of the chain: a work cannot be a sequel (or a spin-off) of its own sequel."
+    cause = "The other end already follows this work, directly or through other works, with the same kind of relation."
+
   [errors."export.series_reassignment_refused"]
     title = "The reallocation plan for the exported series is outdated or refused: nothing has been modified."
     action = "Reread the plan: an adopted (frozen) series or a series linked to something other than its Editions stops it. A plan reread after a change has another fingerprint."

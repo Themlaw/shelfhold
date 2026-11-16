@@ -181,9 +181,14 @@ from shelfhold.catalog.application.rating import (
 )
 from shelfhold.catalog.application.relations import (
     RelatedWork,
+    RelationCycleError,
     RelationError,
+    RelationNotFoundError,
+    Relations,
+    RelationView,
     relate_works,
     relations_of,
+    relations_shown,
     unrelate_works,
 )
 from shelfhold.catalog.application.relink import (
@@ -565,7 +570,11 @@ __all__ = [
     "ReaderScope",
     "Refiling",
     "RelatedWork",
+    "RelationCycleError",
     "RelationError",
+    "RelationNotFoundError",
+    "RelationView",
+    "Relations",
     "RelinkRefusedError",
     "RelinkRequest",
     "RelinkResult",
@@ -669,6 +678,7 @@ __all__ = [
     "referenced_cover_refs",
     "relate_works",
     "relations_of",
+    "relations_shown",
     "relink_isolated",
     "remove_from_search_index",
     "removed_ids",

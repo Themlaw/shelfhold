@@ -15,10 +15,10 @@ from typing import Any
 
 import pytest
 import sqlalchemy as sa
-from shelfhold.export.targets.kavita.related import RELATED_FIELD, RelatedSeries
 
 from shelfhold.catalog.public import relate_works, unrelate_works
 from shelfhold.export.application.target_state import FieldRegistry, target_write_guard
+from shelfhold.export.targets.kavita.related import RELATED_FIELD, RelatedSeries
 from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import export
@@ -72,7 +72,7 @@ def indexed(
                 remote_library_id=library_id,
                 export_series_id=series_id,
                 assigned_at=NOW,
-                assigned_by="auto",
+                assigned_by="first_export",
             )
         )
     return kavita_id
@@ -201,7 +201,7 @@ def test_libraries_open_to_the_same_profiles_are_related_across_libraries() -> N
         kl = indexed(w, left, "Left")
         kr = indexed(w, right, "Right", destination_id=destination, library_id=library)
         relate(env, left, right, "spin_off_of")
-        assert sorted(push(w)) == sorted([kl, kr])
+        assert push(w) == [kr]  # Kavita derives the parent: one side is written
         assert w.fake.relations[kr]["spinOffs"] == [kl]
 
 
@@ -218,6 +218,7 @@ def test_a_relation_waits_while_paused_and_skips_a_missing_series() -> None:
         with write_transaction(env.engine) as c:
             c.execute(sa.update(export.shelf).values(paused_reason=None))
         # a series Kavita does not know (the cache outlived it) is left alone, the other is not hurt
+        w.fake.series = [s for s in w.fake.series if s["id"] != kb]
         del w.fake.ages[kb]
         assert push(w) == []
         assert w.fake.violations == []

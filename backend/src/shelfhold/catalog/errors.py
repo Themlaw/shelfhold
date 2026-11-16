@@ -25,4 +25,7 @@ CODES: tuple[ErrorCode, ...] = (
     # M4 L18a (EF-BIB-016): a reading-list file that is refused (never cut), a list that is full
     ErrorCode("collection.cbl_refused", 422, "user"),
     ErrorCode("collection.full", 409, "user"),
+    # M4 L19 (EF-BIB-039): a relation that cannot exist, and one that would close a loop
+    ErrorCode("relation.invalid", 422, "admin"),
+    ErrorCode("relation.cycle", 409, "admin"),
 )

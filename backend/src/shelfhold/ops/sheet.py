@@ -25,7 +25,7 @@ from typing import TYPE_CHECKING, Any, Final
 
 import sqlalchemy as sa
 
-from shelfhold.catalog.public import COVER_FIELD, MERGE_WINDOW_DAYS, Catalog
+from shelfhold.catalog.public import COVER_FIELD, MERGE_WINDOW_DAYS, Catalog, relations_of
 from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.ids import is_ulid
 from shelfhold.infrastructure.schema import acquisition, catalog
@@ -78,6 +78,7 @@ class SheetOps:
             attach = self._attach(connection, edition_id)
             fields = self._fields(connection, edition_id, work_id)
             cover = self._cover(connection, edition_id)
+            relations = self._relations(connection, work_id)
         paused = follow is not None and follow.check_override == "paused"
         active = [b for b in bindings if b["active"]]
         return {
@@ -88,6 +89,7 @@ class SheetOps:
             "upstream_status_by": edition.upstream_status_by,
             "followed": follow is not None, "bindings": bindings, "gaps": gaps,
             "teams": teams, "fields": fields, "merges": merges, "attach": attach,
+            "relations": relations,
             "can": {
                 "check": follow is not None and not paused and bool(active),
                 "reorder": len(active) > 1,
@@ -183,6 +185,35 @@ class SheetOps:
                     "value": value, "manual": r.provenance == "manual", "locked": bool(r.locked),
                 })  # fmt: skip
         return found
+
+    def _relations(self, connection: sa.Connection, work_id: str) -> list[dict[str, Any]]:
+        """The relations of the Work, all of them: the sheet is the admin's (EF-BIB-039). Each is
+        read from this Work's side, with the other Work's title and its first Edition, where its
+        own sheet is."""
+        related = relations_of(connection, work_id)
+        if not related:
+            return []
+        others = sorted({r.other_work_id for r in related})
+        titles = {
+            str(r.id): str(r.title)
+            for r in connection.execute(
+                sa.select(catalog.work.c.id, catalog.work.c.title).where(
+                    catalog.work.c.id.in_(others)
+                )
+            )
+        }
+        editions: dict[str, str] = {}
+        for row in connection.execute(
+            sa.select(catalog.edition.c.work_id, catalog.edition.c.id)
+            .where(catalog.edition.c.work_id.in_(others))
+            .order_by(catalog.edition.c.id.desc())
+        ):
+            editions[str(row.work_id)] = str(row.id)  # the oldest Edition ends up the one kept
+        return [
+            {"work_id": r.other_work_id, "title": titles.get(r.other_work_id, ""), "kind": r.kind,
+             "outgoing": r.outgoing, "edition_id": editions.get(r.other_work_id)}
+            for r in related
+        ]  # fmt: skip
 
     def _cover(self, connection: sa.Connection, edition_id: str) -> str | None:
         t = catalog.metadata_field.c

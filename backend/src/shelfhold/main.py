@@ -82,6 +82,7 @@ from shelfhold.interfaces.http_api.opds import SeriesBundleProvider, build_opds_
 from shelfhold.interfaces.http_api.ops import build_ops_router
 from shelfhold.interfaces.http_api.plans import build_plans_router
 from shelfhold.interfaces.http_api.plugins import build_plugins_router
+from shelfhold.interfaces.http_api.relations import build_relations_router
 from shelfhold.interfaces.http_api.requests import build_requests_router
 from shelfhold.interfaces.http_api.revisions import build_revisions_router
 from shelfhold.interfaces.http_api.search import build_search_router
@@ -370,6 +371,7 @@ def create_app(
         build_activity_router(lambda: engine),  # EF-USR-016: `activity_view`, unmask audited
         build_catalog_lists_router(lambda: engine, since_key),  # M3 L11: `?since=`
         build_collections_router(lambda: engine),  # M4 L18a: collections and reading lists
+        build_relations_router(lambda: engine, clock.now),  # M4 L19: related Works
         build_stream_router(
             lambda: engine,
             lambda: composition.bus,

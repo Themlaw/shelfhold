@@ -128,6 +128,7 @@ from shelfhold.export.targets.kavita.library_type import LibraryTypeService
 from shelfhold.export.targets.kavita.polling import ArrivalPoller
 from shelfhold.export.targets.kavita.progress import KavitaProgress
 from shelfhold.export.targets.kavita.reinstall import InstanceService
+from shelfhold.export.targets.kavita.related import RelatedSeries
 from shelfhold.export.targets.kavita.series import (
     SeriesAgeGate,
     SeriesAges,
@@ -977,7 +978,8 @@ async def settle_arrival(
     fsops: Callable[[], Fsops] | None = None,
 ) -> None:
     """After an export: confirm what Kavita indexed (EF-EXP-034), post the covers of the
-    series it now knows (EF-EXP-045), then push their classes (EF-EXP-040). All are read from
+    series it now knows (EF-EXP-045), then push their classes (EF-EXP-040) and their relations
+    (EF-BIB-039). All are read from
     the database first, so with nothing pending neither the network nor a disk is touched beyond
     that."""
     events = BusTargetEvents(comp.engine, comp.bus)
@@ -999,6 +1001,10 @@ async def settle_arrival(
         log.info("export.cover_skipped", reason=type(error).__name__)
     # the class of the series, locked, by the API: never a rewrite of a file (EF-EXP-040)
     await SeriesAges(comp.engine, comp.clock, events).push(client, destination_id)
+    # the related Works, as the "related series" of Kavita, between libraries open to the same
+    # profiles only (EF-BIB-039); the database alone says when nothing is due
+    if client.target_id is not None:
+        await RelatedSeries(comp.engine, comp.clock, events).publish(client, client.target_id)
 
 
 # -- export.apply ---------------------------------------------------------------

@@ -84,6 +84,14 @@ class SheetCanOut(BaseModel):
     confirm_attach: bool
 
 
+class SheetRelationOut(BaseModel):
+    work_id: str
+    title: str
+    kind: str
+    outgoing: bool  # True: this Work is `kind` of the other one
+    edition_id: str | None  # the other Work's first Edition: where its own sheet is
+
+
 class SheetOut(BaseModel):
     edition_id: str
     work_id: str
@@ -100,6 +108,7 @@ class SheetOut(BaseModel):
     fields: list[SheetFieldOut]
     merges: list[SheetMergeOut]
     attach: SheetAttachOut | None
+    relations: list[SheetRelationOut]  # M4 L19: related Works, read from this Work's side
     can: SheetCanOut
 
 

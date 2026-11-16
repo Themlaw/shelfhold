@@ -1974,6 +1974,16 @@ title = "Cette liste est pleine."
 action = "Une liste tient au plus 5 000 éléments : retirez-en ou faites-en une autre."
 cause = "Le nombre maximal d'éléments d'une collection ou d'une liste de lecture est atteint."
 
+[errors."relation.invalid"]
+title = "Ces deux œuvres ne peuvent pas être liées ainsi."
+action = "Choisissez deux œuvres différentes et l'un des types de relation connus."
+cause = "Une œuvre ne se lie pas à elle-même, et le type de relation doit être un type que le catalogue connaît."
+
+[errors."relation.cycle"]
+title = "Cette relation fermerait une boucle."
+action = "Vérifiez l'ordre de la chaîne : une œuvre ne peut pas être la suite (ou le dérivé) de sa propre suite."
+cause = "L'autre œuvre suit déjà celle-ci, directement ou par d'autres œuvres, avec le même type de relation."
+
 [errors."export.series_reassignment_refused"]
 title = "Le plan de réaffectation des séries exportées est périmé ou refusé : rien n'a été modifié."
 action = "Relisez le plan : une série adoptée (figée) ou une série liée à autre chose que ses éditions l'arrête. Un plan relu après un changement a une autre empreinte."
