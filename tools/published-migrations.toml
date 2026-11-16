@@ -229,3 +229,8 @@ since = "1.1"
 file = "0081_utime_intent.py"
 sha256 = "c350d103e31e07f4319d6ae524c459dbbf63afc0203f9842f11e998d7635d99e"
 since = "1.1"
+
+[[migration]]
+file = "0082_bundle_setting.py"
+sha256 = "31b04fbc59907938433fc10e3bbadc1d22b96064d324afc2da80298a18950f5b"
+since = "1.1"
