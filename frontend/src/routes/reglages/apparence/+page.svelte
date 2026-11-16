@@ -6,7 +6,7 @@
   import { onMount } from 'svelte';
   import { getPreferences, patchPreferences } from '#lib/api/index.ts';
   import type { PreferencesOut } from '#lib/api/types.gen.ts';
-  import { setUiLanguage, t } from '#lib/i18n/index.ts';
+  import { hasMessage, setUiLanguage, t } from '#lib/i18n/index.ts';
   import { csrfToken } from '#lib/passkeys.ts';
 
   let prefs = $state<PreferencesOut | null>(null);
@@ -19,6 +19,12 @@
   let language = $state<PreferencesOut['language']>('fr');
   let failed = $state(false);
   let message = $state('');
+
+  // a theme the server delivers before this screen knows its name shows under its own name
+  const themeLabel = (name: string): string => {
+    const key = `appearance.theme.${name}`;
+    return hasMessage(key) ? t(key) : name;
+  };
 
   const headers = () => ({ 'X-CSRF-Token': csrfToken() });
 
@@ -113,7 +119,7 @@
       <label for="theme">{t('appearance.theme')}</label>
       <select id="theme" bind:value={theme} onchange={changeTheme}>
         {#each prefs.available_themes as name (name)}
-          <option value={name}>{t(`appearance.theme.${name}`)}</option>
+          <option value={name}>{themeLabel(name)}</option>
         {/each}
       </select>
     </form>
