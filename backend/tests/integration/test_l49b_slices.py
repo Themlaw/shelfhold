@@ -274,11 +274,11 @@ def test_the_admin_sets_and_clears_the_slice(lab: World) -> None:
         )
 
 
-@pytest.mark.parametrize("value", [0, -1, 257, 1.5, "2", True, [2]])
-def test_a_slice_out_of_range_or_of_another_type_is_refused(lab: World, value: Any) -> None:
-    got = put_slice(lab, value)
-    assert got.status_code in (400, 422), got.text
-    assert slice_of(lab) is None
+def test_a_slice_out_of_range_or_of_another_type_is_refused(lab: World) -> None:
+    for value in (0, -1, 257, 1.5, "2", True, [2]):
+        got = put_slice(lab, value)
+        assert got.status_code in (400, 422), (value, got.text)
+        assert slice_of(lab) is None
 
 
 def test_an_unknown_field_or_an_unknown_edition_is_refused(lab: World) -> None:
