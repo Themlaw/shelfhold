@@ -1331,11 +1331,6 @@ title = "La liseuse ne crée pas de compte."
 action = "Demandez à l'administrateur de Shelfhold un jeton d'appareil, puis saisissez-le dans les réglages de synchronisation de la liseuse."
 cause = "Les comptes sont les profils de Shelfhold : une liseuse ne peut pas en créer, elle se connecte avec un jeton d'appareil."
 
-[errors."kosync_ambiguous_document"]
-title = "Deux fichiers portent la même empreinte."
-action = "Gardez un seul de ces fichiers sur la liseuse, ou demandez à l'administrateur de relancer le calcul des empreintes."
-cause = "Shelfhold ne devine pas sur quel fichier écrire la position : rien n'a été enregistré ni lu."
-
 [errors."bundle_busy"]
 title = "Trop de blocs sont servis en ce moment."
 action = "Patientez quelques instants, puis relancez le téléchargement."
@@ -2555,6 +2550,9 @@ keyring_title = "Le trousseau"
 keyring_body = "Le fichier d'export du trousseau, que la documentation nomme {export} : si vous l'avez enregistré sous un autre nom (l'option --out), notez ce nom ci-dessous. Il est chiffré par la phrase de passe, il est gardé hors de l'hôte, dans un autre endroit que la phrase de passe. Sans lui, après une perte de /data, le journal des suppressions ne protège plus rien."
 rotation = "Refaites l'export du trousseau, et réimprimez ce kit, après chaque rotation du trousseau."
 no_secret = "Ce kit ne contient aucun secret."
+
+[kosync]
+registration_disabled = "Les comptes se créent dans Shelfhold : demandez un jeton d'appareil à l'administrateur."
 
 [opds]
 root_title = "Shelfhold"

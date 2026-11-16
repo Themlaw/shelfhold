@@ -4,8 +4,11 @@
 the shapes KOReader and the reference sync server speak (`api.json`, `KOSyncClient.lua`,
 `koreader/koreader-sync-server`):
 
-* `PUT /kosync/syncs/progress`: 200 `{document, timestamp}`; 202 `{}` when the digest is unknown
-  to this profile (or the position cannot be anchored): accepted, no effect;
+* `PUT /kosync/syncs/progress`: 200 `{document, timestamp}`, **always**, stored or not: for
+  KOReader only a 200 is a success, and its queue stops at the first failure (a 202 or a 409 on one
+  unknown file would hold every later position). Why a position was not taken (unknown or hidden
+  digest, two files with one digest, a chapter that is gone, a guard) stays in the log and the
+  counter; the answer is the same for all, so none of them is an oracle;
 * `GET /kosync/syncs/progress/{document}`: 200 `{document, progress, percentage, device,
   device_id, timestamp}`, or 200 `{}` when nothing is known;
 * `POST /kosync/users/create`: 402, always: the accounts are the profiles of Shelfhold and a device
@@ -15,7 +18,8 @@ Every route takes `require_device_kosync`: the credential, its revocation and it
 at each request (L46), TLS is required, and a wrong key is counted and limited. The profile is the
 one of the token and nothing in the body or the headers can name another. The body is read only
 after the token was accepted, and never beyond `MAX_BODY` bytes. What is wrong with a field is a
-422 that names no value; an unknown, a hidden and a malformed digest are one answer.
+422 that names no value, for a body KOReader never sends (a field of the wrong type, a page that is
+not a number); an unknown, a hidden and a malformed digest are one answer.
 """
 
 import json
@@ -28,10 +32,11 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from starlette.concurrency import run_in_threadpool
 
+from shelfhold.i18n import negotiate, t_lang
 from shelfhold.identity.public import Principal
 from shelfhold.interfaces.http_api.device_auth import require_device_kosync
 from shelfhold.interfaces.http_api.problems import ProblemError
-from shelfhold.reading.public import AmbiguousDocumentError, InvalidProgressError, Kosync
+from shelfhold.reading.public import InvalidProgressError, Kosync
 
 __all__ = ["MAX_BODY", "build_kosync_router"]
 
@@ -54,10 +59,6 @@ class ProgressBody(BaseModel):
 class ProgressStored(BaseModel):
     document: str
     timestamp: int
-
-
-class Accepted(BaseModel):
-    """`{}`: accepted, nothing stored."""
 
 
 class ProgressRead(BaseModel):
@@ -143,9 +144,18 @@ def build_kosync_router(service: Callable[[], Kosync], now: Callable[[], datetim
         operation_id="kosync_register",
         status_code=402,
     )
-    def register() -> JSONResponse:
-        """The "Register" button of KOReader: refused, whoever asks and whatever it sends."""
-        raise ProblemError("kosync_registration_disabled", headers=_NO_STORE)
+    def register(request: Request) -> JSONResponse:
+        """The "Register" button of KOReader: refused, whoever asks and whatever it sends. The
+        device shows `message` (`doRegister`): in the language of the request, both when it names
+        none (nobody is signed in to register)."""
+        asked = request.headers.get("accept-language")
+        languages = (negotiate(asked),) if asked else ("fr", "en")
+        message = chr(10).join(
+            t_lang("kosync.registration_disabled", language=x) for x in languages
+        )
+        raise ProblemError(
+            "kosync_registration_disabled", extensions={"message": message}, headers=_NO_STORE
+        )
 
     @router.put(
         "/syncs/progress",
@@ -158,7 +168,6 @@ def build_kosync_router(service: Callable[[], Kosync], now: Callable[[], datetim
         },
         responses={
             200: {"model": ProgressStored},
-            202: {"model": Accepted},
         },
     )
     async def update_progress(request: Request, principal: Device) -> JSONResponse:
@@ -180,10 +189,7 @@ def build_kosync_router(service: Callable[[], Kosync], now: Callable[[], datetim
             )  # fmt: skip
         except InvalidProgressError:
             raise _invalid() from None
-        except AmbiguousDocumentError:
-            raise ProblemError("kosync_ambiguous_document", headers=_NO_STORE) from None
-        if not stored:
-            return JSONResponse({}, status_code=202, headers=_NO_STORE)
+        del stored  # stored or not, the device is told the same: only a 200 is a success to it
         return JSONResponse(
             {"document": document, "timestamp": int(now().timestamp())}, headers=_NO_STORE
         )
@@ -197,10 +203,7 @@ def build_kosync_router(service: Callable[[], Kosync], now: Callable[[], datetim
     def get_progress(request: Request, document: str, principal: Device) -> JSONResponse:
         """The furthest position of the profile in this document, in its own pages, or `{}`."""
         _announce(request)
-        try:
-            found = service().pull(user_id=principal.user_id, document=document[:256])
-        except AmbiguousDocumentError:
-            raise ProblemError("kosync_ambiguous_document", headers=_NO_STORE) from None
+        found = service().pull(user_id=principal.user_id, document=document[:256])
         return JSONResponse({} if found is None else found.body(), headers=_NO_STORE)
 
     return router

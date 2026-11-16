@@ -1,7 +1,7 @@
 """PR #296 (M4 L47), adversarial review: the gaps of the kosync routes, as red proofs.
 
-Each test is a strict `xfail`: it turns green (and so fails the suite) the day the gap is closed,
-and the mark is then removed (docs/decisions/M4.md, "#296 : contradicteur").
+Each test was a strict `xfail`: the gaps are closed and the marks removed
+(docs/decisions/M4.md, "#296 : contradicteur"), the proofs themselves unchanged.
 
 What KOReader does with an answer is read in `plugins/kosync.koplugin/` (`KOSyncClient.lua`,
 `KOSyncQueue.lua`, `main.lua`) and `frontend/optmath.lua`.
@@ -42,7 +42,6 @@ def _koreader_percent(page: int, pages: int) -> float:
     return math.floor(page / pages * 10000) / 10000
 
 
-@pytest.mark.xfail(strict=True, reason="#296 BLQ-1: 202 is a failure for KOReader")
 def test_poc_a_put_that_stores_nothing_is_still_a_200_for_koreader(lab: World) -> None:
     """`KOSyncClient:update_progress` calls back `ok = (res.status == 200)`. Anything else but a 401
     is pushed in `KOSyncQueue`, and `drain` stops at the first failure: one file Shelfhold does not
@@ -54,7 +53,6 @@ def test_poc_a_put_that_stores_nothing_is_still_a_200_for_koreader(lab: World) -
     assert positions(lab) == []
 
 
-@pytest.mark.xfail(strict=True, reason="#296 BLQ-1: a refused integrity guard is a 202")
 def test_poc_a_position_the_guard_refuses_does_not_jam_the_queue_of_the_device(lab: World) -> None:
     three_chapters(lab)
     digest, _ = block(lab, lab.mum)
@@ -62,7 +60,6 @@ def test_poc_a_position_the_guard_refuses_does_not_jam_the_queue_of_the_device(l
     assert positions(lab) == []
 
 
-@pytest.mark.xfail(strict=True, reason="#296 MAJ-1: the chain is cut at each chapter file")
 def test_poc_a_block_read_through_marks_the_chapters_it_crossed(lab: World) -> None:
     """ADR-0053 §5: "la chaîne peut franchir plusieurs chapitres". Each page of the block is stored
     on its chapter's file and the traversal only looks at the history of one file: a block read
@@ -87,7 +84,6 @@ def test_poc_a_block_read_through_marks_the_chapters_it_crossed(lab: World) -> N
     assert set(states) == {items[0].unit_id, items[1].unit_id}
 
 
-@pytest.mark.xfail(strict=True, reason="#296 MIN-1: the guard forgets KOReader floors")
 def test_poc_the_first_page_of_a_block_of_159_pages_passes_the_guard(lab: World) -> None:
     """KOReader floors the share to 1/10000 (`Math.roundPercent`): page 1 of 159 is sent as 0.0062,
     so N' = 161.3 and the guard (2 pages) refuses a true position. 3000 pages: 20 of the first 38
@@ -100,7 +96,6 @@ def test_poc_the_first_page_of_a_block_of_159_pages_passes_the_guard(lab: World)
     assert len(positions(lab)) == 1
 
 
-@pytest.mark.xfail(strict=True, reason="#296 MIN-2: KOReader shows `body.message`")
 def test_poc_the_402_of_register_says_why_on_the_device(lab: World) -> None:
     """`KOSync:doRegister` shows `body.message or "Unknown server error"`."""
     answer = lab.mum.client.post(

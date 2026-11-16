@@ -51,6 +51,7 @@ __all__ = [
     "PositionRecord",
     "UnitProgress",
     "UnknownCarrierError",
+    "mark_traversed_in_frame",
     "normalise_locator",
     "position_of",
     "progress_of",
@@ -228,6 +229,67 @@ def snapshot_covered_units(
     return None if earlier is None else [str(u) for u in earlier]
 
 
+def _mark_state(
+    connection: sa.Connection, user_id: str, unit_ids: set[str]
+) -> tuple[dict[str, datetime], set[str]]:
+    """What the profile's earlier marks say of these Units: when a mark was undone (a later move
+    only counts again), and which Units are already marked and not undone."""
+    table = reading.reading_position
+    after: dict[str, datetime] = {}
+    already: set[str] = set()
+    for other in connection.execute(
+        sa.select(table.c.read_units, table.c.undone_units).where(
+            table.c.user_id == user_id,
+            sa.or_(
+                sa.func.json_array_length(table.c.read_units) > 0,
+                table.c.undone_units != "{}",
+            ),
+        )
+    ):
+        for unit, when in other.undone_units.items():
+            if unit in unit_ids:
+                stamp = _ts(datetime.fromisoformat(when))
+                after[unit] = max(after.get(unit, stamp), stamp)
+        already.update(u for u in other.read_units if u not in other.undone_units)
+    return after, already
+
+
+def mark_traversed_in_frame(
+    connection: sa.Connection,
+    position_id: str,
+    *,
+    steps: list[Step],
+    spans: list[Span],
+    max_pages_per_minute: float = DEFAULT_MAX_PAGES_PER_MINUTE,
+) -> list[str]:
+    """The traversal of a frame that is not one file's: the pages of a block of a series, whose
+    chapters sit on several files. `steps` are the profile's positions in that frame (page of the
+    block, `server_ts`), oldest first, and `spans` the Units' ranges of pages in it. The rule is the
+    one of `_mark_traversed` (speed on `server_ts` alone, no instant jump, undoable); the marks go
+    in the journal of the position that closed the move."""
+    row = connection.execute(
+        sa.select(reading.reading_position.c.user_id).where(
+            reading.reading_position.c.id == position_id
+        )
+    ).one()
+    after, already = _mark_state(connection, row.user_id, {span.unit_id for span in spans})
+    marked = [
+        u
+        for u in traversed_units(
+            steps, spans, mode=PAGES, max_pages_per_minute=max_pages_per_minute, after=after
+        )
+        if u not in already
+    ]
+    if marked:
+        connection.execute(
+            sa.update(reading.reading_position)
+            .where(reading.reading_position.c.id == position_id)
+            .values(read_units=marked)
+        )
+        log.info("reading.read_marked", position=position_id, units=len(marked))
+    return marked
+
+
 def _mark_traversed(
     connection: sa.Connection, position_id: str, max_pages_per_minute: float
 ) -> list[str]:
@@ -265,6 +327,8 @@ def _mark_traversed(
                 table.c.carrier_id == row.carrier_id,
                 table.c.content_hash == row.content_hash,
                 table.c.source == "device",
+                # a place in a reflowable text measures nothing (L51): never an anchor
+                sa.func.json_extract(table.c.locator, "$.xpointer").is_(None),
             )
             .order_by(table.c.server_ts.desc(), table.c.id.desc())
             .limit(HISTORY_LIMIT)
@@ -276,23 +340,7 @@ def _mark_traversed(
         for h in history
         if (isinstance(h.locator.get("page"), int) if mode == PAGES else h.percent is not None)
     ]
-    spans_ids = {span.unit_id for span in spans}
-    after: dict[str, datetime] = {}
-    already: set[str] = set()
-    for other in connection.execute(
-        sa.select(table.c.read_units, table.c.undone_units).where(
-            table.c.user_id == row.user_id,
-            sa.or_(
-                sa.func.json_array_length(table.c.read_units) > 0,
-                table.c.undone_units != "{}",
-            ),
-        )
-    ):
-        for unit, when in other.undone_units.items():
-            if unit in spans_ids:
-                stamp = _ts(datetime.fromisoformat(when))
-                after[unit] = max(after.get(unit, stamp), stamp)
-        already.update(u for u in other.read_units if u not in other.undone_units)
+    after, already = _mark_state(connection, row.user_id, {span.unit_id for span in spans})
     marked = [
         u
         for u in traversed_units(

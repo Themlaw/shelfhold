@@ -13,7 +13,6 @@ CODES: tuple[ErrorCode, ...] = (
     ErrorCode("bundle_gone", 410, "user"),  # M4 L49a: a block that cannot be served any more
     ErrorCode("bundle_busy", 429, "user"),  # M4 L49a: too many blocks at a time
     ErrorCode("kosync_registration_disabled", 402, "user"),  # M4 L47: accounts are Shelfhold's
-    ErrorCode("kosync_ambiguous_document", 409, "user"),  # M4 L47: one digest, two visible files
     ErrorCode("precondition_failed", 412, "user"),
     ErrorCode("precondition_required", 428, "user"),
     ErrorCode("idempotency_key_invalid", 400, "user"),

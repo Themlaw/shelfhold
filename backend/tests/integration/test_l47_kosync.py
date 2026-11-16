@@ -133,8 +133,12 @@ def three_chapters(world: World, key: str = "ok") -> list[Exported]:
 def shape(answer: Any) -> tuple[int, Any, dict[str, str]]:
     """What a client can tell two answers apart by (no date, no request id)."""
     body = answer.json()
-    if isinstance(body, dict):
-        body = {k: v for k, v in body.items() if k != "request_id"}
+    if isinstance(body, dict):  # the digest sent and the date are the request's and the clock's
+        body = {
+            k: (type(v).__name__ if k in {"document", "timestamp"} else v)
+            for k, v in body.items()
+            if k != "request_id"
+        }
     kept = {
         k: v for k, v in answer.headers.items()
         if k.lower() in {"content-type", "cache-control", "www-authenticate"}
@@ -151,7 +155,8 @@ class Statements:
 
     def _on(self, _c: Any, _cur: Any, statement: str, *_a: Any) -> None:
         if re.search(
-            r"document_alias|bundle_version|bundle_member|reading_position|export_item", statement
+            r"document_alias|bundle_|reading_position|export_item|\bedition\b|\buser\b|\bshelf",
+            statement,
         ):
             self.seen.append(re.sub(r"\s+", " ", statement))
 
@@ -396,11 +401,17 @@ def test_a_page_less_text_for_a_paged_file_is_a_422_not_an_xpointer(lab: World) 
 # -- 🔒 2: an unknown document and a hidden one answer the same -----------------------------
 
 
-def test_an_unknown_document_is_202_on_put_and_an_empty_200_on_get_and_stores_nothing(
+def accepted(answer: Any, document: str) -> None:
+    """The one answer a device that may not be served gets: a 200, as KOReader needs (BLQ-1)."""
+    assert answer.status_code == 200, answer.text
+    assert set(answer.json()) == {"document", "timestamp"}
+    assert answer.json()["document"] == document and isinstance(answer.json()["timestamp"], int)
+
+
+def test_an_unknown_document_is_a_200_on_put_and_an_empty_200_on_get_and_stores_nothing(
     lab: World,
 ) -> None:
-    put_answer = push(lab.mum, ABSENT_MD5, "5")
-    assert (put_answer.status_code, put_answer.json()) == (202, {})
+    accepted(push(lab.mum, ABSENT_MD5, "5"), ABSENT_MD5)
     assert (pull(lab.mum, ABSENT_MD5).status_code, pull(lab.mum, ABSENT_MD5).json()) == (200, {})
     assert positions(lab) == []
 
@@ -413,9 +424,7 @@ def test_a_document_that_is_not_a_digest_answers_like_an_unknown_one(
 ) -> None:
     unknown = push(lab.mum, ABSENT_MD5, "5")
     odd = push(lab.mum, document, "5")
-    assert odd.status_code in (202, 422) and (
-        odd.status_code != 202 or shape(odd) == shape(unknown)
-    )
+    assert shape(odd) == shape(unknown)
     if document and "/" not in document and "%" not in document:
         assert pull(lab.mum, document).status_code in (200, 404, 422)
     assert positions(lab) == []
@@ -427,7 +436,8 @@ def test_a_document_above_the_ceiling_answers_exactly_like_an_unknown_one(lab: W
         unknown_put, unknown_get = push(lab.kid, ABSENT_MD5, "5"), pull(lab.kid, ABSENT_MD5)
     with Statements() as hidden_cost:
         hidden_put, hidden_get = push(lab.kid, digest, "5"), pull(lab.kid, digest)
-    assert shape(hidden_put) == shape(unknown_put) == (202, {}, shape(unknown_put)[2])
+    accepted(hidden_put, digest)
+    assert shape(hidden_put) == shape(unknown_put)
     assert shape(hidden_get) == shape(unknown_get)
     assert hidden_cost.seen == unknown_cost.seen  # the same work: no clock tells them apart
     assert positions(lab) == []
@@ -455,7 +465,7 @@ def test_a_digest_of_another_profiles_block_is_an_unknown_one_for_this_profile(l
     assert kid_rows == 0
 
 
-def test_a_digest_held_by_two_visible_files_is_a_409_not_a_guess(lab: World) -> None:
+def test_a_digest_held_by_two_visible_files_is_never_guessed_and_still_a_200(lab: World) -> None:
     first, digest = volume(lab)
     other = library(lab, "ok").add(Chapter.simple("2", count=20))
     with lab.seed.engine.begin() as c:
@@ -468,12 +478,13 @@ def test_a_digest_held_by_two_visible_files_is_a_409_not_a_guess(lab: World) -> 
             )
         )
     assert first.item_id != other.item_id
-    assert push(lab.mum, digest, "3").status_code == 409
-    assert pull(lab.mum, digest).status_code == 409
+    accepted(push(lab.mum, digest, "3"), digest)  # a 409 would jam the queue of the device
+    assert (pull(lab.mum, digest).status_code, pull(lab.mum, digest).json()) == (200, {})
+    assert lab.env.app.state.kosync_unknown.of(lab.mum.public_id, "ambiguous") == 1
     assert positions(lab) == []
 
 
-def test_a_hidden_twin_of_a_digest_is_never_a_409_for_a_child(lab: World) -> None:
+def test_a_hidden_twin_of_a_digest_never_makes_a_child_answer_differ(lab: World) -> None:
     """The adult edition that shares a digest with a visible file must not turn the child's
     answer into a conflict: it would tell her the other file exists."""
     _visible, digest = volume(lab)
@@ -529,11 +540,13 @@ def test_the_first_and_the_last_page_of_a_part_are_the_first_and_last_chapters(l
     assert (last.carrier_id, last.locator["page"]) == (items[2].item_id, 3)
 
 
-def test_the_page_after_the_last_and_the_page_zero_of_a_block_are_a_422(lab: World) -> None:
+def test_the_page_after_the_last_of_a_block_is_taken_for_nothing_and_page_zero_is_a_422(
+    lab: World,
+) -> None:
     three_chapters(lab)
     digest, _ = block(lab, lab.mum)
-    assert push(lab.mum, digest, "10", 1.0).status_code == 422
-    assert push(lab.mum, digest, "0", 0.0).status_code == 422
+    accepted(push(lab.mum, digest, "10", 1.0), digest)  # beyond the block: a file KOReader has
+    assert push(lab.mum, digest, "0", 0.0).status_code == 422  # a malformed page it never sends
     assert positions(lab) == []
 
 
@@ -613,7 +626,8 @@ def test_a_chapter_purged_from_a_version_is_an_orphan_position_that_is_not_store
     with lab.seed.engine.begin() as c:
         c.execute(sa.delete(export.export_item).where(export.export_item.c.id == items[1].item_id))
     answer = push(lab.mum, digest, "5", 5 / 9)  # the page that was in the purged chapter
-    assert answer.status_code == 202 and positions(lab) == []
+    accepted(answer, digest)
+    assert positions(lab) == []
     assert push(lab.mum, digest, "1", 1 / 9).status_code == 200  # the others still answer
 
 
@@ -626,7 +640,8 @@ def test_a_chapter_replaced_since_the_version_is_never_given_a_page_of_the_old_c
     lab_lib.items = items
     lab_lib.rewrite(items[1], Chapter("2", [("1.png", page("png", "NEWER"))]), record=True)
     answer = push(lab.mum, digest, "5", 5 / 9)
-    assert answer.status_code == 202 and positions(lab) == []  # the layout it speaks of is gone
+    accepted(answer, digest)
+    assert positions(lab) == []  # the layout it speaks of is gone
 
 
 def test_the_guard_of_integrity_refuses_a_percentage_that_is_not_of_this_file(lab: World) -> None:
@@ -634,7 +649,8 @@ def test_the_guard_of_integrity_refuses_a_percentage_that_is_not_of_this_file(la
     digest, _ = block(lab, lab.mum)
     # page 5 of a file that has 9 pages is at 55.6 %: 5 / 0.1 = 50 pages is another file
     answer = push(lab.mum, digest, "5", 0.1)
-    assert answer.status_code == 202 and positions(lab) == []
+    accepted(answer, digest)
+    assert positions(lab) == []
     assert push(lab.mum, digest, "5", 0.5556).status_code == 200  # KOReader rounds to 1/10000
     assert push(lab.mum, digest, "5", 0.5).status_code == 200  # within max(2, 0.5 %) pages: 10
 
@@ -872,7 +888,7 @@ def test_a_child_cannot_write_or_read_a_position_on_a_work_above_her_ceiling(lab
     hidden, digest = volume(lab, key="above")
     assert push(lab.mum, digest, "3").status_code == 200  # an adult's own place on it
     assert pull(lab.kid, digest).json() == {}
-    assert push(lab.kid, digest, "9").status_code == 202
+    accepted(push(lab.kid, digest, "9"), digest)
     with lab.seed.engine.connect() as c:
         kid_rows = c.execute(
             sa.text("SELECT count(*) FROM reading_position WHERE user_id = :u"),
@@ -905,10 +921,14 @@ def test_a_burst_of_good_requests_is_cut_by_the_budget_of_the_token(lab: World) 
     assert set(answers) <= {200, 429}
 
 
-def test_a_burst_of_puts_stores_one_row_per_accepted_put_and_never_more(lab: World) -> None:
+def test_a_burst_of_puts_keeps_the_first_and_the_last_of_the_window_and_no_more(lab: World) -> None:
+    """MIN-4: one row per PUT would be 860 000 rows a day for one token. A window of a minute keeps
+    the first position (the anchor of a move) and the last, which each new one replaces."""
     _item, digest = volume(lab, count=30)
     ok = sum(
         push(lab.mum, digest, str(1 + n % 30), (1 + n % 30) / 30).status_code == 200
         for n in range(40)
     )
-    assert len(positions(lab)) == ok == 40
+    kept = positions(lab)
+    assert ok == 40 and len(kept) == 2
+    assert [r.locator["page"] for r in kept] == [1, 1 + 39 % 30]  # the first, and the last one

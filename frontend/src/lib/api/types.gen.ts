@@ -19,15 +19,6 @@ export type About = {
 };
 
 /**
- * Accepted
- *
- * `{}`: accepted, nothing stored.
- */
-export type Accepted = {
-    [key: string]: unknown;
-};
-
-/**
  * AccountList
  */
 export type AccountList = {
@@ -13649,10 +13640,6 @@ export type KosyncUpdateProgressResponses = {
      * Successful Response
      */
     200: ProgressStored;
-    /**
-     * Accepted
-     */
-    202: Accepted;
 };
 
 export type KosyncUpdateProgressResponse = KosyncUpdateProgressResponses[keyof KosyncUpdateProgressResponses];

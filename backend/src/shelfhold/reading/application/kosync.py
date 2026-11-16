@@ -47,13 +47,16 @@ from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.schema import bundle, export, reading
 from shelfhold.infrastructure.secrets.keyring import Keyring
 from shelfhold.reading.application.progress import (
+    HISTORY_LIMIT,
     UnknownCarrierError,
     _current_hash,
+    mark_traversed_in_frame,
     progress_of,
     record_position,
 )
 from shelfhold.reading.bundle import store
 from shelfhold.reading.bundle.plan import LIVE
+from shelfhold.reading.domain.traversal import Span, Step
 
 log = structlog.get_logger(__name__)
 
@@ -74,6 +77,8 @@ _ABSENT: Final = "0" * 26  # a placeholder that is no Edition: a lookup always r
 _REFLOWABLE = frozenset({"epub"})
 _DELIVERY = "delivery"  # the page 0 the server writes when it hands a file over
 _UNKNOWN_BOUND = 1024  # tokens kept by the counter
+WINDOW_S: Final = 60  # one first and one last position per file, device and window (MIN-4)
+GUARD_FLOOR: Final = 0.0001  # KOReader floors the share to the ten-thousandth
 
 
 class InvalidProgressError(ValueError):
@@ -110,23 +115,28 @@ class Pulled:
 
 
 class UnknownCounter:
-    """How many unknown digests each token sent (ADR-0053 §5): in memory, bounded, and it keeps
-    the token's public identifier only, never what was asked."""
+    """How many positions each token sent that Shelfhold did not take, and why (unknown digest,
+    guard of integrity, a chapter that is gone...). The device is always answered 200 (a refusal
+    would jam its queue, ADR-0053 amendment of 2026-11-16): this counter and the log keep the real
+    reason. In memory, bounded, and it keeps the token's public identifier only, never what was
+    asked."""
 
     def __init__(self) -> None:
-        self._counts: dict[str, int] = {}
+        self._counts: dict[str, dict[str, int]] = {}
 
-    def hit(self, token: str) -> None:
+    def hit(self, token: str, reason: str = "unknown") -> None:
         token = token.lower()
         if token not in self._counts and len(self._counts) >= _UNKNOWN_BOUND:
             del self._counts[next(iter(self._counts))]
-        self._counts[token] = self._counts.get(token, 0) + 1
+        reasons = self._counts.setdefault(token, {})
+        reasons[reason] = reasons.get(reason, 0) + 1
 
-    def of(self, token: str) -> int:
-        return self._counts.get(token.lower(), 0)
+    def of(self, token: str, reason: str | None = None) -> int:
+        reasons = self._counts.get(token.lower(), {})
+        return sum(reasons.values()) if reason is None else reasons.get(reason, 0)
 
-    def snapshot(self) -> dict[str, int]:
-        return dict(self._counts)
+    def snapshot(self) -> dict[str, dict[str, int]]:
+        return {token: dict(reasons) for token, reasons in self._counts.items()}
 
 
 @dataclass(frozen=True)
@@ -157,6 +167,10 @@ def _clean(text: str, *, limit: int) -> str:
     ):
         raise InvalidProgressError("text field")
     return text
+
+
+def _utc(value: datetime) -> datetime:
+    return value if value.tzinfo is not None else value.replace(tzinfo=UTC)
 
 
 def _digest_of(raw: str) -> str | None:
@@ -254,13 +268,21 @@ class Kosync:
         ).scalars()
         return any(h is not None and store.member_fp(key, str(h)) == member.fp for h in hashes)
 
-    def _reflowable(self, connection: Connection, item_id: str) -> bool:
-        found = connection.execute(
-            sa.select(export.export_record.c.format)
-            .where(export.export_record.c.export_item_id == item_id)
-            .limit(1)
-        ).scalar()
-        return str(found or "").lower() in _REFLOWABLE
+    def _kind(self, connection: Connection, item_id: str) -> str | None:
+        """`reflowable` (an EPUB), `paged`, or None when no record says: the first of the formats
+        of the file, whatever the order the rows come in."""
+        formats = {
+            str(f).lower()
+            for f in connection.execute(
+                sa.select(export.export_record.c.format).where(
+                    export.export_record.c.export_item_id == item_id,
+                    export.export_record.c.format.is_not(None),
+                )
+            ).scalars()
+        }
+        if not formats:
+            return None
+        return "reflowable" if formats & _REFLOWABLE else "paged"
 
     # -- the write --------------------------------------------------------------------------
 
@@ -275,8 +297,10 @@ class Kosync:
         device: str,
         device_id: str | None,
     ) -> bool:
-        """Records where the device is. True: stored. False: accepted without effect (unknown
-        digest, a chapter that is gone, a percentage that is not of this file)."""
+        """Records where the device is. True: stored. False: accepted without effect, for a reason
+        that goes to the log and the counter and never to the device (unknown or hidden digest, two
+        files with one digest, a chapter that is gone, a page beyond the block, a percentage that
+        is not of this file, a format nobody knows). Only a malformed field is an error."""
         device = _clean(device, limit=MAX_TEXT)
         device_id = None if device_id is None else _clean(device_id, limit=MAX_TEXT)
         if not isinstance(percentage, int | float) or not math.isfinite(percentage):
@@ -284,70 +308,168 @@ class Kosync:
         if not 0.0 <= percentage <= 1.0:
             raise InvalidProgressError("percentage")
         with write_transaction(self._engine) as connection:
-            doc = self._resolve(connection, user_id, document)
+            try:
+                doc = self._resolve(connection, user_id, document)
+            except AmbiguousDocumentError:
+                return self._refused(token, "ambiguous")
             if doc is None:
-                self.unknown.hit(token)
-                log.info("kosync.unknown_document", token=token.lower())
-                return False
+                return self._refused(token, "unknown")
             now = self._now()
+            bundled: tuple[store.VersionRow, int] | None = None
             if doc.version is not None:
-                target = self._into_chapter(
-                    connection, doc, doc.version, progress, percentage, token
-                )
+                page = _page(progress)
+                if page > doc.version_pages:
+                    return self._refused(token, "beyond_block")
+                target = self._into_chapter(connection, doc, doc.version, page, percentage, token)
                 if target is None:
                     return False
                 item_id, locator, percent = target
                 traverse = True
+                bundled = (doc.version, page)
+                locator["bundle"] = doc.version.id
+                locator["bundle_page"] = page
             elif doc.item_id is not None:
                 item_id = doc.item_id
-                if self._reflowable(connection, item_id):
+                kind = self._kind(connection, item_id)
+                if kind == "reflowable":
                     locator = {"xpointer": _xpointer(progress)}
                     traverse = False
-                else:
+                elif kind == "paged" or _DIGITS.fullmatch(progress.strip()):
                     locator = {"page": _page(progress)}
                     traverse = True
+                else:
+                    return self._refused(token, "unknown_format")
                 percent = percentage
             else:
-                return False
+                return self._refused(token, "unknown")
             anchor = self._anchor(connection, item_id)
             if anchor is None:
-                return False
+                return self._refused(token, "no_anchor")
             locator["device"] = device
+            replaces = self._coalesce(connection, user_id, item_id, device_id, now, locator)
             try:
-                record_position(
+                position_id = record_position(
                     connection, reader_id=user_id, subject_id=user_id, carrier_type="export_item",
                     carrier_id=item_id, content_hash=anchor, locator=locator, percent=percent,
                     client_ts=now, device_id=device_id, now=now, traverse=traverse,
                 )  # fmt: skip
             except UnknownCarrierError:
-                return False
+                return self._refused(token, "hidden")
+            if replaces is not None:
+                connection.execute(
+                    sa.delete(reading.reading_position).where(
+                        reading.reading_position.c.id == replaces
+                    )
+                )
+            if bundled is not None:
+                self._cross_chapters(connection, user_id, position_id, *bundled)
             return True
+
+    def _refused(self, token: str, reason: str) -> bool:
+        self.unknown.hit(token, reason)
+        log.info("kosync.not_stored", token=token.lower(), reason=reason)
+        return False
+
+    def _coalesce(
+        self,
+        connection: Connection,
+        user_id: str,
+        item_id: str,
+        device_id: str | None,
+        now: datetime,
+        locator: dict[str, Any],
+    ) -> str | None:
+        """At most two rows per (profile, file, device) and window of `WINDOW_S` seconds: the first
+        (`f`), and the last, which each new position of the window replaces. The traversal needs
+        the anchors of a move, and the speed of a move from the first to the last of a window is the
+        speed it had: nothing it counts is lost. A row that carries a mark is never replaced.
+        Writes the window into `locator` and returns the id of the row to delete."""
+        table = reading.reading_position
+        stamp = int(now.timestamp())
+        last = connection.execute(
+            sa.select(table.c.id, table.c.locator, table.c.read_units, table.c.undone_units)
+            .where(
+                table.c.user_id == user_id,
+                table.c.carrier_type == "export_item",
+                table.c.carrier_id == item_id,
+                table.c.source == "device",
+                table.c.device_id.is_(None)
+                if device_id is None
+                else table.c.device_id == device_id,
+            )
+            .order_by(table.c.server_ts.desc(), table.c.id.desc())
+            .limit(1)
+        ).first()
+        start = None if last is None else last.locator.get("w")
+        if (
+            last is None
+            or not isinstance(start, int)
+            or isinstance(start, bool)
+            or not 0 <= stamp - start < WINDOW_S
+        ):
+            locator.update({"w": stamp, "f": True})
+            return None
+        locator["w"] = start
+        if last.locator.get("f") is True or last.read_units or last.undone_units != {}:
+            return None  # the first of the window, or a row that carries a mark: kept
+        return str(last.id)
+
+    def _cross_chapters(
+        self, connection: Connection, user_id: str, position_id: str, version: store.VersionRow,
+        page: int,
+    ) -> None:  # fmt: skip
+        """The traversal in the frame of the block: the profile's positions on this version, as
+        pages of the block, and every chapter a plausible move covered whole is read, wherever its
+        file is (ADR-0053 §5: "la chaîne peut franchir plusieurs chapitres")."""
+        table = reading.reading_position
+        rows = connection.execute(
+            sa.select(
+                sa.func.json_extract(table.c.locator, "$.bundle_page").label("page"),
+                table.c.server_ts,
+            )
+            .where(
+                table.c.user_id == user_id,
+                table.c.source == "device",
+                sa.func.json_extract(table.c.locator, "$.bundle") == version.id,
+            )
+            .order_by(table.c.server_ts.desc(), table.c.id.desc())
+            .limit(HISTORY_LIMIT)
+        ).all()
+        steps = [
+            Step(float(r.page), _utc(r.server_ts))
+            for r in reversed(rows)
+            if isinstance(r.page, int)
+        ]
+        spans = [
+            Span(m.unit_id, float(m.first_page), float(m.first_page + m.page_count - 1))
+            for m in self._members(connection, version.id)
+            if m.unit_id and m.item_id and m.page_count > 0
+        ]
+        if len(steps) >= 2 and spans:
+            mark_traversed_in_frame(connection, position_id, steps=steps, spans=spans)
 
     def _into_chapter(
         self,
         connection: Connection,
         doc: _Doc,
         version: store.VersionRow,
-        progress: str,
+        page: int,
         percentage: float,
         token: str,
     ) -> tuple[str, dict[str, Any], float] | None:
         """The page of the block as (chapter file, locator, share of the chapter)."""
-        page = _page(progress)
         total = doc.version_pages
-        if page > total:
-            raise InvalidProgressError("page beyond the block")
-        n = page / percentage if percentage > 0 else math.inf
-        if abs(n - total) > max(2.0, 0.005 * total):
-            log.info("kosync.integrity_refused", token=token.lower(), version=version.id)
-            return None  # the file that is open is not the one whose digest was sent
+        if not within_guard(page, total, percentage):
+            self._refused(token, "integrity")  # the open file is not the one whose digest was sent
+            return None
         for member in self._members(connection, version.id):
             if member.first_page <= page < member.first_page + member.page_count:
                 if member.item_id is None or not self._still_the_member(connection, member):
-                    log.info("kosync.orphan_position", token=token.lower(), rank=member.rank)
-                    return None  # purged or replaced: a place with no chapter to be on
+                    self._refused(token, "chapter_gone")  # purged or replaced since the version
+                    return None
                 inner = page - member.first_page + 1
                 return member.item_id, {"page": inner}, inner / member.page_count
+        self._refused(token, "no_chapter")
         return None
 
     # -- the read ---------------------------------------------------------------------------
@@ -356,7 +478,10 @@ class Kosync:
         """The furthest position, in the frame of the document asked; None when nothing is known
         or nothing can be told in this frame."""
         with self._engine.connect() as connection:
-            doc = self._resolve(connection, user_id, document)
+            try:
+                doc = self._resolve(connection, user_id, document)
+            except AmbiguousDocumentError:
+                return None  # nothing is guessed: the answer is the one of nothing known
             if doc is None:
                 return None
             order: list[tuple[str, _Member | None]]
@@ -442,6 +567,13 @@ class Kosync:
         if not isinstance(device, str) or not device:
             device = "Kavita" if position.source == "server" else "Shelfhold"
         return Pulled(doc.digest, progress, percentage, device, position.device_id, stamp)
+
+
+def within_guard(page: int, total: int, percentage: float) -> bool:
+    """Whether `page` of `total` and the share the device sent are of one file. KOReader sends
+    `Math.roundPercent(page / pages)`, floored to the ten-thousandth, so the comparison is made in
+    the space of the share: the floor, plus 2 pages or 0.5 % (whichever is wider) of slack."""
+    return abs(page / total - percentage) <= GUARD_FLOOR + max(2.0 / total, 0.005)
 
 
 def _page(text: str) -> int:

@@ -19,7 +19,7 @@ def test_the_counter_names_a_token_by_its_public_identifier_in_any_case() -> Non
     counter.hit("AbCd1234")
     counter.hit("abcd1234")
     assert counter.of("ABCD1234") == 2 and counter.of("other") == 0
-    assert counter.snapshot() == {"abcd1234": 2}
+    assert counter.snapshot() == {"abcd1234": {"unknown": 2}}
 
 
 def test_the_counter_is_bounded_and_forgets_the_oldest_token() -> None:

@@ -1922,7 +1922,9 @@ export const kosyncAuthorize = <ThrowOnError extends boolean = false>(options?: 
 /**
  * Register
  *
- * The "Register" button of KOReader: refused, whoever asks and whatever it sends.
+ * The "Register" button of KOReader: refused, whoever asks and whatever it sends. The
+ * device shows `message` (`doRegister`): in the language of the request, both when it names
+ * none (nobody is signed in to register).
  */
 export const kosyncRegister = <ThrowOnError extends boolean = false>(options?: Options<KosyncRegisterData, ThrowOnError>): RequestResult<KosyncRegisterResponses, KosyncRegisterErrors, ThrowOnError> => (options?.client ?? client).post<KosyncRegisterResponses, KosyncRegisterErrors, ThrowOnError>({ url: '/kosync/users/create', ...options });
 

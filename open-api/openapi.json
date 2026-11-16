@@ -19,12 +19,6 @@
         "title": "About",
         "type": "object"
       },
-      "Accepted": {
-        "description": "`{}`: accepted, nothing stored.",
-        "properties": {},
-        "title": "Accepted",
-        "type": "object"
-      },
       "AccountList": {
         "properties": {
           "items": {
@@ -23040,16 +23034,6 @@
             },
             "description": "Successful Response"
           },
-          "202": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Accepted"
-                }
-              }
-            },
-            "description": "Accepted"
-          },
           "default": {
             "content": {
               "application/problem+json": {
@@ -23148,7 +23132,7 @@
     },
     "/kosync/users/create": {
       "post": {
-        "description": "The \"Register\" button of KOReader: refused, whoever asks and whatever it sends.",
+        "description": "The \"Register\" button of KOReader: refused, whoever asks and whatever it sends. The\ndevice shows `message` (`doRegister`): in the language of the request, both when it names\nnone (nobody is signed in to register).",
         "operationId": "kosync_register",
         "responses": {
           "402": {
@@ -24275,10 +24259,6 @@
     },
     "/api/v1/problems/kavita.scan-abandoned": {
       "code": "kavita.scan_abandoned",
-      "status": 409
-    },
-    "/api/v1/problems/kosync-ambiguous-document": {
-      "code": "kosync_ambiguous_document",
       "status": 409
     },
     "/api/v1/problems/kosync-registration-disabled": {

@@ -298,5 +298,16 @@ EF-LEC-009, EF-LEC-014, EF-LEC-007, EF-INT-007, EF-UX-004, EF-USR-006, EF-USR-02
 - `docs/decisions/M4.md` (L13), ADR-0045, ADR-0049, ADR-0052
 - `~/shelfhold-spec/PLAN-M4.md` (L10, L12, L13, L14a, L14b, §6 D8 et D11)
 
+## Amendement du 2026-11-16 (relecture adverse de L47)
+
+Dans la source de KOReader, `update_progress` ne compte comme réussi que le statut 200, et la file d'envoi (`KOSyncQueue`) s'arrête au premier échec. Les décisions ci-dessus sont donc amendées :
+
+- **Plus de `202`.** Tout « accepté sans effet » (empreinte inconnue, cachée, d'un autre profil, version purgée, chapitre retiré ou remplacé, garde d'intégrité, page au-delà du bloc, xpointer sur un format inconnu, empreinte tenue par deux fichiers) répond `200 {document, timestamp}`, de même forme. Le motif réel reste dans le journal et dans le compteur par jeton, par motif. Seul un corps mal formé reste un 422 (ou un 413).
+- **Le `GET`** d'une empreinte non résolue répond toujours `200 {}`.
+- **Traversée d'un bloc.** Elle est calculée dans le repère du bloc (page du bloc, `server_ts`, version) ; les chapitres entièrement couverts par une progression plausible sont marqués lus, y compris sur d'autres fichiers. La règle de L14a ne change pas : seule l'heure du serveur compte, aucun saut instantané, annulable.
+- **Garde d'intégrité** : tolère l'arrondi vers le bas de KOReader (`|page/N − pourcentage| ≤ 0,0001 + max(2/N, 0,005)`).
+- **Fusion des rafales** : au plus une ligne par jeton, appareil et fichier et par minute ; la première et la dernière de chaque fenêtre servent d'ancres.
+- **Positions EPUB** : jamais une ancre de traversée (à reprendre avec L51).
+
 ## Acceptation (2026-11-15)
 Acceptée par le mainteneur, qui a demandé cette voie, avec la révision qui répond au contradicteur. Points tranchés par défaut, révisables : L10 passe en « Plus tard » (EF-EXP-019 redatée) ; plafond de 500 Mio par partie avec découpage « (1 sur N) » ; secret de jeton saisi une fois sur la liseuse ; EPUB hors du relais (L51). Ordre : le premier incrément (L46, L46b, L48, L49a) passe dès que L12 et L13 sont fusionnés ; L50 n'ouvre qu'après les vérifications sur appareil réel listées plus haut.
