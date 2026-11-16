@@ -159,10 +159,14 @@ def stored_boundaries(connection: Connection, edition_id: str) -> list[tuple[int
 
 
 def plan_parts(
-    stored: list[tuple[int, str | None]], eligible: list[Candidate], limits: BundleLimits
+    stored: list[tuple[int, str | None]],
+    eligible: list[Candidate],
+    limits: BundleLimits,
+    slice_chapters: int | None = None,
 ) -> list[Part]:
     """Cut `eligible` (in the order of the series) into parts: the written boundaries first, then
-    a greedy fill of the last part by the sizes the manifest gives."""
+    a greedy fill of the last part by the sizes the manifest gives. `slice_chapters` (L49b) only
+    narrows how many chapters that fill puts in a part: a written boundary does not move."""
     if not eligible:
         return []
     position = {c.unit_id: i for i, c in enumerate(eligible)}
@@ -178,13 +182,12 @@ def plan_parts(
         eligible[a:b] for a, b in zip(starts, [*starts[1:], len(eligible)], strict=True)
     ]
     tail, filled = members_of.pop(), 0
+    most = min(limits.members_per_part, slice_chapters or limits.members_per_part)
     members_of.append([])
     for candidate in tail:
         size = candidate.size or 0
         current = members_of[-1]
-        if current and (
-            filled + size > limits.part_bytes or len(current) >= limits.members_per_part
-        ):
+        if current and (filled + size > limits.part_bytes or len(current) >= most):
             members_of.append([])
             filled = 0
         members_of[-1].append(candidate)

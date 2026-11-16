@@ -29,7 +29,7 @@ from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.schema import catalog, identity
 from shelfhold.infrastructure.secrets.keyring import Keyring
 from shelfhold.reading.bundle import plan as planning
-from shelfhold.reading.bundle import store
+from shelfhold.reading.bundle import slices, store
 from shelfhold.reading.bundle.errors import (
     BundleGoneError,
     BundleNotFoundError,
@@ -118,7 +118,10 @@ class SeriesBundles:
             candidates = planning.load_candidates(connection, edition_id)
             eligible = [c for c in candidates if c.left_out is None]
             parts = planning.plan_parts(
-                planning.stored_boundaries(connection, edition_id), eligible, self.limits
+                planning.stored_boundaries(connection, edition_id),
+                eligible,
+                self.limits,
+                slices.get_slice(connection, edition_id),
             )
             left_out = len(candidates) - len(eligible)
             title = self._title(connection, edition_id)
@@ -172,7 +175,10 @@ class SeriesBundles:
         eligible = [c for c in candidates if c.left_out is None]
         with write_transaction(self._engine) as connection:
             parts = planning.plan_parts(
-                planning.stored_boundaries(connection, edition_id), eligible, self.limits
+                planning.stored_boundaries(connection, edition_id),
+                eligible,
+                self.limits,
+                slices.get_slice(connection, edition_id),
             )
             alias_items = planning.ensure_partitions(connection, edition_id, parts, self._now())
         if not 1 <= part <= len(parts):
@@ -230,6 +236,7 @@ class SeriesBundles:
                         if c.left_out is None
                     ],
                     self.limits,
+                    slices.get_slice(connection, version.edition_id),
                 )
             )
         key = store.fingerprint_key(self._keyring())

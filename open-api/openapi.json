@@ -975,6 +975,153 @@
         "title": "BindingPausedOut",
         "type": "object"
       },
+      "BundleCanOut": {
+        "properties": {
+          "set_slice": {
+            "title": "Set Slice",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "set_slice"
+        ],
+        "title": "BundleCanOut",
+        "type": "object"
+      },
+      "BundleExcludedOut": {
+        "properties": {
+          "format": {
+            "title": "Format",
+            "type": "integer"
+          },
+          "unsafe": {
+            "title": "Unsafe",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "format",
+          "unsafe"
+        ],
+        "title": "BundleExcludedOut",
+        "type": "object"
+      },
+      "BundleOut": {
+        "properties": {
+          "can": {
+            "$ref": "#/components/schemas/BundleCanOut"
+          },
+          "edition_id": {
+            "title": "Edition Id",
+            "type": "string"
+          },
+          "excluded": {
+            "$ref": "#/components/schemas/BundleExcludedOut"
+          },
+          "parts": {
+            "items": {
+              "$ref": "#/components/schemas/BundlePartOut"
+            },
+            "title": "Parts",
+            "type": "array"
+          },
+          "slice_chapters": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Slice Chapters"
+          },
+          "slice_max": {
+            "title": "Slice Max",
+            "type": "integer"
+          },
+          "slice_min": {
+            "title": "Slice Min",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "edition_id",
+          "slice_chapters",
+          "slice_min",
+          "slice_max",
+          "parts",
+          "excluded",
+          "can"
+        ],
+        "title": "BundleOut",
+        "type": "object"
+      },
+      "BundlePartOut": {
+        "properties": {
+          "chapters": {
+            "title": "Chapters",
+            "type": "integer"
+          },
+          "first_number": {
+            "title": "First Number",
+            "type": "string"
+          },
+          "index": {
+            "title": "Index",
+            "type": "integer"
+          },
+          "last_number": {
+            "title": "Last Number",
+            "type": "string"
+          },
+          "size": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Size"
+          },
+          "written": {
+            "title": "Written",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "index",
+          "chapters",
+          "first_number",
+          "last_number",
+          "size",
+          "written"
+        ],
+        "title": "BundlePartOut",
+        "type": "object"
+      },
+      "BundleSliceIn": {
+        "additionalProperties": false,
+        "properties": {
+          "slice_chapters": {
+            "anyOf": [
+              {
+                "maximum": 256.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Slice Chapters"
+          }
+        },
+        "title": "BundleSliceIn",
+        "type": "object"
+      },
       "CancelOut": {
         "properties": {
           "id": {
@@ -13407,6 +13554,140 @@
         "summary": "Support Author Pause",
         "tags": [
           "support-author"
+        ]
+      }
+    },
+    "/api/v1/editions/{edition_id}/bundle": {
+      "get": {
+        "operationId": "bundle_slices_read",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "edition_id",
+            "required": true,
+            "schema": {
+              "title": "Edition Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BundleOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Connexion requise, ou mot de passe à confirmer (reauth-required)."
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée)."
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Détail du problème (RFC 9457)."
+          }
+        },
+        "summary": "Bundle Slices Read",
+        "tags": [
+          "bundle"
+        ]
+      }
+    },
+    "/api/v1/editions/{edition_id}/bundle-slice": {
+      "post": {
+        "operationId": "bundle_slices_set",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "edition_id",
+            "required": true,
+            "schema": {
+              "title": "Edition Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BundleSliceIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BundleOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Connexion requise, ou mot de passe à confirmer (reauth-required)."
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée)."
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Détail du problème (RFC 9457)."
+          }
+        },
+        "summary": "Bundle Slices Set",
+        "tags": [
+          "bundle"
         ]
       }
     },

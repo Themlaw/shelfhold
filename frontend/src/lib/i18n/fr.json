@@ -681,5 +681,16 @@
   "deviceTokens.revoke_note": "La révocation est immédiate.",
   "deviceTokens.error": "Le jeton n'a pas pu être créé. Vérifiez le profil choisi, puis recommencez.",
   "deviceTokens.forbidden": "Les enfants ne gèrent pas de jeton : demandez à un parent.",
-  "settings.link.device_tokens": "Jetons d'appareil (liseuses)"
+  "settings.link.device_tokens": "Jetons d'appareil (liseuses)",
+  "bundleSlices.title": "Bloc pour liseuse",
+  "bundleSlices.intro": "Le bloc de la série se télécharge en un fichier par partie. Fixez ici le nombre de chapitres d'une partie : les parties déjà écrites ne bougent pas, seule la partie ouverte et les suivantes sont recoupées. Le poids maximal d'une partie reste respecté.",
+  "bundleSlices.part.range": "Partie {index} sur {total} : chapitres {first} à {last} ({count})",
+  "bundleSlices.part.single": "Partie {index} sur {total} : chapitre {first} ({count})",
+  "bundleSlices.excluded": "{count, plural, one {# chapitre hors du bloc} other {# chapitres hors du bloc}} (format ou fichier illisible).",
+  "bundleSlices.field": "Chapitres par partie",
+  "bundleSlices.save": "Enregistrer",
+  "bundleSlices.clear": "Retirer la tranche",
+  "bundleSlices.saved": "Enregistré.",
+  "bundleSlices.range": "Indiquez un nombre entier entre {min} et {max}.",
+  "bundleSlices.loading": "Chargement du bloc…"
 }

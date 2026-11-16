@@ -30,6 +30,7 @@
   import { csrfToken } from '#lib/passkeys.ts';
   import { problemView, type ProblemView } from '#lib/problems.ts';
   import { needsReauth, problemOf } from '#lib/triage.ts';
+  import BundleSlices from './BundleSlices.svelte';
   import SupportAuthor from './SupportAuthor.svelte';
 
   type Status = UpstreamStatusIn['status'];
@@ -243,6 +244,7 @@
       onreload={load}
     />
 
+    <BundleSlices editionId={sheet.edition_id} />
     <SupportAuthor editionId={sheet.edition_id} />
 
     {#if sheet.can.acknowledge_gap}

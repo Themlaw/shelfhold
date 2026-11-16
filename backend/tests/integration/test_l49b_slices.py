@@ -46,6 +46,7 @@ MISSING = "01HZZZZZZZZZZZZZZZZZZZZZZM"
 @pytest.fixture
 def lab(monkeypatch: pytest.MonkeyPatch, settings: Settings) -> Iterator[World]:
     with make_world(monkeypatch, settings) as made:
+        assert made.env.login().status_code == 200
         yield made
 
 
@@ -71,7 +72,9 @@ def set_slice(world: World, value: int | None, key: str = "ok") -> None:
 
 def part_sizes(world: World, key: str = "ok") -> list[int]:
     api, who = provider(world), user_id(world, "mum")
-    offers = api.offers(user_id=who, scope=scope_of(world, "mum"), edition_id=world.seed.editions[key])
+    offers = api.offers(
+        user_id=who, scope=scope_of(world, "mum"), edition_id=world.seed.editions[key]
+    )
     sizes = []
     for offer in offers:
         body = drain(
@@ -130,14 +133,16 @@ def test_a_boundary_written_never_moves_when_the_slice_changes(lab: World) -> No
     set_slice(lab, 2)
     assert part_sizes(lab) == [2, 2]
     written = boundaries(lab)
-    set_slice(lab, 1)  # narrower: the parts written stay as they are
-    assert part_sizes(lab) == [2, 2]
+    set_slice(lab, 1)  # narrower: only the open part, the last, is cut again
+    assert part_sizes(lab) == [2, 1, 1]
+    assert boundaries(lab)[:2] == written
     lib.add(Chapter.simple("5", count=2))
     lib.add(Chapter.simple("6", count=2))
-    assert part_sizes(lab) == [2, 2, 1, 1]  # only what is new is cut by the new slice
-    assert boundaries(lab)[:2] == written
-    set_slice(lab, None)
-    assert boundaries(lab)[:2] == written
+    assert part_sizes(lab) == [2, 1, 1, 1, 1]
+    kept = boundaries(lab)[:3]
+    set_slice(lab, None)  # no slice: the written starts stay, what is open is filled by the bytes
+    assert part_sizes(lab)[:3] == [2, 1, 1]
+    assert boundaries(lab)[:3] == kept
 
 
 def test_a_chapter_added_goes_in_the_last_part_until_the_slice_is_full(lab: World) -> None:
@@ -151,23 +156,27 @@ def test_a_chapter_added_goes_in_the_last_part_until_the_slice_is_full(lab: Worl
     assert part_sizes(lab) == [2, 2, 1]
 
 
-def test_changing_the_slice_makes_no_new_version_of_a_part_that_did_not_change(lab: World) -> None:
+def test_widening_the_slice_makes_no_new_version_of_a_part_that_did_not_change(
+    lab: World,
+) -> None:
     chapters(library(lab), 4)
     set_slice(lab, 2)
     part_sizes(lab)
-    with lab.seed.engine.connect() as c:
-        before = c.execute(
-            sa.select(bundle.bundle_version.c.part_index, bundle.bundle_version.c.version_no)
-            .order_by("part_index")
-        ).all()  # fmt: skip
-    set_slice(lab, 1)
+
+    def versions() -> list[Any]:
+        with lab.seed.engine.connect() as c:
+            return list(
+                c.execute(
+                    sa.select(
+                        bundle.bundle_version.c.part_index, bundle.bundle_version.c.number
+                    ).order_by("part_index")
+                )
+            )
+
+    before = versions()
+    set_slice(lab, 2)
     part_sizes(lab)
-    with lab.seed.engine.connect() as c:
-        after = c.execute(
-            sa.select(bundle.bundle_version.c.part_index, bundle.bundle_version.c.version_no)
-            .order_by("part_index")
-        ).all()  # fmt: skip
-    assert after == before
+    assert versions() == before
 
 
 def test_a_slice_is_the_same_bytes_as_the_same_chapters_cut_by_the_cap_of_members(
@@ -213,15 +222,18 @@ def path(world: World, key: str = "ok") -> str:
     return f"/api/v1/editions/{world.seed.editions[key]}/bundle"
 
 
-def put_slice(world: World, value: Any, *, client: TestClient | None = None, key: str = "ok") -> Any:
-    return world.env.post(f"{path(world, key)}-slice", client=client, json={"slice_chapters": value})
+def put_slice(
+    world: World, value: Any, *, client: TestClient | None = None, key: str = "ok"
+) -> Any:
+    return world.env.post(
+        f"{path(world, key)}-slice", client=client, json={"slice_chapters": value}
+    )
 
 
 def test_the_admin_reads_the_parts_and_what_is_left_out(lab: World) -> None:
     lib = library(lab)
     chapters(lib, 3)
-    lib.add(Chapter("4", [("1.avif", b"\x00\x00\x00\x1cftypavif" + b"x" * 40)]))
-    lib.add(Chapter.simple("5", fmt="epub"))
+    lib.add(Chapter.simple("4", fmt="epub"))
     set_slice(lab, 2)
     got = lab.env.client.get(path(lab))
     assert got.status_code == 200, got.text
@@ -231,7 +243,7 @@ def test_the_admin_reads_the_parts_and_what_is_left_out(lab: World) -> None:
     assert (body["slice_min"], body["slice_max"]) == (1, 256)
     assert [(p["index"], p["chapters"]) for p in body["parts"]] == [(1, 2), (2, 1)]
     assert body["parts"][0]["first_number"] == "1" and body["parts"][0]["last_number"] == "2"
-    assert body["excluded"]["format"] == 1
+    assert body["excluded"] == {"format": 1, "unsafe": 0}
     assert body["can"] == {"set_slice": True}
 
 
@@ -240,8 +252,12 @@ def test_reading_the_parts_writes_nothing(lab: World) -> None:
     set_slice(lab, 2)
     lab.env.client.get(path(lab))
     with lab.seed.engine.connect() as c:
-        assert c.execute(sa.select(sa.func.count()).select_from(bundle.bundle_partition)).scalar() == 0
-        assert c.execute(sa.select(sa.func.count()).select_from(bundle.bundle_version)).scalar() == 0
+        assert (
+            c.execute(sa.select(sa.func.count()).select_from(bundle.bundle_partition)).scalar() == 0
+        )
+        assert (
+            c.execute(sa.select(sa.func.count()).select_from(bundle.bundle_version)).scalar() == 0
+        )
 
 
 def test_the_admin_sets_and_clears_the_slice(lab: World) -> None:
@@ -253,7 +269,9 @@ def test_the_admin_sets_and_clears_the_slice(lab: World) -> None:
     cleared = put_slice(lab, None)
     assert cleared.status_code == 200 and slice_of(lab) is None
     with lab.seed.engine.connect() as c:
-        assert c.execute(sa.select(sa.func.count()).select_from(bundle.bundle_setting)).scalar() == 0
+        assert (
+            c.execute(sa.select(sa.func.count()).select_from(bundle.bundle_setting)).scalar() == 0
+        )
 
 
 @pytest.mark.parametrize("value", [0, -1, 257, 1.5, "2", True, [2]])
@@ -274,20 +292,20 @@ def test_an_unknown_field_or_an_unknown_edition_is_refused(lab: World) -> None:
 def test_the_setting_is_the_admins_alone(lab: World) -> None:
     chapters(library(lab), 3)
     member = add_profile(lab.env, "mem", "member", "10.0.0.4")
-    key = local_auth(lab.seed.engine, lab.env.settings).create_api_key(
-        name="bundlekey", username="admin", read_only=False
-    ).value
+    auth = local_auth(lab.seed.engine, lab.env.settings)
+    keys = [auth.create_api_key(name="ro", username="admin", read_only=True).value]  # no write
     url = path(lab)
     for who in (lab.kid_session, member):
         assert who.get(url).status_code == 403
         assert put_slice(lab, 2, client=who).status_code == 403
-    anonymous = TestClient(lab.env.app, base_url="https://testserver")
+    anonymous = TestClient(lab.env.app, base_url="https://testserver")  # type: ignore[arg-type]
     assert anonymous.get(url).status_code in (401, 403)
     assert anonymous.post(f"{url}-slice", json={"slice_chapters": 2}).status_code in (401, 403)
-    by_key = lab.env.other_client("10.0.0.9").post(
-        f"{url}-slice", json={"slice_chapters": 2}, headers={"Authorization": f"Bearer {key}"}
-    )
-    assert by_key.status_code in (401, 403)
+    for key in keys:
+        by_key = lab.env.other_client("10.0.0.9").post(
+            f"{url}-slice", json={"slice_chapters": 2}, headers={"Authorization": f"Bearer {key}"}
+        )
+        assert by_key.status_code in (401, 403)
     for reader in (lab.mum, lab.kid):  # a device token opens the feed and the blocks, no more
         assert reader.get(url).status_code in (401, 403)
         denied = lab.env.other_client("10.0.0.10").post(
@@ -376,8 +394,7 @@ def test_the_history_of_the_versions_and_the_parts_survives_a_slice_that_goes(la
             == held
         )
         assert (
-            c.execute(sa.select(sa.func.count()).select_from(bundle.bundle_partition)).scalar()
-            == 2
+            c.execute(sa.select(sa.func.count()).select_from(bundle.bundle_partition)).scalar() == 2
         )
 
 

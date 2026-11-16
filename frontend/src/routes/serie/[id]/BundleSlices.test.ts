@@ -17,7 +17,7 @@ const state = (over: Record<string, unknown> = {}) => ({
   slice_min: 1,
   slice_max: 256,
   parts: [{ index: 1, chapters: 3, first_number: '1', last_number: '3', size: 1200, written: true }],
-  excluded: { format: 0, unsafe: 0, unreadable: 0 },
+  excluded: { format: 0, unsafe: 0 },
   can: { set_slice: true },
   ...over
 });
@@ -62,7 +62,7 @@ describe('Slices of the series block', () => {
 
   // req: EF-INT-007
   it('test_bundle_slices_says_how_many_chapters_are_left_out', async () => {
-    server.use(read(state({ excluded: { format: 2, unsafe: 0, unreadable: 1 } })));
+    server.use(read(state({ excluded: { format: 2, unsafe: 1 } })));
     render(BundleSlices, { editionId: 'ED1' });
     expect(await screen.findByText('3 chapitres hors du bloc (format ou fichier illisible).')).toBeInTheDocument();
   });

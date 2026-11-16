@@ -46,7 +46,7 @@ M4_TABLES = {
     "bundle_version",
     "bundle_member",  # migration 0077 (M4 L49a)
     "external_link",  # migration 0079 (M4 L23)
-    "bundle_setting",  # migration 0081 (M4 L49b)
+    "bundle_setting",  # migration 0082 (M4 L49b)
 }  # migration 0064 (M4 L02); the others sit in their modules
 M1B_TABLES = {"webauthn_credential", "backup_run"}  # migration 0013
 M2_TABLES = {  # migration 0020, the tables of the other modules included
