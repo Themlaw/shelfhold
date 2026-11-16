@@ -327,3 +327,25 @@ def test_family_shelf_to_a_non_family_binding_is_refused_never_inherited() -> No
         rate_edition(env, mine.edition_id, 16)
         env.add_chapter(mine, "2")
         assert run(env, env.destination_id) == 0 and run(env, second) == 0
+
+
+@pytest.mark.req("EF-EXP-002", "EF-EXP-006")
+@pytest.mark.parametrize("forgotten", ["primary", "secondary"])
+def test_forgetting_a_binding_of_a_tree_leaves_the_others_standing(forgotten: str) -> None:
+    from shelfhold.export.application.remove_destination import forget_destination
+
+    with export_env() as env:
+        tree_id = {b.destination_id: b.tree_id for b in service(env).list_bindings(env.shelf_id)}[
+            env.destination_id
+        ]
+        secondary = bind(env, "Kavita", target_id=add_target(env), attach_to_tree=tree_id)
+        gone = env.destination_id if forgotten == "primary" else secondary
+        with write_transaction(env.engine) as connection:
+            forget_destination(connection, gone)
+        with env.engine.connect() as connection:
+            ids = set(connection.execute(sa.select(export.shelf_destination.c.id)).scalars())
+            indexers = set(
+                connection.execute(sa.select(export.tree_indexer.c.shelf_destination_id)).scalars()
+            )
+        assert gone not in ids and gone not in indexers
+        assert ids == ({secondary} if forgotten == "primary" else {env.destination_id})
