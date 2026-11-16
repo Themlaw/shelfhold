@@ -791,6 +791,40 @@ export type ChildAuditOut = {
 };
 
 /**
+ * ChoiceList
+ */
+export type ChoiceList = {
+    /**
+     * Items
+     */
+    items: Array<ChoiceOut>;
+};
+
+/**
+ * ChoiceOut
+ *
+ * A binding a key can be linked to: its shelf, its server, and whether one is linked.
+ */
+export type ChoiceOut = {
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Linked
+     */
+    linked: boolean;
+    /**
+     * Shelf Name
+     */
+    shelf_name: string;
+    /**
+     * Target Name
+     */
+    target_name: string;
+};
+
+/**
  * CollectionDetailOut
  */
 export type CollectionDetailOut = {
@@ -5456,6 +5490,38 @@ export type TargetIn = {
      * Username
      */
     username: string;
+};
+
+/**
+ * TargetOut
+ */
+export type TargetOut = {
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Kind
+     */
+    kind: string;
+    /**
+     * Name
+     */
+    name: string;
+    /**
+     * Partitioning
+     */
+    partitioning: 'none' | 'library' | 'user';
+};
+
+/**
+ * TargetsOut
+ */
+export type TargetsOut = {
+    /**
+     * Items
+     */
+    items: Array<TargetOut>;
 };
 
 /**
@@ -11547,6 +11613,44 @@ export type LinkAccountResponses = {
 
 export type LinkAccountResponse = LinkAccountResponses[keyof LinkAccountResponses];
 
+export type ListChoicesData = {
+    body?: never;
+    path: {
+        /**
+         * User Id
+         */
+        user_id: string;
+    };
+    query?: never;
+    url: '/api/v1/profiles/{user_id}/kavita-destinations';
+};
+
+export type ListChoicesErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type ListChoicesError = ListChoicesErrors[keyof ListChoicesErrors];
+
+export type ListChoicesResponses = {
+    /**
+     * Successful Response
+     */
+    200: ChoiceList;
+};
+
+export type ListChoicesResponse = ListChoicesResponses[keyof ListChoicesResponses];
+
 export type QueuePauseData = {
     body: ScopeIn;
     path?: never;
@@ -13781,6 +13885,39 @@ export type StoreReinitResponses = {
 };
 
 export type StoreReinitResponse = StoreReinitResponses[keyof StoreReinitResponses];
+
+export type ListTargetsData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/targets';
+};
+
+export type ListTargetsErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type ListTargetsError = ListTargetsErrors[keyof ListTargetsErrors];
+
+export type ListTargetsResponses = {
+    /**
+     * Successful Response
+     */
+    200: TargetsOut;
+};
+
+export type ListTargetsResponse = ListTargetsResponses[keyof ListTargetsResponses];
 
 export type AddTargetData = {
     body: TargetIn;

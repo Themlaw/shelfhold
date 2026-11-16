@@ -176,6 +176,6 @@ describe('Étagères: les destinations d’une étagère', () => {
     world({ [ADULT]: [binding()] });
     render(Page);
     const adults = await screen.findByRole('heading', { name: 'Destinations of “Adultes”', level: 2 });
-    expect(adults.closest('section')).toHaveTextContent('Keeps accounts apart by library');
+    expect(await within(adults.closest('section') as HTMLElement).findByText('Keeps accounts apart by library')).toBeTruthy();
   });
 });

@@ -6,6 +6,7 @@
   import { client } from '#lib/api/client.gen.ts';
   import { t } from '#lib/i18n/index.ts';
   import PlanPreview from '#lib/components/PlanPreview.svelte';
+  import ShelfBindings, { type Target } from '#lib/components/ShelfBindings.svelte';
   import ReauthPrompt from '#lib/components/ReauthPrompt.svelte';
   import { csrfToken } from '#lib/passkeys.ts';
   import { isForbidden, needsReauth, problemOf } from '#lib/triage.ts';
@@ -34,7 +35,7 @@
     blocked: { code: string; src: string }[];
     warnings: { code: string; readers: number; exact: boolean; series: string[] }[];
   };
-  type Shelf = { id: string; name: string };
+  type Shelf = { id: string; name: string; max_age_rating: number | null };
   type DestState = {
     template: Template;
     preview: NamingPreview | null;
@@ -47,6 +48,7 @@
   const DEBOUNCE_MS = 300;
 
   let shelves = $state<Shelf[]>([]);
+  let targets = $state<Target[]>([]);
   let destinations = $state<Destination[]>([]);
   let adminOnly = $state(false);
   let notice = $state<{ text: string; kind: 'status' | 'alert' } | null>(null);
@@ -70,7 +72,8 @@
   async function load(): Promise<void> {
     const shelvesAnswer = await client.get({ url: '/api/v1/shelves', throwOnError: false });
     const destinationsAnswer = await client.get({ url: '/api/v1/destinations', throwOnError: false });
-    const error = shelvesAnswer.error ?? destinationsAnswer.error;
+    const targetsAnswer = await client.get({ url: '/api/v1/targets', throwOnError: false });
+    const error = shelvesAnswer.error ?? destinationsAnswer.error ?? targetsAnswer.error;
     if (error) {
       adminOnly = isForbidden(error);
       say(adminOnly ? t('screens.admin_only') : t('shelves.error'), 'alert');
@@ -78,6 +81,7 @@
     }
     shelves = (shelvesAnswer.data as { items: Shelf[] }).items;
     destinations = (destinationsAnswer.data as { items: Destination[] }).items;
+    targets = (targetsAnswer.data as { items: Target[] }).items;
     const next: Record<string, DestState> = {};
     for (const d of destinations) {
       next[d.id] = {
@@ -184,6 +188,9 @@
   {#if adminOnly}
     <p role="alert">{notice?.text}</p>
   {:else}
+    {#each shelves as shelf (shelf.id)}
+      <ShelfBindings {shelf} {targets} />
+    {/each}
     {#if destinations.length === 0}
       <p>{t('shelves.empty')}</p>
     {/if}

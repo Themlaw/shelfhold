@@ -14,6 +14,8 @@ const ROOT = resolve(__dirname, '../../..');
 const FILES = [
   'routes/reglages/etageres/+page.svelte',
   'routes/reglages/destinations/+page.svelte',
+  'routes/reglages/compte-kavita/+page.svelte',
+  'lib/components/ShelfBindings.svelte',
   'lib/components/PlanPreview.svelte',
   'lib/components/TypedConfirm.svelte'
 ];

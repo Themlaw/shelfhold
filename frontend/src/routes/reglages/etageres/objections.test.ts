@@ -52,6 +52,8 @@ describe('the review of L45', () => {
       http.get(`${BASE}/api/v1/shelves`, () =>
         HttpResponse.json({ items: [{ id: 'shelf-D1', name: 'Manga', max_age_rating: null }] })
       ),
+      http.get(`${BASE}/api/v1/targets`, () => HttpResponse.json({ items: [] })),
+      http.get(`${BASE}/api/v1/shelves/shelf-D1/destinations`, () => HttpResponse.json({ destinations: [] })),
       http.get(`${BASE}/api/v1/destinations`, () =>
         HttpResponse.json({
           items: [destination('D1', 'Manga', { flagged_names: null, flagged_reason: 'TypeError' })]

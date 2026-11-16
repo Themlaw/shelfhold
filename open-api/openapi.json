@@ -1299,6 +1299,51 @@
         "title": "ChildAuditOut",
         "type": "object"
       },
+      "ChoiceList": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ChoiceOut"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "ChoiceList",
+        "type": "object"
+      },
+      "ChoiceOut": {
+        "description": "A binding a key can be linked to: its shelf, its server, and whether one is linked.",
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "linked": {
+            "title": "Linked",
+            "type": "boolean"
+          },
+          "shelf_name": {
+            "title": "Shelf Name",
+            "type": "string"
+          },
+          "target_name": {
+            "title": "Target Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "shelf_name",
+          "target_name",
+          "linked"
+        ],
+        "title": "ChoiceOut",
+        "type": "object"
+      },
       "CollectionDetailOut": {
         "properties": {
           "count": {
@@ -8993,6 +9038,55 @@
           "password"
         ],
         "title": "TargetIn",
+        "type": "object"
+      },
+      "TargetOut": {
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "partitioning": {
+            "enum": [
+              "none",
+              "library",
+              "user"
+            ],
+            "title": "Partitioning",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "kind",
+          "partitioning"
+        ],
+        "title": "TargetOut",
+        "type": "object"
+      },
+      "TargetsOut": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/TargetOut"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "TargetsOut",
         "type": "object"
       },
       "TitleOut": {
@@ -19232,6 +19326,69 @@
         ]
       }
     },
+    "/api/v1/profiles/{user_id}/kavita-destinations": {
+      "get": {
+        "description": "What the screen of the member offers: the Kavita bindings they may link a key to.",
+        "operationId": "list_choices",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "title": "User Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChoiceList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Connexion requise, ou mot de passe à confirmer (reauth-required)."
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée)."
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Détail du problème (RFC 9457)."
+          }
+        },
+        "summary": "List Choices",
+        "tags": [
+          "destination-accounts"
+        ]
+      }
+    },
     "/api/v1/queue/pause": {
       "post": {
         "operationId": "queue_pause",
@@ -23215,6 +23372,55 @@
       }
     },
     "/api/v1/targets": {
+      "get": {
+        "operationId": "list_targets",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TargetsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Connexion requise, ou mot de passe à confirmer (reauth-required)."
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée)."
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Détail du problème (RFC 9457)."
+          }
+        },
+        "summary": "List Targets",
+        "tags": [
+          "targets"
+        ]
+      },
       "post": {
         "operationId": "add_target",
         "requestBody": {
