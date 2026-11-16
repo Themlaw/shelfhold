@@ -737,7 +737,7 @@
   "bindings.add": "Ajouter une destination",
   "bindings.target": "Serveur",
   "bindings.target_none": "Choisir un serveur",
-  "bindings.transport": "Transport",
+  "bindings.transport": "Mode d'envoi",
   "bindings.folder": "Dossier",
   "bindings.submit": "Lier la destination",
   "bindings.linked": "Destination liée.",
