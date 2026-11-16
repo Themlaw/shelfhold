@@ -10,14 +10,18 @@ from collections.abc import Callable
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, field_validator
 
 from shelfhold.identity.application.notification_prefs import (
     NotificationPrefs,
     NotificationPrefsError,
     NotificationPrefsService,
 )
-from shelfhold.identity.application.preferences import Preferences, PreferencesService
+from shelfhold.identity.application.preferences import (
+    DELIVERED_THEMES,
+    Preferences,
+    PreferencesService,
+)
 from shelfhold.identity.public import Principal
 from shelfhold.interfaces.http_api.auth import require_session
 from shelfhold.interfaces.http_api.problems import ProblemError
@@ -28,6 +32,7 @@ __all__ = ["build_identity_router", "build_notification_prefs_router"]
 class PreferencesOut(BaseModel):
     theme: str  # the theme in effect: the choice, else the instance default
     chosen_theme: str | None  # null: the person has not chosen, the default applies
+    available_themes: list[str]  # the themes that ship: the selector offers these and no other
     color_scheme: Literal["auto", "light", "dark"]
     language: Literal["fr", "en"]  # the language of the interface (ENF-I18N-001)
 
@@ -39,15 +44,23 @@ class PreferencesIn(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    theme: Literal["bibliotheque"] | None = None
+    theme: str | None = None
     color_scheme: Literal["auto", "light", "dark"] = "auto"
     language: Literal["fr", "en"] = "fr"
+
+    @field_validator("theme")
+    @classmethod
+    def _delivered(cls, value: str | None) -> str | None:
+        if value is not None and value not in DELIVERED_THEMES:
+            raise ValueError(value)  # the name the screen cannot style
+        return value
 
 
 def _out(preferences: Preferences) -> PreferencesOut:
     return PreferencesOut(
         theme=preferences.theme,
         chosen_theme=preferences.chosen_theme,
+        available_themes=list(preferences.available_themes),
         color_scheme=preferences.color_scheme,  # type: ignore[arg-type]
         language=preferences.language,  # type: ignore[arg-type]
     )
