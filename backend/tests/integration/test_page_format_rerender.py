@@ -44,7 +44,7 @@ def avif_chapter(env: ExportEnv) -> tuple[str, str, str]:
         env.lib.data,
         tombstones=NONE_PURGED,
         hold_work=work_lock(env.engine),
-    ).ingest(  # fmt: skip
+    ).ingest(
         unit_id=unit,
         variant_id=variant,
         staged=env.lib.stage(pf.cbz([("001.avif", pf.avif()), ("002.avif", pf.avif((1, 2, 3)))])),
