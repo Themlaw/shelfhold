@@ -88,9 +88,10 @@ def test_theme_null_falls_back_to_the_instance_default(api: AuthEnv) -> None:
 @pytest.mark.parametrize(
     "body",
     [
-        {"theme": "console"},  # B, C and D are not delivered in M3
-        {"theme": "galerie"},
+        {"theme": "galerie"},  # C and D arrive after B (M4)
         {"theme": "calme"},
+        {"theme": "Console"},  # the names are exact
+        {"theme": ""},
         {"theme": "nope"},
         {"theme": "<script>alert(1)</script>"},
         {"theme": "bibliotheque'; DROP TABLE user; --"},
