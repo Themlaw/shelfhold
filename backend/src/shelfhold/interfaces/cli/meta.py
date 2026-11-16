@@ -14,7 +14,8 @@ import sys
 from typing import Any
 
 from shelfhold.i18n import t
-from shelfhold.interfaces.cli._ops import ops_command
+from shelfhold.infrastructure.secrets.provider_keys import PROVIDERS as KEYED_PROVIDERS
+from shelfhold.interfaces.cli._ops import fail, ops_command
 from shelfhold.interfaces.local_cli import OpsChannel
 
 
@@ -28,11 +29,26 @@ def register(commands: argparse._SubParsersAction[argparse.ArgumentParser]) -> N
     enrich.add_argument("target", help=t("cli.meta_target_help"))
     enrich.add_argument(
         "--provider", default="openlibrary",
-        choices=("openlibrary", "anilist", "mangaupdates", "bnf", "wikidata", "comicvine"),
+        choices=("openlibrary", "anilist", "mangaupdates", "bnf", "wikidata", "comicvine",
+                 "hardcover", "googlebooks"),
         help=t("cli.meta_provider_help"),
     )  # fmt: skip
     enrich.add_argument("--title", default=None, help=t("cli.meta_title_help"))
     enrich.set_defaults(handler=run_enrich)
+    keys = actions.add_parser("provider-key", help=t("cli.meta_provider_key_help"),
+                              allow_abbrev=False)  # fmt: skip
+    verbs = keys.add_subparsers(dest="key_command", required=True)
+    for verb in ("set", "clear"):
+        one = verbs.add_parser(verb, help=t(f"cli.meta_provider_key_{verb}_help"),
+                               allow_abbrev=False)  # fmt: skip
+        one.add_argument("provider", choices=KEYED_PROVIDERS)
+        if verb == "set":
+            # never a value on the command line (shell history, `ps`): present only to refuse it
+            one.add_argument("key", nargs="?", default=None, help=argparse.SUPPRESS)
+        one.set_defaults(handler=run_key_set if verb == "set" else run_key_clear)
+    status = verbs.add_parser("status", help=t("cli.meta_provider_key_status_help"),
+                              allow_abbrev=False)  # fmt: skip
+    status.set_defaults(handler=run_key_status)
     calendar = actions.add_parser("calendar", help=t("cli.meta_calendar_help"),
                                   allow_abbrev=False)  # fmt: skip
     calendar.set_defaults(handler=run_calendar)
@@ -129,7 +145,15 @@ def run_enrich(args: argparse.Namespace, channel: OpsChannel) -> int:
         else:
             message = t("meta.enrich_not_found", provider=args.provider)
         print(message, file=sys.stderr)
+        if done.get("suspended_until"):
+            print(t("meta.enrich_suspended", provider=args.provider, until=done["suspended_until"]),
+                  file=sys.stderr)  # fmt: skip
         return 1
+    if done.get("suspended_until"):
+        print(t("meta.enrich_suspended", provider=args.provider, until=done["suspended_until"]))
+    if done.get("fallback_of"):  # said first: the answer is not the provider that was asked for
+        print(t("meta.enrich_fallback", asked=done["fallback_of"], reason=done["fallback_reason"],
+                provider=done["provider"]))  # fmt: skip
     print(t("meta.enriched", edition=done["edition_id"], count=len(done["written"])))
     for name in done["written"]:
         print(t("meta.enrich_field", field=name))
@@ -164,4 +188,35 @@ def run_calendar(args: argparse.Namespace, channel: OpsChannel) -> int:
         print(t("meta.calendar_line", title=entry["title"], on=entry["last_release_on"] or "-",
                 chapter=entry["chapter"] or "-"))  # fmt: skip
         print(t("meta.enrich_attribution", text=entry["attribution"], url=entry["source_url"]))
+    return 0
+
+
+MAX_KEY_LINE = 4000
+
+
+@ops_command
+def run_key_set(args: argparse.Namespace, channel: OpsChannel) -> int:
+    if args.key is not None:
+        return fail(t("meta.provider_key_not_on_argv"))
+    key = sys.stdin.readline(MAX_KEY_LINE + 1).strip()
+    if len(key) > MAX_KEY_LINE:
+        return fail(t("meta.provider_key_invalid"))
+    if args.provider == "hardcover":
+        key = key.removeprefix("Bearer ").strip()  # the site shows the token with its scheme
+    channel.call("ops.meta_provider_key_set", provider=args.provider, key=key)
+    print(f"{args.provider}: set")  # the key is never repeated
+    return 0
+
+
+@ops_command
+def run_key_clear(args: argparse.Namespace, channel: OpsChannel) -> int:
+    done = channel.call("ops.meta_provider_key_clear", provider=args.provider)
+    print(f"{args.provider}: {'cleared' if done['cleared'] else 'unset'}")
+    return 0
+
+
+@ops_command
+def run_key_status(args: argparse.Namespace, channel: OpsChannel) -> int:
+    for name, present in channel.call("ops.meta_provider_key_status").items():
+        print(f"{name}: {'set' if present else 'unset'}")  # presence only, never the key
     return 0

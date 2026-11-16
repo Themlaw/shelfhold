@@ -1,4 +1,4 @@
-"""A simulated Hardcover GraphQL service replaying the fabricated cassettes of `cassettes/hardcover`."""
+"""A simulated Hardcover GraphQL service replaying `cassettes/hardcover` (fabricated)."""
 
 from __future__ import annotations
 

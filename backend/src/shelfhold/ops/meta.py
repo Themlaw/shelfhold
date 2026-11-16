@@ -12,19 +12,34 @@ journal. `check` writes nothing.
 from __future__ import annotations
 
 import asyncio
+import time
 from collections.abc import Callable
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
 import sqlalchemy as sa
 
+from shelfhold.catalog.application.enrich import DAILY_QUOTA
 from shelfhold.catalog.application.release_calendar import ReleaseCalendar
 from shelfhold.catalog.public import EnrichReport, EnrichService, UnknownTargetError
 from shelfhold.export.application.mirror import ProvenanceMirror
 from shelfhold.identity.domain.visibility import ALL
+from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.fetcher.quota_store import SqlBucketStore
 from shelfhold.infrastructure.ids import is_ulid
 from shelfhold.infrastructure.logging import register_secret_value
 from shelfhold.infrastructure.schema import export
+from shelfhold.infrastructure.secrets import registry
+from shelfhold.infrastructure.secrets.provider_keys import (
+    PROVIDERS as KEYED_PROVIDERS,
+)
+from shelfhold.infrastructure.secrets.provider_keys import (
+    ProviderKey,
+    clear_provider_key,
+    load_provider_key,
+    provider_key_present,
+    store_provider_key,
+)
 from shelfhold.library.public import MetaProjection
 from shelfhold.ops.errors import ExitUnavailableError, UnknownSubjectError
 from shelfhold.ops.library import refusal_of
@@ -32,6 +47,8 @@ from shelfhold.plugin_host import provider_fetcher
 from shelfhold.plugin_host.adapters.native.anilist import AniListProvider
 from shelfhold.plugin_host.adapters.native.bnf import BnFProvider
 from shelfhold.plugin_host.adapters.native.comicvine import NOTICE, ComicVineProvider
+from shelfhold.plugin_host.adapters.native.googlebooks import GoogleBooksProvider
+from shelfhold.plugin_host.adapters.native.hardcover import HardcoverProvider
 from shelfhold.plugin_host.adapters.native.mangaupdates import MangaUpdatesProvider
 from shelfhold.plugin_host.adapters.native.openlibrary import OpenLibraryProvider
 from shelfhold.plugin_host.adapters.native.wikidata import WikidataProvider
@@ -74,9 +91,15 @@ PROVIDERS: dict[str, Callable[[], MetadataProvider]] = {
     "bnf": lambda: BnFProvider(reader=read_sru),  # the host's own reader of XML (ENF-SEC-014)
     "wikidata": WikidataProvider,
     "comicvine": ComicVineProvider,
+    "hardcover": HardcoverProvider,  # the instance's own token, sealed (`provider_secret`)
+    "googlebooks": GoogleBooksProvider,  # the instance's own key, sealed
 }
 BY_TITLE = frozenset({"anilist", "mangaupdates", "wikidata", "comicvine"})  # a title is required
-TITLE_OPTIONAL = frozenset({"bnf"})  # a title when given, else the ISBN
+TITLE_OPTIONAL = frozenset({"bnf", "hardcover", "googlebooks"})  # a title when given, else the ISBN
+# Where the host goes when a provider cannot answer for the rest of its day (its budget is spent, or
+# it said «Queries per day» and is suspended until Pacific midnight): the first of these that
+# enriches the Edition answers instead.
+FALLBACKS: dict[str, tuple[str, ...]] = {"googlebooks": ("openlibrary", "bnf")}
 
 
 class MetaOps:
@@ -137,6 +160,8 @@ class MetaOps:
             raise UnknownSubjectError(f"no such provider: {provider}")
         if provider == "comicvine":
             self._comicvine_ready()
+        if provider in KEYED_PROVIDERS:
+            self._key_ready(provider)
         if provider in BY_TITLE and not (title and title.strip()):
             raise UnknownSubjectError(f"{provider} is asked by title: give --title")
         target = self._pasted(target) if provider == "openlibrary" else target
@@ -150,9 +175,83 @@ class MetaOps:
         except (UnknownTargetError, LookupError) as error:
             raise UnknownSubjectError(str(error)) from None
         done = _report(report)
+        done["provider"] = provider
+        until = SqlBucketStore(self._comp.engine).suspended_until(provider, time.time())
+        done["suspended_until"] = (
+            datetime.fromtimestamp(until, UTC).isoformat(timespec="minutes") if until else None
+        )  # a provider that said its day is spent: when it is asked again
+        if (fallback := self._fallback(service, edition_id, provider, title, report)) is not None:
+            used, answered = fallback
+            suspended = done["suspended_until"]
+            done = _report(answered)
+            done["suspended_until"] = suspended
+            done["provider"] = used
+            done["fallback_of"] = provider
+            done["fallback_reason"] = report.reason or report.outcome
         if provider == "comicvine":
             done["notice"] = NOTICE  # the terms are said with every answer, not only the first
         return done
+
+    def _fallback(
+        self,
+        service: EnrichService,
+        edition_id: str,
+        provider: str,
+        title: str | None,
+        report: EnrichReport,
+    ) -> tuple[str, EnrichReport] | None:
+        """The report of the first other provider that enriches, when `provider` cannot answer
+        for the rest of its day; `None` when it can, or when nobody else enriches."""
+        spent = report.outcome == "quota" or (
+            report.outcome == "provider_down" and report.reason == DAILY_QUOTA
+        )
+        if not spent:
+            return None
+        for other in FALLBACKS.get(provider, ()):
+            try:
+                answered = asyncio.run(self._enrich(service, edition_id, other, title))
+            except (UnknownTargetError, LookupError):  # this one has nothing to ask by
+                continue
+            if answered.outcome == "enriched":
+                return other, answered
+        return None
+
+    def _key_ready(self, provider: str) -> None:
+        """Hardcover and Google Books are asked with the key of the instance, sealed: without
+        one nothing is asked, and the refusal says how to give it."""
+        if not self._key_present(provider):
+            raise ExitUnavailableError(
+                f"{provider} needs the key of this instance: give it with "
+                f"`shelfhold meta provider-key set {provider}` (the key is read from stdin)"
+            )
+
+    def _key_present(self, provider: str) -> bool:
+        with self._comp.engine.connect() as connection:
+            return provider_key_present(connection, provider)
+
+    def provider_key_set(self, provider: str, key: str) -> dict[str, Any]:
+        """Seal `key` for `provider` (the operator's, local, from its standard input)."""
+        if provider not in KEYED_PROVIDERS:
+            raise UnknownSubjectError(f"no key is kept for {provider}")
+        try:
+            sealed = ProviderKey(key)
+        except ValueError as error:
+            raise UnknownSubjectError(str(error)) from None
+        vault = self._comp.vault()
+        with write_transaction(self._comp.engine) as connection:
+            registry.register_active_key(connection, vault.keyring)
+            store_provider_key(vault, connection, provider, sealed)
+        return {"provider": provider, "set": True}
+
+    def provider_key_clear(self, provider: str) -> dict[str, Any]:
+        if provider not in KEYED_PROVIDERS:
+            raise UnknownSubjectError(f"no key is kept for {provider}")
+        with write_transaction(self._comp.engine) as connection:
+            return {"provider": provider, "cleared": clear_provider_key(connection, provider)}
+
+    def provider_key_status(self) -> dict[str, bool]:
+        """Which providers have a key: presence only, never the key."""
+        return {name: self._key_present(name) for name in KEYED_PROVIDERS}
 
     def _comicvine_ready(self) -> None:
         """ComicVine is off until the operator switches it on and brings the key of the instance
@@ -169,6 +268,15 @@ class MetaOps:
             )
 
     def _provider(self, key: str) -> MetadataProvider:
+        if key in KEYED_PROVIDERS:
+            with self._comp.engine.connect() as connection:
+                sealed = load_provider_key(self._comp.vault(), connection, key)
+            opened = sealed.reveal() if sealed is not None else None
+            if key == "hardcover":
+                return HardcoverProvider(token=opened)
+            return GoogleBooksProvider(
+                api_key=opened, daily_budget=self._comp.settings.googlebooks_daily_budget
+            )
         if key != "comicvine":
             return PROVIDERS[key]()
         secret = self._comp.settings.comicvine_api_key

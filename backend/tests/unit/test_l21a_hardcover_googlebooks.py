@@ -15,8 +15,7 @@ from typing import Any
 import pytest
 import structlog
 
-from shelfhold.infrastructure.fetcher.day_window import PACIFIC
-from shelfhold.plugin_host.adapters.native.googlebooks import GoogleBooksProvider
+from shelfhold.plugin_host.adapters.native.googlebooks import PACIFIC, GoogleBooksProvider
 from shelfhold.plugin_host.adapters.native.googlebooks import build_manifest as gb_manifest
 from shelfhold.plugin_host.adapters.native.hardcover import HardcoverProvider
 from shelfhold.plugin_host.adapters.native.hardcover import build_manifest as hc_manifest
@@ -41,7 +40,10 @@ def key() -> str:
 
 
 def hardcover(
-    server: CassetteServer, key: str | None, *, title: str | None = hc.TITLE,
+    server: CassetteServer,
+    key: str | None,
+    *,
+    title: str | None = hc.TITLE,
     ids: dict[str, str] | None = None,
 ) -> IdentifyResult:
     target = EntityRef(entity_type="edition", entity_id=EDITION, ids=ids or {})
@@ -51,8 +53,12 @@ def hardcover(
 
 
 def googlebooks(
-    server: CassetteServer, key: str | None, *, title: str | None = gb.TITLE,
-    ids: dict[str, str] | None = None, budget: int = 1000,
+    server: CassetteServer,
+    key: str | None,
+    *,
+    title: str | None = gb.TITLE,
+    ids: dict[str, str] | None = None,
+    budget: int = 1000,
 ) -> IdentifyResult:
     target = EntityRef(entity_type="edition", entity_id=EDITION, ids=ids or {})
     hints = MatchHints(title=title) if title else MatchHints()
@@ -91,8 +97,10 @@ def test_hardcover_asks_by_title_with_the_token_in_a_header_only(key: str) -> No
     assert body["variables"]["q"] == hc.TITLE  # what was typed is data, not glued into the query
     assert hc.TITLE not in body["query"]
     assert fields(result) == {
-        "title": hc.TITLE, "description": "An invented book for tests.",
-        "publisher": "Invented Press", "published_on": "1999",
+        "title": hc.TITLE,
+        "description": "An invented book for tests.",
+        "publisher": "Invented Press",
+        "published_on": "1999",
     }
     proposal = result.proposals[0]
     assert proposal.provenance.source_url == hc.BOOK_URL
@@ -132,14 +140,17 @@ def test_hardcover_believes_the_shape_only(key: str) -> None:
 
 @pytest.mark.parametrize(
     ("cassette", "reason"),
-    [("unauthorized", "unauthorized"), ("over_limit", "rate_limited"), ("not_json", "schema_mismatch")],
+    [
+        ("unauthorized", "unauthorized"),
+        ("over_limit", "rate_limited"),
+        ("not_json", "schema_mismatch"),
+    ],
 )
 def test_hardcover_names_its_errors_and_never_the_token(
     key: str, cassette: str, reason: str
 ) -> None:
-    with structlog.testing.capture_logs() as events:
-        with pytest.raises(ProviderUnavailable) as raised:
-            hardcover(hc.fake_hardcover(cassette), key)
+    with structlog.testing.capture_logs() as events, pytest.raises(ProviderUnavailable) as raised:
+        hardcover(hc.fake_hardcover(cassette), key)
     assert raised.value.reason == reason
     assert key not in repr(raised.value) and key not in repr(events)
 
@@ -188,8 +199,10 @@ def test_googlebooks_by_isbn_with_the_key_in_a_header_only(key: str) -> None:
     assert call.headers["x-goog-api-key"] == key
     assert key not in call.query and key not in call.path  # never in an address
     assert fields(result) == {
-        "title": gb.TITLE, "description": "An invented book for tests.",
-        "publisher": "Invented Press", "published_on": "1999-05-01",
+        "title": gb.TITLE,
+        "description": "An invented book for tests.",
+        "publisher": "Invented Press",
+        "published_on": "1999-05-01",
     }
     assert result.proposals[0].provenance.source_url == gb.VOLUME_URL
 
@@ -238,9 +251,8 @@ def test_googlebooks_a_429_per_day_is_told_apart_from_one_per_minute(key: str) -
 def test_googlebooks_names_its_errors_and_never_the_key(
     key: str, cassette: str, reason: str
 ) -> None:
-    with structlog.testing.capture_logs() as events:
-        with pytest.raises(ProviderUnavailable) as raised:
-            googlebooks(gb.fake_googlebooks(cassette), key)
+    with structlog.testing.capture_logs() as events, pytest.raises(ProviderUnavailable) as raised:
+        googlebooks(gb.fake_googlebooks(cassette), key)
     assert raised.value.reason == reason
     assert key not in repr(raised.value) and key not in repr(events)
 

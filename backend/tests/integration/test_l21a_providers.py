@@ -27,7 +27,7 @@ from shelfhold.config import Settings, load_settings
 from shelfhold.events.bus import EventBus
 from shelfhold.infrastructure.db import create_db_engine
 from shelfhold.infrastructure.fetcher import Network
-from shelfhold.infrastructure.fetcher.day_window import pacific_midnight_after
+from shelfhold.infrastructure.fetcher.day_window import midnight_after
 from shelfhold.infrastructure.fetcher.quota_store import SqlBucketStore
 from shelfhold.infrastructure.imaging import WorkerLimits
 from shelfhold.infrastructure.schema import metadata
@@ -41,10 +41,11 @@ from shelfhold.infrastructure.secrets.provider_keys import (
 )
 from shelfhold.infrastructure.secrets.vault import SecretVault
 from shelfhold.plugin_host import provider_fetcher
-from shelfhold.plugin_host.adapters.native.googlebooks import GoogleBooksProvider
+from shelfhold.plugin_host.adapters.native.googlebooks import PACIFIC, GoogleBooksProvider
 from shelfhold.plugin_host.adapters.native.googlebooks import build_manifest as gb_manifest
 from shelfhold.plugin_host.provider_fetcher import ProviderRuntime
 from shelfhold.sdk.metadata import MatchHints
+from tests.auth_env import run_cli
 from tests.fakes.cassette_server import PUBLIC, CassetteServer
 from tests.fakes.googlebooks import server as gb
 from tests.fakes.hardcover import server as hc
@@ -101,7 +102,9 @@ def test_provider_key_is_sealed_at_rest_and_opened_by_the_vault_alone(engine: En
         envelope = connection.execute(sa.text("SELECT secret_ct FROM provider_secret")).first()
         assert envelope is not None
     opened = ProviderKey(HC_KEY)
-    assert HC_KEY not in repr(opened) and HC_KEY not in str(opened) and HC_KEY not in f"{opened!r:>40}"
+    assert (
+        HC_KEY not in repr(opened) and HC_KEY not in str(opened) and HC_KEY not in f"{opened!r:>40}"
+    )
 
 
 @pytest.mark.req("ENF-SEC-005")
@@ -155,7 +158,10 @@ class Bench:
         )
         self.runtime.buckets.use_store(SqlBucketStore(engine))
         self.service = EnrichService(
-            engine, self.clock, EventBus(self.clock, channels=Channels()), data_dir=data_dir,
+            engine,
+            self.clock,
+            EventBus(self.clock, channels=Channels()),
+            data_dir=data_dir,
             limits=LIMITS,
         )
 
@@ -173,7 +179,9 @@ class Bench:
         fetcher = worker(gb_manifest(budget), server, self.time, self.runtime)
         provider = GoogleBooksProvider(api_key=GB_KEY, daily_budget=budget)
         return run(
-            self.service.enrich(provider, fetcher, edition_id=edition, hints=MatchHints(title=title))  # type: ignore[arg-type]
+            self.service.enrich(
+                provider, fetcher, edition_id=edition, hints=MatchHints(title=title)
+            )  # type: ignore[arg-type]
         )
 
     def paused_until(self) -> float | None:
@@ -199,26 +207,27 @@ INSTANTS = [
 def test_google_books_daily_budget_and_429_pause_until_pacific_midnight(
     bench: Bench, now: datetime
 ) -> None:
-    midnight = pacific_midnight_after(now)
+    midnight = midnight_after(now, PACIFIC)
     bench.at(now)
     server = gb.fake_googlebooks()
     edition = bench.edition()
-    # the budget: three requests a day, the fourth is refused before it leaves the machine
+    # the budget counts what leaves the machine, robots.txt included (read once, then kept): four
+    # a day, so three questions; the next is refused before it leaves
     for n in range(3):
-        report = bench.google(edition, server, budget=3)
+        report = bench.google(edition, server, budget=4)
         assert report.outcome == "enriched", n
-    assert bench.google(edition, server, budget=3).outcome == "quota"
+    assert bench.google(edition, server, budget=4).outcome == "quota"
     assert len(server.calls()) == 3
     # it is the budget of the Pacific day: the count starts again at Pacific midnight, not before
     bench.at(midnight - timedelta(seconds=1))
-    assert bench.google(edition, server, budget=3).outcome == "quota"
+    assert bench.google(edition, server, budget=4).outcome == "quota"
     bench.at(midnight)
-    assert bench.google(edition, server, budget=3).outcome == "enriched"
+    assert bench.google(edition, server, budget=4).outcome == "enriched"
     assert len(server.calls()) == 4
 
     # a 429 «Queries per day» from Google itself: the provider is suspended until the next midnight
     bench.at(now + timedelta(days=3))
-    midnight = pacific_midnight_after(now + timedelta(days=3))
+    midnight = midnight_after(now + timedelta(days=3), PACIFIC)
     server.use("day_quota")
     report = bench.google(edition, server)
     assert (report.outcome, report.reason) == ("provider_down", "daily_quota")
@@ -276,7 +285,9 @@ def wire(b: Bench54, servers: list[CassetteServer | FakeOpenLibrary], monkeypatc
 
     by_host: dict[str, Any] = {}
     for server in servers:
-        hosts = [server.host] if isinstance(server, CassetteServer) else [OL_HOST, "covers." + OL_HOST]
+        hosts = (
+            [server.host] if isinstance(server, CassetteServer) else [OL_HOST, "covers." + OL_HOST]
+        )
         for host in hosts:
             by_host[host] = server
     times = FakeTime()
@@ -286,11 +297,12 @@ def wire(b: Bench54, servers: list[CassetteServer | FakeOpenLibrary], monkeypatc
 
     def route(request: httpx2.Request) -> httpx2.Response:
         server = by_host[request.headers["host"]]
-        handler = server._handle  # noqa: SLF001  (the fake's own dispatcher)
+        handler = server._handle
         return handler(request)  # type: ignore[no-any-return]
 
     monkeypatch.setattr(composition, "_DEFAULT_NETWORK",
-                        Network(resolver=resolver, transport=httpx2.MockTransport(route)))  # fmt: skip
+                        Network(resolver=resolver, transport=httpx2.MockTransport(route)),
+    )  # fmt: skip
     monkeypatch.setattr(provider_fetcher, "DEFAULT_RUNTIME",
                         ProviderRuntime(clock=times.now, sleep=times.sleep))  # fmt: skip
     return b.env.new_series(EDITION_TITLE).edition_id
@@ -304,8 +316,13 @@ def add_isbn(b: Bench54, edition: str, isbn: str) -> None:
         add_external_id(connection, edition, ExternalId("edition", "isbn", isbn), origin="manual")
 
 
+def cli_in(b: Bench54, stdin: str, *argv: str) -> int:
+    """A command whose standard input is `stdin`: where a key is given."""
+    return run_cli(b.monkeypatch, b.settings, *argv, stdin=stdin)
+
+
 def set_key(b: Bench54, provider: str, key: str) -> int:
-    return b.cli("meta", "provider-key", "set", provider, stdin=key + "\n")  # type: ignore[call-arg]
+    return cli_in(b, key + "\n", "meta", "provider-key", "set", provider)
 
 
 @pytest.mark.req("ENF-SEC-005", "ENF-LEG-005")
@@ -320,7 +337,11 @@ def test_cli_provider_key_set_status_clear_never_echoes_the_key(
         with structlog.testing.capture_logs() as events:
             assert b.cli("meta", "provider-key", "status") == 0
             shown = capsys.readouterr().out
-            assert "hardcover" in shown and "googlebooks" in shown and "set" not in shown.replace("unset", "")
+            assert (
+                "hardcover" in shown
+                and "googlebooks" in shown
+                and "set" not in shown.replace("unset", "")
+            )
             assert set_key(b, "hardcover", HC_KEY) == 0
             done = capsys.readouterr()
             assert HC_KEY not in done.out + done.err  # the key is never repeated
@@ -345,13 +366,19 @@ def test_cli_provider_key_refuses_what_is_not_a_key(
 ) -> None:
     with bench54(monkeypatch, settings, tmp_path) as b:
         capsys.readouterr()
-        assert b.cli("meta", "provider-key", "set", "openlibrary", stdin="x\n") != 0  # type: ignore[call-arg]
-        assert b.cli("meta", "provider-key", "set", "hardcover", stdin="\n") != 0  # type: ignore[call-arg]
-        assert b.cli("meta", "provider-key", "set", "hardcover", stdin="two words\n") != 0  # type: ignore[call-arg]
-        assert b.cli("meta", "provider-key", "set", "hardcover", stdin=("k" * 5000) + "\n") != 0  # type: ignore[call-arg]
+        with pytest.raises(SystemExit):  # argparse refuses a provider that keeps no key
+            cli_in(b, "x\n", "meta", "provider-key", "set", "openlibrary")
+        assert cli_in(b, "\n", "meta", "provider-key", "set", "hardcover") != 0
+        assert cli_in(b, "two words\n", "meta", "provider-key", "set", "hardcover") != 0
+        assert cli_in(b, ("k" * 5000) + "\n", "meta", "provider-key", "set", "hardcover") != 0
         assert b.rows("SELECT provider FROM provider_secret") == []
         capsys.readouterr()
-        assert b.cli("meta", "provider-key", "set", "hardcover", HC_KEY) != 0  # never on argv
+        try:  # a key on the command line is refused (a key that looks like a flag, by argparse)
+            refused = b.cli("meta", "provider-key", "set", "hardcover", "--", HC_KEY)
+        except SystemExit as stop:
+            refused = int(stop.code or 1)
+        assert refused != 0
+        assert HC_KEY not in capsys.readouterr().out
 
 
 @pytest.mark.req("EF-BIB-013", "ENF-LEG-005", "ENF-SEC-005")
@@ -380,7 +407,9 @@ def test_hardcover_enrich_by_cli_reads_the_sealed_token_and_asks_server_side(
         assert [c.host for c in fake.calls()] == [hc.HOST]
         assert fake.calls()[0].headers["authorization"] == f"Bearer {HC_KEY}"
         assert HC_KEY not in shown.out + shown.err + repr(events)
-        assert HC_KEY not in dump(b.engine).replace(repr(b.rows("SELECT secret_ct FROM provider_secret")), "")
+        assert HC_KEY not in dump(b.engine).replace(
+            repr(b.rows("SELECT secret_ct FROM provider_secret")), ""
+        )
 
 
 @pytest.mark.req("EF-BIB-013", "ENF-LEG-005", "ENF-SEC-005")
@@ -390,7 +419,7 @@ def test_google_books_enrich_by_cli_refuses_without_a_key_and_honours_the_budget
     settings: Settings,
     tmp_path: Path,
 ) -> None:
-    monkeypatch.setenv("SHELFHOLD_GOOGLEBOOKS_DAILY_BUDGET", "2")
+    monkeypatch.setenv("SHELFHOLD_GOOGLEBOOKS_DAILY_BUDGET", "3")  # robots.txt is one of them
     with bench54(monkeypatch, settings, tmp_path) as b:
         fake = gb.fake_googlebooks()
         edition = wire(b, [fake], monkeypatch)
@@ -407,8 +436,10 @@ def test_google_books_enrich_by_cli_refuses_without_a_key_and_honours_the_budget
         assert gb.VOLUME_URL in out and "Google Books" in out
         assert b.cli(*args) != 0  # the budget of the day is spent: nothing is asked
         assert len(fake.calls()) == 2
-        assert "quota" in capsys.readouterr().err.lower()
-        assert GB_KEY not in dump(b.engine).replace(repr(b.rows("SELECT secret_ct FROM provider_secret")), "")
+        assert "googlebooks" in capsys.readouterr().err  # said by name
+        assert GB_KEY not in dump(b.engine).replace(
+            repr(b.rows("SELECT secret_ct FROM provider_secret")), ""
+        )
 
 
 @pytest.mark.req("EF-BIB-013", "ENF-LEG-005")
@@ -431,19 +462,25 @@ def test_google_books_suspended_falls_back_on_the_other_providers(
         assert "Open Library" in out and "googlebooks" in out and "daily_quota" in out
         assert field(b, edition, "contributors") is not None
         assert len(google.calls()) == 1
-        until = SqlBucketStore(b.engine).suspended_until("googlebooks", datetime.now(UTC).timestamp())
-        assert until is not None and until <= pacific_midnight_after(datetime.now(UTC)).timestamp()
+        until = SqlBucketStore(b.engine).suspended_until(
+            "googlebooks", datetime.now(UTC).timestamp()
+        )
+        assert until is not None and until <= midnight_after(datetime.now(UTC), PACIFIC).timestamp()
         assert b.cli(*args) == 0  # suspended: Google is not asked at all, the fallback answers
         assert len(google.calls()) == 1
         assert "googlebooks" in capsys.readouterr().out  # the way it went is told
-        assert GB_KEY not in dump(b.engine).replace(repr(b.rows("SELECT secret_ct FROM provider_secret")), "")
+        assert GB_KEY not in dump(b.engine).replace(
+            repr(b.rows("SELECT secret_ct FROM provider_secret")), ""
+        )
 
 
 @pytest.mark.req("ENF-LEG-005")
 def test_settings_the_budget_is_adjustable_and_sane() -> None:
     assert load_settings({}).values.googlebooks_daily_budget == 1000
-    assert load_settings({"SHELFHOLD_GOOGLEBOOKS_DAILY_BUDGET": "250"}).values.googlebooks_daily_budget == 250
+    assert (
+        load_settings({"SHELFHOLD_GOOGLEBOOKS_DAILY_BUDGET": "250"}).values.googlebooks_daily_budget
+        == 250
+    )
     for bad in ("0", "-5", "abc", "100000000"):
         with pytest.raises(Exception):  # noqa: B017  (the settings refuse to load)
             load_settings({"SHELFHOLD_GOOGLEBOOKS_DAILY_BUDGET": bad})
-

@@ -90,6 +90,7 @@ EXCLUDED_TABLES: Final[Mapping[str, str]] = {
     "secret_key": _CREDENTIAL, "export_target": _CREDENTIAL, "source_account": _CREDENTIAL,
     "destination_account": _CREDENTIAL, "device_token": _CREDENTIAL,
     "source_secret": _CREDENTIAL, "source_config": _CREDENTIAL, "plugin_attestation": _CREDENTIAL,
+    "provider_secret": _CREDENTIAL,
     "idempotency_key": _CREDENTIAL,
     # tombstones
     "content_tombstone": _TOMBSTONE, "tombstone_kid": _TOMBSTONE,

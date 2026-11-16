@@ -42,6 +42,23 @@ SHELFHOLD_COMICVINE_API_KEY=<la clé de votre compte ComicVine>
 
 Ensuite : `shelfhold meta enrich <ISBN ou édition> --provider comicvine --title "<titre>"`. Elle répond par titre seulement et ne propose ni couverture ni âge. Chaque valeur garde sa provenance, la mention de la source et l'adresse de la page du volume (le lien retour) ; la commande les affiche avec le rappel des conditions (<https://comicvine.gamespot.com/api/documentation>). Un champ verrouillé ou saisi à la main n'est jamais remplacé. Shelfhold tient le plafond de 200 requêtes par heure, et ne garde pas ces réponses en cache. Si la clé est refusée ou le plafond atteint, la commande le dit (`unauthorized`, `rate_limited`) et rien n'est enregistré. La clé n'apparaît dans aucun journal ni paquet de diagnostic (« présente » seulement).
 
+## Hardcover et Google Books (la clé de votre instance, scellée)
+
+Ces deux fournisseurs se servent d'une clé qui est **la vôtre** (Shelfhold n'en fournit aucune) et que **seul le serveur** utilise : le navigateur ne les interroge jamais, et aucune page, route ou réponse de l'API ne la renvoie. Elle est scellée dans la base (`provider_secret`), lue sur l'entrée standard, jamais sur la ligne de commande :
+
+```
+shelfhold meta provider-key set hardcover       # colle le jeton, puis Entrée
+shelfhold meta provider-key set googlebooks     # colle la clé d'API, puis Entrée
+shelfhold meta provider-key status              # « hardcover: set » : la présence, jamais la clé
+shelfhold meta provider-key clear googlebooks
+```
+
+La clé n'apparaît ni dans un journal, ni dans la table d'audit, ni dans le paquet de diagnostic, ni dans l'export intégral. Ensuite : `shelfhold meta enrich <ISBN ou édition> --provider hardcover|googlebooks [--title "<titre>"]` (l'ISBN de l'Édition d'abord, sinon le titre). Chaque valeur garde sa provenance et la mention de la source.
+
+- **Hardcover** : 60 requêtes par minute et 5 000 par jour, tenues par l'hôte. Le jeton est celui de votre compte (collez-le sans le mot `Bearer`).
+- **Google Books** : Google ne publie aucun plafond, le vrai est celui de la console Cloud de votre projet. Shelfhold applique un budget prudent de **1 000 requêtes par jour** (`SHELFHOLD_GOOGLEBOOKS_DAILY_BUDGET`, à régler), compté **par jour du Pacifique** (la remise à zéro des quotas de Google, heure d'été comprise). `robots.txt` compte comme une requête. Si Google répond 429 « Queries per day », le fournisseur est **suspendu jusqu'à minuit heure du Pacifique** pour tous les processus, et la commande se replie sur OpenLibrary puis la BnF (elle le dit). Un 429 « par minute » ne suspend pas la journée.
+- Ces réponses ne sont pas mises en cache (une requête qui porte une clé n'est jamais rangée) : le budget quotidien est le garde-fou.
+
 ## Provenance et verrous
 
 Chaque valeur garde son fournisseur, son origine (fournisseur, source, saisie à la main), sa confiance et sa date.

@@ -522,6 +522,19 @@ source_secret = sa.Table(
     sa.UniqueConstraint("plugin_id", "kind", "field"),
 )
 
+# The key of a metadata provider that is the instance's own (Hardcover token, Google Books key;
+# M4 L21a, EF-BIB-013): one row per provider, the key in the sealed columns and nowhere else. The
+# provider is the row id, so the envelope is bound to it (an envelope copied to another row does
+# not open). Which providers have a key is the code's business (`provider_keys.PROVIDERS`).
+provider_secret = sa.Table(
+    "provider_secret",
+    metadata,
+    sa.Column("provider", sa.String(), primary_key=True),
+    *sealed_secret_columns(),
+    now_column("updated_at"),
+    sa.CheckConstraint('"provider" <> \'\' AND length("provider") <= 40', name="named"),
+)
+
 # A hole seen in an Edition's numbering; the row is what makes the notification one per gap
 # (EF-BIB-056). Same key as `gap_ack`, so the two join without translation.
 series_gap = sa.Table(

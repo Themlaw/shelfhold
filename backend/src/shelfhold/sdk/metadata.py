@@ -14,6 +14,7 @@ never imports the AGPL core (ENF-LEG-010). Like every SDK type it round-trips th
 from datetime import datetime
 from enum import Flag, auto
 from typing import Annotated, Any, Literal, Protocol, Self
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from pydantic import (
     Field,
@@ -21,6 +22,7 @@ from pydantic import (
     PlainSerializer,
     PlainValidator,
     WithJsonSchema,
+    field_validator,
     model_validator,
 )
 
@@ -78,6 +80,18 @@ class ProviderQuota(SdkModel):
     # of 1); the host uses it only when the instance configured one, and `None` means no such tier.
     requests_per_second_with_contact: float | None = None
     adaptive: AdaptiveLimit | None = None  # the rate the provider announces, when it does
+    # The zone whose midnight ends the day of `daily_cap` (Google: the Pacific); UTC when `None`.
+    day_timezone: str | None = None
+
+    @field_validator("day_timezone")
+    @classmethod
+    def _known_zone(cls, value: str | None) -> str | None:
+        if value is not None:
+            try:
+                ZoneInfo(value)
+            except (ZoneInfoNotFoundError, ValueError):
+                raise ValueError("an unknown time zone") from None
+        return value
 
     def effective(self, with_contact: bool) -> "ProviderQuota":
         """The quota the host applies: the contact tier only for an instance that gave a contact."""
@@ -89,6 +103,7 @@ class ProviderQuota(SdkModel):
             burst=self.burst,
             daily_cap=self.daily_cap,
             adaptive=self.adaptive,
+            day_timezone=self.day_timezone,
         )
 
 

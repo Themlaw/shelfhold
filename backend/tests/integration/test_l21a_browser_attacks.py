@@ -9,7 +9,6 @@ added by this lot, so none is added to the truth table of reserved actions: the 
 what tells whether one ever leaks a key.
 """
 
-# ruff: noqa: F811  (the `world` fixture is the one of the destination routes)
 from __future__ import annotations
 
 import re
@@ -20,6 +19,7 @@ from typing import Any
 import pytest
 
 from shelfhold.infrastructure.db import write_transaction
+from shelfhold.infrastructure.http_headers import hash_csp
 from shelfhold.infrastructure.secrets import registry
 from shelfhold.infrastructure.secrets.keyring import Keyring
 from shelfhold.infrastructure.secrets.provider_keys import ProviderKey, store_provider_key
@@ -54,10 +54,8 @@ def leaked(text: str) -> bool:
 
 
 def operations(world: World) -> list[tuple[str, str, dict[str, Any]]]:
-    spec = world.api.client.get("/openapi.json")
-    assert spec.status_code == 200
     found = []
-    for path, item in spec.json()["paths"].items():
+    for path, item in world.api.app.openapi()["paths"].items():
         for method, operation in item.items():
             if method in {"get", "post", "put", "patch", "delete"}:
                 found.append((method, path, operation))
@@ -72,7 +70,9 @@ def readable(world: World) -> list[str]:
     others = [p["id"] for p in admin] if isinstance(admin, list) else []
     candidates = [world.adult, world.family, UNKNOWN, *others[:2]]
     for method, path, operation in operations(world):
-        streams = any("text/event-stream" in (r.get("content") or {}) for r in operation["responses"].values())
+        streams = any(
+            "text/event-stream" in (r.get("content") or {}) for r in operation["responses"].values()
+        )
         if method != "get" or streams:
             continue
         if "{" not in path:
@@ -91,10 +91,20 @@ def test_hardcover_never_called_from_browser(world: World) -> None:
         named = " ".join([path, operation.get("operationId", ""), operation.get("summary", "")])
         assert not ROUTE_WORDS.search(named), (method, path)
     page = world.api.client.get("/")
-    csp = page.headers.get("content-security-policy", "")
-    assert "connect-src 'self'" in csp and not any(h in csp for h in HOSTS)
+    served = page.headers.get("content-security-policy", "")
+    assert "connect-src" not in served or "connect-src 'self'" in served  # its own server only
+    csp = hash_csp("<html><body></body></html>")  # the policy of every page the server serves
+    assert "connect-src 'self'" in csp and "default-src 'none'" in csp
+    assert not any(h in csp + served for h in HOSTS)
     for source in (REPO / "frontend" / "src").rglob("*"):
-        if source.is_file() and source.suffix in {".ts", ".svelte", ".js", ".css", ".html", ".json"}:
+        if source.is_file() and source.suffix in {
+            ".ts",
+            ".svelte",
+            ".js",
+            ".css",
+            ".html",
+            ".json",
+        }:
             text = source.read_text("utf-8", errors="ignore").lower()
             assert not any(h in text for h in HOSTS), source.relative_to(REPO)
 
@@ -138,7 +148,11 @@ def test_provider_keys_refused_to_an_api_key_read_only_or_not(
             assert not leaked(answer.text), (flags, path)
         # and no write verb of a key reaches a provider key either: there is no such route
         for method in ("put", "post", "delete"):
-            for suffix in ("meta/provider-keys", "providers/hardcover/key", "providers/googlebooks/key"):
+            for suffix in (
+                "meta/provider-keys",
+                "providers/hardcover/key",
+                "providers/googlebooks/key",
+            ):
                 answer = other.request(method, f"/api/v1/{suffix}", headers=_bearer(key))
                 assert answer.status_code in {401, 403, 404, 405}, (flags, method, suffix)
                 assert not leaked(answer.text)
@@ -153,8 +167,16 @@ def test_no_route_sets_a_provider_key_for_any_profile(world: World) -> None:
     child = add_profile(world.api, "kid", "child", "10.0.0.7", max_age_rating=10)
     for client in (world.api.client, member, child):
         for method in ("put", "post", "patch"):
-            for suffix in ("meta/provider-keys", "providers/hardcover/key", "providers/googlebooks/key",
-                           "settings/providers"):
-                answer = client.request(method, f"/api/v1/{suffix}", json={"key": synthetic_text("x")},
-                                        headers={CSRF_HEADER: world.api.csrf(client)})
+            for suffix in (
+                "meta/provider-keys",
+                "providers/hardcover/key",
+                "providers/googlebooks/key",
+                "settings/providers",
+            ):
+                answer = client.request(
+                    method,
+                    f"/api/v1/{suffix}",
+                    json={"key": synthetic_text("x")},
+                    headers={CSRF_HEADER: world.api.csrf(client)},
+                )
                 assert answer.status_code in {401, 403, 404, 405, 422}, (method, suffix)

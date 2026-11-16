@@ -1,4 +1,4 @@
-"""A simulated Google Books service replaying the fabricated cassettes of `cassettes/googlebooks`."""
+"""A simulated Google Books service replaying `cassettes/googlebooks` (fabricated)."""
 
 from __future__ import annotations
 

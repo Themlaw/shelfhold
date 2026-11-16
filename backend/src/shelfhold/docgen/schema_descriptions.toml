@@ -1061,6 +1061,12 @@ attested_at = "When it was attested (UTC)."
 plugin_version = "Installed version of the plugin it was given for; another version lapses it ('' matches none)."
 plugin_sha256 = "Digest of the installed plugin files it was given for; another wheel, even under the same version, lapses it ('' matches none)."
 
+[tables.provider_secret]
+description = "The key of a metadata provider that is the instance's own (Hardcover, Google Books), sealed by the secret vault; one row per provider."
+[tables.provider_secret.columns]
+provider = "Provider name (the row identifier the sealed envelope is bound to)."
+updated_at = "When the key was last set (UTC)."
+
 [tables.source_secret]
 description = "One sealed secret setting or cookie jar per source and field; never read back, only shown as set with a fingerprint."
 [tables.source_secret.columns]

@@ -15,15 +15,15 @@ from sqlalchemy import Engine
 
 from shelfhold.infrastructure.db import create_db_engine
 from shelfhold.infrastructure.fetcher.day_window import (
-    PACIFIC,
     day_key,
+    midnight_after,
     next_midnight,
-    pacific_midnight_after,
 )
 from shelfhold.infrastructure.fetcher.errors import ProviderQuotaExceeded
 from shelfhold.infrastructure.fetcher.limiter import TokenBucket
 from shelfhold.infrastructure.fetcher.quota_store import SqlBucketStore
 from shelfhold.infrastructure.schema import metadata
+from shelfhold.plugin_host.adapters.native.googlebooks import PACIFIC
 
 pytestmark = pytest.mark.req("ENF-LEG-005")
 
@@ -33,39 +33,39 @@ def utc(*args: int) -> datetime:
 
 
 def test_pacific_midnight_in_winter_is_08h_utc() -> None:
-    assert pacific_midnight_after(utc(2026, 12, 1, 12)) == utc(2026, 12, 2, 8)
-    assert pacific_midnight_after(utc(2026, 12, 2, 7, 59, 59)) == utc(2026, 12, 2, 8)
+    assert midnight_after(utc(2026, 12, 1, 12), PACIFIC) == utc(2026, 12, 2, 8)
+    assert midnight_after(utc(2026, 12, 2, 7, 59, 59), PACIFIC) == utc(2026, 12, 2, 8)
 
 
 def test_pacific_midnight_in_summer_is_07h_utc() -> None:
-    assert pacific_midnight_after(utc(2026, 7, 4, 12)) == utc(2026, 7, 5, 7)
+    assert midnight_after(utc(2026, 7, 4, 12), PACIFIC) == utc(2026, 7, 5, 7)
 
 
 def test_the_day_of_the_spring_change_holds_23_hours() -> None:
     # 2026-03-08: 02:00 PST becomes 03:00 PDT
-    start = pacific_midnight_after(utc(2026, 3, 7, 20))
+    start = midnight_after(utc(2026, 3, 7, 20), PACIFIC)
     assert start == utc(2026, 3, 8, 8)  # still PST at midnight
-    end = pacific_midnight_after(start)
+    end = midnight_after(start, PACIFIC)
     assert end == utc(2026, 3, 9, 7)  # PDT by then
     assert end - start == timedelta(hours=23)
 
 
 def test_the_day_of_the_autumn_change_holds_25_hours() -> None:
     # 2026-11-01: 02:00 PDT becomes 01:00 PST
-    start = pacific_midnight_after(utc(2026, 10, 31, 12))
+    start = midnight_after(utc(2026, 10, 31, 12), PACIFIC)
     assert start == utc(2026, 11, 1, 7)  # still PDT at midnight
-    end = pacific_midnight_after(start)
+    end = midnight_after(start, PACIFIC)
     assert end == utc(2026, 11, 2, 8)  # PST by then
     assert end - start == timedelta(hours=25)
 
 
 def test_the_instant_of_midnight_belongs_to_the_next_day() -> None:
-    assert pacific_midnight_after(utc(2026, 11, 2, 8)) == utc(2026, 11, 3, 8)
+    assert midnight_after(utc(2026, 11, 2, 8), PACIFIC) == utc(2026, 11, 3, 8)
 
 
 def test_a_naive_instant_is_refused() -> None:
     with pytest.raises(ValueError):
-        pacific_midnight_after(datetime(2026, 11, 1, 12))
+        midnight_after(datetime(2026, 11, 1, 12), PACIFIC)
 
 
 @pytest.mark.parametrize(
@@ -86,7 +86,9 @@ def test_the_day_key_turns_at_pacific_midnight_only(
 
 
 def test_next_midnight_of_a_zone_is_a_timestamp() -> None:
-    assert next_midnight(utc(2026, 11, 1, 12).timestamp(), PACIFIC) == utc(2026, 11, 2, 8).timestamp()
+    assert (
+        next_midnight(utc(2026, 11, 1, 12).timestamp(), PACIFIC) == utc(2026, 11, 2, 8).timestamp()
+    )
 
 
 @pytest.fixture
@@ -132,9 +134,7 @@ def test_a_pause_refuses_until_its_instant_and_for_every_worker(engine: Engine) 
 
 def test_the_in_memory_bucket_counts_a_pacific_day_too() -> None:
     now = [utc(2026, 11, 1, 6, 59).timestamp()]
-    bucket = TokenBucket(
-        1000.0, 1000, daily_cap=1, wall=lambda: now[0], day_timezone=PACIFIC
-    )
+    bucket = TokenBucket(1000.0, 1000, daily_cap=1, wall=lambda: now[0], day_timezone=PACIFIC)
     bucket._reserve()
     with pytest.raises(ProviderQuotaExceeded):
         bucket._reserve()
