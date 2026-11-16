@@ -11,7 +11,7 @@ from typing import Any
 import pytest
 
 from shelfhold.export.application.page_policy import PagePolicy
-from shelfhold.export.application.rendering import CbzRenderer
+from shelfhold.export.application.rendering import CbzRenderer, PagesNotNormalizedError
 from shelfhold.infrastructure.archives import safe_open_archive
 from shelfhold.infrastructure.content_trust.cbz_entries import sniff_page_kind
 from shelfhold.library.domain.content_hash import content_hash
@@ -95,18 +95,12 @@ def test_an_already_clean_archive_is_rendered_with_its_pages_untouched() -> None
 
 
 @pytest.mark.req("EF-EXP-046")
-def test_a_page_that_cannot_be_read_leaves_the_archive_as_received() -> None:
+def test_a_page_that_cannot_be_read_sets_the_chapter_aside_and_never_leaves_as_received() -> None:
     data = pf.cbz([("1.avif", pf.avif()), ("2.avif", pf.truncated_avif())])
     with lib_env() as env:
-        rendered = render(env, data, PagePolicy())
-        try:
-            assert list(kinds(rendered)) == ["1.avif", "2.avif"]  # not half-converted
-            assert rendered.pages_normalized is False
-            assert [(i.entry, i.code) for i in rendered.page_issues] == [
-                ("2.avif", "page.undecodable")
-            ]
-        finally:
-            rendered.file.close()
+        with pytest.raises(PagesNotNormalizedError) as refused:
+            render(env, data, PagePolicy())
+        assert [(i.entry, i.code) for i in refused.value.issues] == [("2.avif", "page.undecodable")]
 
 
 @pytest.mark.req("EF-EXP-046", "EF-INT-007")

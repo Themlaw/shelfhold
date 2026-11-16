@@ -101,3 +101,31 @@ def test_the_ordinary_upgrade_does_not_rewrite_a_file_for_the_same_content() -> 
             item = connection.execute(sa.select(export.export_item.c.id)).scalar_one()
         plain = UpgradeRequest(env.destination_id, item, content, "better_version")
         assert upgrader(env).upgrade(plain).outcome is UpgradeOutcome.UP_TO_DATE
+
+
+@pytest.mark.req("EF-EXP-046")
+def test_the_same_path_upgrade_gives_the_renderer_the_target_of_the_destination() -> None:
+    with export_env() as env:
+        _, _, content = avif_chapter(env)
+        env.pipeline._renderer = CbzRenderer(
+            env.lib.fsops, staging_dir=env.lib.data / "tmp", pages=WITH_AVIF
+        )
+        env.pipeline.run(env.destination_id, job_id=new_ulid())
+        with env.engine.connect() as connection:
+            item = connection.execute(sa.select(export.export_item.c.id)).scalar_one()
+            target = connection.execute(
+                sa.select(export.shelf_destination.c.target_id)
+            ).scalar_one()
+        seen: list[str | None] = []
+        upgrade = upgrader(env)
+        real = upgrade._renderer.render
+
+        def render(source: str, xml: bytes, *, target_id: str | None = None) -> object:
+            seen.append(target_id)
+            return real(source, xml, target_id=target_id)
+
+        upgrade._renderer.render = render  # type: ignore[method-assign]
+        upgrade.upgrade(
+            UpgradeRequest(env.destination_id, item, content, "better_version", rerender=True)
+        )
+        assert seen == [target]  # the policy of that destination applies, not the default one

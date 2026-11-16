@@ -98,6 +98,6 @@ def test_kill9_during_normalize_pages_then_the_command_finishes(stage: str) -> N
         with env.engine.connect() as c:
             row = c.execute(sa.select(storage.content)).one()
             assert row.derived_hash == "sha256:" + hashlib.sha256(served).hexdigest()
-            assert independent_copies(c, unit) == 2
+            assert independent_copies(c, unit) == 1  # only /store holds the received bytes
         assert normalizer(env).run().normalized == 0  # a second run moves nothing
         assert dest.read_bytes() == served

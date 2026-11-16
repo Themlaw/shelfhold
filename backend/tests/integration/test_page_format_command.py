@@ -87,7 +87,9 @@ def test_apply_keeps_the_original_and_normalizes_the_library_then_is_idempotent(
         served = dest.read_bytes()
         with env.engine.connect() as c:
             row = c.execute(sa.select(storage.content)).one()
-            assert row.derived_hash == sha(served) and independent_copies(c, unit) == 2
+            assert (
+                row.derived_hash == sha(served) and independent_copies(c, unit) == 1
+            )  # only /store holds the received bytes
         again = normalizer(env).run()
         assert again.normalized == 0 and not again.pending
         assert dest.read_bytes() == served  # not a byte moved

@@ -96,9 +96,6 @@ def _native_pass(env: ExportEnv) -> str:
 # -- B1 : un chapitre normalisé dans /library ne s'exporte plus ------------------------------------
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#311 B1: rendered.content_hash (dérivé) != content.content_hash"
-)
 @pytest.mark.req("EF-EXP-046", "EF-BIB-027")
 def test_a_chapter_normalized_in_the_library_is_still_exported() -> None:
     with export_env() as env:
@@ -112,7 +109,6 @@ def test_a_chapter_normalized_in_the_library_is_still_exported() -> None:
 # -- B2 : le dossier natif (L07), servi par l'hôte, reçoit de l'AVIF ----------------------------
 
 
-@pytest.mark.xfail(strict=True, reason="#311 B2: render_cbz_bytes recopie les pages telles quelles")
 @pytest.mark.req("EF-EXP-046", "EF-EXP-010")
 def test_the_native_folder_gets_only_allowlisted_pages_without_store() -> None:
     with export_env() as env:
@@ -124,7 +120,6 @@ def test_the_native_folder_gets_only_allowlisted_pages_without_store() -> None:
             assert _kinds(chapter.read_bytes()) <= KEEP_PAGE_KINDS
 
 
-@pytest.mark.xfail(strict=True, reason="#311 B2: byte_sources lit d'abord l'original de /store")
 @pytest.mark.req("EF-EXP-046", "EF-EXP-010", "EF-BIB-045")
 def test_the_native_folder_gets_only_allowlisted_pages_after_normalize_pages() -> None:
     with export_env() as env:
@@ -140,9 +135,6 @@ def test_the_native_folder_gets_only_allowlisted_pages_after_normalize_pages() -
 # -- B3 : `normalize-pages` ne peut plus rattraper un fichier déjà servi -------------------------
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#311 B3: upgrade compare le dérivé au content_hash de l'original"
-)
 @pytest.mark.req("EF-EXP-046", "EF-EXP-016")
 def test_normalize_pages_rerenders_a_served_file_once_the_library_is_normalized() -> None:
     from shelfhold.export.application.page_policy import PagePolicy
@@ -183,9 +175,6 @@ def test_normalize_pages_rerenders_a_served_file_once_the_library_is_normalized(
 # -- M1 : le registre dit que le dérivé avec perte porte la charge utile de l'original ------------
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#311 M1: record_library_rewrite garde le content_hash de l'original"
-)
 @pytest.mark.req("EF-BIB-027", "EF-BIB-045")
 def test_the_registry_does_not_say_a_lossy_derivative_holds_the_original_payload() -> None:
     with export_env() as env:
@@ -219,7 +208,6 @@ def _tiff16(value: int) -> bytes:
     return out.getvalue()
 
 
-@pytest.mark.xfail(strict=True, reason="#311 M2: convert('RGB') écrête le 16 bits : page blanche")
 @pytest.mark.req("EF-EXP-046")
 def test_a_16_bit_grey_tiff_page_is_not_turned_white() -> None:
     result = reencode_image(_tiff16(0x4000))  # un gris sombre (25 %)
@@ -227,7 +215,6 @@ def test_a_16_bit_grey_tiff_page_is_not_turned_white() -> None:
     assert isinstance(pixel, int) and pixel < 128, pixel
 
 
-@pytest.mark.xfail(strict=True, reason="#311 M3: seule la 1re image d'un TIFF multipage est gardée")
 @pytest.mark.req("EF-EXP-046")
 def test_a_multi_page_tiff_is_not_silently_cut_to_its_first_page() -> None:
     frames = [Image.new("RGB", (64, 48), c) for c in ((255, 0, 0), (0, 255, 0), (0, 0, 255))]
