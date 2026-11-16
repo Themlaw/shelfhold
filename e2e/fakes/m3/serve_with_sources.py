@@ -1,4 +1,4 @@
-"""Harness of the M3 journey: `shelfhold serve`, and the two addresses of the books project set once
+"""Harness of the M3 journey: `shelfhold serve --migrate` (the image command), and the two addresses of the books project set once
 the server answers.
 
 Not part of the product and not an action of the person being timed. The simulated catalogue and
@@ -25,7 +25,7 @@ GIVE_UP_S = 1500
 
 
 def main() -> int:
-    server = subprocess.Popen(["shelfhold", "serve"])  # noqa: S603, S607
+    server = subprocess.Popen(["shelfhold", "serve", "--migrate"])  # noqa: S603, S607
 
     def forward(number: int, _frame: FrameType | None) -> None:
         server.send_signal(number)
