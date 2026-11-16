@@ -195,6 +195,8 @@ CLOSED = (
     "POST /api/v1/editions/{edition_id}/check",
     "POST /api/v1/editions/{edition_id}/gaps/ack",  # M3 L43: the sheet's doors, all the admin's
     "GET /api/v1/editions/{edition_id}/sheet",
+    "GET /api/v1/editions/{edition_id}/bundle",  # M4 L49b: the slice of a block, the admin's
+    "POST /api/v1/editions/{edition_id}/bundle-slice",
     "POST /api/v1/editions/{edition_id}/bindings/order",
     "POST /api/v1/editions/{edition_id}/upstream-status",
     "POST /api/v1/editions/{edition_id}/preferred-team",
