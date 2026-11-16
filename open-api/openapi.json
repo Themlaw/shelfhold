@@ -6170,6 +6170,118 @@
         "title": "RejectIn",
         "type": "object"
       },
+      "RelationCreatedOut": {
+        "properties": {
+          "created": {
+            "title": "Created",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "created"
+        ],
+        "title": "RelationCreatedOut",
+        "type": "object"
+      },
+      "RelationIn": {
+        "properties": {
+          "kind": {
+            "pattern": "^[a-z0-9_]{1,40}$",
+            "title": "Kind",
+            "type": "string"
+          },
+          "to_work_id": {
+            "maxLength": 26,
+            "minLength": 26,
+            "title": "To Work Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "to_work_id",
+          "kind"
+        ],
+        "title": "RelationIn",
+        "type": "object"
+      },
+      "RelationOut": {
+        "properties": {
+          "cover_hash": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cover Hash"
+          },
+          "edition_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Edition Id"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "outgoing": {
+            "title": "Outgoing",
+            "type": "boolean"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "work_id": {
+            "title": "Work Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "work_id",
+          "title",
+          "kind",
+          "outgoing",
+          "edition_id",
+          "cover_hash"
+        ],
+        "title": "RelationOut",
+        "type": "object"
+      },
+      "RelationsOut": {
+        "properties": {
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/RelationOut"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "work_id": {
+            "title": "Work Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "work_id",
+          "count",
+          "items"
+        ],
+        "title": "RelationsOut",
+        "type": "object"
+      },
       "RemovalIn": {
         "additionalProperties": false,
         "properties": {
@@ -8000,6 +8112,13 @@
             "title": "Merges",
             "type": "array"
           },
+          "relations": {
+            "items": {
+              "$ref": "#/components/schemas/SheetRelationOut"
+            },
+            "title": "Relations",
+            "type": "array"
+          },
           "shelf_id": {
             "anyOf": [
               {
@@ -8064,9 +8183,50 @@
           "fields",
           "merges",
           "attach",
+          "relations",
           "can"
         ],
         "title": "SheetOut",
+        "type": "object"
+      },
+      "SheetRelationOut": {
+        "properties": {
+          "edition_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Edition Id"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "outgoing": {
+            "title": "Outgoing",
+            "type": "boolean"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "work_id": {
+            "title": "Work Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "work_id",
+          "title",
+          "kind",
+          "outgoing",
+          "edition_id"
+        ],
+        "title": "SheetRelationOut",
         "type": "object"
       },
       "SheetTeamOut": {
@@ -24781,6 +24941,211 @@
         ]
       }
     },
+    "/api/v1/works/{work_id}/relations": {
+      "get": {
+        "operationId": "relations_read",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "work_id",
+            "required": true,
+            "schema": {
+              "title": "Work Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RelationsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Connexion requise, ou mot de passe à confirmer (reauth-required)."
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée)."
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Détail du problème (RFC 9457)."
+          }
+        },
+        "summary": "Relations Read",
+        "tags": [
+          "relations"
+        ]
+      },
+      "post": {
+        "operationId": "relations_add",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "work_id",
+            "required": true,
+            "schema": {
+              "title": "Work Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RelationIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RelationCreatedOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Connexion requise, ou mot de passe à confirmer (reauth-required)."
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée)."
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Détail du problème (RFC 9457)."
+          }
+        },
+        "summary": "Relations Add",
+        "tags": [
+          "relations"
+        ]
+      }
+    },
+    "/api/v1/works/{work_id}/relations/{kind}/{to_work_id}": {
+      "delete": {
+        "operationId": "relations_remove",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "work_id",
+            "required": true,
+            "schema": {
+              "title": "Work Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "kind",
+            "required": true,
+            "schema": {
+              "title": "Kind",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "to_work_id",
+            "required": true,
+            "schema": {
+              "title": "To Work Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Connexion requise, ou mot de passe à confirmer (reauth-required)."
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée)."
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Détail du problème (RFC 9457)."
+          }
+        },
+        "summary": "Relations Remove",
+        "tags": [
+          "relations"
+        ]
+      }
+    },
     "/api/v1/works/{work_id}/series": {
       "post": {
         "description": "A Series that comes after its Work (EF-BIB-025): the membership only.",
@@ -26444,6 +26809,18 @@
     "/api/v1/problems/reconcile.drift": {
       "code": "reconcile.drift",
       "status": 409
+    },
+    "/api/v1/problems/relation.cycle": {
+      "code": "relation.cycle",
+      "status": 409
+    },
+    "/api/v1/problems/relation.invalid": {
+      "code": "relation.invalid",
+      "status": 422
+    },
+    "/api/v1/problems/relation.limit": {
+      "code": "relation.limit",
+      "status": 422
     },
     "/api/v1/problems/remember-needs-confirmation": {
       "code": "remember_needs_confirmation",

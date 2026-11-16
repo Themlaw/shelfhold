@@ -11,7 +11,7 @@ from __future__ import annotations
 import base64
 import json
 import time
-from collections.abc import Awaitable, Callable, Iterator, Mapping, Sequence
+from collections.abc import Awaitable, Callable, Iterable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -117,6 +117,16 @@ class KavitaClient:
             yield
         finally:
             self._write_guard = guard
+
+    @contextmanager
+    def guarded_as(self, guard: Callable[[], None]) -> Iterator[None]:
+        """A write that is less than what the standing guard stops (the withdrawal of a link while
+        a shelf is paused) runs under the guard that fits it."""
+        previous, self._write_guard = self._write_guard, guard
+        try:
+            yield
+        finally:
+            self._write_guard = previous
 
     def __repr__(self) -> str:
         return f"KavitaClient({self._base_url!r}, mode={self.health.mode.value})"
@@ -456,11 +466,25 @@ class KavitaClient:
         data = (await self._send(routes.SERIES_METADATA, query={"seriesId": int(series_id)})).data
         return dto.SeriesAge.from_json(data)
 
+    async def series_related(self, series_id: int) -> dict[str, list[int]]:
+        """What Kavita holds of the relations of a series, by kind (series ids)."""
+        data = (await self._send(routes.SERIES_RELATED, query={"seriesId": int(series_id)})).data
+        return dto.related_ids(data)
+
     # -- writes --------------------------------------------------------------------------------
 
     async def set_series_age(self, current: dto.SeriesAge, age_rating: int) -> None:
         """Push the age of a series, locked, as a faithful update of the document just read."""
         await self._send(routes.SERIES_METADATA_UPDATE, body=current.age_update(age_rating))
+
+    async def set_series_related(
+        self, series_id: int, relations: Mapping[str, Iterable[int]]
+    ) -> None:
+        """Write the relations of a series: for each kind given, the whole list (Kavita replaces
+        it), so the caller sends back what it read with only its own changes."""
+        await self._send(
+            routes.SERIES_RELATED_UPDATE, body=dto.related_update(series_id, relations)
+        )
 
     async def set_series_field(self, current: dto.SeriesAge, key: str, value: str) -> None:
         """Set one metadata field of a series, locked, as a faithful update of the document read."""

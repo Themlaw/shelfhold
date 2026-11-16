@@ -31,6 +31,7 @@
   import { problemView, type ProblemView } from '#lib/problems.ts';
   import { needsReauth, problemOf } from '#lib/triage.ts';
   import BundleSlices from './BundleSlices.svelte';
+  import RelatedWorks from './RelatedWorks.svelte';
   import SupportAuthor from './SupportAuthor.svelte';
 
   type Status = UpstreamStatusIn['status'];
@@ -245,6 +246,7 @@
     />
 
     <BundleSlices editionId={sheet.edition_id} />
+    <RelatedWorks workId={sheet.work_id} canEdit />
     <SupportAuthor editionId={sheet.edition_id} />
 
     {#if sheet.can.acknowledge_gap}

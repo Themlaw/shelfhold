@@ -3730,6 +3730,78 @@ export type RejectIn = {
 };
 
 /**
+ * RelationCreatedOut
+ */
+export type RelationCreatedOut = {
+    /**
+     * Created
+     */
+    created: boolean;
+};
+
+/**
+ * RelationIn
+ */
+export type RelationIn = {
+    /**
+     * Kind
+     */
+    kind: string;
+    /**
+     * To Work Id
+     */
+    to_work_id: string;
+};
+
+/**
+ * RelationOut
+ */
+export type RelationOut = {
+    /**
+     * Cover Hash
+     */
+    cover_hash: string | null;
+    /**
+     * Edition Id
+     */
+    edition_id: string | null;
+    /**
+     * Kind
+     */
+    kind: string;
+    /**
+     * Outgoing
+     */
+    outgoing: boolean;
+    /**
+     * Title
+     */
+    title: string;
+    /**
+     * Work Id
+     */
+    work_id: string;
+};
+
+/**
+ * RelationsOut
+ */
+export type RelationsOut = {
+    /**
+     * Count
+     */
+    count: number;
+    /**
+     * Items
+     */
+    items: Array<RelationOut>;
+    /**
+     * Work Id
+     */
+    work_id: string;
+};
+
+/**
  * RemovalIn
  */
 export type RemovalIn = {
@@ -4874,6 +4946,10 @@ export type SheetOut = {
      */
     merges: Array<SheetMergeOut>;
     /**
+     * Relations
+     */
+    relations: Array<SheetRelationOut>;
+    /**
      * Shelf Id
      */
     shelf_id: string | null;
@@ -4893,6 +4969,32 @@ export type SheetOut = {
      * Upstream Status By
      */
     upstream_status_by: string | null;
+    /**
+     * Work Id
+     */
+    work_id: string;
+};
+
+/**
+ * SheetRelationOut
+ */
+export type SheetRelationOut = {
+    /**
+     * Edition Id
+     */
+    edition_id: string | null;
+    /**
+     * Kind
+     */
+    kind: string;
+    /**
+     * Outgoing
+     */
+    outgoing: boolean;
+    /**
+     * Title
+     */
+    title: string;
     /**
      * Work Id
      */
@@ -14642,6 +14744,128 @@ export type RateWorkResponses = {
 };
 
 export type RateWorkResponse = RateWorkResponses[keyof RateWorkResponses];
+
+export type RelationsReadData = {
+    body?: never;
+    path: {
+        /**
+         * Work Id
+         */
+        work_id: string;
+    };
+    query?: never;
+    url: '/api/v1/works/{work_id}/relations';
+};
+
+export type RelationsReadErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type RelationsReadError = RelationsReadErrors[keyof RelationsReadErrors];
+
+export type RelationsReadResponses = {
+    /**
+     * Successful Response
+     */
+    200: RelationsOut;
+};
+
+export type RelationsReadResponse = RelationsReadResponses[keyof RelationsReadResponses];
+
+export type RelationsAddData = {
+    body: RelationIn;
+    path: {
+        /**
+         * Work Id
+         */
+        work_id: string;
+    };
+    query?: never;
+    url: '/api/v1/works/{work_id}/relations';
+};
+
+export type RelationsAddErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type RelationsAddError = RelationsAddErrors[keyof RelationsAddErrors];
+
+export type RelationsAddResponses = {
+    /**
+     * Successful Response
+     */
+    201: RelationCreatedOut;
+};
+
+export type RelationsAddResponse = RelationsAddResponses[keyof RelationsAddResponses];
+
+export type RelationsRemoveData = {
+    body?: never;
+    path: {
+        /**
+         * Work Id
+         */
+        work_id: string;
+        /**
+         * Kind
+         */
+        kind: string;
+        /**
+         * To Work Id
+         */
+        to_work_id: string;
+    };
+    query?: never;
+    url: '/api/v1/works/{work_id}/relations/{kind}/{to_work_id}';
+};
+
+export type RelationsRemoveErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type RelationsRemoveError = RelationsRemoveErrors[keyof RelationsRemoveErrors];
+
+export type RelationsRemoveResponses = {
+    /**
+     * Successful Response
+     */
+    204: void;
+};
+
+export type RelationsRemoveResponse = RelationsRemoveResponses[keyof RelationsRemoveResponses];
 
 export type WorksAttachSeriesData = {
     body: AttachSeriesIn;

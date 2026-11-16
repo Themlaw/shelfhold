@@ -289,3 +289,42 @@ def library_filter(library_id: int) -> dict[str, Any]:
             {"comparison": FILTER_EQUAL, "field": SERIES_FILTER_LIBRARIES, "value": str(library_id)}
         ],
     }  # fmt: skip
+
+
+# The relations of a series, as Kavita names them in `UpdateRelatedSeriesDto` (L19, EF-BIB-039).
+# `RelatedSeriesDto` has the same lists, each of series, plus `parent` (the inverse that Kavita
+# derives by itself, never written).
+RELATION_KINDS: tuple[str, ...] = (
+    "adaptations", "alternativeSettings", "alternativeVersions", "annuals", "cameos", "characters",
+    "contains", "doujinshis", "editions", "others", "prequels", "sequels", "sideStories",
+    "spinOffs",
+)  # fmt: skip
+
+
+def related_ids(document: Any) -> dict[str, list[int]]:
+    """The series ids of each kind of relation in an `all-related` answer; a kind Kavita does not
+    send is not in the result (and so is never sent back)."""
+    if not isinstance(document, dict):
+        raise ProtocolError("all-related did not answer an object")
+    found: dict[str, list[int]] = {}
+    for kind in RELATION_KINDS:
+        listed = document.get(kind)
+        if listed is None:
+            continue
+        if not isinstance(listed, list):
+            raise ProtocolError(f"all-related: {kind} is not a list")
+        ids = [
+            int(item["id"]) for item in listed
+            if isinstance(item, dict) and isinstance(item.get("id"), int)
+        ]  # fmt: skip
+        found[kind] = sorted(set(ids))
+    return found
+
+
+def related_update(series_id: int, relations: Mapping[str, Iterable[int]]) -> dict[str, Any]:
+    """`UpdateRelatedSeriesDto`: every kind, whole. Kavita applies each list as it is, and its DTO
+    starts every list empty: a kind left out would be emptied, so none is left out."""
+    body: dict[str, Any] = {"seriesId": int(series_id)}
+    for kind in RELATION_KINDS:
+        body[kind] = sorted({int(i) for i in relations.get(kind, ())})
+    return body

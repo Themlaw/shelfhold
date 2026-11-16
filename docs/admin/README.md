@@ -44,6 +44,7 @@ et ne change rien à l'installation (voir [vérifier les images](verifier-les-im
 | Laisser des enfants lire : étagère famille, un compte Kavita par lecteur, appareil partagé | [famille.md](famille.md) |
 | Règles du contrôle parental, âge dans Kavita, retrait, livres EPUB (âge de série poussé verrouillé, omnibus) | [controle-parental.md](controle-parental.md) |
 | Collections et listes de lecture : qui voit quoi, import d'un fichier CBL | [listes-de-lecture.md](listes-de-lecture.md) |
+| Œuvres liées : relier un roman et son adaptation, ce qu'un profil en voit, séries liées de Kavita | [oeuvres-liees.md](oeuvres-liees.md) |
 | Classer les œuvres (« À classer », « À ranger », `shelfhold rate`) | [a-classer.md](a-classer.md) |
 | Qui peut faire quoi : rôles, actions réservées, fraîcheur du mot de passe | [roles.md](roles.md) |
 | Conditions, limites et `terms_url` de chaque source native | [sources.md](sources.md) |

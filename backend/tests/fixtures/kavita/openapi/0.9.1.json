@@ -1332,6 +1332,121 @@
      "Dashboard"
     ]
    },
+   "RelatedSeriesDto": {
+    "additionalProperties": false,
+    "properties": {
+     "adaptations": {
+      "items": {
+       "$ref": "#/components/schemas/SeriesDto"
+      },
+      "nullable": true,
+      "type": "array"
+     },
+     "alternativeSettings": {
+      "items": {
+       "$ref": "#/components/schemas/SeriesDto"
+      },
+      "nullable": true,
+      "type": "array"
+     },
+     "alternativeVersions": {
+      "items": {
+       "$ref": "#/components/schemas/SeriesDto"
+      },
+      "nullable": true,
+      "type": "array"
+     },
+     "annuals": {
+      "items": {
+       "$ref": "#/components/schemas/SeriesDto"
+      },
+      "nullable": true,
+      "type": "array"
+     },
+     "cameos": {
+      "items": {
+       "$ref": "#/components/schemas/SeriesDto"
+      },
+      "nullable": true,
+      "type": "array"
+     },
+     "characters": {
+      "items": {
+       "$ref": "#/components/schemas/SeriesDto"
+      },
+      "nullable": true,
+      "type": "array"
+     },
+     "contains": {
+      "items": {
+       "$ref": "#/components/schemas/SeriesDto"
+      },
+      "nullable": true,
+      "type": "array"
+     },
+     "doujinshis": {
+      "items": {
+       "$ref": "#/components/schemas/SeriesDto"
+      },
+      "nullable": true,
+      "type": "array"
+     },
+     "editions": {
+      "items": {
+       "$ref": "#/components/schemas/SeriesDto"
+      },
+      "nullable": true,
+      "type": "array"
+     },
+     "others": {
+      "items": {
+       "$ref": "#/components/schemas/SeriesDto"
+      },
+      "nullable": true,
+      "type": "array"
+     },
+     "parent": {
+      "items": {
+       "$ref": "#/components/schemas/SeriesDto"
+      },
+      "nullable": true,
+      "type": "array"
+     },
+     "prequels": {
+      "items": {
+       "$ref": "#/components/schemas/SeriesDto"
+      },
+      "nullable": true,
+      "type": "array"
+     },
+     "sequels": {
+      "items": {
+       "$ref": "#/components/schemas/SeriesDto"
+      },
+      "nullable": true,
+      "type": "array"
+     },
+     "sideStories": {
+      "items": {
+       "$ref": "#/components/schemas/SeriesDto"
+      },
+      "nullable": true,
+      "type": "array"
+     },
+     "sourceSeriesId": {
+      "format": "int32",
+      "type": "integer"
+     },
+     "spinOffs": {
+      "items": {
+       "$ref": "#/components/schemas/SeriesDto"
+      },
+      "nullable": true,
+      "type": "array"
+     }
+    },
+    "type": "object"
+   },
    "RgbaColor": {
     "additionalProperties": false,
     "properties": {
@@ -2262,6 +2377,128 @@
      "removePrefixForSortName",
      "type"
     ],
+    "type": "object"
+   },
+   "UpdateRelatedSeriesDto": {
+    "additionalProperties": false,
+    "properties": {
+     "adaptations": {
+      "items": {
+       "format": "int32",
+       "type": "integer"
+      },
+      "nullable": true,
+      "type": "array"
+     },
+     "alternativeSettings": {
+      "items": {
+       "format": "int32",
+       "type": "integer"
+      },
+      "nullable": true,
+      "type": "array"
+     },
+     "alternativeVersions": {
+      "items": {
+       "format": "int32",
+       "type": "integer"
+      },
+      "nullable": true,
+      "type": "array"
+     },
+     "annuals": {
+      "items": {
+       "format": "int32",
+       "type": "integer"
+      },
+      "nullable": true,
+      "type": "array"
+     },
+     "cameos": {
+      "items": {
+       "format": "int32",
+       "type": "integer"
+      },
+      "nullable": true,
+      "type": "array"
+     },
+     "characters": {
+      "items": {
+       "format": "int32",
+       "type": "integer"
+      },
+      "nullable": true,
+      "type": "array"
+     },
+     "contains": {
+      "items": {
+       "format": "int32",
+       "type": "integer"
+      },
+      "nullable": true,
+      "type": "array"
+     },
+     "doujinshis": {
+      "items": {
+       "format": "int32",
+       "type": "integer"
+      },
+      "nullable": true,
+      "type": "array"
+     },
+     "editions": {
+      "items": {
+       "format": "int32",
+       "type": "integer"
+      },
+      "nullable": true,
+      "type": "array"
+     },
+     "others": {
+      "items": {
+       "format": "int32",
+       "type": "integer"
+      },
+      "nullable": true,
+      "type": "array"
+     },
+     "prequels": {
+      "items": {
+       "format": "int32",
+       "type": "integer"
+      },
+      "nullable": true,
+      "type": "array"
+     },
+     "sequels": {
+      "items": {
+       "format": "int32",
+       "type": "integer"
+      },
+      "nullable": true,
+      "type": "array"
+     },
+     "seriesId": {
+      "format": "int32",
+      "type": "integer"
+     },
+     "sideStories": {
+      "items": {
+       "format": "int32",
+       "type": "integer"
+      },
+      "nullable": true,
+      "type": "array"
+     },
+     "spinOffs": {
+      "items": {
+       "format": "int32",
+       "type": "integer"
+      },
+      "nullable": true,
+      "type": "array"
+     }
+    },
     "type": "object"
    },
    "UpdateSeriesMetadataDto": {
@@ -3342,6 +3579,47 @@
     ]
    }
   },
+  "/api/Series/all-related": {
+   "get": {
+    "parameters": [
+     {
+      "description": "",
+      "in": "query",
+      "name": "seriesId",
+      "schema": {
+       "format": "int32",
+       "type": "integer"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/RelatedSeriesDto"
+        }
+       },
+       "text/json": {
+        "schema": {
+         "$ref": "#/components/schemas/RelatedSeriesDto"
+        }
+       },
+       "text/plain": {
+        "schema": {
+         "$ref": "#/components/schemas/RelatedSeriesDto"
+        }
+       }
+      },
+      "description": "OK"
+     }
+    },
+    "summary": "Returns all related series against the passed series Id",
+    "tags": [
+     "Series"
+    ]
+   }
+  },
   "/api/Series/all-v2": {
    "post": {
     "parameters": [
@@ -3603,6 +3881,39 @@
      }
     },
     "summary": "Get a special DTO for Series Detail page.",
+    "tags": [
+     "Series"
+    ]
+   }
+  },
+  "/api/Series/update-related": {
+   "post": {
+    "requestBody": {
+     "content": {
+      "application/*+json": {
+       "schema": {
+        "$ref": "#/components/schemas/UpdateRelatedSeriesDto"
+       }
+      },
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/UpdateRelatedSeriesDto"
+       }
+      },
+      "text/json": {
+       "schema": {
+        "$ref": "#/components/schemas/UpdateRelatedSeriesDto"
+       }
+      }
+     },
+     "description": ""
+    },
+    "responses": {
+     "200": {
+      "description": "OK"
+     }
+    },
+    "summary": "Update the relations attached to the Series. Does not generate associated Sequel/Prequel pairs on target series.",
     "tags": [
      "Series"
     ]

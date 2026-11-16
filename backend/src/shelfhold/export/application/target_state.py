@@ -31,6 +31,7 @@ __all__ = [
     "resume_shelf",
     "save_fingerprint",
     "save_health",
+    "target_removal_guard",
     "target_write_guard",
 ]
 
@@ -145,6 +146,22 @@ def target_write_guard(engine: Engine, target_id: str) -> Callable[[], None]:
             ).scalar()
             if paused:
                 raise DestinationPausedError(f"target.{paused}")
+            health = load_health(connection, target_id)
+        if health.instance_changed:
+            raise DestinationPausedError("target.instance_changed")
+        if health.paused:
+            raise DestinationPausedError("target.forbidden")
+
+    return guard
+
+
+def target_removal_guard(engine: Engine, target_id: str) -> Callable[[], None]:
+    """The guard of a write that only takes a link back (M4 L19): a paused shelf does not stop it,
+    because withdrawing is what protects; a target that waits for a human, or whose instance is not
+    the one that was paired, still does."""
+
+    def guard() -> None:
+        with engine.connect() as connection:
             health = load_health(connection, target_id)
         if health.instance_changed:
             raise DestinationPausedError("target.instance_changed")
