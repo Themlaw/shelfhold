@@ -141,6 +141,7 @@ from shelfhold.infrastructure.fsops.errors import RootBlockedError
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.observability.wiring import daily_access_audit
 from shelfhold.infrastructure.schema import coherence, export
+from shelfhold.infrastructure.secrets.keyring import Keyring
 from shelfhold.infrastructure.wake import WakeDeferred
 from shelfhold.integrations.apprise import NotificationDispatcher, register_notification_job
 from shelfhold.jobs.daily_checks import library_type_check, major_update_replay
@@ -163,7 +164,11 @@ from shelfhold.ops.events import BusTargetEvents
 from shelfhold.ops.kavita_accounts import declared_children
 from shelfhold.ops.library import LibraryOps
 from shelfhold.ops.notifications import LazyNotificationSweep
-from shelfhold.reading.application.sync import ProgressRemote, sync_destination
+from shelfhold.reading.application.sync import (
+    DEFAULT_MAX_SESSION_HOURS,
+    ProgressRemote,
+    sync_destination,
+)
 from shelfhold.retention_jobs import register_retention_jobs
 from shelfhold.safeguard_jobs import register_safeguard_job
 from shelfhold.store_jobs import register_store_jobs
@@ -1257,7 +1262,11 @@ class LazyDispatcher:
 
 
 def progress_sync_handler(
-    engine: sa.Engine, remote_of: Callable[[], ProgressRemote], clock: Any
+    engine: sa.Engine,
+    remote_of: Callable[[], ProgressRemote],
+    clock: Any,
+    page_map_keyring: Callable[[], Keyring] | None = None,
+    max_session_hours: float = DEFAULT_MAX_SESSION_HOURS,
 ) -> Callable[[JobContext], None]:
     """`progress.sync` (EF-EXP-026): for every destination with the synchronisation on, each linked
     member in turn, pull then push. A Kavita that cannot be asked, a key Kavita refuses, a revoked
@@ -1280,6 +1289,8 @@ def progress_sync_handler(
                     destination_id=destination,
                     clock=clock,
                     should_stop=lambda: bool(context.stop_requested),
+                    page_map_keyring=page_map_keyring,
+                    max_session_hours=max_session_hours,
                 ).values():
                     if outcome.code == "ok":
                         context.add(synchronised=1, pulled=outcome.pulled, pushed=outcome.pushed)
@@ -1367,7 +1378,10 @@ def register_runtime_jobs(pools: JobPools, comp: Composition) -> None:
     pools.scheduler.add(EXPORT_JOB_KIND, EXPORT_CRON, jitter_s=60)
     pools.register(
         PROGRESS_SYNC_KIND, pool="io",
-        handler=progress_sync_handler(comp.engine, lambda: progress_remote(comp), comp.clock),
+        handler=progress_sync_handler(
+            comp.engine, lambda: progress_remote(comp), comp.clock, comp.keyring,
+            comp.settings.reading_relay_max_session_hours,
+        ),
     )  # fmt: skip
     pools.scheduler.add(PROGRESS_SYNC_KIND, PROGRESS_SYNC_CRON, jitter_s=60)
     pools.register(

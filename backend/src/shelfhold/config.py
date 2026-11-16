@@ -146,6 +146,11 @@ class Settings(BaseModel):
     # read it, in pages per minute, measured on the server's clock. Wide for a manga or a
     # webtoon; a look at 200 pages in 30 seconds is far above it.
     reading_max_pages_per_minute: float = Field(default=20.0, gt=0, le=10_000)
+    # M4 L50: « read » is told to Kavita for the chapters a move crossed only if the move started
+    # from a contact of the same device at most this many hours earlier (KOReader makes no contact
+    # by itself unless its auto-sync is on: the previous PUT is that contact). The local mark is
+    # not bounded.
+    reading_relay_max_session_hours: float = Field(default=24.0, gt=0, le=720)
     # EF-INT-022 (ADR-0025): the WakeHook, optional. `wake_url` is the API of Sablier (a declared
     # LAN address of the owner, like Suwayomi and Kavita); `wake_suwayomi` and `wake_kavita` name
     # the containers to start for each tool, or `group:<name>` alone. Without them nothing is woken.

@@ -41,17 +41,21 @@ from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.kavita_names import same_kavita_username
 from shelfhold.infrastructure.schema import export, identity, reading
+from shelfhold.infrastructure.secrets.keyring import Keyring
 from shelfhold.reading.application.member_keys import MemberKeyRevokedError, live_member_account
+from shelfhold.reading.application.page_map import relayable, verify_page_maps
 from shelfhold.reading.application.progress import (
     UnknownCarrierError,
     _current_hash,
     check_carrier,
 )
 from shelfhold.reading.application.server_state import record_server_state
+from shelfhold.reading.bundle import store
 
 log = structlog.get_logger(__name__)
 
 __all__ = [
+    "DEFAULT_MAX_SESSION_HOURS",
     "ChapterRef",
     "ChapterRejected",
     "MemberOutcome",
@@ -144,6 +148,7 @@ class MemberOutcome:
     echoes: int = 0
     hidden: int = 0
     rejected: int = 0
+    unverified: int = 0  # chapters whose page of the block was not handed to Kavita (L50)
 
 
 CODES: Final = (
@@ -181,6 +186,9 @@ def push_page(page: int, pages: int, *, finished: bool) -> int:
     return min(max(page, 0), max(pages - 2, 0))
 
 
+DEFAULT_MAX_SESSION_HOURS: Final = 24.0  # `reading.relay_max_session_hours`
+
+
 # ----------------------------------------------------------------------------- entry points
 
 
@@ -193,14 +201,31 @@ def sync_member(
     clock: Any,
     chapters: Sequence[ChapterRef] | None = None,
     should_stop: Callable[[], bool] | None = None,
+    page_map_keyring: Callable[[], Keyring] | None = None,
+    max_session_hours: float = DEFAULT_MAX_SESSION_HOURS,
 ) -> MemberOutcome:
-    """One pass for one member. Never raises for what Kavita or the key does: it says why."""
+    """One pass for one member. Never raises for what Kavita or the key does: it says why.
+
+    `page_map_keyring` is what compares the page counts of Kavita with the page map of the blocks
+    (`page_map.verify_page_maps`): without it no member of a block is `verified`, and no page of a
+    block is handed to Kavita."""
     outcome = MemberOutcome("ok")
     try:
         _check_enabled(engine, destination_id)
         if chapters is None:
             chapters = _chapters(remote, destination_id)
-        _pass(engine, remote, user_id, destination_id, clock, chapters, outcome, should_stop)
+            _verify(engine, chapters, page_map_keyring)
+        _pass(
+            engine,
+            remote,
+            user_id,
+            destination_id,
+            clock,
+            chapters,
+            outcome,
+            should_stop,
+            max_session_hours * 3600,
+        )
     except _Stop as stop:
         outcome.code = stop.code
     log.info(
@@ -217,6 +242,8 @@ def sync_destination(
     destination_id: str,
     clock: Any,
     should_stop: Callable[[], bool] | None = None,
+    page_map_keyring: Callable[[], Keyring] | None = None,
+    max_session_hours: float = DEFAULT_MAX_SESSION_HOURS,
 ) -> dict[str, MemberOutcome]:
     """Every member with a live key on the destination, one after the other. A member whose key
     stops does not stop the others; a Kavita that cannot be asked stops them all, quietly."""
@@ -231,6 +258,7 @@ def sync_destination(
         chapters = _chapters(remote, destination_id)
     except _Stop as stop:
         return {user: MemberOutcome(stop.code) for user in members}
+    _verify(engine, chapters, page_map_keyring)
     results: dict[str, MemberOutcome] = {}
     down = False
     for user in members:
@@ -241,7 +269,8 @@ def sync_destination(
             continue
         results[user] = sync_member(
             engine, remote, user_id=user, destination_id=destination_id, clock=clock,
-            chapters=chapters, should_stop=should_stop,
+            chapters=chapters, should_stop=should_stop, page_map_keyring=page_map_keyring,
+            max_session_hours=max_session_hours,
         )  # fmt: skip
         down = results[user].code == "unavailable"
     return results
@@ -267,6 +296,21 @@ def _chapters(remote: ProgressRemote, destination_id: str) -> Sequence[ChapterRe
         return remote.chapters(destination_id)
     except RemoteUnavailable:
         raise _Stop("unavailable") from None
+
+
+def _verify(
+    engine: sa.Engine, chapters: Sequence[ChapterRef], keyring: Callable[[], Keyring] | None
+) -> None:
+    """The page counts of Kavita against the page maps of the blocks, once per pass and before any
+    member's: what is not verified is not relayed. No keyring (or a locked one): nothing is."""
+    if keyring is None:
+        return
+    try:
+        key = store.fingerprint_key(keyring())
+    except RuntimeError:  # a keyring that cannot be read: nothing is verified, nothing relayed
+        log.info("progress_sync.page_map_skipped")
+        return
+    verify_page_maps(engine, chapters, key)
 
 
 def _linked_members(engine: sa.Engine, destination_id: str) -> list[str]:
@@ -364,6 +408,7 @@ def _pass(
     chapters: Sequence[ChapterRef],
     outcome: MemberOutcome,
     should_stop: Callable[[], bool] | None = None,
+    max_session_s: float = DEFAULT_MAX_SESSION_HOURS * 3600,
 ) -> None:
     started = clock.now()
     account_id = _live(engine, user_id, destination_id)
@@ -374,7 +419,7 @@ def _pass(
     try:
         _pass_open(
             engine, member, user_id, destination_id, account_id, declared, clock, started,
-            chapters, outcome, should_stop,
+            chapters, outcome, should_stop, max_session_s,
         )  # fmt: skip
     finally:
         member.close()
@@ -392,6 +437,7 @@ def _pass_open(
     chapters: Sequence[ChapterRef],
     outcome: MemberOutcome,
     should_stop: Callable[[], bool] | None,
+    max_session_s: float,
 ) -> None:
     try:
         who = member.account_name()
@@ -429,11 +475,15 @@ def _pass_open(
                 continue  # nothing moved in Kavita, nothing new here: no call, no write
             for ref in series:
                 _live(engine, user_id, destination_id)
+                if not _visible(engine, user_id, ref):
+                    outcome.hidden += 1  # the ceiling was lowered during the pass: nothing more
+                    continue
                 pushed_before = outcome.pushed
                 try:
                     changed = _chapter(
                         engine, member, user_id, destination_id, ref, clock, started, outcome,
                         notes.get(ref.chapter_id), ref.chapter_id in pending, stamp,
+                        max_session_s,
                     )  # fmt: skip
                 except ChapterRejected:
                     outcome.rejected += 1  # this chapter only: not for the account, or gone
@@ -580,8 +630,9 @@ class _NoteWriter:
 def _pending_chapters(
     engine: sa.Engine, user_id: str, refs: Sequence[ChapterRef], notes: dict[int, _Note]
 ) -> set[int]:
-    """The chapters with a device position newer than their note (one read for all of them): only
-    these can have something to say to Kavita."""
+    """The chapters with a device position newer than their note, or a Unit a traversal marked
+    read since (one read for each, for all of them): only these can have something to say to
+    Kavita. A chapter a read through the block crossed has no position of its own."""
     if not refs:
         return set()
     since = {r.chapter_id: (notes[r.chapter_id].synced_at if r.chapter_id in notes else EPOCH)
@@ -601,12 +652,47 @@ def _pending_chapters(
             )
             .group_by(position.c.carrier_id)
         ).all()
+        marks = connection.execute(
+            sa.select(position.c.server_ts, position.c.read_units).where(
+                position.c.user_id == user_id,
+                position.c.source == "device",
+                position.c.server_ts >= min(since.values()),
+                sa.func.json_array_length(position.c.read_units) > 0,
+            )
+        ).all()
+        units = _units_of(connection, {r.carrier_id for r in refs}) if marks else {}
     last = {str(r.carrier_id): _utc(r.last) for r in rows}
-    return {
+    found = {
         r.chapter_id
         for r in refs
         if (at := last.get(r.carrier_id)) is not None and at >= since[r.chapter_id]
     }
+    for r in refs:
+        covered = units.get(r.carrier_id, set())
+        if (
+            r.chapter_id not in found
+            and covered
+            and any(
+                (when := _utc(m.server_ts)) is not None
+                and when >= since[r.chapter_id]
+                and covered & set(m.read_units)
+                for m in marks
+            )
+        ):
+            found.add(r.chapter_id)
+    return found
+
+
+def _units_of(connection: sa.Connection, carriers: set[str]) -> dict[str, set[str]]:
+    cover = export.unit_coverage
+    found: dict[str, set[str]] = {}
+    for row in connection.execute(
+        sa.select(cover.c.carrier_id, cover.c.unit_id).where(
+            cover.c.carrier_type == "export_item", cover.c.carrier_id.in_(sorted(carriers))
+        )
+    ):
+        found.setdefault(str(row.carrier_id), set()).add(str(row.unit_id))
+    return found
 
 
 def _chapter(
@@ -621,6 +707,7 @@ def _chapter(
     old: _Note | None,
     has_pending: bool,
     stamp: str | None,
+    max_session_s: float = DEFAULT_MAX_SESSION_HOURS * 3600,
 ) -> _Note | None:
     """Pull, then push, one chapter. The note to write, or `None` when it would be the same."""
     if old is not None and old.carrier_id != ref.carrier_id:
@@ -643,7 +730,7 @@ def _chapter(
     if not echo:
         pushed_page = None  # Kavita moved on its own: what we pushed is no longer what it holds
     wanted = (
-        _pending_page(engine, user_id, ref, old.synced_at if old else EPOCH)
+        _pending_page(engine, user_id, ref, old.synced_at if old else EPOCH, outcome, max_session_s)
         if has_pending or old is None
         else None
     )
@@ -681,12 +768,28 @@ def _record_pull(
     return True
 
 
-def _pending_page(engine: sa.Engine, user_id: str, ref: ChapterRef, since: datetime) -> int | None:
+def _pending_page(
+    engine: sa.Engine,
+    user_id: str,
+    ref: ChapterRef,
+    since: datetime,
+    outcome: MemberOutcome,
+    max_session_s: float = DEFAULT_MAX_SESSION_HOURS * 3600,
+) -> int | None:
     """What to say to Kavita: the page of the member's **latest** device position since the last
-    pass (the server's clock, `id` for a tie), on the content the file carries now."""
+    pass (the server's clock, `id` for a tie), on the content the file carries now; or, when a
+    traversal marked every Unit of the file read since, « read » (the chapter a read through the
+    block crossed has no position of its own).
+
+    What came through a block (`locator.bundle`) is handed over only if the chapter's member of
+    that block is `verified` against Kavita's own page count (`page_map`), else nothing is, and the
+    chapter is counted (`unverified`). A position transposed from a replaced chapter is a guess
+    and is never written."""
     position = reading.reading_position
     with engine.connect() as connection:
         current = _current_hash(connection, "export_item", ref.carrier_id)
+        if current is None:
+            return None
         row = connection.execute(
             sa.select(position.c.content_hash, position.c.locator, position.c.percent)
             .where(
@@ -699,15 +802,65 @@ def _pending_page(engine: sa.Engine, user_id: str, ref: ChapterRef, since: datet
             .order_by(position.c.server_ts.desc(), position.c.id.desc())
             .limit(1)
         ).first()
-        if row is None or current is None or row.content_hash != current:
-            return None  # nothing new, or a page counted in a file that is no longer there
-        page = row.locator.get("page") if isinstance(row.locator, dict) else None
-        if not isinstance(page, int) or isinstance(page, bool):
-            if row.percent is None or ref.pages <= 0:
-                return None
-            page = int(row.percent * ref.pages)
+        page: int | None = None
+        speaking: list[dict[str, Any]] = []
+        if row is not None and row.content_hash == current:
+            locator = row.locator if isinstance(row.locator, dict) else {}
+            if not locator.get("transposed"):
+                found = locator.get("page")
+                if isinstance(found, int) and not isinstance(found, bool):
+                    page = found
+                elif row.percent is not None and ref.pages > 0:
+                    page = int(row.percent * ref.pages)
+                if page is not None:
+                    speaking.append(locator)
         finished = _all_read(connection, user_id, ref.carrier_id)
-    return push_page(page, ref.pages, finished=finished)
+        marks = (
+            _marking_locators(connection, user_id, ref.carrier_id, since, max_session_s)
+            if finished
+            else []
+        )
+        if page is None and not marks:
+            return None
+        for locator in [*speaking, *marks]:
+            version = locator.get("bundle")
+            if version is not None and not relayable(connection, version, ref.carrier_id):
+                outcome.unverified += 1
+                log.info("progress_sync.chapter_not_relayed", code="page_map_unverified")
+                return None
+    if marks and ref.pages > 0:
+        return ref.pages
+    return None if page is None else push_page(page, ref.pages, finished=finished)
+
+
+def _marking_locators(
+    connection: sa.Connection,
+    user_id: str,
+    carrier_id: str,
+    since: datetime,
+    max_session_s: float = DEFAULT_MAX_SESSION_HOURS * 3600,
+) -> list[dict[str, Any]]:
+    """The locators of the positions, since `since`, whose traversal marked a Unit of this file
+    read (the position that closed the move may be on another file of the block)."""
+    units = _units_of(connection, {carrier_id}).get(carrier_id, set())
+    position = reading.reading_position
+    found: list[dict[str, Any]] = []
+    for row in connection.execute(
+        sa.select(position.c.locator, position.c.read_units).where(
+            position.c.user_id == user_id,
+            position.c.source == "device",
+            position.c.server_ts >= since,
+            sa.func.json_array_length(position.c.read_units) > 0,
+        )
+    ):
+        if units & set(row.read_units):
+            locator = row.locator if isinstance(row.locator, dict) else {}
+            gap = locator.get("gap")
+            if isinstance(gap, int | float) and not isinstance(gap, bool) and gap > max_session_s:
+                log.info("progress_sync.chapter_not_relayed", code="session_too_long")
+                continue  # the move did not start from a recent contact: it stays local
+            found.append(locator)
+    return found
 
 
 def _all_read(connection: sa.Connection, user_id: str, carrier_id: str) -> bool:

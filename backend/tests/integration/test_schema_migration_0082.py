@@ -22,7 +22,7 @@ pytestmark = pytest.mark.req("ENF-OPS-002", "EF-INT-007")
 
 def test_the_revision_is_0082_and_follows_the_head_of_main() -> None:
     script = ScriptDirectory(str(default_script_location()))
-    assert script.get_heads() == ["0082"]
+    assert len(script.get_heads()) == 1  # one head, whichever later lot moved it
     assert script.get_revision("0082").down_revision == "0081"
 
 

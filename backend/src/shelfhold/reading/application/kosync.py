@@ -29,6 +29,7 @@ is, in `locator.xpointer`, and marks nothing read (`traverse=False`) until L51. 
 kept in the locator (`device`); the date of a position is always the server's.
 """
 
+import hashlib
 import math
 import re
 import unicodedata
@@ -77,6 +78,7 @@ _ABSENT: Final = "0" * 26  # a placeholder that is no Edition: a lookup always r
 _REFLOWABLE = frozenset({"epub"})
 _DELIVERY = "delivery"  # the page 0 the server writes when it hands a file over
 _UNKNOWN_BOUND = 1024  # tokens kept by the counter
+_RETURNED_BOUND = 1024  # (profile, token) pairs whose last given page is kept
 WINDOW_S: Final = 60  # one first and one last position per file, device and window (MIN-4)
 GUARD_FLOOR: Final = 0.0001  # KOReader floors the share to the ten-thousandth
 
@@ -147,6 +149,7 @@ class _Member:
     fp: str | None
     first_page: int
     page_count: int
+    state: str = "candidate"  # `verified` once Kavita counted the same pages (M4 L50)
 
 
 @dataclass(frozen=True)
@@ -173,6 +176,14 @@ def _utc(value: datetime) -> datetime:
     return value if value.tzinfo is not None else value.replace(tzinfo=UTC)
 
 
+def _who(device_id: str | None, token: str) -> str:
+    """The device of a position: its identifier, else (a client that sends none) its token, that
+    is kept only as a short digest."""
+    if device_id is not None:
+        return "d:" + device_id
+    return "t:" + hashlib.sha256(token.lower().encode()).hexdigest()[:16]
+
+
 def _digest_of(raw: str) -> str | None:
     return "md5:" + raw.lower() if _DIGEST.fullmatch(raw) else None
 
@@ -189,6 +200,10 @@ class Kosync:
         self._keyring = keyring
         self._now = now
         self.unknown = unknown or UnknownCounter()
+        # The last page of a block a GET gave to each (profile, token): (version, page of the block,
+        # when). In memory and bounded, on purpose: it is a hint about a start, not a fact to keep
+        # (lost at a restart, the next PUT of a device is taken as a position like any other).
+        self._returned: dict[tuple[str, str], tuple[str, int, datetime]] = {}
 
     # -- resolution -------------------------------------------------------------------------
 
@@ -232,7 +247,7 @@ class Kosync:
 
     def _members(self, connection: Connection, version_id: str) -> list[_Member]:
         return [
-            _Member(m.rank, m.item_id, m.unit_id, m.fp, m.first_page, m.page_count)
+            _Member(m.rank, m.item_id, m.unit_id, m.fp, m.first_page, m.page_count, m.state)
             for m in store.members_of(connection, version_id)
         ]
 
@@ -324,10 +339,17 @@ class Kosync:
                 if target is None:
                     return False
                 item_id, locator, percent = target
-                traverse = True
-                bundled = (doc.version, page)
-                locator["bundle"] = doc.version.id
-                locator["bundle_page"] = page
+                transposed = locator.get("transposed") is True
+                traverse = not transposed  # a transposed share is no proof of a reading
+                bundled = None if transposed else (doc.version, page)
+                if transposed:
+                    log.info("kosync.transposed", token=token.lower())  # I30: stored, never relayed
+                else:
+                    locator["bundle"] = doc.version.id
+                    locator["bundle_page"] = page
+                    locator["who"] = _who(device_id, token)
+                    if self._is_echo(connection, user_id, token, doc.version, page):
+                        locator["anchor"] = True  # a start (the page a GET gave), never a reading
             elif doc.item_id is not None:
                 item_id = doc.item_id
                 kind = self._kind(connection, item_id)
@@ -361,8 +383,8 @@ class Kosync:
                         reading.reading_position.c.id == replaces
                     )
                 )
-            if bundled is not None:
-                self._cross_chapters(connection, user_id, position_id, *bundled)
+            if bundled is not None and locator.get("anchor") is not True:
+                self._cross_chapters(connection, user_id, position_id, token, *bundled)
             return True
 
     def _refused(self, token: str, reason: str) -> bool:
@@ -410,43 +432,105 @@ class Kosync:
             locator.update({"w": stamp, "f": True})
             return None
         locator["w"] = start
-        if last.locator.get("f") is True or last.read_units or last.undone_units != {}:
-            return None  # the first of the window, or a row that carries a mark: kept
+        if (
+            last.locator.get("f") is True
+            or last.locator.get("anchor") is True
+            or last.read_units
+            or last.undone_units != {}
+        ):
+            return None  # the first of the window, a start, or a row that carries a mark: kept
         return str(last.id)
 
+    def _is_echo(
+        self, connection: Connection, user_id: str, token: str, version: store.VersionRow, page: int
+    ) -> bool:
+        """The page is the one a GET gave this token (or an earlier page of the same chapter): the
+        device went there because it was told to, and sends it back. It is where the reader starts,
+        not a place the reader got to."""
+        entry = self._returned.get((user_id, token.lower()))
+        if entry is None or entry[0] != version.id:
+            return False
+        given = entry[1]
+        return any(
+            m.first_page <= given < m.first_page + m.page_count and m.first_page <= page <= given
+            for m in self._members(connection, version.id)
+        )
+
     def _cross_chapters(
-        self, connection: Connection, user_id: str, position_id: str, version: store.VersionRow,
-        page: int,
+        self, connection: Connection, user_id: str, position_id: str, token: str,
+        version: store.VersionRow, page: int,
     ) -> None:  # fmt: skip
-        """The traversal in the frame of the block: the profile's positions on this version, as
-        pages of the block, and every chapter a plausible move covered whole is read, wherever its
-        file is (ADR-0053 §5: "la chaîne peut franchir plusieurs chapitres")."""
+        """The traversal in the frame of the block: the positions of **this device** on this
+        version, as pages of the block, and every chapter a plausible move covered whole is read,
+        wherever its file is (ADR-0053 §5: "la chaîne peut franchir plusieurs chapitres").
+
+        The chain starts at the latest start: a position that echoes a page a GET gave (`anchor`),
+        or that GET itself (the page it gave, and when). Another device's positions are never a
+        step: a move is one device's. The delay between the last two steps is written on the
+        position that closed the move (`gap`, in seconds): what the sync reads to relay « read »
+        only to a move that started from a recent contact."""
         table = reading.reading_position
+        who = self._who_of(connection, position_id)
         rows = connection.execute(
             sa.select(
                 sa.func.json_extract(table.c.locator, "$.bundle_page").label("page"),
+                sa.func.json_extract(table.c.locator, "$.anchor").label("anchor"),
                 table.c.server_ts,
             )
             .where(
                 table.c.user_id == user_id,
                 table.c.source == "device",
                 sa.func.json_extract(table.c.locator, "$.bundle") == version.id,
+                sa.func.json_extract(table.c.locator, "$.who") == who,
             )
             .order_by(table.c.server_ts.desc(), table.c.id.desc())
             .limit(HISTORY_LIMIT)
         ).all()
-        steps = [
-            Step(float(r.page), _utc(r.server_ts))
-            for r in reversed(rows)
-            if isinstance(r.page, int)
-        ]
+        chain: list[Step] = []
+        anchored: datetime | None = None
+        for r in rows:  # newest first, up to the latest start
+            if isinstance(r.page, int):
+                chain.append(Step(float(r.page), _utc(r.server_ts)))
+            if r.anchor:
+                anchored = _utc(r.server_ts)
+                break
+        steps = list(reversed(chain))
+        given = self._returned.get((user_id, token.lower()))
+        if (
+            given is not None
+            and given[0] == version.id
+            and (anchored is None or _utc(given[2]) >= anchored)
+        ):
+            at = _utc(given[2])
+            steps = [Step(float(given[1]), at), *[s for s in steps if s.ts > at]]
         spans = [
             Span(m.unit_id, float(m.first_page), float(m.first_page + m.page_count - 1))
             for m in self._members(connection, version.id)
             if m.unit_id and m.item_id and m.page_count > 0
         ]
         if len(steps) >= 2 and spans:
-            mark_traversed_in_frame(connection, position_id, steps=steps, spans=spans)
+            marked = mark_traversed_in_frame(connection, position_id, steps=steps, spans=spans)
+            if marked:
+                self._write_gap(connection, position_id, steps[-1].ts - steps[-2].ts)
+
+    def _who_of(self, connection: Connection, position_id: str) -> str | None:
+        found = connection.execute(
+            sa.select(sa.func.json_extract(reading.reading_position.c.locator, "$.who")).where(
+                reading.reading_position.c.id == position_id
+            )
+        ).scalar()
+        return None if found is None else str(found)
+
+    def _write_gap(self, connection: Connection, position_id: str, gap: Any) -> None:
+        table = reading.reading_position
+        locator = connection.execute(
+            sa.select(table.c.locator).where(table.c.id == position_id)
+        ).scalar_one()
+        locator = dict(locator)
+        locator["gap"] = max(0, int(gap.total_seconds()))
+        connection.execute(
+            sa.update(table).where(table.c.id == position_id).values(locator=locator)
+        )
 
     def _into_chapter(
         self,
@@ -464,19 +548,25 @@ class Kosync:
             return None
         for member in self._members(connection, version.id):
             if member.first_page <= page < member.first_page + member.page_count:
-                if member.item_id is None or not self._still_the_member(connection, member):
-                    self._refused(token, "chapter_gone")  # purged or replaced since the version
+                if member.item_id is None or member.fp is None:
+                    self._refused(token, "chapter_gone")  # purged since the version: an orphan
                     return None
                 inner = page - member.first_page + 1
+                if not self._still_the_member(connection, member):
+                    # Replaced since the version (I30): its page is a page of a file that is no
+                    # longer there. The share of the chapter is kept, as a proportion (no page),
+                    # and it is never handed to Kavita nor given back as a page of the block.
+                    return member.item_id, {"transposed": True}, inner / member.page_count
                 return member.item_id, {"page": inner}, inner / member.page_count
         self._refused(token, "no_chapter")
         return None
 
     # -- the read ---------------------------------------------------------------------------
 
-    def pull(self, *, user_id: str, document: str) -> Pulled | None:
+    def pull(self, *, user_id: str, document: str, token: str = "") -> Pulled | None:
         """The furthest position, in the frame of the document asked; None when nothing is known
-        or nothing can be told in this frame."""
+        or nothing can be told in this frame. The page of a block that is given is remembered for
+        the token (`_returned`): the next PUT that sends it back is an echo, not a reading."""
         with self._engine.connect() as connection:
             try:
                 doc = self._resolve(connection, user_id, document)
@@ -521,8 +611,17 @@ class Kosync:
                 ).first()
                 if position is None or position.device_id == _DELIVERY:
                     continue
-                return self._in_frame(connection, doc, member, position)  # the furthest decides
+                found = self._in_frame(connection, doc, member, position)  # the furthest decides
+                if found is not None and doc.version is not None:
+                    self._remember(user_id, token, doc.version.id, int(found.progress))
+                return found
         return None
+
+    def _remember(self, user_id: str, token: str, version_id: str, page: int) -> None:
+        key = (user_id, token.lower())
+        if key not in self._returned and len(self._returned) >= _RETURNED_BOUND:
+            del self._returned[next(iter(self._returned))]
+        self._returned[key] = (version_id, page, self._now())
 
     def _in_frame(
         self, connection: Connection, doc: _Doc, member: _Member | None, position: Any
@@ -541,8 +640,9 @@ class Kosync:
                 or not 1 <= page <= member.page_count
                 or position.content_hash != self._anchor(connection, str(member.item_id))
                 or not self._still_the_member(connection, member)
+                or (position.source == "server" and member.state != "verified")
             ):
-                return None
+                return None  # a page Kavita counts is given only where it counts as we do (L50)
             of_block = member.first_page + page - 1
             progress, percentage = str(of_block), of_block / doc.version_pages
         else:

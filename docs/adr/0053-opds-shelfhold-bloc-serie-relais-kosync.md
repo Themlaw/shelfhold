@@ -309,5 +309,11 @@ Dans la source de KOReader, `update_progress` ne compte comme réussi que le sta
 - **Fusion des rafales** : au plus une ligne par jeton, appareil et fichier et par minute ; la première et la dernière de chaque fenêtre servent d'ancres.
 - **Positions EPUB** : jamais une ancre de traversée (à reprendre avec L51).
 
+## Amendement du 2026-11-16 (L50, relais vers Kavita)
+
+- **`verified` est un état de chapitre.** Un membre `unverified` (noms que Kavita pourrait trier autrement, ou nombre de pages différent de celui que Kavita annonce) n'est ni poussé ni lu dans le repère du bloc ; les autres chapitres du bloc continuent. Santé le signale. Remplace « un membre `unverified` désactive le relais du bloc ».
+- **Fermé par défaut** : sans comparaison faite, aucun membre n'est `verified`.
+- **Chapitre remplacé** : la position est transposée en part du chapitre (sans page), comptée dans la progression, jamais poussée ni rendue.
+
 ## Acceptation (2026-11-15)
 Acceptée par le mainteneur, qui a demandé cette voie, avec la révision qui répond au contradicteur. Points tranchés par défaut, révisables : L10 passe en « Plus tard » (EF-EXP-019 redatée) ; plafond de 500 Mio par partie avec découpage « (1 sur N) » ; secret de jeton saisi une fois sur la liseuse ; EPUB hors du relais (L51). Ordre : le premier incrément (L46, L46b, L48, L49a) passe dès que L12 et L13 sont fusionnés ; L50 n'ouvre qu'après les vérifications sur appareil réel listées plus haut.

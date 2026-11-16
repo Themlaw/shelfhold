@@ -59,6 +59,7 @@ class MemberRow:
     first_page: int
     page_count: int
     canonical: bool
+    state: str = "candidate"  # `candidate`, `unverified` or `verified` (M4 L50)
 
 
 @dataclass(frozen=True)
@@ -144,7 +145,8 @@ def members_of(connection: Connection, version_id: str) -> list[MemberRow]:
             r.pages_digest,
             r.first_page,
             r.page_count,
-            r.page_map_state == "candidate",
+            r.page_map_state in ("candidate", "verified"),
+            r.page_map_state,
         )
         for r in rows
     ]

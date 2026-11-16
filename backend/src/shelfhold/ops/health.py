@@ -32,7 +32,7 @@ from shelfhold.acquisition.application.follow import OUTAGE_CYCLES
 from shelfhold.config import Settings
 from shelfhold.i18n import t
 from shelfhold.infrastructure.health import HealthProbe
-from shelfhold.infrastructure.schema import acquisition, platform, storage
+from shelfhold.infrastructure.schema import acquisition, bundle, platform, storage
 from shelfhold.infrastructure.stats import DEFAULT_SINCE, compute_stats, parse_since
 from shelfhold.library.public import irreplaceability
 from shelfhold.ops.backup.run import backup_warnings
@@ -444,6 +444,50 @@ def _library_type_changes(waiting: Sequence[WaitingItem]) -> list[dict[str, obje
     ]
 
 
+def _page_map_warnings(connection: Connection) -> list[dict[str, object]]:
+    """Chapters of a block of a series that are not relayed to Kavita, by Edition and closed code
+    (M4 L50, ADR-0053 §2): `relay.page_count_mismatch` (Kavita counts another number of pages) and
+    `relay.page_map_unverified` (names Kavita might sort otherwise). No title, no path: the
+    Edition's identifier and a count of chapters."""
+    member, version = bundle.bundle_member, bundle.bundle_version
+    rows = connection.execute(
+        sa.select(
+            version.c.edition_id,
+            member.c.kavita_pages.is_(None).label("never_compared"),
+            sa.func.count(sa.distinct(member.c.export_item_id)).label("chapters"),
+        )
+        .join(version, version.c.id == member.c.version_id)
+        .where(
+            version.c.purged_at.is_(None),
+            member.c.page_map_state == "unverified",
+            member.c.export_item_id.is_not(None),
+        )
+        .group_by(version.c.edition_id, member.c.kavita_pages.is_(None))
+        .order_by(version.c.edition_id)
+    )
+    return [
+        {
+            "code": "relay.page_map_unverified"
+            if r.never_compared
+            else "relay.page_count_mismatch",
+            "subject": str(r.edition_id),
+            "chapters": int(r.chapters),
+        }
+        for r in rows
+    ]
+
+
+def _kosync_unknown(counter: Mapping[str, Mapping[str, int]] | None) -> list[dict[str, object]]:
+    """What the e-readers sent that Shelfhold did not take, by device token and reason
+    (`kosync.unknown`, `kosync.integrity`, ...): the public identifier of the token and a count.
+    Never the fingerprint the device sent."""
+    return [
+        {"code": f"kosync.{reason}", "token": token, "count": int(count)}
+        for token, reasons in sorted((counter or {}).items())
+        for reason, count in sorted(reasons.items())
+    ]
+
+
 def _jurisdiction(connection: Connection) -> dict[str, object] | None:
     report = jurisdiction_report(connection)
     if report is None:
@@ -468,6 +512,7 @@ def build_health_page(
     now: datetime,
     *,
     waiting: Sequence[WaitingItem] | None = None,
+    kosync_unknown: Mapping[str, Mapping[str, int]] | None = None,
 ) -> dict[str, object]:
     """The whole page, from the database. `waiting` is what `status` lists (read here when not
     given, from the database only: no root is looked at)."""
@@ -484,6 +529,8 @@ def build_health_page(
             "kavita_audit": audit,
             "library_type_changes": type_changes,
             "jurisdiction": _jurisdiction(connection),
+            "page_map_warnings": _page_map_warnings(connection),
+            "kosync_unknown": _kosync_unknown(kosync_unknown),
         }
     page["backup"] = _backup(engine, settings, now)
     page["stats"] = compute_stats(engine, now=now, since_days=parse_since(DEFAULT_SINCE)).as_dict()

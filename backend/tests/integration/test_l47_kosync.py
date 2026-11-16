@@ -641,7 +641,10 @@ def test_a_chapter_replaced_since_the_version_is_never_given_a_page_of_the_old_c
     lab_lib.rewrite(items[1], Chapter("2", [("1.png", page("png", "NEWER"))]), record=True)
     answer = push(lab.mum, digest, "5", 5 / 9)
     accepted(answer, digest)
-    assert positions(lab) == []  # the layout it speaks of is gone
+    # M4 L50 (I30): the page of the old cut is never kept, only the share of the chapter reached
+    kept = positions(lab)
+    assert len(kept) == 1 and "page" not in kept[0].locator and kept[0].locator["transposed"]
+    assert pull(lab.mum, digest).json() == {}  # and never given back as a page of the block
 
 
 def test_the_guard_of_integrity_refuses_a_percentage_that_is_not_of_this_file(lab: World) -> None:
@@ -750,6 +753,9 @@ def test_a_server_state_position_is_given_as_kavita_with_a_stable_device_id(lab:
                 covered_units=[items[2].unit_id],
             )
         )
+    assert pull(lab.mum, digest).json() == {}  # M4 L50: not before Kavita counted the same pages
+    with lab.seed.engine.begin() as c:
+        c.execute(sa.text("UPDATE bundle_member SET page_map_state = 'verified'"))
     body = pull(lab.mum, digest).json()
     assert (
         body["progress"] == "8"

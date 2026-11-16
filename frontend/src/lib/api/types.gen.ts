@@ -1811,6 +1811,12 @@ export type HealthPageOut = {
         [key: string]: unknown;
     }>;
     /**
+     * Kosync Unknown
+     */
+    kosync_unknown: Array<{
+        [key: string]: unknown;
+    }>;
+    /**
      * Library Type Changes
      */
     library_type_changes: Array<{
@@ -1820,6 +1826,12 @@ export type HealthPageOut = {
      * Lost Originals
      */
     lost_originals: Array<{
+        [key: string]: unknown;
+    }>;
+    /**
+     * Page Map Warnings
+     */
+    page_map_warnings: Array<{
         [key: string]: unknown;
     }>;
     /**

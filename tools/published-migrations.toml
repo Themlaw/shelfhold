@@ -234,3 +234,8 @@ since = "1.1"
 file = "0082_bundle_setting.py"
 sha256 = "31b04fbc59907938433fc10e3bbadc1d22b96064d324afc2da80298a18950f5b"
 since = "1.1"
+
+[[migration]]
+file = "0083_page_map_verified.py"
+sha256 = "e267b157ca60ac9228da19ea38e294c60c3c273c6496a48d2c49bcc7675c7004"
+since = "1.1"
