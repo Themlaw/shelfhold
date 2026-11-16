@@ -63,7 +63,7 @@ from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.fsops import Fsops, FsopsError
 from shelfhold.infrastructure.schema import coherence, export, platform
 from shelfhold.sdk.api_call import ApiCall, check_api_call, parse_api_call
-from shelfhold.sdk.export_target import TargetCapabilities
+from shelfhold.sdk.export_target import TargetCapabilities, sidecar_forbidden
 from shelfhold.sdk.fsops import (
     ContentRef,
     FsOp,
@@ -248,6 +248,11 @@ class PlanExecutor:
         self._events = events
 
     # -- the entry points -----------------------------------------------------------------------
+
+    @property
+    def contents(self) -> ContentStore:
+        """The bytes the host serves this executor (a destination asks it what a cover is)."""
+        return self._contents
 
     def execute(self, binding: PlanBinding, call_id: str, raw_plan: object) -> ExecutionReport:
         """Run the plan a destination returned for one call, on one binding."""
@@ -483,9 +488,11 @@ class PlanExecutor:
         ref = op.content_ref
         if ref is not None and ref.kind == "sidecar" and ref.ref not in run.sidecars:
             raise PlanRefusedError("the sidecar is not one the host made for this binding")
-        forbidden = {fold(name) for name in run.binding.capabilities.forbidden_sidecars}
+        forbidden = run.binding.capabilities.forbidden_sidecars
         for created in (op.rel_path, op.dst_rel_path) if op.op in _CREATES else ():
-            if created is not None and fold(PurePosixPath(created).name) in forbidden:
+            if created is not None and sidecar_forbidden(
+                forbidden, fold(PurePosixPath(created).name)
+            ):
                 raise PlanRefusedError("this destination does not take this sidecar")
 
     def _checked(self, run: _Run, index: int) -> FsOp:

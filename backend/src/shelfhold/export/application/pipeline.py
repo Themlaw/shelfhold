@@ -515,6 +515,13 @@ class ExportPipeline:
             barrier=barrier,
         )
 
+    @property
+    def plan_contents(self) -> object:
+        """The bytes the host serves the plans of this pipeline (set by `use_plan_executor`)."""
+        if self._plan_executor is None:
+            raise RuntimeError("the executor of plans is not set up")
+        return self._plan_executor.contents
+
     def execute_destination_plan(
         self, binding: PlanBinding, call_id: str, raw_plan: object
     ) -> ExecutionReport:

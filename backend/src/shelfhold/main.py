@@ -15,6 +15,7 @@ import structlog
 from sqlalchemy import Engine
 
 from shelfhold import __version__
+from shelfhold.acquisition.public import RootGuard
 from shelfhold.catalog.public import ensure_search_tables, sync_search_index
 from shelfhold.composition import Composition, Network
 from shelfhold.config import Settings, load_settings
@@ -333,7 +334,10 @@ def create_app(
         return Kosync(engine, composition.keyring, clock.now)
 
     export_routers = (
-        build_shelves_router(lambda: ShelfService(engine, clock=clock), ops_services),
+        build_shelves_router(
+            lambda: ShelfService(engine, clock=clock, root_check=RootGuard().check_root),
+            ops_services,
+        ),
         build_destinations_router(ops_services),
         build_destination_accounts_router(ops_services),  # M4 L12: a member's own Kavita key
         build_edition_shelf_router(lambda: ShelfService(engine, clock=clock)),

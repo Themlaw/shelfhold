@@ -12,17 +12,32 @@ from shelfhold.export.application.export_items import (
 )
 from shelfhold.export.application.pairing import pending_pairing
 from shelfhold.export.application.waiting_marks import clear as _clear_marks
-from shelfhold.export.domain.bindings import adult_clause, family_clause, is_family
+from shelfhold.export.domain.bindings import (
+    LocalSourceUnknownError,
+    RootOverlapsLocalSourceError,
+    adult_clause,
+    family_clause,
+    is_family,
+)
+from shelfhold.export.domain.folders import Relation, absolute_relation, folder_relation
+from shelfhold.export.domain.path_map import PathMapError, clean_absolute
 
 __all__ = [
+    "LocalSourceUnknownError",
+    "PathMapError",
+    "Relation",
+    "RootOverlapsLocalSourceError",
     "SeriesMove",
     "SeriesReassignmentPlan",
     "SeriesReassignmentRefusedError",
+    "absolute_relation",
     "adopted_volumes",
     "adult_clause",
     "apply_series_reassignment",
     "attach_to_volume",
+    "clean_absolute",
     "family_clause",
+    "folder_relation",
     "forget_coverage_unknown",
     "is_family",
     "pending_pairing",

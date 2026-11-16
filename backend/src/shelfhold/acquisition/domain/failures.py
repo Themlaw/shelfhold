@@ -28,6 +28,7 @@ _DISPOSITIONS = {
     "version": Disposition.PAUSE,
     "schema": Disposition.PAUSE,
     "instance": Disposition.PAUSE,  # another installation of the tool (EF-SRC-036)
+    "local_source_loop": Disposition.PAUSE,  # the tool reads a folder Shelfhold writes (EF-EXP-010)
     "infra": Disposition.RETRY,
 }
 

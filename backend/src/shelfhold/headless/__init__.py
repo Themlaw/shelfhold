@@ -26,6 +26,8 @@ from shelfhold.headless.errors import (
     SourceUpdateFiltersBlocking,
     TargetConflict,
     TargetExchangeFailed,
+    TargetLocalSourceUnknown,
+    TargetRootOverlapsLocalSource,
     UnknownConfigKey,
     UnknownTarget,
 )
@@ -56,6 +58,8 @@ __all__ = [
     "TargetAdded",
     "TargetConflict",
     "TargetExchangeFailed",
+    "TargetLocalSourceUnknown",
+    "TargetRootOverlapsLocalSource",
     "UnknownConfigKey",
     "UnknownTarget",
     "absolute_url",

@@ -26,7 +26,9 @@ _PAUSE_EVENTS = {
     "version": "source.version_unsupported",
     "schema": "source.version_unsupported",  # the upstream schema moved: a version problem
     "instance": "source.instance_changed",  # the tool was installed again (EF-SRC-036)
+    "local_source_loop": "source.broken",  # told with the reason below (EF-EXP-010)
 }
+_PAUSE_REASONS = {"local_source_loop": "local_source_on_managed_root"}
 
 
 # What an adapter raises when an answer is not shaped as it expects: the upstream schema moved.
@@ -59,6 +61,7 @@ class Pause:
     failure_class: str
     event_type: str
     waiting_state: str | None  # an EF-INT-023 state when the pause is one
+    reason: str | None = None  # the typed reason the event carries, when the class has one
 
     @property
     def label(self) -> str:
@@ -72,7 +75,9 @@ def pause_of(failure_class: str, error: BaseException) -> Pause:
     state = getattr(error, "waiting_state", None)
     if state is None and failure_class == "auth":
         state = WaitingState.AUTH_EXPIRED
-    return Pause(failure_class, event, str(state) if state else None)
+    return Pause(
+        failure_class, event, str(state) if state else None, _PAUSE_REASONS.get(failure_class)
+    )
 
 
 _SET = sa.text(
@@ -176,7 +181,9 @@ class FailureLedger:
         raw = self._read(connection).get("pause")
         if not isinstance(raw, dict):
             return None
-        return Pause(raw["failure_class"], raw["event_type"], raw.get("waiting_state"))
+        return Pause(
+            raw["failure_class"], raw["event_type"], raw.get("waiting_state"), raw.get("reason")
+        )
 
     def pause(self, connection: Connection, pause: Pause, now: datetime) -> bool:
         """Start a pause; False when the service was already paused (nothing to announce)."""
@@ -184,6 +191,7 @@ class FailureLedger:
             "failure_class": pause.failure_class,
             "event_type": pause.event_type,
             "waiting_state": pause.waiting_state,
+            "reason": pause.reason,
             "since": now.isoformat(),
         }
         return self._set(connection, "$.pause", value, if_unset=True)

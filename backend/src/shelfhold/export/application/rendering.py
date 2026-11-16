@@ -8,8 +8,10 @@ archive must have the `content_hash` of the original, so that only the sidecar d
 """
 
 import hashlib
+import io
 import re
 import tempfile
+from collections.abc import Mapping
 from contextlib import ExitStack
 from dataclasses import dataclass
 from pathlib import Path, PurePath
@@ -21,7 +23,9 @@ from sqlalchemy import Connection
 
 from shelfhold.catalog.public import ContributorName, NameKind, effective_age, parse_partial_date
 from shelfhold.export.domain.bindings import is_family
+from shelfhold.export.domain.naming import exported_series_name
 from shelfhold.infrastructure.archives import SafeArchive, safe_open_archive
+from shelfhold.infrastructure.content_trust import check_cbz_entries
 from shelfhold.infrastructure.fsops import Fsops
 from shelfhold.infrastructure.packaging.cbz import repackage_cbz
 from shelfhold.infrastructure.packaging.comicinfo import (
@@ -37,12 +41,15 @@ from shelfhold.sdk.age import ADULT_MIN_AGE, AgeRating
 __all__ = [
     "CbzRenderer",
     "EpubRenderer",
+    "RenderMismatchError",
     "RenderedCbz",
     "RenderedEpub",
     "comicinfo_data",
     "comicinfo_sha256",
     "comicinfo_xml",
     "epub_opf_edit",
+    "first_page",
+    "render_cbz_bytes",
     "volume_opf_edit",
 ]
 
@@ -308,6 +315,31 @@ class CbzRenderer:
         )  # fmt: skip
 
 
+def render_cbz_bytes(data: bytes, comicinfo: bytes) -> bytes:
+    """The archive `data` with `comicinfo` as its last entry, the pages as they were: the payload
+    of the result is checked against the original's (`RenderMismatchError`). In memory: the host
+    already holds the archive in memory when a plan names it (`HostContentStore`)."""
+    with safe_open_archive(io.BytesIO(data), name="received.cbz") as source:
+        original = content_hash(source)
+        out = io.BytesIO()
+        repackage_cbz(source, comicinfo, out)
+    out.seek(0)
+    with safe_open_archive(out, name="rendered.cbz") as rendered:
+        if content_hash(rendered) != original:
+            raise RenderMismatchError("the rendered pages differ from the received ones")
+    return out.getvalue()
+
+
+def first_page(data: bytes) -> bytes:
+    """The first page of an archive, as it is (the cover of a series for Mihon: it reads a file
+    named `cover.*` by its content). `ValueError` when there is none."""
+    with safe_open_archive(io.BytesIO(data), name="received.cbz") as source:
+        images = check_cbz_entries(source).images
+        if not images:
+            raise ValueError("the archive has no page")
+        return bytes(source.read(images[0]))
+
+
 @dataclass
 class RenderedEpub:
     file: BinaryIO  # positioned at 0, closed by the caller
@@ -404,3 +436,25 @@ def _entry_digests(archive: SafeArchive) -> dict[str, str]:
                     digest.update(chunk)
         found[entry.name] = digest.hexdigest()
     return found
+
+
+def item_series_name(frozen: Mapping[str, Any], work_title: str) -> str:
+    """The series folder of an item: the name frozen at its first export, else the Work's title,
+    one series per numbering segment when it has one."""
+    series = str(frozen.get("series") or "") or work_title
+    return exported_series_name(series, str(frozen.get("segment") or ""))
+
+
+def series_of_item(connection: Connection, item_id: str) -> str:
+    """The series name an item is exported under (the folder, and the `Series` of its ComicInfo)."""
+    item, edition, work = export.export_item, catalog.edition, catalog.work
+    row = connection.execute(
+        sa.select(item.c.frozen_attrs, work.c.title)
+        .select_from(
+            item.join(edition, edition.c.id == item.c.edition_id).join(
+                work, work.c.id == edition.c.work_id
+            )
+        )
+        .where(item.c.id == item_id)
+    ).one()
+    return item_series_name(row.frozen_attrs or {}, row.title)

@@ -1692,6 +1692,21 @@ title = "Deux destinations en écriture se recouvrent."
 action = "Choisissez des dossiers distincts : deux indexeurs ne partagent pas encore le même arbre."
 cause = "Un dossier de l'une des destinations en écriture contient ou recouvre celui d'une autre : deux programmes y écriraient en même temps."
 
+[errors."target.root_overlaps_local_source"]
+title = "Ce dossier recouvre la source locale de Suwayomi."
+action = "Choisissez un dossier qui ne contient pas, n'est pas dans et n'est pas la source locale de Suwayomi (réglage « Local source path » du serveur), ou déplacez cette source locale ailleurs."
+cause = "Shelfhold relirait ses propres exports comme une source amont et les acquerrait en boucle."
+
+[errors."target.local_source_unknown"]
+title = "La source locale de Suwayomi n'est pas connue ou ne peut pas être vérifiée."
+action = "Laissez le suivi tourner une fois (ou attendez le prochain cycle), puis recommencez : Shelfhold doit lire la source locale de Suwayomi avant de lier un dossier natif. Si Suwayomi la place à un chemin que Shelfhold ne voit pas, rendez ce dossier visible (montage en lecture seule, ou côté « remote » du path_map)."
+cause = "Suwayomi est configuré, mais son réglage de source locale n'a pas été lu (ou n'est pas lisible), ou il désigne un chemin que Shelfhold ne peut pas situer : par prudence, rien n'est lié ni écrit d'ici là."
+
+[errors."source.local_source_on_managed_root"]
+title = "Suwayomi lit un dossier que Shelfhold gère."
+action = "Changez le réglage « Local source path » de Suwayomi pour un dossier qui n'est ni la bibliothèque, ni /store, ni une racine de destination, puis lancez « shelfhold source recheck » : le suivi reprend, et se remet en pause si le dossier est toujours mauvais."
+cause = "La source locale de Suwayomi est (ou contient, ou est dans) une racine que Shelfhold gère : le suivi est en pause, rien n'a été supprimé."
+
 [errors."target.unreachable"]
 title = "Kavita ne répond pas."
 action = "Vérifiez que le conteneur Kavita tourne, ou reconnectez-le avec « shelfhold target reconnect ». Les scans qui n'ont pas pu partir (suppression, retrait) sont gardés : le prochain export les redemande, et le dossier vide d'une série supprimée reste jusque-là."

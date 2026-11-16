@@ -62,6 +62,7 @@ TYPED_ERRORS: Final[Mapping[type[BaseException], TypedState]] = MappingProxyType
         ),
         sdk.ContentRemoved: _unit("source.content_removed"),
         host.RefHasSecret: _unit("source.ref_has_secret"),
+        host.LocalSourceOnManagedRootError: _service("source.local_source_on_managed_root"),
     }
 )
 

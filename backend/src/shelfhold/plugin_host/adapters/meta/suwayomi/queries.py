@@ -15,6 +15,8 @@ import json
 ABOUT = "query { aboutServer { name version buildType } }"
 AUTH_MODE = "query { settings { authMode } }"
 DOWNLOADS_PATH = "query { settings { downloadsPath } }"
+# M4 L07 (EF-EXP-010): the folder the server reads as its local source, for the loop guard
+LOCAL_SOURCE_PATH = "query { settings { localSourcePath } }"
 # EF-SRC-026 (b): what the server is downloading now. The requeue waits until it is empty.
 DOWNLOAD_QUEUE = "query { downloadStatus { state queue { chapter { id } } } }"
 # M4 L17 (EF-SRC-026): the read flag of a series' chapters, and the one write that pushes it. Read

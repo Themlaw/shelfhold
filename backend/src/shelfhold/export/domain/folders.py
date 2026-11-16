@@ -9,11 +9,11 @@ inode) are **linked** whatever their paths say. Pure: the caller hands over what
 """
 
 import unicodedata
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
 from enum import StrEnum
 from typing import Final
 
-__all__ = ["FOLDER_TRANSPORTS", "Relation", "fold", "folder_relation"]
+__all__ = ["FOLDER_TRANSPORTS", "Relation", "absolute_relation", "fold", "folder_relation"]
 
 # the transports that put files in a folder of the host: only they can overlap
 FOLDER_TRANSPORTS: Final = ("tree", "dropbox", "push")
@@ -50,3 +50,26 @@ def folder_relation(a: Sequence[str], b: Sequence[str], *, linked: bool = False)
     if fa == fb or _is_prefix(fa, fb) or _is_prefix(fb, fa):
         return Relation.LOOKALIKE
     return Relation.LINKED if linked else Relation.APART
+
+
+def absolute_relation(
+    a: str,
+    b: str,
+    *,
+    identity_a: tuple[int, int] | None = None,
+    ancestry_a: Iterable[tuple[int, int]] = (),
+    identity_b: tuple[int, int] | None = None,
+    ancestry_b: Iterable[tuple[int, int]] = (),
+) -> Relation:
+    """The same rule for two absolute paths that are already real (links resolved, no `..`): by
+    components, then by what the disk says. `(st_dev, st_ino)` of a folder, and of every folder
+    from the top down to it (`ancestry`, itself included), make two folders that no string relates
+    one: a bind mount, a case-insensitive twin, a folder reached through two roots."""
+    parts_a = tuple(p for p in a.split("/") if p)
+    parts_b = tuple(p for p in b.split("/") if p)
+    ancestry_a, ancestry_b = frozenset(ancestry_a), frozenset(ancestry_b)
+    linked = identity_a is not None and identity_b is not None
+    linked = linked and (
+        identity_a == identity_b or identity_a in ancestry_b or identity_b in ancestry_a
+    )
+    return folder_relation(parts_a, parts_b, linked=linked)

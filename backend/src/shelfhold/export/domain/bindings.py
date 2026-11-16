@@ -70,6 +70,20 @@ class TreeOverlapError(BindingError):
     code = "target.tree_overlap"
 
 
+class RootOverlapsLocalSourceError(BindingError):
+    """A native folder root that is, holds or sits inside the local source of Suwayomi: Shelfhold
+    would read back its own exports as an upstream (EF-EXP-010)."""
+
+    code = "target.root_overlaps_local_source"
+
+
+class LocalSourceUnknownError(BindingError):
+    """A Suwayomi is configured and no follow cycle has read its local source yet: nothing can be
+    said about the loop, so no native folder is bound until one has (fail closed)."""
+
+    code = "target.local_source_unknown"
+
+
 class ShelfAlreadyBoundError(BindingError):
     """M1a: one destination per shelf. M4 L06a (fan-out) lifts it: a shelf has as many bindings as
     folders and servers; the code stays in the catalogue for the clients that knew it."""

@@ -43,6 +43,18 @@ class TargetExchangeFailed(HeadlessError):
     code = "target.exchange_failed"
 
 
+class TargetRootOverlapsLocalSource(HeadlessError):
+    """A native folder root that holds or sits in the local source of Suwayomi (EF-EXP-010)."""
+
+    code = "target.root_overlaps_local_source"
+
+
+class TargetLocalSourceUnknown(HeadlessError):
+    """The local source of Suwayomi is unread or cannot be told apart from the root."""
+
+    code = "target.local_source_unknown"
+
+
 class TargetConflict(HeadlessError):
     code = "target.conflict"
 

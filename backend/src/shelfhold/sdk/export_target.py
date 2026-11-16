@@ -14,6 +14,8 @@ values or call descriptions (`ApiCall`, `FsOp`) that the host validates and exec
 parts (version ranges, events, progress) are fixed by the lot that implements the first destination.
 """
 
+from collections.abc import Iterable
+from fnmatch import fnmatchcase
 from typing import Any, Literal, Protocol
 from warnings import deprecated
 
@@ -93,6 +95,17 @@ class TargetCapabilities(SdkModel):
         return sorted(value)  # a stable JSON round trip
 
 
+def sidecar_forbidden(forbidden: Iterable[str], filename: str) -> bool:
+    """Is this file name one the destination forbids? Each entry is a file name or, when it holds a
+    `*` or a `?`, a pattern (`*.json`); the comparison ignores the case."""
+    name = filename.casefold()
+    for entry in forbidden:
+        rule = entry.casefold()
+        if rule == name or (("*" in rule or "?" in rule) and fnmatchcase(name, rule)):
+            return True
+    return False
+
+
 def copy_can_verify(caps: TargetCapabilities) -> bool:
     """A copy in the destination can be read back to check it (`verify` or `fetch`)."""
     return caps.readback != "none"
@@ -168,4 +181,5 @@ __all__ = [
     "copy_can_serve_bytes",
     "copy_can_verify",
     "metadata_change_route",
+    "sidecar_forbidden",
 ]

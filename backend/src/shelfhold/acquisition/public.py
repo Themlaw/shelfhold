@@ -66,6 +66,7 @@ from shelfhold.acquisition.application.read_state_push import (
     RemoteUnavailable,
     push_read_state,
 )
+from shelfhold.acquisition.application.root_guard import FolderFacts, RootGuard, folder_facts
 from shelfhold.acquisition.application.staleness import StaleSeries, stale_series
 from shelfhold.acquisition.application.tickets import (
     CycleAbandoned,
@@ -131,6 +132,7 @@ __all__ = [
     "Disposition",
     "DownloadTickets",
     "FailureLedger",
+    "FolderFacts",
     "FollowConfirmationRequired",
     "FollowCycle",
     "FollowIntent",
@@ -157,6 +159,7 @@ __all__ = [
     "RemoteRefused",
     "RemoteUnavailable",
     "RequestBudget",
+    "RootGuard",
     "SeriesBinding",
     "SeriesPausedError",
     "ServiceLink",
@@ -183,6 +186,7 @@ __all__ = [
     "disposition_of",
     "epub_only",
     "fold",
+    "folder_facts",
     "follow_dedupe_key",
     "follow_job",
     "held_numbers",

@@ -26,7 +26,7 @@ from pydantic import ValidationError
 
 from shelfhold.sdk.api_call import ApiCall, ApiCallError, check_api_call, parse_api_call
 from shelfhold.sdk.events import PluginEventError, check_plugin_event, plugin_event_type
-from shelfhold.sdk.export_target import TargetCapabilities
+from shelfhold.sdk.export_target import TargetCapabilities, sidecar_forbidden
 from shelfhold.sdk.fsops import (
     FsOp,
     FsOpPlan,
@@ -114,8 +114,8 @@ def _check_declarations(report: ConformanceReport, caps: Any) -> None:
             detail = "the capabilities do not survive a JSON round trip"
         report.add("capabilities_roundtrip_json", same, detail)
     declared = getattr(caps, "sidecars", None) or set()
-    forbidden = {s.casefold() for s in getattr(caps, "forbidden_sidecars", None) or ()}
-    clash = sorted(s for s in declared if s.casefold() in forbidden)
+    forbidden = getattr(caps, "forbidden_sidecars", None) or ()
+    clash = sorted(s for s in declared if sidecar_forbidden(forbidden, s))
     report.add(
         "no_forbidden_sidecar",
         not clash,
@@ -173,11 +173,11 @@ def _written_names(ops: tuple[FsOp, ...]) -> list[tuple[int, str]]:
 def _check_plan(report: ConformanceReport, caps: Any, raw: object, planned: PlannedContent) -> None:
     plan, ops = _plan_ops(report, raw)
     if ops is not None:
-        forbidden = {s.casefold(): s for s in getattr(caps, "forbidden_sidecars", None) or ()}
+        forbidden = getattr(caps, "forbidden_sidecars", None) or ()
         hits = [
             f"operation #{i} writes forbidden sidecar {name!r}"
             for i, name in _written_names(ops)
-            if name.casefold() in forbidden
+            if sidecar_forbidden(forbidden, name)
         ]
         report.add("no_forbidden_sidecar", not hits, "; ".join(hits))
     if plan is None:

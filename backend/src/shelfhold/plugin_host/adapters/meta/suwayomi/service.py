@@ -19,6 +19,7 @@ from typing import Any, ClassVar, Literal
 
 from shelfhold.catalog.lang import LanguageError, normalize_lang
 from shelfhold.infrastructure.clock import DEFAULT_SKEW
+from shelfhold.integrations.suwayomi.settings import read_local_source
 from shelfhold.plugin_host.adapters.meta.suwayomi import queries as q
 from shelfhold.plugin_host.adapters.meta.suwayomi.versions import is_supported
 from shelfhold.plugin_host.errors import (
@@ -262,6 +263,16 @@ class SuwayomiService:
         settings = data.get("settings")
         path = settings.get("downloadsPath") if isinstance(settings, dict) else None
         return path if isinstance(path, str) else None  # "" is the default: not set
+
+    async def local_source_path(self, f: Fetcher) -> str | None:
+        """The folder the server reads as its local source, as it reports it (EF-EXP-010); the empty
+        string when it says it has none of its own; None when it cannot be read (an older schema,
+        a relative path, a control character): unknown, never "no local source"."""
+        try:
+            data = await self._query(f, q.LOCAL_SOURCE_PATH)
+        except SourceChanged:
+            return None  # the schema has no such field: unreadable
+        return read_local_source(data.get("settings"))
 
     async def _ensure_supported_mode(self, f: Fetcher) -> None:
         if self._mode_verified:

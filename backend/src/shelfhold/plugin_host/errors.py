@@ -73,11 +73,28 @@ class ServiceInstanceChanged(SourceError):
         super().__init__(message)
 
 
+class LocalSourceOnManagedRootError(SourceError):
+    """The local source of the tool is a folder Shelfhold manages (a destination root, `/store`,
+    the library): it would read its own exports back as an upstream (EF-EXP-010). The follow
+    pauses, nothing is deactivated, deleted or asked; the admin changes the setting of the tool and
+    resumes."""
+
+    code = "source.local_source_on_managed_root"
+
+    def __init__(
+        self, message: str = "the local source of the connected service is a managed root"
+    ) -> None:
+        super().__init__(message)
+
+
 class UnsupportedAuthFlow(ValueError):
     """An AuthFlow reserved for a later milestone (V1 injects Basic and ApiKey only)."""
 
 
 UNTRUSTED_CLASS = "untrusted"  # not a `source_failure` value: it is never counted
+
+
+LOOP_CLASS = "local_source_loop"  # the tool reads a folder Shelfhold writes (EF-EXP-010)
 
 
 def failure_class_of(error: BaseException) -> str:
@@ -90,6 +107,8 @@ def failure_class_of(error: BaseException) -> str:
         return "version"
     if isinstance(error, ServiceInstanceChanged):
         return "instance"
+    if isinstance(error, LocalSourceOnManagedRootError):
+        return LOOP_CLASS
     if isinstance(error, AuthRequired | AuthModeUnsupported):
         return "auth"
     if isinstance(error, SourceChanged):

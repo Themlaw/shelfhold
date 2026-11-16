@@ -61,6 +61,7 @@ from shelfhold.acquisition.application.planning import (
 from shelfhold.acquisition.application.preference import TeamPreference, record_release
 from shelfhold.acquisition.application.presence import present_for_acquisition
 from shelfhold.acquisition.application.ranges import Keeper, RangeTickets, RangeUnit
+from shelfhold.acquisition.application.root_guard import RootGuard
 from shelfhold.acquisition.application.staleness import stale_series
 from shelfhold.acquisition.application.tickets import (
     MAX_ATTEMPTS,
@@ -280,7 +281,9 @@ class FollowCycle:
         fallback_return: bool = True,
         upgrader: Upgrader | None = None,
         repairer: Repairer | None = None,
+        root_guard: RootGuard | None = None,
     ) -> None:
+        self._root_guard = root_guard  # EF-EXP-010: the loop guard, looked at again every cycle
         self._min_page_ratio = min_page_ratio
         self._engine = engine
         self._bus = bus
@@ -436,6 +439,28 @@ class FollowCycle:
             if check_instance(connection, self._plugin_id, current, self._clock.now()):
                 raise ServiceInstanceChanged()
 
+    async def _check_local_source(self) -> None:
+        """EF-EXP-010: the folder the tool reads as its local source is read again at every cycle,
+        before anything is read from it. On a folder Shelfhold manages the follow pauses (a typed
+        code, `LocalSourceOnManagedRootError`): its own exports would come back as an upstream. The
+        pause is a pause like the others: no request while it lasts, and it ends with the admin's
+        `source recheck`; the next cycle reads the folder again and pauses again if it is still
+        wrong. An answer that cannot be read is recorded as unknown, never as "no local source":
+        it lifts nothing and frees no binding. Nothing is deactivated, deleted or asked."""
+        guard = self._root_guard
+        read = getattr(self._service, "local_source_path", None)
+        if guard is None or read is None:
+            return
+        path = await from_service(read(self._fetcher))
+        with write_transaction(self._engine) as connection:
+            if path is None:
+                guard.record_unreadable(connection, self._plugin_id)
+            else:
+                guard.record(connection, self._plugin_id, path or None)
+        if path:
+            with self._engine.connect() as connection:
+                guard.check_local_source(connection, path)
+
     async def _cycle(self, report: FollowReport) -> None:
         self._log_skipped_capabilities()
         if ConnectedCapability.HEALTH_PROBE in self._service.connected:
@@ -444,6 +469,7 @@ class FollowCycle:
                 raise _probe_error(health.detail)
         if ConnectedCapability.INSTANCE_FINGERPRINT in self._service.connected:
             await self._check_instance()
+        await self._check_local_source()
         library = await from_service(self._service.followed_series(self._fetcher))
         log.debug("follow.library_listed", series=len(library), service=self._plugin_id)
         unloaded = await self._probe_sources(library, report)
@@ -1380,6 +1406,8 @@ class FollowCycle:
                 payload: dict[str, object] = {"code": pause.event_type}
                 if pause.waiting_state:
                     payload["state"] = pause.waiting_state
+                if pause.reason:
+                    payload["reason"] = pause.reason
                 self._emit(connection, pause.event_type, payload)
         report.paused = pause.label
 

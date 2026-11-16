@@ -12,7 +12,7 @@ profiles are reserved actions: the caller has passed `authorize_reserved`; the a
 """
 
 import os
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from contextlib import AbstractContextManager
 from dataclasses import dataclass
 from datetime import datetime
@@ -20,6 +20,7 @@ from typing import Protocol
 
 import sqlalchemy as sa
 from sqlalchemy import Connection, Engine
+from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
 from shelfhold.catalog.public import Admission, RatingService, file_new_edition
 from shelfhold.export.application import fan_out
@@ -77,6 +78,8 @@ class Actor(Protocol):
     def auth_time(self) -> datetime | None: ...
 
 
+NATIVE_FOLDER = "native_folder"  # the kind of target of EF-EXP-010
+LOCAL_LIBRARY = "local"  # the one remote library of a folder destination: no server, a folder
 TAKEN = "remote_library_taken"  # the reason `FileResult` gives for the one-per-library rule
 
 
@@ -96,8 +99,16 @@ class FileResult:
 
 class ShelfService:
     def __init__(
-        self, engine: Engine, *, clock: Clock | None = None, rating: RatingService | None = None
+        self,
+        engine: Engine,
+        *,
+        clock: Clock | None = None,
+        rating: RatingService | None = None,
+        root_check: Callable[[Connection, str], None] | None = None,
     ) -> None:
+        # EF-EXP-010: the guard that a native folder root never meets the local source of Suwayomi
+        # (`acquisition` owns it; the composition root hands it over, export never imports it)
+        self._root_check = root_check
         self._engine = engine
         self._clock = clock or SystemClock()
         self._rating = rating or RatingService()
@@ -589,6 +600,8 @@ class ShelfService:
             if attach_to_tree is not None:
                 others = self._without_tree(connection, others, attach_to_tree, shelf_id, real)
             check_binding(new, others, retention_mode=shelf.retention_mode)
+            if row.kind == NATIVE_FOLDER and real is not None and self._root_check is not None:
+                self._root_check(connection, real)
             try:
                 with connection.begin_nested():
                     connection.execute(
@@ -603,6 +616,8 @@ class ShelfService:
                 if attach_to_tree is None:
                     raise
                 raise TreeOverlapError("this server already indexes this folder") from None
+            if row.kind == NATIVE_FOLDER:
+                self._register_local_library(connection, destination_id, target_id)
             if transport == "tree":
                 if attach_to_tree is None:
                     fan_out.ensure_tree(
@@ -616,6 +631,32 @@ class ShelfService:
                     )  # fmt: skip
             self._audit(connection, actor, "shelf.bind", f"{shelf_id}|{destination_id}")
         return destination_id
+
+    @staticmethod
+    def _register_local_library(
+        connection: Connection, destination_id: str, target_id: str
+    ) -> None:
+        """A folder destination has one remote library, its own and local (M1a: an exported series
+        needs a `remote_library`; nothing is created on any server): the same row for every
+        binding of the target, linked to this binding."""
+        library = export.remote_library
+        connection.execute(
+            sqlite_insert(library)
+            .values(id=new_ulid(), export_target_id=target_id, remote_ref=LOCAL_LIBRARY)
+            .on_conflict_do_nothing(index_elements=["export_target_id", "remote_ref"])
+        )
+        library_id = connection.execute(
+            sa.select(library.c.id).where(
+                library.c.export_target_id == target_id, library.c.remote_ref == LOCAL_LIBRARY
+            )
+        ).scalar_one()
+        connection.execute(
+            sa.insert(export.shelf_destination_remote_library).values(
+                shelf_destination_id=destination_id,
+                remote_library_id=library_id,
+                export_target_id=target_id,
+            )
+        )
 
     @staticmethod
     def _without_tree(
@@ -698,6 +739,14 @@ class ShelfService:
         )
         writable = path_map.writable()
         with self._engine.connect() as connection:
+            kind = connection.execute(
+                sa.select(export.export_target.c.kind).where(export.export_target.c.id == target_id)
+            ).scalar()
+            if kind == NATIVE_FOLDER and self._root_check is not None:
+                for (
+                    entry
+                ) in writable:  # a root moved onto the local source of Suwayomi (EF-EXP-010)
+                    self._root_check(connection, entry.local)
             rows = connection.execute(
                 sa.select(
                     export.shelf_destination.c.id,
