@@ -322,12 +322,12 @@
   "admin console/light /": {
     "tokens": {
       "bg": "#fafafa",
-      "surface": "#ffffff",
+      "surface": "#fff",
       "ink": "#111827",
       "muted": "#5f6672",
       "rule": "#e5e7eb",
       "accent": "#2563eb",
-      "on-accent": "#ffffff",
+      "on-accent": "#fff",
       "ok": "#15803d",
       "warn": "#b45309",
       "err": "#dc2626"
@@ -372,12 +372,12 @@
   "admin console/light /chercher": {
     "tokens": {
       "bg": "#fafafa",
-      "surface": "#ffffff",
+      "surface": "#fff",
       "ink": "#111827",
       "muted": "#5f6672",
       "rule": "#e5e7eb",
       "accent": "#2563eb",
-      "on-accent": "#ffffff",
+      "on-accent": "#fff",
       "ok": "#15803d",
       "warn": "#b45309",
       "err": "#dc2626"
@@ -412,12 +412,12 @@
   "admin console/light /bibliotheque": {
     "tokens": {
       "bg": "#fafafa",
-      "surface": "#ffffff",
+      "surface": "#fff",
       "ink": "#111827",
       "muted": "#5f6672",
       "rule": "#e5e7eb",
       "accent": "#2563eb",
-      "on-accent": "#ffffff",
+      "on-accent": "#fff",
       "ok": "#15803d",
       "warn": "#b45309",
       "err": "#dc2626"
@@ -454,12 +454,12 @@
   "admin console/light /serie/{edition}": {
     "tokens": {
       "bg": "#fafafa",
-      "surface": "#ffffff",
+      "surface": "#fff",
       "ink": "#111827",
       "muted": "#5f6672",
       "rule": "#e5e7eb",
       "accent": "#2563eb",
-      "on-accent": "#ffffff",
+      "on-accent": "#fff",
       "ok": "#15803d",
       "warn": "#b45309",
       "err": "#dc2626"
@@ -504,12 +504,12 @@
   "admin console/light /assistant/kavita": {
     "tokens": {
       "bg": "#fafafa",
-      "surface": "#ffffff",
+      "surface": "#fff",
       "ink": "#111827",
       "muted": "#5f6672",
       "rule": "#e5e7eb",
       "accent": "#2563eb",
-      "on-accent": "#ffffff",
+      "on-accent": "#fff",
       "ok": "#15803d",
       "warn": "#b45309",
       "err": "#dc2626"
@@ -546,12 +546,12 @@
   "admin console/light /sante": {
     "tokens": {
       "bg": "#fafafa",
-      "surface": "#ffffff",
+      "surface": "#fff",
       "ink": "#111827",
       "muted": "#5f6672",
       "rule": "#e5e7eb",
       "accent": "#2563eb",
-      "on-accent": "#ffffff",
+      "on-accent": "#fff",
       "ok": "#15803d",
       "warn": "#b45309",
       "err": "#dc2626"
@@ -602,12 +602,12 @@
   "admin console/light /reglages/apparence": {
     "tokens": {
       "bg": "#fafafa",
-      "surface": "#ffffff",
+      "surface": "#fff",
       "ink": "#111827",
       "muted": "#5f6672",
       "rule": "#e5e7eb",
       "accent": "#2563eb",
-      "on-accent": "#ffffff",
+      "on-accent": "#fff",
       "ok": "#15803d",
       "warn": "#b45309",
       "err": "#dc2626"
@@ -776,12 +776,12 @@
   "kid8 console/light /": {
     "tokens": {
       "bg": "#fafafa",
-      "surface": "#ffffff",
+      "surface": "#fff",
       "ink": "#111827",
       "muted": "#5f6672",
       "rule": "#e5e7eb",
       "accent": "#2563eb",
-      "on-accent": "#ffffff",
+      "on-accent": "#fff",
       "ok": "#15803d",
       "warn": "#b45309",
       "err": "#dc2626"
@@ -828,12 +828,12 @@
   "kid8 console/light /chercher": {
     "tokens": {
       "bg": "#fafafa",
-      "surface": "#ffffff",
+      "surface": "#fff",
       "ink": "#111827",
       "muted": "#5f6672",
       "rule": "#e5e7eb",
       "accent": "#2563eb",
-      "on-accent": "#ffffff",
+      "on-accent": "#fff",
       "ok": "#15803d",
       "warn": "#b45309",
       "err": "#dc2626"
@@ -868,12 +868,12 @@
   "kid8 console/light /mes-demandes": {
     "tokens": {
       "bg": "#fafafa",
-      "surface": "#ffffff",
+      "surface": "#fff",
       "ink": "#111827",
       "muted": "#5f6672",
       "rule": "#e5e7eb",
       "accent": "#2563eb",
-      "on-accent": "#ffffff",
+      "on-accent": "#fff",
       "ok": "#15803d",
       "warn": "#b45309",
       "err": "#dc2626"

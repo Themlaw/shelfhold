@@ -52,7 +52,7 @@ class PreferencesIn(BaseModel):
     @classmethod
     def _delivered(cls, value: str | None) -> str | None:
         if value is not None and value not in DELIVERED_THEMES:
-            raise ValueError("this theme is not delivered")
+            raise ValueError(value)  # the name the screen cannot style
         return value
 
 
