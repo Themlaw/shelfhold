@@ -21,11 +21,20 @@ jobs:
       contents: read
       pull-requests: read
     outputs:
-      backend: ${{ steps.filter.outputs.backend }}
-      frontend: ${{ steps.filter.outputs.frontend }}
-      openapi: ${{ steps.filter.outputs.openapi }}
-      e2e: ${{ steps.filter.outputs.e2e }}
-      image: ${{ steps.filter.outputs.image }}
+      # Scope of the run (step `scope`): on a pull request, what the changed files can affect; on
+      # a push to main, everything ("true"). See CONTRIBUTING.md, "Quelle CI pour quels fichiers".
+      backend: ${{ steps.scope.outputs.backend }}
+      unit: ${{ steps.scope.outputs.unit }}
+      integration: ${{ steps.scope.outputs.integration }}
+      suites: ${{ steps.scope.outputs.suites }}
+      backend_suites: ${{ steps.scope.outputs.backend_suites }}
+      bench: ${{ steps.scope.outputs.bench }}
+      fixtures: ${{ steps.scope.outputs.fixtures }}
+      frontend: ${{ steps.scope.outputs.frontend }}
+      openapi: ${{ steps.scope.outputs.openapi }}
+      e2e: ${{ steps.scope.outputs.e2e }}
+      image: ${{ steps.scope.outputs.image }}
+      image_build: ${{ steps.scope.outputs.image_build }}
       backend_shards: ${{ steps.shards.outputs.backend }}
       backend_shard_total: ${{ steps.shards.outputs.backend_total }}
       backend_integration_shards: ${{ steps.shards.outputs.backend_integration }}
@@ -54,36 +63,102 @@ jobs:
       - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
         id: filter
         with:
+          # a file matches when it matches one pattern and no negated (`!`) pattern
+          predicate-quantifier: some-with-excludes
           filters: |
-            backend:
+            core:
               - 'backend/**'
+              - '!backend/tests/unit/**'
+              - '!backend/tests/integration/**'
+              - '!backend/tests/golden/**'
+              - '!backend/tests/faults/**'
+              - '!backend/tests/property/**'
+              - '!backend/tests/bench/**'
+              - '!backend/**/*.md'
               - 'docker/**'
-              - 'compose*.yaml'
+              - 'frontend/**'
+              - 'open-api/**'
               - '.github/workflows/ci.yml'
+            unit_tests:
+              - 'backend/tests/unit/**'
+            integration_tests:
+              - 'backend/tests/integration/**'
+            golden_tests:
+              - 'backend/tests/golden/**'
+            faults_tests:
+              - 'backend/tests/faults/**'
+            property_tests:
+              - 'backend/tests/property/**'
+            bench_tests:
+              - 'backend/tests/bench/**'
+            workflows:
+              - '.github/workflows/**'
+            compose:
+              - 'compose*.yaml'
+              - '.env.example'
+              - '.dockerignore'
             frontend:
               - 'frontend/**'
               - 'open-api/**'
               - '.github/workflows/ci.yml'
             openapi:
               - 'backend/**'
+              - '!backend/tests/**'
+              - '!backend/**/*.md'
               - 'frontend/**'
               - 'open-api/**'
               - '.github/workflows/ci.yml'
             e2e:
               - 'backend/**'
+              - '!backend/tests/**'
+              - '!backend/**/*.md'
               - 'frontend/**'
               - 'open-api/**'
               - 'e2e/**'
               - '.github/workflows/ci.yml'
             image:
-              - 'backend/**'
+              - 'backend/pyproject.toml'
+              - 'backend/uv.lock'
+              - 'backend/src/**'
               - 'frontend/**'
               - 'docker/**'
               - 'open-api/**'
-              - '.dockerignore'
               - 'e2e/**'
-              - 'compose*'
               - '.github/workflows/image*'
+              - '.github/workflows/ci.yml'
+      - id: scope
+        env:
+          EVENT: ${{ github.event_name }}
+          FILTERS: ${{ toJSON(steps.filter.outputs) }}
+        run: |
+          # `any a b ...`: true on a push to main (everything runs), otherwise when one filter matched.
+          # The filter names are fixed above; the values are "true"/"false" only.
+          flag() { jq -r --arg k "$1" '.[$k] // "false"' <<<"$FILTERS"; }
+          any() {
+            [ "$EVENT" != pull_request ] && { echo true; return; }
+            for k in "$@"; do [ "$(flag "$k")" = true ] && { echo true; return; }; done
+            echo false
+          }
+          suites=()
+          for s in property golden faults; do
+            [ "$(any core "${s}_tests")" = true ] && suites+=("\"$s\"")
+          done
+          list=$(IFS=,; echo "[${suites[*]}]")
+          {
+            echo "backend=$(any core)"
+            echo "unit=$(any core unit_tests compose workflows)"
+            echo "integration=$(any core integration_tests)"
+            echo "bench=$(any core bench_tests)"
+            echo "fixtures=$(any core unit_tests)"
+            echo "backend_suites=${list}"
+            echo "suites=$([ ${#suites[@]} -gt 0 ] && echo true || echo false)"
+            echo "frontend=$(any frontend)"
+            echo "openapi=$(any openapi)"
+            echo "e2e=$(any e2e)"
+            echo "image=$(any image)"
+            echo "image_build=$(any image compose)"
+          } >> "$GITHUB_OUTPUT"
+          cat "$GITHUB_OUTPUT"
 
   lint:
     runs-on: ubuntu-24.04
@@ -229,7 +304,7 @@ jobs:
     # Unit tests, split over a matrix of shards (hash of the node id, see tests/conftest.py).
     name: backend-unit (${{ matrix.shard }}/${{ needs.changes.outputs.backend_shard_total }})
     needs: changes
-    if: needs.changes.outputs.backend == 'true'
+    if: needs.changes.outputs.unit == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     strategy:
@@ -264,7 +339,7 @@ jobs:
     # Integration tests, sharded like backend-unit (the unsharded job hit its 15 min timeout).
     name: backend-integration (${{ matrix.shard }}/${{ needs.changes.outputs.backend_integration_shard_total }})
     needs: changes
-    if: needs.changes.outputs.backend == 'true'
+    if: needs.changes.outputs.integration == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     strategy:
@@ -300,13 +375,13 @@ jobs:
     # becomes the bottleneck. A suite that outgrows 10 minutes gets `--shard`, like backend-unit.
     name: backend-${{ matrix.suite }}
     needs: changes
-    if: needs.changes.outputs.backend == 'true'
+    if: needs.changes.outputs.suites == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
-        suite: [property, golden, faults]
+        suite: ${{ fromJSON(needs.changes.outputs.backend_suites) }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -335,7 +410,7 @@ jobs:
     # runner and without xdist or coverage, so the median of its runs measures the code, not the
     # neighbours. Synthetic data, no network.
     needs: changes
-    if: needs.changes.outputs.backend == 'true'
+    if: needs.changes.outputs.bench == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
@@ -356,7 +431,9 @@ jobs:
   # The contract bench (real Suwayomi, needs Docker) is not a required check: see contract.yml.
 
   coverage:
-    # Combines the coverage data of every backend shard, then applies the thresholds.
+    # Combines the coverage data of every backend shard, then applies the thresholds. Only when
+    # production code (or a shared test helper) changed: that is when every suite runs, and a partial
+    # combination would fail the global threshold. A pull request of tests alone does not need it.
     needs: [changes, backend-unit, backend-integration, backend-suites]
     if: needs.changes.outputs.backend == 'true'
     runs-on: ubuntu-24.04
@@ -394,6 +471,8 @@ jobs:
         run: uv run --locked diff-cover coverage.xml --compare-branch="origin/${BASE_REF}" --fail-under=85
 
   fixtures:
+    needs: changes
+    if: needs.changes.outputs.fixtures == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
@@ -608,11 +687,14 @@ jobs:
   # On a pull request the image (amd64 only) is built only when something it contains changed.
   image-pr:
     needs: changes
-    if: github.event_name == 'pull_request' && needs.changes.outputs.image == 'true'
+    if: github.event_name == 'pull_request' && needs.changes.outputs.image_build == 'true'
     permissions:
       contents: read
       packages: read
     uses: ./.github/workflows/image.yml  # zizmor: ignore[self-repository]
+    with:
+      # compose files, .env.example and .dockerignore: the image is built and only the install smoke runs
+      only-smoke: ${{ needs.changes.outputs.image != 'true' }}
 
   image-main:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
@@ -737,7 +819,13 @@ jobs:
           DCO: ${{ needs.dco.result }}
           TITLE: ${{ needs.conventional-title.result }}
           TRACEABILITY: ${{ needs.traceability.result }}
-          IMAGE_CHANGED: ${{ needs.changes.outputs.image }}
+          IMAGE_CHANGED: ${{ needs.changes.outputs.image_build }}
+          UNIT_CHANGED: ${{ needs.changes.outputs.unit }}
+          INTEGRATION_CHANGED: ${{ needs.changes.outputs.integration }}
+          SUITES_CHANGED: ${{ needs.changes.outputs.suites }}
+          BENCH_CHANGED: ${{ needs.changes.outputs.bench }}
+          FIXTURES_CHANGED: ${{ needs.changes.outputs.fixtures }}
+          BACKEND_SUITES: ${{ needs.backend-suites.result }}
           BACKEND_UNIT: ${{ needs.backend-unit.result }}
           BACKEND_INTEGRATION: ${{ needs.backend-integration.result }}
           BACKEND_BENCH: ${{ needs.backend-bench.result }}
@@ -759,11 +847,11 @@ jobs:
           CLIENT_DRIFT: ${{ needs.client-drift.result }}
         run: |
           echo "dco=${DCO} conventional-title=${TITLE} traceability=${TRACEABILITY} (image changed=${IMAGE_CHANGED})"
-          echo "changes=${CHANGES} lint=${LINT} denylist=${DENYLIST} fixtures=${FIXTURES} image-pr=${IMAGE_PR} image-main=${IMAGE_MAIN} image-publish=${IMAGE_PUBLISH} scan=${SCAN} (informational)"
-          echo "backend-unit=${BACKEND_UNIT} backend-integration=${BACKEND_INTEGRATION} backend-bench=${BACKEND_BENCH} coverage=${COVERAGE} (changed=${BACKEND_CHANGED}) frontend=${FRONTEND} (changed=${FRONTEND_CHANGED})"
+          echo "changes=${CHANGES} lint=${LINT} denylist=${DENYLIST} fixtures=${FIXTURES} (changed=${FIXTURES_CHANGED}) image-pr=${IMAGE_PR} image-main=${IMAGE_MAIN} image-publish=${IMAGE_PUBLISH} scan=${SCAN} (informational)"
+          echo "backend-unit=${BACKEND_UNIT} (changed=${UNIT_CHANGED}) backend-integration=${BACKEND_INTEGRATION} (changed=${INTEGRATION_CHANGED}) backend-suites=${BACKEND_SUITES} (changed=${SUITES_CHANGED}) backend-bench=${BACKEND_BENCH} (changed=${BENCH_CHANGED}) coverage=${COVERAGE} (changed=${BACKEND_CHANGED}) frontend=${FRONTEND} (changed=${FRONTEND_CHANGED})"
           echo "openapi=${OPENAPI} (changed=${OPENAPI_CHANGED}) e2e-front=${E2E} (changed=${E2E_CHANGED})"
           ok=1
-          for r in "$CHANGES" "$LINT" "$DENYLIST" "$FIXTURES" "$TRACEABILITY"; do
+          for r in "$CHANGES" "$LINT" "$DENYLIST" "$TRACEABILITY"; do
             [ "$r" = "success" ] || ok=0
           done
           # A filtered job may be skipped only when its paths filter is false.
@@ -774,9 +862,11 @@ jobs:
               [ "$1" = "success" ] || ok=0
             fi
           }
-          check_filtered "$BACKEND_UNIT" "$BACKEND_CHANGED"
-          check_filtered "$BACKEND_INTEGRATION" "$BACKEND_CHANGED"
-          check_filtered "$BACKEND_BENCH" "$BACKEND_CHANGED"
+          check_filtered "$BACKEND_UNIT" "$UNIT_CHANGED"
+          check_filtered "$BACKEND_INTEGRATION" "$INTEGRATION_CHANGED"
+          check_filtered "$BACKEND_SUITES" "$SUITES_CHANGED"
+          check_filtered "$BACKEND_BENCH" "$BENCH_CHANGED"
+          check_filtered "$FIXTURES" "$FIXTURES_CHANGED"
           check_filtered "$COVERAGE" "$BACKEND_CHANGED"
           check_filtered "$FRONTEND" "$FRONTEND_CHANGED"
           check_filtered "$OPENAPI" "$OPENAPI_CHANGED"
