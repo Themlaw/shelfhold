@@ -35,6 +35,7 @@ ACQUISITION_TABLES = {
     "source_account", "upstream_snapshot", "plugin_install", "plugin_state", "revision_pending",
     "follow_request", "plugin_attestation", "series_gap", "binding_release_sample",
     "source_secret",
+    "provider_secret",  # migration 0087 (M4 L21a)
     "pending_source_item", "source_alias_migration",  # migration 0046 (M3 L01)
 }  # fmt: skip
 

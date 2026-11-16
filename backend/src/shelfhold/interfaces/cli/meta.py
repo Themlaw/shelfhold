@@ -38,9 +38,12 @@ def register(commands: argparse._SubParsersAction[argparse.ArgumentParser]) -> N
     keys = actions.add_parser("provider-key", help=t("cli.meta_provider_key_help"),
                               allow_abbrev=False)  # fmt: skip
     verbs = keys.add_subparsers(dest="key_command", required=True)
+    helps = {
+        "set": t("cli.meta_provider_key_set_help"),
+        "clear": t("cli.meta_provider_key_clear_help"),
+    }
     for verb in ("set", "clear"):
-        one = verbs.add_parser(verb, help=t(f"cli.meta_provider_key_{verb}_help"),
-                               allow_abbrev=False)  # fmt: skip
+        one = verbs.add_parser(verb, help=helps[verb], allow_abbrev=False)
         one.add_argument("provider", choices=KEYED_PROVIDERS)
         if verb == "set":
             # never a value on the command line (shell history, `ps`): present only to refuse it
@@ -201,22 +204,21 @@ def run_key_set(args: argparse.Namespace, channel: OpsChannel) -> int:
     key = sys.stdin.readline(MAX_KEY_LINE + 1).strip()
     if len(key) > MAX_KEY_LINE:
         return fail(t("meta.provider_key_invalid"))
-    if args.provider == "hardcover":
-        key = key.removeprefix("Bearer ").strip()  # the site shows the token with its scheme
     channel.call("ops.meta_provider_key_set", provider=args.provider, key=key)
-    print(f"{args.provider}: set")  # the key is never repeated
+    print(t("meta.provider_key_state", provider=args.provider, state="set"))  # never the key
     return 0
 
 
 @ops_command
 def run_key_clear(args: argparse.Namespace, channel: OpsChannel) -> int:
     done = channel.call("ops.meta_provider_key_clear", provider=args.provider)
-    print(f"{args.provider}: {'cleared' if done['cleared'] else 'unset'}")
+    print(t("meta.provider_key_state", provider=args.provider,
+            state="cleared" if done["cleared"] else "unset"))  # fmt: skip
     return 0
 
 
 @ops_command
 def run_key_status(args: argparse.Namespace, channel: OpsChannel) -> int:
     for name, present in channel.call("ops.meta_provider_key_status").items():
-        print(f"{name}: {'set' if present else 'unset'}")  # presence only, never the key
+        print(t("meta.provider_key_state", provider=name, state="set" if present else "unset"))
     return 0

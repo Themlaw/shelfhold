@@ -47,6 +47,7 @@ M4_TABLES = {
     "bundle_version",
     "bundle_member",  # migration 0077 (M4 L49a)
     "external_link",  # migration 0079 (M4 L23)
+    "provider_secret",  # migration 0087 (M4 L21a)
     "bundle_setting",  # migration 0082 (M4 L49b)
     "request_proposal",  # migration 0087 (M4 L30)
 }  # migration 0064 (M4 L02); the others sit in their modules

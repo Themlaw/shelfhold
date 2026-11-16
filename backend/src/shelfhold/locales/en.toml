@@ -896,6 +896,7 @@
   enrich_suspended = "{provider} is suspended until {until} (UTC): its day's quota is spent."
   enrich_fallback = "{asked} cannot answer today ({reason}): {provider} answered instead."
   provider_key_not_on_argv = "A key is never given on the command line: send it on standard input."
+  provider_key_state = "{provider}: {state}"
   provider_key_invalid = "That is not a key: one printable word, no space, on a single line."
   enrich_quota = "The limit of {provider} has been reached: nothing is requested until tomorrow."
   locked = "Edition {edition}: field {field} ({lang}, on {on}) is locked, the value entered is yours."

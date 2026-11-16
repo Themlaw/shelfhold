@@ -46,7 +46,7 @@ from shelfhold.infrastructure.clock import Clock
 from shelfhold.infrastructure.cover_store import CoverStore
 from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.fetcher.client import is_identifiable
-from shelfhold.infrastructure.fetcher.day_window import next_midnight
+from shelfhold.infrastructure.fetcher.day_window import midnight_after
 from shelfhold.infrastructure.fetcher.errors import (
     DnsBlocked,
     DnsResolutionError,
@@ -441,11 +441,8 @@ class EnrichService:
         """Nothing is asked of this provider until its day is over (ENF-LEG-005): the midnight of
         the zone its quota is counted in (Google's: the Pacific), for every worker and process."""
         zone = manifest.quota.day_timezone
-        until = (
-            next_midnight(self._clock.now().timestamp(), zone)
-            if zone
-            else _utc_midnight(self._clock.now())
-        )
+        now = self._clock.now()
+        until = midnight_after(now, zone).timestamp() if zone else _utc_midnight(now)
         SqlBucketStore(self._engine).suspend(manifest.key, until)
 
     def _down(self, edition_id: str, reason: str) -> EnrichReport:

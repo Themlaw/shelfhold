@@ -885,6 +885,7 @@ enrich_robots_disallowed = "Le robots.txt de {provider} refuse cette lecture : r
 enrich_suspended = "{provider} est suspendu jusqu'à {until} (UTC) : son quota du jour est épuisé."
 enrich_fallback = "{asked} ne peut pas répondre aujourd'hui ({reason}) : {provider} a répondu à sa place."
 provider_key_not_on_argv = "Une clé ne se donne jamais sur la ligne de commande : envoie-la sur l'entrée standard."
+provider_key_state = "{provider}: {state}"
 provider_key_invalid = "Ce n'est pas une clé : un seul mot imprimable, sans espace, sur une seule ligne."
 enrich_quota = "Le plafond de {provider} est atteint : rien n'est demandé avant demain."
 locked = "Édition {edition} : le champ {field} ({lang}, sur {on}) est verrouillé, la valeur saisie est la vôtre."

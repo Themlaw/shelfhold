@@ -12,6 +12,7 @@ journal. `check` writes nothing.
 from __future__ import annotations
 
 import asyncio
+import re
 import time
 from collections.abc import Callable
 from datetime import UTC, datetime
@@ -233,6 +234,8 @@ class MetaOps:
         """Seal `key` for `provider` (the operator's, local, from its standard input)."""
         if provider not in KEYED_PROVIDERS:
             raise UnknownSubjectError(f"no key is kept for {provider}")
+        if provider == "hardcover":
+            key = re.sub(r"^bearer\s+", "", key, flags=re.IGNORECASE)  # the site shows the scheme
         try:
             sealed = ProviderKey(key)
         except ValueError as error:
