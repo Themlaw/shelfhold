@@ -730,7 +730,7 @@
   "bindings.partitioning.library": "Cloisonne par bibliothèque",
   "bindings.partitioning.user": "Cloisonne par compte",
   "bindings.role.primary": "Écrit le dossier",
-  "bindings.role.secondary": "Suit un dossier existant",
+  "bindings.role.secondary": "Suit le dossier d'un autre serveur",
   "bindings.transport.tree": "Dossier",
   "bindings.transport.dropbox": "Dépôt",
   "bindings.transport.pull": "Récupération",
