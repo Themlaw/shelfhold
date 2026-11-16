@@ -16,7 +16,30 @@ Un jeton d'appareil est le « mot de passe » d'une liseuse : il sert à l'OPDS 
   un changement de son rôle (même règle que pour ses sessions et ses clés) et une restauration de
   sauvegarde révoquent aussi ses jetons ; le changement de rôle est inscrit à l'audit.
 
-## L'émettre, le lister, le révoquer
+## L'émettre depuis l'écran « Connecter une liseuse »
+
+Réglages → « Jetons d'appareil (liseuses) » (`/appareils/jetons`). L'écran écrit l'adresse du catalogue
+(`/opds`, avec le préfixe de `root_path` ou du mandataire de confiance) et celle de la synchronisation
+(`/kosync`), l'heure du serveur, et rappelle que HTTPS est exigé. Un code QR porte l'adresse du
+catalogue **seulement** : jamais l'identifiant ni le secret.
+
+- Un **membre** crée et révoque **ses** jetons. Un **administrateur** crée un jeton pour un membre ou un
+  enfant (jamais pour un administrateur, donc jamais pour lui-même) et révoque ceux de tous. Un
+  **enfant** n'en gère aucun : un parent le fait pour lui. Le jeton d'un autre profil répond comme un
+  jeton inconnu.
+- La création est une **action réservée** (`device_token.issue`) : session récente (900 s par défaut)
+  dans tous les profils, jamais une clé d'API ni un jeton d'appareil ; la page redemande le mot de passe
+  sur place si besoin. La révocation est `device_token.manage`. Les deux sont inscrites à l'audit.
+- Le **secret** s'affiche **une seule fois**, tel qu'il se saisit (26 caractères, sans séparateur), dans
+  la réponse de la création ; il n'est ni dans l'adresse, ni dans le stockage du navigateur, ni dans un
+  journal, ni dans la liste, et la page le retire quand on a noté le secret ou qu'on la quitte.
+- L'écran rappelle trois choses : réglez KOReader sur la méthode « **binaire** » (pas « nom de
+  fichier »), une liseuse n'a **qu'un serveur de synchronisation** (pointée vers Shelfhold, les fichiers
+  pris sur le catalogue de Kavita ne se synchronisent plus), et une liseuse **en avance** sur l'horloge
+  ignore en silence les positions plus récentes (KOReader n'envoie aucune heure) : comparez avec
+  l'heure du serveur affichée.
+
+## L'émettre, le lister, le révoquer en ligne de commande
 
 ```
 shelfhold admin device-tokens create --profile NOM [--name "Liseuse du salon"] [--expires-days N]

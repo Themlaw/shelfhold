@@ -1463,6 +1463,211 @@
         "title": "DeviceTargetOut",
         "type": "object"
       },
+      "DeviceTokenList": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/DeviceTokenOut"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "DeviceTokenList",
+        "type": "object"
+      },
+      "DeviceTokenOut": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "expires_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expires At"
+          },
+          "last_used_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Used At"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "public_id": {
+            "title": "Public Id",
+            "type": "string"
+          },
+          "subject_user_id": {
+            "title": "Subject User Id",
+            "type": "string"
+          },
+          "subject_username": {
+            "title": "Subject Username",
+            "type": "string"
+          }
+        },
+        "required": [
+          "public_id",
+          "name",
+          "subject_user_id",
+          "subject_username",
+          "created_at",
+          "expires_at",
+          "last_used_at"
+        ],
+        "title": "DeviceTokenOut",
+        "type": "object"
+      },
+      "DeviceTokenPairIn": {
+        "additionalProperties": false,
+        "description": "`subject_user_id` is the profile the reader reads as: omitted, it is the caller's own (an\nadmin has to name one, as an admin cannot be a subject).",
+        "properties": {
+          "expires_days": {
+            "anyOf": [
+              {
+                "maximum": 3650.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expires Days"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "maxLength": 80,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "subject_user_id": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Subject User Id"
+          }
+        },
+        "title": "DeviceTokenPairIn",
+        "type": "object"
+      },
+      "DeviceTokenPaired": {
+        "description": "What is shown once. `secret` is typed as it is: no separator, case kept.",
+        "properties": {
+          "expires_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expires At"
+          },
+          "public_id": {
+            "title": "Public Id",
+            "type": "string"
+          },
+          "secret": {
+            "title": "Secret",
+            "type": "string"
+          },
+          "subject_user_id": {
+            "title": "Subject User Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "public_id",
+          "secret",
+          "subject_user_id",
+          "expires_at"
+        ],
+        "title": "DeviceTokenPaired",
+        "type": "object"
+      },
+      "DeviceTokenSetup": {
+        "properties": {
+          "document_matching": {
+            "title": "Document Matching",
+            "type": "string"
+          },
+          "https": {
+            "title": "Https",
+            "type": "boolean"
+          },
+          "kosync_path": {
+            "title": "Kosync Path",
+            "type": "string"
+          },
+          "opds_path": {
+            "title": "Opds Path",
+            "type": "string"
+          },
+          "plain_http_allowed": {
+            "title": "Plain Http Allowed",
+            "type": "boolean"
+          },
+          "server_time": {
+            "format": "date-time",
+            "title": "Server Time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "opds_path",
+          "kosync_path",
+          "server_time",
+          "https",
+          "plain_http_allowed",
+          "document_matching"
+        ],
+        "title": "DeviceTokenSetup",
+        "type": "object"
+      },
       "Done": {
         "properties": {
           "ok": {
@@ -12374,6 +12579,222 @@
         "summary": "Restore Upstream",
         "tags": [
           "library"
+        ]
+      }
+    },
+    "/api/v1/device-tokens": {
+      "get": {
+        "operationId": "device_token_list",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeviceTokenList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Connexion requise, ou mot de passe à confirmer (reauth-required)."
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée)."
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Détail du problème (RFC 9457)."
+          }
+        },
+        "summary": "Device Token List",
+        "tags": [
+          "device-tokens"
+        ]
+      },
+      "post": {
+        "operationId": "device_token_pair",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DeviceTokenPairIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeviceTokenPaired"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Connexion requise, ou mot de passe à confirmer (reauth-required)."
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée)."
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Détail du problème (RFC 9457)."
+          }
+        },
+        "summary": "Device Token Pair",
+        "tags": [
+          "device-tokens"
+        ]
+      }
+    },
+    "/api/v1/device-tokens/setup": {
+      "get": {
+        "operationId": "device_token_setup",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeviceTokenSetup"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Connexion requise, ou mot de passe à confirmer (reauth-required)."
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée)."
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Détail du problème (RFC 9457)."
+          }
+        },
+        "summary": "Device Token Setup",
+        "tags": [
+          "device-tokens"
+        ]
+      }
+    },
+    "/api/v1/device-tokens/{public_id}": {
+      "delete": {
+        "operationId": "device_token_revoke",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "public_id",
+            "required": true,
+            "schema": {
+              "title": "Public Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Connexion requise, ou mot de passe à confirmer (reauth-required)."
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée)."
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Détail du problème (RFC 9457)."
+          }
+        },
+        "summary": "Device Token Revoke",
+        "tags": [
+          "device-tokens"
         ]
       }
     },
@@ -23936,6 +24357,10 @@
     "/api/v1/problems/device-tls-required": {
       "code": "device_tls_required",
       "status": 403
+    },
+    "/api/v1/problems/device-token-not-found": {
+      "code": "device_token_not_found",
+      "status": 404
     },
     "/api/v1/problems/disk.low": {
       "code": "disk.low",

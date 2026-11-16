@@ -152,6 +152,8 @@
         <!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- the app is served at the root of its origin -->
         <li><a href="/appareils">{t('settings.link.devices')}</a></li>
         <!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- the app is served at the root of its origin -->
+        <li><a href="/appareils/jetons">{t('settings.link.device_tokens')}</a></li>
+        <!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- the app is served at the root of its origin -->
         <li><a href="/corbeille">{t('settings.link.trash')}</a></li>
       {/if}
       <!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- the app is served at the root of its origin -->

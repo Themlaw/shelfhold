@@ -181,6 +181,12 @@ CLOSED = (
     "POST /api/v1/destinations/{destination_id}/removal-preview",
     "POST /api/v1/targets/{target_id}/detach",
     "POST /api/v1/targets/{target_id}/detach-preview",
+    # M4 L46b: pairing an e-reader is for an adult's session (reserved to create); a child is
+    # refused by session and by key, before any service
+    "GET /api/v1/device-tokens",
+    "POST /api/v1/device-tokens",
+    "GET /api/v1/device-tokens/setup",
+    "DELETE /api/v1/device-tokens/{public_id}",
     "GET /api/v1/diagnostic/bundle",  # M3 L46: the bundle is the admin's alone
     "GET /api/v1/editions",
     "POST /api/v1/editions/{edition_id}/add-directly",

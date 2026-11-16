@@ -915,6 +915,125 @@ export type DeviceTargetOut = {
 };
 
 /**
+ * DeviceTokenList
+ */
+export type DeviceTokenList = {
+    /**
+     * Items
+     */
+    items: Array<DeviceTokenOut>;
+};
+
+/**
+ * DeviceTokenOut
+ */
+export type DeviceTokenOut = {
+    /**
+     * Created At
+     */
+    created_at: string;
+    /**
+     * Expires At
+     */
+    expires_at: string | null;
+    /**
+     * Last Used At
+     */
+    last_used_at: string | null;
+    /**
+     * Name
+     */
+    name: string | null;
+    /**
+     * Public Id
+     */
+    public_id: string;
+    /**
+     * Subject User Id
+     */
+    subject_user_id: string;
+    /**
+     * Subject Username
+     */
+    subject_username: string;
+};
+
+/**
+ * DeviceTokenPairIn
+ *
+ * `subject_user_id` is the profile the reader reads as: omitted, it is the caller's own (an
+ * admin has to name one, as an admin cannot be a subject).
+ */
+export type DeviceTokenPairIn = {
+    /**
+     * Expires Days
+     */
+    expires_days?: number | null;
+    /**
+     * Name
+     */
+    name?: string | null;
+    /**
+     * Subject User Id
+     */
+    subject_user_id?: string | null;
+};
+
+/**
+ * DeviceTokenPaired
+ *
+ * What is shown once. `secret` is typed as it is: no separator, case kept.
+ */
+export type DeviceTokenPaired = {
+    /**
+     * Expires At
+     */
+    expires_at: string | null;
+    /**
+     * Public Id
+     */
+    public_id: string;
+    /**
+     * Secret
+     */
+    secret: string;
+    /**
+     * Subject User Id
+     */
+    subject_user_id: string;
+};
+
+/**
+ * DeviceTokenSetup
+ */
+export type DeviceTokenSetup = {
+    /**
+     * Document Matching
+     */
+    document_matching: string;
+    /**
+     * Https
+     */
+    https: boolean;
+    /**
+     * Kosync Path
+     */
+    kosync_path: string;
+    /**
+     * Opds Path
+     */
+    opds_path: string;
+    /**
+     * Plain Http Allowed
+     */
+    plain_http_allowed: boolean;
+    /**
+     * Server Time
+     */
+    server_time: string;
+};
+
+/**
  * Done
  */
 export type Done = {
@@ -7588,6 +7707,143 @@ export type RestoreUpstreamResponses = {
 };
 
 export type RestoreUpstreamResponse = RestoreUpstreamResponses[keyof RestoreUpstreamResponses];
+
+export type DeviceTokenListData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/device-tokens';
+};
+
+export type DeviceTokenListErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type DeviceTokenListError = DeviceTokenListErrors[keyof DeviceTokenListErrors];
+
+export type DeviceTokenListResponses = {
+    /**
+     * Successful Response
+     */
+    200: DeviceTokenList;
+};
+
+export type DeviceTokenListResponse = DeviceTokenListResponses[keyof DeviceTokenListResponses];
+
+export type DeviceTokenPairData = {
+    body: DeviceTokenPairIn;
+    path?: never;
+    query?: never;
+    url: '/api/v1/device-tokens';
+};
+
+export type DeviceTokenPairErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type DeviceTokenPairError = DeviceTokenPairErrors[keyof DeviceTokenPairErrors];
+
+export type DeviceTokenPairResponses = {
+    /**
+     * Successful Response
+     */
+    201: DeviceTokenPaired;
+};
+
+export type DeviceTokenPairResponse = DeviceTokenPairResponses[keyof DeviceTokenPairResponses];
+
+export type DeviceTokenSetupData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/device-tokens/setup';
+};
+
+export type DeviceTokenSetupErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type DeviceTokenSetupError = DeviceTokenSetupErrors[keyof DeviceTokenSetupErrors];
+
+export type DeviceTokenSetupResponses = {
+    /**
+     * Successful Response
+     */
+    200: DeviceTokenSetup;
+};
+
+export type DeviceTokenSetupResponse = DeviceTokenSetupResponses[keyof DeviceTokenSetupResponses];
+
+export type DeviceTokenRevokeData = {
+    body?: never;
+    path: {
+        /**
+         * Public Id
+         */
+        public_id: string;
+    };
+    query?: never;
+    url: '/api/v1/device-tokens/{public_id}';
+};
+
+export type DeviceTokenRevokeErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type DeviceTokenRevokeError = DeviceTokenRevokeErrors[keyof DeviceTokenRevokeErrors];
+
+export type DeviceTokenRevokeResponses = {
+    /**
+     * Successful Response
+     */
+    204: void;
+};
+
+export type DeviceTokenRevokeResponse = DeviceTokenRevokeResponses[keyof DeviceTokenRevokeResponses];
 
 export type DeviceConnectData = {
     body?: never;

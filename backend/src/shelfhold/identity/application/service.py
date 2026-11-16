@@ -237,6 +237,13 @@ class CreatedApiKey:
     expires_at: datetime | None
 
 
+def _may_pair(by: Principal, subject_id: str | None) -> bool:
+    """An admin pairs for any profile (the subject's rules apply after), a member for themself."""
+    if by.role == "admin":
+        return True
+    return by.role == "member" and subject_id is not None and subject_id == by.user_id
+
+
 def _by_host_user(target: str, by: Principal | None = None) -> str:
     """Offline, the CLI has no principal: the audit keeps at least the uid of the host user who
     ran it (review PR #43, M6). Through the local socket (L23) the principal carries the uid and
@@ -1192,6 +1199,31 @@ class LocalAuth:
         if by is not None and by.role != "admin":
             raise NotAllowedError
         subject = self._store.user_by_name(subject_username.strip())
+        return self._issue_device_token(subject, name, expires_days, by)
+
+    def pair_device_token(
+        self,
+        *,
+        by: Principal,
+        subject_user_id: str,
+        name: str | None = None,
+        expires_days: int | None = None,
+    ) -> CreatedDeviceToken:
+        """The screen "Connect a device" (M4 L46b): an admin pairs for a member or a child, a member
+        for themself, a child for nobody. The same rules as above apply to the subject (never an
+        admin, so an admin never pairs for themself)."""
+        subject = self._store.user_by_id(subject_user_id)
+        if not _may_pair(by, subject.id if subject is not None else None):
+            raise NotAllowedError  # a member names themself only, a child nobody
+        return self._issue_device_token(subject, name, expires_days, by)
+
+    def _issue_device_token(
+        self,
+        subject: UserRecord | None,
+        name: str | None,
+        expires_days: int | None,
+        by: Principal | None,
+    ) -> CreatedDeviceToken:
         if subject is None:
             raise UnknownUserError
         if subject.role == "admin":  # a lost e-reader would open the whole catalogue, unfiltered
@@ -1230,11 +1262,22 @@ class LocalAuth:
             )
         raise RuntimeError("device_token_id_exhausted")
 
-    def device_tokens(self) -> Sequence[DeviceTokenRecord]:
-        return self._store.device_tokens()
+    def device_tokens(self, *, by: Principal | None = None) -> Sequence[DeviceTokenRecord]:
+        """Every token for the host or an admin; a member's own for a member; none for a child."""
+        everything = self._store.device_tokens()
+        if by is None or by.role == "admin":
+            return everything
+        if by.role != "member":
+            return ()
+        return tuple(t for t in everything if t.subject.id == by.user_id)
 
     def revoke_device_token(self, public_id: str, *, by: Principal | None = None) -> bool:
-        """Immediate: the next request with it is refused. False: unknown or already revoked."""
+        """Immediate: the next request with it is refused. False: unknown or already revoked, and
+        for a member also another profile's token: it answers like one that is not there."""
+        if by is not None and by.role != "admin":
+            held = self._store.device_token_by_public_id(public_id.strip().lower())
+            if by.role != "member" or held is None or held.subject.id != by.user_id:
+                return False
         revoked = self._store.revoke_device_token(public_id.strip().lower(), now=self.now())
         if revoked:
             self._audit("device_token.revoked", by, target=_by_host_user(public_id, by))

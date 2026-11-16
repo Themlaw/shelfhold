@@ -126,12 +126,19 @@ WHEN_CLOSED_AUDITED = {
     # transaction that seals or erases the key; the empty body below is refused (422) or finds
     # nothing (404): no line
     "destination_account.bind", "destination_account.revoke",
+    # M4 L46b: pairing an e-reader and revoking its token: the service writes the line, with the
+    # identifier of the token, when one is made or ended; the empty body below is a 422 and an
+    # unknown identifier a 404: no line
+    "device_token.issue", "device_token.manage",
 }  # fmt: skip
 # any role may do it on its own account (the guard names KNOWN_ROLES): the role loop skips it
 # M4 L12: an adult handles their own Kavita key (a member's session is not refused by role: the
 # profile of another answers 404, tested in test_destination_accounts.py); a child is refused there
+# M4 L46b: the same for the e-readers of an adult (a member's own, an admin's all); a child is
+# refused by the route (tests/integration/test_l46b_connect_device.py)
 EVERY_ROLE_OWN_ACCOUNT = {
     "session.revoke_others", "destination_account.bind", "destination_account.revoke",
+    "device_token.issue", "device_token.manage",
 }  # fmt: skip
 
 
