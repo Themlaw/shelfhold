@@ -10,9 +10,8 @@ from typing import Protocol
 from shelfhold.i18n import DEFAULT_LANGUAGE, LANGUAGES
 
 DEFAULT_THEME = "bibliotheque"  # theme A
-# One folder of tokens per theme under `frontend/src/lib/themes` (a test keeps them level); D
-# arrives after C.
-DELIVERED_THEMES = (DEFAULT_THEME, "console", "galerie")
+# One folder of tokens per theme under `frontend/src/lib/themes` (a test keeps them level).
+DELIVERED_THEMES = (DEFAULT_THEME, "console", "galerie", "calme")
 COLOR_SCHEMES = ("auto", "light", "dark")
 DELIVERED_LANGUAGES = LANGUAGES  # ("fr", "en"); a language of the catalogs only
 

@@ -2,7 +2,7 @@
 // element carries `data-theme` and, when the user chose one, `data-color-scheme`. Only this folder
 // and the root layout know the names: no component, screen or store reads them (I51).
 // One folder of tokens per name; a test keeps the folders and this list level.
-export const THEMES = ['bibliotheque', 'console', 'galerie'] as const;
+export const THEMES = ['bibliotheque', 'console', 'galerie', 'calme'] as const;
 export type Theme = (typeof THEMES)[number];
 export const DEFAULT_THEME: Theme = 'bibliotheque';
 
