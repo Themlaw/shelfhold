@@ -44,4 +44,4 @@ def test_ci_runs_property_golden_and_faults_in_a_matrix_aggregated_by_ci_success
     assert job["strategy"]["fail-fast"] is False
     assert {"backend-suites"} <= set(jobs["coverage"]["needs"])
     assert "backend-suites" in jobs["ci-success"]["needs"]
-    assert "tests/${{ matrix.suite }}" in CI.read_text(encoding="utf-8")
+    assert '"tests/${SUITE}"' in CI.read_text(encoding="utf-8")
