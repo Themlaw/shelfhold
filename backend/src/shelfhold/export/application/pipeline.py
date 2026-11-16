@@ -49,10 +49,12 @@ from shelfhold.export.application.rename_plan import (
 )
 from shelfhold.export.application.rename_plan import (
     ItemMove,
+    ProgressCarry,
     ReaderCounter,
     RenameBook,
     RenameConfirmationRequiredError,
     RenamePreview,
+    SeriesNames,
 )
 from shelfhold.export.application.rendering import (
     CbzRenderer,
@@ -390,6 +392,14 @@ class ExportPipeline:
     def bind_scan_drain(self, drain: Callable[[], None] | None) -> None:
         """What sends the scans asked so far: a rename plan calls it at the end of each batch."""
         self._renames.bind_scan_drain(drain)
+
+    def bind_carry(self, carry: ProgressCarry | None) -> None:
+        """What carries each member's progress over a rename plan (EF-EXP-017)."""
+        self._renames.bind_carry(carry)
+
+    def bind_series_names(self, names: SeriesNames | None) -> None:
+        """What reads the names the library of Kavita shows, for the planning of a rename."""
+        self._renames.bind_series_names(names)
 
     def rename_preview(
         self,

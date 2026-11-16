@@ -780,15 +780,13 @@ def test_gate_p2_is_recorded_as_a_delegated_decision_without_a_measure() -> None
 
 
 @pytest.mark.req("ENF-GOV-006", "EF-EXP-017")
-def test_ef_exp_017_is_deferred_to_m4_and_gov_006_stays_partial() -> None:
+def test_ef_exp_017_is_no_longer_deferred_and_gov_006_stays_partial() -> None:
     import tomllib
 
     path = BACKEND.parent / "tools" / "traceability-exceptions.toml"
     data = tomllib.loads(path.read_text("utf-8"))
-    deferred = [d for d in data["deferred"] if d["requirement"] == "EF-EXP-017"]
-    assert len(deferred) == 1
-    assert "M4" in deferred[0]["reason"]
-    assert "passe 2, B15" in deferred[0]["reason"]
+    # M4 L16 carries each member's progress over a rename: its tests prove the requirement
+    assert [d for d in data["deferred"] if d["requirement"] == "EF-EXP-017"] == []
     partial = [p for p in data["partial"] if p["requirement"] == "ENF-GOV-006"]
     assert [p["milestone"] for p in partial] == ["M3"]
 

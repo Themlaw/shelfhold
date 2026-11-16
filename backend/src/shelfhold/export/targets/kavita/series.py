@@ -11,9 +11,11 @@ from __future__ import annotations
 
 import asyncio
 import posixpath
-from collections.abc import Callable
+from collections.abc import Callable, Collection, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
+from types import SimpleNamespace
+from typing import Any
 
 import sqlalchemy as sa
 import structlog
@@ -53,6 +55,7 @@ from shelfhold.infrastructure.schema import export
 from shelfhold.sdk.age import AgeRating
 
 __all__ = [
+    "RemoteSeries",
     "Resolution",
     "SeriesAgeGate",
     "SeriesAges",
@@ -61,8 +64,10 @@ __all__ = [
     "blocking_age_reader",
     "blocking_unknowns_tier",
     "folded",
+    "planned_collisions",
     "refresh_foreign_names",
     "refresh_names",
+    "resolve_remote",
     "unknowns_tier",
 ]
 
@@ -119,6 +124,166 @@ class SeriesResolver:
             if folded(series.name) == folded(planned_name):
                 return series
         return None
+
+
+@dataclass(frozen=True)
+class RemoteSeries:
+    """A series of the destination as Kavita shows it now (`resolve_remote`)."""
+
+    folder: str
+    kavita_id: int | None  # None: Kavita does not show it (yet)
+    previous_id: int | None  # the identifier cached before
+    renamed: bool  # Kavita shows another name than the one Shelfhold froze: never rewritten
+    by: str | None
+
+
+async def resolve_remote(
+    engine: Engine, client: KavitaClient, destination_id: str, folders: Collection[str]
+) -> list[RemoteSeries]:
+    """Find again, in Kavita, the series of the folders of a destination (EF-EXP-017).
+
+    A scan after a move may have deleted the series and made another one under a new identifier:
+    the series is looked for by the folder it lives in (`SeriesResolver`; the cached id is not
+    trusted, it may be the one of a series that no longer lives where the files now are), and the
+    id kept in `export_series.kavita_series_id` follows what Kavita shows. The name Kavita shows is
+    read, not written (`Resolution.renamed`: a series renamed in its interface is the same series,
+    EF-EXP-057). Nothing is written in Kavita."""
+    series = export.export_series
+    with engine.connect() as connection:
+        ctx = load_context(connection, destination_id)
+        rows = _series_folders(connection, destination_id, set(folders))
+        library = connection.execute(
+            sa.select(export.remote_library.c.remote_ref).where(
+                export.remote_library.c.id == ctx.remote_library_id
+            )
+        ).scalar()
+    if not rows or ctx.root_local is None or library is None or not str(library).isdigit():
+        return []
+    resolver = SeriesResolver(client)
+    found: list[RemoteSeries] = []
+    for row in rows:
+        cached = int(row.kavita_series_id) if str(row.kavita_series_id or "").isdigit() else None
+        # by the folder, never by the cached id first: after a move the id may still be Kavita's
+        # (the scan has not run) while the series no longer lives where the files now are
+        resolution = await resolver.resolve(
+            library_id=int(library),
+            remote_folder=ctx.remote_folder(ctx.local(row.folder)),
+        )
+        now = resolution.series.id if resolution.series is not None else None
+        if now is not None and now != cached:
+            with write_transaction(engine) as connection:
+                connection.execute(
+                    sa.update(series).where(series.c.id == row.id).values(kavita_series_id=str(now))
+                )
+        found.append(
+            RemoteSeries(
+                row.folder, now, cached, resolution.renamed(row.frozen_series), resolution.by
+            )
+        )
+    return found
+
+
+def _series_folders(connection: sa.Connection, destination_id: str, folders: set[str]) -> list[Any]:
+    """The series of the destination that live in one of `folders`, with that folder. A series
+    adopted from Kavita says its folder (`series_dir`); one Shelfhold wrote has the folder its
+    files are in (one only: a series spread over two folders is not guessed)."""
+    series, link = export.export_series, export.edition_export_series
+    item, record = export.export_item, export.export_record
+    tops: dict[str, set[str]] = {}
+    ident: dict[str, Any] = {}
+    for row in connection.execute(
+        sa.select(
+            series.c.id,
+            series.c.kavita_series_id,
+            series.c.frozen_series,
+            series.c.series_dir,
+            record.c.rel_path,
+        )
+        .select_from(
+            series.join(
+                link,
+                sa.and_(
+                    link.c.export_series_id == series.c.id,
+                    link.c.remote_library_id == series.c.remote_library_id,
+                ),
+            )
+            .join(item, item.c.edition_id == link.c.edition_id)
+            .join(
+                record,
+                sa.and_(
+                    record.c.export_item_id == item.c.id,
+                    record.c.shelf_destination_id == series.c.shelf_destination_id,
+                ),
+            )
+        )
+        .where(
+            series.c.shelf_destination_id == destination_id,
+            record.c.rel_path.isnot(None),
+            record.c.state.in_(("written", "scanned", "resolved", "adopted")),
+        )
+    ):
+        ident[str(row.id)] = row
+        tops.setdefault(str(row.id), set()).add(str(row.rel_path).split("/", 1)[0])
+    found: list[Any] = []
+    for sid, where in tops.items():
+        row = ident[sid]
+        folder = row.series_dir if row.series_dir in folders else None
+        if folder is None and len(where) == 1 and next(iter(where)) in folders:
+            folder = next(iter(where))
+        if folder is not None:
+            found.append(
+                SimpleNamespace(
+                    id=sid,
+                    kavita_series_id=row.kavita_series_id,
+                    frozen_series=row.frozen_series,
+                    folder=folder,
+                )
+            )
+    return found
+
+
+async def planned_collisions(
+    engine: Engine, client: KavitaClient, destination_id: str, renames: Sequence[tuple[str, str]]
+) -> tuple[str, ...]:
+    """Of `(old folder, new folder)` pairs a rename plan makes, the new folders whose name another
+    series of the library already bears (EF-EXP-032). The names are the ones Kavita shows now: our
+    own series, renamed there, never collides with its former name, and a series that now bears
+    the planned name does. A Kavita that cannot be asked says nothing (the confirmation of the
+    plan is asked all the same: a count that could not be read is not "nobody")."""
+    with engine.connect() as connection:
+        ctx = load_context(connection, destination_id)
+        library = connection.execute(
+            sa.select(export.remote_library.c.remote_ref).where(
+                export.remote_library.c.id == ctx.remote_library_id
+            )
+        ).scalar()
+        cached = {
+            str(r.folder): r.kavita_series_id
+            for r in _series_folders(connection, destination_id, {old for old, _ in renames})
+        }
+    if ctx.root_local is None or library is None or not str(library).isdigit():
+        return ()
+    resolver = SeriesResolver(client)
+    taken: list[str] = []
+    try:
+        for old, new in renames:
+            id_ = str(cached.get(old) or "")
+            own = await resolver.resolve(
+                library_id=int(library),
+                remote_folder=ctx.remote_folder(ctx.local(old)),
+                cached_id=int(id_) if id_.isdigit() else None,
+            )
+            other = await resolver.collision(
+                library_id=int(library),
+                planned_name=new,
+                remote_folder=ctx.remote_folder(ctx.local(new)),
+                own=own,
+            )
+            if other is not None:
+                taken.append(new)
+    except (TargetError, ListingIncomplete):
+        return ()
+    return tuple(taken)
 
 
 async def refresh_names(engine: Engine, client: KavitaClient, destination_id: str) -> int:

@@ -561,6 +561,7 @@
   "plan.phrase": "LOSE THE PROGRESS",
   "plan.warning_exact": "The Kavita progress of {readers, plural, one {# reader} other {# readers}} will be lost.",
   "plan.warning_at_least": "The Kavita progress of at least {readers, plural, one {# reader} other {# readers}} will be lost.",
+  "plan.warning_members": "No Kavita key on this destination: {members}.",
   "shelves.title": "Shelves",
   "shelves.error": "Loading error.",
   "screens.admin_only": "These screens are reserved to the administrator.",

@@ -15,22 +15,35 @@ What is never done:
   nothing is replaced;
 - a path that an open intent covers (I9);
 - a plan applied without the confirmation when readers of Kavita would lose their progress
-  (EF-EXP-037: before M4 the progress is not carried over, so the count is told and the
-  confirmation asked; a count that could not be read is not "nobody").
+  (EF-EXP-037: the readers whose own key Shelfhold holds are carried over (L16), so only the others
+  are counted, and the members among them are named; a count that could not be read is not
+  "nobody");
+- a series renamed under the name another series of the library already bears
+  (`series_name_collision`, read at the planning), and a move from one root to another
+  (`cross_root`: two roots are a copy, never a rename).
 
-The reader count belongs to the admin who previews and applies: it is in the answer of these two
-doors and nowhere else (no event, no audit line, no log carries it).
+**The progress of each member is carried** (EF-EXP-017, EF-EXP-030). A batch is a series folder.
+Before its first move the members' own keys read what Kavita holds (`pull`: what only Kavita knows
+comes first, and a member whose key cannot be used stops the batch before anything moved:
+`progress_not_pulled`). After its last move and the scan, the series are found again in Kavita by
+the folder they live in (`resolve_remote`: the identifier it made may be new, the old series and
+its readings are deleted by the scan) and each member's furthest **proven** page is written with
+their key (`restore`): never a reading made up, never backwards. Both halves are idempotent: a
+stop at any step is resumed by running the batch again.
+
+The reader count and the names belong to the admin who previews and applies: they are in the answer
+of these two doors and nowhere else (no event, no audit line, no log carries them).
 """
 
 import posixpath
 import unicodedata
 from collections import defaultdict, deque
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Collection, Sequence
 from contextlib import AbstractContextManager, ExitStack, nullcontext
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from datetime import datetime
 from pathlib import PurePosixPath
-from typing import Any
+from typing import Any, Protocol
 
 import sqlalchemy as sa
 import structlog
@@ -59,6 +72,7 @@ from shelfhold.export.domain.physical_roots import RECEIVED_DIR
 from shelfhold.infrastructure.clock import Clock
 from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.fsops import Fsops, FsopsError
+from shelfhold.infrastructure.kavita_names import kavita_name_key
 from shelfhold.infrastructure.schema import coherence, export
 from shelfhold.library.public import relocate_destination_copy
 
@@ -70,8 +84,11 @@ _LIVE_STATES = ("written", "scanned", "resolved", "adopted")
 
 __all__ = [
     "PLAN_KIND",
+    "CarryCoverage",
+    "CarryResult",
     "ItemMove",
     "PlannedRename",
+    "ProgressCarry",
     "ProgressLossWarning",
     "ReaderCount",
     "ReaderCounter",
@@ -80,6 +97,7 @@ __all__ = [
     "RenamePreview",
     "RenameRefusedError",
     "RenameReport",
+    "SeriesNames",
     "validate_rel_path",
 ]
 
@@ -116,6 +134,8 @@ class ReaderCount:
 
     count: int
     exact: bool = True
+    # the Kavita accounts counted (those of the members whose key is held are not), when known
+    accounts: tuple[str, ...] = ()
 
 
 # `folders`: the folders as Kavita sees them. Bound by the composition root; none bound means no
@@ -129,6 +149,9 @@ WriteSession = Callable[[], AbstractContextManager[object]]
 class ItemMove:
     export_item_id: str
     new_rel_path: str
+    # the destination the file should land in, when the caller says one: only the plan's own is
+    # accepted (`cross_root`: two roots are a copy)
+    destination_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -150,6 +173,58 @@ class ProgressLossWarning:
     exact: bool
     series: tuple[str, ...]
     code: str = "progress_loss"
+    # the members of the instance who read in these folders with no key of their own on the
+    # destination: the warning is theirs, and only theirs (EF-EXP-017, EF-EXP-037)
+    members: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class CarryCoverage:
+    """Who the progress is carried for. `carried`: the members whose own live key the destination
+    holds, `(user id, name of their Kavita account)`. `unlinked`: the members that declare a
+    Kavita account (`user.kavita_username`) and have no key on the destination, `(name, account)`.
+    `enabled` false: the destination does not synchronise progress, nobody is carried."""
+
+    enabled: bool = False
+    carried: tuple[tuple[str, str], ...] = ()
+    unlinked: tuple[tuple[str, str], ...] = ()
+
+
+@dataclass(frozen=True)
+class CarryResult:
+    """What one half of the carry did. `members`: the closed code each member's pass ended with
+    (`ok`, or why it stopped). `missing`: series folders Kavita did not show after the wait."""
+
+    members: dict[str, str] = field(default_factory=dict)
+    pulled: int = 0
+    pushed: int = 0
+    missing: tuple[str, ...] = ()
+
+    @property
+    def stopped(self) -> tuple[str, ...]:
+        """The members whose pass did not end well."""
+        return tuple(sorted(user for user, code in self.members.items() if code != "ok"))
+
+
+class ProgressCarry(Protocol):
+    """The progress of the members, read and written with their own keys (the Kavita adapter)."""
+
+    def coverage(self, destination_id: str) -> CarryCoverage: ...
+
+    def pull(self, destination_id: str, carriers: Collection[str]) -> CarryResult:
+        """Read what Kavita holds for the members, on the files `carriers` (export item ids)."""
+        ...
+
+    def restore(self, destination_id: str, carriers: Collection[str]) -> CarryResult:
+        """Find the series again in Kavita and write each member's furthest proven page."""
+        ...
+
+
+class SeriesNames(Protocol):
+    def collision(self, destination_id: str, renames: Sequence[tuple[str, str]]) -> tuple[str, ...]:
+        """Of `(old folder, new folder)` pairs, the new folders whose name another series of the
+        library already bears (the current names Kavita shows, not the cache)."""
+        ...
 
 
 @dataclass(frozen=True)
@@ -230,9 +305,19 @@ class RenameBook:
         self._lock_wait_s = lock_wait_s
         self._readers: ReaderCounter | None = None
         self._drain: Callable[[], None] | None = None
+        self._carry: ProgressCarry | None = None
+        self._names: SeriesNames | None = None
 
     def bind_readers(self, counter: ReaderCounter | None) -> None:
         self._readers = counter
+
+    def bind_carry(self, carry: ProgressCarry | None) -> None:
+        """What carries each member's progress over the moves (none: before M4, the warning)."""
+        self._carry = carry
+
+    def bind_series_names(self, names: SeriesNames | None) -> None:
+        """What tells the names the library of Kavita shows now (none: nothing is checked)."""
+        self._names = names
 
     def bind_scan_drain(self, drain: Callable[[], None] | None) -> None:
         """What sends the scans asked so far: called at the end of every batch, so that Kavita
@@ -263,11 +348,12 @@ class RenameBook:
         if template is not None:
             wanted = self._template_targets(records, template, blocked)
         else:
-            wanted = self._move_targets(records, moves)
+            wanted = self._move_targets(destination_id, records, moves)
         wanted = {item: new for item, new in wanted.items() if new != records[item].rel_path}
         steps, batches = self._steps(ctx, records, wanted, covered)
         if not steps:
             return RenamePreview(None, version, (), 0, tuple(blocked), ())
+        self._require_free_names(ctx, records, steps)
         warnings = self._warnings(ctx, steps)
         files = [ctx.local(p) for s in steps for p in (s.src, s.dst)]
         files += [ctx.local(records[i].rel_path) for i in wanted]
@@ -367,14 +453,55 @@ class RenameBook:
             wanted[item_id] = path.rel_path
         return wanted
 
-    @staticmethod
-    def _move_targets(records: dict[str, _Record], moves: Sequence[ItemMove]) -> dict[str, str]:
+    def _move_targets(
+        self, destination_id: str, records: dict[str, _Record], moves: Sequence[ItemMove]
+    ) -> dict[str, str]:
         wanted: dict[str, str] = {}
         for move in moves:
+            if move.destination_id not in (None, destination_id):
+                raise RenameRefusedError("cross_root")  # two roots are a copy, never a rename
             if move.export_item_id not in records:
-                raise RenameRefusedError("unknown_item")
+                raise RenameRefusedError(
+                    "cross_root" if self._elsewhere(destination_id, move.export_item_id)
+                    else "unknown_item"
+                )  # fmt: skip
             wanted[move.export_item_id] = validate_rel_path(move.new_rel_path, export_names=True)
         return wanted
+
+    def _elsewhere(self, destination_id: str, item_id: str) -> bool:
+        """The file is held by the manifest of another destination: another root."""
+        table = export.export_record
+        with self._engine.connect() as conn:
+            return (
+                conn.execute(
+                    sa.select(table.c.export_item_id).where(
+                        table.c.export_item_id == item_id,
+                        table.c.shelf_destination_id != destination_id,
+                        table.c.state.in_(_LIVE_STATES),
+                    )
+                ).first()
+                is not None
+            )
+
+    def _require_free_names(
+        self, ctx: DestinationContext, records: dict[str, _Record], steps: Sequence[PlannedRename]
+    ) -> None:
+        """The series folders the plan makes must not take the name of another series of the
+        library (EF-EXP-032): Kavita would merge the two, and the readings with them. Read now,
+        in the names Kavita shows, so that a series the user renamed there is its own."""
+        if self._names is None:
+            return
+        known = {_fold(r.rel_path.split("/", 1)[0]) for r in records.values()}
+        pairs: dict[str, str] = {}
+        for step in steps:
+            old, new = step.src.split("/", 1)[0], step.dst.split("/", 1)[0]
+            if _fold(new) not in known and _fold(old) != _fold(new):
+                pairs.setdefault(new, old)  # a folder that does not exist yet: a series to be
+        if not pairs:
+            return
+        taken = self._names.collision(ctx.destination_id, sorted((o, n) for n, o in pairs.items()))
+        if taken:
+            raise RenameRefusedError("series_name_collision")
 
     def _steps(
         self,
@@ -576,7 +703,26 @@ class RenameBook:
         found = self._count_readers(ctx, folders)
         if found is None or (found.count == 0 and found.exact):
             return ()
-        return (ProgressLossWarning(found.count, found.exact, tuple(folders)),)
+        return (
+            ProgressLossWarning(
+                found.count, found.exact, tuple(folders), members=self._unlinked(ctx, found)
+            ),
+        )
+
+    def _unlinked(self, ctx: DestinationContext, found: ReaderCount) -> tuple[str, ...]:
+        """The members the warning is for: they declare a Kavita account, hold no key of their own
+        on the destination, and their account is among those that read (all of them when the list
+        of the accounts could not be read: not "nobody")."""
+        if self._carry is None:
+            return ()
+        counted = {kavita_name_key(name) for name in found.accounts}
+        return tuple(
+            sorted(
+                name
+                for name, account in self._carry.coverage(ctx.destination_id).unlinked
+                if not counted or kavita_name_key(account) in counted
+            )
+        )
 
     def _count_readers(self, ctx: DestinationContext, folders: Sequence[str]) -> ReaderCount | None:
         if self._readers is None:
@@ -716,6 +862,7 @@ class RenameBook:
 
         held = ExitStack()  # the write session, opened by the first move: after the refusals
         opened = False
+        pulled: set[int] = set()
 
         def ensure_session() -> None:
             nonlocal opened
@@ -725,6 +872,9 @@ class RenameBook:
 
         def run(op: PlanOp) -> None:
             payload = op.payload or {}
+            if op.batch not in pulled:  # before the first move of the batch: nothing is lost
+                pulled.add(op.batch)
+                self._pull(ctx, plan_id, op.batch)
             ensure_session()
             with self._hold(job_id, ctx, payload):
                 try:
@@ -931,6 +1081,73 @@ class RenameBook:
                     self._request_scan(ctx.remote_folder(ctx.local(folder)))
         if self._drain is not None:
             self._drain()  # one scan per batch, now
+        self._restore(ctx, plan_id, batch)
+
+    # -- the progress of the members ---------------------------------------------------------
+
+    def _batch_carriers(self, ctx: DestinationContext, plan_id: str, batch: int) -> set[str]:
+        """The files of the series a batch touches, wherever they are now: the ones that move and
+        every file of the folders it leaves or enters (Kavita scans the folder, not the file)."""
+        table, record = coherence.export_op, export.export_record
+        with self._engine.connect() as conn:
+            ops = conn.execute(
+                sa.select(table.c.src_path, table.c.dst_path, table.c.payload).where(
+                    table.c.plan_id == plan_id, table.c.batch == batch
+                )
+            ).all()
+            root = (ctx.root_local or "").rstrip("/") + "/"
+            tops = {
+                path[len(root) :].split("/", 1)[0]
+                for op in ops
+                for path in (op.src_path, op.dst_path)
+                if path and path.startswith(root)
+            }
+            moved = {str(op.payload["item_id"]) for op in ops if (op.payload or {}).get("item_id")}
+            rows = conn.execute(
+                sa.select(record.c.export_item_id, record.c.rel_path).where(
+                    record.c.shelf_destination_id == ctx.destination_id,
+                    record.c.locator_type == "path",
+                    record.c.rel_path.isnot(None),
+                    record.c.state.in_(_LIVE_STATES),
+                )
+            ).all()
+        return moved | {str(r.export_item_id) for r in rows if r.rel_path.split("/", 1)[0] in tops}
+
+    def _pull(self, ctx: DestinationContext, plan_id: str, batch: int) -> None:
+        """What Kavita holds for each member is read **before** the batch moves anything: the scan
+        that follows deletes the readings of the series it loses. A member whose key cannot be used
+        now stops the batch, nothing moved (`progress_not_pulled`): the admin fixes the key or
+        unlinks it, and the member is then named by the preview."""
+        if self._carry is None:
+            return
+        carriers = self._batch_carriers(ctx, plan_id, batch)
+        if not carriers:
+            return
+        result = self._carry.pull(ctx.destination_id, carriers)
+        if result.stopped:
+            log.warning("rename.progress_not_pulled", plan_id=plan_id, members=len(result.stopped))
+            raise RenameRefusedError("progress_not_pulled")  # the members are not named here
+
+    def _restore(self, ctx: DestinationContext, plan_id: str, batch: int) -> None:
+        """The batch is moved and Kavita has scanned: the series are found again, each member's
+        furthest proven page is written back. A failure here loses nothing (Shelfhold holds the
+        progress and the periodic pass finds a chapter it has never seen and carries it too): it
+        is logged and the plan goes on."""
+        if self._carry is None:
+            return
+        try:
+            carriers = self._batch_carriers(ctx, plan_id, batch)
+            if carriers:
+                result = self._carry.restore(ctx.destination_id, carriers)
+                log.info(
+                    "rename.progress_restored",
+                    plan_id=plan_id,
+                    pushed=result.pushed,
+                    stopped=len(result.stopped),
+                    missing=len(result.missing),
+                )  # counts only: neither a name nor a page
+        except Exception:
+            log.warning("rename.progress_restore_failed", plan_id=plan_id, exc_info=True)
 
     def _remove_emptied(self, root: str, local: str) -> None:
         """A managed folder the batch emptied goes; the root and a folder with anything left

@@ -130,6 +130,52 @@ another Kavita account, or with another key, or a chapter id that now holds anot
 afresh (the row of an account survives a re-link, the note must not). `progress_sync_cursor` records, per account,
 the start of the last complete pass. Neither is in `export-all`.
 
+## Carried over a rename plan (M4 L16)
+
+A rename, a reshelving or a binding migration inside one root makes Kavita scan again, and a scan
+that no longer finds a series **deletes it with every reading of every account**. A rename plan
+(`export/application/rename_plan.py`) therefore carries each member's progress, batch by batch (a
+batch is a series folder), with the member's own key and in this order:
+
+1. **pull** (before the batch's first move): what Kavita holds is read for every member whose key is
+   held (`sync_member(mode="pull")`: reading only, the notes keep their dates, nothing is written in
+   Kavita). A member whose pass does not end `ok` (key refused, revoked, Kavita down) **stops the
+   batch before anything moved**: `progress_not_pulled` (409), the plan is `failed`, the admin fixes
+   the key or unlinks it. There is no half-carried member.
+2. **move**: the renames, as before (never a deletion followed by a recreation).
+3. **scan**: one per batch, drained at its end.
+4. **resolve_remote**: the series are found again by the folder they live in
+   (`SeriesResolver.resolve`, by the folder: the cached id may be that of a series that no longer
+   lives where the files now are); `export_series.kavita_series_id` follows what Kavita shows. A series Kavita does not show yet is waited for (6 tries, 5 s), then
+   left to the periodic pass. `Resolution.renamed`: a series renamed in Kavita's interface is the same
+   series and its name is read, never written.
+5. **push** (`sync_member(mode="restore")`): the notes of the chapters that are gone are dropped and
+   each member's **furthest proven** page is written to every chapter they may see
+   (`reading_progress_proven`, never a position carried over from another Edition), whatever its
+   source: Kavita's own state pulled at step 1 comes back as it was. Never behind what Kavita already
+   holds; « read » (the page count) only if every Unit of the file is read in the proven view **and**
+   a traversal of a recent contact marked one or Kavita itself said so; otherwise the page, capped
+   as any push (`pages - 2`). Nothing is ever recorded as a new reading.
+
+Every half is idempotent (the note of the pass remembers what was pushed, so its echo is never read
+back as a reading), so a stop at any step is resumed by running the batch again; the resume of a
+plan (`RenameBook.resume`) does it. The periodic pass also carries a chapter it has never seen under
+an id Kavita has just made (a rescan that renumbered a series, with or without a plan), by the same
+rule.
+
+**Who is carried.** The members whose own live key the destination holds (`destination_account`),
+on a destination with `sync_progress` on. The preview counts the readers of Kavita **without** their
+accounts (`count_readers(carried=...)`), and `warnings[].members` names, to the admin only, the
+members who declare a Kavita account (`user.kavita_username`) with no key here and whose account
+reads in these folders: the confirmation of EF-EXP-037 is for them, and for the accounts nobody
+declared. No warning, no confirmation when everybody is carried.
+
+**What it does not do.** A move from one root to another is a copy, not a rename: it stays refused
+(`cross_root`), noted « Later ». A series name already borne by another series of the library is
+refused at the planning (`series_name_collision`, the names Kavita shows now: the series the user
+renamed in Kavita is our own, never a collision). A chapter Kavita holds as several files, an EPUB
+and a block page whose map is not verified are not carried (as in the periodic pass).
+
 ## Side effects in Kavita
 
 Writing a progress makes Kavita record a reading session (its statistics) and, with Kavita+, send

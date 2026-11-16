@@ -136,6 +136,9 @@ class ItemMoveIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
     export_item_id: str = Field(min_length=26, max_length=26)
     new_rel_path: str = Field(min_length=1, max_length=2048)
+    # the destination the file would land in: only the plan's own is accepted, another root is a
+    # copy and not a rename (`cross_root`)
+    destination_id: str | None = Field(default=None, min_length=26, max_length=26)
 
 
 class RenamePlanIn(BaseModel):
@@ -243,7 +246,9 @@ def build_plans_router(get_pipeline: Callable[[], PlanPipeline]) -> APIRouter:
         if (body.template is None) == (not body.moves):
             raise ProblemError("validation_failed")
         template = _candidate(body.template)
-        moves = tuple(ItemMove(m.export_item_id, m.new_rel_path) for m in body.moves or ())
+        moves = tuple(
+            ItemMove(m.export_item_id, m.new_rel_path, m.destination_id) for m in body.moves or ()
+        )
         try:
             result = get_pipeline().rename_preview(
                 body.shelf_destination_id, template=template, moves=moves

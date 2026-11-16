@@ -17,7 +17,7 @@ Le développement est mené par des agents (voir [AI_POLICY.md](AI_POLICY.md)) :
 | M5 | Lecteur intégré | Lecteur EPUB et manga (secondaire), OPDS et kosync propres, OIDC, page légère pour liseuses, PWA | `v1.x` |
 | M6 | Écosystème | SDK publié sur PyPI (`shelfhold-sdk`, MIT), plugins tiers isolés, index signé, trackers ; relecture juridique de l'exception de plugin avant publication | `v2.0.0` |
 
-Hors planning (« plus tard ») : moteur YAML, PDF, annotations, Calibre, envoi vers liseuses, autres serveurs de lecture, import V2.
+Hors planning (« plus tard ») : migration d’une liaison d’une racine à l’autre (une copie, pas un renommage), moteur YAML, PDF, annotations, Calibre, envoi vers liseuses, autres serveurs de lecture, import V2.
 
 ## Critère de sortie commun
 

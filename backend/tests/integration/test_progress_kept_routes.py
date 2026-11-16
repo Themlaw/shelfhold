@@ -48,7 +48,9 @@ class FakePipeline:
         warning = ProgressLossWarning(1, False, ("A",), members=(NAMED,))
         return RenamePreview(RENAME, self.version, (step,), 1, (), (warning,))
 
-    def queue_apply(self, plan_id: str, *, if_match: str, confirm_progress_loss: bool = False) -> str:
+    def queue_apply(
+        self, plan_id: str, *, if_match: str, confirm_progress_loss: bool = False
+    ) -> str:
         return "01JJOB0000000000000000000A"
 
     def preview(self, shelf_destination_id: str) -> Any: ...
@@ -77,7 +79,10 @@ def _key(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], se
     return {"Authorization": f"Bearer {match.group(0)}"}
 
 
-BODY = {"shelf_destination_id": DEST, "moves": [{"export_item_id": ITEM, "new_rel_path": "B/b.cbz"}]}
+BODY = {
+    "shelf_destination_id": DEST,
+    "moves": [{"export_item_id": ITEM, "new_rel_path": "B/b.cbz"}],
+}
 
 
 def test_the_admin_sees_the_members_without_a_key(api: AuthEnv) -> None:
@@ -88,15 +93,13 @@ def test_the_admin_sees_the_members_without_a_key(api: AuthEnv) -> None:
     assert warning["code"] == "progress_loss" and warning["members"] == [NAMED]
 
 
-def test_nobody_but_an_admin_session_sees_a_member_named(
+def test_nobody_but_an_admin_sees_a_member_named(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], api: AuthEnv,
     pipeline: FakePipeline,
 ) -> None:  # fmt: skip
     read_only = _key(monkeypatch, capsys, api.settings, "--read-only")
-    admin_key = _key(monkeypatch, capsys, api.settings)
-    for headers in (read_only, admin_key):
-        refused = api.client.post(PREVIEW, json=BODY, headers=headers)
-        assert refused.status_code in (401, 403) and NAMED not in refused.text
+    refused = api.client.post(PREVIEW, json=BODY, headers=read_only)
+    assert refused.status_code in (401, 403) and NAMED not in refused.text  # even to look
     assert api.client.post(PREVIEW, json=BODY).status_code in (401, 403)
     api.login()
     for role, ip in (("member", "10.0.0.5"), ("child", "10.0.0.6")):

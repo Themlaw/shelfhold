@@ -9,29 +9,41 @@ progress, an upper bound that says so (`exact` false): the plan then asks for it
 any other (an unreadable count is never "nobody").
 """
 
-from collections.abc import Sequence
+from collections.abc import Collection, Sequence
 
 from shelfhold.export.application.rename_plan import ReaderCount
 from shelfhold.export.targets.kavita.client import KavitaClient
 from shelfhold.export.targets.kavita.errors import TargetError
 from shelfhold.export.targets.kavita.series import SeriesResolver
+from shelfhold.infrastructure.kavita_names import kavita_name_key
 
 __all__ = ["count_readers"]
 
 
 async def count_readers(
-    client: KavitaClient, library_id: int, remote_folders: Sequence[str]
+    client: KavitaClient,
+    library_id: int,
+    remote_folders: Sequence[str],
+    *,
+    carried: Collection[str] = (),
 ) -> ReaderCount:
-    """The accounts of Kavita that read in `remote_folders` of one library, or all that could."""
+    """The accounts of Kavita that read in `remote_folders` of one library, or all that could,
+    the `carried` accounts (names, as the members declared them) apart."""
+    kept = {kavita_name_key(name) for name in carried}
     try:
         users = await client.list_users()
-        accounts = sum(1 for user in users if user.is_admin or library_id in user.library_ids)
+        left = [
+            user for user in users
+            if (user.is_admin or library_id in user.library_ids)
+            and kavita_name_key(user.username) not in kept
+        ]  # fmt: skip
         reading = await _key_account_reads(client, library_id, remote_folders)
     except TargetError:
         return ReaderCount(0, exact=False)  # Kavita could not be asked: not "nobody"
-    if accounts <= 1:
-        return ReaderCount(1 if reading else 0, exact=True)
-    return ReaderCount(accounts, exact=False)  # the members' progress needs their own tokens (M4)
+    names = tuple(sorted(user.username for user in left))
+    if len(left) <= 1:
+        return ReaderCount(1 if reading else 0, exact=True, accounts=names)
+    return ReaderCount(len(left), exact=False, accounts=names)  # a count, not who read
 
 
 async def _key_account_reads(

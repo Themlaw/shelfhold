@@ -5,7 +5,13 @@
   import { t } from '#lib/i18n/index.ts';
 
   type Step = { kind: string; src: string; dst: string };
-  type Warning = { code: string; readers: number; exact: boolean; series: string[] };
+  type Warning = {
+    code: string;
+    readers: number;
+    exact: boolean;
+    series: string[];
+    members?: string[];
+  };
   type Blocked = { code: string; src: string };
   type Plan = {
     plan_id: string | null;
@@ -48,7 +54,12 @@
     <p>{t('plan.blocked', { count: plan.blocked.length })}</p>
   {/if}
   {#if progressWarning}
-    <div role="alert">{warningText(progressWarning)}</div>
+    <div role="alert">
+      {warningText(progressWarning)}
+      {#if progressWarning.members && progressWarning.members.length > 0}
+        {t('plan.warning_members', { members: progressWarning.members.join(', ') })}
+      {/if}
+    </div>
   {/if}
   {#if hasProgressLoss}
     <TypedConfirm

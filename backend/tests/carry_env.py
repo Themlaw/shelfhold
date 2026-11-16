@@ -58,6 +58,8 @@ class CarryEnv:
     log: list[tuple[Any, ...]] = field(default_factory=list)  # what happened, in order
     keys: dict[str, str] = field(default_factory=dict)  # user id -> the member's key
     names: dict[str, str] = field(default_factory=dict)  # user id -> the Kavita account name
+    sleeps: list[float] = field(default_factory=list)  # the waits the carry asked for
+    on_sleep: Callable[[], None] | None = None  # what Kavita does meanwhile
 
     @property
     def engine(self) -> sa.Engine:
@@ -136,9 +138,7 @@ class CarryEnv:
         known = {PurePosixPath(s["folderPath"]).name for s in fake.series}
         for folder, files in on_disk.items():
             if folder not in known:
-                fake.add_series(
-                    folder, self.remote_path(folder), files, library_id=LIBRARY
-                )
+                fake.add_series(folder, self.remote_path(folder), files, library_id=LIBRARY)
 
     def series_ids(self) -> dict[str, int]:
         return {PurePosixPath(s["folderPath"]).name: int(s["id"]) for s in self.fake.series}
@@ -218,8 +218,13 @@ class CarryEnv:
                     ":t, :t, 'device', 'reader-1', :cu, '[]')"
                 ),
                 {
-                    "id": row_id, "u": user, "c": item, "h": self.content_hash(item),
-                    "l": json.dumps(locator), "p": page / PAGES, "t": now,
+                    "id": row_id,
+                    "u": user,
+                    "c": item,
+                    "h": self.content_hash(item),
+                    "l": json.dumps(locator),
+                    "p": page / PAGES,
+                    "t": now,
                     "cu": json.dumps(covered),
                 },
             )
@@ -241,8 +246,10 @@ class CarryEnv:
             return {
                 str(r.unit_id): (str(r.state), int(r.approximate))
                 for r in connection.execute(
-                    sa.text("SELECT unit_id, state, approximate FROM reading_progress "
-                            "WHERE user_id = :u"),
+                    sa.text(
+                        "SELECT unit_id, state, approximate FROM reading_progress "
+                        "WHERE user_id = :u"
+                    ),
                     {"u": user},
                 )
             }
@@ -276,7 +283,7 @@ def _user() -> sa.Table:
 
 
 @contextmanager
-def carry_env() -> Iterator[CarryEnv]:
+def carry_env(*, tries: int = 6) -> Iterator[CarryEnv]:
     with export_env() as env:
         fake = FakeKavita()
         fake.wall = env.clock.now
@@ -306,8 +313,17 @@ def carry_env() -> Iterator[CarryEnv]:
             sleep=lambda _s: None,
             structure_ttl_s=0.0,  # a test moves Kavita's files at will
         )
+        box: list[CarryEnv] = []
+
+        def sleep(seconds: float) -> None:  # nothing sleeps: a test says what Kavita does meanwhile
+            box[0].sleeps.append(seconds)
+            if box[0].on_sleep is not None:
+                box[0].on_sleep()
+
         carry = KavitaCarry(
-            env.engine, remote, env.clock, admin_client=lambda _target: admin,
-            sleep=lambda _s: None,
-        )
-        yield CarryEnv(env, fake, store, remote, carry)
+            env.engine, remote, env.clock, admin_client=lambda _target: admin, sleep=sleep,
+            tries=tries,
+        )  # fmt: skip
+        made = CarryEnv(env, fake, store, remote, carry)
+        box.append(made)
+        yield made

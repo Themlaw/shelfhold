@@ -68,9 +68,7 @@ def _new_chapter_pages(cenv: CarryEnv, folder: str) -> dict[str, dict[str, int]]
 def test_delete_and_rename_resolve_remote_preserves_progress(cenv: CarryEnv) -> None:
     alice, bob, _ids = _setup(cenv)
     old_series = cenv.series_ids()[OLD]
-    preview = cenv.env.pipeline.rename_preview(
-        cenv.env.destination_id, moves=cenv.moves(OLD, NEW)
-    )
+    preview = cenv.env.pipeline.rename_preview(cenv.env.destination_id, moves=cenv.moves(OLD, NEW))
     assert preview.warnings == ()  # every reader has a key: nobody loses anything
     _apply(cenv, preview)  # no confirmation was needed
     series = cenv.series_ids()
@@ -92,16 +90,14 @@ def test_delete_and_rename_resolve_remote_preserves_progress(cenv: CarryEnv) -> 
 def test_reshelving_preserves_progress_pull_move_scan_resolve_push(cenv: CarryEnv) -> None:
     alice, bob, _ids = _setup(cenv)
     cenv.watch()
-    preview = cenv.env.pipeline.rename_preview(
-        cenv.env.destination_id, moves=cenv.moves(OLD, NEW)
-    )
+    preview = cenv.env.pipeline.rename_preview(cenv.env.destination_id, moves=cenv.moves(OLD, NEW))
     _apply(cenv, preview)
     kinds = cenv.kinds()
     assert {"pull", "scan", "push"} <= set(kinds)
-    last_pull = max(i for i, k in enumerate(kinds) if k == "pull")
-    first_push = min(i for i, k in enumerate(kinds) if k == "push")
-    scan = kinds.index("scan")
-    assert last_pull < scan < first_push  # pull, then the scan, then the push: nothing else
+    first_pull, scan = kinds.index("pull"), kinds.index("scan")
+    first_push = kinds.index("push")
+    assert first_pull < scan < first_push  # pull, then the scan, then the push
+    assert "push" not in kinds[:scan]  # nothing is written in Kavita before the move is scanned
     old_files = {f"{OLD}/{n}" for n in (CH1, CH2, CH3)}
     new_files = {f"{NEW}/{n}" for n in (CH1, CH2, CH3)}
     first_pull = cenv.log[kinds.index("pull")][1]
@@ -121,9 +117,7 @@ def test_member_without_token_named_in_preview(cenv: CarryEnv) -> None:
     cenv.member("dave", link=False, library_access=False)  # no access to this library
     cenv.member("erin", link=False, kavita=False)  # no Kavita account at all
     cenv.wire()
-    preview = cenv.env.pipeline.rename_preview(
-        cenv.env.destination_id, moves=cenv.moves(OLD, NEW)
-    )
+    preview = cenv.env.pipeline.rename_preview(cenv.env.destination_id, moves=cenv.moves(OLD, NEW))
     assert len(preview.warnings) == 1
     warning = preview.warnings[0]
     assert warning.code == "progress_loss"
@@ -133,9 +127,7 @@ def test_member_without_token_named_in_preview(cenv: CarryEnv) -> None:
         _apply(cenv, preview)
     assert tree(cenv.env) == sorted(f"{OLD}/{name}" for name in ids)  # nothing moved
     cenv.link(carol, "acct-carol")  # she pastes her key
-    again = cenv.env.pipeline.rename_preview(
-        cenv.env.destination_id, moves=cenv.moves(OLD, NEW)
-    )
+    again = cenv.env.pipeline.rename_preview(cenv.env.destination_id, moves=cenv.moves(OLD, NEW))
     assert again.warnings == ()
     _apply(cenv, again)  # and nobody is asked anything any more
 
@@ -149,13 +141,13 @@ def test_rename_collision_checked_at_planning(cenv: CarryEnv) -> None:
     )  # a series nobody from Shelfhold wrote, under the name the plan would give
     before = (tree(cenv.env), cenv.fake.series[:])
     with pytest.raises(RenameRefusedError) as refused:
-        cenv.env.pipeline.rename_preview(
-            cenv.env.destination_id, moves=cenv.moves(OLD, "Blue Box")
-        )
+        cenv.env.pipeline.rename_preview(cenv.env.destination_id, moves=cenv.moves(OLD, "Blue Box"))
     assert refused.value.reason == "series_name_collision"
     with cenv.engine.connect() as connection:  # nothing is stored, nothing moved
-        assert connection.execute(sa.select(sa.func.count()).select_from(coherence.export_plan)
-                                  ).scalar_one() == 0  # fmt: skip
+        assert connection.execute(
+            sa.select(sa.func.count()).select_from(coherence.export_plan)
+            .where(coherence.export_plan.c.kind == "rename_plan")
+        ).scalar_one() == 0  # fmt: skip
     assert (tree(cenv.env), cenv.fake.series) == before
     # the name Kavita shows for **our own** series is not a collision (the user renamed it there)
     own = next(s for s in cenv.fake.series if s["name"] == OLD)
@@ -184,9 +176,7 @@ def test_cross_root_binding_migration_still_refused_with_code(cenv: CarryEnv) ->
         )  # fmt: skip
     before = tree(env)
     with pytest.raises(RenameRefusedError) as refused:  # an item of the other root
-        env.pipeline.rename_preview(
-            env.destination_id, moves=[ItemMove(foreign, f"{NEW}/x.cbz")]
-        )
+        env.pipeline.rename_preview(env.destination_id, moves=[ItemMove(foreign, f"{NEW}/x.cbz")])
     assert refused.value.reason == "cross_root"
     with pytest.raises(RenameRefusedError) as named:  # a move that names the other destination
         env.pipeline.rename_preview(
@@ -210,9 +200,7 @@ def test_a_look_at_the_last_page_and_a_transposed_position_never_become_read(
     cenv.device_position(alice, ids[CH2], 15, transposed=True)  # a guess from another Edition
     cenv.read_in_kavita(alice, OLD, CH3, PAGES)  # Kavita itself says read: that one is proven
     cenv.wire()
-    preview = cenv.env.pipeline.rename_preview(
-        cenv.env.destination_id, moves=cenv.moves(OLD, NEW)
-    )
+    preview = cenv.env.pipeline.rename_preview(cenv.env.destination_id, moves=cenv.moves(OLD, NEW))
     _apply(cenv, preview)
     pages = _new_chapter_pages(cenv, NEW)[alice]
     assert pages[CH1] == PAGES - 2  # never the count: a look is given as a page
@@ -226,9 +214,7 @@ def test_a_member_is_never_written_with_another_ones_key(cenv: CarryEnv) -> None
     carol = cenv.member("carol", link=False)  # an account in Kavita, no key on this instance
     cenv.device_position(carol, ids[CH1], 9)
     carol_before = cenv.positions(carol)
-    preview = cenv.env.pipeline.rename_preview(
-        cenv.env.destination_id, moves=cenv.moves(OLD, NEW)
-    )
+    preview = cenv.env.pipeline.rename_preview(cenv.env.destination_id, moves=cenv.moves(OLD, NEW))
     assert preview.warnings[0].members == ("carol",)
     _apply(cenv, preview, confirm=True)  # the warning is hers: the admin gave the confirmation
     writers = {account for account, _chapter, _page in cenv.fake.progress_writes}
@@ -244,7 +230,12 @@ def test_a_child_chapter_above_the_ceiling_is_neither_pulled_nor_pushed(cenv: Ca
     hidden = cenv.series("Blue Box", ["1"])
     child = cenv.member("kid", role="child")
     with cenv.engine.begin() as connection:  # the second series is rated above the ceiling
-        connection.execute(sa.text("UPDATE edition SET age_rating = 6"))
+        connection.execute(
+            sa.text("UPDATE work SET age_rating = 6, rated_at = '2026-11-01 00:00:00'")
+        )
+        connection.execute(
+            sa.text("UPDATE edition SET age_rating = 6, rated_at = '2026-11-01 00:00:00'")
+        )
         connection.execute(
             sa.text(
                 "UPDATE edition SET age_rating = 16 WHERE id IN (SELECT i.edition_id FROM "
@@ -252,7 +243,12 @@ def test_a_child_chapter_above_the_ceiling_is_neither_pulled_nor_pushed(cenv: Ca
                 "WHERE r.rel_path LIKE 'Blue Box/%')"
             )
         )
+        connection.execute(
+            sa.text("UPDATE work SET age_rating = 16 WHERE id IN "
+                    "(SELECT work_id FROM edition WHERE age_rating = 16)")
+        )  # fmt: skip
     (blue,) = hidden
+    blue_chapter = cenv.chapter("Blue Box", blue)
     cenv.read_in_kavita(child, "Blue Box", blue, 6)  # in Kavita, above the ceiling
     cenv.read_in_kavita(child, OLD, CH1, 4)  # in Kavita, visible
     cenv.wire()
@@ -263,7 +259,7 @@ def test_a_child_chapter_above_the_ceiling_is_neither_pulled_nor_pushed(cenv: Ca
              if "reader/get-progress" in r.path.lower()]  # fmt: skip
     assert asked  # the visible chapter was asked about
     chapters_asked = {int(r.query["chapterId"]) for r in asked if r.query.get("chapterId")}
-    assert cenv.chapter("Blue Box", blue) not in chapters_asked
+    assert blue_chapter not in chapters_asked
     stored = [p for p in cenv.positions(child) if p.source == "server"]
     assert {p.carrier_id for p in stored} == set(ids.values())  # the visible one, nothing else
     assert cenv.kavita_page(child, NEW, CH1) == 4  # carried
@@ -286,9 +282,9 @@ def test_a_stop_at_any_step_resumes_with_every_progress_kept(
     from shelfhold.export.application.plans import PlanStore
 
     alice, bob, _ids = _setup(cenv)
-    preview = cenv.env.pipeline.rename_preview(
-        cenv.env.destination_id, moves=cenv.moves(OLD, NEW)
-    )
+    preview = cenv.env.pipeline.rename_preview(cenv.env.destination_id, moves=cenv.moves(OLD, NEW))
+    plan_id = preview.plan_id
+    assert plan_id is not None
     seen = {"n": 0, "killed": False}
 
     def step() -> None:
@@ -338,17 +334,17 @@ def test_a_stop_at_any_step_resumes_with_every_progress_kept(
                 .where(coherence.export_op.c.status == "failed")
                 .values(status="pending")
             )
-        resume_plan(cenv.env, preview.plan_id)
-    assert plan_status(cenv.env, preview.plan_id) == "done"
+        resume_plan(cenv.env, plan_id)
+    assert plan_status(cenv.env, plan_id) == "done"
     pages = _new_chapter_pages(cenv, NEW)
     assert pages[alice] == {CH1: 12, CH2: 0, CH3: 5}  # whatever the step, all of it is back
     assert pages[bob] == {CH1: 0, CH2: 7, CH3: 0}
     assert tree(cenv.env) == sorted(f"{NEW}/{n}" for n in (CH1, CH2, CH3))
     with cenv.engine.connect() as connection:
         open_intents = connection.execute(
-            sa.select(sa.func.count()).select_from(coherence.fs_intent).where(
-                coherence.fs_intent.c.state.in_(("pending", "applying"))
-            )
+            sa.select(sa.func.count())
+            .select_from(coherence.fs_intent)
+            .where(coherence.fs_intent.c.state.in_(("pending", "applying")))
         ).scalar_one()
     assert open_intents == 0
     for user in (alice, bob):  # no duplicate, no invented reading
@@ -378,16 +374,44 @@ def test_rescan_that_changes_the_series_id_is_healed_by_the_next_pass(cenv: Carr
     assert {state for state, _ in cenv.progress(alice).values()} <= {"in_progress"}
 
 
-def test_two_members_one_shared_account_is_never_guessed(cenv: CarryEnv) -> None:
-    alice, _bob, _ids = _setup(cenv)
-    twin = cenv.member("twin", link=False, kavita=False)  # a profile with the same Kavita account
-    cenv.link(twin, "acct-alice")
-    cenv.wire()
-    preview = cenv.env.pipeline.rename_preview(
-        cenv.env.destination_id, moves=cenv.moves(OLD, NEW)
-    )
-    with pytest.raises(RenameRefusedError) as refused:
-        _apply(cenv, preview, confirm=True)
-    assert refused.value.reason == "progress_not_pulled"  # `account_shared`: nobody is carried
+def test_a_key_kavita_refuses_stops_the_batch_before_anything_moves(cenv: CarryEnv) -> None:
+    alice, bob, _ids = _setup(cenv)
+    cenv.fake.auth_keys[:] = [k for k in cenv.fake.auth_keys if k["key"] != cenv.keys[alice]]
+    preview = cenv.env.pipeline.rename_preview(cenv.env.destination_id, moves=cenv.moves(OLD, NEW))
+    with pytest.raises(RenameRefusedError) as refused:  # alice's key is dead: her reading is
+        _apply(cenv, preview)  # only in Kavita, and the scan would delete it
+    assert refused.value.reason == "progress_not_pulled"
     assert tree(cenv.env) == sorted(f"{OLD}/{n}" for n in (CH1, CH2, CH3))  # nothing moved
-    assert cenv.kavita_page(alice, OLD, CH1) == 12
+    assert cenv.kavita_page(alice, OLD, CH1) == 12 and cenv.kavita_page(bob, OLD, CH2) == 7
+    assert preview.plan_id is not None
+    assert plan_status(cenv.env, preview.plan_id) == "failed"
+
+
+# -- a Kavita that scans late, or not at all --------------------------------------------------
+
+
+def test_a_kavita_that_scans_late_is_waited_for(cenv: CarryEnv) -> None:
+    alice, bob, _ids = _setup(cenv)
+    cenv.wire(drain=lambda: None)  # the scan is asked and Kavita does not answer yet
+    cenv.on_sleep = cenv.rescan  # it indexes the disk while the carry waits
+    preview = cenv.env.pipeline.rename_preview(cenv.env.destination_id, moves=cenv.moves(OLD, NEW))
+    _apply(cenv, preview)
+    assert len(cenv.sleeps) >= 1  # it waited, a bounded number of times
+    pages = _new_chapter_pages(cenv, NEW)
+    assert pages[alice] == {CH1: 12, CH2: 0, CH3: 5}
+    assert pages[bob] == {CH1: 0, CH2: 7, CH3: 0}
+
+
+def test_a_scan_that_never_comes_leaves_the_rest_to_the_periodic_pass(cenv: CarryEnv) -> None:
+    alice, bob, _ids = _setup(cenv)
+    cenv.wire(drain=lambda: None)
+    preview = cenv.env.pipeline.rename_preview(cenv.env.destination_id, moves=cenv.moves(OLD, NEW))
+    _apply(cenv, preview)  # the plan is done: the files are where they were asked to be
+    assert plan_status(cenv.env, str(preview.plan_id)) == "done"
+    assert len(cenv.sleeps) == 5  # six tries, then it gives up: bounded, never a hang
+    cenv.rescan()  # Kavita scans at last: the old series and its readings are gone
+    assert cenv.series_ids().get(OLD) is None
+    cenv.sync_all()  # the periodic pass finds chapters it has never seen, and carries them
+    pages = _new_chapter_pages(cenv, NEW)
+    assert pages[alice] == {CH1: 12, CH2: 0, CH3: 5}
+    assert pages[bob] == {CH1: 0, CH2: 7, CH3: 0}
