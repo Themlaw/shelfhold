@@ -305,6 +305,7 @@ CLOSED = (
     "GET /api/v1/status",
     "POST /api/v1/store/reinit",
     "POST /api/v1/targets",
+    "POST /api/v1/targets/native-folder",  # M4 L07: a reserved action (config.path_map)
     "POST /api/v1/targets/{target_id}/recheck",
     "POST /api/v1/targets/{target_id}/reconnect",
     "POST /api/v1/targets/{target_id}/rotate-key",
