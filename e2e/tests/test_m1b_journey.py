@@ -350,6 +350,9 @@ def rollback_world() -> Iterator[dict[str, object]]:
     j = Journey(app_image=PREVIOUS)
     j.compose("down", "-v", "-t", "1", check=False)
     try:
+        # the previous release does not know `serve --migrate`: its migration is run on its own
+        j.compose("up", "--wait", "-d", "egress-watch")
+        j.compose("run", "--rm", "--no-deps", "-T", "shelfhold", "shelfhold", "migrate")
         j.compose("up", "--wait", "-d")
         yield run_rollback(j)
     finally:
