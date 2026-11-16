@@ -32,8 +32,8 @@ describe('theme mechanism', () => {
   beforeEach(() => localStorage.clear());
 
   // req: EF-UX-012
-  it('ships themes A and B, A being the default', () => {
-    expect(THEMES).toEqual(['bibliotheque', 'console']);
+  it('ships theme A as the only theme and as the default', () => {
+    expect(THEMES).toEqual(['bibliotheque']);
     expect(DEFAULT_THEME).toBe('bibliotheque');
     expect(COLOR_SCHEMES).toEqual(['auto', 'light', 'dark']);
     const dirs = readdirSync(join(here), { withFileTypes: true }).filter((e) => e.isDirectory());
@@ -60,7 +60,7 @@ describe('theme mechanism', () => {
   // req: EF-UX-012, ENF-SEC-004
   it.each([
     '{"theme":"<script>alert(1)</script>","colorScheme":"dark"}',
-    '{"theme":"galerie","colorScheme":"neon"}',
+    '{"theme":"console","colorScheme":"neon"}',
     '{"theme":"bibliotheque\\" onload=\\"x","colorScheme":"dark\\"]{}"}',
     '{"theme":{"toString":1},"colorScheme":["dark"]}',
     '{"theme":"__proto__","colorScheme":"constructor"}',
@@ -95,7 +95,7 @@ describe('theme mechanism', () => {
   it('the markup default and the boot script agree with the list of themes', () => {
     expect(appHtml).toMatch(new RegExp(`<html[^>]*data-theme="${DEFAULT_THEME}"`));
     for (const theme of THEMES) expect(bootScript(appHtml)).toContain(`'${theme}'`);
-    expect(bootScript(appHtml)).not.toMatch(/galerie|calme/);
+    expect(bootScript(appHtml)).not.toMatch(/console|galerie|calme/);
   });
 
   // req: EF-UX-012
@@ -112,37 +112,6 @@ describe('theme mechanism', () => {
     expect(root.hasAttribute('data-color-scheme')).toBe(false);
     localStorage.setItem(STORAGE_KEY, '{"theme":"nope"}');
     expect(loadAppearance(localStorage)).toEqual({ theme: DEFAULT_THEME, colorScheme: 'auto' });
-  });
-});
-
-describe('theme B "Console"', () => {
-  // req: EF-UX-012
-  it('is applied and remembered like any theme, and the boot script knows it', () => {
-    const root = document.documentElement;
-    applyAppearance(root, { theme: 'console', colorScheme: 'dark' });
-    expect(root.dataset.theme).toBe('console');
-    rememberAppearance(localStorage, { theme: 'console', colorScheme: 'light' });
-    expect(loadAppearance(localStorage)).toEqual({ theme: 'console', colorScheme: 'light' });
-    expect(boot(JSON.stringify({ theme: 'console', colorScheme: 'dark' }))).toEqual({
-      theme: 'console',
-      scheme: 'dark'
-    });
-  });
-
-  // req: EF-UX-012
-  it('compiles to its own block, in light and in dark, with the dense variants', () => {
-    const css = readFileSync(join(here, 'themes.css'), 'utf8');
-    const block = css.match(/:root\[data-theme="console"\] \{[^}]*\}/s)?.[0] ?? '';
-    expect(block).toContain('--color-accent:');
-    expect(block).toContain('--variant-density: compact;');
-    expect(css).toMatch(/:root\[data-theme="console"\]\[data-color-scheme="dark"\] \{/);
-    expect(css).toMatch(/\(prefers-color-scheme: dark\)[^@]*:root\[data-theme="console"\]:not/s);
-  });
-
-  // req: EF-UX-012
-  it('every theme folder is on the list, and the list holds nothing else', () => {
-    const dirs = readdirSync(here, { withFileTypes: true }).filter((e) => e.isDirectory());
-    expect(dirs.map((e) => e.name).sort()).toEqual([...THEMES].sort());
   });
 });
 

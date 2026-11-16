@@ -1,12 +1,12 @@
 <script lang="ts">
-  // The theme, the color scheme and the language of the signed-in person (EF-UX-012, ENF-I18N-001): saved by
+  // The color scheme and the language of the signed-in person (EF-UX-012, ENF-I18N-001): saved by
   // the server, then the root layout reads the preferences again and applies them (only it knows
   // the theme mechanism, I51).
   import { invalidateAll } from '$app/navigation';
   import { onMount } from 'svelte';
   import { getPreferences, patchPreferences } from '#lib/api/index.ts';
   import type { PreferencesOut } from '#lib/api/types.gen.ts';
-  import { hasMessage, setUiLanguage, t } from '#lib/i18n/index.ts';
+  import { setUiLanguage, t } from '#lib/i18n/index.ts';
   import { csrfToken } from '#lib/passkeys.ts';
 
   let prefs = $state<PreferencesOut | null>(null);
@@ -14,17 +14,10 @@
   // the options speak their own language: the choice of one is readable whatever the interface says
   const LANGUAGES: PreferencesOut['language'][] = ['fr', 'en'];
 
-  let theme = $state('');
   let colorScheme = $state<PreferencesOut['color_scheme']>('auto');
   let language = $state<PreferencesOut['language']>('fr');
   let failed = $state(false);
   let message = $state('');
-
-  // a theme the server delivers before this screen knows its name shows under its own name
-  const themeLabel = (name: string): string => {
-    const key = `appearance.theme.${name}`;
-    return hasMessage(key) ? t(key) : name;
-  };
 
   const headers = () => ({ 'X-CSRF-Token': csrfToken() });
 
@@ -32,7 +25,6 @@
     try {
       const { data } = await getPreferences({ throwOnError: true });
       prefs = data;
-      theme = data.theme;
       colorScheme = data.color_scheme;
       language = data.language;
       setUiLanguage(data.language);
@@ -60,29 +52,6 @@
     } catch {
       failed = true;
       message = t('appearance.refused');
-    }
-  }
-
-  // The themes are the ones the server delivers; the choice applies at once, then the layout reads
-  // the preference again and sets it on the page (only it knows the mechanism, I51). A refusal puts
-  // the select back on what is kept.
-  async function changeTheme(): Promise<void> {
-    failed = false;
-    message = '';
-    try {
-      const { data } = await patchPreferences({
-        headers: headers(),
-        body: { theme },
-        throwOnError: true
-      });
-      prefs = data;
-      theme = data.theme;
-      message = t('appearance.saved');
-      await invalidateAll();
-    } catch {
-      failed = true;
-      message = t('appearance.refused');
-      theme = prefs?.theme ?? theme;
     }
   }
 
@@ -115,14 +84,6 @@
 <main>
   <h1>{t('appearance.title')}</h1>
   {#if prefs}
-    <form onsubmit={(event) => event.preventDefault()}>
-      <label for="theme">{t('appearance.theme')}</label>
-      <select id="theme" bind:value={theme} onchange={changeTheme}>
-        {#each prefs.available_themes as name (name)}
-          <option value={name}>{themeLabel(name)}</option>
-        {/each}
-      </select>
-    </form>
     <form onsubmit={save}>
       <label for="color-scheme">{t('appearance.scheme')}</label>
       <select id="color-scheme" bind:value={colorScheme}>

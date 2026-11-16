@@ -9,10 +9,8 @@ from typing import Protocol
 
 from shelfhold.i18n import DEFAULT_LANGUAGE, LANGUAGES
 
-DEFAULT_THEME = "bibliotheque"  # theme A
-# One folder of tokens per theme under `frontend/src/lib/themes` (a test keeps them level); C and D
-# arrive after B.
-DELIVERED_THEMES = (DEFAULT_THEME, "console")
+DEFAULT_THEME = "bibliotheque"  # theme A; B, C and D arrive in M4
+DELIVERED_THEMES = (DEFAULT_THEME,)
 COLOR_SCHEMES = ("auto", "light", "dark")
 DELIVERED_LANGUAGES = LANGUAGES  # ("fr", "en"); a language of the catalogs only
 
@@ -21,7 +19,6 @@ DELIVERED_LANGUAGES = LANGUAGES  # ("fr", "en"); a language of the catalogs only
 class Preferences:
     theme: str  # in effect: the choice, else the instance default
     chosen_theme: str | None
-    available_themes: tuple[str, ...]
     color_scheme: str
     language: str  # the language of the interface (ENF-I18N-001), on the user row
 
@@ -44,11 +41,9 @@ class PreferencesService:
         chosen, scheme, locale = self._store.read(user_id)
         default = self._store.instance_default_theme()
         fallback = default if default in DELIVERED_THEMES else DEFAULT_THEME
-        chosen = chosen if chosen in DELIVERED_THEMES else None  # never a name nobody can style
         return Preferences(
             theme=chosen or fallback,
             chosen_theme=chosen,
-            available_themes=DELIVERED_THEMES,
             color_scheme=scheme,
             language=locale if locale in DELIVERED_LANGUAGES else DEFAULT_LANGUAGE,
         )

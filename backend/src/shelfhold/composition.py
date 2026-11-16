@@ -472,13 +472,14 @@ class Composition:
 
     def kavita_client(self, target_id: str) -> KavitaClient:
         with self.engine.connect() as connection:
-            url = str(
-                connection.execute(
-                    sa.select(export.export_target.c.config).where(
-                        export.export_target.c.id == target_id
-                    )
-                ).scalar_one()["url"]
-            )
+            row = connection.execute(
+                sa.select(export.export_target.c.kind, export.export_target.c.config).where(
+                    export.export_target.c.id == target_id
+                )
+            ).one()
+            if row.kind != "kavita":  # a Komga or a folder is never run by the Kavita client
+                raise KeyError(target_id)
+            url = str(row.config["url"])
         wakes = self.wakes()
 
         async def wake() -> None:

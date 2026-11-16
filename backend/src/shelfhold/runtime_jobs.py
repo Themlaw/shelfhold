@@ -136,6 +136,7 @@ from shelfhold.export.targets.kavita.series import (
     refresh_foreign_names,
     refresh_names,
 )
+from shelfhold.export.targets.komga.target import KomgaDestination
 from shelfhold.export.targets.native_folder.source import NativeFolderSource
 from shelfhold.identity.public import child_kavita_accounts
 from shelfhold.import_jobs import register_import_job
@@ -601,7 +602,9 @@ class FirstPartyDestinations:
     """What the destinations of the core describe for a binding. Kavita is run by its own client
     (`KavitaClient.execute`, with the key the core holds): it describes calls the core already
     sends and no plan of files, so nothing is asked of it here. The native folder (EF-EXP-010)
-    describes a plan of files: `NativeFolderSource` reads what was planned and answers for it."""
+    describes a plan of files: `NativeFolderSource` reads what was planned and answers for it.
+    Komga (EF-EXP-020) declares what it is and describes calls of the library; it is not run by
+    the pass yet (its scan is asked by `KomgaClient`, see docs/decisions/M4.md, L08a)."""
 
     def __init__(self, engine: Engine) -> None:
         self._engine = engine
@@ -617,6 +620,8 @@ class FirstPartyDestinations:
             ).scalar()
         if kind == "native_folder":
             return self._native.capabilities(target_id)
+        if kind == "komga":
+            return KomgaDestination.capabilities
         return KavitaDestination.capabilities if kind == "kavita" else None
 
     def plan(self, binding: Any) -> object | None:

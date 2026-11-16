@@ -38,7 +38,8 @@ class KavitaDestination:
             max_segment_bytes=255, max_path_bytes=4096, forbidden='<>:"|?*', case_insensitive=False
         ),
         name_normalizer="kavita-1",
-        series_grouping="folder",
+        series_grouping="name",  # Kavita reads the name of the series (ADR-0052); Komga the folder
+        indexes_tree=True,  # it may index a tree it did not write (ADR-0052, M4 L08a)
         forbidden_sidecars=frozenset({"series.json"}),  # Kavita misreads it (ADR-0052, M4 L03)
     )
 
