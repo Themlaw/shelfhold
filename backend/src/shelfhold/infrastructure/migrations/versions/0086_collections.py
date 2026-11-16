@@ -36,11 +36,7 @@ CREATE TABLE collection (
 )
 """
     )
-    op.execute(
-        """
-CREATE INDEX ix_collection_owner ON collection (owner_id)
-"""
-    )
+    op.execute("CREATE INDEX ix_collection_owner ON collection (owner_id)")
     op.execute(
         """
 CREATE TABLE collection_item (
@@ -60,11 +56,7 @@ CREATE TABLE collection_item (
 )
 """
     )
-    op.execute(
-        """
-CREATE INDEX ix_collection_item_work ON collection_item (work_id)
-"""
-    )
+    op.execute("CREATE INDEX ix_collection_item_work ON collection_item (work_id)")
     op.execute(
         """
 CREATE TABLE collection_remote (

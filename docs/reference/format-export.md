@@ -76,6 +76,7 @@ laisse de côté (pierres tombales, secrets, jetons, destinations) : les listes 
 | Fichiers | `content`, `export_item`, `unit_coverage` |
 | Étagères | `shelf` |
 | Blocs de série | `bundle_partition`, `bundle_version`, `bundle_setting`, `document_alias` |
+| Listes | `collection`, `collection_item` |
 | Profils | `user`, `user_state`, `reading_position`, `request`, `profile_source_policy` |
 
 Les blocs de série servis en OPDS (L49a) sont un **historique**, pas un cache : `bundle_partition`

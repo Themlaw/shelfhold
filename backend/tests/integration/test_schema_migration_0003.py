@@ -26,6 +26,7 @@ CATALOG_TABLES = {
     "merge_log", "work_redirect",  # migration 0046 (M3 L01)
     "provider_release_calendar",  # migration 0071 (M4 L20)
     "external_link",  # migration 0079 (M4 L23)
+    "collection", "collection_item", "collection_remote",  # migration 0086 (M4 L18a)
 }  # fmt: skip
 ACQUISITION_TABLES = {
     "follow_notice",
