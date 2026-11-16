@@ -63,7 +63,7 @@ def test_a_file_dropped_in_the_folder_closes_the_request_put_aside(
         assert [o["state"] for o in report["outcomes"]] == ["stored"]
         with engine.connect() as connection:
             states = dict(
-                connection.execute(sa.select(identity.request.c.id, identity.request.c.state))
+                connection.execute(sa.select(identity.request.c.id, identity.request.c.state)).all()
             )
             work = connection.execute(
                 sa.select(identity.request.c.work_id).where(identity.request.c.id == waiting)
