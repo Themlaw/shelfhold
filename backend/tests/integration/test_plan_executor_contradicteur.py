@@ -44,6 +44,7 @@ def x() -> Iterator[ExecEnv]:
         yield ex
 
 
+@pytest.mark.req("EF-EXP-058")
 def test_a_second_plan_for_the_same_call_is_not_skipped_by_index(x: ExecEnv) -> None:
     """Un appel relancé avec un plan régénéré (l'ordre ou le contenu a changé) : l'opération 0 du
     nouveau plan est sautée parce que l'opération 0 de l'ancien a une intention `done`. Le
@@ -58,6 +59,7 @@ def test_a_second_plan_for_the_same_call_is_not_skipped_by_index(x: ExecEnv) -> 
     assert (x.root / "Series A" / "Volume 2.cbz").read_bytes() == BYTES[BOOK_B]
 
 
+@pytest.mark.req("EF-EXP-058")
 def test_run_calls_refuses_a_target_that_is_not_the_one_of_the_binding(x: ExecEnv) -> None:
     """`PlanBinding.target_id` vient de l'appelant. `execute` le recoupe par `tree_indexer`,
     `run_calls` jamais : l'empreinte contrôlée est celle d'un autre serveur, et la pause de la
@@ -76,6 +78,7 @@ def test_run_calls_refuses_a_target_that_is_not_the_one_of_the_binding(x: ExecEn
     assert sent == []
 
 
+@pytest.mark.req("EF-EXP-058")
 def test_one_folder_reached_through_two_roots_is_one_tree(x: ExecEnv) -> None:
     """`_load_tree` ne charge ni `(st_dev, st_ino)` ni l'ascendance : `relation` ne compare que
     dans une même racine, donc un dossier atteint par deux racines (montage lié, ou deux entrées
@@ -106,6 +109,7 @@ def test_one_folder_reached_through_two_roots_is_one_tree(x: ExecEnv) -> None:
     assert not (x.root / "Series B").exists()
 
 
+@pytest.mark.req("EF-EXP-058")
 def test_touch_mtime_keeps_the_inode_and_its_links(x: ExecEnv) -> None:
     """`touch_mtime` réécrit le fichier entier par `write_atomic(replace=True)` : l'écriture est
     atomique (pas de troncature possible), mais l'inode change. Un fichier lié en dur
@@ -127,6 +131,7 @@ def test_touch_mtime_keeps_the_inode_and_its_links(x: ExecEnv) -> None:
     assert (after.st_ino, after.st_nlink) == (before.st_ino, before.st_nlink)
 
 
+@pytest.mark.req("EF-EXP-058")
 def test_a_sidecar_is_planned_and_never_one_the_destination_forbids(x: ExecEnv) -> None:
     """Un `write_inline` qui cite un `sidecar` échappe à `check_content_ref` : l'exécuteur lit au
     `ContentStore` une référence que rien n'a planifiée pour cet appel ni pour cette liaison, et
@@ -143,6 +148,7 @@ def test_a_sidecar_is_planned_and_never_one_the_destination_forbids(x: ExecEnv) 
     assert x.contents.reads == []
 
 
+@pytest.mark.req("EF-EXP-058")
 def test_an_instance_that_changes_during_a_run_stops_the_next_write(x: ExecEnv) -> None:
     """L'empreinte est lue au départ du passage, plus ensuite : sur 10 000 opérations, un serveur
     remplacé en cours de route reçoit le reste du plan. Attendu : la pause arrête l'opération

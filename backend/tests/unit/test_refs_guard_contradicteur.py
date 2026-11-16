@@ -31,12 +31,14 @@ def _clean_registry():  # type: ignore[no-untyped-def]
     forget_secret_values()
 
 
+@pytest.mark.req("EF-EXP-065")
 def test_the_write_guard_refuses_this_reference() -> None:
     register_secret_value(SECRET)
     with pytest.raises(SecretInWriteError):
         check_write("UPDATE unit_variant SET remote_unit_id = ?", (REF,), many=False)
 
 
+@pytest.mark.req("EF-EXP-065")
 @pytest.mark.parametrize("template", [None, SECRET_PLACEHOLDER])
 def test_what_the_write_guard_refuses_the_refs_guard_refuses_or_hides(template: str | None) -> None:
     register_secret_value(SECRET)
