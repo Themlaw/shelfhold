@@ -169,7 +169,8 @@ FROM (
         WHERE NOT q.replaced
         UNION ALL
         SELECT q.id, q.user_id, u.id, q.percent, q.client_ts, q.server_ts, q.source, q.page,
-          1, CAST(j.key AS INTEGER), json_array_length(q.covered_units), NULL, NULL, q.undone_units, q.transposed
+          1, CAST(j.key AS INTEGER), json_array_length(q.covered_units), NULL, NULL,
+          q.undone_units, q.transposed
         FROM (
           SELECT id, user_id, carrier_type, carrier_id, percent, client_ts, server_ts, source,
             covered_units, undone_units, NULL AS page,

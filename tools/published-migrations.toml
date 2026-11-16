@@ -242,5 +242,5 @@ since = "1.1"
 
 [[migration]]
 file = "0084_reading_progress_transposed.py"
-sha256 = "37dbfacb51b1cc62904c9eaa1c922c0ba4f7980669c80119f4218564ef575325"
+sha256 = "fd351ebfc21104f5534845155ec5bcd90c8887b49c3cac12640d0c784979a062"
 since = "1.1"
