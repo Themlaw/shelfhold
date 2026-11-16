@@ -18,6 +18,7 @@ from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import replica as replica_schema
 from shelfhold.infrastructure.schema import storage
 from shelfhold.library.public import (
+    CONTENT_HASH_BY,
     ExportSource,
     drop_replicas,
     export_sources,
@@ -113,7 +114,9 @@ def put_destination_copy(
 def add_format(env: ExportEnv, unit: Unit, fmt: str, data: bytes) -> str:
     """A second `content` of the Variant of the Unit (a PDF next to its CBZ), filed in the library
     with its copy. Returns the id of the content."""
-    media = {"pdf": "application/pdf", "epub": "application/epub+zip"}.get(fmt, f"application/{fmt}")
+    media = {"pdf": "application/pdf", "epub": "application/epub+zip"}.get(
+        fmt, f"application/{fmt}"
+    )
     content_id, content_hash = new_ulid(), sha(b"payload-" + data)
     rel = f"{unit.unit_id}.{fmt}"
     path = env.lib.manga / "received" / rel
@@ -128,7 +131,8 @@ def add_format(env: ExportEnv, unit: Unit, fmt: str, data: bytes) -> str:
             sa.insert(storage.content).values(
                 id=content_id, unit_id=unit.unit_id, variant_id=variant, kind="file",
                 media_type=media, format=fmt, retention="passthrough",
-                original_sha256=sha(data), content_hash=content_hash, content_hash_by="t1",
+                original_sha256=sha(data), content_hash=content_hash,
+                content_hash_by=CONTENT_HASH_BY,
                 store_provenance="received", size=len(data),
             )
         )  # fmt: skip
@@ -142,7 +146,9 @@ def add_format(env: ExportEnv, unit: Unit, fmt: str, data: bytes) -> str:
     return content_id
 
 
-def other_target(env: ExportEnv, caps: TargetCapabilities, registry: dict[str, TargetCapabilities]) -> str:
+def other_target(
+    env: ExportEnv, caps: TargetCapabilities, registry: dict[str, TargetCapabilities]
+) -> str:
     """Another server of the library, whose capabilities the test chooses."""
     target_id = add_target(env)
     registry[target_id] = caps

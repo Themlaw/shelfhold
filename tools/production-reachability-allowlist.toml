@@ -111,7 +111,6 @@ symbols = [
   "shelfhold.sdk.export_target:MetadataUpdater.update_metadata",
   "shelfhold.sdk.export_target:MetadataUpdateSupport",
   "shelfhold.sdk.export_target:metadata_change_route",
-  "shelfhold.sdk.export_target:copy_can_verify",
   "shelfhold.sdk.export_target:copy_can_serve_bytes",
 ]
 

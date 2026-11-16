@@ -8,6 +8,7 @@ first of `accepted_content_types` the Variant has, per binding.
 """
 
 import hashlib
+from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
@@ -17,6 +18,8 @@ from shelfhold.export.application.fan_out import (
     ContentNeedsDownloadError,
     FanOut,
     HostContentStore,
+    native_formats,
+    planned_content,
 )
 from shelfhold.export.application.plan_executor import PlanRefusedError
 from shelfhold.export.domain.planner import (
@@ -26,6 +29,7 @@ from shelfhold.export.domain.planner import (
 )
 from shelfhold.export.targets.kavita.destination import KavitaDestination
 from shelfhold.infrastructure.db import write_transaction
+from shelfhold.library.public import independent_copies
 from shelfhold.sdk.export_target import TargetCapabilities
 from shelfhold.sdk.fsops import ContentRef
 from tests.byte_source_env import (
@@ -40,7 +44,6 @@ from tests.byte_source_env import (
 from tests.export_env import ExportEnv, export_env
 from tests.fan_out_env import bind
 from tests.integration.test_fan_out_plans import Plans, setup, write_plan
-from dataclasses import dataclass
 
 BASE = KavitaDestination.capabilities
 
@@ -53,10 +56,11 @@ class Registry:
     """What each target declares, as the destinations of the composition root answer."""
 
     def __init__(self, env: ExportEnv, default: TargetCapabilities) -> None:
+        self.default = default
         self.by_target = {env.target_id: default}
 
     def __call__(self, target_id: str) -> TargetCapabilities | None:
-        return self.by_target.get(target_id)
+        return self.by_target.get(target_id, self.default)
 
 
 @dataclass
@@ -65,9 +69,11 @@ class RegistryPlans(Plans):
 
     registry: Registry | None = None
 
-    def capabilities(self, target_id: str) -> TargetCapabilities | None:
+    def capabilities(self, target_id: str) -> TargetCapabilities:
         assert self.registry is not None
-        return self.registry(target_id)
+        found = self.registry(target_id)
+        assert found is not None
+        return found
 
 
 def ref(item: str) -> ContentRef:
@@ -219,9 +225,11 @@ def test_a_rendering_that_fails_on_one_binding_marks_nothing_on_the_others() -> 
         assert status[second][0] == "failed"  # no native format for the second server
         assert (env.lib.manga / "Kavita" / "One" / "Volume 1.cbz").read_bytes() == unit.data
         with env.engine.connect() as connection:
-            lines = connection.execute(
-                sa.text("SELECT shelf_destination_id FROM export_record")
-            ).scalars().all()
+            lines = (
+                connection.execute(sa.text("SELECT shelf_destination_id FROM export_record"))
+                .scalars()
+                .all()
+            )
         assert second not in lines
 
 
@@ -263,8 +271,12 @@ def test_each_binding_gets_the_native_format_of_its_own_server() -> None:
         add_format(env, unit, "pdf", pdf)
         registry = Registry(env, caps("none", ("pdf", "cbz")))
         host = HostContentStore(env.engine, capabilities=registry)
-        reads_cbz = bind(env, "Second", target_id=other_target(env, caps("none", ("cbz",)), registry.by_target))
-        neither = bind(env, "Third", target_id=other_target(env, caps("none", ("epub",)), registry.by_target))
+        reads_cbz = bind(
+            env, "Second", target_id=other_target(env, caps("none", ("cbz",)), registry.by_target)
+        )
+        neither = bind(
+            env, "Third", target_id=other_target(env, caps("none", ("epub",)), registry.by_target)
+        )
 
         assert host.read(env.destination_id, ref(unit.item_id)) == pdf
         assert host.read(reads_cbz, ref(unit.item_id)) == unit.data
@@ -289,7 +301,9 @@ def test_a_native_format_never_gets_around_the_external_egress_guard() -> None:
                 sa.text("UPDATE shelf_destination SET egress = 'externe' WHERE id = :d"),
                 {"d": env.destination_id},
             )
-        host = HostContentStore(env.engine, capabilities=Registry(env, caps("none", ("pdf", "cbz"))))
+        host = HostContentStore(
+            env.engine, capabilities=Registry(env, caps("none", ("pdf", "cbz")))
+        )
 
         with pytest.raises(PlanRefusedError):
             host.read(env.destination_id, ref(unit.item_id))
@@ -308,7 +322,100 @@ def test_the_host_serves_an_item_of_another_shelf_to_no_binding_whatever_the_for
         assert other_shelf != env.shelf_id
 
 
-# -- helpers ----------------------------------------------------------------------------------------
+@pytest.mark.req("EF-BIB-045", "EF-EXP-047")
+def test_a_family_binding_is_served_no_bytes_above_its_ceiling_or_unrated() -> None:
+    """The cloister of a family shelf, on the road of the bytes: what is rated within the ceiling
+    is served, what is above it or unrated is not, and a ceiling lowered afterwards closes it."""
+    from tests.family_env import family_env, rate
+
+    with family_env(13) as env:
+        registry = Registry(env, caps("fetch"))
+        host = HostContentStore(env.engine, capabilities=registry)
+        fine, old, unrated = env.new_series("Fine"), env.new_series("Old"), env.new_series("New")
+        rate(env, fine, 10)
+        rate(env, old, 18)
+        served = unit_with_item(env, fine)
+        too_old = unit_with_item(env, old)
+        waiting = unit_with_item(env, unrated)
+
+        assert host.read(env.destination_id, ref(served.item_id)) == served.data
+        for refused in (too_old, waiting):
+            with pytest.raises(PlanRefusedError, match="no such content to this binding"):
+                host.read(env.destination_id, ref(refused.item_id))
+        with write_transaction(env.engine) as connection:
+            connection.execute(sa.text("UPDATE shelf SET max_age_rating = 6"))
+        with pytest.raises(PlanRefusedError, match="no such content to this binding"):
+            host.read(env.destination_id, ref(served.item_id))
+
+
+@pytest.mark.req("EF-EXP-046", "EF-EXP-058")
+def test_the_planned_refs_of_a_binding_are_the_items_it_has_a_native_format_for() -> None:
+    with export_env() as env:
+        series = env.new_series()
+        unit = unit_with_item(env, series)
+        with env.engine.connect() as connection:
+            both = planned_content(connection, env.destination_id, ["pdf", "cbz"])
+            none = planned_content(connection, env.destination_id, ["epub"])
+            unfiltered = planned_content(connection, env.destination_id)
+            formats = native_formats(connection, [unit.item_id], ["pdf", "cbz"])
+        assert both.planned_refs == unfiltered.planned_refs == {unit.item_id}
+        assert none.planned_refs == frozenset()  # nothing here is in a format that server takes
+        assert formats == {unit.item_id: "cbz"}
+
+
+@pytest.mark.req("EF-EXP-046", "EF-EXP-001")
+def test_a_plan_names_the_file_with_the_format_chosen_for_its_binding() -> None:
+    """A destination that names the file of an item by another format than the one the host serves
+    it in is refused: the manifest never says "cbz" of the bytes of a pdf."""
+    with export_env() as env:
+        registry = Registry(env, caps("fetch", ("pdf",)))
+        fan, plans, _probe = _host_pass(env, registry)
+        series = env.new_series()
+        unit = unit_with_item(env, series)
+        add_format(env, unit, "pdf", b"%PDF-1.7 chapter")
+        plans.by_destination = {env.destination_id: write_plan(unit.item_id, folder="One")}
+
+        refused = fan.run(env.shelf_id, "call-1").outcomes[0]
+
+        assert refused.status == "failed"  # "Volume 1.cbz" for the bytes of a pdf
+        assert not (env.lib.manga / "Kavita" / "One" / "Volume 1.cbz").exists()
+
+
+@pytest.mark.req("EF-BIB-045", "EF-BIB-048")
+def test_the_registry_keeps_the_archives_a_plan_wrote_and_never_their_renderings() -> None:
+    with export_env() as env:
+        fan, plans, _probe = _host_pass(env, Registry(env, caps("fetch")))
+        series = env.new_series()
+        unit = unit_with_item(env, series)
+        second = bind(env, "Second")
+        plans.by_destination = {
+            env.destination_id: write_plan(unit.item_id, folder="One"),
+            second: write_plan(unit.item_id, folder="Two"),
+        }
+
+        fan.run(env.shelf_id, "call-1")
+        fan.run(env.shelf_id, "call-1")  # the pass resumed: it adds no row
+
+        with env.engine.connect() as connection:
+            held = connection.execute(
+                sa.text(
+                    "SELECT rel_path, file_hash, independent, mutable_by_third_party "
+                    "FROM replica WHERE location = 'destination' ORDER BY rel_path"
+                )
+            ).all()
+            copies = independent_copies(connection, unit.unit_id)
+        # one row per tree, neither forgot the other, none counted as a copy of its own
+        assert [r.rel_path for r in held] == [
+            "manga/Kavita/One/Volume 1.cbz",
+            "manga/Second/Two/Volume 1.cbz",
+        ]
+        assert {(r.file_hash, r.independent, r.mutable_by_third_party) for r in held} == {
+            (digest(unit.data), 0, 1)
+        }
+        assert copies == 1
+
+
+# -- helpers ------------------------------------------------------------
 
 
 def _forget_store(env: ExportEnv) -> None:

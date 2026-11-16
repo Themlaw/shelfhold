@@ -31,7 +31,7 @@ Nothing of a call (query, body, field) is ever logged: no `model_dump` of an `Ap
 
 import hashlib
 import threading
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import PurePosixPath
@@ -164,6 +164,9 @@ class PlanBinding:
     destination_id: str
     target_id: str
     capabilities: TargetCapabilities
+    # `export_item` -> the format the host serves this binding (EF-EXP-046): a file that carries
+    # one of these items is named with it, and only the items listed here can be planned
+    native_formats: Mapping[str, str] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -176,6 +179,8 @@ class WrittenFile:
     file_hash: str
     size: int
     mtime_ns: int
+    dev: int | None = None  # the identity of the inode, for the registry of copies (EF-BIB-045)
+    ino: int | None = None
 
 
 @dataclass(frozen=True)
@@ -512,6 +517,11 @@ class PlanExecutor:
             raise PlanRefusedError("a write cites the bytes it writes")
         if self._disk.observe(where) is not None:
             raise PlanRefusedError("the path is taken by a file the host did not write")
+        chosen = run.binding.native_formats.get(op.content_ref.ref)
+        if chosen is not None and PurePosixPath(op.rel_path).suffix.lower() != f".{chosen}":
+            raise PlanRefusedError(
+                "the file name does not carry the format chosen for this binding"
+            )
         data = self._contents.read(run.binding.destination_id, op.content_ref)
         self._move_away_old(run, op, meta)
         intent = self._journal.record(
@@ -574,9 +584,13 @@ class PlanExecutor:
         if found is None or found[0] != "file":
             return  # moved or binned since: the manifest follows what is there
         digest = self._disk.sha256_of(where)  # `sha256:<hex>`
+        seen = self._disk.fingerprint(where)  # (dev, ino, size, mtime, ctime)
         run.files.append(
-            WrittenFile(ref.ref, op.rel_path, digest, found[1].size, found[1].mtime_ns)
-        )
+            WrittenFile(
+                ref.ref, op.rel_path, digest, found[1].size, found[1].mtime_ns,
+                dev=None if seen is None else seen[0], ino=found[1].ino,
+            )
+        )  # fmt: skip
 
     def _rename(self, run: _Run, op: FsOp, where: str, meta: dict[str, Any]) -> None:
         if op.dst_rel_path is None:

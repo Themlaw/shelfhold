@@ -513,12 +513,33 @@ def build_pipeline(
     # the executor of the plans destinations describe (M4 L04), with the bytes the host owns and
     # the identity each server gives now (asked at most every 30 s, whatever the plan's length)
     pipeline.use_plan_executor(
-        contents=HostContentStore(comp.engine),
+        contents=HostContentStore(
+            comp.engine,
+            capabilities=FirstPartyDestinations(comp.engine).capabilities,
+            epub_path=_epub_path_of(comp, fsops),
+        ),
         probe=CachedInstanceProbe(_instance_identity(comp), clock=comp.clock),
         events=BusTargetEvents(comp.engine, comp.bus),
         barrier=TreeBarrier(comp.engine),  # the barrier of a family shelf, read again as it runs
     )
     return pipeline, reconciler, fsops
+
+
+def _epub_path_of(comp: Composition, fsops: Fsops) -> Callable[[str], str | None]:
+    """The one file of a Unit's EPUB the host may serve: its verified derivative, never an
+    original (EF-BIB-051). A Unit with none gives nothing."""
+    from shelfhold.library.public import OriginalNotServableError, servable_epub
+
+    def path(unit_id: str) -> str | None:
+        staging = comp.settings.data_dir / "tmp"
+        try:
+            return servable_epub(
+                comp.engine, fsops, unit_id, staging=staging if staging.is_dir() else None
+            ).path
+        except OriginalNotServableError:
+            return None
+
+    return path
 
 
 def _instance_identity(comp: Composition) -> Callable[[str], str | None]:

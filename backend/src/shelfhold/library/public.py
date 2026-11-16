@@ -16,12 +16,14 @@ from shelfhold.library.adapters.epub_derivative import (
 from shelfhold.library.adapters.export_source import (
     BinnedFile,
     ExportSource,
+    VariantContent,
     binned_export_file,
     export_sources,
     forget_binned_export_files,
     record_binned_export_file,
     record_destination_copy,
     upgrade_source,
+    variant_contents,
 )
 from shelfhold.library.adapters.import_scan import (
     ImportFolder,
@@ -249,8 +251,10 @@ from shelfhold.library.domain.volume_policy import (
     volume_slices,
 )
 from shelfhold.library.replica import (
+    ByteSource,
     UnitFile,
     adopted_original_unprotected,
+    byte_sources,
     damaged_library_copies,
     demote_shared_inodes,
     destination_identities,
@@ -337,6 +341,7 @@ __all__ = [
     "BinEntry",
     "BinnedFile",
     "BinnedUnitFile",
+    "ByteSource",
     "Candidate",
     "CatalogScreenAdapter",
     "Collected",
@@ -439,6 +444,7 @@ __all__ = [
     "UntrustedEpubStore",
     "UpstreamPurge",
     "VariantAlreadyStoredError",
+    "VariantContent",
     "VariantRef",
     "Verdict",
     "VolumePolicy",
@@ -454,6 +460,7 @@ __all__ = [
     "binding_warning",
     "binned_export_file",
     "binned_for_unit",
+    "byte_sources",
     "check_add_fits",
     "closed_request_ids",
     "complete_interrupted_keep",
@@ -548,6 +555,7 @@ __all__ = [
     "upstream_claims",
     "upstream_tokens",
     "upstream_verdict",
+    "variant_contents",
     "verify_kept",
     "volume_slices",
     "withdraw_upstream_claims",

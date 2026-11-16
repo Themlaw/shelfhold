@@ -47,10 +47,12 @@ __all__ = [
     "AGE_PAUSES",
     "AGE_WAIT",
     "GATE_CLOSED",
+    "NO_NATIVE_FORMAT",
     "SERIES_AGE_STALE",
     "SERIES_SPLIT",
     "AgeGateFacts",
     "Blocked",
+    "ContentOffer",
     "DestinationFacts",
     "EditionFacts",
     "Plan",
@@ -63,6 +65,7 @@ __all__ = [
     "UnitFacts",
     "VolumeFacts",
     "age_rank",
+    "choose_content",
     "plan_destination",
     "series_key",
 ]
@@ -81,6 +84,31 @@ GONE_STATES: Final = frozenset({"missing", "recycled"})
 SUPPORTED_TRANSPORTS: Final = PATH_TRANSPORTS | {"pull"}  # `push` arrives in M4
 AGE_WAIT: Final = "export.awaiting_series_age"
 EXTENSIONS: Final = {"cbz": ".cbz", "epub": ".epub"}
+NO_NATIVE_FORMAT: Final = "export.no_native_format"  # no `content` of the Variant is accepted
+
+
+@dataclass(frozen=True)
+class ContentOffer:
+    """One `content` of a Variant, as a destination may be offered it (EF-EXP-046)."""
+
+    content_id: str
+    format: str  # a slug: cbz, epub, pdf
+    media_type: str  # the MIME type
+
+
+def choose_content(accepted: Iterable[str], offers: Iterable[ContentOffer]) -> ContentOffer | None:
+    """The native format of a binding: the first of its `accepted_content_types`, in the order the
+    destination declares them, that the Variant has as a `content` (a slug or a MIME type names
+    one). None when no content is accepted: the `Rendition` of M5 is reserved, a converted file is
+    never made up here. Deterministic: the order of `accepted` decides, then the id of the content,
+    whatever the order the Variant lists its contents in (EF-EXP-046, EF-EXP-058)."""
+    ranked = sorted({o.content_id: o for o in offers}.values(), key=lambda o: o.content_id)
+    for wanted in accepted:
+        token = wanted.strip().lower()
+        for offer in ranked:
+            if token in (offer.format.lower(), offer.media_type.lower()):
+                return offer
+    return None
 
 
 @dataclass(frozen=True)
