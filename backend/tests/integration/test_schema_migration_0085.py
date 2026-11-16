@@ -1,7 +1,7 @@
 """Migration 0085 (M4 L53, ADR-0054): `page_issue`, the chapters whose pages are set aside.
 
 One table that goes with its Unit; nothing else is touched; reversible. The head of the migrations
-is pinned here, by the newest one.
+is pinned by the newest one.
 """
 
 import sqlite3
@@ -18,10 +18,10 @@ from tests.integration.test_schema_migration_0002 import alembic_config
 pytestmark = pytest.mark.req("ENF-OPS-002", "EF-EXP-046")
 
 
-def test_the_revision_is_0085_and_the_only_head() -> None:
+def test_the_revision_is_0085_and_follows_0084() -> None:
     script = ScriptDirectory(str(default_script_location()))
-    assert script.get_heads() == ["0085"]
     assert script.get_revision("0085").down_revision == "0084"
+    assert "0085" in {r.revision for r in script.walk_revisions()}
 
 
 def _tables(settings: Settings) -> set[str]:

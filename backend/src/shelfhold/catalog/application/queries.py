@@ -27,7 +27,7 @@ from typing import Final, Protocol
 import sqlalchemy as sa
 
 from shelfhold.catalog.domain.provenance import encode_value
-from shelfhold.infrastructure.schema import catalog
+from shelfhold.infrastructure.schema import catalog, export
 from shelfhold.sdk.age import is_family_ceiling
 
 __all__ = [
@@ -37,6 +37,8 @@ __all__ = [
     "VisibleWork",
     "count_visible_works",
     "cover_ref_visible",
+    "first_open_covers",
+    "first_visible_covers",
     "list_visible_series",
     "list_visible_works",
     "referenced_cover_refs",
@@ -404,6 +406,57 @@ def _first_covers(
             found[work_id] = (str(row.id), ref)
         elif found[work_id][1] is None and ref is not None:
             found[work_id] = (found[work_id][0], ref)
+    return found
+
+
+def first_visible_covers(
+    connection: sa.Connection, scope: ReaderScope, work_ids: list[str]
+) -> dict[str, tuple[str, str | None]]:
+    """For each Work of `work_ids`: the first Edition this reader may see and a cover among them
+    (a Work with none is not in the answer). The ids come in chunks, as everywhere here."""
+    found: dict[str, tuple[str, str | None]] = {}
+    for chunk in _chunks(work_ids):
+        found.update(_first_covers(connection, scope, chunk))
+    return found
+
+
+def first_open_covers(
+    connection: sa.Connection, scope: ReaderScope, profile_id: str, work_ids: list[str]
+) -> dict[str, tuple[str, str | None]]:
+    """The perimeter of the shelves (`shelf.allowed_profiles`, L18a): like `_first_covers`, but an
+    Edition counts only when it is filed on a shelf open to this profile (no `allowed_profiles`, or
+    one that names her). A Work with no such Edition is not in the answer: it is not hers to see,
+    ceiling or not, and an Edition on a shelf reserved to someone else lends no cover either."""
+    edition, field, shelf = catalog.edition.c, catalog.metadata_field.c, export.shelf.c
+    found: dict[str, tuple[str, str | None]] = {}
+    for chunk in _chunks(work_ids):
+        rows = connection.execute(
+            sa.select(edition.work_id, edition.id, field.value, shelf.allowed_profiles)
+            .select_from(
+                catalog.edition.join(export.shelf, shelf.id == edition.shelf_id).outerjoin(
+                    catalog.metadata_field,
+                    sa.and_(field.entity_id == edition.id, *_COVER_FIELD_ROWS),
+                )
+            )
+            .where(edition.work_id.in_(chunk), visible_editions_clause(scope))
+            .order_by(edition.work_id, edition.id)
+        ).all()
+        for row in rows:
+            allowed = row.allowed_profiles
+            if allowed and profile_id not in allowed:
+                continue
+            ref: str | None = None
+            if row.value is not None:
+                try:
+                    decoded = json.loads(row.value)
+                except ValueError:
+                    decoded = None
+                ref = decoded if isinstance(decoded, str) else None
+            work_id = str(row.work_id)
+            if work_id not in found:
+                found[work_id] = (str(row.id), ref)
+            elif found[work_id][1] is None and ref is not None:
+                found[work_id] = (found[work_id][0], ref)
     return found
 
 

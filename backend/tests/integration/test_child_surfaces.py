@@ -141,6 +141,15 @@ OPEN = {
     "GET /api/v1/thumbnails/{content_hash}/{size}": "thumbnail",
     # M4 L23: the official links of an Edition she may see; a hidden one is an absent one
     "GET /api/v1/editions/{edition_id}/support-author": "support_author",
+    # M4 L18a: the collections and reading lists, made of the Works she may see and a list of her
+    # own; another profile's list is an absent one (`test_m4_l18a_collections.py`)
+    "GET /api/v1/collections": "collections",
+    "POST /api/v1/collections": "collections",
+    "POST /api/v1/collections/import-cbl": "collections",
+    "GET /api/v1/collections/{collection_id}": "collections",
+    "DELETE /api/v1/collections/{collection_id}": "collections",
+    "POST /api/v1/collections/{collection_id}/items": "collections",
+    "DELETE /api/v1/collections/{collection_id}/items/{item_id}": "collections",
 }
 CLOSED = (
     "GET /api/v1/openapi.json",
@@ -348,7 +357,7 @@ PENDING_SURFACES: dict[
 SURFACES = (
     "search", "search_pages", "search_key", "federated", "me_state_get", "me_state_put",
     "me_state_list", "me_title", "activity", "notification", "works_since", "sse", "thumbnail",
-    "work_redirect", "opds", "support_author",
+    "work_redirect", "opds", "support_author", "collections",
 )  # fmt: skip
 METHODS = ("get", "post", "put", "patch", "delete")
 HIDDEN_FROM_CEILING_10 = {*HIDDEN_TITLES, "twelve"}
@@ -866,6 +875,14 @@ def _surface_support_author(world: World) -> None:
         world.clean(answer.text)
     shown = world.kid.get(f"/api/v1/editions/{world.seed.editions['ok']}/support-author")
     assert shown.status_code == 200 and shown.json()["pause_suggestions"] == []
+
+
+def _surface_collections(world: World) -> None:
+    """M4 L18a: the lists she is shown hold only Works she may see (the attacks are in
+    `test_m4_l18a_collections`)."""
+    from tests.integration.test_m4_l18a_collections import child_case
+
+    child_case(world)
 
 
 def _surface_me_title(world: World) -> None:

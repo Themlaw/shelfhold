@@ -1,5 +1,5 @@
 """Catalog: codes of the attach by external identifier (EF-BIB-003, EF-BIB-037, L12) and of the
-merge of Editions (EF-BIB-049, L14)."""
+merge of Editions (EF-BIB-049, L14), and of the collections and reading lists (EF-BIB-016)."""
 
 from shelfhold.error_catalog import ErrorCode
 
@@ -22,4 +22,7 @@ CODES: tuple[ErrorCode, ...] = (
     ErrorCode("merge.already_undone", 409, "admin"),
     ErrorCode("merge.survivor_gone", 409, "admin"),
     ErrorCode("series.already_attached", 409, "admin"),  # EF-BIB-025: one Series at most
+    # M4 L18a (EF-BIB-016): a reading-list file that is refused (never cut), a list that is full
+    ErrorCode("collection.cbl_refused", 422, "user"),
+    ErrorCode("collection.full", 409, "user"),
 )

@@ -1285,3 +1285,31 @@ seen_modified = "Kavita's own stamp of the state last seen: compared for equalit
 seen_page = "The page Kavita held at the last pass."
 series_stamp = "What the series list said of the series (pages read and last read date) at the last pass: opaque, compared for equality only; NULL: not known."
 synced_at = "Shelfhold's clock at the start of the last pass over this chapter (UTC)."
+
+[tables.collection]
+description = "A collection (the household's) or a reading list (a profile's own): a named, ordered set of Works (M4 L18a)."
+[tables.collection.columns]
+id = "ULID of the collection."
+kind = "`collection` or `reading_list`."
+name = "Name given by the person who made it, or by the CBL file it came from."
+owner_id = "Profile that owns it (`user.id`); NULL: the household's, made by an admin. A profile's own list is read by its owner and by an admin only."
+source = "`manual`, or `cbl` when it came from a reading-list file."
+created_at = "When it was made (UTC)."
+
+[tables.collection_item]
+description = "A place in a collection: a Work, with the number the list gave it, in order (M4 L18a)."
+[tables.collection_item.columns]
+id = "ULID of the place."
+collection_id = "Collection it belongs to (`collection.id`)."
+position = "Place in the order the list was written in; a gap is a line a CBL import could not resolve. A reader is shown the items she may see, numbered again from 1."
+work_id = "Work held (`work.id`); the same Work may come twice."
+number = "The number the list gave it (for example an issue number), if any."
+added_at = "When it was added (UTC)."
+
+[tables.collection_remote]
+description = "What a destination called a collection, for the sync of collections to it (M4 L18a; filled by L18b)."
+[tables.collection_remote.columns]
+collection_id = "Collection pushed (`collection.id`)."
+target_id = "Destination target it was made on (`export_target.id`)."
+remote_id = "Identifier the destination gave it."
+synced_at = "When it was last pushed (UTC); NULL: never."
