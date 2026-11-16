@@ -1251,7 +1251,8 @@ content_fp = "Keyed fingerprint of the file; NULL when wiped."
 pages_digest = "Digest of the names, sizes and CRC-32 of the pages; NULL when wiped."
 first_page = "Number of the chapter's first page in the block, from 1."
 page_count = "Pages the chapter holds in the block."
-page_map_state = "`candidate` (canonical names) or `unverified`; `verified` will come with L50."
+page_map_state = "`candidate` (canonical names), `unverified` (Kavita might sort the pages otherwise, or counts another number of them) or `verified` (Kavita announced the same number of pages); only `verified` is relayed to Kavita."
+kavita_pages = "Pages Kavita announced for the chapter at the last comparison; NULL when never compared."
 [tables.read_state_push_note]
 description = "What was pushed of a profile's read state to a Suwayomi series: the cursor of the push, per owner profile, binding and chapter."
 [tables.read_state_push_note.columns]

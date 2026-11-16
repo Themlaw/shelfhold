@@ -109,6 +109,26 @@
       {/if}
     </section>
 
+    <section aria-labelledby="h-relay">
+      <h2 id="h-relay">{t('health_page.relay')}</h2>
+      {#if view.relay.length === 0}
+        <p>{t('health_page.relay_none')}</p>
+      {:else}
+        <ul>
+          {#each view.relay as entry, i (i)}
+            <HealthEntry
+              label={t(
+                entry.code.startsWith('kosync.') ? 'health_page.relay_documents' : 'health_page.relay_chapters',
+                { count: entry.count, subject: entry.subject ?? '' }
+              )}
+              code={entry.code}
+              action={null}
+            />
+          {/each}
+        </ul>
+      {/if}
+    </section>
+
     {#if view.withdrawalPending.count > 0 || (view.jurisdiction && !view.jurisdiction.confirmed)}
       <section aria-labelledby="h-waits">
         <h2 id="h-waits">{t('health_page.waits')}</h2>

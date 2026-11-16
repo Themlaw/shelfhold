@@ -2928,6 +2928,14 @@
             "title": "Kavita Audit",
             "type": "array"
           },
+          "kosync_unknown": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Kosync Unknown",
+            "type": "array"
+          },
           "library_type_changes": {
             "items": {
               "additionalProperties": true,
@@ -2942,6 +2950,14 @@
               "type": "object"
             },
             "title": "Lost Originals",
+            "type": "array"
+          },
+          "page_map_warnings": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Page Map Warnings",
             "type": "array"
           },
           "sources": {
@@ -2971,6 +2987,8 @@
           "kavita_audit",
           "library_type_changes",
           "jurisdiction",
+          "page_map_warnings",
+          "kosync_unknown",
           "backup",
           "stats"
         ],

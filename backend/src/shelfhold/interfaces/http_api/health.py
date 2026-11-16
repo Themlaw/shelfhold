@@ -188,6 +188,8 @@ class HealthPageOut(BaseModel):
     kavita_audit: list[dict[str, Any]]
     library_type_changes: list[dict[str, Any]]
     jurisdiction: dict[str, Any] | None
+    page_map_warnings: list[dict[str, Any]]  # M4 L50: chapters of a block not relayed to Kavita
+    kosync_unknown: list[dict[str, Any]]  # M4 L47: what the e-readers sent that was not taken
     backup: dict[str, Any]
     stats: dict[str, Any]
 
@@ -200,8 +202,18 @@ def build_health_page_router(
     router = APIRouter(prefix="/api/v1", tags=["health"])
 
     @router.get("/health/page", response_model=HealthPageOut)
-    def health_page(_admin: Annotated[Principal, Depends(require_admin)]) -> HealthPageOut:
-        return HealthPageOut.model_validate(build_health_page(get_engine(), settings, now()))
+    def health_page(
+        request: Request, _admin: Annotated[Principal, Depends(require_admin)]
+    ) -> HealthPageOut:
+        counter = getattr(request.app.state, "kosync_unknown", None)
+        return HealthPageOut.model_validate(
+            build_health_page(
+                get_engine(),
+                settings,
+                now(),
+                kosync_unknown=None if counter is None else counter.snapshot(),
+            )
+        )
 
     @router.get("/diagnostic/bundle", operation_id="diagnostic_bundle_download")
     def diagnostic_bundle(_admin: Annotated[Principal, Depends(require_admin)]) -> Response:

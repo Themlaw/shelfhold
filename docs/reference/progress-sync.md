@@ -63,6 +63,28 @@ counts from 0.
   one near the end (`OPDSController`, the `Koreader` user agent): Kavita then says « read », and
   that state is taken as Kavita's.
 
+## Blocks of a series (kosync, M4 L50)
+
+A position an e-reader reports on a block is stored on the file of its chapter (`locator.page` is the
+page **in the chapter**), so the pass above relays it unchanged. Two things are added.
+
+* **The page map is checked first.** Before any member's pass, Kavita's page count of each chapter
+  (`series-detail`, the dedicated key) is compared with the `bundle_member` rows that hold the file
+  (`reading.application.page_map`). Equal: the member is `verified`; different: `unverified`, with
+  the count Kavita announced (`kavita_pages`); a member whose names Kavita might sort otherwise
+  (`unverified` from the start) is never compared. A page that came through a block
+  (`locator.bundle`) is pushed only if the chapter's member of that block is `verified`; else
+  nothing is pushed for that chapter (`MemberOutcome.unverified`, log `progress_sync.chapter_not_relayed`,
+  Health `relay.page_count_mismatch` / `relay.page_map_unverified`). The kosync read gives a page of
+  Kavita back, in the frame of the block, only for a `verified` member. Without the keyring that
+  compares (`page_map_keyring`) no member is verified and nothing of a block is relayed.
+* **A chapter a read crossed is pushed as « read »** though it has no position of its own: when a
+  traversal in the frame of the block marked every Unit of the file read since the chapter's note
+  (`reading_position.read_units`), `pages` is pushed, never past what Kavita already holds. A look
+  at a last page stays the cap of two pages short. The undo of a mark is not propagated.
+* A position **transposed** from a chapter replaced since the block (`locator.transposed`: a share
+  of the chapter, no page) counts in the merged progress but is never pushed.
+
 ## Clocks and races
 
 Kavita's `lastModifiedUtc` is **its** clock. It is compared for equality with the last one seen
@@ -91,6 +113,8 @@ member's pass ends `unavailable` and the remaining members wait for the next run
 done, so the next pass finds the same positions. A 403 on a chapter (the account may not open that
 library) skips that chapter. A 401 says the key is refused: `token_refused`, with no fallback to the
 service account; the other members go on.
+
+Closed codes of a chapter that is not relayed (`page_map.CODES`): `page_count_mismatch`, `page_map_unverified`.
 
 Closed codes of a member's pass: `ok`, `not_enabled`, `member_key_revoked`, `token_unreadable`,
 `token_refused`, `account_mismatch`, `account_shared`, `unavailable`. `revoked_at` is read again

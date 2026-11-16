@@ -28,6 +28,7 @@ from shelfhold.identity.application.ports import AuditEntry
 from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import export
+from shelfhold.infrastructure.secrets.diagnostics import boot_check
 from shelfhold.infrastructure.secrets.vault import SecretVault
 from shelfhold.reading.application.sync import MemberOutcome, sync_destination, sync_member
 from tests.bundle_env import Chapter, Exported, Library, library_for
@@ -38,25 +39,12 @@ from tests.sync_env import LIBRARY_ID, _Events, store_open
 REMOTE = "/m"
 
 
-class SkewedClock:
-    """The real clock, plus an offset: what the synchronisation sees as now."""
-
-    def __init__(self) -> None:
-        self.offset = timedelta(0)
-
-    def now(self) -> datetime:
-        return datetime.now(UTC) + self.offset
-
-    def advance(self, **delta: float) -> None:
-        self.offset += timedelta(**delta)
-
-
 @dataclass
 class Relay:
     world: World
     lib: Library
     fake: FakeKavita
-    clock: SkewedClock
+    clock: Any
     store: DestinationAccountStore
     keyring: Callable[[], Any]
     remote: KavitaProgress
@@ -119,15 +107,20 @@ class Relay:
     def user_id(self, name: str) -> str:
         with self.engine.connect() as c:
             return str(
-                c.execute(sa.text("SELECT id FROM user WHERE username = :n"), {"n": name}).scalar_one()
+                c.execute(
+                    sa.text("SELECT id FROM user WHERE username = :n"), {"n": name}
+                ).scalar_one()
             )
 
-    def link(self, name: str, kavita_name: str | None = None) -> str:
+    def link(
+        self, name: str, kavita_name: str | None = None, *, destination: str | None = None
+    ) -> str:
         account = kavita_name or f"acct-{name}"
         secret = self.fake.add_member_key(account, roles=("Login",), age_rating=None)
         now = datetime.now(UTC)
         self.store.save(
-            self.user_id(name), self.destination, account, secret, declared=None, now=now,
+            self.user_id(name), destination or self.destination, account, secret, declared=None,
+            now=now,
             entry=lambda replaced: AuditEntry(None, "destination_account.linked", now),
         )  # fmt: skip
         self.names[name], self.keys[name] = account, secret
@@ -153,9 +146,31 @@ class Relay:
         by_id = {self.user_id(n): n for n in self.names}
         return {by_id.get(u, u): o for u, o in found.items()}
 
-    def sync(self, name: str, *, verify: bool = True) -> MemberOutcome:
+    def second_destination(self) -> str:
+        """Another binding to the same Kavita (another shelf)."""
+        with write_transaction(self.engine) as c:
+            target = c.execute(
+                sa.select(export.shelf_destination.c.target_id).where(
+                    export.shelf_destination.c.id == self.destination
+                )
+            ).scalar_one()
+            shelf, dest = new_ulid(), new_ulid()
+            c.execute(sa.insert(export.shelf).values(id=shelf, name=f"s-{shelf}", phrase="manga"))
+            c.execute(
+                sa.insert(export.shelf_destination).values(
+                    id=dest, shelf_id=shelf, target_id=target, transport="tree", egress="foyer",
+                    root_subpath="", template="{series}", template_origin="default@1",
+                    sync_progress=True,
+                )
+            )  # fmt: skip
+        return dest
+
+    def sync(
+        self, name: str, *, verify: bool = True, destination: str | None = None
+    ) -> MemberOutcome:
         return sync_member(
-            self.engine, self.remote, user_id=self.user_id(name), destination_id=self.destination,
+            self.engine, self.remote, user_id=self.user_id(name),
+            destination_id=destination or self.destination,
             clock=self.clock, page_map_keyring=self.keyring if verify else None,
         )  # fmt: skip
 
@@ -172,7 +187,11 @@ class Relay:
         return [r for r in found if name is None or r.headers.get("x-api-key") == self.keys[name]]
 
     def calls_of(self, name: str) -> list[Any]:
-        return [r for r in self.fake.requests_to("/api/reader/") if r.headers.get("x-api-key") == self.keys[name]]
+        return [
+            r
+            for r in self.fake.requests_to("/api/reader/")
+            if r.headers.get("x-api-key") == self.keys[name]
+        ]
 
     # ---------------------------------------------------------------- what Shelfhold holds
     def member_rows(self) -> list[Any]:
@@ -192,7 +211,10 @@ class Relay:
         return {str(r.export_item_id): str(r.page_map_state) for r in self.member_rows()}
 
     def positions(self, name: str, source: str | None = None) -> list[Any]:
-        query, params = "SELECT * FROM reading_position WHERE user_id = :u", {"u": self.user_id(name)}
+        query, params = (
+            "SELECT * FROM reading_position WHERE user_id = :u",
+            {"u": self.user_id(name)},
+        )
         if source is not None:
             query, params["s"] = query + " AND source = :s", source
         with self.engine.connect() as c:
@@ -214,11 +236,12 @@ def build_relay(world: World, *, key: str = "ok") -> Relay:
     lib = library_for(world.seed.engine, root, world.seed.editions[key])
     engine = world.seed.engine
     fake = FakeKavita()
-    clock = SkewedClock()
+    clock = world.env.clock
     fake.wall = clock.now
-    fake.key_expires_at = datetime.now(UTC) + timedelta(days=365)
-    keyring = world.env.app.state.kosync_keyring
-    vault = SecretVault(keyring())
+    fake.key_expires_at = clock.now() + timedelta(days=365)
+    ring = boot_check(world.env.settings)  # the keyring file the application itself opened
+    keyring = lambda: ring  # noqa: E731
+    vault = SecretVault(ring)
     store = DestinationAccountStore(engine, lambda: vault)
     with write_transaction(engine) as c:
         target = c.execute(
@@ -248,7 +271,9 @@ def build_relay(world: World, *, key: str = "ok") -> Relay:
                 remote_library_id=remote_library,
             )
         )  # fmt: skip
-    admin = KavitaClient(build_fetcher(fake), BASE_URL, AdminKey(API_KEY), events=_Events(), clock=clock)
+    admin = KavitaClient(
+        build_fetcher(fake), BASE_URL, AdminKey(API_KEY), events=_Events(), clock=clock
+    )
     remote = KavitaProgress(
         engine,
         admin_client=lambda _target: admin,

@@ -147,6 +147,7 @@ class _Member:
     fp: str | None
     first_page: int
     page_count: int
+    state: str = "candidate"  # `verified` once Kavita counted the same pages (M4 L50)
 
 
 @dataclass(frozen=True)
@@ -232,7 +233,7 @@ class Kosync:
 
     def _members(self, connection: Connection, version_id: str) -> list[_Member]:
         return [
-            _Member(m.rank, m.item_id, m.unit_id, m.fp, m.first_page, m.page_count)
+            _Member(m.rank, m.item_id, m.unit_id, m.fp, m.first_page, m.page_count, m.state)
             for m in store.members_of(connection, version_id)
         ]
 
@@ -324,10 +325,14 @@ class Kosync:
                 if target is None:
                     return False
                 item_id, locator, percent = target
-                traverse = True
-                bundled = (doc.version, page)
-                locator["bundle"] = doc.version.id
-                locator["bundle_page"] = page
+                transposed = locator.get("transposed") is True
+                traverse = not transposed  # a transposed share is no proof of a reading
+                bundled = None if transposed else (doc.version, page)
+                if transposed:
+                    log.info("kosync.transposed", token=token.lower())  # I30: stored, never relayed
+                else:
+                    locator["bundle"] = doc.version.id
+                    locator["bundle_page"] = page
             elif doc.item_id is not None:
                 item_id = doc.item_id
                 kind = self._kind(connection, item_id)
@@ -464,10 +469,15 @@ class Kosync:
             return None
         for member in self._members(connection, version.id):
             if member.first_page <= page < member.first_page + member.page_count:
-                if member.item_id is None or not self._still_the_member(connection, member):
-                    self._refused(token, "chapter_gone")  # purged or replaced since the version
+                if member.item_id is None or member.fp is None:
+                    self._refused(token, "chapter_gone")  # purged since the version: an orphan
                     return None
                 inner = page - member.first_page + 1
+                if not self._still_the_member(connection, member):
+                    # Replaced since the version (I30): its page is a page of a file that is no
+                    # longer there. The share of the chapter is kept, as a proportion (no page),
+                    # and it is never handed to Kavita nor given back as a page of the block.
+                    return member.item_id, {"transposed": True}, inner / member.page_count
                 return member.item_id, {"page": inner}, inner / member.page_count
         self._refused(token, "no_chapter")
         return None
@@ -541,8 +551,9 @@ class Kosync:
                 or not 1 <= page <= member.page_count
                 or position.content_hash != self._anchor(connection, str(member.item_id))
                 or not self._still_the_member(connection, member)
+                or (position.source == "server" and member.state != "verified")
             ):
-                return None
+                return None  # a page Kavita counts is given only where it counts as we do (L50)
             of_block = member.first_page + page - 1
             progress, percentage = str(of_block), of_block / doc.version_pages
         else:

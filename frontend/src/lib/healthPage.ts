@@ -22,6 +22,13 @@ export interface Entry {
   action: HealthAction | null;
 }
 
+/** A warning of the relay with the e-readers: its closed code, what it is about and how many. */
+export interface RelayEntry {
+  code: string;
+  subject: string | null; // an Edition (page map) or a device token's public identifier (kosync)
+  count: number;
+}
+
 export interface HealthView {
   sources: SourceEntry[];
   irreplaceable: {
@@ -35,6 +42,7 @@ export interface HealthView {
   withdrawalPending: { count: number; action: HealthAction | null };
   kavitaAudit: Entry[];
   libraryTypeChanges: Entry[];
+  relay: RelayEntry[];
   jurisdiction: { country: string; confirmed: boolean; action: HealthAction | null } | null;
   stats: { waitingStates: number; unitsExported: number; arrivalsPending: number };
 }
@@ -80,6 +88,19 @@ function sources(value: HealthPageOut['sources']): SourceEntry[] {
   return found;
 }
 
+function relay(page: HealthPageOut): RelayEntry[] {
+  const found: RelayEntry[] = [];
+  for (const doc of docs(page.page_map_warnings)) {
+    const code = str(doc.code);
+    if (code !== null) found.push({ code, subject: str(doc.subject), count: num(doc.chapters) });
+  }
+  for (const doc of docs(page.kosync_unknown)) {
+    const code = str(doc.code);
+    if (code !== null) found.push({ code, subject: str(doc.token), count: num(doc.count) });
+  }
+  return found;
+}
+
 export function healthView(page: HealthPageOut): HealthView {
   const irreplaceable = page.irreplaceable;
   const store = isDoc(irreplaceable.store_backup) ? irreplaceable.store_backup : {};
@@ -101,6 +122,7 @@ export function healthView(page: HealthPageOut): HealthView {
     },
     kavitaAudit: entries(page.kavita_audit),
     libraryTypeChanges: entries(page.library_type_changes),
+    relay: relay(page),
     jurisdiction:
       jurisdiction !== null && str(jurisdiction.country) !== null
         ? {

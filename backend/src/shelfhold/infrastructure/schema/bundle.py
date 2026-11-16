@@ -21,6 +21,13 @@ already exported.
   Shelfhold (`first_page`, `page_count`) and a keyed fingerprint of the file (`content_fp`), never
   a clear hash (ADR-0048). When the exported file's row is deleted the member stays as an orphan
   with its fingerprints wiped (a trigger).
+
+`page_map_state` of a member (ADR-0053 §2): `candidate` (Shelfhold's table of pages can be
+reproduced by Kavita: canonical names), `unverified` (it cannot, or Kavita counts another number
+of pages) and `verified` (Kavita announces the very number of pages of the member). Only a
+`verified` member is relayed to Kavita (M4 L50). `kavita_pages` is the count Kavita announced the
+last time the two were compared; it is empty for a member that never was (names that Kavita would
+not sort alike), which is never compared.
 """
 
 import sqlalchemy as sa
@@ -38,7 +45,7 @@ from shelfhold.infrastructure.schema._base import (
     ulid_column,
 )
 
-PAGE_MAP_STATES = ("candidate", "unverified")
+PAGE_MAP_STATES = ("candidate", "unverified", "verified")
 _HEX64 = "length({c}) = 64 AND {c} NOT GLOB '*[^0-9a-f]*'"
 
 
@@ -141,8 +148,10 @@ bundle_member = sa.Table(
     sa.Column("first_page", sa.Integer(), nullable=False),  # counted by Shelfhold, from 1
     sa.Column("page_count", sa.Integer(), nullable=False),
     sa.Column("page_map_state", sa.String(), nullable=False, server_default="candidate"),
+    sa.Column("kavita_pages", sa.Integer(), nullable=True),  # what Kavita announced when compared
     sa.PrimaryKeyConstraint("version_id", "rank"),
     in_check("page_map_state", PAGE_MAP_STATES),
+    positive_check("kavita_pages"),
     positive_check("rank", minimum=1),
     sa.CheckConstraint('"first_page" >= 1 AND "page_count" >= 0', name="pages_positive"),
     _hex_check("content_fp"),

@@ -2,7 +2,9 @@
 
 Shelfhold parle le protocole de synchronisation de KOReader (kosync) : la liseuse envoie la page où
 elle en est, Shelfhold la range dans la progression du profil du jeton, et la rend à une autre
-liseuse (ou à la même après une pause). Il ne relaie rien vers Kavita pour l'instant.
+liseuse (ou à la même après une pause). Si la synchronisation de la progression est active pour la
+destination Kavita et que vous avez relié **votre propre** clé Kavita, il la relaie aussi vers Kavita,
+et reprend ce que Kavita sait (voir « Relais vers Kavita » plus bas).
 
 ## Réglage de KOReader
 
@@ -25,8 +27,10 @@ fichier pris ailleurs (un autre serveur OPDS) n'est donc pas synchronisé tant q
 Shelfhold.
 
 - **Bloc de série** : la page du bloc est traduite en chapitre et page du chapitre ; la position est
-  rangée sur le chapitre. Si le chapitre a été retiré ou remplacé depuis le téléchargement du bloc, la
-  position n'est pas enregistrée : retéléchargez le bloc.
+  rangée sur le chapitre. Si le chapitre a été **retiré** depuis le téléchargement du bloc, la position
+  n'est pas enregistrée. S'il a été **remplacé**, sa page n'a plus de sens : Shelfhold garde la part du
+  chapitre atteinte (une proportion, jamais une page), la compte dans la progression, ne l'envoie jamais
+  à Kavita et ne la rend pas à la liseuse. Retéléchargez le bloc.
 - **EPUB** : la position (un xpointer) est conservée telle quelle ; elle ne marque pas le chapitre lu.
 - Un bloc lu d'un trait marque « lu » les chapitres franchis, même si la liseuse n'envoie qu'à la mise
   en veille : la traversée est calculée dans le repère du bloc, à la même vitesse plausible.
@@ -38,6 +42,36 @@ Shelfhold.
 La position **la plus avancée** du profil, avec la date de cet enregistrement (jamais « maintenant »).
 Relire un chapitre plus ancien ne recule donc pas la position rendue. Une liseuse dont l'horloge est en
 avance sur celle du serveur (Kobo sans NTP) ignore les positions distantes.
+
+## Relais vers Kavita
+
+Ce que la liseuse envoie est rangé sur le fichier du chapitre ; la tâche de synchronisation (toutes les
+10 minutes, `docs/reference/progress-sync.md`) le transmet à Kavita avec la clé du profil, et reprend
+la page que Kavita tient pour ce compte. La page revient à la liseuse dans le repère du bloc.
+
+- **Un chapitre n'est relayé que si Shelfhold et Kavita le comptent pareil.** Shelfhold compare le
+  nombre de pages que Kavita annonce pour le chapitre à celui de sa table de pages. Égal : le chapitre
+  passe `verified`. Différent (Kavita ignore une image, en compte une de plus), ou noms de pages que
+  Kavita pourrait trier autrement : rien n'est envoyé pour ce chapitre, et la page de Kavita n'est pas
+  rendue dans le repère du bloc. Les autres chapitres du bloc sont relayés. Santé le signale
+  (`relay.page_count_mismatch`, `relay.page_map_unverified`) ; corrigez le chapitre côté Kavita
+  (nouveau scan), ou téléchargez un bloc plus récent.
+- **Aucune boucle.** Ce que Shelfhold envoie à Kavita n'est jamais relu comme une lecture ; une page
+  n'est envoyée que si elle dépasse celle de Kavita ; la dernière page d'un chapitre n'est envoyée
+  comme « lu » que si la lecture a traversé le chapitre, sinon Kavita reçoit l'avant-dernière.
+- **Un bloc lu d'un trait** : chaque chapitre franchi est marqué « lu » dans Kavita, même s'il n'a
+  jamais reçu de position.
+- **Un enfant** : rien au-dessus de son plafond n'est lu, ni écrit, ni demandé à Kavita.
+- **Compte Kavita partagé** par deux profils : aucun des deux n'est synchronisé.
+
+## Santé : les fichiers inconnus
+
+Santé (administrateur seulement) liste, par jeton d'appareil (son identifiant public) et par motif, les
+positions que Shelfhold n'a pas prises : `kosync.unknown` (empreinte inconnue, cachée ou d'un autre
+profil : on ne les distingue pas), `kosync.integrity` (le fichier ouvert n'est pas celui du bloc),
+`kosync.chapter_gone`, `kosync.beyond_block`, `kosync.ambiguous`... L'empreinte n'y figure pas. Les
+compteurs sont en mémoire : ils repartent à zéro au redémarrage. Une liseuse qui envoie un fichier pris
+sur un autre serveur, ou une ancienne version de bloc purgée, apparaît ici.
 
 ## Réglage conseillé : le retour en arrière
 

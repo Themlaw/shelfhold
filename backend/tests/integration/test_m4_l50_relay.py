@@ -1,5 +1,5 @@
 """M4 L50: the relay from the e-reader to Kavita and back, through a block of a series
-(ADR-0053 §2 and §5 and its amendment of 2026-11-16, EF-LEC-009, EF-LEC-014, EF-EXP-026, EF-USR-006).
+(ADR-0053 §2 and §5 and its amendment of 2026-11-16; EF-LEC-009, EF-LEC-014, EF-EXP-026).
 
 The whole chain is one test: a `PUT` of KOReader on a part of the block, the synchronisation job's
 pass with the member's own key against a simulated Kavita (`tests.relay_env`), and the `GET` the
@@ -12,13 +12,13 @@ of pages, then `verified` (only then is anything relayed).
 
 from __future__ import annotations
 
-import logging
 from collections.abc import Iterator
 from datetime import timedelta
 from typing import Any
 
 import pytest
 import sqlalchemy as sa
+from structlog.testing import capture_logs
 
 from shelfhold.config import Settings
 from tests.bundle_env import Chapter, Exported, page
@@ -39,7 +39,9 @@ def lab(monkeypatch: pytest.MonkeyPatch, settings: Settings) -> Iterator[World]:
         yield made
 
 
-def three(lab: World, *, pages: int = PAGES, link: tuple[str, ...] = ("mum",)) -> tuple[Relay, list[Exported], str]:
+def three(
+    lab: World, *, pages: int = PAGES, link: tuple[str, ...] = ("mum",)
+) -> tuple[Relay, list[Exported], str]:
     """Three chapters of `pages` pages, held by Kavita, the block of `mum` and its digest."""
     relay = build_relay(lab)
     items = [relay.add_chapter(Chapter.simple(str(n), count=pages)) for n in (1, 2, 3)]
@@ -64,14 +66,18 @@ def progress_of(lab: World, digest: str, reader: Any = None) -> dict[str, Any]:
 # -- 1. the chain, both ways -----------------------------------------------------------------
 
 
-def test_a_put_on_a_part_of_the_block_reaches_kavita_on_the_right_chapter_and_page(lab: World) -> None:
+def test_a_put_on_a_part_of_the_block_reaches_kavita_on_the_right_chapter_and_page(
+    lab: World,
+) -> None:
     relay, items, digest = three(lab)
     put(lab, digest, 15)  # the 5th page of the 2nd chapter
     assert relay.sync_all()["mum"].code == "ok"
     assert [relay.kavita_page("mum", i) for i in items] == [0, 5, 0]
 
 
-def test_a_read_through_the_block_marks_the_chapters_and_kavita_is_told_read_for_each(lab: World) -> None:
+def test_a_read_through_the_block_marks_the_chapters_and_kavita_is_told_read_for_each(
+    lab: World,
+) -> None:
     relay, items, digest = three(lab)
     put(lab, digest, 1)
     _back_by(lab, timedelta(hours=1))
@@ -89,7 +95,9 @@ def test_a_jump_to_the_end_of_the_block_tells_kavita_no_chapter_is_read(lab: Wor
     relay.sync_all()
     assert relay.kavita_page("mum", items[0]) <= PAGES - 2
     assert relay.kavita_page("mum", items[1]) == 0
-    assert relay.kavita_page("mum", items[2]) == PAGES - 2  # the look at the end: capped, no crossing
+    assert (
+        relay.kavita_page("mum", items[2]) == PAGES - 2
+    )  # the look at the end: capped, no crossing
     assert [relay.unit_state("mum", i) for i in items] == ["in_progress", "unread", "in_progress"]
 
 
@@ -106,7 +114,7 @@ def test_a_look_at_the_last_page_pushed_to_kavita_does_not_come_back_as_read(lab
     relay, items, digest = three(lab)
     put(lab, digest, 2 * PAGES)  # the last page of the 2nd chapter, with no crossing
     for _ in range(3):
-        relay.clock.advance(minutes=10)
+        relay.clock.advance(timedelta(minutes=10))
         relay.sync_all()
     assert relay.kavita_page("mum", items[1]) == PAGES - 2
     assert relay.unit_state("mum", items[1]) != "read"
@@ -117,14 +125,14 @@ def test_many_passes_neither_loop_nor_oscillate(lab: World) -> None:
     relay, items, digest = three(lab)
     put(lab, digest, 15)
     for _ in range(4):
-        relay.clock.advance(minutes=10)
+        relay.clock.advance(timedelta(minutes=10))
         relay.sync_all()
     assert len(relay.writes("mum")) == 1  # pushed once, its echo never pushed again
     assert len(relay.positions("mum", "server")) == 0  # and never taken back as news
     assert progress_of(lab, digest)["progress"] == "15"
     relay.read_in_kavita("mum", items[1], 8)  # Kavita goes on alone
     for _ in range(3):
-        relay.clock.advance(minutes=10)
+        relay.clock.advance(timedelta(minutes=10))
         relay.sync_all()
     assert progress_of(lab, digest)["progress"] == str(PAGES + 8)
     assert len(relay.writes("mum")) == 1  # nothing written back to Kavita for what it said
@@ -145,7 +153,7 @@ def test_the_furthest_wins_when_both_sides_moved_and_nobody_goes_back(lab: World
 
 
 def test_a_member_is_candidate_until_kavita_announces_the_same_number_of_pages(lab: World) -> None:
-    relay, items, digest = three(lab)
+    relay, _items, _digest = three(lab)
     assert set(relay.states().values()) == {"candidate"}
     relay.sync_all()
     assert set(relay.states().values()) == {"verified"}
@@ -153,20 +161,20 @@ def test_a_member_is_candidate_until_kavita_announces_the_same_number_of_pages(l
 
 
 def test_without_the_check_of_the_page_map_nothing_of_a_block_is_pushed(lab: World) -> None:
-    relay, items, digest = three(lab)
+    relay, _items, digest = three(lab)
     put(lab, digest, 15)
     relay.sync_all(verify=False)
     assert relay.writes("mum") == []  # fails closed
 
 
 def test_a_chapter_kavita_counts_otherwise_gets_nothing_and_the_others_are_relayed(
-    lab: World, caplog: pytest.LogCaptureFixture
+    lab: World,
 ) -> None:
     relay, items, digest = three(lab)
     relay.set_kavita_pages(items[1], PAGES + 1)  # Kavita counts one more page
     put(lab, digest, 5)
     put(lab, digest, 15)
-    with caplog.at_level(logging.INFO):
+    with capture_logs() as logs:
         outcome = relay.sync_all()["mum"]
     assert outcome.code == "ok" and outcome.unverified == 1
     assert relay.kavita_page("mum", items[0]) == 5
@@ -174,7 +182,7 @@ def test_a_chapter_kavita_counts_otherwise_gets_nothing_and_the_others_are_relay
     states = relay.states()
     assert states[items[1].item_id] == "unverified" and states[items[0].item_id] == "verified"
     assert {r.kavita_pages for r in relay.member_rows() if r.rank == 2} == {PAGES + 1}
-    assert "page_count_mismatch" in caplog.text
+    assert any(e.get("code") == "page_count_mismatch" for e in logs)
 
 
 def test_a_mismatch_is_in_the_health_page_with_a_closed_code(lab: World) -> None:
@@ -195,15 +203,19 @@ def test_a_member_comes_back_to_verified_when_kavita_counts_the_same_again(lab: 
     relay.sync_all()
     relay.set_kavita_pages(items[1], PAGES)
     put(lab, digest, 15)
-    relay.clock.advance(minutes=10)
+    relay.clock.advance(timedelta(minutes=10))
     relay.sync_all()
     assert relay.states()[items[1].item_id] == "verified"
     assert relay.kavita_page("mum", items[1]) == 5
 
 
-def test_a_chapter_whose_page_names_kavita_would_sort_otherwise_is_never_relayed(lab: World) -> None:
+def test_a_chapter_whose_page_names_kavita_would_sort_otherwise_is_never_relayed(
+    lab: World,
+) -> None:
     relay = build_relay(lab)
-    odd = Chapter("1", [(f"{n}.png", page("png", f"p{n}")) for n in (1, 2, 3, 4, 5, 6, 7, 8, 9, 10)])
+    odd = Chapter(
+        "1", [(f"{n}.png", page("png", f"p{n}")) for n in (1, 2, 3, 4, 5, 6, 7, 8, 9, 10)]
+    )
     item = relay.add_chapter(odd)  # `1.png`, `10.png`: a sort by name puts 10 second
     relay.link("mum")
     digest, _ = block(lab, lab.mum)
@@ -213,7 +225,9 @@ def test_a_chapter_whose_page_names_kavita_would_sort_otherwise_is_never_relayed
     assert relay.kavita_page("mum", item) == 0 and relay.writes("mum") == []
 
 
-def test_a_state_of_kavita_on_an_unverified_chapter_is_not_given_back_in_the_block(lab: World) -> None:
+def test_a_state_of_kavita_on_an_unverified_chapter_is_not_given_back_in_the_block(
+    lab: World,
+) -> None:
     relay, items, digest = three(lab)
     relay.set_kavita_pages(items[1], PAGES + 1)
     relay.read_in_kavita("mum", items[1], 6)
@@ -224,7 +238,7 @@ def test_a_state_of_kavita_on_an_unverified_chapter_is_not_given_back_in_the_blo
 def test_the_page_map_of_one_chapter_never_cuts_the_relay_of_a_plain_file(lab: World) -> None:
     """A position on the chapter's own file (not through the block) is Kavita's own page counting:
     the state of the block's member does not hold it."""
-    relay, items, digest = three(lab)
+    relay, items, _digest = three(lab)
     relay.set_kavita_pages(items[1], PAGES + 1)
     relay.sync_all()
     user = relay.user_id("mum")
@@ -240,7 +254,7 @@ def test_the_page_map_of_one_chapter_never_cuts_the_relay_of_a_plain_file(lab: W
             carrier_id=items[1].item_id, content_hash=anchor, locator={"page": 4}, percent=0.4,
             client_ts=relay.clock.now(),
         )  # fmt: skip
-    relay.clock.advance(minutes=10)
+    relay.clock.advance(timedelta(minutes=10))
     relay.sync_all()
     assert relay.kavita_page("mum", items[1]) == 4
 
@@ -249,17 +263,17 @@ def test_the_page_map_of_one_chapter_never_cuts_the_relay_of_a_plain_file(lab: W
 
 
 def test_a_position_on_a_replaced_chapter_is_transposed_stored_and_never_relayed(
-    lab: World, caplog: pytest.LogCaptureFixture
+    lab: World,
 ) -> None:
     relay, items, digest = three(lab)
     relay.replace_chapter(items[1], Chapter.simple("2", count=PAGES, ext="jpg"))
-    with caplog.at_level(logging.INFO):
+    with capture_logs() as logs:
         put(lab, digest, 15)
     kept = relay.positions("mum", "device")
     assert len(kept) == 1 and kept[0]["carrier_id"] == items[1].item_id
     assert "page" not in kept[0]["locator"] and kept[0]["locator"]["transposed"] is True
     assert kept[0]["percent"] == pytest.approx(0.5)  # the share of the chapter, not a page of it
-    assert "transposed" in caplog.text
+    assert any(e.get("event") == "kosync.transposed" for e in logs)
     assert relay.unit_state("mum", items[1]) == "in_progress"
     relay.sync_all()
     assert relay.writes("mum") == []  # a guess is never written to Kavita
@@ -316,7 +330,7 @@ def test_a_child_reads_back_in_the_block_only_what_is_under_the_ceiling(lab: Wor
 
 
 def test_idor_the_block_of_another_profile_relays_nothing_and_looks_unknown(lab: World) -> None:
-    relay, items, digest = three(lab, link=("mum", "kid"))
+    relay, _items, digest = three(lab, link=("mum", "kid"))
     other = push(lab.kid, digest, "15", floor4(15, 30))  # the child sends mum's digest
     unknown = push(lab.kid, "0123456789abcdef0123456789abcdef", "15", floor4(15, 30))
     assert other.status_code == unknown.status_code == 200
@@ -339,7 +353,9 @@ def test_a_profile_pushes_only_its_own_positions_to_its_own_account(lab: World) 
     assert relay.writes("kid") == []
 
 
-def test_the_token_of_a_child_never_reads_the_state_kavita_holds_for_another_profile(lab: World) -> None:
+def test_the_token_of_a_child_never_reads_the_state_kavita_holds_for_another_profile(
+    lab: World,
+) -> None:
     relay, items, digest = three(lab, link=("mum", "kid"))
     relay.read_in_kavita("mum", items[1], 6)
     relay.sync_all()
@@ -348,15 +364,18 @@ def test_the_token_of_a_child_never_reads_the_state_kavita_holds_for_another_pro
 
 
 def test_a_kavita_account_two_profiles_share_is_synchronised_for_neither(lab: World) -> None:
+    """The same Kavita account linked by two profiles (on two bindings of one Kavita): what is
+    read there belongs to neither, so nothing is written to it and nothing is taken from it."""
     relay = build_relay(lab)
     items = [relay.add_chapter(Chapter.simple(str(n), count=PAGES)) for n in (1, 2, 3)]
+    other = relay.second_destination()
     relay.link("mum", "family")
-    relay.link("kid", "family")
+    relay.link("kid", "family", destination=other)
     digest, _ = block(lab, lab.mum)
     put(lab, digest, 15)
     relay.read_in_kavita("mum", items[0], 7)
-    outcomes = relay.sync_all()
-    assert outcomes["mum"].code == outcomes["kid"].code == "account_shared"
+    assert relay.sync("mum").code == "account_shared"
+    assert relay.sync("kid", destination=other).code == "account_shared"
     assert relay.writes() == [] and relay.positions("mum", "server") == []
     assert progress_of(lab, digest)["progress"] == "15"  # the e-reader's own page, unmoved
 
@@ -376,11 +395,13 @@ def test_a_key_revoked_during_a_pass_is_not_used_for_the_next_chapter(lab: World
     outcome = relay.sync_all()["mum"]
     assert outcome.code == "member_key_revoked"
     assert len(relay.writes()) == 1  # the write in flight, none after the revocation
-    assert [relay.kavita_page("mum", i) for i in items].count(0) == 2  # one chapter written, no more
+    assert [relay.kavita_page("mum", i) for i in items].count(
+        0
+    ) == 2  # one chapter written, no more
 
 
 def test_a_revoked_key_leaves_the_positions_local_and_served(lab: World) -> None:
-    relay, items, digest = three(lab)
+    relay, _items, digest = three(lab)
     relay.revoke("mum")
     put(lab, digest, 15)
     assert relay.sync_all() == {}  # a member without a live key is not even visited

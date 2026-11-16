@@ -141,6 +141,7 @@ from shelfhold.infrastructure.fsops.errors import RootBlockedError
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.observability.wiring import daily_access_audit
 from shelfhold.infrastructure.schema import coherence, export
+from shelfhold.infrastructure.secrets.keyring import Keyring
 from shelfhold.infrastructure.wake import WakeDeferred
 from shelfhold.integrations.apprise import NotificationDispatcher, register_notification_job
 from shelfhold.jobs.daily_checks import library_type_check, major_update_replay
@@ -1257,7 +1258,10 @@ class LazyDispatcher:
 
 
 def progress_sync_handler(
-    engine: sa.Engine, remote_of: Callable[[], ProgressRemote], clock: Any
+    engine: sa.Engine,
+    remote_of: Callable[[], ProgressRemote],
+    clock: Any,
+    page_map_keyring: Callable[[], Keyring] | None = None,
 ) -> Callable[[JobContext], None]:
     """`progress.sync` (EF-EXP-026): for every destination with the synchronisation on, each linked
     member in turn, pull then push. A Kavita that cannot be asked, a key Kavita refuses, a revoked
@@ -1280,6 +1284,7 @@ def progress_sync_handler(
                     destination_id=destination,
                     clock=clock,
                     should_stop=lambda: bool(context.stop_requested),
+                    page_map_keyring=page_map_keyring,
                 ).values():
                     if outcome.code == "ok":
                         context.add(synchronised=1, pulled=outcome.pulled, pushed=outcome.pushed)
@@ -1367,7 +1372,9 @@ def register_runtime_jobs(pools: JobPools, comp: Composition) -> None:
     pools.scheduler.add(EXPORT_JOB_KIND, EXPORT_CRON, jitter_s=60)
     pools.register(
         PROGRESS_SYNC_KIND, pool="io",
-        handler=progress_sync_handler(comp.engine, lambda: progress_remote(comp), comp.clock),
+        handler=progress_sync_handler(
+            comp.engine, lambda: progress_remote(comp), comp.clock, comp.keyring
+        ),
     )  # fmt: skip
     pools.scheduler.add(PROGRESS_SYNC_KIND, PROGRESS_SYNC_CRON, jitter_s=60)
     pools.register(

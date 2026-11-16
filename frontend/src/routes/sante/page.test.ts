@@ -34,6 +34,8 @@ const page = (over: Record<string, unknown> = {}) => ({
   library_type_changes: [
     { code: 'library_type_changed', subject: '01TH', action: action('shelfhold target reconnect 01TH') }
   ],
+  page_map_warnings: [{ code: 'relay.page_count_mismatch', subject: '01ED', chapters: 2 }],
+  kosync_unknown: [{ code: 'kosync.unknown', token: 'tok-public', count: 3 }],
   jurisdiction: null,
   backup: {
     last_ok_at: '2026-11-12T01:00:00Z',
@@ -92,6 +94,25 @@ describe('Health page', () => {
     render(Page);
     expect(await screen.findByText(/Aucun compte Kavita ne voit plus/)).toBeInTheDocument();
     expect(screen.getByText("Aucun type de bibliothèque n'a changé.")).toBeInTheDocument();
+  });
+
+  // req: EF-LEC-009
+  // req: EF-EXP-026
+  it('shows the chapters not relayed to Kavita and the positions an e-reader sent that were not taken', async () => {
+    server.use(serve(page()));
+    render(Page);
+    const region = await screen.findByRole('region', { name: 'Liseuses et relais vers Kavita' });
+    expect(within(region).getByText('relay.page_count_mismatch')).toBeInTheDocument();
+    expect(within(region).getByText(/2 chapitre\(s\) d'un bloc non relayé/)).toBeInTheDocument();
+    expect(within(region).getByText('kosync.unknown')).toBeInTheDocument();
+    expect(within(region).getByText(/3 position\(s\) d'un appareil \(tok-public\)/)).toBeInTheDocument();
+  });
+
+  // req: EF-LEC-009
+  it('says nothing is wrong with the relay when there is no warning', async () => {
+    server.use(serve(page({ page_map_warnings: [], kosync_unknown: [] })));
+    render(Page);
+    expect(await screen.findByText(/Tous les fichiers envoyés par une liseuse sont connus/)).toBeInTheDocument();
   });
 
   // req: ENF-OBS-005
