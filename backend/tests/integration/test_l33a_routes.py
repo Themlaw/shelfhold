@@ -44,7 +44,9 @@ def _close_a_shelf_to(fx: Fixture, user_id: str) -> None:
         shelf = db.execute(
             "SELECT shelf_id FROM shelf_destination WHERE id = ?", (fx.destination_id,)
         ).fetchone()[0]
-        db.execute("UPDATE shelf SET allowed_profiles = ? WHERE id = ?", (json.dumps([user_id]), shelf))
+        db.execute(
+            "UPDATE shelf SET allowed_profiles = ? WHERE id = ?", (json.dumps([user_id]), shelf)
+        )
 
 
 # --- the servers a binding can name ------------------------------
@@ -57,7 +59,10 @@ def test_targets_list_names_each_server_and_what_it_keeps_apart(fx: Fixture) -> 
     items = {i["name"]: i for i in done.json()["items"]}
     assert set(items) == {"kavita-main", "plain-folder"}
     assert items["kavita-main"]["kind"] == "kavita"
-    assert items["kavita-main"]["partitioning"] == "none"
+    assert (
+        items["kavita-main"]["partitioning"] == "library"
+    )  # Kavita keeps accounts apart by library
+    assert items["plain-folder"]["partitioning"] == "none"  # a plain folder keeps nothing apart
     assert set(items["kavita-main"]) == {"id", "name", "kind", "partitioning"}  # no config, no key
 
 

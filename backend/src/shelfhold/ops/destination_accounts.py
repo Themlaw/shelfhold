@@ -47,6 +47,12 @@ class _Verifier:
             else DestinationRef(found.id, found.is_kavita, found.allowed_profiles)
         )
 
+    def kavita_destinations(self) -> list[DestinationRef]:
+        return [
+            DestinationRef(d.id, d.is_kavita, d.allowed_profiles, d.shelf_name, d.target_name)
+            for d in self._kavita.kavita_destinations()
+        ]
+
     def verify(
         self, destination_id: str, remote_user: str, token: str, *, child_max_age: int | None
     ) -> RemoteAccount:

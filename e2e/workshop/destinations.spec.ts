@@ -74,7 +74,7 @@ test('test_family_shelf_destination_refusal_shows_reason', async ({ page }) => {
   const family = page.locator('section', {
     has: page.getByRole('heading', { name: 'Destinations de « Famille »', level: 2 })
   });
-  await family.getByLabel('Serveur').selectOption({ label: 'Kavita maison' }); // keeps nothing apart
+  await family.getByLabel('Serveur').selectOption({ label: 'Dossier partagé' }); // a folder keeps nothing apart
   await family.getByRole('button', { name: 'Lier la destination' }).click();
   const refusal = family.getByRole('alert');
   await expect(refusal).toContainText('shelf.destination_not_partitioned'); // the stable code

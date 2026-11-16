@@ -134,6 +134,46 @@ class BindingsOut(BaseModel):
     destinations: list[BindingOut]
 
 
+class TargetOut(BaseModel):
+    id: str
+    name: str
+    kind: str
+    partitioning: Literal["none", "library", "user"]
+
+
+class TargetsOut(BaseModel):
+    items: list[TargetOut]
+
+
+def _admin_session(request: Request) -> Principal:
+    principal = require_session(request)
+    if principal.role != "admin":
+        raise ProblemError("forbidden")
+    return principal
+
+
+def build_targets_router(get_service: Callable[[], ShelfService]) -> APIRouter:
+    """`GET /api/v1/targets`: the servers the shelves screen offers for a new binding (EF-EXP-002).
+    An admin session: a key, a member and a child are refused. Nothing of the config."""
+    router = APIRouter(prefix="/api/v1/targets", tags=["targets"])
+
+    @router.get("")
+    def list_targets(_principal: Principal = Depends(_admin_session)) -> TargetsOut:  # noqa: B008
+        return TargetsOut(
+            items=[
+                TargetOut(
+                    id=t.id,
+                    name=t.name,
+                    kind=t.kind,
+                    partitioning=t.partitioning,  # type: ignore[arg-type]
+                )
+                for t in get_service().list_targets()
+            ]
+        )
+
+    return router
+
+
 def build_shelves_router(
     get_service: Callable[[], ShelfService], get_ops: Callable[[], Any]
 ) -> APIRouter:

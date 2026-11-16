@@ -84,6 +84,8 @@ class DestinationInfo:
     id: str
     is_kavita: bool
     allowed_profiles: tuple[str, ...] = ()  # the shelf's own list; empty: open to everyone
+    shelf_name: str = ""
+    target_name: str = ""
 
 
 @dataclass(frozen=True)
@@ -248,6 +250,36 @@ class KavitaMemberVerifier:
             return None
         listed = row.allowed_profiles if isinstance(row.allowed_profiles, list) else []
         return DestinationInfo(row.id, row.kind == "kavita", tuple(str(p) for p in listed))
+
+    def kavita_destinations(self) -> list[DestinationInfo]:
+        """Every binding to a Kavita, with the name of its shelf and of its server (what a member
+        reads to choose the account they link a key to), in a stable order."""
+        table, target, shelf = export.shelf_destination, export.export_target, export.shelf
+        with self._engine.connect() as connection:
+            rows = connection.execute(
+                sa.select(
+                    table.c.id,
+                    shelf.c.name.label("shelf_name"),
+                    shelf.c.allowed_profiles,
+                    target.c.name.label("target_name"),
+                )
+                .join(target, target.c.id == table.c.target_id)
+                .join(shelf, shelf.c.id == table.c.shelf_id)
+                .where(target.c.kind == "kavita")
+                .order_by(shelf.c.name, target.c.name, table.c.id)
+            ).all()
+        return [
+            DestinationInfo(
+                row.id,
+                True,
+                tuple(str(p) for p in row.allowed_profiles)
+                if isinstance(row.allowed_profiles, list)
+                else (),
+                row.shelf_name,
+                row.target_name,
+            )
+            for row in rows
+        ]
 
     def _target(self, destination_id: str) -> _Target:
         table, target = export.shelf_destination, export.export_target

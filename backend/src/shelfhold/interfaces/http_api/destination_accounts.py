@@ -75,6 +75,19 @@ class AccountList(BaseModel):
     items: list[AccountOut]
 
 
+class ChoiceOut(BaseModel):
+    """A binding a key can be linked to: its shelf, its server, and whether one is linked."""
+
+    id: str
+    shelf_name: str
+    target_name: str
+    linked: bool
+
+
+class ChoiceList(BaseModel):
+    items: list[ChoiceOut]
+
+
 def _out(view: AccountView) -> AccountOut:
     return AccountOut(
         id=view.id,
@@ -119,6 +132,19 @@ def build_destination_accounts_router(get_ops: Callable[[], OpsServices]) -> API
     def list_accounts(user_id: str, principal: Annotated[Principal, Depends(_adult)]) -> Any:
         views = run(lambda: get_ops().destination_accounts.list_accounts(principal, user_id))
         return AccountList(items=[_out(v) for v in views])
+
+    @router.get("/{user_id}/kavita-destinations", response_model=ChoiceList)
+    def list_choices(user_id: str, principal: Annotated[Principal, Depends(_adult)]) -> Any:
+        """What the screen of the member offers: the Kavita bindings they may link a key to."""
+        found = run(lambda: get_ops().destination_accounts.choices(principal, user_id))
+        return ChoiceList(
+            items=[
+                ChoiceOut(
+                    id=c.id, shelf_name=c.shelf_name, target_name=c.target_name, linked=c.linked
+                )
+                for c in found
+            ]
+        )
 
     @router.put("/{user_id}/destination-accounts/{shelf_destination_id}", response_model=LinkedOut)
     def link_account(

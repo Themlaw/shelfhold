@@ -16,6 +16,7 @@ from shelfhold.identity.adapters.store import (
     revoke_all_credentials,
 )
 from shelfhold.identity.application.destination_accounts import (
+    AccountChoice,
     AccountRefused,
     AccountVerifier,
     AccountView,
@@ -170,6 +171,7 @@ __all__ = [
     "SYSTEM_EMITTERS",
     "TABLE_ROLES",
     "VISIBILITIES",
+    "AccountChoice",
     "AccountRefused",
     "AccountVerifier",
     "AccountView",
