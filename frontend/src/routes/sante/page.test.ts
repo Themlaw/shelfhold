@@ -103,16 +103,17 @@ describe('Health page', () => {
     render(Page);
     const region = await screen.findByRole('region', { name: 'Liseuses et relais vers Kavita' });
     expect(within(region).getByText('relay.page_count_mismatch')).toBeInTheDocument();
-    expect(within(region).getByText(/2 chapitre\(s\) d'un bloc non relayé/)).toBeInTheDocument();
+    expect(within(region).getByText(/2 chapitres d'un bloc ne sont pas relayés vers Kavita/)).toBeInTheDocument();
     expect(within(region).getByText('kosync.unknown')).toBeInTheDocument();
-    expect(within(region).getByText(/3 position\(s\) d'un appareil \(tok-public\)/)).toBeInTheDocument();
+    expect(within(region).getByText(/3 positions envoyées par la liseuse tok-public/)).toBeInTheDocument();
   });
 
   // req: EF-LEC-009
-  it('says nothing is wrong with the relay when there is no warning', async () => {
+  it('shows no relay section when no e-reader or chapter has a warning', async () => {
     server.use(serve(page({ page_map_warnings: [], kosync_unknown: [] })));
     render(Page);
-    expect(await screen.findByText(/Tous les fichiers envoyés par une liseuse sont connus/)).toBeInTheDocument();
+    await screen.findByRole('region', { name: 'Sources' });
+    expect(screen.queryByRole('region', { name: 'Liseuses et relais vers Kavita' })).toBeNull();
   });
 
   // req: ENF-OBS-005

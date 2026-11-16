@@ -109,11 +109,9 @@
       {/if}
     </section>
 
-    <section aria-labelledby="h-relay">
-      <h2 id="h-relay">{t('health_page.relay')}</h2>
-      {#if view.relay.length === 0}
-        <p>{t('health_page.relay_none')}</p>
-      {:else}
+    {#if view.relay.length > 0}
+      <section aria-labelledby="h-relay">
+        <h2 id="h-relay">{t('health_page.relay')}</h2>
         <ul>
           {#each view.relay as entry, i (i)}
             <HealthEntry
@@ -126,8 +124,8 @@
             />
           {/each}
         </ul>
-      {/if}
-    </section>
+      </section>
+    {/if}
 
     {#if view.withdrawalPending.count > 0 || (view.jurisdiction && !view.jurisdiction.confirmed)}
       <section aria-labelledby="h-waits">
