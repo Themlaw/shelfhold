@@ -6,6 +6,7 @@ from typing import Protocol
 
 import sqlalchemy as sa
 
+from shelfhold.catalog.adapters.cbl import MAX_CBL_BYTES, CblError, parse_cbl
 from shelfhold.catalog.adapters.repo import (
     SqlContributorStore,
     SqlEditionStore,
@@ -43,6 +44,21 @@ from shelfhold.catalog.application.changes import (
     track_work_changes,
     window,
     work_need,
+)
+from shelfhold.catalog.application.collections import (
+    MAX_ITEMS as MAX_COLLECTION_ITEMS,
+)
+from shelfhold.catalog.application.collections import (
+    CollectionFullError,
+    CollectionNotFoundError,
+    CollectionNotYoursError,
+    Collections,
+    CollectionSummary,
+    CollectionView,
+    CollectionViewer,
+    ImportResult,
+    ItemView,
+    Unresolved,
 )
 from shelfhold.catalog.application.contributors import ARTIST, WRITER
 from shelfhold.catalog.application.coverage import (
@@ -468,6 +484,8 @@ __all__ = [
     "EDITION_KEY",
     "LANG_NORMALIZER_ID",
     "LINK_PROVIDERS",
+    "MAX_CBL_BYTES",
+    "MAX_COLLECTION_ITEMS",
     "MAX_REMOVED",
     "MAX_TERMS",
     "MAX_TERM_CHARS",
@@ -487,6 +505,14 @@ __all__ = [
     "BindingRef",
     "Bound",
     "Catalog",
+    "CblError",
+    "CollectionFullError",
+    "CollectionNotFoundError",
+    "CollectionNotYoursError",
+    "CollectionSummary",
+    "CollectionView",
+    "CollectionViewer",
+    "Collections",
     "ConfirmationError",
     "ConfirmationRequiredError",
     "ContributorName",
@@ -512,11 +538,13 @@ __all__ = [
     "FieldReport",
     "Filing",
     "ForceRefusedError",
+    "ImportResult",
     "IncomingEdition",
     "IncomingUnit",
     "IngestOutcome",
     "IngestResult",
     "InvalidTermError",
+    "ItemView",
     "LanguageError",
     "ListedUnit",
     "MergeAlreadyUndoneError",
@@ -567,6 +595,7 @@ __all__ = [
     "TombstoneScreenMissingError",
     "TooManyRemovalsError",
     "UnknownTargetError",
+    "Unresolved",
     "UnsupportedFileError",
     "VariantFacts",
     "Verdict",
@@ -619,6 +648,7 @@ __all__ = [
     "open_offset_suggestion",
     "open_suggestions",
     "parse_age",
+    "parse_cbl",
     "parse_number",
     "parse_partial_date",
     "pause_community_binding",

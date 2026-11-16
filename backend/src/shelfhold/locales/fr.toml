@@ -1954,6 +1954,16 @@ title = "Cette œuvre appartient déjà à une série."
 action = "Une œuvre n'appartient qu'à une série : pour la changer, séparez-la d'abord ou fusionnez les œuvres."
 cause = "L'œuvre est déjà rattachée à une série, et une œuvre n'en a qu'une."
 
+[errors."collection.cbl_refused"]
+title = "Ce fichier de liste de lecture est refusé."
+action = "Vérifiez que c'est bien un fichier CBL (une liste « ReadingList » avec ses « Book ») de moins de 2 Mo et de 5 000 livres, sans déclaration de type de document."
+cause = "Le fichier n'est pas un CBL lisible, ou il dépasse une limite (taille, profondeur, nombre de livres), ou il déclare une entité externe : rien n'a été importé."
+
+[errors."collection.full"]
+title = "Cette liste est pleine."
+action = "Une liste tient au plus 5 000 éléments : retirez-en ou faites-en une autre."
+cause = "Le nombre maximal d'éléments d'une collection ou d'une liste de lecture est atteint."
+
 [errors."export.series_reassignment_refused"]
 title = "Le plan de réaffectation des séries exportées est périmé ou refusé : rien n'a été modifié."
 action = "Relisez le plan : une série adoptée (figée) ou une série liée à autre chose que ses éditions l'arrête. Un plan relu après un changement a une autre empreinte."

@@ -51,6 +51,7 @@ __all__ = [
     "WorkMergeRefusedError",
     "WorkMerged",
     "apply_work_merge",
+    "move_collection_items",
     "plan_work_merge",
     "resolve_work",
 ]
@@ -280,6 +281,17 @@ def _move_entity_rows(connection: Connection, drop_id: str, keep_id: str) -> dic
     return saved
 
 
+def move_collection_items(connection: Connection, *, drop_id: str, keep_id: str) -> None:
+    """The places of the absorbed Work in the collections and reading lists go to the survivor,
+    each in its place: a list does not lose a line because the catalogue was tidied (EF-BIB-016).
+    "Séparer" does not take them back: a list is a person's choice, not a fact about the Work."""
+    connection.execute(
+        sa.update(catalog.collection_item)
+        .where(catalog.collection_item.c.work_id == drop_id)
+        .values(work_id=keep_id)
+    )
+
+
 def _move_states(connection: Connection, drop_id: str, keep_id: str) -> list[dict[str, Any]]:
     """The flags of each user. Where the user holds both, the survivor's row takes the union and
     the latest stamp; the absorbed row is in the snapshot either way."""
@@ -375,6 +387,7 @@ def _apply(connection: Connection, plan: WorkMergePlan, now: datetime) -> WorkMe
             .where(identity.request.c.work_id == drop_id)
             .values(work_id=keep_id)
         )
+        move_collection_items(connection, drop_id=drop_id, keep_id=keep_id)
         have = {r.series_id for r in _series_of(connection, keep_id)}
         for m in members:
             if m["series_id"] in have:  # the same Series: the survivor's place stays

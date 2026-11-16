@@ -46,6 +46,9 @@ UPSTREAM_STATUSES = ("ongoing", "finished", "paused", "unknown")
 METADATA_ENTITIES = ("series", "work", "edition", "volume", "contributor")
 
 EXTERNAL_LINK_KINDS = ("official_read", "buy", "licensed_in")
+COLLECTION_KINDS = ("collection", "reading_list")
+COLLECTION_SOURCES = ("manual", "cbl")
+MAX_COLLECTION_NAME = 200
 METADATA_PROVENANCES = ("provider", "source", "embedded", "import", "manual")
 UNIT_STATES = (
     "known", "wanted", "queued", "stored", "exported", "adopted", "missing", "store_missing",
@@ -871,4 +874,59 @@ external_link = sa.Table(
         "\"url\" LIKE 'https://%' AND \"provider\" <> ''", name="external_link_https_provider_named"
     ),
     sa.Index("ix_external_link_entity", "entity_type", "entity_id"),
+)
+
+
+# Collections and reading lists (EF-BIB-016, M4 L18a). A collection with no owner is the household's
+# (an admin makes it, every profile reads what of it she may see); one with an `owner_id` is that
+# profile's own and is read by her and by an admin only. `position` is the place in the order the
+# list was written in (a CBL keeps the numbering of its lines, a gap is a line that was not
+# resolved): what is shown to a reader is numbered again among the items she may see.
+collection = sa.Table(
+    "collection",
+    metadata,
+    ulid_column("id", primary_key=True),
+    sa.Column("kind", sa.String(), nullable=False),
+    sa.Column("name", sa.String(), nullable=False),
+    _fk("owner_id", "user.id", ondelete="CASCADE", nullable=True),
+    sa.Column("source", sa.String(), nullable=False, server_default="manual"),
+    now_column(),
+    ulid_check("id"),
+    in_check("kind", COLLECTION_KINDS),
+    in_check("source", COLLECTION_SOURCES),
+    sa.CheckConstraint(f'length("name") BETWEEN 1 AND {MAX_COLLECTION_NAME}', name="name_length"),
+    sa.Index("ix_collection_owner", "owner_id"),
+)
+
+# A place in a collection: a Work, with the number the list gave it ("Series #12"), in order.
+# The same Work may come twice (two issues of one series): the place is the key, not the Work.
+collection_item = sa.Table(
+    "collection_item",
+    metadata,
+    ulid_column("id", primary_key=True),
+    _fk("collection_id", "collection.id", ondelete="CASCADE"),
+    sa.Column("position", sa.Integer(), nullable=False),
+    _fk("work_id", "work.id", ondelete="CASCADE"),
+    sa.Column("number", sa.String(), nullable=True),
+    now_column("added_at"),
+    ulid_check("id"),
+    positive_check("position"),
+    sa.CheckConstraint(
+        '"number" IS NULL OR length("number") BETWEEN 1 AND 40', name="number_length"
+    ),
+    sa.UniqueConstraint("collection_id", "position", name="uq_collection_item_place"),
+    sa.Index("ix_collection_item_work", "work_id"),
+)
+
+# Where a collection was made on a destination (the id the destination gave it): L18b fills it. It
+# goes with the collection and with the destination's target, and is rebuilt by the next sync.
+collection_remote = sa.Table(
+    "collection_remote",
+    metadata,
+    _fk("collection_id", "collection.id", ondelete="CASCADE"),
+    _fk("target_id", "export_target.id", ondelete="CASCADE"),
+    sa.Column("remote_id", sa.String(), nullable=False),
+    sa.Column("synced_at", UtcDateTime(), nullable=True),
+    sa.PrimaryKeyConstraint("collection_id", "target_id"),
+    sa.CheckConstraint("\"remote_id\" <> ''", name="remote_id_named"),
 )

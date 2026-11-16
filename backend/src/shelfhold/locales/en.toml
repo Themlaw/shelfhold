@@ -1965,6 +1965,16 @@
     action = "A work only belongs to one series: to change it, separate it first or merge the works."
     cause = "The work is already attached to a series, and a work only has one."
 
+  [errors."collection.cbl_refused"]
+    title = "This reading-list file is refused."
+    action = "Check that it is a CBL file (a ReadingList with its Book lines) under 2 MB and 5,000 books, with no document type declaration."
+    cause = "The file is not a readable CBL, or it is over a limit (size, depth, number of books), or it declares an external entity: nothing was imported."
+
+  [errors."collection.full"]
+    title = "This list is full."
+    action = "A list holds at most 5,000 items: remove some or make another list."
+    cause = "The largest number of items of a collection or reading list is reached."
+
   [errors."export.series_reassignment_refused"]
     title = "The reallocation plan for the exported series is outdated or refused: nothing has been modified."
     action = "Reread the plan: an adopted (frozen) series or a series linked to something other than its Editions stops it. A plan reread after a change has another fingerprint."

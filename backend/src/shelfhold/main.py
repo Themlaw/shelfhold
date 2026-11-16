@@ -58,6 +58,7 @@ from shelfhold.interfaces.http_api.bootstrap import build_bootstrap_router
 from shelfhold.interfaces.http_api.bundle_slices import build_bundle_slices_router
 from shelfhold.interfaces.http_api.catalog_admin import build_catalog_admin_router
 from shelfhold.interfaces.http_api.catalog_lists import build_catalog_lists_router
+from shelfhold.interfaces.http_api.collections import build_collections_router
 from shelfhold.interfaces.http_api.destination_accounts import (
     build_destination_accounts_router,
 )
@@ -368,6 +369,7 @@ def create_app(
         build_me_router(cache(lambda: user_state_service(engine, clock))),  # EF-USR-007, EF-BIB-022
         build_activity_router(lambda: engine),  # EF-USR-016: `activity_view`, unmask audited
         build_catalog_lists_router(lambda: engine, since_key),  # M3 L11: `?since=`
+        build_collections_router(lambda: engine),  # M4 L18a: collections and reading lists
         build_stream_router(
             lambda: engine,
             lambda: composition.bus,

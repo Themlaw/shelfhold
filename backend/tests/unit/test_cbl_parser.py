@@ -1,4 +1,4 @@
-"""M4 L18a (EF-BIB-016): the reading-list file is untrusted XML, read bounded and without any entity.
+"""M4 L18a (EF-BIB-016): the reading-list file is untrusted XML, read bounded, with no entity.
 
 The parser keeps the order of the books, refuses every DTD (so no external entity, no parameter
 entity, no expansion), and stops at a size, a depth, a number of elements or of books that a
@@ -19,13 +19,24 @@ def _list(books: list[tuple[str, str]], *, name: str = "Order") -> bytes:
         f'<Book Series="{series}" Number="{number}" Volume="2020" Year="2021"/>'.encode()
         for series, number in books
     )
-    return HEAD + b"<ReadingList><Name>" + name.encode() + b"</Name><Books>" + rows + b"</Books></ReadingList>"
+    return (
+        HEAD
+        + b"<ReadingList><Name>"
+        + name.encode()
+        + b"</Name><Books>"
+        + rows
+        + b"</Books></ReadingList>"
+    )
 
 
 def test_the_books_come_in_the_order_of_the_file() -> None:
     parsed = parse_cbl(_list([("Zeta", "3"), ("Alpha", "1"), ("Zeta", "2")], name="Mine"))
     assert parsed.name == "Mine"
-    assert [(b.series, b.number) for b in parsed.books] == [("Zeta", "3"), ("Alpha", "1"), ("Zeta", "2")]
+    assert [(b.series, b.number) for b in parsed.books] == [
+        ("Zeta", "3"),
+        ("Alpha", "1"),
+        ("Zeta", "2"),
+    ]
     assert (parsed.books[0].volume, parsed.books[0].year) == ("2020", "2021")
 
 
@@ -57,8 +68,10 @@ def test_cbl_parser_refuses_external_entities() -> None:
 
 def test_an_expanding_entity_is_refused_before_it_expands() -> None:
     laughs = (
-        HEAD + b'<!DOCTYPE ReadingList [<!ENTITY a "aaaaaaaaaa"><!ENTITY b "&a;&a;&a;&a;&a;&a;&a;&a;">'
-        b'<!ENTITY c "&b;&b;&b;&b;&b;&b;&b;&b;">]><ReadingList><Name>&c;</Name><Books/></ReadingList>'
+        HEAD
+        + b'<!DOCTYPE ReadingList [<!ENTITY a "aaaaaaaaaa"><!ENTITY b "&a;&a;&a;&a;&a;&a;&a;&a;">'
+        b'<!ENTITY c "&b;&b;&b;&b;&b;&b;&b;&b;">]>'
+        b"<ReadingList><Name>&c;</Name><Books/></ReadingList>"
     )
     with pytest.raises(CblError) as refused:
         parse_cbl(laughs)

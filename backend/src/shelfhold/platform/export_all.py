@@ -71,6 +71,8 @@ EXPORTED_TABLES: Final = frozenset(
         "bundle_partition", "bundle_version", "document_alias",
         # the slice an admin chose for a block (L49b): a choice, not a cache
         "bundle_setting",
+        # the lists people made (L18a): a household collection and a profile's own reading list
+        "collection", "collection_item",
     }
 )  # fmt: skip
 
@@ -121,6 +123,7 @@ EXCLUDED_TABLES: Final[Mapping[str, str]] = {
     "export_record": _REBUILT, "export_series": _REBUILT, "edition_export_series": _REBUILT,
     "export_upgrade": _REBUILT, "bundle_member": _REBUILT, "field_owner": _REBUILT,
     "work_relation": _REBUILT,
+    "collection_remote": _REBUILT,  # the next sync of collections makes them again (M4 L18a)
     "page_issue": _REBUILT,  # found again by the next look at the content (M4 L53)
 }  # fmt: skip
 

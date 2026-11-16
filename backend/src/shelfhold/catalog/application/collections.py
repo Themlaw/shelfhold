@@ -1,0 +1,409 @@
+"""Collections and reading lists, read as a profile (EF-BIB-016, EF-USR-006, M4 L18a).
+
+A collection with no owner is the household's: an admin makes it, every profile reads what of it she
+may see. A collection with an owner is that profile's own list: private by default, read by its
+owner and by an admin and by nobody else. A list that is not the reader's is exactly a list that
+does not exist: the same absent answer, whatever the identifier.
+
+What a reader is shown of a list is made of the Works she may see, and of nothing else:
+- an item is shown when its Work is visible to her (`queries.visible_work_ids`, the one filter) and,
+  for a child, when an Edition she may see is filed on a shelf open to her
+  (`shelf.allowed_profiles`, the perimeter of the shelves: an Edition on no shelf, or on one
+  reserved to someone else, is not hers); an adult is not narrowed (as everywhere in the app);
+- the count, the order, the cover and the title come out of the shown items only: places are
+  numbered again from 1 among them (no gap says where a hidden one was), the cover is the first
+  shown item's, and the name of a household list that holds something hidden from her is withheld
+  (a name such as "…, volume 9" could spoil it);
+- a household list that holds only hidden Works is absent for her, as is the one she cannot read.
+
+A Work that is removed leaves its places (`ON DELETE CASCADE`); one that is merged moves them to the
+survivor (`work_merge.move_collection_items`).
+"""
+
+from collections import defaultdict
+from collections.abc import Sequence
+from dataclasses import dataclass
+from datetime import datetime
+from typing import Any, Final, Literal
+
+import sqlalchemy as sa
+
+from shelfhold.catalog.application.queries import (
+    ReaderScope,
+    first_open_covers,
+    first_visible_covers,
+    visible_work_ids,
+)
+from shelfhold.catalog.domain.reading_list import ReadingListFile, title_key
+from shelfhold.infrastructure.db import write_transaction
+from shelfhold.infrastructure.ids import new_ulid
+from shelfhold.infrastructure.schema import catalog
+
+__all__ = [
+    "MAX_ITEMS",
+    "CollectionFullError",
+    "CollectionNotFoundError",
+    "CollectionNotYoursError",
+    "CollectionSummary",
+    "CollectionView",
+    "CollectionViewer",
+    "Collections",
+    "ImportResult",
+    "ItemView",
+    "Unresolved",
+]
+
+MAX_ITEMS: Final = 5000
+MAX_LISTED: Final = 200
+Scope = Literal["shared", "profile"]
+Kind = Literal["collection", "reading_list"]
+_CHUNK = 500
+
+
+@dataclass(frozen=True)
+class CollectionViewer:
+    """Who reads or writes: the profile, whether she is an admin, and her scope (her ceiling)."""
+
+    user_id: str
+    is_admin: bool
+    scope: ReaderScope
+
+
+class CollectionNotFoundError(LookupError):
+    """Absent, or not the reader's: the same error, so nothing tells the two apart."""
+
+
+class CollectionNotYoursError(PermissionError):
+    """The reader may read this list but not change it (a household list, for a non-admin)."""
+
+
+class CollectionFullError(ValueError):
+    pass
+
+
+@dataclass(frozen=True)
+class ItemView:
+    id: str
+    position: int  # numbered again from 1 among the items shown
+    work_id: str
+    title: str
+    number: str | None
+    cover_ref: str | None
+
+
+@dataclass(frozen=True)
+class CollectionSummary:
+    id: str
+    kind: str
+    name: str | None  # None: withheld, it could tell of a Work she may not see
+    scope: Scope
+    mine: bool
+    count: int
+    cover_ref: str | None
+    created_at: datetime
+
+
+@dataclass(frozen=True)
+class CollectionView:
+    summary: CollectionSummary
+    items: list[ItemView]
+
+
+@dataclass(frozen=True)
+class Unresolved:
+    index: int  # the line of the file, from 0
+    series: str
+    number: str
+    reason: Literal["not_found", "ambiguous"]
+
+
+@dataclass(frozen=True)
+class ImportResult:
+    collection: CollectionSummary
+    imported: int
+    unresolved: list[Unresolved]
+
+
+@dataclass(frozen=True)
+class _Row:
+    id: str
+    kind: str
+    name: str
+    owner_id: str | None
+    created_at: datetime
+
+
+def _chunks(values: Sequence[str]) -> list[list[str]]:
+    return [list(values[i : i + _CHUNK]) for i in range(0, len(values), _CHUNK)]
+
+
+def _readable(viewer: CollectionViewer, row: _Row) -> bool:
+    return row.owner_id is None or row.owner_id == viewer.user_id or viewer.is_admin
+
+
+def _row(connection: sa.Connection, collection_id: str) -> _Row | None:
+    c = catalog.collection.c
+    found = connection.execute(
+        sa.select(c.id, c.kind, c.name, c.owner_id, c.created_at).where(c.id == collection_id)
+    ).first()
+    return None if found is None else _Row(*found)
+
+
+def _shown_works(
+    connection: sa.Connection, viewer: CollectionViewer, work_ids: Sequence[str]
+) -> dict[str, str | None]:
+    """The Works of `work_ids` this reader may see, each with the cover of the first Edition she
+    may see (None when it has none). Absent and hidden are the same: not in the answer."""
+    unique = sorted(set(work_ids))
+    seen = visible_work_ids(connection, viewer.scope, unique)
+    if viewer.scope.unrestricted:
+        covers = first_visible_covers(connection, viewer.scope, sorted(seen))
+        return {work: covers[work][1] if work in covers else None for work in sorted(seen)}
+    covers = first_open_covers(connection, viewer.scope, viewer.user_id, sorted(seen))
+    return {work: ref for work, (_edition, ref) in covers.items()}
+
+
+def _titles(connection: sa.Connection, work_ids: Sequence[str]) -> dict[str, str]:
+    found: dict[str, str] = {}
+    work = catalog.work.c
+    for chunk in _chunks(sorted(set(work_ids))):
+        found.update(
+            {
+                str(r.id): str(r.title)
+                for r in connection.execute(
+                    sa.select(work.id, work.title).where(work.id.in_(chunk))
+                )
+            }
+        )
+    return found
+
+
+def _items_of(connection: sa.Connection, collection_ids: Sequence[str]) -> dict[str, list[Any]]:
+    item = catalog.collection_item.c
+    by_collection: dict[str, list[Any]] = defaultdict(list)
+    for chunk in _chunks(collection_ids):
+        for row in connection.execute(
+            sa.select(item.id, item.collection_id, item.position, item.work_id, item.number)
+            .where(item.collection_id.in_(chunk))
+            .order_by(item.collection_id, item.position)
+        ):
+            by_collection[str(row.collection_id)].append(row)
+    return by_collection
+
+
+def _present(
+    viewer: CollectionViewer,
+    row: _Row,
+    items: list[Any],
+    shown: dict[str, str | None],
+    titles: dict[str, str],
+) -> CollectionView | None:
+    """What this reader is shown of one collection, or None when it is not hers to see."""
+    kept = [i for i in items if str(i.work_id) in shown]
+    mine = row.owner_id == viewer.user_id
+    shared = row.owner_id is None
+    if not viewer.scope.unrestricted and shared and items and not kept:
+        return None  # a household list of nothing but what she may not see does not exist for her
+    hidden = len(items) - len(kept)
+    withheld = not viewer.scope.unrestricted and shared and hidden > 0
+    views = [
+        ItemView(
+            id=str(i.id), position=n, work_id=str(i.work_id), title=titles.get(str(i.work_id), ""),
+            number=i.number, cover_ref=shown[str(i.work_id)],
+        )
+        for n, i in enumerate(kept, start=1)
+    ]  # fmt: skip
+    cover = next((v.cover_ref for v in views if v.cover_ref is not None), None)
+    summary = CollectionSummary(
+        id=row.id, kind=row.kind, name=None if withheld else row.name,
+        scope="shared" if shared else "profile", mine=mine, count=len(views), cover_ref=cover,
+        created_at=row.created_at,
+    )  # fmt: skip
+    return CollectionView(summary, views)
+
+
+class Collections:
+    def __init__(self, engine: sa.Engine) -> None:
+        self._engine = engine
+
+    # -- reads ---------------------------------------------------------------------------------
+
+    def list_for(
+        self, viewer: CollectionViewer, *, limit: int = 50, offset: int = 0
+    ) -> list[CollectionSummary]:
+        """The collections this reader may open, the household's first, then by name."""
+        c = catalog.collection.c
+        limit = max(0, min(limit, MAX_LISTED))
+        with self._engine.connect() as connection:
+            query = sa.select(c.id, c.kind, c.name, c.owner_id, c.created_at)
+            if not viewer.is_admin:
+                query = query.where(sa.or_(c.owner_id.is_(None), c.owner_id == viewer.user_id))
+            rows = [
+                _Row(*r)
+                for r in connection.execute(
+                    query.order_by(c.owner_id.is_not(None), sa.func.lower(c.name), c.id)
+                )
+            ]
+            items = _items_of(connection, [r.id for r in rows])
+            every = [str(i.work_id) for found in items.values() for i in found]
+            shown = _shown_works(connection, viewer, every)
+            titles = _titles(connection, list(shown))
+            found_views = [_present(viewer, r, items.get(r.id, []), shown, titles) for r in rows]
+        return [v.summary for v in found_views if v is not None][offset : offset + limit]
+
+    def get(self, viewer: CollectionViewer, collection_id: str) -> CollectionView:
+        with self._engine.connect() as connection:
+            return self._view(connection, viewer, collection_id)
+
+    def _view(
+        self, connection: sa.Connection, viewer: CollectionViewer, collection_id: str
+    ) -> CollectionView:
+        row = _row(connection, collection_id)
+        if row is None or not _readable(viewer, row):
+            raise CollectionNotFoundError(collection_id)
+        items = _items_of(connection, [row.id]).get(row.id, [])
+        shown = _shown_works(connection, viewer, [str(i.work_id) for i in items])
+        view = _present(viewer, row, items, shown, _titles(connection, list(shown)))
+        if view is None:
+            raise CollectionNotFoundError(collection_id)
+        return view
+
+    # -- writes --------------------------------------------------------------------------------
+
+    def create(self, viewer: CollectionViewer, *, name: str, kind: Kind, scope: Scope) -> str:
+        if scope == "shared" and not viewer.is_admin:
+            raise CollectionNotYoursError(scope)
+        collection_id = new_ulid()
+        with write_transaction(self._engine) as connection:
+            self._insert(connection, viewer, collection_id, name, kind, scope, "manual")
+        return collection_id
+
+    @staticmethod
+    def _insert(
+        connection: sa.Connection,
+        viewer: CollectionViewer,
+        collection_id: str,
+        name: str,
+        kind: str,
+        scope: str,
+        source: str,
+    ) -> None:
+        connection.execute(
+            sa.insert(catalog.collection).values(
+                id=collection_id, kind=kind, name=name, source=source,
+                owner_id=None if scope == "shared" else viewer.user_id,
+            )
+        )  # fmt: skip
+
+    def _writable(
+        self, connection: sa.Connection, viewer: CollectionViewer, collection_id: str
+    ) -> _Row:
+        row = _row(connection, collection_id)
+        if row is None or not _readable(viewer, row):
+            raise CollectionNotFoundError(collection_id)
+        if row.owner_id is None and not viewer.is_admin:
+            raise CollectionNotYoursError(collection_id)
+        return row
+
+    def add_item(
+        self, viewer: CollectionViewer, collection_id: str, work_id: str, number: str | None = None
+    ) -> ItemView:
+        with write_transaction(self._engine) as connection:
+            self._writable(connection, viewer, collection_id)
+            shown = _shown_works(connection, viewer, [work_id])
+            if work_id not in shown:  # hidden and absent are the same answer
+                raise CollectionNotFoundError(work_id)
+            item = catalog.collection_item.c
+            last, count = connection.execute(
+                sa.select(sa.func.coalesce(sa.func.max(item.position), -1), sa.func.count()).where(
+                    item.collection_id == collection_id
+                )
+            ).one()
+            if count >= MAX_ITEMS:
+                raise CollectionFullError(collection_id)
+            item_id = new_ulid()
+            connection.execute(
+                sa.insert(catalog.collection_item).values(
+                    id=item_id, collection_id=collection_id, position=int(last) + 1,
+                    work_id=work_id, number=number or None,
+                )
+            )  # fmt: skip
+            title = _titles(connection, [work_id])[work_id]
+        return ItemView(item_id, int(count) + 1, work_id, title, number or None, shown[work_id])
+
+    def remove_item(self, viewer: CollectionViewer, collection_id: str, item_id: str) -> None:
+        with write_transaction(self._engine) as connection:
+            self._writable(connection, viewer, collection_id)
+            item = catalog.collection_item.c
+            found = connection.execute(
+                sa.select(item.work_id).where(
+                    item.id == item_id, item.collection_id == collection_id
+                )
+            ).scalar()
+            if found is None or str(found) not in _shown_works(connection, viewer, [str(found)]):
+                raise CollectionNotFoundError(item_id)
+            connection.execute(sa.delete(catalog.collection_item).where(item.id == item_id))
+
+    def delete(self, viewer: CollectionViewer, collection_id: str) -> None:
+        with write_transaction(self._engine) as connection:
+            self._writable(connection, viewer, collection_id)
+            connection.execute(
+                sa.delete(catalog.collection).where(catalog.collection.c.id == collection_id)
+            )
+
+    # -- the import of a reading-list file -----------------------------------------------------
+
+    def import_list(
+        self, viewer: CollectionViewer, parsed: ReadingListFile, *, scope: Scope, name: str | None
+    ) -> ImportResult:
+        """Make a reading list of the file: the order of the file is the order of the list; a line
+        that names no Work this reader may see, or more than one, is listed and left out, never
+        invented or guessed. Her own list resolves only against what she may see, so a hidden Work
+        is a line that was not found, exactly like one the catalogue never had."""
+        if scope == "shared" and not viewer.is_admin:
+            raise CollectionNotYoursError(scope)
+        with write_transaction(self._engine) as connection:
+            wanted = {title_key(b.series) for b in parsed.books}
+            candidates = _candidates(connection, wanted)
+            shown = _shown_works(
+                connection, viewer, [w for works in candidates.values() for w in works]
+            )
+            places: list[tuple[int, str, str]] = []
+            unresolved: list[Unresolved] = []
+            for index, book in enumerate(parsed.books):
+                matches = [w for w in candidates.get(title_key(book.series), []) if w in shown]
+                if len(matches) == 1:
+                    places.append((index, matches[0], book.number))
+                else:
+                    unresolved.append(
+                        Unresolved(
+                            index, book.series, book.number, "ambiguous" if matches else "not_found"
+                        )
+                    )
+            collection_id = new_ulid()
+            self._insert(
+                connection, viewer, collection_id,
+                (name or parsed.name or "Reading list").strip()[:200] or "Reading list",
+                "reading_list", scope, "cbl",
+            )  # fmt: skip
+            for index, work_id, number in places:
+                connection.execute(
+                    sa.insert(catalog.collection_item).values(
+                        id=new_ulid(), collection_id=collection_id, position=index,
+                        work_id=work_id, number=number or None,
+                    )
+                )  # fmt: skip
+            view = self._view(connection, viewer, collection_id)
+        return ImportResult(view.summary, len(places), unresolved)
+
+
+def _candidates(connection: sa.Connection, wanted: set[str]) -> dict[str, list[str]]:
+    """The Works whose title, folded, is one of `wanted`: a title is the name of a Work, and a
+    line of a file names it the way it was written (case, spaces, width forms)."""
+    work = catalog.work.c
+    found: dict[str, list[str]] = defaultdict(list)
+    for row in connection.execute(sa.select(work.id, work.title).order_by(work.id)):
+        key = title_key(str(row.title))
+        if key in wanted:
+            found[key].append(str(row.id))
+    return found

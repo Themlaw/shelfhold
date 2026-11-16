@@ -36,7 +36,7 @@ def test_the_tables_come_and_go_with_the_migration(settings: Settings) -> None:
     command.upgrade(alembic_config(database), "0085")
     assert not NEW & tables(database)
     assert "0086" in migrate(settings).applied
-    assert NEW <= tables(database)
+    assert tables(database) >= NEW
     command.downgrade(alembic_config(database), "0085")
     assert not NEW & tables(database)
 
@@ -55,12 +55,18 @@ def test_a_collection_has_a_known_kind_and_a_name(settings: Settings) -> None:
                 conn.execute(
                     "INSERT INTO collection (id, kind, name) VALUES (?, ?, ?)", (LIST, kind, name)
                 )
-        conn.execute("INSERT INTO collection (id, kind, name) VALUES (?, 'reading_list', 'x')", (LIST,))
+        conn.execute(
+            "INSERT INTO collection (id, kind, name) VALUES (?, 'reading_list', 'x')", (LIST,)
+        )
         # no owner: the household's; a profile's own list names its owner (and goes with it)
-        assert conn.execute("SELECT owner_id FROM collection WHERE id = ?", (LIST,)).fetchone()[0] is None
+        assert (
+            conn.execute("SELECT owner_id FROM collection WHERE id = ?", (LIST,)).fetchone()[0]
+            is None
+        )
         with pytest.raises(sqlite3.IntegrityError):  # the owner must exist
             conn.execute(
-                "INSERT INTO collection (id, kind, name, owner_id) VALUES (?, 'collection', 'y', ?)",
+                "INSERT INTO collection (id, kind, name, owner_id) "
+                "VALUES (?, 'collection', 'y', ?)",
                 (ITEM, USER),
             )
 
@@ -71,8 +77,12 @@ def test_an_item_needs_its_list_and_its_work_and_a_free_position(settings: Setti
         conn.execute(
             "INSERT INTO work (id, kind, title, sort_title) VALUES (?, ?, 'T', 't')", (WORK, kind)
         )
-        conn.execute("INSERT INTO collection (id, kind, name) VALUES (?, 'collection', 'x')", (LIST,))
-        add = "INSERT INTO collection_item (id, collection_id, position, work_id) VALUES (?, ?, ?, ?)"
+        conn.execute(
+            "INSERT INTO collection (id, kind, name) VALUES (?, 'collection', 'x')", (LIST,)
+        )
+        add = (
+            "INSERT INTO collection_item (id, collection_id, position, work_id) VALUES (?, ?, ?, ?)"
+        )
         with pytest.raises(sqlite3.IntegrityError):
             conn.execute(add, (ITEM, LIST, -1, WORK))  # never negative
         with pytest.raises(sqlite3.IntegrityError):

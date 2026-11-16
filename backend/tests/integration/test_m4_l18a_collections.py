@@ -32,7 +32,7 @@ from tests.visibility_env import RATED, add_profile
 
 COLLECTIONS = "/api/v1/collections"
 IMPORT = "/api/v1/collections/import-cbl"
-SECRET_FILE = "root:x:0:0"
+SECRET_FILE = "root:x:0:0"  # noqa: S105  (what /etc/passwd starts with, not a secret)
 
 
 def _cbl(books: list[tuple[str, str]], name: str = "Reading order") -> str:
@@ -51,9 +51,7 @@ def _delete(world: World, client: Any, path: str) -> Any:
     return client.delete(path, headers={CSRF_HEADER: world.env.csrf(client)})
 
 
-def _make(
-    world: World, client: Any, name: str, scope: str, works: Sequence[str] = ()
-) -> str:
+def _make(world: World, client: Any, name: str, scope: str, works: Sequence[str] = ()) -> str:
     made = _post(world, client, COLLECTIONS, {"name": name, "kind": "reading_list", "scope": scope})
     assert made.status_code == 201, made.text
     collection = made.json()["id"]
@@ -116,7 +114,10 @@ def test_cbl_import_keeps_order(world: World) -> None:
     shown = world.env.client.get(f"{COLLECTIONS}/{body['collection']['id']}")
     assert shown.status_code == 200
     assert [i["work_id"] for i in shown.json()["items"]] == [
-        works["mixed"], works["ok"], works["adult_shelf"], works["ok"]
+        works["mixed"],
+        works["ok"],
+        works["adult_shelf"],
+        works["ok"],
     ]
     assert [i["number"] for i in shown.json()["items"]] == ["1", "2", "3", "4"]
     assert [i["position"] for i in shown.json()["items"]] == [1, 2, 3, 4]
@@ -135,7 +136,10 @@ def test_cbl_import_does_not_guess_between_two_works_of_one_title(world: World) 
             )
         )  # fmt: skip
     done = _post(
-        world, world.env.client, IMPORT, {"scope": "shared", "cbl": _cbl([("Tale of Orchard", "1")])}
+        world,
+        world.env.client,
+        IMPORT,
+        {"scope": "shared", "cbl": _cbl([("Tale of Orchard", "1")])},
     )
     assert done.status_code == 201
     assert done.json()["imported"] == 0
@@ -145,13 +149,15 @@ def test_cbl_import_does_not_guess_between_two_works_of_one_title(world: World) 
 @pytest.mark.req("EF-BIB-016", "ENF-SEC-014")
 def test_a_trapped_cbl_is_refused_and_creates_nothing(world: World) -> None:
     trapped = (
-        f'<?xml version="1.0"?><!DOCTYPE ReadingList [<!ENTITY leak SYSTEM "file:///etc/passwd">]>'
+        '<?xml version="1.0"?><!DOCTYPE ReadingList [<!ENTITY leak SYSTEM "file:///etc/passwd">]>'
         "<ReadingList><Name>&leak;</Name><Books/></ReadingList>"
     )
     too_big = _cbl([("Tale", str(i)) for i in range(6000)])
     deep = (
         '<?xml version="1.0"?><ReadingList><Name>x</Name><Books>'
-        + "<a>" * 80 + "</a>" * 80 + "</Books></ReadingList>"
+        + "<a>" * 80
+        + "</a>" * 80
+        + "</Books></ReadingList>"
     )
     for document in (trapped, too_big, deep, "", "not xml at all"):
         refused = _post(world, world.env.client, IMPORT, {"scope": "shared", "cbl": document})
@@ -162,7 +168,9 @@ def test_a_trapped_cbl_is_refused_and_creates_nothing(world: World) -> None:
 
 @pytest.mark.req("EF-BIB-016", "ENF-SEC-010")
 def test_a_child_import_resolves_only_what_she_may_see(world: World) -> None:
-    document = _cbl([("Tale of Orchard", "1"), ("Tale of Harbor Sixteen", "2"), ("Tale of Xylophone", "3")])
+    document = _cbl(
+        [("Tale of Orchard", "1"), ("Tale of Harbor Sixteen", "2"), ("Tale of Xylophone", "3")]
+    )
     done = _post(world, world.kid, IMPORT, {"scope": "profile", "cbl": document})
     assert done.status_code == 201, done.text
     assert done.json()["imported"] == 1
@@ -184,7 +192,7 @@ def test_profile_list_invisible_to_other_profiles(world: World) -> None:
     # the owner and the admin read it
     assert ann.get(path).status_code == 200
     assert world.env.client.get(path).status_code == 200
-    # another member, a child, a guessed identifier: the same answer as for an identifier that is not
+    # another member, a child, a guessed identifier: the same answer as for one nobody ever had
     absent = bob.get(f"{COLLECTIONS}/{MISSING}")
     assert absent.status_code == 404
     for stranger in (bob, world.kid):
@@ -229,9 +237,19 @@ def test_a_key_reads_as_its_profile_and_a_read_only_key_writes_nothing(world: Wo
     assert ann_client.get(f"{COLLECTIONS}/{mine}", headers=ann_auth).status_code == 200
     # a read-only key writes nothing, anywhere
     for client, auth, path, body in (
-        (ann_client, ann_auth, COLLECTIONS, {"name": "x", "kind": "reading_list", "scope": "profile"}),
+        (
+            ann_client,
+            ann_auth,
+            COLLECTIONS,
+            {"name": "x", "kind": "reading_list", "scope": "profile"},
+        ),
         (ann_client, ann_auth, f"{COLLECTIONS}/{mine}/items", {"work_id": works["mixed"]}),
-        (ann_client, ann_auth, IMPORT, {"scope": "profile", "cbl": _cbl([("Tale of Orchard", "1")])}),
+        (
+            ann_client,
+            ann_auth,
+            IMPORT,
+            {"scope": "profile", "cbl": _cbl([("Tale of Orchard", "1")])},
+        ),
     ):
         refused = client.post(path, json=body, headers=auth)
         assert refused.status_code in (401, 403), path
@@ -248,7 +266,9 @@ def test_only_an_admin_makes_a_household_collection(world: World) -> None:
     works = world.seed.works
     member = add_profile(world.env, "mem", "member", "10.0.0.13")
     for client in (member, world.kid):
-        refused = _post(world, client, COLLECTIONS, {"name": "x", "kind": "collection", "scope": "shared"})
+        refused = _post(
+            world, client, COLLECTIONS, {"name": "x", "kind": "collection", "scope": "shared"}
+        )
         assert refused.status_code == 403
         imported = _post(
             world, client, IMPORT, {"scope": "shared", "cbl": _cbl([("Tale of Orchard", "1")])}
@@ -257,7 +277,12 @@ def test_only_an_admin_makes_a_household_collection(world: World) -> None:
     shared = _make(world, world.env.client, "Household", "shared", [works["ok"]])
     for client in (member, world.kid):  # everyone reads it, nobody but an admin changes it
         assert client.get(f"{COLLECTIONS}/{shared}").status_code == 200
-        assert _post(world, client, f"{COLLECTIONS}/{shared}/items", {"work_id": works["mixed"]}).status_code == 403
+        assert (
+            _post(
+                world, client, f"{COLLECTIONS}/{shared}/items", {"work_id": works["mixed"]}
+            ).status_code
+            == 403
+        )
         assert _delete(world, client, f"{COLLECTIONS}/{shared}").status_code == 403
     assert len(world.env.client.get(f"{COLLECTIONS}/{shared}").json()["items"]) == 1
 
@@ -279,7 +304,11 @@ def test_child_sees_only_collection_items_visible_to_her(world: World) -> None:
     answer = world.kid.get(f"{COLLECTIONS}/{shared}")
     assert answer.status_code == 200
     body = answer.json()
-    assert [i["work_id"] for i in body["items"]] == [works["ok"], works["adult_shelf"], works["mixed"]]
+    assert [i["work_id"] for i in body["items"]] == [
+        works["ok"],
+        works["adult_shelf"],
+        works["mixed"],
+    ]
     assert body["count"] == 3  # a count of what she sees: it cannot say 6 more exist
     assert [i["position"] for i in body["items"]] == [1, 2, 3]  # no gap where a hidden one was
     world.clean(answer.text)
@@ -308,17 +337,21 @@ def test_the_cover_of_a_list_is_never_a_hidden_works(world: World) -> None:
     works, editions = world.seed.works, world.seed.editions
     hidden_cover = f"covers/{'a' * 64}.webp"
     shown_cover = f"covers/{'b' * 64}.webp"
+    reserved_cover = f"covers/{'c' * 64}.webp"
     with world.seed.engine.begin() as c:
-        for edition, ref in ((editions["above"], hidden_cover), (editions["ok"], shown_cover)):
-            point_at(c, edition, ref)
+        point_at(c, editions["above"], hidden_cover)  # a Work above her ceiling
+        point_at(c, editions["ok_second"], shown_cover)  # an Edition on a shelf open to her
+        point_at(c, editions["ok"], reserved_cover)  # an Edition on a shelf reserved to another
     shared = _make(world, world.env.client, "Covers", "shared")
     _force_items(world, shared, [works["above"], works["ok"]])  # the hidden one comes first
     admin = world.env.client.get(f"{COLLECTIONS}/{shared}").json()
     kid = world.kid.get(f"{COLLECTIONS}/{shared}").json()
-    assert admin["cover_hash"] != kid["cover_hash"]
-    assert kid["cover_hash"] is not None and "a" * 64 not in json.dumps(kid)
+    assert admin["cover_hash"] == "a" * 64  # the admin's first item is the hidden one
+    assert kid["cover_hash"] == "b" * 64
+    assert "a" * 64 not in json.dumps(kid) and "c" * 64 not in json.dumps(kid)
     listed = world.kid.get(COLLECTIONS).json()["items"]
     assert next(r for r in listed if r["id"] == shared)["cover_hash"] == kid["cover_hash"]
+    assert "a" * 64 not in json.dumps(listed) and "c" * 64 not in json.dumps(listed)
 
 
 @pytest.mark.req("EF-BIB-016", "EF-USR-006", "ENF-SEC-010")
@@ -335,7 +368,10 @@ def test_a_work_outside_the_shelves_open_to_her_is_not_shown(world: World) -> No
             )
         )  # fmt: skip
         outside, loose = new_ulid(), new_ulid()
-        for work, shelf, title in ((outside, reserved, "Tale of Reserved Shelf"), (loose, None, "Tale of No Shelf")):
+        for work, shelf, title in (
+            (outside, reserved, "Tale of Reserved Shelf"),
+            (loose, None, "Tale of No Shelf"),
+        ):
             c.execute(
                 sa.insert(catalog.work).values(
                     id=work, kind=kind, title=title, sort_title=title.lower(),
@@ -360,11 +396,16 @@ def test_a_work_outside_the_shelves_open_to_her_is_not_shown(world: World) -> No
     assert len(member.get(f"{COLLECTIONS}/{shared}").json()["items"]) == 3
     # nor can a child add it to a list of hers
     mine = _make(world, world.kid, "Mine", "profile")
-    assert _post(world, world.kid, f"{COLLECTIONS}/{mine}/items", {"work_id": outside}).status_code == 404
+    assert (
+        _post(world, world.kid, f"{COLLECTIONS}/{mine}/items", {"work_id": outside}).status_code
+        == 404
+    )
 
 
 @pytest.mark.req("EF-BIB-016", "EF-USR-006", "ENF-SEC-010")
-def test_a_child_cannot_put_a_hidden_work_in_her_list_and_a_later_rating_hides_it(world: World) -> None:
+def test_a_child_cannot_put_a_hidden_work_in_her_list_and_a_later_rating_hides_it(
+    world: World,
+) -> None:
     works = world.seed.works
     mine = _make(world, world.kid, "Mine", "profile", [works["ok"]])
     path = f"{COLLECTIONS}/{mine}/items"
@@ -378,7 +419,9 @@ def test_a_child_cannot_put_a_hidden_work_in_her_list_and_a_later_rating_hides_i
     assert len(world.kid.get(f"{COLLECTIONS}/{mine}").json()["items"]) == 1
     # the admin raises the Work's age after she added it: it leaves what she is shown
     with world.seed.engine.begin() as c:
-        c.execute(sa.update(catalog.work).where(catalog.work.c.id == works["ok"]).values(age_rating=16))
+        c.execute(
+            sa.update(catalog.work).where(catalog.work.c.id == works["ok"]).values(age_rating=16)
+        )
     after = world.kid.get(f"{COLLECTIONS}/{mine}")
     assert after.status_code == 200 and after.json()["items"] == [] and after.json()["count"] == 0
     # a list she owns, once empty for her, is still hers (not a 404): she made it
@@ -402,12 +445,20 @@ def test_a_childs_list_is_read_by_her_and_the_admin_only(world: World) -> None:
 @pytest.mark.req("EF-BIB-016")
 def test_removing_a_work_removes_its_items(world: World) -> None:
     works = world.seed.works
-    shared = _make(world, world.env.client, "Household", "shared", [works["ok"], works["mixed"]])
+    alone = new_ulid()
     with world.seed.engine.begin() as c:
-        c.execute(sa.delete(catalog.work).where(catalog.work.c.id == works["mixed"]))
-    assert [i["work_id"] for i in world.env.client.get(f"{COLLECTIONS}/{shared}").json()["items"]] == [
-        works["ok"]
-    ]
+        kind = c.execute(sa.text("SELECT key FROM work_kind LIMIT 1")).scalar_one()
+        c.execute(
+            sa.insert(catalog.work).values(
+                id=alone, kind=kind, title="Tale of Nobody", sort_title="tale of nobody",
+                age_rating=6, rated_at=RATED,
+            )
+        )  # fmt: skip
+    shared = _make(world, world.env.client, "Household", "shared", [works["ok"], alone])
+    with world.seed.engine.begin() as c:
+        c.execute(sa.delete(catalog.work).where(catalog.work.c.id == alone))
+    shown = world.env.client.get(f"{COLLECTIONS}/{shared}").json()["items"]
+    assert [i["work_id"] for i in shown] == [works["ok"]]
 
 
 @pytest.mark.req("EF-BIB-016")
@@ -439,10 +490,22 @@ def child_case(world: World) -> None:
     world.clean(listed.text)
     assert closed not in listed.text and world.kid.get(f"{COLLECTIONS}/{closed}").status_code == 404
     mine = _make(world, world.kid, "Mine", "profile", [works["ok"]])
-    assert _post(world, world.kid, f"{COLLECTIONS}/{mine}/items", {"work_id": works["above"]}).status_code == 404
+    assert (
+        _post(
+            world, world.kid, f"{COLLECTIONS}/{mine}/items", {"work_id": works["above"]}
+        ).status_code
+        == 404
+    )
     imported = _post(
         world, world.kid, IMPORT,
-        {"scope": "profile", "cbl": _cbl([("Tale of Harbor Sixteen", "1"), ("Tale of Orchard", "2")])},
+        {
+            "scope": "profile",
+            "cbl": _cbl([("Tale of Harbor Sixteen", "1"), ("Tale of Orchard", "2")]),
+        },
     )  # fmt: skip
     assert imported.status_code == 201 and imported.json()["imported"] == 1
-    world.clean(imported.text)
+    # the only place her own hidden title comes back is the echo of the line she sent, as
+    # "not found": nothing of the catalogue is in the rest of the answer
+    body = imported.json()
+    assert [u["reason"] for u in body.pop("unresolved")] == ["not_found"]
+    world.clean(json.dumps(body))

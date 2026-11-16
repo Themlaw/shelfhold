@@ -878,7 +878,8 @@ def _surface_support_author(world: World) -> None:
 
 
 def _surface_collections(world: World) -> None:
-    """M4 L18a: the lists she is shown hold only Works she may see (the attacks: `test_m4_l18a_collections`)."""
+    """M4 L18a: the lists she is shown hold only Works she may see (the attacks are in
+    `test_m4_l18a_collections`)."""
     from tests.integration.test_m4_l18a_collections import child_case
 
     child_case(world)
