@@ -489,6 +489,7 @@ class RenameBook:
         """The series folders the plan makes must not take the name of another series of the
         library (EF-EXP-032): Kavita would merge the two, and the readings with them. Read now,
         in the names Kavita shows, so that a series the user renamed there is its own."""
+        self._require_distinct_series(records, steps)
         if self._names is None:
             return
         known = {_fold(r.rel_path.split("/", 1)[0]) for r in records.values()}
@@ -501,6 +502,25 @@ class RenameBook:
             return
         taken = self._names.collision(ctx.destination_id, sorted((o, n) for n, o in pairs.items()))
         if taken:
+            raise RenameRefusedError("series_name_collision")
+
+    @staticmethod
+    def _require_distinct_series(
+        records: dict[str, _Record], steps: Sequence[PlannedRename]
+    ) -> None:
+        """Two series of ours must not end in one folder, nor one be poured into the folder of
+        another: Kavita would merge them into one series, and the readings of both with it. A
+        folder the plan empties is free to be taken (a swap, a chain)."""
+        origins: dict[str, set[str]] = defaultdict(set)
+        for rec in records.values():
+            old = rec.rel_path
+            final = old
+            for step in steps:
+                if old == step.src or old.startswith(step.src + "/"):
+                    final = step.dst + old[len(step.src) :]
+                    break
+            origins[_fold(final.split("/", 1)[0])].add(_fold(old.split("/", 1)[0]))
+        if any(len(from_) > 1 for from_ in origins.values()):
             raise RenameRefusedError("series_name_collision")
 
     def _steps(

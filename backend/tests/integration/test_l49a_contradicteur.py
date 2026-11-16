@@ -17,11 +17,11 @@ from typing import Any, cast
 import anyio
 import pytest
 import sqlalchemy as sa
-from starlette.concurrency import iterate_in_threadpool
 
 from shelfhold.identity.public import DELETION_SITES
 from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.schema import export
+from shelfhold.interfaces.http_api.opds.routes import _closing
 from shelfhold.reading.bundle import BundleLimits
 from shelfhold.reading.bundle.plan import Candidate, plan_parts
 from tests.bundle_env import Chapter, page
@@ -48,18 +48,20 @@ def _open(api: Any, world: World, token: str) -> Any:
 
 
 def test_poc_blq1_a_reader_that_goes_away_gives_its_slot_back_at_once(lab: World) -> None:  # noqa: F811
-    """Starlette itère le flux par `iterate_in_threadpool`, qui n'appelle jamais `close()` sur
-    l'itérateur : sur `http.disconnect`, le groupe de tâches est annulé et le générateur
-    asynchrone abandonné. `BundleStream` et son générateur `_run` (qui tient `self`) forment un
-    cycle : seul le ramasse-miettes cyclique appelle `__del__`, donc rend le créneau et les
-    descripteurs. Deux liseuses dont le Wi-Fi coupe bloquent le bloc pour toute l'instance."""
+    """Starlette itère un flux synchrone par `iterate_in_threadpool`, qui n'appelle jamais `close()`
+    sur l'itérateur : sur `http.disconnect`, le générateur asynchrone est abandonné et le créneau
+    ne revient qu'au ramasse-miettes cyclique (`BundleStream` et son générateur forment un
+    cycle). La route passe donc par `_closing`, qui ferme le flux dans un `finally` : le créneau et
+    les descripteurs reviennent à l'instant où la réponse s'arrête, sans le ramasse-miettes (coupé
+    ici : le test ne dépend ni de lui ni de l'ordre des fils d'anyio). Deux liseuses dont le Wi-Fi
+    coupe ne bloquent pas le bloc pour toute l'instance."""
     lib = library(lab)
     lib.add(Chapter("1", [("1.png", page("png", "gone", 600_000))]))
     api = provider(lab, limits=BundleLimits(chunk_bytes=16_384))
     token = fresh_token(lab)
 
     async def a_reader_that_disconnects() -> None:
-        body = cast(AsyncGenerator[bytes], iterate_in_threadpool(_open(api, lab, token).chunks))
+        body = cast(AsyncGenerator[bytes], _closing(_open(api, lab, token).chunks))
         await body.__anext__()
         await body.aclose()  # ce que laisse l'annulation de `StreamingResponse`, au mieux
 

@@ -749,9 +749,10 @@ def _chapter(
     )
     if echo:
         outcome.echoes += 1
-    elif (
-        seen.page > 0
-        and not unchanged
+    elif (  # a page 0 where the note had seen more is Kavita's « unread » (a chapter it made new
+        # has no note: its 0 is a new chapter, not a reading taken back)
+        not unchanged
+        and (seen.page > 0 or (old is not None and (old.seen_page or 0) > 0))
         and _record_pull(engine, user_id, destination_id, ref, seen.page, clock)
     ):
         outcome.pulled += 1
@@ -767,8 +768,10 @@ def _chapter(
         )
         # a chapter Kavita holds under an id never seen (a rescan that renumbered it, or a first
         # look), not already refused above: what the member has proven is carried
-        if wanted is None and old is None and outcome.unverified == refused:
-            wanted = _carried_page(engine, user_id, ref, outcome, max_session_s)
+        if old is None and outcome.unverified == refused:
+            carried = _carried_page(engine, user_id, ref, outcome, max_session_s, only_server=True)
+            if carried is not None and (wanted is None or carried > wanted):
+                wanted = carried  # the furthest proven page is never replaced by an older one
     if wanted is not None and wanted > seen.page:
         _live(engine, user_id, destination_id)
         latest = member.get(ref)  # read again just before writing: never back from what it holds
@@ -876,6 +879,8 @@ def _carried_page(
     ref: ChapterRef,
     outcome: MemberOutcome,
     max_session_s: float = DEFAULT_MAX_SESSION_HOURS * 3600,
+    *,
+    only_server: bool = False,
 ) -> int | None:
     """What a chapter that Kavita holds under an identifier it has just made is told: the page of
     the member's **furthest proven** position on this file (`reading_progress_proven`: a position
@@ -896,7 +901,10 @@ def _carried_page(
         if current is None:
             return None
         rows = connection.execute(
-            sa.select(position.c.locator, position.c.percent, position.c.source)
+            sa.select(
+                position.c.id, position.c.locator, position.c.percent, position.c.source,
+                position.c.server_ts,
+            )
             .join(view, view.c.last_position_id == position.c.id)
             .join(cover, sa.and_(cover.c.unit_id == view.c.unit_id,
                                  cover.c.carrier_type == "export_item",
@@ -909,9 +917,7 @@ def _carried_page(
                 _not_transposed(position),
             )
         ).all()  # fmt: skip
-        best: int | None = None
-        speaking: list[dict[str, Any]] = []
-        server_read = False
+        seen_pages: list[tuple[Any, dict[str, Any], int]] = []
         for row in rows:
             locator = row.locator if isinstance(row.locator, dict) else {}
             found = locator.get("page")
@@ -921,8 +927,40 @@ def _carried_page(
                 page = int(row.percent * ref.pages)
             else:
                 page = None
-            if page is None:
-                continue
+            if page is not None:
+                seen_pages.append((row, locator, page))
+        # Kavita's own word, the latest observation of it, is what it holds now: an older `server`
+        # state is not (a chapter marked unread there is page 0, later than its old read). The
+        # view keeps the position that last changed a Unit's state, which a page 0 never does:
+        # the latest one is asked of the positions themselves
+        latest = connection.execute(
+            sa.select(position.c.id, position.c.locator, position.c.server_ts)
+            .where(
+                position.c.user_id == user_id,
+                position.c.carrier_type == "export_item",
+                position.c.carrier_id == ref.carrier_id,
+                position.c.content_hash == current,
+                position.c.source == "server",
+            )
+            .order_by(position.c.server_ts.desc(), position.c.id.desc())
+            .limit(1)
+        ).first()
+        newest = (latest.server_ts, latest.id) if latest is not None else None
+        since = EPOCH
+        if latest is not None:
+            said = latest.locator.get("page") if isinstance(latest.locator, dict) else None
+            if said == 0:  # « unread » in Kavita: what came before it is no longer proof
+                since = _utc(latest.server_ts) or EPOCH
+        best: int | None = None
+        speaking: list[dict[str, Any]] = []
+        server_read = False
+        for row, locator, page in seen_pages:
+            key = (row.server_ts, row.id)
+            stale = newest is not None and (
+                (row.source == "server" and key != newest) or (since != EPOCH and key < newest)
+            )
+            if stale or (only_server and row.source != "server"):
+                continue  # `only_server`: the device side is `_pending_page`'s (latest wins, L15)
             if row.source == "server" and ref.pages > 0 and page >= ref.pages:
                 server_read = True
             if best is None or page > best:
@@ -930,7 +968,7 @@ def _carried_page(
             speaking.append(locator)
         finished = _all_read(connection, user_id, ref.carrier_id)
         marks = (
-            _marking_locators(connection, user_id, ref.carrier_id, EPOCH, max_session_s)
+            _marking_locators(connection, user_id, ref.carrier_id, since, max_session_s)
             if finished and not server_read
             else []
         )

@@ -98,12 +98,6 @@ def test_a_real_sigkill_between_pull_and_push_loses_nothing(cenv: CarryEnv, poin
 # -- 1. a renumbered chapter left to the periodic pass ------------------------------------------
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#312 trou 1: on a chapter never seen, the periodic pass pushes the latest device "
-    "page (_pending_page since EPOCH) and only falls back on the furthest proven page "
-    "(_carried_page) when there is none: what the member read further in Kavita is lost",
-)
 def test_poc_a_renumbered_chapter_gets_the_furthest_page_not_the_last_device_one(
     cenv: CarryEnv,
 ) -> None:
@@ -120,11 +114,6 @@ def test_poc_a_renumbered_chapter_gets_the_furthest_page_not_the_last_device_one
     assert cenv.kavita_page(alice, OLD, CH1) == 15  # actual: 3
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#312 trou 1 (plan): a scan that comes after the six tries leaves the chapter to the "
-    "periodic pass, which pushes the latest device page, not the furthest proven one",
-)
 def test_poc_a_late_scan_after_a_plan_keeps_the_furthest_page(cenv: CarryEnv) -> None:
     ids = cenv.series(OLD, ["1"])
     alice = cenv.member("alice")
@@ -143,11 +132,6 @@ def test_poc_a_late_scan_after_a_plan_keeps_the_furthest_page(cenv: CarryEnv) ->
 # -- 2. a false "read" -------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#312 trou 2: a chapter the member marked unread in Kavita (page 0) is never pulled "
-    "(`seen.page > 0`), so the restore finds the old `server` read and pushes « read » again",
-)
 def test_poc_a_chapter_marked_unread_in_kavita_is_not_made_read_by_the_carry(
     cenv: CarryEnv,
 ) -> None:
@@ -164,11 +148,6 @@ def test_poc_a_chapter_marked_unread_in_kavita_is_not_made_read_by_the_carry(
     assert cenv.kavita_page(alice, NEW, CH1) < PAGES  # actual: PAGES, « read » again
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#312 trou 2 (sans plan): the same unread chapter, renumbered by a rescan, is made "
-    "« read » by the periodic pass (_carried_page on a chapter never seen)",
-)
 def test_poc_a_chapter_marked_unread_is_not_made_read_by_the_periodic_pass(
     cenv: CarryEnv,
 ) -> None:
@@ -187,12 +166,6 @@ def test_poc_a_chapter_marked_unread_is_not_made_read_by_the_periodic_pass(
 # -- 1. two series of ours merged into one folder ----------------------------------------------
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#312 trou 3: _require_free_names only checks a new folder against the series of "
-    "Kavita that are not ours; two series of the plan sent to one new folder are merged by "
-    "Kavita (same chapter numbers: one chapter, the readings of both on it)",
-)
 def test_poc_two_series_of_the_plan_into_one_new_folder_are_refused(cenv: CarryEnv) -> None:
     first = cenv.series(OLD, ["1"])
     other = cenv.series("Blue Box", ["1"])
