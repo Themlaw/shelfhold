@@ -35,9 +35,13 @@ def test_ci_runs_property_golden_and_faults_in_a_matrix_aggregated_by_ci_success
     ci: dict[str, Any] = yaml.safe_load(CI.read_text(encoding="utf-8"))
     jobs = ci["jobs"]
     job = jobs["backend-suites"]
-    assert job["if"] == "needs.changes.outputs.backend == 'true'"
-    assert list(job["strategy"]["matrix"]["suite"]) == list(SUITES)
+    assert job["if"] == "needs.changes.outputs.suites == 'true'"
+    # the matrix lists the suites the changed files can affect (all on production code)
+    assert (
+        job["strategy"]["matrix"]["suite"]
+        == "${{ fromJSON(needs.changes.outputs.backend_suites) }}"
+    )
     assert job["strategy"]["fail-fast"] is False
     assert {"backend-suites"} <= set(jobs["coverage"]["needs"])
     assert "backend-suites" in jobs["ci-success"]["needs"]
-    assert "tests/${{ matrix.suite }}" in CI.read_text(encoding="utf-8")
+    assert '"tests/${SUITE}"' in CI.read_text(encoding="utf-8")

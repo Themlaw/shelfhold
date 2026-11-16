@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import ast
 import importlib.util
+import json
 import re
 import subprocess
 import sys
@@ -44,9 +45,13 @@ def test_every_e2e_test_is_in_exactly_one_shard() -> None:
 @pytest.mark.req("ENF-QUAL-007")
 def test_workflow_runs_each_shard_and_no_other() -> None:
     text = (ROOT / ".github" / "workflows" / "image.yml").read_text(encoding="utf-8")
-    declared = re.search(r"shard: \[([^\]]+)\]", text)
+    declared = re.search(
+        r"shard: \$\{\{ fromJSON\(inputs\.only-smoke && '\[\"smoke-install\"\]'"
+        r" \|\| '(\[[^']+\])'\) \}\}",
+        text,
+    )
     assert declared is not None
-    assert [s.strip() for s in declared.group(1).split(",")] == list(_shards())
+    assert json.loads(declared.group(1)) == list(_shards())
     assert "E2E_SHARD: ${{ matrix.shard }}" in text
     assert "timeout-minutes: 15" in text  # not raised: the shards are what keeps it short
 
