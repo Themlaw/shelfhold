@@ -42,6 +42,7 @@ from sqlalchemy import Connection, Engine
 
 from shelfhold.catalog.public import Admission, RatingService
 from shelfhold.export.application.cover_image import prepare_cover
+from shelfhold.export.application.komga_audit_state import partitioning_of
 from shelfhold.export.application.page_policy import PagePolicy
 from shelfhold.export.application.plan_executor import (
     ExecutionReport,
@@ -61,10 +62,10 @@ from shelfhold.export.application.target_state import DestinationPausedError
 from shelfhold.export.domain.bindings import (
     PARTITIONED,
     TreeOverlapError,
-    effective_partitioning,
     is_family,
 )
 from shelfhold.export.domain.kavita_compat import blocks_family_shelf
+from shelfhold.export.domain.komga_access import assess_version as komga_assess_version
 from shelfhold.export.domain.native_folder import cover_item_of
 from shelfhold.export.domain.path_map import clean_absolute, within
 from shelfhold.export.domain.planner import NO_NATIVE_FORMAT, ContentOffer, choose_content
@@ -148,14 +149,17 @@ class BindingView:
 
 
 def bindings_of(connection: Connection, shelf_id: str) -> list[BindingView]:
-    d, t, i = export.shelf_destination, export.export_target, export.tree_indexer
+    d, t, i, s = export.shelf_destination, export.export_target, export.tree_indexer, export.shelf
     rows = connection.execute(
         sa.select(
             d.c.id, d.c.target_id, d.c.transport, t.c.kind, t.c.access_partitioning,
-            t.c.access_partitioning_attested_at, i.c.tree_id, i.c.role,
+            t.c.access_partitioning_attested_at, i.c.tree_id, i.c.role, t.c.path_map,
+            d.c.root_subpath, s.c.max_age_rating,
         )
         .select_from(
-            d.join(t, t.c.id == d.c.target_id).outerjoin(i, i.c.shelf_destination_id == d.c.id)
+            d.join(t, t.c.id == d.c.target_id)
+            .join(s, s.c.id == d.c.shelf_id)
+            .outerjoin(i, i.c.shelf_destination_id == d.c.id)
         )
         .where(d.c.shelf_id == shelf_id)
         .order_by(d.c.id)
@@ -163,10 +167,10 @@ def bindings_of(connection: Connection, shelf_id: str) -> list[BindingView]:
     return [
         BindingView(
             r.id, r.target_id, r.transport, r.tree_id, r.role,
-            effective_partitioning(
-                r.kind,
-                r.access_partitioning,
-                attested=r.access_partitioning_attested_at is not None,
+            partitioning_of(
+                connection, target_id=r.target_id, kind=r.kind, stored=r.access_partitioning,
+                attested=r.access_partitioning_attested_at is not None, path_map=r.path_map,
+                root_subpath=r.root_subpath, ceiling=r.max_age_rating,
             ),
         )
         for r in rows
@@ -369,11 +373,12 @@ class Mate:
     role: str | None
     partitioning: str
     version_seen: str | None
+    kind: str = "kavita"
 
 
 def tree_mates(connection: Connection, destination_id: str) -> list[Mate]:
     """The binding itself, then the other indexers of its tree: each counts for the whole tree."""
-    d, t, i = export.shelf_destination, export.export_target, export.tree_indexer
+    d, t, i, s = export.shelf_destination, export.export_target, export.tree_indexer, export.shelf
     own_tree = tree_of(connection, destination_id)
     where = (
         d.c.id == destination_id
@@ -383,10 +388,13 @@ def tree_mates(connection: Connection, destination_id: str) -> list[Mate]:
     rows = connection.execute(
         sa.select(
             d.c.id, d.c.target_id, i.c.role, t.c.kind, t.c.access_partitioning,
-            t.c.access_partitioning_attested_at, t.c.version_seen,
+            t.c.access_partitioning_attested_at, t.c.version_seen, t.c.path_map, d.c.root_subpath,
+            s.c.max_age_rating,
         )
         .select_from(
-            d.join(t, t.c.id == d.c.target_id).outerjoin(i, i.c.shelf_destination_id == d.c.id)
+            d.join(t, t.c.id == d.c.target_id)
+            .join(s, s.c.id == d.c.shelf_id)
+            .outerjoin(i, i.c.shelf_destination_id == d.c.id)
         )
         .where(where)
         .order_by((d.c.id != destination_id), d.c.id)
@@ -394,12 +402,12 @@ def tree_mates(connection: Connection, destination_id: str) -> list[Mate]:
     return [
         Mate(
             r.id, r.target_id, r.role,
-            effective_partitioning(
-                r.kind,
-                r.access_partitioning,
-                attested=r.access_partitioning_attested_at is not None,
+            partitioning_of(
+                connection, target_id=r.target_id, kind=r.kind, stored=r.access_partitioning,
+                attested=r.access_partitioning_attested_at is not None, path_map=r.path_map,
+                root_subpath=r.root_subpath, ceiling=r.max_age_rating,
             ),
-            r.version_seen,
+            r.version_seen, r.kind,
         )
         for r in rows
     ]  # fmt: skip
@@ -414,7 +422,14 @@ def weakest_partitioning(mates: Sequence[Mate]) -> str:
 
 
 def tree_known_bad(mates: Sequence[Mate]) -> bool:
-    return any(blocks_family_shelf(mate.version_seen) for mate in mates)
+    """A release a family shelf may not be written for, by the rule of each server's own line: a
+    Komga is judged on its own floor (1.22.0), never on the range of Kavita."""
+    return any(
+        not komga_assess_version(mate.version_seen).accepted
+        if mate.kind == "komga"
+        else blocks_family_shelf(mate.version_seen)
+        for mate in mates
+    )
 
 
 def refusal_of(connection: Connection, destination_id: str) -> str | None:

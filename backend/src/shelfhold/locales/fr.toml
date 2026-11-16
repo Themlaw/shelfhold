@@ -1416,7 +1416,7 @@ cause = "Un fichier, une source ou un fournisseur annonce un âge plus élevé q
 
 [errors."shelf.destination_not_partitioned"]
 title = "Une étagère sous 18+ exige une destination qui cloisonne l'accès."
-action = "Liez-la à une bibliothèque Kavita dédiée, ou à une destination déclarée et attestée comme cloisonnée."
+action = "Liez-la à une bibliothèque Kavita dédiée, à un Komga dont l'audit des comptes a réussi (la raison est donnée), ou à une destination déclarée et attestée comme cloisonnée."
 cause = "Rien ne garantit que la destination réserve l'accès aux seules personnes concernées : un enfant pourrait y lire des contenus plus âgés."
 
 [errors."shelf.library_not_dedicated"]

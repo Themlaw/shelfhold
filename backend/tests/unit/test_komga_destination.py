@@ -39,8 +39,8 @@ def test_komga_passes_destination_kit() -> None:
     assert caps.can_purge is False  # `empty-trash` forgets Komga's records, the host erases files
     assert caps.indexes_tree is True and caps.path_scoped_scan is False
     assert caps.accepted_content_types == ["cbz", "epub"] and caps.name_normalizer == "komga-1"
-    # no server below 18+ before the audit of L08b: nothing is attested, nothing is partitioned
-    assert caps.access_partitioning == "none"
+    # declared by library since L08b; it counts only for a folder whose accounts the audit proved
+    assert caps.access_partitioning == "library"
     scan, trash = destination.scan_library_call(LIBRARY), destination.forget_removed_call(LIBRARY)
     assert (scan.method, scan.path) == ("POST", f"/api/v1/libraries/{LIBRARY}/scan")
     assert (trash.method, trash.path) == ("POST", f"/api/v1/libraries/{LIBRARY}/empty-trash")

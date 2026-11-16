@@ -27,6 +27,8 @@ from shelfhold.export.domain.kavita_compat import (
     MINIMUM_VERSION,
     known_bad_age,
 )
+from shelfhold.export.domain.komga_access import KNOWN_BAD_VERSIONS as KOMGA_KNOWN_BAD_VERSIONS
+from shelfhold.export.domain.komga_access import KOMGA_FLOOR
 from shelfhold.identity.public import EXIT_ROUTES
 from shelfhold.infrastructure.schema import acquisition, catalog, export, platform
 from shelfhold.infrastructure.wal import WAL_PENDING_KEY
@@ -300,6 +302,21 @@ def _jobs(connection: Connection) -> list[WaitingItem]:
     ]
 
 
+UNCLASSIFIED_EXITS = (
+    "an account with no restriction reads a family library and a library above it: give it the "
+    "ADMIN role in Komga, or use one account for the family library and another for the adult one"
+)
+
+
+def _komga_unclassified(connection: Connection, target_id: str) -> bool:
+    from shelfhold.export.application.komga_audit_state import load
+
+    findings = load(connection, target_id).get("findings")
+    return isinstance(findings, list) and any(
+        isinstance(f, dict) and f.get("code") == "account_unclassified" for f in findings
+    )
+
+
 def _targets(connection: Connection) -> list[WaitingItem]:
     target = export.export_target
     items: list[WaitingItem] = []
@@ -318,6 +335,7 @@ def _targets(connection: Connection) -> list[WaitingItem]:
         if state is None and shelf_exposed and not items:
             state = "child_exposure"
         if state is not None:
+            unclassified = state == "child_exposure" and _komga_unclassified(connection, row.id)
             reason = {
                 "target_forbidden": f"403 on {health.paused_route}",
                 "route_missing": ", ".join(health.missing_routes),
@@ -325,6 +343,8 @@ def _targets(connection: Connection) -> list[WaitingItem]:
                 "not_indexed": "a written file was never indexed",
                 "library_type_changed": "a library type changed in Kavita; the shelf is paused",
             }.get(state, state)
+            if unclassified:
+                reason = UNCLASSIFIED_EXITS
             items.append(_item(state, "export", row.id, reason or state))
     return items
 
@@ -549,6 +569,14 @@ def known_bad_report(connection: Connection, today: date) -> dict[str, object]:
             {"advisory": k.advisory, "category": k.category, "below": str(k.below)}
             for k in KNOWN_BAD_VERSIONS
         ],
+        # the floor of Komga, a line of its own (L08b, ENF-SEC-016): a family shelf is refused below
+        "komga": {
+            "minimum_version": str(KOMGA_FLOOR),
+            "entries": [
+                {"advisory": k.advisory, "category": k.category, "below": str(k.below)}
+                for k in KOMGA_KNOWN_BAD_VERSIONS
+            ],
+        },
         "targets": targets,
     }
 

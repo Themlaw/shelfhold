@@ -15,12 +15,11 @@ from dataclasses import dataclass, field
 import sqlalchemy as sa
 from sqlalchemy import Engine
 
+from shelfhold.export.application.exposure_holds import hold, release
 from shelfhold.export.application.ports import TargetEvents
 from shelfhold.export.application.snapshot import load_context
 from shelfhold.export.application.target_state import (
     CHILD_EXPOSURE,
-    pause_shelf,
-    resume_shelf,
     save_health,
 )
 from shelfhold.export.domain.bindings import is_family
@@ -110,7 +109,7 @@ class AccessAuditor:
         report = AuditReport(failed=True, error=type(error).__name__)
         with write_transaction(self._engine) as connection:
             for shelf_id in self._shelves(connection, target_id):
-                if pause_shelf(connection, shelf_id, CHILD_EXPOSURE):
+                if hold(connection, target_id, shelf_id):
                     report.paused_shelves.append(shelf_id)
             client.health.child_exposure = True
             client.health.refresh_waiting()
@@ -172,11 +171,11 @@ class AccessAuditor:
                 )  # fmt: skip
             wanted = {shelf for shelf, must in shelves if must}
             for shelf_id in sorted(wanted):
-                if pause_shelf(connection, shelf_id, CHILD_EXPOSURE):
+                if hold(connection, target_id, shelf_id):
                     report.paused_shelves.append(shelf_id)
             if resume:
                 for shelf_id in sorted({s for s, _ in shelves} - wanted):
-                    if resume_shelf(connection, shelf_id, CHILD_EXPOSURE):
+                    if release(connection, target_id, shelf_id, lift_unheld=True):
                         report.resumed_shelves.append(shelf_id)
             health = client.health
             health.child_exposure = bool(

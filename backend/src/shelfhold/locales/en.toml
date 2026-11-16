@@ -1447,7 +1447,7 @@
 
   [errors."shelf.destination_not_partitioned"]
     title = "A shelf under 18+ requires a destination that partitions access."
-    action = "Link it to a dedicated Kavita library, or to a destination declared and certified as partitioned."
+    action = "Link it to a dedicated Kavita library, to a Komga whose account audit succeeded (the reason is given), or to a destination declared and certified as partitioned."
     cause = "There is no guarantee that the destination reserves access only to the people concerned: a child could read older content there."
 
   [errors."shelf.library_not_dedicated"]

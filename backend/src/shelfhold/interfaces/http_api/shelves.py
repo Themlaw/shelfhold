@@ -241,7 +241,9 @@ def build_shelves_router(
                 actor=_actor(principal),
             )  # fmt: skip
         except BindingError as error:
-            raise ProblemError(error.code) from None
+            # the closed code of the audit that refused it (never free text), for the admin
+            extensions = {"reason": error.reason} if error.reason else None
+            raise ProblemError(error.code, extensions=extensions) from None
         except sa.exc.NoResultFound:
             raise ProblemError("not_found") from None
         return DestinationOut(id=destination_id)

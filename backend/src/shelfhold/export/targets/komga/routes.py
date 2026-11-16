@@ -41,12 +41,13 @@ class Route:
 
 INFO: Final = Route("GET", "/actuator/info", write=False, admin=True)
 ME: Final = Route("GET", "/api/v2/users/me", write=False, admin=False)
+USERS: Final = Route("GET", "/api/v2/users", write=False, admin=True)  # the audit of the accounts
 LIBRARIES: Final = Route("GET", "/api/v1/libraries", write=False, admin=False)
 LIBRARY_SCAN: Final = Route("POST", "/api/v1/libraries/{library_id}/scan", write=True, admin=True)
 LIBRARY_EMPTY_TRASH: Final = Route(
     "POST", "/api/v1/libraries/{library_id}/empty-trash", write=True, admin=True
 )
-ALLOWED_ROUTES: Final = (INFO, ME, LIBRARIES, LIBRARY_SCAN, LIBRARY_EMPTY_TRASH)
+ALLOWED_ROUTES: Final = (INFO, ME, USERS, LIBRARIES, LIBRARY_SCAN, LIBRARY_EMPTY_TRASH)
 SCAN_QUERY: Final = frozenset({"deep"})  # `deep=true` rereads files Komga thinks unchanged
 
 
