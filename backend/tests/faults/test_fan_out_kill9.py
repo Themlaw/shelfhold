@@ -108,9 +108,13 @@ def test_kill9_in_a_pass_over_several_bindings_resumes_without_duplicate_or_loss
         spec.write_text(
             json.dumps(
                 {
-                    "library": str(env.lib.library), "root_id": env.lib.library_root,
-                    "instance_id": env.lib.instance_id, "database": str(env.engine.url.database),
-                    "data": str(env.lib.data), "shelf_id": env.shelf_id, "call_id": "c1",
+                    "library": str(env.lib.library),
+                    "root_id": env.lib.library_root,
+                    "instance_id": env.lib.instance_id,
+                    "database": str(env.engine.url.database),
+                    "data": str(env.lib.data),
+                    "shelf_id": env.shelf_id,
+                    "call_id": "c1",
                     "fingerprint": _probe.current,
                     "data_by_item": {k: v.hex() for k, v in contents.data.items()},
                     "plans": plan_by_destination,
@@ -131,7 +135,8 @@ def test_kill9_in_a_pass_over_several_bindings_resumes_without_duplicate_or_loss
             assert {o.status for o in fan.run(env.shelf_id, "c1").outcomes} <= {"done", "indexer"}
 
         for subpath, folder, items in (
-            ("Kavita", "Series A", (one, two)), ("Kavita2", "Series B", (two, one)),
+            ("Kavita", "Series A", (one, two)),
+            ("Kavita2", "Series B", (two, one)),
         ):
             names = sorted(p.name for p in (env.lib.manga / subpath / folder).iterdir())
             assert names == ["Volume 1.cbz", "Volume 2.cbz"], (subpath, names)
@@ -148,7 +153,10 @@ def test_kill9_in_a_pass_over_several_bindings_resumes_without_duplicate_or_loss
         first_lines = records_of(env, env.destination_id)
         second_lines = records_of(env, second)
         assert len(first_lines) == len(second_lines) == 2
-        assert {r.file_hash for r in first_lines} == {digest(contents.data[one]), digest(contents.data[two])}
+        assert {r.file_hash for r in first_lines} == {
+            digest(contents.data[one]),
+            digest(contents.data[two]),
+        }
         key = ("export_item_id", "rel_path", "file_hash", "size", "state")
         assert [tuple(getattr(r, k) for k in key) for r in records_of(env, secondary)] == [
             tuple(getattr(r, k) for k in key) for r in first_lines

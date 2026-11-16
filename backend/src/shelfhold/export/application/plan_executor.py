@@ -32,7 +32,7 @@ Nothing of a call (query, body, field) is ever logged: no `model_dump` of an `Ap
 import hashlib
 import threading
 from collections.abc import Callable, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import PurePosixPath
 from typing import Any, Final, Protocol
@@ -82,6 +82,7 @@ __all__ = [
     "PlanExecutor",
     "PlanRefusedError",
     "PlannedLedger",
+    "WrittenFile",
 ]
 
 FILE_TRANSPORTS: Final = FOLDER_TRANSPORTS  # one list with `check_binding`: the folder transports
@@ -158,9 +159,22 @@ class PlanBinding:
 
 
 @dataclass(frozen=True)
+class WrittenFile:
+    """A file of the plan that is on the disk now, by the bytes of an `export_item`: what the
+    manifest of the tree is made from. Listed whether this run wrote it or an earlier one did."""
+
+    export_item_id: str
+    rel_path: str
+    file_hash: str
+    size: int
+    mtime_ns: int
+
+
+@dataclass(frozen=True)
 class ExecutionReport:
     executed: int
     skipped: int  # already done: by an intent of an earlier run, or already in place (a folder)
+    files: tuple[WrittenFile, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -185,6 +199,7 @@ class _Run:
     executed: int = 0
     skipped: int = 0
     since_probe: int = 0
+    files: list[WrittenFile] = field(default_factory=list)
 
 
 class PlanExecutor:
@@ -234,7 +249,7 @@ class PlanExecutor:
             self._screen(run, op)  # every operation, before the first one runs
         for index in range(len(run.snapshot)):
             self._run_op(run, index)
-        return ExecutionReport(run.executed, run.skipped)
+        return ExecutionReport(run.executed, run.skipped, tuple(run.files))
 
     def run_calls(
         self,
@@ -398,12 +413,13 @@ class PlanExecutor:
 
     def _run_op(self, run: _Run, index: int) -> None:
         op = self._checked(run, index)
+        where = f"{run.tree.local}/{op.rel_path}"
         if run.keys[index] in run.done:
             run.skipped += 1
+            self._note(run, op, where)  # done by an earlier run: still part of the manifest
             return
         if op.op != "mkdir":
             self._probe_again(run)
-        where = f"{run.tree.local}/{op.rel_path}"
         meta = {"exec": run.call_id, "dest": run.binding.destination_id, "op_key": run.keys[index]}
         match op.op:
             case "mkdir":
@@ -486,6 +502,21 @@ class PlanExecutor:
             raise PlanRefusedError("the disk refused the write") from None
         self._journal.mark_done(intent)
         run.executed += 1
+        self._note(run, op, where)
+
+    def _note(self, run: _Run, op: FsOp, where: str) -> None:
+        """A file the plan put there by an item of the host: kept for the manifest of the tree. The
+        hash is the one of the disk now, never one a plan said."""
+        ref = op.content_ref
+        if op.op != "write" or ref is None or ref.kind != "export_item":
+            return
+        found = self._disk.observe(where)
+        if found is None or found[0] != "file":
+            return  # moved or binned since: the manifest follows what is there
+        digest = self._disk.sha256_of(where)  # `sha256:<hex>`
+        run.files.append(
+            WrittenFile(ref.ref, op.rel_path, digest, found[1].size, found[1].mtime_ns)
+        )
 
     def _rename(self, run: _Run, op: FsOp, where: str, meta: dict[str, Any]) -> None:
         if op.dst_rel_path is None:

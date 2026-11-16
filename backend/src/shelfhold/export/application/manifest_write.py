@@ -11,6 +11,7 @@ from datetime import datetime
 import sqlalchemy as sa
 from sqlalchemy import Connection
 
+from shelfhold.export.application.fan_out import is_secondary, mirror_to_indexers
 from shelfhold.export.application.intents import ManifestHook, OpenIntent
 from shelfhold.export.domain.provenance_mirror import MIRROR_DIR
 from shelfhold.infrastructure.clock import Clock
@@ -65,6 +66,9 @@ def complete_write(
         file_hash=row.file_hash, physical_root_id=root_id, rel_path=root_rel, size=identity.size,
         mtime_ns=identity.mtime_ns, ino=identity.ino, dev=fsops.device_of(target), verified_at=now,
     )  # fmt: skip
+    # T9: the indexers of the tree say what the primary says, in this same transaction (and, after
+    # a crash, in the transaction of the boot that completes the line)
+    mirror_to_indexers(connection, destination_id, item_id)
 
 
 def adopt_written_hook(fsops: Fsops, locate: Locate, clock: Clock) -> ManifestHook:
@@ -80,6 +84,8 @@ def adopt_written_hook(fsops: Fsops, locate: Locate, clock: Clock) -> ManifestHo
                 record.c.shelf_destination_id, record.c.export_item_id, record.c.rel_path
             ).where(record.c.state == "planned", record.c.file_hash == intent.expected_sha256)
         ):
+            if is_secondary(connection, row.shelf_destination_id):
+                continue  # its line is a copy: the primary's completion writes it
             if row.rel_path is not None and intent.dst.endswith("/" + row.rel_path):
                 observed = fsops.observe(intent.dst)
                 if observed is None:
@@ -121,6 +127,8 @@ def reserved_line(connection: Connection, intent: OpenIntent) -> ReservedLine | 
         )
         .where(record.c.state == "planned", record.c.file_hash == intent.expected_sha256)
     ):  # fmt: skip
+        if is_secondary(connection, row.shelf_destination_id):
+            continue  # a copy of the primary's line: the primary is the one that is reserved
         if row.rel_path is not None and intent.dst.endswith("/" + row.rel_path):
             return ReservedLine(
                 row.shelf_destination_id, row.export_item_id, row.rel_path, row.work_id

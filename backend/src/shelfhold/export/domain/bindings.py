@@ -1,7 +1,7 @@
 """Rules about shelves and their destination bindings, before anything is planned.
 
-- EF-EXP-002: a ceiling is a tier of the scale (or X, or none); a shelf below 18+ is a family
-  shelf (ADR-0027);
+- EF-EXP-002: a shelf has one binding per folder and server (fan-out); a ceiling is a tier of
+  the scale (or X, or none); a shelf below 18+ is a family shelf (ADR-0027);
 - EF-EXP-047: a family shelf is linked only to a destination that partitions access by library or
   by user; what a third-party plugin declares is a default the admin attests;
 - EF-EXP-058: `egress` is attested per instance, two `tree` bindings may not overlap, a shelf kept
@@ -71,7 +71,8 @@ class TreeOverlapError(BindingError):
 
 
 class ShelfAlreadyBoundError(BindingError):
-    """M1a: one destination per shelf (EF-EXP-002); several come with M1b."""
+    """M1a: one destination per shelf. M4 L06a (fan-out) lifts it: a shelf has as many bindings as
+    folders and servers; the code stays in the catalogue for the clients that knew it."""
 
     code = "shelf.destination_exists"
 
@@ -155,14 +156,16 @@ class BindingFacts:
 def check_binding(
     new: BindingFacts, existing: Iterable[BindingFacts], *, retention_mode: str
 ) -> None:
-    """Refuse a second destination for a shelf, a binding whose folder overlaps another writing
-    one (same real path or same device and inode), or a pull with no readable copy behind it.
+    """Refuse a binding whose folder overlaps another writing one (same real path or same device
+    and inode), or a pull with no readable copy behind it. A shelf takes as many bindings as it
+    has folders and servers (EF-EXP-002, fan-out); the barrier of a shelf below 18+ is looked at
+    for each of them (`check_partitioning`, and again at every planning).
 
-    `existing` are the other bindings of the instance. `retention_mode` is the shelf's.
+    `existing` are the other bindings of the instance. `retention_mode` is the shelf's. The caller
+    that attaches a server to a tree already written (ADR-0052) leaves that tree's own bindings
+    out of `existing`: the identity is the explicit choice, every other overlap stays refused.
     """
     others = [b for b in existing if b.shelf_destination_id != new.shelf_destination_id]
-    if any(b.shelf_id == new.shelf_id for b in others):
-        raise ShelfAlreadyBoundError(f"shelf {new.shelf_id} already has a destination")
     if new.transport in WRITING_TRANSPORTS and new.local_root is not None:
         for other in others:
             if other.transport not in WRITING_TRANSPORTS or other.local_root is None:

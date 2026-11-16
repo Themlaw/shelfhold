@@ -83,15 +83,13 @@ def test_fan_out_one_shelf_many_destinations() -> None:
         assert one.shelf_destination_id != two.shelf_destination_id  # a line per binding
 
         # a server that indexes the folder of the first one: secondary, with what is already there
-        third = bind(
-            env, "Kavita", attach_to_tree=before[env.destination_id].tree_id, link=True
-        )
+        third = bind(env, "Kavita", attach_to_tree=before[env.destination_id].tree_id, link=True)
         roles = {b.destination_id: b.role for b in svc.list_bindings(env.shelf_id)}
         assert roles == {env.destination_id: "primary", second: "primary", third: "secondary"}
         assert tree_of(env, third) == before[env.destination_id].tree_id
         assert [line(r) for r in records_of(env, third)] == [line(one)]  # copied at the attach
 
-        # a second chapter: the primary writes it, the secondary gets the same line, same transaction
+        # a second chapter: the primary writes it, the secondary gets the same line (one commit)
         env.add_chapter(series, "2")
         assert run(env, third) == 0  # an indexer never writes into the tree
         assert run(env, env.destination_id) == 1
@@ -171,7 +169,9 @@ def test_present_in_per_binding() -> None:
                 return {
                     name: present_in(connection, unit, destination)
                     for name, destination in (
-                        ("first", env.destination_id), ("second", second), ("secondary", secondary)
+                        ("first", env.destination_id),
+                        ("second", second),
+                        ("secondary", secondary),
                     )
                 }
 
@@ -212,7 +212,8 @@ def test_present_in_reads_an_edition_per_binding() -> None:
         run(env, env.destination_id)
         with env.engine.connect() as connection:
             assert present_units_in(connection, series.edition_id, env.destination_id) == {
-                one, two,
+                one,
+                two,
             }
             assert present_units_in(connection, series.edition_id, second) == frozenset()
 
@@ -235,9 +236,12 @@ def test_family_shelf_fan_out_rechecks_partitioning_per_binding() -> None:
         with pytest.raises(UnpartitionedDestinationError):
             bind(env, "Kavita2", target_id=loose)
         with env.engine.connect() as connection:
-            assert connection.execute(
-                sa.select(sa.func.count()).select_from(export.shelf_destination)
-            ).scalar_one() == 1
+            assert (
+                connection.execute(
+                    sa.select(sa.func.count()).select_from(export.shelf_destination)
+                ).scalar_one()
+                == 1
+            )
 
         # at the planning: a second binding that was fine, whose attestation is withdrawn
         kept = add_target(env, kind="plugin_x", partitioning="library")
@@ -293,7 +297,7 @@ def test_family_shelf_to_a_non_family_binding_is_refused_never_inherited() -> No
         with write_transaction(env.engine) as connection:
             connection.execute(
                 sa.insert(export.shelf).values(
-                    id=adult_shelf, name="Adultes", phrase="Adultes", max_age_rating=99
+                    id=adult_shelf, name="Elsewhere", phrase="Elsewhere", max_age_rating=99
                 )
             )
         elsewhere = env.new_series("Elsewhere", shelf_id=adult_shelf)
@@ -303,7 +307,8 @@ def test_family_shelf_to_a_non_family_binding_is_refused_never_inherited() -> No
         for destination in (env.destination_id, second):
             assert run(env, destination) == 1  # "Mine", and nothing else
             assert set(blocked(env, destination)) == {
-                "shelf.above_ceiling", "shelf.rating_required",
+                "shelf.above_ceiling",
+                "shelf.rating_required",
             }
         with env.engine.connect() as connection:
             editions = set(

@@ -76,7 +76,7 @@ class InstanceService:
         """At every connection: False (and exports paused) when it is not the same Kavita."""
         await client.probe()
         health = client.health
-        current = await self._fingerprint(client)
+        current = await self.fingerprint(client)
         with write_transaction(self._engine) as connection:
             stored = load_fingerprint(connection, target_id)
             if stored is None:
@@ -92,7 +92,7 @@ class InstanceService:
         return not health.instance_changed
 
     @staticmethod
-    async def _fingerprint(client: KavitaClient) -> str | None:
+    async def fingerprint(client: KavitaClient) -> str | None:
         """URL + installation id + creation date of the oldest account (see the domain rule)."""
         created: str | None = None
         try:
@@ -117,7 +117,7 @@ class InstanceService:
         self, client: KavitaClient, target_id: str, auditor: AccessAuditor
     ) -> ReconnectReport:
         assessment = await client.probe()
-        current = await self._fingerprint(client)
+        current = await self.fingerprint(client)
         if current is None:
             raise ProtocolError("the server gives no installation id")
         libraries = await client.list_libraries()

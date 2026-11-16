@@ -3,8 +3,8 @@
 Linking a destination decides who can read what (a shelf below 18+ goes to a server that keeps
 accounts apart, or nowhere), so `shelf.bind_destination` is a reserved action: an admin session,
 fresh, never a key and never a child or a member. The attacks: a child, a member (even one the
-shelf is open to), a key (read-only or not), a profile that reads another's, a tree of another shelf,
-and a shelf that does not exist (the same answer for everyone who may not know).
+shelf is open to), a key (read-only or not), a profile that reads another's, a tree of another
+shelf, and a shelf that does not exist (the same answer for everyone who may not know).
 """
 
 from collections.abc import Iterator
@@ -37,6 +37,7 @@ class World:
     adult: str
     server: str  # keeps accounts apart
     loose: str  # does not
+    other: str  # another one that does
 
     def path(self, shelf_id: str, suffix: str = "") -> str:
         return f"/api/v1/shelves/{shelf_id}/destinations{suffix}"
@@ -56,15 +57,13 @@ class World:
 
 
 @pytest.fixture
-def world(
-    monkeypatch: pytest.MonkeyPatch, settings: Settings, tmp_path: Path
-) -> Iterator[World]:
+def world(monkeypatch: pytest.MonkeyPatch, settings: Settings, tmp_path: Path) -> Iterator[World]:
     with auth_env(monkeypatch, settings) as api:
         assert api.login().status_code == 200
         engine = create_db_engine(settings.database_path)
         library = tmp_path / "library" / "manga"
         library.mkdir(parents=True)
-        family, adult, server, loose = (new_ulid() for _ in range(4))
+        family, adult, server, loose, other = (new_ulid() for _ in range(5))
         path_map = [{"local": str(library), "remote": "/manga", "mode": "rw"}]
         with write_transaction(engine) as connection:
             connection.execute(
@@ -84,9 +83,10 @@ def world(
                 [
                     {"id": server, "kind": "kavita", "name": "Server", "path_map": path_map},
                     {"id": loose, "kind": "plugin_x", "name": "Loose", "path_map": path_map},
+                    {"id": other, "kind": "kavita", "name": "Other", "path_map": path_map},
                 ],
             )
-        yield World(api, engine, library, family, adult, server, loose)
+        yield World(api, engine, library, family, adult, server, loose, other)
         engine.dispose()
 
 
@@ -172,7 +172,11 @@ def test_a_tree_of_another_shelf_is_never_attached_to(world: World) -> None:
     }
     stolen = world.api.post(
         world.path(world.family),
-        json={"target_id": world.loose, "root_subpath": "theirs", "tree_id": trees[theirs.json()["id"]]},
+        json={
+            "target_id": world.other,
+            "root_subpath": "theirs",
+            "tree_id": trees[theirs.json()["id"]],
+        },
     )
     assert stolen.status_code == 409 and stolen.json()["code"] == "target.tree_overlap"
     unknown = world.api.post(

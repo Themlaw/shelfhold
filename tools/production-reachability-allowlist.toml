@@ -47,9 +47,8 @@ symbols = [
 [[allow]]
 category = "unwired-m4"
 reason = "Related Works (EF-BIB-039): M1b holds the model and the service (a typed link, never a merge). The admin API that links two Works, the page that shows the relation and the push to the \"related series\" of Kavita are M4's, the first callers."
-until = "M4"  # settled by M4 lot L06a (present_in) and L19 (relate_works)
+until = "M4"  # settled by M4 lot L19 (relate_works); `present_in` left with L06a
 symbols = [
-  "shelfhold.acquisition.application.presence:present_in",
   "shelfhold.catalog.application.relations:RelatedWork",
   "shelfhold.catalog.application.relations:RelationError",
   "shelfhold.catalog.application.relations:relate_works",
@@ -114,10 +113,6 @@ symbols = [
   "shelfhold.sdk.export_target:metadata_change_route",
   "shelfhold.sdk.export_target:copy_can_verify",
   "shelfhold.sdk.export_target:copy_can_serve_bytes",
-  "shelfhold.sdk.api_call:ApiCallError",
-  "shelfhold.sdk.api_call:ContentBody",
-  "shelfhold.sdk.api_call:parse_api_call",
-  "shelfhold.sdk.api_call:check_api_call",
 ]
 
 # What waited for M2 and is neither wired nor deleted (M2 L31 and closure, 2026-11-12): each group
@@ -142,14 +137,6 @@ symbols = [
   "shelfhold.sdk.events:plugin_event_type",
   "shelfhold.sdk.models:WAITING_EXITS",
   "shelfhold.sdk.source:Source.fetch_range",
-]
-
-[[allow]]
-category = "m4-l04-destination-calls"
-reason = "2026-11-16 (M4 L04): `PlanExecutor.run_calls` sends the calls a destination describes (`parse_api_call`, then `check_api_call` right before each send, `can_purge` from the capabilities). Kavita still goes through `KavitaClient.execute`, which the core already runs; the first destination that sends its calls through the generic executor (a destination of the second phase) is its caller. The plans of files, `PlanExecutor.execute`, go through `ExportPipeline.execute_destination_plan`; the composition root binds the executor (`use_plan_executor`, with the bytes the host owns and the identity the server gives) with the same lot."
-until = "M4"  # settled by M4 lot L06a, the fan-out that calls the executor for each binding
-symbols = [
-  "shelfhold.export.application.plan_executor:PlanExecutor.run_calls",
 ]
 
 [[allow]]

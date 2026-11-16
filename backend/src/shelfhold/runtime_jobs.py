@@ -63,6 +63,11 @@ from shelfhold.composition import (
     WriteContext,
 )
 from shelfhold.export.application import blocked_memo
+from shelfhold.export.application.fan_out import (
+    CachedInstanceProbe,
+    FanOut,
+    HostContentStore,
+)
 from shelfhold.export.application.intents import IntentJournal
 from shelfhold.export.application.library_repair import LibraryRepair
 from shelfhold.export.application.locks import work_lock_for
@@ -107,6 +112,7 @@ from shelfhold.export.targets.kavita.adopt import BulkParse, library_type_named
 from shelfhold.export.targets.kavita.audit import AccessAuditor
 from shelfhold.export.targets.kavita.client import KavitaClient
 from shelfhold.export.targets.kavita.cover import SeriesCovers
+from shelfhold.export.targets.kavita.destination import KavitaDestination
 from shelfhold.export.targets.kavita.dto import LibraryType
 from shelfhold.export.targets.kavita.errors import (
     RouteMissing,
@@ -117,6 +123,7 @@ from shelfhold.export.targets.kavita.errors import (
 from shelfhold.export.targets.kavita.library_type import LibraryTypeService
 from shelfhold.export.targets.kavita.polling import ArrivalPoller
 from shelfhold.export.targets.kavita.progress import KavitaProgress
+from shelfhold.export.targets.kavita.reinstall import InstanceService
 from shelfhold.export.targets.kavita.series import (
     SeriesAgeGate,
     SeriesAges,
@@ -130,6 +137,7 @@ from shelfhold.import_jobs import register_import_job
 from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.fsops import Fsops
 from shelfhold.infrastructure.fsops.errors import RootBlockedError
+from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.observability.wiring import daily_access_audit
 from shelfhold.infrastructure.schema import coherence, export
 from shelfhold.infrastructure.wake import WakeDeferred
@@ -496,7 +504,65 @@ def build_pipeline(
     pipeline.use_switchover(
         SwitchoverGate(comp.engine, SwitchoverDetector(comp.engine, fsops), clock=comp.clock)
     )
+    # the executor of the plans destinations describe (M4 L04), with the bytes the host owns and
+    # the identity each server gives now (asked at most every 30 s, whatever the plan's length)
+    pipeline.use_plan_executor(
+        contents=HostContentStore(comp.engine),
+        probe=CachedInstanceProbe(_instance_identity(comp), clock=comp.clock),
+        events=BusTargetEvents(comp.engine, comp.bus),
+    )
     return pipeline, reconciler, fsops
+
+
+def _instance_identity(comp: Composition) -> Callable[[str], str | None]:
+    """What the server of a target says of itself, read on a thread of its own (the plan code is
+    synchronous and may run inside the loop of a job). A server that does not answer, or a target
+    with no sealed key, gives nothing: one that was known then pauses its binding."""
+
+    def fetch(target_id: str) -> str | None:
+        from concurrent.futures import ThreadPoolExecutor
+
+        async def ask(client: KavitaClient) -> str | None:
+            await client.probe()
+            return await InstanceService.fingerprint(client)
+
+        try:
+            client = comp.kavita_client(target_id)
+            with ThreadPoolExecutor(max_workers=1) as pool:
+                return pool.submit(lambda: asyncio.run(ask(client))).result()
+        except (KeyringUnavailableError, KeyError, sa.exc.NoResultFound, TargetError):
+            return None
+
+    return fetch
+
+
+class FirstPartyDestinations:
+    """What the destinations of the core describe for a binding. Kavita is run by its own client
+    (`KavitaClient.execute`, with the key the core holds): it describes calls the core already
+    sends and no plan of files yet, so nothing is asked of it here; the first destination that
+    describes a plan (L06b, L07) is answered by this class."""
+
+    def __init__(self, engine: Engine) -> None:
+        self._engine = engine
+
+    def capabilities(self, target_id: str) -> Any:
+        with self._engine.connect() as connection:
+            kind = connection.execute(
+                sa.select(export.export_target.c.kind).where(export.export_target.c.id == target_id)
+            ).scalar()
+        return KavitaDestination.capabilities if kind == "kavita" else None
+
+    def plan(self, _binding: Any) -> object | None:
+        return None
+
+    def calls(self, _binding: Any) -> tuple[object, ...]:
+        return ()
+
+    def sender(self, _binding: Any) -> Callable[[Any], object]:
+        def refuse(_call: Any) -> object:
+            raise TargetError("no destination of the core sends calls through the executor yet")
+
+        return refuse
 
 
 def _unchecked(_name: str) -> Any:
@@ -525,6 +591,10 @@ class _Disks:
 
     def fsops(self) -> Fsops:
         return self.get()[1]
+
+    @property
+    def opened(self) -> bool:
+        return self._built is not None
 
 
 def export_handler(comp: Composition) -> Callable[[JobContext], None]:
@@ -558,8 +628,36 @@ def export_handler(comp: Composition) -> Callable[[JobContext], None]:
             except (NoLibraryError, KeyringUnavailableError) as error:
                 log.info("export.run_skipped", reason=type(error).__name__)
                 return
+        if disks.opened:  # a root was opened: each shelf's bindings are judged one by one (L06a)
+            _fan_out_pass(comp, disks, destinations)
 
     return run
+
+
+def _fan_out_pass(comp: Composition, disks: _Disks, destinations: list[Destination]) -> None:
+    """The pass over the bindings of the shelves this run exported: the barrier of a shelf below
+    18+ looked at again for each binding, what each is given, and the calls and plans the
+    destinations describe through the executor (the gates of the pipeline's doors). Nothing here
+    opens a root: the pipeline of the run is the one that was already built."""
+    from shelfhold.export.application.target_state import DestinationPausedError
+
+    pipeline, _fsops = disks.get()
+    fan = FanOut(comp.engine, pipeline, FirstPartyDestinations(comp.engine), clock=comp.clock)
+    with comp.engine.connect() as connection:
+        shelves = sorted(
+            set(
+                connection.execute(
+                    sa.select(export.shelf_destination.c.shelf_id).where(
+                        export.shelf_destination.c.id.in_([d.id for d in destinations])
+                    )
+                ).scalars()
+            )
+        )
+    for shelf_id in shelves:
+        try:
+            fan.run(shelf_id, new_ulid())
+        except (DestinationPausedError, RestoredBehindError) as error:
+            log.info("export.fan_out_waits", reason=type(error).__name__)
 
 
 def _names_may_refresh(comp: Composition, destination_id: str) -> bool:

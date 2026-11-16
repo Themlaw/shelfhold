@@ -25,7 +25,6 @@ from shelfhold.export.application.shelves import ShelfService
 from shelfhold.export.application.snapshot import load_context, version_of
 from shelfhold.export.domain.bindings import (
     BindingFacts,
-    ShelfAlreadyBoundError,
     TreeOverlapError,
     check_binding,
 )
@@ -275,13 +274,16 @@ def test_overlap_is_seen_through_a_link_and_a_second_destination_is_refused(
                     transport=transport, plugin_egress="foyer",
                 )  # fmt: skip
         assert real.exists()
-        with pytest.raises(ShelfAlreadyBoundError):  # EF-EXP-002: one destination per shelf
-            shelves.bind_destination(
-                shelf_id=env.shelf_id, target_id=target(str(env.lib.manga / "Other")),
-                transport="tree", plugin_egress="foyer",
-            )  # fmt: skip
+        # EF-EXP-002 (M4 L06a): a shelf takes one binding per folder and server; the one-per-shelf
+        # rule of M1a is lifted, the overlap rules above are not
+        (env.lib.manga / "Other").mkdir(exist_ok=True)
+        assert shelves.bind_destination(
+            shelf_id=env.shelf_id, target_id=target(str(env.lib.manga / "Other")),
+            transport="tree", plugin_egress="foyer",
+        )  # fmt: skip
+        (env.lib.manga / "Else").mkdir(exist_ok=True)
         ok = shelves.bind_destination(
-            shelf_id=shelf(), target_id=target(str(env.lib.manga / "Other")),
+            shelf_id=shelf(), target_id=target(str(env.lib.manga / "Else")),
             transport="tree", plugin_egress="foyer",
         )  # fmt: skip
         assert ok

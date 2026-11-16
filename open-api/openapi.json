@@ -951,6 +951,81 @@
         "title": "BindingOrderOut",
         "type": "object"
       },
+      "BindingOut": {
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "partitioning": {
+            "enum": [
+              "none",
+              "library",
+              "user"
+            ],
+            "title": "Partitioning",
+            "type": "string"
+          },
+          "present_units": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Present Units"
+          },
+          "role": {
+            "anyOf": [
+              {
+                "enum": [
+                  "primary",
+                  "secondary"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Role"
+          },
+          "target_id": {
+            "title": "Target Id",
+            "type": "string"
+          },
+          "transport": {
+            "title": "Transport",
+            "type": "string"
+          },
+          "tree_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tree Id"
+          }
+        },
+        "required": [
+          "id",
+          "target_id",
+          "transport",
+          "tree_id",
+          "role",
+          "partitioning"
+        ],
+        "title": "BindingOut",
+        "type": "object"
+      },
       "BindingPausedOut": {
         "properties": {
           "binding_id": {
@@ -973,6 +1048,22 @@
           "paused"
         ],
         "title": "BindingPausedOut",
+        "type": "object"
+      },
+      "BindingsOut": {
+        "properties": {
+          "destinations": {
+            "items": {
+              "$ref": "#/components/schemas/BindingOut"
+            },
+            "title": "Destinations",
+            "type": "array"
+          }
+        },
+        "required": [
+          "destinations"
+        ],
+        "title": "BindingsOut",
         "type": "object"
       },
       "BundleCanOut": {
@@ -1507,6 +1598,19 @@
             ],
             "title": "Transport",
             "type": "string"
+          },
+          "tree_id": {
+            "anyOf": [
+              {
+                "maxLength": 26,
+                "minLength": 26,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tree Id"
           }
         },
         "required": [
@@ -20542,7 +20646,85 @@
       }
     },
     "/api/v1/shelves/{shelf_id}/destinations": {
+      "get": {
+        "description": "The bindings of a shelf, with their tree and role; with `edition_id`, the Units of that\nEdition each binding holds (`present_in`, per binding: a tree is one copy, its indexers\nsay what its primary says).",
+        "operationId": "list_destinations",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "shelf_id",
+            "required": true,
+            "schema": {
+              "title": "Shelf Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "edition_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Edition Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BindingsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Connexion requise, ou mot de passe à confirmer (reauth-required)."
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée)."
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Détail du problème (RFC 9457)."
+          }
+        },
+        "summary": "List Destinations",
+        "tags": [
+          "shelves"
+        ]
+      },
       "post": {
+        "description": "A shelf takes one binding per folder and server (fan-out): each is looked at for the\nbarrier of a shelf below 18+, and a folder that is a tree is attached to on purpose.",
         "operationId": "bind_destination",
         "parameters": [
           {

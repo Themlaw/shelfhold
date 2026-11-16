@@ -9,6 +9,7 @@ the host owns.
 
 import ast
 import hashlib
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -23,6 +24,7 @@ from shelfhold.export.application.plan_executor import PlanBinding
 from shelfhold.export.application.target_state import save_fingerprint
 from shelfhold.export.targets.kavita.destination import KavitaDestination
 from shelfhold.infrastructure.db import write_transaction
+from shelfhold.sdk.api_call import ApiCall
 from shelfhold.sdk.export_target import TargetCapabilities
 from tests.export_env import ExportEnv, export_env
 from tests.family_env import family_env, rate
@@ -47,6 +49,12 @@ class Plans:
 
     def plan(self, binding: PlanBinding) -> object | None:
         return self.by_destination.get(binding.destination_id)
+
+    def calls(self, _binding: PlanBinding) -> tuple[object, ...]:
+        return ()
+
+    def sender(self, _binding: PlanBinding) -> Callable[[ApiCall], object]:
+        raise AssertionError("this test sends no call")
 
 
 def write_plan(*items: str, folder: str = "Series A") -> dict[str, Any]:
@@ -127,7 +135,10 @@ def test_a_pass_runs_every_binding_and_a_failure_marks_nothing_on_the_others() -
         assert [tuple(getattr(r, k) for k in key) for r in copy] == [
             tuple(getattr(r, k) for k in key) for r in primary
         ]
-        assert {r.file_hash for r in primary} == {digest(contents.data[one]), digest(contents.data[two])}
+        assert {r.file_hash for r in primary} == {
+            digest(contents.data[one]),
+            digest(contents.data[two]),
+        }
 
         # the same call again: nothing is done twice, no line is duplicated
         again = fan.run(env.shelf_id, "call-1")
@@ -182,7 +193,7 @@ def test_family_planned_refs_are_the_ones_of_the_shelf_of_each_binding() -> None
             connection.execute(
                 sa.text(
                     "INSERT INTO shelf (id, name, phrase, max_age_rating) "
-                    "VALUES (:i, 'Adultes', 'Adultes', 99)"
+                    "VALUES (:i, 'Elsewhere', 'Elsewhere', 99)"
                 ),
                 {"i": adult_shelf},
             )
@@ -246,7 +257,9 @@ def test_nothing_runs_a_plan_but_the_pipeline_door() -> None:
 
 
 @pytest.mark.req("EF-EXP-001", "EF-EXP-002")
-def test_the_composition_root_binds_the_executor_with_the_host_bytes_and_the_server_identity() -> None:
+def test_the_composition_root_binds_the_executor_with_the_host_bytes_and_the_server_identity() -> (
+    None
+):
     """`use_plan_executor` is called where the pipeline of production is built, with the host's
     own `ContentStore` and a probe that answers from the identity the server gave."""
     import shelfhold.runtime_jobs as jobs
@@ -260,4 +273,4 @@ def test_the_composition_root_binds_the_executor_with_the_host_bytes_and_the_ser
         for n in ast.walk(build)
         if isinstance(n, ast.Call)
     }
-    assert {"use_plan_executor", "HostContentStore", "StoredInstanceProbe"} <= called
+    assert {"use_plan_executor", "HostContentStore", "CachedInstanceProbe"} <= called

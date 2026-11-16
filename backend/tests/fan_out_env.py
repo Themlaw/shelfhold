@@ -13,6 +13,7 @@ from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import export
 from tests.export_env import ExportEnv
+from tests.family_env import SAFE_KAVITA
 
 
 def add_target(
@@ -27,7 +28,7 @@ def add_target(
         connection.execute(
             sa.insert(export.export_target).values(
                 id=target_id, kind=kind, name=name or f"Server {target_id[-6:].lower()}",
-                path_map=path_map, access_partitioning=partitioning,
+                path_map=path_map, access_partitioning=partitioning, version_seen=SAFE_KAVITA,
                 access_partitioning_attested_at=env.clock.now() if partitioning != "none" else None,
             )
         )  # fmt: skip
@@ -106,4 +107,3 @@ def set_partitioning(env: ExportEnv, target_id: str, value: str) -> None:
             .where(export.export_target.c.id == target_id)
             .values(access_partitioning=value, access_partitioning_attested_at=None)
         )
-
