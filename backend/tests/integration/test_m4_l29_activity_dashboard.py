@@ -125,6 +125,7 @@ def test_blocklist_never_unblocks_silently() -> None:
         assert third in _variants(bench)  # offered again, taken like any chapter
 
 
+@pytest.mark.req("EF-INT-019", "ENF-SEC-005")
 def test_blocklist_reasons_are_a_closed_list() -> None:
     assert set(BLOCK_REASONS) == {"bad_quality", "wrong_content", "duplicate", "other"}
     with (
@@ -512,6 +513,7 @@ def test_traffic_counter_sits_after_the_ssrf_guard(api: AuthEnv) -> None:
     assert _counter_rows(api) == []
 
 
+@pytest.mark.req("EF-INT-020")
 def test_a_fetcher_without_a_counter_is_unchanged(api: AuthEnv) -> None:
     recorder = Recorder()
     fetcher = GuardedFetcher(
@@ -521,6 +523,7 @@ def test_a_fetcher_without_a_counter_is_unchanged(api: AuthEnv) -> None:
     assert _counter_rows(api) == []
 
 
+@pytest.mark.req("EF-INT-020")
 def test_the_counter_failing_never_fails_the_request(api: AuthEnv) -> None:
     """A page on a dashboard is not worth a download: a counter that cannot write is logged only."""
 
