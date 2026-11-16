@@ -25,12 +25,15 @@ from shelfhold.sdk.testing.destination_kit import (
     assert_destination_conforms,
 )
 
-# ChapterRecognition.kt of Mihon: `basic = (?<=ch\.) *NUMBER_PATTERN`, NUMBER_PATTERN = ([0-9]+)(\.[0-9]+)?
+# ChapterRecognition.kt of Mihon: `basic = (?<=ch\.) *NUMBER_PATTERN`,
+# NUMBER_PATTERN = ([0-9]+)(\.[0-9]+)?
 _MIHON_BASIC = re.compile(r"(?<=ch\.) *([0-9]+)(\.[0-9]+)?")
 _ARCHIVES = (".cbz", ".epub")
 
 
-def _series(*chapters: ChapterSpec, name: str = "Series Alpha", cover: str | None = "I1") -> SeriesSpec:
+def _series(
+    *chapters: ChapterSpec, name: str = "Series Alpha", cover: str | None = "I1"
+) -> SeriesSpec:
     return SeriesSpec(name=name, chapters=tuple(chapters), cover_item=cover)
 
 
@@ -70,7 +73,9 @@ def test_native_folder_mihon_local_layout() -> None:
     assert numbers == [3.0, 12.0, 12.5]
     cover = plan.ops[-1]
     assert cover.content_ref == ContentRef(kind="sidecar", ref=cover_ref("I1"))
-    assert all(o.content_ref.kind == "export_item" for o in plan.ops if o.op == "write" and o.content_ref)
+    assert all(
+        o.content_ref.kind == "export_item" for o in plan.ops if o.op == "write" and o.content_ref
+    )
 
 
 @pytest.mark.req("EF-EXP-010")
@@ -151,6 +156,12 @@ def test_native_folder_passes_destination_kit() -> None:
     assert report.ok
     # what the destination itself describes for the synthetic item passes the same replay
     described = destination.describe(
-        [_series(ChapterSpec(SYNTHETIC_ITEM, "1", "One", "cbz"), cover=None, name="Synthetic Series")]
+        [
+            _series(
+                ChapterSpec(SYNTHETIC_ITEM, "1", "One", "cbz"), cover=None, name="Synthetic Series"
+            )
+        ]
     )
-    assert_destination_conforms(destination, DestinationScenario(key="native_folder", plan=described))
+    assert_destination_conforms(
+        destination, DestinationScenario(key="native_folder", plan=described)
+    )

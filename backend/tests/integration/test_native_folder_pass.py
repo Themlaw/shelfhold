@@ -10,13 +10,14 @@ lowered after the binding, and a plan that cites what nobody planned.
 
 import io
 import zipfile
+
 import pytest
 import sqlalchemy as sa
 
 from shelfhold.export.application.fan_out import FanOut, HostContentStore, planned_content
-from shelfhold.export.application.native_folder_plan import NativeFolderSource
 from shelfhold.export.application.plan_executor import PlanRefusedError
 from shelfhold.export.domain.bindings import UnpartitionedDestinationError
+from shelfhold.export.targets.native_folder.source import NativeFolderSource
 from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import catalog, export
@@ -30,12 +31,17 @@ TEAM = "Synthetic Team A"
 
 
 def native(env: ExportEnv, subpath: str = "local", *, link: bool = False) -> str:
-    return bind(env, subpath, target_id=add_target(env, kind="native_folder", partitioning="none"), link=link)
+    return bind(
+        env,
+        subpath,
+        target_id=add_target(env, kind="native_folder", partitioning="none"),
+        link=link,
+    )
 
 
 def run(env: ExportEnv, call_id: str = "c1") -> tuple[FanOut, NativeFolderSource]:
     source = NativeFolderSource(env.engine)
-    host = HostContentStore(env.engine, capabilities=source.capabilities)
+    host = HostContentStore(env.engine, capabilities=source.capabilities, renders=source.renders)
     env.pipeline.use_plan_executor(contents=host, probe=Probe(None))
     return FanOut(env.engine, env.pipeline, source, clock=env.clock), source
 
@@ -48,7 +54,9 @@ def tree(env: ExportEnv, subpath: str = "local") -> list[str]:
 def titled(env: ExportEnv, series: Series, unit: Unit, title: str, team: str = TEAM) -> None:
     team_id = new_ulid()
     with write_transaction(env.engine) as connection:
-        connection.execute(sa.update(catalog.unit).where(catalog.unit.c.id == unit.unit_id).values(title=title))
+        connection.execute(
+            sa.update(catalog.unit).where(catalog.unit.c.id == unit.unit_id).values(title=title)
+        )
         connection.execute(
             sa.insert(catalog.team).values(id=team_id, edition_id=series.edition_id, label=team)
         )
@@ -85,8 +93,13 @@ def test_a_pass_writes_the_mihon_local_tree_with_a_comicinfo_and_a_cover() -> No
         assert names[-1] == "ComicInfo.xml" and "1-001.png" in names
         assert f"<Translator>{TEAM}</Translator>" in info and "<Title>Dawn</Title>" in info
         cover = (env.lib.manga / "local" / "Dr Stone" / "cover.jpg").read_bytes()
-        assert cover.startswith(b"\x89PNG")  # the first page as it is: Mihon reads cover.* by content
-        assert {r.export_item_id for r in records_of(env, destination)} == {one.item_id, two.item_id}
+        assert cover.startswith(
+            b"\x89PNG"
+        )  # the first page as it is: Mihon reads cover.* by content
+        assert {r.export_item_id for r in records_of(env, destination)} == {
+            one.item_id,
+            two.item_id,
+        }
         for path in (env.lib.manga / "local").rglob("*.cbz"):  # a file of its own: no shared link
             assert path.stat().st_nlink == 1
 
@@ -117,7 +130,9 @@ def test_the_native_folder_registers_a_local_remote_library() -> None:
         destination = native(env)
         with env.engine.connect() as connection:
             rows = connection.execute(
-                sa.select(export.remote_library.c.remote_ref, export.remote_library.c.export_target_id)
+                sa.select(
+                    export.remote_library.c.remote_ref, export.remote_library.c.export_target_id
+                )
                 .select_from(
                     export.remote_library.join(
                         export.shelf_destination_remote_library,
@@ -125,7 +140,9 @@ def test_the_native_folder_registers_a_local_remote_library() -> None:
                         == export.remote_library.c.id,
                     )
                 )
-                .where(export.shelf_destination_remote_library.c.shelf_destination_id == destination)
+                .where(
+                    export.shelf_destination_remote_library.c.shelf_destination_id == destination
+                )
             ).all()
         assert len(rows) == 1 and rows[0].remote_ref == "local"
 
@@ -147,7 +164,9 @@ def test_an_item_of_another_shelf_never_reaches_the_native_folder() -> None:
 
         assert tree(env) == ["Mine/Ch.0001.cbz", "Mine/cover.jpg"]
         assert not any("Theirs" in p for p in tree(env))
-        host = HostContentStore(env.engine, capabilities=source.capabilities)
+        host = HostContentStore(
+            env.engine, capabilities=source.capabilities, renders=source.renders
+        )
         for ref in (
             ContentRef(kind="export_item", ref=theirs.item_id),
             ContentRef(kind="sidecar", ref=f"cover:{theirs.item_id}"),
@@ -160,9 +179,8 @@ def test_an_item_of_another_shelf_never_reaches_the_native_folder() -> None:
 
 @pytest.mark.req("EF-EXP-010", "EF-EXP-047")
 def test_a_shelf_below_18_cannot_be_bound_to_a_folder_that_keeps_no_accounts_apart() -> None:
-    with export_env(max_age_rating=13) as env:
-        with pytest.raises(UnpartitionedDestinationError):
-            native(env)
+    with export_env(max_age_rating=13) as env, pytest.raises(UnpartitionedDestinationError):
+        native(env)
 
 
 @pytest.mark.req("EF-EXP-010", "EF-EXP-047")
@@ -178,7 +196,9 @@ def test_a_ceiling_lowered_after_the_binding_stops_the_writes() -> None:
 
         with write_transaction(env.engine) as connection:  # the shelf is now below 18+
             connection.execute(
-                sa.update(export.shelf).where(export.shelf.c.id == env.shelf_id).values(max_age_rating=13)
+                sa.update(export.shelf)
+                .where(export.shelf.c.id == env.shelf_id)
+                .values(max_age_rating=13)
             )
         report = fan.run(env.shelf_id, "c2")
 

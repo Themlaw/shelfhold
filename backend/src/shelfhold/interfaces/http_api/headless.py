@@ -13,6 +13,7 @@ from typing import Any, Literal
 from fastapi import APIRouter, Depends, Request, Response
 from pydantic import BaseModel, Field
 
+from shelfhold.export.domain.bindings import BindingError
 from shelfhold.headless import (
     AdminRiskNotAccepted,
     HeadlessAdmin,
@@ -61,6 +62,11 @@ class TargetIn(BaseModel):
     password: str = Field(min_length=1, repr=False)
     accept_admin_risk: bool = False
     path_map: list[dict[str, str]] | None = None
+
+
+class NativeFolderIn(BaseModel):
+    name: str = Field(min_length=1)
+    path_map: list[dict[str, str]] = Field(min_length=1)
 
 
 class SourceIn(BaseModel):
@@ -148,6 +154,27 @@ def build_headless_router(
             )  # fmt: skip
         except AdminRiskNotAccepted:
             raise ProblemError("target.admin_risk_not_accepted") from None
+        except HeadlessError as error:
+            raise _problem(error) from None
+        located(response, f"/api/v1/targets/{added.id}")
+        return Created(id=added.id)
+
+    @router.post("/targets/native-folder", status_code=201)
+    def add_native_folder(
+        body: NativeFolderIn,
+        response: Response,
+        principal: Principal = Depends(_PATH_MAP),  # noqa: B008
+    ) -> Created:
+        """EF-EXP-010: a folder Mihon or the local source of Suwayomi reads. Which folders are
+        written is a reserved action (admin, fresh session, never a key, a child or a member), and
+        a root that meets the local source of Suwayomi is refused
+        (`target.root_overlaps_local_source`)."""
+        try:
+            added = get_admin().target_add_native_folder(
+                name=body.name, path_map=body.path_map, actor=_actor_of(principal)
+            )
+        except BindingError as error:
+            raise ProblemError(error.code) from None
         except HeadlessError as error:
             raise _problem(error) from None
         located(response, f"/api/v1/targets/{added.id}")

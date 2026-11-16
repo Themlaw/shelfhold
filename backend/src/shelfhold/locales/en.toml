@@ -1723,6 +1723,21 @@
     action = "Choose separate folders: two indexers do not yet share the same tree."
     cause = "A folder in one of the write destinations contains or overlaps that of another: two programs would write there at the same time."
 
+  [errors."target.root_overlaps_local_source"]
+    title = "This folder overlaps the local source of Suwayomi."
+    action = "Pick a folder that does not hold, sit inside or equal the local source of Suwayomi (the “Local source path” setting of the server), or move that local source elsewhere."
+    cause = "Shelfhold would read its own exports back as an upstream and acquire them in a loop."
+
+  [errors."target.local_source_unknown"]
+    title = "The local source of Suwayomi is not known yet."
+    action = "Let the follow run once (or wait for the next cycle), then try again: Shelfhold has to read the local source of Suwayomi before it binds a native folder."
+    cause = "Suwayomi is configured but no follow cycle has read its local source setting yet; to be safe nothing is bound until then."
+
+  [errors."source.local_source_on_managed_root"]
+    title = "Suwayomi reads a folder Shelfhold manages."
+    action = "Change the “Local source path” setting of Suwayomi to a folder that is neither the library, nor /store, nor a destination root. The follow resumes by itself at the next cycle."
+    cause = "The local source of Suwayomi is (or holds, or sits inside) a root Shelfhold manages: the follow is paused and nothing was deleted."
+
   [errors."target.unreachable"]
     title = "Kavita doesn’t answer."
     action = "Check that the Kavita container is running, or reconnect it with “shelfhold target reconnect”. The scans that could not be sent (a deletion, a withdrawal) are kept: the next export asks for them again, and a deleted series’ empty folder stays until then."

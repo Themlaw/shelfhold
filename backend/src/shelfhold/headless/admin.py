@@ -23,6 +23,7 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from shelfhold.acquisition.application.failures import FailureLedger
 from shelfhold.acquisition.application.instance import reconnect
+from shelfhold.acquisition.application.root_guard import RootGuard
 from shelfhold.config import ResolvedSettings
 from shelfhold.export.application.preflight import DestinationNotWritableError
 from shelfhold.export.application.root_bootstrap import (
@@ -581,6 +582,44 @@ class HeadlessAdmin:
         _log.info("headless.target_added", kind="kavita", name=name, url=clean_url)
         self._bootstrap()
         return TargetAdded(target_id, name, True, exchanged.expires_at)
+
+    # -- target add native-folder (EF-EXP-010) -------------------------------------------------
+
+    def target_add_native_folder(
+        self, *, name: str, path_map: PathMapSpec, actor: Actor | None = None
+    ) -> TargetAdded:
+        """A folder that Mihon or the local source of Suwayomi reads. No server and no key: the
+        folders it writes, which must be writable roots, and which never meet the local source of
+        Suwayomi (`RootGuard`: refused with `target.root_overlaps_local_source`). Idempotent by
+        name; a name that is another kind of target is a conflict."""
+        entries = _normalise_path_map(path_map)
+        if not entries or any(e["mode"] != PathMode.RW.value for e in entries):
+            raise InvalidConfigValue("a native folder is written: give it rw folders")
+        self._check_roots(entries)
+        with self._engine.connect() as connection:
+            existing = records.target_named(connection, name)
+        if existing is not None:
+            if existing.kind != "native_folder":
+                raise TargetConflict(f"a target named {name!r} exists and is not a native folder")
+            return TargetAdded(existing.id, name, False)
+        target_id = new_ulid()
+        guard = RootGuard()
+        with write_transaction(self._engine) as connection:
+            for entry in entries:  # the local source of Suwayomi may be neither held nor covered
+                guard.check_root(connection, entry["local"])
+            records.insert_native_folder_target(
+                connection, target_id=target_id, name=name, path_map=entries
+            )
+            records.insert_audit(
+                connection, audit_id=new_ulid(), actor_id=actor.actor_id if actor else None,
+                action="target.add_native_folder",
+                target=name if actor else f"{name} uid={os.getuid()}",
+                at=self._clock.now(), session_id=actor.session_id if actor else None,
+                auth_time=actor.auth_time if actor else None,
+            )  # fmt: skip
+        _log.info("headless.target_added", kind="native_folder", name=name)
+        self._bootstrap()
+        return TargetAdded(target_id, name, True)
 
     def _audit_admin_risk(self, connection: Connection, name: str, actor: Actor | None) -> None:
         """One row in the same transaction as the target: no accepted risk without its trace."""

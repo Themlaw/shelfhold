@@ -18,6 +18,8 @@ CODES: tuple[ErrorCode, ...] = (
     ErrorCode("source.downloads_dropped", 503, "admin", event=True),
     ErrorCode("source.auth_mode_unsupported", 503, "admin", event=True),
     ErrorCode("source.instance_changed", 409, "admin", event=True),
+    # EF-EXP-010 (M4 L07): the tool reads a folder Shelfhold writes; the follow pauses
+    ErrorCode("source.local_source_on_managed_root", 409, "admin"),
     # EF-SRC-026 (d): the global update settings of the tool leave out the series that are followed
     ErrorCode("source.update_filters_blocking", 409, "admin"),
     # EF-SRC-004: a pasted URL that no active plugin recognises

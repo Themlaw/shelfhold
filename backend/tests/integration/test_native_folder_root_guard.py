@@ -122,9 +122,8 @@ def test_the_guard_sees_one_folder_through_every_disguise(tmp_path: Path) -> Non
             "the parent": str(root.parent),
         }
         for what, path in disguises.items():
-            with env.engine.connect() as connection:
-                with pytest.raises(LocalSourceOnManagedRootError):
-                    guard.check_local_source(connection, path)
+            with env.engine.connect() as connection, pytest.raises(LocalSourceOnManagedRootError):
+                guard.check_local_source(connection, path)
             assert what
 
         # a neighbour that only shares a prefix is not an overlap (components, never a prefix)
@@ -243,15 +242,16 @@ def test_suwayomi_local_path_moved_onto_managed_root_pauses_binding(tmp_path: Pa
         assert bench.rows(COUNTS)[0] == before  # nothing deleted, nothing asked again
         assert bench.library_files() == files and bench.binding()["active"]
 
-        sent = len(server.requests)
-        assert bench.run().paused == "local_source_loop" and len(server.requests) == sent
-        assert len(bench.events("source.broken")) == 1  # told once
+        again = bench.run()  # still wrong: still paused, read-only requests only, told once
+        assert again.paused == "local_source_loop"
+        assert len(bench.events("source.broken")) == 1
+        assert not [r for r in server.requests if b"mutation" in r.body]
 
-        # the admin fixes the setting of Suwayomi and resumes: the follow goes on
+        # the admin fixes the setting of Suwayomi: the pause ends by itself, the follow goes on
         server.state["local_source_path"] = str(free)
-        bench.cycle.resume()
         assert bench.run().paused is None
         assert bench.rows(COUNTS)[0]["active"] == before["active"]
+        assert bench.rows("SELECT health FROM source_config")[0]["health"].count("pause") == 0
 
 
 @pytest.mark.req("EF-EXP-010")

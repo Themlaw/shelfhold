@@ -106,6 +106,22 @@ def insert_kavita_target(
     )  # fmt: skip
 
 
+def insert_native_folder_target(
+    connection: Connection, *, target_id: str, name: str, path_map: Sequence[Any]
+) -> None:
+    """A native folder (EF-EXP-010): no server, no key, no address: a name and the folders."""
+    connection.execute(
+        sa.insert(export.export_target).values(
+            id=target_id,
+            kind="native_folder",
+            name=name,
+            config={},
+            path_map=path_map,
+            access_partitioning="none",
+        )
+    )
+
+
 def set_target_config(connection: Connection, target_id: str, config: dict[str, Any]) -> None:
     table = export.export_target
     connection.execute(sa.update(table).where(table.c.id == target_id).values(config=config))

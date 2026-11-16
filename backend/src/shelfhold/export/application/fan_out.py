@@ -47,6 +47,13 @@ from shelfhold.export.application.plan_executor import (
     PlannedLedger,
     PlanRefusedError,
 )
+from shelfhold.export.application.rendering import (
+    RenderMismatchError,
+    comicinfo_xml,
+    first_page,
+    render_cbz_bytes,
+    series_of_item,
+)
 from shelfhold.export.application.target_state import DestinationPausedError
 from shelfhold.export.domain.bindings import (
     PARTITIONED,
@@ -55,6 +62,7 @@ from shelfhold.export.domain.bindings import (
     is_family,
 )
 from shelfhold.export.domain.kavita_compat import blocks_family_shelf
+from shelfhold.export.domain.native_folder import cover_item_of
 from shelfhold.export.domain.path_map import clean_absolute, within
 from shelfhold.export.domain.planner import NO_NATIVE_FORMAT, ContentOffer, choose_content
 from shelfhold.infrastructure.clock import Clock, SystemClock
@@ -861,7 +869,11 @@ class FanOut:
                     code=NO_NATIVE_FORMAT,
                 )  # fmt: skip
             binding = PlanBinding(destination_id, view.target_id, capabilities, formats)
-            self._pipeline.plan_ledger.plan(call_id, destination_id, planned)
+            made = getattr(self._source, "sidecars", None)  # the annexes the host makes (a cover)
+            self._pipeline.plan_ledger.plan(
+                call_id, destination_id, planned,
+                sidecars=frozenset(made(binding)) if made is not None else frozenset(),
+            )  # fmt: skip
             executed = 0
             if view.role != "secondary":  # an indexer is never asked to write (T3)
                 raw = self._source.plan(binding)
@@ -990,7 +1002,10 @@ class HostContentStore:
         download: Callable[[str], None] | None = None,
         epub_path: Callable[[str], EpubFile | None] | None = None,
         fsops: Any = None,
+        renders: Callable[[str], bool] | None = None,
     ) -> None:
+        # the targets whose CBZ is given a ComicInfo made for the binding (a native folder)
+        self._renders = renders
         self._engine = engine
         self._capabilities = capabilities
         self._download = download
@@ -1010,8 +1025,45 @@ class HostContentStore:
         return None if self._capabilities is None else self._capabilities(target_id)
 
     def read(self, destination_id: str, ref: ContentRef) -> bytes:
+        if ref.kind == "sidecar":
+            return self._cover(destination_id, ref)
         if ref.kind != "export_item":
             raise PlanRefusedError("the host serves no such content here")
+        data, fmt, target_id = self._archive(destination_id, ref.ref)
+        if fmt == "cbz" and self._renders is not None and self._renders(target_id):
+            return self._with_comicinfo(ref.ref, data)  # a ComicInfo made for this binding
+        return data
+
+    def _with_comicinfo(self, item_id: str, data: bytes) -> bytes:
+        with self._engine.connect() as connection:
+            unit = _unit_of(connection, item_id)
+            if unit is None:
+                raise PlanRefusedError("the host holds no bytes for this item")
+            xml = comicinfo_xml(connection, unit, series_of_item(connection, item_id))
+        try:
+            return render_cbz_bytes(data, xml)
+        except (RenderMismatchError, ValueError, OSError) as error:
+            raise ContentRefusedError("the archive cannot be given a ComicInfo") from error
+
+    def _cover(self, destination_id: str, ref: ContentRef) -> bytes:
+        """The cover of a series for a binding that makes one: the first page of the item the
+        reference names, which must be planned for this binding like any other (same gates)."""
+        item_id = cover_item_of(ref.ref)
+        if item_id is None:
+            raise PlanRefusedError("the host serves no such content here")
+        data, fmt, _target = self._archive(destination_id, item_id)
+        if fmt != "cbz":
+            raise PlanRefusedError("only a CBZ gives a cover")
+        try:
+            return first_page(data)
+        except (ValueError, OSError) as error:
+            raise ContentRefusedError("the archive has no page to make a cover of") from error
+
+    def _archive(self, destination_id: str, item_id: str) -> tuple[bytes, str, str]:
+        """The canonical bytes of an item in the format the binding is served, with that format
+        and the target of the binding. Only what the binding was planned (its shelf, the barrier
+        of a family shelf), whatever a plan cites."""
+        ref = ContentRef(kind="export_item", ref=item_id)
         d = export.shelf_destination
         with self._engine.connect() as connection:
             binding = connection.execute(
@@ -1045,7 +1097,7 @@ class HostContentStore:
                 else byte_sources(connection, unit, chosen.content_id, shelf_id=binding.shelf_id)
             )
         if chosen.format == "epub":
-            return self._read_epub(unit, chosen.content_id)
+            return self._read_epub(unit, chosen.content_id), chosen.format, binding.target_id
         for source in sources:
             if source.kind == "destination":
                 held = None if source.target_id is None else self._caps(source.target_id)
@@ -1057,7 +1109,7 @@ class HostContentStore:
             except (OSError, FsopsError, ContentRefusedError):
                 continue  # a FIFO, a link, another size: no source, and nothing was waited for
             if found == source.file_hash:
-                return data
+                return data, chosen.format, binding.target_id
         if self._download is not None:
             self._download(unit)
         raise ContentNeedsDownloadError("no copy of the archive can be read and verified")

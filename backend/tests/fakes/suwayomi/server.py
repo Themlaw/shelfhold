@@ -493,6 +493,7 @@ class FakeSuwayomi:
         return {
             "authMode": self.auth_mode.upper(),
             "downloadsPath": self.state.get("downloads_path", "/downloads"),
+            "localSourcePath": self.state.get("local_source_path"),  # M4 L07: the loop guard
             "excludeUnreadChapters": self.exclude_unread,
             "excludeNotStarted": self.exclude_not_started,
         }

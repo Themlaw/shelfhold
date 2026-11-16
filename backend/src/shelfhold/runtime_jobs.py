@@ -50,6 +50,7 @@ from shelfhold.acquisition.public import (
     FollowReport,
     LeasedReceiver,
     ReadStateRemote,
+    RootGuard,
     bounded_receiver,
     epub_only,
     push_read_state,
@@ -134,6 +135,7 @@ from shelfhold.export.targets.kavita.series import (
     refresh_foreign_names,
     refresh_names,
 )
+from shelfhold.export.targets.native_folder.source import NativeFolderSource
 from shelfhold.identity.public import child_kavita_accounts
 from shelfhold.import_jobs import register_import_job
 from shelfhold.infrastructure.db import write_transaction
@@ -424,6 +426,7 @@ def follow_handler(comp: Composition, pools: JobPools) -> Callable[[JobContext],
                         upgrader=_LazyUpgrader(comp, lazy),
                         repairer=_LazyRepairer(comp, lazy),
                         policy=CadencePolicy.from_settings(comp.settings),
+                        root_guard=RootGuard(),  # EF-EXP-010: the loop guard, every cycle
                     )  # fmt: skip
                     prefix = "" if position == 0 else f"{link.service.manifest.key}_"
 
@@ -517,6 +520,7 @@ def build_pipeline(
         contents=HostContentStore(
             comp.engine,
             capabilities=FirstPartyDestinations(comp.engine).capabilities,
+            renders=FirstPartyDestinations(comp.engine).renders,  # EF-EXP-010: a ComicInfo each
             epub_path=_epub_path_of(comp, fsops),
             fsops=fsops,
         ),
@@ -570,21 +574,30 @@ def _instance_identity(comp: Composition) -> Callable[[str], str | None]:
 class FirstPartyDestinations:
     """What the destinations of the core describe for a binding. Kavita is run by its own client
     (`KavitaClient.execute`, with the key the core holds): it describes calls the core already
-    sends and no plan of files yet, so nothing is asked of it here; the first destination that
-    describes a plan (L06b, L07) is answered by this class."""
+    sends and no plan of files, so nothing is asked of it here. The native folder (EF-EXP-010)
+    describes a plan of files: `NativeFolderSource` reads what was planned and answers for it."""
 
     def __init__(self, engine: Engine) -> None:
         self._engine = engine
+        self._native = NativeFolderSource(engine)
 
     def capabilities(self, target_id: str) -> Any:
         with self._engine.connect() as connection:
             kind = connection.execute(
                 sa.select(export.export_target.c.kind).where(export.export_target.c.id == target_id)
             ).scalar()
+        if kind == "native_folder":
+            return self._native.capabilities(target_id)
         return KavitaDestination.capabilities if kind == "kavita" else None
 
-    def plan(self, _binding: Any) -> object | None:
-        return None
+    def plan(self, binding: Any) -> object | None:
+        return self._native.plan(binding)  # None for every other kind
+
+    def sidecars(self, binding: Any) -> frozenset[str]:
+        return self._native.sidecars(binding)
+
+    def renders(self, target_id: str) -> bool:
+        return self._native.renders(target_id)
 
     def calls(self, _binding: Any) -> tuple[object, ...]:
         return ()
@@ -659,10 +672,29 @@ def export_handler(comp: Composition) -> Callable[[JobContext], None]:
             except (NoLibraryError, KeyringUnavailableError) as error:
                 log.info("export.run_skipped", reason=type(error).__name__)
                 return
-        if disks.opened:  # a root was opened: each shelf's bindings are judged one by one (L06a)
-            _fan_out_pass(comp, disks, destinations, context)
+        natives = _native_folders(comp, destinations)
+        if disks.opened or natives:  # each shelf's bindings are judged one by one (L06a, L07)
+            _fan_out_pass(comp, disks, destinations if disks.opened else natives, context)
 
     return run
+
+
+def _native_folders(comp: Composition, destinations: list[Destination]) -> list[Destination]:
+    """The bindings of the run that are a native folder: no server to ask, only a folder to write,
+    so they take part in the pass even when no Kavita opened a root (EF-EXP-010)."""
+    if not destinations:
+        return []
+    table = export.export_target
+    with comp.engine.connect() as connection:
+        native = set(
+            connection.execute(
+                sa.select(table.c.id).where(
+                    table.c.id.in_({d.target_id for d in destinations}),
+                    table.c.kind == "native_folder",
+                )
+            ).scalars()
+        )
+    return [d for d in destinations if d.target_id in native]
 
 
 def _fan_out_pass(

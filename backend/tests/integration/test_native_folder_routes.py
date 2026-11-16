@@ -7,6 +7,9 @@ or not), the family shelf that a folder keeping no accounts apart may not serve,
 covers the local source of Suwayomi, and a target that does not exist.
 """
 
+# ruff: noqa: F811  (the `world` fixture of L06a is imported, then asked for by name)
+from pathlib import Path
+
 import pytest
 import sqlalchemy as sa
 
@@ -18,7 +21,20 @@ from tests.integration.test_auth_keys_reserved import _bearer, _create_key
 from tests.integration.test_fan_out_routes import UNKNOWN, World, world  # noqa: F401
 from tests.visibility_env import add_profile
 
-TARGETS = "/api/v1/targets"
+TARGETS = "/api/v1/targets/native-folder"
+
+
+@pytest.fixture
+def env(tmp_path: Path) -> dict[str, str]:
+    """The library the application writes under is the one the world lays out (a writable root of
+    a target must be under it)."""
+    return {
+        "SHELFHOLD_DISK_PAUSE_PERCENT": "0",
+        "SHELFHOLD_DISK_PAUSE_GIB": "0",
+        "SHELFHOLD_DATA_DIR": str(tmp_path / "data"),
+        "SHELFHOLD_STORE_DIR": str(tmp_path / "store"),
+        "SHELFHOLD_LIBRARY_DIR": str(tmp_path / "library"),
+    }
 
 
 def native_target(world: World) -> str:
@@ -41,7 +57,9 @@ def test_an_admin_binds_an_adult_shelf_to_a_native_folder(world: World) -> None:
     listed = world.api.client.get(world.path(world.adult)).json()["destinations"]
     assert [d["id"] for d in listed] == [bound.json()["id"]]
     refused = world.bind(world.family, "kids", target=target)  # a folder keeps no accounts apart
-    assert refused.status_code == 409 and refused.json()["code"] == "shelf.destination_not_partitioned"
+    assert (
+        refused.status_code == 409 and refused.json()["code"] == "shelf.destination_not_partitioned"
+    )
 
 
 @pytest.mark.req("EF-EXP-010", "EF-EXP-002", "EF-USR-024", "ENF-SEC-010")
@@ -55,7 +73,10 @@ def test_a_child_or_a_member_creates_no_native_destination(
     headers = {"X-CSRF-Token": world.api.csrf(client)}
     (world.library / "x").mkdir()
     bind = {"target_id": target, "root_subpath": "x"}
-    new_target = {"kind": "native_folder", "name": "Mine", "path_map": [{"local": str(world.library / "x"), "remote": "/x", "mode": "rw"}]}
+    new_target = {
+        "name": "Mine",
+        "path_map": [{"local": str(world.library / "x"), "remote": "/x", "mode": "rw"}],
+    }
     for shelf in (world.family, world.adult, UNKNOWN):
         post = client.post(world.path(shelf), json=bind, headers=headers)
         assert post.status_code == 403 and post.json()["code"] == "forbidden", (shelf, post.text)
@@ -81,14 +102,16 @@ def _targets(world: World) -> int:
 
 @pytest.mark.req("EF-EXP-010", "EF-EXP-002")
 def test_an_admin_creates_a_native_folder_target_and_the_guard_applies(world: World) -> None:
-    root = world.library / "native"
-    root.mkdir()
-    body = {"kind": "native_folder", "name": "Mihon", "path_map": [{"local": str(root), "remote": "/native", "mode": "rw"}]}
+    root = world.library.parent / "native"
+    root.mkdir(exist_ok=True)
+    body = {"name": "Mihon", "path_map": [{"local": str(root), "remote": "/native", "mode": "rw"}]}
     with write_transaction(world.engine) as connection:  # a Suwayomi whose local source is read
         connection.execute(sa.insert(acquisition.source_config).values(plugin_id="suwayomi"))
         RootGuard().record(connection, "suwayomi", str(root / "local"))
     refused = world.api.post(TARGETS, json=body)
-    assert refused.status_code == 409 and refused.json()["code"] == "target.root_overlaps_local_source"
+    assert (
+        refused.status_code == 409 and refused.json()["code"] == "target.root_overlaps_local_source"
+    )
     assert _targets(world) == 0
 
     with write_transaction(world.engine) as connection:
@@ -106,6 +129,8 @@ def test_binding_a_native_folder_that_covers_the_local_source_is_a_409(world: Wo
         connection.execute(sa.insert(acquisition.source_config).values(plugin_id="suwayomi"))
         RootGuard().record(connection, "suwayomi", str(world.library / "local" / "deep"))
     refused = world.bind(world.adult, "local", target=target)
-    assert refused.status_code == 409 and refused.json()["code"] == "target.root_overlaps_local_source"
+    assert (
+        refused.status_code == 409 and refused.json()["code"] == "target.root_overlaps_local_source"
+    )
     assert world.count() == 0
     assert world.bind(world.adult, "other", target=target).status_code == 201

@@ -73,6 +73,8 @@ PAYLOAD_ENUMS: Final[dict[str, dict[str, frozenset[str]]]] = {
     "source.fallback": {
         "reason": frozenset({"not_loaded", "content_failures", "removed_upstream"})
     },
+    # EF-EXP-010: the follow pauses, the tool reads a folder Shelfhold writes (M4 L07)
+    "source.broken": {"reason": GENERIC_REASONS | {"local_source_on_managed_root"}},
     # EF-SRC-024: an Edition that may still be protected where the instance is; never blocking.
     "ops.rights_warning": {
         "reason": frozenset({"may_be_protected", "translation_may_be_protected"})

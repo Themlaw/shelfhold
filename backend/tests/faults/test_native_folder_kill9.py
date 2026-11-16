@@ -17,7 +17,7 @@ import sqlalchemy as sa
 
 from shelfhold.export.application.fan_out import FanOut, HostContentStore
 from shelfhold.export.application.intents import IntentJournal, open_intent_paths
-from shelfhold.export.application.native_folder_plan import NativeFolderSource
+from shelfhold.export.targets.native_folder.source import NativeFolderSource
 from shelfhold.infrastructure.schema import coherence
 from tests.byte_source_env import unit_with_item
 from tests.export_env import export_env
@@ -33,7 +33,7 @@ CHILD = textwrap.dedent(
     from pathlib import Path
     from shelfhold.export.application import fan_out as fan_out_module
     from shelfhold.export.application.fan_out import FanOut, HostContentStore
-    from shelfhold.export.application.native_folder_plan import NativeFolderSource
+    from shelfhold.export.targets.native_folder.source import NativeFolderSource
     from shelfhold.export.application.pipeline import ExportPipeline
     from shelfhold.export.domain.path_map import PathEntry, PathMap
     from shelfhold.export.domain.physical_roots import ExpectedRoot
@@ -74,7 +74,10 @@ CHILD = textwrap.dedent(
     )
     source = NativeFolderSource(engine)
     pipeline.use_plan_executor(
-        contents=HostContentStore(engine, capabilities=source.capabilities), probe=Probe(None)
+        contents=HostContentStore(
+            engine, capabilities=source.capabilities, renders=source.renders
+        ),
+        probe=Probe(None),
     )
     journal = pipeline._plan_executor._journal
     for owner, name in [
@@ -109,7 +112,9 @@ def test_kill9_during_a_native_folder_pass_resumes_without_duplicate_or_loss(
         series = env.new_series("Dr Stone")
         units = [unit_with_item(env, series, "1"), unit_with_item(env, series, "2")]
         destination = bind(
-            env, "local", target_id=add_target(env, kind="native_folder", partitioning="none"),
+            env,
+            "local",
+            target_id=add_target(env, kind="native_folder", partitioning="none"),
             link=False,
         )
         spec = tmp_path / "spec.json"
@@ -139,7 +144,9 @@ def test_kill9_during_a_native_folder_pass_resumes_without_duplicate_or_loss(
             assert open_intent_paths(connection) == frozenset()
         source = NativeFolderSource(env.engine)
         env.pipeline.use_plan_executor(
-            contents=HostContentStore(env.engine, capabilities=source.capabilities),
+            contents=HostContentStore(
+                env.engine, capabilities=source.capabilities, renders=source.renders
+            ),
             probe=Probe(None),
         )
         restart = FanOut(env.engine, env.pipeline, source, clock=env.clock)
@@ -150,11 +157,15 @@ def test_kill9_during_a_native_folder_pass_resumes_without_duplicate_or_loss(
         found = sorted(str(p.relative_to(root)) for p in root.rglob("*") if p.is_file())
         assert found == EXPECTED  # no duplicate, no loss, no temporary file, no json
         _whole_archives(root)
-        assert [p.name for p in (root / "Dr Stone").iterdir() if p.name.endswith((".tmp", ".part"))] == []
+        assert [
+            p.name for p in (root / "Dr Stone").iterdir() if p.name.endswith((".tmp", ".part"))
+        ] == []
         stray = [p for p in env.lib.library.rglob("*") if p.name.endswith((".tmp", ".part"))]
         assert stray == []
         with env.engine.connect() as connection:
             intents = list(connection.execute(sa.select(coherence.fs_intent)))
         assert {r.state for r in intents} <= {"done", "cancelled"}
-        assert {r.export_item_id for r in records_of(env, destination)} == {u.item_id for u in units}
+        assert {r.export_item_id for r in records_of(env, destination)} == {
+            u.item_id for u in units
+        }
         assert all(os.path.exists(str(u.source.local_path)) for u in units)  # the library is intact
