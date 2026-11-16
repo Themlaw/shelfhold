@@ -1245,6 +1245,15 @@ pages_digest = "Digest of the names, sizes and CRC-32 of the pages; NULL when wi
 first_page = "Number of the chapter's first page in the block, from 1."
 page_count = "Pages the chapter holds in the block."
 page_map_state = "`candidate` (canonical names) or `unverified`; `verified` will come with L50."
+[tables.read_state_push_note]
+description = "What was pushed of a profile's read state to a Suwayomi series: the cursor of the push, per owner profile, binding and chapter."
+[tables.read_state_push_note.columns]
+pushed_at = "When Shelfhold last wrote this chapter's read flag to Suwayomi, or noted it already was (UTC)."
+remote_unit_id = "The chapter's unit key (source key and chapter address), as the follow names it."
+source_binding_id = "The binding to the Suwayomi series."
+state = "`read` or `unread`: the flag last pushed; the next pass sends only what differs from the view."
+unit_id = "The Unit the chapter stands for."
+user_id = "The owner profile whose read state is pushed."
 [tables.progress_sync_note]
 description = "What the progress synchronisation noted of each Kavita chapter of an account: the page it last pushed, the state it last saw and when it last ran."
 [tables.progress_sync_note.columns]

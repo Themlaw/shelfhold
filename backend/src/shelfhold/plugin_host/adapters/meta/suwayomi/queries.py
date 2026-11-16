@@ -17,6 +17,30 @@ AUTH_MODE = "query { settings { authMode } }"
 DOWNLOADS_PATH = "query { settings { downloadsPath } }"
 # EF-SRC-026 (b): what the server is downloading now. The requeue waits until it is empty.
 DOWNLOAD_QUEUE = "query { downloadStatus { state queue { chapter { id } } } }"
+# M4 L17 (EF-SRC-026): the read flag of a series' chapters, and the one write that pushes it. Read
+# in `ChapterMutation.kt` and `ChapterType.kt` at the tag v2.4.2366, the minimum version:
+# `updateChapters(input: UpdateChaptersInput!)` with `UpdateChaptersInput { clientMutationId,
+# ids: [Int!]!, patch: UpdateChapterPatch! }` and `UpdateChapterPatch { isBookmarked, isRead,
+# lastPageRead }`, payload `UpdateChaptersPayload { chapters }`. Only `isRead` is ever sent: not the
+# page (`lastPageRead` also moves `lastReadAt` and the KOReader sync of the server), not the
+# bookmark. Setting a chapter read makes the server push its progress to KOReader sync if enabled.
+READ_CHAPTERS = (
+    "query ($mangaId: Int!) { chapters(condition: {mangaId: $mangaId}) { nodes "
+    "{ id url isRead } } }"
+)
+
+
+def update_chapters_read(ids: list[int], read: bool) -> str:
+    """The batch write of `isRead`. The ids are literals of the document, whole numbers only (so
+    that no schema type is named and nothing but a number can reach the document)."""
+    if not ids or any(type(i) is not int or i < 0 for i in ids):
+        raise ValueError("chapter ids are whole numbers, at least one")
+    return (
+        f"mutation {{ updateChapters(input: {{ids: [{', '.join(str(i) for i in ids)}], "
+        f"patch: {{isRead: {'true' if read else 'false'}}}}}) {{ chapters {{ id isRead }} }} }}"
+    )
+
+
 # EF-SRC-026 (d): the global update filters that leave out the series the user has not read
 UPDATE_FILTERS = "query { settings { excludeUnreadChapters excludeNotStarted } }"
 # Owner decision 2026-11-12: the only write in the settings of Suwayomi, confirmed by the admin.

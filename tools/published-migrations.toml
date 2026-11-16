@@ -219,3 +219,8 @@ since = "1.1"
 file = "0079_external_link.py"
 sha256 = "f006f37a8728f3d9a6f74dcbf4b5883495e5f1ee2e4bfea23468732114ac5d89"
 since = "1.1"
+
+[[migration]]
+file = "0080_read_state_push_note.py"
+sha256 = "6faa31469f46363343f796431c7ba40cf7263b30728892e1423063ea2f679a7f"
+since = "1.1"

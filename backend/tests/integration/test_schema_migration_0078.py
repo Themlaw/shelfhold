@@ -25,7 +25,7 @@ USER, DEST, TARGET, SHELF, ACCOUNT = (new_ulid() for _ in range(5))
 
 
 @pytest.mark.req("ENF-OPS-002")
-def test_single_alembic_head_with_0078_on_0077() -> None:
+def test_0078_follows_0077_in_a_single_chain() -> None:
     script = ScriptDirectory(str(default_script_location()))
     assert len(script.get_heads()) == 1  # the head itself is pinned by the newest migration test
     assert script.get_revision("0078").down_revision == "0077"

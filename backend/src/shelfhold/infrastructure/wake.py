@@ -70,6 +70,13 @@ class Wakes:
     def attached(self, target: str) -> bool:
         return self._hook is not None and target in self._targets
 
+    def is_awake(self, target: str) -> bool:
+        """`target` answers now, without being woken: not behind this hook, or a wake whose
+        session still holds. Asks nothing and counts nothing (a push that can wait uses it)."""
+        if not self.attached(target):
+            return True
+        return self._awake_until.get(target, self._clock.now()) > self._clock.now()
+
     async def ensure(self, target: str) -> None:
         """Return when `target` is awake, or raise `WakeDeferred`."""
         if self._hook is None or target not in self._targets:

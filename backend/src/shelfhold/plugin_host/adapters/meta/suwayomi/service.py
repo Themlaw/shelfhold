@@ -689,6 +689,24 @@ class SuwayomiService:
         units = [self._unit(ref, c) for c in await self._chapters(f, ref)]
         return sorted(units, key=lambda u: u.source_order)
 
+    # -- the read flag (M4 L17, EF-SRC-026): the owner's « read », pushed back ----------------
+    async def read_flags(self, f: Fetcher, ref: SeriesRef) -> dict[str, tuple[int, bool]]:
+        """Per unit key (`source_key:chapter url`, the one of `list_units`): the chapter's local
+        id and whether Suwayomi's own user has read it. Read only; the series is found by
+        `(sourceId, url)`, never by a local id."""
+        manga = await self._manga(f, ref)
+        nodes = (await self._query(f, q.READ_CHAPTERS, {"mangaId": manga["id"]}))["chapters"][
+            "nodes"
+        ]
+        return {
+            self._unit_id(ref.source_key, str(n["url"])): (int(n["id"]), bool(n["isRead"]))
+            for n in nodes
+        }
+
+    async def set_chapters_read(self, f: Fetcher, chapter_ids: list[int], read: bool) -> None:
+        """`isRead` of a batch of chapters, nothing else (no page, no bookmark)."""
+        await self._query(f, q.update_chapters_read(chapter_ids, read))
+
     def _unit(self, ref: SeriesRef, chapter: dict[str, Any]) -> UnitInfo:
         number = chapter.get("chapterNumber")
         number_sort: Decimal | None = None
