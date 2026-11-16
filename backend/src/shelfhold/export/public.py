@@ -19,10 +19,12 @@ from shelfhold.export.domain.bindings import (
     family_clause,
     is_family,
 )
-from shelfhold.export.domain.folders import Relation, absolute_relation
+from shelfhold.export.domain.folders import Relation, absolute_relation, folder_relation
+from shelfhold.export.domain.path_map import PathMapError, clean_absolute
 
 __all__ = [
     "LocalSourceUnknownError",
+    "PathMapError",
     "Relation",
     "RootOverlapsLocalSourceError",
     "SeriesMove",
@@ -33,7 +35,9 @@ __all__ = [
     "adult_clause",
     "apply_series_reassignment",
     "attach_to_volume",
+    "clean_absolute",
     "family_clause",
+    "folder_relation",
     "forget_coverage_unknown",
     "is_family",
     "pending_pairing",

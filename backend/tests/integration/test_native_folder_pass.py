@@ -14,6 +14,7 @@ import zipfile
 import pytest
 import sqlalchemy as sa
 
+from shelfhold.acquisition.public import RootGuard
 from shelfhold.export.application.fan_out import FanOut, HostContentStore, planned_content
 from shelfhold.export.application.plan_executor import PlanRefusedError
 from shelfhold.export.domain.bindings import UnpartitionedDestinationError
@@ -40,8 +41,9 @@ def native(env: ExportEnv, subpath: str = "local", *, link: bool = False) -> str
 
 
 def run(env: ExportEnv, call_id: str = "c1") -> tuple[FanOut, NativeFolderSource]:
-    source = NativeFolderSource(env.engine)
+    source = NativeFolderSource(env.engine, root_check=RootGuard().check_root)
     host = HostContentStore(env.engine, capabilities=source.capabilities, renders=source.renders)
+    source.attach(host)
     env.pipeline.use_plan_executor(contents=host, probe=Probe(None))
     return FanOut(env.engine, env.pipeline, source, clock=env.clock), source
 
@@ -83,7 +85,7 @@ def test_a_pass_writes_the_mihon_local_tree_with_a_comicinfo_and_a_cover() -> No
         assert tree(env) == [
             "Dr Stone/Ch.0001 Dawn.cbz",
             "Dr Stone/Ch.0002.5.cbz",
-            "Dr Stone/cover.jpg",
+            "Dr Stone/cover.png",
         ]
         assert not [p for p in tree(env) if p.casefold().endswith(".json")]
         chapter = env.lib.manga / "local" / "Dr Stone" / "Ch.0001 Dawn.cbz"
@@ -92,7 +94,7 @@ def test_a_pass_writes_the_mihon_local_tree_with_a_comicinfo_and_a_cover() -> No
             info = archive.read("ComicInfo.xml").decode()
         assert names[-1] == "ComicInfo.xml" and "1-001.png" in names
         assert f"<Translator>{TEAM}</Translator>" in info and "<Title>Dawn</Title>" in info
-        cover = (env.lib.manga / "local" / "Dr Stone" / "cover.jpg").read_bytes()
+        cover = (env.lib.manga / "local" / "Dr Stone" / "cover.png").read_bytes()
         assert cover.startswith(
             b"\x89PNG"
         )  # the first page as it is: Mihon reads cover.* by content
@@ -162,7 +164,7 @@ def test_an_item_of_another_shelf_never_reaches_the_native_folder() -> None:
 
         fan.run(env.shelf_id, "c1")
 
-        assert tree(env) == ["Mine/Ch.0001.cbz", "Mine/cover.jpg"]
+        assert tree(env) == ["Mine/Ch.0001.cbz", "Mine/cover.png"]
         assert not any("Theirs" in p for p in tree(env))
         host = HostContentStore(
             env.engine, capabilities=source.capabilities, renders=source.renders

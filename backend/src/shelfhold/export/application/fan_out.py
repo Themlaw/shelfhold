@@ -41,6 +41,7 @@ import structlog
 from sqlalchemy import Connection, Engine
 
 from shelfhold.catalog.public import Admission, RatingService
+from shelfhold.export.application.cover_image import prepare_cover
 from shelfhold.export.application.plan_executor import (
     ExecutionReport,
     PlanBinding,
@@ -1051,11 +1052,22 @@ class HostContentStore:
         item_id = cover_item_of(ref.ref)
         if item_id is None:
             raise PlanRefusedError("the host serves no such content here")
+        image = self.cover_image(destination_id, item_id)
+        if image is None:
+            raise ContentRefusedError("the first page cannot be made a cover")
+        return image[0]
+
+    def cover_image(self, destination_id: str, item_id: str) -> tuple[bytes, str] | None:
+        """The cover of the series of an item: the bytes to write and their extension (`jpg`,
+        `png`, `webp`, by the bytes). Read through the same gates as a chapter every time it is
+        asked (the plan asks for its name, the write for its bytes): nothing is kept between the
+        two, so a ceiling lowered in between is seen. None when the image worker refuses the
+        page."""
         data, fmt, _target = self._archive(destination_id, item_id)
         if fmt != "cbz":
             raise PlanRefusedError("only a CBZ gives a cover")
         try:
-            return first_page(data)
+            return prepare_cover(first_page(data))
         except (ValueError, OSError) as error:
             raise ContentRefusedError("the archive has no page to make a cover of") from error
 

@@ -579,7 +579,10 @@ class FirstPartyDestinations:
 
     def __init__(self, engine: Engine) -> None:
         self._engine = engine
-        self._native = NativeFolderSource(engine)
+        self._native = NativeFolderSource(engine, root_check=RootGuard().check_root)
+
+    def attach(self, host: Any) -> None:
+        self._native.attach(host)
 
     def capabilities(self, target_id: str) -> Any:
         with self._engine.connect() as connection:
@@ -707,7 +710,9 @@ def _fan_out_pass(
     from shelfhold.export.application.target_state import DestinationPausedError
 
     pipeline, _fsops = disks.get()
-    fan = FanOut(comp.engine, pipeline, FirstPartyDestinations(comp.engine), clock=comp.clock)
+    destinations_of_core = FirstPartyDestinations(comp.engine)
+    destinations_of_core.attach(pipeline.plan_contents)  # a cover is named by its bytes
+    fan = FanOut(comp.engine, pipeline, destinations_of_core, clock=comp.clock)
     with comp.engine.connect() as connection:
         shelves = sorted(
             set(

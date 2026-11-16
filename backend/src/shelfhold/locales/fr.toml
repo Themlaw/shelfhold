@@ -1698,13 +1698,13 @@ action = "Choisissez un dossier qui ne contient pas, n'est pas dans et n'est pas
 cause = "Shelfhold relirait ses propres exports comme une source amont et les acquerrait en boucle."
 
 [errors."target.local_source_unknown"]
-title = "La source locale de Suwayomi n'est pas encore connue."
-action = "Laissez le suivi tourner une fois (ou attendez le prochain cycle), puis recommencez : Shelfhold doit lire la source locale de Suwayomi avant de lier un dossier natif."
-cause = "Suwayomi est configuré, mais aucun cycle de suivi n'a encore lu son réglage de source locale ; par prudence, rien n'est lié d'ici là."
+title = "La source locale de Suwayomi n'est pas connue ou ne peut pas être vérifiée."
+action = "Laissez le suivi tourner une fois (ou attendez le prochain cycle), puis recommencez : Shelfhold doit lire la source locale de Suwayomi avant de lier un dossier natif. Si Suwayomi la place à un chemin que Shelfhold ne voit pas, rendez ce dossier visible (montage en lecture seule, ou côté « remote » du path_map)."
+cause = "Suwayomi est configuré, mais son réglage de source locale n'a pas été lu (ou n'est pas lisible), ou il désigne un chemin que Shelfhold ne peut pas situer : par prudence, rien n'est lié ni écrit d'ici là."
 
 [errors."source.local_source_on_managed_root"]
 title = "Suwayomi lit un dossier que Shelfhold gère."
-action = "Changez le réglage « Local source path » de Suwayomi pour un dossier qui n'est ni la bibliothèque, ni /store, ni une racine de destination. Le suivi reprend de lui-même au cycle suivant."
+action = "Changez le réglage « Local source path » de Suwayomi pour un dossier qui n'est ni la bibliothèque, ni /store, ni une racine de destination, puis lancez « shelfhold source recheck » : le suivi reprend, et se remet en pause si le dossier est toujours mauvais."
 cause = "La source locale de Suwayomi est (ou contient, ou est dans) une racine que Shelfhold gère : le suivi est en pause, rien n'a été supprimé."
 
 [errors."target.unreachable"]

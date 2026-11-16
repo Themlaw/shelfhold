@@ -16,10 +16,10 @@ from decimal import Decimal, InvalidOperation
 from typing import Any, Literal
 
 from shelfhold.export.domain.folders import fold
-from shelfhold.export.domain.native_folder import cover_item_of, cover_ref
+from shelfhold.export.domain.native_folder import COVER_EXTENSIONS, cover_item_of, cover_ref
 from shelfhold.export.targets.native_folder.names import (
-    COVER_NAME,
     chapter_filename,
+    cover_filename,
     series_folder,
 )
 from shelfhold.sdk.api_call import ApiCall
@@ -52,6 +52,7 @@ class SeriesSpec:
     name: str
     chapters: tuple[ChapterSpec, ...]
     cover_item: str | None = None  # the item whose first page is the cover, when there is one
+    cover_ext: str = "jpg"  # the extension of that image by its bytes (`cover.<ext>`)
 
 
 def _order(chapter: ChapterSpec) -> tuple[int, Decimal, str, str]:
@@ -89,8 +90,9 @@ class NativeFolderDestination:
         ),
         name_normalizer="mihon-local-1",
         series_grouping="folder",
-        # a `*.json` in a series folder is the legacy details file of Mihon: it consumes it
-        forbidden_sidecars=frozenset({"series.json", "details.json", "metadata.json"}),
+        # any `*.json` of a series folder is the legacy details file of Mihon: it reads it, turns
+        # it into details and deletes it (the names are the usual ones, the pattern is the rule)
+        forbidden_sidecars=frozenset({"*.json", "series.json", "details.json", "metadata.json"}),
     )
 
     def config_schema(self) -> dict[str, Any]:
@@ -121,6 +123,7 @@ class NativeFolderDestination:
         folders: dict[str, str] = {}
         taken: dict[str, set[str]] = {}
         covers: dict[str, str | None] = {}
+        extensions: dict[str, str] = {}
         chapters: dict[str, list[ChapterSpec]] = {}
         for spec in series:
             name = series_folder(spec.name)
@@ -130,10 +133,12 @@ class NativeFolderDestination:
             covers.setdefault(key, spec.cover_item)
             if covers[key] is None:
                 covers[key] = spec.cover_item
+            if covers[key] == spec.cover_item:
+                extensions[key] = spec.cover_ext
         ops: list[FsOp] = []
         for key, folder in folders.items():
             ops.append(FsOp(op="mkdir", rel_path=folder))
-            names = taken.setdefault(key, {fold(COVER_NAME)})
+            names = taken.setdefault(key, {fold(cover_filename(ext)) for ext in COVER_EXTENSIONS})
             for chapter in sorted(chapters[key], key=_order):
                 filename = _unique(
                     chapter_filename(
@@ -152,7 +157,7 @@ class NativeFolderDestination:
                 ops.append(
                     FsOp(
                         op="write_inline",
-                        rel_path=f"{folder}/{COVER_NAME}",
+                        rel_path=f"{folder}/{cover_filename(extensions[key])}",
                         content_ref=ContentRef(kind="sidecar", ref=cover_ref(str(covers[key]))),
                     )
                 )

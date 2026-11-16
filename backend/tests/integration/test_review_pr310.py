@@ -1,7 +1,7 @@
-"""#310 (M4 L07, relecture adverse intégrité) : PoC rouges en `xfail(strict=True)`.
+"""#310 (M4 L07, relecture adverse intégrité) : les quatre PoC du contradicteur.
 
-Chacun échoue aujourd'hui pour la raison qu'il décrit ; `strict` signalera le jour où il passe.
-Détail et remèdes : section « #310 : contradicteur » de `docs/decisions/M4.md`.
+Ils étaient posés en `xfail(strict=True)` ; chacun passe depuis la correction, et le marqueur est
+retiré. Détail et remèdes : section « #310 : contradicteur » de `docs/decisions/M4.md`.
 """
 
 import json
@@ -43,10 +43,6 @@ def env(tmp_path: Path) -> dict[str, str]:
 
 
 @pytest.mark.req("EF-EXP-010")
-@pytest.mark.xfail(
-    strict=True,
-    reason="#310 M1: `config set path_map.<cible>` (PATCH /config) ne passe pas par RootGuard",
-)
 def test_a_new_path_map_cannot_move_a_native_root_onto_the_local_source(world: World) -> None:
     free = world.library.parent / "native"
     free.mkdir(exist_ok=True)
@@ -77,10 +73,6 @@ def test_a_new_path_map_cannot_move_a_native_root_onto_the_local_source(world: W
 
 
 @pytest.mark.req("EF-EXP-010")
-@pytest.mark.xfail(
-    strict=True,
-    reason="#310 M2: la garde n'est lue qu'à la liaison ; le passage écrit dans la source locale",
-)
 def test_a_pass_never_writes_into_the_local_source_suwayomi_now_reads() -> None:
     with export_env() as env:
         series = env.new_series("Dr Stone")
@@ -98,10 +90,6 @@ def test_a_pass_never_writes_into_the_local_source_suwayomi_now_reads() -> None:
 
 
 @pytest.mark.req("EF-EXP-010")
-@pytest.mark.xfail(
-    strict=True,
-    reason="#310 M3: le chemin rapporté par Suwayomi n'est comparé qu'aux chemins `local`",
-)
 def test_the_local_source_seen_through_the_remote_side_of_the_path_map_is_refused() -> None:
     with export_env() as env:
         target = _native_target(env)  # path map: local = the library, remote = /manga
@@ -116,10 +104,6 @@ def test_the_local_source_seen_through_the_remote_side_of_the_path_map_is_refuse
 
 
 @pytest.mark.req("EF-EXP-010")
-@pytest.mark.xfail(
-    strict=True,
-    reason="#310 M4: un cycle qui ne lit plus de chemin (None) lève la pause `local_source_loop`",
-)
 def test_a_loop_pause_is_not_lifted_by_a_local_source_that_can_no_longer_be_read() -> None:
     server = FakeSuwayomi(auth_mode="none")
     with follow_bench(server) as bench:

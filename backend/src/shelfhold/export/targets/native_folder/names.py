@@ -12,11 +12,16 @@ from decimal import Decimal, InvalidOperation
 from typing import Final
 
 from shelfhold.export.domain.naming import MAX_COMPONENT_BYTES, sanitize_name
+from shelfhold.export.domain.native_folder import COVER_STEM
 
-__all__ = ["COVER_NAME", "chapter_filename", "chapter_number", "series_folder"]
+__all__ = ["chapter_filename", "chapter_number", "cover_filename", "series_folder"]
 
-COVER_NAME: Final = "cover.jpg"  # Mihon finds `cover.*` by name and reads the image by content
 _MIN_DIGITS: Final = 4
+
+
+def cover_filename(extension: str) -> str:
+    """`cover.png`: Mihon finds `cover.*` by name; the extension is the one of the bytes."""
+    return f"{COVER_STEM}.{extension}"
 
 
 def chapter_number(number: str | None) -> str | None:

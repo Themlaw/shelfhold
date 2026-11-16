@@ -124,7 +124,6 @@ from shelfhold.library.public import (
     VariantRef,
 )
 from shelfhold.plugin_host.errors import (
-    LOOP_CLASS,
     AuthModeUnsupported,
     ServiceInstanceChanged,
     ServiceVersionMismatch,
@@ -284,7 +283,6 @@ class FollowCycle:
         repairer: Repairer | None = None,
         root_guard: RootGuard | None = None,
     ) -> None:
-        self._loop_paused = False  # the pause in force is the loop guard's, read again each cycle
         self._root_guard = root_guard  # EF-EXP-010: the loop guard, looked at again every cycle
         self._min_page_ratio = min_page_ratio
         self._engine = engine
@@ -356,8 +354,7 @@ class FollowCycle:
         started = time.perf_counter()
         with self._engine.connect() as connection:
             paused = self._ledger.paused(connection)
-        self._loop_paused = paused is not None and paused.failure_class == LOOP_CLASS
-        if paused is not None and not self._loop_paused:
+        if paused is not None:
             report.paused = paused.label  # waiting for a human: no request, no second alert
             log.debug("follow.cycle_paused", state=paused.label, service=self._plugin_id)
             return report
@@ -445,22 +442,24 @@ class FollowCycle:
     async def _check_local_source(self) -> None:
         """EF-EXP-010: the folder the tool reads as its local source is read again at every cycle,
         before anything is read from it. On a folder Shelfhold manages the follow pauses (a typed
-        code, `LocalSourceOnManagedRootError`): its own exports would come back as an upstream.
-        Nothing is deactivated, deleted or asked; what was read is kept for the binding of a native
-        folder, which refuses to cover it."""
+        code, `LocalSourceOnManagedRootError`): its own exports would come back as an upstream. The
+        pause is a pause like the others: no request while it lasts, and it ends with the admin's
+        `source recheck`; the next cycle reads the folder again and pauses again if it is still
+        wrong. An answer that cannot be read is recorded as unknown, never as "no local source":
+        it lifts nothing and frees no binding. Nothing is deactivated, deleted or asked."""
         guard = self._root_guard
         read = getattr(self._service, "local_source_path", None)
         if guard is None or read is None:
             return
         path = await from_service(read(self._fetcher))
         with write_transaction(self._engine) as connection:
-            guard.record(connection, self._plugin_id, path)
-        if path is not None:
+            if path is None:
+                guard.record_unreadable(connection, self._plugin_id)
+            else:
+                guard.record(connection, self._plugin_id, path or None)
+        if path:
             with self._engine.connect() as connection:
                 guard.check_local_source(connection, path)
-        if self._loop_paused:  # the admin moved the local source off the managed roots: it ends
-            self.resume()
-            self._loop_paused = False
 
     async def _cycle(self, report: FollowReport) -> None:
         self._log_skipped_capabilities()

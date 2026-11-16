@@ -242,16 +242,20 @@ def test_suwayomi_local_path_moved_onto_managed_root_pauses_binding(tmp_path: Pa
         assert bench.rows(COUNTS)[0] == before  # nothing deleted, nothing asked again
         assert bench.library_files() == files and bench.binding()["active"]
 
-        again = bench.run()  # still wrong: still paused, read-only requests only, told once
-        assert again.paused == "local_source_loop"
-        assert len(bench.events("source.broken")) == 1
-        assert not [r for r in server.requests if b"mutation" in r.body]
+        sent = len(server.requests)
+        assert bench.run().paused == "local_source_loop" and len(server.requests) == sent
+        assert len(bench.events("source.broken")) == 1  # told once
 
-        # the admin fixes the setting of Suwayomi: the pause ends by itself, the follow goes on
+        # the admin fixes the setting of Suwayomi and resumes: the follow goes on
         server.state["local_source_path"] = str(free)
+        bench.cycle.resume()
         assert bench.run().paused is None
         assert bench.rows(COUNTS)[0]["active"] == before["active"]
-        assert bench.rows("SELECT health FROM source_config")[0]["health"].count("pause") == 0
+
+        # resumed without fixing anything: the next cycle reads the folder again and pauses again
+        server.state["local_source_path"] = str(bench.lib.store)
+        bench.cycle.resume()
+        assert bench.run().paused == "local_source_loop"
 
 
 @pytest.mark.req("EF-EXP-010")
@@ -261,3 +265,57 @@ def test_a_local_source_that_is_not_exposed_pauses_nothing(tmp_path: Path) -> No
     with follow_bench(server) as bench:
         bench.cycle = bench.new_cycle(root_guard=RootGuard())
         assert bench.run().paused is None
+
+
+@pytest.mark.req("EF-EXP-010")
+@pytest.mark.parametrize("answer", [None, "relative/path", "/with/nul\u0000byte", 42])
+def test_an_unreadable_answer_is_unknown_never_a_free_binding(
+    tmp_path: Path, answer: object
+) -> None:
+    """A path that was read once, then an answer that cannot be read: unknown, so closed."""
+    server = FakeSuwayomi(auth_mode="none")
+    free = tmp_path / "suwayomi-local"
+    free.mkdir()
+    server.state["local_source_path"] = str(free)
+    with follow_bench(server) as bench:
+        bench.cycle = bench.new_cycle(root_guard=RootGuard())
+        assert bench.run().paused is None
+        server.state["local_source_path"] = answer
+        assert bench.run().paused is None  # nothing proves a loop: the follow goes on
+        with bench.lib.engine.connect() as connection:
+            assert RootGuard.known(connection) == [None]  # forgotten, not "no local source"
+            with pytest.raises(LocalSourceUnknownError):
+                RootGuard().check_root(connection, str(tmp_path / "somewhere"))
+        server.state["local_source_path"] = ""  # the server says it has none of its own: read
+        assert bench.run().paused is None
+        with bench.lib.engine.connect() as connection:
+            assert RootGuard.known(connection) == []
+            RootGuard().check_root(connection, str(tmp_path / "somewhere"))
+
+
+@pytest.mark.req("EF-EXP-010")
+def test_a_local_source_that_no_path_map_translates_cannot_be_told_apart(tmp_path: Path) -> None:
+    """Suwayomi reports a path of its own container: it does not exist here and no `remote` covers
+    it. Nothing proves it apart from a managed root: the native folder is refused, not believed."""
+    with export_env() as env:
+        _suwayomi_source(env, "/home/suwayomi/.local/share/local")
+        with pytest.raises(LocalSourceUnknownError):
+            _bind(env, "native", _native_target(env))
+        with env.engine.connect() as connection:  # the cycle itself does not pause for it
+            RootGuard().check_local_source(connection, "/home/suwayomi/.local/share/local")
+
+
+@pytest.mark.req("EF-EXP-010")
+def test_the_remote_side_of_a_path_map_is_compared_both_ways(tmp_path: Path) -> None:
+    with export_env() as env:
+        target = _native_target(env)  # local = the library, remote = /manga
+        guard = RootGuard()
+        with env.engine.connect() as connection:
+            for reported in ("/manga", "/manga/local", "/MANGA/Local/deep"):  # holds, is, inside
+                with pytest.raises(LocalSourceOnManagedRootError):
+                    guard.check_local_source(connection, reported)
+            guard.check_local_source(connection, "/elsewhere/local")  # nothing to translate
+        _suwayomi_source(env, "/manga/Own")  # the folder a reader sees as the one of the binding
+        with pytest.raises(RootOverlapsLocalSourceError):
+            _bind(env, "Own", target)
+        assert _bind(env, "other", target)  # a sibling the path map translates: proven apart

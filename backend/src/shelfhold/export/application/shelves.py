@@ -739,6 +739,14 @@ class ShelfService:
         )
         writable = path_map.writable()
         with self._engine.connect() as connection:
+            kind = connection.execute(
+                sa.select(export.export_target.c.kind).where(export.export_target.c.id == target_id)
+            ).scalar()
+            if kind == NATIVE_FOLDER and self._root_check is not None:
+                for (
+                    entry
+                ) in writable:  # a root moved onto the local source of Suwayomi (EF-EXP-010)
+                    self._root_check(connection, entry.local)
             rows = connection.execute(
                 sa.select(
                     export.shelf_destination.c.id,

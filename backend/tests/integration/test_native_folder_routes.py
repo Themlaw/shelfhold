@@ -114,8 +114,10 @@ def test_an_admin_creates_a_native_folder_target_and_the_guard_applies(world: Wo
     )
     assert _targets(world) == 0
 
+    elsewhere = world.library.parent.parent / "elsewhere"
+    elsewhere.mkdir()  # a folder that exists here, so that it can be told apart
     with write_transaction(world.engine) as connection:
-        RootGuard().record(connection, "suwayomi", str(world.library.parent / "elsewhere"))
+        RootGuard().record(connection, "suwayomi", str(elsewhere))
     created = world.api.post(TARGETS, json=body)
     assert created.status_code == 201, created.text
     assert _targets(world) == 1

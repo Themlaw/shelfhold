@@ -15,12 +15,17 @@ mount (`st_dev`, `st_ino`, of the folder or an ancestor) too.
   Refused: `RootOverlapsLocalSourceError`. A Suwayomi that was configured and never read:
   `LocalSourceUnknownError` (fail closed). A Suwayomi that does not expose it: nothing to compare.
 
-The path is the one Suwayomi reports, read as this process sees it: the two must mount the folder
-at the same path (the same convention as the download folder of EF-EXP-044).
+The path is the one Suwayomi reports, in its own namespace. It is compared three ways: as it is
+(when both see the folder at one path, or when it exists here), translated by the path map of each
+target (`remote` -> `local`, the usual Docker case: Suwayomi mounts the folder under `/manga`,
+Shelfhold under `/library/manga`), and against the `remote` side of every path map. A path that
+none of these relates, and that does not exist here, cannot be told apart from a managed root: a
+native folder is refused for it (`LocalSourceUnknownError`) rather than believed apart.
 """
 
 import json
 import os
+import posixpath
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any, Final
@@ -31,9 +36,12 @@ from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
 from shelfhold.export.public import (
     LocalSourceUnknownError,
+    PathMapError,
     Relation,
     RootOverlapsLocalSourceError,
     absolute_relation,
+    clean_absolute,
+    folder_relation,
 )
 from shelfhold.infrastructure.schema import acquisition, export, platform
 from shelfhold.plugin_host.errors import LocalSourceOnManagedRootError
@@ -101,29 +109,112 @@ class RootGuard:
         )  # fmt: skip
         return how is not Relation.APART
 
+    @staticmethod
+    def _entries(connection: Connection) -> list[tuple[str, str]]:
+        """The `(local, remote)` pairs of every path map: what the readers see, and where."""
+        pairs: list[tuple[str, str]] = []
+        for path_map in connection.execute(sa.select(export.export_target.c.path_map)).scalars():
+            for e in path_map or []:
+                if isinstance(e, dict) and e.get("local") and e.get("remote"):
+                    pairs.append((str(e["local"]), str(e["remote"])))
+        return pairs
+
+    @staticmethod
+    def _tidy(path: str) -> str:
+        """A path of Suwayomi's namespace, cleaned by its text alone (it is not ours to resolve):
+        `..` folded, no trailing slash. What cannot be cleaned is kept as it is."""
+        try:
+            return clean_absolute(posixpath.normpath(path))
+        except PathMapError:
+            return posixpath.normpath(path)
+
+    @staticmethod
+    def _below(path: str, base: str) -> str | None:
+        """What is under `base` in `path`, by components and lax names, or None."""
+        parts, root = [p for p in path.split("/") if p], [p for p in base.split("/") if p]
+        if len(parts) < len(root) or folder_relation(parts[: len(root)], root).value not in (
+            "same",
+            "lookalike",
+        ):
+            return None
+        return "/".join(parts[len(root) :])
+
+    def _local_views(self, connection: Connection, reported: str) -> tuple[list[str], bool]:
+        """Where a path of Suwayomi is, in the namespace of Shelfhold: the path itself, and the
+        places the path maps put it. The flag says whether that is known: the folder exists here,
+        or a path map covers it (it may not exist yet; it is still said where it will be)."""
+        clean = self._tidy(reported)
+        views = [reported]
+        translated = False
+        for local, remote in self._entries(connection):
+            rest = self._below(clean, clean_absolute(remote))
+            if rest is not None:
+                translated = True
+                views.append(clean_absolute(f"{local}/{rest}" if rest else local))
+        return views, translated or os.path.exists(reported)
+
+    def _remote_related(self, connection: Connection, reported: str) -> bool:
+        """The path Suwayomi reports against the `remote` side of every path map: a folder it
+        reads that holds or sits in what a reader sees as a managed root."""
+        parts = [p for p in self._tidy(reported).split("/") if p]
+        for _local, remote in self._entries(connection):
+            if (
+                folder_relation(parts, [p for p in clean_absolute(remote).split("/") if p]).value
+                != "apart"
+            ):
+                return True
+        return False
+
     # -- the local source read from Suwayomi ---------------------------------------------------
     def check_local_source(self, connection: Connection, path: str) -> None:
-        for root in self.managed_roots(connection):
-            if self._related(path, root):
-                raise LocalSourceOnManagedRootError()
+        views, _known = self._local_views(connection, path)
+        roots = self.managed_roots(connection)
+        if self._remote_related(connection, path) or any(
+            self._related(view, root) for view in views for root in roots
+        ):
+            raise LocalSourceOnManagedRootError()
 
-    # -- a native folder root about to be bound ----------------------------------------------
+    # -- a native folder root about to be bound, or moved ----------------------------------------
     def check_root(self, connection: Connection, root: str) -> None:
         for known in self.known(connection):
             if known is None:
                 raise LocalSourceUnknownError(
-                    "Suwayomi is configured and its local source is unread"
+                    "Suwayomi is configured and its local source is unread or unreadable"
                 )
-            if self._related(root, known):
+            views, placed = self._local_views(connection, known)
+            if any(self._related(root, view) for view in views):
                 raise RootOverlapsLocalSourceError(
                     "the root holds or sits in the local source of Suwayomi"
                 )
+            if self._remote_of_root_related(connection, root, known):
+                raise RootOverlapsLocalSourceError(
+                    "the root holds or sits in the local source of Suwayomi"
+                )
+            if not placed:
+                raise LocalSourceUnknownError(
+                    "the local source of Suwayomi is at a path that this instance cannot see, "
+                    "nor translate through a path map: it cannot be told apart from this folder"
+                )
+
+    def _remote_of_root_related(self, connection: Connection, root: str, reported: str) -> bool:
+        """The root as its readers see it (`local` -> `remote`) against the reported path."""
+        clean_root = self._tidy(root)
+        reported_parts = [p for p in self._tidy(reported).split("/") if p]
+        for local, remote in self._entries(connection):
+            rest = self._below(clean_root, clean_absolute(local))
+            if rest is None:
+                continue
+            seen = clean_absolute(f"{remote}/{rest}" if rest else remote)
+            if folder_relation(reported_parts, [p for p in seen.split("/") if p]).value != "apart":
+                return True
+        return False
 
     @staticmethod
     def known(connection: Connection) -> list[str | None]:
         """What the follow last read of each Suwayomi source: its local source path, or None for
-        a source that was configured and never read. A source that was read and exposes no local
-        source is not in the list."""
+        a source that was configured and never read, or whose last answer could not be read (an
+        absent field, a relative path, a control character). A source that was read and says it
+        has no local source is not in the list."""
         table = acquisition.source_config
         rows = connection.execute(
             sa.select(table.c.health).where(table.c.plugin_id == SUWAYOMI)
@@ -131,8 +222,8 @@ class RootGuard:
         out: list[str | None] = []
         for row in rows:
             seen = (row.health or {}).get(_KEY) if isinstance(row.health, dict) else None
-            if not isinstance(seen, dict):
-                out.append(None)
+            if not isinstance(seen, dict) or seen.get("unreadable"):
+                out.append(None)  # never read, or read but not understood: unknown, not apart
             elif seen.get("path"):
                 out.append(str(seen["path"]))
         return out
@@ -151,4 +242,19 @@ class RootGuard:
                 "'$.local_source', json(:value)) WHERE plugin_id = :plugin"
             ),
             {"value": json.dumps(value), "plugin": plugin_id},
+        )
+
+    @staticmethod
+    def record_unreadable(connection: Connection, plugin_id: str) -> None:
+        """What a cycle could not read: unknown, which is not the same as having no local source."""
+        table = acquisition.source_config
+        connection.execute(
+            sqlite_insert(table).values(plugin_id=plugin_id).on_conflict_do_nothing()
+        )
+        connection.execute(
+            sa.text(
+                "UPDATE source_config SET health = json_set(coalesce(health, '{}'), "
+                "'$.local_source', json(:value)) WHERE plugin_id = :plugin"
+            ),
+            {"value": json.dumps({"unreadable": True}), "plugin": plugin_id},
         )

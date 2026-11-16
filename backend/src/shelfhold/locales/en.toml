@@ -1729,13 +1729,13 @@
     cause = "Shelfhold would read its own exports back as an upstream and acquire them in a loop."
 
   [errors."target.local_source_unknown"]
-    title = "The local source of Suwayomi is not known yet."
-    action = "Let the follow run once (or wait for the next cycle), then try again: Shelfhold has to read the local source of Suwayomi before it binds a native folder."
-    cause = "Suwayomi is configured but no follow cycle has read its local source setting yet; to be safe nothing is bound until then."
+    title = "The local source of Suwayomi is not known or cannot be checked."
+    action = "Let the follow run once (or wait for the next cycle), then try again: Shelfhold has to read the local source of Suwayomi before it binds a native folder. If Suwayomi puts it at a path Shelfhold cannot see, make that folder visible (a read-only mount, or the “remote” side of the path map)."
+    cause = "Suwayomi is configured but its local source setting has not been read (or cannot be read), or it points at a path Shelfhold cannot place; to be safe nothing is bound or written until then."
 
   [errors."source.local_source_on_managed_root"]
     title = "Suwayomi reads a folder Shelfhold manages."
-    action = "Change the “Local source path” setting of Suwayomi to a folder that is neither the library, nor /store, nor a destination root. The follow resumes by itself at the next cycle."
+    action = "Change the “Local source path” setting of Suwayomi to a folder that is neither the library, nor /store, nor a destination root. Then run “shelfhold source recheck”: the follow resumes, and pauses again if the folder is still wrong."
     cause = "The local source of Suwayomi is (or holds, or sits inside) a root Shelfhold manages: the follow is paused and nothing was deleted."
 
   [errors."target.unreachable"]

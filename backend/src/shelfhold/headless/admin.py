@@ -35,7 +35,12 @@ from shelfhold.export.application.root_bootstrap import (
 from shelfhold.export.application.shelves import ShelfService
 from shelfhold.export.application.snapshot import load_context
 from shelfhold.export.application.target_state import load_health, save_health
-from shelfhold.export.domain.bindings import BindingError, check_ceiling
+from shelfhold.export.domain.bindings import (
+    BindingError,
+    LocalSourceUnknownError,
+    RootOverlapsLocalSourceError,
+    check_ceiling,
+)
 from shelfhold.export.domain.kavita_key_expiry import KeyNoticeState
 from shelfhold.export.domain.path_map import PathEntry, PathMap, PathMapError, PathMode, within
 from shelfhold.export.domain.reconcile import (
@@ -66,6 +71,8 @@ from shelfhold.headless.errors import (
     SourceUpdateFiltersBlocking,
     TargetConflict,
     TargetExchangeFailed,
+    TargetLocalSourceUnknown,
+    TargetRootOverlapsLocalSource,
     UnknownConfigKey,
     UnknownTarget,
 )
@@ -291,7 +298,7 @@ class HeadlessAdmin:
         self._resolve = resolve
         self._roots = roots
         self._linker = linker
-        self._shelves = ShelfService(engine)
+        self._shelves = ShelfService(engine, root_check=RootGuard().check_root)
         self._store = ChannelStore(vault, clock)
 
     def _wake(self) -> None:
@@ -480,6 +487,10 @@ class HeadlessAdmin:
         self._check_roots(entries, except_target=own)
         try:
             self._shelves.check_path_map(own, entries)  # bindings that would overlap or share
+        except RootOverlapsLocalSourceError as error:
+            raise TargetRootOverlapsLocalSource(str(error)) from None
+        except LocalSourceUnknownError as error:
+            raise TargetLocalSourceUnknown(str(error)) from None
         except BindingError as error:
             raise InvalidConfigValue(f"{error.code}: {error}") from None
         with write_transaction(self._engine) as connection:

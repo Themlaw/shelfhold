@@ -15,6 +15,7 @@ from pathlib import Path
 import pytest
 import sqlalchemy as sa
 
+from shelfhold.acquisition.public import RootGuard
 from shelfhold.export.application.fan_out import FanOut, HostContentStore
 from shelfhold.export.application.intents import IntentJournal, open_intent_paths
 from shelfhold.export.targets.native_folder.source import NativeFolderSource
@@ -31,6 +32,7 @@ CHILD = textwrap.dedent(
     """
     import json, os, signal, sys
     from pathlib import Path
+    from shelfhold.acquisition.public import RootGuard
     from shelfhold.export.application import fan_out as fan_out_module
     from shelfhold.export.application.fan_out import FanOut, HostContentStore
     from shelfhold.export.targets.native_folder.source import NativeFolderSource
@@ -72,13 +74,10 @@ CHILD = textwrap.dedent(
         data_dir=Path(spec["data"]), clock=SystemClock(),
         parse=lambda name: None, parse_verified=True,
     )
-    source = NativeFolderSource(engine)
-    pipeline.use_plan_executor(
-        contents=HostContentStore(
-            engine, capabilities=source.capabilities, renders=source.renders
-        ),
-        probe=Probe(None),
-    )
+    source = NativeFolderSource(engine, root_check=RootGuard().check_root)
+    host = HostContentStore(engine, capabilities=source.capabilities, renders=source.renders)
+    source.attach(host)
+    pipeline.use_plan_executor(contents=host, probe=Probe(None))
     journal = pipeline._plan_executor._journal
     for owner, name in [
         (journal, "record"), (journal, "mark_applying"), (fsops, "write_atomic"),
@@ -92,7 +91,7 @@ CHILD = textwrap.dedent(
 EXPECTED = [
     "Dr Stone/Ch.0001.cbz",
     "Dr Stone/Ch.0002.cbz",
-    "Dr Stone/cover.jpg",
+    "Dr Stone/cover.png",
 ]
 
 
@@ -142,13 +141,12 @@ def test_kill9_during_a_native_folder_pass_resumes_without_duplicate_or_loss(
         IntentJournal(env.engine, env.lib.fsops, clock=env.clock).resolve_open()
         with env.engine.connect() as connection:
             assert open_intent_paths(connection) == frozenset()
-        source = NativeFolderSource(env.engine)
-        env.pipeline.use_plan_executor(
-            contents=HostContentStore(
-                env.engine, capabilities=source.capabilities, renders=source.renders
-            ),
-            probe=Probe(None),
+        source = NativeFolderSource(env.engine, root_check=RootGuard().check_root)
+        host = HostContentStore(
+            env.engine, capabilities=source.capabilities, renders=source.renders
         )
+        source.attach(host)
+        env.pipeline.use_plan_executor(contents=host, probe=Probe(None))
         restart = FanOut(env.engine, env.pipeline, source, clock=env.clock)
         for _ in range(2):
             outcomes = restart.run(env.shelf_id, "c1").outcomes
