@@ -227,10 +227,6 @@ DELETION_SITES: Mapping[str, str] = MappingProxyType(
 # writes a staged file, reads it back against a hash and swaps it in; none unlinks first.
 REPLACEMENT_SITES: Mapping[str, str] = MappingProxyType(
     {
-        "shelfhold/export/application/plan_executor.py::PlanExecutor._touch": (
-            "a `touch_mtime` of a destination plan rewrites the file byte for byte with a new "
-            "date, under a `write` intent whose expected hash is the one of the file read first"
-        ),
         "shelfhold/library/adapters/storage.py::KeepCopier._declare": (
             "a declared derivative replaces the received file, the original having been kept first"
         ),

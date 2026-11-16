@@ -43,6 +43,7 @@ from tests.plan_executor_env import (
     ExecEnv,
     make_exec_env,
     second_binding,
+    sha,
 )
 
 PLAN: dict[str, Any] = {
@@ -532,3 +533,143 @@ def test_an_open_intent_of_the_call_is_settled_before_the_call_runs_again(x: Exe
     x.journal.resolve_open()
     report = x.executor.execute(x.binding, "c1", PLAN)
     assert len(tree_files(x)) == 2 and report.executed >= 1
+
+
+# --------------------------------------------------------- #299: the keys, the sidecars, the time
+
+
+@pytest.mark.req("EF-EXP-041", "EF-EXP-001")
+def test_a_plan_made_again_keeps_the_keys_of_what_it_still_asks_for(x: ExecEnv) -> None:
+    """The resume is by the key of each operation (its type, target, reference), never by its
+    rank: the same operation in another place of a new plan is still done, a new one is run, and
+    the report counts as skipped only what was done."""
+    x.plan_for("c1", BOOK_A, BOOK_B)
+    first = x.executor.execute(x.binding, "c1", {"ops": PLAN["ops"][:2]})  # mkdir, volume 1
+    regenerated = {"ops": [PLAN["ops"][2], PLAN["ops"][1], PLAN["ops"][0]]}  # another order
+    second = x.executor.execute(x.binding, "c1", regenerated)
+    assert (first.executed, first.skipped) == (2, 0)
+    assert (second.executed, second.skipped) == (1, 2)  # only volume 2 was missing
+    assert len(tree_files(x)) == 2
+
+
+@pytest.mark.req("EF-EXP-001")
+def test_a_key_is_the_content_of_the_operation_not_its_place(x: ExecEnv) -> None:
+    x.plan_for("c1", BOOK_A, BOOK_B)
+    x.executor.execute(x.binding, "c1", {"ops": [PLAN["ops"][1]]})
+    # the same target with another content reference is another operation: refused (it exists)
+    again = {"ops": [{**PLAN["ops"][1], "content_ref": {"kind": "export_item", "ref": BOOK_B}}]}
+    with pytest.raises(PlanRefusedError):
+        x.executor.execute(x.binding, "c1", again)
+    assert (x.root / "Series A" / "Volume 1.cbz").read_bytes() == BYTES[BOOK_A]
+
+
+@pytest.mark.req("EF-EXP-058")
+def test_a_sidecar_the_host_planned_is_written_and_series_json_never(x: ExecEnv) -> None:
+    x.contents.data["side-1"] = b"<ComicInfo/>"
+    x.contents.data["side-2"] = b"{}"
+    x.ledger.plan(
+        "c1",
+        x.binding.destination_id,
+        PlannedContent(planned_refs=frozenset(), egress="foyer"),
+        sidecars=frozenset({"side-1", "side-2"}),
+    )
+
+    def inline(rel: str, ref: str) -> dict[str, Any]:
+        return {
+            "op": "write_inline",
+            "rel_path": rel,
+            "content_ref": {"kind": "sidecar", "ref": ref},
+        }
+
+    x.executor.execute(x.binding, "c1", {"ops": [inline("S/ComicInfo.xml", "side-1")]})
+    assert (x.root / "S" / "ComicInfo.xml").read_bytes() == b"<ComicInfo/>"
+    for name in ("series.json", "Series.JSON", "S/SERIES.json "):  # the case and the dot are lax
+        with pytest.raises(PlanRefusedError):
+            x.executor.execute(x.binding, "c1", {"ops": [inline(name, "side-2")]})
+    renamed = {
+        "ops": [{"op": "rename", "rel_path": "S/ComicInfo.xml", "dst_rel_path": "S/series.json"}]
+    }
+    with pytest.raises(PlanRefusedError):  # a rename onto the forbidden name is the same thing
+        x.executor.execute(x.binding, "c1", renamed)
+    assert not list(x.root.rglob("series.json"))
+
+
+@pytest.mark.req("EF-EXP-001")
+def test_touch_mtime_sets_the_time_in_place_and_journals_it(x: ExecEnv) -> None:
+    x.plan_for("c1", BOOK_A)
+    x.executor.execute(x.binding, "c1", {"ops": [PLAN["ops"][1]]})
+    served = x.root / "Series A" / "Volume 1.cbz"
+    before = served.stat()
+    x.plan_for("c2")
+    touch = {
+        "op": "touch_mtime",
+        "rel_path": "Series A/Volume 1.cbz",
+        "mtime": "2020-01-02T03:04:05+00:00",
+    }
+    x.executor.execute(x.binding, "c2", {"ops": [touch]})
+    after = served.stat()
+    assert (after.st_ino, after.st_size) == (before.st_ino, before.st_size)
+    assert int(after.st_mtime) == 1577934245
+    assert served.read_bytes() == BYTES[BOOK_A]
+    row = [i for i in intents(x, "done") if i.op == "utime"]
+    assert len(row) == 1 and row[0].expected_sha256 == sha(BYTES[BOOK_A])
+
+
+@pytest.mark.req("EF-EXP-001")
+def test_touch_mtime_of_something_that_is_not_a_file_is_refused(x: ExecEnv) -> None:
+    x.plan_for("c1")
+    x.executor.execute(x.binding, "c1", {"ops": [PLAN["ops"][0]]})  # the folder
+    folder = {"op": "touch_mtime", "rel_path": "Series A", "mtime": "2020-01-02T03:04:05+00:00"}
+    missing = {**folder, "rel_path": "Series A/none.cbz"}
+    for bad in (folder, missing):
+        with pytest.raises(PlanRefusedError):
+            x.executor.execute(x.binding, "c1", {"ops": [bad]})
+    assert intents(x) == []
+
+
+@pytest.mark.req("EF-SRC-036")
+def test_the_identity_is_read_again_every_n_operations(x: ExecEnv) -> None:
+    """`recheck_every` bounds the reads: with 2, the swap that follows the first write is seen
+    before the third operation, not the second."""
+    from shelfhold.export.application.plan_executor import PlanExecutor
+
+    slow = PlanExecutor(
+        x.env.engine, x.env.lib.fsops, x.journal, ledger=x.ledger, contents=x.contents,
+        probe=x.probe, clock=x.env.clock, recheck_every=2,
+    )  # fmt: skip
+    real = x.contents.read
+
+    def read_then_swap(destination_id: str, ref: Any) -> bytes:
+        data = real(destination_id, ref)
+        x.probe.current = "sha256:" + "b" * 64
+        return data
+
+    x.contents.read = read_then_swap  # type: ignore[method-assign,assignment]
+    x.plan_for("c1", BOOK_A, BOOK_B)
+    with pytest.raises(DestinationPausedError):
+        slow.execute(x.binding, "c1", PLAN)
+    assert tree_files(x) == ["Series A/Volume 1.cbz"]  # the second write was one more than allowed
+
+
+@pytest.mark.req("EF-EXP-058")
+def test_the_target_of_a_binding_is_read_from_the_database(x: ExecEnv) -> None:
+    other = second_binding(x, new_target=True)
+    crossed = PlanBinding(
+        destination_id=x.binding.destination_id,
+        target_id=other.target_id,
+        capabilities=x.binding.capabilities,
+    )
+    x.plan_for("c1", BOOK_A, BOOK_B)
+    with pytest.raises(PlanRefusedError):
+        x.executor.execute(crossed, "c1", PLAN)
+    with pytest.raises(PlanRefusedError):  # nor a transport the binding does not have
+        x.executor.execute(
+            PlanBinding(
+                destination_id=x.binding.destination_id,
+                target_id=x.binding.target_id,
+                capabilities=x.binding.capabilities.model_copy(update={"transport": "dropbox"}),
+            ),
+            "c1",
+            PLAN,
+        )
+    assert tree_files(x) == []

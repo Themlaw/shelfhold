@@ -1081,6 +1081,20 @@ class Fsops:
         with self._gated(located) as root:
             root.mkdir(located.rel, parents=parents, exist_ok=exist_ok)
 
+    def utime(self, local: str, *, mtime_ns: int) -> None:
+        """Set the modification time of a regular file, in place (M4 L04, `touch_mtime`): the
+        inode, its hard links, its owner and its mode stay as they are, nothing is rewritten.
+        Bounded like every write: relative to a root, a link never followed
+        (`follow_symlinks=False`), a read-only root or a blocked root refuses, and so does
+        anything but a regular file. The access time is kept."""
+        log.debug("fsops.utime", **self._where(local))
+        located = self._locate(local)
+        with self._gated(located) as root:
+            if root.lstat_kind(located.rel) != "file":
+                raise NotRegularFileError(local)
+            atime_ns = root.stat(located.rel).st_atime_ns
+            root.utime(located.rel, (atime_ns, mtime_ns))
+
     def unlink(self, local: str) -> None:
         log.debug("fsops.unlink", **self._where(local))
         located = self._locate(local)

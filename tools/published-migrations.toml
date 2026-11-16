@@ -224,3 +224,8 @@ since = "1.1"
 file = "0080_read_state_push_note.py"
 sha256 = "6faa31469f46363343f796431c7ba40cf7263b30728892e1423063ea2f679a7f"
 since = "1.1"
+
+[[migration]]
+file = "0081_utime_intent.py"
+sha256 = "c350d103e31e07f4319d6ae524c459dbbf63afc0203f9842f11e998d7635d99e"
+since = "1.1"

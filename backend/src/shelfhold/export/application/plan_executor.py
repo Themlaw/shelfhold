@@ -34,6 +34,7 @@ import threading
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from pathlib import PurePosixPath
 from typing import Any, Final, Protocol
 
 import sqlalchemy as sa
@@ -49,6 +50,7 @@ from shelfhold.export.application.target_state import (
     save_fingerprint,
     save_health,
 )
+from shelfhold.export.domain.folders import FOLDER_TRANSPORTS, fold
 from shelfhold.export.domain.kavita_instance import instance_changed
 from shelfhold.export.domain.trees import (
     TreeFolder,
@@ -82,7 +84,7 @@ __all__ = [
     "PlannedLedger",
 ]
 
-FILE_TRANSPORTS: Final = ("tree", "dropbox")  # the ones that put files in a folder of the host
+FILE_TRANSPORTS: Final = FOLDER_TRANSPORTS  # one list with `check_binding`: the folder transports
 
 
 class PlanRefusedError(Exception):
@@ -110,19 +112,34 @@ class InstanceProbe(Protocol):
 
 class PlannedLedger:
     """What the host planned, per call **and** binding. The planner records it; the executor
-    asks for it and never builds it from what a plan says."""
+    asks for it and never builds it from what a plan says. `sidecars` are the generated annexes
+    (kind `sidecar`) the host made for this call and this binding: a sidecar that is not there is
+    never read."""
 
     def __init__(self) -> None:
         self._lock = threading.Lock()
-        self._planned: dict[tuple[str, str], PlannedContent] = {}
+        self._planned: dict[tuple[str, str], tuple[PlannedContent, frozenset[str]]] = {}
 
-    def plan(self, call_id: str, destination_id: str, planned: PlannedContent) -> None:
+    def plan(
+        self,
+        call_id: str,
+        destination_id: str,
+        planned: PlannedContent,
+        *,
+        sidecars: frozenset[str] = frozenset(),
+    ) -> None:
         with self._lock:
-            self._planned[(call_id, destination_id)] = planned
+            self._planned[(call_id, destination_id)] = (planned, sidecars)
 
     def planned(self, call_id: str, destination_id: str) -> PlannedContent | None:
         with self._lock:
-            return self._planned.get((call_id, destination_id))
+            found = self._planned.get((call_id, destination_id))
+        return found[0] if found else None
+
+    def sidecars(self, call_id: str, destination_id: str) -> frozenset[str]:
+        with self._lock:
+            found = self._planned.get((call_id, destination_id))
+        return found[1] if found else frozenset()
 
     def release(self, call_id: str) -> None:
         with self._lock:
@@ -162,9 +179,12 @@ class _Run:
     plan: FsOpPlan
     planned: PlannedContent
     snapshot: tuple[str, ...]
-    done: frozenset[int]
+    keys: tuple[str, ...]
+    done: frozenset[str]
+    sidecars: frozenset[str]
     executed: int = 0
     skipped: int = 0
+    since_probe: int = 0
 
 
 class PlanExecutor:
@@ -179,7 +199,9 @@ class PlanExecutor:
         probe: InstanceProbe,
         clock: Clock | None = None,
         events: TargetEvents | None = None,
+        recheck_every: int = 1,
     ) -> None:
+        self._recheck_every = max(1, recheck_every)
         self._engine = engine
         self._disk = disk
         self._journal = journal
@@ -193,17 +215,23 @@ class PlanExecutor:
 
     def execute(self, binding: PlanBinding, call_id: str, raw_plan: object) -> ExecutionReport:
         """Run the plan a destination returned for one call, on one binding."""
+        self._confirm(binding)
         self._gate(binding)
         if binding.capabilities.transport not in FILE_TRANSPORTS:
             raise PlanRefusedError("this destination has no folder: it gets calls, not a file plan")
         tree = self._tree(binding)
         planned = self._planned(call_id, binding)
         plan = self._copy(raw_plan, planned)
+        snapshot = tuple(op.model_dump_json() for op in plan.ops)
         run = _Run(
             binding, call_id, tree, plan, planned,
-            snapshot=tuple(op.model_dump_json() for op in plan.ops),
+            snapshot=snapshot,
+            keys=_keys(snapshot),
             done=self._settled(call_id, binding.destination_id),
+            sidecars=self._ledger.sidecars(call_id, binding.destination_id),
         )  # fmt: skip
+        for op in plan.ops:
+            self._screen(run, op)  # every operation, before the first one runs
         for index in range(len(run.snapshot)):
             self._run_op(run, index)
         return ExecutionReport(run.executed, run.skipped)
@@ -219,6 +247,7 @@ class PlanExecutor:
         """Send the calls a destination described, one by one: each is parsed into the host's own
         copy and checked right before it leaves. `send` is the Fetcher of the target (the core
         holds the secrets and the SSRF guard); it receives the copy and nothing else."""
+        self._confirm(binding)
         self._gate(binding)
         planned = self._planned(call_id, binding)
         sent = 0
@@ -233,6 +262,24 @@ class PlanExecutor:
         return sent
 
     # -- before anything is touched -------------------------------------------------------------
+
+    def _confirm(self, binding: PlanBinding) -> None:
+        """The target and the transport of the binding are the ones the database holds for that
+        binding, never the ones the caller says: the identity that is checked is the identity of
+        the server this binding writes to."""
+        table = export.shelf_destination
+        with self._engine.connect() as connection:
+            row = connection.execute(
+                sa.select(table.c.target_id, table.c.transport).where(
+                    table.c.id == binding.destination_id
+                )
+            ).first()
+        if (
+            row is None
+            or row.target_id != binding.target_id
+            or row.transport != binding.capabilities.transport
+        ):
+            raise PlanRefusedError("the binding is not the one the host holds")
 
     def _gate(self, binding: PlanBinding) -> None:
         """A paused binding waits; a server that is not the one the host knew pauses it."""
@@ -267,19 +314,18 @@ class PlanExecutor:
 
     def _tree(self, binding: PlanBinding) -> _Tree:
         """The folder and the role of the binding, as the database holds them, and the checks of
-        ADR-0052: one writer (the primary), no overlap with another tree, no link on the way."""
+        ADR-0052: one writer (the primary), no overlap with another tree (by name, and by what the
+        disk says: one folder reached through two roots is one tree), no link on the way."""
         with self._engine.connect() as connection:
-            tree = _load_tree(connection, binding)
-        if tree is None:
+            loaded = _load_trees(connection, binding)
+        if loaded is None:
             raise PlanRefusedError("this binding has no tree")
-        if tree.role != "primary":
+        mine, role, others = loaded
+        if role != "primary":
             raise PlanRefusedError("an indexer never writes into the tree: the primary does")
-        check_tree_attachment(tree.folder, tree.others)  # `TreeOverlapError`: target.tree_overlap
-        root = (
-            tree.local.removesuffix("/" + tree.folder.subpath)
-            if tree.folder.subpath
-            else tree.local
-        )
+        folder = self._with_identity(mine)
+        check_tree_attachment(folder, [self._with_identity(o) for o in others])
+        root = mine.root_path
 
         def kind_of(rel: str) -> str | None:
             try:
@@ -289,10 +335,35 @@ class PlanExecutor:
             return found[0] if found else None
 
         try:
-            check_no_symlink(tree.folder.subpath, kind_of)
+            check_no_symlink(folder.subpath, kind_of)
         except TreePathError:
             raise PlanRefusedError("the folder of a tree never goes through a link") from None
-        return tree
+        return _Tree(mine.local, folder, role, ())
+
+    def _with_identity(self, located: "_Located") -> TreeFolder:
+        """The folder with `(st_dev, st_ino)` of itself and of every folder down to it. The inode
+        only serves the overlap check, it is never stored (`st_dev` changes at every boot)."""
+        parts = located.subpath.split("/") if located.subpath else []
+        seen: list[tuple[int, int]] = []
+        last: tuple[int, int] | None = None
+        for depth in range(len(parts) + 1):
+            path = "/".join([located.root_path, *parts[:depth]])
+            try:
+                stat = self._disk.link_stat(path)
+            except (FsopsError, OSError):
+                last = None  # not there yet (or not a path the façade looks at): no identity
+                if depth > 0:
+                    break
+                continue
+            last = (stat[0], stat[1])
+            seen.append(last)
+        return TreeFolder(
+            root_id=located.root_id,
+            subpath=located.subpath,
+            tree_id=located.tree_id,
+            identity=last,
+            ancestry=frozenset(seen),
+        )
 
     def _copy(self, raw_plan: object, planned: PlannedContent) -> FsOpPlan:
         try:
@@ -302,16 +373,18 @@ class PlanExecutor:
             raise PlanRefusedError("the plan is not one the host will run") from None
         return plan
 
-    def _settled(self, call_id: str, destination_id: str) -> frozenset[int]:
-        """The operations an earlier run of this call finished, by their intents. An intent that is
-        still open stops the run: the boot settles it first, nothing is replayed blind."""
+    def _settled(self, call_id: str, destination_id: str) -> frozenset[str]:
+        """The operations an earlier run of this call finished, by the **key** of each (its type,
+        its target, its content reference: see `_keys`), never by its place in a plan: a plan that
+        was made again redoes what is missing. An intent that is still open stops the run: the
+        boot settles it first, nothing is replayed blind."""
         table = coherence.fs_intent
         call = sa.func.json_extract(table.c.expected_file_id, "$.exec")
         dest = sa.func.json_extract(table.c.expected_file_id, "$.dest")
-        index = sa.func.json_extract(table.c.expected_file_id, "$.op_index")
+        key = sa.func.json_extract(table.c.expected_file_id, "$.op_key")
         with self._engine.connect() as connection:
             rows = connection.execute(
-                sa.select(table.c.state, index.label("i")).where(
+                sa.select(table.c.state, key.label("k")).where(
                     call == call_id,
                     dest == destination_id,
                     table.c.state.in_(("pending", "applying", "done")),
@@ -319,17 +392,19 @@ class PlanExecutor:
             ).all()
         if any(r.state != "done" for r in rows):
             raise PlanRefusedError("an earlier run of this call is not settled yet")
-        return frozenset(int(r.i) for r in rows if r.i is not None)
+        return frozenset(str(r.k) for r in rows if r.k is not None)
 
     # -- one operation --------------------------------------------------------------------------
 
     def _run_op(self, run: _Run, index: int) -> None:
         op = self._checked(run, index)
-        if index in run.done:
+        if run.keys[index] in run.done:
             run.skipped += 1
             return
+        if op.op != "mkdir":
+            self._probe_again(run)
         where = f"{run.tree.local}/{op.rel_path}"
-        meta = {"exec": run.call_id, "dest": run.binding.destination_id, "op_index": index}
+        meta = {"exec": run.call_id, "dest": run.binding.destination_id, "op_key": run.keys[index]}
         match op.op:
             case "mkdir":
                 self._mkdir(run, where)
@@ -346,6 +421,28 @@ class PlanExecutor:
             case _:  # `unlink` and the like never reach here: the check refuses them
                 raise PlanRefusedError("an operation the host does not run for a destination")
 
+    def _probe_again(self, run: _Run) -> None:
+        """The identity of the server is read again before an operation that changes a file, every
+        `recheck_every` of them (1 by default): a server replaced in the middle of a plan of ten
+        thousand operations never receives the rest of it. The probe of production bounds its own
+        cost (a cached answer, a few seconds old at most), not the executor."""
+        run.since_probe += 1
+        if run.since_probe >= self._recheck_every:
+            run.since_probe = 0
+            self._gate(run.binding)
+
+    def _screen(self, run: _Run, op: FsOp) -> None:
+        """What the SDK check does not know: a sidecar the host did not make for this call and
+        this binding is never read, and a file the destination declares harmful (`series.json`
+        for Kavita) is never written, whatever bytes it cites."""
+        ref = op.content_ref
+        if ref is not None and ref.kind == "sidecar" and ref.ref not in run.sidecars:
+            raise PlanRefusedError("the sidecar is not one the host made for this binding")
+        forbidden = {fold(name) for name in run.binding.capabilities.forbidden_sidecars}
+        for created in (op.rel_path, op.dst_rel_path) if op.op in _CREATES else ():
+            if created is not None and fold(PurePosixPath(created).name) in forbidden:
+                raise PlanRefusedError("this destination does not take this sidecar")
+
     def _checked(self, run: _Run, index: int) -> FsOp:
         """The operation as the copy holds it **now**, checked right before it runs, and equal to
         what the whole plan was validated with."""
@@ -359,6 +456,7 @@ class PlanExecutor:
             raise PlanRefusedError("an operation changed after the plan was validated") from None
         if not same:
             raise PlanRefusedError("an operation changed after the plan was validated")
+        self._screen(run, op)
         return op
 
     def _mkdir(self, run: _Run, where: str) -> None:
@@ -419,23 +517,43 @@ class PlanExecutor:
         self._journal.mark_done(intent)
 
     def _touch(self, op: FsOp, where: str, meta: dict[str, Any]) -> None:
-        """Set the mtime of a file: the file is written again, byte for byte, with that mtime
-        (the façade has no `utime`). A crash leaves the file as it was; the intent settles as done
-        and the mtime is then the only thing lost, which is cosmetic."""
+        """Set the mtime of a file **in place** (`Fsops.utime`): the inode, its hard links, its
+        owner and its mode stay, and a file of an adoption root is refused by the façade. An
+        intent of its own: the boot sets the time again, which is the same whenever the crash
+        came."""
         found = self._disk.observe(where)
-        if found is None or found[0] != "file":
+        if found is None or found[0] != "file" or op.mtime is None:
             raise PlanRefusedError("only a file gets a new mtime")
-        data = self._disk.read_bytes(where)
+        mtime_ns = _ns(op.mtime)
+        assert mtime_ns is not None  # noqa: S101 - `op.mtime` is set, checked just above
         intent = self._journal.record(
-            op="write", dst=where, expected_sha256=_digest(data), extra=meta
+            op="utime",
+            dst=where,
+            expected_sha256=self._disk.sha256_of(where),
+            extra={**meta, "mtime_ns": mtime_ns},
         )
         self._journal.mark_applying(intent)
         try:
-            self._disk.write_atomic(where, data, replace=True, mtime_ns=_ns(op.mtime))
+            self._disk.utime(where, mtime_ns=mtime_ns)
         except (OSError, FsopsError):
             self._journal.cancel(intent)
             raise PlanRefusedError("the disk refused the change of mtime") from None
         self._journal.mark_done(intent)
+
+
+_CREATES: Final = ("write", "write_inline", "rename")  # operations that put a name on the disk
+
+
+def _keys(snapshot: tuple[str, ...]) -> tuple[str, ...]:
+    """The stable key of each operation: a digest of its normalised JSON (type, target, content
+    reference, time) and of its rank among identical operations of the plan, so that a plan made
+    again keeps the keys of what it still asks for."""
+    seen: dict[str, int] = {}
+    keys = []
+    for text in snapshot:
+        seen[text] = seen.get(text, 0) + 1
+        keys.append(hashlib.sha256(f"{text}#{seen[text]}".encode()).hexdigest())
+    return tuple(keys)
 
 
 def _digest(data: bytes) -> str:
@@ -449,15 +567,27 @@ def _ns(moment: datetime | None) -> int | None:
     return int(aware.timestamp()) * 1_000_000_000 + aware.microsecond * 1_000
 
 
-def _load_tree(connection: Connection, binding: PlanBinding) -> _Tree | None:
+@dataclass(frozen=True)
+class _Located:
+    tree_id: str
+    root_id: str
+    root_path: str
+    subpath: str
+
+    @property
+    def local(self) -> str:
+        return f"{self.root_path}/{self.subpath}" if self.subpath else self.root_path
+
+
+def _load_trees(
+    connection: Connection, binding: PlanBinding
+) -> tuple[_Located, str, list[_Located]] | None:
     tree, indexer, root = export.tree, export.tree_indexer, platform.physical_root
+    columns = (tree.c.id, tree.c.root_id, tree.c.root_subpath, root.c.path_entry)
+    joined = tree.join(root, root.c.root_id == tree.c.root_id)
     row = connection.execute(
-        sa.select(tree.c.id, tree.c.root_id, tree.c.root_subpath, indexer.c.role, root.c.path_entry)
-        .select_from(
-            indexer.join(tree, tree.c.id == indexer.c.tree_id).join(
-                root, root.c.root_id == tree.c.root_id
-            )
-        )
+        sa.select(*columns, indexer.c.role)
+        .select_from(joined.join(indexer, indexer.c.tree_id == tree.c.id))
         .where(
             indexer.c.shelf_destination_id == binding.destination_id,
             indexer.c.target_id == binding.target_id,
@@ -465,14 +595,14 @@ def _load_tree(connection: Connection, binding: PlanBinding) -> _Tree | None:
     ).first()
     if row is None:
         return None
-    others = tuple(
-        TreeFolder(root_id=r.root_id, subpath=r.root_subpath, tree_id=r.id)
+
+    def located(r: Any) -> _Located:
+        return _Located(r.id, r.root_id, r.path_entry.rstrip("/"), r.root_subpath)
+
+    others = [
+        located(r)
         for r in connection.execute(
-            sa.select(tree.c.id, tree.c.root_id, tree.c.root_subpath).where(tree.c.id != row.id)
+            sa.select(*columns).select_from(joined).where(tree.c.id != row.id)
         )
-    )
-    local = (
-        f"{row.path_entry.rstrip('/')}/{row.root_subpath}" if row.root_subpath else row.path_entry
-    )
-    folder = TreeFolder(root_id=row.root_id, subpath=row.root_subpath, tree_id=row.id)
-    return _Tree(local, folder, row.role, others)
+    ]
+    return located(row), row.role, others

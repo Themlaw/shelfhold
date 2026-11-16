@@ -20,7 +20,7 @@ from tests.export_env import export_env
 from tests.plan_executor_env import BOOK_A, BOOK_B, BYTES, FINGERPRINT, make_exec_env
 
 BACKEND = Path(__file__).resolve().parents[2]
-STEPS = 9  # mkdir, then for each write: record, applying, the write itself, done
+STEPS = 21  # mkdir; per write, rename, utime, recycle: record, applying, the deed, done
 PLAN = {
     "ops": [
         {"op": "mkdir", "rel_path": "Series A"},
@@ -34,8 +34,20 @@ PLAN = {
             "rel_path": "Series A/Volume 2.cbz",
             "content_ref": {"kind": "export_item", "ref": BOOK_B},
         },
+        {
+            "op": "rename",
+            "rel_path": "Series A/Volume 1.cbz",
+            "dst_rel_path": "Series A/V1.cbz",
+        },
+        {
+            "op": "touch_mtime",
+            "rel_path": "Series A/Volume 2.cbz",
+            "mtime": "2020-01-02T03:04:05+00:00",
+        },
+        {"op": "recycle", "rel_path": "Series A/V1.cbz"},
     ]
 }
+MTIME = 1577934245
 
 CHILD = textwrap.dedent(
     """
@@ -76,7 +88,8 @@ CHILD = textwrap.dedent(
 
     for owner, name in [
         (journal, "record"), (journal, "mark_applying"), (fsops, "write_atomic"),
-        (fsops, "mkdir"), (journal, "mark_done"),
+        (fsops, "mkdir"), (fsops, "rename"), (fsops, "utime"), (fsops, "recycle"),
+        (journal, "mark_done"),
     ]:
         die_after(owner, name)
 
@@ -128,11 +141,59 @@ def test_kill9_between_ops_leaves_a_resumable_intent(tmp_path: Path, kill_at: in
         x.executor.execute(x.binding, "c1", PLAN)  # and once more: nothing is done twice
 
         series = env.root / "Series A"
-        assert sorted(p.name for p in series.iterdir()) == ["Volume 1.cbz", "Volume 2.cbz"]
-        assert (series / "Volume 1.cbz").read_bytes() == BYTES[BOOK_A]
+        assert sorted(p.name for p in series.iterdir()) == ["Volume 2.cbz"]  # 1 was renamed, binned
         assert (series / "Volume 2.cbz").read_bytes() == BYTES[BOOK_B]
+        assert int((series / "Volume 2.cbz").stat().st_mtime) == MTIME
+        binned = list(env.lib.library.glob(".shelfhold/recycle/*/manga/Kavita/Series A/V1.cbz"))
+        assert [p.read_bytes() for p in binned] == [BYTES[BOOK_A]]  # once, never twice
         with env.engine.connect() as connection:
             rows = list(connection.execute(sa.select(coherence.fs_intent)))
         assert {r.state for r in rows} <= {"done", "cancelled"}
-        written = [r for r in rows if r.op == "write" and r.state == "done"]
-        assert len(written) == 2  # one intent per file that was written, whatever the kill
+        done = sorted(r.op for r in rows if r.state == "done")
+        assert done == ["recycle", "rename", "utime", "write", "write"]  # one per deed
+
+
+MID_WRITE = textwrap.dedent(
+    """
+    import os, signal
+    from shelfhold.infrastructure.fsops.confined import ConfinedRoot
+
+    real = ConfinedRoot.rename
+
+    def killed(self, src, dst, *, replace, durable=True):
+        os.kill(os.getpid(), signal.SIGKILL)  # the bytes are staged, the name is not there yet
+        return real(self, src, dst, replace=replace, durable=durable)
+
+    ConfinedRoot.rename = killed
+    """
+)
+
+
+@pytest.mark.req("EF-EXP-041", "EF-EXP-001")
+def test_kill9_during_a_write_leaves_no_partial_file_and_a_plan_that_resumes(
+    tmp_path: Path,
+) -> None:
+    with export_env() as env:
+        x = make_exec_env(env)
+        with write_transaction(env.engine) as connection:
+            save_fingerprint(connection, env.target_id, FINGERPRINT, None, env.clock.now())
+        one_write = {"ops": PLAN["ops"][:2]}
+        result = subprocess.run(  # noqa: S603
+            [
+                sys.executable, "-c", MID_WRITE + CHILD, str(env.lib.library),
+                env.lib.library_root, env.lib.instance_id, str(env.engine.url.database),
+                env.destination_id, env.target_id, "999", json.dumps(one_write),
+            ],
+            check=False,
+            capture_output=True,
+            cwd=BACKEND,
+        )  # fmt: skip
+        assert result.returncode == -signal.SIGKILL, result.stderr.decode()
+        series = env.root / "Series A"
+        assert not (series / "Volume 1.cbz").exists()  # never half a file under its name
+        IntentJournal(env.engine, env.lib.fsops, clock=env.clock).resolve_open()
+        with env.engine.connect() as connection:
+            assert open_intent_paths(connection) == frozenset()
+        x.plan_for("c1", BOOK_A, BOOK_B)
+        x.executor.execute(x.binding, "c1", one_write)
+        assert (series / "Volume 1.cbz").read_bytes() == BYTES[BOOK_A]

@@ -15,10 +15,10 @@ Pure rules, no disk: the caller hands over what it saw (`TreeFolder.identity`, `
 import unicodedata
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
-from enum import StrEnum
 from typing import Final
 
 from shelfhold.export.domain.bindings import TreeOverlapError
+from shelfhold.export.domain.folders import Relation, fold, folder_relation
 
 __all__ = [
     "Relation",
@@ -38,15 +38,6 @@ class TreePathError(ValueError):
     """A `root_subpath` that is not a folder name below the root."""
 
 
-class Relation(StrEnum):
-    APART = "apart"
-    SAME = "same"  # exactly the same (root, subpath): the identity of T1
-    INSIDE = "inside"  # the first is below the second
-    CONTAINS = "contains"  # the first holds the second
-    LOOKALIKE = "lookalike"  # the same folder under another case or Unicode form: never one tree
-    LINKED = "linked"  # one folder through an inode, a mount or an ancestor
-
-
 def normalize_subpath(raw: str) -> str:
     """The subpath as stored: components joined by `/`, none empty, none `.` or `..`, no
     backslash, no control character, no leading or trailing `/`. '' is the root itself. A path
@@ -63,12 +54,6 @@ def normalize_subpath(raw: str) -> str:
     if any(part in ("", ".", "..") for part in parts):
         raise TreePathError("subpath has an empty, `.` or `..` component")
     return "/".join(parts)
-
-
-def fold(component: str) -> str:
-    """What a lax file system makes of a name: Unicode form, case, trailing dots and spaces."""
-    text = unicodedata.normalize("NFKC", component)
-    return text.casefold().rstrip(". ")
 
 
 @dataclass(frozen=True)
@@ -91,28 +76,15 @@ class TreeFolder:
         return tuple(self.subpath.split("/")) if self.subpath else ()
 
 
-def _is_prefix(shorter: tuple[str, ...], longer: tuple[str, ...]) -> bool:
-    return len(shorter) < len(longer) and longer[: len(shorter)] == shorter
-
-
 def relation(a: TreeFolder, b: TreeFolder) -> Relation:
-    """How `a` stands to `b`. Components, never string prefixes: `Manga` is not inside `Man`."""
-    if a.root_id == b.root_id:
-        if a.parts == b.parts:
-            return Relation.SAME
-        if _is_prefix(b.parts, a.parts):
-            return Relation.INSIDE
-        if _is_prefix(a.parts, b.parts):
-            return Relation.CONTAINS
-        fa, fb = tuple(map(fold, a.parts)), tuple(map(fold, b.parts))
-        if fa == fb or _is_prefix(fa, fb) or _is_prefix(fb, fa):
-            return Relation.LOOKALIKE
-    if a.identity is not None and b.identity is not None:
-        if a.identity == b.identity:
-            return Relation.LINKED
-        if a.identity in b.ancestry or b.identity in a.ancestry:
-            return Relation.LINKED
-    return Relation.APART
+    """How `a` stands to `b`: the rule of `folders.folder_relation`, plus the disk."""
+    linked = a.identity is not None and b.identity is not None
+    linked = linked and (
+        a.identity == b.identity or a.identity in b.ancestry or b.identity in a.ancestry
+    )
+    if a.root_id != b.root_id:
+        return Relation.LINKED if linked else Relation.APART
+    return folder_relation(a.parts, b.parts, linked=linked)
 
 
 def check_tree_attachment(
