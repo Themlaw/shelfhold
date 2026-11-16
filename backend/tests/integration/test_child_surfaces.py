@@ -189,6 +189,8 @@ CLOSED = (
     # M3 L45: the destinations and the full detachment (reserved: a fresh admin session, a typed
     # phrase) are the admin's: a child is refused by session and by key, before any service
     "GET /api/v1/destinations",
+    # M4 L33a: the servers a shelf can be bound to are the admin's (a session, never a key)
+    "GET /api/v1/targets",
     "POST /api/v1/destinations/{destination_id}/removal",
     "POST /api/v1/destinations/{destination_id}/removal-preview",
     "POST /api/v1/targets/{target_id}/detach",
@@ -263,6 +265,7 @@ CLOSED = (
     "PUT /api/v1/profiles/{profile_id}/kavita-account",  # M3 L10: reserved, a name, never a token
     # M4 L12 (EF-USR-012): a member's Kavita key: her own, a parent's for a child; never a child's
     "GET /api/v1/profiles/{user_id}/destination-accounts",
+    "GET /api/v1/profiles/{user_id}/kavita-destinations",  # M4 L33a: what a key may be linked to
     "PUT /api/v1/profiles/{user_id}/destination-accounts/{shelf_destination_id}",
     "DELETE /api/v1/profiles/{user_id}/destination-accounts/{shelf_destination_id}",
     "GET /api/v1/audit/kavita-accounts",  # M3 L10: the audit of the Kavita accounts, the admin's
