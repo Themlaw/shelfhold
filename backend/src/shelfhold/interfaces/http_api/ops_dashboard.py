@@ -143,7 +143,7 @@ def build_ops_dashboard_router(
     router = APIRouter(prefix="/api/v1/ops", tags=["operations"])
 
     @router.get("/activity-history", response_model=HistoryOut)
-    def history(
+    def ops_activity_history(
         admin: Admin,
         limit: Annotated[int, Query(ge=1, le=100)] = 50,
         before: Annotated[int | None, Query(ge=1)] = None,
@@ -155,14 +155,14 @@ def build_ops_dashboard_router(
         )
 
     @router.get("/blocklist", response_model=BlocksOut)
-    def blocklist(_admin: Admin) -> BlocksOut:
+    def ops_blocklist(_admin: Admin) -> BlocksOut:
         engine = get_engine()
         with engine.connect() as connection:
             blocks = list_blocks(connection)
         return BlocksOut(items=[_block_out(v) for v in describe_blocks(engine, blocks)])
 
     @router.post("/blocklist", response_model=BlockOut, status_code=201)
-    def block(admin: Admin, body: BlockIn, response: Response) -> BlockOut:
+    def ops_block_chapter(admin: Admin, body: BlockIn, response: Response) -> BlockOut:
         engine = get_engine()
         remote = body.remote_unit_id
         if remote is None and body.unit_id is not None:  # (the model makes it one or the other)
@@ -178,14 +178,14 @@ def build_ops_dashboard_router(
         return _block_out(describe_blocks(engine, [blocked])[0])
 
     @router.delete("/blocklist/{block_id}", status_code=204)
-    def unblock_one(admin: Admin, block_id: str) -> Response:
+    def ops_unblock_chapter(admin: Admin, block_id: str) -> Response:
         """The one way a block ends, named in the audit. Nothing else lifts it."""
         if remove_block(get_engine(), admin, block_id, now=now()) is None:
             raise ProblemError("not_found")
         return Response(status_code=204)
 
     @router.get("/storage-dashboard", response_model=StorageOut)
-    def storage(_admin: Admin, days: Annotated[int, Query(ge=1, le=MAX_DAYS)] = 30) -> StorageOut:
+    def ops_storage_dashboard(_admin: Admin, days: Annotated[int, Query(ge=1, le=MAX_DAYS)] = 30) -> StorageOut:
         board = storage_dashboard(get_engine(), today=now().date(), days=days)
         return StorageOut(
             shelves=[ShelfOut(**vars(s)) for s in board.shelves],
