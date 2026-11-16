@@ -512,6 +512,13 @@ def _import_scan(ops: OpsServices, _by: Principal, p: Params) -> object:
     )
 
 
+def _assemble_volume(ops: OpsServices, _by: Principal, p: Params) -> object:
+    return ops.assembly.assemble(
+        _text(p, "destination"), _text(p, "edition"), _text(p, "volume"),
+        _text(p, "first"), _text(p, "last"),
+    )  # fmt: skip
+
+
 def _normalize_pages(ops: OpsServices, _by: Principal, p: Params) -> object:
     return ops.page_formats.normalize(dry_run=_flag(p, "dry_run"))
 
@@ -809,6 +816,7 @@ OPS_METHODS: Mapping[str, tuple[OpsMethod, str | None]] = {
     "ops.import_scan": (_import_scan, None),
     "ops.import_tree": (_import_tree, None),
     "ops.normalize_pages": (_normalize_pages, None),
+    "ops.assemble_volume": (_assemble_volume, None),
     "ops.follow": (_follow, None),
     "ops.unfollow": (_unfollow, None),
     "ops.follow_gap_ack": (_gap_ack, None),

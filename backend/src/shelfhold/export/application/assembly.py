@@ -40,6 +40,7 @@ import tempfile
 import uuid
 from collections.abc import Callable, Iterator, Sequence
 from dataclasses import asdict, dataclass, replace
+from datetime import datetime
 from decimal import Decimal
 from pathlib import Path
 from typing import Any
@@ -76,18 +77,18 @@ from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.logging import escaped
 from shelfhold.infrastructure.packaging.cbz import write_cbz
 from shelfhold.infrastructure.packaging.comicinfo import render_comicinfo
-from shelfhold.infrastructure.schema import catalog, export
-from shelfhold.library.domain.coverage import (
+from shelfhold.infrastructure.schema import catalog, export, reading
+from shelfhold.library.public import (
     ChapterSpan,
+    RootLocator,
     VolumeCoverageError,
     derived_content_hash,
-    spans_of,
-)
-from shelfhold.library.public import (
-    RootLocator,
     forget_destination_copies,
     record_binned_export_file,
+    spans_of,
+    volume_page_of,
 )
+from shelfhold.reading.application.progress import progress_of
 
 __all__ = [
     "EVENT",
@@ -97,6 +98,7 @@ __all__ = [
     "AssemblyRequest",
     "AssemblyResult",
     "VolumeAssembly",
+    "served_chapters",
 ]
 
 log = structlog.get_logger(__name__)
@@ -107,6 +109,7 @@ EVENT = (
 REASON = "volume_assembly"
 PAYLOAD_KIND = "assembly"
 MIN_CHAPTERS = 2
+_STARTED = ("in_progress", "read")
 _VOLUME = re.compile(r"[0-9]{1,6}")  # the `Volume` of a ComicInfo is a whole number
 
 
@@ -458,7 +461,7 @@ class VolumeAssembly:
             )
             self._journal.mark_done(intent, within=connection)
         self._after(ctx, rel)
-        self._bus.deliver([e for e in events if e is not None])
+        self._bus.deliver(events)
         log.info("assembly.done", chapters=len(olds), volume=volume)
         return AssemblyResult(AssemblyOutcome.ASSEMBLED, new_item_id, assembly_id)
 
@@ -477,7 +480,7 @@ class VolumeAssembly:
 
     def _complete(
         self, connection: Connection, intent_id: str, payload: dict[str, Any]
-    ) -> tuple[str, list[PublishedEvent | None]]:
+    ) -> tuple[str, list[PublishedEvent]]:
         """The volume is at its path and the chapter files are in the bin: the export item and its
         coverage, the manifest line, the chapter lines, the aliases, the bin entries, the registry
         of copies, `export_assembly` and `unit.upgraded`. Runs once per intent (the journal closes
@@ -567,6 +570,8 @@ class VolumeAssembly:
                 derived_hash=str(payload["derived_hash"]), file_hash=new_hash, created_at=now,
             )
         )  # fmt: skip
+        carried = _carry_positions(connection, payload, now)
+        log.info("assembly.carried", profiles=carried)
         events = [
             self._bus.publish(
                 connection, EVENT,
@@ -580,3 +585,107 @@ class VolumeAssembly:
             for unit_id, _first, _last in payload["spans"]
         ]  # fmt: skip
         return assembly_id, events
+
+
+def served_chapters(
+    connection: Connection, destination_id: str, edition_id: str, first: Decimal, last: Decimal
+) -> list[str]:
+    """The export items of the chapters `first` to `last` of an Edition that this destination
+    serves as a file of their own (never a volume, never a file of several Units), in reading
+    order: what `library assemble-volume` hands to `assemble`."""
+    record, item, cover, unit = (
+        export.export_record, export.export_item, export.unit_coverage, catalog.unit,
+    )  # fmt: skip
+    rows = connection.execute(
+        sa.select(item.c.id, unit.c.number_norm, unit.c.number_sort, unit.c.source_order)
+        .select_from(
+            record.join(item, item.c.id == record.c.export_item_id)
+            .join(
+                cover,
+                sa.and_(cover.c.carrier_type == "export_item", cover.c.carrier_id == item.c.id),
+            )
+            .join(unit, unit.c.id == cover.c.unit_id)
+        )
+        .where(
+            record.c.shelf_destination_id == destination_id,
+            record.c.state == "written",
+            item.c.edition_id == edition_id,
+            item.c.kind == "unit",
+            unit.c.track == "main",
+        )
+    ).all()
+    chosen = [r for r in rows if first <= _numeric(str(r.number_norm)) <= last]
+    chosen.sort(
+        key=lambda r: (
+            r.number_sort if r.number_sort is not None else float("inf"),
+            r.source_order,
+            str(r.id),
+        )
+    )
+    return [str(r.id) for r in chosen]
+
+
+def _carry_positions(connection: Connection, payload: dict[str, Any], now: datetime) -> int:
+    """KOReader takes the volume for a new document and asks where it was: each profile that
+    was reading the chapters is given **one** position on the volume, at the furthest chapter it
+    has proven (`reading_progress_proven`, as the relay answers), so that the e-reader opens
+    where the reader was. The page is the chapter's own when it is exact, the start of the
+    chapter when it is a guess, the end of it when the chapter is read. It is a device report:
+    it marks nothing read (L14a), and a profile that cannot see the Edition gets nothing."""
+    order = [str(unit) for unit, _first, _last in payload["spans"]]
+    spans = tuple(
+        ChapterSpan(str(unit), rank, int(first), int(last))
+        for rank, (unit, first, last) in enumerate(payload["spans"], start=1)
+    )
+    total = spans[-1].end_page
+    old_items = [str(o["export_item_id"]) for o in payload["olds"]]
+    position = reading.reading_position
+    profiles = connection.execute(
+        sa.select(position.c.user_id)
+        .where(position.c.carrier_type == "export_item", position.c.carrier_id.in_(old_items))
+        .distinct()
+        .order_by(position.c.user_id)
+    ).scalars()
+    carried = 0
+    for user_id in list(profiles):
+        rows = {
+            r.unit_id: r
+            for r in progress_of(
+                connection, viewer_id=str(user_id), subject_id=str(user_id),
+                unit_ids=order, proven=True,
+            )
+        }  # fmt: skip
+        furthest = next(
+            (u for u in reversed(order) if u in rows and rows[u].state in _STARTED), None
+        )
+        if furthest is None:
+            continue
+        span = next(s for s in spans if s.unit_id == furthest)
+        row = rows[furthest]
+        page = span.start_page
+        if row.state == "read":
+            page = span.end_page
+        elif row.last_position_id is not None:
+            # exact only when the position was on this chapter alone (the view's own flag is
+            # computed against the coverage as it is now, which the volume has just changed)
+            found = connection.execute(
+                sa.select(position.c.locator, position.c.covered_units).where(
+                    position.c.id == row.last_position_id
+                )
+            ).one_or_none()
+            if found is not None and list(found.covered_units or []) == [furthest]:
+                chapter_page = (found.locator or {}).get("page")
+                if isinstance(chapter_page, int) and not isinstance(chapter_page, bool):
+                    page = volume_page_of(spans, furthest, chapter_page) or page
+        connection.execute(
+            sa.insert(position).values(
+                id=new_ulid(), user_id=str(user_id), carrier_type="export_item",
+                carrier_id=str(payload["export_item_id"]),
+                content_hash=str(payload["derived_hash"]),
+                locator={"page": page, "carried": True, "device": "Shelfhold"},
+                percent=page / total, client_ts=now, server_ts=now, source="device",
+                covered_units=order, read_units=[], undone_units={},
+            )
+        )  # fmt: skip
+        carried += 1
+    return carried

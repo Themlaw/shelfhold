@@ -16,8 +16,16 @@ import sqlalchemy as sa
 from shelfhold.acquisition.public import present_in
 from shelfhold.export.application.assembly import AssemblyOutcome
 from shelfhold.export.application.intents import open_intent_paths
+from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.fsops import Fsops
-from shelfhold.infrastructure.schema import catalog, coherence, export, platform, replica, storage
+from shelfhold.infrastructure.schema import (
+    catalog,
+    coherence,
+    export,
+    platform,
+    replica,
+    storage,
+)
 from shelfhold.library.public import independent_copies
 from shelfhold.ops.status import koreader_reset_report
 from tests.assembly_env import (
@@ -189,18 +197,41 @@ def test_the_progress_of_each_member_is_kept_without_a_false_read() -> None:
         ana, bob = reader(env, "ana"), reader(env, "bob")
         # ana was reading the second chapter of the tome, on its own file
         position(
-            env, ana, chapters.items[1], chapters.old_hashes[1], [chapters.units[1]], 2, percent=0.5
+            env,
+            ana,
+            chapters.items[1],
+            chapters.content_hashes[1],
+            [chapters.units[1]],
+            2,
+            percent=0.5,
         )
         before = progress_of(env, ana)
 
         result = service(env).assemble(request(env, chapters))
 
-        assert progress_of(env, ana) == before == {chapters.units[1]: "in_progress"}
+        assert before == {chapters.units[1]: "in_progress"}
+        after = progress_of(env, ana)
+        # what she had is kept, and the profile is told where she is in the volume: no chapter is
+        # read that was not (a device report never marks one)
+        assert after[chapters.units[1]] == "in_progress" and "read" not in after.values()
         # bob's e-reader now reports a page of the volume: it falls in the second chapter
         assert result.export_item_id is not None
-        volume_hash = digest(env.files()[0])
-        position(env, bob, result.export_item_id, volume_hash, chapters.units, 6, percent=0.5)
+        with env.engine.connect() as connection:
+            anchor = connection.execute(  # the hash KOReader's relay anchors a position on
+                sa.select(export.document_alias.c.content_hash).where(
+                    export.document_alias.c.export_item_id == result.export_item_id
+                )
+            ).scalar_one()
+        position(env, bob, result.export_item_id, anchor, chapters.units, 6, percent=0.5)
         seen = progress_of(env, bob)
+        with env.engine.connect() as connection:
+            exact = connection.execute(
+                sa.text(
+                    "SELECT approximate FROM reading_progress WHERE user_id = :u AND unit_id = :c"
+                ),
+                {"u": bob, "c": chapters.units[1]},
+            ).scalar_one()
+        assert exact == 0  # page 6 of the volume is the 2nd page of chapter 2, by its bounds
         assert seen[chapters.units[1]] == "in_progress"
         assert chapters.units[0] not in seen or seen[chapters.units[0]] != "read"
         assert chapters.units[2] not in seen or seen[chapters.units[2]] != "read"
@@ -422,3 +453,98 @@ def test_a_destination_paused_or_read_only_is_not_written() -> None:
 
         assert result.outcome is AssemblyOutcome.REFUSED_DESTINATION
         assert bin_files(env) == [] and len(env.files()) == 2
+
+
+@pytest.mark.req("EF-BIB-037", "ENF-SEC-010")
+def test_a_child_below_the_rating_neither_reads_nor_writes_a_position_on_the_volume() -> None:
+    """The volume carries the rating of its Edition and nothing else: a child whose ceiling is
+    below it gets the answer of a file that is not there, on the volume as on its chapters, and a
+    member of the household gets the position of nobody else."""
+    from shelfhold.reading.application.progress import UnknownCarrierError, record_position
+
+    with export_env() as env:
+        series = env.new_series()
+        rate(env, series, 16)
+        chapters = exported_chapters(env, [4, 3], series=series)
+        result = service(env).assemble(request(env, chapters))
+        assert result.export_item_id is not None
+        kid = reader(env, "kid", "child", max_age_rating=10)
+        adult = reader(env, "adult")
+        with env.engine.connect() as connection:
+            anchor = connection.execute(
+                sa.select(export.document_alias.c.content_hash).where(
+                    export.document_alias.c.export_item_id == result.export_item_id
+                )
+            ).scalar_one()
+
+        def write(reader_id: str, subject_id: str, carrier: str) -> str:
+            with write_transaction(env.engine) as connection:
+                return record_position(
+                    connection, reader_id=reader_id, subject_id=subject_id,
+                    carrier_type="export_item", carrier_id=carrier, content_hash=anchor,
+                    locator={"page": 2}, percent=0.3, client_ts=env.clock.now(),
+                    now=env.clock.now(),
+                )  # fmt: skip
+
+        for carrier in (result.export_item_id, *chapters.items):
+            with pytest.raises(UnknownCarrierError):  # the child's ceiling is below the Edition's
+                write(kid, kid, carrier)
+        assert write(adult, adult, result.export_item_id)  # the adult reads on
+        with pytest.raises(UnknownCarrierError):  # and nobody writes the position of another
+            write(adult, kid, result.export_item_id)
+        assert progress_of(env, kid) == {}
+
+
+def test_the_e_reader_opens_the_volume_where_the_reader_was() -> None:
+    """KOReader takes the volume for a new document and asks the relay where it was: the profile
+    that was reading the chapters is told the page of the volume, and nothing is marked read."""
+    from shelfhold.infrastructure.secrets.keyring import Keyring
+    from shelfhold.reading.application.kosync import Kosync
+
+    with export_env() as env:
+        chapters = exported_chapters(env, [4, 3, 5])
+        ana, bob, cleo = reader(env, "ana"), reader(env, "bob"), reader(env, "cleo")
+        # ana is on the 2nd page of chapter 2; bob finished chapter 1 (a read mark kept by Kavita);
+        # cleo read nothing
+        position(
+            env,
+            ana,
+            chapters.items[1],
+            chapters.old_hashes[1],
+            [chapters.units[1]],
+            2,
+            percent=0.5,
+        )
+        position(
+            env,
+            bob,
+            chapters.items[0],
+            chapters.old_hashes[0],
+            [chapters.units[0]],
+            4,
+            percent=1.0,
+            source="server",
+        )
+        before = {u: progress_of(env, u) for u in (ana, bob, cleo)}
+
+        result = service(env).assemble(request(env, chapters))
+
+        with env.engine.connect() as connection:
+            alias = connection.execute(
+                sa.select(export.document_alias.c.koreader_partial_md5).where(
+                    export.document_alias.c.export_item_id == result.export_item_id
+                )
+            ).scalar_one()
+        relay = Kosync(env.engine, lambda: Keyring(b"\x01" * 32), env.clock.now)
+        told = {u: relay.pull(user_id=u, document=str(alias).removeprefix("md5:")) for u in before}
+
+        assert (
+            told[ana] is not None and told[ana].progress == "6"
+        )  # chapter 2 starts at 5: 5 + 2 - 1
+        assert told[bob] is not None and told[bob].progress == "4"  # the end of chapter 1
+        assert told[cleo] is None  # a profile that read nothing is told nothing
+        for user, was in before.items():  # the carry marks nothing read
+            now = progress_of(env, user)
+            assert {u for u, state in now.items() if state == "read"} <= {
+                u for u, state in was.items() if state == "read"
+            }

@@ -149,7 +149,10 @@ PAYLOAD_ENUMS: Final[dict[str, dict[str, frozenset[str]]]] = {
     "unit.upgraded": {
         "reason": frozenset(
             {
-                "better_version", "preferred_team", "integrity_reacquire", "restore",
+                "better_version",
+                "preferred_team",
+                "integrity_reacquire",
+                "restore",
                 "volume_assembly",
             }
         )

@@ -66,6 +66,7 @@ class Chapters:
     targets: list[Path]  # the file served for each
     old_bytes: list[bytes]
     old_hashes: list[str] = field(default_factory=list)
+    content_hashes: list[str] = field(default_factory=list)  # what a position is anchored on
 
 
 def exported_chapters(
@@ -79,10 +80,16 @@ def exported_chapters(
     items: list[str] = []
     targets: list[Path] = []
     hashes: list[str] = []
+    contents: list[str] = []
     with env.engine.connect() as connection:
         for unit in units:
             row = connection.execute(
-                sa.select(record.c.export_item_id, record.c.rel_path, record.c.file_hash)
+                sa.select(
+                    record.c.export_item_id,
+                    record.c.rel_path,
+                    record.c.file_hash,
+                    record.c.content_hash,
+                )
                 .join(
                     cover,
                     sa.and_(
@@ -95,7 +102,10 @@ def exported_chapters(
             items.append(str(row.export_item_id))
             targets.append(env.root / str(row.rel_path))
             hashes.append(str(row.file_hash))
-    return Chapters(series, units, pages, items, targets, [t.read_bytes() for t in targets], hashes)
+            contents.append(str(row.content_hash))
+    return Chapters(
+        series, units, pages, items, targets, [t.read_bytes() for t in targets], hashes, contents
+    )
 
 
 def service(env: ExportEnv, *, scans: list[str] | None = None) -> VolumeAssembly:
@@ -135,11 +145,13 @@ def page_bytes(path: Path) -> list[bytes]:
         return [archive.read(n) for n in archive.namelist() if n != "ComicInfo.xml"]
 
 
-def reader(env: ExportEnv, name: str = "reader", role: str = "member") -> str:
+def reader(env: ExportEnv, name: str = "reader", role: str = "member", **extra: object) -> str:
     user_id = new_ulid()
     with write_transaction(env.engine) as connection:
         connection.execute(
-            sa.insert(identity.user).values(id=user_id, username=f"{name}-{user_id}", role=role)
+            sa.insert(identity.user).values(
+                id=user_id, username=f"{name}-{user_id}", role=role, **extra
+            )
         )
     return user_id
 

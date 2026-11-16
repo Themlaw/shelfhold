@@ -22,6 +22,7 @@ from shelfhold.composition import Composition, Gates, open_fsops
 from shelfhold.config import Settings
 from shelfhold.events.bus import EventBus
 from shelfhold.export.application import root_capabilities
+from shelfhold.export.application.assembly import VolumeAssembly
 from shelfhold.export.application.intents import IntentJournal, OpenIntent, ResolveReport
 from shelfhold.export.application.library_repair import LibraryRepair
 from shelfhold.export.application.locks import ResourceLocks
@@ -254,6 +255,10 @@ class InstanceRuntime:
                     engine, fsops, locate=loaded.locate, data_dir=self.settings.data_dir,
                     clock=clock, bus=bus,
                 ).settle_hook()  # fmt: skip
+                assembled = VolumeAssembly(  # chapters replaced by a volume, cut short (EF-EXP-019)
+                    engine, fsops, locate=loaded.locate, data_dir=self.settings.data_dir,
+                    clock=clock, bus=bus,
+                ).settle_hook()  # fmt: skip
 
                 no_lock = lambda _work: contextlib.nullcontext()  # noqa: E731 (nothing else runs yet)
                 repaired = LibraryRepair(  # a repair cut short: the registry it owes (EF-BIB-012)
@@ -270,6 +275,7 @@ class InstanceRuntime:
                     adopt(connection, intent)
                     renamed(connection, intent)
                     upgraded(connection, intent)
+                    assembled(connection, intent)
                     repaired(connection, intent)
                     if intent.op == "copy_cross_root" and intent.dst is not None:
                         complete_interrupted_keep(  # a kept copy on disk, its bookkeeping owed

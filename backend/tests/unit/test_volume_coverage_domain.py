@@ -2,7 +2,7 @@
 
 The bounds of each chapter in the assembled file are a pure function of the page count of the
 chapters, in reading order: contiguous, none shared, none lost. A position on a chapter is carried
-to the volume by those bounds, and a page of the volume is found back in its chapter. The hash of
+to the volume by those bounds. The hash of
 the volume says what it was made of, never a content received from a source.
 """
 
@@ -13,7 +13,6 @@ from shelfhold.library.domain.coverage import (
     VolumeCoverageError,
     derived_content_hash,
     spans_of,
-    unit_at,
     volume_page_of,
 )
 
@@ -50,16 +49,6 @@ def test_the_same_chapter_twice_is_refused() -> None:
 def test_nothing_to_assemble_is_refused() -> None:
     with pytest.raises(VolumeCoverageError):
         spans_of([])
-
-
-def test_a_page_of_the_volume_is_found_in_its_chapter() -> None:
-    spans = spans_of([(A, 4), (B, 3)])
-
-    assert unit_at(spans, 1) == (A, 1)
-    assert unit_at(spans, 4) == (A, 4)
-    assert unit_at(spans, 5) == (B, 1)  # the first page of the next chapter, not the last of this
-    assert unit_at(spans, 7) == (B, 3)
-    assert unit_at(spans, 0) is None and unit_at(spans, 8) is None
 
 
 def test_a_position_on_a_chapter_is_carried_to_the_volume() -> None:

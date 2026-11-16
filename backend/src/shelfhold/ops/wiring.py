@@ -33,6 +33,7 @@ from shelfhold.jobs.control import QueueControl
 from shelfhold.jobs.window import MaintenanceWindow
 from shelfhold.ops.acquire import AcquireOps
 from shelfhold.ops.adoption import LibraryAdoptionExit
+from shelfhold.ops.assembly import VolumeAssemblyOps
 from shelfhold.ops.attach import AttachOps
 from shelfhold.ops.backfill import BackfillOps
 from shelfhold.ops.content import ContentOps
@@ -171,6 +172,7 @@ def open_ops(
         intents=IntentOps(composition), revisions=RevisionOps(composition),
         backfill=BackfillOps(composition), import_folder=ImportOps(composition),
         page_formats=PageNormalizeOps(composition),
+        assembly=VolumeAssemblyOps(composition),
         normalize=NormalizeOps(composition),
         source_migration=SourceMigrationOps(composition), meta=MetaOps(composition),
         content=ContentOps(composition),

@@ -319,9 +319,7 @@ class CbzRenderer:
         ComicInfo last. The pages of the source are copied as they are unless one is in a format
         to convert; `content_hash` is always the source's, the identity the plan compares."""
         with self._fsops.open_read(source) as stream:
-            return self.render_stream(
-                stream, PurePath(source).name, comicinfo, target_id=target_id
-            )
+            return self.render_stream(stream, PurePath(source).name, comicinfo, target_id=target_id)
 
     def render_stream(
         self, stream: BinaryIO, name: str, comicinfo: bytes, *, target_id: str | None = None

@@ -5,7 +5,7 @@ of the page count of the chapters, in reading order. They are written in `unit_c
 (`start_locator.page`, `end_locator.page`, both inclusive, pages counted from 1 as a reader counts
 them), which is also what `reading_progress` reads to say which chapter a page of the volume is in.
 
-The same bounds carry a position the other way: a page of a chapter is a page of the volume. The
+The same bounds carry a position: a page of a chapter is a page of the volume. The
 hash of the volume says what it was made of; it is never the hash of a content a source sent, so
 the volume is never taken for a copy of one of its chapters.
 """
@@ -19,7 +19,6 @@ __all__ = [
     "VolumeCoverageError",
     "derived_content_hash",
     "spans_of",
-    "unit_at",
     "volume_page_of",
 ]
 
@@ -59,14 +58,6 @@ def spans_of(chapters: Sequence[tuple[str, int]]) -> tuple[ChapterSpan, ...]:
         spans.append(ChapterSpan(unit_id, rank, first, first + pages - 1))
         first += pages
     return tuple(spans)
-
-
-def unit_at(spans: Sequence[ChapterSpan], page: int) -> tuple[str, int] | None:
-    """The chapter a page of the volume is in, and the page in that chapter (from 1)."""
-    for span in spans:
-        if span.start_page <= page <= span.end_page:
-            return span.unit_id, page - span.start_page + 1
-    return None
 
 
 def volume_page_of(spans: Sequence[ChapterSpan], unit_id: str, page: int) -> int | None:
