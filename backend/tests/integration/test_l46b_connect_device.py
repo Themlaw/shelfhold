@@ -282,3 +282,20 @@ def test_the_setup_prefix_comes_from_a_trusted_proxy_only(
             w.mum.get(SETUP, headers={"X-Forwarded-Prefix": "/books"}).json()["opds_path"]
             == "/opds"
         )
+
+
+@pytest.mark.req("ENF-SEC-010")
+def test_the_service_refuses_a_child_even_if_the_route_were_reached(world: World) -> None:
+    """The role is checked again in the service: a route that forgets the guard still holds."""
+    from shelfhold.identity.public import Credential, NotAllowedError, Principal
+
+    auth = world.env.app.state.auth_gate.auth  # type: ignore[attr-defined]
+    made = world.create(world.admin, "kid").json()
+    kid = Principal(
+        user_id=world.ids["kid"], username="kid", role="child", credential=Credential.SESSION
+    )
+    assert auth.device_tokens(by=kid) == ()
+    assert auth.revoke_device_token(made["public_id"], by=kid) is False
+    with pytest.raises(NotAllowedError):
+        auth.pair_device_token(by=kid, subject_user_id=world.ids["kid"])
+    assert world.active(made["public_id"])
