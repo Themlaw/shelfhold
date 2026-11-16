@@ -1,8 +1,8 @@
 """M4 L18a, relecture adverse (#315): collections and reading lists, read as a profile.
 
 Each test is a hole found by the adverse review, written as the behaviour the lot promises
-(docs/decisions/M4.md, L18a) and marked `xfail(strict=True)`: it is red today, and turns the suite
-red the day it is fixed without the mark being lifted.
+(docs/decisions/M4.md, L18a). They were `xfail(strict=True)` until the fixes; the marks are lifted,
+the tests are unchanged.
 """
 
 # ruff: noqa: F811  (the fixtures `api` and `world` are those of the child-surface suite)
@@ -30,11 +30,6 @@ from tests.integration.test_m4_l18a_collections import (
 
 
 @pytest.mark.req("EF-BIB-016", "EF-USR-006", "ENF-SEC-010")
-@pytest.mark.xfail(
-    strict=True,
-    reason="#315 contradicteur 1: is_admin comes from the role alone, a read key of the admin "
-    "reads every profile's private list (elsewhere an admin power by key needs the `admin` scope)",
-)
 def test_a_read_key_of_the_admin_does_not_open_a_childs_private_list(world: World) -> None:
     works = world.seed.works
     mine = _make(world, world.kid, "Kid's secret list", "profile", [works["ok"]])
@@ -45,11 +40,6 @@ def test_a_read_key_of_the_admin_does_not_open_a_childs_private_list(world: Worl
 
 
 @pytest.mark.req("EF-BIB-016", "EF-USR-006", "ENF-SEC-010")
-@pytest.mark.xfail(
-    strict=True,
-    reason="#315 contradicteur 2: a household list that holds only hidden Works is a 404 on GET "
-    "but a 403 on DELETE and POST items (`_writable` does not apply `_present`): an oracle",
-)
 def test_a_household_list_absent_for_her_is_absent_on_every_door(world: World) -> None:
     works = world.seed.works
     closed = _make(world, world.env.client, "Closed", "shared")
@@ -68,11 +58,6 @@ def test_a_household_list_absent_for_her_is_absent_on_every_door(world: World) -
 
 
 @pytest.mark.req("EF-BIB-016", "EF-USR-006", "ENF-SEC-010")
-@pytest.mark.xfail(
-    strict=True,
-    reason="#315 contradicteur 3: `add_item` answers `position = count(all items) + 1`, hidden "
-    "ones included: the gap the read hides comes back in the write's answer",
-)
 def test_adding_to_her_list_does_not_count_the_hidden_items(world: World) -> None:
     works = world.seed.works
     mine = _make(world, world.kid, "Mine", "profile", [works["ok"]])
@@ -86,3 +71,21 @@ def test_adding_to_her_list_does_not_count_the_hidden_items(world: World) -> Non
     read = world.kid.get(f"{COLLECTIONS}/{mine}").json()
     assert read["count"] == 1 and read["items"][0]["position"] == 1
     assert added.json()["position"] == 1  # today: 2, one hidden item before it
+
+
+@pytest.mark.req("EF-BIB-016", "ENF-SEC-010")
+def test_an_admin_reads_a_childs_private_list_but_does_not_write_in_it(world: World) -> None:
+    works = world.seed.works
+    mine = _make(world, world.kid, "Kid list", "profile", [works["ok"]])
+    admin = world.env.client
+    path = f"{COLLECTIONS}/{mine}"
+    assert admin.get(path).status_code == 200  # read: the admin's
+    absent = _post(world, admin, f"{COLLECTIONS}/{MISSING}/items", {"work_id": works["ok"]})
+    for answer in (
+        _post(world, admin, f"{path}/items", {"work_id": works["mixed"]}),
+        _delete(world, admin, path),
+        _delete(world, admin, f"{path}/items/{world.kid.get(path).json()['items'][0]['id']}"),
+    ):
+        assert answer.status_code == 404  # as an absent list, never a 403
+    assert absent.status_code == 404
+    assert len(world.kid.get(path).json()["items"]) == 1

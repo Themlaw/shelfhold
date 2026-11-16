@@ -298,10 +298,21 @@ class Collections:
     def _writable(
         self, connection: sa.Connection, viewer: CollectionViewer, collection_id: str
     ) -> _Row:
+        """A list is written by its owner; a household one by an admin. Everything else is the
+        absent answer, on every door: a list that is not hers to read, one that she may read but
+        that belongs to someone else (an admin reads a profile's list, never writes in it), and a
+        household list that holds only what she may not see. Only a household list she can see, and
+        may not change, is a 403."""
         row = _row(connection, collection_id)
         if row is None or not _readable(viewer, row):
             raise CollectionNotFoundError(collection_id)
+        if row.owner_id is not None and row.owner_id != viewer.user_id:
+            raise CollectionNotFoundError(collection_id)
         if row.owner_id is None and not viewer.is_admin:
+            items = _items_of(connection, [row.id]).get(row.id, [])
+            shown = _shown_works(connection, viewer, [str(i.work_id) for i in items])
+            if _present(viewer, row, items, shown, {}) is None:
+                raise CollectionNotFoundError(collection_id)
             raise CollectionNotYoursError(collection_id)
         return row
 
@@ -329,7 +340,10 @@ class Collections:
                 )
             )  # fmt: skip
             title = _titles(connection, [work_id])[work_id]
-        return ItemView(item_id, int(count) + 1, work_id, title, number or None, shown[work_id])
+            every = _items_of(connection, [collection_id]).get(collection_id, [])
+            visible = _shown_works(connection, viewer, [str(i.work_id) for i in every])
+            place = sum(1 for i in every if str(i.work_id) in visible)  # as the read numbers them
+        return ItemView(item_id, place, work_id, title, number or None, shown[work_id])
 
     def remove_item(self, viewer: CollectionViewer, collection_id: str, item_id: str) -> None:
         with write_transaction(self._engine) as connection:

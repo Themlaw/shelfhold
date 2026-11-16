@@ -33,7 +33,7 @@ from shelfhold.catalog.public import (
     ItemView,
     parse_cbl,
 )
-from shelfhold.identity.public import Principal, reader_scope
+from shelfhold.identity.public import Credential, Principal, reader_scope
 from shelfhold.interfaces.http_api.auth import require_principal, require_session
 from shelfhold.interfaces.http_api.problems import ProblemError
 from shelfhold.library.public import cover_hash
@@ -132,7 +132,13 @@ def build_collections_router(get_engine: Callable[[], Engine]) -> APIRouter:
     def viewer_of(principal: Principal) -> CollectionViewer:
         with get_engine().connect() as connection:
             scope = reader_scope(connection, principal.user_id)
-        return CollectionViewer(principal.user_id, principal.role == "admin", scope)
+        # an admin's power comes from a session, or from a key of scope `admin` (as `plans`): a
+        # read key of the admin, handed to a program, reads as the admin's profile and no more
+        is_admin = principal.role == "admin" and (
+            principal.credential is Credential.SESSION
+            or (principal.credential is Credential.API_KEY and "admin" in principal.scopes)
+        )
+        return CollectionViewer(principal.user_id, is_admin, scope)
 
     @router.get("", response_model=CollectionsOut)
     def list_collections(
