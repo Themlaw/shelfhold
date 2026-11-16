@@ -45,7 +45,14 @@ from tests.integration.test_child_surfaces import (  # noqa: F401  (fixtures)
     api,
     world,
 )
-from tests.integration.test_schema_catalog import add_edition, add_unit, add_work
+from tests.integration.test_schema_catalog import (
+    add_binding,
+    add_edition,
+    add_source_item,
+    add_unit,
+    add_variant,
+    add_work,
+)
 from tests.visibility_env import add_profile
 
 PREFIX = "/api/v1/ops"
@@ -229,6 +236,35 @@ def test_blocklist_admin_roundtrip_audited(world: World) -> None:
     assert missing.status_code == 404
 
 
+@pytest.mark.req("EF-INT-019")
+def test_a_chapter_is_blocked_by_its_unit_and_shown_by_title_and_number(world: World) -> None:
+    """The administrator names the chapter by our own Unit and the source that offered it: the
+    source's identifier is resolved here, never echoed, and the screen reads title and number."""
+    engine = create_db_engine(world.env.settings.database_path)
+    try:
+        with write_transaction(engine) as connection:
+            work = add_work(connection)
+            edition = add_edition(connection, work)
+            item = add_source_item(connection)
+            binding = add_binding(connection, work, edition, item)
+            unit = add_unit(connection, edition, "7")
+            add_variant(connection, unit, binding, "https://upstream.invalid/ch-7")
+    finally:
+        engine.dispose()
+    admin = world.env.client
+    body = {"source_key": "suwayomi:1", "unit_id": unit, "reason": "wrong_content"}
+    made = _write(world, admin, "POST", BLOCKLIST, body)
+    assert made.status_code == 201, made.text
+    assert made.json()["number"] == "7" and made.json()["title"]
+    assert "upstream.invalid" not in made.text  # what the source calls it is not an address we show
+    assert admin.get(BLOCKLIST).json()["items"][0]["title"] == made.json()["title"]
+    # a source that never offered that Unit: nothing to block; naming it twice, or not at all: 422
+    other = _write(world, admin, "POST", BLOCKLIST, {**body, "source_key": "elsewhere:1"})
+    assert other.status_code == 404
+    for bad in ({**body, "remote_unit_id": "x"}, {"source_key": "s", "reason": "other"}):
+        assert _write(world, admin, "POST", BLOCKLIST, bad).status_code in (400, 422)
+
+
 @pytest.mark.req("EF-INT-019", "ENF-SEC-010")
 def test_blocklist_attacks_child_member_key_idor(world: World) -> None:
     """A child, a member, a read-only key (the administrator's own included) and nobody: refused
@@ -387,6 +423,13 @@ def _seed_storage(world: World) -> dict[str, str]:
                             independent=True, fidelity="original",
                         )
                     )  # fmt: skip
+            loose = add_unit(connection, add_edition(connection, add_work(connection)), "1")
+            connection.execute(  # an Edition on no shelf: counted apart, never lost
+                sa.insert(replica_schema.replica).values(
+                    id=new_ulid(), unit_id=loose, location="store", rel_path="loose/one.cbz",
+                    dev=1, ino=77, size=5, independent=True, fidelity="original",
+                )
+            )  # fmt: skip
             work = add_work(connection)
             edition = add_edition(connection, work, shelf_id=shelves["Synthetic shelf A"])
             unit = add_unit(connection, edition, "9")
@@ -427,6 +470,8 @@ def test_storage_dashboard(world: World) -> None:
     assert (a["shelf_id"], a["bytes"], a["copies"]) == (shelves["Synthetic shelf A"], 150, 2)
     assert (a["by_location"]["store"], a["by_location"]["library"]) == (100, 50)
     assert (b["bytes"], b["copies"]) == (7, 1)  # two hard links are one file, a damaged one is none
+    (loose,) = [s for s in body["shelves"] if s["shelf_id"] is None]
+    assert (loose["name"], loose["bytes"], loose["copies"]) == (None, 5, 1)
     traffic = {s["source_key"]: s for s in body["traffic"]["sources"]}
     assert (traffic["source-one"]["requests"], traffic["source-one"]["bytes_in"]) == (5, 4010)
     assert len(traffic["source-one"]["by_day"]) == 2

@@ -94,11 +94,11 @@ describe('Activity history', () => {
     const region = await screen.findByRole('region', { name: 'Chapitres bloqués' });
     const items = within(region).getAllByRole('listitem');
     expect(items).toHaveLength(2);
-    expect(within(items[0]).getByText(/Série synthétique/)).toBeInTheDocument();
-    expect(within(items[0]).getByText(/Mauvaise qualité/)).toBeInTheDocument();
-    expect(within(items[0]).getByText(/proposé de nouveau 3 fois et ignoré/i)).toBeInTheDocument();
-    expect(within(items[1]).getByText(/Chapitre inconnu ici/)).toBeInTheDocument();
-    expect(within(items[1]).getByText(/Doublon/)).toBeInTheDocument();
+    expect(within(items[0] as HTMLElement).getByText(/Série synthétique/)).toBeInTheDocument();
+    expect(within(items[0] as HTMLElement).getByText(/Mauvaise qualité/)).toBeInTheDocument();
+    expect(within(items[0] as HTMLElement).getByText(/proposé de nouveau 3 fois et ignoré/i)).toBeInTheDocument();
+    expect(within(items[1] as HTMLElement).getByText(/Chapitre inconnu ici/)).toBeInTheDocument();
+    expect(within(items[1] as HTMLElement).getByText(/Doublon/)).toBeInTheDocument();
   });
 
   // req: EF-INT-019

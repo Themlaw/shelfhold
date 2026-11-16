@@ -77,7 +77,7 @@ class BlockIn(BaseModel):
     @model_validator(mode="after")
     def _one_way_to_name_the_chapter(self) -> "BlockIn":
         if (self.remote_unit_id is None) == (self.unit_id is None):
-            raise ValueError("name the chapter by `remote_unit_id` or by `unit_id`, not both")
+            raise ValueError("exactly_one_of_remote_unit_id_and_unit_id")
         return self
 
 
@@ -185,7 +185,9 @@ def build_ops_dashboard_router(
         return Response(status_code=204)
 
     @router.get("/storage-dashboard", response_model=StorageOut)
-    def ops_storage_dashboard(_admin: Admin, days: Annotated[int, Query(ge=1, le=MAX_DAYS)] = 30) -> StorageOut:
+    def ops_storage_dashboard(
+        _admin: Admin, days: Annotated[int, Query(ge=1, le=MAX_DAYS)] = 30
+    ) -> StorageOut:
         board = storage_dashboard(get_engine(), today=now().date(), days=days)
         return StorageOut(
             shelves=[ShelfOut(**vars(s)) for s in board.shelves],

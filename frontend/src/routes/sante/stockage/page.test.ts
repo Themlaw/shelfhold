@@ -58,12 +58,12 @@ describe('Storage and network dashboard', () => {
     const region = await screen.findByRole('region', { name: 'Espace par étagère' });
     const rows = within(region).getAllByRole('row');
     expect(rows).toHaveLength(4); // the header and three lines
-    expect(within(rows[1]).getByText('Étagère A')).toBeInTheDocument();
-    expect(within(rows[1]).getByText(/150\s*Mo/)).toBeInTheDocument();
-    expect(within(rows[1]).getByText('12')).toBeInTheDocument();
-    expect(within(rows[2]).getByText('Étagère B')).toBeInTheDocument();
-    expect(within(rows[3]).getByText('Hors étagère')).toBeInTheDocument();
-    expect(within(rows[3]).getByText(/2\s*Ko/)).toBeInTheDocument();
+    expect(within(rows[1] as HTMLElement).getByText('Étagère A')).toBeInTheDocument();
+    expect(within(rows[1] as HTMLElement).getByText(/150\s*Mo/)).toBeInTheDocument();
+    expect(within(rows[1] as HTMLElement).getByText('12')).toBeInTheDocument();
+    expect(within(rows[2] as HTMLElement).getByText('Étagère B')).toBeInTheDocument();
+    expect(within(rows[3] as HTMLElement).getByText('Hors étagère')).toBeInTheDocument();
+    expect(within(rows[3] as HTMLElement).getAllByText(/2\s*ko/i)).toHaveLength(2); // its size, and the store column
   });
 
   // req: EF-INT-020

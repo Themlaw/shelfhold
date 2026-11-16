@@ -2,6 +2,15 @@
 
 Format : [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/). Versionnement : [SemVer](https://semver.org/lang/fr/). Procédure de release : `docs/releasing.md`.
 
+## Non publié
+
+### Ajouté
+
+- **Historique d'activité et liste de blocage (L29)** : l'administrateur relit l'historique des événements, bloque un chapitre qu'une source repropose (il est alors ignoré à chaque cycle, sans jamais être débloqué en silence) et le débloque lui-même, avec une ligne d'audit.
+- **Stockage et réseau (L29)** : l'espace occupé par étagère et le trafic par source et par jour, compté par le Fetcher après la garde réseau, sans adresse ni chemin.
+
+Migration : oui (0087)
+
 ## 1.1.0-rc.2 - 2026-11-16
 
 Candidate de la 1.1.0 : pré-version GitHub `v1.1.0-rc.2` (version du paquet `1.1.0rc2`), sans tag d'image de version. Porte les lots M4 fusionnés depuis la 1.1.0-rc.1.

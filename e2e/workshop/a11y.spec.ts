@@ -16,6 +16,8 @@ const SCREENS = [
   '/a-approuver',
   '/mes-demandes',
   '/activite',
+  '/activite/historique',
+  '/sante/stockage',
   '/bibliotheque',
   '/assistant/compte',
   '/assistant/dossier',

@@ -150,6 +150,10 @@
         <!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- the app is served at the root of its origin -->
         <li><a href="/sante">{t('settings.link.health')}</a></li>
         <!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- the app is served at the root of its origin -->
+        <li><a href="/sante/stockage">{t('settings.link.storage')}</a></li>
+        <!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- the app is served at the root of its origin -->
+        <li><a href="/activite/historique">{t('settings.link.history')}</a></li>
+        <!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- the app is served at the root of its origin -->
         <li><a href="/sources">{t('settings.link.sources')}</a></li>
         <!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- the app is served at the root of its origin -->
         <li><a href="/a-classer">{t('settings.link.to_rate')}</a></li>
