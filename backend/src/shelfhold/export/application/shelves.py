@@ -24,7 +24,12 @@ from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
 from shelfhold.catalog.public import Admission, RatingService, file_new_edition
 from shelfhold.export.application import fan_out
-from shelfhold.export.application.komga_audit_state import audit_reason, partitioning_of
+from shelfhold.export.application.komga_audit_state import (
+    audit_reason,
+    exposure_for,
+    partitioning_of,
+    remote_root_of,
+)
 from shelfhold.export.application.precreate import (
     AdoptedLibrary,
     Precreated,
@@ -40,6 +45,7 @@ from shelfhold.export.domain.bindings import (
     Egress,
     TargetKindTransportError,
     TreeOverlapError,
+    UnpartitionedDestinationError,
     check_binding,
     check_ceiling,
     check_dropbox_folder,
@@ -171,7 +177,7 @@ class ShelfService:
                 )
             ).one()
             check_family_cap(name, max_age_rating)
-            for partitioning in self._partitionings(connection, shelf_id):
+            for partitioning in self._partitionings(connection, shelf_id, max_age_rating):
                 check_partitioning(max_age_rating, partitioning)
             connection.execute(
                 sa.update(export.shelf)
@@ -514,7 +520,11 @@ class ShelfService:
         )
 
     @staticmethod
-    def _partitionings(connection: Connection, shelf_id: str) -> list[str]:
+    def _partitionings(
+        connection: Connection, shelf_id: str, ceiling: str | int | None = "stored"
+    ) -> list[str]:
+        """The partitioning of each binding; for the ceiling the shelf is about to have, when one
+        is given (`set_max_age` checks the new one, not the one in the base)."""
         target, destination, shelf = export.export_target, export.shelf_destination, export.shelf
         return [
             partitioning_of(
@@ -525,7 +535,7 @@ class ShelfService:
                 attested=r.access_partitioning_attested_at is not None,
                 path_map=r.path_map,
                 root_subpath=r.root_subpath,
-                ceiling=r.max_age_rating,
+                ceiling=r.max_age_rating if ceiling == "stored" else ceiling,  # type: ignore[arg-type]
             )
             for r in connection.execute(
                 sa.select(
@@ -597,6 +607,18 @@ class ShelfService:
                 root_subpath=root_subpath,
                 ceiling=shelf.max_age_rating,
             )
+            if row.kind == "komga" and (
+                exposed := exposure_for(
+                    connection,
+                    target_id,
+                    remote_root_of(row.path_map, root_subpath),
+                    shelf.max_age_rating,
+                )
+            ):  # whatever the shelf: the last audit saw a child reach this folder (#320 M6)
+                raise UnpartitionedDestinationError(
+                    f"the last audit of this Komga saw a child account reach it ({exposed})",
+                    reason=exposed,
+                )
             check_partitioning(
                 shelf.max_age_rating,
                 partitioning,

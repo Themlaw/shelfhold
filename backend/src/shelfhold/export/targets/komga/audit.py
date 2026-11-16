@@ -25,7 +25,9 @@ from shelfhold.export.application.komga_audit import (
     KomgaAuditRecorder,
     KomgaAuditReport,
     Reading,
+    Stamp,
     cleaned,
+    new_stamp,
 )
 from shelfhold.export.application.ports import TargetEvents
 from shelfhold.export.domain.kavita_compat import KavitaVersion
@@ -57,23 +59,30 @@ class KomgaAuditor:
     async def _run(
         self, client: KomgaClient, target_id: str, candidate: BoundShelf | None
     ) -> KomgaAuditReport:
+        stamp = new_stamp(client.clock)  # dated before the first request
         try:
-            reading = await self._read(client)
+            reading = await self._read(client, stamp)
         except Exception as error:  # the reading AND its interpretation: nothing escapes
-            return self._recorder.record(target_id, candidate, None, failed=type(error).__name__)
+            return self._recorder.record(
+                target_id, candidate, None, failed=type(error).__name__, stamp=stamp
+            )
         return self._recorder.record(target_id, candidate, reading)
 
     @staticmethod
-    async def _read(client: KomgaClient) -> Reading:
+    async def _read(client: KomgaClient, stamp: Stamp | None = None) -> Reading:
+        stamp = stamp or new_stamp(client.clock)
         raw = await client.probe()
         verdict = assess_version(raw)
         parsed = KavitaVersion.parse(raw)
         version = str(parsed) if parsed is not None else None
         advisories = tuple(f"{k.advisory} ({k.category})" for k in verdict.known_bad)
         if not verdict.accepted:  # no need to read more: a release that is refused is refused
-            return Reading(version, refusal=verdict.reason, advisories=advisories)
+            return Reading(version, refusal=verdict.reason, advisories=advisories, stamp=stamp)
         accounts = await client.list_accounts()
         libraries = await client.list_libraries()
         return Reading(
-            version, tuple(accounts), tuple(KomgaLibrary(lib.id, lib.root) for lib in libraries)
+            version,
+            tuple(accounts),
+            tuple(KomgaLibrary(lib.id, lib.root) for lib in libraries),
+            stamp=stamp,
         )

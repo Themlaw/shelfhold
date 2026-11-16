@@ -45,11 +45,6 @@ def labelled(name: str, libraries: list[str], **labels: list[str]) -> dict[str, 
 
 
 @pytest.mark.req("EF-EXP-047")
-@pytest.mark.xfail(
-    strict=True,
-    reason="M1 : un audit lent, lu avant un audit plus récent, écrit après lui : il rétablit la "
-    "preuve et lève la pause que l'audit récent venait de poser",
-)
 def test_m1_a_stale_reading_never_lifts_a_newer_pause() -> None:
     with family_env(13) as env:
         fake, client, auditor, _events, target = kit(env)
@@ -67,11 +62,6 @@ def test_m1_a_stale_reading_never_lifts_a_newer_pause() -> None:
 
 
 @pytest.mark.req("EF-EXP-047")
-@pytest.mark.xfail(
-    strict=True,
-    reason="M2 : la preuve n'a pas de date de péremption ; sans contrôle quotidien branché, une "
-    "preuve d'il y a un an vaut toujours `library`",
-)
 def test_m2_a_proof_expires_when_no_audit_renews_it() -> None:
     with family_env(13) as env:
         _fake, client, auditor, _events, target = kit(env)
@@ -82,11 +72,6 @@ def test_m2_a_proof_expires_when_no_audit_renews_it() -> None:
 
 
 @pytest.mark.req("EF-EXP-047")
-@pytest.mark.xfail(
-    strict=True,
-    reason="M3 : un compte restreint par libellés (labelsAllow / labelsExclude) sans âge est lu "
-    "comme un membre ; il atteint la bibliothèque 18+ et l'audit la prouve",
-)
 @pytest.mark.parametrize("labels", [{"labelsExclude": ["adulte"]}, {"labelsAllow": ["enfants"]}])
 def test_m3_a_label_restricted_account_is_a_child(labels: dict[str, list[str]]) -> None:
     with family_env(13) as env:
@@ -97,11 +82,6 @@ def test_m3_a_label_restricted_account_is_a_child(labels: dict[str, list[str]]) 
 
 
 @pytest.mark.req("EF-EXP-047")
-@pytest.mark.xfail(
-    strict=True,
-    reason="M4 : un compte non administrateur sans aucune restriction, qui lit la bibliothèque "
-    "familiale ET la bibliothèque 18+, n'empêche aucune preuve (« qui est un enfant »)",
-)
 def test_m4_an_unclassified_account_on_family_and_adult_libraries_proves_nothing() -> None:
     with family_env(13) as env:
         fake, client, auditor, _events, target = kit(
@@ -115,11 +95,6 @@ def test_m4_an_unclassified_account_on_family_and_adult_libraries_proves_nothing
 
 
 @pytest.mark.req("EF-EXP-047")
-@pytest.mark.xfail(
-    strict=True,
-    reason="M5 : `target recheck` de Kavita (audit resume=True) lève la pause `child_exposure` "
-    "posée par l'audit Komga sur une étagère liée aux deux",
-)
 def test_m5_kavita_never_lifts_a_pause_komga_posed() -> None:
     with family_env(13) as env:
         wired = wire(env)
@@ -135,11 +110,6 @@ def test_m5_kavita_never_lifts_a_pause_komga_posed() -> None:
 
 
 @pytest.mark.req("EF-EXP-047")
-@pytest.mark.xfail(
-    strict=True,
-    reason="M6 : une étagère 18+ se lie à un Komga dont le dernier audit a vu un enfant partagé "
-    "sur toutes les bibliothèques : ni refus ni pause, rien n'est vérifié à la liaison",
-)
 def test_m6_an_adult_shelf_is_not_bound_where_a_child_reaches_every_library() -> None:
     with family_env(13) as env:
         adult_shelf, _ = add_adult_shelf(env)

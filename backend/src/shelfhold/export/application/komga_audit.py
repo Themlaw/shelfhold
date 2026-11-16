@@ -5,27 +5,30 @@ module compares, writes and pauses, so that the targets never touch the database
 
 from __future__ import annotations
 
+import itertools
 from dataclasses import dataclass, field
+from datetime import datetime
 from typing import Any
 
 import sqlalchemy as sa
 from sqlalchemy import Engine
 
 from shelfhold.export.application import komga_audit_state as state
+from shelfhold.export.application.exposure_holds import held_by, hold, other_targets_of, release
 from shelfhold.export.application.ports import TargetEvents
 from shelfhold.export.application.target_state import (
     CHILD_EXPOSURE,
     load_health,
-    pause_shelf,
-    resume_shelf,
     save_health,
 )
 from shelfhold.export.domain.bindings import is_family
 from shelfhold.export.domain.komga_access import (
     AUDIT_FAILED,
+    AUDIT_SUPERSEDED,
     BoundShelf,
     Finding,
     KomgaLibrary,
+    child_reach,
     evaluate,
 )
 from shelfhold.export.domain.path_map import PathMapError, clean_absolute
@@ -33,7 +36,23 @@ from shelfhold.infrastructure.clock import Clock
 from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.schema import export
 
-__all__ = ["KomgaAuditRecorder", "KomgaAuditReport", "Reading", "cleaned"]
+__all__ = ["KomgaAuditRecorder", "KomgaAuditReport", "Reading", "Stamp", "cleaned", "new_stamp"]
+
+_SEQUENCE = itertools.count(1)
+Stamp = tuple[str, int]  # (instant, sequence): when a reading began, and in which order
+
+
+def new_stamp(clock: Clock) -> Stamp:
+    """Taken **before** the first request of a reading. The sequence orders two readings begun in
+    the same instant; across a restart the instant does (#320 M1)."""
+    return (clock.now().isoformat(), next(_SEQUENCE))
+
+
+def _key(stamp: Any) -> tuple[datetime, int] | None:
+    try:
+        return datetime.fromisoformat(stamp[0]), int(stamp[1])
+    except (TypeError, ValueError, IndexError):
+        return None
 
 
 @dataclass
@@ -56,6 +75,7 @@ class Reading:
     libraries: tuple[KomgaLibrary, ...] = ()
     refusal: str | None = None  # a closed code: the release is not accepted
     advisories: tuple[str, ...] = ()
+    stamp: Stamp | None = None
 
 
 def cleaned(root: str | None) -> str | None:
@@ -70,16 +90,17 @@ class KomgaAuditRecorder:
         self._engine = engine
         self._clock = clock
         self._events = events
+        state.use_clock(clock)  # the gate reads the freshness of the proof on this clock
 
-    def _bound(self, target_id: str) -> list[BoundShelf]:
+    @staticmethod
+    def _bound(connection: Any, target_id: str) -> list[BoundShelf]:
         d, s, t = export.shelf_destination, export.shelf, export.export_target
-        with self._engine.connect() as connection:
-            rows = connection.execute(
-                sa.select(d.c.shelf_id, d.c.root_subpath, s.c.max_age_rating, t.c.path_map)
-                .select_from(d.join(s, s.c.id == d.c.shelf_id).join(t, t.c.id == d.c.target_id))
-                .where(d.c.target_id == target_id)
-                .order_by(d.c.id)
-            ).all()
+        rows = connection.execute(
+            sa.select(d.c.shelf_id, d.c.root_subpath, s.c.max_age_rating, t.c.path_map)
+            .select_from(d.join(s, s.c.id == d.c.shelf_id).join(t, t.c.id == d.c.target_id))
+            .where(d.c.target_id == target_id)
+            .order_by(d.c.id)
+        ).all()
         return [
             BoundShelf(r.shelf_id, state.remote_root_of(r.path_map, r.root_subpath) or None,
                        r.max_age_rating)
@@ -88,9 +109,30 @@ class KomgaAuditRecorder:
 
     def record(
         self, target_id: str, candidate: BoundShelf | None, reading: Reading | None,
-        *, failed: str | None = None,
+        *, failed: str | None = None, stamp: Stamp | None = None,
     ) -> KomgaAuditReport:  # fmt: skip
-        bound = self._bound(target_id)
+        """Write what a reading says. Everything is decided inside one transaction, on the shelves
+        bound **then**, and a reading begun before the one the state keeps is ignored: it neither
+        restores a proof nor lifts a pause."""
+        stamp = (reading.stamp if reading else None) or stamp or new_stamp(self._clock)
+        with write_transaction(self._engine) as connection:
+            previous = state.load(connection, target_id)
+            kept, mine = _key(previous.get("stamp")), _key(stamp)
+            if kept is not None and (mine is None or mine < kept):
+                return KomgaAuditReport(proved=False, reason=AUDIT_SUPERSEDED)
+            report = self._write(connection, target_id, candidate, reading, failed, stamp, previous)
+        if report.paused_shelves:
+            self._events.emit(
+                "target.child_exposure", target_id=target_id, shelves=report.paused_shelves,
+                accounts=[], cause=report.reason or AUDIT_FAILED,
+            )  # fmt: skip
+        return report
+
+    def _write(
+        self, connection: Any, target_id: str, candidate: BoundShelf | None,
+        reading: Reading | None, failed: str | None, stamp: Stamp, previous: dict[str, Any],
+    ) -> KomgaAuditReport:  # fmt: skip
+        bound = self._bound(connection, target_id)
         shelves = [*bound, *([candidate] if candidate else [])]
         findings: tuple[Finding, ...] = ()
         reason: str | None = None
@@ -130,44 +172,44 @@ class KomgaAuditRecorder:
             version=reading.version if reading else None,
             warnings=reading.advisories if reading else (),
         )
-        with write_transaction(self._engine) as connection:
-            previous = state.load(connection, target_id)
-            ours = {s for s in previous.get("paused", []) if isinstance(s, str)}
-            for shelf_id in sorted(must_pause):
-                if pause_shelf(connection, shelf_id, CHILD_EXPOSURE):
-                    report.paused_shelves.append(shelf_id)
-                    ours.add(shelf_id)
-            if complete:  # only a complete audit lifts, and only what this audit paused
-                for shelf_id in sorted(ours - must_pause):
-                    if resume_shelf(connection, shelf_id, CHILD_EXPOSURE):
-                        report.resumed_shelves.append(shelf_id)
-                    ours.discard(shelf_id)
-            ours &= {b.shelf_id for b in bound if b.shelf_id}
-            state.save(connection, target_id, {
-                "audited_at": self._clock.now().isoformat(),
-                "reason": reason,
-                "proved": proved,
-                "findings": [{"code": f.code, "library": f.library} for f in findings],
-                "paused": sorted(ours),
-                "version": report.version,
-                "failed": failed is not None,
-            })  # fmt: skip
-            health = load_health(connection, target_id)
-            if reading is not None:
-                health.version = reading.version
-                health.warnings = reading.advisories
-            health.child_exposure = bool(
-                connection.execute(
-                    sa.select(sa.func.count())
-                    .select_from(export.shelf)
-                    .where(export.shelf.c.paused_reason == CHILD_EXPOSURE)
-                ).scalar_one()
-            )
-            health.refresh_waiting()
-            save_health(connection, target_id, health)
-        if report.paused_shelves:
-            self._events.emit(
-                "target.child_exposure", target_id=target_id, shelves=report.paused_shelves,
-                accounts=[], cause=reason or AUDIT_FAILED,
-            )  # fmt: skip
+        for shelf_id in sorted(must_pause):
+            if hold(connection, target_id, shelf_id):
+                report.paused_shelves.append(shelf_id)
+        if complete:  # only a complete audit lets go, of what it held (bound or not) and of an
+            held = held_by(
+                connection, target_id
+            )  # unheld pause on a shelf that has only this server
+            bound_ids = {b.shelf_id for b in bound if b.shelf_id}
+            for shelf_id in sorted((held | bound_ids) - must_pause):
+                alone = shelf_id in bound_ids and not other_targets_of(
+                    connection, shelf_id, target_id
+                )
+                if release(connection, target_id, shelf_id, lift_unheld=alone):
+                    report.resumed_shelves.append(shelf_id)
+        libraries = reading.libraries if reading else ()
+        state.save(connection, target_id, {
+            "audited_at": stamp[0],
+            "stamp": list(stamp),
+            "reason": reason,
+            "proved": proved,
+            "findings": [{"code": f.code, "library": f.library} for f in findings],
+            "libraries": [{"ref": lib.ref, "root": lib.root} for lib in libraries],
+            "child_libraries": child_reach(reading.accounts, libraries) if complete and reading
+            else {},
+            "version": report.version,
+            "failed": failed is not None,
+        })  # fmt: skip
+        health = load_health(connection, target_id)
+        if reading is not None:
+            health.version = reading.version
+            health.warnings = reading.advisories
+        health.child_exposure = bool(
+            connection.execute(
+                sa.select(sa.func.count())
+                .select_from(export.shelf)
+                .where(export.shelf.c.paused_reason == CHILD_EXPOSURE)
+            ).scalar_one()
+        )
+        health.refresh_waiting()
+        save_health(connection, target_id, health)
         return report

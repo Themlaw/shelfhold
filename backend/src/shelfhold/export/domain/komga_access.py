@@ -12,7 +12,12 @@ proves it for the folder of a shelf, never from what the server declares:
   whose shelves go above what that account may read; a shelf of 18+ (or without a ceiling) is
   reached by no child at all.
 
-An account without an age restriction is a member, not a child: it may read a family library.
+An account restricted by labels (`labelsAllow`, `labelsExclude`) and without an age is a child of
+unknown ceiling (age 0), as "include unknowns" is for Kavita. An account without any restriction is
+a member: it may read a family library, but one that reads a family library **and** a library above
+its ceiling cannot be told from a child whose restriction was forgotten: `account_unclassified`,
+nothing is proved (exits: the ADMIN role, or one account for the family library and another for the
+adult one).
 Komga names the restriction by the age it hides from (`ALLOW_ONLY`: reads up to `age`; `EXCLUDE`:
 hides `age` and above, so reads up to `age - 1`, the stricter of the two readings).
 """
@@ -39,7 +44,10 @@ VERSION_BELOW_FLOOR: Final = "version_below_floor"
 LIBRARY_ABOVE_RATING: Final = "library_above_rating"
 LIBRARY_NOT_DEDICATED: Final = "library_not_dedicated"
 LIBRARY_UNMAPPED: Final = "library_unmapped"
+ACCOUNT_UNCLASSIFIED: Final = "account_unclassified"
 AUDIT_FAILED: Final = "audit_failed"
+AUDIT_STALE: Final = "audit_stale"
+AUDIT_SUPERSEDED: Final = "audit_superseded"
 NEVER_AUDITED: Final = "never_audited"
 FOLDER_NOT_AUDITED: Final = "folder_not_audited"
 
@@ -68,6 +76,11 @@ class KomgaAccount:
     shared_all: bool
     library_ids: frozenset[str]
     age: int | None  # the age this account may read up to; None when it has no restriction
+
+    @property
+    def unrestricted(self) -> bool:
+        """A non-administrator with no age restriction and no label: nothing says what it reads."""
+        return not self.is_admin and self.age is None
 
     @property
     def child_like(self) -> bool:
@@ -168,4 +181,34 @@ def evaluate(
                 if not family or ceiling > (account.age or 0):  # type: ignore[operator]
                     findings.append(Finding(LIBRARY_ABOVE_RATING, lib.ref, shelf.shelf_id))
                     break
+    family_refs = {
+        ref for ref, ceils in ceilings.items()
+        if (c := _library_ceiling(ceils)) is not None and is_family(c)
+    }  # fmt: skip
+    other_refs = {lib.ref for lib in libraries} - family_refs  # unbound libraries count: unknown
+    for account in accounts:
+        if not account.unrestricted:
+            continue
+        reached = {lib.ref for lib in libraries if account.reaches(lib.ref)}
+        if reached & family_refs and reached & other_refs:
+            findings += [
+                Finding(ACCOUNT_UNCLASSIFIED, lib.ref, shelf.shelf_id)
+                for shelf in shelves
+                for lib in covering[shelf]
+                if lib.ref in reached
+            ]
     return tuple(dict.fromkeys(findings))
+
+
+def child_reach(
+    accounts: Sequence[KomgaAccount], libraries: Sequence[KomgaLibrary]
+) -> dict[str, int]:
+    """For each library a child's account reaches: the lowest age that reads it."""
+    found: dict[str, int] = {}
+    for lib in libraries:
+        ages = [
+            a.age for a in accounts if a.child_like and a.age is not None and a.reaches(lib.ref)
+        ]
+        if ages:
+            found[lib.ref] = min(ages)
+    return found

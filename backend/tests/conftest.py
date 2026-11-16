@@ -3,6 +3,7 @@
 import importlib.util
 import sys
 import zlib
+from collections.abc import Iterator
 from pathlib import Path
 from types import ModuleType
 
@@ -98,3 +99,12 @@ def _no_dns_in_url_validation(monkeypatch: pytest.MonkeyPatch) -> None:
     import shelfhold.headless.urls as urls
 
     monkeypatch.setattr(urls, "_resolver", lambda: lambda _host: [])
+
+
+@pytest.fixture(autouse=True)
+def _komga_gate_clock() -> "Iterator[None]":
+    """The gate of the Komga proof reads freshness on the clock of the last auditor built."""
+    from shelfhold.export.application.komga_audit_state import use_clock
+
+    yield
+    use_clock(None)

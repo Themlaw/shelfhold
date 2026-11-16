@@ -10,28 +10,54 @@ from __future__ import annotations
 
 import json
 from collections.abc import Sequence
-from typing import Any
+from datetime import datetime, timedelta
+from typing import Any, Final
 
 import sqlalchemy as sa
 from sqlalchemy import Connection
 
 from shelfhold.export.domain.bindings import effective_partitioning
 from shelfhold.export.domain.komga_access import (
+    AUDIT_STALE,
     FOLDER_NOT_AUDITED,
+    LIBRARY_ABOVE_RATING,
     NEVER_AUDITED,
     NO_CEILING,
 )
 from shelfhold.export.domain.path_map import PathMapError, clean_absolute
+from shelfhold.infrastructure.clock import Clock, SystemClock
 from shelfhold.infrastructure.schema import platform
 
 __all__ = [
+    "MAX_AGE",
     "audit_reason",
+    "exposure_for",
     "load",
     "partitioning_of",
     "proved_for",
     "remote_root_of",
     "save",
+    "use_clock",
 ]
+
+MAX_AGE: Final = timedelta(hours=36)  # a day and a margin: an older proof is no proof (#320 M2)
+_clock: Clock = SystemClock()
+
+
+def use_clock(clock: Clock | None) -> None:
+    """The clock the gate reads freshness on. The gate is called from places that hold no clock
+    (every binding, every planning), so the composition root poses it once."""
+    global _clock
+    _clock = clock or SystemClock()
+
+
+def _fresh(state: dict[str, Any]) -> bool:
+    try:
+        at = datetime.fromisoformat(str(state.get("audited_at")))
+        return at.tzinfo is not None and _clock.now() - at <= MAX_AGE
+    except ValueError:
+        return False
+
 
 _KEY = "komga.access_audit."
 
@@ -77,7 +103,7 @@ def proved_for(
     """True only when the audit proved this exact folder for this ceiling or a higher one."""
     state = load(connection, target_id)
     proved = state.get("proved")
-    if not isinstance(proved, list) or not remote_root:
+    if not isinstance(proved, list) or not remote_root or not _fresh(state):
         return False
     wanted = NO_CEILING if ceiling is None else ceiling
     for entry in proved:
@@ -90,11 +116,37 @@ def proved_for(
     return False
 
 
+def exposure_for(
+    connection: Connection, target_id: str, remote_root: str, ceiling: int | None
+) -> str | None:
+    """A fresh audit saw a child's account reach a library over this folder at an age below the
+    ceiling (below any age for a shelf of 18+): the closed code, else None. This is looked at for
+    **every** shelf bound to a Komga, not only those below 18+ (#320 M6)."""
+    state = load(connection, target_id)
+    if not remote_root or not _fresh(state):
+        return None
+    reach, libraries = state.get("child_libraries"), state.get("libraries")
+    if not isinstance(reach, dict) or not isinstance(libraries, list):
+        return None
+    wanted = NO_CEILING if ceiling is None else ceiling
+    for lib in libraries:
+        if not isinstance(lib, dict) or not isinstance(lib.get("root"), str):
+            continue
+        base = [p for p in lib["root"].split("/") if p]
+        parts = [p for p in remote_root.split("/") if p]
+        age = reach.get(lib.get("ref"))
+        if parts[: len(base)] == base and isinstance(age, int) and age < wanted:
+            return LIBRARY_ABOVE_RATING
+    return None
+
+
 def audit_reason(connection: Connection, target_id: str) -> str:
     """Why this target is not proved: a closed code, for the refusal and for the admin."""
     state = load(connection, target_id)
     if not state:
         return NEVER_AUDITED
+    if not _fresh(state):
+        return AUDIT_STALE
     reason = state.get("reason")
     return reason if isinstance(reason, str) and reason else FOLDER_NOT_AUDITED
 

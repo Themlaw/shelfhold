@@ -65,6 +65,21 @@ les bibliothèques dont la racine contient son dossier :
   enfant. `EXCLUDE n` compte pour `n - 1`, la lecture la plus stricte. Un compte sans restriction
   est un membre : il peut lire une bibliothèque familiale.
 
+Deux autres règles ferment : un compte restreint par **libellés** seulement (`labelsAllow`,
+`labelsExclude`) compte comme un enfant d'âge inconnu ; un compte non administrateur **sans aucune
+restriction** qui lit à la fois une bibliothèque familiale et une bibliothèque au-dessus de son
+plafond (y compris une bibliothèque qu'aucune étagère ne remplit) est `account_unclassified` : on ne
+peut pas le distinguer d'un enfant dont la restriction a été oubliée, rien n'est prouvé et les
+étagères concernées sont mises en pause. **Deux sorties** : lui donner le rôle ADMIN dans Komga, ou
+utiliser un compte pour la bibliothèque familiale et un autre pour la bibliothèque adulte. Santé
+donne ces deux sorties.
+
+Une preuve vaut 36 h au plus (`audit_stale` ensuite : le cloisonnement redevient `none`), et une
+lecture plus ancienne que l'état gardé est ignorée. Chaque étagère liée à Komga, sous 18+ ou non,
+est refusée à la liaison si le dernier audit a vu un enfant atteindre son dossier. Une pause est
+tenue par couple (étagère, audit) : un audit ne lève que la sienne, côté Kavita comme côté Komga.
+Les bibliothèques qu'aucune étagère liée ne couvre ne sont regardées que pour `account_unclassified`.
+
 Un audit impossible (serveur muet, clé qui ne peut pas lister les comptes, réponse illisible,
 version inconnue) **ferme** : rien n'est prouvé (`audit_failed`), les étagères liées sont mises en
 pause (`target.child_exposure`) et le refus de liaison porte la raison. Seul un audit complet lève
