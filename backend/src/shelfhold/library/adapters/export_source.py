@@ -91,6 +91,44 @@ def export_sources(
     return found
 
 
+@dataclass(frozen=True)
+class VariantContent:
+    """One `content` of the Variant a Unit is exported from (EF-EXP-046)."""
+
+    content_id: str
+    format: str
+    media_type: str
+    watermarked: bool
+
+
+def variant_contents(connection: Connection, unit_id: str) -> list[VariantContent]:
+    """The `content` rows of the Variant `export_sources` reads (the preferred one, else the first
+    received), in the order of their ids: what a destination may be offered for the Unit."""
+    content, variant = storage.content, catalog.unit_variant
+    rows = list(
+        connection.execute(
+            sa.select(
+                content.c.id, content.c.variant_id, content.c.format, content.c.media_type,
+                content.c.watermarked,
+            )
+            .select_from(content.outerjoin(variant, variant.c.id == content.c.variant_id))
+            .where(content.c.unit_id == unit_id)
+            .order_by(sa.func.coalesce(variant.c.preferred, False).desc(), content.c.id)
+        )
+    )  # fmt: skip
+    if not rows:
+        return []
+    chosen = rows[0].variant_id
+    return sorted(
+        (
+            VariantContent(r.id, r.format, r.media_type, bool(r.watermarked))
+            for r in rows
+            if r.variant_id == chosen
+        ),
+        key=lambda c: c.content_id,
+    )
+
+
 def record_destination_copy(
     connection: Connection,
     *,

@@ -21,16 +21,20 @@ What this module keeps, in one place:
   on the shelf of that binding), its plan runs through the executor of L04, and one that fails
   marks nothing on the others.
 
-The bytes never come from a plan and never from another binding: `planned_content` is the only
-thing that fills the ledger.
+The bytes never come from a plan and never from another binding's rendering: `planned_content` is
+the only thing that fills the ledger, and `HostContentStore` reads them from the registry of copies
+(M4 L06b: `/store`, the library, a verified file of the shelf; the format is the first of the
+server's `accepted_content_types` the Variant has).
 """
 
+import hashlib
 import os
-from collections.abc import Callable, Sequence
+import stat
+from collections.abc import Callable, Iterator, Sequence
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime
-from pathlib import Path
-from typing import Any, Literal, Protocol
+from typing import Any, BinaryIO, Literal, Protocol
 
 import sqlalchemy as sa
 import structlog
@@ -52,14 +56,21 @@ from shelfhold.export.domain.bindings import (
 )
 from shelfhold.export.domain.kavita_compat import blocks_family_shelf
 from shelfhold.export.domain.path_map import clean_absolute, within
+from shelfhold.export.domain.planner import NO_NATIVE_FORMAT, ContentOffer, choose_content
 from shelfhold.infrastructure.clock import Clock, SystemClock
 from shelfhold.infrastructure.db import write_transaction
-from shelfhold.infrastructure.fsops import FsopsError
+from shelfhold.infrastructure.fsops import FsopsError, open_regular
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import catalog, export, platform, storage
-from shelfhold.library.public import export_sources
+from shelfhold.library.public import (
+    byte_sources,
+    forget_destination_copies,
+    record_replica,
+    relocate_root_paths,
+    variant_contents,
+)
 from shelfhold.sdk.api_call import ApiCall
-from shelfhold.sdk.export_target import TargetCapabilities
+from shelfhold.sdk.export_target import TargetCapabilities, copy_can_verify
 from shelfhold.sdk.fsops import ContentRef, PlannedContent
 
 __all__ = [
@@ -67,10 +78,14 @@ __all__ = [
     "BindingOutcome",
     "BindingView",
     "CachedInstanceProbe",
+    "ContentNeedsDownloadError",
+    "ContentRefusedError",
     "DestinationSource",
+    "EpubFile",
     "FanOut",
     "FanOutReport",
     "HostContentStore",
+    "NoNativeFormatError",
     "TreeBarrier",
     "attach_secondary",
     "bindings_of",
@@ -81,9 +96,11 @@ __all__ = [
     "mark_indexers_missing",
     "mark_indexers_recycled",
     "mirror_to_indexers",
+    "native_formats",
     "planned_content",
     "record_applied",
     "refusal_of",
+    "register_destination_copies",
     "tree_mates",
 ]
 
@@ -478,6 +495,8 @@ class AppliedFile:
     file_hash: str
     size: int
     mtime_ns: int
+    dev: int | None = None
+    ino: int | None = None
 
 
 _FORMATS = {"cbz": "cbz", "epub": "epub", "pdf": "pdf"}
@@ -498,9 +517,8 @@ def record_applied(
     every indexer of the tree, in this transaction. Idempotent: a pass run again after a crash puts
     back what the crash kept from the manifest.
 
-    A file a plan wrote is a line of the manifest and nothing more: it makes no `destination`
-    replica, so it does not count in `independent_copies` (prudent: fewer copies counted, never
-    more). A plan that replaces the historical pipeline must tell the replica too (L06b)."""
+    The `destination` replica of these files is `register_destination_copies`, called by the same
+    transaction of the pass (`FanOut._keep`): this function is the manifest and nothing else."""
     record = export.export_record
     touched: set[str] = set()
     for source, target in moved:
@@ -562,6 +580,69 @@ def record_applied(
         mirror_to_indexers(connection, destination_id, item)
 
 
+def register_destination_copies(
+    connection: Connection,
+    *,
+    destination_id: str,
+    files: Sequence[AppliedFile],
+    now: datetime,
+    moved: Sequence[tuple[str, str]] = (),
+    recycled: Sequence[str] = (),
+) -> int:
+    """The `destination` copies of the files a plan wrote (point m6 of #303), in the transaction of
+    the manifest. Only a file that is the archive itself is a copy the registry knows: its hash is
+    the `original_sha256` of a `content` of the Unit. A rendering is a file of the manifest and
+    nothing more: it is never a source of bytes for another binding (EF-BIB-048). Never counted
+    as independent (a server may rewrite it): `independent_copies` is unchanged. A stale row of the
+    item under the same tree is replaced, also when the new file is a rendering; the rows of
+    another tree are not touched. The registry follows what the plan did to files: a `rename` moves
+    the row, a `recycle` forgets it (the file is in the bin: no row says it is here)."""
+    tree_id = tree_of(connection, destination_id)
+    place = None if tree_id is None else tree_place(connection, tree_id)
+    if place is None:
+        return 0
+    root_id, subpath, _shelf = place
+
+    def in_root(rel: str) -> str:
+        return f"{subpath}/{rel}" if subpath else rel
+
+    relocate_root_paths(connection, root_id, [(in_root(a), in_root(b)) for a, b in moved])
+    for path in recycled:
+        for item in _items_at(connection, destination_id, path):
+            forget_destination_copies(connection, item, physical_root_id=root_id, under=subpath)
+    made = 0
+    for file in files:
+        unit = _unit_of(connection, file.export_item_id)
+        if unit is None:
+            continue
+        forget_destination_copies(
+            connection, file.export_item_id, physical_root_id=root_id, under=subpath
+        )
+        content = _canonical_content(connection, unit, file.file_hash)
+        if content is None:
+            continue  # a rendering: in the manifest, never in the registry as a source
+        record_replica(
+            connection, unit_id=unit, export_item_id=file.export_item_id, location="destination",
+            content_hash=content, file_hash=file.file_hash, independent=False,
+            mutable_by_third_party=True, physical_root_id=root_id, rel_path=in_root(file.rel_path),
+            dev=file.dev, ino=file.ino, size=file.size, mtime_ns=file.mtime_ns, verified_at=now,
+        )  # fmt: skip
+        made += 1
+    return made
+
+
+def _canonical_content(connection: Connection, unit_id: str, file_hash: str) -> str | None:
+    """The payload hash of the `content` of the Unit whose archive `file_hash` is, if any."""
+    content = storage.content
+    return connection.execute(
+        sa.select(content.c.content_hash).where(
+            content.c.unit_id == unit_id,
+            content.c.original_sha256 == file_hash,
+            content.c.content_hash.is_not(None),
+        )
+    ).scalar()
+
+
 def _items_at(connection: Connection, destination_id: str, rel_path: str) -> list[str]:
     record = export.export_record
     return list(
@@ -576,12 +657,16 @@ def _items_at(connection: Connection, destination_id: str, rel_path: str) -> lis
 # -- what a binding may be given ------------------------------------------------------------
 
 
-def planned_content(connection: Connection, destination_id: str) -> PlannedContent:
+def planned_content(
+    connection: Connection, destination_id: str, accepted: Sequence[str] | None = None
+) -> PlannedContent:
     """The content that may be cited for *this* binding: the export items of the Editions filed
     on the shelf of the binding and, on a shelf below 18+, admitted by the same rule that files
     them (rated, under the ceiling, not suggested above it). The egress is the one the instance
     attested for the binding, never what the server declares. Nothing of another shelf is here
-    (point m5 of #299): a plan that cites it is refused by the executor."""
+    (point m5 of #299): a plan that cites it is refused by the executor. With `accepted` (the
+    `accepted_content_types` of its server), an item with no content in a format the server takes is
+    not here either (EF-EXP-046)."""
     d, shelf = export.shelf_destination, export.shelf
     row = connection.execute(
         sa.select(d.c.shelf_id, d.c.egress, shelf.c.max_age_rating)
@@ -615,11 +700,49 @@ def planned_content(connection: Connection, destination_id: str) -> PlannedConte
         refs.add(r.id)
         if r.watermarked:
             watermarked.add(r.id)
+    if accepted is not None:
+        refs &= set(native_formats(connection, sorted(refs), accepted))
+        watermarked &= refs
     return PlannedContent(
         planned_refs=frozenset(refs),
         egress="externe" if row.egress == "externe" else "foyer",
         watermarked_refs=frozenset(watermarked),
     )
+
+
+def _unit_of(connection: Connection, export_item_id: str) -> str | None:
+    coverage = export.unit_coverage
+    return connection.execute(
+        sa.select(coverage.c.unit_id)
+        .where(coverage.c.carrier_type == "export_item", coverage.c.carrier_id == export_item_id)
+        .order_by(coverage.c.position)
+        .limit(1)
+    ).scalar()
+
+
+def _offers(connection: Connection, unit_id: str) -> dict[str, ContentOffer]:
+    return {
+        c.content_id: ContentOffer(c.content_id, c.format, c.media_type)
+        for c in variant_contents(connection, unit_id)
+    }
+
+
+def native_formats(
+    connection: Connection, export_item_ids: Sequence[str], accepted: Sequence[str]
+) -> dict[str, str]:
+    """For each item the format of the first of `accepted` its Variant has (EF-EXP-046): the one
+    the binding is served, whatever the other bindings of the shelf are served. An item with no
+    native format is left out (the `Rendition` of M5 is reserved): it cannot be planned for this
+    binding, and the others are not touched. Deterministic: `choose_content` decides."""
+    found: dict[str, str] = {}
+    for item_id in export_item_ids:
+        unit = _unit_of(connection, item_id)
+        if unit is None:
+            continue
+        chosen = choose_content(accepted, _offers(connection, unit).values())
+        if chosen is not None:
+            found[item_id] = chosen.format
+    return found
 
 
 # -- the pass --------------------------------------------------------------------------------
@@ -665,11 +788,31 @@ class BindingOutcome:
     status: Status
     code: str | None = None
     executed: int = 0
+    # items already written whose format the server no longer accepts (`export.no_native_format`):
+    # left where they are and said here, never recycled by the host on its own (m4 of #305)
+    lost_format: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
 class FanOutReport:
     outcomes: tuple[BindingOutcome, ...]
+
+
+def _lost_format(
+    connection: Connection, destination_id: str, formats: dict[str, str]
+) -> tuple[str, ...]:
+    """The items of the manifest of the binding, written and still on the shelf, that no longer
+    have a format the server accepts: the file is there and nothing here removes it."""
+    record = export.export_record
+    held = set(
+        connection.execute(
+            sa.select(record.c.export_item_id).where(
+                record.c.shelf_destination_id == destination_id, record.c.state.in_(FILE_OK)
+            )
+        ).scalars()
+    )
+    on_shelf = planned_content(connection, destination_id).planned_refs
+    return tuple(sorted((held & on_shelf) - set(formats)))
 
 
 class FanOut:
@@ -701,14 +844,23 @@ class FanOut:
         try:
             with self._engine.connect() as connection:
                 refusal = refusal_of(connection, destination_id)
-                planned = planned_content(connection, destination_id)
             if refusal is not None:
                 log.info("fan_out.refused", destination_id=destination_id, code=refusal)
                 return BindingOutcome(destination_id, "refused", refusal)
             capabilities = self._source.capabilities(view.target_id)
             if capabilities is None:
                 return BindingOutcome(destination_id, "skipped", "no_destination")
-            binding = PlanBinding(destination_id, view.target_id, capabilities)
+            accepted = capabilities.accepted_content_types
+            with self._engine.connect() as connection:
+                planned = planned_content(connection, destination_id, accepted)
+                formats = native_formats(connection, sorted(planned.planned_refs), accepted)
+                lost = _lost_format(connection, destination_id, formats)
+            if lost:
+                log.warning(
+                    "fan_out.no_native_format", destination_id=destination_id, items=len(lost),
+                    code=NO_NATIVE_FORMAT,
+                )  # fmt: skip
+            binding = PlanBinding(destination_id, view.target_id, capabilities, formats)
             self._pipeline.plan_ledger.plan(call_id, destination_id, planned)
             executed = 0
             if view.role != "secondary":  # an indexer is never asked to write (T3)
@@ -723,8 +875,9 @@ class FanOut:
                     binding, call_id, calls, send=self._source.sender(binding)
                 )
             return BindingOutcome(
-                destination_id, "indexer" if view.role == "secondary" else "done", None, executed
-            )
+                destination_id, "indexer" if view.role == "secondary" else "done", None, executed,
+                lost,
+            )  # fmt: skip
         except DestinationPausedError as error:
             return BindingOutcome(destination_id, "paused", str(error))
         except PlanRefusedError as error:
@@ -737,7 +890,7 @@ class FanOut:
     def _keep(self, destination_id: str, report: ExecutionReport) -> None:
         """The manifest of the tree, and the copy to its indexers, in one transaction."""
         files = [
-            AppliedFile(w.export_item_id, w.rel_path, w.file_hash, w.size, w.mtime_ns)
+            AppliedFile(w.export_item_id, w.rel_path, w.file_hash, w.size, w.mtime_ns, w.dev, w.ino)
             for w in report.files
         ]
         with write_transaction(self._engine) as connection:
@@ -749,42 +902,181 @@ class FanOut:
                 moved=report.moved,
                 recycled=report.recycled,
             )
+            register_destination_copies(
+                connection, destination_id=destination_id, files=files, now=self._clock.now(),
+                moved=report.moved, recycled=report.recycled,
+            )  # fmt: skip
 
 
 # -- what the composition root gives the executor -----------------------------------------------
 
 
-class HostContentStore:
-    """The bytes the host owns for an export item: the file of its Unit under the host's roots.
-    Only what the ledger planned is ever asked for; anything else (a sidecar nobody made, a
-    volume) is refused here as well."""
+class ContentNeedsDownloadError(PlanRefusedError):
+    """No copy of the archive can be read and verified: it is to be downloaded again (EF-BIB-045).
+    Nothing is served and nothing is invented."""
 
-    def __init__(self, engine: Engine) -> None:
+    code = "export.source_missing"
+
+
+class NoNativeFormatError(PlanRefusedError):
+    """No `content` of the Variant is in a format the server of the binding accepts."""
+
+    code = NO_NATIVE_FORMAT
+
+
+DEFAULT_ACCEPTED = ("cbz", "epub")
+
+
+MAX_READ = 4 << 30  # the most the host reads of a file whose size the registry does not hold
+CHUNK = 1 << 20
+
+
+class ContentRefusedError(PlanRefusedError):
+    """A file is not what the registry says it is (not a regular file, another size, too big):
+    it is no source, and nothing of it is read past what the check needs."""
+
+    code = "export.source_unreadable"
+
+
+@dataclass(frozen=True)
+class EpubFile:
+    """The EPUB `servable_epub` verified: the path, the hash it was verified at and the `content`
+    it is the derivative of. The host reads it once and compares, never trusting the path."""
+
+    path: str
+    file_hash: str
+    content_id: str
+
+
+def _read_bounded(stream: BinaryIO, *, size: int | None) -> tuple[bytes, str]:
+    """The bytes of the open descriptor and their hash, computed while reading. A regular file of
+    the size the registry holds (or under `MAX_READ`): any other is refused before the first read
+    and no more than that size is ever read, whatever the file grows to."""
+    seen = os.fstat(stream.fileno())
+    if not stat.S_ISREG(seen.st_mode):
+        raise ContentRefusedError("not a regular file")
+    cap = MAX_READ if size is None else size
+    if seen.st_size > cap or (size is not None and seen.st_size != size):
+        raise ContentRefusedError("not the size the registry holds")
+    digest, data = hashlib.sha256(), bytearray()
+    while chunk := stream.read(min(CHUNK, cap + 1 - len(data))):
+        digest.update(chunk)
+        data += chunk
+        if len(data) > cap:
+            raise ContentRefusedError("larger than it was")
+    return bytes(data), "sha256:" + digest.hexdigest()
+
+
+class HostContentStore:
+    """The bytes the host owns for an export item. Only what the ledger planned is ever asked for;
+    anything else (a sidecar nobody made, a volume) is refused here as well.
+
+    The archive comes from `byte_sources` (EF-BIB-045): `/store`, the library, then a file a
+    binding of the shelf wrote when it is the archive itself, its hash is the manifest's and its
+    server can read a copy back (`readback` is not `none`). Each candidate is read and hashed
+    before use; the first that is what it should be serves. None: a new download is asked for
+    (`download`) and nothing is served. The rendering of another destination is never a source, so
+    each binding's file is made again from the canonical archive (EF-BIB-048).
+
+    The format is the first of the server's `accepted_content_types` the Variant has (EF-EXP-046);
+    an EPUB only by the file `epub_path` names (its verified derivative, EF-BIB-051), never one
+    of the copies above."""
+
+    def __init__(
+        self,
+        engine: Engine,
+        *,
+        capabilities: Callable[[str], TargetCapabilities | None] | None = None,
+        download: Callable[[str], None] | None = None,
+        epub_path: Callable[[str], EpubFile | None] | None = None,
+        fsops: Any = None,
+    ) -> None:
         self._engine = engine
+        self._capabilities = capabilities
+        self._download = download
+        self._epub_path = epub_path
+        self._fsops = fsops  # the confined facade, when the composition root has one
+
+    @contextmanager
+    def _open(self, path: str) -> Iterator[BinaryIO]:
+        if self._fsops is None:
+            with open_regular(path) as stream:
+                yield stream
+        else:
+            with self._fsops.open_read(path) as stream:  # confined, no link, regular file
+                yield stream
+
+    def _caps(self, target_id: str) -> TargetCapabilities | None:
+        return None if self._capabilities is None else self._capabilities(target_id)
 
     def read(self, destination_id: str, ref: ContentRef) -> bytes:
         if ref.kind != "export_item":
             raise PlanRefusedError("the host serves no such content here")
-        coverage = export.unit_coverage
+        d = export.shelf_destination
         with self._engine.connect() as connection:
-            if ref.ref not in planned_content(connection, destination_id).planned_refs:
+            binding = connection.execute(
+                sa.select(d.c.shelf_id, d.c.target_id).where(d.c.id == destination_id)
+            ).first()
+            if binding is None:
+                raise PlanRefusedError("the host serves no such content to this binding")
+            planned = planned_content(connection, destination_id)
+            if ref.ref not in planned.planned_refs:
                 # a second defence after the ledger: the item is one of this binding's shelf (and,
                 # below 18+, one that shelf admits), never an item of another shelf
                 raise PlanRefusedError("the host serves no such content to this binding")
-            unit = connection.execute(
-                sa.select(coverage.c.unit_id)
-                .where(coverage.c.carrier_type == "export_item", coverage.c.carrier_id == ref.ref)
-                .order_by(coverage.c.position)
-                .limit(1)
-            ).scalar()
-            source = (
-                None
-                if unit is None
-                else export_sources(connection, [unit], formats=("cbz", "epub")).get(unit)
+            caps = self._caps(binding.target_id)
+            accepted = caps.accepted_content_types if caps is not None else DEFAULT_ACCEPTED
+            unit = _unit_of(connection, ref.ref)
+            if unit is None:
+                raise PlanRefusedError("the host holds no bytes for this item")
+            contents = {c.content_id: c for c in variant_contents(connection, unit)}
+            chosen = choose_content(
+                accepted,
+                (ContentOffer(c.content_id, c.format, c.media_type) for c in contents.values()),
             )
-        if source is None or source.local_path is None:
-            raise PlanRefusedError("the host holds no bytes for this item")
-        return Path(source.local_path).read_bytes()
+            if chosen is None:
+                raise NoNativeFormatError("no content of the Variant is in an accepted format")
+            if contents[chosen.content_id].watermarked and planned.egress == "externe":
+                # the guard of L04 holds for the content chosen, not only for the item planned
+                raise PlanRefusedError("a watermarked content never leaves for an external egress")
+            sources = (
+                []
+                if chosen.format == "epub"
+                else byte_sources(connection, unit, chosen.content_id, shelf_id=binding.shelf_id)
+            )
+        if chosen.format == "epub":
+            return self._read_epub(unit, chosen.content_id)
+        for source in sources:
+            if source.kind == "destination":
+                held = None if source.target_id is None else self._caps(source.target_id)
+                if held is None or not copy_can_verify(held):
+                    continue  # a server that cannot read a copy back does not vouch for it
+            try:
+                with self._open(source.local) as stream:
+                    data, found = _read_bounded(stream, size=source.size)
+            except (OSError, FsopsError, ContentRefusedError):
+                continue  # a FIFO, a link, another size: no source, and nothing was waited for
+            if found == source.file_hash:
+                return data
+        if self._download is not None:
+            self._download(unit)
+        raise ContentNeedsDownloadError("no copy of the archive can be read and verified")
+
+    def _read_epub(self, unit_id: str, content_id: str) -> bytes:
+        """The derivative `servable_epub` verified, read once and compared to the hash it was
+        verified at: a file put back at the path since (a restore, a repair) is refused. The one
+        verified is the one chosen (the watermark was read on that `content`)."""
+        served = None if self._epub_path is None else self._epub_path(unit_id)
+        if not isinstance(served, EpubFile) or served.content_id != content_id:
+            raise PlanRefusedError("the host serves no such EPUB here")
+        try:
+            with self._open(served.path) as stream:
+                data, found = _read_bounded(stream, size=None)
+        except (OSError, FsopsError, ContentRefusedError):
+            raise ContentNeedsDownloadError("the verified derivative cannot be read") from None
+        if found != served.file_hash:
+            raise ContentRefusedError("the EPUB is not the one that was verified")
+        return data
 
 
 class TreeBarrier:

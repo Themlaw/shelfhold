@@ -27,11 +27,13 @@ from shelfhold.infrastructure.schema import replica as replica_schema
 from shelfhold.library.domain.copies import Copy
 
 __all__ = [
+    "ByteSource",
     "LibraryCopy",
     "StoreCopy",
     "StoreProof",
     "UnitFile",
     "adopted_original_unprotected",
+    "byte_sources",
     "damaged_library_copies",
     "demote_shared_inodes",
     "distrust_root_copies",
@@ -154,6 +156,123 @@ def independent_copies(
         (r.dev, r.ino) if r.dev is not None and r.ino is not None else ("row", r.id) for r in rows
     }
     return len(keys)
+
+
+@dataclass(frozen=True)
+class ByteSource:
+    """A place the bytes of one `content` can be read from (the fan-out, EF-BIB-045). The caller
+    reads the file and checks it hashes to `file_hash` before using a byte of it."""
+
+    kind: str  # `store`, `library` or `destination`
+    replica_id: str
+    local: str  # absolute local path
+    file_hash: str  # what the bytes must hash to: the archive as received, never a rendering
+    destination_id: str | None = None  # a `destination` copy: the binding that wrote it
+    target_id: str | None = None  # ... and its server, whose `readback` says if it may be read
+    size: int | None = None  # what the registry holds: a file of another size is no source
+
+
+_UNTRUSTED_DIR = "untrusted/"
+
+
+def byte_sources(
+    connection: Connection, unit_id: str, content_id: str, *, shelf_id: str
+) -> list[ByteSource]:
+    """Where to read the canonical archive of one `content` of a Unit, best first (EF-BIB-045):
+
+    1. `/store`, the kept original of an independent, undamaged copy;
+    2. the library copy, undamaged;
+    3. a file a binding of **this shelf** wrote, only when it is the archive itself: the hash the
+       manifest of that binding holds is the registry's and is the hash of the archive as received.
+       A rendering (ComicInfo, a name, a sidecar made for one server) has another hash and is never
+       listed: the rendering of another destination is not a source (EF-BIB-048).
+
+    An EPUB has no source here but the derivative `servable_epub` names (EF-BIB-051): a `/store`
+    file is an original and a destination file is a rendering. A copy a third party altered is not
+    listed: its hash is not the archive's. Nothing is read from the disk here and nothing is
+    written. `independent_copies` counts independently of this list: a destination copy is a
+    source of bytes and is never counted as a copy of its own."""
+    content = storage.content
+    row = connection.execute(
+        sa.select(content.c.format, content.c.content_hash, content.c.original_sha256).where(
+            content.c.id == content_id, content.c.unit_id == unit_id
+        )
+    ).first()
+    if row is None or row.content_hash is None or row.format == "epub":
+        return []
+    root = platform.physical_root
+    r = replica_table
+    found: list[ByteSource] = []
+    held = connection.execute(
+        sa.select(r.c.id, r.c.location, r.c.rel_path, r.c.file_hash, r.c.size, root.c.path_entry)
+        .join(root, root.c.root_id == r.c.physical_root_id)
+        .where(
+            r.c.unit_id == unit_id,
+            r.c.location.in_(("store", "library")),
+            r.c.content_hash == row.content_hash,
+            r.c.damaged_at.is_(None),
+            # a /store file that is a link of another copy is no copy of its own
+            sa.or_(r.c.location != "store", r.c.independent),
+        )
+        .order_by(r.c.id)
+    )
+    by_kind: dict[str, list[ByteSource]] = {"store": [], "library": []}
+    for c in held:
+        if c.location == "store" and c.rel_path.startswith(_UNTRUSTED_DIR):
+            continue
+        expected = c.file_hash or row.original_sha256
+        by_kind[c.location].append(
+            ByteSource(
+                c.location,
+                c.id,
+                f"{c.path_entry.rstrip('/')}/{c.rel_path}",
+                expected,
+                size=c.size,
+            )
+        )
+    found.extend(by_kind["store"])
+    found.extend(by_kind["library"])
+    d, record, binding = replica_table, export.export_record, export.shelf_destination
+    tree, indexer = export.tree, export.tree_indexer
+    written = connection.execute(
+        sa.select(
+            d.c.id, d.c.rel_path, d.c.file_hash, d.c.size, root.c.path_entry,
+            binding.c.id.label("destination_id"), binding.c.target_id,
+        )
+        .select_from(
+            d.join(root, root.c.root_id == d.c.physical_root_id)
+            .join(record, record.c.export_item_id == d.c.export_item_id)
+            .join(binding, binding.c.id == record.c.shelf_destination_id)
+            .join(indexer, indexer.c.shelf_destination_id == binding.c.id)
+            .join(tree, tree.c.id == indexer.c.tree_id)
+        )
+        .where(
+            d.c.unit_id == unit_id,
+            d.c.location == "destination",
+            d.c.damaged_at.is_(None),
+            d.c.file_hash == row.original_sha256,  # the archive itself, not a rendering of it
+            record.c.file_hash == d.c.file_hash,  # the hash the manifest holds
+            record.c.state.in_(("written", "scanned", "resolved")),
+            binding.c.shelf_id == shelf_id,
+            # the file lives in the tree of the binding that vouches for it (root and folder), not
+            # in the tree of another binding that holds a line for the same item
+            tree.c.root_id == d.c.physical_root_id,
+            sa.or_(
+                tree.c.root_subpath == "",
+                sa.func.substr(d.c.rel_path, 1, sa.func.length(tree.c.root_subpath) + 1)
+                == tree.c.root_subpath + "/",
+            ),
+        )
+        .order_by(d.c.id)
+    )  # fmt: skip
+    found.extend(
+        ByteSource(
+            "destination", w.id, f"{w.path_entry.rstrip('/')}/{w.rel_path}", w.file_hash,
+            w.destination_id, w.target_id, w.size,
+        )
+        for w in written
+    )  # fmt: skip
+    return found
 
 
 def fresh_repair_content(

@@ -36,6 +36,7 @@ from shelfhold.infrastructure.fsops.facade import (
 )
 from shelfhold.infrastructure.fsops.identity import FileIdentity, identity_of
 from shelfhold.infrastructure.fsops.openat2 import openat2_supported
+from shelfhold.infrastructure.fsops.plain import open_regular
 from shelfhold.infrastructure.fsops.reading import GenerationSource, RootReading
 from shelfhold.infrastructure.fsops.sentinel import create_sentinel, read_sentinel
 
@@ -74,6 +75,7 @@ __all__ = [
     "create_sentinel",
     "identity_of",
     "new_probe_name",
+    "open_regular",
     "openat2_supported",
     "read_sentinel",
 ]
