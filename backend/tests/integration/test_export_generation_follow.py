@@ -16,7 +16,7 @@ from shelfhold.export.domain.physical_roots import RootState
 from shelfhold.infrastructure.freeze import FreezeState
 from shelfhold.infrastructure.fsops import RootBlockedError
 from shelfhold.infrastructure.ids import new_ulid
-from shelfhold.infrastructure.schema import platform
+from shelfhold.infrastructure.schema import export, platform
 from tests.l41_env import Instance, instance
 
 SENTINEL = ".shelfhold-mount-id"
@@ -205,6 +205,10 @@ def test_another_root_registered_at_the_same_path_is_never_followed(
         inst.configure()
         fsops = _held_after_one_advance(inst)
         with inst.engine.begin() as connection:  # a replaced disk, registered again at the path
+            # the trees kept for the old root are not dropped silently (they are derived from the
+            # bindings and made again by the next pass): the test drops them as the admin would
+            connection.execute(sa.delete(export.tree_indexer))
+            connection.execute(sa.delete(export.tree))
             connection.execute(
                 sa.update(platform.physical_root)
                 .where(platform.physical_root.c.path_entry == str(inst.library))

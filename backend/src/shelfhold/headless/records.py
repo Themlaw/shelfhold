@@ -13,6 +13,7 @@ from sqlalchemy import Connection
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
 from shelfhold.catalog.public import record_removed
+from shelfhold.export.application.remove_destination import leave_tree
 from shelfhold.infrastructure.requesters import live_actor
 from shelfhold.infrastructure.schema import acquisition, export, identity, platform
 
@@ -178,6 +179,7 @@ def bound_subpath(connection: Connection, shelf_id: str, target_name: str) -> st
 
 
 def unbind(connection: Connection, shelf_id: str, destination_id: str, *, drop_shelf: bool) -> None:
+    leave_tree(connection, destination_id)
     connection.execute(
         sa.delete(export.shelf_destination).where(export.shelf_destination.c.id == destination_id)
     )

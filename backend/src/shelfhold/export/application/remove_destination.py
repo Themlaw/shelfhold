@@ -583,14 +583,14 @@ def forget_destination(
     conn.execute(sa.delete(export.shelf_destination_remote_library).where(
         export.shelf_destination_remote_library.c.shelf_destination_id == destination_id
     ))  # fmt: skip
-    _leave_tree(conn, destination_id)
+    leave_tree(conn, destination_id)
     conn.execute(
         sa.delete(export.shelf_destination).where(export.shelf_destination.c.id == destination_id)
     )
     return len(items)
 
 
-def _leave_tree(conn: Connection, destination_id: str) -> None:
+def leave_tree(conn: Connection, destination_id: str) -> None:
     """A secondary leaves its tree alone. A primary takes the tree down with it (the cascade
     detaches its indexers, which keep their own manifest and are given a tree of their own by the
     next pass): a tree without its writer would index nothing."""
