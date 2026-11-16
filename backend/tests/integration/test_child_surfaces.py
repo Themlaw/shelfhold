@@ -104,9 +104,13 @@ OWN = (
 # DEVICE (M4 L46): behind a device token and nothing else, the credential of an e-reader. A session,
 # a child's or an adult's, and an API key are refused (401); the token of a child reads as that
 # child and the route answers no catalogue data. The attacks are in `test_l46_device_tokens.py`;
-# the feed (L48, `tests/integration/test_l48_opds.py`) joins here with its own surface `opds`, and
-# the other kosync routes (L47) will.
-KOSYNC = ("GET /kosync/users/auth",)
+# the feed (L48, `tests/integration/test_l48_opds.py`) joins here with its own surface `opds`. The
+# kosync routes of L47 that are not GET (`PUT /kosync/syncs/progress`, `POST /kosync/users/create`)
+# have their child cases in `test_l47_kosync.py` (a child's PUT on a Work above her ceiling is a 202
+# that stores nothing, a session and a key are refused); the read of a position is here, where it
+# answers a child with `{}` for any fingerprint and no catalogue data.
+KOSYNC = ("GET /kosync/users/auth", "GET /kosync/syncs/progress/{document}")
+KOSYNC_WRITE = ("PUT /kosync/syncs/progress", "POST /kosync/users/create")
 OPDS = (
     "GET /opds",
     "GET /opds/opensearch.xml",
@@ -123,6 +127,7 @@ OPDS = (
     "GET /opds/bundles/{version_id}",
 )
 DEVICE = (*KOSYNC, *OPDS)
+DEVICE_ALL = (*DEVICE, *KOSYNC_WRITE)
 OPEN = {
     "GET /api/v1/activity": "activity",
     "GET /api/v1/events": "sse",
@@ -437,7 +442,7 @@ def _titles(response: Any) -> list[str]:
 @pytest.mark.req("EF-USR-006", "ENF-SEC-010")
 def test_every_openapi_route_has_a_child_case(api: AuthEnv) -> None:
     """A route added with no child case fails the suite (the end condition of L09)."""
-    declared = [*PUBLIC, *OWN, *OPEN, *CLOSED, *DEVICE]
+    declared = [*PUBLIC, *OWN, *OPEN, *CLOSED, *DEVICE_ALL]
     assert len(declared) == len(set(declared)), "a route holds two child cases"
     routes = _routes(api.app)
     assert not routes - set(declared), (
@@ -469,7 +474,7 @@ def test_pending_surfaces_get_a_real_child_case_when_they_arrive(api: AuthEnv) -
 @pytest.mark.req("EF-USR-006", "ENF-SEC-010")
 def test_new_route_without_a_child_case_is_caught(api: AuthEnv) -> None:
     """The meta-test is not decoration: a route that no registry names is reported as missing."""
-    known = set([*PUBLIC, *OWN, *OPEN, *CLOSED, *DEVICE])
+    known = set([*PUBLIC, *OWN, *OPEN, *CLOSED, *DEVICE_ALL])
     assert _routes(api.app) - known == set()  # today: every route has its case
     assert ({*_routes(api.app), "GET /api/v1/zz-new-surface"} - known) == {
         "GET /api/v1/zz-new-surface"
@@ -624,7 +629,8 @@ def test_device_routes_refuse_a_session_and_a_key_and_serve_a_child_token_no_dat
         )
         by_token = env.other_client("10.0.0.54").get(path, headers=presented)
         if route in KOSYNC:
-            assert by_token.status_code == 200 and by_token.json() == {"authorized": "OK"}
+            expected = {"authorized": "OK"} if route.endswith("/auth") else {}
+            assert by_token.status_code == 200 and by_token.json() == expected
         else:  # a feed answers 200, or the 404 of a filled-in identifier nobody has
             assert by_token.status_code in (200, 404), (route, by_token.status_code)
         world.clean(by_token.text)

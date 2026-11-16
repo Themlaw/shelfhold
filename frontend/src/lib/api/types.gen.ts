@@ -2937,6 +2937,52 @@ export type ProfilesOut = {
 };
 
 /**
+ * ProgressRead
+ *
+ * A position, or nothing at all (`{}`): KOReader then says "no progress found".
+ */
+export type ProgressRead = {
+    /**
+     * Device
+     */
+    device?: string | null;
+    /**
+     * Device Id
+     */
+    device_id?: string | null;
+    /**
+     * Document
+     */
+    document?: string | null;
+    /**
+     * Percentage
+     */
+    percentage?: number | null;
+    /**
+     * Progress
+     */
+    progress?: string | null;
+    /**
+     * Timestamp
+     */
+    timestamp?: number | null;
+};
+
+/**
+ * ProgressStored
+ */
+export type ProgressStored = {
+    /**
+     * Document
+     */
+    document: string;
+    /**
+     * Timestamp
+     */
+    timestamp: number;
+};
+
+/**
  * PurgeIn
  */
 export type PurgeIn = {
@@ -13541,6 +13587,93 @@ export type HealthzResponses = {
 
 export type HealthzResponse2 = HealthzResponses[keyof HealthzResponses];
 
+export type KosyncUpdateProgressData = {
+    /**
+     * ProgressBody
+     *
+     * What KOReader sends (`api.json`): `progress` is the page in text, or an xpointer.
+     */
+    body: {
+        /**
+         * Device
+         */
+        device: string;
+        /**
+         * Device Id
+         */
+        device_id?: string | null;
+        /**
+         * Document
+         */
+        document: string;
+        /**
+         * Metadata
+         */
+        metadata?: {
+            [key: string]: unknown;
+        } | null;
+        /**
+         * Percentage
+         */
+        percentage: number;
+        /**
+         * Progress
+         */
+        progress: string;
+    };
+    path?: never;
+    query?: never;
+    url: '/kosync/syncs/progress';
+};
+
+export type KosyncUpdateProgressErrors = {
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type KosyncUpdateProgressError = KosyncUpdateProgressErrors[keyof KosyncUpdateProgressErrors];
+
+export type KosyncUpdateProgressResponses = {
+    /**
+     * Successful Response
+     */
+    200: ProgressStored;
+};
+
+export type KosyncUpdateProgressResponse = KosyncUpdateProgressResponses[keyof KosyncUpdateProgressResponses];
+
+export type KosyncGetProgressData = {
+    body?: never;
+    path: {
+        /**
+         * Document
+         */
+        document: string;
+    };
+    query?: never;
+    url: '/kosync/syncs/progress/{document}';
+};
+
+export type KosyncGetProgressErrors = {
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type KosyncGetProgressError = KosyncGetProgressErrors[keyof KosyncGetProgressErrors];
+
+export type KosyncGetProgressResponses = {
+    /**
+     * Successful Response
+     */
+    200: ProgressRead;
+};
+
+export type KosyncGetProgressResponse = KosyncGetProgressResponses[keyof KosyncGetProgressResponses];
+
 export type KosyncAuthorizeData = {
     body?: never;
     path?: never;
@@ -13569,6 +13702,35 @@ export type KosyncAuthorizeResponses = {
 };
 
 export type KosyncAuthorizeResponse = KosyncAuthorizeResponses[keyof KosyncAuthorizeResponses];
+
+export type KosyncRegisterData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/kosync/users/create';
+};
+
+export type KosyncRegisterErrors = {
+    /**
+     * Successful Response
+     */
+    402: unknown;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type KosyncRegisterError = KosyncRegisterErrors[keyof KosyncRegisterErrors];
+
+export type KosyncRegisterResponses = {
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type KosyncRegisterResponse = KosyncRegisterResponses[keyof KosyncRegisterResponses];
 
 export type MetricsData = {
     body?: never;

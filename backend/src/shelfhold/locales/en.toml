@@ -1357,6 +1357,11 @@
     action = "Open the series page again on your e-reader: an up-to-date version is offered there."
     cause = "A file changed since this version was made, the version was purged, or your access ended."
 
+  [errors.kosync_registration_disabled]
+    title = "An e-reader does not create accounts."
+    action = "Ask the Shelfhold administrator for a device token, then enter it in the e-reader's sync settings."
+    cause = "Accounts are Shelfhold profiles: an e-reader cannot create one, it signs in with a device token."
+
   [errors.bundle_busy]
     title = "Too many blocks are being served right now."
     action = "Wait a few moments, then start the download again."
@@ -2547,6 +2552,9 @@
   keyring_body = "The keychain export file, which the documentation calls {export}: If you saved it under another name (the --out option), note that name below. It is encrypted by the passphrase, it is kept off the host, in a location other than the passphrase. Without it, after a loss of /data, the deletion log no longer protects anything."
   rotation = "Redo the export of the keychain, and reprint this kit, after each rotation of the keychain."
   no_secret = "This kit contains no secrets."
+
+[kosync]
+  registration_disabled = "Accounts are created in Shelfhold: ask the administrator for a device token."
 
 [opds]
   root_title = "Shelfhold"
