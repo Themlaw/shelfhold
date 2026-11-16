@@ -546,6 +546,9 @@ def build_pipeline(
             renders=FirstPartyDestinations(comp.engine).renders,  # EF-EXP-010: a ComicInfo each
             epub_path=_epub_path_of(comp, fsops),
             fsops=fsops,
+            page_target=PageTarget(
+                comp.settings.page_target_format, comp.settings.page_target_quality
+            ),
         ),
         probe=CachedInstanceProbe(_instance_identity(comp), clock=comp.clock),
         events=BusTargetEvents(comp.engine, comp.bus),

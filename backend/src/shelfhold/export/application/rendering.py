@@ -47,6 +47,7 @@ from shelfhold.sdk.age import ADULT_MIN_AGE, AgeRating
 __all__ = [
     "CbzRenderer",
     "EpubRenderer",
+    "PagesNotNormalizedError",
     "RenderMismatchError",
     "RenderedCbz",
     "RenderedEpub",
@@ -76,6 +77,15 @@ class RenderedCbz:
         False  # EF-EXP-046: some page was re-encoded (content_hash stays the source's)
     )
     page_issues: tuple[PageIssue, ...] = ()  # why an archive was left as received
+
+
+class PagesNotNormalizedError(Exception):
+    """A page of the archive cannot be brought to an allowlisted format (empty, undecodable, too
+    large, a format with no decoder): the chapter is left out, never sent as received (ADR-0054)."""
+
+    def __init__(self, issues: tuple[PageIssue, ...]) -> None:
+        super().__init__(issues[0].code if issues else "page.undecodable")
+        self.issues = issues
 
 
 class RenderMismatchError(Exception):
@@ -321,6 +331,8 @@ class CbzRenderer:
                 report = normalize_cbz(
                     archive, out, target=policy.target, keep=policy.keep, comicinfo=comicinfo
                 )
+                if report.status == "kept":
+                    raise PagesNotNormalizedError(report.issues)
                 if report.status != "normalized":
                     out.seek(0)
                     out.truncate(0)
@@ -350,17 +362,34 @@ class CbzRenderer:
         )  # fmt: skip
 
 
-def render_cbz_bytes(data: bytes, comicinfo: bytes) -> bytes:
-    """The archive `data` with `comicinfo` as its last entry, the pages as they were: the payload
-    of the result is checked against the original's (`RenderMismatchError`). In memory: the host
-    already holds the archive in memory when a plan names it (`HostContentStore`)."""
+def render_cbz_bytes(
+    data: bytes, comicinfo: bytes | None = None, policy: PagePolicy | None = None
+) -> bytes:
+    """The archive `data` with its pages in the formats `policy` keeps (EF-EXP-046: the default
+    policy keeps JPEG, PNG, GIF and WebP and re-encodes the rest) and, when given, `comicinfo` as
+    its last entry. An archive that needs nothing is returned as it is, or repackaged when a
+    ComicInfo is to be added, its payload checked against the original's (`RenderMismatchError`).
+    A page that cannot be brought to an allowed format gives `PagesNotNormalizedError`: nothing is
+    served as received. In memory: the host already holds the archive when a plan names it."""
+    policy = policy or PagePolicy()
     with safe_open_archive(io.BytesIO(data), name="received.cbz") as source:
         original = content_hash(source)
         out = io.BytesIO()
-        repackage_cbz(source, comicinfo, out)
+        report = normalize_cbz(
+            source, out, target=policy.target, keep=policy.keep, comicinfo=comicinfo
+        )
+        if report.status == "kept":
+            raise PagesNotNormalizedError(report.issues)
+        if report.status == "unchanged":
+            if comicinfo is None:
+                return data
+            out = io.BytesIO()
+            repackage_cbz(source, comicinfo, out)
     out.seek(0)
     with safe_open_archive(out, name="rendered.cbz") as rendered:
-        if content_hash(rendered) != original:
+        if report.status == "normalized":
+            check_cbz_entries(rendered)  # nothing off the allowlist leaves
+        elif content_hash(rendered) != original:
             raise RenderMismatchError("the rendered pages differ from the received ones")
     return out.getvalue()
 

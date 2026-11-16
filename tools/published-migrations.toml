@@ -244,3 +244,8 @@ since = "1.1"
 file = "0084_reading_progress_transposed.py"
 sha256 = "5b5af92c16c6a360fb0edb4d81c8f845bbd29774766e74cba915ac640be52140"
 since = "1.1"
+
+[[migration]]
+file = "0085_page_issue.py"
+sha256 = "d2c5ffc37edb4a58a683d26d318595df6da348dab1a1ef290385f280e1b93991"
+since = "1.1"

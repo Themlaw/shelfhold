@@ -58,10 +58,11 @@ Non critiques (remplaçables sans réécriture), listées pour mémoire :
 - **apprise** (BSD-2-Clause) : notifications ; planchers de sécurité ENF-SEC-016.
   **Pillow** (MIT-CMU) et **python-multipart** (Apache-2.0) : planchers ENF-SEC-016, vérifiés dans
   le verrou par `test_dependency_floors_enforced_in_lockfile`.
-- **JPEG XL et HEIC/HEIF : non embarqués** (ADR-0054). `pillow-jxl-plugin` (≈ 2,5 Mo, licence non
-  déclarée sur PyPI) et `pillow-heif` (BSD-3, ≈ 6 Mo, libheif et libde265 sous LGPL, brevets HEVC)
+- **JPEG XL et HEIC/HEIF : non embarqués** (ADR-0054). `pillow-jxl-plugin` (≈ 2,5 Mo, GPL-3.0 dans
+  son dépôt, compatible AGPL) et `pillow-heif` (BSD-3, ≈ 6 Mo, libheif et libde265 sous LGPL, brevets HEVC)
   ajouteraient une surface native au worker de décodage, qui tourne sans threads, et le verrou est
   figé. Une page dans l'un de ces formats est refusée avec le code `page.format_unsupported`.
+  Un lot suivant est possible pour JPEG XL (un seul fil, essai seccomp, relecture adverse).
   L'AVIF, lui, est lu par Pillow ≥ 13.
 - **pypdf** (BSD-3-Clause) : lecture stricte d'un PDF du dossier d'import (EF-SRC-012), version
   exacte `6.21.4` (publiée le 2026-10-28, plus de 14 jours). Importée par le seul worker de décodage

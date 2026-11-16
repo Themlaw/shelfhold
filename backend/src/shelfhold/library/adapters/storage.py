@@ -527,7 +527,9 @@ class KeepCopier:
         result = self._extract(unit_id)
         return Kept(unit_id, result.rel_path, "extracted", result.file_hash)
 
-    def declare_derivative(self, unit_id: str, derived: Path, derived_by: str) -> Derivative:
+    def declare_derivative(
+        self, unit_id: str, derived: Path, derived_by: str, *, lossy: bool = False
+    ) -> Derivative:
         """A source declared a descrambling (EF-BIB-006): `derived` is the canonical file, the
         bytes as received stay in /store, both traced by hash.
 
@@ -544,11 +546,13 @@ class KeepCopier:
             raise SafeguardFailedError("no_content", "the Unit is gone")
         try:
             with self._hold_work(work_id):
-                return self._declare(unit_id, derived, derived_by)
+                return self._declare(unit_id, derived, derived_by, lossy)
         except WorkBusyError as busy:
             raise SafeguardFailedError("work_busy", "the Work is held by another job") from busy
 
-    def _declare(self, unit_id: str, derived: Path, derived_by: str) -> Derivative:
+    def _declare(
+        self, unit_id: str, derived: Path, derived_by: str, lossy: bool = False
+    ) -> Derivative:
         with self._engine.connect() as connection:
             content = connection.execute(
                 sa.select(storage.content)
@@ -564,6 +568,7 @@ class KeepCopier:
             copies = list(library_copies(connection, unit_id))
         with safe_open_archive(derived, name="derived.cbz") as archive:
             check_cbz_entries(archive)
+            derived_payload = content_hash(archive)
         derived_hash = sha256_file(derived)
         if content.retention == "passthrough":
             self._keep(unit_id)  # the original first, byte for byte
@@ -591,6 +596,9 @@ class KeepCopier:
                 connection, target.replica_id, file_hash=derived_hash,
                 dev=self._fsops.device_of(target.local), ino=written.ino, size=written.size,
                 mtime_ns=written.mtime_ns, verified_at=datetime.now(UTC),
+                **(
+                    {"content_hash": derived_payload, "fidelity": "derived"} if lossy else {}
+                ),
             )  # fmt: skip
             connection.execute(
                 sa.update(storage.content)

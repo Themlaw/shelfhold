@@ -34,3 +34,17 @@ La commande est reprenable après un arrêt brutal et ne refait pas ce qui est d
 Une page vide, illisible ou trop grande (`page.empty`, `page.undecodable`, `page.too_large`), ou en
 JPEG XL ou HEIC (`page.format_unsupported`), laisse **toute** l'archive telle que reçue et est signalée
 dans le journal ; rien n'est converti à moitié.
+
+## Chapitres mis de côté
+
+Un chapitre dont une page est refusée n'est **jamais** envoyé tel quel (une page AVIF s'affiche en
+blanc dans KOReader) : il reste dans la bibliothèque tel que reçu, hors de chaque destination, et la
+page **Santé** l'indique (nombre de chapitres par code). Il n'est pas décodé de nouveau à chaque
+cycle : un refus certain vaut pour ce contenu ; une page qui fait planter le décodeur
+(`pages.worker_failed`) est redemandée après un recul (un jour par échec, une semaine au plus) ou
+par `normalize-pages`. Un TIFF à plusieurs images est refusé (`page.format_unsupported`).
+
+## Après la normalisation
+
+Un bloc série déjà téléchargé sur la liseuse doit être **retéléchargé** : l'empreinte de chaque
+chapitre change. Un chapitre isolé garde sa progression.

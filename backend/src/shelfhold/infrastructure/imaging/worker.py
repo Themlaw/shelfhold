@@ -357,6 +357,15 @@ def _thumbnail(data: bytes, args: dict[str, Any]) -> tuple[dict[str, Any], bytes
     return {"format": fmt, "width": image.width, "height": image.height}, out.getvalue()
 
 
+_WIDE_MODES = frozenset({"I", "F", "I;16", "I;16L", "I;16B", "I;16N"})
+
+
+def _to_8_bits(image: Any) -> Any:
+    """A grey page of 16 (or 32) bits a sample as 8 bits: the 16-bit range scaled to 0..255."""
+    wide = image.convert("F" if image.mode == "F" else "I")
+    return wide.point(lambda value: value * (1 / 257)).convert("L")
+
+
 def _reencode(data: bytes, args: dict[str, Any]) -> tuple[dict[str, Any], bytes]:
     """A page re-encoded at full size (M4 L53): the first frame, EXIF orientation applied, the
     alpha flattened on white for JPEG, no metadata carried. Never AVIF or JXL as an output."""
@@ -366,8 +375,13 @@ def _reencode(data: bytes, args: dict[str, Any]) -> tuple[dict[str, Any], bytes]
     quality = int(args["quality"])
     _single_thread_avif()
     image = _open(data, args["caps"])
+    if image.format == "TIFF" and getattr(image, "n_frames", 1) > 1:
+        # only the first image would be kept and the others lost without a word: refused
+        raise _Reject("image.format_refused", "multi_frame", "header")
     _guarded(image.load)
     image = _guarded(ImageOps.exif_transpose, image)
+    if image.mode in _WIDE_MODES:  # 16 bits or more per sample: scaled down, never clipped white
+        image = _guarded(_to_8_bits, image)
     has_alpha = "A" in image.getbands() or "transparency" in image.info
     if fmt == "JPEG":
         if has_alpha:

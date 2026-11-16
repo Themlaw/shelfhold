@@ -61,6 +61,7 @@ from shelfhold.library.adapters.storage import (
 )
 from shelfhold.library.adapters.svg_derivative import SvgCbzStore
 from shelfhold.library.domain.failures import SafeguardFailedError, VariantAlreadyStoredError
+from shelfhold.library.page_issues import clear_page_issue, note_page_issue, page_issue_for
 from shelfhold.library.replica import library_copies
 
 __all__ = [
@@ -139,9 +140,13 @@ class PageFormatCbzStore:
             work_id = work_of_unit(connection, unit_id)
         return nullcontext() if work_id is None else self._hold_work(work_id)
 
-    def _report(self, unit_id: str, issues: tuple[PageIssue, ...]) -> None:
+    def _report(
+        self, unit_id: str, issues: tuple[PageIssue, ...], original_sha256: str | None = None
+    ) -> None:
         for issue in issues:
             log.info("pages.not_normalized", unit_id=unit_id, code=issue.code)
+        if issues and original_sha256 is not None:  # the chapter is set aside and shown on Health
+            note_page_issue(self._engine, unit_id, original_sha256, issues[0].code)
         if self._on_issues is not None:
             self._on_issues(unit_id, issues)
 
@@ -156,11 +161,25 @@ class PageFormatCbzStore:
         try:
             with _derivative_of(staged, self._workdir, self._target) as (derived, report):
                 if report.status != "normalized":
-                    self._report(unit_id, report.issues)
-                    return self._inner.ingest(**arguments)  # as received
-                return self._file(arguments, unit_id, derived)
+                    ingested = self._inner.ingest(**arguments)  # as received
+                    self._report(unit_id, report.issues, sha256_file(staged))
+                    return ingested
+                ingested = self._file(arguments, unit_id, derived)
+                clear_page_issue(self._engine, unit_id)
+                return ingested
         except UnsafeArchiveError:
             return self._inner.ingest(**arguments)  # the plain store says why
+        except ImageRejected as error:
+            if error.code != WORKER_FAILED:
+                raise
+            # a page that kills the decoder is not tried again at every cycle: the chapter is
+            # filed as received, set aside, and shown on Health (`pages.worker_failed`)
+            ingested = self._inner.ingest(**arguments)
+            note_page_issue(
+                self._engine, unit_id, sha256_file(staged), PAGES_WORKER_FAILED, died=True
+            )
+            log.warning("pages.worker_failed", unit_id=unit_id)
+            return ingested
 
     def _file(self, arguments: dict[str, Any], unit_id: str, derived: Path) -> Any:
         """The original filed as received, then its derivative declared, under one hold."""
@@ -178,7 +197,7 @@ class PageFormatCbzStore:
             raise OSError(errno.EAGAIN, f"page_derivative_pending: {error.reason}") from error
 
     def _declare(self, unit_id: str, derived: Path) -> None:
-        self._keeper.declare_derivative(unit_id, derived, PAGE_DERIVED_BY)
+        self._keeper.declare_derivative(unit_id, derived, PAGE_DERIVED_BY, lossy=True)
 
     def derivative_missing(self, unit_id: str, staged: Path) -> bool:
         """Does `staged` need normalizing while its Unit's content has no derivative yet?"""
@@ -209,8 +228,9 @@ class PageFormatCbzStore:
                 with _derivative_of(staged, self._workdir, self._target) as (derived, report):
                     if report.status == "normalized":
                         self._declare(unit_id, derived)
+                        clear_page_issue(self._engine, unit_id)
                     else:
-                        self._report(unit_id, report.issues)
+                        self._report(unit_id, report.issues, sha256_file(staged))
         except SafeguardFailedError as error:
             raise OSError(errno.EAGAIN, f"page_derivative_pending: {error.reason}") from error
 
@@ -223,6 +243,7 @@ class PendingUnit:
     unit_id: str
     content_id: str
     local: str
+    original_sha256: str = ""
     resume: bool = False  # the library file is already the derivative: only the books are left
 
 
@@ -305,14 +326,23 @@ class LibraryPageNormalizer:
                 .order_by(content.c.id)
             ).all()
             for row in rows:
+                known = page_issue_for(connection, row.unit_id)
+                if (
+                    known is not None
+                    and known.original_sha256 == row.original_sha256
+                    and known.code != PAGES_WORKER_FAILED
+                ):
+                    continue  # refused for this very content already: nothing new to look at
                 copies = library_copies(connection, row.unit_id)
                 local = next((c.local for c in copies if not c.damaged), None)
                 if local is None:
                     continue
                 if self._wants(local):
-                    found.append(PendingUnit(row.unit_id, row.id, local))
+                    found.append(PendingUnit(row.unit_id, row.id, local, row.original_sha256))
                 elif row.retention == "keep" and self._interrupted(row, local):
-                    found.append(PendingUnit(row.unit_id, row.id, local, resume=True))
+                    found.append(
+                        PendingUnit(row.unit_id, row.id, local, row.original_sha256, resume=True)
+                    )
         return found
 
     def _interrupted(self, row: Any, local: str) -> bool:
@@ -370,20 +400,27 @@ class LibraryPageNormalizer:
         except ImageRejected as error:
             if error.code != WORKER_FAILED:
                 raise
+            note_page_issue(
+                self._engine, unit.unit_id, unit.original_sha256, PAGES_WORKER_FAILED,
+                died=True,
+            )  # fmt: skip
             return UnitOutcome(unit.unit_id, "failed", code=PAGES_WORKER_FAILED)
         except (OSError, UnsafeArchiveError, ValueError):
             return UnitOutcome(unit.unit_id, "failed", code=PAGES_UNREADABLE)
 
     def _declare(self, unit: PendingUnit, staged: Path) -> UnitOutcome:
         if unit.resume:  # the file in the library is the derivative already: declare it as it is
-            self._keeper.declare_derivative(unit.unit_id, staged, PAGE_DERIVED_BY)
+            self._keeper.declare_derivative(unit.unit_id, staged, PAGE_DERIVED_BY, lossy=True)
             return UnitOutcome(unit.unit_id, "normalized")
         with _derivative_of(staged, self._workdir, self._target) as (derived, report):
             if report.status == "normalized":
-                self._keeper.declare_derivative(unit.unit_id, derived, PAGE_DERIVED_BY)
+                self._keeper.declare_derivative(unit.unit_id, derived, PAGE_DERIVED_BY, lossy=True)
+                clear_page_issue(self._engine, unit.unit_id)
                 return UnitOutcome(unit.unit_id, "normalized")
         if report.status == "unchanged":
             return UnitOutcome(unit.unit_id, "unchanged")
         for issue in report.issues:
             log.info("pages.not_normalized", unit_id=unit.unit_id, code=issue.code)
+        if report.issues:
+            note_page_issue(self._engine, unit.unit_id, sha256_file(staged), report.issues[0].code)
         return UnitOutcome(unit.unit_id, "kept_as_received", report.issues)

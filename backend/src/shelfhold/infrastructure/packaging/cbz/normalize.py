@@ -33,6 +33,11 @@ from shelfhold.infrastructure.content_trust.cbz_entries import (
     page_extension,
     sniff_page_kind,
 )
+from shelfhold.infrastructure.content_trust.page_header import (
+    HEADER_STEPS,
+    announced_size,
+    needs_more,
+)
 from shelfhold.infrastructure.imaging import ImageRejected, Reencoded, reencode_image
 from shelfhold.infrastructure.imaging.errors import (
     FORMAT_REFUSED,
@@ -131,11 +136,29 @@ def _classify(source: SafeArchive, keep: frozenset[str]) -> tuple[list[_Item], l
                 continue
             issues.append(PageIssue(name, PAGE_EMPTY if not head else PAGE_UNDECODABLE))
             items.append(_Item(name, "page", None, ext, index))
+        elif _too_large(source, name, head, kind):
+            issues.append(PageIssue(name, PAGE_TOO_LARGE))  # a bomb in a page that is kept as is
+            items.append(_Item(name, "page", kind, ext, index, convert=kind not in keep))
         else:
             item = _Item(name, "page", kind, ext, index, convert=kind not in keep)
             items.append(item)
         index += 1
     return items, issues
+
+
+def _too_large(source: SafeArchive, name: str, head: bytes, kind: str) -> bool:
+    """Does the header of the page announce more pixels than a page may have? Only the first bytes
+    are read (a JPEG's frame header may need a few more): nothing is decoded."""
+    from shelfhold.infrastructure.imaging import caps_for
+
+    for step in HEADER_STEPS:
+        if not needs_more(head, kind):
+            break
+        head = source.read_head(name, step)
+        if len(head) < step:  # the whole page was read
+            break
+    size = announced_size(head, kind)
+    return size is not None and size[0] * size[1] > caps_for("page_input").max_pixels
 
 
 def _stem(name: str) -> str:
@@ -203,7 +226,7 @@ def needs_normalization(source: SafeArchive, keep: frozenset[str] = KEEP_PAGE_KI
 def _issue_for(error: ImageRejected, item: _Item) -> PageIssue:
     if error.code == TOO_LARGE:
         return PageIssue(item.name, PAGE_TOO_LARGE)
-    if error.code == FORMAT_REFUSED and item.kind in _NO_DECODER:
+    if error.code == FORMAT_REFUSED and (item.kind in _NO_DECODER or error.reason == "multi_frame"):
         return PageIssue(item.name, PAGE_FORMAT_UNSUPPORTED)
     return PageIssue(item.name, PAGE_UNDECODABLE)
 
