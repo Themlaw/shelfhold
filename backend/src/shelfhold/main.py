@@ -206,6 +206,7 @@ LOGGED_SETTINGS: dict[str, str] = {
     "retention_audit_days": "retention_audit_days",
     "stream_max_per_profile": "stream_max_per_profile",
     "comicvine_enabled": "comicvine_enabled",  # a switch
+    "googlebooks_daily_budget": "googlebooks_daily_budget",  # a number, no secret
 }  # fmt: skip
 SECRET_SETTINGS = frozenset(
     {
