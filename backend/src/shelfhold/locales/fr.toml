@@ -1187,6 +1187,11 @@ title = "Un disque monté est absent ou différent de celui attendu."
 action = "Montez le bon disque, puis lancez « shelfhold target recheck »."
 cause = "Le fichier sentinelle attendu sur un disque monté est introuvable : disque démonté, remplacé ou monté au mauvais endroit."
 
+[errors."export.plan_refused"]
+title = "L'hôte a refusé d'exécuter ce que la destination décrivait."
+action = "Rien n'a été modifié. Vérifiez la destination et sa version, puis relancez l'export."
+cause = "Un plan ou un appel rendu par la destination enfreint une règle de l'hôte : un chemin hors du dossier, un fichier non planifié pour cette liaison, un indexeur qui demande à écrire, ou un plan modifié après sa vérification."
+
 [errors."export.name_misread_number"]
 title = "Kavita lirait un autre numéro de chapitre dans ce nom de fichier."
 action = "Définissez un nom de série exporté qui ne ressemble pas à un marqueur de chapitre, puis relancez l'aperçu."

@@ -28,7 +28,16 @@ from shelfhold.export.application.locks import ResourceLocks, library_resource
 from shelfhold.export.application.manifest_write import complete_write
 from shelfhold.export.application.mirror import ProvenanceMirror
 from shelfhold.export.application.naming_preview import NAMING_BLOCKS, NamingItem
+from shelfhold.export.application.plan_executor import (
+    ContentStore,
+    ExecutionReport,
+    InstanceProbe,
+    PlanBinding,
+    PlanExecutor,
+    PlannedLedger,
+)
 from shelfhold.export.application.plans import PlanOp, PlanStore, StalePlanError
+from shelfhold.export.application.ports import TargetEvents
 from shelfhold.export.application.ranged_export import (
     PreparedRange,
     RangedExporter,
@@ -145,6 +154,10 @@ class DestinationPermissionError(PermissionError):
     """The destination refused the write of the exported file itself (EACCES, EROFS...): only
     this waits for `target recheck`. A `PermissionError` anywhere else (the received archive,
     the staging area) is an ordinary failure and is not blamed on the folder."""
+
+
+class PlanExecutorUnboundError(RuntimeError):
+    """A plan was handed over before the composition root set an executor."""
 
 
 class UnknownPlanError(LookupError):
@@ -356,6 +369,8 @@ class ExportPipeline:
         self._gate = gate  # raises while the instance is `restored_behind` (EF-INT-026)
         self._preflight: Preflight | None = None
         self._switchover: SwitchoverCheck | None = None
+        self.plan_ledger = PlannedLedger()  # what the planner planned, per call and binding
+        self._plan_executor: PlanExecutor | None = None
         self._renames = RenameBook(
             engine, fsops, locate=locate, clock=clock, locks=self._locks, request_scan=request_scan
         )
@@ -474,6 +489,34 @@ class ExportPipeline:
         """Probe the root of a destination before any export, and park a series whose write is
         refused (EF-EXP-054): the composition root sets it once."""
         self._preflight = preflight
+
+    def use_plan_executor(
+        self, *, contents: ContentStore, probe: InstanceProbe, events: TargetEvents | None = None
+    ) -> None:
+        """The executor of the plans destinations describe (M4 L04), over this pipeline's
+        database, files, journal and ledger. The composition root sets it once, with the bytes the
+        host owns and the identity the server gives."""
+        self._plan_executor = PlanExecutor(
+            self._engine,
+            self._fsops,
+            IntentJournal(self._engine, self._fsops, clock=self._clock),
+            ledger=self.plan_ledger,
+            contents=contents,
+            probe=probe,
+            clock=self._clock,
+            events=events,
+        )
+
+    def execute_destination_plan(
+        self, binding: PlanBinding, call_id: str, raw_plan: object
+    ) -> ExecutionReport:
+        """Run the plan a destination returned for one call, under the lease of its root and
+        never on an instance that waits for an adoption."""
+        if self._plan_executor is None:
+            raise PlanExecutorUnboundError("no executor of destination plans is set")
+        self._require_writable()
+        with self._root_session(binding.destination_id):
+            return self._plan_executor.execute(binding, call_id, raw_plan)
 
     def _require_writable(self) -> None:
         if self._gate is not None:

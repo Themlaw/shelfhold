@@ -21,9 +21,9 @@ from tests.integration.test_schema_migration_0046 import add_row
 pytestmark = pytest.mark.req("ENF-OPS-002", "EF-SRC-026")
 
 
-def test_the_revision_is_0080_and_follows_the_head_of_main() -> None:
+def test_the_revision_is_0080_and_follows_0079() -> None:
     script = ScriptDirectory(str(default_script_location()))
-    assert script.get_heads() == ["0080"]
+    assert len(script.get_heads()) == 1  # one head, whichever later lot moved it
     assert script.get_revision("0080").down_revision == "0079"
 
 

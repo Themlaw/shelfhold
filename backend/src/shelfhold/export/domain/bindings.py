@@ -13,6 +13,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import Any, Literal
 
+from shelfhold.export.domain.folders import FOLDER_TRANSPORTS, Relation, folder_relation
 from shelfhold.export.domain.path_map import clean_absolute, within
 from shelfhold.sdk.age import ADULT_MIN_AGE, AGE_TIERS, is_family_ceiling
 
@@ -136,7 +137,7 @@ def resolve_egress(*, plugin_default: Egress, attested: Egress | None) -> Egress
     return attested if attested is not None else plugin_default
 
 
-WRITING_TRANSPORTS = ("tree", "dropbox", "push")  # the ones that put files in a local folder
+WRITING_TRANSPORTS = FOLDER_TRANSPORTS  # the ones that put files in a local folder
 
 
 @dataclass(frozen=True)
@@ -167,8 +168,9 @@ def check_binding(
             if other.transport not in WRITING_TRANSPORTS or other.local_root is None:
                 continue
             mine, theirs = clean_absolute(new.local_root), clean_absolute(other.local_root)
-            same_folder = new.identity is not None and new.identity == other.identity
-            if same_folder or within(mine, theirs) is not None or within(theirs, mine) is not None:
+            same_inode = new.identity is not None and new.identity == other.identity
+            parts = ([p for p in mine.split("/") if p], [p for p in theirs.split("/") if p])
+            if folder_relation(*parts, linked=same_inode) is not Relation.APART:
                 raise TreeOverlapError(f"{mine} and {theirs} overlap")
     if new.remote_root is not None:
         mine = clean_absolute(new.remote_root)

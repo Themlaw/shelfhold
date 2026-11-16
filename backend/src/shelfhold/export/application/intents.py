@@ -72,6 +72,7 @@ class DiskPort(Protocol):
     def rename(self, src: str, dst: str, *, replace: bool = False) -> None: ...
     def rmdir(self, local: str) -> None: ...
     def recycle(self, local: str, *, entry: str | None = None) -> str: ...
+    def utime(self, local: str, *, mtime_ns: int) -> None: ...
     def observe(self, local: str) -> tuple[Kind, FileIdentity] | None: ...
     def sha256_of(self, local: str) -> str: ...
 
@@ -552,6 +553,8 @@ class IntentJournal:
                 self._resolve_unbin(intent, report, on_done)
             elif intent.op == "write" and intent.dst:
                 self._resolve_write(intent, report, on_done)
+            elif intent.op == "utime" and intent.dst:
+                self._resolve_utime(intent, report, on_done)
             elif intent.op == "upgrade" and intent.dst:
                 self._resolve_upgrade(intent, report, on_done)
             elif intent.op == "copy_cross_root" and intent.src and intent.dst:
@@ -739,6 +742,29 @@ class IntentJournal:
             report.abandoned.append(intent.id)
         else:
             self._drift(intent, report, "the target is not the file that was being written")
+
+    def _resolve_utime(
+        self, intent: OpenIntent, report: ResolveReport, on_done: ManifestHook | None
+    ) -> None:
+        """The time of a file being set in place (M4 L04, `touch_mtime`). The file is the one the
+        intent names (same hash, nothing was rewritten): the time is put again, which is the same
+        whether or not the crash came before it, and the intent is closed. Nothing there: the
+        operation never started. Another file: nothing is touched."""
+        mtime_ns = intent.payload.get("mtime_ns")
+        if intent.dst is None or not isinstance(mtime_ns, int):
+            return self._drift(intent, report, "a utime needs its file and its time")
+        found = self._disk.observe(intent.dst)
+        if found is None:
+            self._close(intent.id, "cancelled")
+            report.abandoned.append(intent.id)
+        elif found[0] == "file" and intent.expected_sha256 is not None:
+            if self._disk.sha256_of(intent.dst) != intent.expected_sha256:
+                return self._drift(intent, report, "the file is not the one whose time was set")
+            self._disk.utime(intent.dst, mtime_ns=mtime_ns)
+            self._finish(intent, on_done)
+            report.replayed.append(intent.id)
+        else:
+            self._drift(intent, report, "the target is not the file whose time was being set")
 
     def _resolve_upgrade(
         self, intent: OpenIntent, report: ResolveReport, on_done: ManifestHook | None

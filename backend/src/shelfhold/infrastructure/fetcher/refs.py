@@ -93,7 +93,12 @@ def _pattern_reason(ref: str) -> str | None:
 
 
 def _index(known: "Iterable[str] | SecretIndex") -> SecretIndex:
-    return known if isinstance(known, SecretIndex) else SecretIndex(known)
+    """The values a reference is looked at against, with the forms a URL carries them in: the
+    same set the write guard holds (`register_secret_value`), so that a reference this guard lets
+    through is never one the database refuses (#299 m2)."""
+    if isinstance(known, SecretIndex):
+        return known
+    return SecretIndex({form for value in known for form in (value, *secret_forms(value))})
 
 
 def check_ref(ref: str, known: "Iterable[str] | SecretIndex", *, patterns: bool = True) -> str:

@@ -56,6 +56,7 @@ WRITES = ("write_atomic", "copy_independent")
 # classes that write elsewhere than under /store or received/ (and the reason)
 NOT_UNDER_STORE = {
     "ExportPipeline": "writes the export targets, under the export locks (L-EXP)",
+    "PlanExecutor": "writes a tree of an export target, every operation under an intent (M4 L04)",
     "Safeguard": "restores /library from a verified copy, under the intent journal",
     "_Target": "import-all into a fresh instance (no Work yet), under the write lease",
     "UntrustedEpubStore": "received/ writer of #129, which takes the Work lock there",
