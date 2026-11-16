@@ -30,12 +30,13 @@ You need Docker with Compose v2, on amd64 or arm64.
 ```sh
 mkdir shelfhold && cd shelfhold
 curl -fsSLO https://raw.githubusercontent.com/Themlaw/shelfhold/main/compose.simple.yaml
+curl -fsSL -o .env https://raw.githubusercontent.com/Themlaw/shelfhold/main/.env.example
 mkdir -p data store && sudo chown 1000:1000 data store
 docker compose -f compose.simple.yaml up -d
 docker compose -f compose.simple.yaml exec shelfhold shelfhold admin create
 ```
 
-Then open <http://localhost:8080> and sign in with the administrator you just created. To create it in the browser instead, set `SHELFHOLD_SETUP_TOKEN` in the compose file before the first start (see the comment there).
+Then open <http://localhost:8080> and sign in with the administrator you just created. Settings go in `.env` (every one is optional, see the comments in it). To create the administrator in the browser instead, set `SHELFHOLD_SETUP_TOKEN` there before the first start.
 
 Next steps:
 

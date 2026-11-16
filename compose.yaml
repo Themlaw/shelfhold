@@ -18,8 +18,12 @@ x-shelfhold: &shelfhold
   security_opt: ["no-new-privileges:true"]
   ulimits:
     core: 0            # no core dump of decrypted data
+  # Settings: copy .env.example to .env and edit it (optional; Compose 2.24 or later).
+  env_file:
+    - path: .env
+      required: false
   environment: &shelfhold-env
-    TZ: Etc/UTC
+    TZ: ${TZ:-Etc/UTC}
     # First start (EF-UX-001): to create the first administrator in the browser wizard, set a setup
     # secret of at least 24 characters, generated on your machine (`openssl rand -hex 24`), then
     # uncomment the next line and paste it. You type it once in the "Your account" screen; it opens

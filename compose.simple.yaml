@@ -9,11 +9,12 @@
 x-shelfhold: &shelfhold
   image: ghcr.io/themlaw/shelfhold:1.0
   user: "1000:1000"
+  # Settings: copy .env.example to .env and edit it (optional; Compose 2.24 or later).
+  env_file:
+    - path: .env
+      required: false
   environment:
-    TZ: Etc/UTC
-    # First administrator in the browser wizard: generate a secret (`openssl rand -hex 24`), paste it
-    # below and uncomment the line. Without it, run `docker compose exec shelfhold shelfhold admin create`.
-    # SHELFHOLD_SETUP_TOKEN: "<the-24-or-more-characters-you-generated>"
+    TZ: ${TZ:-Etc/UTC}
   volumes:
     - ./data:/data     # database, config, thumbnails (local disk, not NFS)
     - ./store:/store   # kept copies, a separate folder from ./data
