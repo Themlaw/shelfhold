@@ -18,6 +18,7 @@ from shelfhold.acquisition.application.requests import (
     Requester,
     RequestRefusedError,
     RequestService,
+    SourceRef,
 )
 from shelfhold.catalog.public import RatingRefusedError, RatingService
 from shelfhold.config import Settings
@@ -71,6 +72,9 @@ class FakePorts:
     engine: sa.Engine | None = None
     fail_follow: Exception | None = None
     fail_start: Exception | None = None
+    search_hits: list[SourceRef] = field(default_factory=list)  # what the federated search finds
+    search_error: Exception | None = None
+    searches: list[str] = field(default_factory=list)  # the queries it was asked, in order
 
     def kind_of(self, source_key: str) -> str:
         return self.kinds.get(source_key, "novel")
@@ -84,6 +88,12 @@ class FakePorts:
         if self.fail_follow is not None:
             raise self.fail_follow
         self.follows.append((source_key, remote_id, requester_user_id, visibility))
+
+    def search(self, query: str) -> list[SourceRef]:
+        self.searches.append(query)
+        if self.search_error is not None:
+            raise self.search_error
+        return list(self.search_hits)
 
     def prepare(
         self, source_key: str, remote_id: str, *, requester_user_id: str | None, visibility: str

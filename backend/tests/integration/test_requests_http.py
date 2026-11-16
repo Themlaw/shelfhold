@@ -36,6 +36,7 @@ OWN_ROUTES = (
 )
 CHILD_KEYS = {  # M3 L41 added the two words she reads: the one state and the link
     "id", "state", "title", "reject_reason", "created_at", "updated_at", "family_state", "open_url",
+    "elsewhere_url",  # M4 L30: always there, and always null for a child
 }  # fmt: skip
 ULID = "01ARZ3NDEKTSV4RRFFQ69G5FAV"
 
