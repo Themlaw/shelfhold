@@ -6,6 +6,7 @@ cases they leave open (the typed codes, the unknown state, a second kind of cove
 Mihon adds to the tree, a volume next to a chapter of the same number).
 """
 
+# ruff: noqa: F811  (the `world` fixture of L06a is imported, then asked for by name)
 import io
 import json
 import zipfile
@@ -33,7 +34,7 @@ from shelfhold.infrastructure.schema import acquisition, export
 from tests.byte_source_env import unit_with_item
 from tests.detach_env import ADMIN
 from tests.export_env import ExportEnv, export_env
-from tests.integration.test_fan_out_routes import World
+from tests.integration.test_fan_out_routes import World, world  # noqa: F401
 from tests.integration.test_native_folder_pass import native, run, tree
 from tests.integration.test_native_folder_root_guard import _suwayomi_source
 
