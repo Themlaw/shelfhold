@@ -1,0 +1,60 @@
+{
+  "interactions": [
+    {
+      "request": {
+        "method": "POST",
+        "uri": "https://api.hardcover.app/v1/graphql",
+        "body_contains": "Hostile Volume"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json; charset=utf-8"
+        },
+        "body": "{\"data\": {\"search\": {\"results\": {\"found\": 1, \"hits\": [{\"document\": {\"title\": 12345, \"slug\": \"../../evil?x=1\", \"description\": \"  Spaced \\u0000 out\\n\\ttext  \", \"release_year\": \"abcd\", \"author_names\": \"a string\", \"isbns\": 7}}]}}}}"
+      }
+    },
+    {
+      "request": {
+        "method": "POST",
+        "uri": "https://api.hardcover.app/v1/graphql",
+        "body_contains": "Nothing Recorded"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json; charset=utf-8"
+        },
+        "body": "{\"data\": {\"search\": {\"results\": {\"found\": 0, \"hits\": []}}}}"
+      }
+    },
+    {
+      "request": {
+        "method": "POST",
+        "uri": "https://api.hardcover.app/v1/graphql",
+        "body_contains": "The Synthetic Chronicle"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json; charset=utf-8"
+        },
+        "body": "{\"data\": {\"search\": {\"results\": {\"found\": 1, \"hits\": [{\"document\": {\"title\": \"The Synthetic Chronicle\", \"slug\": \"the-synthetic-chronicle\", \"description\": \"An invented book for tests.\", \"release_year\": 1999, \"author_names\": [\"Ana Invented\"], \"isbns\": [\"9780000000002\"], \"publisher\": \"Invented Press\"}}]}}}}"
+      }
+    },
+    {
+      "request": {
+        "method": "POST",
+        "uri": "https://api.hardcover.app/v1/graphql",
+        "body_contains": "9780000000002"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json; charset=utf-8"
+        },
+        "body": "{\"data\": {\"search\": {\"results\": {\"found\": 1, \"hits\": [{\"document\": {\"title\": \"The Synthetic Chronicle\", \"slug\": \"the-synthetic-chronicle\", \"description\": \"An invented book for tests.\", \"release_year\": 1999, \"author_names\": [\"Ana Invented\"], \"isbns\": [\"9780000000002\"], \"publisher\": \"Invented Press\"}}]}}}}"
+      }
+    }
+  ]
+}

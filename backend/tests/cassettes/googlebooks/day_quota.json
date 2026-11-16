@@ -1,0 +1,18 @@
+{
+  "interactions": [
+    {
+      "request": {
+        "method": "GET",
+        "uri": "https://www.googleapis.com/books/v1/volumes",
+        "query_contains": ""
+      },
+      "response": {
+        "status": 429,
+        "headers": {
+          "Content-Type": "application/json; charset=utf-8"
+        },
+        "body": "{\"error\": {\"code\": 429, \"message\": \"Quota exceeded for quota metric 'Queries' and limit 'Queries per day' of service 'books.googleapis.com' for consumer 'project_number:0'.\", \"errors\": [{\"message\": \"Quota exceeded for quota metric 'Queries' and limit 'Queries per day' of service 'books.googleapis.com' for consumer 'project_number:0'.\", \"domain\": \"usageLimits\", \"reason\": \"rateLimitExceeded\"}], \"status\": \"RESOURCE_EXHAUSTED\"}}"
+      }
+    }
+  ]
+}

@@ -1,0 +1,19 @@
+{
+  "interactions": [
+    {
+      "request": {
+        "method": "POST",
+        "uri": "https://api.hardcover.app/v1/graphql",
+        "body_contains": ""
+      },
+      "response": {
+        "status": 429,
+        "headers": {
+          "Content-Type": "application/json",
+          "Retry-After": "30"
+        },
+        "body": "{\"error\": \"Throttled\"}"
+      }
+    }
+  ]
+}
