@@ -35,7 +35,7 @@ jobs:
     env:
       # The only place where the number of shards is defined (see CONTRIBUTING.md).
       BACKEND_SHARDS: "4"
-      BACKEND_INTEGRATION_SHARDS: "4"
+      BACKEND_INTEGRATION_SHARDS: "6"
       E2E_SHARDS: "2"
     steps:
       - id: shards
