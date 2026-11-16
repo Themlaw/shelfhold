@@ -203,12 +203,18 @@ def sync_member(
     should_stop: Callable[[], bool] | None = None,
     page_map_keyring: Callable[[], Keyring] | None = None,
     max_session_hours: float = DEFAULT_MAX_SESSION_HOURS,
+    mode: str = "sync",
 ) -> MemberOutcome:
     """One pass for one member. Never raises for what Kavita or the key does: it says why.
 
     `page_map_keyring` is what compares the page counts of Kavita with the page map of the blocks
     (`page_map.verify_page_maps`): without it no member of a block is `verified`, and no page of a
-    block is handed to Kavita."""
+    block is handed to Kavita.
+
+    `mode` is for a rename plan (L16), which asks for its two halves apart: `"pull"` reads and
+    writes nothing in Kavita (before the move: what only Kavita holds comes first), `"restore"`
+    pushes the member's **furthest proven** page on every chapter of `chapters` (after the scan:
+    Kavita has deleted the readings of the series it lost). Default `"sync"`: the periodic pass."""
     outcome = MemberOutcome("ok")
     try:
         _check_enabled(engine, destination_id)
@@ -225,6 +231,7 @@ def sync_member(
             outcome,
             should_stop,
             max_session_hours * 3600,
+            mode,
         )
     except _Stop as stop:
         outcome.code = stop.code
@@ -409,6 +416,7 @@ def _pass(
     outcome: MemberOutcome,
     should_stop: Callable[[], bool] | None = None,
     max_session_s: float = DEFAULT_MAX_SESSION_HOURS * 3600,
+    mode: str = "sync",
 ) -> None:
     started = clock.now()
     account_id = _live(engine, user_id, destination_id)
@@ -419,7 +427,7 @@ def _pass(
     try:
         _pass_open(
             engine, member, user_id, destination_id, account_id, declared, clock, started,
-            chapters, outcome, should_stop, max_session_s,
+            chapters, outcome, should_stop, max_session_s, mode,
         )  # fmt: skip
     finally:
         member.close()
@@ -438,6 +446,7 @@ def _pass_open(
     outcome: MemberOutcome,
     should_stop: Callable[[], bool] | None,
     max_session_s: float,
+    mode: str = "sync",
 ) -> None:
     try:
         who = member.account_name()
@@ -455,8 +464,14 @@ def _pass_open(
             visible.append(ref)
         else:
             outcome.hidden += 1
-    pending = _pending_chapters(engine, user_id, visible, notes)
-    stamps = _stamps(member, visible)
+    restore = mode == "restore"
+    # a restore has something to say about every chapter: the readings of Kavita are gone
+    pending = (
+        {r.chapter_id for r in visible}
+        if restore
+        else _pending_chapters(engine, user_id, visible, notes)
+    )
+    stamps = {} if mode != "sync" else _stamps(member, visible)
     writer = _NoteWriter(engine, user_id, destination_id, account_id, who_for)
     stopped = False
     try:
@@ -483,7 +498,7 @@ def _pass_open(
                     changed = _chapter(
                         engine, member, user_id, destination_id, ref, clock, started, outcome,
                         notes.get(ref.chapter_id), ref.chapter_id in pending, stamp,
-                        max_session_s,
+                        max_session_s, mode,
                     )  # fmt: skip
                 except ChapterRejected:
                     outcome.rejected += 1  # this chapter only: not for the account, or gone
@@ -716,8 +731,13 @@ def _chapter(
     has_pending: bool,
     stamp: str | None,
     max_session_s: float = DEFAULT_MAX_SESSION_HOURS * 3600,
+    mode: str = "sync",
 ) -> _Note | None:
-    """Pull, then push, one chapter. The note to write, or `None` when it would be the same."""
+    """Pull, then push, one chapter. The note to write, or `None` when it would be the same.
+
+    `mode` `"pull"`: the reading half only, and the note keeps its date (the positions still to be
+    pushed are still to be pushed). `"restore"`: the page to push is the member's furthest proven
+    one, whatever its source (a rescan of Kavita has deleted what it held)."""
     if old is not None and old.carrier_id != ref.carrier_id:
         old = None  # another file under the same id: its echo and its date are not this one's
     seen = member.get(ref)
@@ -729,19 +749,29 @@ def _chapter(
     )
     if echo:
         outcome.echoes += 1
-    elif (
-        seen.page > 0
-        and not unchanged
+    elif (  # a page 0 where the note had seen more is Kavita's « unread » (a chapter it made new
+        # has no note: its 0 is a new chapter, not a reading taken back)
+        not unchanged
+        and (seen.page > 0 or (old is not None and (old.seen_page or 0) > 0))
         and _record_pull(engine, user_id, destination_id, ref, seen.page, clock)
     ):
         outcome.pulled += 1
     if not echo:
         pushed_page = None  # Kavita moved on its own: what we pushed is no longer what it holds
-    wanted = (
-        _pending_page(engine, user_id, ref, old.synced_at if old else EPOCH, outcome, max_session_s)
-        if has_pending or old is None
-        else None
-    )
+    wanted: int | None = None
+    if mode == "restore":
+        wanted = _carried_page(engine, user_id, ref, outcome, max_session_s)
+    elif mode == "sync" and (has_pending or old is None):
+        refused = outcome.unverified
+        wanted = _pending_page(
+            engine, user_id, ref, old.synced_at if old else EPOCH, outcome, max_session_s
+        )
+        # a chapter Kavita holds under an id never seen (a rescan that renumbered it, or a first
+        # look), not already refused above: what the member has proven is carried
+        if old is None and outcome.unverified == refused:
+            carried = _carried_page(engine, user_id, ref, outcome, max_session_s, only_server=True)
+            if carried is not None and (wanted is None or carried > wanted):
+                wanted = carried  # the furthest proven page is never replaced by an older one
     if wanted is not None and wanted > seen.page:
         _live(engine, user_id, destination_id)
         latest = member.get(ref)  # read again just before writing: never back from what it holds
@@ -750,10 +780,11 @@ def _chapter(
             outcome.pushed += 1
             pushed_page, pushed_at = wanted, clock.now()
             seen = RemotePosition(wanted, None)
-    touched = has_pending or old is None
+    touched = (has_pending or old is None) and mode != "pull"
     new = _Note(
         ref.chapter_id, ref.carrier_id, ref.series_id, stamp, pushed_page, pushed_at,
-        seen.page, seen.modified, started if touched else old.synced_at if old else started,
+        seen.page, seen.modified,
+        started if touched else old.synced_at if old else EPOCH,
     )  # fmt: skip
     return None if new == old else new
 
@@ -842,6 +873,118 @@ def _pending_page(
     return None if page is None else push_page(page, ref.pages, finished=finished)
 
 
+def _carried_page(
+    engine: sa.Engine,
+    user_id: str,
+    ref: ChapterRef,
+    outcome: MemberOutcome,
+    max_session_s: float = DEFAULT_MAX_SESSION_HOURS * 3600,
+    *,
+    only_server: bool = False,
+) -> int | None:
+    """What a chapter that Kavita holds under an identifier it has just made is told: the page of
+    the member's **furthest proven** position on this file (`reading_progress_proven`: a position
+    carried over from another Edition is a guess and never counts), whatever its source, Kavita's
+    own state pulled earlier included.
+
+    Never a reading made up: « read » (the page count) only if every Unit of the file is read in
+    the proven view **and** a traversal of a recent contact marked one (`_marking_locators`) or
+    Kavita itself said so (a `server` position at the last page); else the page, capped as a push
+    caps it. What came through a block is handed over only if its page map is verified."""
+    position, view, cover = (
+        reading.reading_position,
+        _PROVEN,
+        export.unit_coverage,
+    )
+    with engine.connect() as connection:
+        current = _current_hash(connection, "export_item", ref.carrier_id)
+        if current is None:
+            return None
+        rows = connection.execute(
+            sa.select(
+                position.c.id, position.c.locator, position.c.percent, position.c.source,
+                position.c.server_ts,
+            )
+            .join(view, view.c.last_position_id == position.c.id)
+            .join(cover, sa.and_(cover.c.unit_id == view.c.unit_id,
+                                 cover.c.carrier_type == "export_item",
+                                 cover.c.carrier_id == ref.carrier_id))
+            .where(
+                view.c.user_id == user_id,
+                position.c.carrier_type == "export_item",
+                position.c.carrier_id == ref.carrier_id,
+                position.c.content_hash == current,
+                _not_transposed(position),
+            )
+        ).all()  # fmt: skip
+        seen_pages: list[tuple[Any, dict[str, Any], int]] = []
+        for row in rows:
+            locator = row.locator if isinstance(row.locator, dict) else {}
+            found = locator.get("page")
+            if isinstance(found, int) and not isinstance(found, bool):
+                page: int | None = found
+            elif row.percent is not None and ref.pages > 0:
+                page = int(row.percent * ref.pages)
+            else:
+                page = None
+            if page is not None:
+                seen_pages.append((row, locator, page))
+        # Kavita's own word, the latest observation of it, is what it holds now: an older `server`
+        # state is not (a chapter marked unread there is page 0, later than its old read). The
+        # view keeps the position that last changed a Unit's state, which a page 0 never does:
+        # the latest one is asked of the positions themselves
+        latest = connection.execute(
+            sa.select(position.c.id, position.c.locator, position.c.server_ts)
+            .where(
+                position.c.user_id == user_id,
+                position.c.carrier_type == "export_item",
+                position.c.carrier_id == ref.carrier_id,
+                position.c.content_hash == current,
+                position.c.source == "server",
+            )
+            .order_by(position.c.server_ts.desc(), position.c.id.desc())
+            .limit(1)
+        ).first()
+        newest = (latest.server_ts, latest.id) if latest is not None else None
+        since = EPOCH
+        if latest is not None:
+            said = latest.locator.get("page") if isinstance(latest.locator, dict) else None
+            if said == 0:  # « unread » in Kavita: what came before it is no longer proof
+                since = _utc(latest.server_ts) or EPOCH
+        best: int | None = None
+        speaking: list[dict[str, Any]] = []
+        server_read = False
+        for row, locator, page in seen_pages:
+            key = (row.server_ts, row.id)
+            stale = newest is not None and (
+                (row.source == "server" and key != newest) or (since != EPOCH and key < newest)
+            )
+            if stale or (only_server and row.source != "server"):
+                continue  # `only_server`: the device side is `_pending_page`'s (latest wins, L15)
+            if row.source == "server" and ref.pages > 0 and page >= ref.pages:
+                server_read = True
+            if best is None or page > best:
+                best = page
+            speaking.append(locator)
+        finished = _all_read(connection, user_id, ref.carrier_id)
+        marks = (
+            _marking_locators(connection, user_id, ref.carrier_id, since, max_session_s)
+            if finished and not server_read
+            else []
+        )
+        if best is None and not marks:
+            return None
+        for locator in [*speaking, *marks]:
+            version = locator.get("bundle")
+            if version is not None and not relayable(connection, version, ref.carrier_id):
+                outcome.unverified += 1
+                log.info("progress_sync.chapter_not_relayed", code="page_map_unverified")
+                return None
+    if finished and (marks or server_read) and ref.pages > 0:
+        return ref.pages
+    return None if best is None else push_page(best, ref.pages, finished=False)
+
+
 def _marking_locators(
     connection: sa.Connection,
     user_id: str,
@@ -873,16 +1016,18 @@ def _marking_locators(
     return found
 
 
+# the proven view: a mark carried over from another Edition is not a reading
+_PROVEN: Final = sa.table(
+    "reading_progress_proven",
+    sa.column("user_id"),
+    sa.column("unit_id"),
+    sa.column("state"),
+    sa.column("last_position_id"),
+)
+
+
 def _all_read(connection: sa.Connection, user_id: str, carrier_id: str) -> bool:
-    cover, view = (
-        export.unit_coverage,
-        sa.table(  # the proven view: a mark carried over from another Edition is not a reading
-            "reading_progress_proven",
-            sa.column("user_id"),
-            sa.column("unit_id"),
-            sa.column("state"),
-        ),
-    )
+    cover, view = export.unit_coverage, _PROVEN
     units = [
         str(r.unit_id)
         for r in connection.execute(

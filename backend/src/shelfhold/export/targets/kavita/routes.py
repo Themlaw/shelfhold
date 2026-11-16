@@ -34,6 +34,9 @@ LIBRARY_CREATE: Final = Route("POST", "/api/Library/create", write=True)
 LIBRARY_UPDATE: Final = Route("POST", "/api/Library/update", write=True)
 SCAN_FOLDER: Final = Route("POST", "/api/Library/scan-folder", write=True)
 UPLOAD_SERIES_COVER: Final = Route("POST", "/api/Upload/series", write=True)
+# who the key is: read by the client only (the name of the dedicated account), never described by
+# a destination, so not in ALLOWED_ROUTES
+SELF: Final = Route("GET", "/api/Account", write=False)
 USERS: Final = Route("GET", "/api/Users", write=False)  # administrator only: the access audit
 SERIES_OF_LIBRARY: Final = Route("POST", "/api/Series/all-v2", write=False)  # a read, despite POST
 SERIES_BY_IDS: Final = Route("POST", "/api/Series/series-by-ids", write=False)  # idem

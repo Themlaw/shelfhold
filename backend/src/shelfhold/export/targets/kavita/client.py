@@ -351,6 +351,12 @@ class KavitaClient:
         except (TypeError, ValueError):
             raise ProtocolError("library type is not a known value") from None
 
+    async def account_name(self) -> str | None:
+        """The name of the account the key opens (nothing else of the answer is kept)."""
+        data = (await self._send(routes.SELF)).data
+        name = data.get("username") if isinstance(data, dict) else None
+        return name if isinstance(name, str) and name else None
+
     async def list_users(self) -> list[dto.Member]:
         """The accounts, read-only; an administrator is needed (a 403 pauses the destination)."""
         data = (await self._send(routes.USERS, query={"includePending": "true"})).data

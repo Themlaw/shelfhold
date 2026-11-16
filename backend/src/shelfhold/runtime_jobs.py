@@ -96,8 +96,6 @@ from shelfhold.export.application.reconcile import Reconciler
 from shelfhold.export.application.reconcile_full import FullReconciler
 from shelfhold.export.application.rename_plan import (
     ItemMove,
-    ReaderCount,
-    ReaderCounter,
     RenameConfirmationRequiredError,
     RenamePreview,
     RenameRefusedError,
@@ -114,6 +112,7 @@ from shelfhold.export.domain.physical_roots import RootState
 from shelfhold.export.targets.kavita.accounts_audit import ChildAccountsAuditor
 from shelfhold.export.targets.kavita.adopt import BulkParse, library_type_named
 from shelfhold.export.targets.kavita.audit import AccessAuditor
+from shelfhold.export.targets.kavita.carry import KavitaCarry
 from shelfhold.export.targets.kavita.client import KavitaClient
 from shelfhold.export.targets.kavita.cover import SeriesCovers
 from shelfhold.export.targets.kavita.destination import KavitaDestination
@@ -851,7 +850,7 @@ async def _export_bound(
             )
             pipeline, _fsops = disks.get()
             if apply is not None and pipeline.kind_of(apply[0]) == "rename_plan":
-                pipeline.bind_readers(reader_counter(comp, destination))  # EF-EXP-037
+                bind_carry(pipeline, comp, destination.id)  # EF-EXP-037, EF-EXP-017
                 guard = _scan_guard(comp, disks, destination.id)
                 pipeline.bind_scan_drain(lambda: scans.drain(guard))  # one scan per batch
                 names = []  # a rename plan names nothing: the files exist, only their place moves
@@ -987,43 +986,6 @@ def apply_key(plan_id: str, if_match: str, *, confirmed: bool = False) -> str:
 def _plan_of(dedupe_key: str) -> tuple[str, str]:
     _kind, plan_id, rest = dedupe_key.split(":", 2)
     return plan_id, rest.partition(":")[0]
-
-
-def reader_counter(comp: Composition, destination: Destination) -> ReaderCounter:
-    """The readers of Kavita in some folders of a destination (EF-EXP-037), asked now. The call
-    runs its own event loop in its own thread: the plan code is synchronous, and the job that
-    applies it already runs inside a loop."""
-    from concurrent.futures import ThreadPoolExecutor
-
-    from shelfhold.export.targets.kavita.readers import count_readers
-
-    def count(folders: Sequence[str]) -> ReaderCount:
-        def ask(library: int) -> ReaderCount:
-            # the client is made here, in the thread with no running loop: building it runs
-            # a loop of its own (the fetcher of the integrations)
-            client = comp.kavita_client(destination.target_id)
-            return asyncio.run(count_readers(client, library, list(folders)))
-
-        try:
-            library = _remote_library_id(comp, destination.id)
-            with ThreadPoolExecutor(max_workers=1) as pool:
-                return pool.submit(ask, library).result()
-        except (KeyringUnavailableError, KeyError, sa.exc.NoResultFound, ValueError):
-            return ReaderCount(0, exact=False)
-
-    return count
-
-
-def _remote_library_id(comp: Composition, destination_id: str) -> int:
-    link, library = export.shelf_destination_remote_library, export.remote_library
-    with comp.engine.connect() as connection:
-        ref = connection.execute(
-            sa.select(library.c.remote_ref)
-            .join(link, link.c.remote_library_id == library.c.id)
-            .where(link.c.shelf_destination_id == destination_id)
-            .limit(1)
-        ).scalar_one()
-    return int(ref)
 
 
 def _destination_of(comp: Composition, destination_id: str) -> Destination:
@@ -1193,9 +1155,7 @@ class PlanService:
         readers of Kavita who would lose their progress (EF-EXP-030, EF-EXP-037)."""
         pipeline = self._pipeline()
         with self._lock:
-            pipeline.bind_readers(
-                reader_counter(self._comp, _destination_of(self._comp, destination_id))
-            )
+            bind_carry(pipeline, self._comp, destination_id)
             return pipeline.rename_preview(destination_id, template=template, moves=moves)
 
     def queue_apply(
@@ -1210,9 +1170,7 @@ class PlanService:
         if pipeline.kind_of(plan_id) == "rename_plan":
             pipeline.require_not_applying(plan_id)  # 409: a job is on it, the plan is left be
             with self._lock:
-                pipeline.bind_readers(
-                    reader_counter(self._comp, _destination_of(self._comp, destination_id))
-                )
+                bind_carry(pipeline, self._comp, destination_id)
                 pipeline.require_confirmation(plan_id, confirmed=confirm_progress_loss)
         pools = self._pools()
         if pools is None:
@@ -1447,6 +1405,20 @@ def progress_destinations(engine: sa.Engine) -> list[str]:
             .order_by(table.c.id)
         )
         return [str(r.id) for r in rows]
+
+
+def bind_carry(pipeline: ExportPipeline, comp: Composition, destination_id: str) -> None:
+    """What a rename plan needs from Kavita: who reads (the members whose own key is held lose
+    nothing), the names the library shows, and the progress carried over the moves of each member
+    with their own key (EF-EXP-017, EF-EXP-030, EF-EXP-037)."""
+    carry = KavitaCarry(
+        comp.engine, progress_remote(comp), comp.clock, admin_client=comp.kavita_client,
+        page_map_keyring=comp.keyring,
+        max_session_hours=comp.settings.reading_relay_max_session_hours,
+    )  # fmt: skip
+    pipeline.bind_readers(carry.readers(destination_id))
+    pipeline.bind_carry(carry)
+    pipeline.bind_series_names(carry)
 
 
 def progress_remote(comp: Composition) -> ProgressRemote:

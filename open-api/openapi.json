@@ -3193,6 +3193,19 @@
       "ItemMoveIn": {
         "additionalProperties": false,
         "properties": {
+          "destination_id": {
+            "anyOf": [
+              {
+                "maxLength": 26,
+                "minLength": 26,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Destination Id"
+          },
           "export_item_id": {
             "maxLength": 26,
             "minLength": 26,

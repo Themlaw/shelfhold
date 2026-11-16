@@ -257,6 +257,11 @@ class KavitaProgress:
     def __repr__(self) -> str:
         return "KavitaProgress()"
 
+    def forget(self, destination_id: str) -> None:
+        """Drop the structure read for a destination: the next call asks Kavita again (a scan that
+        was not finished when it was read)."""
+        self._structures.pop(destination_id, None)
+
     # -- structure, with the dedicated key ---------------------------------------------------
     def chapters(self, destination_id: str) -> list[ChapterRef]:
         with self._engine.connect() as connection:

@@ -38,6 +38,14 @@ describe('PlanPreview', () => {
     expect(screen.getByText('2 renommages en 2 lots')).toBeTruthy();
   });
 
+  // req: EF-EXP-017
+  it('test_plan_preview_names_the_members_without_a_key', () => {
+    setup({
+      warnings: [{ code: 'progress_loss', readers: 2, exact: false, series: ['A'], members: ['carol'] }]
+    });
+    expect(screen.getByRole('alert')).toHaveTextContent('Sans clé Kavita sur cette destination : carol.');
+  });
+
   // req: EF-EXP-037
   it('test_rename_plan_preview_shows_reader_count_warning', () => {
     setup();

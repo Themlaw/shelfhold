@@ -1,48 +1,48 @@
 """Who reads in the folders a rename plan touches (EF-EXP-037, EF-EXP-030).
 
-Before M4 the progress Kavita keeps for a reader is not carried over a rename, so the admin is told
-how many readers would lose it. Kavita answers, with the key of the dedicated account, only for
-that account (`pagesRead` of the key's own); the progress of the members is read with their own
-tokens (EF-USR-012, M4). So the count is **exact** only where the key's account is the only one
-with access to the library; with other accounts it is the number of accounts that could lose
-progress, an upper bound that says so (`exact` false): the plan then asks for its confirmation like
-any other (an unreadable count is never "nobody").
+A plan that renames a series makes Kavita scan again, and the readings of the series it loses go
+with it. The progress of the members who hold a key here is carried (EF-EXP-017); the dedicated
+account of the key reads nothing and is not counted. What is left are the accounts that could lose
+progress: their number, an upper bound that says so (`exact` false), and their names (the admin
+only sees them). With none left the count is exact: nobody. A Kavita that cannot be asked is never
+"nobody".
 """
 
-from collections.abc import Sequence
+from collections.abc import Collection, Sequence
 
 from shelfhold.export.application.rename_plan import ReaderCount
 from shelfhold.export.targets.kavita.client import KavitaClient
 from shelfhold.export.targets.kavita.errors import TargetError
-from shelfhold.export.targets.kavita.series import SeriesResolver
+from shelfhold.infrastructure.kavita_names import kavita_name_key
 
 __all__ = ["count_readers"]
 
 
 async def count_readers(
-    client: KavitaClient, library_id: int, remote_folders: Sequence[str]
+    client: KavitaClient,
+    library_id: int,
+    remote_folders: Sequence[str],  # the folders asked about: Kavita cannot say who read where
+    *,
+    carried: Collection[str] = (),
 ) -> ReaderCount:
-    """The accounts of Kavita that read in `remote_folders` of one library, or all that could."""
+    """The accounts of Kavita that read in `remote_folders` of one library, or all that could.
+    Apart from the count: the `carried` accounts (names, as the members declared them), whose
+    progress a plan carries, and the dedicated account of the key, which no one reads with (the
+    plan does not warn about an account that is never a reader, EF-EXP-037)."""
+    kept = {kavita_name_key(name) for name in carried}
     try:
+        service = await client.account_name()
+        if service is not None:
+            kept.add(kavita_name_key(service))
         users = await client.list_users()
-        accounts = sum(1 for user in users if user.is_admin or library_id in user.library_ids)
-        reading = await _key_account_reads(client, library_id, remote_folders)
     except TargetError:
         return ReaderCount(0, exact=False)  # Kavita could not be asked: not "nobody"
-    if accounts <= 1:
-        return ReaderCount(1 if reading else 0, exact=True)
-    return ReaderCount(accounts, exact=False)  # the members' progress needs their own tokens (M4)
-
-
-async def _key_account_reads(
-    client: KavitaClient, library_id: int, remote_folders: Sequence[str]
-) -> bool:
-    resolver = SeriesResolver(client)
-    for folder in remote_folders:
-        found = await resolver.resolve(library_id=library_id, remote_folder=folder)
-        if found.series is None:
-            continue  # Kavita does not have it (yet): nobody has read it
-        chapters = await client.series_chapters(found.series.id)
-        if any(chapter.pages_read > 0 for chapter in chapters):
-            return True
-    return False
+    left = [
+        user for user in users
+        if (user.is_admin or library_id in user.library_ids)
+        and kavita_name_key(user.username) not in kept
+    ]  # fmt: skip
+    names = tuple(sorted(user.username for user in left))
+    if not left:
+        return ReaderCount(0, exact=True, accounts=names)
+    return ReaderCount(len(left), exact=False, accounts=names)  # a count, not who read

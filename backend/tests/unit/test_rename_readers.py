@@ -29,6 +29,12 @@ class FakeClient:
     series: list[dto.SeriesInfo] = field(default_factory=list)
     down: bool = False
     asked: list[int] = field(default_factory=list)
+    me: str = "key"
+
+    async def account_name(self) -> str | None:
+        if self.down:
+            raise TargetError("unreachable")
+        return self.me
 
     async def list_users(self) -> list[dto.Member]:
         if self.down:
@@ -52,14 +58,13 @@ def _count(client: FakeClient, folders: list[str]) -> tuple[int, bool]:
 
 
 @pytest.mark.req("EF-EXP-037")
-def test_the_only_account_is_counted_exactly() -> None:
+def test_the_dedicated_account_alone_is_nobody_exactly() -> None:
     client = FakeClient(
         users=[_user("key", admin=True)], series=[_series(1, "/m/A"), _series(2, "/m/B")],
         read_pages={1: 4},
     )  # fmt: skip
-    assert _count(client, ["/m/A"]) == (1, True)
-    assert _count(client, ["/m/B"]) == (0, True)
-    assert _count(client, ["/m/unknown"]) == (0, True)  # Kavita does not hold it: nobody read it
+    assert _count(client, ["/m/A"]) == (0, True)  # the key's own account is never a reader
+    assert _count(client, ["/m/unknown"]) == (0, True)
 
 
 @pytest.mark.req("EF-EXP-037")
@@ -69,7 +74,7 @@ def test_with_other_accounts_the_count_is_an_upper_bound_that_says_so() -> None:
                _user("b", libraries=frozenset({LIBRARY})), _user("c", libraries=frozenset({9}))],
         series=[_series(1, "/m/A")],
     )  # fmt: skip
-    assert _count(client, ["/m/A"]) == (3, False)  # `c` has no access to the library
+    assert _count(client, ["/m/A"]) == (2, False)  # `c` has no access; the key's account is apart
 
 
 @pytest.mark.req("EF-EXP-037")

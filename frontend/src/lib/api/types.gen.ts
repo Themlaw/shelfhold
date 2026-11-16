@@ -1952,6 +1952,10 @@ export type IntentsOut = {
  */
 export type ItemMoveIn = {
     /**
+     * Destination Id
+     */
+    destination_id?: string | null;
+    /**
      * Export Item Id
      */
     export_item_id: string;

@@ -561,6 +561,7 @@
   "plan.phrase": "PERDRE LA PROGRESSION",
   "plan.warning_exact": "La progression Kavita de {readers, plural, one {# lecteur} other {# lecteurs}} sera perdue.",
   "plan.warning_at_least": "La progression Kavita d'au moins {readers, plural, one {# lecteur} other {# lecteurs}} sera perdue.",
+  "plan.warning_members": "Sans clé Kavita sur cette destination : {members}.",
   "shelves.title": "Étagères",
   "shelves.error": "Erreur de chargement.",
   "screens.admin_only": "Ces écrans sont réservés à l'administrateur.",
