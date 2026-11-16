@@ -25,14 +25,17 @@ from shelfhold.catalog.application.queries import (
     first_visible_covers,
     visible_work_ids,
 )
+from shelfhold.catalog.application.relation_graph import closes_a_loop
 from shelfhold.catalog.application.work_merge import resolve_work
 from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.schema import catalog
 
 __all__ = [
+    "MAX_RELATIONS_PER_WORK",
     "RelatedWork",
     "RelationCycleError",
     "RelationError",
+    "RelationLimitError",
     "RelationNotFoundError",
     "RelationView",
     "Relations",
@@ -42,7 +45,7 @@ __all__ = [
     "unrelate_works",
 ]
 
-_ORDER_KINDS = ("sequel_of", "prequel_of")  # one graph: `prequel_of` says `sequel_of` the other way
+MAX_RELATIONS_PER_WORK = 50  # a Work is related to a handful of others; the walk stays small
 
 
 class RelationError(Exception):
@@ -51,6 +54,10 @@ class RelationError(Exception):
 
 class RelationCycleError(RelationError):
     """The relation would close a loop of the same kind (a sequel of its own sequel)."""
+
+
+class RelationLimitError(RelationError):
+    """One of the two Works already holds `MAX_RELATIONS_PER_WORK` relations."""
 
 
 class RelationNotFoundError(LookupError):
@@ -97,7 +104,11 @@ def relate_works(
     ).first()
     if known is not None:
         return False
-    if _closes_a_loop(connection, from_work_id, to_work_id, kind):
+    if any(
+        _count(connection, work) >= MAX_RELATIONS_PER_WORK for work in (from_work_id, to_work_id)
+    ):
+        raise RelationLimitError(f"a Work holds at most {MAX_RELATIONS_PER_WORK} relations")
+    if closes_a_loop(connection, from_work_id, to_work_id, kind):
         raise RelationCycleError("this relation would close a loop")
     try:
         with connection.begin_nested():
@@ -113,6 +124,17 @@ def relate_works(
     except IntegrityError:
         raise RelationError("unknown Work or kind of relation") from None
     return True
+
+
+def _count(connection: Connection, work_id: str) -> int:
+    table = catalog.work_relation
+    return int(
+        connection.execute(
+            sa.select(sa.func.count()).where(
+                sa.or_(table.c.from_work_id == work_id, table.c.to_work_id == work_id)
+            )
+        ).scalar_one()
+    )
 
 
 def unrelate_works(connection: Connection, from_work_id: str, to_work_id: str, kind: str) -> bool:
@@ -140,39 +162,6 @@ def relations_of(connection: Connection, work_id: str) -> list[RelatedWork]:
                     outgoing=r.from_work_id == work_id)
         for r in rows
     ]  # fmt: skip
-
-
-def _edge(from_work_id: str, to_work_id: str, kind: str) -> tuple[str, str, str]:
-    """`(graph, follower, followed)`: a sequel points at what it follows; `prequel_of` is the same
-    fact written the other way round, so the two share one graph."""
-    if kind == "prequel_of":
-        return "sequel_of", to_work_id, from_work_id
-    return kind, from_work_id, to_work_id
-
-
-def _closes_a_loop(connection: Connection, from_work_id: str, to_work_id: str, kind: str) -> bool:
-    """Whether a path leads from `to` back to `from` in the graph of this kind."""
-    graph, start, goal = _edge(from_work_id, to_work_id, kind)
-    kinds = _ORDER_KINDS if graph == "sequel_of" else (graph,)
-    table = catalog.work_relation
-    follows: dict[str, set[str]] = {}
-    for row in connection.execute(
-        sa.select(table.c.from_work_id, table.c.to_work_id, table.c.kind).where(
-            table.c.kind.in_(kinds)
-        )
-    ):
-        _graph, a, b = _edge(row.from_work_id, row.to_work_id, row.kind)
-        follows.setdefault(a, set()).add(b)
-    seen: set[str] = set()
-    pending = [goal]  # the walk from `goal` (what `start` would follow) must never reach `start`
-    while pending:
-        here = pending.pop()
-        if here == start:
-            return True
-        if here not in seen:
-            seen.add(here)
-            pending.extend(follows.get(here, ()))
-    return False
 
 
 def _shown_works(

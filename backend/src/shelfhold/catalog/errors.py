@@ -28,4 +28,5 @@ CODES: tuple[ErrorCode, ...] = (
     # M4 L19 (EF-BIB-039): a relation that cannot exist, and one that would close a loop
     ErrorCode("relation.invalid", 422, "admin"),
     ErrorCode("relation.cycle", 409, "admin"),
+    ErrorCode("relation.limit", 422, "admin"),  # a Work holds at most 50 relations
 )

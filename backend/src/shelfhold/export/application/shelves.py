@@ -108,7 +108,11 @@ class ShelfService:
         clock: Clock | None = None,
         rating: RatingService | None = None,
         root_check: Callable[[Connection, str], None] | None = None,
+        on_audience_change: Callable[[], None] | None = None,
     ) -> None:
+        # who a shelf is open to changed (ceiling, profiles): the relations that the new audience
+        # forbids are withdrawn from Kavita now, not at the next export (M4 L19)
+        self._on_audience_change = on_audience_change
         # EF-EXP-010: the guard that a native folder root never meets the local source of Suwayomi
         # (`acquisition` owns it; the composition root hands it over, export never imports it)
         self._root_check = root_check
@@ -188,6 +192,8 @@ class ShelfService:
                 f"shelf:{shelf_id};{previous}->{max_age_rating}",
             )
             plan = build_plan(connection, self._rating, shelf_id)
+        if previous != max_age_rating:
+            self._audience_changed()
         return CeilingChange(shelf_id, previous, max_age_rating, plan)
 
     def set_allowed_profiles(
@@ -203,7 +209,12 @@ class ShelfService:
             if done.rowcount != 1:
                 raise LookupError(f"no such shelf: {shelf_id}")
             self._audit(connection, actor, "shelf.set_profiles", f"shelf:{shelf_id};{len(clean)}")
+        self._audience_changed()
         return clean
+
+    def _audience_changed(self) -> None:
+        if self._on_audience_change is not None:
+            self._on_audience_change()  # after the commit: the job reads what was written
 
     def set_hold_until_rated(
         self, shelf_id: str, hold: bool, *, actor: Actor | None = None

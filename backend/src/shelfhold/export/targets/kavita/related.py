@@ -16,8 +16,14 @@ What this never does:
   key, held by the client; no member's key is ever used (the member's accounts are L12's);
 - **disturb what a person put there.** Kavita applies each list of an update as a whole (and a list
   left out as empty), so the document read is sent back with only Shelfhold's own relations added
-  or removed. What Shelfhold pushed is kept in the `field_owner` registry, so that only that is
-  withdrawn.
+  or removed. What Shelfhold added is kept in the `field_owner` registry, so that only that is
+  withdrawn: a link a person had already set is never noted as Shelfhold's;
+- **forget what it is about to push.** The registry is written *before* the call (what it held and
+  what it is about to add), and cut down to what stands after the answer: a process killed between
+  the two leaves a note too long, never too short, and the next pass withdraws what the libraries
+  no longer allow;
+- **leave a forbidden link in place because a shelf is paused.** Withdrawing is the write that
+  protects, so it goes through a pause; adding a link stays suspended until the pause ends.
 
 Nothing is asked of Kavita when no relation has to change: the database alone says so.
 """
@@ -25,7 +31,7 @@ Nothing is asked of Kavita when no relation has to change: the database alone sa
 from __future__ import annotations
 
 from collections import defaultdict
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import Any, Final
 
@@ -34,7 +40,11 @@ import structlog
 from sqlalchemy import Connection, Engine
 
 from shelfhold.export.application.ports import TargetEvents
-from shelfhold.export.application.target_state import DestinationPausedError, FieldRegistry
+from shelfhold.export.application.target_state import (
+    DestinationPausedError,
+    FieldRegistry,
+    target_removal_guard,
+)
 from shelfhold.export.targets.kavita import dto
 from shelfhold.export.targets.kavita.client import KavitaClient
 from shelfhold.export.targets.kavita.errors import TargetError
@@ -67,7 +77,8 @@ class _Task:
     destination_id: str
     export_series_id: str
     wanted: dict[str, tuple[int, ...]]  # Kavita kind -> the series ids Shelfhold says it holds
-    owned: dict[str, tuple[int, ...]]  # what it pushed last time
+    owned: dict[str, tuple[int, ...]]  # what Shelfhold added, and may therefore take back
+    done: dict[str, tuple[int, ...]]  # what `wanted` was when the last push was completed
 
     @property
     def involved(self) -> set[int]:
@@ -117,7 +128,8 @@ class RelatedSeries:
 
     async def publish(self, client: KavitaClient, target_id: str) -> list[int]:
         """Write the relations that changed, as the service account; the Kavita series ids that
-        were written. Nothing is sent when the database says nothing changed."""
+        were written. Nothing is sent when the database says nothing changed. A withdrawal goes
+        through a paused shelf, an addition does not."""
         tasks = self.due(target_id)
         if not tasks:
             return []
@@ -126,48 +138,88 @@ class RelatedSeries:
         except TargetError as error:
             log.info("export.related_failed", target_id=target_id, reason=type(error).__name__)
             return []
+        removal_guard = target_removal_guard(self._engine, target_id)
         written: list[int] = []
         for task in tasks:
             if task.kavita_id not in known:
                 continue  # Kavita has not indexed it (or no longer has it): the cache is stale
             wanted = {k: tuple(i for i in ids if i in known) for k, ids in task.wanted.items()}
             try:
-                changed = await self._write(client, task, wanted)
-            except DestinationPausedError:
-                return written  # a paused destination writes nothing: the next pass asks again
+                changed = await self._write(client, task, wanted, removal_guard)
             except TargetError as error:  # Kavita unreachable: the next pass writes it again
                 log.info("export.related_failed", target_id=target_id,
                          reason=type(error).__name__)  # fmt: skip
                 break
-            self._record(task, wanted)
             if changed:
                 written.append(task.kavita_id)
         return written
 
     async def _write(
-        self, client: KavitaClient, task: _Task, wanted: Mapping[str, tuple[int, ...]]
+        self,
+        client: KavitaClient,
+        task: _Task,
+        wanted: Mapping[str, tuple[int, ...]],
+        removal_guard: Callable[[], None],
     ) -> bool:
-        """Read what Kavita holds, take out what Shelfhold pushed, put what it wants, send it back
-        whole. False when it already holds exactly that."""
+        """Read what Kavita holds, take out what Shelfhold added, put what it wants, send it back
+        whole. False when it already holds exactly that (or nothing could be sent)."""
         current = await client.series_related(task.kavita_id)
-        merged: dict[str, list[int]] = {}
-        for kind in dto.RELATION_KINDS:
-            held = set(current.get(kind, ()))
-            merged[kind] = sorted(
-                (held - set(task.owned.get(kind, ()))) | set(wanted.get(kind, ()))
-            )
-        if all(merged[kind] == sorted(current.get(kind, ())) for kind in dto.RELATION_KINDS):
+        held = {kind: sorted(current.get(kind, ())) for kind in dto.RELATION_KINDS}
+        # what a person put there stays theirs, even when Shelfhold says the same thing
+        foreign = {k: set(held[k]) - set(task.owned.get(k, ())) for k in dto.RELATION_KINDS}
+        mine = {k: tuple(sorted(set(wanted.get(k, ())) - foreign[k])) for k in dto.RELATION_KINDS}
+        full = {k: sorted(foreign[k] | set(mine[k])) for k in dto.RELATION_KINDS}
+        if full == held:
+            self._record(task, mine, wanted)
             return False
-        await client.set_series_related(task.kavita_id, merged)
+        adds = any(set(full[k]) - set(held[k]) for k in dto.RELATION_KINDS)
+        # the note first: a death between the call and the end of this pass leaves it too long
+        self._note(task, _union(task.owned, mine), task.done)
+        try:
+            if adds:
+                await client.set_series_related(task.kavita_id, full)
+            else:
+                with client.guarded_as(removal_guard):
+                    await client.set_series_related(task.kavita_id, full)
+        except DestinationPausedError:
+            # a paused destination takes no addition: take back what is not allowed, and ask again
+            only = {k: sorted(set(held[k]) - (set(task.owned.get(k, ())) - set(mine[k])))
+                    for k in dto.RELATION_KINDS}  # fmt: skip
+            if only == held:
+                self._note(task, task.owned, task.done)
+                return False
+            with client.guarded_as(removal_guard):
+                await client.set_series_related(task.kavita_id, only)
+            kept = {k: tuple(sorted(set(task.owned.get(k, ())) & set(mine[k])))
+                    for k in dto.RELATION_KINDS}  # fmt: skip
+            self._note(task, kept, task.done)
+            return True
+        self._record(task, mine, wanted)
         return True
 
-    def _record(self, task: _Task, wanted: Mapping[str, tuple[int, ...]]) -> None:
-        value = {kind: list(ids) for kind, ids in sorted(wanted.items()) if ids}
+    def _note(
+        self,
+        task: _Task,
+        owned: Mapping[str, tuple[int, ...]],
+        done: Mapping[str, tuple[int, ...]],
+    ) -> None:
+        """What the registry says of the series: `owned` (may be taken back), and `done` (the
+        `wanted` of the last completed push, so that anything else is due again)."""
+        value = {"owned": _listed(owned), "done": _listed(done)}
         with write_transaction(self._engine) as connection:
             FieldRegistry(connection).record_push(
                 task.destination_id, task.export_series_id, RELATED_FIELD, value,
                 self._clock.now(),
             )  # fmt: skip
+
+    def _record(
+        self,
+        task: _Task,
+        owned: Mapping[str, tuple[int, ...]],
+        wanted: Mapping[str, tuple[int, ...]],
+    ) -> None:
+        """After Kavita's answer: only what Shelfhold added stays, and the push is complete."""
+        self._note(task, owned, wanted)
 
     # -- what is due -----------------------------------------------------------------------
 
@@ -198,10 +250,11 @@ class RelatedSeries:
             if owner is None:
                 continue  # no series row to keep the registry on: nothing to write about
             kept = registry.get(owner[0], owner[1], RELATED_FIELD)
-            owned = _normal(kept.last_value) if kept is not None and kept.pushed else {}
+            owned, done = _noted(kept.last_value) if kept is not None and kept.pushed else ({}, {})
             want = {k: tuple(sorted(v)) for k, v in wanted.get(kavita_id, {}).items() if v}
-            if want != owned:
-                tasks.append(_Task(kavita_id, owner[0], owner[1], want, owned))
+            leftover = any(set(ids) - set(want.get(kind, ())) for kind, ids in owned.items())
+            if want != done or leftover:
+                tasks.append(_Task(kavita_id, owner[0], owner[1], want, owned, done))
         return tasks
 
     @staticmethod
@@ -265,11 +318,32 @@ class _Series:
 
 
 def _normal(value: Any) -> dict[str, tuple[int, ...]]:
-    """The registry's note as it is compared: kind -> sorted ids (anything else is nothing)."""
+    """One list of the registry's note as it is compared: kind -> sorted ids (anything else is
+    nothing)."""
     if not isinstance(value, dict):
         return {}
     return {
         str(k): tuple(sorted(int(i) for i in v if isinstance(i, int)))
         for k, v in value.items()
         if isinstance(v, list) and v
+    }
+
+
+def _noted(value: Any) -> tuple[dict[str, tuple[int, ...]], dict[str, tuple[int, ...]]]:
+    """`(owned, done)` of the registry's note."""
+    if not isinstance(value, dict):
+        return {}, {}
+    return _normal(value.get("owned")), _normal(value.get("done"))
+
+
+def _listed(value: Mapping[str, tuple[int, ...]]) -> dict[str, list[int]]:
+    return {kind: list(ids) for kind, ids in sorted(value.items()) if ids}
+
+
+def _union(
+    left: Mapping[str, tuple[int, ...]], right: Mapping[str, tuple[int, ...]]
+) -> dict[str, tuple[int, ...]]:
+    return {
+        kind: tuple(sorted(set(left.get(kind, ())) | set(right.get(kind, ()))))
+        for kind in {*left, *right}
     }

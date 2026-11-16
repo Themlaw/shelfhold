@@ -1984,6 +1984,11 @@ title = "Cette relation fermerait une boucle."
 action = "Vérifiez l'ordre de la chaîne : une œuvre ne peut pas être la suite (ou le dérivé) de sa propre suite."
 cause = "L'autre œuvre suit déjà celle-ci, directement ou par d'autres œuvres, avec le même type de relation."
 
+[errors."relation.limit"]
+title = "Cette œuvre a déjà le maximum de relations."
+action = "Retirez une relation de l'une des deux œuvres avant d'en ajouter une autre."
+cause = "Une œuvre tient au plus 50 relations, pour que la liste reste lisible et la vérification des boucles rapide."
+
 [errors."export.series_reassignment_refused"]
 title = "Le plan de réaffectation des séries exportées est périmé ou refusé : rien n'a été modifié."
 action = "Relisez le plan : une série adoptée (figée) ou une série liée à autre chose que ses éditions l'arrête. Un plan relu après un changement a une autre empreinte."

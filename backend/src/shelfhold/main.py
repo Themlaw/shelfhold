@@ -111,7 +111,7 @@ from shelfhold.plugin_host.settings import SettingsSchema, SourceSettings, parse
 from shelfhold.reading.bundle import SeriesBundles
 from shelfhold.reading.public import Kosync
 from shelfhold.runtime import RETAKE_INTERVAL_S, InstanceRuntime
-from shelfhold.runtime_jobs import PlanService
+from shelfhold.runtime_jobs import RELATIONS_JOB_KIND, PlanService
 
 PACKAGED_FRONTEND = Path(__file__).parent / "static"
 
@@ -337,9 +337,19 @@ def create_app(
     def kosync() -> Kosync:  # one: it counts the unknown fingerprints of each token
         return Kosync(engine, composition.keyring, clock.now)
 
+    def relations_after_audience_change() -> None:
+        pools = runtime.pools
+        if pools is not None:  # M4 L19: the links a new audience forbids are taken back now
+            pools.submit(RELATIONS_JOB_KIND, dedupe_key=RELATIONS_JOB_KIND)
+
     export_routers = (
         build_shelves_router(
-            lambda: ShelfService(engine, clock=clock, root_check=RootGuard().check_root),
+            lambda: ShelfService(
+                engine,
+                clock=clock,
+                root_check=RootGuard().check_root,
+                on_audience_change=relations_after_audience_change,
+            ),
             ops_services,
         ),
         build_destinations_router(ops_services),

@@ -118,6 +118,16 @@ class KavitaClient:
         finally:
             self._write_guard = guard
 
+    @contextmanager
+    def guarded_as(self, guard: Callable[[], None]) -> Iterator[None]:
+        """A write that is less than what the standing guard stops (the withdrawal of a link while
+        a shelf is paused) runs under the guard that fits it."""
+        previous, self._write_guard = self._write_guard, guard
+        try:
+            yield
+        finally:
+            self._write_guard = previous
+
     def __repr__(self) -> str:
         return f"KavitaClient({self._base_url!r}, mode={self.health.mode.value})"
 

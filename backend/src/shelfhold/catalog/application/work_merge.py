@@ -33,12 +33,14 @@ from datetime import UTC, datetime
 from typing import Any
 
 import sqlalchemy as sa
+import structlog
 from sqlalchemy import Connection, exc
 
 from shelfhold.catalog.application.changes import record_work_removed, track_work_changes
 from shelfhold.catalog.application.merge import EDITION_KEY, StaleMergePlanError
 from shelfhold.catalog.application.new_edition_gate import file_new_edition
 from shelfhold.catalog.application.rating import RatingService
+from shelfhold.catalog.application.relation_graph import closes_a_loop
 from shelfhold.infrastructure.event_sequence import invalidate_tokens
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import acquisition, catalog, identity
@@ -57,6 +59,7 @@ __all__ = [
     "resolve_work",
 ]
 
+log = structlog.get_logger(__name__)
 MERGE_WINDOW_DAYS = 30
 _ENTITY_TABLES = ("contribution", "metadata_field", "age_suggestion")
 _HOPS = 16
@@ -296,14 +299,21 @@ def move_collection_items(connection: Connection, *, drop_id: str, keep_id: str)
 def move_work_relations(connection: Connection, *, drop_id: str, keep_id: str) -> None:
     """The relations of the absorbed Work go to the survivor (EF-BIB-039): a merge does not lose
     what the admin said of the Work. The relation between the two Works is dropped (a Work is
-    not related to itself), and a relation the survivor already has is not doubled. "Séparer"
-    does not take them back: a relation is the admin's statement about the Work, kept with it."""
+    not related to itself), and a relation the survivor already has is not doubled. A relation that
+    would close a loop on the survivor (what the API refuses) is given up, and said in the log.
+    "Séparer" does not take them back: a relation is the admin's statement about the Work, kept
+    with it."""
     table = catalog.work_relation
     rows = connection.execute(
         sa.select(table).where(
             sa.or_(table.c.from_work_id == drop_id, table.c.to_work_id == drop_id)
         )
     ).all()
+    connection.execute(
+        sa.delete(table).where(
+            sa.or_(table.c.from_work_id == drop_id, table.c.to_work_id == drop_id)
+        )
+    )  # out first: the loop check below sees the graph as it is once the absorbed Work is gone
     for row in rows:
         source, target = (
             keep_id if row.from_work_id == drop_id else row.from_work_id,
@@ -317,18 +327,18 @@ def move_work_relations(connection: Connection, *, drop_id: str, keep_id: str) -
                 table.c.kind == row.kind,
             )
         ).first()  # fmt: skip
-        if taken is None:
-            connection.execute(
-                sa.insert(table).values(
-                    from_work_id=source, to_work_id=target, kind=row.kind, origin=row.origin,
-                    created_at=row.created_at,
-                )
-            )  # fmt: skip
-    connection.execute(
-        sa.delete(table).where(
-            sa.or_(table.c.from_work_id == drop_id, table.c.to_work_id == drop_id)
-        )
-    )
+        if taken is not None:
+            continue
+        if closes_a_loop(connection, source, target, row.kind):
+            log.info("work_merge.relation_dropped", reason="loop", kind=row.kind,
+                     from_work_id=source, to_work_id=target)  # fmt: skip
+            continue
+        connection.execute(
+            sa.insert(table).values(
+                from_work_id=source, to_work_id=target, kind=row.kind, origin=row.origin,
+                created_at=row.created_at,
+            )
+        )  # fmt: skip
 
 
 def _move_states(connection: Connection, drop_id: str, keep_id: str) -> list[dict[str, Any]]:

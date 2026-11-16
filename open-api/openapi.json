@@ -26818,6 +26818,10 @@
       "code": "relation.invalid",
       "status": 422
     },
+    "/api/v1/problems/relation.limit": {
+      "code": "relation.limit",
+      "status": 422
+    },
     "/api/v1/problems/remember-needs-confirmation": {
       "code": "remember_needs_confirmation",
       "status": 422

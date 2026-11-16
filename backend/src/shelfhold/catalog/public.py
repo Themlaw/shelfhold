@@ -180,9 +180,11 @@ from shelfhold.catalog.application.rating import (
     Withdrawal,
 )
 from shelfhold.catalog.application.relations import (
+    MAX_RELATIONS_PER_WORK,
     RelatedWork,
     RelationCycleError,
     RelationError,
+    RelationLimitError,
     RelationNotFoundError,
     Relations,
     RelationView,
@@ -491,6 +493,7 @@ __all__ = [
     "LINK_PROVIDERS",
     "MAX_CBL_BYTES",
     "MAX_COLLECTION_ITEMS",
+    "MAX_RELATIONS_PER_WORK",
     "MAX_REMOVED",
     "MAX_TERMS",
     "MAX_TERM_CHARS",
@@ -572,6 +575,7 @@ __all__ = [
     "RelatedWork",
     "RelationCycleError",
     "RelationError",
+    "RelationLimitError",
     "RelationNotFoundError",
     "RelationView",
     "Relations",

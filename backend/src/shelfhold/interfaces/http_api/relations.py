@@ -24,6 +24,7 @@ from sqlalchemy import Engine
 from shelfhold.catalog.public import (
     RelationCycleError,
     RelationError,
+    RelationLimitError,
     RelationNotFoundError,
     Relations,
 )
@@ -103,6 +104,8 @@ def build_relations_router(
             raise ProblemError("not_found") from None
         except RelationCycleError:
             raise ProblemError("relation.cycle") from None
+        except RelationLimitError:
+            raise ProblemError("relation.limit") from None
         except RelationError:
             raise ProblemError("relation.invalid") from None
         if not created:

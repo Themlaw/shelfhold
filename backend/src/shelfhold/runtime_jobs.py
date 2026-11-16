@@ -193,6 +193,7 @@ __all__ = [
     "READ_STATE_PUSH_KIND",
     "RECONCILE_HASH_KIND",
     "RECONCILE_KIND",
+    "RELATIONS_JOB_KIND",
     "PlanService",
     "progress_sync_handler",
     "read_state_push_handler",
@@ -205,6 +206,8 @@ log = structlog.get_logger(__name__)
 EXPORT_JOB_KIND = "export.run"
 APPLY_JOB_KIND = "export.apply"
 RECONCILE_KIND = "reconcile.cycle"
+RELATIONS_JOB_KIND = "export.relations"  # M4 L19: the related series, after an audience change
+RELATIONS_CRON = "*/30 * * * *"  # and now and then: the database alone says nothing is due
 RECONCILE_HASH_KIND = "reconcile.hash"
 FOLLOW_CRON = "*/15 * * * *"
 EXPORT_CRON = "*/5 * * * *"
@@ -1312,6 +1315,32 @@ def key_expiry(comp: Composition) -> Callable[[], None]:
     return run
 
 
+def relations_handler(comp: Composition) -> Callable[[JobContext], None]:
+    """The related series of every connected target, outside an export pass: what a changed
+    audience (ceiling, profiles of a shelf) forbids is withdrawn at once, a pause or a failed pass
+    notwithstanding (a withdrawal is the write that protects; an addition waits for the pause)."""
+    clients = connected_clients(comp)
+
+    def run(context: JobContext) -> None:
+        written = 0
+        for target_id, client in clients():
+            try:
+                written += len(
+                    asyncio.run(
+                        RelatedSeries(
+                            comp.engine, comp.clock, BusTargetEvents(comp.engine, comp.bus)
+                        ).publish(client, target_id)
+                    )
+                )
+            except Exception as error:  # one unreachable target must not stop the others
+                log.warning(
+                    "export.relations_failed", target_id=target_id, error=type(error).__name__
+                )
+        context.record(written=written)
+
+    return run
+
+
 def intents_prune(comp: Composition) -> Callable[[], int]:
     """Retention of the intent journal: closed intents resolved before the retention go."""
 
@@ -1474,6 +1503,8 @@ def register_runtime_jobs(pools: JobPools, comp: Composition) -> None:
     pools.scheduler.add(FOLLOW_JOB_KIND, FOLLOW_CRON, jitter_s=120)
     pools.register(ACQUIRE_JOB_KIND, pool="io", handler=acquire_handler(comp, pools))
     pools.register(EXPORT_JOB_KIND, pool="io", handler=export_handler(comp))
+    pools.register(RELATIONS_JOB_KIND, pool="io", handler=relations_handler(comp))
+    pools.scheduler.add(RELATIONS_JOB_KIND, RELATIONS_CRON, jitter_s=60)
     pools.register(APPLY_JOB_KIND, pool="io", handler=apply_handler(comp))
     pools.scheduler.add(EXPORT_JOB_KIND, EXPORT_CRON, jitter_s=60)
     pools.register(

@@ -41,7 +41,6 @@ class _Killed(BaseException):
 
 
 @pytest.mark.req("EF-BIB-039", "ENF-SEC-010")
-@pytest.mark.xfail(strict=True, reason="#319 M1: a push not recorded is never withdrawn")
 def test_a_push_killed_before_its_record_is_still_withdrawn_when_audiences_split(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -78,7 +77,6 @@ def test_a_push_killed_before_its_record_is_still_withdrawn_when_audiences_split
 
 
 @pytest.mark.req("EF-BIB-039")
-@pytest.mark.xfail(strict=True, reason="#319 m1: a relation a person set is taken as Shelfhold's")
 def test_a_relation_a_person_set_before_the_push_stays_when_shelfhold_withdraws() -> None:
     with export_env() as env:
         w = wire(env)
@@ -95,7 +93,6 @@ def test_a_relation_a_person_set_before_the_push_stays_when_shelfhold_withdraws(
 
 
 @pytest.mark.req("EF-BIB-039")
-@pytest.mark.xfail(strict=True, reason="#319 m2: a merge closes a loop the API refuses")
 def test_a_merge_never_closes_a_loop_of_sequels(world: World) -> None:
     keep, drop = _twin(world, "Tale of Survivor", "ja"), _twin(world, "Tale of Absorbed", "de")
     middle = world.seed.works["ok"]

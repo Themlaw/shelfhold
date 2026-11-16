@@ -1995,6 +1995,11 @@
     action = "Check the order of the chain: a work cannot be a sequel (or a spin-off) of its own sequel."
     cause = "The other end already follows this work, directly or through other works, with the same kind of relation."
 
+  [errors."relation.limit"]
+    title = "This work already has the maximum number of relations."
+    action = "Remove a relation from one of the two works before adding another."
+    cause = "A work holds at most 50 relations, so that the list stays readable and the loop check stays fast."
+
   [errors."export.series_reassignment_refused"]
     title = "The reallocation plan for the exported series is outdated or refused: nothing has been modified."
     action = "Reread the plan: an adopted (frozen) series or a series linked to something other than its Editions stops it. A plan reread after a change has another fingerprint."
