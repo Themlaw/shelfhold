@@ -14,6 +14,9 @@ already exported.
   row has no foreign key to its partition: a boundary that goes (the series was re-cut) purges its
   versions but not their rows, so the number of the next version never goes back (a number is
   never served twice for the same Edition, part and profile).
+- `bundle_setting`: the slice of an Edition's block (L49b), a number of chapters a new part may
+  hold. A row is a choice of the admin; no row, the cut is the one of the bytes. It moves no
+  written boundary.
 - `bundle_member`: what a version is made of, in rank order, with the table of pages computed by
   Shelfhold (`first_page`, `page_count`) and a keyed fingerprint of the file (`content_fp`), never
   a clear hash (ADR-0048). When the exported file's row is deleted the member stays as an orphan
@@ -64,6 +67,21 @@ bundle_partition = sa.Table(
     ulid_check("export_item_id"),
     positive_check("part_index", minimum=1),
     sa.UniqueConstraint("export_item_id"),
+)
+
+bundle_setting = sa.Table(
+    "bundle_setting",
+    metadata,
+    sa.Column(
+        "edition_id", sa.String(26), sa.ForeignKey("edition.id", ondelete="CASCADE"), nullable=False
+    ),
+    sa.Column("slice_chapters", sa.Integer(), nullable=False),
+    now_column("updated_at"),
+    sa.PrimaryKeyConstraint("edition_id"),
+    ulid_check("edition_id"),
+    sa.CheckConstraint(
+        '"slice_chapters" >= 1 AND "slice_chapters" <= 256', name="slice_chapters_range"
+    ),
 )
 
 bundle_version = sa.Table(

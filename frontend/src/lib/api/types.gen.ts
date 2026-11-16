@@ -595,6 +595,98 @@ export type BindingPausedOut = {
 };
 
 /**
+ * BundleCanOut
+ */
+export type BundleCanOut = {
+    /**
+     * Set Slice
+     */
+    set_slice: boolean;
+};
+
+/**
+ * BundleExcludedOut
+ */
+export type BundleExcludedOut = {
+    /**
+     * Format
+     */
+    format: number;
+    /**
+     * Unsafe
+     */
+    unsafe: number;
+};
+
+/**
+ * BundleOut
+ */
+export type BundleOut = {
+    can: BundleCanOut;
+    /**
+     * Edition Id
+     */
+    edition_id: string;
+    excluded: BundleExcludedOut;
+    /**
+     * Parts
+     */
+    parts: Array<BundlePartOut>;
+    /**
+     * Slice Chapters
+     */
+    slice_chapters: number | null;
+    /**
+     * Slice Max
+     */
+    slice_max: number;
+    /**
+     * Slice Min
+     */
+    slice_min: number;
+};
+
+/**
+ * BundlePartOut
+ */
+export type BundlePartOut = {
+    /**
+     * Chapters
+     */
+    chapters: number;
+    /**
+     * First Number
+     */
+    first_number: string;
+    /**
+     * Index
+     */
+    index: number;
+    /**
+     * Last Number
+     */
+    last_number: string;
+    /**
+     * Size
+     */
+    size: number | null;
+    /**
+     * Written
+     */
+    written: boolean;
+};
+
+/**
+ * BundleSliceIn
+ */
+export type BundleSliceIn = {
+    /**
+     * Slice Chapters
+     */
+    slice_chapters?: number | null;
+};
+
+/**
  * CancelOut
  */
 export type CancelOut = {
@@ -8186,6 +8278,82 @@ export type SupportAuthorPauseResponses = {
 };
 
 export type SupportAuthorPauseResponse = SupportAuthorPauseResponses[keyof SupportAuthorPauseResponses];
+
+export type BundleSlicesReadData = {
+    body?: never;
+    path: {
+        /**
+         * Edition Id
+         */
+        edition_id: string;
+    };
+    query?: never;
+    url: '/api/v1/editions/{edition_id}/bundle';
+};
+
+export type BundleSlicesReadErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type BundleSlicesReadError = BundleSlicesReadErrors[keyof BundleSlicesReadErrors];
+
+export type BundleSlicesReadResponses = {
+    /**
+     * Successful Response
+     */
+    200: BundleOut;
+};
+
+export type BundleSlicesReadResponse = BundleSlicesReadResponses[keyof BundleSlicesReadResponses];
+
+export type BundleSlicesSetData = {
+    body: BundleSliceIn;
+    path: {
+        /**
+         * Edition Id
+         */
+        edition_id: string;
+    };
+    query?: never;
+    url: '/api/v1/editions/{edition_id}/bundle-slice';
+};
+
+export type BundleSlicesSetErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type BundleSlicesSetError = BundleSlicesSetErrors[keyof BundleSlicesSetErrors];
+
+export type BundleSlicesSetResponses = {
+    /**
+     * Successful Response
+     */
+    200: BundleOut;
+};
+
+export type BundleSlicesSetResponse = BundleSlicesSetResponses[keyof BundleSlicesSetResponses];
 
 export type FollowCheckData = {
     body?: never;

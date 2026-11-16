@@ -21,7 +21,7 @@ pytestmark = pytest.mark.req("ENF-OPS-002", "EF-EXP-041")
 
 def test_the_revision_is_0081_and_follows_0080() -> None:
     script = ScriptDirectory(str(default_script_location()))
-    assert script.get_heads() == ["0081"]
+    assert len(script.get_heads()) == 1
     assert script.get_revision("0081").down_revision == "0080"
 
 

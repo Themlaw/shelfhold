@@ -1213,6 +1213,13 @@ part_index = "Number of the part, from 1."
 first_unit_id = "First Unit of the part; NULL when the part opens the series."
 export_item_id = "Exported item of kind `bundle` the part's document aliases hang on (`export_item.id`)."
 
+[tables.bundle_setting]
+description = "The slice of an Edition's series block: how many chapters a new part may hold (M4 L49b)."
+[tables.bundle_setting.columns]
+edition_id = "Edition whose block is sliced (`edition.id`)."
+slice_chapters = "Chapters a new part may hold, from 1 to 256; a written boundary never moves."
+updated_at = "When the admin last set it (UTC)."
+
 [tables.bundle_version]
 description = "One downloadable file of a series block for one profile, numbered and never reused (M4 L49a). A purged version keeps its row and answers 410."
 [tables.bundle_version.columns]

@@ -69,6 +69,8 @@ EXPORTED_TABLES: Final = frozenset(
         # nothing and number the versions from 1, so that a file an e-reader holds is no longer
         # found. The members (fingerprints of files) are rebuilt by the next download.
         "bundle_partition", "bundle_version", "document_alias",
+        # the slice an admin chose for a block (L49b): a choice, not a cache
+        "bundle_setting",
     }
 )  # fmt: skip
 
@@ -423,7 +425,7 @@ def _keep(table: str, row: Mapping[str, Any], kept: _Kept) -> bool:
                 and row["edition_id"] in kept.editions
                 and (row["first_unit_id"] is None or row["first_unit_id"] in kept.units)
             )
-        case "bundle_version":
+        case "bundle_version" | "bundle_setting":
             return row["edition_id"] in kept.editions
         case "document_alias":  # only those of a series block; the others are rebuilt
             return row["export_item_id"] in kept.carriers

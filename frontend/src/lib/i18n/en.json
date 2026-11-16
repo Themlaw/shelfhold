@@ -681,5 +681,16 @@
   "deviceTokens.revoke_note": "Revocation is immediate.",
   "deviceTokens.error": "The token could not be created. Check the chosen profile, then try again.",
   "deviceTokens.forbidden": "Children do not manage tokens: ask a parent.",
-  "settings.link.device_tokens": "Device tokens (e-readers)"
+  "settings.link.device_tokens": "Device tokens (e-readers)",
+  "bundleSlices.title": "E-reader block",
+  "bundleSlices.intro": "The block of the series downloads as one file per part. Set here how many chapters a part holds: parts already written do not move, only the open part and the ones after it are cut again. The maximum weight of a part still applies.",
+  "bundleSlices.part.range": "Part {index} of {total}: chapters {first} to {last} ({count})",
+  "bundleSlices.part.single": "Part {index} of {total}: chapter {first} ({count})",
+  "bundleSlices.excluded": "{count, plural, one {# chapter left out of the block} other {# chapters left out of the block}} (format or unreadable file).",
+  "bundleSlices.field": "Chapters per part",
+  "bundleSlices.save": "Save",
+  "bundleSlices.clear": "Remove the slice",
+  "bundleSlices.saved": "Saved.",
+  "bundleSlices.range": "Enter a whole number between {min} and {max}.",
+  "bundleSlices.loading": "Loading the block…"
 }

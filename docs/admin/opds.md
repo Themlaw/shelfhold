@@ -65,6 +65,15 @@ bibliothèque ni dans Kavita, et aucune copie complète n'existe sur le disque.
 - **Parties.** Au-delà de 500 Mio, le bloc est coupé en parties : `Titre — Série complète (2 sur 3)
   v1.cbz`. Les limites de parties sont écrites quand la partie est créée et ne bougent plus : un
   chapitre ajouté va dans la dernière partie, un chapitre remplacé ne change que la sienne.
+- **Tranches de plages fixes.** Sur la fiche de la série (« Bloc pour liseuse »), l'admin peut fixer
+  un nombre de chapitres par partie (de 1 à 256) : `Titre — Série complète (2 sur 5) v1.cbz` couvre
+  alors, par exemple, les chapitres 21 à 40. La tranche ne fait que **resserrer** la coupe : le poids
+  maximal et le nombre de membres d'une partie restent des plafonds. Elle ne déplace **aucune limite
+  déjà écrite** : seule la partie ouverte (la dernière) et celles qui s'y ajoutent sont recoupées, donc
+  un fichier déjà sur la liseuse garde sa partie, et une partie dont le contenu ne change pas ne
+  reçoit pas de nouvelle version. Retirer la tranche rend la coupe au poids. L'écran montre les
+  parties prévues d'après le manifeste (rien n'est ouvert ni écrit) et le nombre de chapitres laissés
+  hors du bloc. Seul l'admin la voit et la règle ; la tranche suit l'Édition dans l'export intégral.
 - **Taille exacte, pas de reprise.** `Content-Length` est exact avant le premier octet. Il n'y a ni
   `Range` ni `206` : KOReader n'en envoie pas et efface le fichier sur tout code autre que 200.
 - **Même octets, toujours.** À contenu égal, le fichier est identique octet pour octet, y compris

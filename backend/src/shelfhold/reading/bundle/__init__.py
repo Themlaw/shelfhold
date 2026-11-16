@@ -1,5 +1,6 @@
 """The block of a series: a virtual stored ZIP served on OPDS (M4 L49a, ADR-0053)."""
 
+from shelfhold.reading.bundle import slices
 from shelfhold.reading.bundle.errors import (
     BundleBusyError,
     BundleChangedError,
@@ -21,4 +22,5 @@ __all__ = [
     "BundleOffer",
     "SeriesBundles",
     "prune_versions",
+    "slices",
 ]
