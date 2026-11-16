@@ -52,6 +52,7 @@ from shelfhold.export.application.target_state import (
 )
 from shelfhold.export.domain.folders import FOLDER_TRANSPORTS, fold
 from shelfhold.export.domain.kavita_instance import instance_changed
+from shelfhold.export.domain.path_map import clean_absolute
 from shelfhold.export.domain.trees import (
     TreeFolder,
     TreePathError,
@@ -213,6 +214,7 @@ class _Run:
     keys: tuple[str, ...]
     done: frozenset[str]
     sidecars: frozenset[str]
+    dropped: Mapping[str, tuple[str, int]] = field(default_factory=dict)  # item -> (sha256, size)
     executed: int = 0
     skipped: int = 0
     since_probe: int = 0
@@ -260,7 +262,8 @@ class PlanExecutor:
         self._gate(binding)
         if binding.capabilities.transport not in FILE_TRANSPORTS:
             raise PlanRefusedError("this destination has no folder: it gets calls, not a file plan")
-        tree = self._tree(binding)
+        dropbox = binding.capabilities.transport == "dropbox"
+        tree = self._folder(binding) if dropbox else self._tree(binding)
         planned = self._planned(call_id, binding)
         plan = self._copy(raw_plan, planned)
         snapshot = tuple(op.model_dump_json() for op in plan.ops)
@@ -270,6 +273,7 @@ class PlanExecutor:
             keys=_keys(snapshot),
             done=self._settled(call_id, binding.destination_id),
             sidecars=self._ledger.sidecars(call_id, binding.destination_id),
+            dropped=self._dropped(binding.destination_id) if dropbox else {},
         )  # fmt: skip
         for op in plan.ops:
             self._screen(run, op)  # every operation, before the first one runs
@@ -383,6 +387,73 @@ class PlanExecutor:
             raise PlanRefusedError("the folder of a tree never goes through a link") from None
         return _Tree(mine.local, folder, role, ())
 
+    def _folder(self, binding: PlanBinding) -> _Tree:
+        """The ingestion folder of a drop box: the folder its target declares and the sub-folder
+        of the binding, as the database holds them now. A drop box has no tree and no indexer (the
+        folder is not managed, an ingester empties it), but it keeps the rule that makes a tree
+        safe: the folder never climbs out of what the target declares (`..`, an absolute name), no
+        folder on the way is a link, and it exists (a missing folder is a mistake to be told, not
+        a tree to be made)."""
+        with self._engine.connect() as connection:
+            dest, target = export.shelf_destination, export.export_target
+            row = connection.execute(
+                sa.select(target.c.path_map, dest.c.root_subpath)
+                .select_from(dest.join(target, target.c.id == dest.c.target_id))
+                .where(dest.c.id == binding.destination_id, dest.c.target_id == binding.target_id)
+            ).first()
+        if row is None:
+            raise PlanRefusedError("this binding has no folder")
+        writable = [
+            str(e["local"])
+            for e in row.path_map or []
+            if isinstance(e, dict) and e.get("mode", "rw") == "rw" and e.get("local")
+        ]
+        subpath = row.root_subpath or ""
+        parts = [part for part in subpath.split("/") if part not in ("", ".")]
+        if not writable or subpath.startswith("/") or ".." in parts or "\0" in subpath:
+            raise PlanRefusedError("the folder of a drop box is below the folder of its target")
+        try:
+            base = clean_absolute(writable[0])
+        except ValueError:
+            raise PlanRefusedError(
+                "the folder of a drop box is below the folder of its target"
+            ) from None
+        below = ["/".join([base, *parts[:depth]]) for depth in range(1, len(parts) + 1)]
+        for path in below or [base]:
+            try:
+                found = self._disk.observe(path)
+            except (FsopsError, OSError):
+                raise PlanRefusedError(
+                    "the folder of a drop box never goes through a link"
+                ) from None
+            if found is None:
+                raise PlanRefusedError("the ingestion folder does not exist")
+            if found[0] != "dir":
+                raise PlanRefusedError("the folder of a drop box never goes through a link")
+        folder = TreeFolder(root_id="", subpath="", tree_id="", identity=None, ancestry=frozenset())
+        return _Tree("/".join([base, *parts]), folder, "primary", ())
+
+    def _dropped(self, destination_id: str) -> dict[str, tuple[str, int]]:
+        """The books of this binding that an earlier run dropped (any call: the ingester takes
+        the file, so the folder says nothing), by item, with the digest and size of what was
+        written. Only a finished drop: an intent `cancelled` or still open is not one."""
+        table = coherence.fs_intent
+        meta = table.c.expected_file_id
+        with self._engine.connect() as connection:
+            rows = connection.execute(
+                sa.select(
+                    sa.func.json_extract(meta, "$.item").label("item"),
+                    sa.func.json_extract(meta, "$.size").label("size"),
+                    table.c.expected_sha256,
+                ).where(
+                    sa.func.json_extract(meta, "$.dest") == destination_id,
+                    sa.func.json_extract(meta, "$.item").is_not(None),
+                    table.c.op == "write",
+                    table.c.state == "done",
+                )
+            ).all()
+        return {str(r.item): (str(r.expected_sha256), int(r.size or 0)) for r in rows}
+
     def _with_identity(self, located: "_Located") -> TreeFolder:
         """The folder with `(st_dev, st_ino)` of itself and of every folder down to it. The inode
         only serves the overlap check, it is never stored (`st_dev` changes at every boot)."""
@@ -442,6 +513,12 @@ class PlanExecutor:
     def _run_op(self, run: _Run, index: int) -> None:
         op = self._checked(run, index)
         where = f"{run.tree.local}/{op.rel_path}"
+        ref = op.content_ref
+        if op.op == "write" and ref is not None and ref.ref in run.dropped:
+            digest, size = run.dropped[ref.ref]  # dropped by an earlier run: the file is not ours
+            run.skipped += 1  # to look at any more, the manifest is what is left to put back
+            run.files.append(WrittenFile(ref.ref, op.rel_path, digest, size, 0))
+            return
         if run.keys[index] in run.done:
             run.skipped += 1
             self._note(run, op, where)  # done by an earlier run: still part of the manifest
@@ -485,6 +562,13 @@ class PlanExecutor:
         """What the SDK check does not know: a sidecar the host did not make for this call and
         this binding is never read, and a file the destination declares harmful (`series.json`
         for Kavita) is never written, whatever bytes it cites."""
+        if run.binding.capabilities.transport == "dropbox" and (
+            op.op != "write"
+            or "/" in op.rel_path
+            or "\\" in op.rel_path
+            or op.rel_path.startswith(".")
+        ):
+            raise PlanRefusedError("a drop box takes whole files at the root of its folder")
         ref = op.content_ref
         if ref is not None and ref.kind == "sidecar" and ref.ref not in run.sidecars:
             raise PlanRefusedError("the sidecar is not one the host made for this binding")
@@ -531,6 +615,9 @@ class PlanExecutor:
             )
         data = self._contents.read(run.binding.destination_id, op.content_ref)
         self._move_away_old(run, op, meta)
+        if run.binding.capabilities.transport == "dropbox":
+            # the file will be taken and removed: the intent keeps what the folder cannot
+            meta = {**meta, "item": op.content_ref.ref, "size": len(data)}
         intent = self._journal.record(
             op="write", dst=where, expected_sha256=_digest(data), extra=meta
         )

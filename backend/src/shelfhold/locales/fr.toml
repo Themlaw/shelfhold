@@ -1709,6 +1709,16 @@ title = "Ce dossier recouvre la source locale de Suwayomi."
 action = "Choisissez un dossier qui ne contient pas, n'est pas dans et n'est pas la source locale de Suwayomi (réglage « Local source path » du serveur), ou déplacez cette source locale ailleurs."
 cause = "Shelfhold relirait ses propres exports comme une source amont et les acquerrait en boucle."
 
+[errors."target.transport_not_supported"]
+title = "Cette destination ne se lie pas ainsi."
+action = "Une boîte de dépôt CWA se lie comme boîte de dépôt (transport « dropbox ») : choisissez ce transport."
+cause = "Une boîte de dépôt n'a ni arbre à indexer ni serveur à lire : un autre transport n'écrirait pas là où il faut."
+
+[errors."target.folder_outside_root"]
+title = "Ce dossier n'est pas dans le dossier de la destination."
+action = "Donnez un sous-dossier du dossier que la destination déclare : un nom relatif, sans « .. », qui ne passe par aucun lien."
+cause = "Une boîte de dépôt n'écrit que dans le dossier d'ingestion avec lequel elle a été réglée, jamais ailleurs."
+
 [errors."target.local_source_unknown"]
 title = "La source locale de Suwayomi n'est pas connue ou ne peut pas être vérifiée."
 action = "Laissez le suivi tourner une fois (ou attendez le prochain cycle), puis recommencez : Shelfhold doit lire la source locale de Suwayomi avant de lier un dossier natif. Si Suwayomi la place à un chemin que Shelfhold ne voit pas, rendez ce dossier visible (montage en lecture seule, ou côté « remote » du path_map)."

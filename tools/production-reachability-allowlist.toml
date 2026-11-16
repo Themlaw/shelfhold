@@ -65,6 +65,15 @@ symbols = [
 ]
 
 [[allow]]
+category = "unwired-m4-cwa"
+reason = "2026-11-16 (M4 L09): the CWA drop box is described, executed by the pass (`dropbox_destinations`, `CwaSource` read by `FirstPartyDestinations`) and tested end to end, but nothing creates a `cwa` target yet: the card of L09 stops at the destination. The creation of the target (a reserved action) is for the lot that writes it, recorded in docs/decisions/M4.md."
+until = "M4"
+symbols = [
+  "shelfhold.export.targets.cwa.destination:CwaDestination.inventory_calls",
+  "shelfhold.export.targets.cwa.destination:CwaDestination.render_sidecars",
+]
+
+[[allow]]
 category = "unwired-m4"
 reason = "Related Works (EF-BIB-039): M1b holds the model and the service (a typed link, never a merge). The admin API that links two Works, the page that shows the relation and the push to the \"related series\" of Kavita are M4's, the first callers."
 until = "M4"  # settled by M4 lot L19 (relate_works); `present_in` left with L06a

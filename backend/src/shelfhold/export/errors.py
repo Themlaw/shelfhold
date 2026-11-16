@@ -30,6 +30,9 @@ CODES: tuple[ErrorCode, ...] = (
     # M4 L07: the native folder and the local source of Suwayomi must never meet (EF-EXP-010)
     ErrorCode("target.root_overlaps_local_source", 409, "admin"),
     ErrorCode("target.local_source_unknown", 409, "admin"),
+    # M4 L09: a CWA drop box is bound as a drop box, in the folder its target declares (EF-EXP-022)
+    ErrorCode("target.transport_not_supported", 409, "admin"),
+    ErrorCode("target.folder_outside_root", 409, "admin"),
     # M4 L04: a plan or a call a destination returned that the host will not run (EF-EXP-001)
     ErrorCode("export.plan_refused", 422, "admin"),
     ErrorCode("shelf.destination_exists", 409, "admin"),

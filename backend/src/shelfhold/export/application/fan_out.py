@@ -560,20 +560,40 @@ def record_applied(
                 .values(state="missing")
             )
             touched.add(item)
+    # The locator is typed by the transport (EF-EXP-058): a tree keeps the path it was written at;
+    # a drop box keeps the key of the drop, since the ingester takes the file and removes it.
+    dropbox = (
+        connection.execute(
+            sa.select(export.shelf_destination.c.transport).where(
+                export.shelf_destination.c.id == destination_id
+            )
+        ).scalar()
+        == "dropbox"
+    )
     for file in files:
-        values: dict[str, Any] = {
-            "locator_type": "path", "rel_path": file.rel_path,
-            "format": _FORMATS.get(file.rel_path.rsplit(".", 1)[-1].lower()),
-            "size": file.size, "mtime_ns": file.mtime_ns, "content_hash": file.file_hash,
-            "file_hash": file.file_hash, "written_by_shelfhold_at": now, "exported_at": now,
-            "state": "written", "error_code": None,
-        }  # fmt: skip
         found = connection.execute(
-            sa.select(record.c.state).where(
+            sa.select(record.c.state, record.c.idempotency_key).where(
                 record.c.shelf_destination_id == destination_id,
                 record.c.export_item_id == file.export_item_id,
             )
         ).first()
+        values: dict[str, Any] = {
+            "format": _FORMATS.get(file.rel_path.rsplit(".", 1)[-1].lower()),
+            "size": file.size, "content_hash": file.file_hash,
+            "file_hash": file.file_hash, "written_by_shelfhold_at": now, "exported_at": now,
+            "state": "written", "error_code": None,
+        }  # fmt: skip
+        if dropbox:
+            values |= {
+                "locator_type": "idempotency_key", "rel_path": None, "mtime_ns": None,
+                # the key of a drop is the one it was first given: a pass run again keeps it
+                "idempotency_key": (found.idempotency_key if found else None) or new_ulid(),
+            }  # fmt: skip
+        else:
+            values |= {
+                "locator_type": "path", "rel_path": file.rel_path, "mtime_ns": file.mtime_ns,
+                "idempotency_key": None,
+            }  # fmt: skip
         if found is None:
             connection.execute(
                 sa.insert(record).values(

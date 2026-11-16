@@ -26765,6 +26765,10 @@
       "code": "target.exchange_failed",
       "status": 502
     },
+    "/api/v1/problems/target.folder-outside-root": {
+      "code": "target.folder_outside_root",
+      "status": 409
+    },
     "/api/v1/problems/target.forbidden": {
       "code": "target.forbidden",
       "status": 403
@@ -26816,6 +26820,10 @@
     "/api/v1/problems/target.route-missing": {
       "code": "target.route_missing",
       "status": 503
+    },
+    "/api/v1/problems/target.transport-not-supported": {
+      "code": "target.transport_not_supported",
+      "status": 409
     },
     "/api/v1/problems/target.tree-overlap": {
       "code": "target.tree_overlap",
