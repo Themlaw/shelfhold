@@ -79,7 +79,7 @@ def test_the_image_is_built_with_the_version_of_the_package_for_its_oci_label() 
         ["/bin/sh", "-c", shell], cwd=ROOT, capture_output=True, text=True, check=True
     )
     package = re.search(r'^version = "(.*)"$', (ROOT / "backend/pyproject.toml").read_text(), re.M)
-    assert package is not None and done.stdout.strip() == package.group(1) == "1.1.0rc1"
+    assert package is not None and done.stdout.strip() == package.group(1) == "1.1.0rc2"
     assert 'org.opencontainers.image.version="${VERSION}"' in (
         ROOT / "docker" / "Dockerfile"
     ).read_text(encoding="utf-8")
