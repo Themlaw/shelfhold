@@ -32,7 +32,7 @@ describe('theme mechanism', () => {
   beforeEach(() => localStorage.clear());
 
   // req: EF-UX-012
-  it('ships themes A and B, A being the default', () => {
+  it('ships themes A, B, C and D, A being the default', () => {
     expect(THEMES).toEqual(['bibliotheque', 'console', 'galerie', 'calme']);
     expect(DEFAULT_THEME).toBe('bibliotheque');
     expect(COLOR_SCHEMES).toEqual(['auto', 'light', 'dark']);

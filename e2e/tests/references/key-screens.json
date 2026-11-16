@@ -909,13 +909,13 @@
   },
   "admin galerie/light /": {
     "tokens": {
-      "bg": "#ffffff",
+      "bg": "#fff",
       "surface": "#f2f2f5",
       "ink": "#0b0b0f",
       "muted": "#6e6e73",
       "rule": "#e3e3e8",
       "accent": "#6d28d9",
-      "on-accent": "#ffffff",
+      "on-accent": "#fff",
       "ok": "#147f3c",
       "warn": "#b35208",
       "err": "#d82222"
@@ -959,13 +959,13 @@
   },
   "admin galerie/light /chercher": {
     "tokens": {
-      "bg": "#ffffff",
+      "bg": "#fff",
       "surface": "#f2f2f5",
       "ink": "#0b0b0f",
       "muted": "#6e6e73",
       "rule": "#e3e3e8",
       "accent": "#6d28d9",
-      "on-accent": "#ffffff",
+      "on-accent": "#fff",
       "ok": "#147f3c",
       "warn": "#b35208",
       "err": "#d82222"
@@ -999,13 +999,13 @@
   },
   "admin galerie/light /bibliotheque": {
     "tokens": {
-      "bg": "#ffffff",
+      "bg": "#fff",
       "surface": "#f2f2f5",
       "ink": "#0b0b0f",
       "muted": "#6e6e73",
       "rule": "#e3e3e8",
       "accent": "#6d28d9",
-      "on-accent": "#ffffff",
+      "on-accent": "#fff",
       "ok": "#147f3c",
       "warn": "#b35208",
       "err": "#d82222"
@@ -1041,13 +1041,13 @@
   },
   "admin galerie/light /serie/{edition}": {
     "tokens": {
-      "bg": "#ffffff",
+      "bg": "#fff",
       "surface": "#f2f2f5",
       "ink": "#0b0b0f",
       "muted": "#6e6e73",
       "rule": "#e3e3e8",
       "accent": "#6d28d9",
-      "on-accent": "#ffffff",
+      "on-accent": "#fff",
       "ok": "#147f3c",
       "warn": "#b35208",
       "err": "#d82222"
@@ -1091,13 +1091,13 @@
   },
   "admin galerie/light /assistant/kavita": {
     "tokens": {
-      "bg": "#ffffff",
+      "bg": "#fff",
       "surface": "#f2f2f5",
       "ink": "#0b0b0f",
       "muted": "#6e6e73",
       "rule": "#e3e3e8",
       "accent": "#6d28d9",
-      "on-accent": "#ffffff",
+      "on-accent": "#fff",
       "ok": "#147f3c",
       "warn": "#b35208",
       "err": "#d82222"
@@ -1133,13 +1133,13 @@
   },
   "admin galerie/light /sante": {
     "tokens": {
-      "bg": "#ffffff",
+      "bg": "#fff",
       "surface": "#f2f2f5",
       "ink": "#0b0b0f",
       "muted": "#6e6e73",
       "rule": "#e3e3e8",
       "accent": "#6d28d9",
-      "on-accent": "#ffffff",
+      "on-accent": "#fff",
       "ok": "#147f3c",
       "warn": "#b35208",
       "err": "#d82222"
@@ -1189,13 +1189,13 @@
   },
   "admin galerie/light /reglages/apparence": {
     "tokens": {
-      "bg": "#ffffff",
+      "bg": "#fff",
       "surface": "#f2f2f5",
       "ink": "#0b0b0f",
       "muted": "#6e6e73",
       "rule": "#e3e3e8",
       "accent": "#6d28d9",
-      "on-accent": "#ffffff",
+      "on-accent": "#fff",
       "ok": "#147f3c",
       "warn": "#b35208",
       "err": "#d82222"
@@ -1229,13 +1229,13 @@
   },
   "kid8 galerie/light /": {
     "tokens": {
-      "bg": "#ffffff",
+      "bg": "#fff",
       "surface": "#f2f2f5",
       "ink": "#0b0b0f",
       "muted": "#6e6e73",
       "rule": "#e3e3e8",
       "accent": "#6d28d9",
-      "on-accent": "#ffffff",
+      "on-accent": "#fff",
       "ok": "#147f3c",
       "warn": "#b35208",
       "err": "#d82222"
@@ -1281,13 +1281,13 @@
   },
   "kid8 galerie/light /chercher": {
     "tokens": {
-      "bg": "#ffffff",
+      "bg": "#fff",
       "surface": "#f2f2f5",
       "ink": "#0b0b0f",
       "muted": "#6e6e73",
       "rule": "#e3e3e8",
       "accent": "#6d28d9",
-      "on-accent": "#ffffff",
+      "on-accent": "#fff",
       "ok": "#147f3c",
       "warn": "#b35208",
       "err": "#d82222"
@@ -1321,13 +1321,13 @@
   },
   "kid8 galerie/light /mes-demandes": {
     "tokens": {
-      "bg": "#ffffff",
+      "bg": "#fff",
       "surface": "#f2f2f5",
       "ink": "#0b0b0f",
       "muted": "#6e6e73",
       "rule": "#e3e3e8",
       "accent": "#6d28d9",
-      "on-accent": "#ffffff",
+      "on-accent": "#fff",
       "ok": "#147f3c",
       "warn": "#b35208",
       "err": "#d82222"
@@ -1367,9 +1367,9 @@
       "surface": "#fafafa",
       "ink": "#1c1c1c",
       "muted": "#6b6b6b",
-      "rule": "#dddddd",
+      "rule": "#ddd",
       "accent": "#d93400",
-      "on-accent": "#ffffff",
+      "on-accent": "#fff",
       "ok": "#15803d",
       "warn": "#b45309",
       "err": "#dc2626"
@@ -1417,9 +1417,9 @@
       "surface": "#fafafa",
       "ink": "#1c1c1c",
       "muted": "#6b6b6b",
-      "rule": "#dddddd",
+      "rule": "#ddd",
       "accent": "#d93400",
-      "on-accent": "#ffffff",
+      "on-accent": "#fff",
       "ok": "#15803d",
       "warn": "#b45309",
       "err": "#dc2626"
@@ -1457,9 +1457,9 @@
       "surface": "#fafafa",
       "ink": "#1c1c1c",
       "muted": "#6b6b6b",
-      "rule": "#dddddd",
+      "rule": "#ddd",
       "accent": "#d93400",
-      "on-accent": "#ffffff",
+      "on-accent": "#fff",
       "ok": "#15803d",
       "warn": "#b45309",
       "err": "#dc2626"
@@ -1499,9 +1499,9 @@
       "surface": "#fafafa",
       "ink": "#1c1c1c",
       "muted": "#6b6b6b",
-      "rule": "#dddddd",
+      "rule": "#ddd",
       "accent": "#d93400",
-      "on-accent": "#ffffff",
+      "on-accent": "#fff",
       "ok": "#15803d",
       "warn": "#b45309",
       "err": "#dc2626"
@@ -1549,9 +1549,9 @@
       "surface": "#fafafa",
       "ink": "#1c1c1c",
       "muted": "#6b6b6b",
-      "rule": "#dddddd",
+      "rule": "#ddd",
       "accent": "#d93400",
-      "on-accent": "#ffffff",
+      "on-accent": "#fff",
       "ok": "#15803d",
       "warn": "#b45309",
       "err": "#dc2626"
@@ -1591,9 +1591,9 @@
       "surface": "#fafafa",
       "ink": "#1c1c1c",
       "muted": "#6b6b6b",
-      "rule": "#dddddd",
+      "rule": "#ddd",
       "accent": "#d93400",
-      "on-accent": "#ffffff",
+      "on-accent": "#fff",
       "ok": "#15803d",
       "warn": "#b45309",
       "err": "#dc2626"
@@ -1647,9 +1647,9 @@
       "surface": "#fafafa",
       "ink": "#1c1c1c",
       "muted": "#6b6b6b",
-      "rule": "#dddddd",
+      "rule": "#ddd",
       "accent": "#d93400",
-      "on-accent": "#ffffff",
+      "on-accent": "#fff",
       "ok": "#15803d",
       "warn": "#b45309",
       "err": "#dc2626"
@@ -1687,9 +1687,9 @@
       "surface": "#fafafa",
       "ink": "#1c1c1c",
       "muted": "#6b6b6b",
-      "rule": "#dddddd",
+      "rule": "#ddd",
       "accent": "#d93400",
-      "on-accent": "#ffffff",
+      "on-accent": "#fff",
       "ok": "#15803d",
       "warn": "#b45309",
       "err": "#dc2626"
@@ -1739,9 +1739,9 @@
       "surface": "#fafafa",
       "ink": "#1c1c1c",
       "muted": "#6b6b6b",
-      "rule": "#dddddd",
+      "rule": "#ddd",
       "accent": "#d93400",
-      "on-accent": "#ffffff",
+      "on-accent": "#fff",
       "ok": "#15803d",
       "warn": "#b45309",
       "err": "#dc2626"
@@ -1779,9 +1779,9 @@
       "surface": "#fafafa",
       "ink": "#1c1c1c",
       "muted": "#6b6b6b",
-      "rule": "#dddddd",
+      "rule": "#ddd",
       "accent": "#d93400",
-      "on-accent": "#ffffff",
+      "on-accent": "#fff",
       "ok": "#15803d",
       "warn": "#b45309",
       "err": "#dc2626"
