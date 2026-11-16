@@ -55,6 +55,7 @@ from shelfhold.ops.library import LibraryOps
 from shelfhold.ops.maintenance import MaintenanceOps
 from shelfhold.ops.meta import MetaOps
 from shelfhold.ops.normalize import NormalizeOps
+from shelfhold.ops.page_formats import PageNormalizeOps
 from shelfhold.ops.rating import RatingOps
 from shelfhold.ops.requests import build_service
 from shelfhold.ops.resplit import ResplitOps
@@ -169,6 +170,7 @@ def open_ops(
         library=library, adoption=LibraryAdoptionExit(engine, library),
         intents=IntentOps(composition), revisions=RevisionOps(composition),
         backfill=BackfillOps(composition), import_folder=ImportOps(composition),
+        page_formats=PageNormalizeOps(composition),
         normalize=NormalizeOps(composition),
         source_migration=SourceMigrationOps(composition), meta=MetaOps(composition),
         content=ContentOps(composition),

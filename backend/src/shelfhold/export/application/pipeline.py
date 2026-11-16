@@ -57,6 +57,7 @@ from shelfhold.export.application.rename_plan import (
 from shelfhold.export.application.rendering import (
     CbzRenderer,
     EpubRenderer,
+    PagesNotNormalizedError,
     RenderedCbz,
     RenderedEpub,
     comicinfo_xml,
@@ -98,6 +99,8 @@ from shelfhold.export.domain.planner import (
 from shelfhold.infrastructure.clock import Clock
 from shelfhold.infrastructure.db import read_transaction, write_transaction
 from shelfhold.infrastructure.fsops import Fsops
+from shelfhold.infrastructure.imaging import ImageRejected
+from shelfhold.infrastructure.imaging.errors import PAGES_WORKER_FAILED, WORKER_FAILED
 from shelfhold.infrastructure.logging import debug_enabled, elapsed_ms
 from shelfhold.infrastructure.schema import coherence, export
 from shelfhold.library.public import (
@@ -105,9 +108,12 @@ from shelfhold.library.public import (
     OriginalNotServableError,
     RootLocator,
     ServableEpub,
+    derived_identity,
     export_sources,
     has_epub,
     keep_origin_opf,
+    note_page_issue,
+    page_issue_blocks,
     require_servable_derivative,
     servable_epub,
 )
@@ -1044,7 +1050,24 @@ class ExportPipeline:
             return True
         with self._engine.connect() as connection:
             xml = comicinfo_xml(connection, planned.unit_id, series_name)
-        rendered = self._renderer.render(str(source.local_path), xml)
+        with self._engine.connect() as connection:
+            if page_issue_blocks(connection, planned.unit_id, source.original_sha256):
+                log.warning("export.pages_not_normalized", unit_id=planned.unit_id, set_aside=True)
+                return False  # set aside: asked again only when the content changes
+        try:
+            rendered = self._renderer.render(str(source.local_path), xml, target_id=ctx.target_id)
+        except PagesNotNormalizedError as refused:
+            self._set_aside(planned.unit_id, source.original_sha256, refused.issues[0].code)
+            return False
+        except ImageRejected as error:
+            if error.code != WORKER_FAILED:
+                raise
+            self._set_aside(planned.unit_id, source.original_sha256, PAGES_WORKER_FAILED, died=True)
+            return False
+        with self._engine.connect() as connection:  # a normalized derivative says its original's
+            rendered.content_hash = derived_identity(connection, rendered.content_hash) or (
+                rendered.content_hash
+            )
         try:
             if rendered.content_hash != planned.content_hash:
                 raise SourceMissingError(f"{planned.unit_id}: the archive changed since the plan")
@@ -1054,6 +1077,14 @@ class ExportPipeline:
         finally:
             rendered.file.close()
         return True
+
+    def _set_aside(
+        self, unit_id: str, original_sha256: str, code: str, *, died: bool = False
+    ) -> None:
+        """A page cannot be brought to an allowed format: the chapter stays out of the destination
+        and shows on the Health page; the next passes do not decode it again (ADR-0054)."""
+        note_page_issue(self._engine, unit_id, original_sha256, code, died=died)
+        log.warning("export.pages_not_normalized", unit_id=unit_id, code=code)
 
     def _write_volume(
         self, ctx: DestinationContext, planned: PlannedOp, plan_id: str, guard: Callable[[], None]

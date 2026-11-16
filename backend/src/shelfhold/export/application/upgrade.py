@@ -71,6 +71,7 @@ from shelfhold.library.public import (
     RootLocator,
     binned_export_file,
     confirmation_phrase,
+    derived_identity,
     irreplaceability,
     record_binned_export_file,
     record_destination_copy,
@@ -118,6 +119,9 @@ class UpgradeRequest:
     job_id: str | None = None  # holds the locks of the Work and the series folder when given
     # The grant of `revisions.force`, for a version the guard quarantined: nothing else lifts it
     suspect_grant: Allowed | None = None
+    # EF-EXP-046: the content is the one served but its pages must leave in allowlisted formats
+    # (`library normalize-pages`): the file is rendered again and replaced only if it differs
+    rerender: bool = False
 
 
 @dataclass(frozen=True)
@@ -339,7 +343,11 @@ class SamePathUpgrade:
             source = upgrade_source(connection, served.unit_id, request.content_id)
             if source is None or source.local_path is None:
                 raise LookupError(f"no library copy of content {request.content_id}")
-            if source.content_hash is not None and source.content_hash == served.content_hash:
+            if (
+                not request.rerender
+                and source.content_hash is not None
+                and source.content_hash == served.content_hash
+            ):
                 return UpgradeResult(UpgradeOutcome.UP_TO_DATE)
             if (
                 _quarantined(connection, source.variant_id)
@@ -348,7 +356,16 @@ class SamePathUpgrade:
                 log.warning("upgrade.suspect_revision", unit_id=served.unit_id)
                 return UpgradeResult(UpgradeOutcome.SUSPECT_REVISION)
             xml = comicinfo_xml(connection, served.unit_id, served.series_name)
-        rendered = self._renderer.render(str(source.local_path), xml)
+            target_id = connection.execute(
+                sa.select(export.shelf_destination.c.target_id).where(
+                    export.shelf_destination.c.id == request.destination_id
+                )
+            ).scalar()  # the policy of the destination applies (EF-EXP-046)
+        rendered = self._renderer.render(str(source.local_path), xml, target_id=target_id)
+        with self._engine.connect() as connection:  # a normalized derivative says its original's
+            rendered.content_hash = derived_identity(connection, rendered.content_hash) or (
+                rendered.content_hash
+            )
         try:
             if source.content_hash is not None and rendered.content_hash != source.content_hash:
                 raise LookupError(f"{request.content_id}: the archive is not the content's")

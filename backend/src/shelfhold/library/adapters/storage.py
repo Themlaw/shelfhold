@@ -185,17 +185,24 @@ class PassthroughStore:
         expected_sha256: str | None = None,
         upstream_ref: str | None = None,
         allow_svg_pages: bool = False,
+        allow_convertible_pages: bool = False,
     ) -> Ingested:
         """File `staged` at the local path `dest` in /library. Raises, having changed nothing,
         for a file too large, off the allowlist, not what was announced, or already there.
 
         `allow_svg_pages` (M2 L10) lets an archive with `.svg` pages in: it is the original of a
         derivative the caller must now declare (`rasterize_svg_pages`). Until then the file is
-        refused by every export and serve path, which apply the allowlist with no such opt-in."""
+        refused by every export and serve path, which apply the allowlist with no such opt-in.
+
+        `allow_convertible_pages` (M4 L53) is the same door for pages in a format the decode worker
+        re-encodes (BMP, TIFF, HEIC, JPEG 2000...): the received file is the original, its
+        normalized derivative is declared right after."""
         if staged.stat().st_size > self._max:
             raise ReceivedTooLargeError(f"{staged.stat().st_size} bytes, above {self._max}")
         with safe_open_archive(staged, name=PurePath(dest).name, limits=self._limits) as archive:
-            listing = check_cbz_entries(archive, allow_svg=allow_svg_pages)
+            listing = check_cbz_entries(
+                archive, allow_svg=allow_svg_pages, allow_convertible=allow_convertible_pages
+            )
             payload_hash = content_hash(archive)
             origin_xml = (
                 archive.read(listing.comicinfo, max_bytes=COMICINFO_MAX_BYTES)
@@ -520,7 +527,9 @@ class KeepCopier:
         result = self._extract(unit_id)
         return Kept(unit_id, result.rel_path, "extracted", result.file_hash)
 
-    def declare_derivative(self, unit_id: str, derived: Path, derived_by: str) -> Derivative:
+    def declare_derivative(
+        self, unit_id: str, derived: Path, derived_by: str, *, lossy: bool = False
+    ) -> Derivative:
         """A source declared a descrambling (EF-BIB-006): `derived` is the canonical file, the
         bytes as received stay in /store, both traced by hash.
 
@@ -537,11 +546,13 @@ class KeepCopier:
             raise SafeguardFailedError("no_content", "the Unit is gone")
         try:
             with self._hold_work(work_id):
-                return self._declare(unit_id, derived, derived_by)
+                return self._declare(unit_id, derived, derived_by, lossy)
         except WorkBusyError as busy:
             raise SafeguardFailedError("work_busy", "the Work is held by another job") from busy
 
-    def _declare(self, unit_id: str, derived: Path, derived_by: str) -> Derivative:
+    def _declare(
+        self, unit_id: str, derived: Path, derived_by: str, lossy: bool = False
+    ) -> Derivative:
         with self._engine.connect() as connection:
             content = connection.execute(
                 sa.select(storage.content)
@@ -557,6 +568,7 @@ class KeepCopier:
             copies = list(library_copies(connection, unit_id))
         with safe_open_archive(derived, name="derived.cbz") as archive:
             check_cbz_entries(archive)
+            derived_payload = content_hash(archive)
         derived_hash = sha256_file(derived)
         if content.retention == "passthrough":
             self._keep(unit_id)  # the original first, byte for byte
@@ -564,17 +576,29 @@ class KeepCopier:
             (c for c in copies if self._fsops.sha256_of(c.local) == content.original_sha256), None
         )
         if target is None:
-            raise SafeguardFailedError("library_differs_from_original")
-        with derived.open("rb") as stream:
-            written = self._fsops.write_atomic(
-                target.local, stream, replace=True,
-                verify_digest=lambda: derived_hash.removeprefix("sha256:"),
-            )  # fmt: skip
+            # a rewrite cut off after its rename (kill -9): the library file already is the
+            # derivative and the original is kept, only the bookkeeping is missing
+            target = next(
+                (c for c in copies if self._fsops.sha256_of(c.local) == derived_hash), None
+            )
+            seen = None if target is None else self._fsops.observe(target.local)
+            if target is None or seen is None:
+                raise SafeguardFailedError("library_differs_from_original")
+            written = seen[1]
+        else:
+            with derived.open("rb") as stream:
+                written = self._fsops.write_atomic(
+                    target.local, stream, replace=True,
+                    verify_digest=lambda: derived_hash.removeprefix("sha256:"),
+                )  # fmt: skip
         with write_transaction(self._engine) as connection:
             record_library_rewrite(
                 connection, target.replica_id, file_hash=derived_hash,
                 dev=self._fsops.device_of(target.local), ino=written.ino, size=written.size,
                 mtime_ns=written.mtime_ns, verified_at=datetime.now(UTC),
+                **(
+                    {"content_hash": derived_payload, "fidelity": "derived"} if lossy else {}
+                ),
             )  # fmt: skip
             connection.execute(
                 sa.update(storage.content)

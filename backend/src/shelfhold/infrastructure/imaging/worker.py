@@ -33,7 +33,7 @@ import sys
 import types
 from typing import IO, Any
 
-from shelfhold.infrastructure.imaging.caps import ALLOWED_FORMATS
+from shelfhold.infrastructure.imaging.caps import ALLOWED_FORMATS, PAGE_INPUT_FORMATS
 from shelfhold.infrastructure.imaging.protocol import encode_frame, read_frame
 
 CLONE_NEWUSER = 0x10000000
@@ -41,6 +41,7 @@ CLONE_NEWNET = 0x40000000
 PR_SET_NO_NEW_PRIVS = 38
 MAX_REQUEST_BYTES = 512 * 1024 * 1024
 THUMBNAIL_FORMATS = {"webp": "WEBP", "jpeg": "JPEG", "png": "PNG"}
+WHITE = (255, 255, 255)
 
 
 class _Reject(Exception):
@@ -275,7 +276,8 @@ def _open(data: bytes, caps: dict[str, Any]) -> Any:
     if len(data) > caps["max_bytes"]:
         raise _Reject("image.too_large", "bytes", "input")
     Image.init()
-    formats = [name for name in caps["formats"] if name in ALLOWED_FORMATS and name in Image.OPEN]
+    allowed = PAGE_INPUT_FORMATS if caps.get("convertible") is True else ALLOWED_FORMATS
+    formats = [name for name in caps["formats"] if name in allowed and name in Image.OPEN]
     previous = Image.MAX_IMAGE_PIXELS
     Image.MAX_IMAGE_PIXELS = int(caps["max_pixels"])
     try:
@@ -355,6 +357,55 @@ def _thumbnail(data: bytes, args: dict[str, Any]) -> tuple[dict[str, Any], bytes
     return {"format": fmt, "width": image.width, "height": image.height}, out.getvalue()
 
 
+_WIDE_MODES = frozenset({"I", "F", "I;16", "I;16L", "I;16B", "I;16N"})
+
+
+def _to_8_bits(image: Any) -> Any:
+    """A grey page of 16 (or 32) bits a sample as 8 bits: the 16-bit range scaled to 0..255."""
+    wide = image.convert("F" if image.mode == "F" else "I")
+    return wide.point(lambda value: value * (1 / 257)).convert("L")
+
+
+def _reencode(data: bytes, args: dict[str, Any]) -> tuple[dict[str, Any], bytes]:
+    """A page re-encoded at full size (M4 L53): the first frame, EXIF orientation applied, the
+    alpha flattened on white for JPEG, no metadata carried. Never AVIF or JXL as an output."""
+    from PIL import Image, ImageOps
+
+    fmt = THUMBNAIL_FORMATS[args["fmt"]]
+    quality = int(args["quality"])
+    _single_thread_avif()
+    image = _open(data, args["caps"])
+    if image.format == "TIFF" and getattr(image, "n_frames", 1) > 1:
+        # only the first image would be kept and the others lost without a word: refused
+        raise _Reject("image.format_refused", "multi_frame", "header")
+    _guarded(image.load)
+    image = _guarded(ImageOps.exif_transpose, image)
+    if image.mode in _WIDE_MODES:  # 16 bits or more per sample: scaled down, never clipped white
+        image = _guarded(_to_8_bits, image)
+    has_alpha = "A" in image.getbands() or "transparency" in image.info
+    if fmt == "JPEG":
+        if has_alpha:
+            rgba = image.convert("RGBA")
+            flat = Image.new("RGB", rgba.size, WHITE)
+            flat.paste(rgba, mask=rgba.getchannel("A"))
+            image = flat
+        else:
+            image = image.convert("RGB")
+    elif has_alpha and image.mode not in {"RGBA", "LA"}:
+        image = image.convert("RGBA")
+    elif image.mode not in {"RGB", "RGBA", "L", "LA"}:
+        image = image.convert("RGB")
+    image.info.clear()  # EXIF, ICC, text chunks, XMP: nothing from upstream is carried
+    out = io.BytesIO()
+    options: dict[str, Any] = {"icc_profile": None}
+    if fmt in {"JPEG", "WEBP"}:
+        options["quality"] = quality
+    if fmt == "JPEG":
+        options["optimize"] = True
+    _guarded(image.save, out, fmt, **options)
+    return {"format": fmt, "width": image.width, "height": image.height}, out.getvalue()
+
+
 def _pdf_check(data: bytes) -> tuple[dict[str, Any], bytes]:
     """Closed by default: `clean` only for a PDF the strict reader opens whole, with no encryption,
     no embedded file, no file attachment. Whatever it throws is a refusal, never a crash."""
@@ -424,6 +475,8 @@ def _handle(
         return _probe(data, args)
     if op == "thumbnail":
         return _thumbnail(data, args)
+    if op == "reencode":
+        return _reencode(data, args)
     if op == "pdf_check":
         return _pdf_check(data)
     if op == "svg_rasterize":

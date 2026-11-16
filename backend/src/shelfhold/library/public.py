@@ -41,6 +41,13 @@ from shelfhold.library.adapters.meta_projection import (
     work_rel,
 )
 from shelfhold.library.adapters.origin_opf import keep_origin_opf
+from shelfhold.library.adapters.page_formats import (
+    PAGE_DERIVED_BY,
+    LibraryPageNormalizer,
+    PageFormatCbzStore,
+    PageNormalizeSummary,
+    PageStoreNotConfiguredError,
+)
 from shelfhold.library.adapters.pdf_store import PdfStore
 from shelfhold.library.adapters.purge_inventory import (
     closed_request_ids,
@@ -250,6 +257,13 @@ from shelfhold.library.domain.volume_policy import (
     parse_policy,
     volume_slices,
 )
+from shelfhold.library.page_issues import (
+    clear_page_issue,
+    note_page_issue,
+    page_issue_blocks,
+    page_issue_counts,
+    page_issue_for,
+)
 from shelfhold.library.replica import (
     ByteSource,
     UnitFile,
@@ -257,6 +271,7 @@ from shelfhold.library.replica import (
     byte_sources,
     damaged_library_copies,
     demote_shared_inodes,
+    derived_identity,
     destination_identities,
     distrust_root_copies,
     drop_replicas,
@@ -326,6 +341,7 @@ __all__ = [
     "NOT_DOWNLOADED",
     "NO_KAVITA_COPY",
     "OPTION_OFF",
+    "PAGE_DERIVED_BY",
     "ROLES_UNVERIFIED",
     "SAFEGUARD_PENDING",
     "SERVICE_PAUSED",
@@ -377,12 +393,16 @@ __all__ = [
     "Irreplaceability",
     "KeepCopier",
     "Kept",
+    "LibraryPageNormalizer",
     "LinkPolicy",
     "MetaProjection",
     "NewerFormatError",
     "Normalizers",
     "OriginalNotServableError",
     "OwnExport",
+    "PageFormatCbzStore",
+    "PageNormalizeSummary",
+    "PageStoreNotConfiguredError",
     "PassthroughStore",
     "PdfStore",
     "Pending",
@@ -463,6 +483,7 @@ __all__ = [
     "binned_for_unit",
     "byte_sources",
     "check_add_fits",
+    "clear_page_issue",
     "closed_request_ids",
     "complete_interrupted_keep",
     "confirmation_phrase",
@@ -477,6 +498,7 @@ __all__ = [
     "decide_export",
     "decide_replacement",
     "demote_shared_inodes",
+    "derived_identity",
     "derived_rels",
     "destination_identities",
     "distrust_root_copies",
@@ -515,9 +537,13 @@ __all__ = [
     "meta_rel",
     "migrate_received_dirs",
     "normalizers_of",
+    "note_page_issue",
     "oldest_first",
     "owed_unit_ids",
     "own_export_of",
+    "page_issue_blocks",
+    "page_issue_counts",
+    "page_issue_for",
     "parse_policy",
     "payload_hash_at",
     "plan_batch",

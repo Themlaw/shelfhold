@@ -1213,6 +1213,15 @@ part_index = "Number of the part, from 1."
 first_unit_id = "First Unit of the part; NULL when the part opens the series."
 export_item_id = "Exported item of kind `bundle` the part's document aliases hang on (`export_item.id`)."
 
+[tables.page_issue]
+description = "A chapter whose pages could not be brought to an allowlisted format: left as received, out of every export, listed on the Health page (M4 L53)."
+[tables.page_issue.columns]
+unit_id = "Unit concerned (`unit.id`); one row per Unit."
+original_sha256 = "Hash of the received archive the code was found on; a changed content is looked at again."
+code = "Closed code of the first page refused: `page.empty`, `page.undecodable`, `page.too_large`, `page.format_unsupported` or `pages.worker_failed`."
+failures = "Times the decoder itself died on a page of this content; the chapter is set aside at once and asked again after a back-off."
+noted_at = "When the code was last recorded (UTC)."
+
 [tables.bundle_setting]
 description = "The slice of an Edition's series block: how many chapters a new part may hold (M4 L49b)."
 [tables.bundle_setting.columns]

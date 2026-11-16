@@ -34,7 +34,7 @@ from shelfhold.i18n import t
 from shelfhold.infrastructure.health import HealthProbe
 from shelfhold.infrastructure.schema import acquisition, bundle, platform, storage
 from shelfhold.infrastructure.stats import DEFAULT_SINCE, compute_stats, parse_since
-from shelfhold.library.public import irreplaceability
+from shelfhold.library.public import irreplaceability, page_issue_counts
 from shelfhold.ops.backup.run import backup_warnings
 from shelfhold.ops.ports import PausedQueue, WaitingItem
 from shelfhold.ops.services import OpsServices
@@ -480,6 +480,16 @@ def _page_map_warnings(connection: Connection) -> list[dict[str, object]]:
     ]
 
 
+def _page_issues(connection: Connection) -> list[dict[str, object]]:
+    """Chapters set aside because a page could not be brought to an allowed format (M4 L53,
+    ADR-0054), by closed code (`page.undecodable`, `page.too_large`, `pages.worker_failed`...): a
+    count of chapters, no title and no path."""
+    return [
+        {"code": code, "subject": None, "chapters": count}
+        for code, count in page_issue_counts(connection)
+    ]
+
+
 def _kosync_unknown(counter: Mapping[str, Mapping[str, int]] | None) -> list[dict[str, object]]:
     """What the e-readers sent that Shelfhold did not take, by device token and reason
     (`kosync.unknown`, `kosync.integrity`, ...): the public identifier of the token and a count.
@@ -532,7 +542,7 @@ def build_health_page(
             "kavita_audit": audit,
             "library_type_changes": type_changes,
             "jurisdiction": _jurisdiction(connection),
-            "page_map_warnings": _page_map_warnings(connection),
+            "page_map_warnings": [*_page_map_warnings(connection), *_page_issues(connection)],
             "kosync_unknown": _kosync_unknown(kosync_unknown),
         }
     page["backup"] = _backup(engine, settings, now)

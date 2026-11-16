@@ -20,10 +20,10 @@ from tests.integration.test_schema_migration_0002 import alembic_config
 pytestmark = pytest.mark.req("ENF-OPS-002", "EF-BIB-026")
 
 
-def test_the_revision_is_0084_and_the_only_head() -> None:
+def test_the_revision_is_0084_and_follows_0083() -> None:
     script = ScriptDirectory(str(default_script_location()))
-    assert script.get_heads() == ["0084"]
     assert script.get_revision("0084").down_revision == "0083"
+    assert "0084" in {r.revision for r in script.walk_revisions()}
 
 
 def _view_columns(settings: Settings) -> list[str]:

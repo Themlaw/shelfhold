@@ -19,10 +19,12 @@ from shelfhold.acquisition.public import ImportTargets, TreeTargets
 from shelfhold.export.application.intents import IntentJournal
 from shelfhold.export.application.locks import work_lock_for
 from shelfhold.i18n import t
+from shelfhold.infrastructure.packaging.cbz import PageTarget
 from shelfhold.library.public import (
     ImportFolder,
     ImportFolderOverlapError,
     KeepCopier,
+    PageFormatCbzStore,
     PassthroughStore,
     PdfStore,
     SvgCbzStore,
@@ -57,19 +59,25 @@ class StoreRouter:
         settings = comp.settings
         store_dir = str(settings.store_dir)
         mounted = any(e.path == store_dir for e in w.loaded.expected)
+        plain = PassthroughStore(
+            comp.engine, w.fsops, w.loaded.locate, settings.data_dir,
+            tombstones=w.tombstones, hold_work=_no_hold,
+            min_page_ratio=settings.revision_min_page_ratio,
+        )  # fmt: skip
+        keeper = KeepCopier(
+            comp.engine, w.fsops, w.loaded.locate, store_dir, settings.data_dir,
+            IntentJournal(comp.engine, w.fsops, clock=comp.clock),
+            hold_work=_no_hold,
+        )  # fmt: skip
+        hold = work_holder(comp)  # one hold for both writes
+        svg = SvgCbzStore(plain, keeper, settings.data_dir, comp.engine, hold)
         self._stores: dict[str, Any] = {
-            ".cbz": SvgCbzStore(  # EF-BIB-051 (6): SVG pages drawn to PNG, declared a derivative
-                PassthroughStore(
-                    comp.engine, w.fsops, w.loaded.locate, settings.data_dir,
-                    tombstones=w.tombstones, hold_work=_no_hold,
-                    min_page_ratio=settings.revision_min_page_ratio,
-                ),
-                KeepCopier(
-                    comp.engine, w.fsops, w.loaded.locate, store_dir, settings.data_dir,
-                    IntentJournal(comp.engine, w.fsops, clock=comp.clock),
-                    hold_work=_no_hold,
-                ),
-                settings.data_dir, comp.engine, work_holder(comp),  # one hold for both writes
+            # EF-BIB-051 (6): SVG pages drawn to PNG; EF-EXP-046 (ADR-0054): pages in other formats
+            # normalized; both declared as a derivative, the original kept in /store
+            ".cbz": PageFormatCbzStore(
+                svg, plain, keeper, settings.data_dir, comp.engine, hold,
+                target=PageTarget(settings.page_target_format, settings.page_target_quality),
+                keeps_originals=mounted,
             ),
             ".epub": UntrustedEpubStore(
                 comp.engine, w.fsops, w.loaded.locate, settings.data_dir,

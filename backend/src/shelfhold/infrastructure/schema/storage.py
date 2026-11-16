@@ -161,6 +161,31 @@ safeguard_backlog = sa.Table(
     positive_check("bytes"),
 )
 
+# A chapter whose pages could not be brought to an allowlisted format (M4 L53, ADR-0054): the code
+# of the first page that was refused, and how many times the decoder died on one. The chapter stays
+# as received, is left out of every export and is listed on the Health page; it is looked at again
+# only when its content changes (`original_sha256`), or when the admin asks (`normalize-pages`).
+PAGE_ISSUE_CODES = (
+    "page.empty", "page.undecodable", "page.too_large", "page.format_unsupported",
+    "pages.worker_failed",
+)  # fmt: skip
+page_issue = sa.Table(
+    "page_issue",
+    metadata,
+    sa.Column(
+        "unit_id", sa.String(26), sa.ForeignKey("unit.id", ondelete="CASCADE"), nullable=False
+    ),
+    sa.Column("original_sha256", sa.String(), nullable=False),
+    sa.Column("code", sa.String(), nullable=False),
+    sa.Column("failures", sa.Integer(), nullable=False, server_default="0"),
+    now_column("noted_at"),
+    sa.PrimaryKeyConstraint("unit_id"),
+    ulid_check("unit_id"),
+    prefixed_hash_check("original_sha256"),
+    in_check("code", PAGE_ISSUE_CODES),
+    positive_check("failures"),
+)
+
 # What the import folder held when last scanned, and what was decided about each file (EF-EXP-065).
 # `rel_path` is relative to the import folder; `sha256` is filled once the file is read.
 import_entry = sa.Table(

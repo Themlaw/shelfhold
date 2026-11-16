@@ -121,6 +121,7 @@ EXCLUDED_TABLES: Final[Mapping[str, str]] = {
     "export_record": _REBUILT, "export_series": _REBUILT, "edition_export_series": _REBUILT,
     "export_upgrade": _REBUILT, "bundle_member": _REBUILT, "field_owner": _REBUILT,
     "work_relation": _REBUILT,
+    "page_issue": _REBUILT,  # found again by the next look at the content (M4 L53)
 }  # fmt: skip
 
 # Columns of an exported table that never leave: the password hash is the only secret in one.

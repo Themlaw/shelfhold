@@ -14,12 +14,14 @@ from sqlalchemy import Engine
 
 from shelfhold.config import Settings
 from shelfhold.export.application.pipeline import ExportPipeline
+from shelfhold.export.application.rendering import cbz_renderer
 from shelfhold.export.application.roots import load_roots, open_fsops
 from shelfhold.export.domain.naming import Parsed
 from shelfhold.export.domain.path_map import PathMap
 from shelfhold.infrastructure.clock import SystemClock
 from shelfhold.infrastructure.db import create_db_engine
 from shelfhold.infrastructure.instance.generation import GenerationCounter
+from shelfhold.infrastructure.packaging.cbz import PageTarget
 from shelfhold.infrastructure.schema import platform
 
 __all__ = ["open_pipeline", "roots_signature"]
@@ -69,4 +71,8 @@ def open_pipeline(
         parse_verified=False,
         segment_policy_confirmed=settings.naming_segment_policy_confirmed,
         gate=gate,
+        renderer=cbz_renderer(
+            fsops, staging_dir=Path(settings.data_dir) / "tmp",
+            target=PageTarget(settings.page_target_format, settings.page_target_quality),
+        ),
     )  # fmt: skip

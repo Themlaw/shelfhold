@@ -107,6 +107,7 @@ FIRST_PARTY_PLUGINS: Final = frozenset({"suwayomi", "lncrawl"})  # named as is; 
 _AS_IS = (
     "port", "log_level", "log_format", "received_cbz_max_bytes", "auth_hardened", "fresh_auth_s",
     "metrics_enabled", "revision_min_page_ratio", "follow_fallback_return",
+    "page_target_format", "page_target_quality",
     "follow_check_min_s", "follow_check_max_s", "follow_check_finished_s",
     "naming_segment_policy_confirmed", "cli_allow_host", "allow_network_data_dir",
     "disk_pause_percent", "disk_pause_gib", "disk_resume_percent", "disk_resume_gib",

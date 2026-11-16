@@ -42,6 +42,7 @@ from sqlalchemy import Connection, Engine
 
 from shelfhold.catalog.public import Admission, RatingService
 from shelfhold.export.application.cover_image import prepare_cover
+from shelfhold.export.application.page_policy import PagePolicy
 from shelfhold.export.application.plan_executor import (
     ExecutionReport,
     PlanBinding,
@@ -49,6 +50,7 @@ from shelfhold.export.application.plan_executor import (
     PlanRefusedError,
 )
 from shelfhold.export.application.rendering import (
+    PagesNotNormalizedError,
     RenderMismatchError,
     comicinfo_xml,
     first_page,
@@ -70,10 +72,15 @@ from shelfhold.infrastructure.clock import Clock, SystemClock
 from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.fsops import FsopsError, open_regular
 from shelfhold.infrastructure.ids import new_ulid
+from shelfhold.infrastructure.imaging import ImageRejected
+from shelfhold.infrastructure.imaging.errors import PAGES_WORKER_FAILED, WORKER_FAILED
+from shelfhold.infrastructure.packaging.cbz import PageTarget
 from shelfhold.infrastructure.schema import catalog, export, platform, storage
 from shelfhold.library.public import (
     byte_sources,
     forget_destination_copies,
+    note_page_issue,
+    page_issue_blocks,
     record_replica,
     relocate_root_paths,
     variant_contents,
@@ -729,6 +736,17 @@ def _unit_of(connection: Connection, export_item_id: str) -> str | None:
     ).scalar()
 
 
+def _original_sha(connection: Connection, unit_id: str) -> str | None:
+    """The hash of the archive as received of the Unit's CBZ: what a `page_issue` is noted on."""
+    content = storage.content
+    return connection.execute(
+        sa.select(content.c.original_sha256)
+        .where(content.c.unit_id == unit_id, content.c.format == "cbz")
+        .order_by(content.c.id)
+        .limit(1)
+    ).scalar()
+
+
 def _offers(connection: Connection, unit_id: str) -> dict[str, ContentOffer]:
     return {
         c.content_id: ContentOffer(c.content_id, c.format, c.media_type)
@@ -1004,7 +1022,9 @@ class HostContentStore:
         epub_path: Callable[[str], EpubFile | None] | None = None,
         fsops: Any = None,
         renders: Callable[[str], bool] | None = None,
+        page_target: PageTarget | None = None,
     ) -> None:
+        self._page_target = page_target or PageTarget()
         # the targets whose CBZ is given a ComicInfo made for the binding (a native folder)
         self._renders = renders
         self._engine = engine
@@ -1031,18 +1051,48 @@ class HostContentStore:
         if ref.kind != "export_item":
             raise PlanRefusedError("the host serves no such content here")
         data, fmt, target_id = self._archive(destination_id, ref.ref)
-        if fmt == "cbz" and self._renders is not None and self._renders(target_id):
-            return self._with_comicinfo(ref.ref, data)  # a ComicInfo made for this binding
-        return data
+        if fmt != "cbz":
+            return data
+        # whatever the copy it was read from (the original in /store, a library file, a file of
+        # another binding), the pages leave in the formats this destination takes (EF-EXP-046)
+        caps = self._caps(target_id)
+        policy = PagePolicy.for_destination(
+            None if caps is None else caps.accepted_image_types, self._page_target
+        )
+        xml = None
+        if self._renders is not None and self._renders(target_id):
+            xml = self._comicinfo(ref.ref)  # a ComicInfo made for this binding
+        return self._pages(ref.ref, data, xml, policy)
 
-    def _with_comicinfo(self, item_id: str, data: bytes) -> bytes:
+    def _comicinfo(self, item_id: str) -> bytes:
         with self._engine.connect() as connection:
             unit = _unit_of(connection, item_id)
             if unit is None:
                 raise PlanRefusedError("the host holds no bytes for this item")
-            xml = comicinfo_xml(connection, unit, series_of_item(connection, item_id))
+            return comicinfo_xml(connection, unit, series_of_item(connection, item_id))
+
+    def _pages(self, item_id: str, data: bytes, xml: bytes | None, policy: PagePolicy) -> bytes:
+        with self._engine.connect() as connection:
+            unit = _unit_of(connection, item_id)
+            original = None if unit is None else _original_sha(connection, unit)
+            if (
+                unit is not None
+                and original is not None
+                and page_issue_blocks(connection, unit, original)
+            ):
+                raise ContentRefusedError("a page of the archive cannot be normalized")
         try:
-            return render_cbz_bytes(data, xml)
+            return render_cbz_bytes(data, xml, policy)
+        except PagesNotNormalizedError as refused:
+            if unit is not None and original is not None:
+                note_page_issue(self._engine, unit, original, refused.issues[0].code)
+            raise ContentRefusedError("a page of the archive cannot be normalized") from refused
+        except ImageRejected as error:
+            if error.code != WORKER_FAILED:
+                raise
+            if unit is not None and original is not None:
+                note_page_issue(self._engine, unit, original, PAGES_WORKER_FAILED, died=True)
+            raise ContentRefusedError("a page of the archive cannot be decoded") from error
         except (RenderMismatchError, ValueError, OSError) as error:
             raise ContentRefusedError("the archive cannot be given a ComicInfo") from error
 

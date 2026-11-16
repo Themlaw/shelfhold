@@ -91,6 +91,10 @@ class Settings(BaseModel):
     # EF-BIB-024: a new version of a chapter that counts less than this share of the pages of the
     # stored one is quarantined and the stored one stays exported. 0.5 by default.
     revision_min_page_ratio: float = Field(default=0.5, ge=0.05, le=1.0)
+    # EF-EXP-046 (ADR-0054): a page that is not JPEG, PNG, GIF or WebP is re-encoded to this format,
+    # never AVIF or JXL; `quality` is that of JPEG and WebP.
+    page_target_format: Literal["jpeg", "png", "webp"] = "jpeg"
+    page_target_quality: int = Field(default=90, ge=1, le=100)
     # EF-SRC-037: a binding that fell back to the next rank because its upstream source was not
     # loaded goes back to its own rank when the source is loaded again. Off: it stays where it fell.
     follow_fallback_return: bool = True

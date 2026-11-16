@@ -201,6 +201,7 @@ def _caps_args(caps: ImageCaps) -> dict[str, Any]:
         "max_bytes": caps.max_bytes,
         "max_height": caps.max_height,
         "formats": list(caps.formats),
+        "convertible": caps.convertible,
     }
 
 
@@ -248,6 +249,44 @@ def make_thumbnail(
         limits=limits or WorkerLimits.for_caps(caps),
     )
     return Thumbnail(payload, str(result["format"]), int(result["width"]), int(result["height"]))
+
+
+@dataclass(frozen=True, slots=True)
+class Reencoded:
+    data: bytes
+    format: str
+    width: int
+    height: int
+
+
+_PAGE_OUTPUTS: Final = frozenset({"jpeg", "png", "webp"})
+
+
+def reencode_image(
+    data: bytes,
+    *,
+    fmt: str = "jpeg",
+    quality: int = 90,
+    kind: ImageKind | str = ImageKind.PAGE_INPUT,
+    caps: ImageCaps | None = None,
+    limits: WorkerLimits | None = None,
+) -> Reencoded:
+    """A page of an untrusted archive re-encoded to JPEG, PNG or WebP at full size, inside the
+    worker (M4 L53, ADR-0054): its caps on pixels and bytes, its memory, CPU and time limits, no
+    network. Never AVIF or JXL. Alpha is flattened on white for JPEG."""
+    if fmt not in _PAGE_OUTPUTS:
+        raise ValueError(f"fmt must be one of {sorted(_PAGE_OUTPUTS)}")
+    if not 1 <= quality <= 100:
+        raise ValueError("quality must be between 1 and 100")
+    caps = caps or caps_for(kind)
+    _check_input(data, caps)
+    result, payload = run_worker(
+        "reencode",
+        {"caps": _caps_args(caps), "fmt": fmt, "quality": quality},
+        data,
+        limits=limits or WorkerLimits.for_caps(caps),
+    )
+    return Reencoded(payload, str(result["format"]), int(result["width"]), int(result["height"]))
 
 
 @dataclass(frozen=True, slots=True)
@@ -307,12 +346,14 @@ def diagnose_worker(
 __all__ = [
     "ImageInfo",
     "RasterizedSvg",
+    "Reencoded",
     "Thumbnail",
     "WorkerLimits",
     "diagnose_worker",
     "make_thumbnail",
     "probe_image",
     "rasterize_svg",
+    "reencode_image",
     "run_worker",
 ]
 

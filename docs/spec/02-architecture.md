@@ -704,7 +704,7 @@ class TargetCapabilities(BaseModel):
     sidecars: set[Literal["comicinfo", "opf-embedded", "series.json", "cover-file", "metadata.json"]]
     path_scoped_scan: bool                                         # Kavita True, Komga False, ABS True (watcher)
     access_partitioning: Literal["none", "library", "user"]      # cloisonnement d'accès (EF-EXP-047) : Kavita/Komga "library", CWA/dossier "none"
-    accepted_image_types: set[str]                                 # ex. Kavita {jpeg, png, webp, gif} pour les couvertures (EF-EXP-046)
+    accepted_image_types: set[str]                                 # ex. Kavita {jpeg, png, webp, gif} : couvertures et pages (EF-EXP-046, ADR-0054)
     events: Literal["signalr", "sse", "none"]                      # confirmation d'arrivée (EF-EXP-034)
     collections: Literal["api", "metadata", "none"]
     progress: Literal["api", "kosync", "none"]

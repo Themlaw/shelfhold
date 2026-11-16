@@ -183,6 +183,8 @@ LOGGED_SETTINGS: dict[str, str] = {
     "reading_max_pages_per_minute": "reading_max_pages_per_minute",  # a speed limit
     "reading_relay_max_session_hours": "reading_relay_max_hours",  # a duration
     "follow_fallback_return": "follow_fallback_return",
+    "page_target_format": "page_target_format",
+    "page_target_quality": "page_target_quality",
     "follow_check_min_s": "follow_check_min_s",
     "follow_check_max_s": "follow_check_max_s",
     "follow_check_finished_s": "follow_check_finished_s",

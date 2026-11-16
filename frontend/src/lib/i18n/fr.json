@@ -427,6 +427,7 @@
   "health_page.library_types_none": "Aucun type de bibliothèque n'a changé.",
   "health_page.relay": "Liseuses et relais vers Kavita",
   "health_page.relay_chapters": "{count, plural, one {# chapitre d'un bloc n'est pas relayé} other {# chapitres d'un bloc ne sont pas relayés}} vers Kavita (Édition {subject})",
+  "health_page.pages_set_aside": "{count, plural, one {# chapitre a une page illisible} other {# chapitres ont une page illisible}} : mis de côté, jamais envoyé tel quel (aucun lecteur ne l'afficherait)",
   "health_page.relay_documents": "{count, plural, one {# position envoyée} other {# positions envoyées}} par la liseuse {subject}, non prise en compte",
   "health_page.waits": "En attente",
   "health_page.withdrawal": "{count, plural, one {# retrait en attente} other {# retraits en attente}}",

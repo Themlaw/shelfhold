@@ -16,6 +16,7 @@ from shelfhold.infrastructure.imaging import (
     caps_for,
     probe_image,
 )
+from shelfhold.infrastructure.imaging.caps import PAGE_INPUT_FORMATS
 
 PILLOW_DEFAULT_MAX_PIXELS = 89_478_485
 
@@ -32,7 +33,7 @@ def test_image_caps_defaults_per_kind() -> None:
     for caps in DEFAULT_CAPS.values():
         assert 0 < caps.max_pixels <= webtoon.max_pixels
         assert caps.max_bytes > 0
-        assert caps.formats == ALLOWED_FORMATS
+        assert caps.formats == (PAGE_INPUT_FORMATS if caps.convertible else ALLOWED_FORMATS)
     # cover, page and thumbnail have their own, tighter-or-equal, caps
     assert caps_for(ImageKind.COVER).max_pixels <= caps_for(ImageKind.PAGE).max_pixels
     assert caps_for(ImageKind.THUMBNAIL).max_pixels <= caps_for(ImageKind.COVER).max_pixels

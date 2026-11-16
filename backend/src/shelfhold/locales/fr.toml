@@ -615,6 +615,18 @@ import_tree_stored = "Rangé : {path} ({kind}), l'arbre est laissé en place"
 import_tree_summary = "{stored, plural, one {# rangé} other {# rangés}}, {skipped, plural, one {# ignoré} other {# ignorés}}, {refused, plural, one {# refusé} other {# refusés}}, {waiting} en attente."
 import_summary = "{stored, plural, one {# rangé} other {# rangés}}, {refused, plural, one {# refusé} other {# refusés}}, {waiting} en attente."
 backfill_choose_mode = "Choisissez --gaps ou --all."
+help_library = "Entretien de la bibliothèque."
+help_library_normalize_pages = "Amène les pages des archives déjà rangées à JPEG, PNG, GIF ou WebP : l'original est gardé dans /store, la bibliothèque prend la version normalisée. Reprenable après une interruption."
+help_pages_dry_run = "Liste les chapitres concernés sans rien réécrire."
+pages_pending = "À normaliser : {unit}"
+pages_normalized = "Normalisé : {unit}"
+pages_kept = "Laissé tel quel : {unit} ({codes})"
+pages_failed = "Échec : {unit} ({code})"
+pages_summary = "{normalized, plural, one {# chapitre normalisé} other {# chapitres normalisés}}, {kept, plural, one {# laissé tel quel} other {# laissés tels quels}}, {failed, plural, one {# échec} other {# échecs}}."
+pages_destination_pending = "Fichier de destination à réécrire : {item}"
+pages_destination_rewritten = "Fichier de destination réécrit : {item}"
+pages_destination_left = "Fichier de destination laissé tel quel : {item} ({outcome})"
+pages_nothing = "Rien à normaliser : toutes les pages sont déjà en JPEG, PNG, GIF ou WebP."
 backfill_confirm_pair = "--confirm-units et --confirm-bytes vont ensemble."
 help_follow_series = "Suit une série du service connecté depuis Shelfhold : une seule entrée dans sa bibliothèque, catégorie « Shelfhold », sans téléchargement automatique."
 help_unfollow_series = "Ne suit plus une série : elle reste dans le service connecté, sauf avec --remove-upstream et --confirm."
@@ -2554,6 +2566,51 @@ cause = "Un PDF peut embarquer du code que le lecteur de la destination exécute
 title = "Aucun dossier d'import n'est configuré."
 action = "Définissez SHELFHOLD_IMPORT_DIR (un dossier distinct de /library, /store et /data), puis relancez."
 cause = "Le réglage du dossier d'import est absent ou désigne un emplacement réservé à Shelfhold."
+
+[errors."page.empty"]
+title = "Une page de l'archive est vide."
+action = "Récupérez de nouveau ce chapitre auprès de sa source ; l'archive est conservée telle quelle."
+cause = "Une page de l'archive fait 0 octet : elle ne peut pas être convertie, et l'archive n'est pas réécrite à moitié."
+
+[errors."page.undecodable"]
+title = "Une page de l'archive ne peut pas être décodée."
+action = "Récupérez de nouveau ce chapitre auprès de sa source ; l'archive est conservée telle quelle."
+cause = "Le contenu d'une page est tronqué ou corrompu : le décodeur isolé l'a refusé, et l'archive n'est pas réécrite à moitié."
+
+[errors."page.too_large"]
+title = "Une page de l'archive dépasse les plafonds de taille."
+action = "L'archive est conservée telle quelle ; les plafonds par type sont dans la référence de configuration."
+cause = "Une page dépasse la taille en octets ou en pixels que Shelfhold accepte de décoder."
+
+[errors."page.format_unsupported"]
+title = "Le format d'une page de l'archive n'a pas de décodeur."
+action = "L'archive est conservée telle quelle ; convertissez ces pages en JPEG, PNG ou WebP avant de les importer."
+cause = "Les pages JPEG XL et HEIC ne sont pas décodées : aucune dépendance n'est livrée pour ces formats (ADR-0054)."
+
+[errors."pages.store_not_configured"]
+title = "La normalisation des pages exige /store."
+action = "Montez /store (SHELFHOLD_STORE_DIR) pour que l'original soit conservé avant toute réécriture, puis relancez."
+cause = "Sans /store, la réécriture d'un fichier de la bibliothèque perdrait l'original : elle n'est jamais faite sur place."
+
+[errors."pages.work_busy"]
+title = "Cette œuvre est occupée par une autre tâche."
+action = "Relancez la commande : elle reprend où elle s'est arrêtée."
+cause = "Une autre tâche tient l'œuvre (suppression, export) : l'archive sera normalisée au passage suivant."
+
+[errors."pages.not_kept"]
+title = "L'original n'a pas pu être conservé dans /store."
+action = "Vérifiez l'espace et l'état de /store, puis relancez la commande : elle reprend où elle s'est arrêtée."
+cause = "La copie de l'original dans /store a échoué ou ne correspond plus au fichier de la bibliothèque ; rien n'a été réécrit."
+
+[errors."pages.worker_failed"]
+title = "Le décodeur d'images a échoué pendant la normalisation."
+action = "Consultez les journaux, puis relancez la commande."
+cause = "Le processus isolé de décodage s'est arrêté (mémoire, délai) : ce n'est pas la faute de l'archive."
+
+[errors."pages.unreadable"]
+title = "L'archive n'a pas pu être lue pour la normalisation."
+action = "Vérifiez l'intégrité de la bibliothèque (shelfhold status), puis relancez la commande."
+cause = "Le fichier est absent, illisible ou n'est pas une archive valide : la normalisation le laisse tel quel."
 
 [errors."session_not_found"]
 title = "Cette session n'existe pas ou est déjà fermée."

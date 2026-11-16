@@ -427,6 +427,7 @@
   "health_page.library_types_none": "No library type has changed.",
   "health_page.relay": "E-readers and the relay to Kavita",
   "health_page.relay_chapters": "{count, plural, one {# chapter of a block is not relayed} other {# chapters of a block are not relayed}} to Kavita (Edition {subject})",
+  "health_page.pages_set_aside": "{count, plural, one {# chapter has a page that cannot be read} other {# chapters have a page that cannot be read}}: set aside, never sent as received (no reader would show it)",
   "health_page.relay_documents": "{count, plural, one {# position sent} other {# positions sent}} by the e-reader {subject} was not taken",
   "health_page.waits": "Waiting",
   "health_page.withdrawal": "{count, plural, one {# withdrawal waiting} other {# withdrawals waiting}}",

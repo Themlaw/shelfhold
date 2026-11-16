@@ -116,7 +116,11 @@
           {#each view.relay as entry, i (i)}
             <HealthEntry
               label={t(
-                entry.code.startsWith('kosync.') ? 'health_page.relay_documents' : 'health_page.relay_chapters',
+                entry.code.startsWith('kosync.')
+                  ? 'health_page.relay_documents'
+                  : entry.code.startsWith('page')
+                    ? 'health_page.pages_set_aside'
+                    : 'health_page.relay_chapters',
                 { count: entry.count, subject: entry.subject ?? '' }
               )}
               code={entry.code}

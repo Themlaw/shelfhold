@@ -21,7 +21,7 @@ from shelfhold.export.application.shelves import ShelfService
 from shelfhold.export.domain.naming import DEFAULT_TEMPLATE, NamingTemplate
 from shelfhold.export.domain.path_map import PathMode
 from shelfhold.infrastructure.ids import new_ulid
-from shelfhold.infrastructure.schema import catalog, coherence, export
+from shelfhold.infrastructure.schema import catalog, coherence, export, storage
 from shelfhold.jobs.huey_app import JobPools
 from tests.fakes_clock import ManualClock
 from tests.fs_spy import FsSpy
@@ -394,12 +394,15 @@ def test_avif_first_page_cover_set_as_jpeg_or_webp(settings: Settings, tmp_path)
         assert cover[:4] == b"RIFF" and cover[8:12] == b"WEBP"  # WebP, decoded in the sandbox
         assert env.inst.kavita.violations == []
         (exported,) = env.exported_files()
-        with zipfile.ZipFile(exported) as archive:  # the pages are inchanged, still AVIF
-            assert archive.read("001.avif") == avif
+        with zipfile.ZipFile(exported) as archive:  # EF-EXP-046 amended (ADR-0054): normalized
+            assert (
+                archive.namelist()[0] == "001.jpg"
+                and archive.read("001.jpg")[:3] == b"\xff\xd8\xff"
+            )
 
 
-@pytest.mark.req("EF-EXP-046")
-def test_undecodable_avif_cover_is_refused_by_the_worker_and_not_posted(
+@pytest.mark.req("EF-EXP-046", "ENF-SEC-003")
+def test_an_undecodable_avif_page_sets_the_chapter_aside_and_nothing_reaches_kavita(
     settings: Settings, tmp_path
 ) -> None:
     with seeded(settings, tmp_path) as env:
@@ -407,9 +410,7 @@ def test_undecodable_avif_cover_is_refused_by_the_worker_and_not_posted(
         broken = b"\x00\x00\x00\x20ftypavif\x00\x00\x00\x00avifmif1miaf" + b"\xff" * 64
         env.add_chapter(series, "1", page=("001.avif", broken))
         env.export()
-        series_id = index_in_kavita(env)
-        settle(env)
-        assert series_id not in env.inst.kavita.covers  # nothing undecodable reaches Kavita
-        puts = len(env.inst.kavita.requests_to("/Upload/series"))
-        settle(env)
-        assert len(env.inst.kavita.requests_to("/Upload/series")) == puts == 0  # not retried
+        assert env.exported_files() == []  # never sent as received: no reader shows an AVIF
+        assert [r.code for r in env.rows(storage.page_issue)] == ["page.undecodable"]
+        assert env.inst.kavita.covers == {}  # and no cover was made of it
+        assert len(env.inst.kavita.requests_to("/Upload/series")) == 0

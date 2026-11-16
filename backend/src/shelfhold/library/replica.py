@@ -136,7 +136,12 @@ def independent_copies(
     # The derivative of an `untrusted` EPUB is a readable copy of its own (EF-BIB-051): its hash
     # is not the original's, so it is counted by `derived_hash`, and a content whose original is
     # gone (`extracted_derived`) is evaluated without it.
-    same = replica_table.c.content_hash == reference if reference is not None else sa.false()
+    # a lossy derivative (`fidelity = derived`, its own payload) is never a copy of the original
+    same = (
+        sa.and_(replica_table.c.content_hash == reference, replica_table.c.fidelity == "original")
+        if reference is not None
+        else sa.false()
+    )
     readable = sa.and_(
         replica_table.c.fidelity == "derived", replica_table.c.content_hash.in_(derived)
     )
@@ -194,9 +199,12 @@ def byte_sources(
     source of bytes and is never counted as a copy of its own."""
     content = storage.content
     row = connection.execute(
-        sa.select(content.c.format, content.c.content_hash, content.c.original_sha256).where(
-            content.c.id == content_id, content.c.unit_id == unit_id
-        )
+        sa.select(
+            content.c.format,
+            content.c.content_hash,
+            content.c.original_sha256,
+            content.c.derived_hash,
+        ).where(content.c.id == content_id, content.c.unit_id == unit_id)
     ).first()
     if row is None or row.content_hash is None or row.format == "epub":
         return []
@@ -209,7 +217,13 @@ def byte_sources(
         .where(
             r.c.unit_id == unit_id,
             r.c.location.in_(("store", "library")),
-            r.c.content_hash == row.content_hash,
+            sa.or_(
+                r.c.content_hash == row.content_hash,
+                # the normalized derivative of this content, read by its file's hash (M4 L53)
+                sa.and_(r.c.fidelity == "derived", r.c.file_hash == row.derived_hash)
+                if row.derived_hash is not None
+                else sa.false(),
+            ),
             r.c.damaged_at.is_(None),
             # a /store file that is a link of another copy is no copy of its own
             sa.or_(r.c.location != "store", r.c.independent),
@@ -284,7 +298,13 @@ def fresh_repair_content(
     query = (
         sa.select(content.c.id)
         .select_from(
-            content.join(replica_table, replica_table.c.content_hash == content.c.content_hash)
+            content.join(
+                replica_table,
+                sa.and_(
+                    replica_table.c.content_hash == content.c.content_hash,
+                    replica_table.c.fidelity == "original",
+                ),
+            )
         )
         .where(
             content.c.unit_id == unit_id,
@@ -502,12 +522,38 @@ def refresh_destination_identity(
     )
 
 
+def _identity_of(r: sa.Table) -> Any:
+    """The content a copy is of. A normalized derivative (`fidelity = derived`, M4 L53) holds the
+    payload of its own pages in `content_hash`, which is the truth about the file; the content it
+    stands for is the one whose `derived_hash` is its file's."""
+    content = storage.content
+    original = (
+        sa.select(content.c.content_hash)
+        .where(content.c.unit_id == r.c.unit_id, content.c.derived_hash == r.c.file_hash)
+        .limit(1)
+        .scalar_subquery()
+    )
+    return sa.case((r.c.fidelity == "derived", sa.func.coalesce(original, r.c.content_hash)),
+                   else_=r.c.content_hash)  # fmt: skip
+
+
+def derived_identity(connection: Connection, payload: str) -> str | None:
+    """The content a library file of this payload is the derivative of, None when it is no
+    derivative (the payload then is its own identity)."""
+    r = replica_table
+    return connection.execute(
+        sa.select(_identity_of(r))
+        .where(r.c.location == "library", r.c.fidelity == "derived", r.c.content_hash == payload)
+        .limit(1)
+    ).scalar()
+
+
 @dataclass(frozen=True)
 class LibraryCopy:
     replica_id: str
     local: str  # absolute local path: the physical root's path plus the relative one
     file_hash: str | None  # what the manifest says
-    content_hash: str | None
+    content_hash: str | None  # the content it is a copy of: a derivative says its original's
     damaged: bool = False  # the integrity check read it and it failed (`damaged_at`)
 
 
@@ -535,7 +581,7 @@ def library_copies_of(
                 replica_table.c.id,
                 replica_table.c.rel_path,
                 replica_table.c.file_hash,
-                replica_table.c.content_hash,
+                _identity_of(replica_table).label("identity"),
                 root.c.path_entry,
                 replica_table.c.independent,
                 replica_table.c.damaged_at,
@@ -553,7 +599,7 @@ def library_copies_of(
                     r.id,
                     f"{r.path_entry.rstrip('/')}/{r.rel_path}",
                     r.file_hash,
-                    r.content_hash,
+                    r.identity,
                     r.damaged_at is not None,
                 )
             )
@@ -693,6 +739,7 @@ def record_library_rewrite(
     mtime_ns: int,
     verified_at: datetime,
     content_hash: str | None = None,
+    fidelity: str | None = None,
 ) -> None:
     """A /library file replaced in place (an atomic write makes a new inode): the manifest's hash
     and the identity of what is there now, so a stale inode is never counted as a copy."""
@@ -707,6 +754,7 @@ def record_library_rewrite(
             mtime_ns=mtime_ns,
             verified_at=verified_at,
             **({} if content_hash is None else {"content_hash": content_hash}),
+            **({} if fidelity is None else {"fidelity": fidelity}),
         )
     )
 

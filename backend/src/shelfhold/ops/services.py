@@ -76,6 +76,7 @@ from shelfhold.ops.library import LibraryOps
 from shelfhold.ops.maintenance import MaintenanceOps
 from shelfhold.ops.meta import MetaOps
 from shelfhold.ops.normalize import NormalizeOps
+from shelfhold.ops.page_formats import PageNormalizeOps
 from shelfhold.ops.ports import (
     AdoptionExit,
     CredentialsExit,
@@ -216,6 +217,7 @@ class OpsServices:
         revisions: RevisionOps | None = None,
         backfill: BackfillOps | None = None,
         import_folder: ImportOps | None = None,
+        page_formats: PageNormalizeOps | None = None,
         normalize: NormalizeOps | None = None,
         source_migration: SourceMigrationOps | None = None,
         meta: MetaOps | None = None,
@@ -258,6 +260,7 @@ class OpsServices:
         self._revisions = revisions
         self._backfill = backfill
         self._import_folder = import_folder
+        self._page_formats = page_formats
         self._normalize = normalize
         self._source_migration = source_migration
         self._meta = meta
@@ -945,6 +948,13 @@ class OpsServices:
         if self._import_folder is None:
             raise ExitUnavailableError("the import folder is not connected")
         return self._import_folder
+
+    @property
+    def page_formats(self) -> PageNormalizeOps:
+        """`library normalize-pages` (EF-EXP-046)."""
+        if self._page_formats is None:
+            raise ExitUnavailableError("the page normalization is not connected")
+        return self._page_formats
 
     @property
     def normalize(self) -> NormalizeOps:

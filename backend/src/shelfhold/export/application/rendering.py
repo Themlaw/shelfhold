@@ -11,7 +11,7 @@ import hashlib
 import io
 import re
 import tempfile
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from contextlib import ExitStack
 from dataclasses import dataclass
 from pathlib import Path, PurePath
@@ -22,12 +22,18 @@ import structlog
 from sqlalchemy import Connection
 
 from shelfhold.catalog.public import ContributorName, NameKind, effective_age, parse_partial_date
+from shelfhold.export.application.page_policy import PagePolicy, page_policy_resolver
 from shelfhold.export.domain.bindings import is_family
 from shelfhold.export.domain.naming import exported_series_name
 from shelfhold.infrastructure.archives import SafeArchive, safe_open_archive
 from shelfhold.infrastructure.content_trust import check_cbz_entries
 from shelfhold.infrastructure.fsops import Fsops
-from shelfhold.infrastructure.packaging.cbz import repackage_cbz
+from shelfhold.infrastructure.packaging.cbz import (
+    PageIssue,
+    PageTarget,
+    normalize_cbz,
+    repackage_cbz,
+)
 from shelfhold.infrastructure.packaging.comicinfo import (
     ComicInfoData,
     ComicInfoPerson,
@@ -41,6 +47,7 @@ from shelfhold.sdk.age import ADULT_MIN_AGE, AgeRating
 __all__ = [
     "CbzRenderer",
     "EpubRenderer",
+    "PagesNotNormalizedError",
     "RenderMismatchError",
     "RenderedCbz",
     "RenderedEpub",
@@ -66,6 +73,19 @@ class RenderedCbz:
     file_hash: str  # `sha256:` of the rendered archive
     content_hash: str  # of its pages: equal to the original's
     sidecar_sha256: str
+    pages_normalized: bool = (
+        False  # EF-EXP-046: some page was re-encoded (content_hash stays the source's)
+    )
+    page_issues: tuple[PageIssue, ...] = ()  # why an archive was left as received
+
+
+class PagesNotNormalizedError(Exception):
+    """A page of the archive cannot be brought to an allowlisted format (empty, undecodable, too
+    large, a format with no decoder): the chapter is left out, never sent as received (ADR-0054)."""
+
+    def __init__(self, issues: tuple[PageIssue, ...]) -> None:
+        super().__init__(issues[0].code if issues else "page.undecodable")
+        self.issues = issues
 
 
 class RenderMismatchError(Exception):
@@ -281,11 +301,26 @@ def comicinfo_sha256(connection: Connection, unit_id: str, series: str) -> str:
 
 
 class CbzRenderer:
-    def __init__(self, fsops: Fsops, *, staging_dir: Path) -> None:
+    def __init__(
+        self,
+        fsops: Fsops,
+        *,
+        staging_dir: Path,
+        pages: PagePolicy | None = None,
+        policy_for: Callable[[str], PagePolicy | None] | None = None,
+    ) -> None:
         self._fsops = fsops
         self._staging = staging_dir
+        self._pages = pages or PagePolicy()
+        self._policy_for = policy_for  # the destination's `accepted_image_types`, by target
 
-    def render(self, source: str, comicinfo: bytes) -> RenderedCbz:
+    def render(self, source: str, comicinfo: bytes, *, target_id: str | None = None) -> RenderedCbz:
+        """The archive as the destination takes it: pages in allowlisted formats (EF-EXP-046),
+        ComicInfo last. The pages of the source are copied as they are unless one is in a format
+        to convert; `content_hash` is always the source's, the identity the plan compares."""
+        policy = (self._policy_for(target_id) if self._policy_for and target_id else None) or (
+            self._pages
+        )
         out = tempfile.TemporaryFile(dir=self._staging)  # noqa: SIM115 (closed by the caller)
         try:
             with (
@@ -293,7 +328,15 @@ class CbzRenderer:
                 safe_open_archive(stream, name=PurePath(source).name) as archive,
             ):
                 original = content_hash(archive)
-                repackage_cbz(archive, comicinfo, out)
+                report = normalize_cbz(
+                    archive, out, target=policy.target, keep=policy.keep, comicinfo=comicinfo
+                )
+                if report.status == "kept":
+                    raise PagesNotNormalizedError(report.issues)
+                if report.status != "normalized":
+                    out.seek(0)
+                    out.truncate(0)
+                    repackage_cbz(archive, comicinfo, out)
             out.flush()
             out.seek(0)
             digest = hashlib.sha256()
@@ -303,6 +346,9 @@ class CbzRenderer:
             out.seek(0)
             with safe_open_archive(out, name="rendered.cbz") as rendered:
                 payload = content_hash(rendered)
+                if report.status == "normalized":
+                    check_cbz_entries(rendered)  # nothing off the allowlist leaves
+                    payload = original  # the identity of the content is the source's
             if payload != original:
                 raise RenderMismatchError("the rendered pages differ from the received ones")
             out.seek(0)
@@ -312,20 +358,38 @@ class CbzRenderer:
         return RenderedCbz(
             out, size, "sha256:" + digest.hexdigest(), payload,
             "sha256:" + hashlib.sha256(comicinfo).hexdigest(),
+            report.status == "normalized", report.issues,
         )  # fmt: skip
 
 
-def render_cbz_bytes(data: bytes, comicinfo: bytes) -> bytes:
-    """The archive `data` with `comicinfo` as its last entry, the pages as they were: the payload
-    of the result is checked against the original's (`RenderMismatchError`). In memory: the host
-    already holds the archive in memory when a plan names it (`HostContentStore`)."""
+def render_cbz_bytes(
+    data: bytes, comicinfo: bytes | None = None, policy: PagePolicy | None = None
+) -> bytes:
+    """The archive `data` with its pages in the formats `policy` keeps (EF-EXP-046: the default
+    policy keeps JPEG, PNG, GIF and WebP and re-encodes the rest) and, when given, `comicinfo` as
+    its last entry. An archive that needs nothing is returned as it is, or repackaged when a
+    ComicInfo is to be added, its payload checked against the original's (`RenderMismatchError`).
+    A page that cannot be brought to an allowed format gives `PagesNotNormalizedError`: nothing is
+    served as received. In memory: the host already holds the archive when a plan names it."""
+    policy = policy or PagePolicy()
     with safe_open_archive(io.BytesIO(data), name="received.cbz") as source:
         original = content_hash(source)
         out = io.BytesIO()
-        repackage_cbz(source, comicinfo, out)
+        report = normalize_cbz(
+            source, out, target=policy.target, keep=policy.keep, comicinfo=comicinfo
+        )
+        if report.status == "kept":
+            raise PagesNotNormalizedError(report.issues)
+        if report.status == "unchanged":
+            if comicinfo is None:
+                return data
+            out = io.BytesIO()
+            repackage_cbz(source, comicinfo, out)
     out.seek(0)
     with safe_open_archive(out, name="rendered.cbz") as rendered:
-        if content_hash(rendered) != original:
+        if report.status == "normalized":
+            check_cbz_entries(rendered)  # nothing off the allowlist leaves
+        elif content_hash(rendered) != original:
             raise RenderMismatchError("the rendered pages differ from the received ones")
     return out.getvalue()
 
@@ -338,6 +402,21 @@ def first_page(data: bytes) -> bytes:
         if not images:
             raise ValueError("the archive has no page")
         return bytes(source.read(images[0]))
+
+
+def cbz_renderer(
+    fsops: Fsops,
+    *,
+    staging_dir: Path,
+    target: PageTarget,
+    capabilities: Callable[[str], Any] | None = None,
+) -> CbzRenderer:
+    """The renderer every export road uses: pages in allowlisted formats (EF-EXP-046), the target
+    of the configuration, and what each destination takes by its `accepted_image_types`."""
+    return CbzRenderer(
+        fsops, staging_dir=staging_dir, pages=PagePolicy(target),
+        policy_for=None if capabilities is None else page_policy_resolver(capabilities, target),
+    )  # fmt: skip
 
 
 @dataclass

@@ -52,14 +52,14 @@ def test_withdrawal_racing_an_export_leaves_no_file_behind() -> None:
         real = env.pipeline._renderer.render
         raced: list[str] = []
 
-        def render(path, xml):
+        def render(path, xml, **kwargs):
             if not raced:
                 rate(env, series, 18)
                 service = _withdrawal(env)
                 with pytest.raises(WithdrawalBusyError):  # the export holds the Work
                     service.apply(if_match=service.plan().version, principal=admin(), now=NOW)
                 raced.append("busy")
-            return real(path, xml)
+            return real(path, xml, **kwargs)
 
         env.pipeline._renderer.render = render
         env.pipeline.run(env.destination_id, job_id=new_ulid())
@@ -304,7 +304,7 @@ def test_pause_set_while_the_export_renders_stops_the_write() -> None:
         real = env.pipeline._renderer.render
         fired: list[int] = []
 
-        def render(path, xml):
+        def render(path, xml, **kwargs):
             if not fired:
                 fired.append(1)
                 with env.engine.begin() as connection:
@@ -315,7 +315,7 @@ def test_pause_set_while_the_export_renders_stops_the_write() -> None:
                     )
                     pause_shelf(connection, env.shelf_id, CHILD_EXPOSURE)
                 rate(env, series, 16)
-            return real(path, xml)
+            return real(path, xml, **kwargs)
 
         env.pipeline._renderer.render = render
         env.pipeline.run(env.destination_id, job_id=new_ulid())
