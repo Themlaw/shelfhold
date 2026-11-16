@@ -30,7 +30,7 @@ from tests.integration.test_m4_l18a_collections import (
 
 
 @pytest.mark.req("EF-BIB-016", "EF-USR-006", "ENF-SEC-010")
-def test_a_read_key_of_the_admin_does_not_open_a_childs_private_list(world: World) -> None:
+def test_a_read_key_of_the_admin_does_not_open_a_child_private_list(world: World) -> None:
     works = world.seed.works
     mine = _make(world, world.kid, "Kid's secret list", "profile", [works["ok"]])
     client, auth = _key_client(world, ADMIN, "10.0.0.71", read_only=True)
@@ -74,7 +74,7 @@ def test_adding_to_her_list_does_not_count_the_hidden_items(world: World) -> Non
 
 
 @pytest.mark.req("EF-BIB-016", "ENF-SEC-010")
-def test_an_admin_reads_a_childs_private_list_but_does_not_write_in_it(world: World) -> None:
+def test_an_admin_reads_a_child_private_list_but_does_not_write_in_it(world: World) -> None:
     works = world.seed.works
     mine = _make(world, world.kid, "Kid list", "profile", [works["ok"]])
     admin = world.env.client
