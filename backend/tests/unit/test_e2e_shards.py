@@ -45,7 +45,11 @@ def test_every_e2e_test_is_in_exactly_one_shard() -> None:
 @pytest.mark.req("ENF-QUAL-007")
 def test_workflow_runs_each_shard_and_no_other() -> None:
     text = (ROOT / ".github" / "workflows" / "image.yml").read_text(encoding="utf-8")
-    declared = re.search(r"shard: \$\{\{ fromJSON\(inputs\.only-smoke && '\[\"smoke-install\"\]' \|\| '(\[[^']+\])'\) \}\}", text)
+    declared = re.search(
+        r"shard: \$\{\{ fromJSON\(inputs\.only-smoke && '\[\"smoke-install\"\]'"
+        r" \|\| '(\[[^']+\])'\) \}\}",
+        text,
+    )
     assert declared is not None
     assert json.loads(declared.group(1)) == list(_shards())
     assert "E2E_SHARD: ${{ matrix.shard }}" in text

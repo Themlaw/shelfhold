@@ -55,6 +55,24 @@ Une source passe le kit de conformité (`shelfhold.sdk.testing`), déclare ses c
 - Playwright en local : `cd e2e && npx playwright test --shard=1/2`.
 - Un nouveau test va dans `tests/unit` (rapide, sans E/S lourde) ou `tests/integration` (base, application, sous-processus).
 
+### Quelle CI pour quels fichiers
+
+Sur une **PR**, chaque job ne tourne que si ce qu'il teste a pu changer (job `changes`, étape `scope`). Sur un **push vers `main`**, tout tourne. `lint`, `denylist`, `traceability`, `dco` et le titre tournent toujours ; `ci-success` accepte un job sauté seulement quand le périmètre dit qu'il n'avait pas à tourner.
+
+| Fichier changé | Jobs lancés (en plus des toujours-actifs) |
+| --- | --- |
+| `backend/src/**`, `backend/pyproject.toml`, `backend/uv.lock`, `backend/tests/conftest.py`, modules d'aide à la racine de `backend/tests/`, `backend/tests/fixtures/**` (et `fakes`, `support`, `cassettes`), `docker/**`, `frontend/**`, `open-api/**`, `ci.yml` | tout : `backend-unit`, `backend-integration`, `backend-suites` (property, golden, faults), `backend-bench`, `coverage` (+ diff 85 %), `fixtures` ; `frontend`, `openapi`, `client-drift`, e2e front, image + e2e image selon les dossiers touchés |
+| `backend/tests/unit/**` | `backend-unit`, `fixtures` |
+| `backend/tests/integration/**` | `backend-integration` |
+| `backend/tests/golden/**`, `faults/**`, `property/**` | `backend-suites`, uniquement la suite touchée |
+| `backend/tests/bench/**` | `backend-bench` |
+| `compose*.yaml`, `.env.example`, `.dockerignore` | `backend-unit` (tests statiques du compose), build de l'image et le seul scénario `smoke-install` |
+| `.github/workflows/**` autres que `ci.yml` | `backend-unit` (tests du workflow) ; l'image et tous ses scénarios si `image*.yml` |
+| `e2e/**` | e2e front, image et tous ses scénarios |
+| `*.md`, `docs/**` seuls | aucun test lourd |
+
+`coverage` n'a lieu que lorsque le code de production change : il combine les données de toutes les suites, et une combinaison partielle échouerait le seuil global. Une PR de tests seuls n'a donc pas de rapport de couverture. La règle est figée par `backend/tests/unit/test_ci_workflows.py`.
+
 ## Politique de support
 
 Support « au mieux », sans garantie, par un mainteneur bénévole.

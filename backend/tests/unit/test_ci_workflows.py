@@ -60,8 +60,12 @@ def _scope(files: list[str], event: str = "pull_request") -> dict[str, str]:
     }
     bash = shutil.which("bash")
     assert bash and shutil.which("jq")
-    done = subprocess.run(
-        [bash, "-c", 'GITHUB_OUTPUT=$(mktemp); export GITHUB_OUTPUT; . /dev/stdin >/dev/null; cat "$GITHUB_OUTPUT"'],
+    wrapper = (
+        "GITHUB_OUTPUT=$(mktemp); export GITHUB_OUTPUT; . /dev/stdin >/dev/null; "
+        'cat "$GITHUB_OUTPUT"'
+    )
+    done = subprocess.run(  # noqa: S603
+        [bash, "-c", wrapper],
         input=script, capture_output=True, text=True, check=True,
         env={"PATH": "/usr/bin:/bin", "EVENT": event, "FILTERS": json.dumps(outputs)},
     )  # fmt: skip
@@ -83,7 +87,14 @@ def _runs(files: list[str], event: str = "pull_request") -> set[str]:
     return ran
 
 
-BACKEND_ALL = {"backend-unit", "backend-integration", "backend-suites", "backend-bench", "coverage", "fixtures"}
+BACKEND_ALL = {
+    "backend-unit",
+    "backend-integration",
+    "backend-suites",
+    "backend-bench",
+    "coverage",
+    "fixtures",
+}
 
 
 @pytest.mark.req("ENF-SEC-007")
@@ -98,8 +109,10 @@ def test_pull_request_scope_production_code_runs_everything_as_before() -> None:
         "docker/Dockerfile",
         ".github/workflows/ci.yml",
     ):
-        assert BACKEND_ALL <= _runs([path]), path
-    assert {"frontend", "openapi", "e2e-front", "frontend-e2e", "client-drift"} <= _runs(["frontend/x.ts"])
+        assert _runs([path]) >= BACKEND_ALL, path
+    assert {"frontend", "openapi", "e2e-front", "frontend-e2e", "client-drift"} <= _runs(
+        ["frontend/x.ts"]
+    )
     assert {"image-pr"} <= _runs(["backend/src/shelfhold/app.py"])
     full = _scope(["backend/src/shelfhold/app.py"])
     assert json.loads(full["backend_suites"]) == ["property", "golden", "faults"]
@@ -125,10 +138,15 @@ def test_pull_request_scope_compose_runs_unit_and_the_install_smoke_only() -> No
         assert _runs([path]) == {"backend-unit", "image-pr"}, path
         assert _scope([path])["image"] == "false"  # image-pr is then called with only-smoke
     ci: dict[str, Any] = yaml.safe_load(CI.read_text(encoding="utf-8"))
-    assert ci["jobs"]["image-pr"]["with"]["only-smoke"] == "${{ needs.changes.outputs.image != 'true' }}"
+    assert (
+        ci["jobs"]["image-pr"]["with"]["only-smoke"]
+        == "${{ needs.changes.outputs.image != 'true' }}"
+    )
     image = yaml.safe_load((CI.parent / "image.yml").read_text(encoding="utf-8"))
-    assert image["on"]["workflow_call"]["inputs"]["only-smoke"]["default"] is False
-    assert "inputs.only-smoke && '[\"smoke-install\"]'" in (CI.parent / "image.yml").read_text(encoding="utf-8")
+    assert image[True]["workflow_call"]["inputs"]["only-smoke"]["default"] is False
+    assert "inputs.only-smoke && '[\"smoke-install\"]'" in (CI.parent / "image.yml").read_text(
+        encoding="utf-8"
+    )
 
 
 @pytest.mark.req("ENF-SEC-007")
