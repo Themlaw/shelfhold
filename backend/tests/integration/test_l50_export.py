@@ -394,8 +394,11 @@ def test_avif_first_page_cover_set_as_jpeg_or_webp(settings: Settings, tmp_path)
         assert cover[:4] == b"RIFF" and cover[8:12] == b"WEBP"  # WebP, decoded in the sandbox
         assert env.inst.kavita.violations == []
         (exported,) = env.exported_files()
-        with zipfile.ZipFile(exported) as archive:  # the pages are inchanged, still AVIF
-            assert archive.read("001.avif") == avif
+        with zipfile.ZipFile(exported) as archive:  # EF-EXP-046 amended (ADR-0054): normalized
+            assert (
+                archive.namelist()[0] == "001.jpg"
+                and archive.read("001.jpg")[:3] == b"\xff\xd8\xff"
+            )
 
 
 @pytest.mark.req("EF-EXP-046")
