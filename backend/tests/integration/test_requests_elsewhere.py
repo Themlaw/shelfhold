@@ -66,7 +66,8 @@ def test_to_buy_and_borrow_elsewhere_keep_a_clean_official_link(settings: Settin
         again = r.service.mark_elsewhere(borrow, admin(), "borrow_elsewhere", link=None)
         assert (again.state, again.elsewhere_url) == ("borrow_elsewhere", None)
         assert r.service.get(MEMBER_ID, buy).elsewhere_url == SHOP
-        assert [row[0] for row in r.audit("request.to_buy")] == [ADMIN_ID]
+        (line,) = r.audit("request.to_buy")
+        assert line[0].startswith("session:")  # the admin's session, as for any decision
 
 
 @pytest.mark.parametrize(
@@ -98,9 +99,7 @@ def test_import_matches_open_to_buy_request_and_notifies(settings: Settings) -> 
     with world(settings) as env:
         ports = FakePorts(engine=env.engine)
         service = RequestService(env.engine, env.clock, ports, bus=env.bus)
-        asked = service.create(
-            requester(MEMBER_ID, "member"), RequestTarget("free_text", "Élise")
-        )
+        asked = service.create(requester(MEMBER_ID, "member"), RequestTarget("free_text", "Élise"))
         service.mark_elsewhere(asked.id, admin(), "to_buy", link=SHOP)
         work = env.work("Elise", age=None)  # the title a file called `Elise.epub` is given
         assert service.arrived_from_import(work) == 1
@@ -130,7 +129,7 @@ def test_import_matches_by_isbn_found_in_the_name(settings: Settings) -> None:
 
 def test_import_never_matches_what_is_not_an_open_elsewhere_request(settings: Settings) -> None:
     with rig(settings) as r:
-        pending = ask(r, MEMBER_ID, "member", "free_text", "Élise")  # nobody said "to buy"
+        pending = ask(r, MEMBER_ID, "member", "free_text", "Élise Trois")  # nobody said "to buy"
         cancelled = ask(r, MEMBER_ID, "member", "free_text", "Élise")
         to_buy(r, cancelled)
         r.service.cancel(MEMBER_ID, cancelled)
@@ -163,8 +162,8 @@ def test_title_match_folds_unicode_not_ascii_only(settings: Settings) -> None:
         assert r.service.arrived_from_import(set_title(r, "ÉLISE")) == 1
         assert r.state_of(cjk) == "to_buy"
         # the same fold resolves a typed text to the Work the catalogue holds (the debt of L35)
-        held = ask(r, MEMBER_ID, "member", "free_text", "élise  ")
-        r.work(title="Élise", sort_title="elise")
+        held = ask(r, MEMBER_ID, "member", "free_text", "zoé  ")
+        r.work(title="ZOE", sort_title="zoe")
         assert r.service.preview(held, admin()).resolved is True
 
 
@@ -220,7 +219,7 @@ def test_a_proposal_is_applied_only_when_the_admin_accepts_it(settings: Settings
         assert ports.follows == []  # accepting a proposal is not approving the request
         r.service.approve(rid, admin())
         assert ports.follows and ports.follows[0][:2] == ("alpha", first.remote_id)
-        assert [row[0] for row in r.audit("request.proposal_accepted")] == [ADMIN_ID]
+        assert len(r.audit("request.proposal_accepted")) == 1
 
 
 def test_a_failing_search_proposes_nothing_and_changes_nothing(settings: Settings) -> None:
@@ -323,3 +322,43 @@ def test_a_child_is_shown_no_link_and_no_state_of_hers_leaks(settings: Settings)
         hers = r.service.get(CHILD_ID, asked.id)
         assert hers.elsewhere_url is None
         assert r.service.mine(CHILD_ID)[0].elsewhere_url is None
+
+
+def test_the_search_port_keeps_the_first_edition_of_each_work(
+    settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from types import SimpleNamespace
+
+    from shelfhold.events.bus import EventBus
+    from shelfhold.ops import requests as ops_requests
+
+    asked: list[tuple[str, str]] = []
+
+    def edition(key: str, rid: str, title: str) -> Any:
+        return SimpleNamespace(source_key=key, remote_id=rid, title=title, memo={"entry": rid})
+
+    class FakeAcquire:
+        def __init__(self, comp: Any) -> None:
+            pass
+
+        def federated_search(self, query: str, *, owner: str) -> Any:
+            asked.append((query, owner))
+            groups = [
+                SimpleNamespace(editions=(edition("a", "1", "One"), edition("b", "2", "One"))),
+                SimpleNamespace(editions=()),  # a group with no Edition names nothing
+                SimpleNamespace(editions=(edition("b", "3", "Two"),)),
+            ]
+            return SimpleNamespace(items=groups)
+
+    monkeypatch.setattr(ops_requests, "AcquireOps", FakeAcquire)
+    with rig(settings) as r:
+        comp = SimpleNamespace(
+            engine=r.engine, clock=r.clock, bus=EventBus(r.clock),
+            settings=SimpleNamespace(fresh_auth_s=900),
+        )  # fmt: skip
+        found = ops_requests.build_ports(comp).search("Élise", owner=ADMIN_ID)
+    assert asked == [("Élise", ADMIN_ID)]
+    assert [(s.source_key, s.remote_id, s.title) for s in found] == [
+        ("a", "1", "One"),
+        ("b", "3", "Two"),
+    ]

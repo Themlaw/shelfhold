@@ -89,7 +89,7 @@ class FakePorts:
             raise self.fail_follow
         self.follows.append((source_key, remote_id, requester_user_id, visibility))
 
-    def search(self, query: str) -> list[SourceRef]:
+    def search(self, query: str, *, owner: str) -> list[SourceRef]:
         self.searches.append(query)
         if self.search_error is not None:
             raise self.search_error

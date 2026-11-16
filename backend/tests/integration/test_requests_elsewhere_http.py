@@ -37,21 +37,19 @@ ULID = "01ARZ3NDEKTSV4RRFFQ69G5FAV"
 
 
 def ask(api: AuthEnv, who: TestClient, text: str = "Élise") -> str:
-    answer = api.post(
-        REQUESTS, client=who, json={"target_kind": "free_text", "target_value": text}
-    )
+    answer = api.post(REQUESTS, client=who, json={"target_kind": "free_text", "target_value": text})
     assert answer.status_code == 201, answer.text
     return str(answer.json()["id"])
 
 
 def mark(api: AuthEnv, boss: TestClient, rid: str, **body: Any) -> Any:
     return api.post(
-        f"{REQUESTS}/{rid}/elsewhere", client=boss, json={"state": "to_buy", "link": SHOP, **body}
+        f"{REQUESTS}/{rid}/elsewhere", client=boss, json={"state": "to_buy", "url": SHOP, **body}
     )
 
 
 def state(api: AuthEnv, rid: str) -> str:
-    return str(db_rows(api.settings, "SELECT state FROM request WHERE id = ?", (rid,))[0][0])
+    return str(db_rows(api.settings, "SELECT state FROM request WHERE id = ?", rid)[0][0])
 
 
 def test_the_requester_reads_the_address_the_admin_gave(
@@ -61,12 +59,12 @@ def test_the_requester_reads_the_address_the_admin_gave(
         member = client_of(api, "member", "10.0.0.42")
         rid = ask(api, member)
         boss = admin_client(api)
-        done = mark(api, boss, rid, link=SHOP + "?utm_source=x")
+        done = mark(api, boss, rid, url=SHOP + "?utm_source=x")
         assert done.status_code == 200, done.text
         assert (done.json()["state"], done.json()["elsewhere_url"]) == ("to_buy", SHOP)
         mine = member.get(f"{REQUESTS}/{rid}").json()
         assert (mine["state"], mine["elsewhere_url"]) == ("to_buy", SHOP)
-        bad = mark(api, boss, rid, link="javascript:alert(1)")
+        bad = mark(api, boss, rid, url="javascript:alert(1)")
         assert bad.status_code in (400, 422) and "request.invalid_link" in bad.text
         assert state(api, rid) == "to_buy"
 
@@ -80,7 +78,7 @@ def test_a_request_of_someone_else_is_as_absent_as_one_that_never_was(
         mark(api, admin_client(api), rid)
         kid = client_of(api, "kid", "10.0.0.41")
         for method, path in (("GET", f"{REQUESTS}/{rid}"), ("POST", f"{REQUESTS}/{rid}/cancel")):
-            absent = (kid.get if method == "GET" else lambda u: api.post(u, client=kid))
+            absent = kid.get if method == "GET" else lambda u: api.post(u, client=kid)
             theirs = absent(path)
             never = absent(path.replace(rid, ULID))
             assert theirs.status_code == never.status_code == 404
@@ -105,7 +103,9 @@ def test_a_child_reads_no_address_and_only_the_word_waiting(
 
 
 def test_nobody_but_an_admin_session_acts_elsewhere(
-    monkeypatch: pytest.MonkeyPatch, settings: Settings, ports: FakePorts  # noqa: F811
+    monkeypatch: pytest.MonkeyPatch,
+    settings: Settings,
+    ports: FakePorts,  # noqa: F811
 ) -> None:
     ports.search_hits = [SourceRef("alpha", "r1", "Result", {"entry": "e1"})]
     with instance(monkeypatch, settings, alpha()) as api:
@@ -121,7 +121,7 @@ def test_nobody_but_an_admin_session_acts_elsewhere(
         before = db_rows(api.settings, "SELECT id, state, target_kind FROM request")
         for method, path in (ELSEWHERE, *PROPOSALS):
             url = path.replace("{id}", rid).replace("{pid}", ULID)
-            body = {"state": "to_buy", "link": SHOP}
+            body = {"state": "to_buy", "url": SHOP}
             for who, client in (("member", member), ("kid", kid)):
                 answer = (
                     client.get(url) if method == "GET" else api.post(url, client=client, json=body)
@@ -139,7 +139,9 @@ def test_nobody_but_an_admin_session_acts_elsewhere(
 
 
 def test_the_admin_searches_and_accepts_a_proposal_on_a_request_of_a_member(
-    monkeypatch: pytest.MonkeyPatch, settings: Settings, ports: FakePorts  # noqa: F811
+    monkeypatch: pytest.MonkeyPatch,
+    settings: Settings,
+    ports: FakePorts,  # noqa: F811
 ) -> None:
     ports.search_hits = [
         SourceRef("alpha", f"r{i}", f"Result {i}", {"entry": f"e{i}"}) for i in range(7)
@@ -156,5 +158,5 @@ def test_the_admin_searches_and_accepts_a_proposal_on_a_request_of_a_member(
         done = api.post(f"{REQUESTS}/{rid}/proposals/{items[0]['id']}/accept", client=boss, json={})
         assert done.status_code == 200, done.text
         assert state(api, rid) == "pending"
-        kinds = db_rows(api.settings, "SELECT target_kind FROM request WHERE id = ?", (rid,))
+        kinds = db_rows(api.settings, "SELECT target_kind FROM request WHERE id = ?", rid)
         assert kinds == [("source_ref",)]

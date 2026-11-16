@@ -16,6 +16,9 @@ _REQUEST: Final[dict[str, FamilyState]] = {
     "pending": "waiting",  # nobody has decided yet
     "approved": "preparing",
     "arrived": "available",
+    # EF-USR-019 / D22: put aside to be bought or borrowed, a child is told "under review"
+    "to_buy": "waiting",
+    "borrow_elsewhere": "waiting",
 }
 _DOWNLOAD: Final[dict[str, FamilyState]] = {
     "requested": "preparing",

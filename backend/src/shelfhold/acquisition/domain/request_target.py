@@ -35,8 +35,15 @@ _ULID = re.compile(r"[0-9A-HJKMNP-TV-Z]{26}")
 # the adults who can be asked for nothing more: any other role is read as a child (closed)
 _ADULT_ROLES = frozenset({"admin", "member"})
 _TRANSITIONS: dict[str, frozenset[str]] = {
-    "pending": frozenset({"approved", "rejected", "not_found", "cancelled"}),
+    "pending": frozenset(
+        {"approved", "rejected", "not_found", "cancelled", "to_buy", "borrow_elsewhere"}
+    ),
     "approved": frozenset({"arrived"}),
+    # EF-USR-019: what cannot be found is put aside to be bought or borrowed; the file that
+    # arrives afterwards closes it
+    "not_found": frozenset({"to_buy", "borrow_elsewhere"}),
+    "to_buy": frozenset({"arrived", "cancelled", "rejected", "borrow_elsewhere"}),
+    "borrow_elsewhere": frozenset({"arrived", "cancelled", "rejected", "to_buy"}),
 }
 
 

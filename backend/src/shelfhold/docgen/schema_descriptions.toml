@@ -1103,7 +1103,7 @@ id = "Request identifier (ULID)."
 requester_user_id = "User who asked (`user.id`)."
 target_kind = "What the target is: `work_id`, `source_ref`, `isbn` or `free_text`."
 target_value = "The target: a Work identifier, a source reference, an ISBN or free text."
-state = "`pending`, `approved`, `rejected`, `not_found`, `cancelled` or `arrived`."
+state = "`pending`, `approved`, `rejected`, `not_found`, `cancelled`, `arrived`, or (M4 L30) `to_buy` / `borrow_elsewhere`: put aside, to be bought or borrowed elsewhere."
 reject_reason = "Reason of the refusal; only set when the state is `rejected`."
 visibility = "`private` or `household`: who sees the request besides its owner, as decided when it was made."
 work_id = "Work the target was resolved to at approval (no foreign key: a purge removes the Work)."
@@ -1116,6 +1116,16 @@ approved_x = "Whether the age chosen at approval is X."
 arrived_at = "When the first book of the approved request was filed (UTC)."
 started_at = "When the effects of the approval were all made (UTC); an approved request without it was left half done and is resumed."
 shown_title = "The title the requester was shown when she asked, kept as it was (a child's request)."
+elsewhere_url = "Official or library address given by the admin for a request put aside (`https` only, no affiliation); never shown to a child."
+
+[tables.request_proposal]
+description = "What the source search found for a request nobody could resolve: at most five per request, applied only when an admin accepts one (M4 L30)."
+[tables.request_proposal.columns]
+id = "Proposal identifier (ULID)."
+request_id = "Request it was found for (`request.id`)."
+source_item_id = "Result of the search (`pending_source_item.id`)."
+position = "Rank in the search answer, from 1 to 5."
+created_at = "When the search was made (UTC)."
 
 [tables.notification_digest]
 description = "The digest being built for a user, sent at its due time."

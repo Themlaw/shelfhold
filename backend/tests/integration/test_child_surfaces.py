@@ -341,6 +341,10 @@ CLOSED = (
     "POST /api/v1/requests/{request_id}/approve",
     "POST /api/v1/requests/{request_id}/reject",
     "POST /api/v1/requests/{request_id}/not-found",
+    "POST /api/v1/requests/{request_id}/elsewhere",  # M4 L30: put aside, an admin's (EF-USR-019)
+    "POST /api/v1/requests/{request_id}/proposals",
+    "GET /api/v1/requests/{request_id}/proposals",
+    "POST /api/v1/requests/{request_id}/proposals/{proposal_id}/accept",
     "GET /api/v1/admin/sessions",  # M3 L07: every profile's sessions are the admin's
     "DELETE /api/v1/admin/sessions/{session_id}",
     "GET /api/v1/admin/recovery-kit",

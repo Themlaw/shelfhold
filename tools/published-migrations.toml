@@ -254,3 +254,8 @@ since = "1.1"
 file = "0086_collections.py"
 sha256 = "6793ae45ae524307a5a1e4278a47355f48956185fbcb76ef90f7776d9c093de3"
 since = "1.1"
+
+[[migration]]
+file = "0087_request_elsewhere.py"
+sha256 = "89d508b93abc0fd59cf3367085e872a9791040483c94cf0e2371925f149a6026"
+since = "1.1"

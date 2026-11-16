@@ -15,11 +15,15 @@ from contextlib import contextmanager
 from pathlib import Path, PurePath
 from typing import TYPE_CHECKING, Any
 
+import sqlalchemy as sa
+import structlog
+
 from shelfhold.acquisition.public import ImportTargets, TreeTargets
 from shelfhold.export.application.intents import IntentJournal
 from shelfhold.export.application.locks import work_lock_for
 from shelfhold.i18n import t
 from shelfhold.infrastructure.packaging.cbz import PageTarget
+from shelfhold.infrastructure.schema import catalog
 from shelfhold.library.public import (
     ImportFolder,
     ImportFolderOverlapError,
@@ -34,6 +38,7 @@ from shelfhold.library.public import (
 from shelfhold.ops.dedup import suggest_on_arrival
 from shelfhold.ops.errors import CodedRefusal
 from shelfhold.ops.reclaim import require_space
+from shelfhold.ops.requests import build_service
 from shelfhold.plugin_host.adapters.meta.suwayomi.tree_import import SuwayomiTree
 from shelfhold.plugin_host.adapters.native.import_folder import build_manifest
 from shelfhold.work_locks import work_holder
@@ -43,6 +48,7 @@ if TYPE_CHECKING:
 
 __all__ = ["ImportOps"]
 
+log = structlog.get_logger()
 OFF = "import.not_configured"
 TREE_BAD = "import.tree_unreadable"
 
@@ -139,7 +145,35 @@ class ImportOps:
             report = _report(scan, outcomes, dry_run=False)
         if any(o.state == "stored" for o in outcomes):
             suggest_on_arrival(comp)  # EF-BIB-004: an identical title is suggested, not merged
+            self._match_requests([o.unit_id for o in outcomes if o.state == "stored"])
         return report
+
+    def _match_requests(self, unit_ids: list[str | None]) -> None:
+        """EF-USR-019: what was filed answers the requests put aside to be bought or borrowed.
+        After the filing has committed, and never raising into it: a request that cannot be
+        matched waits for the next file."""
+        comp = self._comp
+        ids = [u for u in unit_ids if u]
+        if not ids:
+            return
+        try:
+            with comp.engine.connect() as connection:
+                works = set(
+                    connection.execute(
+                        sa.select(catalog.edition.c.work_id)
+                        .select_from(
+                            catalog.unit.join(
+                                catalog.edition, catalog.edition.c.id == catalog.unit.c.edition_id
+                            )
+                        )
+                        .where(catalog.unit.c.id.in_(ids))
+                    ).scalars()
+                )
+            service = build_service(comp)
+            for work_id in sorted(works):
+                service.arrived_from_import(work_id)
+        except Exception:
+            log.warning("import.request_match_failed")
 
     def tree(self, path: str, *, dry_run: bool = False) -> dict[str, Any]:
         """`import tree <path>` (EF-INT-009): the Units of an existing Suwayomi download tree,

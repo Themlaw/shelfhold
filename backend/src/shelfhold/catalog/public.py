@@ -264,6 +264,7 @@ from shelfhold.catalog.domain.external_ids import (
     ExternalIdError,
     normalize_external_id,
 )
+from shelfhold.catalog.domain.fold import fold_title
 from shelfhold.catalog.domain.identity import (
     BOOK_KINDS,
     TEXT_VERSION_LABELS,
@@ -642,6 +643,7 @@ __all__ = [
     "ensure_search_tables",
     "external_ids_of",
     "file_new_edition",
+    "fold_title",
     "guard_received",
     "history_marker",
     "holder_of",

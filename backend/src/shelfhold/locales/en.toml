@@ -1925,6 +1925,16 @@
     action = "Choose another shelf, or classify the Edition first."
     cause = "The age of the edition exceeds the ceiling of the chosen shelf, or the edition is not classified."
 
+  [errors."request.invalid_link"]
+    title = "This address cannot be kept."
+    action = "Give a plain https address of the official edition or of the library, without login or tracking."
+    cause = "Only an https address without credentials, on a named host, is accepted; tracking and affiliate parameters are removed."
+
+  [errors."request.nothing_to_propose"]
+    title = "There is nothing to propose for this request."
+    action = "Approve the request as it is, or mark it \"not found\"."
+    cause = "The request already points at a result or at a work the library holds: a search would add nothing."
+
   [errors."series.gap"]
     title = "There are missing chapters in the series."
     action = "Consult the series and start searching for missing chapters."

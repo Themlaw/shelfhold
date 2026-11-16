@@ -23,7 +23,12 @@ COLOR_SCHEMES = ("auto", "light", "dark")
 NOTIFY_MODES = ("digest", "immediate")
 SOURCE_POLICIES = ("add_directly", "request", "forbidden")
 REQUEST_TARGET_KINDS = ("work_id", "source_ref", "isbn", "free_text")
-REQUEST_STATES = ("pending", "approved", "rejected", "not_found", "cancelled", "arrived")
+# M4 L30 (EF-USR-019): a request put aside, to be bought or borrowed elsewhere
+REQUEST_ELSEWHERE_STATES = ("to_buy", "borrow_elsewhere")
+REQUEST_STATES = (
+    "pending", "approved", "rejected", "not_found", "cancelled", "arrived",
+    *REQUEST_ELSEWHERE_STATES,
+)  # fmt: skip
 
 user = sa.Table(
     "user",
@@ -299,6 +304,8 @@ request = sa.Table(
     sa.Column("arrived_at", UtcDateTime(), nullable=True),
     sa.Column("started_at", UtcDateTime(), nullable=True),  # the effects of the approval are made
     sa.Column("shown_title", sa.String(), nullable=True),  # what a child was shown, kept as is
+    # M4 L30 (migration 0087): the official or library address of a request put aside
+    sa.Column("elsewhere_url", sa.String(), nullable=True),
     ulid_check("id"),
     in_check("target_kind", REQUEST_TARGET_KINDS),
     in_check("state", REQUEST_STATES),
@@ -311,8 +318,37 @@ request = sa.Table(
     sa.CheckConstraint(
         '"reject_reason" IS NULL OR "state" = \'rejected\'', name="reason_only_on_refusal"
     ),
+    sa.CheckConstraint(
+        '"elsewhere_url" IS NULL OR ("elsewhere_url" LIKE \'https://%\' '
+        'AND length("elsewhere_url") <= 2048)',
+        name="elsewhere_url_https",
+    ),
     sa.Index("ix_request_requester", "requester_user_id", "state"),
     sa.Index("ix_request_work", "work_id"),
+)
+
+# What the source search found for a request nobody could resolve (EF-USR-019, D22, migration
+# 0087): at most five per request, kept as results (`pending_source_item`), and applied only when
+# an admin accepts one. They go with the request and with the result.
+request_proposal = sa.Table(
+    "request_proposal",
+    metadata,
+    ulid_column("id", primary_key=True),
+    sa.Column(
+        "request_id", sa.String(26), sa.ForeignKey("request.id", ondelete="CASCADE"), nullable=False
+    ),
+    sa.Column(
+        "source_item_id",
+        sa.String(26),
+        sa.ForeignKey("pending_source_item.id", ondelete="CASCADE"),
+        nullable=False,
+    ),
+    sa.Column("position", sa.Integer(), nullable=False),
+    now_column(),
+    ulid_check("id"),
+    sa.CheckConstraint('"position" BETWEEN 1 AND 5', name="position_range"),
+    sa.UniqueConstraint("request_id", "source_item_id"),
+    sa.UniqueConstraint("request_id", "position"),
 )
 
 # The digest being built for a user, sent at `due_at` (EF-INT-021).
