@@ -30,6 +30,7 @@ from shelfhold.identity.domain.kavita_mapping import check_kavita_username, same
 from shelfhold.identity.domain.roles import ProfileError
 
 __all__ = [
+    "AccountChoice",
     "AccountRefused",
     "AccountStore",
     "AccountVerifier",
@@ -108,6 +109,17 @@ class AccountView:
 
 
 @dataclass(frozen=True)
+class AccountChoice:
+    """A binding a profile may link a key to: where it is (shelf, server) and whether a key is
+    linked. Nothing of the account, nothing of the key."""
+
+    id: str
+    shelf_name: str
+    target_name: str
+    linked: bool
+
+
+@dataclass(frozen=True)
 class UserFacts:
     id: str
     role: str
@@ -120,6 +132,8 @@ class DestinationRef:
     id: str
     supported: bool  # a binding to a Kavita
     allowed_profiles: tuple[str, ...] = ()  # the shelf's own list; empty: open to everyone
+    shelf_name: str = ""
+    target_name: str = ""
 
     def open_to(self, user_id: str) -> bool:
         return not self.allowed_profiles or user_id in self.allowed_profiles
@@ -134,6 +148,10 @@ class RemoteAccount:
 
 class AccountVerifier(Protocol):
     def destination(self, destination_id: str) -> DestinationRef | None: ...
+
+    def kavita_destinations(self) -> list[DestinationRef]:
+        """Every binding to a Kavita, named: the choices of a member."""
+        ...
 
     def verify(
         self, destination_id: str, remote_user: str, token: str, *, child_max_age: int | None
@@ -291,6 +309,20 @@ class DestinationAccounts:
         self._adult_session(principal)
         self._target(principal, user_id, child_only_for_others=False)
         return self._store.accounts_of(user_id)
+
+    def choices(self, principal: Principal, user_id: str) -> list[AccountChoice]:
+        """The Kavita bindings the profile may link a key to: those of the shelves open to them
+        (an admin's own: all). For a child, the parent's view of the child's choices."""
+        self._adult_session(principal)
+        target = self._target(principal, user_id, child_only_for_others=False)
+        linked = {
+            a.shelf_destination_id for a in self._store.accounts_of(user_id) if a.revoked_at is None
+        }
+        return [
+            AccountChoice(d.id, d.shelf_name, d.target_name, d.id in linked)
+            for d in self._verifier.kavita_destinations()
+            if d.supported and (target.role == "admin" or d.open_to(target.id))
+        ]
 
     def revoke(self, principal: Principal, user_id: str, destination_id: str) -> None:
         self._adult_session(principal)

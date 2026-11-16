@@ -9,6 +9,7 @@ Candidate de la 1.1.0 : pré-version GitHub `v1.1.0-rc.2` (version du paquet `1.
 ### Ajouté
 
 - **Relais kosync (L47)** : KOReader envoie et lit sa progression.
+- **Destinations et compte Kavita (L33a)** : les étagères montrent leurs N destinations et disent la raison d'un refus ; chaque membre lie sa propre clé Kavita, qui n'est jamais réaffichée.
 - **Liseuse (L46b)** : écran « Connecter un appareil » pour apparier, lister et révoquer les jetons de liseuse.
 - **Progression KOReader → Kavita (L50)** : la progression est relayée à Kavita, y compris par le bloc série ; les chapitres franchis sont poussés « lu » si le mouvement part d'un contact du même appareil depuis moins de 24 h (`reading.relay_max_session_hours`), et une page renvoyée par le serveur ne compte jamais comme une lecture. Un chapitre dont Kavita annonce un autre nombre de pages n'est pas poussé et apparaît dans Santé.
 - **Blocs série (L49b)** : tranches (nombre fixe de chapitres par partie) réglables depuis la fiche de série.

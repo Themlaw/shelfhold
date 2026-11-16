@@ -73,7 +73,12 @@ const lists = (destinations: unknown[]) =>
     http.get(`${BASE}/api/v1/shelves`, () =>
       HttpResponse.json({ items: [{ id: '01JSHLF000000000000000000A', name: 'Manga', max_age_rating: null }], since: 'v1', removed: [] })
     ),
-    http.get(`${BASE}/api/v1/destinations`, () => HttpResponse.json({ items: destinations }))
+    http.get(`${BASE}/api/v1/destinations`, () => HttpResponse.json({ items: destinations })),
+    // the bindings side of the screen (see bindings.test.ts): nothing linked, no server
+    http.get(`${BASE}/api/v1/targets`, () => HttpResponse.json({ items: [] })),
+    http.get(`${BASE}/api/v1/shelves/01JSHLF000000000000000000A/destinations`, () =>
+      HttpResponse.json({ destinations: [] })
+    )
   );
 const reauthConfirm = () =>
   within(screen.getByRole('region', { name: 'Confirmez votre identité' })).getByRole('button', { name: 'Confirmer' });

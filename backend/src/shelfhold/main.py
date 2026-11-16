@@ -88,7 +88,11 @@ from shelfhold.interfaces.http_api.revisions import build_revisions_router
 from shelfhold.interfaces.http_api.search import build_search_router
 from shelfhold.interfaces.http_api.series_sheet import build_series_sheet_router
 from shelfhold.interfaces.http_api.setup import build_setup_router
-from shelfhold.interfaces.http_api.shelves import build_edition_shelf_router, build_shelves_router
+from shelfhold.interfaces.http_api.shelves import (
+    build_edition_shelf_router,
+    build_shelves_router,
+    build_targets_router,
+)
 from shelfhold.interfaces.http_api.sources import build_sources_router
 from shelfhold.interfaces.http_api.stats import build_stats_router
 from shelfhold.interfaces.http_api.status import build_status_router
@@ -352,6 +356,7 @@ def create_app(
             ),
             ops_services,
         ),
+        build_targets_router(lambda: ShelfService(engine, clock=clock)),  # M4 L33a: the servers
         build_destinations_router(ops_services),
         build_destination_accounts_router(ops_services),  # M4 L12: a member's own Kavita key
         build_edition_shelf_router(lambda: ShelfService(engine, clock=clock)),

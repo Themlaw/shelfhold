@@ -66,7 +66,7 @@ from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import catalog, export
 from shelfhold.infrastructure.schema.export import LINK_MODES
 
-__all__ = ["Actor", "CeilingChange", "FileResult", "ShelfService", "resolve_folder"]
+__all__ = ["Actor", "CeilingChange", "FileResult", "ShelfService", "TargetView", "resolve_folder"]
 
 
 class Actor(Protocol):
@@ -92,6 +92,16 @@ class CeilingChange:
     previous: int | None
     new: int | None
     withdrawals: WithdrawalPlan  # what no longer fits: a plan, nothing has moved
+
+
+@dataclass(frozen=True)
+class TargetView:
+    """A server a shelf can be bound to: its name, its kind, what it keeps apart."""
+
+    id: str
+    name: str
+    kind: str
+    partitioning: str
 
 
 @dataclass(frozen=True)
@@ -721,6 +731,31 @@ class ShelfService:
         with self._engine.connect() as connection:
             self._require_shelf(connection, shelf_id)
             return fan_out.bindings_of(connection, shelf_id)
+
+    def list_targets(self) -> list[TargetView]:
+        """The servers a shelf can be bound to, with what each keeps apart (the value the barrier
+        of a family shelf reads). Nothing of the config, no key."""
+        target = export.export_target
+        with self._engine.connect() as connection:
+            rows = connection.execute(
+                sa.select(
+                    target.c.id,
+                    target.c.name,
+                    target.c.kind,
+                    target.c.access_partitioning,
+                    target.c.access_partitioning_attested_at,
+                ).order_by(target.c.name, target.c.id)
+            ).all()
+        return [
+            TargetView(
+                row.id, row.name, row.kind,
+                effective_partitioning(
+                    row.kind, row.access_partitioning,
+                    attested=row.access_partitioning_attested_at is not None,
+                ),
+            )
+            for row in rows
+        ]  # fmt: skip
 
     @staticmethod
     def _require_shelf(connection: Connection, shelf_id: str) -> None:
