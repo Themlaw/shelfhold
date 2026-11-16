@@ -8,7 +8,6 @@ session in every profile, never a key or a token); a member revokes only their o
 any; a child manages none. Everything goes through the real application: real sessions, real CSRF.
 """
 
-import hashlib
 import re
 from collections.abc import Iterator
 from datetime import timedelta
@@ -19,6 +18,7 @@ from fastapi.testclient import TestClient
 
 from shelfhold.config import Settings
 from tests.auth_env import CSRF_HEADER, PASSWORD, AuthEnv, auth_env, db_dump, db_rows
+from tests.integration.test_l46_device_tokens import md5
 from tests.visibility_env import add_profile
 
 pytestmark = pytest.mark.req("EF-UX-004", "EF-USR-008", "ENF-SEC-010")
@@ -51,9 +51,13 @@ class World:
             body["subject_user_id"] = self.ids[subject]
         return self.send(client, "POST", TOKENS, body)
 
-    def key(self, username: str, **kwargs: Any) -> str:
+    def key(self, username: str) -> str:
+        """An admin's key has the `admin` scope; another profile's is a `read` key (the most it
+        can hold): neither may touch a device token."""
         auth = self.env.app.state.auth_gate.auth  # type: ignore[attr-defined]
-        return str(auth.create_api_key(name="k", username=username, **kwargs).value)
+        return str(
+            auth.create_api_key(name="k", username=username, read_only=username != "admin").value
+        )
 
     def active(self, public_id: str) -> bool:
         rows = db_rows(
@@ -85,11 +89,13 @@ def test_a_member_pairs_a_reader_for_themself_and_sees_the_secret_once(world: Wo
 
 def test_the_secret_is_stored_nowhere(world: World) -> None:
     secret = world.create(world.mum).json()["secret"]
-    md5 = hashlib.md5(secret.encode(), usedforsecurity=False).hexdigest()  # KOReader's own key
+    key = md5(secret)  # what KOReader sends: the helper of the tests of L46
     dump = db_dump(world.env.settings)
     assert secret not in dump
-    assert md5 not in dump
-    assert secret not in "\n".join(str(r) for r in db_rows(world.env.settings, "SELECT * FROM audit"))
+    assert key not in dump
+    assert secret not in "\n".join(
+        str(r) for r in db_rows(world.env.settings, "SELECT * FROM audit")
+    )
 
 
 def test_a_replayed_creation_never_returns_the_secret_twice(world: World) -> None:
@@ -141,7 +147,7 @@ def test_a_member_cannot_pair_a_reader_for_someone_else(world: World) -> None:
 @pytest.mark.req("ENF-SEC-010")
 def test_a_child_pairs_nothing_and_revokes_nothing_by_session_or_key(world: World) -> None:
     made = world.create(world.admin, "kid").json()
-    key = world.key("kid", read_only=False)
+    key = world.key("kid")
     alone = world.env.other_client("10.0.0.50")
     bearer = {"Authorization": f"Bearer {key}"}
     for client, headers in ((world.kid, {}), (alone, bearer)):
@@ -178,7 +184,9 @@ def test_an_admin_lists_and_revokes_everyones_tokens(world: World) -> None:
     assert {i["public_id"] for i in listed} == {mum["public_id"], kid["public_id"]}
     assert all("secret" not in i for i in listed)
     for token in (mum, kid):
-        assert world.send(world.admin, "DELETE", f"{TOKENS}/{token['public_id']}").status_code == 204
+        assert (
+            world.send(world.admin, "DELETE", f"{TOKENS}/{token['public_id']}").status_code == 204
+        )
         assert not world.active(token["public_id"])
     actions = [r[0] for r in db_rows(world.env.settings, "SELECT action FROM audit")]
     assert actions.count("device_token.created") == 2
@@ -198,7 +206,7 @@ def test_a_forged_request_is_refused_without_the_token_of_the_page(world: World)
 def test_an_api_key_manages_no_device_token(world: World) -> None:
     made = world.create(world.mum).json()
     for username in ("admin", "mum"):
-        key = world.key(username, read_only=False)
+        key = world.key(username)
         alone = world.env.other_client("10.0.0.60")
         bearer = {"Authorization": f"Bearer {key}"}
         assert alone.get(TOKENS, headers=bearer).status_code in (401, 403)
@@ -217,10 +225,10 @@ def test_a_device_token_manages_no_device_token(world: World) -> None:
     import base64
 
     basic = base64.b64encode(f"{made['public_id']}:{made['secret']}".encode()).decode()
-    md5 = hashlib.md5(made["secret"].encode(), usedforsecurity=False).hexdigest()
+    key = md5(made["secret"])
     ways = (
         {"Authorization": f"Basic {basic}"},
-        {"x-auth-user": made["public_id"], "x-auth-key": md5},
+        {"x-auth-user": made["public_id"], "x-auth-key": key},
         {"Authorization": f"Bearer {made['secret']}"},
     )
     for headers in ways:
@@ -234,7 +242,12 @@ def test_a_device_token_manages_no_device_token(world: World) -> None:
 
 def test_the_routes_need_a_session(world: World) -> None:
     anonymous = world.env.other_client("10.0.0.80")
-    for method, path in (("GET", TOKENS), ("GET", SETUP), ("POST", TOKENS), ("DELETE", f"{TOKENS}/abcd2345")):
+    for method, path in (
+        ("GET", TOKENS),
+        ("GET", SETUP),
+        ("POST", TOKENS),
+        ("DELETE", f"{TOKENS}/abcd2345"),
+    ):
         assert anonymous.request(method, path).status_code in (401, 403)
 
 
@@ -265,4 +278,7 @@ def test_the_setup_prefix_comes_from_a_trusted_proxy_only(
         assert body["kosync_path"] == "/books/kosync"
         evil = proxy.get(SETUP, headers={**said, "X-Forwarded-Prefix": "//evil.example"}).json()
         assert evil["opds_path"] == "/opds"
-        assert w.mum.get(SETUP, headers={"X-Forwarded-Prefix": "/books"}).json()["opds_path"] == "/opds"
+        assert (
+            w.mum.get(SETUP, headers={"X-Forwarded-Prefix": "/books"}).json()["opds_path"]
+            == "/opds"
+        )

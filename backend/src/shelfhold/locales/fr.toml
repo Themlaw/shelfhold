@@ -1271,6 +1271,11 @@ title = "Ce profil ne respecte pas les règles du foyer."
 action = "Un enfant a toujours un âge maximal et jamais le droit de classer ; un adulte n'a pas d'âge maximal ; un enfant ne peut ajouter ou demander que sur une source « famille »."
 cause = "Les réglages demandés enfreignent une règle des profils : un enfant a un âge maximal et ne classe pas, un adulte n'a pas d'âge maximal."
 
+[errors."device_token_not_found"]
+title = "Ce jeton d'appareil n'existe pas pour vous."
+action = "Actualisez la liste de vos appareils."
+cause = "Le jeton est inconnu, déjà révoqué, ou n'est pas le vôtre."
+
 [errors."destination_account_not_found"]
 title = "Ce compte Kavita n'existe pas pour vous."
 action = "Actualisez la liste de vos comptes."

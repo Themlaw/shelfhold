@@ -122,6 +122,9 @@ _DECLARED = (
         "restore.acknowledge", Effect.ACKNOWLEDGES_RESTORE
     ),  # passkeys, passwords after a restore
     _action("device_token.manage", Effect.MANAGES_CREDENTIALS),
+    # M4 L46b: pairing an e-reader shows a new secret, once: a fresh session in every profile,
+    # never a key or a token
+    _action("device_token.issue", Effect.TOUCHES_SECRETS),
     # A passkey is a persistent way in: adding one needs a fresh proof in every profile (porteur,
     # 2026-11-11); retiring one keeps the rule of the other credential actions (hardened only)
     _action("passkey.register", Effect.ENROLS_PASSKEY),

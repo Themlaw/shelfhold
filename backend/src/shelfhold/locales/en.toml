@@ -1302,6 +1302,11 @@
     action = "A child always has a maximum age and never the right to classify; an adult has no maximum age; a child can only add or request from a “family” source."
     cause = "The requested settings violate a profile rule: a child has a maximum age and does not classify, an adult has no maximum age."
 
+  [errors.device_token_not_found]
+    title = "This device token does not exist for you."
+    action = "Refresh the list of your devices."
+    cause = "The token is unknown, already revoked, or is not yours."
+
   [errors.destination_account_not_found]
     title = "This Kavita account does not exist for you."
     action = "Refresh the list of your accounts."

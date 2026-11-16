@@ -8,7 +8,9 @@ CODES: tuple[ErrorCode, ...] = (
     ErrorCode("reauth_required", 401, "user"),
     ErrorCode("credential_not_allowed", 403, "user"),
     ErrorCode("invalid_credentials", 401, "user"),
-    ErrorCode("device_tls_required", 403, "admin"),  # M4 L46: an e-reader over plain HTTP
+    ErrorCode("device_tls_required", 403, "admin"),
+    # M4 L46b: another profile's token answers like one that is not there (no probing)
+    ErrorCode("device_token_not_found", 404, "user"),  # M4 L46: an e-reader over plain HTTP
     ErrorCode("remember_needs_confirmation", 422, "user"),
     ErrorCode("too_many_attempts", 429, "user"),
     ErrorCode("password_login_suspended", 409, "admin"),  # a restore: passwords may be old ones
