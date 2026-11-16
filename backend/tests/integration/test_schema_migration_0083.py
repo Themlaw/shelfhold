@@ -59,7 +59,8 @@ def test_a_state_is_one_of_three_and_a_page_count_is_not_negative(settings: Sett
         db.execute("PRAGMA foreign_keys = OFF")
         base = (
             "INSERT INTO bundle_member (version_id, rank, chapter_label, first_page, page_count, "
-            "page_map_state, kavita_pages) VALUES ('01HZZZZZZZZZZZZZZZZZZZZZZA', 1, 'c', 1, 3, ?, ?)"
+            "page_map_state, kavita_pages) VALUES "
+            "('01HZZZZZZZZZZZZZZZZZZZZZZA', 1, 'c', 1, 3, ?, ?)"
         )
         db.execute(base, ("verified", 3))
         db.execute("DELETE FROM bundle_member")
