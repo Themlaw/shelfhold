@@ -169,7 +169,4 @@ symbols = [
   "shelfhold.reading.application.progress:undo_read_mark",
   "shelfhold.reading.domain.merge:latest",
   "shelfhold.reading.domain.merge:furthest",
-  "shelfhold.reading.domain.projection:Bounds",
-  "shelfhold.reading.domain.projection:Projected",
-  "shelfhold.reading.domain.projection:project",
 ]

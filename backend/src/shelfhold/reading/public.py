@@ -18,6 +18,7 @@ from shelfhold.reading.application.progress import (
     record_position,
     undo_read_mark,
 )
+from shelfhold.reading.application.transfer import TransferReport, prefer_edition
 
 __all__ = [
     "InvalidLocatorError",
@@ -25,12 +26,14 @@ __all__ = [
     "Kosync",
     "MemberKeyRevokedError",
     "PositionRecord",
+    "TransferReport",
     "UnitProgress",
     "UnknownCarrierError",
     "UnknownCounter",
     "live_member_account",
     "normalise_locator",
     "position_of",
+    "prefer_edition",
     "progress_of",
     "record_delivery",
     "record_position",

@@ -137,6 +137,13 @@ class PreferredTeamOut(BaseModel):
     team_id: str
 
 
+class PreferredEditionOut(BaseModel):
+    edition_id: str
+    work_id: str
+    transferred: int  # profiles whose reading was carried over (never which)
+    pending: int  # profiles whose reading waits for a file of the new Edition
+
+
 class AttachWithdrawalOut(BaseModel):
     edition_id: str
     shelf_id: str
@@ -183,6 +190,11 @@ def build_series_sheet_router(get_ops: Callable[[], OpsServices]) -> APIRouter:
     ) -> PreferredTeamOut:
         with refusals():
             return PreferredTeamOut(**get_ops().sheet.prefer_team(edition_id, body.team_id))
+
+    @router.post("/editions/{edition_id}/preferred")
+    def preferred_edition_set(edition_id: str, _admin: Admin) -> PreferredEditionOut:
+        with refusals():
+            return PreferredEditionOut(**get_ops().sheet.prefer_edition(edition_id))
 
     @router.post("/attachments/{attach_id}/plan")
     def attach_plan(

@@ -4898,6 +4898,34 @@
         "title": "PreferencesOut",
         "type": "object"
       },
+      "PreferredEditionOut": {
+        "properties": {
+          "edition_id": {
+            "title": "Edition Id",
+            "type": "string"
+          },
+          "pending": {
+            "title": "Pending",
+            "type": "integer"
+          },
+          "transferred": {
+            "title": "Transferred",
+            "type": "integer"
+          },
+          "work_id": {
+            "title": "Work Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "edition_id",
+          "work_id",
+          "transferred",
+          "pending"
+        ],
+        "title": "PreferredEditionOut",
+        "type": "object"
+      },
       "PreferredTeamIn": {
         "additionalProperties": false,
         "properties": {
@@ -14253,6 +14281,68 @@
         "summary": "Edition Set Lang",
         "tags": [
           "operations"
+        ]
+      }
+    },
+    "/api/v1/editions/{edition_id}/preferred": {
+      "post": {
+        "operationId": "preferred_edition_set",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "edition_id",
+            "required": true,
+            "schema": {
+              "title": "Edition Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PreferredEditionOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Connexion requise, ou mot de passe à confirmer (reauth-required)."
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée)."
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Détail du problème (RFC 9457)."
+          }
+        },
+        "summary": "Preferred Edition Set",
+        "tags": [
+          "series-sheet"
         ]
       }
     },

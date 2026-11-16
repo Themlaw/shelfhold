@@ -69,6 +69,35 @@ ou un changement de sens attend la 2.0. Aucune écriture : un lecteur enregistre
 5. Aucune Unité qu'aucune position n'atteint n'est marquée : un saut en avant ne marque lu aucun
    chapitre sauté.
 
+## Changement d'Édition préférée
+
+`POST /api/v1/editions/{edition_id}/preferred` (administrateur ; une clé en lecture seule est
+refusée) fait de l'Édition la préférée de son Œuvre, puis reporte la lecture de **chaque profil**
+dans la nouvelle Édition (`reading.application.transfer`). La réponse compte les profils
+(`transferred`, `pending`), jamais lesquels.
+
+- **Position neutre** : `work_id`, `part_ordinal` (rang de la partie atteinte), `total_progression`
+  (0 à 1 sur l'Œuvre), `completed`, `approximate = true`, plus le numéro de la partie
+  (`part_number`) et l'avancement dans cette partie (`part_progression`). La partie atteinte est
+  la dernière commencée dans l'ordre de lecture de l'ancienne Édition ; un tome lu à la page 143
+  est déjà un chapitre et une part de ce chapitre, par les bornes `start_locator` / `end_locator`
+  de `unit_coverage`.
+- **Correspondance** : la même numérotation désigne la même partie ; sans elle, la part du tout
+  décide. L'Œuvre finie arrive à la dernière partie, entière.
+- **Écriture** : une position `transposed` (`locator.transposed = true`, `device_id = "transfer"`)
+  sur le fichier de la nouvelle Édition qui porte l'Unité, sans page, avec une part du fichier. La
+  vue la dit toujours `approximate` (0084), ainsi que les Unités qu'elle journalise en `read_units`.
+  Une Unité n'est journalisée lue que si l'ancienne Édition la disait lue (même numéro) : jamais
+  un chapitre sauté. La marque reste annulable (`undo_read_mark`).
+- **Un seul critère de « lu » qui sort** : la vue `reading_progress_proven` (mêmes colonnes, sans les positions transposées). Suwayomi, Kavita (page « lue » de `_all_read`) et le `GET` kosync la lisent ; une marque transposée reste visible et annulable dans `reading_progress`, jamais poussée.
+- **Même genre seulement** : un numéro ne relie que des Unités de même `kind` ; une Unité couverte en partie (`extent`) n'est jamais reportée « lue ».
+- **Jamais une preuve** : une position transposée n'est pas l'ancre d'une traversée, n'est jamais
+  une page à pousser vers Kavita, et ses marques ne sont jamais relayées comme « lu ».
+- **Portée** : un profil qui ne voit pas la nouvelle Édition (enfant au-dessus de son plafond), ou
+  qui n'a rien lu, ne reçoit rien ; l'ancienne progression est gardée. Une partie sans fichier
+  n'invente rien : le profil est compté `pending`.
+- Rappeler la même demande n'ajoute rien.
+
 ## Écrire
 
 - `record_position` normalise la page à l'écriture (entier ; un nombre en texte ou un flottant

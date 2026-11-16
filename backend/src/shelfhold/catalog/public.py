@@ -130,6 +130,12 @@ from shelfhold.catalog.application.official_links import (
 )
 from shelfhold.catalog.application.places import place_key
 from shelfhold.catalog.application.ports import StoredVariant
+from shelfhold.catalog.application.preferred_edition import (
+    EditionPart,
+    PreferredChange,
+    edition_parts,
+    set_preferred_edition,
+)
 from shelfhold.catalog.application.queries import (
     ReaderScope,
     VisibleEdition,
@@ -492,6 +498,7 @@ __all__ = [
     "EditionMergePlan",
     "EditionMergeRefusedError",
     "EditionMerged",
+    "EditionPart",
     "EditionRef",
     "EditionSpec",
     "EditionSuggestion",
@@ -523,6 +530,7 @@ __all__ = [
     "OffsetVerdict",
     "PendingRevision",
     "PersonField",
+    "PreferredChange",
     "RatingRefusedError",
     "RatingResult",
     "RatingService",
@@ -587,6 +595,7 @@ __all__ = [
     "detect_suwayomi_migrations",
     "edit_field",
     "edition_key_lang",
+    "edition_parts",
     "effective_age",
     "ensure_search_tables",
     "external_ids_of",
@@ -641,6 +650,7 @@ __all__ = [
     "search_capability",
     "search_page",
     "separate_works",
+    "set_preferred_edition",
     "shelf_open_to",
     "sort_key",
     "store_official_links",

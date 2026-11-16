@@ -90,7 +90,9 @@ reading_position = sa.Table(
 #   * per reader and Unit, the furthest wins: state, then exact before approximate, then the
 #     fraction of the UNIT reached (never the percent of two different files), then the bounded
 #     `client_ts`, then the id. A Unit that was read never goes back to unread, unless the member
-#     undoes the mark (`undone_units`).
+#     undoes the mark (`undone_units`);
+#   * a `transposed` position (the neutral position carried over by a change of preferred Edition,
+#     0084) is always `approximate`, and so is the mark it journals.
 READING_PROGRESS_SELECT = """
 SELECT user_id, unit_id,
   CASE WHEN srank = 2 THEN 'read' WHEN srank = 1 THEN 'in_progress' ELSE 'unread' END AS state,
@@ -119,7 +121,8 @@ FROM (
           AND json_type(o.undone_units, '$."' || o.unit_id || '"') IS NULL THEN 2
         WHEN o.done OR o.started THEN 1
         ELSE 0 END AS srank,
-      CASE WHEN o.replaced THEN 1 WHEN o.exact THEN 0 ELSE o.n > 1 OR o.percent IS NULL END
+      CASE WHEN o.replaced OR o.transposed THEN 1 WHEN o.exact THEN 0
+        ELSE o.n > 1 OR o.percent IS NULL END
         AS approximate
     FROM (
       SELECT x.*,
@@ -136,10 +139,11 @@ FROM (
           q.percent AS percent, q.client_ts AS client_ts, q.server_ts AS server_ts,
           q.source AS source, q.page AS page, q.replaced AS replaced,
           c.rank0 AS rank0, c.n AS n, c.start_page AS start_page, c.end_page AS end_page,
-          q.undone_units AS undone_units
+          q.undone_units AS undone_units, q.transposed AS transposed
         FROM (
           SELECT id, user_id, carrier_type, carrier_id, percent, client_ts, server_ts, source,
             covered_units, undone_units,
+            coalesce(json_extract(locator, '$.transposed'), 0) AS transposed,
             CASE WHEN json_type(locator, '$.page') = 'integer'
               THEN json_extract(locator, '$.page') END AS page,
             coalesce(content_hash <> CASE carrier_type
@@ -165,10 +169,12 @@ FROM (
         WHERE NOT q.replaced
         UNION ALL
         SELECT q.id, q.user_id, u.id, q.percent, q.client_ts, q.server_ts, q.source, q.page,
-          1, CAST(j.key AS INTEGER), json_array_length(q.covered_units), NULL, NULL, q.undone_units
+          1, CAST(j.key AS INTEGER), json_array_length(q.covered_units), NULL, NULL,
+          q.undone_units, q.transposed
         FROM (
           SELECT id, user_id, carrier_type, carrier_id, percent, client_ts, server_ts, source,
             covered_units, undone_units, NULL AS page,
+            coalesce(json_extract(locator, '$.transposed'), 0) AS transposed,
             coalesce(content_hash <> CASE carrier_type
               WHEN 'export_item' THEN coalesce(
                 (SELECT ct.content_hash FROM export_item AS e
@@ -185,7 +191,8 @@ FROM (
       ) AS x
     ) AS o
     UNION ALL
-    SELECT p.user_id, j.value, p.id, min(p.client_ts, p.server_ts), 1.0, 2, 0
+    SELECT p.user_id, j.value, p.id, min(p.client_ts, p.server_ts), 1.0, 2,
+      coalesce(json_extract(p.locator, '$.transposed'), 0)
     FROM reading_position AS p, json_each(p.read_units) AS j
     JOIN unit AS u ON u.id = j.value
     WHERE json_type(p.undone_units, '$."' || j.value || '"') IS NULL
@@ -194,6 +201,32 @@ FROM (
 """
 
 add_view(reading_position, "reading_progress", READING_PROGRESS_SELECT)
+
+
+def _without_transposed(select: str) -> str:
+    """The same rule over the positions that are not a guess carried over from another Edition."""
+    plain = "coalesce(json_extract(locator, '$.transposed'), 0) = 0"
+    edits = (
+        ("          FROM reading_position\n        ) AS q",
+         f"          FROM reading_position\n          WHERE {plain}\n        ) AS q"),
+        ("FROM reading_position WHERE covered_units IS NOT NULL",
+         f"FROM reading_position WHERE covered_units IS NOT NULL\n          AND {plain}"),
+        ("    WHERE json_type(p.undone_units",
+         f"    WHERE {plain.replace('locator', 'p.locator')}\n      AND json_type(p.undone_units"),
+    )  # fmt: skip
+    for old, new in edits:
+        if select.count(old) != 1:
+            raise AssertionError(old)
+        select = select.replace(old, new)
+    return select
+
+
+# What may be pushed OUTSIDE Shelfhold as read (Suwayomi L17, Kavita L14b and L50): the same view
+# with no transposed position (M4 L15, 0084). A Unit is read here only by a proven traversal or by
+# the state a server holds; a mark carried over from another Edition stays in `reading_progress`
+# (visible, undoable) and never goes out. The one criterion: every outward path reads this view.
+READING_PROGRESS_PROVEN_SELECT = _without_transposed(READING_PROGRESS_SELECT)
+add_view(reading_position, "reading_progress_proven", READING_PROGRESS_PROVEN_SELECT)
 
 # Where each synchronisation of a member's progress with a destination stopped (EF-USR-012, M4):
 # one cursor per account, so one server being down never moves another's. NULL = never run.

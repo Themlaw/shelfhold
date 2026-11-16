@@ -329,6 +329,8 @@ def _mark_traversed(
                 table.c.source == "device",
                 # a place in a reflowable text measures nothing (L51): never an anchor
                 sa.func.json_extract(table.c.locator, "$.xpointer").is_(None),
+                # nor is a position carried over from another Edition (EF-BIB-026): a guess
+                sa.func.json_extract(table.c.locator, "$.transposed").is_(None),
             )
             .order_by(table.c.server_ts.desc(), table.c.id.desc())
             .limit(HISTORY_LIMIT)
@@ -521,15 +523,17 @@ def progress_of(
     viewer_id: str,
     subject_id: str,
     unit_ids: Iterable[str] | None = None,
+    proven: bool = False,
 ) -> list[UnitProgress]:
-    """The progress of `subject_id` per Unit, for a viewer who is that profile: else nothing."""
+    """The progress of `subject_id` per Unit, for a viewer who is that profile: else nothing.
+    With `proven`, a position carried over from another Edition (EF-BIB-026) is left out."""
     if viewer_id != subject_id:
         return []
     scope = reader_scope(connection, viewer_id)
     if scope.kind == "none":
         return []
     view = sa.table(
-        "reading_progress",
+        "reading_progress_proven" if proven else "reading_progress",
         sa.column("user_id"), sa.column("unit_id"), sa.column("state"),
         sa.column("last_position_id"), sa.column("latest_position_id"),
         sa.column("approximate"),

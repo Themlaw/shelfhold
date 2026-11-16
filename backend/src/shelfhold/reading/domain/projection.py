@@ -11,6 +11,9 @@ The state of a Unit is read from where the reader is in the file that holds it:
   `approximate` (invariant I30). Which Units it reaches is the caller's: the ones the file covered
   when the position was written.
 
+A **transposed** position (the neutral position carried over by a change of preferred Edition,
+`reading.domain.neutral_position`) is a guess: it is always `approximate`.
+
 `trusted` tells who said it. A `server` position (the read state Kavita keeps) is taken as it is:
 reaching the end of a Unit is `read`. A `device` position is a report of where the reader is, and a
 look at the last page is not a reading: it never goes beyond `in_progress`; `read` comes from a
@@ -59,6 +62,7 @@ def project(
     bounds: Bounds,
     replaced: bool = False,
     trusted: bool = True,
+    transposed: bool = False,
 ) -> Projected:
     first, last = bounds.start_page, bounds.end_page
     if not replaced and page is not None and first is not None and last is not None:
@@ -74,7 +78,7 @@ def project(
         started = share > bounds.rank0 / bounds.count
         approximate = bounds.count > 1 or percent is None
         within = None if percent is None else _clamp(percent * bounds.count - bounds.rank0)
-    if replaced:
+    if replaced or transposed:
         approximate = True
     if done and trusted:
         state: State = "read"

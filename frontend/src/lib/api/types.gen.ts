@@ -2971,6 +2971,28 @@ export type PreferencesOut = {
 };
 
 /**
+ * PreferredEditionOut
+ */
+export type PreferredEditionOut = {
+    /**
+     * Edition Id
+     */
+    edition_id: string;
+    /**
+     * Pending
+     */
+    pending: number;
+    /**
+     * Transferred
+     */
+    transferred: number;
+    /**
+     * Work Id
+     */
+    work_id: string;
+};
+
+/**
  * PreferredTeamIn
  */
 export type PreferredTeamIn = {
@@ -8654,6 +8676,44 @@ export type EditionSetLangResponses = {
 };
 
 export type EditionSetLangResponse = EditionSetLangResponses[keyof EditionSetLangResponses];
+
+export type PreferredEditionSetData = {
+    body?: never;
+    path: {
+        /**
+         * Edition Id
+         */
+        edition_id: string;
+    };
+    query?: never;
+    url: '/api/v1/editions/{edition_id}/preferred';
+};
+
+export type PreferredEditionSetErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type PreferredEditionSetError = PreferredEditionSetErrors[keyof PreferredEditionSetErrors];
+
+export type PreferredEditionSetResponses = {
+    /**
+     * Successful Response
+     */
+    200: PreferredEditionOut;
+};
+
+export type PreferredEditionSetResponse = PreferredEditionSetResponses[keyof PreferredEditionSetResponses];
 
 export type PreferredTeamSetData = {
     body: PreferredTeamIn;

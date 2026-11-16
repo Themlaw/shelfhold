@@ -6,11 +6,13 @@ one, the gaps nobody acknowledged, the teams in the order of their priority, the
 are locked, the cover, the merges one can still undo and the attach that waits for a decision. It
 also says which actions the server allows now: the screen shows an action only when it is true.
 
-The three writes are plain settings, not reserved actions (the admin's session, its CSRF):
+The writes are plain settings, not reserved actions (the admin's session, its CSRF):
 `reorder` ranks the active bindings of the Edition (the rank stays unique among them), the
-`upstream_status` is set by hand (D23: no source writes it yet, `manual` says who), and
-`prefer_team` puts a Team first in the priority list of the Edition. Choosing a team replaces
-nothing already served: that is an upgrade, and an upgrade is made under intent elsewhere.
+`upstream_status` is set by hand (D23: no source writes it yet, `manual` says who),
+`prefer_edition` makes an Edition the preferred one of its Work and carries each profile's reading
+over (M4 L15, EF-BIB-026), and `prefer_team` puts a Team first in the priority list of the
+Edition. Choosing a team replaces nothing already served: that is an upgrade, and an upgrade is
+made under intent elsewhere.
 Everything else the sheet does goes through the doors that already exist (`follow check`,
 `follow gap-ack`, field locks, "Séparer", `edition attach-confirm`).
 """
@@ -29,6 +31,7 @@ from shelfhold.infrastructure.ids import is_ulid
 from shelfhold.infrastructure.schema import acquisition, catalog
 from shelfhold.library.public import cover_hash
 from shelfhold.ops.errors import InvalidChoiceError, UnknownSubjectError
+from shelfhold.reading.public import prefer_edition
 
 if TYPE_CHECKING:
     from shelfhold.composition import Composition
@@ -267,6 +270,17 @@ class SheetOps:
                 )
             )  # fmt: skip
         return {"edition_id": edition_id, "upstream_status": status, "by": "manual"}
+
+    def prefer_edition(self, edition_id: str) -> dict[str, Any]:
+        """Make the Edition the preferred one of its Work, and carry each profile's reading over
+        to it (EF-BIB-026). The answer counts profiles; it never says whose reading."""
+        with write_transaction(self._comp.engine) as connection:
+            edition = self._edition(connection, edition_id)
+            done = prefer_edition(connection, edition_id=edition_id, now=self._comp.clock.now())
+        return {
+            "edition_id": edition_id, "work_id": str(edition.work_id),
+            "transferred": done.transferred, "pending": done.pending,
+        }  # fmt: skip
 
     def prefer_team(self, edition_id: str, team_id: str) -> dict[str, Any]:
         if not is_ulid(team_id):

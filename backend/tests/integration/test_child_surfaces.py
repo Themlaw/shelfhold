@@ -200,6 +200,7 @@ CLOSED = (
     "POST /api/v1/editions/{edition_id}/bindings/order",
     "POST /api/v1/editions/{edition_id}/upstream-status",
     "POST /api/v1/editions/{edition_id}/preferred-team",
+    "POST /api/v1/editions/{edition_id}/preferred",  # M4 L15: the admin's, like the team
     "POST /api/v1/editions/{edition_id}/bindings/{binding_id}/pause",  # M4 L23: the admin's act
     "POST /api/v1/attachments/{attach_id}/plan",
     "POST /api/v1/attachments/{attach_id}/confirm",

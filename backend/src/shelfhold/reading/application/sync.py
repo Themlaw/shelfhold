@@ -627,6 +627,12 @@ class _NoteWriter:
         self._waiting = []
 
 
+def _not_transposed(position: sa.Table) -> sa.ColumnElement[bool]:
+    """A position carried over from another Edition (EF-BIB-026) is a guess: never a page to push,
+    never a mark of reading to relay."""
+    return sa.func.json_extract(position.c.locator, "$.transposed").is_(None)
+
+
 def _pending_chapters(
     engine: sa.Engine, user_id: str, refs: Sequence[ChapterRef], notes: dict[int, _Note]
 ) -> set[int]:
@@ -648,6 +654,7 @@ def _pending_chapters(
                 position.c.user_id == user_id,
                 position.c.carrier_type == "export_item",
                 position.c.source == "device",
+                _not_transposed(position),
                 position.c.server_ts >= min(since.values()),
             )
             .group_by(position.c.carrier_id)
@@ -656,6 +663,7 @@ def _pending_chapters(
             sa.select(position.c.server_ts, position.c.read_units).where(
                 position.c.user_id == user_id,
                 position.c.source == "device",
+                _not_transposed(position),
                 position.c.server_ts >= min(since.values()),
                 sa.func.json_array_length(position.c.read_units) > 0,
             )
@@ -797,6 +805,7 @@ def _pending_page(
                 position.c.carrier_type == "export_item",
                 position.c.carrier_id == ref.carrier_id,
                 position.c.source == "device",
+                _not_transposed(position),
                 position.c.server_ts >= since,
             )
             .order_by(position.c.server_ts.desc(), position.c.id.desc())
@@ -849,6 +858,7 @@ def _marking_locators(
         sa.select(position.c.locator, position.c.read_units).where(
             position.c.user_id == user_id,
             position.c.source == "device",
+            _not_transposed(position),
             position.c.server_ts >= since,
             sa.func.json_array_length(position.c.read_units) > 0,
         )
@@ -866,8 +876,11 @@ def _marking_locators(
 def _all_read(connection: sa.Connection, user_id: str, carrier_id: str) -> bool:
     cover, view = (
         export.unit_coverage,
-        sa.table(
-            "reading_progress", sa.column("user_id"), sa.column("unit_id"), sa.column("state")
+        sa.table(  # the proven view: a mark carried over from another Edition is not a reading
+            "reading_progress_proven",
+            sa.column("user_id"),
+            sa.column("unit_id"),
+            sa.column("state"),
         ),
     )
     units = [
