@@ -36,9 +36,11 @@ from shelfhold.export.domain.bindings import (
     WRITING_TRANSPORTS,
     BindingFacts,
     Egress,
+    TargetKindTransportError,
     TreeOverlapError,
     check_binding,
     check_ceiling,
+    check_dropbox_folder,
     check_family_cap,
     check_partitioning,
     effective_partitioning,
@@ -79,6 +81,7 @@ class Actor(Protocol):
 
 
 NATIVE_FOLDER = "native_folder"  # the kind of target of EF-EXP-010
+CWA = "cwa"  # the kind of target of EF-EXP-022: a drop box, bound only as `dropbox`
 LOCAL_LIBRARY = "local"  # the one remote library of a folder destination: no server, a folder
 TAKEN = "remote_library_taken"  # the reason `FileResult` gives for the one-per-library rule
 
@@ -578,6 +581,8 @@ class ShelfService:
                     attested=row.access_partitioning_attested_at is not None,
                 ),
             )
+            if row.kind == CWA and transport != "dropbox":
+                raise TargetKindTransportError("a CWA drop box is bound as a drop box")
             path_map = PathMap(
                 tuple(
                     PathEntry(e["local"], e["remote"], PathMode(e.get("mode", "rw")))
@@ -585,12 +590,21 @@ class ShelfService:
                 )
             )
             entries = path_map.writable()
+            declared = (
+                os.path.realpath(clean_absolute(entries[0].local))
+                if row.kind == CWA and entries
+                else None
+            )
+            if declared is not None:
+                check_dropbox_folder(declared, root_subpath, None)  # before a `..` is resolved
             root = None
             if transport in WRITING_TRANSPORTS and entries:
                 root = clean_absolute(
                     f"{entries[0].local}/{root_subpath}" if root_subpath else entries[0].local
                 )
             real, identity = resolve_folder(root)
+            if declared is not None:
+                check_dropbox_folder(declared, root_subpath, real)
             new = BindingFacts(
                 destination_id, shelf_id, target_id, transport,
                 resolve_egress(plugin_default=plugin_egress, attested=attested_egress), real,

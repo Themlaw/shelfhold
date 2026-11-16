@@ -1740,6 +1740,16 @@
     action = "Pick a folder that does not hold, sit inside or equal the local source of Suwayomi (the “Local source path” setting of the server), or move that local source elsewhere."
     cause = "Shelfhold would read its own exports back as an upstream and acquire them in a loop."
 
+  [errors."target.transport_not_supported"]
+    title = "This destination cannot be bound this way."
+    action = "A CWA drop box is bound as a drop box (transport “dropbox”): choose that transport."
+    cause = "A drop box has no tree to index and no server to read from: another transport would not write where it should."
+
+  [errors."target.folder_outside_root"]
+    title = "This folder is not inside the folder of the destination."
+    action = "Give a sub-folder of the folder the destination declares: a relative name, without “..”, that does not go through a link."
+    cause = "A drop box writes only in the ingestion folder it was set up with, never elsewhere."
+
   [errors."target.local_source_unknown"]
     title = "The local source of Suwayomi is not known or cannot be checked."
     action = "Let the follow run once (or wait for the next cycle), then try again: Shelfhold has to read the local source of Suwayomi before it binds a native folder. If Suwayomi puts it at a path Shelfhold cannot see, make that folder visible (a read-only mount, or the “remote” side of the path map)."

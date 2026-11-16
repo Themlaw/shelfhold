@@ -8,6 +8,7 @@ on purpose to show that the kit would say so.
 """
 
 import pytest
+
 from shelfhold.export.domain.bindings import effective_partitioning
 from shelfhold.export.targets.cwa import CwaDestination, DropSpec
 from shelfhold.sdk.fsops import ContentRef, FsOp, FsOpPlan
@@ -36,15 +37,15 @@ def test_cwa_passes_destination_kit() -> None:
     }
     # an egress outside the home never takes a watermarked file: the same plan, refused
     mark = destination.describe([DropSpec(SYNTHETIC_WATERMARKED, "Synthetic Book B")])
-    external = type("External", (), {"capabilities": destination.capabilities.model_copy(
-        update={"egress": "externe"}
-    )})()
+    external = type(
+        "External",
+        (),
+        {"capabilities": destination.capabilities.model_copy(update={"egress": "externe"})},
+    )()
     broken = run_destination_conformance(external, DestinationScenario(key="cwa", plan=mark))
     assert {c.name for c in broken.failures} == {"plan_checked_before_run"}
     # the plan of a drop box that writes more than a file at the root of its folder is not one
-    nested = FsOpPlan(
-        ops=(FsOp(op="mkdir", rel_path="Series"),)
-    )
+    nested = FsOpPlan(ops=(FsOp(op="mkdir", rel_path="Series"),))
     assert run_destination_conformance(
         destination, DestinationScenario(key="cwa", plan=nested)
     ).ok  # the kit has no rule for it: the host's executor refuses it (see the executor test)
@@ -81,7 +82,7 @@ def test_the_name_of_a_drop_is_one_safe_component_that_carries_the_item() -> Non
     titles = [
         "Synthetic Book A",
         "../../etc/passwd",
-        "a/b\\c:d*e?f\"g<h>i|j",
+        'a/b\\c:d*e?f"g<h>i|j',
         ".hidden",
         "",
         "   ",
@@ -89,15 +90,16 @@ def test_the_name_of_a_drop_is_one_safe_component_that_carries_the_item() -> Non
         "x" * 400,
         "Élise et l'Atelier",
     ]
-    plan = destination.describe([DropSpec(ITEM, t) for t in titles])
+    ids = [f"item{n}" for n in range(len(titles))]
+    plan = destination.describe([DropSpec(i, t) for i, t in zip(ids, titles, strict=True)])
     assert len(plan.ops) == len(titles)
-    for op in plan.ops:
-        assert op.op == "write" and op.content_ref == ContentRef(kind="export_item", ref=ITEM)
+    for op, item in zip(plan.ops, ids, strict=True):
+        assert op.op == "write" and op.content_ref == ContentRef(kind="export_item", ref=item)
         name = op.rel_path
         assert "/" not in name and "\\" not in name and "\0" not in name
-        assert not name.startswith(".") and name.endswith(f"[{ITEM}].epub")
+        assert not name.startswith(".") and name.endswith(f"[{item}].epub")
         assert len(name.encode()) <= 255
-    assert plan.ops[0].rel_path == f"Synthetic Book A [{ITEM}].epub"
+    assert plan.ops[0].rel_path == "Synthetic Book A [item0].epub"
     # two items with one title never share a name
     pair = destination.describe([DropSpec(ITEM, "Same"), DropSpec(OTHER, "Same")])
     assert pair.ops[0].rel_path != pair.ops[1].rel_path

@@ -6,6 +6,7 @@ Real database, real files, the executor of L04 and the fan-out of L06: the desti
 writes them. The ingester is `FakeIngest`: it takes whole EPUBs and removes them.
 """
 
+import contextlib
 import hashlib
 import threading
 import time
@@ -65,10 +66,8 @@ def test_a_drop_is_atomic_no_partial_file_is_ever_visible() -> None:
         def watch() -> None:
             while not stop.is_set():
                 for entry in folder(env).iterdir():
-                    try:
+                    with contextlib.suppress(FileNotFoundError):
                         seen.setdefault(entry.name, set()).add(entry.stat().st_size)
-                    except FileNotFoundError:
-                        pass
 
         watcher = threading.Thread(target=watch)
         watcher.start()

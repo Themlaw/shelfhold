@@ -108,9 +108,7 @@ def test_kill9_during_a_cwa_drop_resumes_without_duplicate_or_partial_file(
                     "data": str(env.lib.data),
                     "shelf_id": env.shelf_id,
                     "call_id": "c1",
-                    "epubs": {
-                        k: [v.path, v.file_hash, v.content_id] for k, v in store.items()
-                    },
+                    "epubs": {k: [v.path, v.file_hash, v.content_id] for k, v in store.items()},
                 }
             )
         )

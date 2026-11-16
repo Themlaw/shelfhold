@@ -109,6 +109,7 @@ from shelfhold.export.application.wiring import NoRemoteParse
 from shelfhold.export.domain.naming import DEFAULT_TEMPLATE, NamingTemplate
 from shelfhold.export.domain.path_map import PathMapError
 from shelfhold.export.domain.physical_roots import RootState
+from shelfhold.export.targets.cwa.source import CwaSource
 from shelfhold.export.targets.kavita.accounts_audit import ChildAccountsAuditor
 from shelfhold.export.targets.kavita.adopt import BulkParse, library_type_named
 from shelfhold.export.targets.kavita.audit import AccessAuditor
@@ -236,6 +237,19 @@ def tree_destinations(comp: Composition) -> list[Destination]:
         rows = connection.execute(
             sa.select(table.c.id, table.c.target_id)
             .where(table.c.transport == "tree")
+            .order_by(table.c.id)
+        )
+        return [Destination(r.id, r.target_id) for r in rows]
+
+
+def dropbox_destinations(comp: Composition) -> list[Destination]:
+    """The bindings that drop files in a folder an ingester watches (EF-EXP-022): no server to
+    ask and no Kavita library to scan, so they take part in the fan-out pass alone."""
+    table = export.shelf_destination
+    with comp.engine.connect() as connection:
+        rows = connection.execute(
+            sa.select(table.c.id, table.c.target_id)
+            .where(table.c.transport == "dropbox")
             .order_by(table.c.id)
         )
         return [Destination(r.id, r.target_id) for r in rows]
@@ -601,36 +615,49 @@ class FirstPartyDestinations:
     """What the destinations of the core describe for a binding. Kavita is run by its own client
     (`KavitaClient.execute`, with the key the core holds): it describes calls the core already
     sends and no plan of files, so nothing is asked of it here. The native folder (EF-EXP-010)
-    describes a plan of files: `NativeFolderSource` reads what was planned and answers for it.
-    Komga (EF-EXP-020) declares what it is and describes calls of the library; it is not run by
-    the pass yet (its scan is asked by `KomgaClient`, see docs/decisions/M4.md, L08a)."""
+    and the CWA drop box (EF-EXP-022) describe a plan of files: `NativeFolderSource` and
+    `CwaSource` read what was planned and answer for their kind. Komga (EF-EXP-020) declares what
+    it is and describes calls of the library; it is not run by the pass yet (its scan is asked by
+    `KomgaClient`, see docs/decisions/M4.md, L08a)."""
 
     def __init__(self, engine: Engine) -> None:
         self._engine = engine
         self._native = NativeFolderSource(engine, root_check=RootGuard().check_root)
+        self._cwa = CwaSource(engine)
 
     def attach(self, host: Any) -> None:
         self._native.attach(host)
+        self._cwa.attach(host)
 
-    def capabilities(self, target_id: str) -> Any:
+    def _kind(self, target_id: str) -> str | None:
         with self._engine.connect() as connection:
-            kind = connection.execute(
+            return connection.execute(
                 sa.select(export.export_target.c.kind).where(export.export_target.c.id == target_id)
             ).scalar()
+
+    def capabilities(self, target_id: str) -> Any:
+        kind = self._kind(target_id)
         if kind == "native_folder":
             return self._native.capabilities(target_id)
+        if kind == "cwa":
+            return self._cwa.capabilities(target_id)
         if kind == "komga":
             return KomgaDestination.capabilities
         return KavitaDestination.capabilities if kind == "kavita" else None
 
     def plan(self, binding: Any) -> object | None:
-        return self._native.plan(binding)  # None for every other kind
+        kind = self._kind(binding.target_id)
+        if kind == "native_folder":
+            return self._native.plan(binding)
+        return self._cwa.plan(binding) if kind == "cwa" else None  # None for every other kind
 
     def sidecars(self, binding: Any) -> frozenset[str]:
-        return self._native.sidecars(binding)
+        if self._kind(binding.target_id) == "native_folder":
+            return self._native.sidecars(binding)
+        return frozenset()
 
     def renders(self, target_id: str) -> bool:
-        return self._native.renders(target_id)
+        return self._kind(target_id) == "native_folder" and self._native.renders(target_id)
 
     def calls(self, _binding: Any) -> tuple[object, ...]:
         return ()
@@ -677,8 +704,9 @@ class _Disks:
 def export_handler(comp: Composition) -> Callable[[JobContext], None]:
     def run(context: JobContext) -> None:
         destinations = tree_destinations(comp)
-        context.record(destinations=len(destinations))
-        if not destinations:
+        drops = dropbox_destinations(comp)
+        context.record(destinations=len(destinations) + len(drops))
+        if not destinations and not drops:
             return
         try:  # scans a failure left (deleted series, withdrawals, detachments): asked again here
             context.add(scans_retried=sum(LibraryOps(comp).retry_pending_scans().values()))
@@ -705,9 +733,11 @@ def export_handler(comp: Composition) -> Callable[[JobContext], None]:
             except (NoLibraryError, KeyringUnavailableError) as error:
                 log.info("export.run_skipped", reason=type(error).__name__)
                 return
-        natives = _native_folders(comp, destinations)
+        natives = [*_native_folders(comp, destinations), *drops]
         if disks.opened or natives:  # each shelf's bindings are judged one by one (L06a, L07)
-            _fan_out_pass(comp, disks, destinations if disks.opened else natives, context)
+            _fan_out_pass(
+                comp, disks, [*destinations, *drops] if disks.opened else natives, context
+            )
 
     return run
 

@@ -52,7 +52,11 @@ def cwa_target(env: ExportEnv, *, partitioning: str = "none") -> str:
 
 
 def bind_cwa(
-    env: ExportEnv, *, subpath: str = INGEST, shelf_id: str | None = None, target_id: str | None = None
+    env: ExportEnv,
+    *,
+    subpath: str = INGEST,
+    shelf_id: str | None = None,
+    target_id: str | None = None,
 ) -> str:
     (env.lib.manga / subpath).mkdir(parents=True, exist_ok=True)
     return service(env).bind_destination(
@@ -100,9 +104,9 @@ def lower_ceiling(env: ExportEnv, ceiling: int) -> None:
     """The admin lowers the ceiling of the shelf after the binding was made."""
     with write_transaction(env.engine) as connection:
         connection.execute(
-            sa.update(export.shelf).where(export.shelf.c.id == env.shelf_id).values(
-                max_age_rating=ceiling
-            )
+            sa.update(export.shelf)
+            .where(export.shelf.c.id == env.shelf_id)
+            .values(max_age_rating=ceiling)
         )
 
 

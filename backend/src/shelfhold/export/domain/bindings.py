@@ -84,6 +84,20 @@ class LocalSourceUnknownError(BindingError):
     code = "target.local_source_unknown"
 
 
+class TargetKindTransportError(BindingError):
+    """A first-party target is bound only by the transport it has: a CWA drop box is a `dropbox`
+    (EF-EXP-022), whatever the caller says."""
+
+    code = "target.transport_not_supported"
+
+
+class FolderOutsideRootError(BindingError):
+    """The folder of a drop box is the folder its target declares, or one below it: never one that
+    climbs out of it (`..`), is given as an absolute path, or goes through a link."""
+
+    code = "target.folder_outside_root"
+
+
 class ShelfAlreadyBoundError(BindingError):
     """M1a: one destination per shelf. M4 L06a (fan-out) lifts it: a shelf has as many bindings as
     folders and servers; the code stays in the catalogue for the clients that knew it."""
@@ -134,13 +148,27 @@ def check_family_cap(name: str, max_age_rating: int | None) -> None:
 def effective_partitioning(kind: str, stored: str, *, attested: bool) -> str:
     """How a destination keeps accounts apart. Kavita does it by library (it is the adapter that
     knows). Komga does too, but nothing audits the libraries each account reaches yet, so it
-    counts for nothing until L08b. The value a third-party plugin declares is a default proposal
-    and counts only once the admin attested it (K9, GAP-10-08); an unattested one is `none`."""
+    counts for nothing until L08b. A CWA drop box is a folder that one ingester empties: it
+    partitions nothing, whatever it is declared or attested. The value a third-party plugin
+    declares is a default proposal and counts only once the admin attested it (K9, GAP-10-08); an
+    unattested one is `none`."""
     if kind == "kavita":
         return "library"
     if kind == "komga":
         return "none"  # no audit of the accounts of Komga before M4 L08b: no shelf below 18+
+    if kind == "cwa":
+        return "none"  # a drop box keeps no account apart, and no attestation changes that
     return stored if attested else "none"
+
+
+def check_dropbox_folder(declared: str, root_subpath: str, real: str | None) -> None:
+    """The ingestion folder of a drop box is inside the folder its target declares, by name and
+    once the links are followed (`real` is the real path of the folder, None if there is none)."""
+    parts = root_subpath.split("/") if root_subpath else []
+    if root_subpath.startswith("/") or "\0" in root_subpath or ".." in parts:
+        raise FolderOutsideRootError("the folder of a drop box is below the folder of its target")
+    if real is not None and within(real, declared) is None:
+        raise FolderOutsideRootError("the folder of a drop box leaves its target through a link")
 
 
 def check_partitioning(max_age_rating: int | None, partitioning: str) -> None:

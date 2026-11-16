@@ -24,7 +24,6 @@ from tests.cwa_env import (
     INGEST,
     add_book,
     bind_cwa,
-    cwa_target,
     folder,
     names,
     other_shelf_item,
@@ -130,7 +129,9 @@ def hand_made(env, destination: str, item: str, *refs: str) -> PlanBinding:  # t
     env.pipeline.plan_ledger.plan(
         "hand",
         destination,
-        PlannedContent(planned_refs=frozenset({item}), egress="foyer", watermarked_refs=frozenset()),
+        PlannedContent(
+            planned_refs=frozenset({item}), egress="foyer", watermarked_refs=frozenset()
+        ),
     )
     return binding
 
@@ -173,7 +174,9 @@ def test_a_drop_goes_to_the_folder_itself_under_a_plain_name(rel: str) -> None:
         rig(env, store)
         binding = hand_made(env, destination, book.item_id, book.item_id)
         with pytest.raises(PlanRefusedError):
-            env.pipeline.execute_destination_plan(binding, "hand", {"ops": [write(rel, book.item_id)]})
+            env.pipeline.execute_destination_plan(
+                binding, "hand", {"ops": [write(rel, book.item_id)]}
+            )
         assert names(env) == []
         assert not (env.lib.manga / "escape.epub").exists()
         assert not (env.lib.manga / INGEST / "sub").exists()
