@@ -761,11 +761,13 @@ def _chapter(
     if mode == "restore":
         wanted = _carried_page(engine, user_id, ref, outcome, max_session_s)
     elif mode == "sync" and (has_pending or old is None):
+        refused = outcome.unverified
         wanted = _pending_page(
             engine, user_id, ref, old.synced_at if old else EPOCH, outcome, max_session_s
         )
-        if wanted is None and old is None:  # a chapter Kavita holds under an id never seen: a
-            # rescan that renumbered it, or a first look; what the member has proven is carried
+        # a chapter Kavita holds under an id never seen (a rescan that renumbered it, or a first
+        # look), not already refused above: what the member has proven is carried
+        if wanted is None and old is None and outcome.unverified == refused:
             wanted = _carried_page(engine, user_id, ref, outcome, max_session_s)
     if wanted is not None and wanted > seen.page:
         _live(engine, user_id, destination_id)
