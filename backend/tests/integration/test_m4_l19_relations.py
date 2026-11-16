@@ -231,7 +231,7 @@ def test_relation_routes_refused_to_child_member_and_non_admin_key(world: World)
     for name, ip, kwargs in (
         (ADMIN, "10.0.0.41", {"read_only": True}),
         (ADMIN, "10.0.0.42", {"scope": "request", "subject_username": "mia"}),
-        ("mia", "10.0.0.43", {}),
+        ("mia", "10.0.0.43", {"read_only": True}),
         ("kid", "10.0.0.44", {"read_only": True}),
     ):
         client, auth = _key_client(world, name, ip, **kwargs)
