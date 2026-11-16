@@ -1,6 +1,6 @@
 """Relecture adverse de la PR #319 (M4 L19, œuvres liées) : PoC rouges.
 
-Chaque test décrit le comportement attendu. Il échoue aujourd'hui pour la raison donnée dans
+Chaque test décrit le comportement attendu. Il échoue aujourd'hui pour le motif donné dans
 `docs/decisions/M4.md`, section « #319 : contradicteur ». Le `xfail(strict=True)` signalera le jour
 où il passe.
 """
