@@ -85,8 +85,8 @@ refaire un pas déjà fait.
 
 ### Les limites du compose
 
-Le compose d'exemple pose `mem_limit: 768m` sur le service Shelfhold et `mem_limit: 512m` sur
-`shelfhold-migrate`, avec `pids_limit` et un `/tmp` en mémoire de 256 Mo pour le service. C'est de la
+Le compose d'exemple pose `mem_limit: 768m` sur le service Shelfhold (migrations comprises, elles
+tournent dans le même conteneur), avec `pids_limit` et un `/tmp` en mémoire de 256 Mo. C'est de la
 marge (plus de cinq fois le pic mesuré) : si le conteneur est tué par le noyau (OOM), regardez
 d'abord la taille des CBZ reçus (leur plafond, 512 Mo par défaut, se règle avec
 `SHELFHOLD_RECEIVED_CBZ_MAX_BYTES`, [configuration.md](../configuration.md)) avant d'augmenter la

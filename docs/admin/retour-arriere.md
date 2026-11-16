@@ -45,7 +45,7 @@ vous avez fait avec la 0.3 depuis (classements, étagères famille, passkeys, co
 pas dans cette base ; les fichiers rangés depuis sont, eux, toujours là et ne sont jamais supprimés.
 
 Le service qui fait la réconciliation doit être **le service complet, avec toutes les racines montées**
-(`shelfhold` du compose, pas `shelfhold-migrate`, qui n'a pas `/library`). Une racine non montée n'est pas
+(`shelfhold` du compose, avec ses volumes). Une racine non montée n'est pas
 jugée : sa sentinelle n'est pas relue, et le démarrage suivant retrouve la racine en retard
 (`restored_behind`).
 

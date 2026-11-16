@@ -6,33 +6,25 @@
 # image). Host directories must be writable by uid 1000:
 #   mkdir -p data store && sudo chown 1000:1000 data store
 
-x-shelfhold: &shelfhold
-  image: ghcr.io/themlaw/shelfhold:1.0
-  user: "1000:1000"
-  # Settings: copy .env.example to .env and edit it (optional; Compose 2.24 or later).
-  env_file:
-    - path: .env
-      required: false
-  environment:
-    TZ: ${TZ:-Etc/UTC}
-  volumes:
-    - ./data:/data     # database, config, thumbnails (local disk, not NFS)
-    - ./store:/store   # kept copies, a separate folder from ./data
-
 services:
-  # Applies the database migrations, then exits. Shelfhold starts once it has succeeded.
-  shelfhold-migrate:
-    <<: *shelfhold
-    command: ["shelfhold", "migrate"]
-    restart: "no"
-
   shelfhold:
-    <<: *shelfhold
+    image: ghcr.io/themlaw/shelfhold:1.0
     container_name: shelfhold
-    depends_on:
-      shelfhold-migrate:
-        condition: service_completed_successfully
+    # Applies pending database migrations at start (`shelfhold serve --migrate`), then serves.
+    user: "1000:1000"
+    # Settings: copy .env.example to .env and edit it (optional; Compose 2.24 or later).
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      TZ: ${TZ:-Etc/UTC}
+    volumes:
+      - ./data:/data     # database, config, thumbnails (local disk, not NFS)
+      - ./store:/store   # kept copies, a separate folder from ./data
     init: true
     ports:
       - "8080:8080"
+    healthcheck:
+      test: ["CMD", "python", "/usr/local/bin/shelfhold-healthcheck"]
+      start_period: 10m  # migration budget (ENF-OPS-002)
     restart: unless-stopped

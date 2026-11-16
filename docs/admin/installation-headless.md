@@ -25,8 +25,8 @@ les routes sont dans [headless.md](headless.md).
    ```sh
    mkdir -p data store && chown 1000:1000 data store && chmod 750 data store
    ```
-3. **Démarrer** : `docker compose up -d`. Le service `shelfhold-migrate` applique les migrations
-   puis s'arrête ; `shelfhold` démarre ensuite. `curl http://127.0.0.1:8080/readyz` doit répondre.
+3. **Démarrer** : `docker compose up -d`. Le service `shelfhold` applique d'abord les migrations
+   en attente (`serve --migrate`), puis démarre ; la première fois, comptez quelques secondes. `curl http://127.0.0.1:8080/readyz` doit répondre.
 4. **Exporter la clé maîtresse**, tout de suite (voir [restauration.md](restauration.md)). La
    phrase de passe est un fichier que vous écrivez vous-même (`data/export.pass` sur l'hôte,
    `chmod 600`) :

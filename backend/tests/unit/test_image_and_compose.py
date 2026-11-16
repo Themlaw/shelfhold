@@ -61,40 +61,42 @@ def test_compose_runtime_service_is_hardened(compose: dict[str, Any]) -> None:
     assert health["start_period"] and health["test"]
 
 
-@pytest.mark.req("ENF-SEC-006", "ENF-OPS-002")
-def test_compose_migrate_runs_first_and_is_hardened_too(compose: dict[str, Any]) -> None:
-    migrate = compose["services"]["shelfhold-migrate"]
-    assert migrate["command"] == ["shelfhold", "migrate"]
-    assert migrate["read_only"] is True
-    assert migrate["cap_drop"] == ["ALL"]
-    assert migrate["restart"] == "no"
-    depends = compose["services"]["shelfhold"]["depends_on"]["shelfhold-migrate"]
-    assert depends["condition"] == "service_completed_successfully"
+@pytest.mark.req("ENF-OPS-002")
+def test_compose_is_one_service_that_migrates_at_start(compose: dict[str, Any]) -> None:
+    """One service: the image command is `serve --migrate`, and the compose does not override it."""
+    assert list(compose["services"]) == ["shelfhold"]
+    svc = compose["services"]["shelfhold"]
+    dockerfile = (ROOT / "docker" / "Dockerfile").read_text(encoding="utf-8")
+    assert 'CMD ["shelfhold", "serve", "--migrate"]' in dockerfile
+    assert svc.get("command", ["shelfhold", "serve", "--migrate"]) == [
+        "shelfhold", "serve", "--migrate",
+    ]  # fmt: skip
+    assert "depends_on" not in svc
+    assert svc["healthcheck"]["start_period"] == "10m"  # the migration budget
 
 
 @pytest.mark.req("ENF-OPS-012")
 def test_compose_has_distinct_data_and_store_volumes(compose: dict[str, Any]) -> None:
-    for name in ("shelfhold", "shelfhold-migrate"):
-        pairs = [v.split(":")[:2] for v in compose["services"][name]["volumes"]]
-        assert sorted(target for _, target in pairs) == ["/data", "/store"]
-        assert len({source for source, _ in pairs}) == 2
+    pairs = [v.split(":")[:2] for v in compose["services"]["shelfhold"]["volumes"]]
+    assert sorted(target for _, target in pairs) == ["/data", "/store"]
+    assert len({source for source, _ in pairs}) == 2
 
 
 @pytest.mark.req("ENF-OPS-002", "ENF-OPS-012")
 def test_simple_compose_follows_the_reference(compose: dict[str, Any]) -> None:
-    """compose.simple.yaml drops the hardening, never the order of start or the two volumes."""
+    """compose.simple.yaml drops the hardening, never the migration at start or the two volumes."""
     simple = load(ROOT / "compose.simple.yaml")
-    reference_image = compose["services"]["shelfhold"]["image"]
-    for name in ("shelfhold", "shelfhold-migrate"):
-        svc = simple["services"][name]
-        assert svc["image"] == reference_image
-        assert svc["user"] == "1000:1000"
-        pairs = [v.split(":")[:2] for v in svc["volumes"]]
-        assert sorted(target for _, target in pairs) == ["/data", "/store"]
-        assert len({source for source, _ in pairs}) == 2
-    assert simple["services"]["shelfhold-migrate"]["command"] == ["shelfhold", "migrate"]
-    depends = simple["services"]["shelfhold"]["depends_on"]["shelfhold-migrate"]
-    assert depends["condition"] == "service_completed_successfully"
+    reference = compose["services"]["shelfhold"]
+    assert list(simple["services"]) == ["shelfhold"]
+    svc = simple["services"]["shelfhold"]
+    assert svc["image"] == reference["image"]
+    assert svc["user"] == "1000:1000"
+    pairs = [v.split(":")[:2] for v in svc["volumes"]]
+    assert sorted(target for _, target in pairs) == ["/data", "/store"]
+    assert len({source for source, _ in pairs}) == 2
+    assert svc.get("command", reference.get("command")) == reference.get("command")  # image's
+    assert svc["healthcheck"]["start_period"] == reference["healthcheck"]["start_period"]
+    assert "depends_on" not in svc
 
 
 # --- Dockerfile ----------------------------------------------------------------------------

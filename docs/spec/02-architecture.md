@@ -1412,29 +1412,12 @@ Shelfhold est **toujours actif**, jamais placé derrière Sablier. Il **réveill
 ```yaml
 # compose.yaml — seul fichier présent sur le serveur (+ .env). Le compose Kavita existant n'est PAS modifié.
 services:
-  shelfhold-migrate:
+  shelfhold:
     image: ghcr.io/<org>/shelfhold:0.2           # tag X.Y épinglé (0.Y avant 1.0) ; l'outil GitOps applique les patchs
                                                  # second registre équivalent : <registre2>/<org>/shelfhold:0.2 (Q28)
-    command: ["shelfhold", "migrate"]           # sauvegarde pré-migration + Alembic ; refuse un schéma plus récent
-    user: "1000:1000"
-    read_only: true
-    environment: &env
-      TZ: Europe/Paris
-      SHELFHOLD_SECRET_KEY_FILE: /run/secrets/shelfhold_secret_key
-    secrets: [shelfhold_secret_key]
-    volumes: &vols
-      - /srv/shelfhold/data:/data                 # SSD conseillé, local (base, config, unit.json)
-      - /srv/media/shelfhold-store:/store         # copies conservées (copies indépendantes) ; HDD possible ; même FS que /library pour le reflink
-      - /srv/media/kavita:/library                # parent EXISTANT des médias Kavita (exemple)
-      # - /srv/media/suwayomi-downloads:/upstream/suwayomi:ro   # BASCULE SEULEMENT (passe 6, EF-EXP-060) : PathMap adopt_ro,
-      #                                                         # lu pour adopter et rapatrier, jamais écrit ; à retirer ensuite
-    restart: "no"
-
-  shelfhold:
-    image: ghcr.io/<org>/shelfhold:0.2
     container_name: shelfhold
-    depends_on:
-      shelfhold-migrate: { condition: service_completed_successfully }
+    # commande de l'image : `shelfhold serve --migrate` (sauvegarde pré-migration + Alembic, refuse un schéma plus récent,
+    # ne sert rien si la migration échoue) ; migrer à part : `docker compose run --rm shelfhold shelfhold migrate`
     user: "1000:1000"
     # group_add: ["<gid partagé avec Kavita>"]   # si nécessaire ; pas de chown
     init: true
@@ -1446,7 +1429,8 @@ services:
     pids_limit: 256
     stop_grace_period: 60s
     environment:
-      <<: *env
+      TZ: Europe/Paris
+      SHELFHOLD_SECRET_KEY_FILE: /run/secrets/shelfhold_secret_key
       SHELFHOLD_UMASK: "0002"
       SHELFHOLD_PATH_MAP: "/library/manga=/manga;/library/books=/books;/library/comics=/comics"
       # pendant la bascule seulement : …;/upstream/suwayomi=/suwayomi:adopt_ro   (EF-EXP-060)
@@ -1464,13 +1448,18 @@ services:
       # SHELFHOLD_PLUGIN_INDEX_URL / SHELFHOLD_UPDATE_CHECK_URL : configurables, vérificateur désactivé par défaut (ADR-0029)
       MALLOC_ARENA_MAX: "2"
     secrets: [shelfhold_secret_key]                 # + shelfhold_proxy_secret si forward-auth avec secret
-    volumes: *vols
+    volumes:
+      - /srv/shelfhold/data:/data                 # SSD conseillé, local (base, config, unit.json)
+      - /srv/media/shelfhold-store:/store         # copies conservées (copies indépendantes) ; HDD possible ; même FS que /library pour le reflink
+      - /srv/media/kavita:/library                # parent EXISTANT des médias Kavita (exemple)
+      # - /srv/media/suwayomi-downloads:/upstream/suwayomi:ro   # BASCULE SEULEMENT (passe 6, EF-EXP-060) : PathMap adopt_ro,
+      #                                                         # lu pour adopter et rapatrier, jamais écrit ; à retirer ensuite
     healthcheck:
       test: ["CMD", "shelfhold", "healthcheck"]   # appelle /readyz
       interval: 30s
       timeout: 5s
       retries: 3
-      start_period: 60s
+      start_period: 10m                           # budget de migration (ENF-OPS-002)
     logging: { driver: json-file, options: { max-size: "10m", max-file: "3" } }
     restart: unless-stopped
     networks: [shelfhold_ingress, media]

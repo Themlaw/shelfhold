@@ -5,6 +5,7 @@
   description = "Shelfhold: the workshop for your home's personal library."
   migrate_help = "Applies database migrations (previous backup, refusal of a more recent schema)."
   serve_help = "Starts the HTTP server."
+  serve_migrate_help = "Applies pending migrations first, as `migrate` does; serves nothing if one fails."
   config_help = "View the configuration."
   config_show_help = "Shows each field with its origin (env, toml, db, default)."
   config_get_help = "Displays the value of a configuration key."

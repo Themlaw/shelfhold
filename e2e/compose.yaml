@@ -2,7 +2,7 @@
 # leaves the network namespace (ENF-PRIV-001). An `internal: true` network would only make
 # attempts fail silently (ENETUNREACH, no packet), so the stack observes instead: the sidecar
 # owns the namespace, which also covers start-up. SHELFHOLD_IMAGE is set by the workflow (image of the run) or by the developer.
-# SHELFHOLD_APP_IMAGE, when set, is the image of the `shelfhold` and `shelfhold-migrate` services alone
+# SHELFHOLD_APP_IMAGE, when set, is the image of the `shelfhold` service alone
 # (the rollback journey runs the previous release on the volumes of this one); the simulated servers
 # stay on SHELFHOLD_IMAGE.
 name: shelfhold-e2e
@@ -22,7 +22,7 @@ services:
     cap_drop: [ALL]
     cap_add: [NET_RAW]
     security_opt: ["no-new-privileges:true"]
-    command: ["python", "/watch/egress_watch.py", "auto", "egress-watch", "shelfhold", "shelfhold-migrate"]
+    command: ["python", "/watch/egress_watch.py", "auto", "egress-watch", "shelfhold"]
     volumes:
       - ./fakes/egress_watch.py:/watch/egress_watch.py:ro
     networks: [isolated]
@@ -32,24 +32,12 @@ services:
       retries: 30
     tmpfs: ["/tmp"]
 
-  shelfhold-migrate:
-    <<: *hardened
-    image: ${SHELFHOLD_APP_IMAGE:-${SHELFHOLD_IMAGE:?}}
-    command: ["shelfhold", "migrate"]
-    restart: "no"
-    depends_on:
-      egress-watch: { condition: service_healthy }
-    volumes:
-      - data:/data
-      - store:/store
-    tmpfs: ["/tmp"]
-
   shelfhold:
     <<: *hardened
     image: ${SHELFHOLD_APP_IMAGE:-${SHELFHOLD_IMAGE:?}}
     init: true
     depends_on:
-      shelfhold-migrate: { condition: service_completed_successfully }
+      egress-watch: { condition: service_healthy }
     volumes:
       - data:/data
       - store:/store

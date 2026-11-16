@@ -85,4 +85,4 @@ EXPOSE 8080
 STOPSIGNAL SIGTERM
 HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
     CMD ["python", "/usr/local/bin/shelfhold-healthcheck"]
-CMD ["shelfhold", "serve"]
+CMD ["shelfhold", "serve", "--migrate"]
