@@ -41,6 +41,13 @@ from shelfhold.library.adapters.meta_projection import (
     work_rel,
 )
 from shelfhold.library.adapters.origin_opf import keep_origin_opf
+from shelfhold.library.adapters.page_formats import (
+    PAGE_DERIVED_BY,
+    LibraryPageNormalizer,
+    PageFormatCbzStore,
+    PageNormalizeSummary,
+    PageStoreNotConfiguredError,
+)
 from shelfhold.library.adapters.pdf_store import PdfStore
 from shelfhold.library.adapters.purge_inventory import (
     closed_request_ids,
@@ -326,6 +333,7 @@ __all__ = [
     "NOT_DOWNLOADED",
     "NO_KAVITA_COPY",
     "OPTION_OFF",
+    "PAGE_DERIVED_BY",
     "ROLES_UNVERIFIED",
     "SAFEGUARD_PENDING",
     "SERVICE_PAUSED",
@@ -377,12 +385,16 @@ __all__ = [
     "Irreplaceability",
     "KeepCopier",
     "Kept",
+    "LibraryPageNormalizer",
     "LinkPolicy",
     "MetaProjection",
     "NewerFormatError",
     "Normalizers",
     "OriginalNotServableError",
     "OwnExport",
+    "PageFormatCbzStore",
+    "PageNormalizeSummary",
+    "PageStoreNotConfiguredError",
     "PassthroughStore",
     "PdfStore",
     "Pending",

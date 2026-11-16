@@ -2,12 +2,17 @@
 
 from shelfhold.infrastructure.content_trust.active_content import find_active_content
 from shelfhold.infrastructure.content_trust.cbz_entries import (
+    KEEP_PAGE_KINDS,
     REASON_KINDS,
     UNTRUSTED_ENTRY_CODE,
     CbzListing,
     UntrustedEntryError,
     check_cbz_entries,
+    entry_extension,
+    is_image_extension,
+    page_extension,
     sniff_image_kind,
+    sniff_page_kind,
     sniff_svg,
 )
 from shelfhold.infrastructure.content_trust.epub_scan import (
@@ -34,6 +39,7 @@ __all__ = [
     "ALLOWED_HTML_TAGS",
     "DERIVED_BY",
     "DERIVED_HASH_BY",
+    "KEEP_PAGE_KINDS",
     "NEUTRALIZER_VERSION",
     "REASON_KINDS",
     "UNTRUSTED_ENTRY_CODE",
@@ -43,11 +49,15 @@ __all__ = [
     "NeutralizationError",
     "UntrustedEntryError",
     "check_cbz_entries",
+    "entry_extension",
     "epub_payload_hash",
     "find_active_content",
+    "is_image_extension",
     "neutralize",
     "neutralize_epub",
+    "page_extension",
     "sanitize_upstream_text",
     "sniff_image_kind",
+    "sniff_page_kind",
     "sniff_svg",
 ]

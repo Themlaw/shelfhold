@@ -29,7 +29,7 @@ class KavitaDestination:
         sidecars={"comicinfo"},
         path_scoped_scan=True,
         access_partitioning="library",
-        accepted_image_types={"jpeg", "png", "webp"},
+        accepted_image_types={"jpeg", "png", "webp", "gif"},  # pages and covers (EF-EXP-046)
         events="signalr",
         collections="api",
         progress="api",

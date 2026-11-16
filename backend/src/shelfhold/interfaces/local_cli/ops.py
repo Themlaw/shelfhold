@@ -500,6 +500,10 @@ def _import_scan(ops: OpsServices, _by: Principal, p: Params) -> object:
     )
 
 
+def _normalize_pages(ops: OpsServices, _by: Principal, p: Params) -> object:
+    return ops.page_formats.normalize(dry_run=_flag(p, "dry_run"))
+
+
 def _import_tree(ops: OpsServices, _by: Principal, p: Params) -> object:
     return ops.import_folder.tree(_text(p, "path"), dry_run=_flag(p, "dry_run"))
 
@@ -788,6 +792,7 @@ OPS_METHODS: Mapping[str, tuple[OpsMethod, str | None]] = {
     "ops.backfill_start": (_backfill_start, None),
     "ops.import_scan": (_import_scan, None),
     "ops.import_tree": (_import_tree, None),
+    "ops.normalize_pages": (_normalize_pages, None),
     "ops.follow": (_follow, None),
     "ops.unfollow": (_unfollow, None),
     "ops.follow_gap_ack": (_gap_ack, None),

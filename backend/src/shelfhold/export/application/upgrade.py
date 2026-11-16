@@ -118,6 +118,9 @@ class UpgradeRequest:
     job_id: str | None = None  # holds the locks of the Work and the series folder when given
     # The grant of `revisions.force`, for a version the guard quarantined: nothing else lifts it
     suspect_grant: Allowed | None = None
+    # EF-EXP-046: the content is the one served but its pages must leave in allowlisted formats
+    # (`library normalize-pages`): the file is rendered again and replaced only if it differs
+    rerender: bool = False
 
 
 @dataclass(frozen=True)
@@ -339,7 +342,11 @@ class SamePathUpgrade:
             source = upgrade_source(connection, served.unit_id, request.content_id)
             if source is None or source.local_path is None:
                 raise LookupError(f"no library copy of content {request.content_id}")
-            if source.content_hash is not None and source.content_hash == served.content_hash:
+            if (
+                not request.rerender
+                and source.content_hash is not None
+                and source.content_hash == served.content_hash
+            ):
                 return UpgradeResult(UpgradeOutcome.UP_TO_DATE)
             if (
                 _quarantined(connection, source.variant_id)

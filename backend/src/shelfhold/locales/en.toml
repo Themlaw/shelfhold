@@ -606,6 +606,18 @@
   import_tree_summary = "{stored, plural, one {# tidy} other {# stored}}, {skipped, plural, one {# ignored} other {# ignored}}, {refused, plural, one {# denied} other {# refused}}, {waiting} on hold."
   import_summary = "{stored, plural, one {# tidy} other {# stored}}, {refused, plural, one {# denied} other {# refused}}, {waiting} on hold."
   backfill_choose_mode = "Choose --gaps or --all."
+  help_library = "Library upkeep."
+  help_library_normalize_pages = "Bring the pages of archives already filed to JPEG, PNG, GIF or WebP: the original is kept in /store, the library takes the normalized version. Resumable after an interruption."
+  help_pages_dry_run = "List the chapters concerned without rewriting anything."
+  pages_pending = "To normalize: {unit}"
+  pages_normalized = "Normalized: {unit}"
+  pages_kept = "Left as it is: {unit} ({codes})"
+  pages_failed = "Failed: {unit} ({code})"
+  pages_summary = "{normalized, plural, one {# chapter normalized} other {# chapters normalized}}, {kept, plural, one {# left as it is} other {# left as they are}}, {failed, plural, one {# failure} other {# failures}}."
+  pages_destination_pending = "Destination file to rewrite: {item}"
+  pages_destination_rewritten = "Destination file rewritten: {item}"
+  pages_destination_left = "Destination file left as it is: {item} ({outcome})"
+  pages_nothing = "Nothing to normalize: every page is already JPEG, PNG, GIF or WebP."
   backfill_confirm_pair = "--confirm-units and --confirm-bytes go together."
   help_follow_series = "Follows a series of the service connected from Shelfhold: a single entry in its library, category “Shelfhold”, without automatic download."
   help_unfollow_series = "No longer follows a series: it remains in the connected service, except with --remove-upstream and --confirm."
@@ -2267,6 +2279,51 @@
     title = "No import folder is configured."
     action = "Set SHELFHOLD_IMPORT_DIR (a folder separate from /library, /store and /data), then relaunch."
     cause = "The Import Folder setting is missing or points to a location reserved for Shelfhold."
+
+  [errors."page.empty"]
+    title = "A page of the archive is empty."
+    action = "Fetch this chapter again from its source; the archive is kept as it is."
+    cause = "A page of the archive is 0 bytes: it cannot be converted, and the archive is never rewritten halfway."
+
+  [errors."page.undecodable"]
+    title = "A page of the archive cannot be decoded."
+    action = "Fetch this chapter again from its source; the archive is kept as it is."
+    cause = "The content of a page is truncated or corrupt: the isolated decoder refused it, and the archive is never rewritten halfway."
+
+  [errors."page.too_large"]
+    title = "A page of the archive exceeds the size caps."
+    action = "The archive is kept as it is; the caps per kind are in the configuration reference."
+    cause = "A page exceeds the size in bytes or pixels that Shelfhold agrees to decode."
+
+  [errors."page.format_unsupported"]
+    title = "The format of a page of the archive has no decoder."
+    action = "The archive is kept as it is; convert these pages to JPEG, PNG or WebP before importing them."
+    cause = "JPEG XL and HEIC pages are not decoded: no dependency is shipped for these formats (ADR-0054)."
+
+  [errors."pages.store_not_configured"]
+    title = "Page normalization needs /store."
+    action = "Mount /store (SHELFHOLD_STORE_DIR) so the original is kept before anything is rewritten, then run it again."
+    cause = "Without /store, rewriting a library file would lose the original: it is never done in place."
+
+  [errors."pages.work_busy"]
+    title = "This work is busy with another task."
+    action = "Run the command again: it resumes where it stopped."
+    cause = "Another task holds the work (a deletion, an export): the archive will be normalized on the next pass."
+
+  [errors."pages.not_kept"]
+    title = "The original could not be kept in /store."
+    action = "Check the space and the state of /store, then run the command again: it resumes where it stopped."
+    cause = "The copy of the original into /store failed or no longer matches the library file; nothing was rewritten."
+
+  [errors."pages.worker_failed"]
+    title = "The image decoder failed during the normalization."
+    action = "Check the logs, then run the command again."
+    cause = "The isolated decoding process stopped (memory, time): the archive is not at fault."
+
+  [errors."pages.unreadable"]
+    title = "The archive could not be read for the normalization."
+    action = "Check the integrity of the library (shelfhold status), then run the command again."
+    cause = "The file is missing, unreadable or not a valid archive: the normalization leaves it as it is."
 
   [errors.session_not_found]
     title = "This session does not exist or is already closed."

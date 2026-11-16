@@ -30,6 +30,8 @@ Version du schéma de `config.toml` : `1.0`. Précédence : variable d'environne
 | `SHELFHOLD_METRICS_ENABLED` | `metrics_enabled` | bool | `false` |  | `SHELFHOLD_METRICS_ENABLED_FILE` en lit la valeur dans un fichier |
 | `SHELFHOLD_FRESH_AUTH_S` | `fresh_auth_s` | int | `900` | >= 60, <= 86400 | `SHELFHOLD_FRESH_AUTH_S_FILE` en lit la valeur dans un fichier |
 | `SHELFHOLD_REVISION_MIN_PAGE_RATIO` | `revision_min_page_ratio` | float | `0.5` | >= 0.05, <= 1.0 | `SHELFHOLD_REVISION_MIN_PAGE_RATIO_FILE` en lit la valeur dans un fichier |
+| `SHELFHOLD_PAGE_TARGET_FORMAT` | `page_target_format` | 'jpeg' \| 'png' \| 'webp' | `jpeg` |  | `SHELFHOLD_PAGE_TARGET_FORMAT_FILE` en lit la valeur dans un fichier |
+| `SHELFHOLD_PAGE_TARGET_QUALITY` | `page_target_quality` | int | `90` | >= 1, <= 100 | `SHELFHOLD_PAGE_TARGET_QUALITY_FILE` en lit la valeur dans un fichier |
 | `SHELFHOLD_FOLLOW_FALLBACK_RETURN` | `follow_fallback_return` | bool | `true` |  | `SHELFHOLD_FOLLOW_FALLBACK_RETURN_FILE` en lit la valeur dans un fichier |
 | `SHELFHOLD_FOLLOW_CHECK_MIN_S` | `follow_check_min_s` | int | `3600` | >= 60 | `SHELFHOLD_FOLLOW_CHECK_MIN_S_FILE` en lit la valeur dans un fichier |
 | `SHELFHOLD_FOLLOW_CHECK_MAX_S` | `follow_check_max_s` | int | `604800` | >= 60 | `SHELFHOLD_FOLLOW_CHECK_MAX_S_FILE` en lit la valeur dans un fichier |

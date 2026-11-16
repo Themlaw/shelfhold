@@ -28,6 +28,7 @@ et ne change rien à l'installation (voir [vérifier les images](verifier-les-im
 | Supprimer, restaurer, fusionner ou relier une Œuvre ou une Édition sans écran | [sans-ecran.md](sans-ecran.md) |
 | Récupérer de l'espace : vider la corbeille, purge anticipée, ajout refusé, lever une pierre tombale | [corbeille.md](corbeille.md) |
 | Garder une copie dans `/store`, « Mettre à l'abri », purge chez Suwayomi, l'index de `/store` | [copie-conservee.md](copie-conservee.md) |
+| Pages d'image en AVIF, BMP, TIFF… : normalisation, `library normalize-pages` | [normaliser-les-pages.md](normaliser-les-pages.md) |
 | Importer vos propres fichiers, fichiers protégés et audio refusés, tatouage | [dossier-import.md](dossier-import.md) |
 | Comprendre la pause « disque presque plein » | [garde-disque.md](garde-disque.md) |
 | Mettre à jour ou recréer le conteneur | [redeploiement.md](redeploiement.md) |

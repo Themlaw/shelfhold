@@ -83,6 +83,54 @@ def sniff_image_kind(head: bytes) -> str | None:
     return None
 
 
+# Page formats every reader takes: JPEG, PNG, GIF and WebP (EF-EXP-046, ADR-0054). Anything else is
+# re-encoded, never trusted to a reader.
+KEEP_PAGE_KINDS: Final = frozenset({"jpeg", "png", "gif", "webp"})
+PAGE_EXTENSIONS: Final = {"jpeg": "jpg", "png": "png", "gif": "gif", "webp": "webp"}
+_KIND_EXTENSIONS: Final = {
+    "jpeg": frozenset({"jpg", "jpeg"}), "png": frozenset({"png"}), "gif": frozenset({"gif"}),
+    "webp": frozenset({"webp"}),
+}  # fmt: skip
+_IMAGE_EXTENSIONS: Final = frozenset(_EXTENSION_KIND) | frozenset(
+    {"bmp", "tif", "tiff", "heic", "heif", "jp2", "j2k", "jpx"}
+)
+_HEIF_BRANDS: Final = (b"heic", b"heix", b"hevc", b"hevx", b"heim", b"heis", b"mif1", b"msf1")
+
+
+def sniff_page_kind(head: bytes) -> str | None:
+    """The image kind the leading bytes announce, whether or not it is allowlisted: `jpeg`,
+    `png`, `gif`, `webp`, `avif`, `jxl`, `bmp`, `tiff`, `heic` or `jp2`; None for anything else
+    (and for an empty page). The extension plays no part."""
+    kind = sniff_image_kind(head)
+    if kind is not None:
+        return kind
+    if head.startswith(b"BM") and len(head) >= 14:
+        return "bmp"
+    if head.startswith((b"II*\x00", b"MM\x00*")):
+        return "tiff"
+    if head[4:8] == b"ftyp" and head[8:12] in _HEIF_BRANDS:
+        return "heic"
+    if head.startswith((b"\x00\x00\x00\x0cjP  \r\n\x87\n", b"\xff\x4f\xff\x51")):
+        return "jp2"
+    return None
+
+
+def page_extension(kind: str, current: str) -> str:
+    """The extension a page of `kind` keeps (`current` if it already says so), else the usual."""
+    known = _KIND_EXTENSIONS.get(kind)
+    if known is None:  # a kind a policy keeps although it is off the allowlist: its name stays
+        return current
+    return current if current.lower() in known else PAGE_EXTENSIONS[kind]
+
+
+def is_image_extension(extension: str) -> bool:
+    return extension.lower() in _IMAGE_EXTENSIONS
+
+
+def entry_extension(name: str) -> str:
+    return _extension(name)
+
+
 def sniff_svg(head: bytes) -> bool:
     """Do the leading bytes open like an SVG document (not HTML, not a binary)? The worker's audit
     is the real judge; this only keeps an extension honest."""
@@ -95,8 +143,15 @@ def _extension(name: str) -> str:
     return base.rsplit(".", 1)[-1].lower() if "." in base else ""
 
 
-def check_cbz_entries(archive: SafeArchive, *, allow_svg: bool = False) -> CbzListing:
-    """Refuse the archive on the first entry off the allowlist; otherwise list pages in order."""
+def check_cbz_entries(
+    archive: SafeArchive, *, allow_svg: bool = False, allow_convertible: bool = False
+) -> CbzListing:
+    """Refuse the archive on the first entry off the allowlist; otherwise list pages in order.
+
+    `allow_convertible` (M4 L53) lets in a page of any raster format the decode worker can
+    re-encode (BMP, TIFF, HEIC, JPEG 2000 on top of AVIF and JPEG XL), whatever its extension says:
+    the magic bytes decide the kind. It is the door of an archive whose derivative the caller
+    declares at once; an archive taken in this way is never served as it is."""
     images: list[str] = []
     svgs: list[str] = []
     pages: list[str] = []
@@ -115,6 +170,12 @@ def check_cbz_entries(archive: SafeArchive, *, allow_svg: bool = False) -> CbzLi
             if not sniff_svg(archive.read_head(name, _HEAD_BYTES)):
                 raise UntrustedEntryError("magic_mismatch", name)
             svgs.append(name)
+            pages.append(name)
+            continue
+        if allow_convertible and is_image_extension(_extension(name)):
+            if sniff_page_kind(archive.read_head(name, _HEAD_BYTES)) is None:
+                raise UntrustedEntryError("magic_mismatch", name)
+            images.append(name)
             pages.append(name)
             continue
         expected = _EXTENSION_KIND.get(_extension(name))

@@ -185,17 +185,24 @@ class PassthroughStore:
         expected_sha256: str | None = None,
         upstream_ref: str | None = None,
         allow_svg_pages: bool = False,
+        allow_convertible_pages: bool = False,
     ) -> Ingested:
         """File `staged` at the local path `dest` in /library. Raises, having changed nothing,
         for a file too large, off the allowlist, not what was announced, or already there.
 
         `allow_svg_pages` (M2 L10) lets an archive with `.svg` pages in: it is the original of a
         derivative the caller must now declare (`rasterize_svg_pages`). Until then the file is
-        refused by every export and serve path, which apply the allowlist with no such opt-in."""
+        refused by every export and serve path, which apply the allowlist with no such opt-in.
+
+        `allow_convertible_pages` (M4 L53) is the same door for pages in a format the decode worker
+        re-encodes (BMP, TIFF, HEIC, JPEG 2000...): the received file is the original, its
+        normalized derivative is declared right after."""
         if staged.stat().st_size > self._max:
             raise ReceivedTooLargeError(f"{staged.stat().st_size} bytes, above {self._max}")
         with safe_open_archive(staged, name=PurePath(dest).name, limits=self._limits) as archive:
-            listing = check_cbz_entries(archive, allow_svg=allow_svg_pages)
+            listing = check_cbz_entries(
+                archive, allow_svg=allow_svg_pages, allow_convertible=allow_convertible_pages
+            )
             payload_hash = content_hash(archive)
             origin_xml = (
                 archive.read(listing.comicinfo, max_bytes=COMICINFO_MAX_BYTES)
@@ -564,12 +571,21 @@ class KeepCopier:
             (c for c in copies if self._fsops.sha256_of(c.local) == content.original_sha256), None
         )
         if target is None:
-            raise SafeguardFailedError("library_differs_from_original")
-        with derived.open("rb") as stream:
-            written = self._fsops.write_atomic(
-                target.local, stream, replace=True,
-                verify_digest=lambda: derived_hash.removeprefix("sha256:"),
-            )  # fmt: skip
+            # a rewrite cut off after its rename (kill -9): the library file already is the
+            # derivative and the original is kept, only the bookkeeping is missing
+            target = next(
+                (c for c in copies if self._fsops.sha256_of(c.local) == derived_hash), None
+            )
+            seen = None if target is None else self._fsops.observe(target.local)
+            if target is None or seen is None:
+                raise SafeguardFailedError("library_differs_from_original")
+            written = seen[1]
+        else:
+            with derived.open("rb") as stream:
+                written = self._fsops.write_atomic(
+                    target.local, stream, replace=True,
+                    verify_digest=lambda: derived_hash.removeprefix("sha256:"),
+                )  # fmt: skip
         with write_transaction(self._engine) as connection:
             record_library_rewrite(
                 connection, target.replica_id, file_hash=derived_hash,

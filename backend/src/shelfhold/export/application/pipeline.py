@@ -1044,7 +1044,7 @@ class ExportPipeline:
             return True
         with self._engine.connect() as connection:
             xml = comicinfo_xml(connection, planned.unit_id, series_name)
-        rendered = self._renderer.render(str(source.local_path), xml)
+        rendered = self._renderer.render(str(source.local_path), xml, target_id=ctx.target_id)
         try:
             if rendered.content_hash != planned.content_hash:
                 raise SourceMissingError(f"{planned.unit_id}: the archive changed since the plan")

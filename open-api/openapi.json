@@ -25447,6 +25447,42 @@
       "code": "ops.unknown_subject",
       "status": 404
     },
+    "/api/v1/problems/page.empty": {
+      "code": "page.empty",
+      "status": 422
+    },
+    "/api/v1/problems/page.format-unsupported": {
+      "code": "page.format_unsupported",
+      "status": 422
+    },
+    "/api/v1/problems/page.too-large": {
+      "code": "page.too_large",
+      "status": 422
+    },
+    "/api/v1/problems/page.undecodable": {
+      "code": "page.undecodable",
+      "status": 422
+    },
+    "/api/v1/problems/pages.not-kept": {
+      "code": "pages.not_kept",
+      "status": 409
+    },
+    "/api/v1/problems/pages.store-not-configured": {
+      "code": "pages.store_not_configured",
+      "status": 409
+    },
+    "/api/v1/problems/pages.unreadable": {
+      "code": "pages.unreadable",
+      "status": 422
+    },
+    "/api/v1/problems/pages.work-busy": {
+      "code": "pages.work_busy",
+      "status": 409
+    },
+    "/api/v1/problems/pages.worker-failed": {
+      "code": "pages.worker_failed",
+      "status": 500
+    },
     "/api/v1/problems/pairing.already-paired": {
       "code": "pairing.already_paired",
       "status": 409

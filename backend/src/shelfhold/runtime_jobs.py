@@ -102,6 +102,7 @@ from shelfhold.export.application.rename_plan import (
     RenamePreview,
     RenameRefusedError,
 )
+from shelfhold.export.application.rendering import cbz_renderer
 from shelfhold.export.application.restore import RestoredBehindError
 from shelfhold.export.application.snapshot import load_context
 from shelfhold.export.application.upgrade import SamePathUpgrade
@@ -143,6 +144,7 @@ from shelfhold.infrastructure.fsops import Fsops
 from shelfhold.infrastructure.fsops.errors import RootBlockedError
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.observability.wiring import daily_access_audit
+from shelfhold.infrastructure.packaging.cbz import PageTarget
 from shelfhold.infrastructure.schema import coherence, export
 from shelfhold.infrastructure.secrets.keyring import Keyring
 from shelfhold.infrastructure.wake import WakeDeferred
@@ -154,6 +156,7 @@ from shelfhold.jobs.public import JobContext, JobFailedError, JobPools
 from shelfhold.jobs.thumbnail_gc import register_thumbnail_jobs
 from shelfhold.library.public import (
     KeepCopier,
+    PageFormatCbzStore,
     PassthroughStore,
     RangedKeeper,
     SvgCbzStore,
@@ -272,6 +275,13 @@ class _LazyUpgrader:
         upgrade = SamePathUpgrade(
             self._comp.engine, w.fsops, locate=w.loaded.locate,
             data_dir=self._comp.settings.data_dir, clock=self._comp.clock, bus=w.bus,
+            renderer=cbz_renderer(
+                w.fsops, staging_dir=self._comp.settings.data_dir / "tmp",
+                target=PageTarget(
+                    self._comp.settings.page_target_format, self._comp.settings.page_target_quality
+                ),
+                capabilities=FirstPartyDestinations(self._comp.engine).capabilities,
+            ),
         )  # fmt: skip
         return [r.outcome.value for r in upgrade.upgrade_unit(unit_id, content_id)]
 
@@ -342,9 +352,16 @@ class _LazyStore:
         )  # fmt: skip
         # EF-BIB-051 (6): an untrusted CBZ with SVG pages is drawn to PNG and declared a derivative,
         # the original and the derivative filed under one hold of the Work
-        return SvgCbzStore(
-            store, keeper, self._comp.settings.data_dir, self._comp.engine,
-            work_holder(self._comp),
+        hold = work_holder(self._comp)
+        svg = SvgCbzStore(store, keeper, self._comp.settings.data_dir, self._comp.engine, hold)
+        # EF-EXP-046 (ADR-0054): pages in other formats are normalized, the original kept in /store
+        store_dir = str(self._comp.settings.store_dir)
+        return PageFormatCbzStore(
+            svg, store, keeper, self._comp.settings.data_dir, self._comp.engine, hold,
+            target=PageTarget(
+                self._comp.settings.page_target_format, self._comp.settings.page_target_quality
+            ),
+            keeps_originals=any(e.path == store_dir for e in w.loaded.expected),
         ).ingest(**arguments)  # fmt: skip
 
 
@@ -502,9 +519,15 @@ def build_pipeline(
 ) -> tuple[ExportPipeline, Reconciler, Any]:
     fsops, loaded, _tombstones = comp.read_context()
     reconciler = Reconciler(comp.engine, fsops, clock=comp.clock, bus=comp.bus)
+    renderer = cbz_renderer(
+        fsops,
+        staging_dir=comp.settings.data_dir / "tmp",
+        target=PageTarget(comp.settings.page_target_format, comp.settings.page_target_quality),
+        capabilities=FirstPartyDestinations(comp.engine).capabilities,
+    )  # EF-EXP-046: what each destination takes, by its `accepted_image_types`
     pipeline = ExportPipeline(
         comp.engine, fsops, locate=loaded.locate, data_dir=comp.settings.data_dir,
-        clock=comp.clock, parse=_unchecked, parse_verified=False,
+        clock=comp.clock, parse=_unchecked, parse_verified=False, renderer=renderer,
         segment_policy_confirmed=comp.settings.naming_segment_policy_confirmed,
         sessions=comp.session_opener(fsops, loaded), request_scan=scans,
         detector=lambda destination_id: reconciler.reconcile(destination_id),  # EF-EXP-043
