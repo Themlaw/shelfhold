@@ -150,7 +150,18 @@ def build_ops_dashboard_router(
     ) -> HistoryOut:
         page = activity_history(get_engine(), admin, limit=limit, before=before)
         return HistoryOut(
-            items=[HistoryEntryOut(**vars(entry)) for entry in page.items],
+            items=[
+                HistoryEntryOut(
+                    event_id=e.event_id,
+                    type=e.type,
+                    visibility=e.visibility,
+                    occurred_at=e.occurred_at,
+                    title=e.title,
+                    title_masked=e.title_masked,
+                    payload=e.payload,
+                )
+                for e in page.items
+            ],
             next_before=page.next_before,
         )
 
@@ -190,7 +201,16 @@ def build_ops_dashboard_router(
     ) -> StorageOut:
         board = storage_dashboard(get_engine(), today=now().date(), days=days)
         return StorageOut(
-            shelves=[ShelfOut(**vars(s)) for s in board.shelves],
+            shelves=[
+                ShelfOut(
+                    shelf_id=s.shelf_id,
+                    name=s.name,
+                    bytes=s.bytes,
+                    copies=s.copies,
+                    by_location=s.by_location,
+                )
+                for s in board.shelves
+            ],
             traffic=TrafficOut(
                 days=board.days,
                 sources=[
@@ -198,7 +218,10 @@ def build_ops_dashboard_router(
                         source_key=t.source_key,
                         requests=t.requests,
                         bytes_in=t.bytes_in,
-                        by_day=[TrafficDayOut(**vars(d)) for d in t.by_day],
+                        by_day=[
+                            TrafficDayOut(day=d.day, requests=d.requests, bytes_in=d.bytes_in)
+                            for d in t.by_day
+                        ],
                     )
                     for t in board.sources
                 ],
