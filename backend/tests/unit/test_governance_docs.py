@@ -72,8 +72,8 @@ def test_portes_md_has_p0_p3_stop_and_handover_rules() -> None:
 @pytest.mark.req("ENF-DOC-001")
 def test_readme_shows_project_status() -> None:
     first_line = _read("README.md").splitlines()[0]
-    assert first_line.startswith("**Statut du projet")
-    assert "pré-alpha" in first_line
+    assert first_line.startswith("**Project status:")
+    assert re.search(r"pre-release|pre-alpha|alpha|beta|stable", first_line)
 
 
 @pytest.mark.req("ENF-GOV-001")

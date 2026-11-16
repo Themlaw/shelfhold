@@ -1,4 +1,5 @@
-# Shelfhold reference compose (= homelab example, docs/spec/04-structure-repo.md section 5).
+# Shelfhold reference compose, hardened (= homelab example, docs/spec/04-structure-repo.md section 5).
+# A shorter, unhardened variant for a first try: compose.simple.yaml.
 # The image is defined here and in env.IMAGE of the workflows, nowhere else.
 # Pinned on X.Y (patch releases only, never a migration): `1.0` follows the 1.0.x releases.
 # `edge` is the development image: do not use it for a library you care about.
@@ -26,6 +27,12 @@ x-shelfhold: &shelfhold
     # `docker compose exec shelfhold shelfhold admin create` is the way (docs/configuration.md).
     # SHELFHOLD_SETUP_TOKEN: "<the-24-or-more-characters-you-generated>"
     # SHELFHOLD_IMPORT_DIR: /import   # with the ./import volume below; unset = import off
+    # Behind an HTTPS reverse proxy (required for e-reader tokens): the public address, so that
+    # cookies get `Secure` and the `__Host-` prefix (docs/admin/durcir.md).
+    # SHELFHOLD_PUBLIC_URL: "https://shelfhold.example.org"
+    # Hardened authentication profile: short admin sessions, password asked again for every
+    # reserved action, API keys expire within 90 days (docs/admin/durcir.md).
+    # SHELFHOLD_AUTH_HARDENED: "true"
   volumes:
     - ./data:/data     # database, config, thumbnails (local disk, SSD advised, not NFS)
     - ./store:/store   # kept copies only; a separate volume from /data (ENF-OPS-012).

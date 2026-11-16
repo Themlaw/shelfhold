@@ -80,6 +80,23 @@ def test_compose_has_distinct_data_and_store_volumes(compose: dict[str, Any]) ->
         assert len({source for source, _ in pairs}) == 2
 
 
+@pytest.mark.req("ENF-OPS-002", "ENF-OPS-012")
+def test_simple_compose_follows_the_reference(compose: dict[str, Any]) -> None:
+    """compose.simple.yaml drops the hardening, never the order of start or the two volumes."""
+    simple = load(ROOT / "compose.simple.yaml")
+    reference_image = compose["services"]["shelfhold"]["image"]
+    for name in ("shelfhold", "shelfhold-migrate"):
+        svc = simple["services"][name]
+        assert svc["image"] == reference_image
+        assert svc["user"] == "1000:1000"
+        pairs = [v.split(":")[:2] for v in svc["volumes"]]
+        assert sorted(target for _, target in pairs) == ["/data", "/store"]
+        assert len({source for source, _ in pairs}) == 2
+    assert simple["services"]["shelfhold-migrate"]["command"] == ["shelfhold", "migrate"]
+    depends = simple["services"]["shelfhold"]["depends_on"]["shelfhold-migrate"]
+    assert depends["condition"] == "service_completed_successfully"
+
+
 # --- Dockerfile ----------------------------------------------------------------------------
 
 
