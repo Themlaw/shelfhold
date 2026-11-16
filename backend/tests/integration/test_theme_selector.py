@@ -61,11 +61,11 @@ def _theme_of(api: AuthEnv, username: str) -> object:
 @pytest.mark.req("EF-UX-012")
 def test_console_is_delivered_and_a_stays_the_default(api: AuthEnv) -> None:
     assert DEFAULT_THEME == "bibliotheque"
-    assert DELIVERED_THEMES == ("bibliotheque", "console")
+    assert DELIVERED_THEMES == ("bibliotheque", "console", "galerie")
     assert api.login().status_code == 200
     first = api.client.get(PREFERENCES).json()
     assert (first["theme"], first["chosen_theme"]) == ("bibliotheque", None)
-    assert first["available_themes"] == ["bibliotheque", "console"]
+    assert first["available_themes"] == ["bibliotheque", "console", "galerie"]
     assert _patch(api, api.client, {"theme": "console", "color_scheme": "dark"}) == 200
     again = api.client.get(PREFERENCES).json()
     assert (again["theme"], again["chosen_theme"], again["color_scheme"]) == (
@@ -135,7 +135,7 @@ def test_a_theme_that_is_no_longer_delivered_falls_back(api: AuthEnv) -> None:
     assert api.login().status_code == 200
     connection = sqlite3.connect(api.settings.database_path)
     try:
-        connection.execute("UPDATE user SET theme = 'galerie' WHERE username = 'admin'")
+        connection.execute("UPDATE user SET theme = 'calme' WHERE username = 'admin'")
         connection.commit()
     finally:
         connection.close()

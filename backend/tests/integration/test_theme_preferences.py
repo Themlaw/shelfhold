@@ -88,8 +88,7 @@ def test_theme_null_falls_back_to_the_instance_default(api: AuthEnv) -> None:
 @pytest.mark.parametrize(
     "body",
     [
-        {"theme": "galerie"},  # C and D arrive after B (M4)
-        {"theme": "calme"},
+        {"theme": "calme"},  # D arrives after C (M4)
         {"theme": "Console"},  # the names are exact
         {"theme": ""},
         {"theme": "nope"},

@@ -33,7 +33,7 @@ describe('theme mechanism', () => {
 
   // req: EF-UX-012
   it('ships themes A and B, A being the default', () => {
-    expect(THEMES).toEqual(['bibliotheque', 'console']);
+    expect(THEMES).toEqual(['bibliotheque', 'console', 'galerie']);
     expect(DEFAULT_THEME).toBe('bibliotheque');
     expect(COLOR_SCHEMES).toEqual(['auto', 'light', 'dark']);
     const dirs = readdirSync(join(here), { withFileTypes: true }).filter((e) => e.isDirectory());
@@ -60,7 +60,7 @@ describe('theme mechanism', () => {
   // req: EF-UX-012, ENF-SEC-004
   it.each([
     '{"theme":"<script>alert(1)</script>","colorScheme":"dark"}',
-    '{"theme":"galerie","colorScheme":"neon"}',
+    '{"theme":"calme","colorScheme":"neon"}',
     '{"theme":"bibliotheque\\" onload=\\"x","colorScheme":"dark\\"]{}"}',
     '{"theme":{"toString":1},"colorScheme":["dark"]}',
     '{"theme":"__proto__","colorScheme":"constructor"}',
@@ -95,7 +95,7 @@ describe('theme mechanism', () => {
   it('the markup default and the boot script agree with the list of themes', () => {
     expect(appHtml).toMatch(new RegExp(`<html[^>]*data-theme="${DEFAULT_THEME}"`));
     for (const theme of THEMES) expect(bootScript(appHtml)).toContain(`'${theme}'`);
-    expect(bootScript(appHtml)).not.toMatch(/galerie|calme/);
+    expect(bootScript(appHtml)).not.toMatch(/calme/);
   });
 
   // req: EF-UX-012
