@@ -63,14 +63,16 @@ def test_compose_runtime_service_is_hardened(compose: dict[str, Any]) -> None:
 
 @pytest.mark.req("ENF-OPS-002")
 def test_compose_is_one_service_that_migrates_at_start(compose: dict[str, Any]) -> None:
-    """One service: the image command is `serve --migrate`, and the compose does not override it."""
+    """One service that migrates, then serves: the image's `serve --migrate`, or, for the 1.0 images
+    the compose still pins, the same two steps written out (`migrate && exec serve`)."""
     assert list(compose["services"]) == ["shelfhold"]
     svc = compose["services"]["shelfhold"]
     dockerfile = (ROOT / "docker" / "Dockerfile").read_text(encoding="utf-8")
     assert 'CMD ["shelfhold", "serve", "--migrate"]' in dockerfile
-    assert svc.get("command", ["shelfhold", "serve", "--migrate"]) == [
-        "shelfhold", "serve", "--migrate",
-    ]  # fmt: skip
+    assert svc.get("command", ["shelfhold", "serve", "--migrate"]) in (
+        ["shelfhold", "serve", "--migrate"],
+        ["sh", "-c", "shelfhold migrate && exec shelfhold serve"],
+    )
     assert "depends_on" not in svc
     assert svc["healthcheck"]["start_period"] == "10m"  # the migration budget
 

@@ -14,8 +14,10 @@ services:
   shelfhold:
     image: ghcr.io/themlaw/shelfhold:1.0
     container_name: shelfhold
-    # The image starts `shelfhold serve --migrate`: pending migrations first (backup named by
-    # revision, ENF-OPS-002), then the server. A failed migration exits non-zero and serves nothing.
+    # Migrations first (backup named by revision, ENF-OPS-002), then the server; a failed migration
+    # exits non-zero and serves nothing. Written out because the 1.0 images predate the image's own
+    # `serve --migrate` default (from 1.1 on, this line can go).
+    command: ["sh", "-c", "shelfhold migrate && exec shelfhold serve"]
     # To migrate separately before an update: docker compose run --rm shelfhold shelfhold migrate
     user: "1000:1000"
     read_only: true
