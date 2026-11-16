@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="robots" content="noindex" />
-    <script>(function(){try{var d=document.documentElement,a=JSON.parse(localStorage.getItem('shelfhold.appearance')||'null');if(a&&['bibliotheque','console'].indexOf(a.theme)>=0)d.dataset.theme=a.theme;if(a&&(a.colorScheme==='light'||a.colorScheme==='dark'))d.dataset.colorScheme=a.colorScheme}catch(e){}})();</script>
+    <script>(function(){try{var d=document.documentElement,a=JSON.parse(localStorage.getItem('shelfhold.appearance')||'null');if(a&&a.theme==='bibliotheque')d.dataset.theme='bibliotheque';if(a&&(a.colorScheme==='light'||a.colorScheme==='dark'))d.dataset.colorScheme=a.colorScheme}catch(e){}})();</script>
     %sveltekit.head%
   </head>
   <body>

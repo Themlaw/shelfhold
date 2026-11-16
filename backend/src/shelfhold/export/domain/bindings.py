@@ -133,10 +133,13 @@ def check_family_cap(name: str, max_age_rating: int | None) -> None:
 
 def effective_partitioning(kind: str, stored: str, *, attested: bool) -> str:
     """How a destination keeps accounts apart. Kavita does it by library (it is the adapter that
-    knows); the value a third-party plugin declares is a default proposal and counts only once
-    the admin attested it (K9, GAP-10-08); an unattested one is `none`."""
+    knows). Komga does too, but nothing audits the libraries each account reaches yet, so it
+    counts for nothing until L08b. The value a third-party plugin declares is a default proposal
+    and counts only once the admin attested it (K9, GAP-10-08); an unattested one is `none`."""
     if kind == "kavita":
         return "library"
+    if kind == "komga":
+        return "none"  # no audit of the accounts of Komga before M4 L08b: no shelf below 18+
     return stored if attested else "none"
 
 

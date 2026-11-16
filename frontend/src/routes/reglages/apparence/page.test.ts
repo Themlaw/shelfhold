@@ -11,12 +11,8 @@ vi.mock('$app/navigation', () => ({ invalidateAll }));
 
 const BASE = 'http://shelfhold.test';
 const server = setupServer();
-const prefs = (scheme: string, language: string = 'fr', theme: string = 'bibliotheque') => ({
-  theme,
-  chosen_theme: theme === 'bibliotheque' ? null : theme,
-  available_themes: ['bibliotheque', 'console'],
-  color_scheme: scheme,
-  language
+const prefs = (scheme: string, language: string = 'fr') => ({
+  theme: 'bibliotheque', chosen_theme: null, color_scheme: scheme, language
 });
 
 beforeAll(() => {
@@ -64,46 +60,5 @@ describe('Appearance screen', () => {
     await userEvent.setup().selectOptions(await screen.findByLabelText("Langue de l'interface"), 'English');
     expect(patched).toEqual({ language: 'en' });
     expect(invalidateAll).toHaveBeenCalledOnce(); // the layout reads the preference again
-  });
-
-  // req: EF-UX-012
-  it('offers the themes the server delivers, named in the language of the interface', async () => {
-    server.use(http.get(`${BASE}/api/v1/me/preferences`, () => HttpResponse.json(prefs('auto'))));
-    render(Page);
-    const select = await screen.findByLabelText('Thème');
-    const names = Array.from((select as HTMLSelectElement).options).map((o) => o.textContent);
-    expect(names).toEqual(['Bibliothèque', 'Console']);
-    expect((select as HTMLSelectElement).value).toBe('bibliotheque');
-  });
-
-  // req: EF-UX-012
-  it('saves the theme at once, then has the root layout apply it', async () => {
-    let patched: unknown = null;
-    server.use(
-      http.get(`${BASE}/api/v1/me/preferences`, () => HttpResponse.json(prefs('auto'))),
-      http.patch(`${BASE}/api/v1/me/preferences`, async ({ request }) => {
-        patched = await request.json();
-        return HttpResponse.json(prefs('auto', 'fr', 'console'));
-      })
-    );
-    render(Page);
-    await userEvent.setup().selectOptions(await screen.findByLabelText('Thème'), 'Console');
-    expect(await screen.findByText('Enregistré.')).toBeTruthy();
-    expect(patched).toEqual({ theme: 'console' });
-    expect(invalidateAll).toHaveBeenCalledOnce();
-  });
-
-  // req: EF-UX-012
-  it('keeps the old choice and says so when the server refuses the theme', async () => {
-    server.use(
-      http.get(`${BASE}/api/v1/me/preferences`, () => HttpResponse.json(prefs('auto'))),
-      http.patch(`${BASE}/api/v1/me/preferences`, () => new HttpResponse(null, { status: 422 }))
-    );
-    render(Page);
-    const select = (await screen.findByLabelText('Thème')) as HTMLSelectElement;
-    await userEvent.setup().selectOptions(select, 'Console');
-    expect(await screen.findByRole('alert')).toBeTruthy();
-    expect(select.value).toBe('bibliotheque');
-    expect(invalidateAll).not.toHaveBeenCalled();
   });
 });

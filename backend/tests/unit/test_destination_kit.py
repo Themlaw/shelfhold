@@ -286,7 +286,10 @@ def test_kavita_passes_destination_kit() -> None:
     assert (caps.transport, caps.egress, caps.access_partitioning) == ("tree", "foyer", "library")
     assert caps.can_purge is False  # Kavita never purges: only the host's own path erases
     assert "series.json" in caps.forbidden_sidecars
-    assert_destination_conforms(kavita, _scenario(key="kavita"))
+    # Kavita describes calls and no plan of files (the host writes its tree), and it may index a
+    # tree it did not write (ADR-0052): an indexer's plan is empty, so the plan replayed is too
+    assert caps.indexes_tree is True and caps.series_grouping == "name"
+    assert_destination_conforms(kavita, _scenario(key="kavita", plan=FsOpPlan(ops=())))
 
 
 @pytest.mark.req("ENF-QUAL-003")

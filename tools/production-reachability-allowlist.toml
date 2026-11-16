@@ -45,6 +45,26 @@ symbols = [
 ]
 
 [[allow]]
+category = "unwired-m4-komga"
+reason = "2026-11-16 (M4 L08a): the Komga destination is described, tested against a fake and declared to the core (`KomgaDestination.capabilities`, read by `FirstPartyDestinations`), but nothing creates a Komga target yet and the export pass does not ask it for a scan: the card of L08a stops at the client and the destination. Its first callers are the creation of the target (key sealed by `store_komga_key`) and the scan relay of the pass, written down in docs/decisions/M4.md for the lot that wires them."
+until = "M4"  # settled by M4 lot L44 (Komga journey) or the lot that creates the target
+symbols = [
+  "shelfhold.export.targets.komga.client:KomgaClient",
+  "shelfhold.export.targets.komga.credentials:KomgaKey",
+  "shelfhold.export.targets.komga.credentials:load_komga_key",
+  "shelfhold.export.targets.komga.credentials:store_komga_key",
+  "shelfhold.export.targets.komga.errors:KomgaNoLibrary",
+  "shelfhold.export.targets.komga.errors:KomgaRouteNotAllowed",
+  "shelfhold.export.targets.komga.routes:ALLOWED_ROUTES",
+  "shelfhold.export.targets.komga.target:KomgaDestination.layout_conflicts",
+  "shelfhold.export.targets.komga.target:KomgaDestination.scan_library_call",
+  "shelfhold.export.targets.komga.target:KomgaDestination.forget_removed_call",
+  "shelfhold.export.targets.komga.target:KomgaDestination.inventory_calls",
+  "shelfhold.export.targets.kavita.destination:KavitaDestination.inventory_calls",
+  "shelfhold.export.targets.komga.wiring:open_client",
+]
+
+[[allow]]
 category = "unwired-m4"
 reason = "Related Works (EF-BIB-039): M1b holds the model and the service (a typed link, never a merge). The admin API that links two Works, the page that shows the relation and the push to the \"related series\" of Kavita are M4's, the first callers."
 until = "M4"  # settled by M4 lot L19 (relate_works); `present_in` left with L06a

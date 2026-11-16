@@ -2961,17 +2961,13 @@ export type PreferencesIn = {
     /**
      * Theme
      */
-    theme?: string | null;
+    theme?: 'bibliotheque' | null;
 };
 
 /**
  * PreferencesOut
  */
 export type PreferencesOut = {
-    /**
-     * Available Themes
-     */
-    available_themes: Array<string>;
     /**
      * Chosen Theme
      */
