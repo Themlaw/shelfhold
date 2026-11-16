@@ -57,6 +57,8 @@ ALLOWED: dict[tuple[str, str], bool] = {
     ("GET", "/api/series/series-detail"): False,
     ("GET", "/api/series/metadata"): False,
     ("POST", "/api/series/metadata"): True,
+    ("GET", "/api/series/all-related"): False,
+    ("POST", "/api/series/update-related"): True,
     # the routes a member's own key may reach (EF-USR-012, D8): who the key is, and progress
     ("GET", "/api/account"): False,
     ("GET", "/api/reader/get-progress"): False,
@@ -159,8 +161,11 @@ class FakeKavita:
     series: list[dict[str, Any]] = field(default_factory=list)
     files: dict[int, list[str]] = field(default_factory=dict)  # series id -> indexed file paths
     ages: dict[int, dict[str, Any]] = field(default_factory=dict)  # series id -> metadata
+    # series id -> relation kind (the DTO's field name) -> the series ids it holds (L19)
+    relations: dict[int, dict[str, list[int]]] = field(default_factory=dict)
     # file path -> pages the account of the key has read (`ChapterDto.pagesRead`, EF-EXP-051)
     progress: dict[str, int] = field(default_factory=dict)
+    related_posts: list[dict[str, Any]] = field(default_factory=list)  # the bodies taken (L19)
     pending: list[PendingIndex] = field(default_factory=list)
     never_indexed: set[str] = field(default_factory=set)  # folders Kavita ignores (excluded)
     next_series_id: int = 100
@@ -309,6 +314,7 @@ class FakeKavita:
         self.reinstalls += 1  # a new database: its first account is new, even if installId is not
         self.users = default_users(f"2026-0{self.reinstalls + 1}-01T00:00:00Z")
         self.series, self.files, self.ages, self.pending = [], {}, {}, []
+        self.relations = {}
 
     def not_found_resource(self, method: str, path: str) -> None:
         """The route exists but answers 404 with a ProblemDetails body (a resource is missing)."""
@@ -723,6 +729,44 @@ class FakeKavita:
         self.ages[sid] = copy.deepcopy(document)
         if self.drops_age_lock:
             self.ages[sid]["ageRatingLocked"] = False
+        return self._text(200, "")
+
+    def _all_related(self, recorded: RecordedRequest) -> httpx2.Response:
+        """`RelatedSeriesDto`: each relation as the series it names (here, its id and its name)."""
+        sid = recorded.query.get("seriesId", "")
+        if not sid.isdigit() or int(sid) not in self.ages:
+            return self._json({"title": "Not Found", "status": 404}, 404)
+        held = self.relations.get(int(sid), {})
+        document: dict[str, Any] = {"sourceSeriesId": int(sid)}
+        for kind in _schema("RelatedSeriesDto")["properties"]:
+            if kind != "sourceSeriesId":
+                document[kind] = [self._related_series(i) for i in held.get(kind, [])]
+        return self._json(document)
+
+    def _related_series(self, series_id: int) -> dict[str, Any]:
+        found = next((s for s in self.series if s["id"] == series_id), None)
+        return {"id": series_id, "name": found["name"] if found else f"series-{series_id}"}
+
+    def _update_related(self, recorded: RecordedRequest) -> httpx2.Response:
+        """`UpdateRelatedSeriesDto`: the lists replace the stored ones, as Kavita applies them (a
+        list the document leaves out is left alone, a list it sends is the whole of that kind)."""
+        body = recorded.json() if recorded.body else None
+        if not isinstance(body, dict):
+            return self._violation("related update without a JSON object")
+        schema = _schema("UpdateRelatedSeriesDto")["properties"]
+        unknown = set(body) - set(schema)
+        sid = body.get("seriesId")
+        if unknown or sid not in self.ages:
+            return self._violation(f"related update: unknown={sorted(unknown)} series={sid!r}")
+        for kind, ids in body.items():
+            if kind == "seriesId" or ids is None:
+                continue
+            if not isinstance(ids, list) or not all(isinstance(i, int) for i in ids):
+                return self._violation(f"related update: {kind} is not a list of ids")
+            if sid in ids or any(i not in self.ages for i in ids):
+                return self._violation(f"related update: {kind} names itself or an unknown series")
+            self.relations.setdefault(sid, {})[kind] = sorted(set(ids))
+        self.related_posts.append(copy.deepcopy(body))
         return self._text(200, "")
 
     def _series(self, recorded: RecordedRequest) -> httpx2.Response:

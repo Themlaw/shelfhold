@@ -35,6 +35,8 @@ transmise à un plugin de destination ; seule `scan-folder` la reçoit aussi dan
 | GET | `/api/Series/series-detail` | Lister les fichiers indexés d'une série (confirmation d'arrivée du chapitre, EF-EXP-034) | M1a |
 | GET | `/api/Series/metadata` | Lire l'âge de la série et son verrou (registre `field_owner`, âge dérivé des tags, EF-EXP-057) | M1a |
 | POST | `/api/Series/metadata` | Pousser l'âge de série **verrouillé** (`ageRating`, `ageRatingLocked`) : le document lu est renvoyé tel quel avec ces deux seuls champs changés, car Kavita applique le document entier ; seulement pour un champ du registre `field_owner` ou libre, jamais pour un verrou d'un tiers (EF-EXP-040, EF-EXP-057) ; exige un compte administrateur | M1b |
+| GET | `/api/Series/all-related` | Lire les relations d'une série (`RelatedSeriesDto`) avant d'écrire les siennes : ce que des tiers y ont mis est repris tel quel (L19, EF-BIB-039) | M4 |
+| POST | `/api/Series/update-related` | Poser les « séries liées » d'une série (`UpdateRelatedSeriesDto`) : le document relu, avec pour seuls changements les relations que Shelfhold a posées ; par le compte de service, entre séries de bibliothèques ouvertes aux mêmes profils seulement ; exige un compte administrateur (L19, EF-BIB-039) | M4 |
 
 ## Routes de mise en place (hors du client d'exploitation)
 

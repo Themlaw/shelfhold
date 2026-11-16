@@ -150,6 +150,9 @@ OPEN = {
     "DELETE /api/v1/collections/{collection_id}": "collections",
     "POST /api/v1/collections/{collection_id}/items": "collections",
     "DELETE /api/v1/collections/{collection_id}/items/{item_id}": "collections",
+    # M4 L19: the relations of a Work she may see, and of those the ones whose other end she may
+    # see too (`test_m4_l19_relations.py`); making and removing one is the admin's (CLOSED)
+    "GET /api/v1/works/{work_id}/relations": "relations",
 }
 CLOSED = (
     "GET /api/v1/openapi.json",
@@ -325,6 +328,8 @@ CLOSED = (
     "POST /api/v1/tombstones/set-aside-journal",
     "POST /api/v1/units/{unit_id}/purge",
     "POST /api/v1/units/{unit_id}/restore",
+    "POST /api/v1/works/{work_id}/relations",  # M4 L19: the admin's (session or `admin` key)
+    "DELETE /api/v1/works/{work_id}/relations/{kind}/{to_work_id}",
     "POST /api/v1/works/rating-batch",
     "POST /api/v1/works/{work_id}/purge",
     "POST /api/v1/works/{work_id}/rating",
@@ -345,6 +350,7 @@ BODIES = {
     "POST /api/v1/destinations/{destination_id}/removal": {"mode": "keep_files", "typed": "x"},
     "POST /api/v1/destinations/{destination_id}/removal-preview": {"mode": "keep_files"},
     "POST /api/v1/targets/{target_id}/detach": {"typed": "x"},
+    "POST /api/v1/works/{work_id}/relations": {"to_work_id": ULID, "kind": "sequel_of"},
 }
 
 # Surfaces that do not exist yet: the lot that builds each one adds its child case, and this
@@ -357,7 +363,7 @@ PENDING_SURFACES: dict[
 SURFACES = (
     "search", "search_pages", "search_key", "federated", "me_state_get", "me_state_put",
     "me_state_list", "me_title", "activity", "notification", "works_since", "sse", "thumbnail",
-    "work_redirect", "opds", "support_author", "collections",
+    "work_redirect", "opds", "support_author", "collections", "relations",
 )  # fmt: skip
 METHODS = ("get", "post", "put", "patch", "delete")
 HIDDEN_FROM_CEILING_10 = {*HIDDEN_TITLES, "twelve"}
@@ -881,6 +887,14 @@ def _surface_collections(world: World) -> None:
     """M4 L18a: the lists she is shown hold only Works she may see (the attacks are in
     `test_m4_l18a_collections`)."""
     from tests.integration.test_m4_l18a_collections import child_case
+
+    child_case(world)
+
+
+def _surface_relations(world: World) -> None:
+    """M4 L19: a relation to a Work she may not see is not shown, nor counted (the attacks are in
+    `test_m4_l19_relations`)."""
+    from tests.integration.test_m4_l19_relations import child_case
 
     child_case(world)
 
