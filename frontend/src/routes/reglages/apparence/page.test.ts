@@ -14,7 +14,7 @@ const server = setupServer();
 const prefs = (scheme: string, language: string = 'fr', theme: string = 'bibliotheque') => ({
   theme,
   chosen_theme: theme === 'bibliotheque' ? null : theme,
-  available_themes: ['bibliotheque', 'console'],
+  available_themes: ['bibliotheque', 'console', 'galerie', 'calme'],
   color_scheme: scheme,
   language
 });
@@ -72,7 +72,7 @@ describe('Appearance screen', () => {
     render(Page);
     const select = await screen.findByLabelText('Thème');
     const names = Array.from((select as HTMLSelectElement).options).map((o) => o.textContent);
-    expect(names).toEqual(['Bibliothèque', 'Console']);
+    expect(names).toEqual(['Bibliothèque', 'Console', 'Galerie', 'Calme']);
     expect((select as HTMLSelectElement).value).toBe('bibliotheque');
   });
 

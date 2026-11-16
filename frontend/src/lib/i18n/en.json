@@ -250,6 +250,8 @@
   "appearance.theme": "Theme",
   "appearance.theme.bibliotheque": "Library",
   "appearance.theme.console": "Console",
+  "appearance.theme.galerie": "Gallery",
+  "appearance.theme.calme": "Calm",
   "appearance.scheme": "Color scheme",
   "appearance.scheme.auto": "Automatic",
   "appearance.scheme.light": "Light",

@@ -32,12 +32,12 @@ describe('theme mechanism', () => {
   beforeEach(() => localStorage.clear());
 
   // req: EF-UX-012
-  it('ships themes A and B, A being the default', () => {
-    expect(THEMES).toEqual(['bibliotheque', 'console']);
+  it('ships themes A, B, C and D, A being the default', () => {
+    expect(THEMES).toEqual(['bibliotheque', 'console', 'galerie', 'calme']);
     expect(DEFAULT_THEME).toBe('bibliotheque');
     expect(COLOR_SCHEMES).toEqual(['auto', 'light', 'dark']);
     const dirs = readdirSync(join(here), { withFileTypes: true }).filter((e) => e.isDirectory());
-    expect(dirs.map((e) => e.name)).toEqual([...THEMES]);
+    expect(dirs.map((e) => e.name).sort()).toEqual([...THEMES].sort());
   });
 
   // req: EF-UX-012
@@ -60,7 +60,7 @@ describe('theme mechanism', () => {
   // req: EF-UX-012, ENF-SEC-004
   it.each([
     '{"theme":"<script>alert(1)</script>","colorScheme":"dark"}',
-    '{"theme":"galerie","colorScheme":"neon"}',
+    '{"theme":"nope","colorScheme":"neon"}',
     '{"theme":"bibliotheque\\" onload=\\"x","colorScheme":"dark\\"]{}"}',
     '{"theme":{"toString":1},"colorScheme":["dark"]}',
     '{"theme":"__proto__","colorScheme":"constructor"}',
@@ -95,7 +95,6 @@ describe('theme mechanism', () => {
   it('the markup default and the boot script agree with the list of themes', () => {
     expect(appHtml).toMatch(new RegExp(`<html[^>]*data-theme="${DEFAULT_THEME}"`));
     for (const theme of THEMES) expect(bootScript(appHtml)).toContain(`'${theme}'`);
-    expect(bootScript(appHtml)).not.toMatch(/galerie|calme/);
   });
 
   // req: EF-UX-012
