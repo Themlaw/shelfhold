@@ -25,6 +25,9 @@ const SCREENS = [
   '/compte/passkeys',
   '/reglages',
   '/reglages/apparence',
+  '/reglages/compte-kavita',
+  '/reglages/destinations',
+  '/reglages/etageres',
   '/reglages/notifications',
   '/reglages/profils'
 ];

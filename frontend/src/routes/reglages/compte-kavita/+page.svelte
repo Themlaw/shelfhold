@@ -210,9 +210,13 @@
               />
             </label>
             <small id="hint-{choice.id}">{t('kavita.key_hint')}</small>
-            <button type="submit" disabled={busy === choice.id}>
-              {live(account) ? t('kavita.replace') : t('kavita.link')}
-            </button>
+            <!-- not the lone last child of the form: one card per destination, so one sticky
+                 action per card would stack at the bottom of a phone and cover the fields -->
+            <div class="actions">
+              <button type="submit" disabled={busy === choice.id}>
+                {live(account) ? t('kavita.replace') : t('kavita.link')}
+              </button>
+            </div>
           </form>
         {/if}
         {#if live(account)}

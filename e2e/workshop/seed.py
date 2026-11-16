@@ -25,6 +25,13 @@ PASSWORD = "synthetic-profile-password-1"  # noqa: S105 (invented, for the synth
 COVERS = 60  # a library screen (ENF-PERF-010); the digests are written for `weight.spec.ts`
 COVERS_FILE = "covers.json"
 COVER_SEED = 20_261_113  # fixed: the same covers, so the same weight, on every run
+TEMPLATE = json.dumps(
+    {
+        "chapter": "{series} - Chapter {number}", "volume": "{series} - Vol.{number}",
+        "special": "{series} - {label}", "special_dir": "Specials",
+        "segment": "{series} - Part {n}",
+    }
+)  # fmt: skip
 TITLES = ("Le Jardin des brumes", "Chroniques du phare", "Atlas des marées")
 
 
@@ -85,6 +92,29 @@ def seed_covered_library(data_dir: Path, db: sa.Connection, shelf_id: str) -> No
     (data_dir.parent / COVERS_FILE).write_text(json.dumps(digests), encoding="utf-8")
 
 
+def seed_destinations(db: sa.Connection) -> None:
+    """The screens of the destinations (L33a): a Kavita (it keeps accounts apart by library), a
+    plain shared folder (it keeps nothing apart: a family shelf is refused it), and an adult shelf
+    that already has its Kavita binding, so that a member has an account to link. The address of
+    the Kavita is never reached: the server does not call it unless a key is linked."""
+    kavita, folder, adult = new_ulid(), new_ulid(), new_ulid()
+    db.execute(
+        sa.insert(export.export_target),
+        [
+            {"id": kavita, "kind": "kavita", "name": "Kavita maison",
+             "config": {"url": "http://kavita.invalid"}},
+            {"id": folder, "kind": "native_folder", "name": "Dossier partagé", "config": {}},
+        ],
+    )  # fmt: skip
+    db.execute(sa.insert(export.shelf).values(id=adult, name="Adultes", phrase="Pour les grands"))
+    db.execute(
+        sa.insert(export.shelf_destination).values(
+            id=new_ulid(), shelf_id=adult, target_id=kavita, transport="tree", egress="foyer",
+            root_subpath="adultes", template=TEMPLATE, template_origin="default@1",
+        )
+    )  # fmt: skip
+
+
 def main(data_dir: Path) -> None:
     engine = create_db_engine(data_dir / "shelfhold.db")
     digest = Argon2Hasher().hash(PASSWORD)
@@ -107,6 +137,7 @@ def main(data_dir: Path) -> None:
                 id=shelf_id, name="Famille", phrase="Pour toute la maison", max_age_rating=13
             )
         )
+        seed_destinations(db)
         for title in TITLES:
             work_id = new_ulid()
             db.execute(

@@ -145,7 +145,11 @@
       {t('bindings.folder')}
       <input type="text" bind:value={folder} autocomplete="off" spellcheck="false" />
     </label>
-    <button type="submit" disabled={busy || targetId === ''}>{t('bindings.submit')}</button>
+    <!-- not the lone last child of the form: one form per shelf, so one sticky action per shelf
+         would stack at the bottom of a phone and cover the fields -->
+    <div class="actions">
+      <button type="submit" disabled={busy || targetId === ''}>{t('bindings.submit')}</button>
+    </div>
   </form>
 
   {#if linked}
