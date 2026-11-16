@@ -4867,7 +4867,6 @@
           "theme": {
             "anyOf": [
               {
-                "const": "bibliotheque",
                 "type": "string"
               },
               {
@@ -4882,6 +4881,13 @@
       },
       "PreferencesOut": {
         "properties": {
+          "available_themes": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Available Themes",
+            "type": "array"
+          },
           "chosen_theme": {
             "anyOf": [
               {
@@ -4918,6 +4924,7 @@
         "required": [
           "theme",
           "chosen_theme",
+          "available_themes",
           "color_scheme",
           "language"
         ],

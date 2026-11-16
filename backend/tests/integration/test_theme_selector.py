@@ -16,7 +16,7 @@ from tests.auth_env import CSRF_HEADER, PASSWORD, AuthEnv, auth_env, db_rows
 
 PREFERENCES = "/api/v1/me/preferences"
 MEMBER_ID = "01J0000000000000000000MEMB"
-CHILD_ID = "01J0000000000000000000KIDX"
+CHILD_ID = "01J0000000000000000000KDDX"
 REPO = Path(__file__).resolve().parents[3]
 
 
