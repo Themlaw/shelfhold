@@ -12,10 +12,36 @@ from typing import Any
 
 from shelfhold.export.domain.kavita_compat import MAXIMUM_EXCLUSIVE, MINIMUM_VERSION
 from shelfhold.export.targets.kavita import dto, routes
-from shelfhold.sdk.export_target import ApiCall
+from shelfhold.sdk.export_target import ApiCall, NamingConstraints, TargetCapabilities
 
 
 class KavitaDestination:
+    capabilities = TargetCapabilities(
+        media_kinds={"manga", "comic", "book"},
+        formats={"cbz", "epub"},
+        transport="tree",
+        egress="foyer",
+        can_update=True,
+        can_delete=True,  # the bin of the host; Kavita itself never purges (`can_purge` stays off)
+        confirms_arrival=True,
+        reconcilable=True,
+        accepted_content_types=["cbz", "epub"],
+        sidecars={"comicinfo"},
+        path_scoped_scan=True,
+        access_partitioning="library",
+        accepted_image_types={"jpeg", "png", "webp"},
+        events="signalr",
+        collections="api",
+        progress="api",
+        manage_libraries=True,
+        naming=NamingConstraints(
+            max_segment_bytes=255, max_path_bytes=4096, forbidden='<>:"|?*', case_insensitive=False
+        ),
+        name_normalizer="kavita-1",
+        series_grouping="folder",
+        forbidden_sidecars=frozenset({"series.json"}),  # Kavita misreads it (ADR-0052, M4 L03)
+    )
+
     def parse_name_call(self, name: str, lib_type: str) -> ApiCall | None:
         """`plugin/parse` checks a file **name** with the library type, nothing else."""
         return ApiCall(

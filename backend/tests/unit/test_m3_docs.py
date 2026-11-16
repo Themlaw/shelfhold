@@ -56,9 +56,12 @@ def test_plugin_author_docs_cover_sources_and_targets() -> None:
         assert f"`{op}`" in destination, op
     assert re.search(r"unlink[^\n]*(hôte|l'hôte)", destination)
     assert ".shelfhold" in destination and "check_destination_plan" in destination
-    # the kit page does not promise a destination kit that does not exist yet (M4)
+    # the kit page points to the destination kit (M4 L05), which has its own page
     kit = _text(PLUGINS / "kit.md")
-    assert "M4" in kit and "run_source_conformance" in kit and "run_metadata_conformance" in kit
+    assert "destination-kit.md" in kit and "run_source_conformance" in kit
+    assert "run_metadata_conformance" in kit
+    chapter = _text(PLUGINS / "destination-kit.md")
+    assert "assert_destination_conforms" in chapter and "can_purge" in chapter
     for page in (PLUGINS / "source.md", PLUGINS / "metadata-provider.md", PLUGINS / "kit.md"):
         assert f"SDK {SDK_VERSION}" in _text(page), page.name  # no page stuck on an older SDK
 

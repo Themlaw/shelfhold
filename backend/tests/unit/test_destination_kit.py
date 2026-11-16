@@ -126,9 +126,7 @@ def test_conformity_kit_transport_and_egress() -> None:
     )
     # push sends bytes through a call: it needs the declared body, and the kit says so by name
     push = _caps(transport="push", content_body=False)
-    _fails(
-        _Dest(push), _scenario(), "transport_push_requires_content_body", "needs a declared"
-    )
+    _fails(_Dest(push), _scenario(), "transport_push_requires_content_body", "needs a declared")
     pushing = _caps(transport="push", content_body=True)
     assert run_destination_conformance(_Dest(pushing), _scenario()).ok
 
@@ -170,9 +168,7 @@ def test_kit_checks_access_partitioning_declared() -> None:
     bad = SimpleNamespace(**(caps.model_dump() | {"access_partitioning": "tenant"}))
     _fails(_Dest(bad), _scenario(), "access_partitioning_declared", "'tenant'")
     for value in ("none", "library", "user"):
-        assert run_destination_conformance(
-            _Dest(_caps(access_partitioning=value)), _scenario()
-        ).ok
+        assert run_destination_conformance(_Dest(_caps(access_partitioning=value)), _scenario()).ok
 
 
 @pytest.mark.req("ENF-QUAL-003", "EF-EXP-065")
@@ -183,9 +179,8 @@ def test_kit_checks_readback_and_can_purge() -> None:
     wrong = SimpleNamespace(**(caps.model_dump() | {"readback": "peek"}))
     _fails(_Dest(wrong), _scenario(), "readback_declared", "'peek'")
     # a readback that nothing can perform is a promise the host would believe
-    _fails(
-        _Dest(_caps(readback="verify")), _scenario(), "readback_has_a_way_to_read", "inventory_calls"
-    )
+    verify = _Dest(_caps(readback="verify"))
+    _fails(verify, _scenario(), "readback_has_a_way_to_read", "inventory_calls")
 
     class Reading(_Dest):
         def inventory_calls(self, remote_library_id: str) -> list[ApiCall]:
@@ -201,9 +196,7 @@ def test_kit_checks_readback_and_can_purge() -> None:
         "calls_checked_before_run",
         "DELETE needs a destination that declares can_purge",
     )
-    assert run_destination_conformance(
-        _Dest(_caps(can_purge=True)), _scenario(calls=(delete,))
-    ).ok
+    assert run_destination_conformance(_Dest(_caps(can_purge=True)), _scenario(calls=(delete,))).ok
 
 
 @pytest.mark.req("EF-EXP-065")
@@ -294,3 +287,46 @@ def test_kavita_passes_destination_kit() -> None:
     assert caps.can_purge is False  # Kavita never purges: only the host's own path erases
     assert "series.json" in caps.forbidden_sidecars
     assert_destination_conforms(kavita, _scenario(key="kavita"))
+
+
+@pytest.mark.req("ENF-QUAL-003")
+def test_pytest_tool_and_public_exports_for_plugin_authors() -> None:
+    import shelfhold.sdk.testing as public
+    from shelfhold.sdk.testing.pytest_plugin import check_destination
+
+    run = check_destination.__wrapped__()  # type: ignore[attr-defined]
+    assert run(_Dest(_caps()), _scenario()).ok
+    with pytest.raises(AssertionError, match="egress_declared"):
+        run(_Dest(_without(_caps(), "egress")), _scenario())
+    assert public.run_destination_conformance is run_destination_conformance
+    assert public.DestinationScenario is DestinationScenario
+
+
+@pytest.mark.req("ENF-QUAL-003")
+def test_destination_kit_imports_nothing_of_the_host() -> None:
+    import ast
+    from pathlib import Path
+
+    import shelfhold.sdk.testing.destination_kit as module
+
+    tree = ast.parse(Path(module.__file__ or "").read_text())
+    imported = [
+        n.module or "" for n in ast.walk(tree) if isinstance(n, ast.ImportFrom) and n.level == 0
+    ]
+    own = [m for m in imported if m.split(".")[0] == "shelfhold"]
+    assert own, "the kit builds on the SDK"
+    assert all(m.startswith("shelfhold.sdk.") for m in own), own
+
+
+@pytest.mark.req("ENF-QUAL-003")
+def test_a_failure_message_never_carries_a_secret() -> None:
+    secret = "fake-secret-0000-not-a-credential"  # noqa: S105 - a placeholder
+    bad = {"method": "TRACE", "path": "/x", "auth": "none", "json_body": {"token": secret}}
+
+    class Leaky(_Dest):
+        def scan_calls(self, remote_paths: list[str]) -> list[Any]:
+            return [bad]
+
+    report = run_destination_conformance(Leaky(_caps()), _scenario())
+    assert not report.ok
+    assert secret not in " ".join(c.detail for c in report.checks)

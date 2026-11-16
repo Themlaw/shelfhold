@@ -59,6 +59,18 @@ class CalibreReservedTarget:
             method="POST", path=path, body=ContentBody(content_ref=content), auth="target_admin"
         )
 
+    def update_metadata(self, ref: JsonObject, fields: JsonObject, lock: bool) -> list[ApiCall]:
+        """`/cdb/set-fields/{book_id}`; `lock` is ignored, calibre has no field lock."""
+        book_id = quote(str(ref["remote_id"]), safe="")
+        return [
+            ApiCall(
+                method="POST",
+                path=f"/cdb/set-fields/{book_id}",
+                json_body={"changes": fields},
+                auth="target_admin",
+            )
+        ]
+
     def interpret(self, call: ApiCall, response: JsonObject) -> JsonObject:
         """`book_id` is the `remote_id` locator of the copy."""
         return {"remote_id": str(response["book_ids"][0])}
