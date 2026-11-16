@@ -24,6 +24,7 @@ from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
 from shelfhold.catalog.public import Admission, RatingService, file_new_edition
 from shelfhold.export.application import fan_out
+from shelfhold.export.application.komga_audit_state import audit_reason, partitioning_of
 from shelfhold.export.application.precreate import (
     AdoptedLibrary,
     Precreated,
@@ -33,6 +34,7 @@ from shelfhold.export.application.snapshot import load_context
 from shelfhold.export.application.target_state import CHILD_EXPOSURE, pause_shelf
 from shelfhold.export.application.withdrawal import WithdrawalPlan, build_plan
 from shelfhold.export.domain.bindings import (
+    PARTITIONED,
     WRITING_TRANSPORTS,
     BindingFacts,
     Egress,
@@ -43,7 +45,6 @@ from shelfhold.export.domain.bindings import (
     check_dropbox_folder,
     check_family_cap,
     check_partitioning,
-    effective_partitioning,
     is_family,
     resolve_egress,
 )
@@ -514,20 +515,33 @@ class ShelfService:
 
     @staticmethod
     def _partitionings(connection: Connection, shelf_id: str) -> list[str]:
-        target, destination = export.export_target, export.shelf_destination
+        target, destination, shelf = export.export_target, export.shelf_destination, export.shelf
         return [
-            effective_partitioning(
-                r.kind,
-                r.access_partitioning,
+            partitioning_of(
+                connection,
+                target_id=r.target_id,
+                kind=r.kind,
+                stored=r.access_partitioning,
                 attested=r.access_partitioning_attested_at is not None,
+                path_map=r.path_map,
+                root_subpath=r.root_subpath,
+                ceiling=r.max_age_rating,
             )
             for r in connection.execute(
                 sa.select(
+                    destination.c.target_id,
                     target.c.kind,
                     target.c.access_partitioning,
                     target.c.access_partitioning_attested_at,
+                    target.c.path_map,
+                    destination.c.root_subpath,
+                    shelf.c.max_age_rating,
                 )
-                .select_from(destination.join(target, target.c.id == destination.c.target_id))
+                .select_from(
+                    destination.join(target, target.c.id == destination.c.target_id).join(
+                        shelf, shelf.c.id == destination.c.shelf_id
+                    )
+                )
                 .where(destination.c.shelf_id == shelf_id)
             )
         ]
@@ -573,12 +587,23 @@ class ShelfService:
                     export.export_target.c.access_partitioning_attested_at,
                 ).where(export.export_target.c.id == target_id)
             ).one()
+            partitioning = partitioning_of(
+                connection,
+                target_id=target_id,
+                kind=row.kind,
+                stored=row.access_partitioning,
+                attested=row.access_partitioning_attested_at is not None,
+                path_map=row.path_map,
+                root_subpath=root_subpath,
+                ceiling=shelf.max_age_rating,
+            )
             check_partitioning(
                 shelf.max_age_rating,
-                effective_partitioning(
-                    row.kind,
-                    row.access_partitioning,
-                    attested=row.access_partitioning_attested_at is not None,
+                partitioning,
+                reason=(
+                    audit_reason(connection, target_id)
+                    if row.kind == "komga" and partitioning not in PARTITIONED
+                    else None
                 ),
             )
             if row.kind == CWA and transport != "dropbox":

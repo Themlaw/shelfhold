@@ -24,6 +24,7 @@ from urllib.parse import urlencode
 
 import structlog
 
+from shelfhold.export.domain.komga_access import KomgaAccount, restriction_age
 from shelfhold.export.domain.scan_debounce import DEFAULT_QUIET, ScanDebouncer
 from shelfhold.export.targets.kavita.errors import (
     ProtocolError,
@@ -41,6 +42,7 @@ from shelfhold.infrastructure.logging import elapsed_ms
 from shelfhold.sdk.api_call import ApiCall
 
 MAX_LIBRARIES: Final = 500
+MAX_ACCOUNTS: Final = 5000
 
 log = structlog.get_logger(__name__)
 
@@ -56,6 +58,36 @@ class Library:
     id: str
     name: str
     root: str
+
+
+def _account(row: Any) -> KomgaAccount:
+    """One account of `GET /api/v2/users`. Strict: a field of the wrong type is an error, never a
+    default (a default could read as "no restriction")."""
+    if not isinstance(row, dict):
+        raise TypeError("not an account")
+    roles, shared, ids = row["roles"], row["sharedAllLibraries"], row["sharedLibrariesIds"]
+    restriction = row.get("ageRestriction")
+    if not (isinstance(roles, list) and all(isinstance(r, str) for r in roles)):
+        raise TypeError("roles")
+    if not isinstance(shared, bool) or not (
+        isinstance(ids, list) and all(isinstance(i, str) for i in ids)
+    ):
+        raise TypeError("shares")
+    age = None
+    if restriction is not None:
+        years = restriction["age"]
+        if (
+            not isinstance(restriction, dict)
+            or isinstance(years, bool)
+            or not isinstance(years, int)
+        ):
+            raise TypeError("age restriction")
+        if years < 0:
+            raise ValueError("age restriction")
+        age = restriction_age(years, str(restriction["restriction"]))
+    return KomgaAccount(
+        str(row["email"]), "ADMIN" in roles, shared, frozenset(ids), age
+    )  # the name tells accounts apart during the audit only; it is stored nowhere
 
 
 def _under(root: str, path: str) -> bool:
@@ -157,6 +189,17 @@ class KomgaClient:
         build = result.data.get("build") if isinstance(result.data, dict) else None
         version = build.get("version") if isinstance(build, dict) else None
         return version if isinstance(version, str) else None
+
+    async def list_accounts(self) -> list[KomgaAccount]:
+        """The accounts of the server (`GET /api/v2/users`, an administrator's route). Any row that
+        cannot be read as an account fails the whole reading: the audit never skips an account."""
+        result = await self._send(routes.USERS, routes.USERS.path)
+        if not isinstance(result.data, list) or len(result.data) > MAX_ACCOUNTS:
+            raise ProtocolError("GET /api/v2/users did not answer a list of accounts")
+        try:
+            return [_account(row) for row in result.data]
+        except (KeyError, TypeError, ValueError):
+            raise ProtocolError("GET /api/v2/users: an account cannot be read") from None
 
     async def list_libraries(self) -> list[Library]:
         result = await self._send(routes.LIBRARIES, routes.LIBRARIES.path)

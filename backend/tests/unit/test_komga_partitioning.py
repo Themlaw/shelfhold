@@ -24,10 +24,17 @@ def test_komga_destination_declares_library_partitioning() -> None:
 def test_the_declaration_counts_only_with_the_proof_of_an_audit(attested: bool) -> None:
     """Whatever the declaration and the attestation of an admin: no proof, no partitioning."""
     assert effective_partitioning("komga", "library", attested=attested) == "none"
-    assert effective_partitioning("komga", "library", attested=attested, audit_proved=False) == "none"
-    assert effective_partitioning("komga", "library", attested=attested, audit_proved=True) == "library"
+    assert (
+        effective_partitioning("komga", "library", attested=attested, audit_proved=False) == "none"
+    )
+    assert (
+        effective_partitioning("komga", "library", attested=attested, audit_proved=True)
+        == "library"
+    )
     assert effective_partitioning("cwa", "library", attested=True, audit_proved=True) == "none"
-    assert effective_partitioning("plugin_x", "library", attested=False, audit_proved=True) == "none"
+    assert (
+        effective_partitioning("plugin_x", "library", attested=False, audit_proved=True) == "none"
+    )
 
 
 @pytest.mark.req("ENF-SEC-016")
@@ -44,7 +51,9 @@ def test_komga_below_1_22_in_known_bad_versions() -> None:
 
 
 @pytest.mark.req("ENF-SEC-016", "EF-EXP-047")
-@pytest.mark.parametrize("raw", [None, "", "  ", "unknown", "1.22.0-SNAPSHOT", "1", "1.x.0", "9" * 400])
+@pytest.mark.parametrize(
+    "raw", [None, "", "  ", "unknown", "1.22.0-SNAPSHOT", "1", "1.x.0", "9" * 400]
+)
 def test_an_unknown_or_unreadable_version_is_never_accepted(raw: str | None) -> None:
     verdict = assess_version(raw)
     assert not verdict.accepted and verdict.reason == "version_unknown"

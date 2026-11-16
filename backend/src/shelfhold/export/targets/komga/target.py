@@ -71,9 +71,9 @@ class KomgaDestination:
         accepted_content_types=["cbz", "epub"],
         sidecars={"comicinfo"},
         path_scoped_scan=False,  # Komga scans a library, never a folder
-        # Nothing is partitioned until the audit of L08b exists: Komga is never given a shelf
-        # below 18+ before it checks the libraries each account reaches (EF-EXP-047, T10).
-        access_partitioning="none",
+        # Komga shares a library with an account. The declaration is the proposal; it counts for a
+        # folder only once `KomgaAuditor` proved the accounts (`effective_partitioning`, T10).
+        access_partitioning="library",
         accepted_image_types={"jpeg", "png", "webp"},
         events="none",
         collections="none",
@@ -104,7 +104,7 @@ class KomgaDestination:
         return _library_call(routes.LIBRARY_EMPTY_TRASH, library_id)
 
     def supported_versions(self) -> dict[str, Any]:
-        return {}  # the floor of Komga is a `known_bad_versions` row (L08b)
+        return {}  # the floor (1.22.0) is a `known_bad_versions` row: domain.komga_access
 
     def interpret(self, call: ApiCall, response: Mapping[str, Any]) -> Any:
         return None

@@ -27,6 +27,8 @@ from shelfhold.export.domain.kavita_compat import (
     MINIMUM_VERSION,
     known_bad_age,
 )
+from shelfhold.export.domain.komga_access import KNOWN_BAD_VERSIONS as KOMGA_KNOWN_BAD_VERSIONS
+from shelfhold.export.domain.komga_access import KOMGA_FLOOR
 from shelfhold.identity.public import EXIT_ROUTES
 from shelfhold.infrastructure.schema import acquisition, catalog, export, platform
 from shelfhold.infrastructure.wal import WAL_PENDING_KEY
@@ -549,6 +551,14 @@ def known_bad_report(connection: Connection, today: date) -> dict[str, object]:
             {"advisory": k.advisory, "category": k.category, "below": str(k.below)}
             for k in KNOWN_BAD_VERSIONS
         ],
+        # the floor of Komga, a line of its own (L08b, ENF-SEC-016): a family shelf is refused below
+        "komga": {
+            "minimum_version": str(KOMGA_FLOOR),
+            "entries": [
+                {"advisory": k.advisory, "category": k.category, "below": str(k.below)}
+                for k in KOMGA_KNOWN_BAD_VERSIONS
+            ],
+        },
         "targets": targets,
     }
 

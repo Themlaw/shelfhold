@@ -14,6 +14,25 @@ de correctif. Les releases publiées depuis moins de 14 jours sont exclues au ve
 | apprise | >= 2.1, < 3 | CVE-2026-59180, GHSA-856c-92hv-3vxx | contrainte uv |
 | pyasn1 | >= 0.6.5 | GHSA-9m75-vc3g-4x39, GHSA-fm9c-5rcf-2q5p, GHSA-2qm8-x737-gmw5, GHSA-mm57-4v3p-rchx | contrainte uv |
 
+## Versions refusées des serveurs de destination (`known_bad_versions`)
+
+Même exigence, pour les serveurs que Shelfhold pilote (ENF-SEC-016, EF-EXP-047). La liste est
+livrée avec la release (`domain/kavita_compat.py` pour Kavita, `domain/komga_access.py` pour
+Komga) et son âge est affiché par `shelfhold status`.
+
+| Serveur | Version | Catégorie | Effet |
+| --- | --- | --- | --- |
+| Komga | < 1.22.0 | `cve` | une étagère sous 18+ est refusée (aucun cloisonnement accordé) et mise en pause si elle était liée ; l'avis figure dans la santé de la cible |
+
+- Le numéro d'avis est celui du projet (`komga-below-1.22.0`) tant qu'aucun identifiant public n'a
+  été vérifié à la source : rien n'est cité de mémoire.
+- Une version que personne n'a pu lire ou qui n'est pas un numéro (`1.22.0-SNAPSHOT`, absente,
+  trop longue) est traitée comme une version trop ancienne : **on ne déduit jamais** le
+  cloisonnement. Les étagères pour adultes ne sont pas bloquées par la version : elles reçoivent
+  l'avertissement.
+- Le plancher est vérifié à chaque audit des comptes (connexion et contrôle quotidien) ; la sortie
+  est de mettre Komga à jour puis de relancer l'audit.
+
 ## État des alertes de l'image (2026-11-12)
 
 - **oauthlib** (GHSA-3jp2-3mrg-2vxc) : corrigé en 4.0.1, publié le 2026-10-31. Cette version a

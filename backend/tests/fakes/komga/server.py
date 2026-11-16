@@ -69,7 +69,9 @@ def reader(
     return {"id": f"0SYNTH{name.upper()}", "email": f"{name}@komga.invalid",
             "roles": roles if roles is not None else ["USER"], "sharedAllLibraries": shared_all,
             "sharedLibrariesIds": list(libraries), "labelsAllow": [], "labelsExclude": [],
-            "ageRestriction": None if age is None else {"age": age, "restriction": restriction}}  # fmt: skip
+            "ageRestriction": (
+                None if age is None else {"age": age, "restriction": restriction}
+            )}  # fmt: skip
 
 
 @dataclass(frozen=True)

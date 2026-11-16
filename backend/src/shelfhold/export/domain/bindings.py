@@ -29,8 +29,9 @@ class BindingError(ValueError):
 
     code = "export.binding"
 
-    def __init__(self, message: str) -> None:
+    def __init__(self, message: str, *, reason: str | None = None) -> None:
         super().__init__(f"{self.code}: {message}")
+        self.reason = reason  # a closed code the admin may be shown (never free text)
 
 
 class ShelfCeilingError(BindingError):
@@ -145,17 +146,20 @@ def check_family_cap(name: str, max_age_rating: int | None) -> None:
         )
 
 
-def effective_partitioning(kind: str, stored: str, *, attested: bool) -> str:
+def effective_partitioning(
+    kind: str, stored: str, *, attested: bool, audit_proved: bool = False
+) -> str:
     """How a destination keeps accounts apart. Kavita does it by library (it is the adapter that
-    knows). Komga does too, but nothing audits the libraries each account reaches yet, so it
-    counts for nothing until L08b. A CWA drop box is a folder that one ingester empties: it
-    partitions nothing, whatever it is declared or attested. The value a third-party plugin
-    declares is a default proposal and counts only once the admin attested it (K9, GAP-10-08); an
-    unattested one is `none`."""
+    knows). Komga does too, but only for a folder whose accounts its audit proved (L08b,
+    EF-EXP-047): the declaration and an admin's attestation count for nothing without that proof
+    (`audit_proved`, read for the folder of the binding). A CWA drop box is a folder that one
+    ingester empties: it partitions nothing, whatever it is declared or attested. The value a
+    third-party plugin declares is a default proposal and counts only once the admin attested it
+    (K9, GAP-10-08); an unattested one is `none`."""
     if kind == "kavita":
         return "library"
     if kind == "komga":
-        return "none"  # no audit of the accounts of Komga before M4 L08b: no shelf below 18+
+        return "library" if audit_proved else "none"
     if kind == "cwa":
         return "none"  # a drop box keeps no account apart, and no attestation changes that
     return stored if attested else "none"
@@ -171,10 +175,15 @@ def check_dropbox_folder(declared: str, root_subpath: str, real: str | None) -> 
         raise FolderOutsideRootError("the folder of a drop box leaves its target through a link")
 
 
-def check_partitioning(max_age_rating: int | None, partitioning: str) -> None:
+def check_partitioning(
+    max_age_rating: int | None, partitioning: str, *, reason: str | None = None
+) -> None:
     if is_family(max_age_rating) and partitioning not in PARTITIONED:
+        why = f" ({reason})" if reason else ""
         raise UnpartitionedDestinationError(
-            f"a shelf below 18+ needs a destination with access partitioning, not {partitioning!r}"
+            f"a shelf below 18+ needs a destination with access partitioning, not "
+            f"{partitioning!r}{why}",
+            reason=reason,
         )
 
 

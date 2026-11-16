@@ -23,7 +23,6 @@ from shelfhold.export.targets.komga import KomgaClient, KomgaKey
 from shelfhold.export.targets.komga.audit import KomgaAuditor, KomgaAuditReport
 from shelfhold.infrastructure.schema import export, platform
 from tests.export_env import ExportEnv
-from tests.family_env import add_adult_shelf, family_env
 from tests.fakes.komga import (
     API_KEY,
     BASE_URL,
@@ -33,6 +32,7 @@ from tests.fakes.komga import (
     build_fetcher,
     reader,
 )
+from tests.family_env import add_adult_shelf, family_env
 from tests.fan_out_env import add_target, bind
 from tests.kavita_env import RecordingEvents
 from tests.komga_env import run
@@ -80,7 +80,7 @@ def try_bind(env: ExportEnv, target: str) -> str | None:
 @pytest.mark.req("EF-EXP-047")
 def test_komga_child_account_audit_flags_library_above_its_rating() -> None:
     with family_env(13) as env:
-        fake, client, auditor, events, target = kit(env)
+        fake, client, auditor, _events, target = kit(env)
         fake.users = [administrator(), reader("kid", [LIBRARY], age=8)]  # reads 8+, shelf is 13+
         report = admit(env, auditor, client, target)
         assert not report.proved and not report.failed
@@ -138,7 +138,7 @@ def test_the_rating_of_an_account_is_compared_with_the_ceiling_of_the_library(
 @pytest.mark.req("EF-EXP-047")
 def test_a_library_that_holds_more_than_the_folder_of_the_shelf_is_not_a_family_library() -> None:
     with family_env(13) as env:
-        fake, client, auditor, _events, target = kit(env, libraries=[library(root="/manga")])
+        _fake, client, auditor, _events, target = kit(env, libraries=[library(root="/manga")])
         report = admit(env, auditor, client, target)
         assert not report.proved and "library_not_dedicated" in codes(report)
 
@@ -146,7 +146,7 @@ def test_a_library_that_holds_more_than_the_folder_of_the_shelf_is_not_a_family_
 @pytest.mark.req("EF-EXP-047")
 def test_a_shelf_no_library_answers_for_is_not_proved() -> None:
     with family_env(13) as env:
-        fake, client, auditor, _events, target = kit(env, libraries=[library(root="/elsewhere")])
+        _fake, client, auditor, _events, target = kit(env, libraries=[library(root="/elsewhere")])
         report = admit(env, auditor, client, target)
         assert not report.proved and codes(report) == {"library_unmapped"}
 
@@ -197,7 +197,7 @@ def test_a_target_never_audited_is_refused_a_family_shelf_with_its_reason() -> N
 @pytest.mark.req("EF-EXP-047", "ENF-SEC-016")
 def test_a_proof_is_for_the_folder_and_the_ceiling_it_was_audited_for() -> None:
     with family_env(13) as env:
-        fake, client, auditor, _events, target = kit(
+        _fake, client, auditor, _events, target = kit(
             env, libraries=[library(), library("0OTHERLIB2", "/manga/Other")]
         )
         assert admit(env, auditor, client, target, ceiling=13).proved
@@ -232,9 +232,9 @@ def test_a_gap_that_opens_later_pauses_the_shelf_and_shows_in_health() -> None:
         assert health.child_exposure and health.waiting_state is WaitingState.CHILD_EXPOSURE
         (detail,) = events.details("target.child_exposure")
         assert detail["shelves"] == [env.shelf_id] and detail["cause"] == "library_above_rating"
-        assert [b.partitioning for b in bindings_of_all(env) if b.destination_id == destination] == [
-            "none"
-        ]  # the pass itself refuses the binding from now on
+        assert [
+            b.partitioning for b in bindings_of_all(env) if b.destination_id == destination
+        ] == ["none"]  # the pass itself refuses the binding from now on
         fake.users = [administrator(), reader("teen", [LIBRARY], age=13)]  # repaired
         assert run(auditor.audit(client, target)).proved
         assert env.rows(export.shelf)[0].paused_reason is None  # only a complete audit lifts it
@@ -291,3 +291,24 @@ def test_no_key_and_no_account_name_leaves_the_audit() -> None:
             assert API_KEY not in text and OTHER_KEY not in text and "secretname" not in text
         assert all(r.headers.get("x-api-key") == API_KEY for r in fake.requests)
         assert fake.violations == []  # only listed routes were called
+
+
+@pytest.mark.req("ENF-SEC-016", "EF-EXP-047")
+def test_the_status_page_lists_the_komga_floor_and_the_version_audited() -> None:
+    from datetime import date
+
+    from shelfhold.ops.status import known_bad_report
+
+    with family_env(13) as env:
+        fake, client, auditor, _events, target = kit(env)
+        fake.version = "1.21.0"
+        admit(env, auditor, client, target)
+        with env.engine.connect() as connection:
+            known = known_bad_report(connection, date(2026, 11, 16))
+        assert known["komga"] == {
+            "minimum_version": "1.22.0",
+            "entries": [{"advisory": "komga-below-1.22.0", "category": "cve", "below": "1.22.0"}],
+        }
+        row = next(t for t in known["targets"] if t["target"] == target)  # type: ignore[attr-defined]
+        assert row["version"] == "1.21" or row["version"] == "1.21.0"
+        assert row["advisories"] == ["komga-below-1.22.0 (cve)"]

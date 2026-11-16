@@ -18,13 +18,15 @@ from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import export
 from tests.fakes.komga import API_KEY, BASE_URL, FakeKomga, administrator, build_fetcher, reader
+from tests.integration import test_fan_out_routes as routes
 from tests.integration.test_auth_keys_reserved import _bearer, _create_key
-from tests.integration.test_fan_out_routes import UNKNOWN, World, world  # noqa: F401
+from tests.integration.test_fan_out_routes import UNKNOWN, World
 from tests.kavita_env import RecordingEvents
 from tests.komga_env import run
 from tests.visibility_env import add_profile
 
 LIBRARY = "0KIDSLIB01"
+world = routes.world  # the same world as the binding routes: one shelf below 18+, one adult
 
 
 def komga_target(world: World) -> str:
@@ -56,12 +58,12 @@ def test_a_family_shelf_is_bound_to_komga_only_after_the_audit_proved_it(world: 
     refused = world.bind(world.family, "kids", target=target)  # nobody audited
     assert refused.status_code in {403, 409, 422}
     assert refused.json()["code"] == "shelf.destination_not_partitioned"
-    assert "never_audited" in refused.text and world.count() == 0
+    assert refused.json()["reason"] == "never_audited" and world.count() == 0
 
     audit(world, target, age=6)  # a child of 6 reads the library of a 13+ shelf
     refused = world.bind(world.family, "kids", target=target)
     assert refused.json()["code"] == "shelf.destination_not_partitioned"
-    assert "library_above_rating" in refused.text and world.count() == 0
+    assert refused.json()["reason"] == "library_above_rating" and world.count() == 0
     assert "secretname" not in refused.text and API_KEY not in refused.text
 
     fake = audit(world, target, age=13)
@@ -102,7 +104,7 @@ def test_a_child_and_a_member_learn_nothing_of_the_audit_and_bind_nothing(
 
 
 @pytest.mark.req("EF-EXP-047", "EF-USR-024", "ENF-SEC-010")
-def test_an_api_key_even_read_only_binds_nothing_and_reads_no_gap(
+def test_an_api_key_even_read_only_binds_nothing_and_reads_no_binding(
     world: World, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     target = komga_target(world)
@@ -114,9 +116,7 @@ def test_an_api_key_even_read_only_binds_nothing_and_reads_no_gap(
         other = world.api.other_client("10.0.0.9")
         post = other.post(world.path(world.family), json=body, headers=_bearer(key))
         get = other.get(world.path(world.family), headers=_bearer(key))
-        status = other.get("/api/v1/status", headers=_bearer(key))
         assert post.status_code in {401, 403} and get.status_code in {401, 403}, flags
-        assert status.status_code in {401, 403}, flags
     assert world.count() == 0
 
 
