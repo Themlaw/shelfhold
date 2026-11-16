@@ -14,8 +14,8 @@ from shelfhold.sdk.testing.destination_kit import SYNTHETIC_ITEM
 
 plan = FsOpPlan(
     ops=(
-        FsOp(op="mkdir", rel_path="Serie A"),
-        FsOp(op="write", rel_path="Serie A/Tome 1.cbz",
+        FsOp(op="mkdir", rel_path="Series A"),
+        FsOp(op="write", rel_path="Series A/Tome 1.cbz",
              content_ref=ContentRef(kind="export_item", ref=SYNTHETIC_ITEM)),
     )
 )

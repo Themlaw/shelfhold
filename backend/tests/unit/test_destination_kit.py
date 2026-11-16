@@ -28,8 +28,8 @@ from shelfhold.sdk.testing.fixtures.reserved_targets import (
 _ITEM = ContentRef(kind="export_item", ref=SYNTHETIC_ITEM)
 _PLAN = FsOpPlan(
     ops=(
-        FsOp(op="mkdir", rel_path="Serie A"),
-        FsOp(op="write", rel_path="Serie A/Volume 1.cbz", content_ref=_ITEM),
+        FsOp(op="mkdir", rel_path="Series A"),
+        FsOp(op="write", rel_path="Series A/Volume 1.cbz", content_ref=_ITEM),
     )
 )
 
@@ -233,7 +233,7 @@ def test_kit_refuses_a_forbidden_sidecar() -> None:
     caps = _caps(forbidden_sidecars=frozenset({"series.json"}))
     sidecar = ContentRef(kind="sidecar", ref="series-json")
     plan = FsOpPlan(
-        ops=(FsOp(op="write_inline", rel_path="Serie A/series.json", content_ref=sidecar),)
+        ops=(FsOp(op="write_inline", rel_path="Series A/series.json", content_ref=sidecar),)
     )
     _fails(_Dest(caps), _scenario(plan=plan), "no_forbidden_sidecar", "series.json")
     declares = _caps(sidecars={"series.json"}, forbidden_sidecars=frozenset({"series.json"}))
