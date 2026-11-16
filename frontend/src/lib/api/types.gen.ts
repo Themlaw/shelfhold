@@ -791,6 +791,114 @@ export type ChildAuditOut = {
 };
 
 /**
+ * CollectionDetailOut
+ */
+export type CollectionDetailOut = {
+    /**
+     * Count
+     */
+    count: number;
+    /**
+     * Cover Hash
+     */
+    cover_hash: string | null;
+    /**
+     * Created At
+     */
+    created_at: string;
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Items
+     */
+    items: Array<ItemOut>;
+    /**
+     * Kind
+     */
+    kind: 'collection' | 'reading_list';
+    /**
+     * Mine
+     */
+    mine: boolean;
+    /**
+     * Name
+     */
+    name: string | null;
+    /**
+     * Scope
+     */
+    scope: 'shared' | 'profile';
+};
+
+/**
+ * CollectionIn
+ */
+export type CollectionIn = {
+    /**
+     * Kind
+     */
+    kind?: 'collection' | 'reading_list';
+    /**
+     * Name
+     */
+    name: string;
+    /**
+     * Scope
+     */
+    scope?: 'shared' | 'profile';
+};
+
+/**
+ * CollectionOut
+ */
+export type CollectionOut = {
+    /**
+     * Count
+     */
+    count: number;
+    /**
+     * Cover Hash
+     */
+    cover_hash: string | null;
+    /**
+     * Created At
+     */
+    created_at: string;
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Kind
+     */
+    kind: 'collection' | 'reading_list';
+    /**
+     * Mine
+     */
+    mine: boolean;
+    /**
+     * Name
+     */
+    name: string | null;
+    /**
+     * Scope
+     */
+    scope: 'shared' | 'profile';
+};
+
+/**
+ * CollectionsOut
+ */
+export type CollectionsOut = {
+    /**
+     * Items
+     */
+    items: Array<CollectionOut>;
+};
+
+/**
  * CollisionOut
  */
 export type CollisionOut = {
@@ -1896,6 +2004,39 @@ export type HumanInterventions = {
 };
 
 /**
+ * ImportIn
+ */
+export type ImportIn = {
+    /**
+     * Cbl
+     */
+    cbl: string;
+    /**
+     * Name
+     */
+    name?: string | null;
+    /**
+     * Scope
+     */
+    scope?: 'shared' | 'profile';
+};
+
+/**
+ * ImportOut
+ */
+export type ImportOut = {
+    collection: CollectionOut;
+    /**
+     * Imported
+     */
+    imported: number;
+    /**
+     * Unresolved
+     */
+    unresolved: Array<UnresolvedOut>;
+};
+
+/**
  * IntentOut
  */
 export type IntentOut = {
@@ -1948,6 +2089,20 @@ export type IntentsOut = {
 };
 
 /**
+ * ItemIn
+ */
+export type ItemIn = {
+    /**
+     * Number
+     */
+    number?: string | null;
+    /**
+     * Work Id
+     */
+    work_id: string;
+};
+
+/**
  * ItemMoveIn
  */
 export type ItemMoveIn = {
@@ -1963,6 +2118,36 @@ export type ItemMoveIn = {
      * New Rel Path
      */
     new_rel_path: string;
+};
+
+/**
+ * ItemOut
+ */
+export type ItemOut = {
+    /**
+     * Cover Hash
+     */
+    cover_hash: string | null;
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Number
+     */
+    number: string | null;
+    /**
+     * Position
+     */
+    position: number;
+    /**
+     * Title
+     */
+    title: string;
+    /**
+     * Work Id
+     */
+    work_id: string;
 };
 
 /**
@@ -5436,6 +5621,28 @@ export type UnmaskedOut = {
 };
 
 /**
+ * UnresolvedOut
+ */
+export type UnresolvedOut = {
+    /**
+     * Index
+     */
+    index: number;
+    /**
+     * Number
+     */
+    number: string;
+    /**
+     * Reason
+     */
+    reason: 'not_found' | 'ambiguous';
+    /**
+     * Series
+     */
+    series: string;
+};
+
+/**
  * UpstreamStatusIn
  */
 export type UpstreamStatusIn = {
@@ -7508,6 +7715,274 @@ export type SessionRevokeResponses = {
 };
 
 export type SessionRevokeResponse = SessionRevokeResponses[keyof SessionRevokeResponses];
+
+export type ListCollectionsData = {
+    body?: never;
+    path?: never;
+    query?: {
+        /**
+         * Limit
+         */
+        limit?: number;
+        /**
+         * Offset
+         */
+        offset?: number;
+    };
+    url: '/api/v1/collections';
+};
+
+export type ListCollectionsErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type ListCollectionsError = ListCollectionsErrors[keyof ListCollectionsErrors];
+
+export type ListCollectionsResponses = {
+    /**
+     * Successful Response
+     */
+    200: CollectionsOut;
+};
+
+export type ListCollectionsResponse = ListCollectionsResponses[keyof ListCollectionsResponses];
+
+export type CreateCollectionData = {
+    body: CollectionIn;
+    path?: never;
+    query?: never;
+    url: '/api/v1/collections';
+};
+
+export type CreateCollectionErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type CreateCollectionError = CreateCollectionErrors[keyof CreateCollectionErrors];
+
+export type CreateCollectionResponses = {
+    /**
+     * Response Create Collection
+     *
+     * Successful Response
+     */
+    201: {
+        [key: string]: string;
+    };
+};
+
+export type CreateCollectionResponse = CreateCollectionResponses[keyof CreateCollectionResponses];
+
+export type ImportCblData = {
+    body: ImportIn;
+    path?: never;
+    query?: never;
+    url: '/api/v1/collections/import-cbl';
+};
+
+export type ImportCblErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type ImportCblError = ImportCblErrors[keyof ImportCblErrors];
+
+export type ImportCblResponses = {
+    /**
+     * Successful Response
+     */
+    201: ImportOut;
+};
+
+export type ImportCblResponse = ImportCblResponses[keyof ImportCblResponses];
+
+export type DeleteCollectionData = {
+    body?: never;
+    path: {
+        /**
+         * Collection Id
+         */
+        collection_id: string;
+    };
+    query?: never;
+    url: '/api/v1/collections/{collection_id}';
+};
+
+export type DeleteCollectionErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type DeleteCollectionError = DeleteCollectionErrors[keyof DeleteCollectionErrors];
+
+export type DeleteCollectionResponses = {
+    /**
+     * Successful Response
+     */
+    204: void;
+};
+
+export type DeleteCollectionResponse = DeleteCollectionResponses[keyof DeleteCollectionResponses];
+
+export type ReadCollectionData = {
+    body?: never;
+    path: {
+        /**
+         * Collection Id
+         */
+        collection_id: string;
+    };
+    query?: never;
+    url: '/api/v1/collections/{collection_id}';
+};
+
+export type ReadCollectionErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type ReadCollectionError = ReadCollectionErrors[keyof ReadCollectionErrors];
+
+export type ReadCollectionResponses = {
+    /**
+     * Successful Response
+     */
+    200: CollectionDetailOut;
+};
+
+export type ReadCollectionResponse = ReadCollectionResponses[keyof ReadCollectionResponses];
+
+export type AddItemData = {
+    body: ItemIn;
+    path: {
+        /**
+         * Collection Id
+         */
+        collection_id: string;
+    };
+    query?: never;
+    url: '/api/v1/collections/{collection_id}/items';
+};
+
+export type AddItemErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type AddItemError = AddItemErrors[keyof AddItemErrors];
+
+export type AddItemResponses = {
+    /**
+     * Successful Response
+     */
+    201: ItemOut;
+};
+
+export type AddItemResponse = AddItemResponses[keyof AddItemResponses];
+
+export type RemoveItemData = {
+    body?: never;
+    path: {
+        /**
+         * Collection Id
+         */
+        collection_id: string;
+        /**
+         * Item Id
+         */
+        item_id: string;
+    };
+    query?: never;
+    url: '/api/v1/collections/{collection_id}/items/{item_id}';
+};
+
+export type RemoveItemErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type RemoveItemError = RemoveItemErrors[keyof RemoveItemErrors];
+
+export type RemoveItemResponses = {
+    /**
+     * Successful Response
+     */
+    204: void;
+};
+
+export type RemoveItemResponse = RemoveItemResponses[keyof RemoveItemResponses];
 
 export type ReadConfigData = {
     body?: never;

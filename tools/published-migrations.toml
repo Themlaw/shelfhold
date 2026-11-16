@@ -249,3 +249,8 @@ since = "1.1"
 file = "0085_page_issue.py"
 sha256 = "d2c5ffc37edb4a58a683d26d318595df6da348dab1a1ef290385f280e1b93991"
 since = "1.1"
+
+[[migration]]
+file = "0086_collections.py"
+sha256 = "6793ae45ae524307a5a1e4278a47355f48956185fbcb76ef90f7776d9c093de3"
+since = "1.1"
