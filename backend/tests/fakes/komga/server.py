@@ -34,6 +34,7 @@ UNKNOWN_KEY = synthetic_text("komga-fake-revoked")  # a key the server does not 
 ALLOWED: dict[tuple[str, str], bool] = {
     ("GET", r"/actuator/info"): True,
     ("GET", r"/api/v2/users/me"): False,
+    ("GET", r"/api/v2/users"): True,
     ("GET", r"/api/v1/libraries"): False,
     ("POST", r"/api/v1/libraries/(?P<library>[A-Za-z0-9]+)/scan"): True,
     ("POST", r"/api/v1/libraries/(?P<library>[A-Za-z0-9]+)/empty-trash"): True,
@@ -54,6 +55,23 @@ def default_libraries() -> list[dict[str, Any]]:
     ]
 
 
+def administrator() -> dict[str, Any]:
+    return {"id": "0SYNTHUSER001", "email": "service@komga.invalid", "roles": ["ADMIN"],
+            "sharedAllLibraries": True, "sharedLibrariesIds": [], "labelsAllow": [],
+            "labelsExclude": [], "ageRestriction": None}  # fmt: skip
+
+
+def reader(
+    name: str, libraries: list[str], *, age: int | None = None, restriction: str = "ALLOW_ONLY",
+    roles: list[str] | None = None, shared_all: bool = False,
+) -> dict[str, Any]:  # fmt: skip
+    """A non-administrator account: the libraries it is shared, an age restriction or none."""
+    return {"id": f"0SYNTH{name.upper()}", "email": f"{name}@komga.invalid",
+            "roles": roles if roles is not None else ["USER"], "sharedAllLibraries": shared_all,
+            "sharedLibrariesIds": list(libraries), "labelsAllow": [], "labelsExclude": [],
+            "ageRestriction": None if age is None else {"age": age, "restriction": restriction}}  # fmt: skip
+
+
 @dataclass(frozen=True)
 class RecordedRequest:
     method: str
@@ -68,6 +86,7 @@ class RecordedRequest:
 class FakeKomga:
     version: str = "1.22.1"
     libraries: list[dict[str, Any]] = field(default_factory=default_libraries)
+    users: list[dict[str, Any]] = field(default_factory=lambda: [administrator()])
     keys: dict[str, bool] = field(default_factory=lambda: {API_KEY: True, OTHER_KEY: False})
     asleep: bool = False
     requests: list[RecordedRequest] = field(default_factory=list)
@@ -135,6 +154,8 @@ class FakeKomga:
                 {"id": "0SYNTHUSER001", "email": "service@komga.invalid", "roles": ["ADMIN"],
                  "sharedAllLibraries": True, "sharedLibrariesIds": []},
             )  # fmt: skip
+        if path == "/api/v2/users":
+            return self._json(200, [dict(user) for user in self.users])
         if path == "/api/v1/libraries":
             return self._json(200, [dict(lib) for lib in self.libraries])
         library = found.group("library")
