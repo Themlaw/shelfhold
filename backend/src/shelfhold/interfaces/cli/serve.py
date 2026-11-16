@@ -17,19 +17,28 @@ from shelfhold.infrastructure.secrets.errors import (
     KeyringPermissionsError,
     KeyringUnreadableError,
 )
+from shelfhold.interfaces.cli import migrate as migrate_command
 
 
 def register(commands: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
-    commands.add_parser("serve", help=t("cli.serve_help")).set_defaults(handler=run)
+    parser = commands.add_parser("serve", help=t("cli.serve_help"))
+    parser.add_argument("--migrate", action="store_true", help=t("cli.serve_migrate_help"))
+    parser.set_defaults(handler=run)
 
 
-def run(_args: argparse.Namespace, resolved: ResolvedSettings) -> int:
+def run(args: argparse.Namespace, resolved: ResolvedSettings) -> int:
     settings = resolved.values
     try:
         check_schema_not_newer(settings)  # refuse early, with a clear message
     except SchemaTooNewError as exc:
         print(t("migrate.schema_too_new", revision=exc.revision), file=sys.stderr)
         return 1
+    if args.migrate:
+        # Same path as `shelfhold migrate` (pre-migration backup, progress, messages). A failed
+        # migration serves nothing; with nothing pending it is a quick no-op.
+        code = migrate_command.run(args, resolved)
+        if code != 0:
+            return code
     try:
         boot_check(settings)  # ENF-SEC-005: refuse early, with a clear message
     except KeyringUnreadableError as exc:

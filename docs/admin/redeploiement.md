@@ -12,8 +12,16 @@ au démarrage (ENF-OPS-017).
 3. Changez la version de l'image dans le compose et redéployez avec votre outil habituel
    (`docker compose pull && docker compose up -d`, ou un outil de gestion de piles).
 
-Le service `shelfhold-migrate` tourne d'abord et le service principal en dépend
-(`service_completed_successfully`). `shelfhold migrate` :
+Le compose n'a qu'un service : l'image démarre `shelfhold serve --migrate`, qui applique d'abord les
+migrations en attente, puis sert. Si la migration échoue, le conteneur sort avec un code non nul et ne
+sert rien. Sans migration en attente, c'est immédiat ; le `start_period` du healthcheck (10 min) est le
+budget de migration. Pour migrer à part, avant la mise à jour, avec le même chemin :
+
+```sh
+docker compose run --rm shelfhold shelfhold migrate
+```
+
+`shelfhold migrate` (et donc `serve --migrate`) :
 
 - refuse tant qu'une intention de fichier est ouverte (redémarrez l'ancienne version et laissez-la
   reprendre ou annuler l'intention) ;

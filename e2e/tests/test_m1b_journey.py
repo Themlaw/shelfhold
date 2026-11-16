@@ -350,6 +350,9 @@ def rollback_world() -> Iterator[dict[str, object]]:
     j = Journey(app_image=PREVIOUS)
     j.compose("down", "-v", "-t", "1", check=False)
     try:
+        # the previous release does not know `serve --migrate`: its migration is run on its own
+        j.compose("up", "--wait", "-d", "egress-watch")
+        j.compose("run", "--rm", "--no-deps", "-T", "shelfhold", "shelfhold", "migrate")
         j.compose("up", "--wait", "-d")
         yield run_rollback(j)
     finally:
@@ -391,13 +394,12 @@ def run_rollback(j: Journey) -> dict[str, object]:
     # the way back: the saved database first (the newer one would be refused), then the release
     j.compose("stop", "shelfhold")
     j.compose(
-        "run", "--rm", "--no-deps", "-T", "--entrypoint", "sh", "shelfhold-migrate", "-c",
+        "run", "--rm", "--no-deps", "-T", "--entrypoint", "sh", "shelfhold", "-c",
         f"cp /data/backups/pre-migration/{backup} /data/shelfhold.db "
         "&& rm -f /data/shelfhold.db-wal /data/shelfhold.db-shm",
     )  # fmt: skip
     j.switch_app_image(PREVIOUS or "")
-    # the adoption wants the volumes to itself, and every root mounted (the `shelfhold` service,
-    # not the migration one, which has no /library: a root that is not mounted is not judged)
+    # the adoption wants the volumes to itself, and every root mounted (the `shelfhold` service)
     j.compose("stop", "shelfhold")
 
     def offline(*args: str) -> subprocess.CompletedProcess[str]:

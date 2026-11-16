@@ -157,3 +157,72 @@ def test_cli_migrate_creates_the_database_private(
     finally:
         os.umask(previous)
     assert stat.S_IMODE(settings.database_path.stat().st_mode) == 0o600
+
+
+@pytest.mark.req("ENF-OPS-002")
+def test_serve_migrate_is_a_quick_no_op_on_an_up_to_date_schema(
+    cli_env: dict[str, str],
+    settings: Settings,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    migrate(settings)
+    started: list[object] = []
+    monkeypatch.setattr(serve_command.uvicorn, "run", lambda *a, **k: started.append(a))
+    assert cli.main(["serve", "--migrate"]) == 0
+    assert len(started) == 1
+    assert "à jour" in capsys.readouterr().out
+
+
+@pytest.mark.req("ENF-OPS-002")
+def test_serve_migrate_applies_pending_migrations_then_serves(
+    cli_env: dict[str, str],
+    settings: Settings,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    started: list[object] = []
+    monkeypatch.setattr(serve_command.uvicorn, "run", lambda *a, **k: started.append(a))
+    assert current_revision(settings.database_path) is None
+    assert cli.main(["serve", "--migrate"]) == 0
+    assert current_revision(settings.database_path) == head_revision()
+    assert len(started) == 1
+    assert head_revision() in capsys.readouterr().out
+
+
+@pytest.mark.req("ENF-OPS-002")
+def test_serve_migrate_serves_nothing_when_the_migration_fails(
+    cli_env: dict[str, str],
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    def broken(_settings: Settings) -> None:
+        raise MigrationError("0002", "boom")
+
+    started: list[object] = []
+    monkeypatch.setattr(migrate_command, "migrate", broken)
+    monkeypatch.setattr(serve_command.uvicorn, "run", lambda *a, **k: started.append(a))
+    assert cli.main(["serve", "--migrate"]) == 1
+    assert started == []
+    assert "0002" in capsys.readouterr().err
+
+
+@pytest.mark.req("ENF-OPS-002")
+def test_serve_migrate_still_refuses_a_newer_schema_first(
+    cli_env: dict[str, str],
+    settings: Settings,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    settings.data_dir.mkdir(parents=True)
+    with closing(sqlite3.connect(settings.database_path)) as db:
+        db.execute("CREATE TABLE alembic_version (version_num VARCHAR(32) NOT NULL)")
+        db.execute("INSERT INTO alembic_version VALUES ('from_the_future')")
+        db.commit()
+    attempted: list[object] = []
+    started: list[object] = []
+    monkeypatch.setattr(migrate_command, "migrate", lambda *a, **k: attempted.append(a))
+    monkeypatch.setattr(serve_command.uvicorn, "run", lambda *a, **k: started.append(a))
+    assert cli.main(["serve", "--migrate"]) == 1
+    assert attempted == [] and started == []
+    assert "démarrage refusé" in capsys.readouterr().err

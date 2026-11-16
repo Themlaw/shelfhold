@@ -10,67 +10,21 @@
 #
 # Host directories must be writable by uid 1000:  mkdir -p data store && chown 1000:1000 data store && chmod 750 data store
 
-x-shelfhold: &shelfhold
-  image: ghcr.io/themlaw/shelfhold:1.0
-  user: "1000:1000"
-  read_only: true
-  cap_drop: [ALL]
-  security_opt: ["no-new-privileges:true"]
-  ulimits:
-    core: 0            # no core dump of decrypted data
-  # Settings: copy .env.example to .env and edit it (optional; Compose 2.24 or later).
-  env_file:
-    - path: .env
-      required: false
-  environment: &shelfhold-env
-    TZ: ${TZ:-Etc/UTC}
-    # First start (EF-UX-001): to create the first administrator in the browser wizard, set a setup
-    # secret of at least 24 characters, generated on your machine (`openssl rand -hex 24`), then
-    # uncomment the next line and paste it. You type it once in the "Your account" screen; it opens
-    # nothing once an administrator exists. Unset: the screen stays closed and
-    # `docker compose exec shelfhold shelfhold admin create` is the way (docs/configuration.md).
-    # SHELFHOLD_SETUP_TOKEN: "<the-24-or-more-characters-you-generated>"
-    # SHELFHOLD_IMPORT_DIR: /import   # with the ./import volume below; unset = import off
-    # Behind an HTTPS reverse proxy (required for e-reader tokens): the public address, so that
-    # cookies get `Secure` and the `__Host-` prefix (docs/admin/durcir.md).
-    # SHELFHOLD_PUBLIC_URL: "https://shelfhold.example.org"
-    # Hardened authentication profile: short admin sessions, password asked again for every
-    # reserved action, API keys expire within 90 days (docs/admin/durcir.md).
-    # SHELFHOLD_AUTH_HARDENED: "true"
-  volumes:
-    - ./data:/data     # database, config, thumbnails (local disk, SSD advised, not NFS)
-    - ./store:/store   # kept copies only; a separate volume from /data (ENF-OPS-012).
-                       # Recommended for every untrusted source (web EPUBs, import folder): without it
-                       # the original of an EPUB is kept nowhere, only its neutralised derivative.
-    # Import folder (docs/admin/dossier-import.md): your own CBZ, EPUB and PDF files. A folder of its
-    # own, never inside or above /library, /store or /data; Shelfhold removes what it has stored.
-    # Uncomment both lines, then run `shelfhold import scan --dry-run` to see what is ready.
-    # - ./import:/import
-    # Switchover from an existing automation (adoption, repatriation; EF-EXP-060): uncomment the
-    # next line to mount, read-only, the folder Suwayomi downloads to, and declare it in the path
-    # map of the target with mode = adopt_ro. Shelfhold reads it and never writes there (the :ro is
-    # the second lock). Remove the line once the switchover is done.
-    # - /path/to/suwayomi/downloads:/upstream/suwayomi:ro
-
 services:
-  # Applies migrations, then exits. Shelfhold only starts after it succeeded.
-  shelfhold-migrate:
-    <<: *shelfhold
-    command: ["shelfhold", "migrate"]
-    restart: "no"
-    pids_limit: 64
-    mem_limit: 512m
-    tmpfs: ["/tmp:size=64m"]
-    logging:
-      driver: json-file
-      options: { max-size: "10m", max-file: "3" }
-
   shelfhold:
-    <<: *shelfhold
+    image: ghcr.io/themlaw/shelfhold:1.0
     container_name: shelfhold
-    depends_on:
-      shelfhold-migrate:
-        condition: service_completed_successfully
+    # Migrations first (backup named by revision, ENF-OPS-002), then the server; a failed migration
+    # exits non-zero and serves nothing. Written out because the 1.0 images predate the image's own
+    # `serve --migrate` default (from 1.1 on, this line can go).
+    command: ["sh", "-c", "shelfhold migrate && exec shelfhold serve"]
+    # To migrate separately before an update: docker compose run --rm shelfhold shelfhold migrate
+    user: "1000:1000"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    ulimits:
+      core: 0            # no core dump of decrypted data
     init: true
     tmpfs: ["/tmp:size=256m"]
     stop_grace_period: 60s
@@ -78,12 +32,45 @@ services:
     pids_limit: 256
     ports:
       - "127.0.0.1:8080:8080"
+    # Settings: copy .env.example to .env and edit it (optional; Compose 2.24 or later).
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      TZ: ${TZ:-Etc/UTC}
+      # First start (EF-UX-001): to create the first administrator in the browser wizard, set a setup
+      # secret of at least 24 characters, generated on your machine (`openssl rand -hex 24`), then
+      # uncomment the next line and paste it. You type it once in the "Your account" screen; it opens
+      # nothing once an administrator exists. Unset: the screen stays closed and
+      # `docker compose exec shelfhold shelfhold admin create` is the way (docs/configuration.md).
+      # SHELFHOLD_SETUP_TOKEN: "<the-24-or-more-characters-you-generated>"
+      # SHELFHOLD_IMPORT_DIR: /import   # with the ./import volume below; unset = import off
+      # Behind an HTTPS reverse proxy (required for e-reader tokens): the public address, so that
+      # cookies get `Secure` and the `__Host-` prefix (docs/admin/durcir.md).
+      # SHELFHOLD_PUBLIC_URL: "https://shelfhold.example.org"
+      # Hardened authentication profile: short admin sessions, password asked again for every
+      # reserved action, API keys expire within 90 days (docs/admin/durcir.md).
+      # SHELFHOLD_AUTH_HARDENED: "true"
+    volumes:
+      - ./data:/data     # database, config, thumbnails (local disk, SSD advised, not NFS)
+      - ./store:/store   # kept copies only; a separate volume from /data (ENF-OPS-012).
+                         # Recommended for every untrusted source (web EPUBs, import folder): without it
+                         # the original of an EPUB is kept nowhere, only its neutralised derivative.
+      # Import folder (docs/admin/dossier-import.md): your own CBZ, EPUB and PDF files. A folder of its
+      # own, never inside or above /library, /store or /data; Shelfhold removes what it has stored.
+      # Uncomment both lines, then run `shelfhold import scan --dry-run` to see what is ready.
+      # - ./import:/import
+      # Switchover from an existing automation (adoption, repatriation; EF-EXP-060): uncomment the
+      # next line to mount, read-only, the folder Suwayomi downloads to, and declare it in the path
+      # map of the target with mode = adopt_ro. Shelfhold reads it and never writes there (the :ro is
+      # the second lock). Remove the line once the switchover is done.
+      # - /path/to/suwayomi/downloads:/upstream/suwayomi:ro
     healthcheck:
       test: ["CMD", "python", "/usr/local/bin/shelfhold-healthcheck"]
       interval: 30s
       timeout: 5s
       retries: 3
-      start_period: 60s
+      start_period: 10m  # migration budget (ENF-OPS-002): the server answers once it is applied
     logging:
       driver: json-file
       options: { max-size: "10m", max-file: "3" }

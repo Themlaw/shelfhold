@@ -145,12 +145,12 @@ class Journey:
         return [line for line in logs.splitlines() if line.startswith("EGRESS")]
 
     def switch_app_image(self, image: str) -> None:
-        """Another release on the same volumes: the container is recreated (the migration service
-        runs first, as in a redeploy); the simulated servers and the volumes stay as they are."""
+        """Another release on the same volumes: the container is recreated (`serve --migrate`
+        applies the migrations at start, as in a redeploy; run on its own first so that a failure shows here); the simulated servers and the volumes stay as they are."""
         self.compose("stop", "shelfhold")
         self.app_image = image
         # the simulated servers stay up: no `--wait` on their health (it flaps on a loaded host)
-        self.compose("run", "--rm", "--no-deps", "-T", "shelfhold-migrate")
+        self.compose("run", "--rm", "--no-deps", "-T", "shelfhold", "shelfhold", "migrate")
         self.compose("up", "-d", "--force-recreate", "--no-deps", "shelfhold")
         assert wait_for(lambda: self.shelfhold("status").code == 0, 180)
 

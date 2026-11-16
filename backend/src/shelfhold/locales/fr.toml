@@ -4,6 +4,7 @@
 description = "Shelfhold : l'atelier de la bibliothèque personnelle de votre foyer."
 migrate_help = "Applique les migrations de la base (sauvegarde préalable, refus d'un schéma plus récent)."
 serve_help = "Démarre le serveur HTTP."
+serve_migrate_help = "Applique d'abord les migrations en attente, comme `migrate` ; ne sert rien si l'une échoue."
 config_help = "Consulte la configuration."
 config_show_help = "Affiche chaque champ avec son origine (env, toml, db, défaut)."
 config_get_help = "Affiche la valeur d'une clé de configuration."

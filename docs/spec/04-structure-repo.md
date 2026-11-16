@@ -269,26 +269,10 @@ Le compose Kavita existant **n'est pas modifié** : Shelfhold monte le **parent 
 ```yaml
 # /srv/stacks/shelfhold/compose.yaml
 services:
-  shelfhold-migrate:
-    image: ghcr.io/<org>/shelfhold:0.2
-    command: ["shelfhold", "migrate"]
-    user: "1000:1000"
-    read_only: true
-    environment:
-      SHELFHOLD_SECRET_KEY_FILE: /run/secrets/shelfhold_secret_key
-    secrets: [shelfhold_secret_key]
-    volumes:
-      - /srv/shelfhold/data:/data
-      - /srv/media/shelfhold-store:/store
-      - /srv/media/kavita:/library
-    restart: "no"
-
   shelfhold:
     image: ghcr.io/<org>/shelfhold:0.2
     container_name: shelfhold
-    depends_on:
-      shelfhold-migrate:
-        condition: service_completed_successfully
+    # la commande de l'image est `shelfhold serve --migrate` : migrations en attente, puis serveur
     user: "1000:1000"
     init: true
     read_only: true
@@ -323,7 +307,7 @@ services:
       interval: 30s
       timeout: 5s
       retries: 3
-      start_period: 60s
+      start_period: 10m   # budget de migration (ENF-OPS-002)
     logging:
       driver: json-file
       options: { max-size: "10m", max-file: "3" }
