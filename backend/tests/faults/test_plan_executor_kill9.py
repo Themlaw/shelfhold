@@ -47,7 +47,8 @@ CHILD = textwrap.dedent(
     from shelfhold.export.domain.physical_roots import ExpectedRoot
     from shelfhold.export.targets.kavita.destination import KavitaDestination
     from shelfhold.infrastructure.db import create_db_engine
-        from shelfhold.sdk.fsops import PlannedContent
+    from shelfhold.infrastructure.fsops import Fsops
+    from shelfhold.sdk.fsops import PlannedContent
     from tests.plan_executor_env import BOOK_A, BOOK_B, FINGERPRINT, FixedContents, Probe
 
     library, root_id, instance_id, database, destination, target, kill_at, plan = sys.argv[1:9]

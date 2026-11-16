@@ -27,6 +27,8 @@ CODES: tuple[ErrorCode, ...] = (
     # M3 L22 (EF-EXP-062): the plan that moves an exported series is stale or has blockers
     ErrorCode("export.series_reassignment_refused", 409, "admin"),
     ErrorCode("target.tree_overlap", 409, "admin"),
+    # M4 L04: a plan or a call a destination returned that the host will not run (EF-EXP-001)
+    ErrorCode("export.plan_refused", 422, "admin"),
     ErrorCode("shelf.destination_exists", 409, "admin"),
     ErrorCode("target.pull_needs_readable_copy", 409, "admin"),
     ErrorCode("export.watermarked_external_egress", 409, "user"),

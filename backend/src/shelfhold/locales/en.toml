@@ -1218,6 +1218,11 @@
     action = "Mount the correct disk, then run “shelfhold target recheck”."
     cause = "The expected sentinel file on a mounted disk was not found: disk unmounted, replaced or mounted in the wrong location."
 
+  [errors."export.plan_refused"]
+    title = "The host refused to run what the destination described."
+    action = "Nothing was changed. Check the destination and its version, then run the export again."
+    cause = "A plan or a call returned by the destination broke a rule of the host: a path outside the folder, a file that was not planned for this binding, an indexer asking to write, or a plan altered after it was checked."
+
   [errors."export.name_misread_number"]
     title = "Kavita would read another chapter number in this file name."
     action = "Set an exported series name that doesn't look like a chapter marker, then run the preview again."

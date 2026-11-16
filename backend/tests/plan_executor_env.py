@@ -56,7 +56,7 @@ class Probe:
     def __init__(self, fingerprint: str | None) -> None:
         self.current = fingerprint
 
-    def fingerprint(self, target_id: str) -> str | None:  # noqa: ARG002
+    def fingerprint(self, target_id: str) -> str | None:
         return self.current
 
 
@@ -125,7 +125,9 @@ def tree_row(
     return TreeFolder(root_id=root_id, subpath=subpath, tree_id=tree_id)
 
 
-def make_exec_env(env: ExportEnv, *, role: str = "primary", fingerprint: str | None = None) -> ExecEnv:
+def make_exec_env(
+    env: ExportEnv, *, role: str = "primary", fingerprint: str | None = None
+) -> ExecEnv:
     tree = tree_row(env, subpath=f"manga/{ROOT_SUBPATH}", role=role)
     journal = IntentJournal(env.engine, env.lib.fsops, clock=env.clock)
     ledger, contents = PlannedLedger(), FixedContents()

@@ -12,6 +12,7 @@ runs in the export job, with no route): a child, a member or an API key never re
 attacks of the profiles are the ones of the routes that will call it (L06a).
 """
 
+import ast
 from collections.abc import Callable, Iterator
 from pathlib import Path
 from typing import Any
@@ -96,21 +97,27 @@ def test_executor_checks_destination_plan_before_each_op(
 
     def spy(plan: FsOpPlan, *, planned: PlannedContent) -> None:
         events.append("check")
-        assert type(plan) is FsOpPlan and planned == x.ledger.planned("c1", x.binding.destination_id)
+        assert type(plan) is FsOpPlan and planned == x.ledger.planned(
+            "c1", x.binding.destination_id
+        )
         real(plan, planned=planned)
 
     monkeypatch.setattr(plan_executor, "check_destination_plan_before_run", spy)
     monkeypatch.setattr(
         plan_executor,
         "check_destination_plan",
-        lambda *a, **k: pytest.fail("the static check has no `planned`: the executor never uses it"),
+        lambda *a, **k: pytest.fail(
+            "the static check has no `planned`: the executor never uses it"
+        ),
         raising=False,
     )
     fsops = x.env.lib.fsops
     for name in ("mkdir", "write_atomic"):
         real_effect = getattr(fsops, name)
 
-        def effect(*args: Any, _real: Callable[..., Any] = real_effect, _n: str = name, **kw: Any) -> Any:
+        def effect(
+            *args: Any, _real: Callable[..., Any] = real_effect, _n: str = name, **kw: Any
+        ) -> Any:
             events.append(f"disk:{_n}")
             return _real(*args, **kw)
 
@@ -208,7 +215,11 @@ def test_executor_runs_rename_recycle_and_touch_under_intents(x: ExecEnv) -> Non
         "c2",
         {
             "ops": [
-                {"op": "rename", "rel_path": "Series A/Volume 1.cbz", "dst_rel_path": "Series A/V1.cbz"},
+                {
+                    "op": "rename",
+                    "rel_path": "Series A/Volume 1.cbz",
+                    "dst_rel_path": "Series A/V1.cbz",
+                },
                 {
                     "op": "touch_mtime",
                     "rel_path": "Series A/V1.cbz",
@@ -220,9 +231,7 @@ def test_executor_runs_rename_recycle_and_touch_under_intents(x: ExecEnv) -> Non
     kept = x.root / "Series A" / "V1.cbz"
     assert kept.read_bytes() == BYTES[BOOK_A] and int(kept.stat().st_mtime) == 1577934245
     x.plan_for("c3")
-    x.executor.execute(
-        x.binding, "c3", {"ops": [{"op": "recycle", "rel_path": "Series A/V1.cbz"}]}
-    )
+    x.executor.execute(x.binding, "c3", {"ops": [{"op": "recycle", "rel_path": "Series A/V1.cbz"}]})
     assert not kept.exists() and list((x.root.parent.parent / ".shelfhold").rglob("V1.cbz"))
     assert {i.op for i in intents(x, "done")} >= {"write", "rename", "recycle"}
     assert intents(x, "pending") == [] and intents(x, "applying") == []
@@ -271,7 +280,9 @@ def test_fsop_write_ref_must_be_planned_for_binding(x: ExecEnv) -> None:
 
 
 @pytest.mark.req("EF-EXP-001")
-@pytest.mark.parametrize("new_target", [False, True], ids=["between-bindings", "between-destinations"])
+@pytest.mark.parametrize(
+    "new_target", [False, True], ids=["between-bindings", "between-destinations"]
+)
 def test_write_ref_planned_for_another_binding_is_refused(x: ExecEnv, new_target: bool) -> None:
     """IDOR: the item is planned for the other binding (same server, or another server), for the
     very same call. Citing it from this one is refused, in both directions."""
@@ -326,7 +337,9 @@ def test_api_call_is_parsed_then_checked_right_before_each_send(x: ExecEnv) -> N
         method="POST",
         path="/api/upload",
         auth="target_admin",
-        body=ContentBody(content_ref=ContentRef(kind="export_item", ref=BOOK_A), encoding=RawEncoding()),
+        body=ContentBody(
+            content_ref=ContentRef(kind="export_item", ref=BOOK_A), encoding=RawEncoding()
+        ),
     )
     other_item = ok.model_copy(
         update={"body": ContentBody(content_ref=ContentRef(kind="export_item", ref=BOOK_B))}
@@ -342,9 +355,19 @@ def test_api_call_is_parsed_then_checked_right_before_each_send(x: ExecEnv) -> N
 
 @pytest.mark.req("EF-EXP-001")
 def test_no_dump_of_an_api_call_reaches_a_log_line() -> None:
-    """#275 m3: the body of a call may hold a secret; nothing logs `model_dump` of a call."""
-    source = Path(plan_executor.__file__).read_text(encoding="utf-8")
-    assert "model_dump" not in source
+    """#275 m3: the body of a call may hold a secret. The executor logs nothing, and the only
+    dump it makes is the one of a file operation, which holds no secret."""
+    tree = ast.parse(Path(plan_executor.__file__).read_text(encoding="utf-8"))
+    dumps = [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Attribute) and node.attr.startswith("model_dump")
+    ]
+    assert dumps and all(isinstance(d.value, ast.Name) and d.value.id == "op" for d in dumps)
+    assert not any(
+        isinstance(node, ast.Call) and "log" in ast.unparse(node.func).lower()
+        for node in ast.walk(tree)
+    )
 
 
 # ------------------------------------------------------------------ instance fingerprint
@@ -441,7 +464,10 @@ def test_tree_that_overlaps_another_is_refused_at_execution(x: ExecEnv) -> None:
     other = second_binding(x, new_target=False)
     with write_transaction(x.env.engine) as connection:
         connection.execute(
-            sa.text("UPDATE tree SET root_subpath = 'manga/Kavita/Inner' WHERE root_subpath = 'manga/Other'")
+            sa.text(
+                "UPDATE tree SET root_subpath = 'manga/Kavita/Inner' "
+                "WHERE root_subpath = 'manga/Other'"
+            )
         )
     x.plan_for("c1", BOOK_A, BOOK_B)
     with pytest.raises(TreeOverlapError):

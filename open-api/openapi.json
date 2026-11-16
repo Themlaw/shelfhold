@@ -24402,6 +24402,10 @@
       "code": "export.no_remote_library",
       "status": 409
     },
+    "/api/v1/problems/export.plan-refused": {
+      "code": "export.plan_refused",
+      "status": 422
+    },
     "/api/v1/problems/export.segment-policy-unconfirmed": {
       "code": "export.segment_policy_unconfirmed",
       "status": 409

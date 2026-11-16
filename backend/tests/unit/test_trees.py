@@ -19,7 +19,9 @@ OTHER_ROOT = "01JBZ3X5QH8M2N4P6R7S9T0V2R"
 TREE = "01JBZ3X5QH8M2N4P6R7S9T0V1T"
 
 
-def folder(subpath: str, *, tree_id: str | None = None, root: str = ROOT, **extra: object) -> TreeFolder:
+def folder(
+    subpath: str, *, tree_id: str | None = None, root: str = ROOT, **extra: object
+) -> TreeFolder:
     return TreeFolder(root_id=root, subpath=subpath, tree_id=tree_id, **extra)  # type: ignore[arg-type]
 
 
@@ -38,7 +40,9 @@ def test_tree_overlap_refused_unless_same_tree_per_adr() -> None:
         check_tree_attachment(folder("manga/Kavita"), [DECLARED])
     assert refused.value.code == "target.tree_overlap"
     with pytest.raises(TreeOverlapError):  # an explicit choice of another tree
-        check_tree_attachment(folder("manga/Kavita"), [DECLARED], attach_to="01JBZ3X5QH8M2N4P6R7S9T0V9Z")
+        check_tree_attachment(
+            folder("manga/Kavita"), [DECLARED], attach_to="01JBZ3X5QH8M2N4P6R7S9T0V9Z"
+        )
     with pytest.raises(TreeOverlapError):  # attaching to a tree that is not this folder
         check_tree_attachment(folder("manga/Other"), [DECLARED], attach_to=TREE)
 
@@ -81,7 +85,9 @@ def test_overlap_of_a_folder_with_a_deposit_box_inside_or_around_a_tree() -> Non
 @pytest.mark.req("EF-EXP-058")
 def test_same_inode_is_one_folder_and_an_ancestor_inode_is_an_overlap() -> None:
     mine = folder("alias/Kavita", identity=(7, 100), ancestry=frozenset({(7, 1), (7, 100)}))
-    declared = folder("manga/Kavita", tree_id=TREE, identity=(7, 100), ancestry=frozenset({(7, 1), (7, 100)}))
+    declared = folder(
+        "manga/Kavita", tree_id=TREE, identity=(7, 100), ancestry=frozenset({(7, 1), (7, 100)})
+    )
     assert relation(mine, declared) is Relation.LINKED  # a bind mount, another path, one folder
     with pytest.raises(TreeOverlapError):
         check_tree_attachment(mine, [declared], attach_to=TREE)  # never an identity by inode
@@ -102,8 +108,21 @@ def test_a_tree_is_not_its_own_neighbour() -> None:
 @pytest.mark.parametrize(
     "raw",
     [
-        "..", "../x", "a/../b", "a/..", "./a", "a/./b", "/abs", "a/", "a//b", "a\\b", "a\x00b",
-        "a\nb", "a\u200bb", "//", "/",
+        "..",
+        "../x",
+        "a/../b",
+        "a/..",
+        "./a",
+        "a/./b",
+        "/abs",
+        "a/",
+        "a//b",
+        "a\\b",
+        "a\x00b",
+        "a\nb",
+        "a\u200bb",
+        "//",
+        "/",
     ],
 )
 def test_subpath_that_climbs_or_is_not_a_folder_name_is_refused(raw: str) -> None:
