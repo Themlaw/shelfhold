@@ -93,7 +93,7 @@ describe('Étagères: les destinations d’une étagère', () => {
     expect(items[0]).toHaveTextContent('Cloisonne par bibliothèque');
     expect(items[1]).toHaveTextContent('Dossier partagé');
     expect(items[1]).toHaveTextContent('Ne cloisonne pas');
-    expect(items[1]).toHaveTextContent('Suit le dossier d'un autre serveur');
+    expect(items[1]).toHaveTextContent("Suit le dossier d'un autre serveur");
     expect(within(await section('Famille')).queryAllByRole('listitem')).toHaveLength(0);
   });
 
