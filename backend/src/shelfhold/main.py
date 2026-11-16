@@ -180,7 +180,7 @@ LOGGED_SETTINGS: dict[str, str] = {
     "fresh_auth_s": "recent_login_window_s",  # a duration
     "revision_min_page_ratio": "revision_min_page_ratio",
     "reading_max_pages_per_minute": "reading_max_pages_per_minute",  # a speed limit
-    "reading_relay_max_session_hours": "reading_relay_max_session_hours",  # a duration
+    "reading_relay_max_session_hours": "reading_relay_max_hours",  # a duration (`session` is masked)
     "follow_fallback_return": "follow_fallback_return",
     "follow_check_min_s": "follow_check_min_s",
     "follow_check_max_s": "follow_check_max_s",
