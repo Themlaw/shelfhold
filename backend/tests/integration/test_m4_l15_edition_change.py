@@ -203,7 +203,9 @@ def test_the_change_is_applied_once_and_a_second_call_adds_nothing(tmp_path: Pat
         assert len(transposed(env, reader)) == 1 and again.transferred == 0
 
 
-def test_a_profile_with_no_reading_gets_nothing_and_nobody_gets_the_reading_of_another(tmp_path: Path) -> None:
+def test_a_profile_with_no_reading_gets_nothing_and_nobody_gets_the_reading_of_another(
+    tmp_path: Path,
+) -> None:
     with reading_env(tmp_path) as env:
         reader, idle = env.user("reader"), env.user("idle")
         admin = env.user("boss", "admin")
