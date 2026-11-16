@@ -12,6 +12,7 @@ session (admin or member, never a child, a key or a token): an Edition nobody ra
 a family shelf, and an adult without the right to classify does not choose one.
 """
 
+import contextlib
 from collections.abc import Callable
 from typing import Any, Literal
 
@@ -188,6 +189,10 @@ def build_shelves_router(
     ) -> DestinationOut:
         """A shelf takes one binding per folder and server (fan-out): each is looked at for the
         barrier of a shelf below 18+, and a folder that is a tree is attached to on purpose."""
+        with contextlib.suppress(LookupError):  # an unknown shelf is answered by the bind below
+            # a write route: a binding made before trees existed gets its tree first, so that it
+            # can be attached to (the read route above never writes)
+            get_service().list_bindings(shelf_id)
         try:
             destination_id = get_service().bind_destination(
                 shelf_id=shelf_id, target_id=body.target_id, transport=body.transport,
@@ -211,7 +216,7 @@ def build_shelves_router(
         Edition each binding holds (`present_in`, per binding: a tree is one copy, its indexers
         say what its primary says)."""
         try:
-            views = get_service().list_bindings(shelf_id)
+            views = get_service().read_bindings(shelf_id)
         except LookupError:
             raise ProblemError("not_found") from None
         held = get_ops().library.present_units(edition_id, [v.destination_id for v in views])

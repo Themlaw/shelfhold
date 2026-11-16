@@ -2328,6 +2328,7 @@ warning_manifest_forgotten = "Shelfhold oublie {count} lignes de manifeste et ce
 warning_files_deleted = "{count} fichiers écrits par Shelfhold sont supprimés pour de bon."
 warning_past_the_bin = "Ils ne passent pas par la corbeille : il n'y a pas de retour possible."
 warning_adopted_kept = "{count} fichiers que vous aviez déjà restent : Shelfhold n'a jamais eu à les supprimer."
+warning_indexed_elsewhere = "{count} autres serveurs lisent ce dossier : il sera vide pour eux aussi."
 type_phrase = "Pour continuer, relancez la même commande avec --confirm \"{phrase}\"."
 done = "Destination retirée : {deleted} fichiers supprimés, {forgotten} lignes de manifeste oubliées."
 left = "Laissé en place ({code}) : {path}"

@@ -644,16 +644,27 @@ class ShelfService:
 
     def list_bindings(self, shelf_id: str) -> list[fan_out.BindingView]:
         """The bindings of a shelf with their tree and their role. A binding made before trees
-        existed gets its tree here, once (idempotent), from the folder it writes."""
+        existed gets its tree here, once (idempotent), from the folder it writes: a write, for the
+        callers that are one (the pass, the tests). A read route uses `read_bindings`."""
         with write_transaction(self._engine) as connection:
-            if (
-                connection.execute(
-                    sa.select(export.shelf.c.id).where(export.shelf.c.id == shelf_id)
-                ).first()
-                is None
-            ):
-                raise LookupError(shelf_id)
+            self._require_shelf(connection, shelf_id)
             return fan_out.ensure_trees(connection, shelf_id)
+
+    def read_bindings(self, shelf_id: str) -> list[fan_out.BindingView]:
+        """The same, as the database holds it: nothing is written (a safe method writes nothing)."""
+        with self._engine.connect() as connection:
+            self._require_shelf(connection, shelf_id)
+            return fan_out.bindings_of(connection, shelf_id)
+
+    @staticmethod
+    def _require_shelf(connection: Connection, shelf_id: str) -> None:
+        if (
+            connection.execute(
+                sa.select(export.shelf.c.id).where(export.shelf.c.id == shelf_id)
+            ).first()
+            is None
+        ):
+            raise LookupError(shelf_id)
 
     def pause_family_of_target(self, target_id: str) -> list[str]:
         """A new path map moves the folders a Kavita library reads, so who can read what has to be

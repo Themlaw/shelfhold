@@ -29,6 +29,7 @@ _WARNINGS: dict[str, Callable[[object], str]] = {
     "removal:files_deleted": lambda n: t("removal.warning_files_deleted", count=n),
     "removal:past_the_bin": lambda n: t("removal.warning_past_the_bin", count=n),
     "removal:adopted_kept": lambda n: t("removal.warning_adopted_kept", count=n),
+    "removal:indexed_elsewhere": lambda n: t("removal.warning_indexed_elsewhere", count=n),
     "detach:files_kept": lambda n: t("detach.warning_files_kept", count=n),
     "detach:hidden_erased": lambda n: t("detach.warning_hidden_erased", count=n),
     "detach:key_revoked": lambda n: t("detach.warning_key_revoked", count=n),

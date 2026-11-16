@@ -75,6 +75,7 @@ from shelfhold.sdk.fsops import (
 )
 
 __all__ = [
+    "Barrier",
     "ContentStore",
     "ExecutionReport",
     "InstanceProbe",
@@ -96,6 +97,13 @@ class PlanRefusedError(Exception):
     def __init__(self, reason: str) -> None:
         super().__init__(reason)
         self.reason = reason
+
+
+class Barrier(Protocol):
+    """What is looked at again while a plan runs (a shelf below 18+: the partitioning of the
+    tree, the ceiling). `holds` is False when what was planned may no longer be written."""
+
+    def holds(self, destination_id: str, planned: PlannedContent) -> bool: ...
 
 
 class ContentStore(Protocol):
@@ -175,6 +183,10 @@ class ExecutionReport:
     executed: int
     skipped: int  # already done: by an intent of an earlier run, or already in place (a folder)
     files: tuple[WrittenFile, ...] = ()
+    moved: tuple[tuple[str, str], ...] = ()  # `(from, to)` rel paths the plan renamed
+    recycled: tuple[
+        str, ...
+    ] = ()  # rel paths the plan sent to the bin (or moved away, see `_write`)
 
 
 @dataclass(frozen=True)
@@ -200,6 +212,8 @@ class _Run:
     skipped: int = 0
     since_probe: int = 0
     files: list[WrittenFile] = field(default_factory=list)
+    moved: list[tuple[str, str]] = field(default_factory=list)
+    recycled: list[str] = field(default_factory=list)
 
 
 class PlanExecutor:
@@ -215,7 +229,9 @@ class PlanExecutor:
         clock: Clock | None = None,
         events: TargetEvents | None = None,
         recheck_every: int = 1,
+        barrier: Barrier | None = None,
     ) -> None:
+        self._barrier = barrier
         self._recheck_every = max(1, recheck_every)
         self._engine = engine
         self._disk = disk
@@ -249,7 +265,9 @@ class PlanExecutor:
             self._screen(run, op)  # every operation, before the first one runs
         for index in range(len(run.snapshot)):
             self._run_op(run, index)
-        return ExecutionReport(run.executed, run.skipped, tuple(run.files))
+        return ExecutionReport(
+            run.executed, run.skipped, tuple(run.files), tuple(run.moved), tuple(run.recycled)
+        )
 
     def run_calls(
         self,
@@ -428,9 +446,11 @@ class PlanExecutor:
                 self._write(run, op, where, meta)
             case "rename":
                 self._rename(run, op, where, meta)
+                self._note(run, op, where)
             case "recycle":
                 self._recycle(where, meta)
                 run.executed += 1
+                self._note(run, op, where)
             case "touch_mtime":
                 self._touch(op, where, meta)
                 run.executed += 1
@@ -446,6 +466,10 @@ class PlanExecutor:
         if run.since_probe >= self._recheck_every:
             run.since_probe = 0
             self._gate(run.binding)
+            if self._barrier is not None and not self._barrier.holds(
+                run.binding.destination_id, run.planned
+            ):
+                raise PlanRefusedError("the barrier of the shelf no longer holds")
 
     def _screen(self, run: _Run, op: FsOp) -> None:
         """What the SDK check does not know: a sidecar the host did not make for this call and
@@ -489,6 +513,7 @@ class PlanExecutor:
         if self._disk.observe(where) is not None:
             raise PlanRefusedError("the path is taken by a file the host did not write")
         data = self._contents.read(run.binding.destination_id, op.content_ref)
+        self._move_away_old(run, op, meta)
         intent = self._journal.record(
             op="write", dst=where, expected_sha256=_digest(data), extra=meta
         )
@@ -504,9 +529,44 @@ class PlanExecutor:
         run.executed += 1
         self._note(run, op, where)
 
+    def _move_away_old(self, run: _Run, op: FsOp, meta: dict[str, Any]) -> None:
+        """An item the manifest of this binding already holds at another path is moved, never
+        copied: the old file goes to the bin under an intent of its own before the new one is
+        written, so no copy exists that the manifest does not know. Only what the host wrote, and
+        still the file the manifest names (a file that changed is left, and the write refused)."""
+        ref = op.content_ref
+        if ref is None or ref.kind != "export_item":
+            return
+        record = export.export_record
+        with self._engine.connect() as connection:
+            line = connection.execute(
+                sa.select(record.c.rel_path, record.c.file_hash).where(
+                    record.c.shelf_destination_id == run.binding.destination_id,
+                    record.c.export_item_id == ref.ref,
+                    record.c.state.in_(("written", "scanned", "resolved")),
+                    record.c.rel_path.is_not(None),
+                )
+            ).first()
+        if line is None or line.rel_path == op.rel_path:
+            return
+        old = f"{run.tree.local}/{line.rel_path}"
+        found = self._disk.observe(old)
+        if found is None or found[0] != "file":
+            return  # already gone (an earlier run of this very move): the new file may be written
+        if line.file_hash and self._disk.sha256_of(old) != line.file_hash:
+            raise PlanRefusedError("the file the manifest names changed since it was written")
+        self._recycle(old, {**meta, "op_key": meta["op_key"] + ":move"})
+        run.recycled.append(line.rel_path)
+
     def _note(self, run: _Run, op: FsOp, where: str) -> None:
         """A file the plan put there by an item of the host: kept for the manifest of the tree. The
         hash is the one of the disk now, never one a plan said."""
+        if op.op == "rename" and op.dst_rel_path is not None:
+            run.moved.append((op.rel_path, op.dst_rel_path))
+            return
+        if op.op == "recycle":
+            run.recycled.append(op.rel_path)
+            return
         ref = op.content_ref
         if op.op != "write" or ref is None or ref.kind != "export_item":
             return

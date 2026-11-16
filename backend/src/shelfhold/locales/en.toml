@@ -2489,6 +2489,7 @@
   warning_files_deleted = "{count} files written by Shelfhold are deleted for good."
   warning_past_the_bin = "They do not go through the bin: there is no way back."
   warning_adopted_kept = "{count} files you already had stay: they were never Shelfhold's to delete."
+  warning_indexed_elsewhere = "{count} other servers read this folder: it will be empty for them as well."
   type_phrase = "To go on, run the same command again with --confirm \"{phrase}\"."
   done = "Destination removed: {deleted} files deleted, {forgotten} manifest lines forgotten."
   left = "Left in place ({code}): {path}"

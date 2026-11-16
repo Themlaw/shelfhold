@@ -31,6 +31,7 @@ import structlog
 from sqlalchemy import Connection, Engine
 
 from shelfhold.catalog.public import RatingService
+from shelfhold.export.application.fan_out import mark_indexers_recycled
 from shelfhold.export.application.intents import IntentJournal
 from shelfhold.export.application.locks import LockBusyError, ResourceLocks, work_resource
 from shelfhold.export.application.plans import StalePlanError
@@ -232,13 +233,18 @@ def _files(connection: Connection, edition_id: str, shelf_id: str) -> tuple[With
     rows = connection.execute(
         sa.select(record.c.shelf_destination_id, record.c.export_item_id, record.c.rel_path)
         .select_from(
-            record.join(item, item.c.id == record.c.export_item_id).join(
-                destination, destination.c.id == record.c.shelf_destination_id
+            record.join(item, item.c.id == record.c.export_item_id)
+            .join(destination, destination.c.id == record.c.shelf_destination_id)
+            .outerjoin(
+                export.tree_indexer,
+                export.tree_indexer.c.shelf_destination_id == destination.c.id,
             )
         )
         .where(
             item.c.edition_id == edition_id,
             destination.c.shelf_id == shelf_id,
+            # the lines of an indexer are copies of the primary's: one writer, one file (T3)
+            sa.or_(export.tree_indexer.c.role.is_(None), export.tree_indexer.c.role != "secondary"),
             record.c.state.in_(LIVE_STATES),
             record.c.rel_path.is_not(None),
         )
@@ -423,6 +429,7 @@ class WithdrawalService:
                         )
                         .values(state="recycled")
                     )
+                    mark_indexers_recycled(connection, file.destination_id, file.export_item_id)
             if done_all:
                 self._unshelve(item, principal, now)
                 withdrawn.append(item.edition_id)
@@ -596,6 +603,7 @@ class WithdrawalService:
                     )
                     .values(state="recycled")
                 )
+                mark_indexers_recycled(connection, file.destination_id, file.export_item_id)
             connection.execute(
                 sa.update(catalog.edition)
                 .where(

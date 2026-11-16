@@ -1,7 +1,7 @@
 """#303 (M4 L06a, fan-out): the holes found by the adversarial review, one red PoC each.
 
-Each test is `xfail(strict=True)`: it says what should hold and fails today. The fix of the lot
-turns it green, and the marker is then removed (a strict xfail that passes is an error).
+Each test said what should hold and failed (`xfail(strict=True)`); the fix of the lot turned it
+green and the marker is gone.
 """
 
 import pytest
@@ -32,10 +32,6 @@ def _tree(env: ExportEnv, destination_id: str) -> str:
 
 
 @pytest.mark.req("EF-EXP-002", "EF-EXP-006")
-@pytest.mark.xfail(
-    strict=True,
-    reason="#303 M1: two secondaries outlive their primary, ensure_trees raises for ever",
-)
 def test_two_secondaries_outlive_their_primary_and_the_shelf_is_still_listed() -> None:
     """A tree with a primary and two secondaries; the primary is removed (keep the files). The
     cascade detaches both, the next `ensure_trees` makes the first one a primary of a new tree on
@@ -58,10 +54,6 @@ def test_two_secondaries_outlive_their_primary_and_the_shelf_is_still_listed() -
 
 
 @pytest.mark.req("EF-EXP-031", "EF-BIB-044")
-@pytest.mark.xfail(
-    strict=True,
-    reason="#303 M2: deleting the primary's files leaves the secondary's lines `written`",
-)
 def test_deleting_the_files_of_a_primary_leaves_no_line_that_says_they_are_there() -> None:
     """`remove --delete-files` on the primary of a tree a second server indexes: the files go
     (the preview says nothing of the other server), the secondary keeps its copied lines in
@@ -92,10 +84,6 @@ def test_deleting_the_files_of_a_primary_leaves_no_line_that_says_they_are_there
 
 
 @pytest.mark.req("EF-EXP-002", "EF-BIB-037")
-@pytest.mark.xfail(
-    strict=True,
-    reason="#303 M3: record_applied leaves a `written` line where it was when a plan moves it",
-)
 def test_a_plan_that_writes_an_item_elsewhere_moves_its_manifest_line() -> None:
     """A destination writes an item at `Old/…`, then (a new template, a new folder) at `New/…`.
     `record_applied` updates only a line in `planned`/`error`/`missing`: the manifest still says

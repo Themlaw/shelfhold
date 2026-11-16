@@ -71,11 +71,15 @@ __all__ = [
     "FanOut",
     "FanOutReport",
     "HostContentStore",
+    "TreeBarrier",
     "attach_secondary",
     "bindings_of",
     "ensure_tree",
     "ensure_trees",
+    "indexers_of",
     "is_secondary",
+    "mark_indexers_missing",
+    "mark_indexers_recycled",
     "mirror_to_indexers",
     "planned_content",
     "record_applied",
@@ -169,10 +173,16 @@ def ensure_trees(connection: Connection, shelf_id: str) -> list[BindingView]:
             continue
         base = writable[0]["local"]
         root = clean_absolute(f"{base}/{row.root_subpath}" if row.root_subpath else base)
-        ensure_tree(
-            connection, destination_id=view.destination_id, target_id=view.target_id,
-            local_root=os.path.realpath(root),
-        )  # fmt: skip
+        try:
+            with connection.begin_nested():
+                ensure_tree(
+                    connection, destination_id=view.destination_id, target_id=view.target_id,
+                    local_root=os.path.realpath(root),
+                )  # fmt: skip
+        except TreeOverlapError:
+            # a folder that is already a tree, for a binding that was never attached: left with no
+            # tree (nothing writes through it) rather than failing the shelf for every caller
+            log.warning("fan_out.tree_overlap", destination_id=view.destination_id)
     return bindings_of(connection, shelf_id)
 
 
@@ -260,6 +270,49 @@ def attach_secondary(
         .all()
     ):  # what the tree already holds is what the new indexer is told
         mirror_to_indexers(connection, primary, item)
+
+
+def indexers_of(connection: Connection, destination_id: str) -> list[str]:
+    """The other bindings that index the tree of this one."""
+    indexer = export.tree_indexer
+    tree_id = tree_of(connection, destination_id)
+    if tree_id is None:
+        return []
+    return list(
+        connection.execute(
+            sa.select(indexer.c.shelf_destination_id).where(
+                indexer.c.tree_id == tree_id, indexer.c.shelf_destination_id != destination_id
+            )
+        ).scalars()
+    )
+
+
+def mark_indexers_missing(
+    connection: Connection, destination_id: str, export_item_id: str, state: str = "missing"
+) -> None:
+    """A file that left the tree is gone for every indexer: their copy says so (T9) instead of
+    keeping a `written` line for a folder that is empty."""
+    if is_secondary(connection, destination_id):
+        return
+    record = export.export_record
+    others = indexers_of(connection, destination_id)
+    if others:
+        connection.execute(
+            sa.update(record)
+            .where(
+                record.c.shelf_destination_id.in_(others),
+                record.c.export_item_id == export_item_id,
+                record.c.state.in_(FILE_OK),
+            )
+            .values(state=state)
+        )
+
+
+def mark_indexers_recycled(
+    connection: Connection, destination_id: str, export_item_id: str
+) -> None:
+    """The same, for a file moved to the bin by a withdrawal: the copies say `recycled`."""
+    mark_indexers_missing(connection, destination_id, export_item_id, "recycled")
 
 
 def is_secondary(connection: Connection, destination_id: str) -> bool:
@@ -431,12 +484,48 @@ _FORMATS = {"cbz": "cbz", "epub": "epub", "pdf": "pdf"}
 
 
 def record_applied(
-    connection: Connection, *, destination_id: str, files: Sequence[AppliedFile], now: datetime
+    connection: Connection,
+    *,
+    destination_id: str,
+    files: Sequence[AppliedFile],
+    now: datetime,
+    moved: Sequence[tuple[str, str]] = (),
+    recycled: Sequence[str] = (),
 ) -> None:
-    """The manifest of a binding after its plan ran: one line per file, then the copy to every
-    indexer of the tree, in this transaction. Idempotent: it says what the disk holds, so a pass
-    that is run again after a crash puts back what the crash kept from the manifest."""
+    """The manifest of a binding after its plan ran, in plan order of effect: the files the plan
+    renamed follow their new name, the ones it sent to the bin are `missing`, then one line per
+    file written, whatever it said before (the line says what the disk holds), then the copy to
+    every indexer of the tree, in this transaction. Idempotent: a pass run again after a crash puts
+    back what the crash kept from the manifest.
+
+    A file a plan wrote is a line of the manifest and nothing more: it makes no `destination`
+    replica, so it does not count in `independent_copies` (prudent: fewer copies counted, never
+    more). A plan that replaces the historical pipeline must tell the replica too (L06b)."""
     record = export.export_record
+    touched: set[str] = set()
+    for source, target in moved:
+        for item in _items_at(connection, destination_id, source):
+            connection.execute(
+                sa.update(record)
+                .where(
+                    record.c.shelf_destination_id == destination_id,
+                    record.c.export_item_id == item,
+                )
+                .values(rel_path=target)
+            )
+            touched.add(item)
+    for path in recycled:
+        for item in _items_at(connection, destination_id, path):
+            connection.execute(
+                sa.update(record)
+                .where(
+                    record.c.shelf_destination_id == destination_id,
+                    record.c.export_item_id == item,
+                    record.c.state.in_(FILE_OK),
+                )
+                .values(state="missing")
+            )
+            touched.add(item)
     for file in files:
         values: dict[str, Any] = {
             "locator_type": "path", "rel_path": file.rel_path,
@@ -459,7 +548,7 @@ def record_applied(
                     **values,
                 )
             )
-        elif found.state in ("planned", "error", "missing"):
+        else:
             connection.execute(
                 sa.update(record)
                 .where(
@@ -468,7 +557,20 @@ def record_applied(
                 )
                 .values(**values)
             )
-        mirror_to_indexers(connection, destination_id, file.export_item_id)
+        touched.add(file.export_item_id)
+    for item in sorted(touched):
+        mirror_to_indexers(connection, destination_id, item)
+
+
+def _items_at(connection: Connection, destination_id: str, rel_path: str) -> list[str]:
+    record = export.export_record
+    return list(
+        connection.execute(
+            sa.select(record.c.export_item_id).where(
+                record.c.shelf_destination_id == destination_id, record.c.rel_path == rel_path
+            )
+        ).scalars()
+    )
 
 
 # -- what a binding may be given ------------------------------------------------------------
@@ -640,7 +742,12 @@ class FanOut:
         ]
         with write_transaction(self._engine) as connection:
             record_applied(
-                connection, destination_id=destination_id, files=files, now=self._clock.now()
+                connection,
+                destination_id=destination_id,
+                files=files,
+                now=self._clock.now(),
+                moved=report.moved,
+                recycled=report.recycled,
             )
 
 
@@ -660,6 +767,10 @@ class HostContentStore:
             raise PlanRefusedError("the host serves no such content here")
         coverage = export.unit_coverage
         with self._engine.connect() as connection:
+            if ref.ref not in planned_content(connection, destination_id).planned_refs:
+                # a second defence after the ledger: the item is one of this binding's shelf (and,
+                # below 18+, one that shelf admits), never an item of another shelf
+                raise PlanRefusedError("the host serves no such content to this binding")
             unit = connection.execute(
                 sa.select(coverage.c.unit_id)
                 .where(coverage.c.carrier_type == "export_item", coverage.c.carrier_id == ref.ref)
@@ -674,6 +785,22 @@ class HostContentStore:
         if source is None or source.local_path is None:
             raise PlanRefusedError("the host holds no bytes for this item")
         return Path(source.local_path).read_bytes()
+
+
+class TreeBarrier:
+    """The barrier of a shelf, read again while a plan runs (the bound of the identity of the
+    server: every `recheck_every` operations). It no longer holds when the binding is refused now
+    (partitioning withdrawn, a version known bad) or when something the plan was given is no longer
+    admitted (a ceiling lowered)."""
+
+    def __init__(self, engine: Engine) -> None:
+        self._engine = engine
+
+    def holds(self, destination_id: str, planned: PlannedContent) -> bool:
+        with self._engine.connect() as connection:
+            if refusal_of(connection, destination_id) is not None:
+                return False
+            return planned.planned_refs <= planned_content(connection, destination_id).planned_refs
 
 
 class CachedInstanceProbe:

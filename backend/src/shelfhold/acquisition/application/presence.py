@@ -9,8 +9,9 @@ Unit can be in one Kavita and not in another.
 
 Fan-out (M4 L06a, ADR-0052 T9, T11): the line of a secondary indexer is a copy of the line of the
 primary of its tree, so the two say the same of the file; a tree stays one copy for the purge and
-for `independent_copies` (the replica is told once, by the primary). The screen of a shelf and the
-purge ask `present_units_in(edition, binding)`.
+for `independent_copies` (the replica is told once, by the primary). Only the screen of a shelf
+(the route of the bindings) reads `present_units_in(edition, binding)`; the purge upstream reads
+`independent_copies`, not this module.
 """
 
 import sqlalchemy as sa

@@ -29,6 +29,7 @@ from shelfhold.export.application.manifest_write import complete_write
 from shelfhold.export.application.mirror import ProvenanceMirror
 from shelfhold.export.application.naming_preview import NAMING_BLOCKS, NamingItem
 from shelfhold.export.application.plan_executor import (
+    Barrier,
     ContentStore,
     ExecutionReport,
     InstanceProbe,
@@ -492,7 +493,12 @@ class ExportPipeline:
         self._preflight = preflight
 
     def use_plan_executor(
-        self, *, contents: ContentStore, probe: InstanceProbe, events: TargetEvents | None = None
+        self,
+        *,
+        contents: ContentStore,
+        probe: InstanceProbe,
+        events: TargetEvents | None = None,
+        barrier: Barrier | None = None,
     ) -> None:
         """The executor of the plans destinations describe (M4 L04), over this pipeline's
         database, files, journal and ledger. The composition root sets it once, with the bytes the
@@ -506,6 +512,7 @@ class ExportPipeline:
             probe=probe,
             clock=self._clock,
             events=events,
+            barrier=barrier,
         )
 
     def execute_destination_plan(

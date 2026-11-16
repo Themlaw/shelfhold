@@ -67,6 +67,7 @@ from shelfhold.export.application.fan_out import (
     CachedInstanceProbe,
     FanOut,
     HostContentStore,
+    TreeBarrier,
 )
 from shelfhold.export.application.intents import IntentJournal
 from shelfhold.export.application.library_repair import LibraryRepair
@@ -510,6 +511,7 @@ def build_pipeline(
         contents=HostContentStore(comp.engine),
         probe=CachedInstanceProbe(_instance_identity(comp), clock=comp.clock),
         events=BusTargetEvents(comp.engine, comp.bus),
+        barrier=TreeBarrier(comp.engine),  # the barrier of a family shelf, read again as it runs
     )
     return pipeline, reconciler, fsops
 
@@ -629,12 +631,14 @@ def export_handler(comp: Composition) -> Callable[[JobContext], None]:
                 log.info("export.run_skipped", reason=type(error).__name__)
                 return
         if disks.opened:  # a root was opened: each shelf's bindings are judged one by one (L06a)
-            _fan_out_pass(comp, disks, destinations)
+            _fan_out_pass(comp, disks, destinations, context)
 
     return run
 
 
-def _fan_out_pass(comp: Composition, disks: _Disks, destinations: list[Destination]) -> None:
+def _fan_out_pass(
+    comp: Composition, disks: _Disks, destinations: list[Destination], context: JobContext
+) -> None:
     """The pass over the bindings of the shelves this run exported: the barrier of a shelf below
     18+ looked at again for each binding, what each is given, and the calls and plans the
     destinations describe through the executor (the gates of the pipeline's doors). Nothing here
@@ -658,6 +662,9 @@ def _fan_out_pass(comp: Composition, disks: _Disks, destinations: list[Destinati
             fan.run(shelf_id, new_ulid())
         except (DestinationPausedError, RestoredBehindError) as error:
             log.info("export.fan_out_waits", reason=type(error).__name__)
+        except Exception as error:  # one shelf never stops the job nor the shelves after it
+            log.warning("export.fan_out_failed", reason=type(error).__name__)
+            context.add(fan_out_failed=1)  # a counter of the run: Health reads it
 
 
 def _names_may_refresh(comp: Composition, destination_id: str) -> bool:
