@@ -27,6 +27,7 @@ from shelfhold.export.application.mirror import ProvenanceMirror
 from shelfhold.identity.domain.visibility import ALL
 from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.fetcher.quota_store import SqlBucketStore
+from shelfhold.infrastructure.fetcher.traffic_store import SqlTrafficCounter
 from shelfhold.infrastructure.ids import is_ulid
 from shelfhold.infrastructure.logging import register_secret_value
 from shelfhold.infrastructure.schema import export
@@ -299,6 +300,7 @@ class MetaOps:
         network = self._comp.network
         runtime = provider_fetcher.default_runtime()
         runtime.buckets.use_store(SqlBucketStore(self._comp.engine))  # the balance outlives us
+        runtime.traffic = SqlTrafficCounter(self._comp.engine)  # EF-INT-020
         fetcher = provider_fetcher.open_provider(
             provider.manifest, network.resolver, contact=self._comp.settings.metadata_contact,
             runtime=runtime, transport=network.transport,

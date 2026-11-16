@@ -80,6 +80,7 @@ from shelfhold.interfaces.http_api.me import build_me_router
 from shelfhold.interfaces.http_api.metrics import build_metrics_router
 from shelfhold.interfaces.http_api.opds import SeriesBundleProvider, build_opds_router
 from shelfhold.interfaces.http_api.ops import build_ops_router
+from shelfhold.interfaces.http_api.ops_dashboard import build_ops_dashboard_router
 from shelfhold.interfaces.http_api.plans import build_plans_router
 from shelfhold.interfaces.http_api.plugins import build_plugins_router
 from shelfhold.interfaces.http_api.relations import build_relations_router
@@ -421,6 +422,8 @@ def create_app(
         build_status_router(ops_services),  # EF-INT-023: what waits, with the command
         build_health_page_router(lambda: engine, resolved, clock.now),  # M3 L15: admin only
         build_ops_router(ops_services),  # EF-INT-023: the exits
+        # M4 L29 (EF-INT-019, EF-INT-020): history, blocklist, storage and network; admin only
+        build_ops_dashboard_router(lambda: engine, clock.now),
         build_triage_router(ops_services),  # EF-USR-015, EF-EXP-046: the two lists, the batch
         build_library_router(ops_services),  # pairing, repatriation, detach, purge, probe
         # EF-SRC-013, EF-EXP-065: per-source settings (nothing secret read back), attestations

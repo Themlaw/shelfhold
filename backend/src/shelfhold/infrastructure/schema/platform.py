@@ -281,6 +281,22 @@ provider_quota = sa.Table(
     sa.CheckConstraint('"announced_limit" IS NULL OR "announced_limit" > 0', name="limit_positive"),
 )
 
+# What the Fetcher carried, per source and per UTC day (M4 L29, EF-INT-020): two numbers and the
+# name of the source. No address, no host, no path, no query: nothing here could name a title or
+# leak a key. A row is written after the SSRF guard, by a request that left the machine.
+traffic_counter = sa.Table(
+    "traffic_counter",
+    metadata,
+    sa.Column("day", sa.Date(), nullable=False),
+    sa.Column("source_key", sa.String(), nullable=False),
+    sa.Column("requests", sa.Integer(), nullable=False, server_default=sa.text("0")),
+    sa.Column("bytes_in", sa.BigInteger(), nullable=False, server_default=sa.text("0")),
+    sa.PrimaryKeyConstraint("day", "source_key"),
+    sa.CheckConstraint("\"source_key\" <> ''", name="source_named"),
+    positive_check("requests"),
+    positive_check("bytes_in"),
+)
+
 # Validators of a cached HTTP answer (ETag, Last-Modified); the body is a file under
 # `/data/cache/http/`, named by `body_ref` (relative).
 http_cache = sa.Table(

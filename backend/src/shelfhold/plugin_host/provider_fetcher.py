@@ -23,6 +23,7 @@ from shelfhold.infrastructure.fetcher.cache import HttpCache
 from shelfhold.infrastructure.fetcher.client import (
     FetchLimits,
     GuardedFetcher,
+    TrafficCounter,
     identifiable_user_agent,
     is_identifiable,
 )
@@ -59,6 +60,7 @@ class ProviderRuntime:
         wall: Callable[[], float] = time.time,
     ) -> None:
         self.buckets = ProviderBuckets(clock, sleep, wall)
+        self.traffic: TrafficCounter | None = None  # EF-INT-020: set by the host, by provider
         self.caches: dict[str, HttpCache] = {}
         self.robots: dict[str, RobotsPolicy] = {}
 
@@ -173,5 +175,7 @@ def open_provider(
         limiter=runtime.buckets.bucket_for(
             manifest.key, manifest.quota.effective(contact is not None)
         ),
+        traffic=runtime.traffic,
+        traffic_source=manifest.key,
     )
     return ProviderFetcher(inner, manifest)

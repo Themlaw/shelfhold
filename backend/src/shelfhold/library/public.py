@@ -277,6 +277,7 @@ from shelfhold.library.page_issues import (
 )
 from shelfhold.library.replica import (
     ByteSource,
+    ShelfSpace,
     UnitFile,
     adopted_original_unprotected,
     byte_sources,
@@ -302,6 +303,7 @@ from shelfhold.library.replica import (
     replica_snapshot,
     restore_replica,
     roots_holding_library_copies,
+    space_by_shelf,
     store_unit_ids,
     unit_files,
     upstream_claims,
@@ -456,6 +458,7 @@ __all__ = [
     "ServableEpub",
     "ServiceGate",
     "SetAsideRefusedError",
+    "ShelfSpace",
     "SpaceFigures",
     "StalePlanError",
     "StoreBudget",
@@ -589,6 +592,7 @@ __all__ = [
     "safe_to_clean",
     "servable_epub",
     "sniff_kind",
+    "space_by_shelf",
     "spans_of",
     "store_unit_ids",
     "title_needles",

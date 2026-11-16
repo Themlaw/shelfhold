@@ -29,6 +29,7 @@ from shelfhold.library.domain.copies import Copy
 __all__ = [
     "ByteSource",
     "LibraryCopy",
+    "ShelfSpace",
     "StoreCopy",
     "StoreProof",
     "UnitFile",
@@ -64,6 +65,7 @@ __all__ = [
     "replica_snapshot",
     "restore_replica",
     "sibling_inodes",
+    "space_by_shelf",
     "store_copies",
     "store_proofs",
     "store_unit_ids",
@@ -972,6 +974,67 @@ def median_unit_bytes(connection: Connection, edition_id: str) -> int | None:
         ).scalars()
     )
     return sizes[len(sizes) // 2] if sizes else None
+
+
+_SPACE_PLACES = ("store", "library", "destination", "adopted_ro")  # what is on our disks
+
+
+@dataclass(frozen=True)
+class ShelfSpace:
+    shelf_id: str | None  # None: the Editions filed on no shelf
+    bytes: int
+    copies: int
+    by_location: dict[str, int]
+
+
+def space_by_shelf(connection: Connection) -> list[ShelfSpace]:
+    """The disk space the registry holds per shelf (EF-INT-020): the copies on our disks, never the
+    origin (`upstream`) and never a copy found damaged. A file is counted once however many places
+    link it (`(dev, ino)`: two hard links are one file), under the first place in `_SPACE_PLACES`.
+    Sizes and counts only: no path leaves this function."""
+    unit_edition = replica_table.join(
+        catalog.unit, catalog.unit.c.id == replica_table.c.unit_id, isouter=True
+    ).join(
+        export.export_item,
+        export.export_item.c.id == replica_table.c.export_item_id,
+        isouter=True,
+    )
+    via_unit, via_item = catalog.edition.alias("via_unit"), catalog.edition.alias("via_item")
+    rows = connection.execute(
+        sa.select(
+            replica_table.c.id, replica_table.c.dev, replica_table.c.ino, replica_table.c.size,
+            replica_table.c.location,
+            sa.func.coalesce(via_unit.c.shelf_id, via_item.c.shelf_id).label("shelf_id"),
+        )
+        .select_from(
+            unit_edition.join(via_unit, via_unit.c.id == catalog.unit.c.edition_id, isouter=True)
+            .join(via_item, via_item.c.id == export.export_item.c.edition_id, isouter=True)
+        )
+        .where(
+            replica_table.c.location.in_(_SPACE_PLACES),
+            replica_table.c.damaged_at.is_(None),
+            replica_table.c.size.is_not(None),
+        )
+    ).all()  # fmt: skip
+    rank = {place: n for n, place in enumerate(_SPACE_PLACES)}
+    seen: set[tuple[str | None, tuple[Any, ...]]] = set()
+    spaces: dict[str | None, dict[str, int]] = {}
+    for row in sorted(rows, key=lambda r: (rank[r.location], r.id)):
+        file_key = (
+            (row.dev, row.ino) if row.dev is not None and row.ino is not None else ("row", row.id)
+        )
+        if (row.shelf_id, file_key) in seen:
+            continue
+        seen.add((row.shelf_id, file_key))
+        per = spaces.setdefault(row.shelf_id, dict.fromkeys(_SPACE_PLACES, 0))
+        per[row.location] += int(row.size)
+    counts: dict[str | None, int] = {}
+    for shelf_id, _ in seen:
+        counts[shelf_id] = counts.get(shelf_id, 0) + 1
+    return [
+        ShelfSpace(shelf_id, sum(per.values()), counts[shelf_id], per)
+        for shelf_id, per in spaces.items()
+    ]
 
 
 # -- what a purge reads and erases (EF-BIB-052): the one door to the table stays here ------------

@@ -107,6 +107,13 @@ class RequestLimiter(Protocol):
     async def acquire(self) -> None: ...
 
 
+class TrafficCounter(Protocol):
+    """Where the Fetcher says what it carried (EF-INT-020): a source, a count and a size. It is
+    handed no address: nothing it keeps could name a host, a path or a key."""
+
+    def record(self, source_key: str, *, requests: int, bytes_in: int) -> None: ...
+
+
 class Sink(Protocol):
     """Where a download goes: a file object opened for writing, never the whole body in memory."""
 
@@ -152,8 +159,14 @@ class GuardedFetcher:
         robots: RobotsPolicy | None = None,
         limiter: RequestLimiter | None = None,
         settings: Mapping[str, Any] | None = None,
+        traffic: TrafficCounter | None = None,
+        traffic_source: str | None = None,
     ) -> None:
         self._resolver = resolver
+        # EF-INT-020: what this Fetcher carried, by source (`traffic_source`, else the plugin id
+        # of its domain rules). None: no counter, or no source to count it for.
+        self._traffic = traffic
+        self._traffic_source = traffic_source or (domains.plugin_id if domains else None)
         # None: no quota (the owner's own services). A source's rhythm (`Pacer`) is one too.
         self._limiter = limiter
         self._settings = dict(settings or {})  # plain values only, never a secret
@@ -343,6 +356,7 @@ class GuardedFetcher:
             if self._limiter is not None:
                 await self._limiter.acquire()  # robots.txt and every hop count, a cache hit not
             response = await self._send(method, url, addresses, sent, body, cap, tally)
+            self._count_traffic(response, tally)  # after the guard: the request really went out
             observe = getattr(self._limiter, "observe", None)
             if observe is not None:  # the rate the provider announces, a 429's Retry-After
                 observe(response.headers, response.status)
@@ -364,6 +378,17 @@ class GuardedFetcher:
                 method, body = "GET", {}
             url = target
         raise TooManyRedirects(f"more than {self._limits.max_redirects} redirections")
+
+    def _count_traffic(self, response: Response, tally: _Tally | None) -> None:
+        """One request and the bytes it brought back. A counter that fails is logged, never raised:
+        a dashboard is not worth a download."""
+        if self._traffic is None or self._traffic_source is None:
+            return
+        received = tally.size if tally is not None else len(response.body)
+        try:
+            self._traffic.record(self._traffic_source, requests=1, bytes_in=received)
+        except Exception as error:
+            log.warning("http.traffic_unrecorded", reason=type(error).__name__)
 
     # -- politeness (ENF-LEG-007): the cache and robots.txt ---------------------------------------
 

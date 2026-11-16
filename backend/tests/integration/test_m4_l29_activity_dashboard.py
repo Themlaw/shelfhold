@@ -127,12 +127,15 @@ def test_blocklist_never_unblocks_silently() -> None:
 
 def test_blocklist_reasons_are_a_closed_list() -> None:
     assert set(BLOCK_REASONS) == {"bad_quality", "wrong_content", "duplicate", "other"}
-    with follow_bench() as bench, pytest.raises(ValueError, match="reason"):
-        with write_transaction(bench.lib.engine) as connection:
-            block_unit(
-                connection, source_key=SOURCE_KEY, remote_unit_id="x",
-                reason="a free text with a path /srv/x", actor_id=None, now=datetime.now(UTC),
-            )  # fmt: skip
+    with (
+        follow_bench() as bench,
+        pytest.raises(ValueError, match="reason"),
+        write_transaction(bench.lib.engine) as connection,
+    ):
+        block_unit(
+            connection, source_key=SOURCE_KEY, remote_unit_id="x",
+            reason="a free text with a path /srv/x", actor_id=None, now=datetime.now(UTC),
+        )  # fmt: skip
 
 
 # -- the routes: the administrator's, and nobody else's -----------------------------------------
@@ -141,9 +144,11 @@ def test_blocklist_reasons_are_a_closed_list() -> None:
 def _key(world: World, username: str, **kwargs: Any) -> str:
     engine = create_db_engine(world.env.settings.database_path)
     try:
-        return local_auth(engine, world.env.settings).create_api_key(
-            name="k", username=username, **kwargs
-        ).value
+        return (
+            local_auth(engine, world.env.settings)
+            .create_api_key(name="k", username=username, **kwargs)
+            .value
+        )
     finally:
         engine.dispose()
 
@@ -156,9 +161,11 @@ def _bearer(world: World, key: str, ip: str) -> Any:
 
 def _write(world: World, client: Any, method: str, path: str, body: Any = None) -> Any:
     # a session sends the CSRF token it holds (an attacker without one sends a made-up one)
-    headers = {} if "Authorization" in client.headers else {
-        CSRF_HEADER: client.cookies.get(CSRF_COOKIE) or "made-up"
-    }
+    headers = (
+        {}
+        if "Authorization" in client.headers
+        else {CSRF_HEADER: client.cookies.get(CSRF_COOKIE) or "made-up"}
+    )
     return client.request(method, path, json=body, headers=headers)
 
 
@@ -194,7 +201,10 @@ def test_blocklist_admin_roundtrip_audited(world: World) -> None:
     made = _write(world, admin, "POST", BLOCKLIST, body)
     assert made.status_code == 201, made.text
     block_id = made.json()["id"]
-    assert set(made.json()) >= {"id", "source_key", "remote_unit_id", "reason", "created_at"}
+    assert set(made.json()) >= {"id", "source_key", "ref", "reason", "created_at"}
+    assert (
+        "ch-009" not in made.text
+    )  # the source's identifier is never echoed (it can be an address)
     again = _write(world, admin, "POST", BLOCKLIST, body)  # the same chapter: the same block
     assert again.status_code == 200 and again.json()["id"] == block_id
     bad = _write(world, admin, "POST", BLOCKLIST, {**body, "reason": "free text /srv/x"})
@@ -206,12 +216,14 @@ def test_blocklist_admin_roundtrip_audited(world: World) -> None:
     gone = _write(world, admin, "DELETE", f"{BLOCKLIST}/{block_id}")
     assert gone.status_code == 204
     assert admin.get(BLOCKLIST).json()["items"] == []
-    # the removal is named in the audit, with who and when (never silent)
+    # the block and its removal are named in the audit, with who and when (never silent)
     audited = db_rows(
-        world.env.settings, "SELECT action, target, actor_id FROM audit WHERE action LIKE 'blocklist.%'"
+        world.env.settings,
+        "SELECT action, target, actor_id FROM audit "
+        "WHERE action LIKE 'blocklist.%' ORDER BY at, action",
     )
-    assert [row[0] for row in audited] == ["blocklist.remove"]
-    assert block_id in str(audited[0][1])
+    assert [row[0] for row in audited] == ["blocklist.add", "blocklist.remove"]
+    assert all(block_id in str(row[1]) and row[2] for row in audited)  # which block, and who
     missing = _write(world, admin, "DELETE", f"{BLOCKLIST}/{new_ulid()}")
     assert missing.status_code == 404
 
@@ -219,7 +231,7 @@ def test_blocklist_admin_roundtrip_audited(world: World) -> None:
 @pytest.mark.req("EF-INT-019", "ENF-SEC-010")
 def test_blocklist_attacks_child_member_key_idor(world: World) -> None:
     """A child, a member, a read-only key (the administrator's own included) and nobody: refused
-    on the three routes, with one answer whether the block exists or not (IDOR), and nothing moved."""
+    on the three routes, with one answer whether the block exists or not (IDOR), nothing moved."""
     block_id = _insert_block(world)
     readers = _readers(world)
     for name, client in readers.items():
@@ -240,7 +252,9 @@ def test_blocklist_attacks_child_member_key_idor(world: World) -> None:
     engine = create_db_engine(world.env.settings.database_path)
     try:
         with engine.connect() as connection:
-            assert [b.id for b in list_blocks(connection)] == [block_id]  # nothing added, nothing lifted
+            assert [b.id for b in list_blocks(connection)] == [
+                block_id
+            ]  # nothing added, nothing lifted
     finally:
         engine.dispose()
     assert db_rows(world.env.settings, "SELECT 1 FROM audit WHERE action LIKE 'blocklist.%'") == []
@@ -288,7 +302,9 @@ def test_activity_history_admin_reads_every_event_without_paths_or_secrets(world
     assert seen.status_code == 200, seen.text
     items = seen.json()["items"]
     assert {i["event_id"] for i in items} >= set(ids)  # the admin reads the household's events
-    assert [i["occurred_at"] for i in items] == sorted((i["occurred_at"] for i in items), reverse=True)
+    assert [i["occurred_at"] for i in items] == sorted(
+        (i["occurred_at"] for i in items), reverse=True
+    )
     for canary in CANARIES:
         assert canary not in seen.text, f"the history shows {canary}"
     # paged: the cursor gives the older ones, nothing twice
@@ -324,7 +340,7 @@ def test_activity_history_goes_through_activity_view_for_child_and_member(
     for name, client in _readers(world).items():
         refused = client.get(HISTORY)
         assert refused.status_code in (401, 403), name
-        assert not any(str(i) in refused.text for i in ids), name
+        assert "event_id" not in refused.text and "items" not in refused.text, name
     assert passed == []  # refused before the projection: no row was read for them
     # what a child and a member have is the activity page, which filters the same way
     for client in (world.kid, add_profile(world.env, "bob", "member", "10.0.0.4")):
@@ -340,9 +356,13 @@ def test_activity_history_goes_through_activity_view_for_child_and_member(
 
 def _seed_storage(world: World) -> dict[str, str]:
     engine = create_db_engine(world.env.settings.database_path)
-    day = datetime.now(UTC).date()
+    day = world.env.clock.now().date()  # the application's own today
     try:
         with write_transaction(engine) as connection:
+            root = new_ulid()  # a library root: its path is something the dashboard must not show
+            connection.execute(
+                sa.insert(platform.physical_root).values(root_id=root, path_entry=PATH_CANARY)
+            )
             shelves = {}
             for name in ("Synthetic shelf A", "Synthetic shelf B"):
                 shelf_id = new_ulid()
@@ -361,7 +381,8 @@ def _seed_storage(world: World) -> dict[str, str]:
                     connection.execute(
                         sa.insert(replica_schema.replica).values(
                             id=new_ulid(), unit_id=unit, location=location,
-                            rel_path=f"{PATH_CANARY}-{ino}", dev=1, ino=ino, size=size,
+                            physical_root_id=root if location == "library" else None,
+                            rel_path=f"{PATH_CANARY[1:]}-{ino}", dev=1, ino=ino, size=size,
                             independent=True, fidelity="original",
                         )
                     )  # fmt: skip
@@ -376,7 +397,9 @@ def _seed_storage(world: World) -> dict[str, str]:
                 )
             )  # fmt: skip
             for source, offset, requests, received in (
-                ("source-one", 0, 4, 4000), ("source-one", 1, 1, 10), ("source-two", 0, 2, 20)
+                ("source-one", 0, 4, 4000),
+                ("source-one", 1, 1, 10),
+                ("source-two", 0, 2, 20),
             ):
                 connection.execute(
                     sa.text(
@@ -444,12 +467,15 @@ def test_traffic_counter_has_no_url(api: AuthEnv) -> None:
         recorder = Recorder(lambda r: httpx2.Response(200, content=b"x" * 123))
         fetcher = GuardedFetcher(
             FakeResolver({"files.example.org": ["93.184.216.34"]}),
-            transport=recorder.transport, traffic=SqlTrafficCounter(engine),
+            transport=recorder.transport,
+            traffic=SqlTrafficCounter(engine),
             traffic_source="source-one",
         )
 
         async def go() -> None:
-            await fetcher.get(f"https://files.example.org/{SECRET_CANARY}/ch-1?token={SECRET_CANARY}")
+            await fetcher.get(
+                f"https://files.example.org/{SECRET_CANARY}/ch-1?token={SECRET_CANARY}"
+            )
             await fetcher.get("https://files.example.org/other")
 
         asyncio.run(go())
@@ -474,7 +500,8 @@ def test_traffic_counter_sits_after_the_ssrf_guard(api: AuthEnv) -> None:
         recorder = Recorder()
         fetcher = GuardedFetcher(
             FakeResolver({"inside.example.org": ["10.0.0.5"]}),
-            transport=recorder.transport, traffic=SqlTrafficCounter(engine),
+            transport=recorder.transport,
+            traffic=SqlTrafficCounter(engine),
             traffic_source="source-one",
         )
         with pytest.raises(SsrfBlocked):
@@ -503,7 +530,8 @@ def test_the_counter_failing_never_fails_the_request(api: AuthEnv) -> None:
 
     fetcher = GuardedFetcher(
         FakeResolver({"files.example.org": ["93.184.216.34"]}),
-        transport=Recorder().transport, traffic=Broken(), traffic_source="source-one",
+        transport=Recorder().transport,
+        traffic=Broken(),
+        traffic_source="source-one",
     )
     assert asyncio.run(fetcher.get("https://files.example.org/x")).status == 200
-

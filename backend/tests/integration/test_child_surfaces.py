@@ -316,6 +316,13 @@ CLOSED = (
     "GET /api/v1/sources/{source_key}/search",
     "GET /api/v1/sources/{source_key}/series/{remote_id}/estimate",  # M3 L42
     "GET /api/v1/stats",
+    # M4 L29 (EF-INT-019, EF-INT-020): the administrator's alone, by session and by key; the
+    # attacks (child, member, read-only key, IDOR) are in `test_m4_l29_activity_dashboard.py`
+    "GET /api/v1/ops/activity-history",
+    "GET /api/v1/ops/blocklist",
+    "POST /api/v1/ops/blocklist",
+    "DELETE /api/v1/ops/blocklist/{block_id}",
+    "GET /api/v1/ops/storage-dashboard",
     "GET /metrics",  # M4 L25: a key of scope `metrics` alone
     "GET /api/v1/status",
     "POST /api/v1/store/reinit",
@@ -370,6 +377,7 @@ BODIES = {
     "POST /api/v1/editions/{edition_id}/source-migrations/{migration_id}/application": {
         "digest": "d" * 64
     },
+    "POST /api/v1/ops/blocklist": {"source_key": "s", "remote_unit_id": "x", "reason": "other"},
 }
 
 # Surfaces that do not exist yet: the lot that builds each one adds its child case, and this
