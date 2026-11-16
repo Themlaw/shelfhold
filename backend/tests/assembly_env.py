@@ -146,7 +146,7 @@ def reader(env: ExportEnv, name: str = "reader", role: str = "member") -> str:
 
 def position(
     env: ExportEnv, user: str, item: str, content_hash: str, units: list[str], page: int,
-    *, source: str = "device",
+    *, source: str = "device", percent: float | None = None,
 ) -> None:  # fmt: skip
     """A reading position of `user` on the file of `item`, at `page`."""
     import json
@@ -156,13 +156,13 @@ def position(
             sa.text(
                 "INSERT INTO reading_position (id, user_id, carrier_type, carrier_id, "
                 "content_hash, locator, percent, client_ts, server_ts, source, covered_units) "
-                "VALUES (:id, :user, 'export_item', :item, :hash, :locator, NULL, :ts, :ts, "
+                "VALUES (:id, :user, 'export_item', :item, :hash, :locator, :percent, :ts, :ts, "
                 ":source, :units)"
             ),
             {
                 "id": new_ulid(), "user": user, "item": item, "hash": content_hash,
                 "locator": json.dumps({"page": page}), "ts": env.clock.now(), "source": source,
-                "units": json.dumps(units),
+                "units": json.dumps(units), "percent": percent,
             },
         )  # fmt: skip
 

@@ -119,7 +119,8 @@ def test_volume_assembly_recorded_in_unit_coverage() -> None:
                     cover.c.extent,
                 )
                 .where(
-                    cover.c.carrier_type == "export_item", cover.c.carrier_id == result.export_item_id
+                    cover.c.carrier_type == "export_item",
+                    cover.c.carrier_id == result.export_item_id,
                 )
                 .order_by(cover.c.position)
             ).all()
@@ -187,16 +188,18 @@ def test_the_progress_of_each_member_is_kept_without_a_false_read() -> None:
         chapters = exported_chapters(env, [4, 3, 5])
         ana, bob = reader(env, "ana"), reader(env, "bob")
         # ana was reading the second chapter of the tome, on its own file
-        position(env, ana, chapters.items[1], "sha256:" + "1" * 64, [chapters.units[1]], 2)
+        position(
+            env, ana, chapters.items[1], chapters.old_hashes[1], [chapters.units[1]], 2, percent=0.5
+        )
         before = progress_of(env, ana)
 
         result = service(env).assemble(request(env, chapters))
 
         assert progress_of(env, ana) == before == {chapters.units[1]: "in_progress"}
         # bob's e-reader now reports a page of the volume: it falls in the second chapter
-        position(
-            env, bob, result.export_item_id, "sha256:" + "2" * 64, chapters.units, 6
-        )
+        assert result.export_item_id is not None
+        volume_hash = digest(env.files()[0])
+        position(env, bob, result.export_item_id, volume_hash, chapters.units, 6, percent=0.5)
         seen = progress_of(env, bob)
         assert seen[chapters.units[1]] == "in_progress"
         assert chapters.units[0] not in seen or seen[chapters.units[0]] != "read"
@@ -260,7 +263,12 @@ def test_an_item_that_is_not_a_chapter_is_refused() -> None:
         first = service(env).assemble(request(env, chapters))
         assert first.outcome is AssemblyOutcome.ASSEMBLED
 
-        again = service(env).assemble(request(env, chapters, items=[first.export_item_id]))
+        volume_item = first.export_item_id
+        assert volume_item is not None
+
+        again = service(env).assemble(
+            request(env, chapters, items=[volume_item, chapters.items[0]])
+        )
 
         assert again.outcome is AssemblyOutcome.NOT_CHAPTERS  # a volume is not assembled again
         assert len(env.files()) == 1

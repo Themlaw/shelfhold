@@ -1329,3 +1329,16 @@ collection_id = "Collection pushed (`collection.id`)."
 target_id = "Destination target it was made on (`export_target.id`)."
 remote_id = "Identifier the destination gave it."
 synced_at = "When it was last pushed (UTC); NULL: never."
+
+[tables.export_assembly]
+description = "One assembly of chapter files into a volume of a destination: the volume and what it replaced."
+[tables.export_assembly.columns]
+id = "Identifier of the assembly (ULID)."
+intent_id = "The `assemble` intent it was made under (`fs_intent.id`); the journal is pruned, so no key."
+shelf_destination_id = "The destination whose chapter files were replaced."
+export_item_id = "The export item of the volume, which covers the chapters in `unit_coverage`."
+volume = "The number the volume is named with."
+old_items = "The chapter files replaced, in reading order: export item, Unit, file hash and bin entry of each."
+derived_hash = "Hash of what the volume was made of (its chapters' contents), never that of a received content."
+file_hash = "Hash of the volume file."
+created_at = "When the assembly was recorded (UTC)."

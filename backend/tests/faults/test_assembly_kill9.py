@@ -116,16 +116,16 @@ def test_assembly_kill9_resumes_without_double_file(kill_at: int) -> None:
             done = connection.execute(
                 sa.select(sa.func.count())
                 .select_from(coherence.fs_intent)
-                .where(coherence.fs_intent.c.op == "assemble", coherence.fs_intent.c.state == "done")
+                .where(
+                    coherence.fs_intent.c.op == "assemble", coherence.fs_intent.c.state == "done"
+                )
             ).scalar_one()
             assemblies = connection.execute(
                 sa.select(sa.func.count()).select_from(export.export_assembly)
             ).scalar_one()
         assert done == 1 and assemblies == 1  # once, whatever the instant of the kill
         for host in ("staging", "assemble"):  # nothing left half-way
-            assert not any(
-                p.is_file() for p in (env.lib.library / ".shelfhold" / host).rglob("*")
-            )
+            assert not any(p.is_file() for p in (env.lib.library / ".shelfhold" / host).rglob("*"))
 
 
 def test_a_killed_assembly_never_leaves_a_volume_next_to_its_chapters_after_the_boot() -> None:
