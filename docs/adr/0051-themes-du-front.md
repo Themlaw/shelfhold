@@ -49,6 +49,10 @@ Le mécanisme livré suit la décision (option C : socle unique, jetons W3C dans
 - le script d'`app.html` teste le thème `bibliotheque` en dur et la liste côté API est figée à ce thème : ils suivront `THEMES` quand B, C et D arrivent (M4) ;
 - les captures par thème comparent une référence structurelle commitée (jetons appliqués et structure de la page), non les pixels.
 
+## Amendement M4 (2026-11-16) : B « Console » et le sélecteur
+
+B est livré avec le sélecteur de thème par personne (L32b) ; C et D restent à venir. Le script d'amorçage d'`app.html` et la liste de l'API suivent `THEMES` (deux tests les maintiennent de niveau avec les dossiers de jetons). L'API rend la liste des thèmes livrés, et la page Apparence la propose sans connaître un seul nom. Détails : `docs/decisions/M4.md` (L32b).
+
 ## Exigences liées
 EF-UX-012, ENF-A11Y-001, ENF-I18N-001, ENF-SEC-004, I51, ADR-0013.
 
