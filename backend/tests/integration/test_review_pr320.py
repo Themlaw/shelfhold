@@ -1,6 +1,6 @@
 """#320 (M4 L08b) : relecture adverse contrôle parental de l'audit des comptes Komga.
 
-Chaque PoC est rouge aujourd'hui pour la raison écrite dans `reason` ; `strict=True` signalera
+Chaque PoC est rouge aujourd'hui pour le motif écrit dans `reason` ; `strict=True` signalera
 le jour où le trou est fermé. Détail et remèdes : `docs/decisions/M4.md`, « #320 : contradicteur ».
 Serveurs simulés, aucun réseau.
 """
