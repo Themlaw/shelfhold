@@ -37,7 +37,7 @@ describe('theme mechanism', () => {
     expect(DEFAULT_THEME).toBe('bibliotheque');
     expect(COLOR_SCHEMES).toEqual(['auto', 'light', 'dark']);
     const dirs = readdirSync(join(here), { withFileTypes: true }).filter((e) => e.isDirectory());
-    expect(dirs.map((e) => e.name)).toEqual([...THEMES]);
+    expect(dirs.map((e) => e.name).sort()).toEqual([...THEMES].sort());
   });
 
   // req: EF-UX-012
