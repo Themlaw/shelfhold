@@ -143,7 +143,6 @@ symbols = [
   "shelfhold.sdk.events:PluginEventError",
   "shelfhold.sdk.events:check_plugin_event",
   "shelfhold.sdk.events:plugin_event_type",
-  "shelfhold.sdk.export_target:TargetCapabilities",
   "shelfhold.sdk.fsops:FsOp",
   "shelfhold.sdk.fsops:FsOpPlan",
   "shelfhold.sdk.fsops:FsOpPlanError",

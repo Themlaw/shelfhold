@@ -41,11 +41,8 @@ sort sans motif actif, un piège à refuser lève une exception.
 
 ## Destinations
 
-**Il n'existe pas encore de kit pour les destinations : il arrive en M4**, avec la première destination
-complète (contrôles de `readback`, de `can_purge` et des espaces de noms). D'ici là, la seule vérification
-disponible est celle du plan d'opérations : `parse_destination_plan` et `check_destination_plan` de
-`shelfhold.sdk.fsops` ([destination.md](destination.md)). Ne présentez pas un plugin de destination comme
-« conforme » avant M4.
+`run_destination_conformance(destination, DestinationScenario(...))` et `assert_destination_conforms` rejouent une
+destination (déclarations, plan, appels, espaces de noms) : voir [destination-kit.md](destination-kit.md).
 
 ## Cassettes
 
@@ -53,10 +50,9 @@ Une cassette est un JSON synthétique : `{"interactions": [{"method", "url", "st
 copié d'un site, aucune adresse réelle : utilisez des hôtes `.invalid`. Le test du gabarit ajoute un
 **test d'attaque** : une source qui joint un hôte hors cassette doit faire échouer le kit.
 
-## Destinations
+## Contrôles de déclaration d'une destination
 
-Le kit complet des destinations arrive en M4 (lot L05). Une première vérification existe déjà avec le SDK 1.4,
-`run_destination_declaration_check(capabilities)` :
+`run_destination_declaration_check(capabilities)` fait partie du kit des destinations ([destination-kit.md](destination-kit.md)) :
 
 | Contrôle | Ce qu'il vérifie |
 | --- | --- |

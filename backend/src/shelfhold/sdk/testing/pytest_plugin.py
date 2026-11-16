@@ -7,6 +7,7 @@ import pytest
 
 from shelfhold.sdk.refs import SeriesRef
 from shelfhold.sdk.source import Source
+from shelfhold.sdk.testing.destination_kit import assert_destination_conforms
 from shelfhold.sdk.testing.fakes import FakeFetcher
 from shelfhold.sdk.testing.kit import ConformanceReport, assert_conforms
 
@@ -31,3 +32,10 @@ def check_conformance() -> Callable[..., ConformanceReport]:
         return assert_conforms(source, fetcher, reinstall=reinstall, series_ref=series_ref)
 
     return run
+
+
+@pytest.fixture
+def check_destination() -> Callable[..., ConformanceReport]:
+    """`check_destination(destination, DestinationScenario(key=..., plan=...))` runs the
+    destination chapter of the kit and raises on the first report that is not clean."""
+    return assert_destination_conforms
