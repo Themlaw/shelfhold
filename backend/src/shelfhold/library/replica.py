@@ -169,6 +169,7 @@ class ByteSource:
     file_hash: str  # what the bytes must hash to: the archive as received, never a rendering
     destination_id: str | None = None  # a `destination` copy: the binding that wrote it
     target_id: str | None = None  # ... and its server, whose `readback` says if it may be read
+    size: int | None = None  # what the registry holds: a file of another size is no source
 
 
 _UNTRUSTED_DIR = "untrusted/"
@@ -203,7 +204,7 @@ def byte_sources(
     r = replica_table
     found: list[ByteSource] = []
     held = connection.execute(
-        sa.select(r.c.id, r.c.location, r.c.rel_path, r.c.file_hash, root.c.path_entry)
+        sa.select(r.c.id, r.c.location, r.c.rel_path, r.c.file_hash, r.c.size, root.c.path_entry)
         .join(root, root.c.root_id == r.c.physical_root_id)
         .where(
             r.c.unit_id == unit_id,
@@ -221,20 +222,29 @@ def byte_sources(
             continue
         expected = c.file_hash or row.original_sha256
         by_kind[c.location].append(
-            ByteSource(c.location, c.id, f"{c.path_entry.rstrip('/')}/{c.rel_path}", expected)
+            ByteSource(
+                c.location,
+                c.id,
+                f"{c.path_entry.rstrip('/')}/{c.rel_path}",
+                expected,
+                size=c.size,
+            )
         )
     found.extend(by_kind["store"])
     found.extend(by_kind["library"])
     d, record, binding = replica_table, export.export_record, export.shelf_destination
+    tree, indexer = export.tree, export.tree_indexer
     written = connection.execute(
         sa.select(
-            d.c.id, d.c.rel_path, d.c.file_hash, root.c.path_entry,
+            d.c.id, d.c.rel_path, d.c.file_hash, d.c.size, root.c.path_entry,
             binding.c.id.label("destination_id"), binding.c.target_id,
         )
         .select_from(
             d.join(root, root.c.root_id == d.c.physical_root_id)
             .join(record, record.c.export_item_id == d.c.export_item_id)
             .join(binding, binding.c.id == record.c.shelf_destination_id)
+            .join(indexer, indexer.c.shelf_destination_id == binding.c.id)
+            .join(tree, tree.c.id == indexer.c.tree_id)
         )
         .where(
             d.c.unit_id == unit_id,
@@ -244,13 +254,21 @@ def byte_sources(
             record.c.file_hash == d.c.file_hash,  # the hash the manifest holds
             record.c.state.in_(("written", "scanned", "resolved")),
             binding.c.shelf_id == shelf_id,
+            # the file lives in the tree of the binding that vouches for it (root and folder), not
+            # in the tree of another binding that holds a line for the same item
+            tree.c.root_id == d.c.physical_root_id,
+            sa.or_(
+                tree.c.root_subpath == "",
+                sa.func.substr(d.c.rel_path, 1, sa.func.length(tree.c.root_subpath) + 1)
+                == tree.c.root_subpath + "/",
+            ),
         )
         .order_by(d.c.id)
     )  # fmt: skip
     found.extend(
         ByteSource(
             "destination", w.id, f"{w.path_entry.rstrip('/')}/{w.rel_path}", w.file_hash,
-            w.destination_id, w.target_id,
+            w.destination_id, w.target_id, w.size,
         )
         for w in written
     )  # fmt: skip

@@ -165,5 +165,5 @@ def test_kill9_while_two_bindings_copy_one_archive_resumes_without_duplicate_or_
         assert [r.file_hash for r in records_of(env, second)] == [digest(unit.data)]
         assert copies == 1  # the library copy; a file of a tree is never counted as a copy
         assert [(r.file_hash, r.independent) for r in held] == [(digest(unit.data), 0)] * len(held)
-        assert len(held) <= 2
+        assert len(held) == 2  # the registry is complete after the resume
         assert os.path.exists(unit.source.local_path)

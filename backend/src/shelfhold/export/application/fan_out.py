@@ -29,11 +29,12 @@ server's `accepted_content_types` the Variant has).
 
 import hashlib
 import os
-from collections.abc import Callable, Sequence
+import stat
+from collections.abc import Callable, Iterator, Sequence
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime
-from pathlib import Path
-from typing import Any, Literal, Protocol
+from typing import Any, BinaryIO, Literal, Protocol
 
 import sqlalchemy as sa
 import structlog
@@ -58,13 +59,14 @@ from shelfhold.export.domain.path_map import clean_absolute, within
 from shelfhold.export.domain.planner import NO_NATIVE_FORMAT, ContentOffer, choose_content
 from shelfhold.infrastructure.clock import Clock, SystemClock
 from shelfhold.infrastructure.db import write_transaction
-from shelfhold.infrastructure.fsops import FsopsError
+from shelfhold.infrastructure.fsops import FsopsError, open_regular
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import catalog, export, platform, storage
 from shelfhold.library.public import (
     byte_sources,
     forget_destination_copies,
     record_replica,
+    relocate_root_paths,
     variant_contents,
 )
 from shelfhold.sdk.api_call import ApiCall
@@ -77,7 +79,9 @@ __all__ = [
     "BindingView",
     "CachedInstanceProbe",
     "ContentNeedsDownloadError",
+    "ContentRefusedError",
     "DestinationSource",
+    "EpubFile",
     "FanOut",
     "FanOutReport",
     "HostContentStore",
@@ -582,32 +586,45 @@ def register_destination_copies(
     destination_id: str,
     files: Sequence[AppliedFile],
     now: datetime,
+    moved: Sequence[tuple[str, str]] = (),
+    recycled: Sequence[str] = (),
 ) -> int:
     """The `destination` copies of the files a plan wrote (point m6 of #303), in the transaction of
     the manifest. Only a file that is the archive itself is a copy the registry knows: its hash is
     the `original_sha256` of a `content` of the Unit. A rendering is a file of the manifest and
     nothing more: it is never a source of bytes for another binding (EF-BIB-048). Never counted
     as independent (a server may rewrite it): `independent_copies` is unchanged. A stale row of the
-    item under the same tree is replaced; the rows of another tree are not touched."""
+    item under the same tree is replaced, also when the new file is a rendering; the rows of
+    another tree are not touched. The registry follows what the plan did to files: a `rename` moves
+    the row, a `recycle` forgets it (the file is in the bin: no row says it is here)."""
     tree_id = tree_of(connection, destination_id)
     place = None if tree_id is None else tree_place(connection, tree_id)
     if place is None:
         return 0
     root_id, subpath, _shelf = place
+
+    def in_root(rel: str) -> str:
+        return f"{subpath}/{rel}" if subpath else rel
+
+    relocate_root_paths(connection, root_id, [(in_root(a), in_root(b)) for a, b in moved])
+    for path in recycled:
+        for item in _items_at(connection, destination_id, path):
+            forget_destination_copies(connection, item, physical_root_id=root_id, under=subpath)
     made = 0
     for file in files:
         unit = _unit_of(connection, file.export_item_id)
-        content = None if unit is None else _canonical_content(connection, unit, file.file_hash)
-        if unit is None or content is None:
+        if unit is None:
             continue
-        in_root = f"{subpath}/{file.rel_path}" if subpath else file.rel_path
         forget_destination_copies(
             connection, file.export_item_id, physical_root_id=root_id, under=subpath
         )
+        content = _canonical_content(connection, unit, file.file_hash)
+        if content is None:
+            continue  # a rendering: in the manifest, never in the registry as a source
         record_replica(
             connection, unit_id=unit, export_item_id=file.export_item_id, location="destination",
             content_hash=content, file_hash=file.file_hash, independent=False,
-            mutable_by_third_party=True, physical_root_id=root_id, rel_path=in_root,
+            mutable_by_third_party=True, physical_root_id=root_id, rel_path=in_root(file.rel_path),
             dev=file.dev, ino=file.ino, size=file.size, mtime_ns=file.mtime_ns, verified_at=now,
         )  # fmt: skip
         made += 1
@@ -771,11 +788,31 @@ class BindingOutcome:
     status: Status
     code: str | None = None
     executed: int = 0
+    # items already written whose format the server no longer accepts (`export.no_native_format`):
+    # left where they are and said here, never recycled by the host on its own (m4 of #305)
+    lost_format: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
 class FanOutReport:
     outcomes: tuple[BindingOutcome, ...]
+
+
+def _lost_format(
+    connection: Connection, destination_id: str, formats: dict[str, str]
+) -> tuple[str, ...]:
+    """The items of the manifest of the binding, written and still on the shelf, that no longer
+    have a format the server accepts: the file is there and nothing here removes it."""
+    record = export.export_record
+    held = set(
+        connection.execute(
+            sa.select(record.c.export_item_id).where(
+                record.c.shelf_destination_id == destination_id, record.c.state.in_(FILE_OK)
+            )
+        ).scalars()
+    )
+    on_shelf = planned_content(connection, destination_id).planned_refs
+    return tuple(sorted((held & on_shelf) - set(formats)))
 
 
 class FanOut:
@@ -817,6 +854,12 @@ class FanOut:
             with self._engine.connect() as connection:
                 planned = planned_content(connection, destination_id, accepted)
                 formats = native_formats(connection, sorted(planned.planned_refs), accepted)
+                lost = _lost_format(connection, destination_id, formats)
+            if lost:
+                log.warning(
+                    "fan_out.no_native_format", destination_id=destination_id, items=len(lost),
+                    code=NO_NATIVE_FORMAT,
+                )  # fmt: skip
             binding = PlanBinding(destination_id, view.target_id, capabilities, formats)
             self._pipeline.plan_ledger.plan(call_id, destination_id, planned)
             executed = 0
@@ -832,8 +875,9 @@ class FanOut:
                     binding, call_id, calls, send=self._source.sender(binding)
                 )
             return BindingOutcome(
-                destination_id, "indexer" if view.role == "secondary" else "done", None, executed
-            )
+                destination_id, "indexer" if view.role == "secondary" else "done", None, executed,
+                lost,
+            )  # fmt: skip
         except DestinationPausedError as error:
             return BindingOutcome(destination_id, "paused", str(error))
         except PlanRefusedError as error:
@@ -859,8 +903,9 @@ class FanOut:
                 recycled=report.recycled,
             )
             register_destination_copies(
-                connection, destination_id=destination_id, files=files, now=self._clock.now()
-            )
+                connection, destination_id=destination_id, files=files, now=self._clock.now(),
+                moved=report.moved, recycled=report.recycled,
+            )  # fmt: skip
 
 
 # -- what the composition root gives the executor -----------------------------------------------
@@ -882,8 +927,44 @@ class NoNativeFormatError(PlanRefusedError):
 DEFAULT_ACCEPTED = ("cbz", "epub")
 
 
-def _digest(data: bytes) -> str:
-    return "sha256:" + hashlib.sha256(data).hexdigest()
+MAX_READ = 4 << 30  # the most the host reads of a file whose size the registry does not hold
+CHUNK = 1 << 20
+
+
+class ContentRefusedError(PlanRefusedError):
+    """A file is not what the registry says it is (not a regular file, another size, too big):
+    it is no source, and nothing of it is read past what the check needs."""
+
+    code = "export.source_unreadable"
+
+
+@dataclass(frozen=True)
+class EpubFile:
+    """The EPUB `servable_epub` verified: the path, the hash it was verified at and the `content`
+    it is the derivative of. The host reads it once and compares, never trusting the path."""
+
+    path: str
+    file_hash: str
+    content_id: str
+
+
+def _read_bounded(stream: BinaryIO, *, size: int | None) -> tuple[bytes, str]:
+    """The bytes of the open descriptor and their hash, computed while reading. A regular file of
+    the size the registry holds (or under `MAX_READ`): any other is refused before the first read
+    and no more than that size is ever read, whatever the file grows to."""
+    seen = os.fstat(stream.fileno())
+    if not stat.S_ISREG(seen.st_mode):
+        raise ContentRefusedError("not a regular file")
+    cap = MAX_READ if size is None else size
+    if seen.st_size > cap or (size is not None and seen.st_size != size):
+        raise ContentRefusedError("not the size the registry holds")
+    digest, data = hashlib.sha256(), bytearray()
+    while chunk := stream.read(min(CHUNK, cap + 1 - len(data))):
+        digest.update(chunk)
+        data += chunk
+        if len(data) > cap:
+            raise ContentRefusedError("larger than it was")
+    return bytes(data), "sha256:" + digest.hexdigest()
 
 
 class HostContentStore:
@@ -907,12 +988,23 @@ class HostContentStore:
         *,
         capabilities: Callable[[str], TargetCapabilities | None] | None = None,
         download: Callable[[str], None] | None = None,
-        epub_path: Callable[[str], str | None] | None = None,
+        epub_path: Callable[[str], EpubFile | None] | None = None,
+        fsops: Any = None,
     ) -> None:
         self._engine = engine
         self._capabilities = capabilities
         self._download = download
         self._epub_path = epub_path
+        self._fsops = fsops  # the confined facade, when the composition root has one
+
+    @contextmanager
+    def _open(self, path: str) -> Iterator[BinaryIO]:
+        if self._fsops is None:
+            with open_regular(path) as stream:
+                yield stream
+        else:
+            with self._fsops.open_read(path) as stream:  # confined, no link, regular file
+                yield stream
 
     def _caps(self, target_id: str) -> TargetCapabilities | None:
         return None if self._capabilities is None else self._capabilities(target_id)
@@ -953,31 +1045,38 @@ class HostContentStore:
                 else byte_sources(connection, unit, chosen.content_id, shelf_id=binding.shelf_id)
             )
         if chosen.format == "epub":
-            return self._read_epub(unit)
+            return self._read_epub(unit, chosen.content_id)
         for source in sources:
             if source.kind == "destination":
                 held = None if source.target_id is None else self._caps(source.target_id)
                 if held is None or not copy_can_verify(held):
                     continue  # a server that cannot read a copy back does not vouch for it
             try:
-                with open(source.local, "rb") as stream:
-                    data = stream.read()
-            except OSError:
-                continue
-            if _digest(data) == source.file_hash:
+                with self._open(source.local) as stream:
+                    data, found = _read_bounded(stream, size=source.size)
+            except (OSError, FsopsError, ContentRefusedError):
+                continue  # a FIFO, a link, another size: no source, and nothing was waited for
+            if found == source.file_hash:
                 return data
         if self._download is not None:
             self._download(unit)
         raise ContentNeedsDownloadError("no copy of the archive can be read and verified")
 
-    def _read_epub(self, unit_id: str) -> bytes:
-        path = None if self._epub_path is None else self._epub_path(unit_id)
-        if path is None:
-            raise PlanRefusedError("the host serves no EPUB here")
+    def _read_epub(self, unit_id: str, content_id: str) -> bytes:
+        """The derivative `servable_epub` verified, read once and compared to the hash it was
+        verified at: a file put back at the path since (a restore, a repair) is refused. The one
+        verified is the one chosen (the watermark was read on that `content`)."""
+        served = None if self._epub_path is None else self._epub_path(unit_id)
+        if not isinstance(served, EpubFile) or served.content_id != content_id:
+            raise PlanRefusedError("the host serves no such EPUB here")
         try:
-            return Path(path).read_bytes()
-        except OSError:
+            with self._open(served.path) as stream:
+                data, found = _read_bounded(stream, size=None)
+        except (OSError, FsopsError, ContentRefusedError):
             raise ContentNeedsDownloadError("the verified derivative cannot be read") from None
+        if found != served.file_hash:
+            raise ContentRefusedError("the EPUB is not the one that was verified")
+        return data
 
 
 class TreeBarrier:

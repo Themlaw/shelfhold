@@ -596,6 +596,9 @@ class PlanExecutor:
         if op.dst_rel_path is None:
             raise PlanRefusedError("a rename needs its target")
         target = f"{run.tree.local}/{op.dst_rel_path}"
+        chosen = run.binding.native_formats.get(self._item_at(run, op.rel_path) or "")
+        if chosen is not None and PurePosixPath(op.dst_rel_path).suffix.lower() != f".{chosen}":
+            raise PlanRefusedError("the file name does not carry the format chosen here")
         if self._disk.observe(target) is not None:
             raise PlanRefusedError("a rename never overwrites")
         try:
@@ -605,6 +608,21 @@ class PlanExecutor:
         except (OSError, FsopsError):
             raise PlanRefusedError("the disk refused the rename") from None
         run.executed += 1
+
+    def _item_at(self, run: _Run, rel_path: str) -> str | None:
+        """The export item whose file is at `rel_path` of this tree: written by this run, else
+        the line of the manifest of the binding."""
+        for written in run.files:
+            if written.rel_path == rel_path:
+                return written.export_item_id
+        record = export.export_record
+        with self._engine.connect() as connection:
+            return connection.execute(
+                sa.select(record.c.export_item_id).where(
+                    record.c.shelf_destination_id == run.binding.destination_id,
+                    record.c.rel_path == rel_path,
+                )
+            ).scalar()
 
     def _recycle(self, where: str, meta: dict[str, Any]) -> None:
         found = self._disk.observe(where)

@@ -1,5 +1,6 @@
 """#305 (M4 L06b, the bytes of the fan-out): the holes found by the adversarial review, one red PoC
-each (`xfail(strict=True)`). Each test says what should hold and fails today for the reason it
+each (`xfail(strict=True)`, retired
+once fixed). Each test says what should hold and fails today for the reason it
 gives; `strict` reports the day it passes.
 """
 
@@ -24,7 +25,6 @@ from tests.integration.test_fan_out_bytes import Registry, _host_pass, caps, ref
 
 
 @pytest.mark.req("EF-BIB-045")
-@pytest.mark.xfail(strict=True, reason="#305 M1: a destination file is opened and read unbounded")
 def test_a_destination_file_replaced_by_a_fifo_does_not_hang_the_pass() -> None:
     """A destination copy is a file a third party may change (`mutable_by_third_party`). The host
     opens it by name with `open()` (no `O_NOFOLLOW`, no `O_NONBLOCK`, not through the confined
@@ -61,7 +61,6 @@ def test_a_destination_file_replaced_by_a_fifo_does_not_hang_the_pass() -> None:
 
 
 @pytest.mark.req("EF-BIB-051", "EF-EXP-046")
-@pytest.mark.xfail(strict=True, reason="#305 M2: the EPUB served is not the one that was verified")
 def test_the_epub_served_is_the_derivative_that_was_verified(tmp_path: Path) -> None:
     """`servable_epub` checks the file at a path (payload, neutralizer) and hashes it;
     `_epub_path_of` keeps the path only, and `HostContentStore._read_epub` reads whatever is at
@@ -93,7 +92,6 @@ def test_the_epub_served_is_the_derivative_that_was_verified(tmp_path: Path) -> 
 
 
 @pytest.mark.req("EF-BIB-045")
-@pytest.mark.xfail(strict=True, reason="#305 m1: readback is read from another binding's server")
 def test_a_copy_on_a_server_that_cannot_read_back_is_no_source_through_another_binding() -> None:
     """`byte_sources` joins the `destination` replica to `export_record` on the export item only,
     not on the tree the file lives in. A file written in the tree of a server with `readback: none`
@@ -115,7 +113,6 @@ def test_a_copy_on_a_server_that_cannot_read_back_is_no_source_through_another_b
 
 
 @pytest.mark.req("EF-EXP-046", "EF-EXP-001")
-@pytest.mark.xfail(strict=True, reason="#305 m2: a rename gives the file another extension")
 def test_a_rename_cannot_give_the_file_of_an_item_another_format() -> None:
     """The guard of the native format reads the `rel_path` of a `write` only. A plan that writes
     `Volume 1.cbz` (the format served) then renames it `Volume 1.pdf` puts the bytes of a CBZ under

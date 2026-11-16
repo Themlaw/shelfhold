@@ -65,6 +65,7 @@ from shelfhold.composition import (
 from shelfhold.export.application import blocked_memo
 from shelfhold.export.application.fan_out import (
     CachedInstanceProbe,
+    EpubFile,
     FanOut,
     HostContentStore,
     TreeBarrier,
@@ -517,6 +518,7 @@ def build_pipeline(
             comp.engine,
             capabilities=FirstPartyDestinations(comp.engine).capabilities,
             epub_path=_epub_path_of(comp, fsops),
+            fsops=fsops,
         ),
         probe=CachedInstanceProbe(_instance_identity(comp), clock=comp.clock),
         events=BusTargetEvents(comp.engine, comp.bus),
@@ -525,17 +527,18 @@ def build_pipeline(
     return pipeline, reconciler, fsops
 
 
-def _epub_path_of(comp: Composition, fsops: Fsops) -> Callable[[str], str | None]:
+def _epub_path_of(comp: Composition, fsops: Fsops) -> Callable[[str], EpubFile | None]:
     """The one file of a Unit's EPUB the host may serve: its verified derivative, never an
     original (EF-BIB-051). A Unit with none gives nothing."""
     from shelfhold.library.public import OriginalNotServableError, servable_epub
 
-    def path(unit_id: str) -> str | None:
+    def path(unit_id: str) -> EpubFile | None:
         staging = comp.settings.data_dir / "tmp"
         try:
-            return servable_epub(
+            served = servable_epub(
                 comp.engine, fsops, unit_id, staging=staging if staging.is_dir() else None
-            ).path
+            )
+            return EpubFile(served.path, served.file_hash, served.content_id)
         except OriginalNotServableError:
             return None
 

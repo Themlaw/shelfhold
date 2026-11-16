@@ -12,7 +12,7 @@ from pathlib import Path
 import sqlalchemy as sa
 
 from shelfhold.export.application.export_items import create_export_item
-from shelfhold.export.application.fan_out import AppliedFile, record_applied
+from shelfhold.export.application.fan_out import AppliedFile, ensure_trees, record_applied
 from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import replica as replica_schema
@@ -83,6 +83,14 @@ def put_store_copy(env: ExportEnv, unit: Unit, data: bytes | None = None) -> Pat
     return path
 
 
+def shelf_of(connection: sa.Connection, destination_id: str) -> str:
+    return str(
+        connection.execute(
+            sa.text("SELECT shelf_id FROM shelf_destination WHERE id = :d"), {"d": destination_id}
+        ).scalar_one()
+    )
+
+
 def put_destination_copy(
     env: ExportEnv, destination_id: str, unit: Unit, data: bytes, *, rel: str | None = None,
     folder: str = "Kavita",
@@ -95,6 +103,7 @@ def put_destination_copy(
     path.write_bytes(data)
     stat = path.stat()
     with write_transaction(env.engine) as connection:
+        ensure_trees(connection, shelf_of(connection, destination_id))
         record_applied(
             connection, destination_id=destination_id,
             files=[AppliedFile(unit.item_id, rel, sha(data), len(data), stat.st_mtime_ns)],

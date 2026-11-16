@@ -16,6 +16,7 @@ import sqlalchemy as sa
 
 from shelfhold.export.application.fan_out import (
     ContentNeedsDownloadError,
+    EpubFile,
     FanOut,
     HostContentStore,
     native_formats,
@@ -413,6 +414,95 @@ def test_the_registry_keeps_the_archives_a_plan_wrote_and_never_their_renderings
             (digest(unit.data), 0, 1)
         }
         assert copies == 1
+
+
+@pytest.mark.req("EF-BIB-045")
+def test_a_file_of_another_size_than_the_registry_holds_is_no_source() -> None:
+    with export_env() as env:
+        series = env.new_series()
+        unit = unit_with_item(env, series)
+        host = HostContentStore(env.engine, capabilities=Registry(env, caps("fetch")))
+        written = put_destination_copy(env, env.destination_id, unit, unit.data)
+        drop_library_copy(env, unit)
+        written.write_bytes(unit.data + b"x" * 10)  # grew since the registry looked
+        with pytest.raises(ContentNeedsDownloadError):
+            host.read(env.destination_id, ref(unit.item_id))
+
+
+@pytest.mark.req("EF-BIB-051", "EF-EXP-046")
+def test_the_epub_is_served_only_at_the_hash_that_was_verified(tmp_path: Path) -> None:
+    with export_env() as env:
+        series = env.new_series()
+        unit = unit_with_item(env, series)
+        epub_id = add_format(env, unit, "epub", b"PK epub derivative")
+        path = tmp_path / "c.epub"
+        path.write_bytes(b"PK clean derivative")
+        good = EpubFile(str(path), digest(b"PK clean derivative"), epub_id)
+        registry = Registry(env, caps("fetch", ("epub",)))
+        served = HostContentStore(env.engine, capabilities=registry, epub_path=lambda _u: good)
+        assert served.read(env.destination_id, ref(unit.item_id)) == b"PK clean derivative"
+        # another `content` than the one chosen (the watermark was read on that one)
+        other = EpubFile(str(path), good.file_hash, "01HZZZZZZZZZZZZZZZZZZZZZZZ")
+        mismatched = HostContentStore(env.engine, capabilities=registry, epub_path=lambda _u: other)
+        with pytest.raises(PlanRefusedError):
+            mismatched.read(env.destination_id, ref(unit.item_id))
+
+
+@pytest.mark.req("EF-BIB-045", "EF-BIB-048")
+def test_the_registry_follows_a_rename_and_a_recycle_of_the_plan() -> None:
+    with export_env() as env:
+        registry = Registry(env, caps("fetch"))
+        fan, plans, _probe = _host_pass(env, registry)
+        series = env.new_series()
+        unit = unit_with_item(env, series)
+        plans.by_destination = {env.destination_id: write_plan(unit.item_id, folder="One")}
+        fan.run(env.shelf_id, "call-1")
+
+        def rows() -> list[str]:
+            with env.engine.connect() as connection:
+                return list(
+                    connection.execute(
+                        sa.text("SELECT rel_path FROM replica WHERE location = 'destination'")
+                    ).scalars()
+                )
+
+        assert rows() == ["manga/Kavita/One/Volume 1.cbz"]
+        plans.by_destination = {
+            env.destination_id: {
+                "ops": [
+                    {
+                        "op": "rename",
+                        "rel_path": "One/Volume 1.cbz",
+                        "dst_rel_path": "One/Vol 1.cbz",
+                    }
+                ]
+            }
+        }
+        fan.run(env.shelf_id, "call-2")
+        assert rows() == ["manga/Kavita/One/Vol 1.cbz"]
+        plans.by_destination = {
+            env.destination_id: {"ops": [{"op": "recycle", "rel_path": "One/Vol 1.cbz"}]}
+        }
+        fan.run(env.shelf_id, "call-3")
+        assert rows() == []  # the file is in the bin: nothing says it is here
+
+
+@pytest.mark.req("EF-EXP-046")
+def test_an_item_that_lost_its_native_format_is_said_and_its_file_is_left() -> None:
+    with export_env() as env:
+        registry = Registry(env, caps("fetch"))
+        fan, plans, _probe = _host_pass(env, registry)
+        series = env.new_series()
+        unit = unit_with_item(env, series)
+        plans.by_destination = {env.destination_id: write_plan(unit.item_id, folder="One")}
+        fan.run(env.shelf_id, "call-1")
+        registry.by_target[env.target_id] = caps("fetch", ("pdf",))  # cbz no longer accepted
+        plans.by_destination = {}
+
+        outcome = fan.run(env.shelf_id, "call-2").outcomes[0]
+
+        assert outcome.lost_format == (unit.item_id,)
+        assert (env.lib.manga / "Kavita" / "One" / "Volume 1.cbz").exists()  # never removed here
 
 
 # -- helpers ------------------------------------------------------------
