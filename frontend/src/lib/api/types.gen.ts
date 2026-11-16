@@ -2533,6 +2533,22 @@ export type NamingTemplateIn = {
 };
 
 /**
+ * NativeFolderIn
+ */
+export type NativeFolderIn = {
+    /**
+     * Name
+     */
+    name: string;
+    /**
+     * Path Map
+     */
+    path_map: Array<{
+        [key: string]: string;
+    }>;
+};
+
+/**
  * NotificationPrefsIn
  *
  * The whole of it, replaced at once. Nothing names a person: the caller's row is the one.
@@ -13213,6 +13229,39 @@ export type AddTargetResponses = {
 };
 
 export type AddTargetResponse = AddTargetResponses[keyof AddTargetResponses];
+
+export type AddNativeFolderData = {
+    body: NativeFolderIn;
+    path?: never;
+    query?: never;
+    url: '/api/v1/targets/native-folder';
+};
+
+export type AddNativeFolderErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type AddNativeFolderError = AddNativeFolderErrors[keyof AddNativeFolderErrors];
+
+export type AddNativeFolderResponses = {
+    /**
+     * Successful Response
+     */
+    201: Created;
+};
+
+export type AddNativeFolderResponse = AddNativeFolderResponses[keyof AddNativeFolderResponses];
 
 export type DetachData = {
     body: ShelfholdInterfacesHttpApiDestinationsDetachIn;

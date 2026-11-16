@@ -265,6 +265,9 @@ _ACTION_TEXT: dict[str, Callable[[], str]] = {
     "source.auth_mode_unsupported": lambda: t("errors.source.auth_mode_unsupported.action"),
     "source.instance_changed": lambda: t("errors.source.instance_changed.action"),
     "source.ref_has_secret": lambda: t("errors.source.ref_has_secret.action"),
+    "source.local_source_on_managed_root": lambda: t(
+        "errors.source.local_source_on_managed_root.action"
+    ),
 }
 _BACKUP_COMMAND = {
     "backup_not_configured": "shelfhold config set",
