@@ -329,6 +329,8 @@ def _mark_traversed(
                 table.c.source == "device",
                 # a place in a reflowable text measures nothing (L51): never an anchor
                 sa.func.json_extract(table.c.locator, "$.xpointer").is_(None),
+                # nor is a position carried over from another Edition (EF-BIB-026): a guess
+                sa.func.json_extract(table.c.locator, "$.transposed").is_(None),
             )
             .order_by(table.c.server_ts.desc(), table.c.id.desc())
             .limit(HISTORY_LIMIT)

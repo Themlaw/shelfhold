@@ -9,19 +9,20 @@ proof of reading: no anchor of a traversal, nothing pushed to Kavita.
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+import json
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
 import sqlalchemy as sa
 
-from shelfhold.catalog.public import prefer_edition
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import catalog
-from shelfhold.reading.public import record_position, undo_read_mark
+from shelfhold.reading.public import prefer_edition, record_position, undo_read_mark
 from tests.integration.test_schema_catalog import add_edition
-from tests.reading_env import NEW_HASH, ReadingEnv, hours, reading_env
+from tests.reading_env import NEW_HASH, ReadingEnv, reading_env
 from tests.visibility_env import RATED, _work
 
 NOW = datetime(2026, 11, 16, 9, 0, tzinfo=UTC)
@@ -67,17 +68,16 @@ def change(env: ReadingEnv, edition: str) -> Any:
         return prefer_edition(connection, edition_id=edition, now=NOW)
 
 
-def transposed(env: ReadingEnv, user: str) -> list[sa.Row[Any]]:
+def transposed(env: ReadingEnv, user: str) -> list[Any]:
     with env.engine.connect() as connection:
-        return list(
-            connection.execute(
-                sa.text(
-                    "SELECT * FROM reading_position WHERE user_id = :u "
-                    "AND json_extract(locator, '$.transposed') = 1 ORDER BY id"
-                ),
-                {"u": user},
-            )
+        rows = connection.execute(
+            sa.text(
+                "SELECT * FROM reading_position WHERE user_id = :u "
+                "AND json_extract(locator, '$.transposed') = 1 ORDER BY id"
+            ),
+            {"u": user},
         )
+        return [SimpleNamespace(**{**r._mapping, "locator": json.loads(r.locator)}) for r in rows]
 
 
 def test_preferred_edition_change_transfers_neutral_position_approximate(tmp_path: Path) -> None:
@@ -142,14 +142,14 @@ def test_volume_page_transposed_to_chapter_by_coverage_bounds(tmp_path: Path) ->
         bounds = [(1, 40), (41, 80), (81, 120), (121, 160), (161, 200)]
         volume = env.file("en", en_units, bounds=bounds, content_hash=NEW_HASH)
         fr_units, _ = chapters(env, "fr", 5, hashed=FR_HASH)
-        env.position(reader, volume, page=143, percent=143 / 200, source="server")
+        env.position(reader, volume, page=143, percent=143 / 200)
 
         change(env, fr)
 
         progress = env.progress(reader)
         assert progress[fr_units[3]].state == "in_progress"  # 143 is in chapter 4 (121 to 160)
         assert bool(progress[fr_units[3]].approximate) is True
-        assert fr_units[4] not in progress
+        assert fr_units[4] not in progress and fr_units[0] not in progress  # skipped, never marked
         (row,) = transposed(env, reader)
         assert row.percent == pytest.approx(22 / 39)  # where 143 sits in 121..160
         assert row.locator["neutral"]["part_ordinal"] == 4
@@ -171,7 +171,7 @@ def test_a_chapter_position_lands_in_the_volume_that_covers_it(tmp_path: Path) -
         progress = env.progress(reader)
         assert progress[fr_units[1]].state == "in_progress"
         assert bool(progress[fr_units[1]].approximate) is True
-        assert fr_units[2] not in progress
+        assert progress[fr_units[2]].state == "unread"  # the next chapter is not reached
         (row,) = transposed(env, reader)
         assert "page" not in row.locator and row.percent == pytest.approx((1 + 0.5) / 4)
 
@@ -310,7 +310,7 @@ def test_a_transposed_position_is_never_the_anchor_of_a_traversal(tmp_path: Path
         _work_id, _en, fr = bilingual(env)
         _eu, en_files = chapters(env, "en", 1, hashed=NEW_HASH)
         fr_units, fr_files = chapters(env, "fr", 1, hashed=FR_HASH)
-        env.position(reader, en_files[0], percent=0.1)
+        env.position(reader, en_files[0], percent=0.02)  # 2 pages of 100: a start
         change(env, fr)
         with env.engine.begin() as connection:
             connection.execute(
@@ -320,7 +320,7 @@ def test_a_transposed_position_is_never_the_anchor_of_a_traversal(tmp_path: Path
             record_position(
                 connection, reader_id=reader, subject_id=reader, carrier_type="export_item",
                 carrier_id=fr_files[0], content_hash=FR_HASH, locator={}, percent=1.0,
-                client_ts=hours(11), now=hours(11),
+                client_ts=NOW + timedelta(hours=10), now=NOW + timedelta(hours=10),
             )  # fmt: skip
         assert env.progress(reader)[fr_units[0]].state == "in_progress"
 
@@ -349,3 +349,29 @@ def test_the_pages_given_to_kavita_never_come_from_a_transposed_position(tmp_pat
         for ref in refs:
             assert sync._pending_page(env.engine, reader, ref, sync.EPOCH, outcome) is None
         assert fr_units
+
+
+def test_the_view_and_the_domain_agree_on_a_transposed_position(tmp_path: Path) -> None:
+    """A single-chapter file is never `approximate` from a share alone; a transposed one is."""
+    from shelfhold.reading.domain.projection import Bounds, project
+
+    with reading_env(tmp_path) as env:
+        reader = env.user("reader")
+        units = env.units("ok", 2)
+        plain, other = env.file("ok", units[:1]), env.file("ok", units[1:])
+        env.position(reader, plain, percent=0.5)
+        row = env.position(reader, other, percent=0.5)
+        with env.engine.begin() as connection:
+            connection.execute(
+                sa.text(
+                    "UPDATE reading_position SET locator = '{\"transposed\": true}' WHERE id = :i"
+                ),
+                {"i": row},
+            )
+        got = env.progress(reader)
+        for unit, flag in ((units[0], False), (units[1], True)):
+            want = project(
+                page=None, percent=0.5, bounds=Bounds(None, None, 0, 1), trusted=False,
+                transposed=flag,
+            )  # fmt: skip
+            assert bool(got[unit].approximate) is want.approximate is flag

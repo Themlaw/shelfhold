@@ -239,3 +239,8 @@ since = "1.1"
 file = "0083_page_map_verified.py"
 sha256 = "e267b157ca60ac9228da19ea38e294c60c3c273c6496a48d2c49bcc7675c7004"
 since = "1.1"
+
+[[migration]]
+file = "0084_reading_progress_transposed.py"
+sha256 = "37dbfacb51b1cc62904c9eaa1c922c0ba4f7980669c80119f4218564ef575325"
+since = "1.1"
