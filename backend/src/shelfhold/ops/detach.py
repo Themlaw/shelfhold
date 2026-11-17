@@ -49,7 +49,7 @@ from shelfhold.export.targets.kavita.errors import TargetError
 from shelfhold.export.targets.kavita.settings_restore import restore_library_settings
 from shelfhold.identity.public import Principal
 from shelfhold.infrastructure.fsops import Fsops
-from shelfhold.jobs.public import JobContext, JobFailedError
+from shelfhold.jobs.public import MAX_ATTEMPTS, JobContext, JobFailedError
 from shelfhold.library.public import roots_holding_library_copies
 from shelfhold.ops.errors import CodedRefusal, ExitUnavailableError, InvalidChoiceError
 from shelfhold.ops.events import BusTargetEvents
@@ -387,9 +387,19 @@ class DetachOps:
         pools = self._pools()  # a refusal comes first; no line is written for a job never queued
         detacher.record_order(order, principal)
         key = detach_job_key(order)
+        handoff = self._comp.credential_handoff
+        waiting = handoff.holds(key)  # an earlier order of the same job, not yet taken
         if credential:
-            self._comp.credential_handoff.put(key, credential)
-        job_id: str = pools.submit(DETACH_JOB_KIND, dedupe_key=key, priority_class="request").job_id
+            handoff.put(key, credential)
+        try:
+            created = pools.submit(DETACH_JOB_KIND, dedupe_key=key, priority_class="request")
+        except BaseException:
+            if not waiting:
+                handoff.discard(key)  # no job will come for it
+            raise
+        if not created.created and not waiting:
+            handoff.discard(key)  # the job in flight took its password already: this one is no use
+        job_id: str = created.job_id
         return job_id
 
     def run_detach_job(self, context: JobContext) -> None:
@@ -417,7 +427,7 @@ class DetachOps:
                 ),
             )  # fmt: skip
         except DetachRefusedError as error:
-            if error.reason in _TRANSIENT and credential:
+            if error.reason in _TRANSIENT and credential and _attempts_left(context):
                 handoff.put(context.dedupe_key, credential)  # the next attempt needs it again
             if error.reason in _TRANSIENT:
                 raise _Busy(error.reason) from None
@@ -474,6 +484,12 @@ class DetachOps:
 
 
 _TRANSIENT = frozenset({"busy", "intent_open"})  # another job holds it, or an operation is open
+
+
+def _attempts_left(context: JobContext) -> bool:
+    """Whether the queue will run this job again: on its last attempt the password is not kept
+    for a run that will not come (the job becomes a dead letter)."""
+    return bool(context.ledger.attempts_of(context.job_id) < MAX_ATTEMPTS)
 
 
 class _Busy(Exception):

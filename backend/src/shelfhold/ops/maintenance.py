@@ -40,6 +40,7 @@ from shelfhold.ops.errors import (
     NotWaitingError,
     UnknownSubjectError,
 )
+from shelfhold.ops.job_actions import reserved_job_action
 
 __all__ = ["MaintenanceOps"]
 
@@ -235,6 +236,8 @@ class MaintenanceOps:
     def replay(self, job_id: str, *, principal: Principal, audit: bool = True) -> dict[str, Any]:
         self._authorize(principal, QUEUE)
         with write_transaction(self._engine) as conn:
+            if (action := reserved_job_action(conn, job_id)) is not None:
+                self._authorize(principal, action)  # as `jobs retry`: the order's own session
             try:
                 queued, changed = self.control.replay(conn, job_id)
             except JobNotFoundError:

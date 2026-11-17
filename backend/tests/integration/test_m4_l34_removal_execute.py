@@ -22,6 +22,7 @@ from shelfhold.export.application.detach import (
     detach_order_of,
     full_detach_phrase,
 )
+from shelfhold.export.application.locks import ResourceLocks
 from shelfhold.export.application.remove_destination import (
     REMOVAL_JOB_KIND,
     RemovalMode,
@@ -65,6 +66,13 @@ def _audit(d: DetachEnv, action: str) -> list[Any]:
         return list(
             conn.execute(sa.text("SELECT target FROM audit WHERE action = :a"), {"a": action})
         )
+
+
+def _boot(d: Any) -> None:
+    """The start, in its order: `resolve_open`, then `release_all` of the resource locks (a real
+    SIGKILL leaves `dest:<id>` held; an exception unwinding the stack would have let it go)."""
+    d.journal.resolve_open()
+    ResourceLocks(d.env.engine, clock=d.env.clock).release_all()
 
 
 def _units(d: DetachEnv) -> list[str]:
@@ -369,7 +377,7 @@ def test_a_kill_at_each_step_of_the_removal_is_finished_by_the_rerun(
     with contextlib.suppress(Killed):  # the stop; past the last step it just runs to the end
         d.remover.execute(order)
     monkeypatch.undo()
-    d.journal.resolve_open()  # the boot settles what a stop left open, before the queue restarts
+    _boot(d)  # what the start does: the open intents settled, the resource locks let go
     report = d.remover.execute(order)
     assert report.complete, report.left
     assert d.env.files() == []
@@ -437,7 +445,7 @@ def test_detach_is_a_resumable_job(
     with contextlib.suppress(Killed):  # past the last step it runs to the end
         report = d.detacher.execute(order, **run)
     monkeypatch.undo()
-    d.journal.resolve_open()  # the boot settles what a stop left open, before the queue restarts
+    _boot(d)  # what the start does: the open intents settled, the resource locks let go
     report = report or d.detacher.execute(order, **run)
     assert report.complete and report.key_revoked, report.leftovers
     assert d.tree_digest() == exported  # the exported files are never touched

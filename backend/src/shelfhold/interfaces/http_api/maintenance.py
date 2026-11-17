@@ -16,7 +16,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel, Field
 from starlette.types import ASGIApp, Receive, Scope, Send
 
@@ -205,8 +205,14 @@ def build_maintenance_router(get_ops: Callable[[], OpsServices]) -> APIRouter:
             return PriorityOut(**done)
 
     @router.post("/jobs/{job_id}/replay")
-    def job_replay(job_id: str, principal: Annotated[Principal, Depends(_QUEUE)]) -> ReplayOut:
+    def job_replay(
+        job_id: str, request: Request, principal: Annotated[Principal, Depends(_QUEUE)]
+    ) -> ReplayOut:
         with refusals():
-            return ReplayOut(**get_ops().maintenance.replay(job_id, principal=principal))
+            ops = get_ops()
+            action = ops.jobs_retry_reserved_action(job_id)
+            if action is not None:  # a removal, a detachment, a rename plan: a fresh session
+                principal = reserved_action(RESERVED_ACTIONS[action])(request)
+            return ReplayOut(**ops.maintenance.replay(job_id, principal=principal))
 
     return router

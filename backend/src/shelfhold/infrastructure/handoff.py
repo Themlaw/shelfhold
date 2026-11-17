@@ -37,6 +37,16 @@ class CredentialHandoff:
             found = self._held.pop(key, None)
         return None if found is None else found[0]
 
+    def holds(self, key: str) -> bool:
+        with self._lock:
+            self._drop_expired()
+            return key in self._held
+
+    def discard(self, key: str) -> None:
+        """Forget the secret of this key: the job it was for will not come to take it."""
+        with self._lock:
+            self._held.pop(key, None)
+
     def clear(self) -> None:
         with self._lock:
             self._held.clear()

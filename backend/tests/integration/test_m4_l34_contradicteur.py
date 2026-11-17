@@ -1,6 +1,6 @@
 """PR #334 (M4 L34), contradicteur: suppression et intégrité des données.
 
-1. **PoC (xfail strict).** `jobs retry` d'une tâche de retrait ou de détachement demande l'action
+1. **PoC (corrigé).** `jobs retry` d'une tâche de retrait ou de détachement demande l'action
    réservée de l'ordre (`destination.remove_all`, `detach.full`), mais `jobs replay` (la file à la
    main, `queue.control`) ne la demande pas : la fraîcheur de `queue.control` n'est exigée qu'en
    profil durci. Une session admin périmée remet en file une tâche de retrait que l'admin avait
@@ -41,11 +41,6 @@ def _queue_ops(rig: _Rig) -> MaintenanceOps:  # noqa: F811
     )
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#334 contradicteur: `jobs replay` (queue.control) brings back a removal job "
-    "without the fresh session `jobs retry` asks for",
-)
 def test_poc_a_stale_session_replays_a_cancelled_removal_and_the_files_go(
     rig: _Rig,  # noqa: F811
 ) -> None:

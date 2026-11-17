@@ -26,12 +26,10 @@ from shelfhold.acquisition.public import FOLLOW_JOB_KIND, make_all_due
 from shelfhold.catalog.lang import LANG_NORMALIZER_ID, LanguageError, edition_key_lang
 from shelfhold.events.bus import EventBus
 from shelfhold.export.application import root_capabilities, waiting_marks
-from shelfhold.export.application.detach import DETACH_JOB_KIND
 from shelfhold.export.application.export_items import SeriesCollisionError, ensure_export_series
 from shelfhold.export.application.foreign_names import load_foreign_names
 from shelfhold.export.application.preflight import PermissionPreflight
 from shelfhold.export.application.reconcile import Reconciler
-from shelfhold.export.application.remove_destination import REMOVAL_JOB_KIND
 from shelfhold.export.application.snapshot import load_context
 from shelfhold.export.application.target_state import load_health
 from shelfhold.export.domain.naming import normalize_series_name, series_name_refusal
@@ -47,7 +45,7 @@ from shelfhold.identity.public import (
 from shelfhold.infrastructure.clock import Clock
 from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.fsops import Fsops
-from shelfhold.infrastructure.schema import catalog, coherence, export, platform
+from shelfhold.infrastructure.schema import catalog, export, platform
 from shelfhold.infrastructure.stable_hash import FileChangedError
 from shelfhold.jobs.control import QueueControl
 from shelfhold.jobs.window import DEFAULT_WINDOW, MaintenanceWindow
@@ -75,6 +73,7 @@ from shelfhold.ops.export_item import ExportItemOps
 from shelfhold.ops.follows import FollowOps
 from shelfhold.ops.import_folder import ImportOps
 from shelfhold.ops.intents import IntentOps
+from shelfhold.ops.job_actions import reserved_job_action
 from shelfhold.ops.kavita_accounts import KavitaAccountsOps
 from shelfhold.ops.library import LibraryOps
 from shelfhold.ops.maintenance import MaintenanceOps
@@ -198,9 +197,6 @@ def _job_row(r: sa.Row[tuple[object, ...]]) -> JobRow:
         r.id, r.kind, r.status, r.error_code, r.last_error, r.attempts, r.created_at,
         r.started_at, r.finished_at, r.progress, r.request_id, r.priority_class, r.source_key,
     )  # fmt: skip
-
-
-_APPLY_JOB_KIND = "export.apply"  # `runtime_jobs.APPLY_JOB_KIND` (the composition root)
 
 
 class OpsServices:
@@ -468,28 +464,10 @@ class OpsServices:
             raise UnknownSubjectError("no periodic job of this kind is scheduled")
 
     def jobs_retry_reserved_action(self, subject: str) -> str | None:
-        """The reserved action that putting this job back in the queue stands for, or None.
-
-        A job that applies a rename plan is `plan.apply_rename` (EF-EXP-030). A removal that takes
-        the files and a full detachment are the orders a fresh session gave with its phrase (M4
-        L34): the queue is never a way around that session, so a key does not bring them back."""
-        job, plan = platform.job_view, coherence.export_plan
+        """The reserved action that putting this job back in the queue stands for, or None
+        (`ops.job_actions`: `jobs retry` and `jobs replay` ask for the same session)."""
         with self._engine.connect() as connection:
-            row = connection.execute(
-                sa.select(job.c.kind, job.c.dedupe_key).where(job.c.id == subject)
-            ).first()
-            if row is None:
-                return None
-            if row.kind == REMOVAL_JOB_KIND:
-                return "destination.remove_all"
-            if row.kind == DETACH_JOB_KIND:
-                return "detach.full"
-            if row.kind != _APPLY_JOB_KIND or not row.dedupe_key:
-                return None
-            kind = connection.execute(
-                sa.select(plan.c.kind).where(plan.c.plan_id == row.dedupe_key.split(":")[1])
-            ).scalar()
-        return "plan.apply_rename" if kind == "rename_plan" else None
+            return reserved_job_action(connection, subject)
 
     def jobs_retry(self, subject: str, *, principal: Principal | None = None) -> JobRow | None:
         """A job that gave up goes back to the queue (the scheduler dispatches it); a file the

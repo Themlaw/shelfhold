@@ -10,13 +10,23 @@ order given again is a new job that finishes it.
 
 from collections.abc import Iterator
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
+from unittest.mock import patch
 
 import pytest
 import sqlalchemy as sa
 
 import shelfhold.runtime_jobs as rj
 from shelfhold.config import Settings
+from shelfhold.export.application.detach import (
+    DetachOrder,
+    DetachRefusedError,
+    FullDetacher,
+    detach_job_key,
+)
+from shelfhold.export.application.intents import IntentJournal
+from shelfhold.export.application.locks import ResourceLocks
 from shelfhold.export.application.remove_destination import (
     REMOVAL_JOB_KIND,
     RemovalMode,
@@ -24,8 +34,12 @@ from shelfhold.export.application.remove_destination import (
 )
 from shelfhold.infrastructure.fsops import Fsops
 from shelfhold.infrastructure.schema import export, platform
-from shelfhold.jobs.public import JobPools
-from shelfhold.ops.detach import DetachOps, register_teardown_jobs
+from shelfhold.jobs.public import MAX_ATTEMPTS, JobPools
+from shelfhold.jobs.window import DEFAULT_WINDOW
+from shelfhold.ops.detach import DetachOps, _Busy, register_teardown_jobs
+from shelfhold.ops.errors import CodedRefusal
+from shelfhold.ops.maintenance import MaintenanceOps
+from shelfhold.ops.settle_hooks import settle_hooks
 from tests.l50_env import Seeded, seeded
 from tests.maintenance_env import principal
 
@@ -68,6 +82,22 @@ class _Rig:
         huey = self.pools.huey("io")
         while (task := huey.dequeue()) is not None:
             huey.execute(task)
+
+    def boot(self) -> None:
+        """What `Runtime` and `boot_jobs` do at start, in their order: the open intents settled,
+        the resource locks and slots released, the dead `running` jobs back in the queue."""
+        comp, engine = self.comp, self.env.inst.engine
+        with comp.write_context() as w:
+            hook = settle_hooks(
+                engine, w.fsops, w.loaded.locate, data_dir=comp.settings.data_dir,
+                clock=comp.clock, bus=comp.bus,
+            )  # fmt: skip
+            IntentJournal(engine, w.fsops, clock=comp.clock).resolve_open(on_done=hook)
+        ResourceLocks(engine, clock=comp.clock).release_all()
+        self.pools.flush_huey_locks()
+        self.pools.slots.release_all()
+        for pending in self.pools.ledger.requeue_running():
+            self.pools.ledger.mark_dispatched(pending.job_id, self.pools.dispatch(pending))
 
     def job(self, job_id: str) -> Any:
         with self.env.inst.engine.connect() as conn:
@@ -155,8 +185,7 @@ def test_a_job_that_died_running_goes_back_to_the_queue_and_finishes_without_a_d
         rig.run()
     monkeypatch.setattr(Fsops, "purge_unlink", real)
     assert rig.job(job_id).status == "running" and len(rig.files()) == 1
-    for pending in rig.pools.ledger.requeue_running():  # the boot
-        rig.pools.ledger.mark_dispatched(pending.job_id, rig.pools.dispatch(pending))
+    rig.boot()
     rig.run()
     assert rig.job(job_id).status == "succeeded"
     assert rig.files() == [] and rig.count(export.shelf_destination) == 0
@@ -203,8 +232,6 @@ def test_an_incomplete_removal_is_a_failed_job_said_by_its_code(rig: _Rig) -> No
 
 
 def test_the_door_refuses_before_queueing(rig: _Rig) -> None:
-    from shelfhold.ops.errors import CodedRefusal
-
     now = rig.comp.clock.now()
     for who in (principal(kind, now) for kind in ("key", "member", "child", "stale")):
         with pytest.raises(CodedRefusal):
@@ -239,6 +266,91 @@ def test_the_retry_of_a_dead_removal_job_names_its_reserved_action(rig: _Rig) ->
     services._engine = rig.env.inst.engine  # type: ignore[attr-defined]
     assert services.jobs_retry_reserved_action(job_id) == "destination.remove_all"
     assert services.jobs_retry_reserved_action("01JNOSUCHJOB000000000000A") is None
+
+
+def test_the_replay_of_a_cancelled_removal_needs_the_fresh_session_of_the_order(
+    rig: _Rig,
+) -> None:
+    queue = MaintenanceOps(
+        rig.env.inst.engine, rig.comp.clock, window=DEFAULT_WINDOW, control=rig.pools.control
+    )
+    job_id = rig.queue_removal()
+    queue.cancel(job_id, principal=principal("admin", rig.comp.clock.now()))
+    assert rig.job(job_id).status == "cancelled"
+    for who in ("key", "member", "child", "stale"):
+        with pytest.raises(CodedRefusal):
+            queue.replay(job_id, principal=principal(who, rig.comp.clock.now()))
+    assert rig.job(job_id).status == "cancelled"
+    queue.replay(job_id, principal=principal("admin", rig.comp.clock.now()))  # a fresh session
+    assert rig.job(job_id).status == "queued"  # back in the queue; the scheduler sends it again
+
+
+def _queue_detach(rig: _Rig) -> str:
+    target = _target_of(rig)
+    return rig.ops.full_queue(
+        target_id=target, typed=f"detach {target}", credential=PASSWORD,
+        discard_hidden_data=True, discard_tombstone_journal=True, key_gone=False,
+        principal=principal("admin", rig.comp.clock.now()),
+    )  # fmt: skip
+
+
+def _detach_key(rig: _Rig) -> str:
+    return detach_job_key(
+        DetachOrder(_target_of(rig), discard_hidden_data=True, discard_tombstone_journal=True)
+    )
+
+
+def test_a_second_order_does_not_keep_a_password_the_running_job_already_took(
+    rig: _Rig,
+) -> None:
+    key = _detach_key(rig)
+    first = _queue_detach(rig)
+    handoff = rig.comp.credential_handoff
+    assert handoff.holds(key)  # waiting for the job
+    assert _queue_detach(rig) == first and handoff.holds(key)  # not taken yet: still the one
+    assert handoff.take(key) == PASSWORD  # the job starts and takes it
+    assert _queue_detach(rig) == first  # the same order again, the job is in flight
+    assert not handoff.holds(key)  # nothing is left in memory for a run that will not come
+
+
+def test_a_dead_letter_does_not_keep_the_password_after_repeated_busy(rig: _Rig) -> None:
+    key = _detach_key(rig)
+    handoff = rig.comp.credential_handoff
+    busy = DetachRefusedError("busy")
+
+    class _Context:
+        job_id, dedupe_key = "01JJOB0000000000000000000A", key
+
+        def __init__(self, attempts: int) -> None:
+            self.ledger = SimpleNamespace(attempts_of=lambda _id: attempts)
+
+        def record(self, **_counters: object) -> None:
+            return None
+
+    for attempts, kept in ((1, True), (MAX_ATTEMPTS - 1, True), (MAX_ATTEMPTS, False)):
+        handoff.put(key, PASSWORD)
+        with (
+            patch.object(FullDetacher, "execute", side_effect=busy),
+            pytest.raises(_Busy),
+        ):
+            rig.ops.run_detach_job(_Context(attempts))  # type: ignore[arg-type]
+        assert handoff.holds(key) is kept, attempts  # the last attempt keeps nothing
+        handoff.clear()
+
+
+def test_a_submit_that_fails_after_the_password_was_put_leaves_nothing_in_memory(
+    rig: _Rig, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    key = _detach_key(rig)
+
+    def broken(*_a: Any, **_k: Any) -> Any:
+        raise RuntimeError("the ledger is not there")
+
+    monkeypatch.setattr(rig.pools, "submit", broken)
+    with pytest.raises(RuntimeError):
+        _queue_detach(rig)
+    assert not rig.comp.credential_handoff.holds(key)
+    assert rig.count(platform.job_view) == 0
 
 
 def _target_of(rig: _Rig) -> str:
