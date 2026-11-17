@@ -309,3 +309,8 @@ since = "1.1"
 file = "0097_team_switch.py"
 sha256 = "357e34218746fb75c8b13ac6fd183e05a04378cd50eda425f209978652145769"
 since = "1.1"
+
+[[migration]]
+file = "0098_bulk_order.py"
+sha256 = "eaeab68ed573584dffc0d9233e05fcc46f429bfdaa62c4add4bf92d86f3e4820"
+since = "1.1"

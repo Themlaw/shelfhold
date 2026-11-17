@@ -111,8 +111,29 @@ class RatingService:
         if rated is None or rated.rated_at is not None:
             return None  # no such Work, or an admin rated it meanwhile: that decision stands
         settled = self._write(connection, work_id, rating, now)
-        target = f"work:{work_id};request:{request_id}"
-        if settled != (0, 0):  # the admin ruled on what files and sources had said, by approving
+        return self._finish_decided(
+            connection, work_id, rating, now, f"work:{work_id};request:{request_id}",
+            decided_by, settled,
+        )  # fmt: skip
+
+    def rate_ordered(
+        self, connection: Connection, work_id: str, rating: AgeRating, *,
+        order_id: str, decided_by: str, now: datetime,
+    ) -> RatingResult:  # fmt: skip
+        """One Work of a bulk order (M4 L28). Not a door: the order was given by the reserved
+        action (admin session, fresh, the right to classify) and the job that calls this checked
+        that its owner still holds the right. Same audit line as a rating, naming the order."""
+        settled = self._write(connection, work_id, rating, now)
+        return self._finish_decided(
+            connection, work_id, rating, now, f"work:{work_id};bulk:{order_id}", decided_by,
+            settled,
+        )  # fmt: skip
+
+    def _finish_decided(
+        self, connection: Connection, work_id: str, rating: AgeRating, now: datetime,
+        target: str, decided_by: str, settled: tuple[int, int],
+    ) -> RatingResult:  # fmt: skip
+        if settled != (0, 0):  # the admin ruled on what files and sources had said, by deciding
             connection.execute(
                 audit_insert(
                     AuditEntry(
@@ -235,6 +256,11 @@ class RatingService:
         return admission(self._facts(connection, edition_id), ceiling_of(ceiling))
 
     # -- inside ---------------------------------------------------------------------------------
+    def authorize(self, principal: Principal, now: datetime) -> None:
+        """The reserved action `rate` for this caller, or `RatingRefusedError` (a bulk order is
+        refused at the door of the preview and of the apply, before anything is written)."""
+        self._allow(principal, now)
+
     def _allow(self, principal: Principal, now: datetime) -> None:
         verdict = authorize_reserved(
             principal, RESERVED_ACTIONS["rate"], now=now, fresh_auth_s=self._fresh_auth_s

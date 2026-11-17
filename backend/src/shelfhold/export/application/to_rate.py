@@ -47,6 +47,9 @@ class ToRate:
     state: str  # FOLLOW_SUSPENDED | RATING_PENDING | SUGGESTION_ABOVE
     reason: str
     suggestions: tuple[EditionSuggestion, ...] = ()  # open ones above an Edition's age
+    rated: bool = False  # the Work itself was rated (`work.rated_at`): only an Edition waits
+    age: int | None = None  # the age in place, when it is rated (18 with `age_x` for X)
+    age_x: bool = False
 
 
 def to_rate(connection: Connection) -> list[ToRate]:
@@ -89,7 +92,7 @@ def to_rate(connection: Connection) -> list[ToRate]:
         if suggestion.edition_id in on_family:
             above.setdefault(suggestion.work_id, []).append(suggestion)
     rows = connection.execute(
-        sa.select(work.c.id, work.c.title)
+        sa.select(work.c.id, work.c.title, work.c.rated_at, work.c.age_rating, work.c.age_x)
         .distinct()
         .select_from(work.join(edition, edition.c.work_id == work.c.id))
         .where(
@@ -102,6 +105,9 @@ def to_rate(connection: Connection) -> list[ToRate]:
         ToRate(
             r.id, r.title, RATING_PENDING,
             "an Edition nobody rated waits out of the shelves below 18+",
+            rated=r.rated_at is not None,
+            age=None if r.age_rating is None else int(r.age_rating),
+            age_x=bool(r.age_x),
         )
         for r in rows
         if r.id not in suspended
@@ -116,16 +122,27 @@ def to_rate(connection: Connection) -> list[ToRate]:
             )
         }
         found += [
-            ToRate(w, titles_above[w], SUGGESTION_ABOVE, _SUGGESTION_REASON, tuple(above[w]))
+            ToRate(
+                w,
+                titles_above[w],
+                SUGGESTION_ABOVE,
+                _SUGGESTION_REASON,
+                tuple(above[w]),
+                rated=True,
+            )
             for w in sorted(titles_above)
         ]
     return found
 
 
 def rateable(items: Sequence[ToRate]) -> list[ToRate]:
-    """What the batch rates: the Works nobody rated. A Work that only waits for an Edition to be
-    rated (`suggestion_above`) is already rated; rating it again at the batch age could lower it."""
-    return [i for i in items if i.state != SUGGESTION_ABOVE]
+    """What a batch rates: the Works nobody rated (`work.rated_at` empty), and only those.
+
+    A Work that is already rated and waits only because an Edition arrived or a suggestion is above
+    (`rating_pending` with `rated`, `suggestion_above`) is settled by `rate` of that Edition or of
+    the Work alone: rating it again at the age of a batch could lower an administrator's decision
+    and widen what a child sees (M4 L28, relecture adverse M1)."""
+    return [i for i in items if i.state != SUGGESTION_ABOVE and not i.rated]
 
 
 def batch_token(items: Sequence[ToRate], age: str) -> str:

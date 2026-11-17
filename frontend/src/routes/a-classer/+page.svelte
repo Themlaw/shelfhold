@@ -6,9 +6,10 @@
   // sources: it is text, never markup. A raised age shows the plan of the files to withdraw and
   // applies none of it (EF-BIB-037): withdrawing is its own explicit action.
   import { onMount } from 'svelte';
-  import { rateBatch, rateEdition, rateWork, toRateList } from '#lib/api/index.ts';
+  import { rateEdition, rateWork, toRateList } from '#lib/api/index.ts';
   import type { ToRateItem, WithdrawalOut } from '#lib/api/types.gen.ts';
   import AgePicker from '#lib/components/AgePicker.svelte';
+  import BulkBar from '#lib/components/BulkBar.svelte';
   import ReauthPrompt from '#lib/components/ReauthPrompt.svelte';
   import { t, type MessageKey } from '#lib/i18n/index.ts';
   import { csrfToken } from '#lib/passkeys.ts';
@@ -35,9 +36,7 @@
   let reauthMethods = $state<string[] | null>(null);
   let retry: (() => Promise<void>) | null = null;
 
-  let batchAge = $state<Age | null>(null);
-  let batchToken = $state<string | null>(null);
-  let typed = $state('');
+
 
   const headers = () => ({ 'X-CSRF-Token': csrfToken() });
   const STATES: Record<string, MessageKey> = {
@@ -129,7 +128,6 @@
     });
   }
 
-  const filtering = $derived(stateFilter !== '' || textFilter.trim() !== '');
   const shown = $derived(
     items.filter(
       (item) =>
@@ -138,35 +136,6 @@
     )
   );
 
-  async function prepareBatch(): Promise<void> {
-    const age = batchAge;
-    if (!age) return;
-    await guarded(async () => {
-      const { data } = await toRateList({ query: { age }, throwOnError: true });
-      batchToken = data.token;
-      items = data.items;
-      typed = '';
-    });
-  }
-
-  async function runBatch(event: SubmitEvent): Promise<void> {
-    event.preventDefault();
-    const age = batchAge;
-    if (!age || !batchToken || typed.trim() !== batchToken) return;
-    const confirm = typed.trim();
-    await guarded(async () => {
-      const { data } = await rateBatch({
-        headers: headers(),
-        body: { age, confirm },
-        throwOnError: true
-      });
-      plan = data.rated.flatMap((r) => r.withdrawals);
-      say(t('toRate.batch_done', { count: data.rated.length, age: t(ageLabel(age)) }));
-      batchToken = null;
-      typed = '';
-      await load();
-    });
-  }
 </script>
 
 <svelte:head>
@@ -264,28 +233,12 @@
         {/each}
       </ul>
 
-      <section aria-labelledby="batch-title" class="batch">
-        <h2 id="batch-title">{t('toRate.batch_title')}</h2>
-        <p class="muted">{t('toRate.batch_scope', { count: items.length })}</p>
-        <AgePicker name="age-batch" legend={t('toRate.batch_age')} bind:value={batchAge} />
-        <button type="button" disabled={!batchAge} onclick={prepareBatch}>
-          {filtering
-            ? t('toRate.batch_prepare_filtered', { count: items.length })
-            : t('toRate.batch_prepare')}
-        </button>
-        {#if batchToken}
-          <form onsubmit={runBatch}>
-            <p>{t('toRate.batch_confirm', { count: items.length, token: batchToken })}</p>
-            <label for="batch-confirm">{t('toRate.batch_token')}</label>
-            <input id="batch-confirm" bind:value={typed} autocomplete="off" spellcheck="false" />
-            <button type="submit" disabled={typed.trim() !== batchToken}>
-              {filtering
-                ? t('toRate.batch_run_filtered', { count: items.length })
-                : t('toRate.batch_run')}
-            </button>
-          </form>
-        {/if}
-      </section>
+      <BulkBar
+        items={shown}
+        stateFilter={stateFilter}
+        textFilter={textFilter}
+        onchanged={() => load()}
+      />
     {/if}
   {/if}
 </main>
@@ -331,15 +284,10 @@
   .plan li {
     overflow-wrap: anywhere;
   }
-  .batch,
   .plan {
     display: grid;
     gap: 0.5rem;
     margin-top: 1.5rem;
-  }
-  form {
-    display: grid;
-    gap: 0.5rem;
   }
   /* Under 600 px the filters stack, and nothing is wider than the screen: a select is as wide as
      its longest option and a button as wide as its label unless told otherwise. */
@@ -356,9 +304,7 @@
   }
   main,
   .works li,
-  .batch,
-  .plan,
-  form {
+  .plan {
     min-width: 0;
   }
   select,
