@@ -49,7 +49,8 @@ afterAll(() => server.close());
 const world = (choices: unknown[] = [choice()], role = 'member') =>
   server.use(
     http.get(`${BASE}/api/v1/me`, () => HttpResponse.json({ id: ME, username: 'mum', role, nav: [] })),
-    http.get(`${BASE}/api/v1/profiles/${ME}/kavita-destinations`, () => HttpResponse.json({ items: choices }))
+    http.get(`${BASE}/api/v1/profiles/${ME}/kavita-destinations`, () => HttpResponse.json({ items: choices })),
+    http.get(`${BASE}/api/v1/sync-status`, () => HttpResponse.json({ items: [] })) // SyncStatus.test.ts
   );
 const everywhere = () =>
   document.documentElement.outerHTML +

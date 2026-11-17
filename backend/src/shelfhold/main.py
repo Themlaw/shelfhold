@@ -100,6 +100,7 @@ from shelfhold.interfaces.http_api.stats import build_stats_router
 from shelfhold.interfaces.http_api.status import build_status_router
 from shelfhold.interfaces.http_api.stream import build_stream_router
 from shelfhold.interfaces.http_api.support_author import build_support_author_router
+from shelfhold.interfaces.http_api.sync_status import build_sync_status_router
 from shelfhold.interfaces.http_api.thumbnails import build_thumbnails_router
 from shelfhold.interfaces.http_api.triage import build_triage_router
 from shelfhold.interfaces.local_cli import IdentityDispatcher
@@ -362,6 +363,7 @@ def create_app(
         build_targets_router(lambda: ShelfService(engine, clock=clock)),  # M4 L33a: the servers
         build_destinations_router(ops_services),
         build_destination_accounts_router(ops_services),  # M4 L12: a member's own Kavita key
+        build_sync_status_router(ops_services),  # M4 L33b: the sync state, member by member
         build_edition_shelf_router(lambda: ShelfService(engine, clock=clock)),
         build_headless_router(headless_admin, lambda: resolved.public_url),
         build_bootstrap_router(resolved.setup_token),  # the first account, behind a secret

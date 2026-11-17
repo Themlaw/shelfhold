@@ -115,15 +115,40 @@ def seed_destinations(db: sa.Connection) -> None:
     )  # fmt: skip
 
 
+def seed_collections(db: sa.Connection, member_id: str, work_ids: list[str]) -> None:
+    """The screens of the collections (L33b): a collection of the household (the three Works, in
+    order) and a private list of the member (one Work with its number). All Works of this base are
+    unrated, so the child reads neither (and the household collection does not exist for them)."""
+
+    def make(name: str, kind: str, owner: str | None, works: list[str]) -> None:
+        collection_id = new_ulid()
+        db.execute(
+            sa.insert(catalog.collection).values(
+                id=collection_id, kind=kind, name=name, owner_id=owner
+            )
+        )
+        for position, work_id in enumerate(works, start=1):
+            db.execute(
+                sa.insert(catalog.collection_item).values(
+                    id=new_ulid(), collection_id=collection_id, position=position,
+                    work_id=work_id, number=str(position),
+                )
+            )  # fmt: skip
+
+    make("Lectures de l'été", "collection", None, work_ids)
+    make("À lire ensuite", "reading_list", member_id, work_ids[:1])
+
+
 def main(data_dir: Path) -> None:
     engine = create_db_engine(data_dir / "shelfhold.db")
     digest = Argon2Hasher().hash(PASSWORD)
     with engine.begin() as db:
         # A child always has an age ceiling (migration 0046): 7 for the child of 8.
+        member_id = new_ulid()
         for name, role, ceiling in (("membre", "member", None), ("enfant8", "child", 7)):
             db.execute(
                 sa.insert(identity.user).values(
-                    id=new_ulid(),
+                    id=member_id if role == "member" else new_ulid(),
                     username=name,
                     password_hash=digest,
                     role=role,
@@ -138,8 +163,10 @@ def main(data_dir: Path) -> None:
             )
         )
         seed_destinations(db)
+        work_ids: list[str] = []
         for title in TITLES:
             work_id = new_ulid()
+            work_ids.append(work_id)
             db.execute(
                 sa.insert(catalog.work).values(
                     id=work_id, kind="manga", title=title, sort_title=title.casefold()
@@ -156,6 +183,7 @@ def main(data_dir: Path) -> None:
                 )
             )
         seed_covered_library(data_dir, db, shelf_id)
+        seed_collections(db, member_id, work_ids)
 
 
 if __name__ == "__main__":

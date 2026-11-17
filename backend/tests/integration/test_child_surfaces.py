@@ -266,6 +266,7 @@ CLOSED = (
     # M4 L12 (EF-USR-012): a member's Kavita key: her own, a parent's for a child; never a child's
     "GET /api/v1/profiles/{user_id}/destination-accounts",
     "GET /api/v1/profiles/{user_id}/kavita-destinations",  # M4 L33a: what a key may be linked to
+    "GET /api/v1/sync-status",  # M4 L33b: the sync state per member, an adult session only
     "PUT /api/v1/profiles/{user_id}/destination-accounts/{shelf_destination_id}",
     "DELETE /api/v1/profiles/{user_id}/destination-accounts/{shelf_destination_id}",
     "GET /api/v1/audit/kavita-accounts",  # M3 L10: the audit of the Kavita accounts, the admin's

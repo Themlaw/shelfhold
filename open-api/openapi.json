@@ -9414,6 +9414,90 @@
         "title": "SupportAuthorOut",
         "type": "object"
       },
+      "SyncStatusList": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/SyncStatusOut"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "SyncStatusList",
+        "type": "object"
+      },
+      "SyncStatusOut": {
+        "properties": {
+          "last_pull_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Pull At"
+          },
+          "last_push_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Push At"
+          },
+          "shelf_destination_id": {
+            "title": "Shelf Destination Id",
+            "type": "string"
+          },
+          "shelf_name": {
+            "title": "Shelf Name",
+            "type": "string"
+          },
+          "state": {
+            "enum": [
+              "linked",
+              "no_token"
+            ],
+            "title": "State",
+            "type": "string"
+          },
+          "target_name": {
+            "title": "Target Name",
+            "type": "string"
+          },
+          "user_id": {
+            "title": "User Id",
+            "type": "string"
+          },
+          "username": {
+            "title": "Username",
+            "type": "string"
+          }
+        },
+        "required": [
+          "user_id",
+          "username",
+          "shelf_destination_id",
+          "shelf_name",
+          "target_name",
+          "state",
+          "last_pull_at",
+          "last_push_at"
+        ],
+        "title": "SyncStatusOut",
+        "type": "object"
+      },
       "TargetAuditOut": {
         "properties": {
           "alerts": {
@@ -24955,6 +25039,57 @@
         "summary": "Store Reinit",
         "tags": [
           "operations"
+        ]
+      }
+    },
+    "/api/v1/sync-status": {
+      "get": {
+        "operationId": "read_sync_status",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SyncStatusList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Connexion requise, ou mot de passe à confirmer (reauth-required)."
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée)."
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Détail du problème (RFC 9457)."
+          }
+        },
+        "summary": "Read Sync Status",
+        "tags": [
+          "sync-status"
         ]
       }
     },

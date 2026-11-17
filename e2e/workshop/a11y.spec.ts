@@ -19,6 +19,7 @@ const SCREENS = [
   '/activite/historique',
   '/sante/stockage',
   '/bibliotheque',
+  '/collections',
   '/assistant/compte',
   '/assistant/dossier',
   '/assistant/etageres',

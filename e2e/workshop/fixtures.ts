@@ -50,6 +50,25 @@ export async function expectNoHorizontalScroll(page: Page): Promise<void> {
   expect(overflow, 'horizontal overflow in px').toBeLessThanOrEqual(0);
 }
 
+/** Every control is at least 44 px by 44 px (a checkbox or a radio by its label). */
+export async function expectTargets44(page: Page, path: string): Promise<void> {
+  const tooSmall = await page.evaluate(() => {
+    const small: string[] = [];
+    for (const el of document.querySelectorAll<HTMLElement>(
+      'button, a[href], input:not([type="hidden"]), select, textarea, summary'
+    )) {
+      if (el.getClientRects().length === 0 || getComputedStyle(el).visibility === 'hidden') continue;
+      const isChoice = el instanceof HTMLInputElement && (el.type === 'checkbox' || el.type === 'radio');
+      const rect = (isChoice ? (el.closest('label') ?? el) : el).getBoundingClientRect();
+      if (rect.width < 43.5 || rect.height < 43.5) {
+        small.push(`${el.tagName} ${el.textContent?.trim().slice(0, 20) ?? ''} ${rect.width.toFixed(0)}x${rect.height.toFixed(0)}`);
+      }
+    }
+    return small;
+  });
+  expect(tooSmall, `${path}: targets under 44x44 px`).toEqual([]);
+}
+
 /** Refuse and count every request whose origin is not the instance's (ENF-PRIV-001). */
 export async function refuseOutsideBaseUrl(
   target: Page | BrowserContext,

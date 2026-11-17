@@ -40,6 +40,7 @@ __all__ = [
     "DestinationRef",
     "RemoteAccount",
     "SecretToken",
+    "SyncStatusRow",
     "UserFacts",
 ]
 
@@ -109,6 +110,21 @@ class AccountView:
 
 
 @dataclass(frozen=True)
+class SyncStatusRow:
+    """One member on one Kavita binding: is a key linked, and when did the sync last pull and push.
+    Nothing of the key, of its fingerprint or of the Kavita account."""
+
+    user_id: str
+    username: str
+    shelf_destination_id: str
+    shelf_name: str
+    target_name: str
+    state: str  # `linked` or `no_token`
+    last_pull_at: datetime | None
+    last_push_at: datetime | None
+
+
+@dataclass(frozen=True)
 class AccountChoice:
     """A binding a profile may link a key to: where it is (shelf, server) and whether a key is
     linked. Nothing of the account, nothing of the key."""
@@ -165,6 +181,14 @@ class AccountVerifier(Protocol):
 
 class AccountStore(Protocol):
     def user(self, user_id: str) -> UserFacts | None: ...
+
+    def members(self) -> list[tuple[str, str]]:
+        """Every profile, `(id, username)`, in a stable order."""
+        ...
+
+    def sync_cursors(self) -> dict[tuple[str, str], tuple[datetime | None, datetime | None]]:
+        """`(user_id, destination_id)` -> (last pull, last push) of the progress sync."""
+        ...
 
     def accounts_of(self, user_id: str) -> list[AccountView]: ...
 
@@ -323,6 +347,36 @@ class DestinationAccounts:
             for d in self._verifier.kavita_destinations()
             if d.supported and (target.role == "admin" or d.open_to(target.id))
         ]
+
+    def sync_status(self, principal: Principal) -> list[SyncStatusRow]:
+        """The state of the progress sync, member by member (EF-EXP-026). An admin reads every
+        member's; anyone else, their own and nothing else (no id is taken: there is no door to
+        another's). A child reads nothing, like their key screen."""
+        self._adult_session(principal)
+        everyone = principal.role == "admin"
+        members = [m for m in self._store.members() if everyone or m[0] == principal.user_id]
+        destinations = [d for d in self._verifier.kavita_destinations() if d.supported]
+        cursors = self._store.sync_cursors()
+        rows: list[SyncStatusRow] = []
+        for user_id, username in members:
+            live = {
+                a.shelf_destination_id
+                for a in self._store.accounts_of(user_id)
+                if a.revoked_at is None
+            }
+            for d in destinations:
+                if not d.open_to(user_id):
+                    continue
+                pull, push = (
+                    cursors.get((user_id, d.id), (None, None)) if d.id in live else (None, None)
+                )
+                rows.append(
+                    SyncStatusRow(
+                        user_id, username, d.id, d.shelf_name, d.target_name,
+                        "linked" if d.id in live else "no_token", pull, push,
+                    )
+                )  # fmt: skip
+        return rows
 
     def revoke(self, principal: Principal, user_id: str, destination_id: str) -> None:
         self._adult_session(principal)

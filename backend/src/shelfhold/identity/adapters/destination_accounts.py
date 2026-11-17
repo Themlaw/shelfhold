@@ -27,7 +27,7 @@ from shelfhold.identity.application.ports import AuditEntry
 from shelfhold.identity.domain.kavita_mapping import same_kavita_username
 from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.ids import new_ulid
-from shelfhold.infrastructure.schema import identity
+from shelfhold.infrastructure.schema import identity, reading
 from shelfhold.infrastructure.secrets import SecretVault, registry
 
 TABLE: Final = "destination_account"
@@ -71,6 +71,22 @@ class DestinationAccountStore:
             if row is None
             else UserFacts(row.id, row.role, row.kavita_username, row.max_age_rating)
         )
+
+    def members(self) -> list[tuple[str, str]]:
+        with self._engine.connect() as connection:
+            rows = connection.execute(
+                sa.select(_user.c.id, _user.c.username).order_by(_user.c.username, _user.c.id)
+            )
+            return [(r.id, r.username) for r in rows]
+
+    def sync_cursors(self) -> dict[tuple[str, str], tuple[datetime | None, datetime | None]]:
+        cursor = reading.progress_sync_cursor
+        with self._engine.connect() as connection:
+            rows = connection.execute(sa.select(cursor))
+            return {
+                (r.user_id, r.shelf_destination_id): (r.last_pull_server_ts, r.last_push_at)
+                for r in rows
+            }
 
     def accounts_of(self, user_id: str) -> list[AccountView]:
         with self._engine.connect() as connection:
