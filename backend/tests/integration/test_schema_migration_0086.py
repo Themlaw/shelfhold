@@ -1,7 +1,7 @@
 """Migration 0086 (M4 L18a, EF-BIB-016): `collection`, `collection_item`, `collection_remote`.
 
 Three tables that go with their owner, their list and their Work; nothing else is touched;
-reversible. The head of the migrations is pinned here, by the newest one.
+reversible. The head of the migrations is pinned by the newest one (0087 now).
 """
 
 import sqlite3
@@ -24,9 +24,8 @@ WORK = "01HZZZZZZZZZZZZZZZZZZZZZZC"
 ITEM = "01HZZZZZZZZZZZZZZZZZZZZZZD"
 
 
-def test_the_revision_is_0086_the_only_head_on_0085() -> None:
+def test_the_revision_is_0086_on_0085() -> None:
     script = ScriptDirectory(str(default_script_location()))
-    assert script.get_heads() == ["0086"]
     assert script.get_revision("0086").down_revision == "0085"
 
 

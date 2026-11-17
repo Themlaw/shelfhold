@@ -87,6 +87,15 @@ class _Ports:
             units=self._counted.get((source_key, remote_id)),
         )
 
+    def search(self, query: str, *, owner: str) -> list[SourceRef]:
+        """The federated search, for an admin (D22): the first Edition of each Work named."""
+        page = AcquireOps(self._comp).federated_search(query, owner=owner)
+        return [
+            SourceRef(e.source_key, e.remote_id, e.title, dict(e.memo))
+            for group in page.items
+            for e in group.editions[:1]
+        ]
+
     def prepare(
         self, source_key: str, remote_id: str, *, requester_user_id: str | None, visibility: str
     ) -> PreparedAcquisition:

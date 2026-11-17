@@ -1499,6 +1499,20 @@ export type EditionsOut = {
 };
 
 /**
+ * ElsewhereIn
+ */
+export type ElsewhereIn = {
+    /**
+     * State
+     */
+    state: 'to_buy' | 'borrow_elsewhere';
+    /**
+     * Url
+     */
+    url?: string | null;
+};
+
+/**
  * EstimateOut
  */
 export type EstimateOut = {
@@ -3519,6 +3533,34 @@ export type ProgressStored = {
 };
 
 /**
+ * ProposalOut
+ */
+export type ProposalOut = {
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Source Key
+     */
+    source_key: string;
+    /**
+     * Title
+     */
+    title: string;
+};
+
+/**
+ * ProposalsOut
+ */
+export type ProposalsOut = {
+    /**
+     * Items
+     */
+    items: Array<ProposalOut>;
+};
+
+/**
  * PurgeIn
  */
 export type PurgeIn = {
@@ -4051,6 +4093,10 @@ export type RequestOut = {
      * Created At
      */
     created_at: string;
+    /**
+     * Elsewhere Url
+     */
+    elsewhere_url: string | null;
     /**
      * Family State
      */
@@ -12043,6 +12089,44 @@ export type CancelResponses = {
 
 export type CancelResponse = CancelResponses[keyof CancelResponses];
 
+export type ElsewhereData = {
+    body: ElsewhereIn;
+    path: {
+        /**
+         * Request Id
+         */
+        request_id: string;
+    };
+    query?: never;
+    url: '/api/v1/requests/{request_id}/elsewhere';
+};
+
+export type ElsewhereErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type ElsewhereError = ElsewhereErrors[keyof ElsewhereErrors];
+
+export type ElsewhereResponses = {
+    /**
+     * Successful Response
+     */
+    200: RequestOut;
+};
+
+export type ElsewhereResponse = ElsewhereResponses[keyof ElsewhereResponses];
+
 export type NotFoundData = {
     body?: never;
     path: {
@@ -12080,6 +12164,124 @@ export type NotFoundResponses = {
 };
 
 export type NotFoundResponse = NotFoundResponses[keyof NotFoundResponses];
+
+export type ProposalsData = {
+    body?: never;
+    path: {
+        /**
+         * Request Id
+         */
+        request_id: string;
+    };
+    query?: never;
+    url: '/api/v1/requests/{request_id}/proposals';
+};
+
+export type ProposalsErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type ProposalsError = ProposalsErrors[keyof ProposalsErrors];
+
+export type ProposalsResponses = {
+    /**
+     * Successful Response
+     */
+    200: ProposalsOut;
+};
+
+export type ProposalsResponse = ProposalsResponses[keyof ProposalsResponses];
+
+export type ProposeData = {
+    body?: never;
+    path: {
+        /**
+         * Request Id
+         */
+        request_id: string;
+    };
+    query?: never;
+    url: '/api/v1/requests/{request_id}/proposals';
+};
+
+export type ProposeErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type ProposeError = ProposeErrors[keyof ProposeErrors];
+
+export type ProposeResponses = {
+    /**
+     * Successful Response
+     */
+    200: ProposalsOut;
+};
+
+export type ProposeResponse = ProposeResponses[keyof ProposeResponses];
+
+export type AcceptData = {
+    body?: never;
+    path: {
+        /**
+         * Request Id
+         */
+        request_id: string;
+        /**
+         * Proposal Id
+         */
+        proposal_id: string;
+    };
+    query?: never;
+    url: '/api/v1/requests/{request_id}/proposals/{proposal_id}/accept';
+};
+
+export type AcceptErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type AcceptError = AcceptErrors[keyof AcceptErrors];
+
+export type AcceptResponses = {
+    /**
+     * Successful Response
+     */
+    200: RequestOut;
+};
+
+export type AcceptResponse = AcceptResponses[keyof AcceptResponses];
 
 export type RejectData = {
     body: RejectIn;

@@ -21,6 +21,7 @@ from datetime import datetime
 from typing import Any, Protocol
 
 import sqlalchemy as sa
+import structlog
 from sqlalchemy import Connection, Engine
 
 from shelfhold.acquisition.domain.request_target import (
@@ -36,6 +37,8 @@ from shelfhold.acquisition.domain.request_target import (
 from shelfhold.catalog.public import (
     RatingService,
     ceiling_of,
+    fold_title,
+    sanitize_url,
     visible_edition_ids,
     visible_work_ids,
 )
@@ -56,6 +59,8 @@ from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.requesters import still_a_user
 from shelfhold.infrastructure.schema import acquisition, catalog, identity
+from shelfhold.infrastructure.schema.identity import REQUEST_ELSEWHERE_STATES
+from shelfhold.library.public import open_request_matches
 from shelfhold.sdk.age import AgeRating, is_family_ceiling
 
 __all__ = [
@@ -64,6 +69,7 @@ __all__ = [
     "Estimate",
     "Ports",
     "PreparedAcquisition",
+    "Proposal",
     "RequestRefusedError",
     "RequestService",
     "RequestView",
@@ -73,9 +79,11 @@ __all__ = [
 
 MAX_PENDING = 20  # open requests per profile: a child's list is not a place to pile things up
 MAX_REASON = 500
+MAX_PROPOSALS = 5  # D22: the search gives an admin a few choices, not a catalogue
 MAX_TITLE = 300
 _LIST = 200
 request = identity.request
+log = structlog.get_logger()
 
 
 class RequestRefusedError(Exception):
@@ -134,6 +142,18 @@ class RequestView:
     updated_at: datetime
     needs_age: bool = False
     stranded: bool = False  # approved, nothing started: an approval can resume it
+    elsewhere_url: str | None = None  # the address of a request put aside; never a child's
+
+
+@dataclass(frozen=True)
+class Proposal:
+    """A result of the source search kept for a request nobody could resolve (D22). Only an
+    admin reads it, and nothing is applied until he accepts one."""
+
+    id: str
+    source_key: str
+    remote_id: str
+    title: str
 
 
 @dataclass(frozen=True)
@@ -171,6 +191,11 @@ class Ports(Protocol):
     def follow(
         self, source_key: str, remote_id: str, *, requester_user_id: str | None, visibility: str
     ) -> None: ...
+
+    def search(self, query: str, *, owner: str) -> list[SourceRef]:
+        """The federated search of the sources that are switched on, for an admin (D22): one
+        result per Work the sources name, best first."""
+        ...
 
     def prepare(
         self, source_key: str, remote_id: str, *, requester_user_id: str | None, visibility: str
@@ -359,6 +384,9 @@ class RequestService:
         whose Work or Edition is hidden from her is exactly an absent book: she is told
         `not_found` (EF-USR-010, "introuvable"), with no title, no reason and no link. Hidden
         and absent are one answer; the admin's own steps are untouched."""
+        if view.state in REQUEST_ELSEWHERE_STATES and needs_age(view.requester_role):
+            # D22: a child is told "under review", whatever the admin did (and never an address)
+            return replace(view, state="pending", elsewhere_url=None)
         if view.state != "arrived":
             return view
         scope = reader_scope(connection, user_id)
@@ -595,6 +623,27 @@ class RequestService:
         self._admin_session(principal)
         return self._close(request_id, principal, "not_found", "request.not_found", None)
 
+    def mark_elsewhere(
+        self, request_id: str, principal: Principal, state: str, *, link: str | None = None
+    ) -> RequestView:
+        """Put a request aside: to be bought, or borrowed from a library (EF-USR-019). The address
+        is the admin's, a plain `https` one with no affiliation (L23's rule); nothing is lent or
+        fetched, no protected file is ever involved."""
+        self._admin_session(principal)
+        if state not in REQUEST_ELSEWHERE_STATES:
+            raise RequestRefusedError("invalid_target")
+        url = None
+        if link is not None:
+            url = sanitize_url(link)
+            if url is None:
+                raise RequestRefusedError("invalid_link")
+        with write_transaction(self._engine) as connection:
+            self._move(
+                connection, request_id, state, f"request.{state}", principal.actor_id, None,
+                decided_by=principal.user_id, principal=principal, extra={"elsewhere_url": url},
+            )  # fmt: skip
+            return self._view(connection, request_id, for_admin=True)
+
     def cancel(self, user_id: str, request_id: str) -> RequestView:
         """Her own pending request, by her alone."""
         with write_transaction(self._engine) as connection:
@@ -621,6 +670,7 @@ class RequestService:
     def _move(
         self, connection: Connection, request_id: str, state: str, action: str, actor: str,
         reason: str | None, *, decided_by: str | None = None, principal: Principal | None = None,
+        extra: dict[str, Any] | None = None,
     ) -> None:  # fmt: skip
         current = connection.execute(
             sa.select(request.c.state).where(request.c.id == request_id)
@@ -631,6 +681,7 @@ class RequestService:
             raise RequestRefusedError("not_pending")
         now = self._clock.now()
         values: dict[str, Any] = {"state": state, "updated_at": now, "reject_reason": reason}
+        values.update(extra or {})
         if decided_by is not None:  # an admin deleted since the decision began decides for nobody
             values.update(decided_by=still_a_user(connection, decided_by), decided_at=now)
         changed = connection.execute(
@@ -693,6 +744,184 @@ class RequestService:
                     )
         self._bus.deliver(published)
         return len(published)
+
+    def arrived_from_import(self, work_id: str) -> int:
+        """A file of the import folder was filed as this Work (EF-USR-019): the requests put aside
+        to be bought or borrowed, whose text (folded) is its title or whose ISBN is one of its
+        Editions' or is written in its title, have `arrived`, and each requester hears of it as of
+        any arrival (the notice carries no title). A replay finds nothing to do."""
+        published: list[PublishedEvent] = []
+        now = self._clock.now()
+        with write_transaction(self._engine) as connection:
+            title = connection.execute(
+                sa.select(catalog.work.c.title).where(catalog.work.c.id == work_id)
+            ).scalar_one_or_none()
+            if title is None:
+                return 0
+            ext, edition = catalog.external_id, catalog.edition
+            held = connection.execute(
+                sa.select(ext.c.value)
+                .select_from(ext.join(edition, edition.c.id == ext.c.entity_id))
+                .where(
+                    ext.c.provider == "isbn", ext.c.entity_type == "edition",
+                    ext.c.state == "current", edition.c.work_id == work_id,
+                )
+            ).scalars()  # fmt: skip
+            for request_id in open_request_matches(connection, title=title, isbns=list(held)):
+                row = connection.execute(sa.select(request).where(request.c.id == request_id)).one()
+                changed = connection.execute(
+                    sa.update(request)
+                    .where(request.c.id == row.id, request.c.state.in_(REQUEST_ELSEWHERE_STATES))
+                    .values(
+                        state="arrived", arrived_at=now, updated_at=now, work_id=work_id,
+                        edition_id=self._edition(connection, work_id, row.requester_user_id),
+                    )
+                )  # fmt: skip
+                if changed.rowcount != 1:
+                    continue
+                connection.execute(
+                    audit_insert(
+                        AuditEntry(
+                            actor_id=row.requester_user_id,
+                            action="request.arrived_from_import",
+                            at=now,
+                            target=f"request:{row.id}",
+                        )
+                    )
+                )
+                published.append(
+                    self._bus.publish(
+                        connection, "ops.request_arrived", {"request_id": row.id},
+                        actor_id=row.requester_user_id, visibility=row.visibility,
+                    )
+                )  # fmt: skip
+        self._bus.deliver(published)
+        return len(published)
+
+    # -- proposals (D22) ------------------------------------------------------------------------
+
+    def propose(self, request_id: str, principal: Principal) -> list[Proposal]:
+        """What the source search finds for a typed text or an ISBN the catalogue does not hold:
+        at most five, kept for the admin to accept one. Only an admin session asks, and a child's
+        request is never searched, whatever its row says: she is told "under review" and that is
+        all (D22). The search is made once; asking again gives the same list."""
+        self._admin_session(principal)
+        with self._engine.connect() as connection:
+            row = self._proposable(connection, request_id)
+            held = self._proposals_of(connection, request_id)
+            if held:
+                return held
+            query = str(row.target_value)
+        try:
+            hits = self._ports.search(query, owner=principal.user_id)
+        except Exception:  # a source that fails leaves the request as it was
+            log.warning("request.search_failed")
+            return []
+        now = self._clock.now()
+        with write_transaction(self._engine) as connection:
+            self._proposable(connection, request_id)  # still there, still asking for it
+            held = self._proposals_of(connection, request_id)
+            if held:  # another admin was quicker
+                return held
+            seen: set[tuple[str, str]] = set()
+            kept: list[SourceRef] = []
+            for ref in hits:
+                if (ref.source_key, ref.remote_id) not in seen and len(kept) < MAX_PROPOSALS:
+                    seen.add((ref.source_key, ref.remote_id))
+                    kept.append(ref)
+            for position, ref in enumerate(kept, start=1):
+                connection.execute(
+                    sa.insert(identity.request_proposal).values(
+                        id=new_ulid(), request_id=request_id, position=position,
+                        source_item_id=_upsert_item(connection, ref, now),
+                    )
+                )  # fmt: skip
+            if kept:
+                connection.execute(
+                    audit_insert(
+                        AuditEntry(
+                            actor_id=principal.actor_id,
+                            action="request.proposals_made",
+                            at=now,
+                            target=f"request:{request_id}",
+                            session_id=principal.session_id,
+                            auth_time=principal.auth_time,
+                        )
+                    )
+                )
+            return self._proposals_of(connection, request_id)
+
+    def proposals(self, request_id: str, principal: Principal) -> list[Proposal]:
+        self._admin_session(principal)
+        with self._engine.connect() as connection:
+            self._proposable(connection, request_id)
+            return self._proposals_of(connection, request_id)
+
+    def accept_proposal(
+        self, request_id: str, proposal_id: str, principal: Principal
+    ) -> RequestView:
+        """The admin chooses one result: the request now points at it, still `pending`. Approving
+        it is the next, separate act, with its size, age and shelf checks as for any request."""
+        self._admin_session(principal)
+        now = self._clock.now()
+        with write_transaction(self._engine) as connection:
+            row = self._proposable(connection, request_id)
+            proposal = identity.request_proposal
+            item = connection.execute(
+                sa.select(proposal.c.source_item_id).where(
+                    proposal.c.id == proposal_id, proposal.c.request_id == request_id
+                )
+            ).first()
+            if item is None:
+                raise RequestRefusedError("not_found")
+            changed = connection.execute(
+                sa.update(request)
+                .where(request.c.id == request_id, request.c.state == "pending")
+                .values(
+                    target_kind="source_ref", target_value=item.source_item_id,
+                    shown_title=_clean_title(str(row.target_value)), updated_at=now,
+                )
+            )  # fmt: skip
+            if changed.rowcount != 1:
+                raise RequestRefusedError("not_pending")
+            connection.execute(sa.delete(proposal).where(proposal.c.request_id == request_id))
+            connection.execute(
+                audit_insert(
+                    AuditEntry(
+                        actor_id=principal.actor_id,
+                        action="request.proposal_accepted",
+                        at=now,
+                        target=f"request:{request_id}",
+                        session_id=principal.session_id,
+                        auth_time=principal.auth_time,
+                    )
+                )
+            )
+            return self._view(connection, request_id, for_admin=True)
+
+    def _proposable(self, connection: Connection, request_id: str) -> Any:
+        """A pending request of an adult whose text or ISBN the catalogue does not hold."""
+        row = connection.execute(sa.select(request).where(request.c.id == request_id)).first()
+        if row is None:
+            raise RequestRefusedError("not_found")
+        if needs_age(self._owner(connection, row.requester_user_id).role):
+            raise RequestRefusedError("not_allowed")  # D22: before anything is asked of a source
+        if row.state != "pending":
+            raise RequestRefusedError("not_pending")
+        if row.target_kind not in ("free_text", "isbn") or self._resolve(connection, row).found:
+            raise RequestRefusedError("nothing_to_propose")
+        return row
+
+    @staticmethod
+    def _proposals_of(connection: Connection, request_id: str) -> list[Proposal]:
+        proposal, item = identity.request_proposal, acquisition.pending_source_item
+        rows = connection.execute(
+            sa.select(proposal.c.id, item.c.source_key, item.c.series_ref, item.c.title)
+            .select_from(proposal.join(item, item.c.id == proposal.c.source_item_id))
+            .where(proposal.c.request_id == request_id)
+            .order_by(proposal.c.position)
+        )
+        return [Proposal(r.id, r.source_key, r.series_ref, r.title) for r in rows]
 
     @staticmethod
     def _waiting_for(connection: Connection, work_id: str) -> list[Any]:
@@ -810,6 +1039,9 @@ class RequestService:
             created_at=row.created_at, updated_at=row.updated_at,
             needs_age=row.state == "pending" and needs_age(row.owner_role),
             stranded=row.state == "approved" and row.started_at is None,
+            elsewhere_url=(
+                None if (not for_admin and needs_age(row.owner_role)) else row.elsewhere_url
+            ),
         )  # fmt: skip
 
 
@@ -944,16 +1176,19 @@ def _work_by_isbn(connection: Connection, isbn: str) -> str | None:
 
 
 def _work_by_title(connection: Connection, text: str) -> str | None:
-    rows = (
-        connection.execute(
-            sa.select(catalog.work.c.id)
-            .where(sa.func.lower(catalog.work.c.title) == text.lower())
-            .limit(2)
-        )
-        .scalars()
-        .all()
-    )
-    return rows[0] if len(rows) == 1 else None
+    """The one Work whose title is this text once both are folded (`fold_title`: NFKC, case,
+    accents; SQLite's `lower()` only knows ASCII, so the comparison is made here, row by row,
+    stopping at the second). None when there is no such Work or more than one."""
+    wanted = fold_title(text)
+    if not wanted:
+        return None
+    found: list[str] = []
+    for row in connection.execute(sa.select(catalog.work.c.id, catalog.work.c.title)):
+        if fold_title(row.title) == wanted:
+            found.append(row.id)
+            if len(found) > 1:
+                return None
+    return found[0] if found else None
 
 
 def _upsert_item(connection: Connection, ref: SourceRef, now: datetime) -> str:

@@ -87,4 +87,7 @@ CODES: tuple[ErrorCode, ...] = (
     ErrorCode("request.confirmation_required", 409, "admin"),  # over 100 Units or 5 GiB
     ErrorCode("request.unresolved", 409, "admin"),  # a text or an ISBN the library does not hold
     ErrorCode("request.shelf_refused", 409, "admin"),
+    # EF-USR-019 (M4 L30): put aside to be bought or borrowed, proposals of the source search
+    ErrorCode("request.invalid_link", 422, "admin"),  # not a plain https address
+    ErrorCode("request.nothing_to_propose", 409, "admin"),  # a result, or a Work the library holds
 )

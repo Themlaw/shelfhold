@@ -96,7 +96,7 @@ def test_a_child_key_stays_a_child(monkeypatch: pytest.MonkeyPatch, settings: Se
         assert [i["id"] for i in listed] == [mine]
         assert set(listed[0]) == {
             "id", "state", "title", "reject_reason", "created_at", "updated_at",
-            "family_state", "open_url",
+            "family_state", "open_url", "elsewhere_url",
         }  # fmt: skip
         # the same key never reads the parents' side
         assert api.client.get(f"{REQUESTS}/queue", headers=bearer(key)).status_code in (401, 403)

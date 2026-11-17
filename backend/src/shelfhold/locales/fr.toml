@@ -1914,6 +1914,16 @@ title = "L'étagère choisie refuse cette édition."
 action = "Choisissez une autre étagère, ou classez d'abord l'édition."
 cause = "L'âge de l'édition dépasse le plafond de l'étagère choisie, ou l'édition n'est pas classée."
 
+[errors."request.invalid_link"]
+title = "Cette adresse ne peut pas être gardée."
+action = "Donnez une adresse https simple de l'édition officielle ou de la médiathèque, sans identifiant ni pistage."
+cause = "Seule une adresse https sans identifiants, sur un hôte nommé, est acceptée ; les paramètres de pistage et d'affiliation sont retirés."
+
+[errors."request.nothing_to_propose"]
+title = "Il n'y a rien à proposer pour cette demande."
+action = "Approuvez la demande telle quelle, ou marquez-la « introuvable »."
+cause = "La demande désigne déjà un résultat ou une œuvre de la bibliothèque : une recherche n'ajouterait rien."
+
 [errors."series.gap"]
 title = "Il manque des chapitres dans la série."
 action = "Consultez la série et lancez la recherche des chapitres manquants."

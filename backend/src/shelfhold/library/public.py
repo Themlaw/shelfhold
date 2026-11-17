@@ -157,6 +157,10 @@ from shelfhold.library.application.disk_guard import (
     check_add_fits,
     reserve_for,
 )
+from shelfhold.library.application.import_match import (
+    isbns_in,
+    open_request_matches,
+)
 from shelfhold.library.application.reclaim import (
     EARLY_PURGE_BATCH,
     EMPTY_TRASH_PHRASE,
@@ -525,6 +529,7 @@ __all__ = [
     "irreplaceability",
     "is_independent",
     "is_rendered_sidecar",
+    "isbns_in",
     "keep_candidates",
     "keep_origin_opf",
     "latest_deletion",
@@ -539,6 +544,7 @@ __all__ = [
     "normalizers_of",
     "note_page_issue",
     "oldest_first",
+    "open_request_matches",
     "owed_unit_ids",
     "own_export_of",
     "page_issue_blocks",

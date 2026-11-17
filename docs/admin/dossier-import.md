@@ -131,3 +131,21 @@ dossier d'images), **sans rien retélécharger**. Donnez le chemin absolu du dos
   fichiers spéciaux, autre disque, noms piégés et fichiers encore en cours d'écriture sont
   refusés ou mis en attente comme pour le dossier d'import ; un fichier protégé reste en place
   avec son message.
+
+## Une demande « à acheter » ou « à emprunter ailleurs »
+
+Quand une demande ne se trouve nulle part, vous pouvez la mettre de côté : **à acheter** ou **à emprunter
+ailleurs**, avec l'adresse de l'édition officielle ou de la médiathèque (une adresse `https` simple : les
+identifiants et les paramètres de pistage ou d'affiliation sont retirés). Shelfhold ne prête rien et
+n'intègre aucun prêt numérique de fichier protégé : il garde l'adresse, c'est tout.
+
+Quand vous déposez ensuite le fichier dans ce dossier, la demande **arrive** toute seule si le titre
+entier est le même (sans tenir compte de la casse, des accents ni de la largeur des caractères : « Élise »
+et « ELISE » sont le même titre) ou si l'ISBN est le même (celui des Éditions de l'Œuvre, ou écrit dans le
+nom du fichier). La personne qui avait demandé est prévenue ; le message envoyé sur un canal partagé ne
+porte jamais le titre. Une demande simplement en attente, annulée, ou d'une autre personne n'est jamais
+appariée.
+
+Pour un texte libre ou un ISBN que la bibliothèque ne connaît pas, l'administrateur peut lancer **une**
+recherche dans les sources (au plus cinq propositions). Rien n'est appliqué tant que vous n'en acceptez pas
+une, puis la demande s'approuve comme les autres. Un profil d'enfant ne déclenche jamais cette recherche.

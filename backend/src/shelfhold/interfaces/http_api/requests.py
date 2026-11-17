@@ -8,6 +8,12 @@ The admin's side: `GET /queue` (a private request of an adult comes without its 
 /{id}/approval` (size, edition, shelf, whether an age is needed), `POST /{id}/approve` (the
 reserved action `request.approve`: a fresh admin session holding the right to rate, never a key),
 `POST /{id}/reject` (with a reason the requester reads) and `POST /{id}/not-found`.
+
+EF-USR-019 (M4 L30): `POST /{id}/elsewhere` puts a request aside, to be bought or borrowed, with an
+official or library address; a file the import folder takes in later closes it by itself. For a text
+or an ISBN the library does not hold, `POST /{id}/proposals` asks the sources once (an admin only,
+never for a child, D22) and keeps at most five results; `POST /{id}/proposals/{proposal_id}/accept`
+points the request at one, which is then approved as any other.
 """
 
 from collections.abc import Callable
@@ -19,6 +25,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from shelfhold.acquisition.application.requests import (
     ApprovalPreview,
+    Proposal,
     Requester,
     RequestRefusedError,
     RequestService,
@@ -69,6 +76,7 @@ class RequestOut(BaseModel):
     updated_at: datetime
     family_state: FamilyState | None  # the one word she reads (EF-UX-010); None: refused, withdrawn
     open_url: str | None  # "Ouvrir dans Kavita": read on the server, only when it is available
+    elsewhere_url: str | None  # EF-USR-019: where to buy or borrow it; never a child's
 
     @classmethod
     def of(cls, view: RequestView, kavita: Callable[[], str | None] = lambda: None) -> "RequestOut":
@@ -77,6 +85,7 @@ class RequestOut(BaseModel):
             id=view.id, state=view.state, title=view.title, reject_reason=view.reject_reason,
             created_at=view.created_at, updated_at=view.updated_at, family_state=state,
             open_url=kavita() if state == "available" else None,
+            elsewhere_url=view.elsewhere_url,
         )  # fmt: skip
 
 
@@ -135,6 +144,27 @@ class RejectIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     reason: str = Field(max_length=2000)
+
+
+class ElsewhereIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    state: Literal["to_buy", "borrow_elsewhere"]
+    url: str | None = Field(default=None, max_length=4096)  # the service says why it is refused
+
+
+class ProposalOut(BaseModel):
+    id: str
+    source_key: str
+    title: str
+
+    @classmethod
+    def of(cls, proposal: Proposal) -> "ProposalOut":
+        return cls(id=proposal.id, source_key=proposal.source_key, title=proposal.title)
+
+
+class ProposalsOut(BaseModel):
+    items: list[ProposalOut]
 
 
 def build_requests_router(
@@ -232,5 +262,25 @@ def build_requests_router(
     @router.post("/{request_id}/not-found")
     def not_found(request_id: str, principal: Admin) -> RequestOut:
         return RequestOut.of(run(lambda s: s.mark_not_found(request_id, principal)))
+
+    @router.post("/{request_id}/elsewhere")
+    def elsewhere(request_id: str, body: ElsewhereIn, principal: Admin) -> RequestOut:
+        return RequestOut.of(
+            run(lambda s: s.mark_elsewhere(request_id, principal, body.state, link=body.url))
+        )
+
+    @router.post("/{request_id}/proposals")
+    def propose(request_id: str, principal: Admin) -> ProposalsOut:
+        found = run(lambda s: s.propose(request_id, principal))
+        return ProposalsOut(items=[ProposalOut.of(p) for p in found])
+
+    @router.get("/{request_id}/proposals")
+    def proposals(request_id: str, principal: Admin) -> ProposalsOut:
+        found = run(lambda s: s.proposals(request_id, principal))
+        return ProposalsOut(items=[ProposalOut.of(p) for p in found])
+
+    @router.post("/{request_id}/proposals/{proposal_id}/accept")
+    def accept(request_id: str, proposal_id: str, principal: Admin) -> RequestOut:
+        return RequestOut.of(run(lambda s: s.accept_proposal(request_id, proposal_id, principal)))
 
     return router
