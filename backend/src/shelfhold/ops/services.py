@@ -22,6 +22,7 @@ from sqlalchemy import Engine
 from shelfhold.acquisition.application.request_lists import RequestListService
 from shelfhold.acquisition.application.requests import RequestService
 from shelfhold.acquisition.application.tachibk_import import TachibkImportService
+from shelfhold.acquisition.application.team_switch import TeamSwitchService
 from shelfhold.acquisition.application.unit_follow import suppress_follow
 from shelfhold.acquisition.public import FOLLOW_JOB_KIND, make_all_due
 from shelfhold.catalog.lang import LANG_NORMALIZER_ID, LanguageError, edition_key_lang
@@ -243,6 +244,7 @@ class OpsServices:
         requests: RequestService | None = None,
         request_lists: RequestListService | None = None,
         tachibk_import: TachibkImportService | None = None,
+        team_switch: TeamSwitchService | None = None,
         roots: RootOps | None = None,
         maintenance: MaintenanceOps | None = None,
         kavita_accounts: KavitaAccountsOps | None = None,
@@ -290,6 +292,7 @@ class OpsServices:
         self._requests = requests
         self._request_lists = request_lists
         self._tachibk_import = tachibk_import
+        self._team_switch = team_switch
         self._roots = roots
         self._maintenance = maintenance
         self._kavita_accounts = kavita_accounts
@@ -919,6 +922,13 @@ class OpsServices:
         if self._tachibk_import is None:
             raise ExitUnavailableError("the backup import is not connected")
         return self._tachibk_import
+
+    @property
+    def team_switch(self) -> TeamSwitchService:
+        """Switch an Edition to its preferred team: preview, application as a job (EF-BIB-005)."""
+        if self._team_switch is None:
+            raise ExitUnavailableError("the team switch is not connected")
+        return self._team_switch
 
     @property
     def requests(self) -> RequestService:

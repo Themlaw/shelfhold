@@ -127,7 +127,7 @@ def test_a_stale_session_prepares_and_queues_nothing(api: tuple[AuthEnv, _Servic
     env.login()
     env.clock.advance(timedelta(minutes=20))
     for method, path in DOORS:
-        stale = env.client.request(method, path)
+        stale = env.post(path) if method == "POST" else env.client.request(method, path)
         assert stale.status_code == 401, (method, path)
         assert stale.json()["type"] == "/api/v1/problems/reauth-required"
     assert service.calls == []

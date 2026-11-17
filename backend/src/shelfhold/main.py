@@ -105,6 +105,7 @@ from shelfhold.interfaces.http_api.stream import build_stream_router
 from shelfhold.interfaces.http_api.support_author import build_support_author_router
 from shelfhold.interfaces.http_api.sync_status import build_sync_status_router
 from shelfhold.interfaces.http_api.tachibk_import import build_tachibk_import_router
+from shelfhold.interfaces.http_api.teams import build_teams_router
 from shelfhold.interfaces.http_api.thumbnails import build_thumbnails_router
 from shelfhold.interfaces.http_api.triage import build_triage_router
 from shelfhold.interfaces.local_cli import IdentityDispatcher
@@ -398,6 +399,9 @@ def create_app(
         ),
         build_tachibk_import_router(  # EF-INT-008: a Mihon backup, preview then apply
             lambda: ops_services().tachibk_import
+        ),
+        build_teams_router(  # EF-BIB-005: the switch to the preferred team, preview then job
+            lambda: ops_services().team_switch
         ),
         build_sources_router(ops_services),  # EF-SRC-015, EF-SRC-004: search, acquire, a URL
         build_source_migration_router(ops_services),  # M4 L27: a series moves to another source

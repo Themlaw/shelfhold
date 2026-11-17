@@ -111,6 +111,9 @@ _DECLARED = (
     # series, read markers and tracker hints in a profile: data enters the instance, so it is a
     # fresh admin session (or the host's command line), never a key, a member or a child
     _action("import.tachibk", Effect.MOVES_INSTANCE_DATA),
+    # M4 L35 (EF-BIB-005): the switch to the preferred team replaces the files already served, so it
+    # is a fresh admin session, never a key, a member or a child (preview, apply and report alike)
+    _action("team.switch", Effect.REWRITES_EXPORTED_FILES),
     # M4 L31 (EF-USR-020): an imported list for a child makes her a reading shelf and requests in
     # her name, which is what she is shown and what she will ask for: a parental decision
     _action("reading_shelf.attach", Effect.PARENTAL_CONTROL),

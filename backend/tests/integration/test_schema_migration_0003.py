@@ -40,6 +40,7 @@ ACQUISITION_TABLES = {
     "source_migration", "source_migration_row",  # migration 0087 (M4 L27)
     "activity_block",  # migration 0091 (M4 L29)
     "tachibk_import", "read_marker", "tracker_hint",  # migration 0095 (M4 L26)
+    "team_switch",  # migration 0096 (M4 L35)
 }  # fmt: skip
 
 

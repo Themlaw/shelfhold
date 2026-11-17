@@ -84,6 +84,7 @@ __all__ = [
     "UpgradeOutcome",
     "UpgradeRequest",
     "UpgradeResult",
+    "served_blockers",
 ]
 
 log = structlog.get_logger(__name__)
@@ -289,6 +290,117 @@ def place_under_intent(
     fsops.same_path_swap(target, intent)
     fsops.same_path_recycle_old(target, intent)
     return intent
+
+
+def _barrier(connection: Connection, served: _Served) -> str | None:
+    """The barrier of the export, read again now: a file already served is not replaced when the
+    destination is closed (paused, read-only) or the shelf below 18+ no longer admits its Edition
+    (a suggested age above the rating, a rating raised, an Edition withdrawn). The very look the
+    planner takes before a write; the destination is told before the age."""
+    unit = catalog.unit
+    editions = connection.execute(
+        sa.select(unit.c.edition_id).where(unit.c.id.in_(served.unit_ids)).distinct()
+    ).scalars()
+    verdicts = [
+        barrier_closed_by(connection, served.ctx.destination_id, edition) for edition in editions
+    ]
+    if "destination" in verdicts:
+        return "destination"
+    return "age" if "age" in verdicts else None
+
+
+def _database_refusal(
+    connection: Connection, served: _Served, typed: str | None, *, check_read: bool
+) -> UpgradeOutcome | None:
+    """What the database alone refuses, in the order of the guards: the barrier, a Unit a reader
+    finished, an irreplaceable Unit, a path an open intent holds. The disk (a frozen root, a
+    sentinel) is looked at by `SamePathUpgrade._refusal` before this."""
+    closed = _barrier(connection, served)
+    if closed is not None:
+        log.info("upgrade.refused_barrier", unit_id=served.unit_id, why=closed)
+        return (
+            UpgradeOutcome.REFUSED_DESTINATION
+            if closed == "destination"
+            else UpgradeOutcome.REFUSED_AGE
+        )
+    if check_read and served.skip_read and _is_read(connection, served.unit_ids):
+        log.info("upgrade.skipped_read", unit_id=served.unit_id)
+        return UpgradeOutcome.SKIPPED_READ
+    for unit_id in served.unit_ids:  # the identifier typed is the first Unit's
+        if irreplaceability(connection, unit_id).irreplaceable and (
+            typed is None or typed.strip() != confirmation_phrase(served.unit_id)
+        ):
+            log.info("upgrade.needs_confirmation", unit_id=unit_id)
+            return UpgradeOutcome.NEEDS_CONFIRMATION
+    if served.target in open_intent_paths(connection):
+        return UpgradeOutcome.BUSY
+    return None
+
+
+def served_blockers(connection: Connection, unit_id: str) -> tuple[str, ...]:
+    """Why an automatic upgrade of the files served for this Unit would be refused, by the database
+    alone (a preview reads no disk and takes no lease): the words of the report, one per refused
+    file. Empty: nothing is served for the Unit, or every file served may be offered the upgrade
+    (the disk is asked again at the write, so a frozen root still refuses there).
+
+    Two kinds of served file are never replaced by this door: one adopted in place (`adopted_ro`,
+    the original is the host's, never rewritten) and one that is part of a volume or a bundle (it
+    is rewritten whole by its own door). They are named here because `upgrade_unit` leaves them
+    out without a word, which a caller must never read as "done"."""
+    record, item, coverage = export.export_record, export.export_item, export.unit_coverage
+    covers = sa.alias(export.unit_coverage)
+    rows = connection.execute(
+        sa.select(
+            record.c.shelf_destination_id, record.c.export_item_id, record.c.state,
+            record.c.locator_type, item.c.kind, item.c.content_id,
+            sa.select(sa.func.count())
+            .select_from(covers)
+            .where(covers.c.carrier_type == "export_item",
+                   covers.c.carrier_id == record.c.export_item_id)
+            .scalar_subquery().label("covered"),
+        )
+        .select_from(
+            record.join(
+                coverage,
+                sa.and_(coverage.c.carrier_type == "export_item",
+                        coverage.c.carrier_id == record.c.export_item_id),
+            ).join(item, item.c.id == record.c.export_item_id)
+        )
+        .where(coverage.c.unit_id == unit_id)
+        .order_by(record.c.shelf_destination_id, record.c.export_item_id)
+    ).all()  # fmt: skip
+    words: list[str] = []
+    for row in rows:
+        if row.state == "adopted" or row.kind == "adopted" or _adopted_content(
+            connection, row.content_id
+        ):
+            word: str | None = "adopted_original"
+        elif row.state != "written" or row.locator_type != "path":
+            continue  # nothing is served there now
+        elif row.kind != "unit" or row.covered != 1:
+            word = "assembled"
+        else:
+            served = _served(connection, row.shelf_destination_id, row.export_item_id)
+            refused = (
+                None
+                if served is None
+                else _database_refusal(connection, served, None, check_read=True)
+            )
+            word = None if refused is None else refused.value
+        if word is not None:
+            words.append(word)
+    return tuple(words)
+
+
+def _adopted_content(connection: Connection, content_id: str | None) -> bool:
+    if content_id is None:
+        return False
+    return (
+        connection.execute(
+            sa.text("SELECT retention FROM content WHERE id = :c"), {"c": content_id}
+        ).scalar()
+        == "adopted_ref"
+    )
 
 
 class SamePathUpgrade:
@@ -547,44 +659,7 @@ class SamePathUpgrade:
         ):  # frozen, or blocked by its sentinel or its lease: nothing, not even the intent
             log.warning("upgrade.root_frozen", root_id=root_id)
             return UpgradeOutcome.ROOT_FROZEN
-        closed = self._barrier(connection, served)
-        if closed is not None:
-            log.info("upgrade.refused_barrier", unit_id=served.unit_id, why=closed)
-            return (
-                UpgradeOutcome.REFUSED_DESTINATION
-                if closed == "destination"
-                else UpgradeOutcome.REFUSED_AGE
-            )
-        if check_read and served.skip_read and _is_read(connection, served.unit_ids):
-            log.info("upgrade.skipped_read", unit_id=served.unit_id)
-            return UpgradeOutcome.SKIPPED_READ
-        for unit_id in served.unit_ids:  # the identifier typed is the first Unit's
-            if irreplaceability(connection, unit_id).irreplaceable and (
-                typed is None or typed.strip() != confirmation_phrase(served.unit_id)
-            ):
-                log.info("upgrade.needs_confirmation", unit_id=unit_id)
-                return UpgradeOutcome.NEEDS_CONFIRMATION
-        if target in open_intent_paths(connection):
-            return UpgradeOutcome.BUSY
-        return None
-
-    @staticmethod
-    def _barrier(connection: Connection, served: _Served) -> str | None:
-        """The barrier of the export, read again now: a file already served is not replaced when
-        the destination is closed (paused, read-only) or the shelf below 18+ no longer admits its
-        Edition (a suggested age above the rating, a rating raised, an Edition withdrawn). The
-        very look the planner takes before a write; the destination is told before the age."""
-        unit = catalog.unit
-        editions = connection.execute(
-            sa.select(unit.c.edition_id).where(unit.c.id.in_(served.unit_ids)).distinct()
-        ).scalars()
-        verdicts = [
-            barrier_closed_by(connection, served.ctx.destination_id, edition)
-            for edition in editions
-        ]
-        if "destination" in verdicts:
-            return "destination"
-        return "age" if "age" in verdicts else None
+        return _database_refusal(connection, served, typed, check_read=check_read)
 
     # -- the replacement --------------------------------------------------------------------
 

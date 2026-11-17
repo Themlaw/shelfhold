@@ -9928,6 +9928,75 @@
         "title": "TargetsOut",
         "type": "object"
       },
+      "TeamSwitchOut": {
+        "properties": {
+          "blocked": {
+            "additionalProperties": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "title": "Blocked",
+            "type": "object"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "edition_id": {
+            "title": "Edition Id",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "pending": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Pending",
+            "type": "array"
+          },
+          "state": {
+            "title": "State",
+            "type": "string"
+          },
+          "switched": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Switched",
+            "type": "array"
+          },
+          "team_id": {
+            "title": "Team Id",
+            "type": "string"
+          },
+          "to_switch": {
+            "items": {
+              "type": "string"
+            },
+            "title": "To Switch",
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "edition_id",
+          "team_id",
+          "state",
+          "to_switch",
+          "blocked",
+          "pending",
+          "switched",
+          "created_at"
+        ],
+        "title": "TeamSwitchOut",
+        "type": "object"
+      },
       "TitleOut": {
         "properties": {
           "lang": {
@@ -17652,6 +17721,211 @@
         "summary": "Support Author Read",
         "tags": [
           "support-author"
+        ]
+      }
+    },
+    "/api/v1/editions/{edition_id}/team-switch": {
+      "post": {
+        "operationId": "team_switch_preview",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "edition_id",
+            "required": true,
+            "schema": {
+              "title": "Edition Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TeamSwitchOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Connexion requise, ou mot de passe à confirmer (reauth-required)."
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée)."
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Détail du problème (RFC 9457)."
+          }
+        },
+        "summary": "Team Switch Preview",
+        "tags": [
+          "teams"
+        ]
+      }
+    },
+    "/api/v1/editions/{edition_id}/team-switch/{switch_id}": {
+      "get": {
+        "operationId": "team_switch_report",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "edition_id",
+            "required": true,
+            "schema": {
+              "title": "Edition Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "switch_id",
+            "required": true,
+            "schema": {
+              "title": "Switch Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TeamSwitchOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Connexion requise, ou mot de passe à confirmer (reauth-required)."
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée)."
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Détail du problème (RFC 9457)."
+          }
+        },
+        "summary": "Team Switch Report",
+        "tags": [
+          "teams"
+        ]
+      }
+    },
+    "/api/v1/editions/{edition_id}/team-switch/{switch_id}/apply": {
+      "post": {
+        "operationId": "team_switch_apply",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "edition_id",
+            "required": true,
+            "schema": {
+              "title": "Edition Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "switch_id",
+            "required": true,
+            "schema": {
+              "title": "Switch Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobAccepted",
+                  "title": "Response Team Switch Apply"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Connexion requise, ou mot de passe à confirmer (reauth-required)."
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée)."
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Détail du problème (RFC 9457)."
+          }
+        },
+        "summary": "Team Switch Apply",
+        "tags": [
+          "teams"
         ]
       }
     },
@@ -30440,6 +30714,18 @@
     "/api/v1/problems/target.version-unsupported": {
       "code": "target.version_unsupported",
       "status": 503
+    },
+    "/api/v1/problems/team-switch.no-preferred-team": {
+      "code": "team_switch.no_preferred_team",
+      "status": 409
+    },
+    "/api/v1/problems/team-switch.not-found": {
+      "code": "team_switch.not_found",
+      "status": 404
+    },
+    "/api/v1/problems/team-switch.stale": {
+      "code": "team_switch.stale",
+      "status": 409
     },
     "/api/v1/problems/tombstone.confirmation-required": {
       "code": "tombstone.confirmation_required",

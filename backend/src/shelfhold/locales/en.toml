@@ -1965,6 +1965,21 @@
     action = "Try again; if it persists, check the logs and the limits of the machine."
     cause = "The bounded process that reads backups failed to start or crashed: the file is not the cause."
 
+  [errors."team_switch.not_found"]
+    title = "No such switch."
+    action = "Start again from the series sheet."
+    cause = "The edition or the switch does not exist (any more), or belongs to another series."
+
+  [errors."team_switch.no_preferred_team"]
+    title = "This series has no preferred team yet."
+    action = "Choose a preferred team on the series sheet first."
+    cause = "Nothing can be switched to a team that has not been chosen."
+
+  [errors."team_switch.stale"]
+    title = "The preview is no longer up to date."
+    action = "Ask for a new preview, read it, then apply it."
+    cause = "A chapter arrived, was read or was changed since the preview: nothing was replaced."
+
   [errors."request.invalid_list"]
     title = "This list cannot be read."
     action = "Send a plain text list: one title per line, at most 100 lines of 300 characters, under 64 KiB."

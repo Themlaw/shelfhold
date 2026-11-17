@@ -7,7 +7,6 @@ cycle, under an intent, and never replaces an irreplaceable original or an adopt
 """
 
 import threading
-from datetime import timedelta
 
 import pytest
 import sqlalchemy as sa
@@ -31,6 +30,7 @@ from tests.team_switch_env import (
     count,
     preferred_variant,
     team_switch,
+    upgrade_intents,
 )
 from tests.upgrade_env import bin_files, digest, record_of
 
@@ -54,13 +54,13 @@ def test_team_switch_preview_then_apply_under_intent() -> None:
     with export_env() as env:
         s = team_switch(env)
         old = s.target.read_bytes()
-        before = (count(env, "fs_intent"), count(env, "export_upgrade"))
+        before = (upgrade_intents(env), count(env, "export_upgrade"))
 
         preview = _preview(env, s.edition_id)
         assert preview.to_switch == (s.unit_id,) and preview.blocked == {} and preview.pending == ()
         # a preview writes nothing: not a byte of the file, not a line of the journal
         assert s.target.read_bytes() == old
-        assert (count(env, "fs_intent"), count(env, "export_upgrade")) == before
+        assert (upgrade_intents(env), count(env, "export_upgrade")) == before
         assert preferred_variant(env, s.unit_id) != s.variant_b
 
         upgrader = RealUpgrader(env)
@@ -75,8 +75,12 @@ def test_team_switch_preview_then_apply_under_intent() -> None:
         assert preferred_variant(env, s.unit_id) == s.variant_b
         # under an intent: one `upgrade` intent, done, and the upgrade row that says why
         with env.engine.connect() as connection:
-            intents = connection.execute(sa.text("SELECT op, state FROM fs_intent")).all()
-            upgrades = connection.execute(sa.text("SELECT reason, automatic FROM export_upgrade")).all()
+            intents = connection.execute(
+                sa.text("SELECT op, state FROM fs_intent WHERE op = 'upgrade'")
+            ).all()
+            upgrades = connection.execute(
+                sa.text("SELECT reason, automatic FROM export_upgrade")
+            ).all()
         assert [tuple(i) for i in intents] == [("upgrade", "done")]
         assert [tuple(u) for u in upgrades] == [("better_version", 1)]
         # asked again, nothing is left to switch and nothing is written twice
@@ -96,7 +100,7 @@ def test_team_switch_never_replaces_irreplaceable() -> None:
         assert report.switched == () and report.blocked == {s.unit_id: ("needs_confirmation",)}
         assert s.target.read_bytes() == old and bin_files(env) == []
         assert preferred_variant(env, s.unit_id) != s.variant_b  # the flag and the file agree
-        assert count(env, "fs_intent") == 0  # not even an intent: nothing was tried
+        assert upgrade_intents(env) == 0  # not even an intent: nothing was tried
 
 
 def test_team_switch_never_replaces_an_adopted_original() -> None:
@@ -110,7 +114,7 @@ def test_team_switch_never_replaces_an_adopted_original() -> None:
         assert preview.blocked == {s.unit_id: ("adopted_original",)} and preview.to_switch == ()
         report = _apply(env, s, preview.token)
         assert report.blocked == {s.unit_id: ("adopted_original",)} and report.switched == ()
-        assert s.target.read_bytes() == old and count(env, "fs_intent") == 0
+        assert s.target.read_bytes() == old and upgrade_intents(env) == 0
         assert preferred_variant(env, s.unit_id) != s.variant_b
 
 
@@ -122,7 +126,7 @@ def test_team_switch_leaves_a_volume_alone() -> None:
             connection.execute(sa.text("UPDATE export_item SET kind = 'volume'"))
         report = _apply(env, s, None)
         assert report.blocked == {s.unit_id: ("assembled",)} and report.switched == ()
-        assert s.target.read_bytes() == old and count(env, "fs_intent") == 0
+        assert s.target.read_bytes() == old and upgrade_intents(env) == 0
 
 
 def test_team_switch_waits_for_an_open_intent() -> None:
@@ -130,7 +134,9 @@ def test_team_switch_waits_for_an_open_intent() -> None:
         s = team_switch(env)
         old = s.target.read_bytes()
         journal = IntentJournal(env.engine, env.lib.fsops, clock=env.clock)
-        journal.record(op="upgrade", src=str(s.target), dst=str(s.target), expected_sha256="sha256:" + "0" * 64)
+        journal.record(
+            op="upgrade", src=str(s.target), dst=str(s.target), expected_sha256="sha256:" + "0" * 64
+        )
         preview = _preview(env, s.edition_id)
         assert preview.blocked == {s.unit_id: ("busy",)}
         report = _apply(env, s, preview.token)
@@ -139,7 +145,7 @@ def test_team_switch_waits_for_an_open_intent() -> None:
         assert preferred_variant(env, s.unit_id) != s.variant_b
 
 
-def test_a_read_chapter_is_blocked_and_a_frozen_root_is_not_written() -> None:
+def test_a_read_chapter_is_blocked_and_left_alone() -> None:
     from tests.upgrade_env import mark_read
 
     with export_env() as env:
@@ -170,9 +176,7 @@ def test_switch_report_lists_switched_blocked_pending() -> None:
             connection.execute(
                 sa.text("UPDATE unit_variant SET preferred = 1 WHERE unit_id = :u"), {"u": third}
             )
-        add_team_chapter(
-            env, s.edition_id, series.binding_id, third, "3", s.team_b, fetched=False
-        )
+        add_team_chapter(env, s.edition_id, series.binding_id, third, "3", s.team_b, fetched=False)
         # and the first one is irreplaceable: blocked
         with write_transaction(env.engine) as connection:
             connection.execute(
@@ -206,7 +210,7 @@ def test_an_application_refuses_a_preview_that_went_stale() -> None:
         add_team_chapter(env, s.edition_id, s.exported.series.binding_id, extra, "2", s.team_b)
         with pytest.raises(StaleSwitchError):
             _apply(env, s, preview.token)
-        assert s.target.read_bytes() == old and count(env, "fs_intent") == 0
+        assert s.target.read_bytes() == old and upgrade_intents(env) == 0
 
 
 def test_the_reader_never_sees_a_half_replaced_file() -> None:
@@ -278,11 +282,16 @@ def test_the_service_keeps_the_preview_queues_one_job_and_reads_the_report_back(
         assert done.switched == (s.unit_id,)
         final = service.report(ADMIN, s.edition_id, switch_id)
         assert final["state"] == "done"
-        assert final["switched"] == [s.unit_id] and final["blocked"] == {} and final["pending"] == []
+        assert (
+            final["switched"] == [s.unit_id] and final["blocked"] == {} and final["pending"] == []
+        )
         # the audit trail names the order and the switch, never a path
         with env.engine.connect() as connection:
             audit = connection.execute(
-                sa.text("SELECT action, target FROM audit WHERE action LIKE 'team.switch%' ORDER BY at, rowid")
+                sa.text(
+                    "SELECT action, target FROM audit "
+                    "WHERE action LIKE 'team.switch%' ORDER BY at, rowid"
+                )
             ).all()
         assert [a[0] for a in audit] == ["team.switch_previewed", "team.switch_queued"]
         assert all(str(a[1]).startswith("team_switch:") for a in audit)
@@ -299,7 +308,9 @@ def test_a_stale_preview_ends_the_job_without_writing() -> None:
         extra = env.add_chapter(s.exported.series, "2")
         env.pipeline.run(env.destination_id, job_id=new_ulid())
         with write_transaction(env.engine) as connection:
-            connection.execute(sa.text("UPDATE unit_variant SET preferred = 1 WHERE unit_id = :u"), {"u": extra})
+            connection.execute(
+                sa.text("UPDATE unit_variant SET preferred = 1 WHERE unit_id = :u"), {"u": extra}
+            )
         add_team_chapter(env, s.edition_id, s.exported.series.binding_id, extra, "2", s.team_b)
         old = s.target.read_bytes()
         with pytest.raises(StaleSwitchError):
@@ -353,7 +364,7 @@ def test_a_preview_kept_a_day_is_dropped_by_the_next_one() -> None:
         s = team_switch(env)
         service, _pool = _service(env)
         first = service.preview(ADMIN, s.edition_id)["id"]
-        env.clock.advance(timedelta(days=2))
+        env.clock.advance(days=2)
         service.preview(ADMIN, s.edition_id)
         with env.engine.connect() as connection:
             ids = [r[0] for r in connection.execute(sa.text("SELECT id FROM team_switch"))]

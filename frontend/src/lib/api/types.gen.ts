@@ -6013,6 +6013,50 @@ export type TargetsOut = {
 };
 
 /**
+ * TeamSwitchOut
+ */
+export type TeamSwitchOut = {
+    /**
+     * Blocked
+     */
+    blocked: {
+        [key: string]: Array<string>;
+    };
+    /**
+     * Created At
+     */
+    created_at: string;
+    /**
+     * Edition Id
+     */
+    edition_id: string;
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Pending
+     */
+    pending: Array<string>;
+    /**
+     * State
+     */
+    state: string;
+    /**
+     * Switched
+     */
+    switched: Array<string>;
+    /**
+     * Team Id
+     */
+    team_id: string;
+    /**
+     * To Switch
+     */
+    to_switch: Array<string>;
+};
+
+/**
  * TitleOut
  */
 export type TitleOut = {
@@ -10666,6 +10710,130 @@ export type SupportAuthorReadResponses = {
 };
 
 export type SupportAuthorReadResponse = SupportAuthorReadResponses[keyof SupportAuthorReadResponses];
+
+export type TeamSwitchPreviewData = {
+    body?: never;
+    path: {
+        /**
+         * Edition Id
+         */
+        edition_id: string;
+    };
+    query?: never;
+    url: '/api/v1/editions/{edition_id}/team-switch';
+};
+
+export type TeamSwitchPreviewErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type TeamSwitchPreviewError = TeamSwitchPreviewErrors[keyof TeamSwitchPreviewErrors];
+
+export type TeamSwitchPreviewResponses = {
+    /**
+     * Successful Response
+     */
+    201: TeamSwitchOut;
+};
+
+export type TeamSwitchPreviewResponse = TeamSwitchPreviewResponses[keyof TeamSwitchPreviewResponses];
+
+export type TeamSwitchReportData = {
+    body?: never;
+    path: {
+        /**
+         * Edition Id
+         */
+        edition_id: string;
+        /**
+         * Switch Id
+         */
+        switch_id: string;
+    };
+    query?: never;
+    url: '/api/v1/editions/{edition_id}/team-switch/{switch_id}';
+};
+
+export type TeamSwitchReportErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type TeamSwitchReportError = TeamSwitchReportErrors[keyof TeamSwitchReportErrors];
+
+export type TeamSwitchReportResponses = {
+    /**
+     * Successful Response
+     */
+    200: TeamSwitchOut;
+};
+
+export type TeamSwitchReportResponse = TeamSwitchReportResponses[keyof TeamSwitchReportResponses];
+
+export type TeamSwitchApplyData = {
+    body?: never;
+    path: {
+        /**
+         * Edition Id
+         */
+        edition_id: string;
+        /**
+         * Switch Id
+         */
+        switch_id: string;
+    };
+    query?: never;
+    url: '/api/v1/editions/{edition_id}/team-switch/{switch_id}/apply';
+};
+
+export type TeamSwitchApplyErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type TeamSwitchApplyError = TeamSwitchApplyErrors[keyof TeamSwitchApplyErrors];
+
+export type TeamSwitchApplyResponses = {
+    /**
+     * Response Team Switch Apply
+     *
+     * Successful Response
+     */
+    202: JobAccepted;
+};
+
+export type TeamSwitchApplyResponse = TeamSwitchApplyResponses[keyof TeamSwitchApplyResponses];
 
 export type UpstreamStatusSetData = {
     body: UpstreamStatusIn;

@@ -1467,3 +1467,17 @@ day = "The UTC day."
 source_key = "Source the requests were made for."
 requests = "Requests that left the machine that day (after the network guard)."
 bytes_in = "Bytes received that day."
+
+[tables.team_switch]
+description = "One preview of the switch of an Edition to its preferred team, then its application (M4 L35)."
+[tables.team_switch.columns]
+id = "Switch identifier (ULID)."
+edition_id = "Edition whose served files would be replaced (`edition.id`)."
+team_id = "Preferred team when the preview was made (`team.id`)."
+created_by = "Admin who asked for it (`user.id`); empty once that account is gone."
+state = "`previewed`, `queued`, `applying`, `done`, `stale` (the preview no longer matched, nothing written) or `failed`."
+token = "SHA-256 of what the preview said; the application compares it before writing anything."
+preview = "What the preview said (JSON): Units to switch, blocked with a closed reason, pending. Identifiers only."
+report = "What the application did (JSON): Units switched, blocked, pending; empty until it ran."
+created_at = "When the preview was made (UTC)."
+applied_at = "When the application ended (UTC)."

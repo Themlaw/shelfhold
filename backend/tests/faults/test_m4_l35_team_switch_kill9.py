@@ -32,7 +32,13 @@ from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.fsops import Fsops
 from shelfhold.infrastructure.ids import new_ulid
 from tests.export_env import ExportEnv, export_env
-from tests.team_switch_env import RealUpgrader, Switch, add_team_chapter, preferred_variant, team_switch
+from tests.team_switch_env import (
+    RealUpgrader,
+    Switch,
+    add_team_chapter,
+    preferred_variant,
+    team_switch,
+)
 from tests.upgrade_env import bin_files, digest, service
 
 pytestmark = pytest.mark.req("EF-BIB-005", "EF-EXP-041")
@@ -116,7 +122,9 @@ def test_team_switch_killed_resumes_without_loss_or_double(kill_at: int) -> None
             assert open_intent_paths(connection) == frozenset()
         assert len(env.files()) == CHAPTERS  # one file per chapter, never none, never two
         for path in env.files():
-            assert path.read_bytes() in {first_old, second_old} or path.read_bytes().startswith(b"PK")
+            assert path.read_bytes() in {first_old, second_old} or path.read_bytes().startswith(
+                b"PK"
+            )
         olds = {first_old, second_old}
         binned = [p.read_bytes() for p in bin_files(env)]
         assert len(binned) == len(set(binned)) and set(binned) <= olds  # binned at most once
@@ -136,7 +144,11 @@ def test_team_switch_killed_resumes_without_loss_or_double(kill_at: int) -> None
             assert preferred_variant(env, unit) != ""
         assert preferred_variant(env, s.unit_id) == s.variant_b
         with env.engine.connect() as connection:
-            rows = connection.execute(sa.text("SELECT file_hash FROM export_record")).scalars().all()
-            upgrades = connection.execute(sa.text("SELECT count(*) FROM export_upgrade")).scalar_one()
+            rows = (
+                connection.execute(sa.text("SELECT file_hash FROM export_record")).scalars().all()
+            )
+            upgrades = connection.execute(
+                sa.text("SELECT count(*) FROM export_upgrade")
+            ).scalar_one()
         assert sorted(rows) == sorted(digest(p) for p in env.files())  # the manifest says the disk
         assert upgrades == CHAPTERS  # one per chapter: the killed one was settled, not redone

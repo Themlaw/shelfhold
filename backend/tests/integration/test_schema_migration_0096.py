@@ -44,7 +44,7 @@ def _connect(settings: Settings) -> sqlite3.Connection:
     conn.execute("PRAGMA foreign_keys = ON")
     conn.execute(
         "INSERT INTO user (id, username, role, can_rate, max_age_rating) "
-        "VALUES (?, 'root', 'admin', 0, NULL)",
+        "VALUES (?, 'ann', 'member', 0, NULL)",
         (USER,),
     )
     return conn

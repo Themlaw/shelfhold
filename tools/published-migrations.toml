@@ -299,3 +299,8 @@ since = "1.1"
 file = "0095_tachibk_import.py"
 sha256 = "d7b6b2ab27b6689bfd54f6c7eceae3aec3c6265cd12950b608d0f8299b22ed20"
 since = "1.1"
+
+[[migration]]
+file = "0096_team_switch.py"
+sha256 = "e33cde016e2f0991c6e6f301756607892cd3303f22da5c839b97cb83c08ee23f"
+since = "1.1"

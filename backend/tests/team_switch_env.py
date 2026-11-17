@@ -7,7 +7,7 @@ write context of a cycle.
 """
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 
 import sqlalchemy as sa
@@ -25,7 +25,7 @@ from tests.locks_env import work_lock
 from tests.null_tombstones import NONE_PURGED
 from tests.upgrade_env import Exported, export_one, service
 
-NOW = datetime(2026, 11, 17, 12, 0)
+NOW = datetime(2026, 11, 17, 12, 0, tzinfo=UTC)
 
 
 class RealUpgrader:
@@ -103,9 +103,11 @@ def team_switch(env: ExportEnv, *, prefer: bool = True) -> Switch:
             )
         ).scalar_one()
         Catalog(connection).set_preferred(exported.unit_id, str(served))
-        team_b = Catalog(connection).resolve_team(
-            BindingRef(exported.series.binding_id, edition_id), "Team B", NOW
-        ).id
+        team_b = (
+            Catalog(connection)
+            .resolve_team(BindingRef(exported.series.binding_id, edition_id), "Team B", NOW)
+            .id
+        )
     variant_b, content_b = add_team_chapter(
         env, edition_id, exported.series.binding_id, exported.unit_id, "1", team_b
     )
@@ -128,3 +130,13 @@ def preferred_variant(env: ExportEnv, unit_id: str) -> str:
 def count(env: ExportEnv, table: str) -> int:
     with env.engine.connect() as connection:
         return int(connection.execute(sa.text(f"SELECT count(*) FROM {table}")).scalar_one())  # noqa: S608
+
+
+def upgrade_intents(env: ExportEnv) -> int:
+    """The same-path upgrades the journal knows (the export itself writes its own intents)."""
+    with env.engine.connect() as connection:
+        return int(
+            connection.execute(
+                sa.text("SELECT count(*) FROM fs_intent WHERE op = 'upgrade'")
+            ).scalar_one()
+        )
