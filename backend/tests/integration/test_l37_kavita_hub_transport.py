@@ -9,7 +9,10 @@ nothing but the transport, and neither the key nor the token of the hub is ever 
 from __future__ import annotations
 
 import asyncio
+import logging
+import secrets
 import ssl
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -504,3 +507,129 @@ def test_websocket_connector_reports_a_refused_upgrade_and_a_closed_connection(
             await connection.close()
 
     run(scenario())
+
+
+# -- the library's own logging: the URL of the hub carries the token ------------------------------
+
+
+def _debug_everything() -> tuple[list[logging.LogRecord], Callable[[], None]]:
+    """The stdlib logging as an admin would set it for a bug hunt: root and `websockets` at DEBUG,
+    every record kept (formatted too, as a file or a console handler would write it)."""
+    records: list[logging.LogRecord] = []
+
+    class Keep(logging.Handler):
+        def emit(self, record: logging.LogRecord) -> None:
+            record.getMessage()
+            records.append(record)
+
+    handler, root = Keep(level=logging.DEBUG), logging.getLogger()
+    named = [logging.getLogger(n) for n in ("websockets", "websockets.client", "shelfhold")]
+    before = [(logger, logger.level) for logger in (root, *named)]
+    root.addHandler(handler)
+    for logger in (root, *named):
+        logger.setLevel(logging.DEBUG)
+
+    def restore() -> None:
+        root.removeHandler(handler)
+        for logger, level in before:
+            logger.setLevel(level)
+
+    return records, restore
+
+
+def _hub_log_records(tmp_path: Path, token: str) -> list[logging.LogRecord]:
+    """Open a real `websockets` connection to a local synthetic hub (a Unix socket: no network)
+    with the stdlib logging at DEBUG, and return what the client side wrote. The synthetic server
+    is given a logger of its own that goes nowhere: Kavita's server is not this library."""
+    import ipaddress
+    import socket
+
+    from websockets.asyncio.server import unix_serve
+
+    deaf = logging.Logger("synthetic.hub.server")
+    deaf.addHandler(logging.NullHandler())
+
+    async def hub(connection: Any) -> None:
+        await connection.recv()
+        await connection.send(ACK.decode())
+        await asyncio.sleep(0.1)
+
+    async def scenario() -> None:
+        path = str(tmp_path / "hub.sock")
+        async with unix_serve(hub, path, logger=deaf):
+
+            async def open_socket(address: object, port: int) -> socket.socket:
+                sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+                sock.setblocking(False)
+                await asyncio.get_running_loop().sock_connect(sock, path)
+                return sock
+
+            endpoint = HubEndpoint(
+                f"ws://kavita.lan:5000/hubs/messages?access_token={token}",
+                (ipaddress.ip_address("192.168.1.50"),),
+            )
+            connection = await WebSocketConnector(open_socket=open_socket)(endpoint)
+            await connection.send(b'{"protocol": "json", "version": 1}\x1e')
+            assert await connection.recv() == ACK
+            await connection.close()
+
+    records, restore = _debug_everything()
+    try:
+        run(scenario())
+    finally:
+        restore()
+    return records
+
+
+def _leaking(records: list[logging.LogRecord], *secrets_: str) -> list[str]:
+    return sorted(
+        {r.name for r in records if any(s in r.getMessage() or s in repr(r.args) for s in secrets_)}
+    )
+
+
+def test_a_real_connection_never_writes_the_token_to_the_stdlib_logs(tmp_path: Path) -> None:
+    token = secrets.token_urlsafe(18)
+    records = _hub_log_records(tmp_path, token)
+    assert _leaking(records, token, API_KEY) == []  # the client of the hub is silent
+
+
+def test_the_stdlib_log_check_has_teeth(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """With the library's default logger, the same connection does write the token at DEBUG."""
+    from shelfhold.export.targets.kavita import events_transport
+
+    monkeypatch.setattr(events_transport, "_QUIET", logging.getLogger("websockets.client"))
+    token = secrets.token_urlsafe(18)
+    assert _leaking(_hub_log_records(tmp_path, token), token) == ["websockets.client"]
+
+
+def test_the_library_exceptions_that_name_the_url_never_reach_a_message_or_a_log() -> None:
+    """`InvalidURI` carries the URI in its text, `InvalidStatus` does not: only the class goes."""
+    import ipaddress
+    import socket
+
+    from websockets.datastructures import Headers
+    from websockets.exceptions import InvalidStatus, InvalidURI
+    from websockets.http11 import Response
+
+    token = secrets.token_urlsafe(18)
+    url = f"ws://kavita.lan:5000/hubs/messages?access_token={token}#fragment"  # fragment
+    assert token in str(InvalidURI(url, "synthetic"))  # why only the class is kept
+    assert token not in str(InvalidStatus(Response(403, "Forbidden", Headers(), b"")))
+
+    async def open_socket(address: object, port: int) -> socket.socket:
+        left, right = socket.socketpair()
+        right.close()
+        left.setblocking(False)
+        return left
+
+    endpoint = HubEndpoint(url, (ipaddress.ip_address("192.168.1.50"),))
+    records, restore = _debug_everything()
+    try:
+        with structlog.testing.capture_logs() as logs, pytest.raises(HubDown) as down:
+            run(WebSocketConnector(open_socket=open_socket)(endpoint))
+    finally:
+        restore()
+    assert "InvalidURI" in str(down.value)  # the library did raise it: the url was in its text
+    written = repr(logs) + " ".join(r.getMessage() for r in records)
+    assert token not in str(down.value) and token not in written
+    assert down.value.__cause__ is None and down.value.__context__ is None  # no chained text

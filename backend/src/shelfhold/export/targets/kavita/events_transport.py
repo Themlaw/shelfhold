@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import logging
 import ssl
 from collections.abc import AsyncIterator, Awaitable, Callable, Sequence
 from ipaddress import IPv4Address, IPv6Address
@@ -55,6 +56,15 @@ __all__ = [
 ]
 
 log = structlog.get_logger(__name__)
+
+# `websockets` logs the opening request at DEBUG, path and query included, so the token of the hub
+# would reach any handler an admin sets to debug. Its connections are given this logger instead: it
+# does not propagate, has no handler of its own and stops below WARNING, so nothing that names the
+# URL is ever written, whatever the level of the root logger or of `websockets`.
+_QUIET = logging.getLogger("shelfhold.kavita.hub.websockets")
+_QUIET.propagate = False
+_QUIET.setLevel(logging.WARNING)
+_QUIET.addHandler(logging.NullHandler())
 
 PING: Final = b'{"type": 6}\x1e'  # SignalR's keep-alive, which Kavita's server waits for
 PING_EVERY: Final = 15.0  # seconds (Kavita's server drops a client silent for 30)
@@ -142,6 +152,7 @@ class WebSocketConnector:
                     ssl=self.tls_context if parts.scheme == "wss" else None,
                     server_hostname=parts.hostname if parts.scheme == "wss" else None,
                     open_timeout=self._open_timeout,
+                    logger=_QUIET,
                     max_size=MAX_MESSAGE,
                     max_queue=64,
                     proxy=None,  # never through a proxy of the environment: the guard chose

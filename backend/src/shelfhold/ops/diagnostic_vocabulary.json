@@ -3545,6 +3545,7 @@
   "shelfhold.db",
   "shelfhold.db.restoring",
   "shelfhold.infrastructure.imaging.worker",
+  "shelfhold.kavita.hub.websockets",
   "shelfhold.plugins",
   "shelfhold.sock",
   "shelfhold.tombstones",
