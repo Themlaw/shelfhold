@@ -27,6 +27,25 @@ Une étagère dont le plafond est **sous 18+** est une étagère famille (`shelf
 - **Retrait.** Un classement relevé au-dessus du plafond ne retire rien seul : voir
   [famille.md](famille.md) (`shelfhold shelf withdraw`, état `withdrawal_pending`).
 
+## Qui voit quoi dans Shelfhold : les étagères réservées
+
+La liste `allowed_profiles` d'une étagère (vide : ouverte à tous) ne règle pas seulement l'export vers
+Kavita : **Shelfhold la lit aussi**. Un enfant ne voit une Œuvre que si, en plus de son plafond d'âge,
+au moins une étagère qui la porte lui est ouverte. C'est vrai du catalogue, de la recherche, de l'OPDS,
+de la progression, des collections et des Œuvres liées. Une Œuvre rangée seulement sur l'étagère d'un
+autre enfant répond comme une Œuvre qui n'existe pas. Une Œuvre rangée sur aucune étagère n'est visible
+que pour les adultes. Un adulte n'est jamais borné par une étagère.
+
+Conséquence pour les demandes : **la demande d'un enfant n'apparaît chez lui qu'une fois l'Édition rangée sur une étagère qui lui est ouverte.** Tant qu'elle attend (« À classer », sans étagère, ou sur l'étagère d'un autre profil), elle n'est pas dans son catalogue. Une Édition qui attend un classement (âge suggéré au-dessus de son âge) ne porte pas non plus l'Œuvre jusqu'à lui. Quand l'étagère change (liste de profils, ou Édition déplacée), un client hors ligne de l'enfant reçoit le retrait à sa prochaine synchronisation (`?since=`).
+
+## Notifications : une destination par adulte
+
+Le canal partagé de l'instance est lu par tous, enfants compris : il ne porte **jamais** de titre. Un
+admin ou un membre peut sceller une destination Apprise à lui (`PUT /api/v1/me/notification-destination`,
+session fraîche, jamais une clé d'API) : les titres de ses notices vont là, et seulement là. Un enfant
+n'a pas de destination propre. Le mode « immédiat » est le choix d'un adulte ; un enfant reçoit toujours
+un résumé quotidien.
+
 ## L'âge dans Kavita
 
 - **CBZ.** L'âge effectif du catalogue est écrit dans `AgeRating` du ComicInfo à l'export, puis, pour

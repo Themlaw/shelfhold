@@ -87,7 +87,7 @@ def test_add_directly_truth_table_row(api: tuple[AuthEnv, Seed]) -> None:
     for member in (plain, rater):
         assert _add(env, member, rated, family).status_code == 403
         assert _add(env, member, unrated, family).status_code == 403
-    assert _shelf_of(seed, unrated) is None and _shelf_of(seed, rated) is None
+    assert _shelf_of(seed, unrated) is None and _shelf_of(seed, rated) == adult  # seeded there
     # the admin: an Edition nobody rated is refused, a rated one is filed
     assert _add(env, env.client, unrated, family).json()["reason"] == "unrated_edition"
     assert _add(env, env.client, rated, family).json() == {"filed": True, "reason": None}

@@ -20,6 +20,7 @@ from dataclasses import dataclass
 import sqlalchemy as sa
 from sqlalchemy import Connection
 
+from shelfhold.catalog.application.changes import track_shelf_changes
 from shelfhold.catalog.application.rating import RatingService
 from shelfhold.catalog.domain.age import Admission
 from shelfhold.infrastructure.schema import catalog, export
@@ -53,11 +54,12 @@ def _work_rated(connection: Connection, edition_id: str) -> bool:
 
 
 def _set(connection: Connection, edition_id: str, shelf_id: str | None) -> None:
-    connection.execute(
-        sa.update(catalog.edition)
-        .where(catalog.edition.c.id == edition_id)
-        .values(shelf_id=shelf_id)
-    )
+    with track_shelf_changes(connection, edition_ids=[edition_id]):  # what a child sees moves
+        connection.execute(
+            sa.update(catalog.edition)
+            .where(catalog.edition.c.id == edition_id)
+            .values(shelf_id=shelf_id)
+        )
 
 
 def file_new_edition(

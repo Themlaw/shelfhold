@@ -16,14 +16,15 @@ from shelfhold.config import Settings
 from shelfhold.events.bus import EventBus, PublishedEvent
 from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.ids import new_ulid
-from shelfhold.infrastructure.schema import catalog, identity, platform
+from shelfhold.infrastructure.schema import catalog, export, identity, platform
 from shelfhold.integrations.apprise.render import Message
 from shelfhold.integrations.notify import NotificationRouter, NotificationSender
 from tests.auth_env import T0, ManualClock
 from tests.request_env import ADMIN_ID, CHILD_ID, MEMBER_ID, OTHER_ID, SIBLING_ID, rig
 
 __all__ = [
-    "ADMIN_ID", "CHILD_ID", "MEMBER_ID", "OTHER_ID", "SIBLING_ID", "T0", "Env", "Sink", "world",
+    "ADMIN_ID", "CHILD_ID", "MEMBER_ID", "OTHER_ID", "SIBLING_ID", "T0", "Env", "PrivateSink",
+    "Sink", "world",
 ]  # fmt: skip
 
 
@@ -51,6 +52,19 @@ class Sink:
 
 
 @dataclass
+class PrivateSink(Sink):
+    """The destination of a profile (M4 L39): a person who has none is not served here (`None`,
+    the sender then writes to the shared channels, without a title)."""
+
+    users: set[str] = field(default_factory=set)
+
+    def __call__(self, user_id: str, message: Message) -> bool | None:  # type: ignore[override]
+        if user_id not in self.users:
+            return None
+        return super().__call__(user_id, message)
+
+
+@dataclass
 class Env:
     engine: sa.Engine
     clock: ManualClock
@@ -59,6 +73,7 @@ class Env:
     sender: NotificationSender
     sink: Sink
     withdrawals: list[int]  # what `pending_withdrawals` answers now (a one-item list)
+    private: PrivateSink | None = None
 
     # -- the catalogue --------------------------------------------------------------------------
     def work(self, title: str, *, age: int | None = 6) -> str:
@@ -67,8 +82,21 @@ class Env:
         extra: dict[str, Any] = {"age_rating": age, "rated_at": T0} if age is not None else {}
         with write_transaction(self.engine) as connection:
             work_id = add_work(connection, title=title, sort_title=title.lower(), **extra)
-            add_edition(connection, work_id, **({"rated_at": T0} if age is not None else {}))
+            add_edition(
+                connection, work_id, shelf_id=self._open_shelf(connection),
+                **({"rated_at": T0} if age is not None else {}),
+            )  # fmt: skip
         return work_id
+
+    def _open_shelf(self, connection: sa.Connection) -> str:
+        """The Editions are filed on a shelf open to everyone (D-P3: a child sees what a shelf open
+        to her carries)."""
+        found = connection.execute(sa.select(export.shelf.c.id).limit(1)).scalar()
+        if found is not None:
+            return str(found)
+        shelf_id = new_ulid()
+        connection.execute(sa.insert(export.shelf).values(id=shelf_id, name="Open", phrase="open"))
+        return shelf_id
 
     def series(self, title: str, work_ids: list[str]) -> str:
         series_id = new_ulid()
@@ -182,7 +210,9 @@ class Env:
 
 
 @contextmanager
-def world(settings: Settings, *, sink: Sink | None = None) -> Iterator[Env]:
+def world(
+    settings: Settings, *, sink: Sink | None = None, private: PrivateSink | None = None
+) -> Iterator[Env]:
     with rig(settings) as base:
         clock = base.clock
         bus = EventBus(clock)
@@ -195,5 +225,6 @@ def world(settings: Settings, *, sink: Sink | None = None) -> Iterator[Env]:
             clock,
             deliver=out,
             pending_withdrawals=lambda _c: withdrawals[0],
+            **({"profile_deliver": private} if private is not None else {}),
         )
-        yield Env(base.engine, clock, bus, router, sender, out, withdrawals)
+        yield Env(base.engine, clock, bus, router, sender, out, withdrawals, private)

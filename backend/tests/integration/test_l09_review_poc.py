@@ -236,22 +236,18 @@ def test_review_poc_meta_test_sees_routes_outside_openapi(
         )
 
 
-# -- O5: `allowed_profiles` is not read -------------------------------------------------------
+# -- O5: `allowed_profiles` is read (D-P3, M4 L39) -----------------------------------------
 
 
-@pytest.mark.skip(
-    reason="decision of the coordinator (M4, docs/decisions/M3.md): `allowed_profiles` rules the "
-    "export to Kavita (L10), not the visibility in Shelfhold; EF-USR-006 says by library"
-)
 @pytest.mark.req("EF-USR-006", "EF-USR-015")
 def test_review_poc_shelf_restricted_to_another_child_is_not_hers(
     monkeypatch: pytest.MonkeyPatch, world: _World
 ) -> None:
     """A parent restricts a family shelf to one child (`shelf.allowed_profiles`, a reserved
-    parental-control action with freshness). A Work filed only there is shown to every other
-    child on every Shelfhold surface, although her Kavita account never opens that library."""
+    parental-control action with freshness). A Work filed only there is hers alone: no other child
+    sees it on any Shelfhold surface (D-P3)."""
     seed, env = world.seed, world.env
-    add_profile(env, "sib", "child", "10.0.0.9", max_age_rating=10)
+    sibling = add_profile(env, "sib", "child", "10.0.0.9", max_age_rating=10)
     with seed.engine.begin() as connection:
         sib_id = str(
             connection.execute(sa.text("SELECT id FROM user WHERE username='sib'")).scalar()
@@ -280,6 +276,8 @@ def test_review_poc_shelf_restricted_to_another_child_is_not_hers(
     assert run_cli(monkeypatch, env.settings, "search", "rebuild") == 0  # index the new Work
     answer = world.kid.get(SEARCH, params={"q": "Sibling"})
     assert _titles(answer) == [], "a Work on a shelf allowed to another child reaches her"
+    # the control: the child the shelf names finds it
+    assert _titles(sibling.get(SEARCH, params={"q": "Sibling"})) == ["Tale of Sibling Shelf"]
 
 
 # -- O6: "Ajouter directement" is a second door to `shelf.choose_family` -----------------------

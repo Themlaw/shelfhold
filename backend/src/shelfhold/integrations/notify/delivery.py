@@ -1,11 +1,11 @@
 """The way out of a per-person message: the channels the admin configured (EF-INT-021, ENF-SEC-016).
 
-No profile has a destination of its own in the schema, so a message leaves through the instance's
-channels (the same sealed URLs, opened at each send, checked again against the allowlist and the
-SSRF rules of `integrations.apprise.destination`). Several people may read those channels, which is
-why the sender writes no title, series name or request title at all (debt M4: titles in clear
-wait for a destination per profile). No URL, no title and no text of
-an error reaches a log line: a failure is a count and a code.
+A message leaves through the instance's channels (the same sealed URLs, opened at each send,
+checked again against the allowlist and the SSRF rules of `integrations.apprise.destination`).
+Several people may read those channels, which is why what goes there writes no title, series name
+or request title at all: the titles go to the destination of an adult profile, sealed
+(`profile_destination`, M4 L39), and only there. No URL, no title and no text of an error reaches
+a log line: a failure is a count and a code.
 """
 
 from __future__ import annotations

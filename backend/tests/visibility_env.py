@@ -35,6 +35,7 @@ HIDDEN_TITLES = {
     "orphan": "Tale of Orphan Age",
     "adult_edition": "Tale of Grove Adult Edition",
     "misfiled": "Tale of Misfiled Family",
+    "reserved": "Tale of Reserved Shelf",  # rated and young, but filed only on a shelf of another
 }
 
 
@@ -142,16 +143,22 @@ def seed_database(path: Path, *, other_profile: str = "someone-else") -> Seed:
         add("orphan", age=6, rated=False)  # an age but never rated as a whole (a merge's leftover)
         add("adult_edition", age=6)
         add("misfiled", age=None, rated=False)
-        editions["ok"] = _edition(connection, works["ok"], shelf_id=family)
-        editions["twelve"] = _edition(connection, works["twelve"])
+        add("reserved", age=6)
+        editions["ok"] = _edition(connection, works["ok"], shelf_id=adult)
+        editions["twelve"] = _edition(connection, works["twelve"], shelf_id=adult)
         editions["adult_shelf"] = _edition(connection, works["adult_shelf"], shelf_id=adult)
         editions["mixed_rated"] = _edition(connection, works["mixed"], shelf_id=adult)
         editions["mixed_new"] = _edition(connection, works["mixed"], rated=False, lang="fr")
-        editions["above"] = _edition(connection, works["above"])
+        editions["above"] = _edition(connection, works["above"], shelf_id=adult)
+        editions["x"] = _edition(connection, works["x"], shelf_id=adult)
         editions["adult_edition"] = _edition(connection, works["adult_edition"], age=18)
         editions["misfiled"] = _edition(connection, works["misfiled"], rated=False, shelf_id=family)
-        # one rated Work on two shelves: it must still be counted and listed once
+        # one rated Work on two shelves (one of them reserved to another profile): it must still be
+        # counted and listed once, and its Edition on the reserved shelf (`ok_reserved`) is not hers
         editions["ok_second"] = _edition(connection, works["ok"], shelf_id=adult, lang="fr")
+        editions["ok_reserved"] = _edition(connection, works["ok"], shelf_id=family, lang="de")
+        # D-P3 (M4 L39): a rated Work whose only shelf is reserved to another profile
+        editions["reserved"] = _edition(connection, works["reserved"], shelf_id=family)
     return Seed(works, editions, {"family": family, "adult": adult}, engine)
 
 

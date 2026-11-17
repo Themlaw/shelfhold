@@ -14,6 +14,7 @@ from shelfhold.integrations.notify import (
     ChannelDelivery,
     NotificationRouter,
     NotificationSender,
+    ProfileDelivery,
 )
 from shelfhold.jobs.digest_job import KIND
 from shelfhold.ops.status import pending_withdrawal_count
@@ -50,4 +51,5 @@ class LazyNotificationSweep:
             deliver=ChannelDelivery(comp.engine, vault, comp.clock),
             pending_withdrawals=pending_withdrawal_count,
             app_url=comp.settings.public_url,  # the channels are shared: no title, a link instead
+            profile_deliver=ProfileDelivery(comp.engine, comp.vault),  # M4 L39: titles go there
         ).run_once()  # fmt: skip

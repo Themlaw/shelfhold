@@ -46,7 +46,7 @@ _SETTING = "a setting or an identity of the instance: not a reference"
 _LOCK = "a lock, a sentinel, a slot or a schedule: no text from a source"
 EXEMPT_TABLES: Final[dict[str, str]] = {
     "api_key": _SEALED, "app_setting": _SETTING, "backup_run": _SETTING,
-    "destination_account": _SEALED,
+    "destination_account": _SEALED, "notify_destination": _SEALED,
     "contribution": _CATALOG, "contributor": _CATALOG, "contributor_name": _CATALOG,
     "domain_slot": _LOCK, "edition": _CATALOG, "edition_export_series": _CATALOG,
     "export_series": _CATALOG, "export_target": _SEALED, "external_id": _CATALOG,

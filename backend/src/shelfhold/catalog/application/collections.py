@@ -6,10 +6,9 @@ owner and by an admin and by nobody else. A list that is not the reader's is exa
 does not exist: the same absent answer, whatever the identifier.
 
 What a reader is shown of a list is made of the Works she may see, and of nothing else:
-- an item is shown when its Work is visible to her (`queries.visible_work_ids`, the one filter) and,
-  for a child, when an Edition she may see is filed on a shelf open to her
-  (`shelf.allowed_profiles`, the perimeter of the shelves: an Edition on no shelf, or on one
-  reserved to someone else, is not hers); an adult is not narrowed (as everywhere in the app);
+- an item is shown when its Work is visible to her (`queries.visible_work_ids`, the one filter,
+  which for a child holds the shelves open to her: `shelf.allowed_profiles`, D-P3); an adult is not
+  narrowed (as everywhere in the app);
 - the count, the order, the cover and the title come out of the shown items only: places are
   numbered again from 1 among them (no gap says where a hidden one was), the cover is the first
   shown item's, and the name of a household list that holds something hidden from her is withheld
@@ -30,7 +29,6 @@ import sqlalchemy as sa
 
 from shelfhold.catalog.application.queries import (
     ReaderScope,
-    first_open_covers,
     first_visible_covers,
     visible_work_ids,
 )
@@ -161,11 +159,8 @@ def _shown_works(
     may see (None when it has none). Absent and hidden are the same: not in the answer."""
     unique = sorted(set(work_ids))
     seen = visible_work_ids(connection, viewer.scope, unique)
-    if viewer.scope.unrestricted:
-        covers = first_visible_covers(connection, viewer.scope, sorted(seen))
-        return {work: covers[work][1] if work in covers else None for work in sorted(seen)}
-    covers = first_open_covers(connection, viewer.scope, viewer.user_id, sorted(seen))
-    return {work: ref for work, (_edition, ref) in covers.items()}
+    covers = first_visible_covers(connection, viewer.scope, sorted(seen))
+    return {work: covers[work][1] if work in covers else None for work in sorted(seen)}
 
 
 def _titles(connection: sa.Connection, work_ids: Sequence[str]) -> dict[str, str]:

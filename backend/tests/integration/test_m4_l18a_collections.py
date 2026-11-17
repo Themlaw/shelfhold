@@ -340,8 +340,8 @@ def test_the_cover_of_a_list_is_never_a_hidden_works(world: World) -> None:
     reserved_cover = f"covers/{'c' * 64}.webp"
     with world.seed.engine.begin() as c:
         point_at(c, editions["above"], hidden_cover)  # a Work above her ceiling
-        point_at(c, editions["ok_second"], shown_cover)  # an Edition on a shelf open to her
-        point_at(c, editions["ok"], reserved_cover)  # an Edition on a shelf reserved to another
+        point_at(c, editions["ok"], shown_cover)  # an Edition on a shelf open to her
+        point_at(c, editions["ok_reserved"], reserved_cover)  # on a shelf reserved to another
     shared = _make(world, world.env.client, "Covers", "shared")
     _force_items(world, shared, [works["above"], works["ok"]])  # the hidden one comes first
     admin = world.env.client.get(f"{COLLECTIONS}/{shared}").json()

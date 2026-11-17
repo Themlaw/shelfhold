@@ -21,7 +21,6 @@ from sqlalchemy.exc import IntegrityError
 
 from shelfhold.catalog.application.queries import (
     ReaderScope,
-    first_open_covers,
     first_visible_covers,
     visible_work_ids,
 )
@@ -168,16 +167,12 @@ def _shown_works(
     connection: Connection, scope: ReaderScope, profile_id: str, work_ids: Sequence[str]
 ) -> dict[str, tuple[str | None, str | None]]:
     """The Works of `work_ids` this reader may see, each with the first Edition she may see and
-    its cover. An adult is not narrowed; a child sees a Work only through an Edition filed on a
-    shelf open to her (`shelf.allowed_profiles`, as in her collections). Absent and hidden are the
-    same: not in the answer."""
+    its cover: the one filter already holds the shelves (D-P3). Absent and hidden are the same:
+    not in the answer."""
     unique = sorted(set(work_ids))
     seen = sorted(visible_work_ids(connection, scope, unique))
-    if scope.unrestricted:
-        found = first_visible_covers(connection, scope, seen)
-        return {work: found.get(work, (None, None)) for work in seen}
-    covers = first_open_covers(connection, scope, profile_id, seen)
-    return {work: (edition, ref) for work, (edition, ref) in covers.items()}
+    found = first_visible_covers(connection, scope, seen)
+    return {work: found.get(work, (None, None)) for work in seen}
 
 
 def relations_shown(

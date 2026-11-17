@@ -16,6 +16,7 @@ import base64
 import hashlib
 import sys
 from collections.abc import Iterator
+from datetime import timedelta
 from typing import Any
 
 import pytest
@@ -269,6 +270,10 @@ CLOSED = (
     "GET /api/v1/sync-status",  # M4 L33b: the sync state per member, an adult session only
     "PUT /api/v1/profiles/{user_id}/destination-accounts/{shelf_destination_id}",
     "DELETE /api/v1/profiles/{user_id}/destination-accounts/{shelf_destination_id}",
+    # M4 L39 (EF-INT-021): the destination of an adult's own notices; a child has none
+    "GET /api/v1/me/notification-destination",
+    "PUT /api/v1/me/notification-destination",
+    "DELETE /api/v1/me/notification-destination",
     "GET /api/v1/audit/kavita-accounts",  # M3 L10: the audit of the Kavita accounts, the admin's
     "POST /api/v1/audit/kavita-accounts",
     "PUT /api/v1/profiles/{profile_id}/visibility",
@@ -419,7 +424,8 @@ class World:
         """What must never reach a child: the titles and the ids of every hidden Work."""
         hidden = [self.seed.title_of(k) for k in HIDDEN_FROM_CEILING_10]
         return hidden + [self.seed.works[k] for k in HIDDEN_FROM_CEILING_10] + [
-            self.seed.editions[k] for k in ("above", "adult_edition", "misfiled", "mixed_new")
+            self.seed.editions[k]
+            for k in ("above", "adult_edition", "misfiled", "mixed_new", "reserved")
         ]  # fmt: skip
 
     def clean(self, text: str) -> None:
@@ -1250,6 +1256,7 @@ def _notification_built_for_a_child(world: World) -> None:
                 {"unit_id": unit_id, "edition_id": edition_id or new_ulid(), "work_id": work_id},
             )  # fmt: skip
         bus.deliver([published])
+    clock.advance(timedelta(days=1))  # a child is never told at once: the digest, tomorrow 08:00
     NotificationSender(engine, clock, deliver=deliver, pending_withdrawals=lambda _c: 0).run_once()
     channel = "\n".join(t for _u, t in sent)  # everything, whoever it was for
     world.clean(channel)
@@ -1273,18 +1280,21 @@ def test_unrated_invisible_to_child_on_all_surfaces(world: World, surface: str) 
 
 
 @pytest.mark.req("EF-USR-006", "EF-USR-015")
-def test_visibility_scope_by_library_not_shelf(world: World) -> None:
-    """What a child sees follows the age of the Work against her own ceiling (the library her
-    profile opens), never the shelf an Edition happens to be filed on."""
+def test_visibility_scope_by_open_shelf(world: World) -> None:
+    """ADR-0027 as amended by D-P3 (M4 L39): what a child sees follows the age of the Work against
+    her own ceiling **and** the shelves: a Work is hers only if at least one shelf that carries it
+    is open to her (`allowed_profiles` empty, or naming her)."""
     seed, ids = world.seed, world.seed.works
     with seed.engine.connect() as connection:
         shown = {k for k, w in ids.items() if work_is_visible(connection, scope_of("child", 10), w)}
     assert shown == VISIBLE_FOR_CEILING_10
-    # a rated Work on an adult shelf (no ceiling) is hers; the shelf does not hide it
+    # a rated Work on an adult shelf (open to everyone) is hers
     assert "adult_shelf" in shown
     # an unrated Work misfiled on the family shelf is still not hers: the shelf does not show it
     assert "misfiled" not in shown and "unrated" not in shown
-    # a shelf whose `allowed_profiles` names someone else does not take a Work away from her
+    # a shelf whose `allowed_profiles` names someone else takes the Work away from her ...
+    assert "reserved" not in shown
+    # ... unless another shelf that carries it is open to her
     assert "ok" in shown
     # a Work on two shelves is one Work: listed and counted once
     with seed.engine.connect() as connection:
@@ -1359,7 +1369,7 @@ def test_ceiling_lowered_takes_effect_on_the_next_request(world: World) -> None:
 @pytest.mark.req("EF-USR-006")
 def test_reader_scope_comes_from_the_profile_row(world: World) -> None:
     engine = world.seed.engine
-    assert reader_scope(engine, world.kid_id) == scope_of("child", 10)
+    assert reader_scope(engine, world.kid_id) == scope_of("child", 10, world.kid_id)
     assert reader_scope(engine, MISSING).kind == "none"  # unknown: nothing
     admin_id = str(
         engine.connect().execute(sa.text("SELECT id FROM user WHERE role='admin'")).scalar()
@@ -1371,6 +1381,8 @@ def test_reader_scope_comes_from_the_profile_row(world: World) -> None:
 @pytest.mark.req("EF-USR-006")
 def test_adults_search_the_whole_catalogue_children_do_not(world: World) -> None:
     mum = add_profile(world.env, "mum", "member", "10.0.0.3")
-    assert len(mum.get(SEARCH, params={"q": "Tale", "limit": 200}).json()["items"]) == 11
+    assert len(mum.get(SEARCH, params={"q": "Tale", "limit": 200}).json()["items"]) == len(
+        VISIBLE_TITLES
+    ) + len(HIDDEN_TITLES)
     # `scope=all` stays the administrator's: a child has the family search, a member nothing
     assert mum.get(SEARCH, params={"q": "Tale", "scope": "all"}).status_code == 403

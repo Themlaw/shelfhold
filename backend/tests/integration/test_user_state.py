@@ -58,6 +58,14 @@ def _works(env: AuthEnv) -> None:
             work_id, kind, title, title.lower(), age, x,
             None if age is None else "2026-11-01 10:00:00",  # rated by an admin (M3 L09)
         )  # fmt: skip
+    shelf = "01HZZZZZZZZZZZZZZZZZZZZZZS"  # D-P3: a child sees what a shelf open to her carries
+    _sql(env, "INSERT INTO shelf (id, name, phrase) VALUES (?, 'Open', 'open')", shelf)
+    _sql(
+        env,
+        "INSERT INTO edition (id, work_id, lang, translation_type, media, rated_at, shelf_id) "
+        "VALUES (?, ?, 'en', 'official', 'images', '2026-11-01 10:00:00', ?)",
+        "01HZZZZZZZZZZZZZZZZZZZZZZE", OK_WORK, shelf,
+    )  # fmt: skip
     for work_id, lang, kind_, title in (
         (OK_WORK, "ja", "localized", "ある題名"),
         (OK_WORK, "en", "localized", "A title"),

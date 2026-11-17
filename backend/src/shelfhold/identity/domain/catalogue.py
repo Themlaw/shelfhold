@@ -93,6 +93,10 @@ _DECLARED = (
     # it is fresh in every profile and never a key's; erasing one is undone by pasting it again
     _action("destination_account.bind", Effect.TOUCHES_SECRETS),
     _action("destination_account.revoke", Effect.MANAGES_CREDENTIALS),
+    # The Apprise destination of one adult profile (M4 L39, EF-INT-021): the titles of their
+    # notices go there, so it is handing over a secret (a URL with a token): fresh in every
+    # profile, never a key's, never a child's
+    _action("notify.profile_destination", Effect.TOUCHES_SECRETS),
     # Parental control
     _action("shelf.max_age_rating", Effect.PARENTAL_CONTROL),
     _action("shelf.allowed_profiles", Effect.PARENTAL_CONTROL),
