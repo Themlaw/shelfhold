@@ -19,6 +19,7 @@ until = "permanent"
 symbols = [
   "shelfhold.events.operating:M1B",
   "shelfhold.events.operating:WAITING_WITHOUT_EVENT",
+  "shelfhold.export.targets.kavita.routes:HUB_ROUTES",
   "shelfhold.export.targets.kavita.routes:SETUP_ROUTES",
   "shelfhold.identity.domain.emitters:DELETION_SITES",
   "shelfhold.identity.domain.emitters:REPLACEMENT_SITES",

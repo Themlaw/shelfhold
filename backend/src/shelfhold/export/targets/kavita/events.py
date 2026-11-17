@@ -76,9 +76,13 @@ def _frames(data: bytes) -> list[str]:
     return [f for f in text.split(RECORD_SEPARATOR) if f][:MAX_FRAMES]
 
 
+def _events_of(frames: Sequence[str]) -> list[ScanEvent]:
+    return [event for frame in frames if (event := _event_of(frame)) is not None]
+
+
 def parse_hub_frames(data: bytes) -> list[ScanEvent]:
     """The watched events of the frames in `data` (record-separated), the rest dropped."""
-    return [event for frame in _frames(data) if (event := _event_of(frame)) is not None]
+    return _events_of(_frames(data))
 
 
 class _State(Enum):
@@ -105,6 +109,8 @@ class HubSession:
         return (json.dumps({"protocol": "json", "version": 1}) + RECORD_SEPARATOR).encode()
 
     def receive(self, data: bytes) -> list[ScanEvent]:
+        if self._state is _State.OPEN:
+            return parse_hub_frames(data)
         frames = _frames(data)
         if self._state is _State.CLOSED:
             return []
@@ -114,7 +120,7 @@ class HubSession:
                 return []
             self._state = _State.OPEN
             frames = frames[1:]
-        return [event for frame in frames if (event := _event_of(frame)) is not None]
+        return _events_of(frames)
 
 
 class ArrivalEventWatcher:
