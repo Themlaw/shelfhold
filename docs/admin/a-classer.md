@@ -40,16 +40,41 @@ d'une Édition passe par `POST /api/v1/editions/{id}/shelf`.
 ## Écran
 
 L'écran « À classer » de l'interface (`/a-classer`) fait la même chose avec une session
-administrateur : classer une Œuvre, classer par lot, voir le plan de retrait qu'un relèvement
-produit (affiché, jamais appliqué). Les titres sont affichés comme du texte. Sans session, la page
-répond « Connexion requise » : connectez-vous d'abord. Classer une Édition seule se fait par la CLI.
+administrateur : classer une Œuvre, classer une sélection en masse, voir le plan de retrait qu'un
+relèvement produit (affiché, jamais appliqué). Les titres sont affichés comme du texte. Sans session,
+la page répond « Connexion requise » : connectez-vous d'abord. Classer une Édition seule se fait par la
+CLI.
+
+### Classer en masse : une sélection, un aperçu, un seul travail
+
+On ne classe plus « tout ce qui attend » depuis l'écran : on **choisit**.
+
+1. Cochez les Œuvres (ou « toutes celles qui correspondent au filtre » : le filtre est alors figé en
+   la liste de ce qu'il couvre à ce moment-là), choisissez l'âge, demandez l'**aperçu**. L'aperçu ne
+   classe rien : il dit combien d'Œuvres seront classées, lesquelles, et combien d'identifiants ont été
+   ignorés (déjà classés, inconnus : ils ne sont pas nommés). Un aperçu non appliqué est oublié après
+   30 minutes.
+2. **Appliquez** : un seul travail est mis en file (`library.bulk_rate`), visible dans la file. Il ne
+   porte que l'identifiant de la commande. Il relit la sélection **sous verrou d'écriture** : si l'une
+   des Œuvres choisies a changé depuis l'aperçu (classée entre-temps par quelqu'un d'autre), **rien**
+   n'est classé et le travail finit en erreur `bulk.stale` ; refaites l'aperçu. Une Œuvre hors de la
+   sélection n'est jamais touchée, même si la liste a changé. Une ligne d'audit par Œuvre, qui nomme la
+   commande.
+3. La commande appartient à celui qui a fait l'aperçu : celle d'un autre profil, un identifiant forgé et
+   un aperçu expiré reçoivent la même réponse (404). Une commande ne s'applique qu'une fois (409 ensuite).
+
+API : `POST /api/v1/bulk/rate/preview` (`{age, work_ids}` ou `{age, filter}`), puis
+`POST /api/v1/bulk/rate/{order_id}/apply` (`{confirm}`), qui répond `202` avec le `job_id`. Si
+l'administrateur perd le droit de classer entre la commande et le travail, le travail finit en erreur
+`bulk.refused` et ne classe rien. Rejouer ou relancer ce travail (`jobs retry`, `jobs replay`) demande la
+même session fraîche que l'ordre.
 
 ## Droits
 
 Classer est une action réservée à l'administrateur : une clé d'API ou un jeton est refusé (403). Elle
 exige un mot de passe (ou une passkey) saisi il y a moins de 900 s (`SHELFHOLD_FRESH_AUTH_S`), **dans tous
 les profils** : sinon un 401 `reauth-required` ouvre la ré-authentification sur place, puis rejoue la même
-action. Le classement par lot et `shelfhold rate` en ligne de commande suivent la même règle (la console de
+action. Le classement en masse (aperçu et application) et `shelfhold rate` en ligne de commande suivent la même règle (la console de
 l'hôte est exemptée). Voir
 [roles.md](roles.md).
 
