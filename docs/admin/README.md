@@ -27,7 +27,6 @@ et ne change rien à l'installation (voir [vérifier les images](verifier-les-im
 | Importer une sauvegarde Mihon (`.tachibk`) : aperçu, séries en attente, marqueurs de lecture, indices de suivi | [import-mihon.md](import-mihon.md) |
 | Où Shelfhold range les livres : destinations (Kavita, dossier natif, Komga, CWA), fan-out, compte Kavita de chaque membre, retrait | [destinations.md](destinations.md) |
 | La synchronisation de la progression avec Kavita : ce que le job fait, renommages, état par membre | [sync.md](sync.md) |
-| Ce qui sort de l'instance : destination de notification de chaque adulte, webhooks signés (état) | [webhooks.md](webhooks.md) |
 | Les métriques Prometheus (`/metrics`) : interrupteur, clé de portée `metrics`, familles exposées | [metrics.md](metrics.md) |
 | Remplacer un chapitre par une meilleure version, ce que voient Kavita et KOReader | [mise-a-niveau.md](mise-a-niveau.md) |
 | Révisions republiées par une source, version suspecte, chapitre retiré à la source | [revisions-en-attente.md](revisions-en-attente.md) |

@@ -27,7 +27,6 @@ PLUGINS = ROOT / "docs" / "plugins"
 NEW_PAGES = [
     ADMIN / "destinations.md",
     ADMIN / "sync.md",
-    ADMIN / "webhooks.md",
     ADMIN / "metrics.md",
     FAMILY / "progression.md",
 ]
@@ -97,20 +96,6 @@ def test_sync_page_matches_the_code() -> None:
 
 
 @pytest.mark.req("ENF-DOC-001")
-def test_webhooks_page_matches_the_code() -> None:
-    """The webhooks page says what leaves the instance today (the notification channels, the
-    per-profile destination) and that the outbox and its signed webhooks are not there yet."""
-    text = _text(ADMIN / "webhooks.md")
-    assert "/api/v1/me/notification-destination" in text  # M4 L39
-    assert "[notifications.md](notifications.md)" in text  # the admin channels live there
-    for scheme in ("ntfy", "gotify", "matrix", "discord", "slack", "tgram", "pover"):
-        assert scheme in text, scheme  # the closed list of the allowed schemes
-    assert "digest" in text and "immediate" in text  # notify_mode
-    assert "HMAC" in text and "pas encore disponible" in text  # the outbox (EF-INT-005)
-    assert "pas encore d'écran" in text  # the profile destination is API-only (L39)
-
-
-@pytest.mark.req("ENF-DOC-001")
 def test_metrics_page_matches_the_code() -> None:
     """The metrics page names the switch, the only credential that reads the route, and the
     families the scrape really renders."""
@@ -172,7 +157,7 @@ def test_destination_plugin_page_names_the_delivered_kit() -> None:
 @pytest.mark.req("ENF-DOC-001")
 def test_new_pages_are_indexed() -> None:
     admin = _text(ADMIN / "README.md")
-    for page in ("destinations.md", "sync.md", "webhooks.md", "metrics.md"):
+    for page in ("destinations.md", "sync.md", "metrics.md"):
         assert page in admin, page
     assert "progression.md" in _text(FAMILY / "README.md")
 
