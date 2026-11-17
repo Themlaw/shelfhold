@@ -291,6 +291,7 @@ FRESHNESS_LINE = {
             "contributor.set_died_for_france",  # M2 L15b: a legal fact about a person
             "export.all",  # M3 L37: every profile's data leaves the instance
             "import.all",  # M3 L37: a whole instance comes in
+            "import.tachibk",  # M4 L26: another app's backup writes series and markers in a profile
             "restore.acknowledge",
             "admin_risk.accept",
             "shelf.purge_upstream",

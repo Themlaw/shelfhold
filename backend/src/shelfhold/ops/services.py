@@ -21,6 +21,7 @@ from sqlalchemy import Engine
 
 from shelfhold.acquisition.application.request_lists import RequestListService
 from shelfhold.acquisition.application.requests import RequestService
+from shelfhold.acquisition.application.tachibk_import import TachibkImportService
 from shelfhold.acquisition.application.unit_follow import suppress_follow
 from shelfhold.acquisition.public import FOLLOW_JOB_KIND, make_all_due
 from shelfhold.catalog.lang import LANG_NORMALIZER_ID, LanguageError, edition_key_lang
@@ -241,6 +242,7 @@ class OpsServices:
         acquire: AcquireOps | None = None,
         requests: RequestService | None = None,
         request_lists: RequestListService | None = None,
+        tachibk_import: TachibkImportService | None = None,
         roots: RootOps | None = None,
         maintenance: MaintenanceOps | None = None,
         kavita_accounts: KavitaAccountsOps | None = None,
@@ -287,6 +289,7 @@ class OpsServices:
         self._acquire = acquire
         self._requests = requests
         self._request_lists = request_lists
+        self._tachibk_import = tachibk_import
         self._roots = roots
         self._maintenance = maintenance
         self._kavita_accounts = kavita_accounts
@@ -909,6 +912,13 @@ class OpsServices:
         if self._request_lists is None:
             raise ExitUnavailableError("request lists are not connected")
         return self._request_lists
+
+    @property
+    def tachibk_import(self) -> TachibkImportService:
+        """Import a Mihon backup: preview, then apply (EF-INT-008)."""
+        if self._tachibk_import is None:
+            raise ExitUnavailableError("the backup import is not connected")
+        return self._tachibk_import
 
     @property
     def requests(self) -> RequestService:

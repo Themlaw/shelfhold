@@ -24,6 +24,7 @@ et ne change rien à l'installation (voir [vérifier les images](verifier-les-im
 | Comprendre « libre de droits aux États-Unis », régler le pays de l'instance | [domaine-public.md](domaine-public.md) |
 | Voir l'historique d'activité, bloquer un chapitre que la source repropose, suivre l'espace par étagère et le trafic par source | [historique-et-stockage.md](historique-et-stockage.md) |
 | Importer une liste de livres voulus (texte, CLI ou écran), étagère de lecture d'un enfant, un seul écran de validation | [listes-importees.md](listes-importees.md) |
+| Importer une sauvegarde Mihon (`.tachibk`) : aperçu, séries en attente, marqueurs de lecture, indices de suivi | [import-mihon.md](import-mihon.md) |
 | Remplacer un chapitre par une meilleure version, ce que voient Kavita et KOReader | [mise-a-niveau.md](mise-a-niveau.md) |
 | Révisions republiées par une source, version suspecte, chapitre retiré à la source | [revisions-en-attente.md](revisions-en-attente.md) |
 | Effacer pour de bon (`purge --now`, `--checkpoint`, `--leftovers`) | [purge.md](purge.md) |

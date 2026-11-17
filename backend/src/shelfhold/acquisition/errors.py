@@ -83,6 +83,13 @@ CODES: tuple[ErrorCode, ...] = (
     ErrorCode("request.invalid_target", 422, "user"),
     ErrorCode("request.too_many_pending", 429, "user"),
     ErrorCode("request.invalid_list", 422, "user"),  # EF-USR-020: a list over a bound or not text
+    ErrorCode(
+        "import.tachibk_invalid", 422, "user"
+    ),  # EF-INT-008: a backup over a bound, or not one
+    ErrorCode("import.tachibk_schema", 422, "user"),  # a generation of the format this build lacks
+    ErrorCode("import.tachibk_not_found", 404, "user"),  # no such batch or profile: one answer
+    ErrorCode("import.tachibk_applied", 409, "admin"),  # a preview is applied once
+    ErrorCode("import.tachibk_unavailable", 503, "admin"),  # the bounded reader could not run
     ErrorCode("request.invalid_reason", 422, "admin"),
     ErrorCode("request.choose_age", 422, "admin"),  # rating a child's request is approving it
     ErrorCode("request.confirmation_required", 409, "admin"),  # over 100 Units or 5 GiB

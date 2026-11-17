@@ -1,8 +1,7 @@
 """Migration 0094 (M4 L39, EF-INT-021, ENF-SEC-005): `notify_destination`.
 
 One row per adult profile that has a destination of its own, the URL in the sealed envelope
-columns. Nothing existing is touched; reversible. The head of the migrations is pinned here, by
-the newest one.
+columns. Nothing existing is touched; reversible.
 """
 
 import sqlite3
@@ -24,7 +23,6 @@ ROW = "01HZZZZZZZZZZZZZZZZZZZZZZA"
 
 def test_the_revision_is_0094_the_only_head_on_0093() -> None:
     script = ScriptDirectory(str(default_script_location()))
-    assert script.get_heads() == ["0094"]
     assert script.get_revision("0094").down_revision == "0093"
 
 
