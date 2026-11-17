@@ -1,0 +1,68 @@
+name: publish-mirror
+
+# ENF-GOV-004 (ADR-0029): the repository, its branch main and its version tags, copied to a mirror
+# outside GitHub, so that the code survives a removal here. Optional: only when the secret
+# CODEBERG_TOKEN exists. Without it the job succeeds and says so in its summary (GitHub stays the
+# only home, and the requirement stays open). The token is handed to the push step and to nothing
+# else; a fork's pull request never starts this workflow (no such trigger). It is a separate
+# workflow: a mirror that is down never blocks main nor a release.
+on:
+  push:
+    branches: ["main"]
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: publish-mirror
+  cancel-in-progress: false
+
+jobs:
+  mirror:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - name: Mirror, detection (optional, never fails without the token)
+        id: token
+        env:
+          HAS_TOKEN: ${{ secrets.CODEBERG_TOKEN != '' }}
+        run: |
+          if [ "$HAS_TOKEN" = true ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            {
+              echo "### Repository mirror: skipped"
+              echo "The secret \`CODEBERG_TOKEN\` is absent: nothing was pushed to the mirror, GitHub is the only home of the code (ENF-GOV-004 stays open). Nothing failed."
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: steps.token.outputs.enabled == 'true'
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Mirror, check the target
+        if: steps.token.outputs.enabled == 'true'
+        env:
+          OWNER: ${{ github.repository_owner }}
+          REPO_NAME: ${{ github.event.repository.name }}
+          MIRROR_URL: ${{ vars.MIRROR_URL }}
+          REF_TYPE: ${{ github.ref_type }}
+          REF_NAME: ${{ github.ref_name }}
+          SHA: ${{ github.sha }}
+        run: .github/scripts/publish-mirror.sh check
+      - name: Mirror, push (the only step that holds the token)
+        if: steps.token.outputs.enabled == 'true'
+        env:
+          MIRROR_TOKEN: ${{ secrets.CODEBERG_TOKEN }}
+          MIRROR_USER: ${{ vars.SECOND_REGISTRY_USER || github.repository_owner }}
+          OWNER: ${{ github.repository_owner }}
+          REPO_NAME: ${{ github.event.repository.name }}
+          MIRROR_URL: ${{ vars.MIRROR_URL }}
+          REF_TYPE: ${{ github.ref_type }}
+          REF_NAME: ${{ github.ref_name }}
+          SHA: ${{ github.sha }}
+        run: .github/scripts/publish-mirror.sh push

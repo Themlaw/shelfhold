@@ -9,7 +9,7 @@ import hashlib
 import re
 from html.parser import HTMLParser
 from typing import Protocol
-from urllib.parse import quote
+from urllib.parse import quote, urlsplit
 
 IMMUTABLE_CACHE = "public, max-age=31536000, immutable"
 NO_CACHE = "no-cache"
@@ -174,4 +174,16 @@ def require_web_url(url: str) -> str:
     """`source_url` ends in an `href` of every screen: http(s) only, no space, quote or bracket."""
     if _WEB_URL.fullmatch(url) is None:
         raise ValueError("the source address must be an http(s) URL")
+    return url
+
+
+def require_plain_web_url(url: str) -> str:
+    """An address the instance will call (update check, plugin index): http(s), and nothing in it
+    that is a credential: no `user:password@`, no query or fragment (a token travels there)."""
+    require_web_url(url)
+    parts = urlsplit(url)
+    if parts.username is not None or parts.password is not None or "@" in parts.netloc:
+        raise ValueError("the address must not carry credentials")
+    if parts.query or parts.fragment or not parts.hostname:
+        raise ValueError("the address must be a plain http(s) URL: no query, no fragment")
     return url

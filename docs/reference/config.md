@@ -25,6 +25,8 @@ Version du schéma de `config.toml` : `1.0`. Précédence : variable d'environne
 | `SHELFHOLD_PLUGIN_REPOS` | `plugin_repos` | liste de str | aucun |  | `SHELFHOLD_PLUGIN_REPOS_FILE` en lit la valeur dans un fichier |
 | `SHELFHOLD_ACTIVE_SOURCES` | `active_sources` | liste de str | aucun |  | `SHELFHOLD_ACTIVE_SOURCES_FILE` en lit la valeur dans un fichier |
 | `SHELFHOLD_SOURCE_URL` | `source_url` | str (optionnel) | aucun |  | `SHELFHOLD_SOURCE_URL_FILE` en lit la valeur dans un fichier |
+| `SHELFHOLD_UPDATE_CHECK_URL` | `update_check_url` | str (optionnel) | aucun |  | `SHELFHOLD_UPDATE_CHECK_URL_FILE` en lit la valeur dans un fichier |
+| `SHELFHOLD_PLUGIN_INDEX_URL` | `plugin_index_url` | str (optionnel) | aucun |  | `SHELFHOLD_PLUGIN_INDEX_URL_FILE` en lit la valeur dans un fichier |
 | `SHELFHOLD_RECEIVED_CBZ_MAX_BYTES` | `received_cbz_max_bytes` | int | `536870912` | >= 1048576 | `SHELFHOLD_RECEIVED_CBZ_MAX_BYTES_FILE` en lit la valeur dans un fichier |
 | `SHELFHOLD_AUTH_HARDENED` | `auth_hardened` | bool | `false` |  | `SHELFHOLD_AUTH_HARDENED_FILE` en lit la valeur dans un fichier |
 | `SHELFHOLD_METRICS_ENABLED` | `metrics_enabled` | bool | `false` |  | `SHELFHOLD_METRICS_ENABLED_FILE` en lit la valeur dans un fichier |

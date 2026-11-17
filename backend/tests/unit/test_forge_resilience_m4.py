@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import json
 import re
+import subprocess
 from pathlib import Path
 from typing import Any
 
@@ -91,7 +92,7 @@ def test_update_check_failure_is_silent(answer: Response | BaseException) -> Non
     assert status.state == "failed" and status.latest is None and not status.newer
     levels = {entry["log_level"] for entry in logs}
     assert levels == {"info"}, logs  # never a warning or an error: it blocks nothing
-    assert len(logs) == 1 and logs[0]["event"] == "update_check_failed"
+    assert len(logs) == 1 and logs[0]["event"] == "update_check.failed"
 
 
 @pytest.mark.req("ENF-GOV-004")
@@ -182,15 +183,15 @@ def test_the_index_documents_that_the_signature_authenticates_not_the_host() -> 
 # --- the mirror workflow ----------------------------------------------------------------------
 
 
-def _wf() -> dict[str, Any]:
-    loaded: dict[str, Any] = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))
+def _wf() -> dict[Any, Any]:
+    loaded: dict[Any, Any] = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))
     return loaded
 
 
 @pytest.mark.req("ENF-GOV-004")
 def test_publish_mirror_token_only_in_push_step() -> None:
-    wf = _wf()
-    triggers = wf.get(True) or wf.get("on")
+    wf: dict[Any, Any] = _wf()
+    triggers: dict[str, Any] = wf.get("on") or dict(wf)[True]  # YAML 1.1 reads `on` as True
     assert set(triggers) <= {"push", "workflow_dispatch"}  # never a pull request
     assert triggers["push"]["branches"] == ["main"] and triggers["push"]["tags"] == ["v*"]
     assert wf["permissions"] == {}
@@ -218,8 +219,8 @@ def test_publish_mirror_token_only_in_push_step() -> None:
     assert checkout["with"]["fetch-depth"] == 0
     # the token is never on a command line or echoed
     text = WORKFLOW.read_text(encoding="utf-8")
-    assert not re.search(r"echo[^\n]*(CODEBERG|TOKEN)|--password|https://[^\s/]*:[^\s/@]*@", text)
-    assert "pull_request" not in text.replace("never a pull request", "")
+    assert not re.search(r"echo[^\n]*(\$\{?\w*TOKEN|secrets\.)|--password|https://[^\s/]*:[^\s/@]*@", text)
+    assert "pull_request" not in text
 
 
 @pytest.mark.req("ENF-GOV-004")
@@ -274,3 +275,55 @@ def test_the_requirement_stays_deferred_until_the_first_signed_publication() -> 
     exceptions = tomllib.loads((ROOT / "tools" / "traceability-exceptions.toml").read_text("utf-8"))
     (deferred,) = [d for d in exceptions["deferred"] if d["requirement"] == "ENF-GOV-004"]
     assert deferred["reason"].startswith("M4") and "D-P1" in deferred["reason"]
+
+
+# --- the push script: the token only ever goes to the known host ---------------------------------
+
+SCRIPT = ROOT / ".github" / "scripts" / "publish-mirror.sh"
+SHA = "a" * 40
+
+
+def _script(mode: str, tmp_path: Path, **env: str) -> tuple[int, str]:
+    base = {
+        "PATH": "/usr/bin:/bin",
+        "OWNER": "Acme",
+        "REPO_NAME": "Shelfhold",
+        "REF_TYPE": "branch",
+        "REF_NAME": "main",
+        "SHA": SHA,
+        "GITHUB_STEP_SUMMARY": str(tmp_path / "summary"),
+    }
+    done = subprocess.run(  # noqa: S603
+        ["bash", str(SCRIPT), mode], env={**base, **env}, capture_output=True, text=True, check=False
+    )
+    return done.returncode, done.stdout + done.stderr
+
+
+@pytest.mark.req("ENF-GOV-004")
+def test_publish_mirror_default_target_and_refs(tmp_path: Path) -> None:
+    code, out = _script("check", tmp_path)
+    assert code == 0 and "https://codeberg.org/acme/shelfhold.git" in out
+    assert "refs/heads/main" in out
+    code, out = _script("check", tmp_path, REF_TYPE="tag", REF_NAME="v1.2.0")
+    assert code == 0 and "refs/tags/v1.2.0" in out
+
+
+@pytest.mark.req("ENF-GOV-004")
+@pytest.mark.parametrize(
+    "env",
+    [
+        {"MIRROR_URL": "https://evil.example.net/acme/shelfhold.git"},
+        {"MIRROR_URL": "http://codeberg.org/acme/shelfhold.git"},
+        {"MIRROR_URL": "https://user:pw@codeberg.org/acme/shelfhold.git"},
+        {"MIRROR_URL": "https://codeberg.org.evil.example/acme/shelfhold.git"},
+        {"MIRROR_URL": "https://codeberg.org/acme/../x.git"},
+        {"REF_NAME": "feature"},
+        {"REF_TYPE": "tag", "REF_NAME": "v1.2"},
+        {"REF_TYPE": "tag", "REF_NAME": "v1.2.0;rm -rf x"},
+        {"SHA": "HEAD"},
+    ],
+)
+def test_publish_mirror_script_refuses_hostile_input(tmp_path: Path, env: dict[str, str]) -> None:
+    code, out = _script("push", tmp_path, MIRROR_TOKEN="not-a-real-token"  # noqa: S106, **env)
+    assert code != 0
+    assert "not-a-real-token" not in out
