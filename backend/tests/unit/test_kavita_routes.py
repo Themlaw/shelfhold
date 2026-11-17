@@ -77,6 +77,20 @@ def test_kavita_adapter_calls_only_allowlisted_routes() -> None:
         await client.series_files(series)
         await client.set_series_age(await client.series_age(series), 8)
         await client.set_series_related(series, await client.series_related(series))
+        # the collections and the reading lists of the service account (L18b)
+        await client.collection_add(0, "Synthetic picks", [series])
+        shelf = (await client.own_collections())[0]
+        await client.series_of_collection(shelf.id)
+        await client.collection_promote(shelf.id, True)
+        await client.collection_remove(shelf, [series])
+        await client.collection_delete(shelf.id)
+        listed = await client.reading_list_create("Synthetic order")
+        await client.reading_list_add(listed, series)
+        await client.own_reading_lists()
+        for item_id, _series in await client.reading_list_items(listed):
+            await client.reading_list_delete_item(listed, item_id)
+        await client.reading_list_promote(listed, True)
+        await client.reading_list_delete(listed)
 
     run(session())
     seen = {(r.method, r.path) for r in h.fake.requests}

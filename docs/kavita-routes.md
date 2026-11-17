@@ -37,6 +37,18 @@ transmise à un plugin de destination ; seule `scan-folder` la reçoit aussi dan
 | POST | `/api/Series/metadata` | Pousser l'âge de série **verrouillé** (`ageRating`, `ageRatingLocked`) : le document lu est renvoyé tel quel avec ces deux seuls champs changés, car Kavita applique le document entier ; seulement pour un champ du registre `field_owner` ou libre, jamais pour un verrou d'un tiers (EF-EXP-040, EF-EXP-057) ; exige un compte administrateur | M1b |
 | GET | `/api/Series/all-related` | Lire les relations d'une série (`RelatedSeriesDto`) avant d'écrire les siennes : ce que des tiers y ont mis est repris tel quel (L19, EF-BIB-039) | M4 |
 | POST | `/api/Series/update-related` | Poser les « séries liées » d'une série (`UpdateRelatedSeriesDto`) : le document relu, avec pour seuls changements les relations que Shelfhold a posées ; par le compte de service, entre séries de bibliothèques ouvertes aux mêmes profils seulement ; exige un compte administrateur (L19, EF-BIB-039) | M4 |
+| GET | `/api/Collection` | Lister les collections du compte de service (`ownedOnly`) : retrouver ce que Shelfhold y a créé, après un arrêt entre l'envoi et l'inscription (L18b, EF-EXP-025) |
+| POST | `/api/Collection/update-for-series` | Créer une collection (`collectionTagId` 0 et son titre) ou y ajouter des séries, sous le compte de service ; exige un compte administrateur (L18b, EF-EXP-025) |
+| POST | `/api/Collection/update-series` | Retirer des séries d'une collection que Shelfhold a remplie (`seriesIdsToRemove`), le document `tag` relu et renvoyé tel quel ; seulement ce que le registre dit avoir été posé par Shelfhold (L18b, EF-EXP-025) |
+| POST | `/api/Collection/promote-multiple` | Promouvoir ou retirer la promotion d'une collection du compte de service ; retirer la promotion passe même en pause (L18b, EF-EXP-025) |
+| DELETE | `/api/Collection` | Supprimer une collection de Shelfhold, vide de tout ce qu'une personne y aurait posé (`tagId` en requête) (L18b, EF-EXP-025) |
+| POST | `/api/ReadingList/lists` | Lister les listes de lecture du compte de service : retrouver une liste créée avant un arrêt (L18b, EF-EXP-025) ; une lecture malgré le `POST` |
+| GET | `/api/ReadingList/items` | Lire les éléments d'une liste (`readingListId`) : ce qui est de Shelfhold et ce qu'une personne y a ajouté (L18b, EF-EXP-025) |
+| POST | `/api/ReadingList/create` | Créer une liste de lecture, sous le compte de service (`CreateReadingListDto`) ; exige un compte administrateur (L18b, EF-EXP-025) |
+| POST | `/api/ReadingList/update-by-series` | Ajouter à une liste tous les chapitres d'une série, dans l'ordre d'appel (L18b, EF-EXP-025) |
+| POST | `/api/ReadingList/delete-item` | Retirer un élément d'une liste, seulement s'il vient d'une série que Shelfhold y a posée (L18b, EF-EXP-025) |
+| POST | `/api/ReadingList/promote-multiple` | Promouvoir ou retirer la promotion d'une liste du compte de service ; retirer la promotion passe même en pause (L18b, EF-EXP-025) |
+| DELETE | `/api/ReadingList` | Supprimer une liste de Shelfhold, vide de tout ce qu'une personne y aurait posé (`readingListId` en requête) (L18b, EF-EXP-025) |
 
 ## Routes de mise en place (hors du client d'exploitation)
 

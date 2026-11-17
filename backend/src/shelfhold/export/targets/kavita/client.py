@@ -193,6 +193,10 @@ class KavitaClient:
                 response = await self._fetcher.get(
                     url, headers=headers, params=dict(query or {}) or None
                 )
+            elif route.method == "DELETE":
+                response = await self._fetcher.delete(
+                    url, headers=headers, params=dict(query or {}) or None
+                )
             else:
                 response = await self._fetcher.post(
                     url, json=body if body is not None else {}, headers=headers
@@ -471,6 +475,37 @@ class KavitaClient:
         data = (await self._send(routes.SERIES_RELATED, query={"seriesId": int(series_id)})).data
         return dto.related_ids(data)
 
+    async def series_of_collection(self, collection_id: int) -> list[int]:
+        """The ids of the series a collection of the key's account holds (capped, never cut
+        silently: `ListingIncomplete`)."""
+        found: list[int] = []
+        body = dto.collection_filter(int(collection_id))
+        for page in range(1, MAX_SERIES_PAGES + 1):
+            query = {"PageNumber": page, "PageSize": SERIES_PAGE}
+            data = (await self._send(routes.SERIES_OF_LIBRARY, query=query, body=body)).data
+            if not isinstance(data, list):
+                raise ProtocolError("all-v2 did not answer a list")
+            found.extend(dto.SeriesInfo.from_json(item).id for item in data)
+            if len(data) < SERIES_PAGE:
+                return found
+        raise ListingIncomplete(
+            f"the collection has at least {MAX_SERIES_PAGES * SERIES_PAGE} series"
+        )
+
+    async def own_collections(self) -> list[dto.Shelf]:
+        """The collections of the account of the key (the service account), promoted or not."""
+        return dto.shelves((await self._send(routes.COLLECTIONS, query={"ownedOnly": "true"})).data)
+
+    async def own_reading_lists(self) -> list[dto.Shelf]:
+        query = {"PageNumber": 1, "PageSize": 1000, "includePromoted": "false"}
+        return dto.shelves((await self._send(routes.READING_LISTS, query=query, body={})).data)
+
+    async def reading_list_items(self, list_id: int) -> list[tuple[int, int]]:
+        data = (
+            await self._send(routes.READING_LIST_ITEMS, query={"readingListId": int(list_id)})
+        ).data
+        return dto.list_item_series(data)
+
     # -- writes --------------------------------------------------------------------------------
 
     async def set_series_age(self, current: dto.SeriesAge, age_rating: int) -> None:
@@ -485,6 +520,49 @@ class KavitaClient:
         await self._send(
             routes.SERIES_RELATED_UPDATE, body=dto.related_update(series_id, relations)
         )
+
+    async def collection_add(
+        self, collection_id: int, title: str, series_ids: Sequence[int]
+    ) -> None:
+        """Create the collection (`collection_id` 0, under the account of the key) or add series."""
+        body = {"collectionTagId": int(collection_id), "collectionTagTitle": title,
+                "seriesIds": [int(i) for i in series_ids]}  # fmt: skip
+        await self._send(routes.COLLECTION_ADD, body=body)
+
+    async def collection_remove(self, shelf: dto.Shelf, series_ids: Sequence[int]) -> None:
+        """Take series out of a collection: the document of the collection as read, and the ids."""
+        tag = {"id": shelf.id, "title": shelf.title, "promoted": shelf.promoted}
+        await self._send(
+            routes.COLLECTION_REMOVE,
+            body={"tag": tag, "seriesIdsToRemove": [int(i) for i in series_ids]},
+        )
+
+    async def collection_promote(self, collection_id: int, promoted: bool) -> None:
+        body = {"collectionIds": [int(collection_id)], "promoted": bool(promoted)}
+        await self._send(routes.COLLECTION_PROMOTE, body=body)
+
+    async def collection_delete(self, collection_id: int) -> None:
+        await self._send(routes.COLLECTION_DELETE, query={"tagId": int(collection_id)})
+
+    async def reading_list_create(self, title: str) -> int:
+        data = (await self._send(routes.READING_LIST_CREATE, body={"title": title})).data
+        return dto.Shelf.from_json(data).id
+
+    async def reading_list_add(self, list_id: int, series_id: int) -> None:
+        body = {"seriesId": int(series_id), "readingListId": int(list_id)}
+        await self._send(routes.READING_LIST_ADD, body=body)
+
+    async def reading_list_delete_item(self, list_id: int, item_id: int) -> None:
+        body = {"readingListId": int(list_id), "readingListItemId": int(item_id),
+                "fromPosition": 0, "toPosition": 0}  # fmt: skip
+        await self._send(routes.READING_LIST_DELETE_ITEM, body=body)
+
+    async def reading_list_promote(self, list_id: int, promoted: bool) -> None:
+        body = {"readingListIds": [int(list_id)], "promoted": bool(promoted)}
+        await self._send(routes.READING_LIST_PROMOTE, body=body)
+
+    async def reading_list_delete(self, list_id: int) -> None:
+        await self._send(routes.READING_LIST_DELETE, query={"readingListId": int(list_id)})
 
     async def set_series_field(self, current: dto.SeriesAge, key: str, value: str) -> None:
         """Set one metadata field of a series, locked, as a faithful update of the document read."""

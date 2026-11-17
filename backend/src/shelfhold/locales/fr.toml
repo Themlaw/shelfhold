@@ -2016,6 +2016,11 @@ title = "Cette liste est pleine."
 action = "Une liste tient au plus 5 000 éléments : retirez-en ou faites-en une autre."
 cause = "Le nombre maximal d'éléments d'une collection ou d'une liste de lecture est atteint."
 
+[errors."collection.not_private"]
+title = "Cette collection est celle du foyer : il n'y a rien à approuver."
+action = "Seule la liste d'un profil a besoin de votre accord pour être montrée dans Kavita ; les collections du foyer le sont déjà."
+cause = "La collection n'a pas de propriétaire : Kavita la montre à tout compte qui peut lire ses séries."
+
 [errors."relation.invalid"]
 title = "Ces deux œuvres ne peuvent pas être liées ainsi."
 action = "Choisissez deux œuvres différentes et l'un des types de relation connus."

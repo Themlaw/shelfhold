@@ -328,3 +328,58 @@ def related_update(series_id: int, relations: Mapping[str, Iterable[int]]) -> di
     for kind in RELATION_KINDS:
         body[kind] = sorted({int(i) for i in relations.get(kind, ())})
     return body
+
+
+# -- collections and reading lists (L18b, EF-EXP-025) ---------------------------------------
+
+SERIES_FILTER_COLLECTION_TAGS: Final = 7  # `SeriesFilterField.CollectionTags`
+
+
+def collection_filter(collection_id: int) -> dict[str, Any]:
+    """A `SeriesFilterV2Dto` that lists the series of one collection."""
+    return {
+        "id": 0, "name": "", "combination": FILTER_AND, "limitTo": 0,
+        "statements": [
+            {"comparison": FILTER_EQUAL, "field": SERIES_FILTER_COLLECTION_TAGS,
+             "value": str(collection_id)}
+        ],
+    }  # fmt: skip
+
+
+@dataclass(frozen=True)
+class Shelf:
+    """A collection or a reading list as Kavita lists it: whose, and whether it is promoted."""
+
+    id: int
+    title: str
+    promoted: bool
+    owner: str
+
+    @classmethod
+    def from_json(cls, data: object) -> Shelf:
+        if not isinstance(data, dict) or not isinstance(data.get("id"), int):
+            raise ProtocolError("a collection or a list did not answer an object")
+        return cls(
+            id=int(data["id"]),
+            title=str(data.get("title") or ""),
+            promoted=bool(data.get("promoted", False)),
+            owner=str(data.get("owner") or data.get("ownerUserName") or ""),
+        )
+
+
+def shelves(data: object) -> list[Shelf]:
+    if not isinstance(data, list):
+        raise ProtocolError("collections or lists did not answer a list")
+    return [Shelf.from_json(item) for item in data]
+
+
+def list_item_series(data: object) -> list[tuple[int, int]]:
+    """`(item id, series id)` of the items of a reading list, in their order."""
+    if not isinstance(data, list):
+        raise ProtocolError("reading list items did not answer a list")
+    return [
+        (int(i["id"]), int(i["seriesId"])) for i in data
+        if isinstance(i, dict)
+        and isinstance(i.get("id"), int)
+        and isinstance(i.get("seriesId"), int)
+    ]  # fmt: skip

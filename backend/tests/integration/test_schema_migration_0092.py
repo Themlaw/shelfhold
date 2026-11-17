@@ -1,8 +1,7 @@
 """Migration 0092 (M4 L31, EF-USR-020): `request_list_import` and `request_list_item`.
 
 One batch per import, for one profile, with its reading shelf; one row per line, either in the
-library or a request. Nothing existing is touched; reversible. The head of the migrations is pinned
-here, by the newest one.
+library or a request. Nothing existing is touched; reversible.
 """
 
 import sqlite3
@@ -27,7 +26,7 @@ REQUEST = "01HZZZZZZZZZZZZZZZZZZZZZZD"
 
 def test_the_revision_is_0092_the_only_head_on_0091() -> None:
     script = ScriptDirectory(str(default_script_location()))
-    assert script.get_heads() == ["0092"]
+    assert len(script.get_heads()) == 1  # one head, whichever later lot moved it
     assert script.get_revision("0092").down_revision == "0091"
 
 

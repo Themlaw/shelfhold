@@ -45,6 +45,19 @@ SERIES_METADATA: Final = Route("GET", "/api/Series/metadata", write=False)
 SERIES_METADATA_UPDATE: Final = Route("POST", "/api/Series/metadata", write=True)
 SERIES_RELATED: Final = Route("GET", "/api/Series/all-related", write=False)
 SERIES_RELATED_UPDATE: Final = Route("POST", "/api/Series/update-related", write=True)
+# Collections and reading lists, under the account of the key (L18b, EF-EXP-025)
+COLLECTIONS: Final = Route("GET", "/api/Collection", write=False)
+COLLECTION_ADD: Final = Route("POST", "/api/Collection/update-for-series", write=True)
+COLLECTION_REMOVE: Final = Route("POST", "/api/Collection/update-series", write=True)
+COLLECTION_PROMOTE: Final = Route("POST", "/api/Collection/promote-multiple", write=True)
+COLLECTION_DELETE: Final = Route("DELETE", "/api/Collection", write=True)
+READING_LISTS: Final = Route("POST", "/api/ReadingList/lists", write=False)  # reads, despite POST
+READING_LIST_ITEMS: Final = Route("GET", "/api/ReadingList/items", write=False)
+READING_LIST_CREATE: Final = Route("POST", "/api/ReadingList/create", write=True)
+READING_LIST_ADD: Final = Route("POST", "/api/ReadingList/update-by-series", write=True)
+READING_LIST_DELETE_ITEM: Final = Route("POST", "/api/ReadingList/delete-item", write=True)
+READING_LIST_PROMOTE: Final = Route("POST", "/api/ReadingList/promote-multiple", write=True)
+READING_LIST_DELETE: Final = Route("DELETE", "/api/ReadingList", write=True)
 
 # Setup routes (EF-INT-024): used once by `target add kavita` to exchange the dedicated account for
 # a named, expiring key. Not in ALLOWED_ROUTES: a destination can never describe a call to them
@@ -59,7 +72,9 @@ ALLOWED_ROUTES: Final = (
     SERVER_INFO, KEY_EXPIRES, PARSE, PARSE_BULK, LIBRARIES, LIBRARY_TYPE, LIBRARY_CREATE,
     LIBRARY_UPDATE, SCAN_FOLDER, UPLOAD_SERIES_COVER, USERS, SERIES_OF_LIBRARY, SERIES_BY_IDS,
     SERIES_DETAIL, SERIES_METADATA, SERIES_METADATA_UPDATE, SERIES_RELATED,
-    SERIES_RELATED_UPDATE,
+    SERIES_RELATED_UPDATE, COLLECTIONS, COLLECTION_ADD, COLLECTION_REMOVE, COLLECTION_PROMOTE,
+    COLLECTION_DELETE, READING_LISTS, READING_LIST_ITEMS, READING_LIST_CREATE, READING_LIST_ADD,
+    READING_LIST_DELETE_ITEM, READING_LIST_PROMOTE, READING_LIST_DELETE,
 )  # fmt: skip
 _BY_KEY: Final[dict[tuple[str, str], Route]] = {
     (r.method, r.path.lower()): r for r in ALLOWED_ROUTES

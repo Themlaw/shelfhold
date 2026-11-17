@@ -27,6 +27,7 @@ from typing import Any
 import httpx2
 
 from shelfhold.infrastructure.fetcher import IntegrationFetcher, LanTargets
+from tests.fakes.kavita.collections import KavitaCollections
 from tests.fakes.kavita.plugin_parse import simulate_parse
 from tests.fakes.kavita.providers import PROVIDERS_FOR_LIBRARY_TYPE
 from tests.fakes_fetcher import FakeResolver
@@ -59,6 +60,19 @@ ALLOWED: dict[tuple[str, str], bool] = {
     ("POST", "/api/series/metadata"): True,
     ("GET", "/api/series/all-related"): False,
     ("POST", "/api/series/update-related"): True,
+    # collections and reading lists, under the account of the key (L18b, EF-EXP-025)
+    ("GET", "/api/collection"): False,
+    ("POST", "/api/collection/update-for-series"): False,
+    ("POST", "/api/collection/update-series"): False,
+    ("POST", "/api/collection/promote-multiple"): False,
+    ("DELETE", "/api/collection"): False,
+    ("POST", "/api/readinglist/lists"): False,
+    ("GET", "/api/readinglist/items"): False,
+    ("POST", "/api/readinglist/create"): False,
+    ("POST", "/api/readinglist/update-by-series"): False,
+    ("POST", "/api/readinglist/delete-item"): False,
+    ("POST", "/api/readinglist/promote-multiple"): False,
+    ("DELETE", "/api/readinglist"): False,
     # the routes a member's own key may reach (EF-USR-012, D8): who the key is, and progress
     ("GET", "/api/account"): False,
     ("GET", "/api/reader/get-progress"): False,
@@ -166,6 +180,7 @@ class FakeKavita:
     # file path -> pages the account of the key has read (`ChapterDto.pagesRead`, EF-EXP-051)
     progress: dict[str, int] = field(default_factory=dict)
     related_posts: list[dict[str, Any]] = field(default_factory=list)  # the bodies taken (L19)
+    shelves: KavitaCollections = field(default_factory=KavitaCollections)  # L18b
     pending: list[PendingIndex] = field(default_factory=list)
     never_indexed: set[str] = field(default_factory=set)  # folders Kavita ignores (excluded)
     next_series_id: int = 100
@@ -315,6 +330,7 @@ class FakeKavita:
         self.users = default_users(f"2026-0{self.reinstalls + 1}-01T00:00:00Z")
         self.series, self.files, self.ages, self.pending = [], {}, {}, []
         self.relations = {}
+        self.shelves = KavitaCollections()
 
     def not_found_resource(self, method: str, path: str) -> None:
         """The route exists but answers 404 with a ProblemDetails body (a resource is missing)."""
@@ -378,6 +394,8 @@ class FakeKavita:
             return self._text(401, "Unauthorized")
         if ALLOWED[route] and not self.is_admin:
             return self._text(403, "Forbidden")
+        if route[1].startswith(("/api/collection", "/api/readinglist")):
+            return self.shelves.handle(self, recorded)
         return getattr(self, "_" + route[1].rsplit("/", 1)[-1].replace("-", "_"))(recorded)
 
     def _violation(self, why: str) -> httpx2.Response:
@@ -660,6 +678,20 @@ class FakeKavita:
             if st.get("field") == 19 and st.get("comparison") == 0
         }  # Libraries, Equal
         found = [s for s in self.series if not wanted or s["libraryId"] in wanted]
+        tags = {
+            int(st["value"])
+            for st in body.get("statements") or []
+            if st.get("field") == 7 and st.get("comparison") == 0
+        }  # CollectionTags, Equal: the series of a collection of the key's account
+        if tags:
+            account = self.key_accounts.get(recorded.headers.get("x-api-key", ""), self.account[0])
+            held = {
+                s
+                for t in tags
+                for s in self.shelves.collections.get(t, {"series": []})["series"]
+                if self.shelves.collections.get(t, {}).get("owner") == account
+            }
+            found = [s for s in found if s["id"] in held]
         start = (int(number) - 1) * int(size)
         page = copy.deepcopy(found[start : start + int(size)])
         key = recorded.headers.get("x-api-key", "")

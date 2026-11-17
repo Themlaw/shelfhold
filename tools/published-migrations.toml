@@ -284,3 +284,8 @@ since = "1.1"
 file = "0092_request_lists.py"
 sha256 = "1227630a2eb7d5971eb72d6a5794ecf944967e5c3d13814a463e6b5f2c1f4954"
 since = "1.1"
+
+[[migration]]
+file = "0093_collection_kavita.py"
+sha256 = "1365793fbb7e2f98f893d0e43182df85efee94e40d03c305a11fd253a876f9fe"
+since = "1.1"

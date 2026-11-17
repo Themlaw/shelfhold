@@ -2468,6 +2468,16 @@ export type KavitaAccountOut = {
 };
 
 /**
+ * KavitaPublicOut
+ */
+export type KavitaPublicOut = {
+    /**
+     * Approved
+     */
+    approved: boolean;
+};
+
+/**
  * KeyringExportIn
  */
 export type KeyringExportIn = {
@@ -8778,6 +8788,82 @@ export type RemoveItemResponses = {
 };
 
 export type RemoveItemResponse = RemoveItemResponses[keyof RemoveItemResponses];
+
+export type WithdrawFromKavitaData = {
+    body?: never;
+    path: {
+        /**
+         * Collection Id
+         */
+        collection_id: string;
+    };
+    query?: never;
+    url: '/api/v1/collections/{collection_id}/kavita-public';
+};
+
+export type WithdrawFromKavitaErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type WithdrawFromKavitaError = WithdrawFromKavitaErrors[keyof WithdrawFromKavitaErrors];
+
+export type WithdrawFromKavitaResponses = {
+    /**
+     * Successful Response
+     */
+    200: KavitaPublicOut;
+};
+
+export type WithdrawFromKavitaResponse = WithdrawFromKavitaResponses[keyof WithdrawFromKavitaResponses];
+
+export type ApproveForKavitaData = {
+    body?: never;
+    path: {
+        /**
+         * Collection Id
+         */
+        collection_id: string;
+    };
+    query?: never;
+    url: '/api/v1/collections/{collection_id}/kavita-public';
+};
+
+export type ApproveForKavitaErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type ApproveForKavitaError = ApproveForKavitaErrors[keyof ApproveForKavitaErrors];
+
+export type ApproveForKavitaResponses = {
+    /**
+     * Successful Response
+     */
+    200: KavitaPublicOut;
+};
+
+export type ApproveForKavitaResponse = ApproveForKavitaResponses[keyof ApproveForKavitaResponses];
 
 export type ReadConfigData = {
     body?: never;

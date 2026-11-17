@@ -130,6 +130,19 @@ def test_detach_needs_the_typed_phrase(d: DetachEnv, typed: str | None) -> None:
     assert _before(d) == before and d.revoker.calls == []
 
 
+@pytest.mark.req("EF-EXP-025")
+def test_detach_takes_back_what_was_pushed_only_once_it_is_allowed(d: DetachEnv) -> None:
+    taken: list[str] = []
+    with pytest.raises(DetachRefusedError):  # a wrong phrase: nothing is taken back
+        _run(d, typed="yes", before_restore=lambda: taken.append("wrong phrase"))
+    with pytest.raises(DetachRefusedError):  # a key is not an admin session
+        _run(d, who=OTHERS[0], before_restore=lambda: taken.append("not allowed"))
+    assert taken == []
+    _clean_bins(d)
+    assert _run(d, before_restore=lambda: taken.append("ok")).complete
+    assert taken == ["ok"]
+
+
 @pytest.mark.req("EF-EXP-031")
 def test_detach_works_for_a_fresh_admin_session(d: DetachEnv) -> None:
     _clean_bins(d)

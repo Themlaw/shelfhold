@@ -82,6 +82,7 @@ def create_http_app(
     device_rate_per_minute: int = 600,
     device_allow_plain_http: bool = False,  # M4 L46, ADR-0053 §4: TLS unless the admin says so
     maintenance_active: Callable[[], bool | None] | None = None,
+    on_profile_change: Callable[[], None] | None = None,  # M4 L18b: a ceiling, a profile removed
 ) -> FastAPI:
     """Without `auth` (offline schema export, protocol tests) the authentication routes are still
     declared, so that the exported schema documents them, but nobody is ever authenticated."""
@@ -156,7 +157,7 @@ def create_http_app(
     app.include_router(build_login_router(resolved_source))
     app.include_router(build_passkeys_router())
     app.include_router(build_sessions_router())
-    app.include_router(build_profiles_router())
+    app.include_router(build_profiles_router(on_profile_change))
     app.include_router(build_own_visibility_router())  # EF-USR-016
     app.include_router(build_about_router(version=version, source_url=resolved_source))
     app.include_router(build_device_tokens_router())  # M4 L46b: pairing an e-reader

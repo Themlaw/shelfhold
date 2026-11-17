@@ -48,6 +48,7 @@ et ne change rien à l'installation (voir [vérifier les images](verifier-les-im
 | Collections et listes de lecture : qui voit quoi, import d'un fichier CBL | [listes-de-lecture.md](listes-de-lecture.md) |
 | Migrer une série vers une autre source sans rien retélécharger | [migrer-une-serie.md](migrer-une-serie.md) |
 | Œuvres liées : relier un roman et son adaptation, ce qu'un profil en voit, séries liées de Kavita | [oeuvres-liees.md](oeuvres-liees.md) |
+| Collections et listes de lecture dans Kavita : compte de service, promotion, ce qu'un enfant n'y voit jamais | [collections-kavita.md](collections-kavita.md) |
 | Classer les œuvres (« À classer », « À ranger », `shelfhold rate`) | [a-classer.md](a-classer.md) |
 | Qui peut faire quoi : rôles, actions réservées, fraîcheur du mot de passe | [roles.md](roles.md) |
 | Conditions, limites et `terms_url` de chaque source native | [sources.md](sources.md) |

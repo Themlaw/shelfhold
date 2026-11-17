@@ -76,6 +76,72 @@
     ],
     "type": "object"
    },
+   "AppUserCollectionDto": {
+    "additionalProperties": false,
+    "properties": {
+     "ageRating": {
+      "$ref": "#/components/schemas/AgeRating"
+     },
+     "coverImage": {
+      "nullable": true,
+      "type": "string"
+     },
+     "coverImageLocked": {
+      "type": "boolean"
+     },
+     "id": {
+      "format": "int32",
+      "type": "integer"
+     },
+     "itemCount": {
+      "format": "int32",
+      "type": "integer"
+     },
+     "lastSyncUtc": {
+      "format": "date-time",
+      "type": "string"
+     },
+     "missingSeriesFromSource": {
+      "nullable": true,
+      "type": "string"
+     },
+     "owner": {
+      "nullable": true,
+      "type": "string"
+     },
+     "primaryColor": {
+      "nullable": true,
+      "type": "string"
+     },
+     "promoted": {
+      "type": "boolean"
+     },
+     "secondaryColor": {
+      "nullable": true,
+      "type": "string"
+     },
+     "source": {
+      "$ref": "#/components/schemas/ScrobbleProvider"
+     },
+     "sourceUrl": {
+      "nullable": true,
+      "type": "string"
+     },
+     "summary": {
+      "nullable": true,
+      "type": "string"
+     },
+     "title": {
+      "nullable": true,
+      "type": "string"
+     },
+     "totalSourceCount": {
+      "format": "int32",
+      "type": "integer"
+     }
+    },
+    "type": "object"
+   },
    "AppUserOpdsPreferences": {
     "additionalProperties": false,
     "properties": {
@@ -542,6 +608,38 @@
       },
       "nullable": true,
       "type": "array"
+     }
+    },
+    "type": "object"
+   },
+   "CollectionTagBulkAddDto": {
+    "additionalProperties": false,
+    "properties": {
+     "collectionTagId": {
+      "format": "int32",
+      "type": "integer"
+     },
+     "collectionTagTitle": {
+      "nullable": true,
+      "type": "string"
+     },
+     "seriesIds": {
+      "items": {
+       "format": "int32",
+       "type": "integer"
+      },
+      "nullable": true,
+      "type": "array"
+     }
+    },
+    "type": "object"
+   },
+   "CreateReadingListDto": {
+    "additionalProperties": false,
+    "properties": {
+     "title": {
+      "nullable": true,
+      "type": "string"
      }
     },
     "type": "object"
@@ -1286,6 +1384,40 @@
     ],
     "type": "object"
    },
+   "PromoteCollectionsDto": {
+    "additionalProperties": false,
+    "properties": {
+     "collectionIds": {
+      "items": {
+       "format": "int32",
+       "type": "integer"
+      },
+      "nullable": true,
+      "type": "array"
+     },
+     "promoted": {
+      "type": "boolean"
+     }
+    },
+    "type": "object"
+   },
+   "PromoteReadingListsDto": {
+    "additionalProperties": false,
+    "properties": {
+     "promoted": {
+      "type": "boolean"
+     },
+     "readingListIds": {
+      "items": {
+       "format": "int32",
+       "type": "integer"
+      },
+      "nullable": true,
+      "type": "array"
+     }
+    },
+    "type": "object"
+   },
    "PublicationStatus": {
     "description": "Members:\n- `0` \u2014 Ongoing (OnGoing)\n- `1` \u2014 Hiatus\n- `2` \u2014 Completed\n- `3` \u2014 Cancelled\n- `4` \u2014 Ended",
     "enum": [
@@ -1331,6 +1463,353 @@
      "Search",
      "Dashboard"
     ]
+   },
+   "ReadingListDto": {
+    "additionalProperties": false,
+    "properties": {
+     "ageRating": {
+      "$ref": "#/components/schemas/AgeRating"
+     },
+     "canSync": {
+      "type": "boolean"
+     },
+     "coverImage": {
+      "nullable": true,
+      "type": "string"
+     },
+     "coverImageLocked": {
+      "type": "boolean"
+     },
+     "downloadUrl": {
+      "nullable": true,
+      "type": "string"
+     },
+     "endingMonth": {
+      "format": "int32",
+      "type": "integer"
+     },
+     "endingYear": {
+      "format": "int32",
+      "type": "integer"
+     },
+     "id": {
+      "format": "int32",
+      "type": "integer"
+     },
+     "itemCount": {
+      "format": "int32",
+      "type": "integer"
+     },
+     "lastSyncCheckUtc": {
+      "format": "date-time",
+      "nullable": true,
+      "type": "string"
+     },
+     "lastSyncedUtc": {
+      "format": "date-time",
+      "nullable": true,
+      "type": "string"
+     },
+     "ownerUserName": {
+      "nullable": true,
+      "type": "string"
+     },
+     "primaryColor": {
+      "nullable": true,
+      "type": "string"
+     },
+     "promoted": {
+      "type": "boolean"
+     },
+     "provider": {
+      "$ref": "#/components/schemas/ReadingListProvider"
+     },
+     "secondaryColor": {
+      "nullable": true,
+      "type": "string"
+     },
+     "shaHash": {
+      "nullable": true,
+      "type": "string"
+     },
+     "sourcePath": {
+      "nullable": true,
+      "type": "string"
+     },
+     "startingMonth": {
+      "format": "int32",
+      "type": "integer"
+     },
+     "startingYear": {
+      "format": "int32",
+      "type": "integer"
+     },
+     "summary": {
+      "nullable": true,
+      "type": "string"
+     },
+     "tags": {
+      "items": {
+       "$ref": "#/components/schemas/ReadingListTagDto"
+      },
+      "nullable": true,
+      "type": "array"
+     },
+     "title": {
+      "nullable": true,
+      "type": "string"
+     },
+     "totalItemsAtImport": {
+      "format": "int32",
+      "type": "integer"
+     }
+    },
+    "required": [
+     "ageRating"
+    ],
+    "type": "object"
+   },
+   "ReadingListItemChapterDto": {
+    "additionalProperties": false,
+    "properties": {
+     "id": {
+      "format": "int32",
+      "type": "integer"
+     },
+     "isSpecial": {
+      "type": "boolean"
+     },
+     "maxNumber": {
+      "format": "float",
+      "type": "number"
+     },
+     "minNumber": {
+      "format": "float",
+      "type": "number"
+     },
+     "pages": {
+      "format": "int32",
+      "type": "integer"
+     },
+     "pencillerId": {
+      "format": "int32",
+      "nullable": true,
+      "type": "integer"
+     },
+     "pencillerName": {
+      "nullable": true,
+      "type": "string"
+     },
+     "range": {
+      "nullable": true,
+      "type": "string"
+     },
+     "releaseDate": {
+      "format": "date-time",
+      "type": "string"
+     },
+     "sortOrder": {
+      "format": "float",
+      "type": "number"
+     },
+     "summary": {
+      "nullable": true,
+      "type": "string"
+     },
+     "titleName": {
+      "nullable": true,
+      "type": "string"
+     },
+     "writerId": {
+      "format": "int32",
+      "nullable": true,
+      "type": "integer"
+     },
+     "writerName": {
+      "nullable": true,
+      "type": "string"
+     }
+    },
+    "type": "object"
+   },
+   "ReadingListItemDto": {
+    "additionalProperties": false,
+    "properties": {
+     "chapter": {
+      "$ref": "#/components/schemas/ReadingListItemChapterDto"
+     },
+     "chapterId": {
+      "format": "int32",
+      "type": "integer"
+     },
+     "chapterNumber": {
+      "deprecated": true,
+      "nullable": true,
+      "type": "string"
+     },
+     "chapterTitleName": {
+      "deprecated": true,
+      "nullable": true,
+      "type": "string"
+     },
+     "fileSize": {
+      "deprecated": true,
+      "format": "int64",
+      "type": "integer"
+     },
+     "id": {
+      "format": "int32",
+      "type": "integer"
+     },
+     "isSpecial": {
+      "deprecated": true,
+      "type": "boolean"
+     },
+     "lastReadingProgressUtc": {
+      "format": "date-time",
+      "nullable": true,
+      "type": "string"
+     },
+     "libraryId": {
+      "format": "int32",
+      "type": "integer"
+     },
+     "libraryName": {
+      "nullable": true,
+      "type": "string"
+     },
+     "libraryType": {
+      "$ref": "#/components/schemas/LibraryType"
+     },
+     "order": {
+      "format": "int32",
+      "type": "integer"
+     },
+     "pagesRead": {
+      "format": "int32",
+      "type": "integer"
+     },
+     "pagesTotal": {
+      "deprecated": true,
+      "format": "int32",
+      "type": "integer"
+     },
+     "readingListId": {
+      "format": "int32",
+      "type": "integer"
+     },
+     "releaseDate": {
+      "deprecated": true,
+      "format": "date-time",
+      "nullable": true,
+      "type": "string"
+     },
+     "seriesFormat": {
+      "$ref": "#/components/schemas/MangaFormat"
+     },
+     "seriesId": {
+      "format": "int32",
+      "type": "integer"
+     },
+     "seriesName": {
+      "nullable": true,
+      "type": "string"
+     },
+     "seriesSortName": {
+      "nullable": true,
+      "type": "string"
+     },
+     "summary": {
+      "deprecated": true,
+      "nullable": true,
+      "type": "string"
+     },
+     "title": {
+      "nullable": true,
+      "type": "string"
+     },
+     "volume": {
+      "$ref": "#/components/schemas/ReadingListItemVolumeDto"
+     },
+     "volumeId": {
+      "format": "int32",
+      "type": "integer"
+     },
+     "volumeNumber": {
+      "deprecated": true,
+      "nullable": true,
+      "type": "string"
+     }
+    },
+    "type": "object"
+   },
+   "ReadingListItemVolumeDto": {
+    "additionalProperties": false,
+    "properties": {
+     "id": {
+      "format": "int32",
+      "type": "integer"
+     },
+     "maxNumber": {
+      "format": "float",
+      "type": "number"
+     },
+     "minNumber": {
+      "format": "float",
+      "type": "number"
+     },
+     "name": {
+      "nullable": true,
+      "type": "string"
+     },
+     "seriesId": {
+      "format": "int32",
+      "type": "integer"
+     }
+    },
+    "type": "object"
+   },
+   "ReadingListProvider": {
+    "description": "Members:\n- `0` \u2014 File (None)\n- `1` \u2014 File\n- `2` \u2014 Url",
+    "enum": [
+     0,
+     1,
+     2
+    ],
+    "format": "int32",
+    "type": "integer",
+    "x-enum-descriptions": [
+     "File",
+     "File",
+     "Url"
+    ],
+    "x-enum-varnames": [
+     "None",
+     "File",
+     "Url"
+    ]
+   },
+   "ReadingListTagDto": {
+    "additionalProperties": false,
+    "properties": {
+     "id": {
+      "format": "int32",
+      "type": "integer"
+     },
+     "normalizedTitle": {
+      "nullable": true,
+      "type": "string"
+     },
+     "title": {
+      "nullable": true,
+      "type": "string"
+     }
+    },
+    "required": [
+     "normalizedTitle",
+     "title"
+    ],
+    "type": "object"
    },
    "RelatedSeriesDto": {
     "additionalProperties": false,
@@ -1509,6 +1988,35 @@
      }
     },
     "type": "object"
+   },
+   "ScrobbleProvider": {
+    "description": "Members:\n- `0` \u2014 Kavita\n- `1` \u2014 AniList\n- `2` \u2014 Mal\n- `4` \u2014 Cbr\n- `5` \u2014 Hardcover\n- `6` \u2014 MangaBaka",
+    "enum": [
+     0,
+     1,
+     2,
+     4,
+     5,
+     6
+    ],
+    "format": "int32",
+    "type": "integer",
+    "x-enum-descriptions": [
+     "Kavita",
+     "AniList",
+     "Mal",
+     "Cbr",
+     "Hardcover",
+     "MangaBaka"
+    ],
+    "x-enum-varnames": [
+     "Kavita",
+     "AniList",
+     "Mal",
+     "Cbr",
+     "Hardcover",
+     "MangaBaka"
+    ]
    },
    "SeriesByIdsDto": {
     "additionalProperties": false,
@@ -2379,6 +2887,47 @@
     ],
     "type": "object"
    },
+   "UpdateReadingListBySeriesDto": {
+    "additionalProperties": false,
+    "properties": {
+     "readingListId": {
+      "format": "int32",
+      "type": "integer"
+     },
+     "seriesId": {
+      "format": "int32",
+      "type": "integer"
+     }
+    },
+    "type": "object"
+   },
+   "UpdateReadingListPosition": {
+    "additionalProperties": false,
+    "properties": {
+     "fromPosition": {
+      "format": "int32",
+      "type": "integer"
+     },
+     "readingListId": {
+      "format": "int32",
+      "type": "integer"
+     },
+     "readingListItemId": {
+      "format": "int32",
+      "type": "integer"
+     },
+     "toPosition": {
+      "format": "int32",
+      "type": "integer"
+     }
+    },
+    "required": [
+     "readingListId",
+     "readingListItemId",
+     "toPosition"
+    ],
+    "type": "object"
+   },
    "UpdateRelatedSeriesDto": {
     "additionalProperties": false,
     "properties": {
@@ -2497,6 +3046,23 @@
       },
       "nullable": true,
       "type": "array"
+     }
+    },
+    "type": "object"
+   },
+   "UpdateSeriesForTagDto": {
+    "additionalProperties": false,
+    "properties": {
+     "seriesIdsToRemove": {
+      "items": {
+       "format": "int32",
+       "type": "integer"
+      },
+      "nullable": true,
+      "type": "array"
+     },
+     "tag": {
+      "$ref": "#/components/schemas/AppUserCollectionDto"
      }
     },
     "type": "object"
@@ -3139,6 +3705,186 @@
     ]
    }
   },
+  "/api/Collection": {
+   "delete": {
+    "parameters": [
+     {
+      "description": "",
+      "in": "query",
+      "name": "tagId",
+      "schema": {
+       "format": "int32",
+       "type": "integer"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "OK"
+     }
+    },
+    "summary": "Removes the collection tag from the user",
+    "tags": [
+     "Collection"
+    ]
+   },
+   "get": {
+    "parameters": [
+     {
+      "description": "Exclude Promoted",
+      "in": "query",
+      "name": "ownedOnly",
+      "schema": {
+       "default": false,
+       "type": "boolean"
+      }
+     },
+     {
+      "description": "Order by Last Modified rather than on Title",
+      "in": "query",
+      "name": "sortByLastModified",
+      "schema": {
+       "default": false,
+       "type": "boolean"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "items": {
+          "$ref": "#/components/schemas/AppUserCollectionDto"
+         },
+         "type": "array"
+        }
+       },
+       "text/json": {
+        "schema": {
+         "items": {
+          "$ref": "#/components/schemas/AppUserCollectionDto"
+         },
+         "type": "array"
+        }
+       },
+       "text/plain": {
+        "schema": {
+         "items": {
+          "$ref": "#/components/schemas/AppUserCollectionDto"
+         },
+         "type": "array"
+        }
+       }
+      },
+      "description": "OK"
+     }
+    },
+    "summary": "Returns all Collection tags for a given User",
+    "tags": [
+     "Collection"
+    ]
+   }
+  },
+  "/api/Collection/promote-multiple": {
+   "post": {
+    "requestBody": {
+     "content": {
+      "application/*+json": {
+       "schema": {
+        "$ref": "#/components/schemas/PromoteCollectionsDto"
+       }
+      },
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/PromoteCollectionsDto"
+       }
+      },
+      "text/json": {
+       "schema": {
+        "$ref": "#/components/schemas/PromoteCollectionsDto"
+       }
+      }
+     },
+     "description": ""
+    },
+    "responses": {
+     "200": {
+      "description": "OK"
+     }
+    },
+    "summary": "Promote/UnPromote multiple collections in one go. Will only update the authenticated user's collections and will only work if the user has promotion role",
+    "tags": [
+     "Collection"
+    ]
+   }
+  },
+  "/api/Collection/update-for-series": {
+   "post": {
+    "requestBody": {
+     "content": {
+      "application/*+json": {
+       "schema": {
+        "$ref": "#/components/schemas/CollectionTagBulkAddDto"
+       }
+      },
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/CollectionTagBulkAddDto"
+       }
+      },
+      "text/json": {
+       "schema": {
+        "$ref": "#/components/schemas/CollectionTagBulkAddDto"
+       }
+      }
+     },
+     "description": ""
+    },
+    "responses": {
+     "200": {
+      "description": "OK"
+     }
+    },
+    "summary": "Adds multiple series to a collection. If tag id is 0, this will create a new tag.",
+    "tags": [
+     "Collection"
+    ]
+   }
+  },
+  "/api/Collection/update-series": {
+   "post": {
+    "requestBody": {
+     "content": {
+      "application/*+json": {
+       "schema": {
+        "$ref": "#/components/schemas/UpdateSeriesForTagDto"
+       }
+      },
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/UpdateSeriesForTagDto"
+       }
+      },
+      "text/json": {
+       "schema": {
+        "$ref": "#/components/schemas/UpdateSeriesForTagDto"
+       }
+      }
+     },
+     "description": ""
+    },
+    "responses": {
+     "200": {
+      "description": "OK"
+     }
+    },
+    "summary": "For a given tag, update the summary if summary has changed and remove a set of series from the tag.",
+    "tags": [
+     "Collection"
+    ]
+   }
+  },
   "/api/Library/create": {
    "post": {
     "requestBody": {
@@ -3576,6 +4322,305 @@
     "summary": "Save page against Chapter for authenticated user",
     "tags": [
      "Reader"
+    ]
+   }
+  },
+  "/api/ReadingList": {
+   "delete": {
+    "parameters": [
+     {
+      "description": "",
+      "in": "query",
+      "name": "readingListId",
+      "schema": {
+       "format": "int32",
+       "type": "integer"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "OK"
+     }
+    },
+    "summary": "Deletes a reading list",
+    "tags": [
+     "ReadingList"
+    ]
+   }
+  },
+  "/api/ReadingList/create": {
+   "post": {
+    "requestBody": {
+     "content": {
+      "application/*+json": {
+       "schema": {
+        "$ref": "#/components/schemas/CreateReadingListDto"
+       }
+      },
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/CreateReadingListDto"
+       }
+      },
+      "text/json": {
+       "schema": {
+        "$ref": "#/components/schemas/CreateReadingListDto"
+       }
+      }
+     },
+     "description": ""
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ReadingListDto"
+        }
+       },
+       "text/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ReadingListDto"
+        }
+       },
+       "text/plain": {
+        "schema": {
+         "$ref": "#/components/schemas/ReadingListDto"
+        }
+       }
+      },
+      "description": "OK"
+     }
+    },
+    "summary": "Creates a new List with a unique title. Returns the new ReadingList back",
+    "tags": [
+     "ReadingList"
+    ]
+   }
+  },
+  "/api/ReadingList/delete-item": {
+   "post": {
+    "requestBody": {
+     "content": {
+      "application/*+json": {
+       "schema": {
+        "$ref": "#/components/schemas/UpdateReadingListPosition"
+       }
+      },
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/UpdateReadingListPosition"
+       }
+      },
+      "text/json": {
+       "schema": {
+        "$ref": "#/components/schemas/UpdateReadingListPosition"
+       }
+      }
+     },
+     "description": ""
+    },
+    "responses": {
+     "200": {
+      "description": "OK"
+     }
+    },
+    "summary": "Deletes a list item from the list. Item orders will update as a result.",
+    "tags": [
+     "ReadingList"
+    ]
+   }
+  },
+  "/api/ReadingList/items": {
+   "get": {
+    "description": "This call is expensive",
+    "parameters": [
+     {
+      "description": "",
+      "in": "query",
+      "name": "readingListId",
+      "schema": {
+       "format": "int32",
+       "type": "integer"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "items": {
+          "$ref": "#/components/schemas/ReadingListItemDto"
+         },
+         "type": "array"
+        }
+       },
+       "text/json": {
+        "schema": {
+         "items": {
+          "$ref": "#/components/schemas/ReadingListItemDto"
+         },
+         "type": "array"
+        }
+       },
+       "text/plain": {
+        "schema": {
+         "items": {
+          "$ref": "#/components/schemas/ReadingListItemDto"
+         },
+         "type": "array"
+        }
+       }
+      },
+      "description": "OK"
+     }
+    },
+    "summary": "Fetches all reading list items for a given list including rich metadata around series, volume, chapters, and progress",
+    "tags": [
+     "ReadingList"
+    ]
+   }
+  },
+  "/api/ReadingList/lists": {
+   "post": {
+    "parameters": [
+     {
+      "in": "query",
+      "name": "PageNumber",
+      "schema": {
+       "format": "int32",
+       "type": "integer"
+      }
+     },
+     {
+      "in": "query",
+      "name": "PageSize",
+      "schema": {
+       "format": "int32",
+       "type": "integer"
+      }
+     },
+     {
+      "description": "Include Promoted Reading Lists along with user's Reading Lists. Defaults to true",
+      "in": "query",
+      "name": "includePromoted",
+      "schema": {
+       "default": true,
+       "type": "boolean"
+      }
+     },
+     {
+      "description": "Sort by last modified (most recent first) or by title (alphabetical)",
+      "in": "query",
+      "name": "sortByLastModified",
+      "schema": {
+       "default": false,
+       "type": "boolean"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "items": {
+          "$ref": "#/components/schemas/ReadingListDto"
+         },
+         "type": "array"
+        }
+       },
+       "text/json": {
+        "schema": {
+         "items": {
+          "$ref": "#/components/schemas/ReadingListDto"
+         },
+         "type": "array"
+        }
+       },
+       "text/plain": {
+        "schema": {
+         "items": {
+          "$ref": "#/components/schemas/ReadingListDto"
+         },
+         "type": "array"
+        }
+       }
+      },
+      "description": "OK"
+     }
+    },
+    "summary": "Returns reading lists (paginated) for a given user.",
+    "tags": [
+     "ReadingList"
+    ]
+   }
+  },
+  "/api/ReadingList/promote-multiple": {
+   "post": {
+    "requestBody": {
+     "content": {
+      "application/*+json": {
+       "schema": {
+        "$ref": "#/components/schemas/PromoteReadingListsDto"
+       }
+      },
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/PromoteReadingListsDto"
+       }
+      },
+      "text/json": {
+       "schema": {
+        "$ref": "#/components/schemas/PromoteReadingListsDto"
+       }
+      }
+     },
+     "description": ""
+    },
+    "responses": {
+     "200": {
+      "description": "OK"
+     }
+    },
+    "summary": "Promote/UnPromote multiple reading lists in one go. Will only update the authenticated user's reading lists and will only work if the user has promotion role",
+    "tags": [
+     "ReadingList"
+    ]
+   }
+  },
+  "/api/ReadingList/update-by-series": {
+   "post": {
+    "requestBody": {
+     "content": {
+      "application/*+json": {
+       "schema": {
+        "$ref": "#/components/schemas/UpdateReadingListBySeriesDto"
+       }
+      },
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/UpdateReadingListBySeriesDto"
+       }
+      },
+      "text/json": {
+       "schema": {
+        "$ref": "#/components/schemas/UpdateReadingListBySeriesDto"
+       }
+      }
+     },
+     "description": ""
+    },
+    "responses": {
+     "200": {
+      "description": "OK"
+     }
+    },
+    "summary": "Adds all chapters from a Series to a reading list",
+    "tags": [
+     "ReadingList"
     ]
    }
   },

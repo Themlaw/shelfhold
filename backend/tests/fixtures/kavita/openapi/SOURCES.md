@@ -20,3 +20,5 @@ tag `v0.9.1.4` dit `0.9.1.1` : Kavita ne le met pas à jour à chaque tag, le ta
 **2026-11-15 (M4 L12).** Les trois fichiers ont été réduits de nouveau, depuis les mêmes tags (`v0.9.1.0` pour `0.9.1.json`, `v0.9.1.4` pour les deux autres), pour y ajouter les quatre routes de la clé d'un membre (`GET /api/Account`, `GET /api/Reader/get-progress`, `POST /api/Reader/progress`, `GET /api/Reader/continue-point`) qu'ajoute `docs/kavita-routes.md`. Aucune autre route n'est entrée.
 
 **2026-11-16 (M4 L19).** Les trois fichiers ont été réduits de nouveau, depuis les mêmes tags, pour y ajouter les deux routes des « séries liées » (`GET /api/Series/all-related`, `POST /api/Series/update-related`) qu'ajoute `docs/kavita-routes.md`. Aucune autre route n'est entrée.
+
+**2026-11-17 (M4 L18b).** Les trois fichiers ont été réduits de nouveau, depuis les mêmes tags, pour y ajouter les routes des collections et des listes de lecture (`/api/Collection…`, `/api/ReadingList…`) qu'ajoute `docs/kavita-routes.md`. Aucune autre route n'est entrée.

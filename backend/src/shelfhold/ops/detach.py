@@ -38,12 +38,14 @@ from shelfhold.export.application.remove_destination import (
 from shelfhold.export.application.root_ref import RootRef
 from shelfhold.export.application.target_state import load_fingerprint
 from shelfhold.export.targets.kavita.account_session import KavitaAccountSession
+from shelfhold.export.targets.kavita.collections import CollectionsSync
 from shelfhold.export.targets.kavita.errors import TargetError
 from shelfhold.export.targets.kavita.settings_restore import restore_library_settings
 from shelfhold.identity.public import Principal
 from shelfhold.infrastructure.fsops import Fsops
 from shelfhold.library.public import roots_holding_library_copies
 from shelfhold.ops.errors import CodedRefusal, InvalidChoiceError
+from shelfhold.ops.events import BusTargetEvents
 
 if TYPE_CHECKING:
     from shelfhold.composition import Composition
@@ -294,6 +296,18 @@ class DetachOps:
             "warnings": [{"code": w.code, "count": w.count} for w in preview.warnings],
         }  # fmt: skip
 
+    def _withdraw_pushed(self, target_id: str, client: Any) -> None:
+        """Before the key goes (the detacher calls it once authorization and phrase have passed):
+        take back the collections and lists Shelfhold pushed, a promoted object would outlive the
+        destination. Best effort, said by the log: what cannot be reached stays for the person."""
+        sync = CollectionsSync(
+            self._comp.engine, self._comp.clock, BusTargetEvents(self._comp.engine, self._comp.bus)
+        )
+        try:
+            self._comp.run(sync.withdraw_all(client, target_id))
+        except Exception as error:
+            log.warning("detach.collections_failed", error=type(error).__name__)
+
     def full(
         self, *, target_id: str, typed: str | None, credential: str | None,
         discard_hidden_data: bool, discard_tombstone_journal: bool, key_gone: bool = False,
@@ -314,6 +328,10 @@ class DetachOps:
                     discard_hidden_data=discard_hidden_data,
                     discard_tombstone_journal=discard_tombstone_journal,
                     key_gone=key_gone, account=account,
+                    before_restore=(
+                        None if client is None
+                        else lambda: self._withdraw_pushed(target_id, client)
+                    ),
                 )  # fmt: skip
         except DetachRefusedError as error:
             raise _full_refusal(error) from None
