@@ -292,6 +292,7 @@ FRESHNESS_LINE = {
             "export.all",  # M3 L37: every profile's data leaves the instance
             "import.all",  # M3 L37: a whole instance comes in
             "import.tachibk",  # M4 L26: another app's backup writes series and markers in a profile
+            "team.switch",  # M4 L35: served files are replaced by the preferred team's
             "restore.acknowledge",
             "admin_risk.accept",
             "shelf.purge_upstream",

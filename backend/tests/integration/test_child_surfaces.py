@@ -362,6 +362,9 @@ CLOSED = (
     "POST /api/v1/requests/{request_id}/approve",
     "POST /api/v1/requests/{request_id}/reject",
     "POST /api/v1/requests/{request_id}/not-found",
+    "POST /api/v1/editions/{edition_id}/team-switch",  # M4 L35: an admin's, replaces served files
+    "POST /api/v1/editions/{edition_id}/team-switch/{switch_id}/apply",
+    "GET /api/v1/editions/{edition_id}/team-switch/{switch_id}",
     "POST /api/v1/imports/tachibk",  # M4 L26: a backup of another reader app, an admin's
     "GET /api/v1/imports/tachibk/{import_id}",
     "POST /api/v1/imports/tachibk/{import_id}/apply",
