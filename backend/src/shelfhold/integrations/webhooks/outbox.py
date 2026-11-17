@@ -159,7 +159,7 @@ class Outbox:
                 .order_by(_outbox.c.next_try_at, _outbox.c.event_id, _outbox.c.schema_version)
                 .limit(limit * 8)
             ).all()  # fmt: skip
-            rows = []
+            rows: list[Any] = []
             taken: dict[str, int] = {}
             for row in candidates:
                 if len(rows) >= limit:
