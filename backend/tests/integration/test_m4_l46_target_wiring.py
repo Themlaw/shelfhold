@@ -11,6 +11,7 @@ child), journaled, and refused with a code for a destination that cannot synchro
 # ruff: noqa: F811  (the `world` fixture of L06a is imported, then asked for by name)
 from __future__ import annotations
 
+import os
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
@@ -690,3 +691,62 @@ def test_the_cwa_route_refuses_a_read_only_folder(world: World) -> None:
     refused = world.api.post(CWA, json=body)
     assert refused.status_code == 422 and refused.json()["code"] == "config.invalid_value"
     assert _count(world, "cwa") == 0
+
+
+# ------------------------------------------------- #342: path map and key of an existing target
+
+
+@pytest.mark.req("EF-EXP-020", "ENF-SEC-013", "EF-USR-024")
+def test_a_new_komga_key_is_probed_sealed_and_journaled_and_the_same_key_writes_nothing(
+    settings: Settings, tmp_path: Path
+) -> None:
+    from tests.redaction_support import synthetic_text
+
+    fresh = synthetic_text("komga-fake-rotated-0342")
+    fake = FakeKomga(keys={API_KEY: True, OTHER_KEY: False, fresh: True})
+    with headless(settings, komga=_probe(fake)) as env:
+        first = env.admin.target_add_komga(name="Komga", url=BASE_URL, api_key=API_KEY)
+        before = len(_audit(env.engine, "target.rotate_komga_key"))
+        same = env.admin.target_add_komga(name="Komga", url=BASE_URL, api_key=API_KEY)
+        assert not same.created and len(_audit(env.engine, "target.rotate_komga_key")) == before
+        with pytest.raises(TargetExchangeFailed):  # a key Komga refuses: the old one stays
+            env.admin.target_add_komga(name="Komga", url=BASE_URL, api_key=OTHER_KEY)
+        with env.engine.connect() as connection:
+            assert load_komga_key(env.vault, connection, first.id).reveal() == API_KEY
+        rotated = env.admin.target_add_komga(name="Komga", url=BASE_URL, api_key=fresh)
+        assert not rotated.created and rotated.id == first.id
+        with env.engine.connect() as connection:
+            assert load_komga_key(env.vault, connection, first.id).reveal() == fresh
+        assert len(_audit(env.engine, "target.rotate_komga_key")) == before + 1
+        assert API_KEY not in env.dump() and fresh not in env.dump()
+        assert fake.violations == []
+
+
+@pytest.mark.req("EF-EXP-020", "EF-USR-024")
+def test_a_path_map_changed_through_an_add_door_leaves_its_line(
+    settings: Settings, tmp_path: Path
+) -> None:
+    fake = FakeKomga()
+    first, second = tmp_path / "one", tmp_path / "two"
+    first.mkdir()
+    second.mkdir()
+    one = [{"local": str(first), "remote": "/one", "mode": "rw"}]
+    two = [{"local": str(second), "remote": "/two", "mode": "rw"}]
+    with headless(settings, komga=_probe(fake)) as env:
+        env.admin.target_add_komga(name="Komga", url=BASE_URL, api_key=API_KEY, path_map=one)
+        assert _audit(env.engine, "config.path_map") == []  # a creation is the line of its door
+        env.admin.target_add_komga(name="Komga", url=BASE_URL, api_key=API_KEY, path_map=one)
+        assert _audit(env.engine, "config.path_map") == []  # nothing changed, nothing said
+        env.admin.target_add_komga(name="Komga", url=BASE_URL, api_key=API_KEY, path_map=two)
+        env.admin.target_add_kavita(
+            name="K", url="http://kavita.internal:5000", username="u", password="p" * 12,
+            accept_admin_risk=True, path_map=one,
+        )  # fmt: skip
+        env.admin.target_add_kavita(
+            name="K", url="http://kavita.internal:5000", username="u", password="p" * 12,
+            accept_admin_risk=True, path_map=two,
+        )  # fmt: skip
+        assert [r.target for r in _audit(env.engine, "config.path_map")] == [
+            "Komga uid=" + str(os.getuid()),
+            "K uid=" + str(os.getuid()),
+        ]

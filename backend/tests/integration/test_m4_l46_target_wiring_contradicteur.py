@@ -37,11 +37,6 @@ def _path_map(engine: sa.Engine, name: str) -> list[Any]:
     return list(row.path_map)
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#342 MAJ-1 : la porte target.add_komga est en audit=False et sa branche « déjà là »"
-    " change le path map sans écrire de ligne d'audit",
-)
 def test_poc_a_path_map_change_through_the_komga_door_is_journaled(
     world: World, komga_http: FakeKomga
 ) -> None:
@@ -66,11 +61,6 @@ def komga_env(settings: Settings) -> Iterator[tuple[Headless, FakeKomga]]:
         yield env, fake
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#342 MIN-1 : une nouvelle clé donnée pour une cible Komga existante est acceptée en"
-    " silence, sans sonde ni scellement : l'ancienne reste",
-)
 def test_poc_a_new_key_for_an_existing_komga_is_not_silently_dropped(
     komga_env: tuple[Headless, FakeKomga], tmp_path: Path
 ) -> None:

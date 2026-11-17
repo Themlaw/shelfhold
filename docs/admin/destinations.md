@@ -16,8 +16,8 @@ Kavita par lecteur) est dans [famille.md](famille.md).
 |---|---|---|
 | **Kavita** | la bibliothèque où se fait la lecture ; Shelfhold écrit dans le dossier que Kavita scanne et l'invite à analyser | `shelfhold target add kavita` (ci-dessous) |
 | **dossier natif** | un dossier à la disposition locale de Mihon, ou que lit la source locale de Suwayomi ; aucun serveur, aucune clé | `POST /api/v1/targets/native-folder` |
-| **Komga** | une bibliothèque Komga ; le cloisonnement par bibliothèque est prouvé par l'audit des comptes | **pas encore disponible** (voir plus bas) |
-| **CWA** | la boîte de dépôt de Calibre-Web Automated : un EPUB déposé, l'importeur le prend | **pas encore disponible** (voir plus bas) |
+| **Komga** | une bibliothèque Komga ; le cloisonnement par bibliothèque est prouvé par l'audit des comptes | `shelfhold target add komga` (plus bas) |
+| **CWA** | la boîte de dépôt de Calibre-Web Automated : un EPUB déposé, l'importeur le prend | `shelfhold target add cwa` (plus bas) |
 
 Le détail de chaque contrat (routes appelées, dépôt atomique, refus) est dans
 [komga-routes.md](../destinations/komga-routes.md) et
@@ -47,15 +47,38 @@ racine qui chevauche le dossier de la source locale de Suwayomi est refusée
 gère. Il n'y a ni serveur ni clé : la destination est l'arbre de dossiers lui-même, à la
 disposition locale de Mihon.
 
-### Komga et CWA : la destination existe, sa création pas encore
+### Komga
 
-Le code qui parle à Komga (scan de bibliothèque débouncé, regroupement par dossier, cloisonnement
-par bibliothèque prouvé par l'audit des comptes, plancher 1.22.0) et celui qui dépose dans la
-boîte CWA (EPUB seul, dépôt atomique, suivi par identifiant) sont livrés et testés. **Aucune
-commande, route ni écran ne crée encore une cible Komga ou CWA** : `target add komga` et
-`target add cwa` n'existent pas, et la liaison d'une étagère n'accepte que des cibles déjà
-déclarées. Ce sera une action réservée à part entière quand elle arrivera. Jusque-là, ces
-destinations ne sont pas utilisables sur une instance de production.
+```sh
+shelfhold target add komga --url http://komga.example.lan:25600 --password-file komga.key
+```
+
+Le fichier (ou `-` pour l'entrée standard, jamais un argument) contient la **clé d'API d'un compte
+administrateur dédié** de Komga (le scan et `empty-trash` exigent ce rôle) ; `--api-key-file` est un
+synonyme de `--password-file`. Shelfhold montre la clé une fois à Komga (`/actuator/info`, route
+d'administrateur : sa réponse prouve le rôle), la **scelle** dans la ligne de la destination et ne la
+relit plus jamais : ni l'API, ni l'export intégral, ni un journal ne la portent. Une clé refusée ou une
+adresse privée que le réglage réseau ne déclare pas n'enregistre rien (`target.exchange_failed`).
+Options : `--name` (défaut `komga`) et `--path-map`. Relancer la commande avec la **même** clé répond
+« déjà présente » sans rien écrire ; avec une **nouvelle** clé, Shelfhold la sonde, la scelle à la place de
+l'ancienne et le journal le dit (`target.rotate_komga_key`) : c'est la rotation. Changer la carte des
+chemins d'une cible existante par cette porte est journalisé comme `config.path_map`. Même ajout par
+`POST /api/v1/targets/komga` (`name`, `url`, `api_key`, `path_map`) : action réservée
+(`target.add_komga`), session d'administrateur récente, jamais une clé d'API, un membre ou un enfant.
+Tant que l'audit des comptes n'est pas appelé en production, une étagère sous 18+ n'est pas liée à Komga
+([komga-routes.md](../destinations/komga-routes.md)).
+
+### CWA
+
+```sh
+shelfhold target add cwa --name depot \
+    --path-map '[{"local": "/library/depot", "remote": "/cwa-ingest", "mode": "rw"}]'
+```
+
+C'est le dossier que Calibre-Web Automated surveille : aucun secret, des dossiers en écriture seulement,
+jamais la source locale de Suwayomi. Même ajout par `POST /api/v1/targets/cwa` (`name`, `path_map`) :
+action réservée comme le dossier natif (`config.path_map`), journalisé (`target.add_cwa`). Une étagère
+se lie à une boîte de dépôt avec le transport `dropbox`.
 
 ## Lier une étagère : le fan-out
 
@@ -105,9 +128,10 @@ dans [installation-headless.md](installation-headless.md) et [adopter-kavita.md]
 
 ## Ce qui n'existe pas encore
 
-- **Créer une cible Komga ou CWA** : pas encore disponible (voir plus haut).
-- **Activer la synchronisation de la progression pour une liaison** : le réglage existe côté
-  données, aucune interface ne l'écrit encore — voir [sync.md](sync.md).
+- **Un écran de création** d'une cible (Komga, CWA, dossier natif) et une étape de l'assistant pour
+  Komga ou CWA : pas encore disponible (la ligne de commande et l'API suffisent).
+- **La synchronisation de la progression** s'allume par liaison (`shelfhold target sync-progress`, case de
+  l'écran des destinations) et seul Kavita la tient — voir [sync.md](sync.md).
 - **Les collections et listes poussées vers Kavita** : livrées, voir
   [collections-kavita.md](collections-kavita.md) ; les œuvres liées dans
   [oeuvres-liees.md](oeuvres-liees.md).

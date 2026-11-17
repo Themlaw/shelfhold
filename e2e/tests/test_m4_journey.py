@@ -13,12 +13,10 @@ observed on the disk, in the database the image holds or in what the simulated s
   template changes, and both are where they were (EF-EXP-017, EF-EXP-030);
 - the hash vectors of ENF-QUAL-005 are green on the image itself.
 
-The two journeys of the members' progress are complete and red on purpose (`xfail` strict): the
-switch `shelf_destination.sync_progress` they stand on is a column with no write surface yet (no
-command, no route sets it), so `progress.sync` answers `no_destination` and a rename carries
-nobody. The lot that turns the switch on makes them pass, and strict xfail then demands the
-markers go. Nothing leaves the network namespace (`Journey.egress()` is read at the end of each
-journey).
+The two journeys of the members' progress turn the switch of the binding on the way the
+administrator does (`shelfhold target sync-progress <binding> --on`, M4 L46): without it
+`progress.sync` answers `no_destination` and a rename carries nobody. Nothing leaves the network
+namespace (`Journey.egress()` is read at the end of each journey).
 """
 
 from __future__ import annotations
@@ -44,13 +42,6 @@ VECTORS_FILE = (
 # the overlay mounted there, as a mounted share would be.
 M4_KAVITA_PATH_MAP = '[{"local": "/library/manga", "remote": "/library/manga", "mode": "rw"}]'
 NATIVE_ROOT = "/library/native"
-SYNC_PROGRESS_NOT_WRITABLE = (
-    "EF-EXP-026/EF-EXP-017: the switch `shelf_destination.sync_progress` has no write surface "
-    "yet (no command, no route sets it; M4 L14b left it a column and L33a/L33b added no write), "
-    "so `progress.sync` skips (no_destination) and a rename carries nobody. The journey is "
-    "complete and red on purpose: the lot that turns the switch on makes it pass, and strict "
-    "xfail then asks for this marker to go."
-)
 
 
 # -- what the journeys read of the simulated servers --------------------------------
@@ -66,6 +57,17 @@ def manga_install_m4(j: Journey, *, exported: bool = True) -> tuple[str, str]:
     """`manga_install` on the M4 layout: Kavita's map names /library/manga and the shelf sits at
     its root, so the native folder beside it is a root of its own and breaks no rule."""
     return manga_install(j, exported=exported, path_map=M4_KAVITA_PATH_MAP, subpath=None)
+
+
+def turn_sync_on(j: Journey, destination: str) -> None:
+    """The administrator turns the progress sync of the binding on, by the command (reserved: the
+    host's command line), and the destinations screen's route says it is on."""
+    done = j.shelfhold("target", "sync-progress", destination, "--on")
+    assert done.code == 0, (done.out, done.err)
+    [(code, listed)] = j.api(("GET", "/api/v1/destinations"))
+    assert code == 200, listed
+    [row] = [d for d in listed["items"] if d["id"] == destination]  # type: ignore[index]
+    assert row["sync_progress"] is True and row["can_sync_progress"] is True, row
 
 
 def fake_call(j: Journey, url: str) -> dict[str, object]:
@@ -230,13 +232,13 @@ def test_m4_journey_manga_shelf_kavita_and_native_folder(journey_m4: Journey) ->
 
 @pytest.mark.e2e_timeout(900)
 @pytest.mark.req("EF-EXP-026")
-@pytest.mark.xfail(strict=True, reason=SYNC_PROGRESS_NOT_WRITABLE)
 def test_m4_journey_progress_both_ways(journey_m4: Journey) -> None:
     """A member reads in Kavita: the position Kavita's own API holds for their account reaches
     their "Where I am", read by the e-reader routes of their device token; and the position the
     e-reader leaves reaches Kavita. The screen of the sync says what was pulled and pushed."""
     j = journey_m4
     destination, library = manga_install_m4(j)
+    turn_sync_on(j, destination)
     reader = ("reader", "synthetic-reader-password-1")
     user_id = make_profile(j, reader, "member")
     j.child_account(reader[0], library_ids(j)[library], age=-1)  # the member's Kavita account
@@ -262,9 +264,9 @@ def test_m4_journey_progress_both_ways(journey_m4: Journey) -> None:
     code, stored = kosync(j, "put", public_id, secret, document, "9")
     assert code == 200 and stored["document"] == document, (code, stored)
     assert j.shelfhold("jobs", "run", "progress.sync").code == 0
-    assert wait_for(
-        lambda: kavita_page(j, reader[0], chapter_of(j, chapter)) == 9, 300
-    ), "the position left by the e-reader never reached Kavita"
+    assert wait_for(lambda: kavita_page(j, reader[0], chapter_of(j, chapter)) == 9, 300), (
+        "the position left by the e-reader never reached Kavita"
+    )
     assert j.kavita()["violations"] == []
     assert j.egress() == []
 
@@ -274,7 +276,6 @@ def test_m4_journey_progress_both_ways(journey_m4: Journey) -> None:
 
 @pytest.mark.e2e_timeout(900)
 @pytest.mark.req("EF-EXP-017", "EF-EXP-030")
-@pytest.mark.xfail(strict=True, reason=SYNC_PROGRESS_NOT_WRITABLE)
 def test_m4_journey_rename_keeps_each_member_progress(journey_m4: Journey) -> None:
     """Two members read the chapter in Kavita, each at their own page; the administrator changes
     the naming template and the files take their new names. Both members are where they were:
@@ -282,6 +283,7 @@ def test_m4_journey_rename_keeps_each_member_progress(journey_m4: Journey) -> No
     nothing is made "read" on the way (EF-EXP-017, EF-EXP-030)."""
     j = journey_m4
     destination, library = manga_install_m4(j)
+    turn_sync_on(j, destination)
     chapter = next(
         f for f in j.library_files() if f.startswith("/library/manga/") and f.endswith(".cbz")
     )
@@ -331,9 +333,9 @@ def test_m4_journey_rename_keeps_each_member_progress(journey_m4: Journey) -> No
         if f.startswith("/library/manga/") and " - Chapter " in f and f.endswith(".cbz")
     )
     # each member is where they were, on the chapter the rename made
-    assert wait_for(
-        lambda: kavita_page(j, "alice", chapter_of(j, moved)) == 12, 300
-    ), "alice's progress was not carried over the rename"
+    assert wait_for(lambda: kavita_page(j, "alice", chapter_of(j, moved)) == 12, 300), (
+        "alice's progress was not carried over the rename"
+    )
     assert kavita_page(j, "bob", chapter_of(j, moved)) == 7, "bob's progress was not carried"
     assert j.kavita()["violations"] == []
     assert j.egress() == []

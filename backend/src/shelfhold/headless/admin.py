@@ -8,6 +8,7 @@ asks for SQL, and no secret is written anywhere but sealed: not in a log, a plan
 
 from __future__ import annotations
 
+import hmac
 import json
 import os
 from collections.abc import Callable, Mapping
@@ -51,7 +52,7 @@ from shelfhold.export.domain.reconcile import (
     Thresholds,
 )
 from shelfhold.export.targets.kavita import AdminKey, load_admin_key, store_admin_key
-from shelfhold.export.targets.komga.credentials import KomgaKey, store_komga_key
+from shelfhold.export.targets.komga.credentials import KomgaKey, load_komga_key, store_komga_key
 from shelfhold.headless import records
 from shelfhold.headless.actor import Actor
 from shelfhold.headless.desired import (
@@ -564,7 +565,7 @@ class HeadlessAdmin:
             if existing.kind != "kavita" or existing.config.get("url") != clean_url:
                 raise TargetConflict(f"a target named {name!r} exists with another address")
             if path_map is not None and _normalise_path_map(list(existing.path_map)) != entries:
-                self._set_path_map(PATH_MAP_PREFIX + name, json.dumps(entries))
+                self._remap_audited(name, entries, actor)
             self._bootstrap()
             return TargetAdded(existing.id, name, False)
         if not accept_admin_risk:  # before anything leaves: the warning is the whole answer
@@ -688,8 +689,26 @@ class HeadlessAdmin:
         if existing is not None:
             if existing.kind != "komga" or existing.config.get("url") != clean_url:
                 raise TargetConflict(f"a target named {name!r} exists with another address")
+            if self._komga is None:
+                raise TargetExchangeFailed("this instance cannot reach a Komga")
+            with self._engine.connect() as connection:
+                sealed = load_komga_key(self._vault, connection, existing.id).reveal()
+            rotated = not hmac.compare_digest(sealed.encode(), api_key.encode())
+            if rotated:  # a new key: shown to Komga first, then sealed in place of the old one
+                self._komga.probe(url=clean_url, api_key=api_key)
+                with write_transaction(self._engine) as connection:
+                    registry.register_active_key(connection, self._vault.keyring)
+                    store_komga_key(self._vault, connection, existing.id, KomgaKey(api_key))
+                    records.insert_audit(
+                        connection, audit_id=new_ulid(),
+                        actor_id=actor.actor_id if actor else None,
+                        action="target.rotate_komga_key",
+                        target=name if actor else f"{name} uid={os.getuid()}",
+                        at=self._clock.now(), session_id=actor.session_id if actor else None,
+                        auth_time=actor.auth_time if actor else None,
+                    )  # fmt: skip
             if path_map is not None and _normalise_path_map(list(existing.path_map)) != entries:
-                self._set_path_map(PATH_MAP_PREFIX + name, json.dumps(entries))
+                self._remap_audited(name, entries, actor)
             self._bootstrap()
             return TargetAdded(existing.id, name, False)
         if self._komga is None:
@@ -745,6 +764,19 @@ class HeadlessAdmin:
         _log.info("headless.sync_progress", destination=destination_id, enabled=enabled)
         self._wake()
         return SyncProgressSet(destination_id, enabled)
+
+    def _remap_audited(self, name: str, entries: PathMapSpec, actor: Actor | None) -> None:
+        """A door that adds a target may find it there and change its folders: that is the action
+        `config.path_map`, and it leaves its line like it (the guard of these doors writes none)."""
+        self._set_path_map(PATH_MAP_PREFIX + name, json.dumps(entries))
+        with write_transaction(self._engine) as connection:
+            records.insert_audit(
+                connection, audit_id=new_ulid(), actor_id=actor.actor_id if actor else None,
+                action="config.path_map",
+                target=name if actor else f"{name} uid={os.getuid()}",
+                at=self._clock.now(), session_id=actor.session_id if actor else None,
+                auth_time=actor.auth_time if actor else None,
+            )  # fmt: skip
 
     def _audit_admin_risk(self, connection: Connection, name: str, actor: Actor | None) -> None:
         """One row in the same transaction as the target: no accepted risk without its trace."""

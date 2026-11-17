@@ -56,7 +56,6 @@ until = "M4"  # settled by M4 lot L44 (Komga journey) or the lot that creates th
 symbols = [
   "shelfhold.export.targets.komga.audit:KomgaAuditor",
   "shelfhold.export.targets.komga.client:KomgaClient",
-  "shelfhold.export.targets.komga.credentials:load_komga_key",
   "shelfhold.export.targets.komga.errors:KomgaNoLibrary",
   "shelfhold.export.targets.komga.target:KomgaDestination.layout_conflicts",
   "shelfhold.export.targets.komga.target:KomgaDestination.inventory_calls",
