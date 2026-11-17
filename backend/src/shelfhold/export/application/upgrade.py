@@ -371,8 +371,10 @@ def served_blockers(connection: Connection, unit_id: str) -> tuple[str, ...]:
     ).all()  # fmt: skip
     words: list[str] = []
     for row in rows:
-        if row.state == "adopted" or row.kind == "adopted" or _adopted_content(
-            connection, row.content_id
+        if (
+            row.state == "adopted"
+            or row.kind == "adopted"
+            or _adopted_content(connection, row.content_id)
         ):
             word: str | None = "adopted_original"
         elif row.state != "written" or row.locator_type != "path":
