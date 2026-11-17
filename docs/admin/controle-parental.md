@@ -221,7 +221,7 @@ enfant dans Kavita. Les chapitres au-dessus du plafond d'âge de l'enfant ne son
 Importer une liste pour un enfant (`POST /api/v1/request-lists/for-child/{id}`, ou `shelfhold request --from-list … --for-profile`)
 est l'action réservée `reading_shelf.attach` : session d'administration fraîche dès qu'un profil restreint existe, jamais une clé,
 jamais un profil enfant ou membre. Son étagère de lecture ne contient que ce qu'elle voit, et chaque demande faite à son nom demande
-un âge à l'approbation. Voir [listes-de-lecture.md](listes-de-lecture.md).
+un âge à l'approbation. Voir [listes-importees.md](listes-importees.md).
 
 ## Plusieurs destinations pour une étagère (fan-out)
 
