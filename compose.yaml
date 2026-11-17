@@ -12,6 +12,12 @@
 
 services:
   shelfhold:
+    # Two names for the same signed image (ENF-GOV-004): GHCR, live here, and the second registry,
+    # published by the CI when the maintainer set it up (digest and signature identical). If GitHub
+    # removes the image, swap the next line for the second name, then `docker compose pull`:
+    #   image: codeberg.org/<owner>/shelfhold:1.0
+    # <owner> is the account of the second registry; verify either name before using it
+    # (docs/admin/verifier-les-images.md). The continuity steps are in GOVERNANCE.md.
     image: ghcr.io/themlaw/shelfhold:1.0
     container_name: shelfhold
     # Migrations first (backup named by revision, ENF-OPS-002), then the server; a failed migration
@@ -51,6 +57,9 @@ services:
       # Hardened authentication profile: short admin sessions, password asked again for every
       # reserved action, API keys expire within 90 days (docs/admin/durcir.md).
       # SHELFHOLD_AUTH_HARDENED: "true"
+      # Off by default, nothing leaves the instance until you set them (ENF-PRIV-001, ENF-GOV-004):
+      # SHELFHOLD_UPDATE_CHECK_URL: "https://<mirror>/latest.json"   # tells you a version is out
+      # SHELFHOLD_PLUGIN_INDEX_URL: "https://<mirror>/index.json"    # where the plugin index is read
     volumes:
       - ./data:/data     # database, config, thumbnails (local disk, SSD advised, not NFS)
       - ./store:/store   # kept copies only; a separate volume from /data (ENF-OPS-012).

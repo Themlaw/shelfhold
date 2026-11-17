@@ -161,8 +161,12 @@ class GuardedFetcher:
         settings: Mapping[str, Any] | None = None,
         traffic: TrafficCounter | None = None,
         traffic_source: str | None = None,
+        quiet_failures: bool = False,
     ) -> None:
         self._resolver = resolver
+        # True: a failed or refused call is logged at `info`, not `warning`. For a caller whose
+        # failure blocks nothing and must not read as an incident (the update check, ENF-GOV-004).
+        self._quiet_failures = quiet_failures
         # EF-INT-020: what this Fetcher carried, by source (`traffic_source`, else the plugin id
         # of its domain rules). None: no counter, or no source to count it for.
         self._traffic = traffic
@@ -308,16 +312,28 @@ class GuardedFetcher:
             ):
                 response = await self._follow(method, url, headers, params, body, max_bytes, tally)
         except (TimeoutError, httpx2.TimeoutException) as exc:
-            log.warning("http.failed", method=method, route=route, reason="timeout",
-                        duration_ms=elapsed_ms(started))  # fmt: skip
+            if self._quiet_failures:
+                log.info("http.failed", method=method, route=route, reason="timeout",
+                         duration_ms=elapsed_ms(started))  # fmt: skip
+            else:
+                log.warning("http.failed", method=method, route=route, reason="timeout",
+                            duration_ms=elapsed_ms(started))  # fmt: skip
             raise FetchTimeout("the response took too long") from exc
         except (httpx2.HTTPError, httpx2.StreamError) as exc:
-            log.warning("http.failed", method=method, route=route, reason=type(exc).__name__,
-                        duration_ms=elapsed_ms(started))  # fmt: skip
+            if self._quiet_failures:
+                log.info("http.failed", method=method, route=route, reason=type(exc).__name__,
+                         duration_ms=elapsed_ms(started))  # fmt: skip
+            else:
+                log.warning("http.failed", method=method, route=route, reason=type(exc).__name__,
+                            duration_ms=elapsed_ms(started))  # fmt: skip
             raise FetchUnreachable(f"the request failed: {type(exc).__name__}") from exc
         except FetchError as exc:
-            log.warning("http.refused", method=method, route=route, reason=type(exc).__name__,
-                        duration_ms=elapsed_ms(started))  # fmt: skip
+            if self._quiet_failures:
+                log.info("http.refused", method=method, route=route, reason=type(exc).__name__,
+                         duration_ms=elapsed_ms(started))  # fmt: skip
+            else:
+                log.warning("http.refused", method=method, route=route, reason=type(exc).__name__,
+                            duration_ms=elapsed_ms(started))  # fmt: skip
             raise
         log.debug("http.call", method=method, route=route, status=response.status,
                   duration_ms=elapsed_ms(started))  # fmt: skip

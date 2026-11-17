@@ -23,7 +23,7 @@ from pydantic import (
     model_validator,
 )
 
-from shelfhold.infrastructure.http_headers import require_web_url
+from shelfhold.infrastructure.http_headers import require_plain_web_url, require_web_url
 from shelfhold.jobs.window import parse_clock, parse_zone
 
 ENV_PREFIX = "SHELFHOLD_"
@@ -77,6 +77,14 @@ class Settings(BaseModel):
     # ENF-LEG-012: where the running code is offered (login page, /api/v1/about); None = the
     # repository at the tag of this version. Point it at your fork if you modified the code.
     source_url: str | None = None
+    # ENF-GOV-004 (ADR-0029): both are off until the administrator gives an address, so that a
+    # fresh install makes no outbound request of its own (ENF-PRIV-001).
+    # The update checker reads one small JSON document at this address (platform/update_check.py);
+    # a failure is an `info` line, never an error.
+    update_check_url: str | None = None
+    # Where the plugin index is read (M6 reads it): the address of a mirror if the forge is lost.
+    # The host does not authenticate the content: the minisign signature of the index does.
+    plugin_index_url: str | None = None
     # ENF-SEC-002: the most a connected service may send as one comic archive (a CBZ). Streamed to
     # the staging file and checked against this bound while it arrives; 512 MiB by default.
     received_cbz_max_bytes: int = Field(default=512 * 1024 * 1024, ge=1024 * 1024)
@@ -219,6 +227,11 @@ class Settings(BaseModel):
     @classmethod
     def _source_url_is_web(cls, value: str | None) -> str | None:
         return None if value is None else require_web_url(value)
+
+    @field_validator("update_check_url", "plugin_index_url")
+    @classmethod
+    def _forge_urls_are_plain(cls, value: str | None) -> str | None:
+        return None if value is None else require_plain_web_url(value)
 
     @field_validator("metadata_contact")
     @classmethod

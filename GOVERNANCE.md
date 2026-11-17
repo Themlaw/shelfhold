@@ -27,7 +27,17 @@ Canal : signalement privé GitHub (voir [SECURITY.md](SECURITY.md)).
 
 ## Continuité en cas de retrait
 
-Si l'hébergeur retire le dépôt ou l'image : bascule vers le second registre d'images et le miroir du dépôt (palier M1b, [ADR-0029](docs/adr/0029-resilience-retrait-forge.md)).
+Si l'hébergeur retire le dépôt ou l'image, la perte est celle d'un hôte, pas de l'authenticité : les images sont signées par le workflow (cosign), l'index de plugins par minisign, et ces signatures valent quel que soit l'hôte ([ADR-0029](docs/adr/0029-resilience-retrait-forge.md), ENF-GOV-004).
+
+**Avant** (en continu) : le workflow `publish-mirror` pousse `main` et les tags vers le miroir `codeberg.org/<owner>/shelfhold`, et la CI publie les images sur le second registre `codeberg.org/<owner>/shelfhold`, tant que le secret `CODEBERG_TOKEN` existe. Ce secret se range dans l'**environnement `mirror`** du dépôt GitHub, restreint à la branche `main` et aux tags `v*` (une autre branche, même d'un porteur d'un droit d'écriture, ne peut pas le lire), avec la variable `MIRROR_USER` (le compte du miroir) ; le mainteneur les crée lui-même. Sans lui, rien n'y est publié et l'exigence reste ouverte (voir [verifier-les-images](docs/admin/verifier-les-images.md)).
+
+**Après un retrait**, dans cet ordre :
+
+1. Le mainteneur confirme le retrait par le canal de sécurité et annonce, depuis le miroir, que celui-ci devient la référence (README du miroir, un message épinglé).
+2. Les familles changent **une ligne** de leur `compose.yaml` : `image: codeberg.org/<owner>/shelfhold:<X.Y>` à la place du nom GHCR, puis `docker compose pull`. Elles vérifient d'abord l'image : `cosign verify codeberg.org/<owner>/shelfhold@sha256:<digest> …` avec la même identité de workflow (le digest est celui de la dernière release signée).
+3. Elles pointent `SHELFHOLD_PLUGIN_INDEX_URL` vers l'index du miroir (la signature minisign authentifie le contenu, pas l'hôte) et, si elles l'avaient activé, `SHELFHOLD_UPDATE_CHECK_URL` vers le document de version du miroir. Un vérificateur dont l'hôte a disparu ne fait que journaliser au niveau `info` : rien ne casse en attendant.
+4. Le mainteneur rouvre le dépôt sur une forge au choix à partir du miroir (historique et tags complets), remet les secrets d'Actions, et publie une release signée sur le nouvel hôte.
+5. Il consigne l'incident et les dates dans `docs/decisions/`, et met à jour le lien « Code source » (`SHELFHOLD_SOURCE_URL`, AGPL §13).
 
 ## Archivage propre
 
