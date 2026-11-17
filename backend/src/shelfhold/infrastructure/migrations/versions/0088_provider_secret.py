@@ -4,15 +4,15 @@ One table, `provider_secret`: one row per provider (Hardcover, Google Books), th
 sealed columns of the secret vault and nowhere else. Created from the schema so the DDL stays
 identical to `metadata.create_all` (ENF-OPS-002). Nothing existing is touched; reversible.
 
-Number: 0087 follows 0086 (L18a), the head of main when this lot was frozen.
+Number: 0088 follows 0087 (L30), the head of main when this lot was frozen.
 """
 
 from alembic import op
 
 from shelfhold.infrastructure.schema import acquisition
 
-revision = "0087"
-down_revision = "0086"
+revision = "0088"
+down_revision = "0087"
 branch_labels = None
 depends_on = None
 

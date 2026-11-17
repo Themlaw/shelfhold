@@ -25,7 +25,7 @@ ITEM = "01HZZZZZZZZZZZZZZZZZZZZZZC"
 
 def test_the_revision_is_0087_the_only_head_on_0086() -> None:
     script = ScriptDirectory(str(default_script_location()))
-    assert script.get_heads() == ["0087"]
+    assert len(script.get_heads()) == 1  # the head is pinned by the newest migration test
     assert script.get_revision("0087").down_revision == "0086"
 
 
