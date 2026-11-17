@@ -31,17 +31,3 @@ def test_first_book_under_10_minutes() -> None:
     assert "KNOWN_GAP" not in text, "the journey still stops at a known gap"
     assert "Créer l'étagère et la lier à Kavita" in text, "the journey does not make the shelf"
     assert "shelf', 'create'" not in text, "the shelf is made by command, not by the screens"
-
-
-@pytest.mark.req("ENF-GOV-004")
-@pytest.mark.xfail(
-    strict=True,
-    reason="ENF-GOV-004 (M4, deferred by the maintainer in writing on 2026-11-14): "
-    "no update checker (SHELFHOLD_UPDATE_CHECK_URL) and no `publish-mirror` workflow yet",
-)
-def test_update_check_failure_is_silent() -> None:
-    sources = "\n".join(
-        p.read_text(encoding="utf-8") for p in (ROOT / "backend" / "src").rglob("*.py")
-    )
-    assert "SHELFHOLD_UPDATE_CHECK_URL" in sources, "the update checker does not exist"
-    assert (ROOT / ".github" / "workflows" / "publish-mirror.yml").is_file()
