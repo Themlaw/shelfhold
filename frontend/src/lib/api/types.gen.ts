@@ -276,6 +276,32 @@ export type AppliedOut = {
 };
 
 /**
+ * ApplyOut
+ */
+export type ApplyOut = {
+    /**
+     * Hints
+     */
+    hints: number;
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Markers
+     */
+    markers: number;
+    /**
+     * Pending Items
+     */
+    pending_items: number;
+    /**
+     * State
+     */
+    state: string;
+};
+
+/**
  * ApprovalOut
  */
 export type ApprovalOut = {
@@ -921,7 +947,7 @@ export type CollectionDetailOut = {
     /**
      * Items
      */
-    items: Array<ItemOut>;
+    items: Array<ShelfholdInterfacesHttpApiCollectionsItemOut>;
     /**
      * Kind
      */
@@ -2194,21 +2220,6 @@ export type ImportIn = {
 };
 
 /**
- * ImportOut
- */
-export type ImportOut = {
-    collection: CollectionOut;
-    /**
-     * Imported
-     */
-    imported: number;
-    /**
-     * Unresolved
-     */
-    unresolved: Array<UnresolvedOut>;
-};
-
-/**
  * IntentOut
  */
 export type IntentOut = {
@@ -2290,36 +2301,6 @@ export type ItemMoveIn = {
      * New Rel Path
      */
     new_rel_path: string;
-};
-
-/**
- * ItemOut
- */
-export type ItemOut = {
-    /**
-     * Cover Hash
-     */
-    cover_hash: string | null;
-    /**
-     * Id
-     */
-    id: string;
-    /**
-     * Number
-     */
-    number: string | null;
-    /**
-     * Position
-     */
-    position: number;
-    /**
-     * Title
-     */
-    title: string;
-    /**
-     * Work Id
-     */
-    work_id: string;
 };
 
 /**
@@ -7107,6 +7088,51 @@ export type WorksPageOut = {
 };
 
 /**
+ * ImportOut
+ */
+export type ShelfholdInterfacesHttpApiCollectionsImportOut = {
+    collection: CollectionOut;
+    /**
+     * Imported
+     */
+    imported: number;
+    /**
+     * Unresolved
+     */
+    unresolved: Array<UnresolvedOut>;
+};
+
+/**
+ * ItemOut
+ */
+export type ShelfholdInterfacesHttpApiCollectionsItemOut = {
+    /**
+     * Cover Hash
+     */
+    cover_hash: string | null;
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Number
+     */
+    number: string | null;
+    /**
+     * Position
+     */
+    position: number;
+    /**
+     * Title
+     */
+    title: string;
+    /**
+     * Work Id
+     */
+    work_id: string;
+};
+
+/**
  * DetachIn
  */
 export type ShelfholdInterfacesHttpApiDestinationsDetachIn = {
@@ -7406,6 +7432,96 @@ export type ShelfholdInterfacesHttpApiStatusQueueOut = {
      * Reason
      */
     reason: string;
+};
+
+/**
+ * ImportOut
+ */
+export type ShelfholdInterfacesHttpApiTachibkImportImportOut = {
+    /**
+     * Chapters
+     */
+    chapters: number;
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Items
+     */
+    items: Array<ShelfholdInterfacesHttpApiTachibkImportItemOut>;
+    /**
+     * Profile Id
+     */
+    profile_id: string;
+    /**
+     * Read
+     */
+    read: number;
+    /**
+     * Schema Version
+     */
+    schema_version: string;
+    /**
+     * Series
+     */
+    series: number;
+    /**
+     * Skipped
+     */
+    skipped: {
+        [key: string]: number;
+    };
+    /**
+     * Sources
+     */
+    sources: number;
+    /**
+     * Started
+     */
+    started: number;
+    /**
+     * State
+     */
+    state: string;
+    /**
+     * Trackers
+     */
+    trackers: number;
+    /**
+     * Unknown Fields
+     */
+    unknown_fields: Array<number>;
+};
+
+/**
+ * ItemOut
+ */
+export type ShelfholdInterfacesHttpApiTachibkImportItemOut = {
+    /**
+     * Chapters
+     */
+    chapters: number;
+    /**
+     * Read
+     */
+    read: number;
+    /**
+     * Source Key
+     */
+    source_key: string;
+    /**
+     * Started
+     */
+    started: number;
+    /**
+     * Title
+     */
+    title: string;
+    /**
+     * Trackers
+     */
+    trackers: number;
 };
 
 export type AboutData = {
@@ -8648,7 +8764,7 @@ export type ImportCblResponses = {
     /**
      * Successful Response
      */
-    201: ImportOut;
+    201: ShelfholdInterfacesHttpApiCollectionsImportOut;
 };
 
 export type ImportCblResponse = ImportCblResponses[keyof ImportCblResponses];
@@ -8762,7 +8878,7 @@ export type AddItemResponses = {
     /**
      * Successful Response
      */
-    201: ItemOut;
+    201: ShelfholdInterfacesHttpApiCollectionsItemOut;
 };
 
 export type AddItemResponse = AddItemResponses[keyof AddItemResponses];
@@ -10723,6 +10839,120 @@ export type HealthPageResponses = {
 };
 
 export type HealthPageResponse = HealthPageResponses[keyof HealthPageResponses];
+
+export type PreviewBackupData = {
+    body: Blob | File;
+    path?: never;
+    query?: {
+        /**
+         * Profile Id
+         */
+        profile_id?: string | null;
+    };
+    url: '/api/v1/imports/tachibk';
+};
+
+export type PreviewBackupErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type PreviewBackupError = PreviewBackupErrors[keyof PreviewBackupErrors];
+
+export type PreviewBackupResponses = {
+    /**
+     * Successful Response
+     */
+    201: ShelfholdInterfacesHttpApiTachibkImportImportOut;
+};
+
+export type PreviewBackupResponse = PreviewBackupResponses[keyof PreviewBackupResponses];
+
+export type ReadImportData = {
+    body?: never;
+    path: {
+        /**
+         * Import Id
+         */
+        import_id: string;
+    };
+    query?: never;
+    url: '/api/v1/imports/tachibk/{import_id}';
+};
+
+export type ReadImportErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type ReadImportError = ReadImportErrors[keyof ReadImportErrors];
+
+export type ReadImportResponses = {
+    /**
+     * Successful Response
+     */
+    200: ShelfholdInterfacesHttpApiTachibkImportImportOut;
+};
+
+export type ReadImportResponse = ReadImportResponses[keyof ReadImportResponses];
+
+export type ApplyImportData = {
+    body?: never;
+    path: {
+        /**
+         * Import Id
+         */
+        import_id: string;
+    };
+    query?: never;
+    url: '/api/v1/imports/tachibk/{import_id}/apply';
+};
+
+export type ApplyImportErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type ApplyImportError = ApplyImportErrors[keyof ApplyImportErrors];
+
+export type ApplyImportResponses = {
+    /**
+     * Successful Response
+     */
+    200: ApplyOut;
+};
+
+export type ApplyImportResponse = ApplyImportResponses[keyof ApplyImportResponses];
 
 export type IntentsListData = {
     body?: never;

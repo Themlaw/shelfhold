@@ -362,6 +362,9 @@ CLOSED = (
     "POST /api/v1/requests/{request_id}/approve",
     "POST /api/v1/requests/{request_id}/reject",
     "POST /api/v1/requests/{request_id}/not-found",
+    "POST /api/v1/imports/tachibk",  # M4 L26: a backup of another reader app, an admin's
+    "GET /api/v1/imports/tachibk/{import_id}",
+    "POST /api/v1/imports/tachibk/{import_id}/apply",
     "GET /api/v1/request-lists",  # M4 L31: an adult's lists; a child makes and reads none
     "POST /api/v1/request-lists",
     "GET /api/v1/request-lists/{import_id}",

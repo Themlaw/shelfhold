@@ -580,6 +580,91 @@ pending_source_item = sa.Table(
     sa.UniqueConstraint("source_key", "series_ref"),
 )
 
+# A Mihon backup (`.tachibk`) imported by an admin for one profile (M4 L26, EF-INT-008, migration
+# 0095): read as a hostile file, previewed (`state = 'previewed'`, `staged` holds what would be
+# written, which is all the library sees of it), then applied once. `content_hash` identifies the
+# file, never its content; no name of a source is ever kept. The staged text is dropped on apply.
+TACHIBK_IMPORT_STATES = ("previewed", "applied")
+TRACKER_NAMES = ("myanimelist", "anilist", "kitsu", "mangaupdates", "shikimori", "bangumi")
+tachibk_import = sa.Table(
+    "tachibk_import",
+    metadata,
+    ulid_column("id", primary_key=True),
+    sa.Column(
+        "user_id", sa.String(26), sa.ForeignKey("user.id", ondelete="CASCADE"), nullable=False
+    ),
+    sa.Column("created_by", sa.String(26), sa.ForeignKey("user.id", ondelete="SET NULL")),
+    sa.Column("schema_version", sa.String(), nullable=False),
+    sa.Column("content_hash", sa.String(64), nullable=False),
+    sa.Column("state", sa.String(), nullable=False, server_default="previewed"),
+    sa.Column("staged", sa.Text(), nullable=True),
+    sa.Column("summary", sa.JSON(), nullable=False, server_default="{}"),
+    now_column(),
+    sa.Column("applied_at", UtcDateTime(), nullable=True),
+    ulid_check("id"),
+    in_check("state", TACHIBK_IMPORT_STATES),
+    json_shape_check("summary", "object"),
+    sa.CheckConstraint('length("content_hash") = 64', name="content_hash_length"),
+    sa.Index("ix_tachibk_import_user", "user_id"),
+)
+
+# What a profile read in the series of a backup, waiting for the series to be resolved (EF-INT-008):
+# one row per chapter the file proves read or started, for the profile the admin chose and nobody
+# else. A marker is not a reading position: it says what the backup proved, and nothing more.
+read_marker = sa.Table(
+    "read_marker",
+    metadata,
+    ulid_column("id", primary_key=True),
+    sa.Column(
+        "user_id", sa.String(26), sa.ForeignKey("user.id", ondelete="CASCADE"), nullable=False
+    ),
+    sa.Column(
+        "pending_item_id",
+        sa.String(26),
+        sa.ForeignKey("pending_source_item.id", ondelete="CASCADE"),
+        nullable=False,
+    ),
+    sa.Column("import_id", sa.String(26), sa.ForeignKey("tachibk_import.id", ondelete="SET NULL")),
+    sa.Column("chapter_ref", sa.String(), nullable=False),
+    sa.Column("number", sa.String(), nullable=True),
+    bool_column("read", default=False),
+    sa.Column("last_page", sa.Integer(), nullable=True),
+    now_column(),
+    ulid_check("id"),
+    sa.CheckConstraint('"read" IN (0, 1)', name="read_bool"),
+    sa.CheckConstraint('length("chapter_ref") BETWEEN 1 AND 2048', name="chapter_ref_length"),
+    sa.CheckConstraint('"last_page" IS NULL OR "last_page" >= 0', name="last_page_min"),
+    sa.UniqueConstraint("user_id", "pending_item_id", "chapter_ref"),
+    sa.Index("ix_read_marker_item", "pending_item_id"),
+)
+
+# The tracker entry a series was linked to in the backup: which tracker, which entry, how far the
+# reader was. An identifier, never an address, a title or a token (EF-INT-008).
+tracker_hint = sa.Table(
+    "tracker_hint",
+    metadata,
+    ulid_column("id", primary_key=True),
+    sa.Column(
+        "user_id", sa.String(26), sa.ForeignKey("user.id", ondelete="CASCADE"), nullable=False
+    ),
+    sa.Column(
+        "pending_item_id",
+        sa.String(26),
+        sa.ForeignKey("pending_source_item.id", ondelete="CASCADE"),
+        nullable=False,
+    ),
+    sa.Column("import_id", sa.String(26), sa.ForeignKey("tachibk_import.id", ondelete="SET NULL")),
+    sa.Column("tracker", sa.String(), nullable=False),
+    sa.Column("remote_id", sa.String(), nullable=False),
+    sa.Column("last_chapter", sa.Float(), nullable=True),
+    now_column(),
+    ulid_check("id"),
+    in_check("tracker", TRACKER_NAMES),
+    sa.CheckConstraint('length("remote_id") BETWEEN 1 AND 64', name="remote_id_length"),
+    sa.UniqueConstraint("user_id", "pending_item_id", "tracker"),
+    sa.Index("ix_tracker_hint_item", "pending_item_id"),
+)
+
 # A bulk change of the identity scheme of a source, previewed before it is applied (EF-SRC-022).
 source_alias_migration = sa.Table(
     "source_alias_migration",

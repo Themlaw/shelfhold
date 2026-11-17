@@ -119,6 +119,8 @@ EXCLUDED_TABLES: Final[Mapping[str, str]] = {
     "provider_quota": _NOISE, "provider_release_calendar": _NOISE,  # a cache, asked again
     "request_proposal": _NOISE,  # what a search found, asked again (M4 L30)
     "request_list_import": _NOISE, "request_list_item": _NOISE,  # the batch of a list (M4 L31)
+    # a Mihon backup waiting for its series (M4 L26): the file is the source, import it again
+    "tachibk_import": _NOISE, "read_marker": _NOISE, "tracker_hint": _NOISE,
     "http_cache": _NOISE, "metadata_cache": _NOISE,
     "follow_notice": _NOISE, "follow_request": _NOISE, "download_request": _NOISE,
     "download_request_unit": _NOISE, "source_failure": _NOISE, "series_gap": _NOISE,

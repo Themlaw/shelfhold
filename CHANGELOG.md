@@ -6,6 +6,7 @@ Format : [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/). Versionnement
 
 ### Ajouté
 
+- **Import d'une sauvegarde Mihon (L26)** : `shelfhold import tachibk fichier.tachibk` (puis `--apply <id>`) et `POST /api/v1/imports/tachibk`. Le fichier est lu comme hostile (gzip et protobuf décodés à la main dans un sous-processus borné, sans nouvelle dépendance : tailles, profondeur, nombre d'entrées et longueur des textes bornés, refus en entier), prévisualisé sans rien écrire, puis appliqué une fois par l'administrateur (action réservée) : les séries deviennent des éléments en attente dont la source est résolue plus tard (aucune adresse du fichier n'est appelée), leurs chapitres des unités connues, ce que le fichier prouve lu des marqueurs du seul profil choisi, les suivis des indices sans secret. Aucun nom de source n'est lu ni gardé.
 - **Listes de lecture importables (L31)** : `shelfhold request --from-list fichier.txt` et un écran d'import ; une ligne par titre, un ISBN si on en a un. Le texte est borné et lu comme non fiable, résolu dans le catalogue seul (aucune recherche dans une source), ce qui est déjà là va sur une étagère de lecture du profil et le reste devient des demandes, décidées sur **un seul écran**. Pour un enfant, c'est une décision parentale (action réservée) : son étagère ne dépasse pas son plafond et chaque demande garde l'âge à l'approbation. Une ligne qui réclame une édition annotée précise porte un avertissement.
 - **Événements d'arrivée de Kavita (L37)** : Shelfhold écoute le hub de Kavita avec la clé dédiée et regarde plus tôt quand une série arrive ; un événement n'est jamais une preuve, le polling reste actif et une panne du hub ne coupe que cette écoute. Nouvelle dépendance : `websockets` (BSD-3-Clause, Python pur).
 - **Historique d'activité et liste de blocage (L29)** : l'administrateur relit l'historique des événements, bloque un chapitre qu'une source repropose (il est alors ignoré à chaque cycle, sans jamais être débloqué en silence) et le débloque lui-même, avec une ligne d'audit.
@@ -18,7 +19,7 @@ Format : [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/). Versionnement
 
 - Une Œuvre ou une Édition rangée sur aucune étagère n'est plus visible pour un enfant (un adulte la voit toujours).
 
-Migration : oui (0091, 0092 et 0094)
+Migration : oui (0091, 0092, 0094 et 0095)
 
 ## 1.1.0-rc.2 - 2026-11-16
 

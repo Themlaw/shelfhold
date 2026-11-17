@@ -649,6 +649,14 @@ request_list_done = "Liste importée : déjà dans la bibliothèque (sur l'étag
 request_list_annotated = "Attention : lignes qui réclament une édition annotée précise : {count}. Shelfhold ne peut pas promettre cette édition ; vérifiez-la sur l'écran de validation."
 request_list_review = "Tout valider sur un seul écran : /a-approuver/liste/{id}"
 request_list_refused = "La liste n'est pas lue ({reason}) : rien n'a été importé."
+help_import_tachibk = "Importe une sauvegarde Mihon (.tachibk) : les séries deviennent des éléments en attente (leur source est résolue plus tard), ce que le fichier prouve lu est gardé en marqueurs pour un profil. Sans --apply, ne fait qu'un aperçu."
+help_import_tachibk_path = "Le fichier de sauvegarde (16 Mio au plus, lu comme un fichier hostile : rien de ce qu'il contient n'est appelé)."
+help_import_tachibk_profile = "Nom du profil qui reçoit les marqueurs de lecture (le vôtre par défaut)."
+help_import_tachibk_apply = "Écrit, une seule fois, un aperçu fait plus tôt (la première commande en affiche l'identifiant)."
+tachibk_preview = "Sauvegarde lue : {series} séries, {chapters} chapitres, {read} prouvés lus, {started} commencés, {trackers} entrées de suivi. Rien n'est écrit pour l'instant."
+tachibk_apply_with = "Pour l'écrire : shelfhold import tachibk --apply {id}"
+tachibk_applied = "Sauvegarde importée : {series} séries en attente de leur source, {markers} marqueurs de lecture, {hints} indices de suivi."
+tachibk_usage = "Donnez soit un fichier de sauvegarde (un aperçu), soit --apply <id> (pas les deux, et pas de --profile avec --apply)."
 help_follow_series = "Suit une série du service connecté depuis Shelfhold : une seule entrée dans sa bibliothèque, catégorie « Shelfhold », sans téléchargement automatique."
 help_unfollow_series = "Ne suit plus une série : elle reste dans le service connecté, sauf avec --remove-upstream et --confirm."
 help_follow_source_key = "Clé de la source de la série, telle que le service la donne (par exemple suwayomi:7001)."
@@ -1920,6 +1928,31 @@ cause = "Le texte n'est ni un identifiant d'œuvre, ni un ISBN valide, ni un tit
 title = "Trop de demandes sont déjà en attente pour ce profil."
 action = "Attendez une réponse, ou annulez une demande, avant d'en faire une autre."
 cause = "Ce profil a déjà atteint le nombre maximal de demandes en attente."
+
+[errors."import.tachibk_invalid"]
+title = "Cette sauvegarde ne peut pas être lue."
+action = "Exportez une nouvelle sauvegarde depuis Mihon et réessayez. Un fichier de plus de 16 Mio, trop imbriqué ou à trop d'entrées est refusé en entier."
+cause = "Le fichier n'est pas une sauvegarde compressée en gzip, est abîmé, ou dépasse une borne (taille, taille décompressée, profondeur, nombre d'entrées, longueur d'un texte). Le mot de raison dit laquelle."
+
+[errors."import.tachibk_schema"]
+title = "Cette sauvegarde vient d'une version du format que Shelfhold ne connaît pas."
+action = "Mettez Shelfhold à jour, ou exportez de nouveau la sauvegarde depuis une version de Mihon qu'il prend en charge."
+cause = "Le fichier utilise une partie du format que cette version ne reconnaît pas ; elle pourrait changer le sens des parties connues, donc il est refusé plutôt que lu à moitié."
+
+[errors."import.tachibk_not_found"]
+title = "Cet import ou ce profil n'existe pas."
+action = "Recommencez depuis un fichier de sauvegarde, et choisissez un profil qui existe."
+cause = "L'import, ou le profil auquel il était destiné, n'existe pas (ou plus)."
+
+[errors."import.tachibk_applied"]
+title = "Cet import a déjà été appliqué."
+action = "Rien à faire : lisez le résultat, ou importez de nouveau le fichier."
+cause = "Un aperçu ne s'applique qu'une fois."
+
+[errors."import.tachibk_unavailable"]
+title = "Le lecteur de sauvegardes n'a pas pu tourner."
+action = "Réessayez ; si cela dure, regardez les journaux et les limites de la machine."
+cause = "Le processus borné qui lit les sauvegardes n'a pas démarré ou s'est arrêté : le fichier n'y est pour rien."
 
 [errors."request.invalid_list"]
 title = "Cette liste ne peut pas être lue."

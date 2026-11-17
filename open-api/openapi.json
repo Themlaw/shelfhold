@@ -453,6 +453,39 @@
         "title": "AppliedOut",
         "type": "object"
       },
+      "ApplyOut": {
+        "properties": {
+          "hints": {
+            "title": "Hints",
+            "type": "integer"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "markers": {
+            "title": "Markers",
+            "type": "integer"
+          },
+          "pending_items": {
+            "title": "Pending Items",
+            "type": "integer"
+          },
+          "state": {
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "state",
+          "pending_items",
+          "markers",
+          "hints"
+        ],
+        "title": "ApplyOut",
+        "type": "object"
+      },
       "ApprovalOut": {
         "properties": {
           "above_requester_ceiling": {
@@ -1516,7 +1549,7 @@
           },
           "items": {
             "items": {
-              "$ref": "#/components/schemas/ItemOut"
+              "$ref": "#/components/schemas/shelfhold__interfaces__http_api__collections__ItemOut"
             },
             "title": "Items",
             "type": "array"
@@ -3639,31 +3672,6 @@
         "title": "ImportIn",
         "type": "object"
       },
-      "ImportOut": {
-        "properties": {
-          "collection": {
-            "$ref": "#/components/schemas/CollectionOut"
-          },
-          "imported": {
-            "title": "Imported",
-            "type": "integer"
-          },
-          "unresolved": {
-            "items": {
-              "$ref": "#/components/schemas/UnresolvedOut"
-            },
-            "title": "Unresolved",
-            "type": "array"
-          }
-        },
-        "required": [
-          "collection",
-          "imported",
-          "unresolved"
-        ],
-        "title": "ImportOut",
-        "type": "object"
-      },
       "IntentOut": {
         "properties": {
           "created_at": {
@@ -3822,58 +3830,6 @@
           "new_rel_path"
         ],
         "title": "ItemMoveIn",
-        "type": "object"
-      },
-      "ItemOut": {
-        "properties": {
-          "cover_hash": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Cover Hash"
-          },
-          "id": {
-            "title": "Id",
-            "type": "string"
-          },
-          "number": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Number"
-          },
-          "position": {
-            "title": "Position",
-            "type": "integer"
-          },
-          "title": {
-            "title": "Title",
-            "type": "string"
-          },
-          "work_id": {
-            "title": "Work Id",
-            "type": "string"
-          }
-        },
-        "required": [
-          "id",
-          "position",
-          "work_id",
-          "title",
-          "number",
-          "cover_hash"
-        ],
-        "title": "ItemOut",
         "type": "object"
       },
       "JobAccepted": {
@@ -11708,6 +11664,83 @@
         "title": "WorksPageOut",
         "type": "object"
       },
+      "shelfhold__interfaces__http_api__collections__ImportOut": {
+        "properties": {
+          "collection": {
+            "$ref": "#/components/schemas/CollectionOut"
+          },
+          "imported": {
+            "title": "Imported",
+            "type": "integer"
+          },
+          "unresolved": {
+            "items": {
+              "$ref": "#/components/schemas/UnresolvedOut"
+            },
+            "title": "Unresolved",
+            "type": "array"
+          }
+        },
+        "required": [
+          "collection",
+          "imported",
+          "unresolved"
+        ],
+        "title": "ImportOut",
+        "type": "object"
+      },
+      "shelfhold__interfaces__http_api__collections__ItemOut": {
+        "properties": {
+          "cover_hash": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cover Hash"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "number": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Number"
+          },
+          "position": {
+            "title": "Position",
+            "type": "integer"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "work_id": {
+            "title": "Work Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "position",
+          "work_id",
+          "title",
+          "number",
+          "cover_hash"
+        ],
+        "title": "ItemOut",
+        "type": "object"
+      },
       "shelfhold__interfaces__http_api__destinations__DetachIn": {
         "additionalProperties": false,
         "properties": {
@@ -12169,6 +12202,126 @@
           "command"
         ],
         "title": "QueueOut",
+        "type": "object"
+      },
+      "shelfhold__interfaces__http_api__tachibk_import__ImportOut": {
+        "properties": {
+          "chapters": {
+            "title": "Chapters",
+            "type": "integer"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/shelfhold__interfaces__http_api__tachibk_import__ItemOut"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "profile_id": {
+            "title": "Profile Id",
+            "type": "string"
+          },
+          "read": {
+            "title": "Read",
+            "type": "integer"
+          },
+          "schema_version": {
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "series": {
+            "title": "Series",
+            "type": "integer"
+          },
+          "skipped": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Skipped",
+            "type": "object"
+          },
+          "sources": {
+            "title": "Sources",
+            "type": "integer"
+          },
+          "started": {
+            "title": "Started",
+            "type": "integer"
+          },
+          "state": {
+            "title": "State",
+            "type": "string"
+          },
+          "trackers": {
+            "title": "Trackers",
+            "type": "integer"
+          },
+          "unknown_fields": {
+            "items": {
+              "type": "integer"
+            },
+            "title": "Unknown Fields",
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "profile_id",
+          "schema_version",
+          "state",
+          "series",
+          "chapters",
+          "read",
+          "started",
+          "trackers",
+          "sources",
+          "skipped",
+          "items",
+          "unknown_fields"
+        ],
+        "title": "ImportOut",
+        "type": "object"
+      },
+      "shelfhold__interfaces__http_api__tachibk_import__ItemOut": {
+        "properties": {
+          "chapters": {
+            "title": "Chapters",
+            "type": "integer"
+          },
+          "read": {
+            "title": "Read",
+            "type": "integer"
+          },
+          "source_key": {
+            "title": "Source Key",
+            "type": "string"
+          },
+          "started": {
+            "title": "Started",
+            "type": "integer"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "trackers": {
+            "title": "Trackers",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "title",
+          "source_key",
+          "chapters",
+          "read",
+          "started",
+          "trackers"
+        ],
+        "title": "ItemOut",
         "type": "object"
       }
     }
@@ -14130,7 +14283,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ImportOut"
+                  "$ref": "#/components/schemas/shelfhold__interfaces__http_api__collections__ImportOut"
                 }
               }
             },
@@ -14317,7 +14470,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ItemOut"
+                  "$ref": "#/components/schemas/shelfhold__interfaces__http_api__collections__ItemOut"
                 }
               }
             },
@@ -17796,6 +17949,211 @@
         "summary": "Health Page",
         "tags": [
           "health"
+        ]
+      }
+    },
+    "/api/v1/imports/tachibk": {
+      "post": {
+        "operationId": "preview_backup",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "profile_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 26,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Profile Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/octet-stream": {
+              "schema": {
+                "format": "binary",
+                "type": "string"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/shelfhold__interfaces__http_api__tachibk_import__ImportOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Connexion requise, ou mot de passe à confirmer (reauth-required)."
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée)."
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Détail du problème (RFC 9457)."
+          }
+        },
+        "summary": "Preview Backup",
+        "tags": [
+          "imports"
+        ]
+      }
+    },
+    "/api/v1/imports/tachibk/{import_id}": {
+      "get": {
+        "operationId": "read_import",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "import_id",
+            "required": true,
+            "schema": {
+              "title": "Import Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/shelfhold__interfaces__http_api__tachibk_import__ImportOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Connexion requise, ou mot de passe à confirmer (reauth-required)."
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée)."
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Détail du problème (RFC 9457)."
+          }
+        },
+        "summary": "Read Import",
+        "tags": [
+          "imports"
+        ]
+      }
+    },
+    "/api/v1/imports/tachibk/{import_id}/apply": {
+      "post": {
+        "operationId": "apply_import",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "import_id",
+            "required": true,
+            "schema": {
+              "title": "Import Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApplyOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Connexion requise, ou mot de passe à confirmer (reauth-required)."
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée)."
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Détail du problème (RFC 9457)."
+          }
+        },
+        "summary": "Apply Import",
+        "tags": [
+          "imports"
         ]
       }
     },
@@ -29256,6 +29614,26 @@
     "/api/v1/problems/import.purchase-pending": {
       "code": "import.purchase_pending",
       "status": 409
+    },
+    "/api/v1/problems/import.tachibk-applied": {
+      "code": "import.tachibk_applied",
+      "status": 409
+    },
+    "/api/v1/problems/import.tachibk-invalid": {
+      "code": "import.tachibk_invalid",
+      "status": 422
+    },
+    "/api/v1/problems/import.tachibk-not-found": {
+      "code": "import.tachibk_not_found",
+      "status": 404
+    },
+    "/api/v1/problems/import.tachibk-schema": {
+      "code": "import.tachibk_schema",
+      "status": 422
+    },
+    "/api/v1/problems/import.tachibk-unavailable": {
+      "code": "import.tachibk_unavailable",
+      "status": 503
     },
     "/api/v1/problems/import.tombstoned": {
       "code": "import.tombstoned",

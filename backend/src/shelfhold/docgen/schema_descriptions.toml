@@ -1156,6 +1156,45 @@ request_id = "Request made for the line (`request.id`); empty once it is deleted
 work_id = "Work the line was matched to in the library (`work.id`)."
 annotated = "The line asks for an annotated or critical edition: the admin is warned."
 
+[tables.tachibk_import]
+description = "One Mihon backup read for one profile: previewed, then applied once (M4 L26)."
+[tables.tachibk_import.columns]
+id = "Import identifier (ULID)."
+user_id = "Profile that receives the read markers (`user.id`)."
+created_by = "Admin who imported it (`user.id`); empty once that account is gone."
+schema_version = "Generation of the backup format that was recognised (`mihon-1` to `mihon-3`)."
+content_hash = "SHA-256 of the file, to tell two imports of the same file apart; never its content."
+state = "`previewed` (read, nothing written to the library) or `applied`."
+staged = "What the preview would write (JSON), dropped when the import is applied."
+summary = "Counts of the file and the first series, for the preview screen; no name of a source."
+created_at = "When the file was read (UTC)."
+applied_at = "When the import was applied (UTC)."
+
+[tables.read_marker]
+description = "What a profile read in a series of a backup, waiting for the series to be resolved (M4 L26)."
+[tables.read_marker.columns]
+id = "Marker identifier (ULID)."
+user_id = "Profile it belongs to (`user.id`): the one the admin chose, never another."
+pending_item_id = "Series of the backup (`pending_source_item.id`)."
+import_id = "Import that wrote it (`tachibk_import.id`); empty once that import is deleted."
+chapter_ref = "Reference of the chapter as the backup wrote it; kept as text and never called."
+number = "Chapter number the backup states, when it is a plausible number."
+read = "The backup proves the chapter read. Never true because a tracker or a later chapter says so."
+last_page = "Last page read of a chapter that is started and not finished."
+created_at = "When the marker was first written (UTC)."
+
+[tables.tracker_hint]
+description = "The tracker entry a series of a backup was linked to: an identifier, never a secret (M4 L26)."
+[tables.tracker_hint.columns]
+id = "Hint identifier (ULID)."
+user_id = "Profile it belongs to (`user.id`)."
+pending_item_id = "Series of the backup (`pending_source_item.id`)."
+import_id = "Import that wrote it (`tachibk_import.id`); empty once that import is deleted."
+tracker = "Tracker, from a closed list (`anilist`, `myanimelist`, `kitsu`, ...)."
+remote_id = "Identifier of the entry at the tracker (at most 64 characters), not an address."
+last_chapter = "How far the reader was at the tracker, when the backup says."
+created_at = "When the hint was first written (UTC)."
+
 [tables.notification_digest]
 description = "The digest being built for a user, sent at its due time."
 [tables.notification_digest.columns]
