@@ -2101,6 +2101,12 @@ export type HealthPageOut = {
         [key: string]: unknown;
     };
     /**
+     * Unreadable Webhooks
+     */
+    unreadable_webhooks: Array<{
+        [key: string]: unknown;
+    }>;
+    /**
      * Withdrawal Pending
      */
     withdrawal_pending: {
@@ -6563,6 +6569,100 @@ export type WaitingOut = {
      * Subject
      */
     subject: string;
+};
+
+/**
+ * WebhookCreated
+ *
+ * The answer to the creation: the only one that carries the secret.
+ */
+export type WebhookCreated = {
+    /**
+     * Created At
+     */
+    created_at: string;
+    /**
+     * Enabled
+     */
+    enabled: boolean;
+    /**
+     * Event Types
+     */
+    event_types: Array<string>;
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Private Target
+     */
+    private_target: string | null;
+    /**
+     * Secret
+     */
+    secret: string;
+    /**
+     * Url Host
+     */
+    url_host: string;
+};
+
+/**
+ * WebhookIn
+ */
+export type WebhookIn = {
+    /**
+     * Allow Private
+     */
+    allow_private?: boolean;
+    /**
+     * Event Types
+     */
+    event_types: Array<string>;
+    /**
+     * Url
+     */
+    url: string;
+};
+
+/**
+ * WebhookList
+ */
+export type WebhookList = {
+    /**
+     * Items
+     */
+    items: Array<WebhookOut>;
+};
+
+/**
+ * WebhookOut
+ */
+export type WebhookOut = {
+    /**
+     * Created At
+     */
+    created_at: string;
+    /**
+     * Enabled
+     */
+    enabled: boolean;
+    /**
+     * Event Types
+     */
+    event_types: Array<string>;
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Private Target
+     */
+    private_target: string | null;
+    /**
+     * Url Host
+     */
+    url_host: string;
 };
 
 /**
@@ -16550,6 +16650,148 @@ export type DeletionRestoreResponses = {
 };
 
 export type DeletionRestoreResponse = DeletionRestoreResponses[keyof DeletionRestoreResponses];
+
+export type ListWebhooksData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/webhooks';
+};
+
+export type ListWebhooksErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type ListWebhooksError = ListWebhooksErrors[keyof ListWebhooksErrors];
+
+export type ListWebhooksResponses = {
+    /**
+     * Successful Response
+     */
+    200: WebhookList;
+};
+
+export type ListWebhooksResponse = ListWebhooksResponses[keyof ListWebhooksResponses];
+
+export type CreateWebhookData = {
+    body: WebhookIn;
+    path?: never;
+    query?: never;
+    url: '/api/v1/webhooks';
+};
+
+export type CreateWebhookErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type CreateWebhookError = CreateWebhookErrors[keyof CreateWebhookErrors];
+
+export type CreateWebhookResponses = {
+    /**
+     * Successful Response
+     */
+    201: WebhookCreated;
+};
+
+export type CreateWebhookResponse = CreateWebhookResponses[keyof CreateWebhookResponses];
+
+export type RemoveWebhookData = {
+    body?: never;
+    path: {
+        /**
+         * Webhook Id
+         */
+        webhook_id: string;
+    };
+    query?: never;
+    url: '/api/v1/webhooks/{webhook_id}';
+};
+
+export type RemoveWebhookErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type RemoveWebhookError = RemoveWebhookErrors[keyof RemoveWebhookErrors];
+
+export type RemoveWebhookResponses = {
+    /**
+     * Successful Response
+     */
+    204: void;
+};
+
+export type RemoveWebhookResponse = RemoveWebhookResponses[keyof RemoveWebhookResponses];
+
+export type ReadWebhookData = {
+    body?: never;
+    path: {
+        /**
+         * Webhook Id
+         */
+        webhook_id: string;
+    };
+    query?: never;
+    url: '/api/v1/webhooks/{webhook_id}';
+};
+
+export type ReadWebhookErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type ReadWebhookError = ReadWebhookErrors[keyof ReadWebhookErrors];
+
+export type ReadWebhookResponses = {
+    /**
+     * Successful Response
+     */
+    200: WebhookOut;
+};
+
+export type ReadWebhookResponse = ReadWebhookResponses[keyof ReadWebhookResponses];
 
 export type ListWorksData = {
     body?: never;

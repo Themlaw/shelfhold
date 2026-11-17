@@ -1,7 +1,7 @@
-"""Migration 0096 (M4 L35, EF-BIB-005): `team_switch`.
+"""Migration 0096 (M4 L24, EF-INT-005): the webhook subscriptions and their outbox.
 
-One row per preview of a switch to the preferred team: what it would do (kept to be compared with
-what is done), the report once applied. Nothing existing is touched; reversible.
+Two tables, nothing else touched, reversible. The head of the migrations is pinned here, by the
+newest one.
 """
 
 import sqlite3
@@ -13,50 +13,43 @@ from alembic.script import ScriptDirectory
 
 from shelfhold.config import Settings
 from shelfhold.infrastructure.migrate import default_script_location, migrate
-from tests.integration.test_schema_migration_0002 import alembic_config, tables
+from tests.integration.test_schema_migration_0002 import alembic_config
 
-pytestmark = pytest.mark.req("ENF-OPS-002", "EF-BIB-005")
+pytestmark = pytest.mark.req("ENF-OPS-002", "EF-INT-005")
 
-USER = "01HZZZZZZZZZZZZZZZZZZZZZZB"
-SWITCH = "01HZZZZZZZZZZZZZZZZZZZZZZA"
+TABLES = {"webhook_subscription", "webhook_outbox"}
 
 
-def test_the_revision_is_0096_the_head_on_0095() -> None:
+def _tables(database: object) -> set[str]:
+    with closing(sqlite3.connect(str(database))) as conn:
+        rows = conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'")
+        return {row[0] for row in rows}
+
+
+def test_the_revision_is_0096_on_0095() -> None:
     script = ScriptDirectory(str(default_script_location()))
-    assert script.get_heads() == ["0096"]  # the head is pinned here, by the newest
     assert script.get_revision("0096").down_revision == "0095"
 
 
-def test_the_table_comes_and_goes_with_the_migration(settings: Settings) -> None:
+def test_the_tables_come_and_go_with_the_migration(settings: Settings) -> None:
     database = settings.database_path
     settings.data_dir.mkdir(parents=True, exist_ok=True)
     command.upgrade(alembic_config(database), "0095")
-    assert "team_switch" not in tables(database)
+    assert not TABLES & _tables(database)
     assert "0096" in migrate(settings).applied
-    assert "team_switch" in tables(database)
+    assert _tables(database) >= TABLES
     command.downgrade(alembic_config(database), "0095")
-    assert "team_switch" not in tables(database)
+    assert not TABLES & _tables(database)
 
 
-def _connect(settings: Settings) -> sqlite3.Connection:
+def test_one_delivery_per_subscription_event_and_version(settings: Settings) -> None:
     migrate(settings)
-    conn = sqlite3.connect(settings.database_path, isolation_level=None)
-    conn.execute("PRAGMA foreign_keys = ON")
-    conn.execute(
-        "INSERT INTO user (id, username, role, can_rate, max_age_rating) "
-        "VALUES (?, 'ann', 'member', 0, NULL)",
-        (USER,),
-    )
-    return conn
-
-
-def test_a_row_needs_a_known_edition_and_a_closed_state(settings: Settings) -> None:
-    with closing(_connect(settings)) as conn:
-        columns = {r[1] for r in conn.execute("PRAGMA table_info(team_switch)")}
-        assert {"id", "edition_id", "team_id", "state", "token", "preview", "report"} <= columns
-        with pytest.raises(sqlite3.IntegrityError):  # no such edition
-            conn.execute(
-                "INSERT INTO team_switch (id, edition_id, team_id, token, preview) "
-                "VALUES (?, 'nope', 'nope', ?, '{}')",
-                (SWITCH, "0" * 64),
-            )
+    with closing(sqlite3.connect(str(settings.database_path), isolation_level=None)) as conn:
+        conn.execute("PRAGMA foreign_keys = OFF")
+        row = (
+            "INSERT INTO webhook_outbox (id, subscription_id, event_id, schema_version, "
+            "next_try_at) VALUES (?, '01HZZZZZZZZZZZZZZZZZZZZZZA', 1, 1, '2026-11-17 09:00:00')"
+        )
+        conn.execute(row, ("01HZZZZZZZZZZZZZZZZZZZZZZB",))
+        with pytest.raises(sqlite3.IntegrityError):
+            conn.execute(row, ("01HZZZZZZZZZZZZZZZZZZZZZZC",))

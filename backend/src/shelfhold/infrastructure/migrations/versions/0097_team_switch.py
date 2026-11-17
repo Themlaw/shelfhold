@@ -6,15 +6,14 @@
 
 Nothing existing is touched; reversible.
 
-Number: 0096 follows 0095 (L26), the head of main when this lot was written; renumbered at the
-freeze if another lot took it first.
+Number: 0097 follows 0096 (L24), the head of main when this lot was frozen.
 """
 # ruff: noqa: E501  (the DDL is the one SQLAlchemy writes, kept as it is)
 
 from alembic import op
 
-revision = "0096"
-down_revision = "0095"
+revision = "0097"
+down_revision = "0096"
 branch_labels = None
 depends_on = None
 

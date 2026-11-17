@@ -83,6 +83,9 @@ _DECLARED = (
     # The open export and its import (M3 L37, EF-INT-016): every profile's data leaves, or enters
     _action("export.all", Effect.MOVES_INSTANCE_DATA),
     _action("import.all", Effect.MOVES_INSTANCE_DATA),
+    # M4 L24 (EF-INT-005): registering or removing a webhook sends the household's events to an
+    # address outside the house and hands out a secret once: a fresh admin session, never a key
+    _action("webhook.manage", Effect.MOVES_INSTANCE_DATA),
     # Sessions and the way back in (M3 L07, EF-USR-011): closing the session of ANOTHER profile,
     # and reading the kit that says how to recover. Own sessions are anyone's own and not here
     _action("session.list_all", Effect.MANAGES_CREDENTIALS),

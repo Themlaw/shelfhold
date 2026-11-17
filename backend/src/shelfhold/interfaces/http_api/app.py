@@ -55,6 +55,7 @@ from shelfhold.interfaces.http_api.ratelimit import (
 )
 from shelfhold.interfaces.http_api.sessions import build_sessions_router
 from shelfhold.interfaces.http_api.spa import mount_spa
+from shelfhold.interfaces.http_api.webhooks import install_webhooks_openapi
 
 HttpApplication = FastAPI
 Routers = Sequence[APIRouter]  # extra routers, named so the composition root needs no FastAPI
@@ -114,6 +115,7 @@ def create_http_app(
     reserved = ReservedRoutes()  # the routes whose keyed POST is never kept (M4 L34)
     install_problem_handlers(app)
     install_problem_openapi(app, public_paths=ANONYMOUS_JSON_PATHS)
+    install_webhooks_openapi(app)  # M4 L24: `x-webhooks`, what a receiver is sent
     install_auth(app, auth)
     app.state.health = health
     refresh = getattr(health, "refresh", None)

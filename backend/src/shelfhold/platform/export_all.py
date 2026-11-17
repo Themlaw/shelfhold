@@ -97,7 +97,7 @@ EXCLUDED_TABLES: Final[Mapping[str, str]] = {
     "destination_account": _CREDENTIAL, "device_token": _CREDENTIAL,
     "notify_destination": _CREDENTIAL,
     "source_secret": _CREDENTIAL, "source_config": _CREDENTIAL, "plugin_attestation": _CREDENTIAL,
-    "provider_secret": _CREDENTIAL,
+    "provider_secret": _CREDENTIAL, "webhook_subscription": _CREDENTIAL,
     "idempotency_key": _CREDENTIAL,
     # tombstones
     "content_tombstone": _TOMBSTONE, "tombstone_kid": _TOMBSTONE,
@@ -113,6 +113,7 @@ EXCLUDED_TABLES: Final[Mapping[str, str]] = {
     # queues, journals, caches, logs
     "progress_sync_cursor": _NOISE, "progress_sync_note": _NOISE,
     "read_state_push_note": _NOISE,
+    "webhook_outbox": _NOISE,
     "audit": _NOISE, "event": _NOISE, "job_view": _NOISE, "fs_intent": _NOISE,
     "resource_lock": _NOISE, "export_plan": _NOISE, "export_op": _NOISE,
     "notification_pending": _NOISE, "notification_digest": _NOISE, "domain_slot": _NOISE,

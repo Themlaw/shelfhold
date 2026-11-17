@@ -170,6 +170,7 @@ from shelfhold.jobs.digest_job import register_digest_job
 from shelfhold.jobs.integrity_job import register_integrity_job
 from shelfhold.jobs.public import JobContext, JobFailedError, JobPools
 from shelfhold.jobs.thumbnail_gc import register_thumbnail_jobs
+from shelfhold.jobs.webhook_job import register_webhook_job
 from shelfhold.library.public import (
     KeepCopier,
     PageFormatCbzStore,
@@ -188,6 +189,7 @@ from shelfhold.ops.kavita_accounts import declared_children
 from shelfhold.ops.lazy_headless import LazyHeadless
 from shelfhold.ops.library import LibraryOps
 from shelfhold.ops.notifications import LazyNotificationSweep
+from shelfhold.ops.webhooks import LazyWebhookSweep
 from shelfhold.reading.application.sync import (
     DEFAULT_MAX_SESSION_HOURS,
     ProgressRemote,
@@ -1660,6 +1662,7 @@ def register_runtime_jobs(pools: JobPools, comp: Composition) -> None:
     pools.scheduler.add(INTENT_PRUNE_KIND, INTENT_PRUNE_CRON, jitter_s=300)
     register_notification_job(pools, LazyDispatcher(comp))  # type: ignore[arg-type]
     register_digest_job(pools, LazyNotificationSweep(comp))  # EF-INT-021: per-person notices
+    register_webhook_job(pools, LazyWebhookSweep(comp))  # EF-INT-005: the webhook outbox
     register_store_jobs(pools, comp)  # the window jobs of /store (L14)
     register_safeguard_job(pools, comp)  # "Mettre à l'abri" and the optional purge (L16)
     register_integrity_job(pools, comp)  # the rolling integrity check (M3 L23)

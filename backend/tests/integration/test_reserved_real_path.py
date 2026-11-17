@@ -134,6 +134,10 @@ WHEN_CLOSED_AUDITED = {
     # M4 L35: the switch to the preferred team: the service writes one line per step (previewed,
     # queued) with the identifier of the switch; the door writes none (a refused call leaves none)
     "team.switch",
+    # M4 L24: a webhook: the service writes `webhook.subscribe` / `webhook.unsubscribe`, with the
+    # subscription, in the transaction that makes or removes it; the empty body below is a 422
+    # and an unknown identifier a 404: no line
+    "webhook.manage",
 }  # fmt: skip
 # any role may do it on its own account (the guard names KNOWN_ROLES): the role loop skips it
 # M4 L12: an adult handles their own Kavita key (a member's session is not refused by role: the

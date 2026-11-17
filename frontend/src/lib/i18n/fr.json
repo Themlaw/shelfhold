@@ -452,6 +452,7 @@
   "health_page.backup": "Sauvegarde",
   "health_page.backup_last": "Dernière sauvegarde réussie : {at}.",
   "health_page.backup_never": "Aucune sauvegarde réussie pour l'instant.",
+  "health_page.unreadable_webhooks": "Webhooks dont l'adresse ne peut plus être lue",
   "health_page.kavita_audit": "Audit des comptes Kavita",
   "health_page.kavita_audit_none": "Aucun compte Kavita ne voit plus que ce qui est permis.",
   "health_page.library_types": "Types de bibliothèque modifiés dans Kavita",
