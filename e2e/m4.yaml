@@ -41,8 +41,11 @@ services:
 
   fake-komga:
     <<: *fake
-    command: ["python", "/fakes/komga/serve.py"]
+    command: ["python", "/fakes/komga.py"]
+    # a service's `environment` replaces the anchor's: PYTHONPATH is repeated here
     environment:
+      PYTHONPATH: /fakes:/pkg
+      PYTHONDONTWRITEBYTECODE: "1"
       FAKE_KOMGA_LIBRARY_ROOT: /library/manga
       PORT: "25600"
     volumes:
