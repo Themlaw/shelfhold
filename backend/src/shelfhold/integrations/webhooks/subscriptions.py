@@ -151,7 +151,8 @@ def _register_url(url: str) -> None:
     register_secret_value(url)
     parts = urlsplit(url)
     for piece in (parts.path, parts.query):
-        register_secret_value(piece.strip("/"))
+        if len(piece) >= 16:  # a short path is not a token, and would blur the logs
+            register_secret_value(piece.strip("/"))
 
 
 def _view(row: Any) -> Subscription:

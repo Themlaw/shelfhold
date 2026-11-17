@@ -41,7 +41,7 @@ from shelfhold.infrastructure.fetcher import (
 from shelfhold.infrastructure.fetcher.lan import normalize_host
 from shelfhold.infrastructure.secrets import SecretVault
 from shelfhold.integrations.webhooks.catalogue import WEBHOOK_EVENTS, Catalogue
-from shelfhold.integrations.webhooks.outbox import MAX_ATTEMPTS, Due, Outbox
+from shelfhold.integrations.webhooks.outbox import BATCH, LEASE, MAX_ATTEMPTS, Due, Outbox
 from shelfhold.integrations.webhooks.subscriptions import Opened, SubscriptionStore
 
 __all__ = [
@@ -59,6 +59,9 @@ LIMITS: Final = FetchLimits(
     max_bytes=64 * 1024, total_timeout=20.0, connect_timeout=5.0, read_timeout=10.0,
     max_redirects=0,  # a redirection is never followed
 )  # fmt: skip
+
+
+assert BATCH * 20.0 < LEASE  # the lease outlasts the whole batch, at the longest send  # noqa: S101
 
 
 def sign_body(secret: str, timestamp: int, body: bytes) -> str:
@@ -85,7 +88,7 @@ class Deliverer:
         transport: Any = None,  # a test's mock transport; None: the real one
         catalogue: Catalogue = WEBHOOK_EVENTS,
         steps: Mapping[tuple[str, int], Upcaster] | None = None,
-        batch: int = 50,
+        batch: int = BATCH,
     ) -> None:
         self._engine = engine
         self._clock = clock
@@ -116,11 +119,11 @@ class Deliverer:
                 opened = self._store.open(connection, row.subscription_id)
                 event = read_one(
                     connection, row.event_id, as_user=opened.subscription.created_by,
-                    steps=self._steps,
+                    steps=self._steps, require_admin=True,
                 )  # fmt: skip
-        except Exception:  # undecryptable (a keyring that changed): the row stays, a count says so
+        except Exception:  # the database, the keyring: ours, not the receiver's
             log.warning("webhook.subscription_unreadable")
-            self._retry(row, report, status=None, error="subscription_unreadable")
+            self._outbox.release(row)  # the attempt is not counted: a long outage kills nothing
             return
         data = (
             None if event is None

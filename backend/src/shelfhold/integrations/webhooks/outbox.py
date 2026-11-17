@@ -31,6 +31,7 @@ from shelfhold.integrations.webhooks.catalogue import WEBHOOK_EVENTS, Catalogue
 
 __all__ = [
     "BASE_DELAY",
+    "BATCH",
     "LEASE",
     "MAX_ATTEMPTS",
     "MAX_DELAY",
@@ -43,7 +44,10 @@ BASE_DELAY: Final = 30  # seconds; doubled at each attempt
 MAX_DELAY: Final = 6 * 3600
 MAX_ATTEMPTS: Final = 8
 LEASE: Final = 600  # seconds a claimed row is held back before it is due again
-_BATCH: Final = 200
+BATCH: Final = 20  # rows claimed at once: BATCH x the longest send (20 s) stays under the lease
+PER_SUBSCRIPTION: Final = 5  # of them, at most, for one address: a dead one does not hold the rest
+RELEASE_DELAY: Final = 300  # seconds before a row we could not even open is tried again
+_READ: Final = 200
 _outbox = schema.webhook_outbox
 _subscription = schema.webhook_subscription
 
@@ -100,8 +104,9 @@ class Outbox:
             if row is None:
                 return None
             events, cursor = read_after(
-                connection, row.last_event_id, as_user=row.created_by, limit=_BATCH
-            )
+                connection, row.last_event_id, as_user=row.created_by, limit=_READ,
+                require_admin=True,
+            )  # fmt: skip
             if cursor == row.last_event_id:
                 return None
             now = self._clock.now()
@@ -139,19 +144,29 @@ class Outbox:
         )
         return int(result.rowcount)
 
-    def claim(self, limit: int = 50) -> list[Due]:
-        """The rows due now, claimed: an attempt counted and a lease, in one transaction."""
+    def claim(self, limit: int = BATCH) -> list[Due]:
+        """The rows due now, claimed: an attempt counted and a lease, in one transaction. At most
+        `PER_SUBSCRIPTION` for one address, so that a receiver that does not answer cannot keep
+        the others waiting; the lease outlasts the whole batch."""
         now = self._clock.now()
         with write_transaction(self._engine) as connection:
-            rows = connection.execute(
+            candidates = connection.execute(
                 sa.select(_outbox.c.id, _outbox.c.subscription_id, _outbox.c.event_id,
                           _outbox.c.schema_version, _outbox.c.attempts)
                 .join(_subscription, _subscription.c.id == _outbox.c.subscription_id)
                 .where(_outbox.c.status == "pending", _outbox.c.next_try_at <= now,
                        _subscription.c.enabled.is_(True))
                 .order_by(_outbox.c.next_try_at, _outbox.c.event_id, _outbox.c.schema_version)
-                .limit(limit)
+                .limit(limit * 8)
             ).all()  # fmt: skip
+            rows = []
+            taken: dict[str, int] = {}
+            for row in candidates:
+                if len(rows) >= limit:
+                    break
+                if taken.get(row.subscription_id, 0) < PER_SUBSCRIPTION:
+                    taken[row.subscription_id] = taken.get(row.subscription_id, 0) + 1
+                    rows.append(row)
             for row in rows:
                 connection.execute(
                     sa.update(_outbox).where(_outbox.c.id == row.id).values(
@@ -179,6 +194,24 @@ class Outbox:
             self._settle(row, status="pending", next_try_at=retry_at, **values)
         return dead
 
+    def release(self, row: Due) -> None:
+        """Give the claim back without counting the attempt: what failed was ours (the database,
+        the keyring), not the receiver's."""
+        self._settle(
+            row, attempts=row.attempts - 1,
+            next_try_at=self._clock.now() + timedelta(seconds=RELEASE_DELAY),
+        )  # fmt: skip
+
     def _settle(self, row: Due, **values: Any) -> None:
+        """Only the attempt that holds the claim settles the row: a slow copy that comes back after
+        the lease ran out (another already delivered or retried it) changes nothing."""
         with write_transaction(self._engine) as connection:
-            connection.execute(sa.update(_outbox).where(_outbox.c.id == row.id).values(**values))
+            connection.execute(
+                sa.update(_outbox)
+                .where(
+                    _outbox.c.id == row.id,
+                    _outbox.c.status == "pending",
+                    _outbox.c.attempts == row.attempts,
+                )
+                .values(**values)
+            )

@@ -388,6 +388,31 @@ def test_a_subscription_without_its_creator_sends_nothing(settings: Settings) ->
         assert env.recorder.requests == []
 
 
+@pytest.mark.req("EF-INT-005", "EF-USR-016")
+def test_a_demoted_creator_sends_nothing_and_the_cursor_waits(settings: Settings) -> None:
+    """A webhook is an administrator's: once its creator is a member, nothing leaves, and the
+    events wait (the cursor does not move) in case the role comes back."""
+    with webhook_env(settings) as env:
+        env.subscribe()
+        first = env.publish()
+        with write_transaction(env.engine) as connection:
+            connection.execute(
+                sa.text("UPDATE user SET role = 'member', can_rate = 0 WHERE id = :i"),
+                {"i": env.admin_id},
+            )
+        assert env.outbox().enqueue() == 0
+        env.deliverer().run_once()
+        assert env.recorder.requests == []
+        with write_transaction(env.engine) as connection:
+            connection.execute(
+                sa.text("UPDATE user SET role = 'admin', can_rate = 1 WHERE id = :i"),
+                {"i": env.admin_id},
+            )
+        assert env.outbox().enqueue() == 1
+        assert env.deliverer().run_once().delivered == 1
+        assert env.rows()[0]["event_id"] == first
+
+
 # -- the schema version: upcast on read, double emission during a deprecation --------------------
 
 
