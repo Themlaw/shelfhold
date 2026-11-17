@@ -10,7 +10,6 @@ of the other doors of L45: a key, a read-only key, a member, a child, nobody; th
 destination that does not exist is answered like one that does; the job is read by the admin only.
 """
 
-import hashlib
 import re
 from collections.abc import Iterator
 from datetime import timedelta
@@ -218,18 +217,6 @@ def test_the_job_of_a_removal_is_read_by_the_admin_only(
         assert who.get(f"/api/v1/jobs/{JOB}").status_code in (401, 403, 404), role
 
 
-def _claim_digest(body: dict[str, Any], path: str) -> str:
-    """What the middleware kept of a keyed request before L34: the digest of the query, the
-    content type and the body (the phrase, the Kavita password)."""
-    import json
-
-    raw = json.dumps(body).encode()
-    h = hashlib.sha256()
-    for part in (b"", b"application/json", raw):
-        h.update(len(part).to_bytes(8, "big") + part)
-    return f"sha256:{h.hexdigest()}"
-
-
 def test_reserved_route_never_stores_body_digest(api: tuple[AuthEnv, _Teardown]) -> None:
     """A keyed POST on a reserved route leaves nothing in `idempotency_key`: no row while the
     request runs (a kill -9 mid-request would leave it), no row after. A digest of the body of
@@ -247,10 +234,9 @@ def test_reserved_route_never_stores_body_digest(api: tuple[AuthEnv, _Teardown])
         )
     ):
         env.post(path, json=body, headers={"Idempotency-Key": f"key-{sent:04d}-abcdef"})
-        digest = _claim_digest(body, path)
         for seen in teardown.claims_seen:
             assert seen == [], f"a claim of a reserved route was in the table: {seen}"
-        assert digest not in str(db_rows(env.settings, "SELECT * FROM idempotency_key"))
+        assert "sha256:" not in str(db_rows(env.settings, "SELECT * FROM idempotency_key"))
     assert db_rows(env.settings, "SELECT COUNT(*) FROM idempotency_key") == [(0,)]
 
 
