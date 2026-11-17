@@ -7,6 +7,7 @@
   import { onMount } from 'svelte';
   import { client } from '#lib/api/client.gen.ts';
   import ProblemCard from '#lib/components/ProblemCard.svelte';
+  import SyncStatus from '#lib/components/SyncStatus.svelte';
   import ReauthPrompt from '#lib/components/ReauthPrompt.svelte';
   import { formatDateTime, hasMessage, t } from '#lib/i18n/index.ts';
   import { csrfToken } from '#lib/passkeys.ts';
@@ -251,6 +252,9 @@
         retry = null;
       }}
     />
+  {/if}
+  {#if me && me.role !== 'child'}
+    <SyncStatus />
   {/if}
 </main>
 

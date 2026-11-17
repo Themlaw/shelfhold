@@ -24,7 +24,7 @@ const detail = (over: Record<string, unknown> = {}) => ({
   count: 2, cover_hash: null, created_at: '2026-11-10T10:00:00Z',
   items: [entry(1, 'Atlas des marées', { number: '12' }), entry(2, 'Le Jardin des brumes')], ...over
 });
-const world = (body: unknown, role = 'member') =>
+const world = (body: Record<string, unknown>, role = 'member') =>
   server.use(
     http.get(`${BASE}/api/v1/me`, () => HttpResponse.json({ id: 'U', username: 'mum', role, nav: [] })),
     http.get(API, () => HttpResponse.json(body))
@@ -53,8 +53,8 @@ describe('Collection', () => {
     expect(rows[0]).toHaveTextContent('Atlas des marées');
     expect(rows[0]).toHaveTextContent('12');
     expect(rows[1]).toHaveTextContent('Le Jardin des brumes');
-    const first = within(rows[0]).getByRole('link', { name: /Atlas des marées/ }) as HTMLAnchorElement;
-    expect(first.getAttribute('href')).toBe('/serie/01JWORK0000000000000000001');
+    // no route shows a Work by itself (the sheet is of an Edition): the title is text, not a link
+    expect(within(rows[0]!).queryByRole('link')).toBeNull();
   });
 
   // req: EF-BIB-016
@@ -91,7 +91,7 @@ describe('Collection', () => {
     );
     render(Page);
     const rows = within(await screen.findByRole('list', { name: 'Éléments' })).getAllByRole('listitem');
-    await userEvent.click(within(rows[0]).getByRole('button', { name: /Retirer/ }));
+    await userEvent.click(within(rows[0]!).getByRole('button', { name: /Retirer/ }));
     await waitFor(() => expect(removed).toBe('01JITEM000000000000000001'));
     await waitFor(() => expect(within(screen.getByRole('list', { name: 'Éléments' })).getAllByRole('listitem')).toHaveLength(1));
   });
