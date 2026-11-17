@@ -47,6 +47,13 @@ def _png(size: tuple[int, int] = (64, 48)) -> bytes:
     return out.getvalue()
 
 
+def _noisy_png() -> bytes:
+    """A page that does not compress: well over a kilobyte."""
+    out = io.BytesIO()
+    Image.frombytes("RGB", (64, 64), bytes(range(256)) * 48).save(out, "PNG", compress_level=0)
+    return out.getvalue()
+
+
 def _giant_png() -> bytes:
     """A PNG whose header announces 100 000 x 100 000 pixels and carries no pixel."""
 
@@ -324,7 +331,7 @@ def test_a_page_past_the_cap_or_an_unreadable_file_is_to_check_not_a_crash(
         a.add_series(
             "S",
             {
-                "Big - Ch.1.cbz": cbz_bytes((("001.png", _png((256, 256))),)),
+                "Big - Ch.1.cbz": cbz_bytes((("001.png", _noisy_png()),)),
                 "Small - Ch.2.cbz": cbz_bytes((("001.png", b"x" * 100),)),
             },
         )
