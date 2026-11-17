@@ -121,7 +121,9 @@ def test_update_check_never_blocks_on_a_hung_server() -> None:
             raise AssertionError
 
     with structlog.testing.capture_logs() as logs:
-        status = asyncio.run(check_for_update(Hung(OSError()), URL, current="1.1.0", timeout_s=0.05))
+        status = asyncio.run(
+            check_for_update(Hung(OSError()), URL, current="1.1.0", timeout_s=0.05)
+        )
     assert status.state == "failed" and {e["log_level"] for e in logs} == {"info"}
 
 
@@ -200,7 +202,11 @@ def test_publish_mirror_token_only_in_push_step() -> None:
     assert job.get("timeout-minutes")
     steps = job["steps"]
     holders = [s for s in steps if "CODEBERG_TOKEN" in yaml.safe_dump(s) and "id" not in s]
-    pushes = [s for s in steps if "git push" in str(s.get("run", "")) or "mirror.sh" in str(s.get("run", ""))]
+    pushes = [
+        s
+        for s in steps
+        if "git push" in str(s.get("run", "")) or "mirror.sh" in str(s.get("run", ""))
+    ]
     assert len(holders) == 1 and holders[0] in pushes  # the secret reaches the push step only
     assert "secrets.CODEBERG_TOKEN" in yaml.safe_dump(holders[0]["env"])
     assert "secrets." not in yaml.safe_dump(wf["jobs"]).replace("secrets.CODEBERG_TOKEN", "")
@@ -219,7 +225,9 @@ def test_publish_mirror_token_only_in_push_step() -> None:
     assert checkout["with"]["fetch-depth"] == 0
     # the token is never on a command line or echoed
     text = WORKFLOW.read_text(encoding="utf-8")
-    assert not re.search(r"echo[^\n]*(\$\{?\w*TOKEN|secrets\.)|--password|https://[^\s/]*:[^\s/@]*@", text)
+    assert not re.search(
+        r"echo[^\n]*(\$\{?\w*TOKEN|secrets\.)|--password|https://[^\s/]*:[^\s/@]*@", text
+    )
     assert "pull_request" not in text
 
 
@@ -227,7 +235,7 @@ def test_publish_mirror_token_only_in_push_step() -> None:
 def test_publish_mirror_script_refuses_an_unknown_host_and_never_sees_the_token_on_argv() -> None:
     script = (ROOT / ".github" / "scripts" / "publish-mirror.sh").read_text(encoding="utf-8")
     assert "codeberg.org" in script and "GIT_ASKPASS" in script
-    assert 'set -euo pipefail' in script
+    assert "set -euo pipefail" in script
     assert not re.search(r"git [^\n]*\$\{?MIRROR_TOKEN", script)  # via askpass, not the arguments
 
 
@@ -294,7 +302,11 @@ def _script(mode: str, tmp_path: Path, **env: str) -> tuple[int, str]:
         "GITHUB_STEP_SUMMARY": str(tmp_path / "summary"),
     }
     done = subprocess.run(  # noqa: S603
-        ["bash", str(SCRIPT), mode], env={**base, **env}, capture_output=True, text=True, check=False
+        ["/bin/bash", str(SCRIPT), mode],
+        env={**base, **env},
+        capture_output=True,
+        text=True,
+        check=False,
     )
     return done.returncode, done.stdout + done.stderr
 
@@ -324,6 +336,7 @@ def test_publish_mirror_default_target_and_refs(tmp_path: Path) -> None:
     ],
 )
 def test_publish_mirror_script_refuses_hostile_input(tmp_path: Path, env: dict[str, str]) -> None:
-    code, out = _script("push", tmp_path, MIRROR_TOKEN="not-a-real-token"  # noqa: S106, **env)
+    fake = "not-a-real-token"
+    code, out = _script("push", tmp_path, MIRROR_TOKEN=fake, **env)
     assert code != 0
-    assert "not-a-real-token" not in out
+    assert fake not in out
