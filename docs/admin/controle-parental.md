@@ -223,6 +223,13 @@ est l'action réservée `reading_shelf.attach` : session d'administration fraîc
 jamais un profil enfant ou membre. Son étagère de lecture ne contient que ce qu'elle voit, et chaque demande faite à son nom demande
 un âge à l'approbation. Voir [listes-importees.md](listes-importees.md).
 
+## Une liste de profil montrée à tout le foyer
+
+Promouvoir la liste d'un profil dans Kavita (`PUT /api/v1/collections/{id}/kavita-public`) est l'action réservée
+`collection.kavita_promote` : session d'administration fraîche, jamais une clé. La liste n'est poussée qu'une fois approuvée, et
+promue seulement si toutes ses séries sont ouvertes à son propriétaire et de la même audience. Voir
+[collections-kavita.md](collections-kavita.md).
+
 ## Plusieurs destinations pour une étagère (fan-out)
 
 Une étagère peut être liée à plusieurs destinations (`POST /api/v1/shelves/{id}/destinations`, action réservée

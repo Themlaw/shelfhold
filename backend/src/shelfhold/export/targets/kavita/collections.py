@@ -32,10 +32,11 @@ complete push (`done`) in its note.
 
 from __future__ import annotations
 
+import json
 from collections import defaultdict
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, Final
+from typing import Any, ClassVar, Final
 
 import sqlalchemy as sa
 import structlog
@@ -105,9 +106,16 @@ class _Task:
     kind: str
     want: _Want | None  # None: nothing of it may be in Kavita
     row: _Row | None
+    title: str = ""  # the title it has, or would have, in Kavita
 
 
 class CollectionsSync:
+    # What this process has looked at: a collection with no note, and what Shelfhold said of it at
+    # that moment (`(target, collection, signature)`). With no note Shelfhold does not know what
+    # Kavita holds under its title (a restore left the table empty): it looks once, and takes the
+    # promotion off whatever the service account holds there that is not allowed, never more.
+    _looked: ClassVar[set[tuple[str, str, str]]] = set()
+
     def __init__(self, engine: Engine, clock: Clock, events: TargetEvents) -> None:
         self._engine = engine
         self._clock = clock
@@ -175,13 +183,15 @@ class CollectionsSync:
             row = None
         if want is None:
             if row is None:
-                return False
+                return await self._look(client, target_id, task, None, mine, removal_guard)
             return await self._withdraw(client, target_id, task, row, shelf, removal_guard)
         if row is None or row.remote_id == PENDING:
             taken = any(s.title == want.title for s in mine.values())
             if row is None and taken:
                 log.info("export.collection_title_taken", target_id=target_id)
-                return False  # not ours: left alone, nothing is pushed under that title
+                # not ours: never taken over, never emptied, nothing is pushed under that title;
+                # only its promotion goes when Shelfhold would not promote it
+                return await self._look(client, target_id, task, want, mine, removal_guard)
             created = await self._create(client, target_id, task, want, row, mine)
             if created is None:
                 return True  # asked for, not found yet: the next pass finds it by its title
@@ -191,6 +201,29 @@ class CollectionsSync:
         return (
             await self._reconcile(client, target_id, task, want, row, shelf, removal_guard) or wrote
         )
+
+    async def _look(
+        self,
+        client: KavitaClient,
+        target_id: str,
+        task: _Task,
+        want: _Want | None,
+        mine: dict[int, dto.Shelf],
+        removal_guard: Callable[[], None],
+    ) -> bool:
+        """An object of the service account under the title of a collection that has no note. It
+        is not Shelfhold's to take or to empty (a person may have made it); but a promoted one that
+        Shelfhold would not promote (a restore lost the note of what it had pushed) is taken out of
+        sight, which is the write that protects."""
+        self._looked.add(self._key(target_id, task.collection_id, task.want))
+        wrote = False
+        for shelf in [s for s in mine.values() if s.title == task.title and s.promoted]:
+            if want is None or not want.promote:
+                with client.guarded_as(removal_guard):
+                    await self._promote(client, task.kind, shelf.id, False)
+                mine[shelf.id] = dto.Shelf(shelf.id, shelf.title, False, shelf.owner)
+                wrote = True
+        return wrote
 
     @staticmethod
     def _find(row: _Row | None, mine: dict[int, dto.Shelf]) -> dto.Shelf | None:
@@ -249,7 +282,10 @@ class CollectionsSync:
         owned = set(row.owned)
         wanted = list(want.series)
         wrote = False
-        if shelf.promoted and not want.promote:
+        # a series that is neither wanted nor Shelfhold's (a person put it there): the audience
+        # rule has not seen it, so the object is not promoted while it holds it
+        promote = want.promote and not (set(current) - set(wanted) - owned)
+        if shelf.promoted and not promote:
             with client.guarded_as(removal_guard):
                 await self._promote(client, task.kind, shelf.id, False)
             wrote = True
@@ -265,7 +301,7 @@ class CollectionsSync:
             self._record(target_id, task.collection_id, row, owned=sorted(owned | set(add)))
             await self._add(client, task.kind, shelf, add)
             wrote = True
-        if want.promote and not shelf.promoted:
+        if promote and not shelf.promoted:
             await self._promote(client, task.kind, shelf.id, True)
             wrote = True
         self._record(target_id, task.collection_id, row, owned=sorted(keep), done=want.signature())
@@ -298,9 +334,30 @@ class CollectionsSync:
                 await self._delete(client, task.kind, shelf.id)
                 self._forget(target_id, task.collection_id)
                 return True
-        # something else is in it: it stays, out of sight, and is no longer Shelfhold's to push
-        self._record(target_id, task.collection_id, row, owned=[], done=None)
+        # something else is in it: it is left to the person, out of sight, and the link is broken:
+        # it is never taken back, and its title stays taken
+        self._forget(target_id, task.collection_id)
         return True
+
+    async def withdraw_all(self, client: KavitaClient, target_id: str) -> list[str]:
+        """Take back everything Shelfhold pushed to this target (a detachment): out of sight, then
+        what it added, then the objects that nothing else is in. What a person put there stays."""
+        with self._engine.connect() as connection:
+            rows = self._rows(connection, target_id)
+        if not rows:
+            return []
+        removal_guard = target_removal_guard(self._engine, target_id)
+        held = {
+            "collection": {s.id: s for s in await client.own_collections()},
+            "reading_list": {s.id: s for s in await client.own_reading_lists()},
+        }
+        done: list[str] = []
+        for collection_id, row in rows.items():
+            task = _Task(collection_id, row.kind, None, row)
+            shelf = self._find(row, held[row.kind])
+            if await self._withdraw(client, target_id, task, row, shelf, removal_guard):
+                done.append(collection_id)
+        return done
 
     # -- the calls, per kind -------------------------------------------------------------------
 
@@ -399,20 +456,28 @@ class CollectionsSync:
         for collection in collections.values():
             want = self._want(collection, series_of, by_library, profiles)
             row = rows.pop(collection.id, None)
-            if self._is_due(want, row):
-                tasks.append(_Task(collection.id, collection.kind, want, row))
+            if self._is_due(target_id, collection.id, want, row):
+                title = want.title if want else _title_of(collection, profiles)
+                tasks.append(_Task(collection.id, collection.kind, want, row, title))
         for gone_id, row in rows.items():  # the collection is gone: what it left is withdrawn
-            if self._is_due(None, row):
+            if self._is_due(target_id, gone_id, None, row):
                 tasks.append(_Task(gone_id, row.kind, None, row))
         return tasks
 
-    @staticmethod
-    def _is_due(want: _Want | None, row: _Row | None) -> bool:
+    def _is_due(
+        self, target_id: str, collection_id: str, want: _Want | None, row: _Row | None
+    ) -> bool:
         if row is not None and row.remote_id == PENDING:
             return True
+        if row is None:  # no note: look once for what Kavita holds under the title
+            return self._key(target_id, collection_id, want) not in self._looked
         if want is None:
-            return row is not None and (row.done is not None or bool(row.owned))
-        return row is None or row.done != want.signature()
+            return row.done is not None or bool(row.owned)
+        return row.done != want.signature()
+
+    @staticmethod
+    def _key(target_id: str, collection_id: str, want: _Want | None) -> tuple[str, str, str]:
+        return (target_id, collection_id, json.dumps(None if want is None else want.signature()))
 
     @staticmethod
     def _rows(connection: Connection, target_id: str) -> dict[str, _Row]:
@@ -508,16 +573,15 @@ class CollectionsSync:
                 return None  # libraries open to different profiles: never one collection
             return _Want(collection.name, ids, promote=True)
         profile = profiles.get(collection.owner_id)
-        if profile is None:
-            return None
+        if profile is None or not collection.approved:
+            return None  # a private list goes to Kavita only once the admin has said so
         username, ceiling = profile
         opened = all(
             _open_to(by_library.get(library), collection.owner_id, ceiling) for library in libraries
         )
-        return _Want(
-            profile_title(username, collection.name), ids,
-            promote=collection.approved and opened,
-        )  # fmt: skip
+        audience = {by_library.get(library) for library in libraries}
+        one_audience = None not in audience and len(audience) == 1  # as the household's rule
+        return _Want(profile_title(username, collection.name), ids, promote=opened and one_audience)
 
 
 @dataclass(frozen=True)
@@ -528,6 +592,14 @@ class _Collection:
     owner_id: str | None
     approved: bool
     works: list[str]
+
+
+def _title_of(collection: _Collection, profiles: dict[str, tuple[str, int | None]]) -> str:
+    """The title a collection has in Kavita, or would have."""
+    if collection.owner_id is None:
+        return collection.name
+    profile = profiles.get(collection.owner_id)
+    return collection.name if profile is None else profile_title(profile[0], collection.name)
 
 
 def _open_to(audience: Audience | None, profile_id: str, ceiling: int | None) -> bool:

@@ -230,16 +230,15 @@ def test_profile_list_not_promoted_if_a_series_is_closed_to_it() -> None:
 
 
 @pytest.mark.req("EF-EXP-025", "ENF-SEC-010")
-def test_a_private_list_is_never_promoted_without_the_admin() -> None:
+def test_a_private_list_is_not_even_pushed_without_the_admin() -> None:
     with export_env(max_age_rating=13) as env:
         w = wire(env)
         s = Scene(w)
         kid = add_user(env, "kid", ceiling=13)
         mine = make(env, "Mine", [s.kid_one], kind="reading_list", owner=kid)  # not approved
         sync(w)
-        assert [(t[1], t[2]) for t in state(w)] == [("kid — Mine", False)]
-        assert seen(w, "grown")["lists"] == {}
-        # the admin's word: promoted at the next pass
+        assert state(w) == [] and w.fake.shelves.lists == {}  # a private list stays in Shelfhold
+        # the admin's word: pushed and promoted at the next pass
         with write_transaction(env.engine) as c:
             c.execute(
                 sa.update(catalog.collection)
@@ -248,11 +247,78 @@ def test_a_private_list_is_never_promoted_without_the_admin() -> None:
             )
         sync(w)
         assert [(t[1], t[2]) for t in state(w)] == [("kid — Mine", True)]
-        # taken back: unpromoted again
+        # taken back: out of Kavita altogether
         with write_transaction(env.engine) as c:
             c.execute(sa.update(catalog.collection).values(public_approved_at=None))
         sync(w)
-        assert [(t[1], t[2]) for t in state(w)] == [("kid — Mine", False)]
+        assert state(w) == []
+        assert w.fake.violations == []
+
+
+@pytest.mark.req("EF-EXP-025", "ENF-SEC-010")
+def test_what_a_restore_left_without_a_note_is_taken_out_of_sight_never_emptied() -> None:
+    with export_env(max_age_rating=13) as env:
+        w = wire(env)
+        s = Scene(w)
+        coll = make(env, "Cosy reads", [s.kid_one])
+        sync(w)
+        with write_transaction(env.engine) as c:  # the note is lost
+            c.execute(sa.delete(catalog.collection_remote))
+        with write_transaction(env.engine) as c:  # and the collection may no longer be promoted
+            c.execute(
+                sa.insert(catalog.collection_item).values(
+                    id=new_ulid(), collection_id=coll, position=3, work_id=s.adult_one.work_id
+                )
+            )
+        sync(w)
+        assert state(w) == [
+            ("collection", "Cosy reads", False, [s.k_one])
+        ]  # not emptied, not taken
+        assert seen(w, "kid")["collections"] == {}
+        assert w.fake.violations == []
+
+
+@pytest.mark.req("EF-EXP-025", "ENF-SEC-010")
+def test_an_object_that_holds_what_a_person_put_there_is_not_promoted() -> None:
+    with export_env(max_age_rating=13) as env:
+        w = wire(env)
+        s = Scene(w)
+        coll = make(env, "Cosy reads", [s.kid_one])
+        sync(w)
+        ours = next(c for c in w.fake.shelves.collections.values() if c["owner"] == SERVICE)
+        assert ours["promoted"] is True
+        ours["series"].append(s.a_one)  # a person adds an adult series by hand
+        with write_transaction(env.engine) as c:  # the collection changes: the pass looks again
+            c.execute(
+                sa.insert(catalog.collection_item).values(
+                    id=new_ulid(), collection_id=coll, position=4, work_id=s.kid_two.work_id
+                )
+            )
+        sync(w)
+        # the series stays (it is hers), but the audience rule has not seen it: out of sight
+        assert ours["promoted"] is False and s.a_one in ours["series"]
+        assert seen(w, "kid")["collections"] == {}
+        assert w.fake.violations == []
+
+
+@pytest.mark.req("EF-EXP-025", "ENF-SEC-010")
+def test_a_detachment_takes_back_what_was_pushed() -> None:
+    with export_env(max_age_rating=13) as env:
+        w = wire(env)
+        s = Scene(w)
+        make(env, "Cosy reads", [s.kid_one])
+        make(env, "Order", [s.kid_one, s.kid_two], kind="reading_list")
+        sync(w)
+        hand = w.fake.shelves.by_hand_collection("grown", "By hand", [s.k_two])
+        ours = next(c for c in w.fake.shelves.collections.values() if c["owner"] == SERVICE)
+        ours["series"].append(s.k_two)  # a person put a series in one of them
+        done = run(
+            CollectionsSync(env.engine, env.clock, w.events).withdraw_all(w.client, env.target_id)
+        )
+        assert len(done) == 2
+        assert [t[1:3] for t in state(w)] == [("Cosy reads", False)]  # kept for the person
+        assert w.fake.shelves.collections[hand]["series"] == [s.k_two]
+        assert seen(w, "kid")["lists"] == {} and seen(w, "kid")["collections"] == {}
         assert w.fake.violations == []
 
 

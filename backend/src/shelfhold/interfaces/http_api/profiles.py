@@ -15,6 +15,7 @@ action (audited when it changes what holds), and `GET`/`PUT /api/v1/me/visibilit
 own, session only: a key or a token is a program, it has no visibility to choose.
 """
 
+from collections.abc import Callable
 from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends, Request, Response
@@ -210,7 +211,9 @@ def _manager(request: Request) -> Principal:
     return require_principal(request)
 
 
-def build_profiles_router() -> APIRouter:
+def build_profiles_router(after_change: Callable[[], None] | None = None) -> APIRouter:
+    """`after_change`: called after a profile's ceiling is set or a profile is removed, so that what
+    Kavita was given for her (collections, lists) is looked at at once, not at the next period."""
     router = APIRouter(prefix=PROFILES_PATH, tags=["profiles"])
 
     def run(request: Request, call: Any) -> Any:
@@ -256,6 +259,8 @@ def build_profiles_router() -> APIRouter:
                 by=principal,
             ),
         )
+        if after_change is not None:
+            after_change()
         return _out(record)
 
     @router.put("/{profile_id}/visibility", response_model=VisibilityOut)
@@ -311,6 +316,8 @@ def build_profiles_router() -> APIRouter:
         request: Request, profile_id: str, principal: Annotated[Principal, Depends(_REMOVE)]
     ) -> Response:
         run(request, lambda auth: auth.profile_remove(profile_id, by=principal))
+        if after_change is not None:
+            after_change()
         return Response(status_code=204)
 
     @router.get("/{profile_id}/export", response_model=UserExportOut)

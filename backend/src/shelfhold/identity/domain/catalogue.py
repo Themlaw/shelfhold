@@ -106,6 +106,9 @@ _DECLARED = (
     # M4 L31 (EF-USR-020): an imported list for a child makes her a reading shelf and requests in
     # her name, which is what she is shown and what she will ask for: a parental decision
     _action("reading_shelf.attach", Effect.PARENTAL_CONTROL),
+    # M4 L18b (EF-EXP-025): promoting a profile's list in Kavita shows it, under her name, to every
+    # account of the household that reads its series: a parental decision, never a key's
+    _action("collection.kavita_promote", Effect.PARENTAL_CONTROL),
     # Household profiles (M3 L05, EF-USR-001, EF-USR-005): the role, the ceiling, the right to
     # classify and the per-source policy; a fresh session in every profile, never a key
     _action("profile.create", Effect.MANAGES_PROFILES),

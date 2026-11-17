@@ -13,10 +13,11 @@ passe d'export (et toutes les 30 minutes, et tout de suite quand une étagère o
   part, pas même amputée : son nom pourrait dévoiler un titre. Si deux bibliothèques cessent d'avoir le
   même public, ce qui avait été poussé est retiré.
 - **La liste d'un profil** porte son nom (`profil — nom de la liste`). Elle reste sous le compte de
-  service, **non promue** : elle n'est pas visible des autres comptes de Kavita. Elle n'est promue que si
-  vous l'avez **approuvée** (`PUT /api/v1/collections/{id}/kavita-public` avec `{"approved": true}`,
-  session administrateur ou clé de portée `admin`) **et** si toutes ses séries sont dans des
-  bibliothèques ouvertes à ce profil. Un élément ajouté ensuite retire l'approbation.
+  service. Elle n'est **poussée dans Kavita qu'une fois approuvée**, puis promue seulement si
+  toutes ses séries sont dans des bibliothèques ouvertes à ce profil **et** de la même audience.
+  L'approbation (`PUT /api/v1/collections/{id}/kavita-public` avec `{"approved": true}`) demande une
+  **session administrateur fraîche** (jamais une clé d'API) ; la retirer (`DELETE` sur la même
+  route) reste possible à l'administrateur. Un élément ajouté ensuite retire l'approbation.
 - Une série que Kavita n'a pas encore indexée est laissée de côté et ajoutée quand elle l'est ; une
   collection sans aucune série connue de Kavita n'est pas créée vide.
 
@@ -40,5 +41,8 @@ créer, ajouter et promouvoir attendent la fin de la pause.
   d'ordre ensuite n'est pas propagé (les ajouts vont à la fin).
 - Ce que Shelfhold sait de Kavita vient de sa base : si quelqu'un supprime à la main un élément poussé,
   il n'est recréé qu'au prochain changement de la collection.
-- Après une restauration de sauvegarde, la mémoire de ce qui a été poussé est reconstruite : les objets
-  déjà dans Kavita restent là, non gérés ; renommez ou supprimez-les à la main.
+- Après une restauration de sauvegarde, la mémoire de ce qui a été poussé est vide : à la passe
+  suivante, un objet promu qui ne doit plus l'être est dépromu (jamais vidé ni supprimé), et un objet
+  qui reste voulu reste non géré ; renommez ou supprimez-le à la main pour qu'il soit repris.
+- Le détachement complet retire d'abord les collections et listes que Shelfhold a posées (au mieux,
+  ce qui n'est pas atteint reste dans Kavita).

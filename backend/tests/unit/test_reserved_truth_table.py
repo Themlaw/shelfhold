@@ -320,6 +320,7 @@ FRESHNESS_LINE = {
             "shelf.withdraw",
             "shelf.bind_destination",  # M4 L06a: which server holds a shelf, and who reads it
             "reading_shelf.attach",  # M4 L31: a reading shelf and requests made for a child
+            "collection.kavita_promote",  # M4 L18b: a profile list shown to the household
             "profile.kavita_mapping",
             "target.recheck_child_exposure",
             "plugin.attest_partitioning",  # D15: which shelves a third-party target may serve

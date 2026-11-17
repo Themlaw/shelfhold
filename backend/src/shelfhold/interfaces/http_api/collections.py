@@ -34,8 +34,8 @@ from shelfhold.catalog.public import (
     ItemView,
     parse_cbl,
 )
-from shelfhold.identity.public import Credential, Principal, reader_scope
-from shelfhold.interfaces.http_api.auth import require_principal, require_session
+from shelfhold.identity.public import RESERVED_ACTIONS, Credential, Principal, reader_scope
+from shelfhold.interfaces.http_api.auth import require_principal, require_session, reserved_action
 from shelfhold.interfaces.http_api.plans import require_admin
 from shelfhold.interfaces.http_api.problems import ProblemError
 from shelfhold.library.public import cover_hash
@@ -123,10 +123,6 @@ def _item(found: ItemView) -> ItemOut:
     )  # fmt: skip
 
 
-class KavitaPublicIn(BaseModel):
-    approved: bool
-
-
 class KavitaPublicOut(BaseModel):
     approved: bool
 
@@ -203,19 +199,9 @@ def build_collections_router(
             **_summary(view.summary).model_dump(), items=[_item(i) for i in view.items]
         )
 
-    @router.put(
-        "/{collection_id}/kavita-public",
-        response_model=KavitaPublicOut,
-        dependencies=[Depends(require_admin)],
-    )
-    def approve_for_kavita(collection_id: str, body: KavitaPublicIn) -> KavitaPublicOut:
-        """The admin's word that a profile's private list may be promoted in Kavita (L18b). An
-        admin session or a key of scope `admin` of the admin: everyone else is refused before the
-        identifier is looked at, so the refusal never says which lists exist."""
+    def set_approval(collection_id: str, approved: bool) -> KavitaPublicOut:
         try:
-            done = collections().set_public_approval(
-                collection_id, body.approved, now=datetime.now(UTC)
-            )
+            done = collections().set_public_approval(collection_id, approved, now=datetime.now(UTC))
         except CollectionNotFoundError:
             raise ProblemError("not_found") from None
         except CollectionNotPrivateError:
@@ -223,6 +209,28 @@ def build_collections_router(
         if after_change is not None:
             after_change()
         return KavitaPublicOut(approved=done)
+
+    @router.put(
+        "/{collection_id}/kavita-public",
+        response_model=KavitaPublicOut,
+        dependencies=[Depends(reserved_action(RESERVED_ACTIONS["collection.kavita_promote"]))],
+    )
+    def approve_for_kavita(collection_id: str) -> KavitaPublicOut:
+        """The admin's word that a profile's private list may be pushed to Kavita and promoted
+        there (L18b). A reserved action (ENF-SEC-010): a fresh admin session, never a key; every
+        other caller is refused before the identifier is looked at, so the refusal never says
+        which lists exist."""
+        return set_approval(collection_id, True)
+
+    @router.delete(
+        "/{collection_id}/kavita-public",
+        response_model=KavitaPublicOut,
+        dependencies=[Depends(require_admin)],
+    )
+    def withdraw_from_kavita(collection_id: str) -> KavitaPublicOut:
+        """Take the word back: the write that protects stays under `require_admin` (a session, or
+        a key of scope `admin` of the admin)."""
+        return set_approval(collection_id, False)
 
     @router.delete("/{collection_id}", status_code=204)
     def delete_collection(collection_id: str, principal: writer) -> Response:
@@ -232,6 +240,8 @@ def build_collections_router(
             raise ProblemError("not_found") from None
         except CollectionNotYoursError:
             raise ProblemError("forbidden") from None
+        if after_change is not None:
+            after_change()  # what it left in Kavita is withdrawn now, not at the next period
         return Response(status_code=204)
 
     @router.post("/{collection_id}/items", status_code=201, response_model=ItemOut)

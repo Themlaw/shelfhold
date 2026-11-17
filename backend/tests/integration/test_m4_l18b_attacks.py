@@ -36,9 +36,9 @@ from tests.visibility_env import add_profile
 def _approve(
     world: World, client: Any, collection: str, approved: bool = True, **extra: Any
 ) -> Any:
-    return client.put(
+    send = client.put if approved else client.delete  # the word is reserved, taking it back is not
+    return send(
         f"{COLLECTIONS}/{collection}/kavita-public",
-        json={"approved": approved},
         headers={CSRF_HEADER: world.env.csrf(client), **extra},
     )
 
@@ -67,33 +67,39 @@ def test_only_an_admin_approves_a_private_list_for_kavita(world: World) -> None:
     assert not _approved(world, mine)
     # a key of the owner, read-only or not, and of the admin without the scope `admin`: refused
     ann_client, ann_auth = _key_client(world, "ann", "10.0.0.61", read_only=True)
-    assert ann_client.put(
-        f"{COLLECTIONS}/{mine}/kavita-public", json={"approved": True}, headers=ann_auth
-    ).status_code in (401, 403)
+    assert ann_client.put(f"{COLLECTIONS}/{mine}/kavita-public", headers=ann_auth).status_code in (
+        401,
+        403,
+    )
     adm_client, adm_auth = _key_client(world, "admin", "10.0.0.62", read_only=True)  # a read key
-    assert adm_client.put(
-        f"{COLLECTIONS}/{mine}/kavita-public", json={"approved": True}, headers=adm_auth
-    ).status_code in (401, 403)
+    assert adm_client.put(f"{COLLECTIONS}/{mine}/kavita-public", headers=adm_auth).status_code in (
+        401,
+        403,
+    )
     # an anonymous caller gets nothing
     anonymous = world.env.other_client("10.0.0.63")
-    assert (
-        anonymous.put(f"{COLLECTIONS}/{mine}/kavita-public", json={"approved": True}).status_code
-        == 401
-    )
+    assert anonymous.put(f"{COLLECTIONS}/{mine}/kavita-public").status_code == 401
     assert not _approved(world, mine)
     # the admin's session does it, and takes it back
     assert _approve(world, world.env.client, mine).status_code == 200
     assert _approved(world, mine)
     assert _approve(world, world.env.client, mine, False).json() == {"approved": False}
     assert not _approved(world, mine)
-    # a key of scope `admin` of the admin is the admin's word as well (as `plans`)
+    # a key of scope `admin` of the admin never says it (a reserved action: a fresh session)...
     full_client, full_auth = _key_client(world, "admin", "10.0.0.65")
-    assert (
-        full_client.put(
-            f"{COLLECTIONS}/{mine}/kavita-public", json={"approved": True}, headers=full_auth
-        ).status_code
-        == 200
-    )
+    path = f"{COLLECTIONS}/{mine}/kavita-public"
+    assert full_client.put(path, headers=full_auth).status_code in (401, 403)
+    assert not _approved(world, mine)
+    # ...but takes it back, which is the write that protects
+    assert _approve(world, world.env.client, mine).status_code == 200
+    assert full_client.delete(path, headers=full_auth).status_code == 200
+    assert not _approved(world, mine)
+    # a child, a member and a read key cannot take it back either
+    assert _approve(world, world.env.client, mine).status_code == 200
+    for client in (world.kid, ann):
+        assert _approve(world, client, mine, False).status_code == 403
+    assert ann_client.delete(path, headers=ann_auth).status_code in (401, 403)
+    assert adm_client.delete(path, headers=adm_auth).status_code in (401, 403)
     assert _approved(world, mine)
 
 

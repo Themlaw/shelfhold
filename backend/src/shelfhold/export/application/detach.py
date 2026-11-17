@@ -269,8 +269,11 @@ class FullDetacher:
         key_gone: bool = False,
         account: object | None = None,
         job_id: str | None = None,
+        before_restore: Callable[[], None] | None = None,
     ) -> DetachReport:
-        """`key_gone`: the dedicated key no longer exists (deleted by hand, 401): the settings are
+        """`before_restore`: run once the checks have passed and before anything is given back
+        (the collections Shelfhold pushed go there); best effort, it must not raise.
+        `key_gone`: the dedicated key no longer exists (deleted by hand, 401): the settings are
         given back through `account` (a session of the admin account, not the dead key) and the
         revocation is skipped when the account confirms no such key is there. A key that is still
         there is revoked as usual: the flag never leaves a live key behind."""
@@ -297,6 +300,8 @@ class FullDetacher:
             left: list[Leftover] = []
             revocation = self._revocation(target_id)
             if revocation is None:  # a revocation on record means the settings were given back
+                if before_restore is not None and not key_gone:
+                    before_restore()
                 self._erase_hidden(target_id, erase, report, left)
                 if journals and not any(x.code in _INCOMPLETE for x in left):
                     left.append(Leftover("tombstone_journal_erased", len(journals)))

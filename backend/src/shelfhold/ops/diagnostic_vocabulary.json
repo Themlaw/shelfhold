@@ -606,6 +606,7 @@
   "deletion.unbin_failed",
   "destination.flagged_names_failed",
   "destination.removed",
+  "detach.collections_failed",
   "detach.done",
   "detach.revoke_failed",
   "detach.settings_failed",

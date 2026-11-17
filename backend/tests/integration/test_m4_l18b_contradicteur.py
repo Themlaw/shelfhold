@@ -1,7 +1,7 @@
 """#331, relecture adverse (contradicteur) de M4 L18b : contrôle parental et intégrité de Kavita.
 
-Chaque PoC est rouge aujourd'hui (`xfail(strict=True)`) et décrit un trou réel ; il doit passer au
-vert quand le trou est fermé. Même décor que `test_m4_l18b_kavita_collections.py` : base et
+Chaque PoC décrivait un trou réel (il était en `xfail(strict=True)`) ; il est vert depuis que le
+trou est fermé. Même décor que `test_m4_l18b_kavita_collections.py` : base et
 registre de production, Kavita simulé.
 """
 
@@ -27,10 +27,6 @@ from tests.kavita_export_env import wire
 
 
 @pytest.mark.req("EF-EXP-025", "ENF-SEC-010")
-@pytest.mark.xfail(
-    strict=True,
-    reason="#331 M1 : après une restauration, un objet promu n'est plus jamais retiré",
-)
 def test_after_a_restore_a_collection_that_became_forbidden_is_still_withdrawn() -> None:
     """`collection_remote` est `_REBUILT` par la sauvegarde : restaurée, elle est vide. Le titre
     est alors « pris » par l'objet que Shelfhold avait fait : rien n'est plus poussé, **ni
@@ -58,10 +54,6 @@ def test_after_a_restore_a_collection_that_became_forbidden_is_still_withdrawn()
 
 
 @pytest.mark.req("EF-EXP-025", "ENF-SEC-010")
-@pytest.mark.xfail(
-    strict=True,
-    reason="#331 M2 : la liste d'un adulte, approuvée, est promue entre deux audiences",
-)
 def test_an_approved_adult_list_across_two_audiences_never_shows_its_name_to_a_child() -> None:
     """La règle du foyer (« jamais entre bibliothèques d'audiences différentes : un nom peut dire
     « … tome 9 ») ne vaut pas pour la liste d'un profil : seule compte l'ouverture au
@@ -81,10 +73,6 @@ def test_an_approved_adult_list_across_two_audiences_never_shows_its_name_to_a_c
 
 
 @pytest.mark.req("EF-EXP-025", "ENF-SEC-010")
-@pytest.mark.xfail(
-    strict=True,
-    reason="#331 m1 : un objet laissé à une personne est repris et promu avec ce qu'elle y a mis",
-)
 def test_an_object_left_to_a_person_is_not_promoted_again_with_what_she_put_there() -> None:
     """`_withdraw` laisse en place, non promu, un objet qui contient autre chose (« n'est plus à
     Shelfhold »), mais garde sa ligne et son `remote_id`. Quand la collection redevient poussable,

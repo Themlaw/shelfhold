@@ -572,6 +572,7 @@ def create_app(
         version=__version__,
         frontend_dir=resolved.frontend_dir or PACKAGED_FRONTEND,
         routers=(*routers, *export_routers),
+        on_profile_change=relations_after_audience_change,
         auth=gate,
         idempotency=IdempotencyStore(engine, clock=clock.now),  # actor: the real principal
         source_url=resolved.source_url,
