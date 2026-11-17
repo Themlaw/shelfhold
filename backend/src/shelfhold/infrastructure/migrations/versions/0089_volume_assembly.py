@@ -7,7 +7,7 @@ assembly replaced. It goes with its destination and with the volume's export ite
 (`ON DELETE CASCADE`). The chapter files are in the bin of their root, never deleted. No row is
 touched; reversible once no `assemble` intent is open (the assemblies recorded go with the table).
 
-Number: 0087 follows 0086 (L18a), the head of main when this lot was rebased.
+Number: 0089 follows 0088, the head of main when this lot was rebased.
 """
 # ruff: noqa: E501  (the DDL is the one SQLAlchemy writes, kept as it is)
 
@@ -18,8 +18,8 @@ import sqlalchemy as sa
 from alembic import op
 from alembic.operations.base import BatchOperations
 
-revision = "0087"
-down_revision = "0086"
+revision = "0089"
+down_revision = "0088"
 branch_labels = None
 depends_on = None
 
@@ -89,7 +89,7 @@ def downgrade() -> None:
     )
     if open_assemble:  # a volume still to be settled: never erase what finishes it
         raise RuntimeError(
-            f"cannot downgrade past 0087: {open_assemble} assemble intent(s) are still open. "
+            f"cannot downgrade past 0089: {open_assemble} assemble intent(s) are still open. "
             "Start the instance so that it finishes them (or resolve them with `shelfhold "
             "intents`), then downgrade."
         )

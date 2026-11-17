@@ -35,7 +35,7 @@ EXPORT_TABLES = {
     "export_series", "edition_export_series", "field_owner", "kavita_access_audit",
     "document_alias",
     "export_upgrade",  # migration 0021 (M2 L16, EF-EXP-016)
-    "export_assembly",  # migration 0087 (M4 L10, EF-EXP-019)
+    "export_assembly",  # migration 0089 (M4 L10, EF-EXP-019)
     "tree", "tree_indexer",  # migration 0064 (M4 L02, ADR-0052)
 }  # fmt: skip
 READING_TABLES = {
