@@ -116,7 +116,7 @@ _AS_IS = (
     "wake_timeout_s", "wake_session_s", "maintenance_window_start", "maintenance_window_end",
     "timezone", "retention_events_days", "retention_audit_days", "backup_retention",
     "stream_max_per_profile",
-    "backup_stale_hours", "fetcher_cache", "comicvine_enabled",
+    "backup_stale_hours", "fetcher_cache", "comicvine_enabled", "googlebooks_daily_budget",
 )  # fmt: skip
 _PRESENCE = (
     "public_url", "api_token", "secret_key_file", "frontend_dir", "source_url", "wake_url",

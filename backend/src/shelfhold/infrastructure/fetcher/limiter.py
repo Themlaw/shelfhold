@@ -18,6 +18,7 @@ from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass, field
 from typing import Protocol
 
+from shelfhold.infrastructure.fetcher.day_window import day_key
 from shelfhold.infrastructure.fetcher.errors import ProviderQuotaExceeded
 from shelfhold.sdk.metadata import AdaptiveLimit, ProviderQuota
 
@@ -39,11 +40,16 @@ class BucketStore(Protocol):
         daily_cap: int | None,
         now: float,
         adaptive: AdaptiveLimit | None = None,
+        day_timezone: str | None = None,
     ) -> float: ...
 
     def announce(self, provider: str, limit: int) -> None: ...
 
     def defer(self, provider: str, seconds: float, now: float) -> None: ...
+
+    def suspend(self, provider: str, until: float) -> None: ...
+
+    def suspended_until(self, provider: str, now: float) -> float | None: ...
 
 
 class TokenBucket:
@@ -59,6 +65,7 @@ class TokenBucket:
         store: BucketStore | None = None,
         name: str = "",
         adaptive: AdaptiveLimit | None = None,
+        day_timezone: str | None = None,
     ) -> None:
         if rate <= 0 or burst < 1:
             raise ValueError("a bucket needs a positive rate and a burst of at least 1")
@@ -68,7 +75,8 @@ class TokenBucket:
         self._clock, self._sleep, self._wall = clock, sleep, wall
         self._tokens = float(burst)
         self._at = clock()
-        self._day = int(wall() // _DAY_S)
+        self.day_timezone = day_timezone
+        self._day = day_key(wall(), day_timezone)
         self._used = 0
         self._store, self._name = store, name
         self.adaptive = adaptive
@@ -79,11 +87,11 @@ class TokenBucket:
     def _reserve(self) -> float:
         """Take one token now; the seconds to wait before using it. Raises when the day is spent."""
         if self._store is not None:  # the database is the one balance
-            extra = {} if self.adaptive is None else {"adaptive": self.adaptive}
             return self._store.reserve(
-                self._name, self.rate, self.burst, self.daily_cap, self._wall(), **extra
-            )
-        day = int(self._wall() // _DAY_S)
+                self._name, self.rate, self.burst, self.daily_cap, self._wall(),
+                self.adaptive, self.day_timezone,
+            )  # fmt: skip
+        day = day_key(self._wall(), self.day_timezone)
         if day != self._day:
             self._day, self._used = day, 0
         if self.daily_cap is not None and self._used >= self.daily_cap:
@@ -155,7 +163,7 @@ class ProviderBuckets:
         bucket = TokenBucket(
             quota.requests_per_second, quota.burst, daily_cap=quota.daily_cap,
             clock=self.clock, sleep=self.sleep, wall=self.wall, store=self.store, name=provider,
-            adaptive=quota.adaptive,
+            adaptive=quota.adaptive, day_timezone=quota.day_timezone,
         )  # fmt: skip
         self._buckets[provider] = (quota, bucket)
         return bucket

@@ -399,6 +399,18 @@ def _meta_enrich(ops: OpsServices, _by: Principal, p: Params) -> object:
     )
 
 
+def _meta_provider_key_set(ops: OpsServices, _by: Principal, p: Params) -> object:
+    return ops.meta.provider_key_set(_text(p, "provider"), _text(p, "key"))
+
+
+def _meta_provider_key_clear(ops: OpsServices, _by: Principal, p: Params) -> object:
+    return ops.meta.provider_key_clear(_text(p, "provider"))
+
+
+def _meta_provider_key_status(ops: OpsServices, _by: Principal, _p: Params) -> object:
+    return ops.meta.provider_key_status()
+
+
 def _meta_calendar(ops: OpsServices, _by: Principal, _p: Params) -> object:
     return ops.meta.release_calendar()
 
@@ -775,6 +787,10 @@ OPS_METHODS: Mapping[str, tuple[OpsMethod, str | None]] = {
     "ops.meta_check": (_meta_check, None),
     "ops.meta_enrich": (_meta_enrich, None),
     "ops.meta_calendar": (_meta_calendar, None),
+    # a provider key is a secret: the reserved action of the other secrets (`source.set_secret`)
+    "ops.meta_provider_key_set": (_meta_provider_key_set, "source.set_secret"),
+    "ops.meta_provider_key_clear": (_meta_provider_key_clear, "source.set_secret"),
+    "ops.meta_provider_key_status": (_meta_provider_key_status, None),
     "ops.meta_lock": (_meta_lock, None),
     "ops.meta_unlock": (_meta_unlock, None),
     "ops.edition_renumber_id": (_edition_renumber_id, None),
@@ -821,7 +837,7 @@ READS = frozenset(
         "ops.intents_list", "ops.withdraw_plan", "ops.backfill_estimate", "ops.meta_check",
         "ops.rate_pending", "ops.attach_list", "ops.source_search", "ops.source_filters",
         "ops.edition_list", "ops.export_item_show", "ops.maintenance_status",
-        "ops.target_remove_preview", "ops.detach_full_preview",
+        "ops.target_remove_preview", "ops.detach_full_preview", "ops.meta_provider_key_status",
     }
 )  # fmt: skip
 MAINTENANCE_OPEN = READS | {"ops.maintenance_off"}

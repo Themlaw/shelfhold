@@ -25,7 +25,7 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, Final, Literal, Protocol
 
@@ -46,6 +46,7 @@ from shelfhold.infrastructure.clock import Clock
 from shelfhold.infrastructure.cover_store import CoverStore
 from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.fetcher.client import is_identifiable
+from shelfhold.infrastructure.fetcher.day_window import midnight_after
 from shelfhold.infrastructure.fetcher.errors import (
     DnsBlocked,
     DnsResolutionError,
@@ -58,6 +59,7 @@ from shelfhold.infrastructure.fetcher.errors import (
     UserAgentNotIdentifiable,
 )
 from shelfhold.infrastructure.fetcher.payload_cache import CachingFetcher, PayloadCache
+from shelfhold.infrastructure.fetcher.quota_store import SqlBucketStore
 from shelfhold.infrastructure.ids import is_ulid
 from shelfhold.infrastructure.imaging import (
     ImageKind,
@@ -72,6 +74,7 @@ from shelfhold.sdk.metadata import (
     EntityRef,
     FieldProposal,
     MatchHints,
+    MetadataManifest,
     MetadataProvider,
     Provenance,
     ProviderCapability,
@@ -93,8 +96,12 @@ DOWN_NOTICE_INTERVAL: Final = timedelta(hours=1)
 COVER_MAX_EDGE: Final = 1200
 PROVIDER_DOWN: Final = "metadata.provider_down"
 _REASONS: Final = frozenset(
-    {"unreachable", "timeout", "http_503", "schema_mismatch", "unauthorized", "rate_limited"}
-)
+    {
+        "unreachable", "timeout", "http_503", "schema_mismatch", "unauthorized", "rate_limited",
+        "daily_quota",
+    }
+)  # fmt: skip
+DAILY_QUOTA: Final = "daily_quota"  # the reason a provider gives when its day's quota is spent
 _ISBN_SCHEMES: Final = (("isbn13", 13), ("isbn10", 10))
 
 
@@ -162,6 +169,12 @@ def _suggestions_of(
         )
         found.append(Suggestion(provider.manifest.key, url, pairs))
     return tuple(found)
+
+
+def _utc_midnight(now: datetime) -> float:
+    return (
+        now.astimezone(UTC).replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(days=1)
+    ).timestamp()
 
 
 def _down_reason(error: Exception) -> str:
@@ -293,6 +306,8 @@ class EnrichService:
             return EnrichReport("quota", edition_id)
         except (ProviderUnavailable, FetchUnreachable, FetchTimeout, DnsResolutionError,
                 DnsBlocked) as error:  # fmt: skip
+            if isinstance(error, ProviderUnavailable) and error.reason == DAILY_QUOTA:
+                self._suspend_for_the_day(manifest)  # the provider said its day is spent
             return self._down(edition_id, _down_reason(error))
         proposals = [p for p in result.proposals if self._acceptable(p, provider)]
         suggestions = _suggestions_of(result, provider, edition_id)
@@ -422,6 +437,14 @@ class EnrichService:
         return self._cover_store.put(thumbnail.data), None, request.url.split("?", 1)[0]
 
     # -- a provider that is down -------------------------------------------------------------
+    def _suspend_for_the_day(self, manifest: MetadataManifest) -> None:
+        """Nothing is asked of this provider until its day is over (ENF-LEG-005): the midnight of
+        the zone its quota is counted in (Google's: the Pacific), for every worker and process."""
+        zone = manifest.quota.day_timezone
+        now = self._clock.now()
+        until = midnight_after(now, zone).timestamp() if zone else _utc_midnight(now)
+        SqlBucketStore(self._engine).suspend(manifest.key, until)
+
     def _down(self, edition_id: str, reason: str) -> EnrichReport:
         """Tell the admin once an hour; change nothing else."""
         now = self._clock.now()

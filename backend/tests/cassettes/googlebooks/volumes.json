@@ -1,0 +1,60 @@
+{
+  "interactions": [
+    {
+      "request": {
+        "method": "GET",
+        "uri": "https://www.googleapis.com/books/v1/volumes",
+        "query_contains": "Hostile Volume"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json; charset=utf-8"
+        },
+        "body": "{\"kind\": \"books#volumes\", \"totalItems\": 1, \"items\": [{\"id\": \"bad id!\", \"volumeInfo\": {\"title\": 7, \"publishedDate\": \"soon\", \"publisher\": [\"x\"], \"description\": \"  Spaced \\u0000 out\\n\\ttext  \", \"infoLink\": \"https://elsewhere.invalid/x?next=1\"}}]}"
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "uri": "https://www.googleapis.com/books/v1/volumes",
+        "query_contains": "Nothing Recorded"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json; charset=utf-8"
+        },
+        "body": "{\"kind\": \"books#volumes\", \"totalItems\": 0}"
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "uri": "https://www.googleapis.com/books/v1/volumes",
+        "query_contains": "isbn:9780000000002"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json; charset=utf-8"
+        },
+        "body": "{\"kind\": \"books#volumes\", \"totalItems\": 1, \"items\": [{\"id\": \"invAAAAAAAAA\", \"volumeInfo\": {\"title\": \"The Synthetic Chronicle\", \"subtitle\": \"A Test\", \"authors\": [\"Ana Invented\"], \"publisher\": \"Invented Press\", \"publishedDate\": \"1999-05-01\", \"description\": \"An invented book for tests.\", \"industryIdentifiers\": [{\"type\": \"ISBN_13\", \"identifier\": \"9780000000002\"}], \"language\": \"en\", \"infoLink\": \"https://books.google.com/books?id=invAAAAAAAAA&source=gbs_api\"}}]}"
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "uri": "https://www.googleapis.com/books/v1/volumes",
+        "query_contains": "intitle:The Synthetic Chronicle"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json; charset=utf-8"
+        },
+        "body": "{\"kind\": \"books#volumes\", \"totalItems\": 1, \"items\": [{\"id\": \"invAAAAAAAAA\", \"volumeInfo\": {\"title\": \"The Synthetic Chronicle\", \"subtitle\": \"A Test\", \"authors\": [\"Ana Invented\"], \"publisher\": \"Invented Press\", \"publishedDate\": \"1999-05-01\", \"description\": \"An invented book for tests.\", \"industryIdentifiers\": [{\"type\": \"ISBN_13\", \"identifier\": \"9780000000002\"}], \"language\": \"en\", \"infoLink\": \"https://books.google.com/books?id=invAAAAAAAAA&source=gbs_api\"}}]}"
+      }
+    }
+  ]
+}

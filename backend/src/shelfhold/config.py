@@ -206,6 +206,10 @@ class Settings(BaseModel):
     # project; never logged, never in a diagnostic bundle (presence only).
     comicvine_enabled: bool = False
     comicvine_api_key: SecretStr | None = None
+    # M4 L21a (ENF-LEG-005): the daily budget of Google Books, in requests per Pacific day. Google
+    # publishes no figure (the real one is the owner's cloud console): 1000 is the lowest reported.
+    # The key itself is never a setting: it is sealed in the database (`meta provider-key set`).
+    googlebooks_daily_budget: int = Field(default=1000, ge=1, le=1_000_000)
 
     @field_validator("source_url")
     @classmethod

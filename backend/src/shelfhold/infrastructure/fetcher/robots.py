@@ -14,7 +14,12 @@ from dataclasses import dataclass, field
 from typing import Final
 from urllib.robotparser import RobotFileParser
 
-from shelfhold.infrastructure.fetcher.errors import FetchError, RobotsDisallowed, RobotsUnavailable
+from shelfhold.infrastructure.fetcher.errors import (
+    FetchError,
+    ProviderQuotaExceeded,
+    RobotsDisallowed,
+    RobotsUnavailable,
+)
 from shelfhold.sdk.fetcher import Response
 
 ROBOTS_AGENT: Final = "Shelfhold"
@@ -53,6 +58,8 @@ class RobotsPolicy:
     async def _load(self, origin: str, fetch: RobotsFetch) -> _Rules:
         try:
             response = await fetch(origin + ROBOTS_PATH)
+        except ProviderQuotaExceeded:
+            raise  # the provider's day is spent: not a robots.txt that cannot be read
         except FetchError:
             return _Rules(None, self.clock() + _RETRY_S)
         if 500 <= response.status < 600:

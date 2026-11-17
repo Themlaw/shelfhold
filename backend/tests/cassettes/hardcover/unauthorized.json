@@ -1,0 +1,18 @@
+{
+  "interactions": [
+    {
+      "request": {
+        "method": "POST",
+        "uri": "https://api.hardcover.app/v1/graphql",
+        "body_contains": ""
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json; charset=utf-8"
+        },
+        "body": "{\"errors\": [{\"message\": \"Unable to verify token\", \"extensions\": {\"code\": \"invalid-jwt\", \"path\": \"$\"}}]}"
+      }
+    }
+  ]
+}
