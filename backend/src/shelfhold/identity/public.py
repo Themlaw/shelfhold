@@ -25,6 +25,7 @@ from shelfhold.identity.application.destination_accounts import (
     DestinationRef,
     RemoteAccount,
     SecretToken,
+    SyncStatusRow,
 )
 from shelfhold.identity.application.passkeys import (
     PasskeyError,
@@ -225,6 +226,7 @@ __all__ = [
     "SetupTokenInvalidError",
     "SetupTokenNotConfiguredError",
     "SourcePolicyRecord",
+    "SyncStatusRow",
     "ThrottledError",
     "TruthRow",
     "UnknownPasskeyError",

@@ -72,9 +72,10 @@ def test_sync_status_shows_only_own_member_to_non_admin(fx: Fixture) -> None:
     fx.as_user("dad")
     other = _rows(fx.api.client.get(PATH))
     assert {r["user_id"] for r in other} == {dad}
-    assert next(r for r in other if r["shelf_destination_id"] == fx.destination_id)[
-        "last_push_at"
-    ] is None  # never pushed
+    assert (
+        next(r for r in other if r["shelf_destination_id"] == fx.destination_id)["last_push_at"]
+        is None
+    )  # never pushed
 
 
 @pytest.mark.req("EF-EXP-026")
@@ -120,7 +121,7 @@ def test_sync_status_never_carries_a_key_a_fingerprint_or_an_account_name(fx: Fi
 
 @pytest.mark.req("EF-EXP-026", "EF-USR-024")
 def test_a_shelf_closed_to_a_member_gives_no_row(fx: Fixture) -> None:
-    mum, _ = _member(fx, "mum")
+    _member(fx, "mum")
     dad, _ = _member(fx, "dad")
     with closing(sqlite3.connect(fx.settings.database_path, isolation_level=None)) as db:
         shelf = db.execute(
