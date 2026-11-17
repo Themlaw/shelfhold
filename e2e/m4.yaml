@@ -1,0 +1,66 @@
+# M4 overlay (L44), used with compose.yaml and journey.yaml: `-f compose.yaml -f journey.yaml
+# -f m4.yaml`. Adds a second simulated server (Komga) and a shared native folder for Mihon/Suwayomi
+# local, plus the third library that Shelfhold will export to as a native folder. Nothing leaves the
+# network namespace: `egress-watch` still sees everything.
+#
+# The journeys:
+# - parcours 1: l'étagère "Manga" alimente Kavita et un dossier natif (Mihon/Suwayomi local) ;
+# - parcours 2: une position écrite par l'API Kavita avec le compte d'un membre remonte dans
+#   "Où j'en suis", et inversement ;
+# - parcours 3: un renommage de série conserve la progression de deux membres ;
+# - parcours 4: les vecteurs de hash KOReader sont verts sur l'image.
+name: shelfhold-e2e-m4
+
+x-fake: &fake
+  image: ${SHELFHOLD_IMAGE:?}
+  user: "1000:1000"
+  read_only: true
+  cap_drop: [ALL]
+  security_opt: ["no-new-privileges:true"]
+  network_mode: service:egress-watch
+  environment:
+    PYTHONPATH: /fakes:/pkg
+    PYTHONDONTWRITEBYTECODE: "1"
+  depends_on:
+    egress-watch: { condition: service_healthy }
+  tmpfs: ["/tmp"]
+
+services:
+  library-init:
+    image: ${SHELFHOLD_IMAGE:?}
+    user: "0:0"
+    read_only: true
+    cap_drop: [ALL]
+    cap_add: [CHOWN]
+    command: ["sh", "-c", "chown 1000:1000 /library /native"]
+    restart: "no"
+    volumes:
+      - library:/library
+      - native:/native
+    network_mode: none
+
+  fake-komga:
+    <<: *fake
+    command: ["python", "/fakes/komga/serve.py"]
+    environment:
+      FAKE_KOMGA_LIBRARY_ROOT: /library/manga
+      PORT: "25600"
+    volumes:
+      - ./fakes:/fakes:ro
+      - ../backend/tests:/pkg/tests:ro
+      - library:/library:ro
+
+  shelfhold:
+    depends_on:
+      library-init: { condition: service_completed_successfully }
+      fake-komga: { condition: service_started }
+    environment:
+      SHELFHOLD_MAINTENANCE_WINDOW_START: "00:00"
+      SHELFHOLD_MAINTENANCE_WINDOW_END: "23:59"
+    volumes:
+      - library:/library
+      - native:/native
+
+volumes:
+  library:
+  native:
