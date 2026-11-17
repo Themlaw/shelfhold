@@ -21,7 +21,7 @@ USER = "01HZZZZZZZZZZZZZZZZZZZZZZB"
 ROW = "01HZZZZZZZZZZZZZZZZZZZZZZA"
 
 
-def test_the_revision_is_0094_the_only_head_on_0093() -> None:
+def test_the_revision_is_0094_on_0093() -> None:
     script = ScriptDirectory(str(default_script_location()))
     assert script.get_revision("0094").down_revision == "0093"
 

@@ -11,6 +11,7 @@ from shelfhold.export.application.export_items import (
     plan_series_reassignment,
 )
 from shelfhold.export.application.pairing import pending_pairing
+from shelfhold.export.application.upgrade import served_blockers
 from shelfhold.export.application.waiting_marks import clear as _clear_marks
 from shelfhold.export.domain.bindings import (
     LocalSourceUnknownError,
@@ -42,6 +43,7 @@ __all__ = [
     "is_family",
     "pending_pairing",
     "plan_series_reassignment",
+    "served_blockers",
 ]
 
 

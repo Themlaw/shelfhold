@@ -9,6 +9,7 @@ from __future__ import annotations
 import sqlalchemy as sa
 from sqlalchemy import Connection
 
+from shelfhold.acquisition.application.team_switch import TEAM_SWITCH_JOB_KIND
 from shelfhold.export.application.detach import DETACH_JOB_KIND
 from shelfhold.export.application.remove_destination import REMOVAL_JOB_KIND
 from shelfhold.infrastructure.schema import coherence, platform
@@ -32,6 +33,8 @@ def reserved_job_action(connection: Connection, subject: str) -> str | None:
         return "destination.remove_all"
     if row.kind == DETACH_JOB_KIND:
         return "detach.full"
+    if row.kind == TEAM_SWITCH_JOB_KIND:  # M4 L35: served files are replaced: the same session
+        return "team.switch"
     if row.kind != APPLY_JOB_KIND or not row.dedupe_key:
         return None
     kind = connection.execute(

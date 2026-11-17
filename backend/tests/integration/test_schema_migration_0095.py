@@ -26,9 +26,8 @@ MARKER = "01HZZZZZZZZZZZZZZZZZZZZZZD"
 HINT = "01HZZZZZZZZZZZZZZZZZZZZZZE"
 
 
-def test_the_revision_is_0095_the_head_on_0094() -> None:
+def test_the_revision_is_0095_on_0094() -> None:
     script = ScriptDirectory(str(default_script_location()))
-    assert script.get_heads() == ["0095"]  # the head is pinned here, by the newest
     assert script.get_revision("0095").down_revision == "0094"
 
 

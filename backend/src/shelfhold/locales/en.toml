@@ -1965,6 +1965,21 @@
     action = "Try again; if it persists, check the logs and the limits of the machine."
     cause = "The bounded process that reads backups failed to start or crashed: the file is not the cause."
 
+  [errors."team_switch.not_found"]
+    title = "No such switch."
+    action = "Start again from the series sheet."
+    cause = "The edition or the switch does not exist (any more), or belongs to another series."
+
+  [errors."team_switch.no_preferred_team"]
+    title = "This series has no preferred team yet."
+    action = "Choose a preferred team on the series sheet first."
+    cause = "Nothing can be switched to a team that has not been chosen."
+
+  [errors."team_switch.stale"]
+    title = "The preview is no longer up to date."
+    action = "Ask for a new preview, read it, then apply it."
+    cause = "A chapter arrived, was read or was changed since the preview: nothing was replaced."
+
   [errors."request.invalid_list"]
     title = "This list cannot be read."
     action = "Send a plain text list: one title per line, at most 100 lines of 300 characters, under 64 KiB."
@@ -2806,3 +2821,23 @@
     title = "This migration request cannot be accepted."
     action = "Check the series of the new source, the source to replace and the numbers you entered."
     cause = "The new source lists no chapter, the source to replace is not a source of this series, or a line or a target number does not exist."
+
+  [errors."webhook.not_found"]
+    title = "This webhook does not exist."
+    action = "Read the list of webhooks again and use its identifier."
+    cause = "No webhook has this identifier, or it was removed."
+
+  [errors."webhook.url_refused"]
+    title = "This address cannot receive a webhook."
+    action = "Give a public https address. For a server on your network, allow it explicitly (host and port)."
+    cause = "The address is malformed, does not answer, or leads to a private network you did not allow. Cloud metadata addresses are always refused."
+
+  [errors."webhook.secret_unreadable"]
+    title = "The address of this webhook can no longer be read."
+    action = "Delete this webhook and create it again: a new secret is given once. If a key was removed, restore the keyring."
+    cause = "The sealed document that holds the address and the secret could not be opened: the key is gone or the row was altered. Nothing can be sent, and the tries stop at the ceiling."
+
+  [errors."webhook.event_types"]
+    title = "These event types are not available."
+    action = "Pick one or more types from the closed list offered."
+    cause = "The list is empty, too long, or names an event that webhooks do not send."

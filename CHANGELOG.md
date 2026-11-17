@@ -6,6 +6,7 @@ Format : [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/). Versionnement
 
 ### Ajouté
 
+- **Passer à l'équipe préférée (L35)** : sur la fiche d'une série, « Voir ce qui serait remplacé » prépare un aperçu (chapitres remplacés, bloqués avec leur raison, en attente), puis « Remplacer maintenant » met l'application en file (tâche d'écriture, bail de la bibliothèque) : chaque fichier servi est remplacé au même emplacement par l'équipe préférée, sous intention, avec les gardes de la montée de version (jamais un original irremplaçable ni adopté, jamais un chapitre lu ou un fichier en cours d'opération), puis l'écran de résultat. Action réservée `team.switch` (session admin fraîche, jamais une clé). Un aperçu périmé n'est jamais appliqué ; un arrêt brutal se reprend par le rejeu des intentions.
 - **Import d'une sauvegarde Mihon (L26)** : `shelfhold import tachibk fichier.tachibk` (puis `--apply <id>`) et `POST /api/v1/imports/tachibk`. Le fichier est lu comme hostile (gzip et protobuf décodés à la main dans un sous-processus borné, sans nouvelle dépendance : tailles, profondeur, nombre d'entrées et longueur des textes bornés, refus en entier), prévisualisé sans rien écrire, puis appliqué une fois par l'administrateur (action réservée) : les séries deviennent des éléments en attente dont la source est résolue plus tard (aucune adresse du fichier n'est appelée), leurs chapitres des unités connues, ce que le fichier prouve lu des marqueurs du seul profil choisi, les suivis des indices sans secret. Aucun nom de source n'est lu ni gardé.
 - **Listes de lecture importables (L31)** : `shelfhold request --from-list fichier.txt` et un écran d'import ; une ligne par titre, un ISBN si on en a un. Le texte est borné et lu comme non fiable, résolu dans le catalogue seul (aucune recherche dans une source), ce qui est déjà là va sur une étagère de lecture du profil et le reste devient des demandes, décidées sur **un seul écran**. Pour un enfant, c'est une décision parentale (action réservée) : son étagère ne dépasse pas son plafond et chaque demande garde l'âge à l'approbation. Une ligne qui réclame une édition annotée précise porte un avertissement.
 - **Événements d'arrivée de Kavita (L37)** : Shelfhold écoute le hub de Kavita avec la clé dédiée et regarde plus tôt quand une série arrive ; un événement n'est jamais une preuve, le polling reste actif et une panne du hub ne coupe que cette écoute. Nouvelle dépendance : `websockets` (BSD-3-Clause, Python pur).
@@ -14,12 +15,13 @@ Format : [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/). Versionnement
 - **Étagères réservées lues partout (L39, D-P3)** : une Œuvre n'est visible pour un enfant que si au moins une étagère qui la porte lui est ouverte (`allowed_profiles` vide ou la nommant), sur le catalogue, la recherche, l'OPDS, le kosync, les collections et les relations, par une seule fonction.
 - **Destination de notification d'un adulte (L39)** : chaque admin ou membre peut sceller une destination Apprise à lui (action réservée, jamais une clé) ; les titres de ses notices vont seulement là, jamais dans le canal partagé. Un enfant n'en a pas.
 - **`notify_mode` lu (L39)** : résumé ou immédiat ; un enfant n'a jamais de notification immédiate.
+- **Webhooks signés et outbox persistée (L24)** : l'administrateur enregistre une adresse https et reçoit, une seule fois, le secret qui signe chaque envoi (`X-Shelfhold-Signature: t=…,v1=…`). Les événements passent par la vue d'activité du rôle « intégration » (jamais un titre, jamais un événement privé), partent par le Fetcher et sa garde réseau, vérifiée de nouveau à chaque envoi (une adresse privée ou de métadonnées est refusée, une redirection n'est jamais suivie). Les envois en attente sont en base : un arrêt brutal n'en perd aucun, la reprise est exponentielle et chaque envoi garde la même identité. Pendant la dépréciation d'une forme d'événement, l'ancienne et la nouvelle version sont envoyées, 180 jours au plus. Voir `docs/admin/webhooks.md`.
 
 ### Modifié
 
 - Une Œuvre ou une Édition rangée sur aucune étagère n'est plus visible pour un enfant (un adulte la voit toujours).
 
-Migration : oui (0091, 0092, 0094 et 0095)
+Migration : oui (0091, 0092, 0094, 0095, 0096 et 0097)
 
 ## 1.1.0-rc.2 - 2026-11-16
 
