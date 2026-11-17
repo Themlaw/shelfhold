@@ -413,6 +413,101 @@ def test_a_demoted_creator_sends_nothing_and_the_cursor_waits(settings: Settings
         assert env.rows()[0]["event_id"] == first
 
 
+@pytest.mark.req("EF-INT-005", "ENF-SEC-001")
+@pytest.mark.parametrize("address", ["127.0.0.1", "127.8.8.8", "::1", "::ffff:127.0.0.1"])
+def test_allow_private_opens_the_lan_never_the_loopback(settings: Settings, address: str) -> None:
+    """The administrator's allowance is for the network of the house: a service on this very host
+    (a database, another container's admin API) is out of reach, however the name is written."""
+    with webhook_env(settings, dns={"loop.example.lan": [address]}) as env:
+        with pytest.raises(WebhookRefused):
+            env.subscribe("http://loop.example.lan:8080/hook", allow_private=True)
+        assert env.rows() == []
+
+
+@pytest.mark.req("EF-INT-005", "ENF-SEC-001")
+def test_a_row_pinned_on_the_loopback_is_never_sent(settings: Settings) -> None:
+    """A subscription written before the rule: the pinned address is checked again at delivery."""
+    with webhook_env(settings, dns={"nas.example.lan": ["192.168.1.20"]}) as env:
+        sub, _ = env.subscribe("http://nas.example.lan:8080/hook", allow_private=True)
+        with write_transaction(env.engine) as connection:
+            connection.execute(
+                sa.text("UPDATE webhook_subscription SET private_addresses = :a WHERE id = :i"),
+                {"a": json.dumps(["127.0.0.1"]), "i": sub.id},
+            )
+        env.resolver.table["nas.example.lan"] = ["127.0.0.1"]
+        env.publish()
+        env.outbox().enqueue()
+        report = env.deliverer().run_once()
+        assert report.delivered == 0 and env.recorder.requests == []
+        assert env.rows()[0]["last_error"] == "ssrf.blocked"
+
+
+def _break_the_sealed_document(env: Any, subscription_id: str) -> None:
+    with write_transaction(env.engine) as connection:
+        connection.execute(
+            sa.text("UPDATE webhook_subscription SET secret_ct = :c WHERE id = :i"),
+            {"c": b"\x00" * 48, "i": subscription_id},
+        )
+
+
+@pytest.mark.req("EF-INT-005", "ENF-SEC-005")
+def test_an_unreadable_sealed_document_counts_its_attempts_and_ends_dead(
+    settings: Settings,
+) -> None:
+    """What cannot be opened is not the receiver's fault, nor a passing fault of ours: each try
+    counts, and the row stops at the ceiling like any other (never forever)."""
+    with webhook_env(settings) as env:
+        sub, _ = env.subscribe()
+        env.publish()
+        env.outbox().enqueue()
+        _break_the_sealed_document(env, sub.id)
+        for attempt in range(1, MAX_ATTEMPTS + 1):
+            env.deliverer().run_once()
+            [row] = env.rows()
+            assert row["attempts"] == attempt and row["last_error"] == "subscription_unreadable"
+            env.clock.advance(days=1)
+        assert env.rows()[0]["status"] == "dead" and env.recorder.requests == []
+
+
+@pytest.mark.req("EF-INT-005", "ENF-SEC-005")
+def test_a_failure_of_ours_that_is_not_the_document_is_still_not_counted(
+    settings: Settings,
+) -> None:
+    with webhook_env(settings) as env:
+        env.subscribe()
+        env.publish()
+        env.outbox().enqueue()
+        deliverer = env.deliverer()
+        original = deliverer._store.open
+
+        def broken(*_a: Any, **_k: Any) -> Any:
+            raise sa.exc.OperationalError("select", {}, Exception("locked"))
+
+        deliverer._store.open = broken  # type: ignore[method-assign]
+        deliverer.run_once()
+        deliverer._store.open = original  # type: ignore[method-assign]
+        assert env.rows()[0]["attempts"] == 0 and env.rows()[0]["status"] == "pending"
+
+
+@pytest.mark.req("EF-INT-005", "EF-UX-003")
+def test_an_unreadable_subscription_shows_in_the_admin_health_page(settings: Settings) -> None:
+    from shelfhold.ops.health import build_health_page
+
+    with webhook_env(settings) as env:
+        sub, secret = env.subscribe()
+        env.publish()
+        env.outbox().enqueue()
+        assert build_health_page(env.engine, settings, NOW)["unreadable_webhooks"] == []
+        _break_the_sealed_document(env, sub.id)
+        env.deliverer().run_once()
+        page = build_health_page(env.engine, settings, NOW)
+        [entry] = page["unreadable_webhooks"]
+        assert entry["code"] == "webhook.secret_unreadable" and entry["subscription_id"] == sub.id
+        assert entry["attempts"] == 1
+        dump = json.dumps(page, default=str)
+        assert secret not in dump and HOST not in dump
+
+
 # -- the schema version: upcast on read, double emission during a deprecation --------------------
 
 

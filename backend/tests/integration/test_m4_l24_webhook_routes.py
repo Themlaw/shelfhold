@@ -246,3 +246,17 @@ def test_the_api_description_documents_the_webhooks(api: AuthEnv) -> None:
     for event in docs["events"].values():
         assert event["current_version"] == 1 and event["deprecated"] == {}
         assert "title" not in event["fields"]["1"]
+
+
+@pytest.mark.req("EF-INT-005", "ENF-SEC-001")
+@pytest.mark.parametrize("url", ["http://127.0.0.1:8080/hook", "http://[::1]:8080/hook"])
+def test_the_loopback_is_refused_even_when_the_admin_allows_private(api: AuthEnv, url: str) -> None:
+    answer = _send(
+        api,
+        api.client,
+        "POST",
+        BASE,
+        {"url": url, "event_types": ["unit.stored"], "allow_private": True},
+    )
+    assert answer.status_code in (400, 422), answer.text
+    assert _count(api) == 0
