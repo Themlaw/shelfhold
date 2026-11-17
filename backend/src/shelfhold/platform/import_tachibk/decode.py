@@ -43,6 +43,7 @@ SCHEMA_VERSIONS: Final[dict[str, frozenset[int]]] = {
 }
 
 _MIB: Final = 1024 * 1024
+_TRACKING_FIELD: Final = 18  # `BackupManga.tracking`
 
 
 @dataclass(frozen=True, slots=True)
@@ -324,7 +325,7 @@ def _manga(reader: _Reader, span: tuple[int, int]) -> RawManga:
         elif number == 16:
             _expect(wire, 2)
             manga.chapters.append(_chapter(reader, value))
-        elif number == 18:
+        elif number == _TRACKING_FIELD:
             _expect(wire, 2)
             manga.tracking.append(_tracking(reader, value))
         elif number == 100:
