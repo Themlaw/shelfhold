@@ -145,7 +145,7 @@ def test_destination_plugin_page_names_the_delivered_kit() -> None:
     text = _text(PLUGINS / "destination.md")
     assert "destination-kit.md" in text and "assert_destination_conforms" in text
     assert "à venir" not in text  # the kit is there
-    assert "reste refusé par le kit" not in text  # `push` is open behind the kit
+    assert "refusé par le kit" not in text  # `push` is open behind the kit
     assert "content_body" in text
     # what stays unstable is still said to the author
     assert "ExportItem" in text
