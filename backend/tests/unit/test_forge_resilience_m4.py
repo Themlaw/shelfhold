@@ -234,7 +234,7 @@ def test_publish_mirror_token_only_in_push_step() -> None:
 @pytest.mark.req("ENF-GOV-004")
 def test_publish_mirror_script_refuses_an_unknown_host_and_never_sees_the_token_on_argv() -> None:
     script = (ROOT / ".github" / "scripts" / "publish-mirror.sh").read_text(encoding="utf-8")
-    assert "codeberg.org" in script and "GIT_ASKPASS" in script
+    assert re.search(r"^re=.*https://codeberg", script, re.M) and "GIT_ASKPASS" in script
     assert "set -euo pipefail" in script
     assert not re.search(r"git [^\n]*\$\{?MIRROR_TOKEN", script)  # via askpass, not the arguments
 
