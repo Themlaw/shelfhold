@@ -1342,3 +1342,37 @@ old_items = "The chapter files replaced, in reading order: export item, Unit, fi
 derived_hash = "Hash of what the volume was made of (its chapters' contents), never that of a received content."
 file_hash = "Hash of the volume file."
 created_at = "When the assembly was recorded (UTC)."
+
+[tables.source_migration]
+description = "The migration of one series to another source: a numbering correspondence, proposed, validated as shown, then applied (M4 L27, EF-BIB-014)."
+[tables.source_migration.columns]
+id = "Migration identifier (ULID)."
+edition_id = "Edition (series) that moves (`edition.id`)."
+work_id = "Work of that Edition (`work.id`)."
+plugin_id = "Connected service that lists the new source."
+source_key = "The new source, as the service names it."
+remote_id = "The series in the new source."
+memo = "What the service remembers of that series (JSON object)."
+memo_version = "Version of that memo; NULL: not given."
+replaces_binding_id = "Binding the migration retires (`source_binding.id`); NULL: none."
+binding_id = "Binding it created, once applied (`source_binding.id`)."
+state = "`proposed`, `validated`, `applied` or `cancelled`."
+number_offset = "Constant offset between the new source's numbers and the library's; 0: none."
+digest = "Fingerprint of the table as shown (SHA-256, hexadecimal); what validation and application must send back."
+held_digest = "Fingerprint of the Units the Edition held when the table was made: it is applied only against that."
+created_at = "When the table was proposed (UTC)."
+validated_at = "When the admin validated it (UTC); NULL: not yet."
+applied_at = "When it was applied (UTC); NULL: not yet."
+
+[tables.source_migration_row]
+description = "One line of a migration's table: a number of the new source, the library number it takes and the Unit it lands on (M4 L27)."
+[tables.source_migration_row.columns]
+migration_id = "Migration it belongs to (`source_migration.id`)."
+place = "The number of the new source, placed as the follow cycle places it."
+number = "That number as the new source writes it; NULL: an extra without one."
+source_order = "Its order in the new source."
+target = "The number it takes in the library's own numbering; NULL: an extra without one."
+target_order = "The order the library keeps for it."
+target_place = "The place of that number in the library: unique per migration, two numbers never land on one."
+unit_id = "The Unit it lands on (`unit.id`); NULL: the library lacks it, it is to be fetched."
+basis = "`same_number`, `offset`, `manual` or `new`: why the line says what it says."

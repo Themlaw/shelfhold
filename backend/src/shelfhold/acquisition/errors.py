@@ -90,4 +90,9 @@ CODES: tuple[ErrorCode, ...] = (
     # EF-USR-019 (M4 L30): put aside to be bought or borrowed, proposals of the source search
     ErrorCode("request.invalid_link", 422, "admin"),  # not a plain https address
     ErrorCode("request.nothing_to_propose", 409, "admin"),  # a result, or a Work the library holds
+    # EF-BIB-014 (M4 L27): the migration of a series to another source
+    ErrorCode("source_migration.collision", 422, "admin"),  # two numbers land on one place
+    ErrorCode("source_migration.not_validated", 409, "admin"),  # applied before it was validated
+    ErrorCode("source_migration.stale", 409, "admin"),  # not the table shown, or the Edition moved
+    ErrorCode("source_migration.invalid", 422, "admin"),  # a line, a target or a listing refused
 )

@@ -21,7 +21,7 @@ from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from shelfhold.catalog.application.dedup import SAME_WORK_REASON, told_apart, tombstoned
 from shelfhold.catalog.application.dto import BindingRef, EditionSpec
 from shelfhold.catalog.application.new_edition_gate import file_new_edition
-from shelfhold.catalog.application.places import place_key
+from shelfhold.catalog.application.places import place_key, unit_place_key
 from shelfhold.catalog.application.rating import RatingService
 from shelfhold.catalog.application.service import CatalogService
 from shelfhold.catalog.application.tombstone_screen import TombstoneScreen
@@ -63,6 +63,7 @@ class RelinkRequest:
     remote_id: str
     listed: tuple[ListedUnit, ...] = ()
     lang: str | None = None  # None: the Edition of the binding replaced, else the only one
+    edition_id: str | None = None  # the Edition itself (a migration names it), of this Work
     replaces_binding_id: str | None = None
     translation_type: str | None = None  # a new Edition: default, that of the Edition it follows
     media: str | None = None
@@ -204,7 +205,13 @@ def _base_edition(
     query = sa.select(
         edition.c.id, edition.c.translation_type, edition.c.media, edition.c.shelf_id
     ).order_by(edition.c.shelf_id.is_(None), edition.c.id)
-    if replaced is not None:
+    if request.edition_id is not None:
+        if replaced is not None and replaced.edition_id != request.edition_id:
+            raise ValueError("the binding replaced is of another Edition")
+        query = query.where(
+            edition.c.id == request.edition_id, edition.c.work_id == request.work_id
+        )
+    elif replaced is not None:
         query = query.where(edition.c.id == replaced.edition_id)
     else:
         query = query.where(edition.c.work_id == request.work_id)
@@ -321,9 +328,10 @@ def _missing(
         ).where(unit.c.edition_id == edition_id)
     ):
         held.add(
-            f"unnumbered:{row.source_order}" if row.track == "unnumbered"
-            else f"{row.track}|{row.number_segment}|{row.number_norm}|{row.part}"
-        )  # fmt: skip
+            unit_place_key(
+                row.track, row.number_segment, row.number_norm, row.part, row.source_order
+            )
+        )
     return tuple(u for u in listed if place_key(u.raw_number, u.source_order) not in held)
 
 

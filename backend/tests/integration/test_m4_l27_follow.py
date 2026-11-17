@@ -16,6 +16,7 @@ import pytest
 from shelfhold.acquisition.public import SourceMigrations
 from shelfhold.catalog.public import ListedUnit
 from shelfhold.identity.public import Credential, Principal
+from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.ids import new_ulid
 from tests.follow_env import Bench, follow_bench, new_chapter
 
@@ -29,7 +30,10 @@ NEW_SOURCE = "suwayomi:7002"
 
 def admin() -> Principal:
     return Principal(
-        user_id=new_ulid(), username="admin", role="admin", credential=Credential.LOCAL_CLI,
+        user_id=new_ulid(),
+        username="admin",
+        role="admin",
+        credential=Credential.LOCAL_CLI,
         can_rate=True,
     )
 
@@ -51,6 +55,27 @@ def publish_beta(bench: Bench, last: int) -> None:
     chapters[:] = [c for c in chapters if c["chapterNumber"] > OFFSET]  # drop the fixture's own
 
 
+def _run(bench: Bench, work: Any) -> Any:
+    with write_transaction(bench.lib.engine) as connection:
+        return work(connection)
+
+
+def _units(bench: Bench) -> list[dict[str, Any]]:
+    """The Units of the series under test (the bench's library holds an unrelated series too)."""
+    return bench.rows(
+        "SELECT id, number_raw FROM unit WHERE edition_id = :e ORDER BY number_sort",
+        e=bench.edition_id,
+    )
+
+
+def _contents(bench: Bench) -> list[dict[str, Any]]:
+    return bench.rows(
+        "SELECT c.id, c.content_hash FROM content c JOIN unit u ON u.id = c.unit_id "
+        "WHERE u.edition_id = :e ORDER BY c.id",
+        e=bench.edition_id,
+    )
+
+
 def settle(bench: Bench, times: int = 5) -> None:
     for _ in range(times):
         bench.run()
@@ -65,8 +90,8 @@ def test_source_migration_no_redownload_no_duplicate_file() -> None:
         settle(bench)
         files = bench.library_files()
         assert len(files) == len(FILED)
-        units_before = bench.rows("SELECT id, number_raw FROM unit ORDER BY number_sort")
-        contents_before = bench.rows("SELECT id, content_hash FROM content ORDER BY id")
+        units_before = _units(bench)
+        contents_before = _contents(bench)
         asked_before = list(bench.server.enqueue_calls)
 
         # Alpha leaves the library of the service (the migration of the tool removes it) and the
@@ -82,7 +107,6 @@ def test_source_migration_no_redownload_no_duplicate_file() -> None:
             for c in beta(bench)["chapters"]
         )
         migrations = SourceMigrations()
-        from shelfhold.catalog.public import run_immediate
 
         def propose(c: Any) -> Any:
             return migrations.propose(
@@ -91,20 +115,29 @@ def test_source_migration_no_redownload_no_duplicate_file() -> None:
                 principal=admin(), now=NOW,
             )  # fmt: skip
 
-        proposal = run_immediate(bench.lib.engine, propose)
+        proposal = _run(bench, propose)
         assert proposal.offset == -OFFSET
         assert [r.number for r in proposal.to_fetch] == ["17", "18"]
-        validated = run_immediate(
-            bench.lib.engine,
+        validated = _run(
+            bench,
             lambda c: migrations.validate(
-                c, bench.edition_id, proposal.id, digest=proposal.digest, overrides=(),
-                principal=admin(), now=NOW,
+                c,
+                bench.edition_id,
+                proposal.id,
+                digest=proposal.digest,
+                overrides=(),
+                principal=admin(),
+                now=NOW,
             ),
         )
-        run_immediate(
-            bench.lib.engine,
+        _run(
+            bench,
             lambda c: migrations.apply(
-                c, bench.edition_id, proposal.id, digest=validated.digest, principal=admin(),
+                c,
+                bench.edition_id,
+                proposal.id,
+                digest=validated.digest,
+                principal=admin(),
                 now=NOW,
             ),
         )
@@ -113,17 +146,17 @@ def test_source_migration_no_redownload_no_duplicate_file() -> None:
 
         settle(bench, 6)  # the cycles list the new source, ask, download, file
 
-        units = bench.rows("SELECT id, number_raw FROM unit ORDER BY number_sort")
+        units = _units(bench)
         assert [u["number_raw"] for u in units] == [str(n) for n in range(1, 9)]  # 7 and 8: new
         assert units[:6] == units_before  # the six Units of the library are the very ones
         # not one chapter of the library was asked again: only the two it lacked were
-        asked = bench.server.enqueue_calls[len(asked_before):]
+        asked = bench.server.enqueue_calls[len(asked_before) :]
         assert sorted(asked) == [6017, 6018]
         # one file per number: the six that were there, untouched, and two new ones
         after = bench.library_files()
         assert set(files) <= set(after) and len(after) == len(files) + 2
         assert len({p.name for p in after}) == len(after)
-        contents = bench.rows("SELECT id, content_hash FROM content ORDER BY id")
+        contents = _contents(bench)
         assert [c for c in contents if c in contents_before] == contents_before
         assert len(contents) == len(contents_before) + 2
         # the six held Units now also have the new source's release as another Variant (a record
@@ -141,7 +174,10 @@ def test_source_migration_no_redownload_no_duplicate_file() -> None:
         )
         assert [t["remote"].rsplit("/", 1)[-1] for t in tickets] == ["ch-017", "ch-018"]
         # the numbering of the library was never touched by the numbers of the new source
-        assert not bench.rows("SELECT 1 FROM unit WHERE CAST(number_norm AS REAL) > 8")
+        assert not bench.rows(
+            "SELECT 1 FROM unit WHERE edition_id = :e AND CAST(number_norm AS REAL) > 8",
+            e=bench.edition_id,
+        )
 
 
 def test_a_chapter_the_new_source_publishes_later_lands_in_the_library_numbering() -> None:
@@ -159,8 +195,6 @@ def test_a_chapter_the_new_source_publishes_later_lands_in_the_library_numbering
             ListedUnit(str(int(c["chapterNumber"])), c["sourceOrder"])
             for c in beta(bench)["chapters"]
         )
-        from shelfhold.catalog.public import run_immediate
-
         migrations = SourceMigrations()
 
         def whole(c: Any) -> Any:
@@ -178,10 +212,10 @@ def test_a_chapter_the_new_source_publishes_later_lands_in_the_library_numbering
                 now=NOW,
             )  # fmt: skip
 
-        run_immediate(bench.lib.engine, whole)
+        _run(bench, whole)
         settle(bench, 3)
         publish_beta(bench, OFFSET + 7)  # chapter 17 appears upstream: the library's 7
         settle(bench, 5)
-        numbers = [u["number_raw"] for u in bench.rows("SELECT number_raw FROM unit")]
+        numbers = [u["number_raw"] for u in _units(bench)]
         assert sorted(numbers, key=float) == [str(n) for n in range(1, 8)]
         assert bench.server.enqueue_calls[-1] == 6017

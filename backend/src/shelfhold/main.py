@@ -93,6 +93,7 @@ from shelfhold.interfaces.http_api.shelves import (
     build_shelves_router,
     build_targets_router,
 )
+from shelfhold.interfaces.http_api.source_migration import build_source_migration_router
 from shelfhold.interfaces.http_api.sources import build_sources_router
 from shelfhold.interfaces.http_api.stats import build_stats_router
 from shelfhold.interfaces.http_api.status import build_status_router
@@ -383,6 +384,7 @@ def create_app(
             lambda: kavita_open_url_of(engine),  # M3 L41: "Ouvrir dans Kavita"
         ),
         build_sources_router(ops_services),  # EF-SRC-015, EF-SRC-004: search, acquire, a URL
+        build_source_migration_router(ops_services),  # M4 L27: a series moves to another source
         build_me_router(cache(lambda: user_state_service(engine, clock))),  # EF-USR-007, EF-BIB-022
         build_activity_router(lambda: engine),  # EF-USR-016: `activity_view`, unmask audited
         build_catalog_lists_router(lambda: engine, since_key),  # M3 L11: `?since=`

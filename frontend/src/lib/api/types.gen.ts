@@ -2589,7 +2589,7 @@ export type MigrateIdsOut = {
     /**
      * Blocked
      */
-    blocked: Array<MigrationRowOut>;
+    blocked: Array<ShelfholdInterfacesHttpApiSourcesMigrationRowOut>;
     /**
      * Fingerprint
      */
@@ -2601,7 +2601,7 @@ export type MigrateIdsOut = {
     /**
      * Migrate
      */
-    migrate: Array<MigrationRowOut>;
+    migrate: Array<ShelfholdInterfacesHttpApiSourcesMigrationRowOut>;
     /**
      * New Forms
      */
@@ -2617,7 +2617,7 @@ export type MigrateIdsOut = {
     /**
      * Unresolved
      */
-    unresolved: Array<MigrationRowOut>;
+    unresolved: Array<ShelfholdInterfacesHttpApiSourcesMigrationRowOut>;
 };
 
 /**
@@ -2628,6 +2628,56 @@ export type MigrationIn = {
      * Fingerprint
      */
     fingerprint: string;
+};
+
+/**
+ * MigrationOut
+ */
+export type MigrationOut = {
+    /**
+     * Already
+     */
+    already?: boolean | null;
+    /**
+     * Binding Id
+     */
+    binding_id: string | null;
+    /**
+     * Digest
+     */
+    digest: string;
+    /**
+     * Edition Id
+     */
+    edition_id: string;
+    /**
+     * Held Count
+     */
+    held_count: number;
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Offset
+     */
+    offset: number;
+    /**
+     * Rows
+     */
+    rows: Array<ShelfholdInterfacesHttpApiSourceMigrationMigrationRowOut>;
+    /**
+     * State
+     */
+    state: string;
+    /**
+     * To Fetch
+     */
+    to_fetch: number;
+    /**
+     * Unmatched Units
+     */
+    unmatched_units: Array<string>;
 };
 
 /**
@@ -2642,28 +2692,6 @@ export type MigrationProgress = {
      * Total
      */
     total: number;
-};
-
-/**
- * MigrationRowOut
- */
-export type MigrationRowOut = {
-    /**
-     * Id
-     */
-    id: string;
-    /**
-     * New
-     */
-    new: string;
-    /**
-     * Old
-     */
-    old: string;
-    /**
-     * Reason
-     */
-    reason: string;
 };
 
 /**
@@ -2859,6 +2887,20 @@ export type OfficialLinkOut = {
      * Url
      */
     url: string;
+};
+
+/**
+ * OverrideIn
+ */
+export type OverrideIn = {
+    /**
+     * Number
+     */
+    number: string;
+    /**
+     * Target
+     */
+    target: string;
 };
 
 /**
@@ -3558,6 +3600,24 @@ export type ProposalsOut = {
      * Items
      */
     items: Array<ProposalOut>;
+};
+
+/**
+ * ProposeIn
+ */
+export type ProposeIn = {
+    /**
+     * Remote Id
+     */
+    remote_id: string;
+    /**
+     * Replaces Binding Id
+     */
+    replaces_binding_id?: string | null;
+    /**
+     * Source Key
+     */
+    source_key: string;
 };
 
 /**
@@ -5984,6 +6044,20 @@ export type UserExportOut = {
 };
 
 /**
+ * ValidateIn
+ */
+export type ValidateIn = {
+    /**
+     * Digest
+     */
+    digest: string;
+    /**
+     * Overrides
+     */
+    overrides?: Array<OverrideIn>;
+};
+
+/**
  * VisibilityIn
  */
 export type VisibilityIn = {
@@ -6763,6 +6837,72 @@ export type ShelfholdInterfacesHttpApiSearchSearchOut = {
      * Total
      */
     total: number;
+};
+
+/**
+ * ApplyIn
+ */
+export type ShelfholdInterfacesHttpApiSourceMigrationApplyIn = {
+    /**
+     * Digest
+     */
+    digest: string;
+};
+
+/**
+ * MigrationRowOut
+ */
+export type ShelfholdInterfacesHttpApiSourceMigrationMigrationRowOut = {
+    /**
+     * Basis
+     */
+    basis: string;
+    /**
+     * Number
+     */
+    number: string;
+    /**
+     * Place
+     */
+    place: string;
+    /**
+     * Source Order
+     */
+    source_order: number;
+    /**
+     * Target
+     */
+    target: string;
+    /**
+     * Target Order
+     */
+    target_order: number;
+    /**
+     * Unit Id
+     */
+    unit_id: string | null;
+};
+
+/**
+ * MigrationRowOut
+ */
+export type ShelfholdInterfacesHttpApiSourcesMigrationRowOut = {
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * New
+     */
+    new: string;
+    /**
+     * Old
+     */
+    old: string;
+    /**
+     * Reason
+     */
+    reason: string;
 };
 
 /**
@@ -9659,6 +9799,170 @@ export type ShelfProposalResponses = {
 };
 
 export type ShelfProposalResponse = ShelfProposalResponses[keyof ShelfProposalResponses];
+
+export type SourceMigrationProposeData = {
+    body: ProposeIn;
+    path: {
+        /**
+         * Edition Id
+         */
+        edition_id: string;
+    };
+    query?: never;
+    url: '/api/v1/editions/{edition_id}/source-migrations';
+};
+
+export type SourceMigrationProposeErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type SourceMigrationProposeError = SourceMigrationProposeErrors[keyof SourceMigrationProposeErrors];
+
+export type SourceMigrationProposeResponses = {
+    /**
+     * Successful Response
+     */
+    201: MigrationOut;
+};
+
+export type SourceMigrationProposeResponse = SourceMigrationProposeResponses[keyof SourceMigrationProposeResponses];
+
+export type SourceMigrationReadData = {
+    body?: never;
+    path: {
+        /**
+         * Edition Id
+         */
+        edition_id: string;
+        /**
+         * Migration Id
+         */
+        migration_id: string;
+    };
+    query?: never;
+    url: '/api/v1/editions/{edition_id}/source-migrations/{migration_id}';
+};
+
+export type SourceMigrationReadErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type SourceMigrationReadError = SourceMigrationReadErrors[keyof SourceMigrationReadErrors];
+
+export type SourceMigrationReadResponses = {
+    /**
+     * Successful Response
+     */
+    200: MigrationOut;
+};
+
+export type SourceMigrationReadResponse = SourceMigrationReadResponses[keyof SourceMigrationReadResponses];
+
+export type SourceMigrationApplyData = {
+    body: ShelfholdInterfacesHttpApiSourceMigrationApplyIn;
+    path: {
+        /**
+         * Edition Id
+         */
+        edition_id: string;
+        /**
+         * Migration Id
+         */
+        migration_id: string;
+    };
+    query?: never;
+    url: '/api/v1/editions/{edition_id}/source-migrations/{migration_id}/application';
+};
+
+export type SourceMigrationApplyErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type SourceMigrationApplyError = SourceMigrationApplyErrors[keyof SourceMigrationApplyErrors];
+
+export type SourceMigrationApplyResponses = {
+    /**
+     * Successful Response
+     */
+    200: MigrationOut;
+};
+
+export type SourceMigrationApplyResponse = SourceMigrationApplyResponses[keyof SourceMigrationApplyResponses];
+
+export type SourceMigrationValidateData = {
+    body: ValidateIn;
+    path: {
+        /**
+         * Edition Id
+         */
+        edition_id: string;
+        /**
+         * Migration Id
+         */
+        migration_id: string;
+    };
+    query?: never;
+    url: '/api/v1/editions/{edition_id}/source-migrations/{migration_id}/validation';
+};
+
+export type SourceMigrationValidateErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type SourceMigrationValidateError = SourceMigrationValidateErrors[keyof SourceMigrationValidateErrors];
+
+export type SourceMigrationValidateResponses = {
+    /**
+     * Successful Response
+     */
+    200: MigrationOut;
+};
+
+export type SourceMigrationValidateResponse = SourceMigrationValidateResponses[keyof SourceMigrationValidateResponses];
 
 export type SupportAuthorReadData = {
     body?: never;

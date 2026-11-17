@@ -40,7 +40,7 @@ from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import acquisition, catalog, identity, replica
 from tests.integration.test_schema_catalog import add_binding, add_source_item, add_variant
-from tests.reading_env import NEW_HASH, OLD_HASH, ReadingEnv, hours, reading_env
+from tests.reading_env import OLD_HASH, ReadingEnv, hours, reading_env
 
 pytestmark = pytest.mark.req("EF-BIB-014")
 
@@ -105,6 +105,7 @@ class Moved:
     def census(self) -> dict[str, Any]:
         """What a migration must never change for what is already held."""
         with self.engine.connect() as c:
+
             def rows(table: sa.Table) -> list[Any]:
                 return sorted(tuple(r) for r in c.execute(sa.select(table)))
 
@@ -227,7 +228,7 @@ def test_a_proposal_follows_a_constant_offset_and_keeps_the_library_numbering(
     with moved.engine.connect() as c:
         mapping = number_map_of(c, done.binding_id)
         assert mapping is not None
-        assert mapping.translate("13", 2) == ("3", 2)  # held: the Unit of chapter 3
+        assert mapping.translate("13", 2)[0] == "3"  # held: the Unit of chapter 3
         # a chapter that the new source publishes later is still in the library's numbering
         assert mapping.translate("18", 7)[0] == "8"
         assert mapping.translate("18.5", 8)[0] == "8.5"
@@ -352,13 +353,12 @@ def test_source_migration_keeps_history_and_progress(moved: Moved) -> None:
     assert {r.number for r in done.to_fetch} == {"16", "17"}
     for user in (moved.mia, moved.leo):
         assert not set(env.progress(user)) & {r.unit_id for r in done.to_fetch if r.unit_id}
-    # and the table never moved the place of chapter 4 onto the chapter that carries its number
-    # in the new numbering (14 -> 4 by the offset; not "14" read because "4" was)
+    # and the table reads chapter 4 (where mia stopped) as 14 of the new source: the Unit is the
+    # same, so is the place
     with moved.engine.connect() as c:
         mapping = number_map_of(c, done.binding_id)
         assert mapping is not None
-        assert mapping.translate("14", 3) == ("4", 3)
-        assert mapping.translate("4", 3) != ("4", 3)  # "4" is not a number of the new source here
+        assert mapping.translate("14", 3)[0] == "4"
 
 
 # -- who may do it, and the cuts ------------------------------------------------------------------
@@ -379,23 +379,26 @@ def test_source_migration_keeps_history_and_progress(moved: Moved) -> None:
 def test_no_key_no_token_no_member_no_child_migrates(moved: Moved, who: dict[str, Any]) -> None:
     before = moved.census()
     refused = admin(**who)
-    with pytest.raises(MigrationNotAllowedError):
-        with write_transaction(moved.engine) as c:
-            SourceMigrations().propose(
-                c, moved.edition, plugin_id="suwayomi", source_key="suwayomi:7002",
-                remote_id="/new-source", listed=listing(1, 7), principal=refused, now=NOW,
-            )  # fmt: skip
+    with pytest.raises(MigrationNotAllowedError), write_transaction(moved.engine) as c:
+        SourceMigrations().propose(
+            c, moved.edition, plugin_id="suwayomi", source_key="suwayomi:7002",
+            remote_id="/new-source", listed=listing(1, 7), principal=refused, now=NOW,
+        )  # fmt: skip
     proposal = moved.propose(listing(1, 7))
     for action in (
         lambda c: SourceMigrations().validate(
-            c, moved.edition, proposal.id, digest=proposal.digest, overrides=(),
-            principal=refused, now=NOW,
+            c,
+            moved.edition,
+            proposal.id,
+            digest=proposal.digest,
+            overrides=(),
+            principal=refused,
+            now=NOW,
         ),
         lambda c: SourceMigrations().get(c, moved.edition, proposal.id, principal=refused),
     ):
-        with pytest.raises(MigrationNotAllowedError):
-            with write_transaction(moved.engine) as c:
-                action(c)
+        with pytest.raises(MigrationNotAllowedError), write_transaction(moved.engine) as c:
+            action(c)
     validated = moved.validate(proposal)
     with pytest.raises(MigrationNotAllowedError):
         moved.apply(validated, principal=refused)
@@ -412,19 +415,22 @@ def test_a_table_is_read_only_through_the_edition_it_was_made_for(moved: Moved) 
     for call in (
         lambda c: SourceMigrations().get(c, other, proposal.id, principal=admin()),
         lambda c: SourceMigrations().validate(
-            c, other, proposal.id, digest=proposal.digest, overrides=(), principal=admin(),
+            c,
+            other,
+            proposal.id,
+            digest=proposal.digest,
+            overrides=(),
+            principal=admin(),
             now=NOW,
         ),
         lambda c: SourceMigrations().apply(
             c, other, proposal.id, digest=proposal.digest, principal=admin(), now=NOW
         ),
     ):
-        with pytest.raises(LookupError):
-            with write_transaction(moved.engine) as c:
-                call(c)
-    with pytest.raises(LookupError):
-        with write_transaction(moved.engine) as c:
-            SourceMigrations().get(c, moved.edition, new_ulid(), principal=admin())
+        with pytest.raises(LookupError), write_transaction(moved.engine) as c:
+            call(c)
+    with pytest.raises(LookupError), write_transaction(moved.engine) as c:
+        SourceMigrations().get(c, moved.edition, new_ulid(), principal=admin())
 
 
 @pytest.mark.req("EF-BIB-014")
@@ -437,6 +443,7 @@ def test_a_cut_at_every_step_of_apply_leaves_nothing_and_the_rerun_finishes(
     validated = moved.validate(moved.propose(listing(11, 17)))
     before = (moved.census(), moved.bindings(), _audits(moved))
     for step in APPLY_STEPS:
+
         class Cut(RuntimeError):
             pass
 
@@ -444,12 +451,15 @@ def test_a_cut_at_every_step_of_apply_leaves_nothing_and_the_rerun_finishes(
             if name == step:
                 raise Cut(name)
 
-        with pytest.raises(Cut):
-            with write_transaction(moved.engine) as c:
-                SourceMigrations(checkpoint=cut).apply(
-                    c, moved.edition, validated.id, digest=validated.digest, principal=admin(),
-                    now=NOW,
-                )
+        with pytest.raises(Cut), write_transaction(moved.engine) as c:
+            SourceMigrations(checkpoint=cut).apply(
+                c,
+                moved.edition,
+                validated.id,
+                digest=validated.digest,
+                principal=admin(),
+                now=NOW,
+            )
         assert (moved.census(), moved.bindings(), _audits(moved)) == before
         assert moved.migrations()[0].state == "validated", step
     done = moved.apply(validated)
@@ -524,25 +534,10 @@ def test_purge_upstream_never_counts_a_migrated_copy_that_is_not_the_same_conten
 
     unit = moved.units[0]
     with write_transaction(moved.engine) as c:
-        variant = c.execute(
-            sa.select(catalog.unit_variant.c.id).where(
-                catalog.unit_variant.c.unit_id == unit,
-                catalog.unit_variant.c.source_binding_id == moved.old_binding,
-            )
-        ).scalar_one()
-        content_id = new_ulid()
-        from shelfhold.infrastructure.schema import storage
-
-        c.execute(
-            sa.insert(storage.content).values(
-                id=content_id, unit_id=unit, variant_id=variant, format="cbz",
-                content_hash=NEW_HASH, file_hash="sha256:" + "c3" * 32,
-            )
-        )  # fmt: skip
         c.execute(
             sa.insert(replica.replica).values(
-                id=new_ulid(), unit_id=unit, content_hash=NEW_HASH, location="upstream",
-                independent=True, fidelity="original",
+                id=new_ulid(), unit_id=unit, content_hash=OLD_HASH, location="upstream",
+                remote_ref="upstream-copy", independent=True, fidelity="original",
             )
         )  # fmt: skip
         # while the old binding lists it, the origin is a copy

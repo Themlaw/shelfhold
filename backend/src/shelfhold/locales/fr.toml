@@ -2712,3 +2712,23 @@ search_description = "Chercher dans la bibliothèque"
 complete = "{title} — Série complète"
 complete_in = "{title} — Série complète ({lang})"
 excluded = "{count, plural, one {# chapitre exclu} other {# chapitres exclus}} : format non lisible sur liseuse ou fichier indisponible."
+
+[errors."source_migration.collision"]
+title = "Deux numéros de la nouvelle source tomberaient sur la même place."
+action = "Changez la ligne de l'un des deux : un numéro de la bibliothèque ne reçoit qu'un seul numéro de la nouvelle source."
+cause = "Deux lignes du tableau désignent le même chapitre de la bibliothèque, ou un numéro à créer est déjà rangé. Rien n'a été modifié."
+
+[errors."source_migration.not_validated"]
+title = "Le tableau de correspondance n'est pas encore validé."
+action = "Relisez le tableau, validez-le, puis appliquez la migration."
+cause = "Rien n'est écrit tant que le tableau n'a pas été validé tel qu'il vous a été montré."
+
+[errors."source_migration.stale"]
+title = "Ce n'est plus le tableau que vous avez vu, ou la série a changé depuis."
+action = "Proposez de nouveau la correspondance, relisez-la, puis validez-la."
+cause = "L'empreinte envoyée n'est pas celle du tableau, ou un chapitre a été ajouté ou retiré depuis qu'il a été établi. Rien n'a été modifié."
+
+[errors."source_migration.invalid"]
+title = "Cette demande de migration n'est pas recevable."
+action = "Vérifiez la série de la nouvelle source, la source à remplacer et les numéros que vous avez saisis."
+cause = "La nouvelle source ne liste aucun chapitre, la source à remplacer n'est pas une source de cette série, ou une ligne ou un numéro cible n'existe pas."

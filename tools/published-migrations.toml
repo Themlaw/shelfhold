@@ -269,3 +269,8 @@ since = "1.1"
 file = "0089_volume_assembly.py"
 sha256 = "7af7a6bb10c0c40dba342dc52e80bcfa594cd36bb0502bdf4370e9dabfdd1a5c"
 since = "1.1"
+
+[[migration]]
+file = "0090_source_migration.py"
+sha256 = "d28faa67ce7c9589789b217c36f688f49be725f461baf4aff1da8ac58d4f1010"
+since = "1.1"

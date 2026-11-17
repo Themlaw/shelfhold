@@ -2714,3 +2714,23 @@
   complete = "{title} — Complete series"
   complete_in = "{title} — Complete series ({lang})"
   excluded = "{count, plural, one {# chapter left out} other {# chapters left out}}: format not readable on an e-reader, or file unavailable."
+
+  [errors."source_migration.collision"]
+    title = "Two numbers of the new source would land on the same place."
+    action = "Change the line of one of the two: a number of the library receives only one number of the new source."
+    cause = "Two lines of the table point at the same chapter of the library, or a number to create is already filed. Nothing has been modified."
+
+  [errors."source_migration.not_validated"]
+    title = "The numbering correspondence is not validated yet."
+    action = "Reread the table, validate it, then apply the migration."
+    cause = "Nothing is written until the table has been validated as it was shown to you."
+
+  [errors."source_migration.stale"]
+    title = "This is no longer the table you saw, or the series has changed since."
+    action = "Propose the correspondence again, reread it, then validate it."
+    cause = "The fingerprint sent is not the table's, or a chapter was added or removed since it was made. Nothing has been modified."
+
+  [errors."source_migration.invalid"]
+    title = "This migration request cannot be accepted."
+    action = "Check the series of the new source, the source to replace and the numbers you entered."
+    cause = "The new source lists no chapter, the source to replace is not a source of this series, or a line or a target number does not exist."

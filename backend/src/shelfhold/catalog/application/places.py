@@ -3,7 +3,7 @@
 from shelfhold.catalog.domain.numbering import NumberError, parse_number
 from shelfhold.catalog.domain.placement import place_of
 
-__all__ = ["place_key"]
+__all__ = ["place_key", "unit_place_key"]
 
 
 def place_key(raw_number: str | None, source_order: int = 0) -> str:
@@ -17,3 +17,13 @@ def place_key(raw_number: str | None, source_order: int = 0) -> str:
     if place.unnumbered:
         return f"unnumbered:{source_order}"
     return f"{place.track}|{place.segment}|{place.number_norm}|{place.part}"
+
+
+def unit_place_key(
+    track: str, number_segment: str, number_norm: str, part: str, source_order: int
+) -> str:
+    """The key of the place a stored Unit holds: the one `place_key` gives to the release that
+    would land on it (a held Unit and an incoming release are compared by this one text)."""
+    if track == "unnumbered":
+        return f"unnumbered:{source_order}"
+    return f"{track}|{number_segment}|{number_norm}|{part}"

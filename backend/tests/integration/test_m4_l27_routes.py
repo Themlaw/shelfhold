@@ -43,7 +43,9 @@ def table_path(table: str = TABLE, edition: str = EDITION, tail: str = "") -> st
     return f"{propose_path(edition)}/{table}{tail}"
 
 
-def doors(edition: str = EDITION, table: str = TABLE) -> list[tuple[str, str, dict[str, Any] | None]]:
+def doors(
+    edition: str = EDITION, table: str = TABLE
+) -> list[tuple[str, str, dict[str, Any] | None]]:
     return [
         ("post", propose_path(edition), PROPOSE_BODY),
         ("get", table_path(table, edition), None),
@@ -54,8 +56,17 @@ def doors(edition: str = EDITION, table: str = TABLE) -> list[tuple[str, str, di
 
 def proposal(**extra: Any) -> dict[str, Any]:
     return {
-        "id": TABLE, "edition_id": EDITION, "state": "proposed", "digest": DIGEST, "offset": 0,
-        "rows": [], "unmatched_units": [], "to_fetch": 0, **extra,
+        "id": TABLE,
+        "edition_id": EDITION,
+        "state": "proposed",
+        "digest": DIGEST,
+        "offset": 0,
+        "rows": [],
+        "unmatched_units": [],
+        "to_fetch": 0,
+        "held_count": 0,
+        "binding_id": None,
+        **extra,
     }
 
 
@@ -174,7 +185,7 @@ def test_admin_session_proposes_reads_validates_and_applies(api: AuthEnv, ops: _
     api.login()
     made = api.post(propose_path(), json=PROPOSE_BODY)
     assert made.status_code == 201 and made.json()["state"] == "proposed"
-    assert api.get(table_path()).json()["digest"] == DIGEST
+    assert api.client.get(table_path()).json()["digest"] == DIGEST
     valid = api.post(table_path(tail="/validation"), json=VALIDATE_BODY)
     assert valid.status_code == 200 and valid.json()["state"] == "validated"
     done = api.post(table_path(tail="/application"), json=APPLY_BODY)
