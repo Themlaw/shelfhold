@@ -49,9 +49,7 @@ def _connect(settings: Settings) -> sqlite3.Connection:
 
 
 def test_a_chapter_is_blocked_once_for_a_known_reason(settings: Settings) -> None:
-    add = (
-        "INSERT INTO activity_block (id, source_key, remote_unit_id, reason) VALUES (?, ?, ?, ?)"
-    )
+    add = "INSERT INTO activity_block (id, source_key, remote_unit_id, reason) VALUES (?, ?, ?, ?)"
     with closing(_connect(settings)) as conn:
         with pytest.raises(sqlite3.IntegrityError):
             conn.execute(add, (BLOCK, "s", "u", "free text"))  # a closed list of reasons

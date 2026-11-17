@@ -24,6 +24,8 @@ pytestmark = pytest.mark.req("ENF-OPS-002", "EF-EXP-019", "EF-BIB-044")
 def test_the_revision_is_0089_and_follows_0088() -> None:
     script = ScriptDirectory(str(default_script_location()))
     assert len(script.get_heads()) == 1  # the head is pinned by the newest migration test
+def test_the_revision_is_0089_on_0088() -> None:
+    script = ScriptDirectory(str(default_script_location()))
     assert script.get_revision("0089").down_revision == "0088"
 
 
