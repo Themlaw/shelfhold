@@ -116,7 +116,8 @@ class KavitaCollections:
         }.get(route)
         if handler is None:
             return fake._violation(f"{recorded.method} {recorded.path}: no such route")
-        return handler(fake, recorded, account)  # type: ignore[no-any-return]
+        answer: httpx2.Response = handler(fake, recorded, account)
+        return answer
 
     @staticmethod
     def _dto(c: dict[str, Any]) -> dict[str, Any]:
@@ -160,12 +161,13 @@ class KavitaCollections:
                 "id": self.next_id, "title": title, "summary": "", "promoted": False,
                 "owner": account, "series": [],
             }  # fmt: skip
-            found = self.collections[self.next_id]
+            held = self.collections[self.next_id]
         else:
-            found = self._own(self.collections, body["collectionTagId"], account)
-            if found is None:
+            owned = self._own(self.collections, body["collectionTagId"], account)
+            if owned is None:
                 return fake._json({"title": "Not Found", "status": 404}, 404)
-        found["series"] += [i for i in ids if i not in found["series"]]
+            held = owned
+        held["series"] += [i for i in ids if i not in held["series"]]
         return fake._text(200, "")
 
     def _collection_remove(

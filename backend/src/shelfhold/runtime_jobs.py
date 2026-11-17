@@ -29,7 +29,7 @@ import asyncio
 import contextlib
 import threading
 import time
-from collections.abc import Callable, Iterable, Iterator, Sequence
+from collections.abc import Callable, Coroutine, Iterable, Iterator, Sequence, Sized
 from contextlib import ExitStack, contextmanager
 from dataclasses import dataclass
 from datetime import timedelta
@@ -1329,10 +1329,11 @@ def relations_handler(comp: Composition) -> Callable[[JobContext], None]:
         written = 0
         for target_id, client in clients():
             events = BusTargetEvents(comp.engine, comp.bus)
-            for publish in (
+            pushes: tuple[Callable[[KavitaClient, str], Coroutine[Any, Any, Sized]], ...] = (
                 RelatedSeries(comp.engine, comp.clock, events).publish,
                 CollectionsSync(comp.engine, comp.clock, events).publish,
-            ):
+            )
+            for publish in pushes:
                 try:  # one unreachable target, or one failing push, must not stop the others
                     written += len(asyncio.run(publish(client, target_id)))
                 except Exception as error:
