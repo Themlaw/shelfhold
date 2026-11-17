@@ -20,13 +20,13 @@ test('test_a_classer_axe_no_blocking_violation', async ({ page }) => {
 });
 
 // req: ENF-A11Y-001
-test('test_a_classer_batch_confirmation_axe_no_blocking_violation', async ({ page }) => {
+test('test_a_classer_bulk_selection_axe_no_blocking_violation', async ({ page }) => {
   await signInAs(page, 'admin');
   await page.goto('/a-classer');
-  const batch = page.getByRole('region', { name: /lot/i });
-  await batch.getByRole('radio').first().check();
-  await batch.getByRole('button').first().click();
-  await expect(page.getByRole('textbox')).toBeVisible();
+  const bar = page.getByRole('region', { name: /Classement en masse/i });
+  await bar.getByRole('checkbox').first().check();
+  await bar.getByRole('radio').first().check();
+  await expect(bar.getByRole('button', { name: /Aperçu/i })).toBeEnabled();
   await expectScreenAccessible(page);
   await expectNoHorizontalScroll(page);
 });

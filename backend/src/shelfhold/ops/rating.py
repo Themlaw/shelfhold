@@ -60,6 +60,7 @@ def _item(i: ToRate) -> dict[str, Any]:
     return {
         "work_id": i.work_id, "title": i.title, "state": i.state, "reason": i.reason,
         "suggestions": _suggestions(i.suggestions),
+        "rated": i.rated, "age": i.age, "age_x": i.age_x,
     }  # fmt: skip
 
 
@@ -183,3 +184,13 @@ class RatingOps:
 
 def _age_text(rating: AgeRating) -> str:
     return "X" if rating.x else f"{rating.min_age}+"
+
+
+def parse_age_choice(text: str) -> AgeRating:
+    """The age a caller chose, one of the tiers or X (`InvalidChoiceError` otherwise)."""
+    return _age(text)
+
+
+def age_text(rating: AgeRating) -> str:
+    """The age as the screens write it: `13+`, `X`."""
+    return _age_text(rating)

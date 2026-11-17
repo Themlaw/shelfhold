@@ -108,6 +108,8 @@ ACTOR_EXEMPT = {
         "the actor is read by `still_a_user` first (test above)",
     "shelfhold/library/tombstones/service.py::TombstoneService.accept_lost_keyring":
         "`principal.actor_id`: a `session:<id>` label, never a user id",
+    "shelfhold/library/application/bulk.py::freeze":
+        "a real user id of the session (foreign key, the order goes with the user), not a label",
     "shelfhold/infrastructure/idempotency_store.py::IdempotencyStore.begin":
         "`principal.actor_id`: a label; the line is erased with the user",
 }  # fmt: skip

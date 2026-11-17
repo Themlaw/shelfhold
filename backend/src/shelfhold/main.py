@@ -58,6 +58,7 @@ from shelfhold.interfaces.http_api.audit import build_audit_router
 from shelfhold.interfaces.http_api.auth import AuthGate
 from shelfhold.interfaces.http_api.backfill import build_backfill_router
 from shelfhold.interfaces.http_api.bootstrap import build_bootstrap_router
+from shelfhold.interfaces.http_api.bulk import build_bulk_router
 from shelfhold.interfaces.http_api.bundle_slices import build_bundle_slices_router
 from shelfhold.interfaces.http_api.catalog_admin import build_catalog_admin_router
 from shelfhold.interfaces.http_api.catalog_lists import build_catalog_lists_router
@@ -458,6 +459,7 @@ def create_app(
         build_ops_dashboard_router(lambda: engine, clock.now),
         build_webhooks_router(webhook_admin),  # M4 L24: signed webhooks; admin only, reserved
         build_triage_router(ops_services),  # EF-USR-015, EF-EXP-046: the two lists, the batch
+        build_bulk_router(ops_services),  # M4 L28 (EF-BIB-023): preview, then one job
         build_library_router(ops_services),  # pairing, repatriation, detach, purge, probe
         # EF-SRC-013, EF-EXP-065: per-source settings (nothing secret read back), attestations
         build_plugins_router(

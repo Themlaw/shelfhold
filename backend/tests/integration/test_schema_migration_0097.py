@@ -21,9 +21,8 @@ USER = "01HZZZZZZZZZZZZZZZZZZZZZZB"
 SWITCH = "01HZZZZZZZZZZZZZZZZZZZZZZA"
 
 
-def test_the_revision_is_0097_the_head_on_0096() -> None:
+def test_the_revision_is_0097_on_0096() -> None:
     script = ScriptDirectory(str(default_script_location()))
-    assert script.get_heads() == ["0097"]  # the head is pinned here, by the newest
     assert script.get_revision("0097").down_revision == "0096"
 
 

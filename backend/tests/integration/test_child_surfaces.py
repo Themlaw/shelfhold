@@ -369,6 +369,8 @@ CLOSED = (
     "POST /api/v1/requests/{request_id}/approve",
     "POST /api/v1/requests/{request_id}/reject",
     "POST /api/v1/requests/{request_id}/not-found",
+    "POST /api/v1/bulk/rate/preview",  # M4 L28: bulk rating, a fresh admin session's
+    "POST /api/v1/bulk/rate/{order_id}/apply",
     "POST /api/v1/editions/{edition_id}/team-switch",  # M4 L35: an admin's, replaces served files
     "POST /api/v1/editions/{edition_id}/team-switch/{switch_id}/apply",
     "GET /api/v1/editions/{edition_id}/team-switch/{switch_id}",
