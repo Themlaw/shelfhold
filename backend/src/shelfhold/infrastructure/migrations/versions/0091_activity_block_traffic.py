@@ -8,14 +8,14 @@
 
 Nothing existing is touched; reversible.
 
-Number: 0091 (0090 is reserved for L27); it follows 0089 (L10), the head of main when this lot was frozen.
+Number: 0091 follows 0090 (L27), the head of main when this lot was frozen.
 """
 # ruff: noqa: E501  (the DDL is the one SQLAlchemy writes, kept as it is)
 
 from alembic import op
 
 revision = "0091"
-down_revision = "0089"
+down_revision = "0090"
 branch_labels = None
 depends_on = None
 

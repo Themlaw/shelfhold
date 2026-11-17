@@ -24,20 +24,20 @@ BLOCK = "01HZZZZZZZZZZZZZZZZZZZZZZA"
 USER = "01HZZZZZZZZZZZZZZZZZZZZZZB"
 
 
-def test_the_revision_is_0091_the_only_head_on_0089() -> None:
+def test_the_revision_is_0091_the_only_head_on_0090() -> None:
     script = ScriptDirectory(str(default_script_location()))
     assert script.get_heads() == ["0091"]
-    assert script.get_revision("0091").down_revision == "0089"
+    assert script.get_revision("0091").down_revision == "0090"
 
 
 def test_the_tables_come_and_go_with_the_migration(settings: Settings) -> None:
     database = settings.database_path
     settings.data_dir.mkdir(parents=True, exist_ok=True)
-    command.upgrade(alembic_config(database), "0089")
+    command.upgrade(alembic_config(database), "0090")
     assert not NEW & tables(database)
     assert "0091" in migrate(settings).applied
     assert tables(database) >= NEW
-    command.downgrade(alembic_config(database), "0089")
+    command.downgrade(alembic_config(database), "0090")
     assert not NEW & tables(database)
 
 

@@ -38,7 +38,6 @@ ACQUISITION_TABLES = {
     "provider_secret",  # migration 0088 (M4 L21a)
     "pending_source_item", "source_alias_migration",  # migration 0046 (M3 L01)
     "source_migration", "source_migration_row",  # migration 0087 (M4 L27)
-    "activity_block",  # migration 0089 (M4 L29)
     "activity_block",  # migration 0091 (M4 L29)
 }  # fmt: skip
 

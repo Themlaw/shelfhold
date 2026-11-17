@@ -793,7 +793,7 @@
   "migrate.validate": "Validate this table",
   "migrate.validated": "Table validated: read it one last time, then apply.",
   "migrate.apply": "Apply the migration",
-  "migrate.done": "Migration applied: {count, plural, =0 {nothing to download} one {# number to download} other {# numbers to download}}. Everyone's reading history and progress stay where they are."
+  "migrate.done": "Migration applied: {count, plural, =0 {nothing to download} one {# number to download} other {# numbers to download}}. Everyone's reading history and progress stay where they are.",
   "history.title": "Activity history",
   "history.events": "Events",
   "history.none": "Nothing in the history yet.",

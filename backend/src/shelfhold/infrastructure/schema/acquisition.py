@@ -692,6 +692,8 @@ source_migration_row = sa.Table(
     positive_check("target_order"),
     sa.UniqueConstraint("migration_id", "target_place"),
     sa.Index("ix_source_migration_row_unit", "unit_id"),
+)
+
 # A chapter the administrator does not want back (M4 L29, EF-INT-019): by what the source calls it,
 # `(source_key, remote_unit_id)`, so it holds whether or not a Unit, a binding or even the series
 # still exists here. Only an explicit removal takes a row away: the account that made it being

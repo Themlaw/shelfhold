@@ -26,9 +26,8 @@ SECOND = "01HZZZZZZZZZZZZZZZZZZZZZZD"
 DIGEST = "d" * 64
 
 
-def test_the_revision_is_0090_the_only_head_on_0089() -> None:
+def test_the_revision_is_0090_on_0089() -> None:
     script = ScriptDirectory(str(default_script_location()))
-    assert script.get_heads() == ["0090"]
     assert script.get_revision("0090").down_revision == "0089"
 
 

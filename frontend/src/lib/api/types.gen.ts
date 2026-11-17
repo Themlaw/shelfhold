@@ -639,6 +639,80 @@ export type BindingsOut = {
 };
 
 /**
+ * BlockIn
+ */
+export type BlockIn = {
+    /**
+     * Reason
+     */
+    reason: 'bad_quality' | 'wrong_content' | 'duplicate' | 'other';
+    /**
+     * Remote Unit Id
+     */
+    remote_unit_id?: string | null;
+    /**
+     * Source Key
+     */
+    source_key: string;
+    /**
+     * Unit Id
+     */
+    unit_id?: string | null;
+};
+
+/**
+ * BlockOut
+ */
+export type BlockOut = {
+    /**
+     * Created At
+     */
+    created_at: string;
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Last Proposed At
+     */
+    last_proposed_at: string | null;
+    /**
+     * Number
+     */
+    number: string | null;
+    /**
+     * Proposed Count
+     */
+    proposed_count: number;
+    /**
+     * Reason
+     */
+    reason: string;
+    /**
+     * Ref
+     */
+    ref: string;
+    /**
+     * Source Key
+     */
+    source_key: string;
+    /**
+     * Title
+     */
+    title: string | null;
+};
+
+/**
+ * BlocksOut
+ */
+export type BlocksOut = {
+    /**
+     * Items
+     */
+    items: Array<BlockOut>;
+};
+
+/**
  * BundleCanOut
  */
 export type BundleCanOut = {
@@ -2035,6 +2109,56 @@ export type HealthzResponse = {
      * Version
      */
     version?: string | null;
+};
+
+/**
+ * HistoryEntryOut
+ */
+export type HistoryEntryOut = {
+    /**
+     * Event Id
+     */
+    event_id: number;
+    /**
+     * Occurred At
+     */
+    occurred_at: string;
+    /**
+     * Payload
+     */
+    payload: {
+        [key: string]: boolean | number | string;
+    };
+    /**
+     * Title
+     */
+    title: string | null;
+    /**
+     * Title Masked
+     */
+    title_masked: boolean;
+    /**
+     * Type
+     */
+    type: string;
+    /**
+     * Visibility
+     */
+    visibility: string;
+};
+
+/**
+ * HistoryOut
+ */
+export type HistoryOut = {
+    /**
+     * Items
+     */
+    items: Array<HistoryEntryOut>;
+    /**
+     * Next Before
+     */
+    next_before: number | null;
 };
 
 /**
@@ -5220,16 +5344,6 @@ export type ShelfItemOut = {
 };
 
 /**
- * ShelfOut
- */
-export type ShelfOut = {
-    /**
-     * Id
-     */
-    id: string;
-};
-
-/**
  * ShelvesPageOut
  */
 export type ShelvesPageOut = {
@@ -5330,6 +5444,28 @@ export type SourceIn = {
      * Url
      */
     url: string;
+};
+
+/**
+ * SourceTrafficOut
+ */
+export type SourceTrafficOut = {
+    /**
+     * By Day
+     */
+    by_day: Array<TrafficDayOut>;
+    /**
+     * Bytes In
+     */
+    bytes_in: number;
+    /**
+     * Requests
+     */
+    requests: number;
+    /**
+     * Source Key
+     */
+    source_key: string;
 };
 
 /**
@@ -5470,6 +5606,17 @@ export type StatusOut = {
      * Waiting
      */
     waiting: Array<WaitingOut>;
+};
+
+/**
+ * StorageOut
+ */
+export type StorageOut = {
+    /**
+     * Shelves
+     */
+    shelves: Array<ShelfholdInterfacesHttpApiOpsDashboardShelfOut>;
+    traffic: TrafficOut;
 };
 
 /**
@@ -5730,6 +5877,38 @@ export type ToShelveOut = {
      * Items
      */
     items: Array<ToShelveItem>;
+};
+
+/**
+ * TrafficDayOut
+ */
+export type TrafficDayOut = {
+    /**
+     * Bytes In
+     */
+    bytes_in: number;
+    /**
+     * Day
+     */
+    day: string;
+    /**
+     * Requests
+     */
+    requests: number;
+};
+
+/**
+ * TrafficOut
+ */
+export type TrafficOut = {
+    /**
+     * Days
+     */
+    days: number;
+    /**
+     * Sources
+     */
+    sources: Array<SourceTrafficOut>;
 };
 
 /**
@@ -6784,6 +6963,34 @@ export type ShelfholdInterfacesHttpApiOpsSecretIn = {
 };
 
 /**
+ * ShelfOut
+ */
+export type ShelfholdInterfacesHttpApiOpsDashboardShelfOut = {
+    /**
+     * By Location
+     */
+    by_location: {
+        [key: string]: number;
+    };
+    /**
+     * Bytes
+     */
+    bytes: number;
+    /**
+     * Copies
+     */
+    copies: number;
+    /**
+     * Name
+     */
+    name: string | null;
+    /**
+     * Shelf Id
+     */
+    shelf_id: string | null;
+};
+
+/**
  * ApplyIn
  *
  * The confirmation that readers lose their progress (EF-EXP-037); nothing else.
@@ -6841,6 +7048,16 @@ export type ShelfholdInterfacesHttpApiSearchSearchOut = {
      * Total
      */
     total: number;
+};
+
+/**
+ * ShelfOut
+ */
+export type ShelfholdInterfacesHttpApiShelvesShelfOut = {
+    /**
+     * Id
+     */
+    id: string;
 };
 
 /**
@@ -11176,6 +11393,190 @@ export type MissingResolveResponses = {
 
 export type MissingResolveResponse = MissingResolveResponses[keyof MissingResolveResponses];
 
+export type OpsActivityHistoryData = {
+    body?: never;
+    path?: never;
+    query?: {
+        /**
+         * Limit
+         */
+        limit?: number;
+        /**
+         * Before
+         */
+        before?: number | null;
+    };
+    url: '/api/v1/ops/activity-history';
+};
+
+export type OpsActivityHistoryErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type OpsActivityHistoryError = OpsActivityHistoryErrors[keyof OpsActivityHistoryErrors];
+
+export type OpsActivityHistoryResponses = {
+    /**
+     * Successful Response
+     */
+    200: HistoryOut;
+};
+
+export type OpsActivityHistoryResponse = OpsActivityHistoryResponses[keyof OpsActivityHistoryResponses];
+
+export type OpsBlocklistData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/ops/blocklist';
+};
+
+export type OpsBlocklistErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type OpsBlocklistError = OpsBlocklistErrors[keyof OpsBlocklistErrors];
+
+export type OpsBlocklistResponses = {
+    /**
+     * Successful Response
+     */
+    200: BlocksOut;
+};
+
+export type OpsBlocklistResponse = OpsBlocklistResponses[keyof OpsBlocklistResponses];
+
+export type OpsBlockChapterData = {
+    body: BlockIn;
+    path?: never;
+    query?: never;
+    url: '/api/v1/ops/blocklist';
+};
+
+export type OpsBlockChapterErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type OpsBlockChapterError = OpsBlockChapterErrors[keyof OpsBlockChapterErrors];
+
+export type OpsBlockChapterResponses = {
+    /**
+     * Successful Response
+     */
+    201: BlockOut;
+};
+
+export type OpsBlockChapterResponse = OpsBlockChapterResponses[keyof OpsBlockChapterResponses];
+
+export type OpsUnblockChapterData = {
+    body?: never;
+    path: {
+        /**
+         * Block Id
+         */
+        block_id: string;
+    };
+    query?: never;
+    url: '/api/v1/ops/blocklist/{block_id}';
+};
+
+export type OpsUnblockChapterErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type OpsUnblockChapterError = OpsUnblockChapterErrors[keyof OpsUnblockChapterErrors];
+
+export type OpsUnblockChapterResponses = {
+    /**
+     * Successful Response
+     */
+    204: void;
+};
+
+export type OpsUnblockChapterResponse = OpsUnblockChapterResponses[keyof OpsUnblockChapterResponses];
+
+export type OpsStorageDashboardData = {
+    body?: never;
+    path?: never;
+    query?: {
+        /**
+         * Days
+         */
+        days?: number;
+    };
+    url: '/api/v1/ops/storage-dashboard';
+};
+
+export type OpsStorageDashboardErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type OpsStorageDashboardError = OpsStorageDashboardErrors[keyof OpsStorageDashboardErrors];
+
+export type OpsStorageDashboardResponses = {
+    /**
+     * Successful Response
+     */
+    200: StorageOut;
+};
+
+export type OpsStorageDashboardResponse = OpsStorageDashboardResponses[keyof OpsStorageDashboardResponses];
+
 export type PreviewData = {
     body: PlanIn;
     path?: never;
@@ -13423,7 +13824,7 @@ export type CreateShelfResponses = {
     /**
      * Successful Response
      */
-    201: ShelfOut;
+    201: ShelfholdInterfacesHttpApiShelvesShelfOut;
 };
 
 export type CreateShelfResponse = CreateShelfResponses[keyof CreateShelfResponses];
