@@ -7,6 +7,8 @@ cycle, under an intent, and never replaces an irreplaceable original or an adopt
 """
 
 import threading
+from types import SimpleNamespace
+from typing import Any
 
 import pytest
 import sqlalchemy as sa
@@ -369,3 +371,40 @@ def test_a_preview_kept_a_day_is_dropped_by_the_next_one() -> None:
         with env.engine.connect() as connection:
             ids = [r[0] for r in connection.execute(sa.text("SELECT id FROM team_switch"))]
         assert first not in ids and len(ids) == 1
+
+
+def test_a_content_adopted_in_place_is_never_replaced() -> None:
+    """The record and the item look like any chapter, but the content served is the host's own
+    file, adopted by reference (`adopted_ref`): the original is never rewritten."""
+    with export_env() as env:
+        s = team_switch(env)
+        old = s.target.read_bytes()
+        with write_transaction(env.engine) as connection:
+            connection.execute(
+                sa.text(
+                    "UPDATE content SET retention = 'adopted_ref' WHERE id IN "
+                    "(SELECT content_id FROM export_item)"
+                )
+            )
+        assert _preview(env, s.edition_id).blocked == {s.unit_id: ("adopted_original",)}
+        report = _apply(env, s, None)
+        assert report.blocked == {s.unit_id: ("adopted_original",)}
+        assert s.target.read_bytes() == old and upgrade_intents(env) == 0
+
+
+def test_the_submitter_queues_as_a_request_and_says_when_the_queue_is_down() -> None:
+    from shelfhold.ops.errors import ExitUnavailableError
+    from shelfhold.ops.wiring import _submitter
+
+    calls: list[tuple[str, str, str]] = []
+
+    class Pools:
+        def submit(self, kind: str, *, dedupe_key: str, priority_class: str) -> Any:
+            calls.append((kind, dedupe_key, priority_class))
+            return SimpleNamespace(job_id="01JJOB0000000000000000000A")
+
+    running = _submitter(SimpleNamespace(pools=lambda: Pools()))  # type: ignore[arg-type]
+    assert running("team.switch", "team.switch:x") == "01JJOB0000000000000000000A"
+    assert calls == [("team.switch", "team.switch:x", "request")]
+    with pytest.raises(ExitUnavailableError):
+        _submitter(SimpleNamespace(pools=lambda: None))("team.switch", "team.switch:x")  # type: ignore[arg-type]
