@@ -26,12 +26,14 @@ _VOLATILE = (
 
 
 _RELEASED = {"schema_revision", "schema_head", "shelfhold_version"}  # move with each release
+# what the host gives the decode worker (a namespace, or a filter, or neither): the runner's own
+_HOST = {"isolation", "seccomp", "network"}
 
 
 def _shape(value: object) -> object:
     if isinstance(value, dict):
         return {
-            key: f"<{key}>" if key in _RELEASED else _shape(item)
+            key: f"<{key}>" if key in _RELEASED | _HOST else _shape(item)
             for key, item in sorted(value.items())
         }
     if isinstance(value, list):

@@ -241,6 +241,7 @@
         'content.json',
         'logs.jsonl',
         'manifest.json',
+        'sandbox.json',
         'schema.sql',
         'sources.json',
         'status.json',
@@ -267,6 +268,42 @@
       'sections': dict({
       }),
       'shelfhold_version': '<shelfhold_version>',
+    }),
+    'sandbox.json': dict({
+      'environment': dict({
+        'cwd_is_empty_dir': True,
+        'env_clean': True,
+        'isolated': True,
+      }),
+      'isolation': '<isolation>',
+      'limits': dict({
+        'no_new_privs': True,
+        'rlimits': dict({
+          'rlimit_as': list([
+            2147483648,
+            2147483648,
+          ]),
+          'rlimit_core': list([
+            0,
+            0,
+          ]),
+          'rlimit_cpu': list([
+            30,
+            32,
+          ]),
+          'rlimit_nofile': list([
+            64,
+            64,
+          ]),
+          'rlimit_nproc': list([
+            1,
+            1,
+          ]),
+        }),
+      }),
+      'network': '<network>',
+      'python_socket': 'denied',
+      'seccomp': '<seccomp>',
     }),
     'sources.json': dict({
       'items': dict({
