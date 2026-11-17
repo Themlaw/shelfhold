@@ -32,7 +32,7 @@ from shelfhold.acquisition.application.follow import OUTAGE_CYCLES
 from shelfhold.config import Settings
 from shelfhold.i18n import t
 from shelfhold.infrastructure.health import HealthProbe
-from shelfhold.infrastructure.schema import acquisition, bundle, platform, storage
+from shelfhold.infrastructure.schema import acquisition, bundle, platform, storage, webhooks
 from shelfhold.infrastructure.stats import DEFAULT_SINCE, compute_stats, parse_since
 from shelfhold.library.public import irreplaceability, page_issue_counts
 from shelfhold.ops.backup.run import backup_warnings
@@ -44,6 +44,7 @@ from shelfhold.plugin_host.health import TypedState, typed_for_code
 __all__ = ["HEALTH_CACHE_TTL", "Action", "OpsHealth", "action_of", "build_health_page"]
 
 STORE_BACKUP_KEY = "store.backup_declared_at"  # what the host's own backup tool declared
+UNREADABLE_WEBHOOK = "webhook.secret_unreadable"  # M4 L24
 LOST_ORIGINAL = "content.original_lost"  # stable code of the entry (EF-BIB-051)
 # How long the shared part of `/healthz` (the paused queues, read through the roots, the restore,
 # the keyring...) is kept. A change made by the instance itself refreshes it at once
@@ -386,6 +387,41 @@ def _lost_originals(connection: Connection) -> list[dict[str, object]]:
     ]
 
 
+def _unreadable_webhooks(connection: Connection) -> list[dict[str, object]]:
+    """The subscriptions whose sealed address could not be opened at a delivery (a key that is
+    gone, an altered row): the id and the count of tries, never the address or the secret."""
+    outbox = webhooks.webhook_outbox
+    rows = connection.execute(
+        sa.select(
+            outbox.c.subscription_id,
+            sa.func.max(outbox.c.attempts).label("attempts"),
+            sa.func.min(sa.case((outbox.c.status == "pending", 0), else_=1)).label("dead"),
+        )
+        .where(
+            outbox.c.last_error == "subscription_unreadable",
+            outbox.c.status.in_(("pending", "dead")),
+        )
+        .group_by(outbox.c.subscription_id)
+        .order_by(outbox.c.subscription_id)
+    )
+    return [
+        {
+            "code": UNREADABLE_WEBHOOK,
+            "subscription_id": r.subscription_id,
+            "attempts": int(r.attempts),
+            "state": "dead" if r.dead else "retrying",
+            "cause": t("errors.webhook.secret_unreadable.cause"),
+            "subject": r.subscription_id,
+            "action": action_of_command(
+                f"DELETE /api/v1/webhooks/{r.subscription_id}",
+                t("errors.webhook.secret_unreadable.action"),
+                reserved=True,
+            ),
+        }
+        for r in rows
+    ]
+
+
 def action_of_command(command: str, text: str, *, reserved: bool = False) -> dict[str, object]:
     return asdict(Action(command, reserved, text))
 
@@ -544,6 +580,7 @@ def build_health_page(
             "library_type_changes": type_changes,
             "jurisdiction": _jurisdiction(connection),
             "page_map_warnings": [*_page_map_warnings(connection), *_page_issues(connection)],
+            "unreadable_webhooks": _unreadable_webhooks(connection),
             "kosync_unknown": _kosync_unknown(kosync_unknown),
         }
     page["backup"] = _backup(engine, settings, now)

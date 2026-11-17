@@ -41,6 +41,12 @@ import structlog
 from sqlalchemy import Engine
 from structlog.contextvars import bound_contextvars
 
+from shelfhold.acquisition.application.team_switch import (
+    TEAM_SWITCH_JOB_KIND,
+    StaleSwitchError,
+    TeamSwitchRefusedError,
+    TeamSwitchService,
+)
 from shelfhold.acquisition.public import (
     ACQUIRE_JOB_KIND,
     FOLLOW_JOB_KIND,
@@ -164,6 +170,7 @@ from shelfhold.jobs.digest_job import register_digest_job
 from shelfhold.jobs.integrity_job import register_integrity_job
 from shelfhold.jobs.public import JobContext, JobFailedError, JobPools
 from shelfhold.jobs.thumbnail_gc import register_thumbnail_jobs
+from shelfhold.jobs.webhook_job import register_webhook_job
 from shelfhold.library.public import (
     KeepCopier,
     PageFormatCbzStore,
@@ -183,6 +190,7 @@ from shelfhold.ops.kavita_accounts import declared_children
 from shelfhold.ops.lazy_headless import LazyHeadless
 from shelfhold.ops.library import LibraryOps
 from shelfhold.ops.notifications import LazyNotificationSweep
+from shelfhold.ops.webhooks import LazyWebhookSweep
 from shelfhold.reading.application.sync import (
     DEFAULT_MAX_SESSION_HOURS,
     ProgressRemote,
@@ -420,6 +428,40 @@ def acquire_handler(comp: Composition, pools: JobPools) -> Callable[[JobContext]
         context.record(state=outcome.state)
         if outcome.state == "fetched":  # what arrived goes out
             pools.submit(EXPORT_JOB_KIND, dedupe_key=EXPORT_JOB_KIND)
+
+    return run
+
+
+def team_switch_handler(comp: Composition) -> Callable[[JobContext], None]:
+    """The application of a preview of the switch to the preferred team (M4 L35, EF-BIB-005).
+
+    The lease on `/library` is taken first, as the other write jobs do; each served file is then
+    replaced by the upgrader of the follow cycle (`_LazyUpgrader`): its own intent, its guards, its
+    locks of the Work and the series folder. A job taken up again after a kill finds what was done
+    (the boot has settled the open intents first) and ends it."""
+
+    def run(context: JobContext) -> None:
+        switch_id = context.dedupe_key.removeprefix(f"{TEAM_SWITCH_JOB_KIND}:")
+        service = TeamSwitchService(comp.engine, comp.clock)
+        try:
+            with ExitStack() as stack:
+                lazy = _LazyWrite(comp, stack)
+                lazy.get()  # the lease first: nothing is replaced that cannot be written
+                report = service.run(switch_id, upgrader=_LazyUpgrader(comp, lazy))
+        except StaleSwitchError:
+            raise JobFailedError("team_switch.stale") from None
+        except TeamSwitchRefusedError:
+            raise JobFailedError("team_switch.not_found") from None
+        except (NoLibraryError, KeyringUnavailableError) as error:
+            log.info("team_switch.skipped", reason=type(error).__name__)
+            raise JobFailedError("job.failed") from None
+        context.record(
+            switched=len(report.switched), blocked=len(report.blocked), pending=len(report.pending)
+        )
+        if report.switched:  # what changed goes out again
+            comp_pools = comp.pools()
+            if comp_pools is not None:
+                comp_pools.submit(EXPORT_JOB_KIND, dedupe_key=EXPORT_JOB_KIND)
 
     return run
 
@@ -1570,6 +1612,7 @@ def register_runtime_jobs(pools: JobPools, comp: Composition) -> None:
     pools.register(RELATIONS_JOB_KIND, pool="io", handler=relations_handler(comp))
     pools.scheduler.add(RELATIONS_JOB_KIND, RELATIONS_CRON, jitter_s=60)
     pools.register(APPLY_JOB_KIND, pool="io", handler=apply_handler(comp))
+    pools.register(TEAM_SWITCH_JOB_KIND, pool="io", handler=team_switch_handler(comp))  # M4 L35
     pools.scheduler.add(EXPORT_JOB_KIND, EXPORT_CRON, jitter_s=60)
     pools.register(
         PROGRESS_SYNC_KIND, pool="io",
@@ -1620,6 +1663,7 @@ def register_runtime_jobs(pools: JobPools, comp: Composition) -> None:
     pools.scheduler.add(INTENT_PRUNE_KIND, INTENT_PRUNE_CRON, jitter_s=300)
     register_notification_job(pools, LazyDispatcher(comp))  # type: ignore[arg-type]
     register_digest_job(pools, LazyNotificationSweep(comp))  # EF-INT-021: per-person notices
+    register_webhook_job(pools, LazyWebhookSweep(comp))  # EF-INT-005: the webhook outbox
     register_store_jobs(pools, comp)  # the window jobs of /store (L14)
     register_safeguard_job(pools, comp)  # "Mettre à l'abri" and the optional purge (L16)
     register_integrity_job(pools, comp)  # the rolling integrity check (M3 L23)

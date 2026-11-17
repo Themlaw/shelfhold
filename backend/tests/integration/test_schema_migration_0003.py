@@ -27,7 +27,7 @@ CATALOG_TABLES = {
     "provider_release_calendar",  # migration 0071 (M4 L20)
     "external_link",  # migration 0079 (M4 L23)
     "collection", "collection_item", "collection_remote",  # migration 0086 (M4 L18a)
-    "bulk_order",  # migration 0096 (M4 L28)
+    "bulk_order",  # migration 0098 (M4 L28)
 }  # fmt: skip
 ACQUISITION_TABLES = {
     "follow_notice",
@@ -41,6 +41,7 @@ ACQUISITION_TABLES = {
     "source_migration", "source_migration_row",  # migration 0087 (M4 L27)
     "activity_block",  # migration 0091 (M4 L29)
     "tachibk_import", "read_marker", "tracker_hint",  # migration 0095 (M4 L26)
+    "team_switch",  # migration 0097 (M4 L35)
 }  # fmt: skip
 
 

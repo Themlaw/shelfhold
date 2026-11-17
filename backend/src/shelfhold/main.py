@@ -50,6 +50,7 @@ from shelfhold.infrastructure.secrets.keyring import Keyring
 from shelfhold.infrastructure.settings_store import load_db_settings
 from shelfhold.infrastructure.volumes import ensure_volumes
 from shelfhold.integrations.notify import ProfileDestinations
+from shelfhold.integrations.webhooks import WebhookAdmin
 from shelfhold.interfaces.http_api.activity import build_activity_router
 from shelfhold.interfaces.http_api.app import HttpApplication, Routers, create_http_app
 from shelfhold.interfaces.http_api.audit import build_audit_router
@@ -106,8 +107,10 @@ from shelfhold.interfaces.http_api.stream import build_stream_router
 from shelfhold.interfaces.http_api.support_author import build_support_author_router
 from shelfhold.interfaces.http_api.sync_status import build_sync_status_router
 from shelfhold.interfaces.http_api.tachibk_import import build_tachibk_import_router
+from shelfhold.interfaces.http_api.teams import build_teams_router
 from shelfhold.interfaces.http_api.thumbnails import build_thumbnails_router
 from shelfhold.interfaces.http_api.triage import build_triage_router
+from shelfhold.interfaces.http_api.webhooks import build_webhooks_router
 from shelfhold.interfaces.local_cli import IdentityDispatcher
 from shelfhold.jobs.mode import MaintenanceMode
 from shelfhold.library.public import ThumbnailService
@@ -322,6 +325,12 @@ def create_app(
         return ThumbnailService(engine, resolved.data_dir, clock)
 
     @cache
+    def webhook_admin() -> WebhookAdmin:
+        return WebhookAdmin(
+            engine, composition.vault, lambda: composition.network.resolver, clock.now
+        )
+
+    @cache
     def headless_admin() -> HeadlessAdmin:
         return wiring.open_headless(resolved)  # opened at first use, after the keyring check
 
@@ -400,6 +409,9 @@ def create_app(
         build_tachibk_import_router(  # EF-INT-008: a Mihon backup, preview then apply
             lambda: ops_services().tachibk_import
         ),
+        build_teams_router(  # EF-BIB-005: the switch to the preferred team, preview then job
+            lambda: ops_services().team_switch
+        ),
         build_sources_router(ops_services),  # EF-SRC-015, EF-SRC-004: search, acquire, a URL
         build_source_migration_router(ops_services),  # M4 L27: a series moves to another source
         build_me_router(cache(lambda: user_state_service(engine, clock))),  # EF-USR-007, EF-BIB-022
@@ -442,6 +454,7 @@ def create_app(
         build_ops_router(ops_services),  # EF-INT-023: the exits
         # M4 L29 (EF-INT-019, EF-INT-020): history, blocklist, storage and network; admin only
         build_ops_dashboard_router(lambda: engine, clock.now),
+        build_webhooks_router(webhook_admin),  # M4 L24: signed webhooks; admin only, reserved
         build_triage_router(ops_services),  # EF-USR-015, EF-EXP-046: the two lists, the batch
         build_bulk_router(ops_services),  # M4 L28 (EF-BIB-023): preview, then one job
         build_library_router(ops_services),  # pairing, repatriation, detach, purge, probe

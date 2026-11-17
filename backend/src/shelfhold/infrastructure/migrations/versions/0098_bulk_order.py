@@ -4,14 +4,14 @@
 of the order, the job that applies it): no title, no secret. It belongs to one user and goes with
 that user. Nothing existing is touched; reversible.
 
-Number: 0096 follows 0095 (L26), the head of main when this lot was frozen.
+Number: 0098 follows 0097 (L35), the head of main when this lot was frozen.
 """
 # ruff: noqa: E501  (the DDL is the one SQLAlchemy writes, kept as it is)
 
 from alembic import op
 
-revision = "0096"
-down_revision = "0095"
+revision = "0098"
+down_revision = "0097"
 branch_labels = None
 depends_on = None
 

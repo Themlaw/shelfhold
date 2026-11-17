@@ -333,6 +333,12 @@ CLOSED = (
     "POST /api/v1/ops/blocklist",
     "DELETE /api/v1/ops/blocklist/{block_id}",
     "GET /api/v1/ops/storage-dashboard",
+    # M4 L24 (EF-INT-005): webhooks, the administrator's alone (writes: a reserved action); the
+    # attacks (child, member, keys, IDOR) are in `test_m4_l24_webhook_routes.py`
+    "GET /api/v1/webhooks",
+    "POST /api/v1/webhooks",
+    "GET /api/v1/webhooks/{webhook_id}",
+    "DELETE /api/v1/webhooks/{webhook_id}",
     "GET /metrics",  # M4 L25: a key of scope `metrics` alone
     "GET /api/v1/status",
     "POST /api/v1/store/reinit",
@@ -364,6 +370,9 @@ CLOSED = (
     "POST /api/v1/requests/{request_id}/not-found",
     "POST /api/v1/bulk/rate/preview",  # M4 L28: bulk rating, a fresh admin session's
     "POST /api/v1/bulk/rate/{order_id}/apply",
+    "POST /api/v1/editions/{edition_id}/team-switch",  # M4 L35: an admin's, replaces served files
+    "POST /api/v1/editions/{edition_id}/team-switch/{switch_id}/apply",
+    "GET /api/v1/editions/{edition_id}/team-switch/{switch_id}",
     "POST /api/v1/imports/tachibk",  # M4 L26: a backup of another reader app, an admin's
     "GET /api/v1/imports/tachibk/{import_id}",
     "POST /api/v1/imports/tachibk/{import_id}/apply",
@@ -399,6 +408,7 @@ BODIES = {
     "POST /api/v1/request-lists": {"text": "A title"},
     "POST /api/v1/request-lists/for-child/{user_id}": {"text": "A title"},
     "POST /api/v1/ops/blocklist": {"source_key": "s", "remote_unit_id": "x", "reason": "other"},
+    "POST /api/v1/webhooks": {"url": "https://hooks.example.org/x", "event_types": ["unit.stored"]},
 }
 
 # Surfaces that do not exist yet: the lot that builds each one adds its child case, and this

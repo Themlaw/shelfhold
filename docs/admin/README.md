@@ -23,8 +23,10 @@ et ne change rien à l'installation (voir [vérifier les images](verifier-les-im
 | Une racine, `/store` ou la base manquent et il n'y a pas de sauvegarde | [sinistre-sans-sauvegarde.md](sinistre-sans-sauvegarde.md) |
 | Comprendre « libre de droits aux États-Unis », régler le pays de l'instance | [domaine-public.md](domaine-public.md) |
 | Voir l'historique d'activité, bloquer un chapitre que la source repropose, suivre l'espace par étagère et le trafic par source | [historique-et-stockage.md](historique-et-stockage.md) |
+| Envoyer les événements de Shelfhold à un autre outil (webhooks signés, adresse privée autorisée, versions) | [webhooks.md](webhooks.md) |
 | Importer une liste de livres voulus (texte, CLI ou écran), étagère de lecture d'un enfant, un seul écran de validation | [listes-importees.md](listes-importees.md) |
 | Importer une sauvegarde Mihon (`.tachibk`) : aperçu, séries en attente, marqueurs de lecture, indices de suivi | [import-mihon.md](import-mihon.md) |
+| Passer à l'équipe préférée : aperçu, remplacement des fichiers servis sous intention, ce qui n'est jamais remplacé | [equipe-preferee.md](equipe-preferee.md) |
 | Remplacer un chapitre par une meilleure version, ce que voient Kavita et KOReader | [mise-a-niveau.md](mise-a-niveau.md) |
 | Révisions republiées par une source, version suspecte, chapitre retiré à la source | [revisions-en-attente.md](revisions-en-attente.md) |
 | Effacer pour de bon (`purge --now`, `--checkpoint`, `--leftovers`) | [purge.md](purge.md) |

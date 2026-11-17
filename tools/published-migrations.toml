@@ -301,6 +301,16 @@ sha256 = "d7b6b2ab27b6689bfd54f6c7eceae3aec3c6265cd12950b608d0f8299b22ed20"
 since = "1.1"
 
 [[migration]]
-file = "0096_bulk_order.py"
-sha256 = "f0bc5524f6c646a571ee256e52211c897fb46ee24ad4b8144efd80d5dd5f22bf"
+file = "0096_webhooks.py"
+sha256 = "e4870516fb9100b441c60020b8596c393a89f1e97c0c427734f14f9be868e573"
+since = "1.1"
+
+[[migration]]
+file = "0097_team_switch.py"
+sha256 = "357e34218746fb75c8b13ac6fd183e05a04378cd50eda425f209978652145769"
+since = "1.1"
+
+[[migration]]
+file = "0098_bulk_order.py"
+sha256 = "eaeab68ed573584dffc0d9233e05fcc46f429bfdaa62c4add4bf92d86f3e4820"
 since = "1.1"
