@@ -404,8 +404,15 @@ def test_m3_detach_journey(journey_m3: Journey) -> None:
     [(done_code, report)] = j.api(
         ("POST", f"/api/v1/targets/{target}/detach", {"typed": phrase, "credential": KAVITA_PASSWORD})
     )  # fmt: skip
-    assert done_code == 200, report
-    assert report["complete"] is True and report["key_revoked"] is True, report  # type: ignore[index]
+    assert done_code == 202, report  # a job: the detachment ends in the background
+    status_url = str(report["status_url"])  # type: ignore[index]
+
+    def job_status() -> str:
+        [(_code, job)] = j.api(("GET", status_url))
+        return str(job["status"])  # type: ignore[index]
+
+    assert wait_for(lambda: job_status() in ("succeeded", "failed"), 120, 2)
+    assert job_status() == "succeeded", j.api(("GET", status_url))
     assert j.kavita()["keys"] == []  # the dedicated key is gone from Kavita itself
     assert j.sql("select count(*) from export_target") == [(0,)]
     # (nothing was adopted, so Shelfhold's own reserved folder is not the Kavita tree's business:

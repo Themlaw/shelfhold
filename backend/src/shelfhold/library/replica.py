@@ -37,6 +37,7 @@ __all__ = [
     "byte_sources",
     "damaged_library_copies",
     "demote_shared_inodes",
+    "destination_copy_rows",
     "distrust_root_copies",
     "drop_replicas",
     "erase_replicas",
@@ -494,6 +495,35 @@ def forget_destination_copies(
             )
             where.append(replica_table.c.rel_path.like(f"{escaped}/%", escape="\\"))
     connection.execute(sa.delete(replica_table).where(*where))
+
+
+def destination_copy_rows(
+    connection: Connection,
+    export_item_id: str,
+    *,
+    physical_root_id: str | None = None,
+    under: str | None = None,
+) -> list[tuple[str, str | None]]:
+    """`(replica id, unit id)` of the `destination` rows `forget_destination_copies` would delete
+    for the same arguments: what a removal takes from the registry, read before it does (M4 L34),
+    so that `independent_copies(..., without=ids)` can say what would be left."""
+    where = [
+        replica_table.c.export_item_id == export_item_id,
+        replica_table.c.location == "destination",
+    ]
+    if physical_root_id is not None:
+        where.append(replica_table.c.physical_root_id == physical_root_id)
+        if under:
+            escaped = (
+                under.rstrip("/").replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+            )
+            where.append(replica_table.c.rel_path.like(f"{escaped}/%", escape="\\"))
+    return [
+        (str(r.id), None if r.unit_id is None else str(r.unit_id))
+        for r in connection.execute(
+            sa.select(replica_table.c.id, replica_table.c.unit_id).where(*where)
+        )
+    ]
 
 
 def roots_holding_library_copies(connection: Connection) -> set[str]:

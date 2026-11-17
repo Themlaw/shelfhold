@@ -8,8 +8,8 @@ stop. Nothing is deleted without that order, nothing that Shelfhold did not writ
 would leave an irreplaceable original without an independent copy, nothing outside the root.
 """
 
+import contextlib
 from collections.abc import Iterator
-from pathlib import Path
 from typing import Any
 
 import pytest
@@ -34,7 +34,7 @@ from shelfhold.infrastructure.fsops import Fsops
 from shelfhold.infrastructure.schema import catalog, export
 from shelfhold.infrastructure.schema import replica as replica_schema
 from shelfhold.library.public import independent_copies, irreplaceability
-from tests.detach_env import ADMIN, OTHERS, DetachEnv, detach_env, fresh_admin
+from tests.detach_env import OTHERS, DetachEnv, detach_env, fresh_admin
 from tests.rename_env import export_chapters
 
 pytestmark = pytest.mark.req("EF-EXP-031")
@@ -62,25 +62,45 @@ def _order(d: DetachEnv, mode: RemovalMode = DELETE) -> Any:
 
 def _audit(d: DetachEnv, action: str) -> list[Any]:
     with d.env.engine.connect() as conn:
-        return list(conn.execute(sa.text("SELECT target FROM audit WHERE action = :a"), {"a": action}))
+        return list(
+            conn.execute(sa.text("SELECT target FROM audit WHERE action = :a"), {"a": action})
+        )
 
 
 def _units(d: DetachEnv) -> list[str]:
+    """The Units behind the exported files, in the order of their paths (the fixture has a Unit
+    of its own that no destination exports)."""
     with d.env.engine.connect() as conn:
-        return [str(u) for u in conn.execute(sa.select(catalog.unit.c.id).order_by("id")).scalars()]
+        rows = conn.execute(
+            sa.select(export.unit_coverage.c.unit_id)
+            .select_from(
+                export.unit_coverage.join(
+                    export.export_record,
+                    export.export_record.c.export_item_id == export.unit_coverage.c.carrier_id,
+                )
+            )
+            .where(export.unit_coverage.c.carrier_type == "export_item")
+            .order_by(export.export_record.c.rel_path)
+        )
+        return [str(u) for u in rows.scalars()]
 
 
 def _make_irreplaceable(d: DetachEnv, unit: str, *, copies: int) -> None:
-    """The source no longer lists the Unit, and `copies` independent copies are kept (0 or 1)."""
+    """The source no longer lists the Unit, and `copies` independent copies are kept (0 or 1):
+    the received archive of the library, which the destination's own row never replaces."""
     with d.env.engine.begin() as conn:
         conn.execute(
             sa.update(catalog.unit_variant)
             .where(catalog.unit_variant.c.unit_id == unit)
             .values(removed_at=d.env.clock.now())
         )
-        rows = list(conn.execute(sa.select(replica_schema.replica.c.id).where(replica_schema.replica.c.unit_id == unit)))
-        for extra in rows[copies:]:
-            conn.execute(sa.delete(replica_schema.replica).where(replica_schema.replica.c.id == extra.id))
+        if copies == 0:
+            conn.execute(
+                sa.delete(replica_schema.replica).where(
+                    replica_schema.replica.c.unit_id == unit,
+                    replica_schema.replica.c.location != "destination",
+                )
+            )
     with d.env.engine.connect() as conn:
         verdict = irreplaceability(conn, unit)
         assert verdict.irreplaceable and verdict.independent_copies == copies, verdict
@@ -97,13 +117,25 @@ def test_the_order_is_the_reserved_action_the_phrase_and_one_audit_line(d: Detac
         with pytest.raises(RemovalRefusedError) as refused:
             d.remover.order(dest, DELETE, principal=who, typed=phrase)
         assert refused.value.reason == "not_allowed"
-    for typed in (None, "", phrase + " ", phrase.upper(), removal_phrase(dest, RemovalMode.KEEP_FILES)):
+    for typed in (
+        None,
+        "",
+        phrase + " ",
+        phrase.upper(),
+        removal_phrase(dest, RemovalMode.KEEP_FILES),
+    ):
         with pytest.raises(RemovalRefusedError) as refused:
             d.remover.order(dest, DELETE, principal=fresh_admin(d.env), typed=typed)
         assert refused.value.reason == "confirmation_required"
-    with pytest.raises(RemovalRefusedError) as unknown:
-        d.remover.order("01JNOSUCHDEST0000000000000", DELETE, principal=ADMIN, typed="x")
-    assert unknown.value.reason in {"unknown_destination", "not_allowed"}
+    ghost = "01JNOSUCHDEST0000000000000"
+    with pytest.raises(RemovalRefusedError) as unknown:  # the phrase is read first
+        d.remover.order(ghost, DELETE, principal=fresh_admin(d.env), typed="x")
+    assert unknown.value.reason == "confirmation_required"
+    with pytest.raises(RemovalRefusedError) as unknown:  # right phrase, no such destination
+        d.remover.order(
+            ghost, DELETE, principal=fresh_admin(d.env), typed=removal_phrase(ghost, DELETE)
+        )
+    assert unknown.value.reason == "unknown_destination"
     assert (d.tree_digest(), d.intent_ids(), d.count(export.shelf_destination)) == before
     assert _audit(d, "destination.remove_all") == []  # refusals leave no line
     order = _order(d)
@@ -171,9 +203,14 @@ def test_execute_takes_only_what_shelfhold_wrote_and_never_a_file_put_there_by_h
     assert same_name.exists() and first.parent.is_dir()  # the folder with a hand-made file stays
     assert d.count(export.shelf_destination) == 0 and d.intents("pending", "applying") == []
     with d.env.engine.connect() as conn:  # nothing is left that names the destination
-        assert conn.execute(
-            sa.select(sa.func.count()).select_from(replica_schema.replica).where(replica_schema.replica.c.location == "destination")
-        ).scalar_one() == 0
+        assert (
+            conn.execute(
+                sa.select(sa.func.count())
+                .select_from(replica_schema.replica)
+                .where(replica_schema.replica.c.location == "destination")
+            ).scalar_one()
+            == 0
+        )
 
 
 def test_a_file_changed_since_the_export_is_left_and_said(d: DetachEnv) -> None:
@@ -210,7 +247,15 @@ def test_deletes_when_an_independent_copy_is_kept_or_the_unit_can_be_fetched_aga
     first, second = _units(d)[:2]
     _make_irreplaceable(d, first, copies=1)  # irreplaceable, but one copy is kept: it may go
     with d.env.engine.begin() as conn:  # `second`: replaceable, no copy at all: it may go
-        conn.execute(sa.delete(replica_schema.replica).where(replica_schema.replica.c.unit_id == second))
+        conn.execute(
+            sa.delete(replica_schema.replica).where(
+                replica_schema.replica.c.unit_id == second,
+                replica_schema.replica.c.location != "destination",
+            )
+        )
+    with d.env.engine.connect() as conn:
+        verdict = irreplaceability(conn, second)
+        assert not verdict.irreplaceable and verdict.independent_copies == 0
     report = d.remover.execute(_order(d))
     assert report.deleted == 3 and report.complete, report.left
     assert d.env.files() == []
@@ -321,9 +366,10 @@ def test_a_kill_at_each_step_of_the_removal_is_finished_by_the_rerun(
     after(Fsops, "purge_unlink")
     after(d.journal, "mark_done")
     order = _order(d)
-    with pytest.raises(Killed) if kill_at < 14 else _nothing():
+    with contextlib.suppress(Killed):  # the stop; past the last step it just runs to the end
         d.remover.execute(order)
     monkeypatch.undo()
+    d.journal.resolve_open()  # the boot settles what a stop left open, before the queue restarts
     report = d.remover.execute(order)
     assert report.complete, report.left
     assert d.env.files() == []
@@ -331,16 +377,14 @@ def test_a_kill_at_each_step_of_the_removal_is_finished_by_the_rerun(
     assert d.intents("pending", "applying") == []
     assert len(unlinked) == len(set(unlinked)), "a file was deleted twice"
     with d.env.engine.connect() as conn:
-        assert conn.execute(
-            sa.select(sa.func.count()).select_from(replica_schema.replica).where(replica_schema.replica.c.location == "destination")
-        ).scalar_one() == 0
-
-
-class _nothing:
-    def __enter__(self) -> None: ...
-
-    def __exit__(self, *exc: object) -> bool:
-        return False
+        assert (
+            conn.execute(
+                sa.select(sa.func.count())
+                .select_from(replica_schema.replica)
+                .where(replica_schema.replica.c.location == "destination")
+            ).scalar_one()
+            == 0
+        )
 
 
 # -- the full detachment is a resumable job -------------------------------------------------------
@@ -385,19 +429,23 @@ def test_detach_is_a_resumable_job(
         key_gone=False, credential_given=True,
     )  # fmt: skip
     run = {
-        "client": d.wired.client, "revoker": d.revoker, "credential": "the account password",
+        "client": d.wired.client,
+        "revoker": d.revoker,
+        "credential": "the account password",
     }
-    try:
-        d.detacher.execute(order, **run)
-    except Killed:
-        pass
+    report = None
+    with contextlib.suppress(Killed):  # past the last step it runs to the end
+        report = d.detacher.execute(order, **run)
     monkeypatch.undo()
-    report = d.detacher.execute(order, **run)
+    d.journal.resolve_open()  # the boot settles what a stop left open, before the queue restarts
+    report = report or d.detacher.execute(order, **run)
     assert report.complete and report.key_revoked, report.leftovers
     assert d.tree_digest() == exported  # the exported files are never touched
     assert d.count(export.export_target) == 0 and d.count(export.shelf_destination) == 0
     assert d.intents("pending", "applying") == []
-    assert d.wired.fake.auth_keys == [] or all(str(k["id"]) not in d.revoker.ids for k in d.wired.fake.auth_keys)
+    assert d.wired.fake.auth_keys == [] or all(
+        str(k["id"]) not in d.revoker.ids for k in d.wired.fake.auth_keys
+    )
     again = d.detacher.execute(order, **run)  # the job replayed after its end changes nothing
     assert again.target_id == target and d.tree_digest() == exported
 

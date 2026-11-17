@@ -70,18 +70,22 @@ from shelfhold.infrastructure.fsops import (
 )
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import export
-from shelfhold.library.public import forget_destination_copies
+from shelfhold.library.public import forget_destination_copies, removal_would_strip
 
 __all__ = [
+    "REMOVAL_JOB_KIND",
     "REMOVAL_SCOPE",
     "LeftLine",
     "RemovalMode",
+    "RemovalOrder",
     "RemovalPreview",
     "RemovalRefusedError",
     "RemovalReport",
     "RemovalWarning",
     "RemoveDestination",
     "forget_destination",
+    "removal_job_key",
+    "removal_order_of",
     "removal_phrase",
 ]
 
@@ -100,6 +104,35 @@ def removal_phrase(destination_id: str, mode: RemovalMode) -> str:
     """What the admin types: the mode and the id, so that a pasted command names its destination
     and what was seen in the preview is what is done (the way out of a keep is not a delete)."""
     return f"remove --{mode.value.replace('_', '-')} {destination_id}"
+
+
+REMOVAL_JOB_KIND = "destination.remove"  # the job of a removal that takes the files (M4 L34)
+
+
+@dataclass(frozen=True)
+class RemovalOrder:
+    """What a fresh admin session ordered, once: the destination and the way. It is made by
+    `RemoveDestination.order` after the reserved action and the phrase, and it is all the job
+    keeps (an identifier and a word, in its key): no phrase, no session, no secret."""
+
+    destination_id: str
+    mode: RemovalMode
+
+
+def removal_job_key(order: RemovalOrder) -> str:
+    """The dedupe key of the job: two orders for the same destination and way share one job while
+    it is active."""
+    return f"{REMOVAL_JOB_KIND}:{order.destination_id}:{order.mode.value}"
+
+
+def removal_order_of(key: str) -> RemovalOrder:
+    """The order a job key stands for; anything else is a forged or foreign key."""
+    kind, _, rest = key.partition(":")
+    destination_id, _, mode = rest.partition(":")
+    modes = {m.value: m for m in RemovalMode}
+    if kind != REMOVAL_JOB_KIND or not destination_id or mode not in modes:
+        raise ValueError("not a removal job key")
+    return RemovalOrder(destination_id, modes[mode])
 
 
 class RemovalRefusedError(PermissionError):
@@ -203,6 +236,44 @@ class RemoveDestination:
 
     # -- the removal ----------------------------------------------------------------------------
 
+    def order(
+        self,
+        destination_id: str,
+        mode: RemovalMode,
+        *,
+        principal: Principal,
+        typed: str | None,
+        record: bool = True,
+    ) -> RemovalOrder:
+        """The door of the queue: the reserved action, the phrase, a destination that exists. It
+        writes the one audit line of the removal (the order is the act of a person) and deletes
+        nothing; the job runs `execute` from the order alone. `record=False` only checks: the
+        caller writes the line with `record_order` once it knows the job can be queued."""
+        self._authorize(principal)
+        self._confirm(destination_id, mode, typed)
+        with self._engine.connect() as conn:
+            self._context(conn, destination_id)
+        order = RemovalOrder(destination_id, mode)
+        if record:
+            self.record_order(order, principal)
+        return order
+
+    def record_order(self, order: RemovalOrder, principal: Principal) -> None:
+        with write_transaction(self._engine) as conn:
+            self._audit(conn, principal, order.destination_id, order.mode)
+
+    def execute(self, order: RemovalOrder, *, job_id: str | None = None) -> RemovalReport:
+        """What the job runs, and runs again after a stop: from the order alone, the destination
+        held for the length of it. A destination that is gone has nothing left to do."""
+        with self._engine.connect() as conn:
+            try:
+                ctx = self._context(conn, order.destination_id)
+            except RemovalRefusedError as error:
+                if error.reason == "unknown_destination":
+                    return RemovalReport()  # the job ran to its end before, or the person did
+                raise
+        return self._run(ctx, order.mode, job_id, audited_by=None)
+
     def apply(
         self,
         destination_id: str,
@@ -212,14 +283,23 @@ class RemoveDestination:
         typed: str | None,
         job_id: str | None = None,
     ) -> RemovalReport:
+        """The synchronous way (the host CLI, a removal that keeps the files): order and
+        execution in one call, the audit line written with the forgetting."""
         self._authorize(principal)
-        if typed is None or not hmac.compare_digest(
-            typed.encode(),
-            removal_phrase(destination_id, mode).encode(),  # exactly, no trim
-        ):
-            raise RemovalRefusedError("confirmation_required")
+        self._confirm(destination_id, mode, typed)
         with self._engine.connect() as conn:
             ctx = self._context(conn, destination_id)
+        return self._run(ctx, mode, job_id, audited_by=principal)
+
+    def _run(
+        self,
+        ctx: DestinationContext,
+        mode: RemovalMode,
+        job_id: str | None,
+        *,
+        audited_by: Principal | None,
+    ) -> RemovalReport:
+        destination_id = ctx.destination_id
         with self._held(ctx, job_id or new_ulid()):
             report = RemovalReport()
             left: list[LeftLine] = []
@@ -237,7 +317,8 @@ class RemoveDestination:
                     report.forgotten += forget_destination(
                         conn, destination_id, copy_scope(ctx, self._roots)
                     )
-                    self._audit(conn, principal, destination_id, mode)
+                    if audited_by is not None:
+                        self._audit(conn, audited_by, destination_id, mode)
                 if report.deleted and self._request_scan is not None and ctx.root_local:
                     self._request_scan(ctx.remote_folder(ctx.root_local))
         log.info(
@@ -245,6 +326,14 @@ class RemoveDestination:
             deleted=report.deleted, left=len(report.left),
         )  # fmt: skip
         return report
+
+    @staticmethod
+    def _confirm(destination_id: str, mode: RemovalMode, typed: str | None) -> None:
+        if typed is None or not hmac.compare_digest(
+            typed.encode(),
+            removal_phrase(destination_id, mode).encode(),  # exactly, no trim
+        ):
+            raise RemovalRefusedError("confirmation_required")
 
     def settle(self, destination_id: str, *, resume: bool, principal: Principal) -> RemovalReport:
         """After a stop: finish what the interrupted removal had begun (`resume`), or give it up.
@@ -290,6 +379,9 @@ class RemoveDestination:
             if not record.file_hash:  # nothing says this file is Shelfhold's own: never deleted
                 left.append(LeftLine("no_hash", rel))
                 continue
+            if self._strips(scope, record.export_item_id):  # maybe the last bytes of an original
+                left.append(LeftLine("sole_copy", rel))
+                continue
             made = self._record(ctx, record, local)
             if made is None:
                 left.append(LeftLine("refused_by_the_disk", rel))
@@ -303,6 +395,16 @@ class RemoveDestination:
             else:
                 left.append(LeftLine(outcome, rel))
         self._remove_emptied(ctx, emptied)
+
+    def _strips(self, scope: CopyScope | None, item_id: str) -> bool:
+        """Would the file be the last bytes of an irreplaceable original (EF-BIB-045)? Read when
+        the file is about to go, and again when an interrupted removal resumes."""
+        with self._engine.connect() as conn:
+            return removal_would_strip(
+                conn, item_id,
+                physical_root_id=None if scope is None else scope.root_id,
+                under=None if scope is None else scope.under,
+            )  # fmt: skip
 
     def _record(
         self, ctx: DestinationContext, record: Any, local: str
@@ -402,6 +504,9 @@ class RemoveDestination:
             if found == "gone":  # it went before the stop: close its line
                 self._close(destination_id, item_id, intent.id, scope)
                 report.deleted += 1
+            elif resume and found == "file" and self._strips(scope, item_id):
+                self._journal.cancel(intent.id)  # the copy it counted on is gone: the file stays
+                left.append(LeftLine("sole_copy", self._relative(ctx, intent.src)))
             elif resume and found == "file":  # the file is looked at again, as at the first pass
                 outcome = self._remove(
                     intent.id, intent.src, intent.expected_sha256, intent.expected_file_id

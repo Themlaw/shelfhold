@@ -3,6 +3,11 @@
   // preview that says what would be lost, a phrase the server gives and the admin types, and the
   // fresh-session prompt. The server is the gate: it checks the phrase, the session and the role
   // again; nothing here decides for it.
+  //
+  // M4 L34: a removal that takes the files and the detachment are background jobs. The server
+  // answers 202 with the id of the job: the screen says the work is "peut-être en cours" and
+  // « Recharger » asks the job and the list again. The password of the Kavita account leaves the
+  // field before the request goes and is never kept (the job is handed it in memory, once).
   import { onMount } from 'svelte';
   import { client } from '#lib/api/client.gen.ts';
   import { t, type MessageKey } from '#lib/i18n/index.ts';
@@ -20,13 +25,13 @@
   type Line = { code: string; count: number };
   type RemovalPreview = { phrase: string; warnings: Line[] };
   type RemovalReport = { complete: boolean; left: { code: string }[] };
+  type JobAccepted = { job_id: string; status_url: string };
   type DetachPreview = { phrase: string; warnings: Line[] };
-  type DetachReport = {
-    complete: boolean;
-    key_revoked: boolean;
-    hidden_removed: number;
-    settings_restored: boolean;
-    leftovers: Line[];
+  type Job = {
+    kind: 'removal' | 'detach';
+    url: string;
+    status: string;
+    error: string | null;
   };
 
   const WARNINGS: Record<string, MessageKey> = {
@@ -45,24 +50,6 @@
     'detach:follows_active': 'destinations.warn.detach_follows_active',
     'detach:tombstone_journal_erased': 'destinations.warn.detach_tombstone_journal_erased'
   };
-  const LEFTOVERS: Record<string, MessageKey> = {
-    suwayomi_downloads: 'destinations.detach.leftover_suwayomi',
-    kavita_accounts: 'destinations.detach.leftover_accounts',
-    store: 'destinations.detach.leftover_store',
-    root_shared: 'destinations.detach.leftover_root_shared',
-    hidden_not_erased: 'destinations.detach.leftover_hidden_not_erased',
-    settings_not_restored: 'destinations.detach.leftover_settings_not_restored',
-    key_not_revoked: 'destinations.detach.leftover_key_not_revoked',
-    erasing_name_taken: 'destinations.detach.leftover_erasing_name_taken',
-    instance_changed: 'destinations.detach.leftover_instance_changed',
-    key_gone: 'destinations.detach.leftover_key_gone',
-    key_id_reused: 'destinations.detach.leftover_key_id_reused',
-    hidden_pattern_kept: 'destinations.detach.leftover_hidden_pattern_kept',
-    library_gone: 'destinations.detach.leftover_library_gone',
-    tombstone_journal_erased: 'destinations.detach.leftover_tombstone_journal_erased',
-    library_type_changed: 'destinations.detach.leftover_library_type_changed'
-  };
-
   let destinations = $state<Destination[]>([]);
   let adminOnly = $state(false);
   let notice = $state<{ text: string; kind: 'status' | 'alert' } | null>(null);
@@ -77,7 +64,7 @@
   let discardHidden = $state(false);
   let discardJournal = $state(false);
   let keyGone = $state(false);
-  let detachReport = $state<DetachReport | null>(null);
+  let job = $state<Job | null>(null); // the background job of the last order, if any
 
   let leftCount = $state(0); // files the removal left on disk, said next to its outcome
   let busy = $state(false);
@@ -97,11 +84,6 @@
     const key = WARNINGS[line.code];
     return key ? t(key, { count: line.count }) : t('destinations.warn.unknown', line);
   };
-  const leftoverText = (line: Line): string => {
-    const key = LEFTOVERS[line.code];
-    return key ? t(key, { count: line.count }) : t('destinations.detach.leftover_other', line);
-  };
-
   function say(text: string, kind: 'status' | 'alert'): void {
     notice = { text, kind };
   }
@@ -130,6 +112,7 @@
     removePreview = null;
     leftCount = 0;
     notice = null;
+    job = null;
   }
 
   function cancelRemove(): void {
@@ -157,7 +140,7 @@
     if (!removing || !removePreview || busy) return;
     busy = true;
     try {
-      const { data, error } = await client.post({
+      const { data, error, response } = await client.post({
         url: '/api/v1/destinations/{destination_id}/removal',
         path: { destination_id: removing.id },
         headers: headers(),
@@ -168,6 +151,10 @@
         if (!askAgain(error, () => confirmRemoval(typed))) {
           say(t('destinations.removal.refused'), 'alert');
         }
+        return;
+      }
+      if (response?.status === 202) {
+        startJob('removal', data as JobAccepted); // the files go in a job: nothing is done yet
         return;
       }
       const report = data as RemovalReport;
@@ -184,7 +171,7 @@
   async function startDetach(dest: Destination): Promise<void> {
     detaching = dest;
     detachPreview = null;
-    detachReport = null;
+    job = null;
     detachPassword = '';
     discardHidden = false;
     discardJournal = false;
@@ -236,13 +223,39 @@
         }
         return;
       }
-      detachReport = data as DetachReport;
-      cancelDetach();
+      startJob('detach', data as JobAccepted);
+    } finally {
+      busy = false;
+    }
+  }
+
+  /** The order was accepted: the form closes (and the password with it), the job is followed. */
+  function startJob(kind: Job['kind'], accepted: JobAccepted): void {
+    cancelRemove();
+    cancelDetach();
+    notice = null;
+    leftCount = 0;
+    job = { kind, url: accepted.status_url, status: 'queued', error: null };
+  }
+
+  /** « Recharger »: what the job says now, and the list again. */
+  async function reload(): Promise<void> {
+    if (!job || busy) return;
+    busy = true;
+    try {
+      const { data, error } = await client.get({ url: job.url, throwOnError: false });
+      if (!error && data) {
+        const state = data as { status: string; error_code: string | null };
+        job = { ...job, status: state.status, error: state.error_code };
+      }
       await load();
     } finally {
       busy = false;
     }
   }
+
+  const jobFailed = (j: Job): boolean => j.status === 'failed' || j.status === 'dead_letter';
+  const jobRunning = (j: Job): boolean => ['queued', 'running'].includes(j.status);
 
   onMount(load);
 </script>
@@ -333,24 +346,39 @@
       </section>
     {/if}
 
-    {#if detachReport}
-      <section aria-labelledby="report-title">
-        <h2 id="report-title">{t('destinations.report.title')}</h2>
-        {#if detachReport.complete}
-          <p>{t('destinations.detach.done')}</p>
+    {#if job}
+      <section aria-labelledby="job-title">
+        <h2 id="job-title">{t('destinations.job.title')}</h2>
+        {#if job.status === 'succeeded' || jobFailed(job)}
+          <h3>{t('destinations.report.title')}</h3>
+        {/if}
+        {#if job.status === 'succeeded'}
+          <p role="status">
+            {job.kind === 'removal' ? t('destinations.removal.done') : t('destinations.detach.done')}
+          </p>
+          {#if job.kind === 'detach'}
+            <p>{t('destinations.detach.left_in_place')} : {t('destinations.detach.stays')}</p>
+          {/if}
+        {:else if jobFailed(job)}
+          {#if job.error === 'removal.incomplete'}
+            <p role="alert">{t('destinations.removal.unfinished')}</p>
+            <p>{t('destinations.detach.left_in_place')} : {t('destinations.job.removal_left')}</p>
+          {:else if job.error === 'detach.incomplete'}
+            <p role="alert">{t('destinations.detach.unfinished')}</p>
+            <p>{t('destinations.job.detach_again')}</p>
+          {:else}
+            <p role="alert">{t('destinations.job.failed')}</p>
+          {/if}
+        {:else if job.status === 'paused'}
+          <p role="status">{t('destinations.job.paused')}</p>
+        {:else if job.status === 'cancelled'}
+          <p role="status">{t('destinations.job.cancelled')}</p>
+        {:else if jobRunning(job)}
+          <p role="status">{t('destinations.job.maybe_running')}</p>
         {:else}
-          <p role="alert">{t('destinations.detach.unfinished')}</p>
+          <p role="status">{t('destinations.job.maybe_running')}</p>
         {/if}
-        <p>{detachReport.settings_restored ? t('destinations.detach.settings_restored') : t('destinations.detach.settings_not_restored')}</p>
-        <p>{detachReport.key_revoked ? t('destinations.detach.key_revoked') : t('destinations.detach.key_not_revoked')}</p>
-        <p>{t('destinations.detach.hidden_removed', { count: detachReport.hidden_removed })}</p>
-        {#if detachReport.leftovers.length > 0}
-          <ul aria-label={t('destinations.detach.left_in_place')}>
-            {#each detachReport.leftovers as line (line.code)}
-              <li>{leftoverText(line)}</li>
-            {/each}
-          </ul>
-        {/if}
+        <button type="button" disabled={busy} onclick={reload}>{t('destinations.job.reload')}</button>
       </section>
     {/if}
 

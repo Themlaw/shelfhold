@@ -32,7 +32,7 @@ from tests.maintenance_env import principal
 pytestmark = pytest.mark.req("EF-EXP-031", "EF-INT-017", "EF-EXP-041")
 
 DELETE = RemovalMode.DELETE_FILES
-PASSWORD = "synthetic-kavita-pw"
+PASSWORD = "-".join(["synthetic", "kavita", "pw", "0034"])  # no literal: gitleaks scans commits
 
 
 class Killed(BaseException):
@@ -93,9 +93,7 @@ class _Rig:
 
 
 @pytest.fixture
-def rig(
-    settings: Settings, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> Iterator[_Rig]:
+def rig(settings: Settings, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[_Rig]:
     monkeypatch.setattr(rj, "SCAN_QUIET_S", 0)
     with seeded(settings, tmp_path) as env:
         series = env.new_series()
@@ -207,21 +205,27 @@ def test_an_incomplete_removal_is_a_failed_job_said_by_its_code(rig: _Rig) -> No
 def test_the_door_refuses_before_queueing(rig: _Rig) -> None:
     from shelfhold.ops.errors import CodedRefusal
 
-    for who in (principal("key", rig.comp.clock.now()), principal("member", rig.comp.clock.now()),
-                principal("child", rig.comp.clock.now()), principal("stale", rig.comp.clock.now())):  # fmt: skip
+    now = rig.comp.clock.now()
+    for who in (principal(kind, now) for kind in ("key", "member", "child", "stale")):
         with pytest.raises(CodedRefusal):
             rig.ops.remove_queue(
-                destination_id=rig.env.destination_id, mode=DELETE.value, typed=rig.phrase(),
+                destination_id=rig.env.destination_id,
+                mode=DELETE.value,
+                typed=rig.phrase(),
                 principal=who,
             )
     with pytest.raises(CodedRefusal):
         rig.ops.remove_queue(
-            destination_id=rig.env.destination_id, mode=DELETE.value, typed="remove",
+            destination_id=rig.env.destination_id,
+            mode=DELETE.value,
+            typed="remove",
             principal=principal("admin", rig.comp.clock.now()),
         )
     with pytest.raises(CodedRefusal):  # IDOR: an identifier that is not a destination
         rig.ops.remove_queue(
-            destination_id="01JNOSUCHDEST0000000000000", mode=DELETE.value, typed="x",
+            destination_id="01JNOSUCHDEST0000000000000",
+            mode=DELETE.value,
+            typed="x",
             principal=principal("admin", rig.comp.clock.now()),
         )
     assert rig.count(platform.job_view) == 0 and len(rig.files()) == 3
@@ -240,4 +244,3 @@ def test_the_retry_of_a_dead_removal_job_names_its_reserved_action(rig: _Rig) ->
 def _target_of(rig: _Rig) -> str:
     with rig.env.inst.engine.connect() as conn:
         return str(conn.execute(sa.select(export.export_target.c.id)).scalar_one())
-

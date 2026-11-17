@@ -15050,13 +15050,21 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Removal",
-                  "type": "object"
+                  "title": "Response Removal"
                 }
               }
             },
             "description": "Successful Response"
+          },
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobAccepted"
+                }
+              }
+            },
+            "description": "Accepted"
           },
           "401": {
             "content": {
@@ -26147,13 +26155,21 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Detach",
-                  "type": "object"
+                  "title": "Response Detach"
                 }
               }
             },
             "description": "Successful Response"
+          },
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobAccepted"
+                }
+              }
+            },
+            "description": "Accepted"
           },
           "401": {
             "content": {
@@ -29009,6 +29025,10 @@
       "code": "destination_account_refused",
       "status": 422
     },
+    "/api/v1/problems/detach.incomplete": {
+      "code": "detach.incomplete",
+      "status": 409
+    },
     "/api/v1/problems/detach.refused": {
       "code": "detach.refused",
       "status": 409
@@ -29614,6 +29634,10 @@
     "/api/v1/problems/remember-needs-confirmation": {
       "code": "remember_needs_confirmation",
       "status": 422
+    },
+    "/api/v1/problems/removal.incomplete": {
+      "code": "removal.incomplete",
+      "status": 409
     },
     "/api/v1/problems/removal.refused": {
       "code": "removal.refused",

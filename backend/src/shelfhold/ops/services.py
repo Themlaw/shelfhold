@@ -26,10 +26,12 @@ from shelfhold.acquisition.public import FOLLOW_JOB_KIND, make_all_due
 from shelfhold.catalog.lang import LANG_NORMALIZER_ID, LanguageError, edition_key_lang
 from shelfhold.events.bus import EventBus
 from shelfhold.export.application import root_capabilities, waiting_marks
+from shelfhold.export.application.detach import DETACH_JOB_KIND
 from shelfhold.export.application.export_items import SeriesCollisionError, ensure_export_series
 from shelfhold.export.application.foreign_names import load_foreign_names
 from shelfhold.export.application.preflight import PermissionPreflight
 from shelfhold.export.application.reconcile import Reconciler
+from shelfhold.export.application.remove_destination import REMOVAL_JOB_KIND
 from shelfhold.export.application.snapshot import load_context
 from shelfhold.export.application.target_state import load_health
 from shelfhold.export.domain.naming import normalize_series_name, series_name_refusal
@@ -465,36 +467,43 @@ class OpsServices:
         if not rows:
             raise UnknownSubjectError("no periodic job of this kind is scheduled")
 
-    def jobs_retry_is_reserved(self, subject: str) -> bool:
-        """The job applies a rename plan: putting it back in the queue is `plan.apply_rename`,
-        which asks for a fresh admin session (EF-EXP-030, EF-USR-024), never a key."""
+    def jobs_retry_reserved_action(self, subject: str) -> str | None:
+        """The reserved action that putting this job back in the queue stands for, or None.
+
+        A job that applies a rename plan is `plan.apply_rename` (EF-EXP-030). A removal that takes
+        the files and a full detachment are the orders a fresh session gave with its phrase (M4
+        L34): the queue is never a way around that session, so a key does not bring them back."""
         job, plan = platform.job_view, coherence.export_plan
         with self._engine.connect() as connection:
             row = connection.execute(
                 sa.select(job.c.kind, job.c.dedupe_key).where(job.c.id == subject)
             ).first()
-            if row is None or row.kind != _APPLY_JOB_KIND or not row.dedupe_key:
-                return False
+            if row is None:
+                return None
+            if row.kind == REMOVAL_JOB_KIND:
+                return "destination.remove_all"
+            if row.kind == DETACH_JOB_KIND:
+                return "detach.full"
+            if row.kind != _APPLY_JOB_KIND or not row.dedupe_key:
+                return None
             kind = connection.execute(
                 sa.select(plan.c.kind).where(plan.c.plan_id == row.dedupe_key.split(":")[1])
             ).scalar()
-        return kind == "rename_plan"
+        return "plan.apply_rename" if kind == "rename_plan" else None
 
     def jobs_retry(self, subject: str, *, principal: Principal | None = None) -> JobRow | None:
         """A job that gave up goes back to the queue (the scheduler dispatches it); a file the
         server never indexed is looked at again by the arrival poll. A job that applies a rename
         plan goes back only for a fresh admin session: a key (or a caller that says nobody) is
         refused, so that no replay brings an application the session did not give."""
-        if self.jobs_retry_is_reserved(subject):
+        if (action := self.jobs_retry_reserved_action(subject)) is not None:
             verdict = (
-                authorize_reserved(
-                    principal, RESERVED_ACTIONS["plan.apply_rename"], now=self._clock.now()
-                )
+                authorize_reserved(principal, RESERVED_ACTIONS[action], now=self._clock.now())
                 if principal is not None
                 else None
             )
             if not isinstance(verdict, Allowed):
-                raise CodedRefusal("forbidden", "applying a rename plan needs a fresh session")
+                raise CodedRefusal("forbidden", "this job needs a fresh session to come back")
         job, record = platform.job_view, export.export_record
         with write_transaction(self._engine) as connection:
             row = connection.execute(sa.select(job.c.status).where(job.c.id == subject)).first()

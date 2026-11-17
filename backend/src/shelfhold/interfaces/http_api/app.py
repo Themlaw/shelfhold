@@ -24,6 +24,7 @@ from shelfhold.interfaces.http_api.health import HealthPort, build_health_router
 from shelfhold.interfaces.http_api.idempotency import (
     ActorOf,
     IdempotencyMiddleware,
+    ReservedRoutes,
 )
 from shelfhold.interfaces.http_api.identity_headers import (
     ForwardAuth,
@@ -110,6 +111,7 @@ def create_http_app(
         generate_unique_id_function=_operation_id,  # stable names for the generated client
         responses=default_problem_responses(),  # RFC 9457 (EF-INT-001)
     )
+    reserved = ReservedRoutes()  # the routes whose keyed POST is never kept (M4 L34)
     install_problem_handlers(app)
     install_problem_openapi(app, public_paths=ANONYMOUS_JSON_PATHS)
     install_auth(app, auth)
@@ -122,7 +124,10 @@ def create_http_app(
     if idempotency is not None:
         if actor_of is None:  # a ledger without actors would share keys between users
             raise ValueError("idempotency_requires_actor_of")
-        app.add_middleware(IdempotencyMiddleware, store=idempotency, actor_of=actor_of)
+        app.add_middleware(
+            IdempotencyMiddleware, store=idempotency, actor_of=actor_of,
+            reserved=reserved,
+        )  # fmt: skip
     if auth is not None and public_rate_per_minute is not None:
         app.state.recognised_devices = RecognisedCredentials()
         app.add_middleware(  # inside auth
@@ -152,18 +157,22 @@ def create_http_app(
     def robots() -> Response:
         return PlainTextResponse(ROBOTS_TXT)
 
-    app.include_router(build_health_router(health, version=version))
-    resolved_source = require_web_url(source_url or build_source_url(version))
-    app.include_router(build_login_router(resolved_source))
-    app.include_router(build_passkeys_router())
-    app.include_router(build_sessions_router())
-    app.include_router(build_profiles_router(on_profile_change))
-    app.include_router(build_own_visibility_router())  # EF-USR-016
-    app.include_router(build_about_router(version=version, source_url=resolved_source))
-    app.include_router(build_device_tokens_router())  # M4 L46b: pairing an e-reader
-    app.include_router(build_device_router())  # M4 L46: the e-reader's own credential
-    for router in routers:
+    def include(router: APIRouter) -> None:
+        reserved.add(router)
         app.include_router(router)
+
+    include(build_health_router(health, version=version))
+    resolved_source = require_web_url(source_url or build_source_url(version))
+    include(build_login_router(resolved_source))
+    include(build_passkeys_router())
+    include(build_sessions_router())
+    include(build_profiles_router(on_profile_change))
+    include(build_own_visibility_router())  # EF-USR-016
+    include(build_about_router(version=version, source_url=resolved_source))
+    include(build_device_tokens_router())  # M4 L46b: pairing an e-reader
+    include(build_device_router())  # M4 L46: the e-reader's own credential
+    for router in routers:
+        include(router)
     if frontend_dir is not None:
         mount_spa(app, frontend_dir)  # last: the API routes keep priority
     return app

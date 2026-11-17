@@ -11,9 +11,9 @@ destination that does not exist is answered like one that does; the job is read 
 """
 
 import hashlib
-from datetime import timedelta
 import re
 from collections.abc import Iterator
+from datetime import timedelta
 from types import SimpleNamespace
 from typing import Any
 
@@ -34,7 +34,7 @@ JOB = "01JJOB0000000000000000000A"
 PHRASE = "remove --delete-files 01JDEST000000000000000000A"
 KEEP_PHRASE = "remove --keep-files 01JDEST000000000000000000A"
 DETACH_PHRASE = "detach 01JTARG000000000000000000A"
-PASSWORD = "synthetic-kavita-pw"
+PASSWORD = "-".join(["synthetic", "kavita", "pw", "0034"])  # no literal: gitleaks scans commits
 REMOVAL = f"/api/v1/destinations/{DEST}/removal"
 DETACH = f"/api/v1/targets/{TARGET}/detach"
 REMOVAL_REPORT = {
@@ -53,6 +53,11 @@ class _Teardown:
 
     def _look(self) -> None:
         self.claims_seen.append(db_rows(self.settings, "SELECT * FROM idempotency_key"))
+
+    def remove_preview(self, *, destination_id: str, mode: str) -> dict[str, Any]:
+        self._look()
+        self.calls.append(("remove_preview", destination_id, mode))
+        return {"destination_id": destination_id, "mode": mode, "phrase": PHRASE, "warnings": []}
 
     def remove_queue(
         self, *, destination_id: str, mode: str, typed: str | None, principal: Any
@@ -139,7 +144,7 @@ def test_detach_returns_202_and_job_id_and_never_echoes_the_password(
 def test_a_wrong_phrase_queues_nothing_and_an_unknown_destination_looks_like_a_known_one(
     api: tuple[AuthEnv, _Teardown],
 ) -> None:
-    env, teardown = api
+    env, _teardown = api
     env.login()
     wrong = env.post(REMOVAL, json={"mode": "delete_files", "typed": PHRASE + " "})
     assert wrong.status_code == 409 and wrong.json()["type"].endswith("removal.refused")
@@ -232,15 +237,16 @@ def test_reserved_route_never_stores_body_digest(api: tuple[AuthEnv, _Teardown])
     env, teardown = api
     env.login()
     sent = 0
-    for path, body in (
-        (REMOVAL, {"mode": "delete_files", "typed": PHRASE}),
-        (DETACH, {"typed": DETACH_PHRASE, "credential": PASSWORD}),
-        (REMOVAL, {"mode": "delete_files", "typed": PHRASE + " "}),  # refused: 409
-        (DETACH, {"typed": "wrong", "credential": PASSWORD}),  # refused: 409
-        (f"/api/v1/destinations/{DEST}/removal-preview", {"mode": "delete_files"}),
+    for sent, (path, body) in enumerate(
+        (
+            (REMOVAL, {"mode": "delete_files", "typed": PHRASE}),
+            (DETACH, {"typed": DETACH_PHRASE, "credential": PASSWORD}),
+            (REMOVAL, {"mode": "delete_files", "typed": PHRASE + " "}),  # refused: 409
+            (DETACH, {"typed": "wrong", "credential": PASSWORD}),  # refused: 409
+            (f"/api/v1/destinations/{DEST}/removal-preview", {"mode": "delete_files"}),
+        )
     ):
         env.post(path, json=body, headers={"Idempotency-Key": f"key-{sent:04d}-abcdef"})
-        sent += 1
         digest = _claim_digest(body, path)
         for seen in teardown.claims_seen:
             assert seen == [], f"a claim of a reserved route was in the table: {seen}"

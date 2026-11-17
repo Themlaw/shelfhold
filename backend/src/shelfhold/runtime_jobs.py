@@ -175,9 +175,11 @@ from shelfhold.library.public import (
 from shelfhold.ops.acquire import AcquireOps
 from shelfhold.ops.dedup import suggest_on_arrival
 from shelfhold.ops.destination_accounts import open_destination_accounts
+from shelfhold.ops.detach import register_teardown_jobs
 from shelfhold.ops.errors import ExitUnavailableError
 from shelfhold.ops.events import BusTargetEvents
 from shelfhold.ops.kavita_accounts import declared_children
+from shelfhold.ops.lazy_headless import LazyHeadless
 from shelfhold.ops.library import LibraryOps
 from shelfhold.ops.notifications import LazyNotificationSweep
 from shelfhold.reading.application.sync import (
@@ -1621,6 +1623,7 @@ def register_runtime_jobs(pools: JobPools, comp: Composition) -> None:
     register_safeguard_job(pools, comp)  # "Mettre à l'abri" and the optional purge (L16)
     register_integrity_job(pools, comp)  # the rolling integrity check (M3 L23)
     register_thumbnail_jobs(pools, comp)  # cover thumbnails: collect, catch up (M3 L24)
+    register_teardown_jobs(pools, comp, LazyHeadless(comp.settings))  # M4 L34: remove, detach
 
     def export_stored() -> None:
         pools.submit(EXPORT_JOB_KIND, dedupe_key=EXPORT_JOB_KIND)

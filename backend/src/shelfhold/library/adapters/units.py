@@ -14,7 +14,7 @@ from shelfhold.identity.public import (
     Verdict,
     authorize_reserved,
 )
-from shelfhold.infrastructure.schema import acquisition, catalog, storage
+from shelfhold.infrastructure.schema import acquisition, catalog, export, storage
 from shelfhold.library.adapters.purge_inventory import erase_content_rows
 from shelfhold.library.domain.irreplaceable import (
     ConfirmationRequiredError,
@@ -24,7 +24,7 @@ from shelfhold.library.domain.irreplaceable import (
     is_irreplaceable,
     require_typed_confirmation,
 )
-from shelfhold.library.replica import independent_copies
+from shelfhold.library.replica import destination_copy_rows, independent_copies
 
 
 @dataclass(frozen=True)
@@ -47,6 +47,53 @@ def irreplaceability(connection: Connection, unit_id: str) -> Irreplaceability:
         )
     ]
     return Irreplaceability(is_irreplaceable(states, unit), independent_copies(connection, unit_id))
+
+
+def removal_would_strip(
+    connection: Connection,
+    export_item_id: str,
+    *,
+    physical_root_id: str | None,
+    under: str | None,
+) -> bool:
+    """Would taking the destination copies of this exported file out of the registry leave a Unit
+    that nothing upstream can give back with no independent copy at all (M4 L34, EF-BIB-045)?
+
+    Asked before a removal deletes the file: the bytes of an irreplaceable original that no
+    independent copy keeps may be these. The destination's own rows are left out of the count, so
+    the answer does not depend on whether a destination copy counts; a Unit that already has none
+    stays at none, and the file stays. A file that no Unit is known for is not decided here."""
+    rows = destination_copy_rows(
+        connection, export_item_id, physical_root_id=physical_root_id, under=under
+    )
+    ids = [row_id for row_id, _unit in rows]
+    units = {unit for _row, unit in rows if unit is not None}
+    units.update(
+        str(u)
+        for u in connection.execute(
+            sa.select(export.unit_coverage.c.unit_id).where(
+                export.unit_coverage.c.carrier_type == "export_item",
+                export.unit_coverage.c.carrier_id == export_item_id,
+            )
+        ).scalars()
+    )
+    units.update(
+        str(u)
+        for u in connection.execute(
+            sa.select(storage.content.c.unit_id)
+            .select_from(
+                export.export_item.join(
+                    storage.content, storage.content.c.id == export.export_item.c.content_id
+                )
+            )
+            .where(export.export_item.c.id == export_item_id)
+        ).scalars()
+    )
+    return any(
+        irreplaceability(connection, unit).irreplaceable
+        and independent_copies(connection, unit, without=ids) == 0
+        for unit in sorted(units)
+    )
 
 
 @dataclass(frozen=True)

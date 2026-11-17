@@ -34,6 +34,7 @@ DEST = "01JDEST000000000000000000A"
 TARGET = "01JTARG000000000000000000A"
 PHRASE = "RETIRER manga/"
 DETACH_PHRASE = "DÉTACHER Kavita"
+JOB = "01JJOB0000000000000000000A"
 LIST = "/api/v1/destinations"
 REMOVAL_PREVIEW = f"/api/v1/destinations/{DEST}/removal-preview"
 REMOVAL = f"/api/v1/destinations/{DEST}/removal"
@@ -92,6 +93,30 @@ class _Teardown:
         if typed != PHRASE:
             raise CodedRefusal("removal.refused", "typed_mismatch")
         return REMOVAL_REPORT
+
+    def remove_queue(
+        self, *, destination_id: str, mode: str, typed: str | None, principal: Any
+    ) -> str:
+        """M4 L34: the files go in a job; the order is checked as the service checks it."""
+        self.calls.append(("remove_queue", destination_id, mode, typed))
+        if typed != PHRASE:
+            raise CodedRefusal("removal.refused", "typed_mismatch")
+        return JOB
+
+    def full_queue(
+        self, *, target_id: str, typed: str | None, credential: str | None,
+        discard_hidden_data: bool, discard_tombstone_journal: bool, key_gone: bool = False,
+        principal: Any,
+    ) -> str:  # fmt: skip
+        self.calls.append(
+            (
+                "full_queue", target_id, typed, credential, discard_hidden_data,
+                discard_tombstone_journal,
+            )
+        )  # fmt: skip
+        if typed != DETACH_PHRASE:
+            raise CodedRefusal("detach.refused", "typed_mismatch")
+        return JOB
 
     def full_preview(self, *, target_id: str) -> dict[str, Any]:
         self.calls.append(("full_preview", target_id))
@@ -187,8 +212,12 @@ def test_the_removal_runs_with_the_mode_and_the_phrase_the_admin_typed(
 ) -> None:
     api.login()
     done = api.post(REMOVAL, json={"mode": "delete_files", "typed": PHRASE})
-    assert done.status_code == 200 and done.json() == REMOVAL_REPORT
-    assert teardown.calls == [("remove", DEST, "delete_files", PHRASE, False)]
+    assert done.status_code == 202 and done.json()["job_id"] == JOB  # M4 L34: the files are a job
+    assert teardown.calls == [("remove_queue", DEST, "delete_files", PHRASE)]
+    teardown.calls.clear()
+    kept = api.post(REMOVAL, json={"mode": "keep_files", "typed": PHRASE})
+    assert kept.status_code == 200 and kept.json() == REMOVAL_REPORT  # nothing to delete: a report
+    assert teardown.calls == [("remove", DEST, "keep_files", PHRASE, False)]
 
 
 def test_the_detachment_runs_with_its_phrase_options_and_password(
@@ -200,9 +229,13 @@ def test_the_detachment_runs_with_its_phrase_options_and_password(
         "discard_hidden_data": True, "discard_tombstone_journal": False,
     }  # fmt: skip
     done = api.post(DETACH, json=body)
-    assert done.status_code == 200 and done.json() == DETACH_REPORT
-    assert teardown.calls == [("full", TARGET, DETACH_PHRASE, "synthetic-kavita-pw", True, False)]
-    assert "synthetic-kavita-pw" not in done.text  # the report never echoes the password
+    assert (
+        done.status_code == 202 and done.json()["job_id"] == JOB
+    )  # M4 L34: the detachment is a job
+    assert teardown.calls == [
+        ("full_queue", TARGET, DETACH_PHRASE, "synthetic-kavita-pw", True, False)
+    ]
+    assert "synthetic-kavita-pw" not in done.text  # the answer never echoes the password
 
 
 def test_a_wrong_phrase_is_a_409_and_the_two_acting_doors_need_a_fresh_session(

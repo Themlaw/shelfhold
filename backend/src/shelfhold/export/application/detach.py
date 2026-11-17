@@ -86,7 +86,9 @@ from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import acquisition, catalog, coherence, export, platform
 
 __all__ = [
+    "DETACH_JOB_KIND",
     "DETACH_SCOPE",
+    "DetachOrder",
     "DetachPreview",
     "DetachRefusedError",
     "DetachReport",
@@ -96,6 +98,8 @@ __all__ = [
     "KeyRevoker",
     "Leftover",
     "RootRef",
+    "detach_job_key",
+    "detach_order_of",
     "full_detach_phrase",
 ]
 
@@ -109,6 +113,49 @@ _ACTION = "detach.full"
 def full_detach_phrase(target_id: str) -> str:
     """What the admin types: the id, so that a pasted command names its target."""
     return f"detach {target_id}"
+
+
+DETACH_JOB_KIND = "target.detach"  # the job of a full detachment (M4 L34)
+
+
+@dataclass(frozen=True)
+class DetachOrder:
+    """What a fresh admin session ordered, once, with the phrase typed: the target and the three
+    choices it made by name. It is what the job keeps, in its key: no phrase, no session, and
+    never the password of the Kavita account (that one is handed over in memory, for one run)."""
+
+    target_id: str
+    discard_hidden_data: bool = False
+    discard_tombstone_journal: bool = False
+    key_gone: bool = False
+
+
+def detach_job_key(order: DetachOrder) -> str:
+    flags = "".join(
+        f"{letter}{int(on)}"
+        for letter, on in (
+            ("h", order.discard_hidden_data),
+            ("t", order.discard_tombstone_journal),
+            ("k", order.key_gone),
+        )
+    )
+    return f"{DETACH_JOB_KIND}:{order.target_id}:{flags}"
+
+
+def detach_order_of(key: str) -> DetachOrder:
+    kind, _, rest = key.partition(":")
+    target_id, _, flags = rest.partition(":")
+    if kind != DETACH_JOB_KIND or not target_id or len(flags) != 6:
+        raise ValueError("not a detach job key")
+    chosen: dict[str, bool] = {}
+    for pair in (flags[0:2], flags[2:4], flags[4:6]):
+        letter, bit = pair[0], pair[1]
+        if bit not in "01" or letter in chosen:
+            raise ValueError("not a detach job key")
+        chosen[letter] = bit == "1"
+    if set(chosen) != {"h", "t", "k"}:
+        raise ValueError("not a detach job key")
+    return DetachOrder(target_id, chosen["h"], chosen["t"], chosen["k"])
 
 
 class KeyRevoker(Protocol):
@@ -255,6 +302,65 @@ class FullDetacher:
 
     # -- the detachment -------------------------------------------------------------------------
 
+    def order(
+        self,
+        target_id: str,
+        *,
+        principal: Principal,
+        typed: str | None,
+        key_gone: bool = False,
+        credential_given: bool = False,
+        discard_hidden_data: bool = False,
+        discard_tombstone_journal: bool = False,
+        record: bool = True,
+    ) -> DetachOrder:
+        """The door of the queue: the reserved action, the phrase, a target that exists, and the
+        password that `key_gone` needs. It writes the one audit line of the detachment (the order
+        is the act of a person) and changes nothing; the job runs `execute` from the order.
+        `record=False` only checks: the caller writes the line with `record_order` once it knows
+        the job can be queued."""
+        self._authorize(principal)
+        self._confirm(target_id, typed)
+        if key_gone and not credential_given:
+            raise DetachRefusedError("credential_required")
+        with self._engine.connect() as conn:
+            self._contexts(conn, target_id)
+        order = DetachOrder(target_id, discard_hidden_data, discard_tombstone_journal, key_gone)
+        if record:
+            self.record_order(order, principal)
+        return order
+
+    def record_order(self, order: DetachOrder, principal: Principal) -> None:
+        with write_transaction(self._engine) as conn:
+            self._audit(conn, principal, order.target_id)
+
+    def execute(
+        self,
+        order: DetachOrder,
+        *,
+        client: object | None,
+        revoker: KeyRevoker,
+        credential: str | None = None,
+        account: object | None = None,
+        job_id: str | None = None,
+        before_restore: Callable[[], None] | None = None,
+    ) -> DetachReport:
+        """What the job runs, and runs again after a stop, from the order alone. A target that is
+        gone was detached: nothing is left to do. Without the password the steps that need none
+        are done and the key stays, said (`key_not_revoked`): the person gives the same order
+        again, with the password, and that is a new job that finishes it."""
+        if order.key_gone and not credential:
+            raise DetachRefusedError("credential_required")
+        try:
+            return self._carry_out(
+                order, client=client, revoker=revoker, credential=credential, account=account,
+                job_id=job_id, before_restore=before_restore, audited_by=None,
+            )  # fmt: skip
+        except DetachRefusedError as error:
+            if error.reason == "unknown_target":
+                return DetachReport(order.target_id, complete=True)
+            raise
+
     def apply(
         self,
         target_id: str,
@@ -271,20 +377,46 @@ class FullDetacher:
         job_id: str | None = None,
         before_restore: Callable[[], None] | None = None,
     ) -> DetachReport:
-        """`before_restore`: run once the checks have passed and before anything is given back
+        """The synchronous way (the host CLI): order and execution in one call, the audit line
+        written with the forgetting.
+
+        `before_restore`: run once the checks have passed and before anything is given back
         (the collections Shelfhold pushed go there); best effort, it must not raise.
         `key_gone`: the dedicated key no longer exists (deleted by hand, 401): the settings are
         given back through `account` (a session of the admin account, not the dead key) and the
         revocation is skipped when the account confirms no such key is there. A key that is still
         there is revoked as usual: the flag never leaves a live key behind."""
         self._authorize(principal)
+        self._confirm(target_id, typed)
+        if key_gone and not credential:
+            raise DetachRefusedError("credential_required")
+        order = DetachOrder(target_id, discard_hidden_data, discard_tombstone_journal, key_gone)
+        return self._carry_out(
+            order, client=client, revoker=revoker, credential=credential, account=account,
+            job_id=job_id, before_restore=before_restore, audited_by=principal,
+        )  # fmt: skip
+
+    @staticmethod
+    def _confirm(target_id: str, typed: str | None) -> None:
         if typed is None or not hmac.compare_digest(
             typed.encode(),
             full_detach_phrase(target_id).encode(),  # exactly: no trim, no case
         ):
             raise DetachRefusedError("confirmation_required")
-        if key_gone and not credential:
-            raise DetachRefusedError("credential_required")
+
+    def _carry_out(
+        self,
+        order: DetachOrder,
+        *,
+        client: object | None,
+        revoker: KeyRevoker,
+        credential: str | None,
+        account: object | None,
+        job_id: str | None,
+        before_restore: Callable[[], None] | None,
+        audited_by: Principal | None,
+    ) -> DetachReport:
+        target_id, key_gone = order.target_id, order.key_gone
         report = DetachReport(target_id)
         with self._held(target_id, job_id or new_ulid()):
             with self._engine.connect() as conn:  # read once the target is ours
@@ -292,10 +424,10 @@ class FullDetacher:
             erase, shared = self._split_roots(target_id, contexts)
             self._settle_own(target_id, report, resume=True)
             self._require_free(target_id, erase)
-            if not discard_hidden_data and any(self._hidden_data(r) for r in erase):
+            if not order.discard_hidden_data and any(self._hidden_data(r) for r in erase):
                 raise DetachRefusedError("hidden_data_present")
             journals = [r for r in erase if self._has_tombstone_journal(r)]
-            if journals and not discard_tombstone_journal:
+            if journals and not order.discard_tombstone_journal:
                 raise DetachRefusedError("tombstone_journal_present")
             left: list[Leftover] = []
             revocation = self._revocation(target_id)
@@ -313,7 +445,7 @@ class FullDetacher:
                 self._revoke(target_id, revoker, credential, report, left, key_gone=key_gone)
             report.complete = not any(leftover.code in _INCOMPLETE for leftover in left)
             if report.complete:
-                report.forgotten = self._forget(principal, target_id, contexts)
+                report.forgotten = self._forget(audited_by, target_id, contexts)
             left.extend(self._leftovers(contexts, shared))
             report.leftovers = tuple(left)
         log.info(
@@ -513,7 +645,7 @@ class FullDetacher:
         )
 
     def _forget(
-        self, principal: Principal, target_id: str, contexts: list[DestinationContext]
+        self, principal: Principal | None, target_id: str, contexts: list[DestinationContext]
     ) -> int:
         forgotten = 0
         with write_transaction(self._engine) as conn:
@@ -529,19 +661,23 @@ class FullDetacher:
             conn.execute(
                 sa.delete(export.export_target).where(export.export_target.c.id == target_id)
             )
-            conn.execute(
-                audit_insert(
-                    AuditEntry(
-                        actor_id=principal.actor_id,
-                        action=_ACTION,
-                        at=self._clock.now(),
-                        target=target_id,
-                        session_id=principal.session_id,
-                        auth_time=principal.auth_time,
-                    )
+            if principal is not None:
+                self._audit(conn, principal, target_id)
+        return forgotten
+
+    def _audit(self, conn: Connection, principal: Principal, target_id: str) -> None:
+        conn.execute(
+            audit_insert(
+                AuditEntry(
+                    actor_id=principal.actor_id,
+                    action=_ACTION,
+                    at=self._clock.now(),
+                    target=target_id,
+                    session_id=principal.session_id,
+                    auth_time=principal.auth_time,
                 )
             )
-        return forgotten
+        )
 
     # -- after a stop ---------------------------------------------------------------------------
 

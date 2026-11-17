@@ -22,18 +22,24 @@ from typing import TYPE_CHECKING, Any
 import structlog
 
 from shelfhold.export.application.detach import (
+    DETACH_JOB_KIND,
     DetachRefusedError,
     DetachReport,
     FullDetacher,
+    detach_job_key,
+    detach_order_of,
 )
 from shelfhold.export.application.intents import IntentJournal
 from shelfhold.export.application.locks import ResourceLocks
 from shelfhold.export.application.pending_scans import remember_scans
 from shelfhold.export.application.remove_destination import (
+    REMOVAL_JOB_KIND,
     RemovalMode,
     RemovalRefusedError,
     RemovalReport,
     RemoveDestination,
+    removal_job_key,
+    removal_order_of,
 )
 from shelfhold.export.application.root_ref import RootRef
 from shelfhold.export.application.target_state import load_fingerprint
@@ -43,8 +49,9 @@ from shelfhold.export.targets.kavita.errors import TargetError
 from shelfhold.export.targets.kavita.settings_restore import restore_library_settings
 from shelfhold.identity.public import Principal
 from shelfhold.infrastructure.fsops import Fsops
+from shelfhold.jobs.public import JobContext, JobFailedError
 from shelfhold.library.public import roots_holding_library_copies
-from shelfhold.ops.errors import CodedRefusal, InvalidChoiceError
+from shelfhold.ops.errors import CodedRefusal, ExitUnavailableError, InvalidChoiceError
 from shelfhold.ops.events import BusTargetEvents
 
 if TYPE_CHECKING:
@@ -52,7 +59,7 @@ if TYPE_CHECKING:
     from shelfhold.export.application.roots import LoadedRoots
     from shelfhold.ops.ports import HeadlessOps
 
-__all__ = ["DetachOps"]
+__all__ = ["DetachOps", "register_teardown_jobs"]
 
 log = structlog.get_logger()
 
@@ -241,6 +248,57 @@ class DetachOps:
             raise _removal(error) from None
         return _removal_report(report)
 
+    def remove_queue(
+        self, *, destination_id: str, mode: str, typed: str | None, principal: Principal
+    ) -> str:
+        """The order of a removal that takes the files, as a job (M4 L34). The reserved action
+        and the phrase are checked here, now, and the audit line is written; nothing is deleted.
+        The job runs from the identifiers in its key, and the same order while it is active is the
+        same job. Returns its id."""
+        fsops, loaded, journal = self._context()
+        service = self._remover(fsops, loaded, journal, None)
+        try:
+            order = service.order(
+                destination_id, _mode(mode), principal=principal, typed=typed, record=False
+            )
+        except RemovalRefusedError as error:
+            raise _removal(error) from None
+        pools = self._pools()  # a refusal comes first; no line is written for a job never queued
+        service.record_order(order, principal)
+        job_id: str = pools.submit(
+            REMOVAL_JOB_KIND, dedupe_key=removal_job_key(order), priority_class="request"
+        ).job_id
+        return job_id
+
+    def _pools(self) -> Any:
+        pools = self._comp.pools()
+        if pools is None:
+            raise ExitUnavailableError("the job queue is not running")
+        return pools
+
+    def run_removal_job(self, context: JobContext) -> None:
+        """The handler of `destination.remove`: what the order in the key says, again after a
+        stop. A destination held by another job, or a file operation that is open, is tried again
+        later; anything left is a failed job, said by its code."""
+        try:
+            order = removal_order_of(context.dedupe_key)
+        except ValueError:
+            raise JobFailedError("job.failed") from None
+        fsops, loaded, journal = self._context()
+        service = self._remover(fsops, loaded, journal, self._scan_of(order.destination_id))
+        try:
+            report = service.execute(order, job_id=context.job_id)
+        except RemovalRefusedError as error:
+            if error.reason in _TRANSIENT:
+                raise _Busy(error.reason) from None
+            raise JobFailedError("removal.refused") from None
+        context.record(
+            deleted=report.deleted, forgotten=report.forgotten, left=len(report.left),
+            complete=int(report.complete),
+        )  # fmt: skip
+        if not report.complete:
+            raise JobFailedError("removal.incomplete")
+
     # -- detach a target ------------------------------------------------------------------------
 
     def _full_detacher(
@@ -308,6 +366,76 @@ class DetachOps:
         except Exception as error:
             log.warning("detach.collections_failed", error=type(error).__name__)
 
+    def full_queue(
+        self, *, target_id: str, typed: str | None, credential: str | None,
+        discard_hidden_data: bool, discard_tombstone_journal: bool, key_gone: bool = False,
+        principal: Principal,
+    ) -> str:  # fmt: skip
+        """The order of a full detachment, as a job (M4 L34). The checks and the audit line are
+        now; the password goes to memory under the key of the job, never to the queue, for one
+        run. Returns the id of the job."""
+        fsops, loaded, journal = self._context()
+        detacher = self._full_detacher(fsops, loaded, journal)
+        try:
+            order = detacher.order(
+                target_id, principal=principal, typed=typed, key_gone=key_gone,
+                credential_given=bool(credential), discard_hidden_data=discard_hidden_data,
+                discard_tombstone_journal=discard_tombstone_journal, record=False,
+            )  # fmt: skip
+        except DetachRefusedError as error:
+            raise _full_refusal(error) from None
+        pools = self._pools()  # a refusal comes first; no line is written for a job never queued
+        detacher.record_order(order, principal)
+        key = detach_job_key(order)
+        if credential:
+            self._comp.credential_handoff.put(key, credential)
+        job_id: str = pools.submit(DETACH_JOB_KIND, dedupe_key=key, priority_class="request").job_id
+        return job_id
+
+    def run_detach_job(self, context: JobContext) -> None:
+        """The handler of `target.detach`: the order in the key, with the password the door left
+        in memory if it is still there. Without it the steps that need none are done, the key
+        stays and the job fails `detach.incomplete`: the same order, given again, finishes it."""
+        try:
+            order = detach_order_of(context.dedupe_key)
+        except ValueError:
+            raise JobFailedError("job.failed") from None
+        handoff = self._comp.credential_handoff
+        credential = handoff.take(context.dedupe_key)
+        fsops, loaded, journal = self._context()
+        detacher = self._full_detacher(fsops, loaded, journal)
+        target_id = order.target_id
+        known = target_id in self._comp.kavita_targets()
+        client = self._comp.kavita_client(target_id) if known else None
+        account = self._account_session(target_id, credential) if order.key_gone and known else None
+        try:
+            report = detacher.execute(
+                order, client=client, revoker=_Revoker(self._headless), credential=credential,
+                account=account, job_id=context.job_id,
+                before_restore=(
+                    None if client is None else lambda: self._withdraw_pushed(target_id, client)
+                ),
+            )  # fmt: skip
+        except DetachRefusedError as error:
+            if error.reason in _TRANSIENT and credential:
+                handoff.put(context.dedupe_key, credential)  # the next attempt needs it again
+            if error.reason in _TRANSIENT:
+                raise _Busy(error.reason) from None
+            if error.reason == "credential_required":
+                raise JobFailedError("detach.incomplete") from None
+            raise JobFailedError("detach.refused") from None
+        finally:
+            if account is not None:
+                with contextlib.suppress(Exception):  # the connection is best-effort closed
+                    self._comp.run(account.aclose())
+        self._comp.roots_changed()  # the roots demoted are no longer expected stamped
+        context.record(
+            complete=int(report.complete), hidden_removed=len(report.hidden_removed),
+            key_revoked=int(report.key_revoked), forgotten=report.forgotten,
+        )  # fmt: skip
+        if not report.complete:
+            raise JobFailedError("detach.incomplete")
+
     def full(
         self, *, target_id: str, typed: str | None, credential: str | None,
         discard_hidden_data: bool, discard_tombstone_journal: bool, key_gone: bool = False,
@@ -343,6 +471,22 @@ class DetachOps:
             raise CodedRefusal("detach.refused", "past_no_return")
         self._comp.roots_changed()  # the roots demoted are no longer expected stamped
         return _full_report(report)
+
+
+_TRANSIENT = frozenset({"busy", "intent_open"})  # another job holds it, or an operation is open
+
+
+class _Busy(Exception):
+    """The destination or the target is held by another job just now: the queue tries again
+    after its backoff (an attempt is spent, nothing else)."""
+
+
+def register_teardown_jobs(pools: Any, comp: Composition, headless: HeadlessOps) -> None:
+    """The two kinds of job of M4 L34. Both are write jobs: a pause of the queue parks them and
+    nothing is deleted until it ends."""
+    ops = DetachOps(comp, headless)
+    pools.register(REMOVAL_JOB_KIND, pool="io", handler=ops.run_removal_job)
+    pools.register(DETACH_JOB_KIND, pool="io", handler=ops.run_detach_job)
 
 
 def _mode(value: str) -> RemovalMode:

@@ -266,8 +266,9 @@ def build_ops_router(get_ops: Callable[[], OpsServices]) -> APIRouter:
     def jobs_retry(job_id: str, request: Request, admin: Admin) -> Done:
         with refusals():
             ops = get_ops()
-            if ops.jobs_retry_is_reserved(job_id):  # the application of a rename plan: a session
-                conditional(request, "plan.apply_rename")
+            action = ops.jobs_retry_reserved_action(job_id)
+            if action is not None:  # a rename plan, a removal, a detachment: a fresh session
+                conditional(request, action)
             ops.jobs_retry(job_id, principal=admin)
         return Done()
 
