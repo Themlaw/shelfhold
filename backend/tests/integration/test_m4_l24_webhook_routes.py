@@ -129,9 +129,7 @@ def test_every_webhook_route_is_declared_reserved_or_admin_only(api: AuthEnv) ->
     from shelfhold.identity.public import RESERVED_ACTIONS
 
     assert "webhook.manage" in RESERVED_ACTIONS
-    routes = {
-        tuple(entry.split(" ", 1)) for entry in _routes(api.app) if f" {BASE}" in entry
-    }
+    routes = {tuple(entry.split(" ", 1)) for entry in _routes(api.app) if f" {BASE}" in entry}
     assert routes == {
         ("GET", BASE),
         ("POST", BASE),
