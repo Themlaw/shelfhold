@@ -24,8 +24,9 @@ from shelfhold.catalog.public import FieldKey, lock_field
 from shelfhold.events.bus import EventBus
 from shelfhold.identity.domain.visibility import ALL, NOBODY, ViewerScope
 from shelfhold.infrastructure.db import create_db_engine
+from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.imaging import WorkerLimits
-from shelfhold.infrastructure.schema import acquisition, catalog, metadata
+from shelfhold.infrastructure.schema import acquisition, catalog, export, metadata
 from shelfhold.plugin_host.adapters.native.mangaupdates import (
     MangaUpdatesProvider,
     build_manifest,
@@ -70,6 +71,7 @@ class Bench:
         bus = EventBus(self.clock, channels=Channels())
         self.service = EnrichService(engine, self.clock, bus, data_dir=data_dir, limits=LIMITS)
         self.calendar = ReleaseCalendar(engine, self.clock)
+        self._shelf: str | None = None
 
     async def _sleep(self, seconds: float) -> None:
         self.t += seconds
@@ -81,6 +83,13 @@ class Bench:
             transport=self.server.transport,
         )  # fmt: skip
 
+    def _open_shelf(self, c: sa.Connection) -> str:
+        """One shelf open to everyone: a child sees what such a shelf carries (D-P3, M4 L39)."""
+        if self._shelf is None:
+            self._shelf = new_ulid()
+            c.execute(sa.insert(export.shelf).values(id=self._shelf, name="Open", phrase="open"))
+        return self._shelf
+
     def edition(
         self, *, age: int | None = 0, followed: bool = False, seen_days_ago: int = 17
     ) -> str:
@@ -88,7 +97,7 @@ class Bench:
         with self.engine.begin() as c:
             rated = {"rated_at": NOW} if age is not None else {}
             work = add_work(c, age_rating=age, **rated)
-            edition = add_edition(c, work, **rated)
+            edition = add_edition(c, work, shelf_id=self._open_shelf(c), **rated)
             if followed:
                 item = add_source_item(c, remote_id=f"series-{edition}")
                 binding = add_binding(c, work, edition, item)

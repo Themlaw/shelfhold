@@ -50,7 +50,9 @@ def build_notify_destination_router(
         return NotifyDestinationOut(configured=get_destinations().configured(principal.user_id))
 
     @router.put("/notification-destination", response_model=NotifyDestinationOut)
-    def put(body: NotifyDestinationIn, principal: Annotated[Principal, Depends(_SET)]) -> NotifyDestinationOut:
+    def put(
+        body: NotifyDestinationIn, principal: Annotated[Principal, Depends(_SET)]
+    ) -> NotifyDestinationOut:
         try:
             get_destinations().set(principal.user_id, body.url)
         except ProfileDestinationError as error:

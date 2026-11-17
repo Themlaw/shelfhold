@@ -69,7 +69,7 @@ def test_a_transposed_mark_is_never_pushed_read_to_suwayomi(tmp_path: Path) -> N
                 .values(preferred=False)
             )
             en = add_edition(
-                connection, seed.works["ok"], lang="de", age_rating=6, rated_at=RATED,
+                connection, seed.works["ok"], lang="it", age_rating=6, rated_at=RATED,
                 preferred=True,
             )  # fmt: skip
         seed.works["en"], seed.editions["en"] = seed.works["ok"], en

@@ -20,8 +20,8 @@ Work *when her token was issued*. That moment is read from the events themselves
 of a Work after the token carries the need the Work had at the token (every change of need is an
 event, so nothing moves between two of them unrecorded). A Work raised and lowered again, rated
 after the token and then deleted, or one a younger reader never saw, is therefore not in her
-removals. The need is computed by the filter itself (`work_need` asks `age_visible_works_clause`: the age part, which no shelf changes), so
-the removals and the pages can never disagree.
+removals. The need is computed by the filter itself (`work_need` asks `age_visible_works_clause`:
+the age part, which no shelf changes), so the removals and the pages can never disagree.
 
 A Work created after the token is not in the removals either: its first event would carry a need
 it never had at the token, so each event also carries `created_seq` (`work.created_seq`, set by a

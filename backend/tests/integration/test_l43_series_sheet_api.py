@@ -466,7 +466,7 @@ def _suggested_attach(world: World) -> tuple[str, str, str]:
     with world.seed.engine.begin() as connection:
         add_external_id(connection, holder, shared, origin="provider")
         work = add_work(connection, title="Dr Stone (uncut)", sort_title="dr stone (uncut)")
-        edition = add_edition(connection, work, lang="de")  # a language the holder lacks
+        edition = add_edition(connection, work, lang="it")  # a language the holder lacks
         RatingService().rate(connection, holder, AgeRating(0), principal=admin, now=NOW)
         RatingService().rate_edition(connection, edition, AgeRating(18), principal=admin, now=NOW)
         arrival = AutoAttachService(tombstones=NO_CATALOG_HITS).arrive(
@@ -556,9 +556,10 @@ def test_series_filters_per_shelf_and_series(world: World) -> None:
         "Tale of Orchard",
     ]
     assert titles(world.env.client, shelf_id=seed.shelves["family"]) == [
-        "Tale of Misfiled Family", "Tale of Orchard",
+        "Tale of Misfiled Family", "Tale of Orchard", "Tale of Reserved Shelf",
     ]  # fmt: skip
-    assert titles(world.kid, shelf_id=seed.shelves["family"]) == ["Tale of Orchard"]
+    # the family shelf is reserved to another profile: for her it carries nothing (D-P3, M4 L39)
+    assert titles(world.kid, shelf_id=seed.shelves["family"]) == []
 
     # the child: the series with a hidden member is not listed, not filterable, and its title is
     # in no answer; the hidden Work never comes back through a filter
