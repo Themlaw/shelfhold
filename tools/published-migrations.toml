@@ -294,3 +294,8 @@ since = "1.1"
 file = "0094_notify_destination.py"
 sha256 = "ba918af3917affdd441dbb56b21ba17a1330340ab6045e1734b2623df2c36aaf"
 since = "1.1"
+
+[[migration]]
+file = "0095_tachibk_import.py"
+sha256 = "d7b6b2ab27b6689bfd54f6c7eceae3aec3c6265cd12950b608d0f8299b22ed20"
+since = "1.1"

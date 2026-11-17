@@ -105,7 +105,17 @@ def build_tachibk_import_router(get_service: Callable[[], TachibkImportService])
             return ProblemError(error.code, extensions={"reason": error.reason})
         return ProblemError(error.code if error.code != "forbidden" else "forbidden")
 
-    @router.post("", status_code=201)
+    @router.post(
+        "", status_code=201,
+        openapi_extra={  # the file is the raw body, read as it arrives: the schema says so
+            "requestBody": {
+                "required": True,
+                "content": {
+                    "application/octet-stream": {"schema": {"type": "string", "format": "binary"}}
+                },
+            }
+        },
+    )  # fmt: skip
     async def preview_backup(
         request: Request, principal: Importer,
         profile_id: Annotated[str | None, Query(max_length=26)] = None,
