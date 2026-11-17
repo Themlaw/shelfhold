@@ -150,14 +150,6 @@ symbols = [
 ]
 
 [[allow]]
-category = "m4-l43-read-marker-guard"
-reason = "2026-11-17 (M4 L43, debt of L26 #336): `readable_markers` says which read markers of a Mihon backup may become reading positions on an Edition: a member's always, a child's only if the Edition is open to her. The resolution of a pending source item to an Edition, which will call it, is not written (the import places no guard and no position). Redated M5 with the resolution (docs/decisions/M4.md)."
-until = "M5"  # settled by the resolution of the pending source items
-symbols = [
-  "shelfhold.acquisition.application.read_markers:readable_markers",
-]
-
-[[allow]]
 category = "deferred-l24-deprecation-window"
 reason = "2026-11-17 (M4 L24): `Deprecation` builds the window during which an event is sent in two versions of its shape (EF-INT-005). Every event of the catalogue is still at its first version, so no entry declares one: the double emission is proved with a catalogue the test builds, and the bounds are checked when any catalogue is built. It comes with the first change of the shape of an event."
 until = "M5"
