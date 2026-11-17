@@ -128,6 +128,7 @@ class AssemblyOutcome(enum.Enum):
     REFUSED_AGE = "refused_age"  # the shelf below 18+ no longer admits the Edition (EF-BIB-037)
     BUSY = "busy"  # another intent holds a path
     NAME_TAKEN = "name_taken"  # the volume's name is served or reserved: never overwritten
+    GAP = "gap"  # a chapter between the first and the last is known but not served
     SOURCE_UNREADABLE = "source_unreadable"  # a chapter file cannot be read as a CBZ, or is too big
 
 
@@ -144,6 +145,7 @@ class AssemblyResult:
     outcome: AssemblyOutcome
     export_item_id: str | None = None
     assembly_id: str | None = None
+    missing: tuple[str, ...] = ()  # `gap`: the numbers known but not served, in reading order
 
 
 @dataclass(frozen=True)
@@ -211,6 +213,10 @@ class VolumeAssembly:
             if isinstance(loaded, AssemblyOutcome):
                 return AssemblyResult(loaded)
             olds, edition_id, work_id = loaded
+            missing = _unserved_between(connection, ctx.destination_id, edition_id, olds)
+            if missing:
+                log.warning("assembly.gap", missing=len(missing))
+                return AssemblyResult(AssemblyOutcome.GAP, missing=missing)
             refused = self._refusal(connection, ctx, olds, edition_id)
             if refused is not None:
                 return AssemblyResult(refused)
@@ -585,6 +591,40 @@ class VolumeAssembly:
             for unit_id, _first, _last in payload["spans"]
         ]  # fmt: skip
         return assembly_id, events
+
+
+def _unserved_between(
+    connection: Connection, destination_id: str, edition_id: str, olds: Sequence[_Old]
+) -> tuple[str, ...]:
+    """The chapters of the Edition that lie between the first and the last of `olds`, that the
+    catalog knows and this destination serves in no file: a volume that skips them would hide them
+    from the reader, then the chapter would arrive alone after the volume. A chapter inside
+    another volume is served."""
+    unit, record, cover = catalog.unit, export.export_record, export.unit_coverage
+    numbers = [_numeric(o.number) for o in olds]
+    low, high = min(numbers), max(numbers)
+    own = {o.unit_id for o in olds}
+    served = (
+        sa.select(cover.c.unit_id)
+        .select_from(
+            cover.join(
+                record,
+                sa.and_(
+                    cover.c.carrier_type == "export_item",
+                    cover.c.carrier_id == record.c.export_item_id,
+                ),
+            )
+        )
+        .where(record.c.shelf_destination_id == destination_id, record.c.state == "written")
+    )
+    rows = connection.execute(
+        sa.select(unit.c.id, unit.c.number_norm, unit.c.number_sort, unit.c.source_order).where(
+            unit.c.edition_id == edition_id, unit.c.track == "main", unit.c.id.not_in(served)
+        )
+    ).all()
+    gaps = [r for r in rows if str(r.id) not in own and low < _numeric(str(r.number_norm)) < high]
+    gaps.sort(key=lambda r: (_numeric(str(r.number_norm)), int(r.source_order), str(r.id)))
+    return tuple(str(r.number_norm) for r in gaps)
 
 
 def served_chapters(

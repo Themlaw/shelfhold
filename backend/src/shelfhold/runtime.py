@@ -22,12 +22,8 @@ from shelfhold.composition import Composition, Gates, open_fsops
 from shelfhold.config import Settings
 from shelfhold.events.bus import EventBus
 from shelfhold.export.application import root_capabilities
-from shelfhold.export.application.assembly import VolumeAssembly
-from shelfhold.export.application.intents import IntentJournal, OpenIntent, ResolveReport
-from shelfhold.export.application.library_repair import LibraryRepair
+from shelfhold.export.application.intents import IntentJournal, ResolveReport
 from shelfhold.export.application.locks import ResourceLocks
-from shelfhold.export.application.manifest_write import adopt_written_hook
-from shelfhold.export.application.rename_plan import RenameBook
 from shelfhold.export.application.restore import RestoredBehindError, RestoreGuard
 from shelfhold.export.application.root_bootstrap import (
     RootPolicy,
@@ -35,7 +31,6 @@ from shelfhold.export.application.root_bootstrap import (
     target_roots,
 )
 from shelfhold.export.application.roots import LoadedRoots, load_roots
-from shelfhold.export.application.upgrade import SamePathUpgrade
 from shelfhold.export.domain.path_map import PathMap, PathMode
 from shelfhold.export.domain.physical_roots import LEGACY_RECEIVED_DIR, RECEIVED_DIR
 from shelfhold.infrastructure.clock import SystemClock
@@ -67,11 +62,11 @@ from shelfhold.jobs.maintenance import MaintenanceGate, register_sqlite_maintena
 from shelfhold.jobs.window import MaintenanceWindow
 from shelfhold.library.public import (
     MetaProjection,
-    complete_interrupted_keep,
     migrate_received_dirs,
 )
 from shelfhold.ops.backup import BackupService, register_backup_job
 from shelfhold.ops.roots import judge_roots
+from shelfhold.ops.settle_hooks import settle_hooks
 from shelfhold.runtime_jobs import access_audit, register_runtime_jobs
 
 RETAKE_INTERVAL_S = 2.0  # how often a process that found `/data/.lock` held looks again
@@ -250,38 +245,10 @@ class InstanceRuntime:
                     ],  # a root that is away or refuses is left for the next start
                     old_dir=LEGACY_RECEIVED_DIR, new_dir=RECEIVED_DIR,
                 )  # fmt: skip
-                adopt = adopt_written_hook(fsops, loaded.locate, clock)
-                upgraded = SamePathUpgrade(  # an upgrade cut short: its bookkeeping (EF-EXP-016)
-                    engine, fsops, locate=loaded.locate, data_dir=self.settings.data_dir,
+                hook = settle_hooks(
+                    engine, fsops, loaded.locate, data_dir=self.settings.data_dir,
                     clock=clock, bus=bus,
-                ).settle_hook()  # fmt: skip
-                assembled = VolumeAssembly(  # chapters replaced by a volume, cut short (EF-EXP-019)
-                    engine, fsops, locate=loaded.locate, data_dir=self.settings.data_dir,
-                    clock=clock, bus=bus,
-                ).settle_hook()  # fmt: skip
-
-                no_lock = lambda _work: contextlib.nullcontext()  # noqa: E731 (nothing else runs yet)
-                repaired = LibraryRepair(  # a repair cut short: the registry it owes (EF-BIB-012)
-                    engine, fsops, loaded.locate, clock, hold_work=no_lock, bus=bus,
-                ).settle_hook()  # fmt: skip
-
-                renamed = RenameBook(  # a rename cut short: the manifest it owes (EF-EXP-030)
-                    engine, fsops, locate=loaded.locate, clock=clock, locks=ResourceLocks(
-                        engine, clock=clock
-                    ),
-                ).settle_hook()  # fmt: skip
-
-                def hook(connection: sa.Connection, intent: OpenIntent) -> None:
-                    adopt(connection, intent)
-                    renamed(connection, intent)
-                    upgraded(connection, intent)
-                    assembled(connection, intent)
-                    repaired(connection, intent)
-                    if intent.op == "copy_cross_root" and intent.dst is not None:
-                        complete_interrupted_keep(  # a kept copy on disk, its bookkeeping owed
-                            connection, fsops, loaded.locate, src=intent.src, dst=intent.dst,
-                            now=clock.now(),
-                        )  # fmt: skip
+                )  # fmt: skip
 
                 result = journal.resolve_open(on_done=hook)
             for intent_id in result.drifted:

@@ -72,4 +72,6 @@ class VolumeAssemblyOps:
             "assembled": result.outcome is AssemblyOutcome.ASSEMBLED,
             "export_item_id": result.export_item_id,
             "chapters": len(items),
+            "code": "volume.gap" if result.outcome is AssemblyOutcome.GAP else None,
+            "missing": list(result.missing),
         }

@@ -619,6 +619,7 @@
   help_assemble_first = "First chapter number of the volume."
   help_assemble_last = "Last chapter number of the volume."
   assembled = "Volume {volume} assembled from {chapters} chapters. KOReader sees a new document: its position is started again (the old files are in the bin)."
+  volume_gap = "Volume refused (volume.gap): chapters known between the first and the last are not received or not served: {numbers}. Nothing was changed; try again when they are there."
   assembly_refused = "No volume made ({outcome}, {chapters} chapters found): nothing was changed."
   help_pages_dry_run = "List the chapters concerned without rewriting anything."
   pages_pending = "To normalize: {unit}"

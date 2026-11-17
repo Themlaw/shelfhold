@@ -1,7 +1,7 @@
-"""#326 (M4 L10), relecture adverse intégrité : les trous trouvés, en rouge (xfail strict).
+"""#326 (M4 L10), relecture adverse intégrité : les trous trouvés, corrigés.
 
 Chaque test décrit un état réel que l'assemblage d'un tome peut laisser, et ce que la décision L10
-promet pour lui. Quand le correctif arrive, le test passe et `strict` oblige à retirer le xfail.
+promet pour lui.
 """
 
 from decimal import Decimal
@@ -15,11 +15,11 @@ from shelfhold.export.application.assembly import (
     served_chapters,
 )
 from shelfhold.export.application.intents import OPEN_STATES, IntentJournal
-from shelfhold.export.application.manifest_write import adopt_written_hook
 from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.fsops import Fsops
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import coherence, export
+from shelfhold.ops.settle_hooks import settle_hooks
 from tests.assembly_env import bin_files, chapter, exported_chapters, request, service
 from tests.export_env import export_env
 from tests.integration.test_schema_catalog import add_unit
@@ -27,11 +27,6 @@ from tests.integration.test_schema_catalog import add_unit
 pytestmark = pytest.mark.req("EF-EXP-019", "EF-BIB-044")
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#326 contradicteur (1) : `intents resolve --replay` ferme une intention `assemble` "
-    "sans sa comptabilité (seul `adopt_written_hook` est passé, ops/intents.py `_replay`)",
-)
 def test_intents_replay_of_an_assembly_cut_short_writes_its_manifest(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -61,9 +56,13 @@ def test_intents_replay_of_an_assembly_cut_short_writes_its_manifest(
                 )
             ).scalars()
 
-        # ce que lance `shelfhold intents resolve <id>` en rejeu (ops/intents.py `_replay`)
+        # ce que lance `shelfhold intents resolve <id>` en rejeu (ops/intents.py `_replay`) :
+        # la table de crochets du démarrage
         IntentJournal(env.engine, env.lib.fsops, clock=env.clock).resolve_one(
-            intent_id, on_done=adopt_written_hook(env.lib.fsops, env.lib.locate, env.clock)
+            intent_id,
+            on_done=settle_hooks(
+                env.engine, env.lib.fsops, env.lib.locate, data_dir=env.lib.data, clock=env.clock
+            ),
         )
 
         assert len(env.files()) == 1 and len(bin_files(env)) == 3  # le disque : un tome
@@ -78,11 +77,6 @@ def test_intents_replay_of_an_assembly_cut_short_writes_its_manifest(
         assert assemblies == 1
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#326 contradicteur (2) : `--first 1 --last 4` avec le chapitre 3 manquant fait un "
-    "tome 1, 2, 4 sans rien dire (`served_chapters` saute les trous)",
-)
 def test_a_range_with_a_hole_is_never_assembled_silently() -> None:
     """Le porteur lit des séries entières dans KOReader : un tome qui saute un chapitre connu du
     catalogue (pas encore reçu) le lui cache, puis le chapitre arrive seul, après le tome fermé."""
@@ -102,3 +96,37 @@ def test_a_range_with_a_hole_is_never_assembled_silently() -> None:
         result = service(env).assemble(AssemblyRequest(env.destination_id, tuple(items), "1"))
 
         assert result.outcome is not AssemblyOutcome.ASSEMBLED
+        assert result.outcome is AssemblyOutcome.GAP and result.missing == ("3",)
+
+
+def test_intents_replay_runs_the_same_hooks_as_the_boot() -> None:
+    """Une seule table de crochets : chaque type d'intention qui doit une comptabilité y a son
+    crochet, et le rejeu d'admin et le démarrage prennent la même."""
+    import inspect
+
+    from shelfhold import runtime
+    from shelfhold.ops import intents, settle_hooks
+
+    assert "settle_hooks(" in inspect.getsource(runtime)
+    assert "settle_hooks(" in inspect.getsource(intents)
+    body = inspect.getsource(settle_hooks)
+    for hook in ("adopt", "renamed", "upgraded", "assembled", "repaired"):
+        assert f"{hook}(connection, intent)" in body
+
+
+def test_a_volume_is_assembled_from_a_chapter_with_an_avif_page() -> None:
+    """L53 : une page AVIF d'un chapitre ne sort jamais telle quelle dans le tome."""
+    from shelfhold.infrastructure.content_trust.cbz_entries import sniff_page_kind
+    from tests import page_formats_env as pf
+    from tests.assembly_env import page_bytes
+
+    if not pf.has_avif():
+        pytest.skip("this Pillow has no AVIF")
+    with export_env() as env:
+        chapters = exported_chapters(env, [2, 2], first_page={0: ("1-001.avif", pf.avif())})
+        result = service(env).assemble(request(env, chapters))
+        assert result.outcome is AssemblyOutcome.ASSEMBLED
+        (volume,) = env.files()
+        kinds = {sniff_page_kind(b[:16]) for b in page_bytes(volume)}
+        assert kinds <= {"jpeg", "png", "gif", "webp"}
+        assert len(page_bytes(volume)) == 4

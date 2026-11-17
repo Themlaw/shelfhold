@@ -32,7 +32,14 @@ def digest(path: Path) -> str:
     return "sha256:" + hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-def chapter(env: ExportEnv, series: Series, number: str, pages: int) -> str:
+def chapter(
+    env: ExportEnv,
+    series: Series,
+    number: str,
+    pages: int,
+    *,
+    first: tuple[str, bytes] | None = None,
+) -> str:
     """A Unit with its Variant and its received archive of `pages` pages (each one its own)."""
     with write_transaction(env.engine) as connection:
         unit = add_unit(connection, series.edition_id, number)
@@ -41,6 +48,8 @@ def chapter(env: ExportEnv, series: Series, number: str, pages: int) -> str:
         (f"{number}-{page:03d}.png", PNG + f"{number}/{page}".encode() + b"\x00" * 16)
         for page in range(1, pages + 1)
     )
+    if first is not None:  # the first page is another format (an AVIF)
+        body = (first, *body[1:])
     PassthroughStore(
         env.engine,
         env.lib.fsops,
@@ -70,11 +79,19 @@ class Chapters:
 
 
 def exported_chapters(
-    env: ExportEnv, pages: list[int], *, series: Series | None = None, first: int = 1
+    env: ExportEnv,
+    pages: list[int],
+    *,
+    series: Series | None = None,
+    first: int = 1,
+    first_page: dict[int, tuple[str, bytes]] | None = None,  # chapter index -> its first page
 ) -> Chapters:
     """`len(pages)` chapters of one Edition, exported by the pipeline."""
     series = series or env.new_series()
-    units = [chapter(env, series, str(first + n), count) for n, count in enumerate(pages)]
+    units = [
+        chapter(env, series, str(first + n), count, first=(first_page or {}).get(n))
+        for n, count in enumerate(pages)
+    ]
     env.pipeline.run(env.destination_id, job_id=new_ulid())
     record, cover = export.export_record, export.unit_coverage
     items: list[str] = []

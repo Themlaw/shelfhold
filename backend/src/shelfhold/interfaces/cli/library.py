@@ -84,5 +84,8 @@ def run_assemble_volume(args: argparse.Namespace, channel: OpsChannel) -> int:
     if answer["assembled"]:
         print(t("ops.assembled", volume=args.volume, chapters=answer["chapters"]))
         return 0
+    if answer["outcome"] == "gap":
+        print(t("ops.volume_gap", numbers=", ".join(answer["missing"])))
+        return 1
     print(t("ops.assembly_refused", outcome=answer["outcome"], chapters=answer["chapters"]))
     return 1
