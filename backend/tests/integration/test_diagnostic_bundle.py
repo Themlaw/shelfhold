@@ -228,7 +228,10 @@ def test_diagnostic_bundle_reports_sandbox(
     sandbox = json.loads(members["sandbox.json"])
     assert sandbox["isolation"] in {"netns", "seccomp", "python"}
     assert sandbox["python_socket"] == "denied"
-    assert sandbox["network"] in {"shut", "python_only"}
+    assert sandbox["network"] in {"shut", "inet_shut", "python_only"}
+    assert sandbox["raw_connect"] in {"failed", "unavailable"}  # the real attempt, reported
+    assert sandbox["unix_socket"] in {"denied", "unavailable"}  # no AF_UNIX either
+    assert sandbox["probes"]["workers"] == 2 and sandbox["probes"]["max_page_bytes"] == 32 * 1024**2
     assert sandbox["environment"] == {"isolated": True, "env_clean": True, "cwd_is_empty_dir": True}
     assert sandbox["limits"]["no_new_privs"] is True
     assert set(sandbox["limits"]["rlimits"]) >= {"rlimit_as", "rlimit_cpu", "rlimit_nproc"}
@@ -261,3 +264,34 @@ def test_diagnostic_bundle_sandbox_section_can_be_excluded_and_says_when_the_wor
     assert run_cli(monkeypatch, settings, "diagnostic", "bundle", "--out", str(again)) == 0
     sandbox = json.loads(_members(again)["sandbox.json"])
     assert sandbox == {"unavailable": "worker_failed"}  # the code, never the reason
+
+
+@pytest.mark.req("ENF-SEC-003")
+@pytest.mark.parametrize(
+    ("facts", "word"),
+    [
+        ({"raw_connect": "failed", "unix_socket": "denied"}, "shut"),
+        ({"raw_connect": "failed", "unix_socket": "allowed"}, "inet_shut"),  # said honestly
+        ({"raw_connect": "connected", "unix_socket": "denied"}, "open"),  # an alert
+        ({"isolation": "python", "raw_connect": "unavailable", "unix_socket": "allowed"},
+         "python_only"),
+    ],
+)  # fmt: skip
+def test_the_sandbox_section_says_exactly_what_the_attempts_found(
+    monkeypatch: pytest.MonkeyPatch, facts: dict[str, str], word: str
+) -> None:
+    from shelfhold.ops import diagnostic
+
+    def worker(what: str, **_: object) -> dict[str, object]:
+        if what == "network":
+            return {"isolation": "netns", "seccomp": True, "python_socket": "denied", **facts}
+        if what == "limits":
+            return {"rlimit_as": [-1, -1], "rlimit_cpu": "x", "no_new_privs": True}
+        return {"isolated": True, "env_keys": ["LC_CTYPE"], "cwd_is_empty_dir": True}
+
+    monkeypatch.setattr(diagnostic, "diagnose_worker", worker)
+    report = diagnostic.sandbox_report()
+    assert report["network"] == word
+    limits = report["limits"]
+    assert limits["rlimits"]["rlimit_as"] == [-1, -1]  # -1: unlimited
+    assert limits["rlimits"]["rlimit_cpu"] == []  # unreadable is not "unlimited"

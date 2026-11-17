@@ -54,9 +54,17 @@ from pydantic import SecretStr
 from shelfhold import __version__
 from shelfhold.config import ResolvedSettings, Settings
 from shelfhold.export.domain.provenance_mirror import is_diagnostic_excluded
+from shelfhold.export.targets.kavita.page_probe import PAGE_MAX_BYTES
+from shelfhold.export.targets.kavita.page_probe import workers as probe_workers
 from shelfhold.infrastructure.archives import ArchiveWriter
 from shelfhold.infrastructure.db import create_db_engine
-from shelfhold.infrastructure.imaging import ImageRejected, diagnose_worker
+from shelfhold.infrastructure.imaging import (
+    ImageKind,
+    ImageRejected,
+    WorkerLimits,
+    caps_for,
+    diagnose_worker,
+)
 from shelfhold.infrastructure.logging import (
     known_secret_values,
     redact_source_urls,
@@ -122,7 +130,7 @@ _AS_IS = (
     "device_allow_plain_http", "reading_max_pages_per_minute", "reading_relay_max_session_hours",
     "wake_timeout_s", "wake_session_s", "maintenance_window_start", "maintenance_window_end",
     "timezone", "retention_events_days", "retention_audit_days", "backup_retention",
-    "stream_max_per_profile",
+    "stream_max_per_profile", "adopt_probe_workers",
     "backup_stale_hours", "fetcher_cache", "comicvine_enabled", "googlebooks_daily_budget",
 )  # fmt: skip
 _PRESENCE = (
@@ -876,35 +884,67 @@ def _word(value: object, allowed: Iterable[str], other: str = "other") -> str:
     return value if isinstance(value, str) and value in allowed else other
 
 
-def _number(value: object) -> int:
-    return value if isinstance(value, int) and not isinstance(value, bool) else -1
+def _pair(value: object) -> list[object]:
+    return list(value)[:2] if isinstance(value, list) else []
+
+
+def _number(value: object) -> int | None:
+    """A limit as the worker read it (`-1` is `RLIM_INFINITY`); `None` when it could not be read."""
+    return value if isinstance(value, int) and not isinstance(value, bool) else None
 
 
 def sandbox_report() -> dict[str, object]:
     """What the decode worker really runs in, asked of the worker itself (M4 L36, ENF-SEC-003):
-    nothing here comes from a file, a title or a path. `network` is `shut` when the worker has no
-    network namespace or no socket syscall and its Python-level stub refuses sockets, and
-    `python_only` when only the stub does. When the worker cannot be run at all, the section says
-    so with a code, never the reason (it may quote a path)."""
+    nothing here comes from a file, a title or a path. The facts are those of a worker run as the
+    probes of an adoption run it (same caps, same limits). `raw_connect` is the result of a real
+    attempt from inside, with libc, to 127.0.0.1:9 (`failed` expected, `connected` an alert);
+    `unix_socket` that of `socket(AF_UNIX)` (`denied` expected). `network` is `shut` when neither
+    works, `inet_shut` when inet is closed but Unix sockets are not, `python_only` when only the
+    Python stub refuses, `open` when the attempt went through. When the worker cannot be run at
+    all, the section says so with a code, never the reason (it may quote a path)."""
+    limits_of_probes = WorkerLimits.for_caps(caps_for(ImageKind.PAGE_INPUT))
     try:
-        network = diagnose_worker("network", port=9)  # never connected to: only the facts are read
-        limits = diagnose_worker("limits")
-        environment = diagnose_worker("environment")
+        network = diagnose_worker("network", port=9, limits=limits_of_probes)
+        limits = diagnose_worker("limits", limits=limits_of_probes)
+        environment = diagnose_worker("environment", limits=limits_of_probes)
     except (ImageRejected, OSError):
         return {"unavailable": "worker_failed"}
     isolation = _word(network.get("isolation"), _ISOLATIONS)
     python_socket = _word(network.get("python_socket"), ("denied", "allowed"))
-    shut = isolation in ("netns", "seccomp") and python_socket == "denied"
+    raw_connect = _word(network.get("raw_connect"), ("connected", "failed", "unavailable"))
+    unix_socket = _word(network.get("unix_socket"), ("denied", "allowed", "unavailable"))
+    inet_shut = (
+        isolation in ("netns", "seccomp")
+        and python_socket == "denied"
+        and raw_connect != "connected"
+    )
+    if inet_shut and unix_socket == "denied":
+        network_word = "shut"
+    elif inet_shut:
+        network_word = "inet_shut"
+    elif raw_connect == "connected":
+        network_word = "open"
+    else:
+        network_word = "python_only" if python_socket == "denied" else "open"
+    caps = caps_for(ImageKind.PAGE_INPUT)
     return {
         "isolation": isolation,
         "seccomp": network.get("seccomp") is True,
         "python_socket": python_socket,
-        "network": "shut" if shut else "python_only" if python_socket == "denied" else "open",
+        "raw_connect": raw_connect,
+        "unix_socket": unix_socket,
+        "network": network_word,
         "limits": {
-            "rlimits": {
-                name: [_number(v) for v in (limits.get(name) or [])][:2] for name in _RLIMITS
-            },
+            "rlimits": {name: [_number(v) for v in _pair(limits.get(name))] for name in _RLIMITS},
             "no_new_privs": limits.get("no_new_privs") is True,
+        },
+        "probes": {  # the bounds of the probes of an adopted library's first pages
+            "workers": probe_workers(),
+            "max_page_bytes": PAGE_MAX_BYTES,
+            "max_pixels": caps.max_pixels,
+            "wall_seconds": limits_of_probes.wall_seconds,
+            "cpu_seconds": limits_of_probes.cpu_seconds,
+            "memory_bytes": limits_of_probes.memory_bytes,
         },
         "environment": {
             "isolated": environment.get("isolated") is True,

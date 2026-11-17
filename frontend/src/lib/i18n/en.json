@@ -621,6 +621,8 @@
   "adoption.to_check_explain": "The first page or the archive of these files was refused by the sandbox. They are adopted as they are and never touched: look at them before they are served.",
   "adoption.adopt": "Adopt this library",
   "adoption.adopted": "{count, plural, one {# file adopted} other {# files adopted}}.",
+  "adoption.waiting": "Reading the library: the first page of each archive is being examined, which can take several minutes. You can leave this screen open.",
+  "adoption.not_probed": "Only CBZ and ZIP files are probed: CBR, CB7 and PDF files are not, so they never appear in the \"to check\" list.",
   "adoption.reason.image.too_large": "image too large",
   "adoption.reason.image.format_refused": "first page is not an accepted image",
   "adoption.reason.image.decode_failed": "first page cannot be decoded within the limits",

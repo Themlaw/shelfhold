@@ -12,7 +12,10 @@ Nothing here ever touches a Kavita credential: they do not reach this class.
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Coroutine
+import threading
+import time
+from collections import OrderedDict
+from collections.abc import Callable, Coroutine
 from dataclasses import asdict
 from typing import TYPE_CHECKING, Any
 
@@ -38,6 +41,7 @@ from shelfhold.export.targets.kavita.errors import TargetError
 from shelfhold.export.targets.kavita.probe_read import kavita_mount_hint, kavita_reads
 from shelfhold.i18n import t
 from shelfhold.infrastructure.fsops.probe import probe_folder, readable_probe
+from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.logging import register_secret_value
 from shelfhold.infrastructure.schema import acquisition, export
 from shelfhold.infrastructure.secrets import diagnostics
@@ -62,6 +66,64 @@ __all__ = ["FAMILY_PROPOSED", "WizardOps"]
 FAMILY_PROPOSED: tuple[str, ...] = ("gutenberg", "wikisource", "standardebooks")
 
 _UNREADABLE = "no_library"  # `kavita_read` when no Kavita library holds the folder yet
+
+
+PREVIEW_WAIT_S = 5.0  # a preview that ends within this answers at once; a longer one is a task
+_PREVIEWS_KEPT = 16
+_PREVIEW_KEEP_S = 3600.0
+
+
+class _PreviewTask:
+    def __init__(self, destination_id: str) -> None:
+        self.id = new_ulid()
+        self.destination_id = destination_id
+        self.finished = threading.Event()
+        self.result: dict[str, Any] | None = None
+        self.error: BaseException | None = None
+        self.ended_at = 0.0
+
+
+class _PreviewTasks:
+    """The previews of an adoption running in the background of this process (M4 L36, #341): the
+    probes of a large library take minutes, more than a request may hold. In memory, since a
+    preview is read-only and is made again after a restart; the same destination asked while its
+    preview runs is the same task (a double click probes nothing twice)."""
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._tasks: OrderedDict[str, _PreviewTask] = OrderedDict()
+
+    def start(self, destination_id: str, work: Callable[[], dict[str, Any]]) -> _PreviewTask:
+        with self._lock:
+            now = time.monotonic()
+            for key, old in list(self._tasks.items()):
+                expired = old.finished.is_set() and now - old.ended_at > _PREVIEW_KEEP_S
+                if expired or (len(self._tasks) >= _PREVIEWS_KEPT and old.finished.is_set()):
+                    del self._tasks[key]
+            for running in self._tasks.values():
+                if running.destination_id == destination_id and not running.finished.is_set():
+                    return running
+            task = _PreviewTask(destination_id)
+            self._tasks[task.id] = task
+
+        def run() -> None:
+            try:
+                task.result = work()
+            except BaseException as error:
+                task.error = error
+            finally:
+                task.ended_at = time.monotonic()
+                task.finished.set()
+
+        threading.Thread(target=run, name="adoption-preview", daemon=True).start()
+        return task
+
+    def get(self, task_id: str) -> _PreviewTask | None:
+        with self._lock:
+            return self._tasks.get(task_id)
+
+
+_PREVIEWS = _PreviewTasks()
 
 
 class WizardOps:
@@ -239,6 +301,43 @@ class WizardOps:
         return covering[0] if covering else None
 
     # -- adoption --------------------------------------------------------------------------------
+
+    def adoption_preview_start(
+        self,
+        destination_id: str,
+        *,
+        library_ref: str | None = None,
+        download_dir: str | None = None,
+        wait_s: float | None = None,
+    ) -> dict[str, Any]:
+        """The preview as a background task: `done` with the report when it ends within `wait_s`,
+        else `running` with the task to ask for (`adoption_preview_status`). An unknown
+        destination is refused now."""
+        self._context(destination_id)
+        task = _PREVIEWS.start(
+            destination_id,
+            lambda: self.adoption_preview(
+                destination_id, library_ref=library_ref, download_dir=download_dir
+            ),
+        )
+        task.finished.wait(PREVIEW_WAIT_S if wait_s is None else wait_s)
+        return self._preview_state(task)
+
+    def adoption_preview_status(self, job_id: str) -> dict[str, Any]:
+        task = _PREVIEWS.get(job_id)
+        if task is None:
+            raise UnknownSubjectError("unknown preview")
+        return self._preview_state(task)
+
+    @staticmethod
+    def _preview_state(task: _PreviewTask) -> dict[str, Any]:
+        if not task.finished.is_set():
+            return {"status": "running", "job_id": task.id, "preview": None}
+        if task.error is not None:
+            if isinstance(task.error, CodedRefusal | InvalidChoiceError | UnknownSubjectError):
+                raise task.error
+            raise CodedRefusal("job.failed", "the preview failed")
+        return {"status": "done", "job_id": task.id, "preview": task.result}
 
     def adoption_preview(
         self,

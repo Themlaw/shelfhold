@@ -621,6 +621,8 @@
   "adoption.to_check_explain": "La première page ou l'archive de ces fichiers a été refusée par le bac à sable. Ils sont adoptés tels quels et ne sont jamais touchés : regardez-les avant de les servir.",
   "adoption.adopt": "Adopter cette bibliothèque",
   "adoption.adopted": "{count, plural, one {# fichier adopté} other {# fichiers adoptés}}.",
+  "adoption.waiting": "Lecture de la bibliothèque en cours : la première page de chaque archive est examinée, cela peut prendre plusieurs minutes. Vous pouvez laisser cet écran ouvert.",
+  "adoption.not_probed": "Seuls les CBZ et ZIP sont sondés : les fichiers CBR, CB7 et PDF ne le sont pas, et ne figurent donc jamais dans la liste « à vérifier ».",
   "adoption.reason.image.too_large": "image trop grande",
   "adoption.reason.image.format_refused": "première page qui n'est pas une image acceptée",
   "adoption.reason.image.decode_failed": "première page impossible à décoder dans les bornes",

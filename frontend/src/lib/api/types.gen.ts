@@ -6852,6 +6852,22 @@ export type WizardLibraryOut = {
 };
 
 /**
+ * WizardPreviewAccepted
+ *
+ * Body of the 202 of a preview that takes longer than a request may: ask `status_url`.
+ */
+export type WizardPreviewAccepted = {
+    /**
+     * Job Id
+     */
+    job_id: string;
+    /**
+     * Status Url
+     */
+    status_url: string;
+};
+
+/**
  * WizardPreviewIn
  */
 export type WizardPreviewIn = {
@@ -6902,6 +6918,21 @@ export type WizardPreviewOut = {
      * To Check
      */
     to_check: Array<WizardToCheckOut>;
+};
+
+/**
+ * WizardPreviewStatusOut
+ */
+export type WizardPreviewStatusOut = {
+    /**
+     * Job Id
+     */
+    job_id: string;
+    preview: WizardPreviewOut | null;
+    /**
+     * Status
+     */
+    status: 'running' | 'done';
 };
 
 /**
@@ -14616,9 +14647,51 @@ export type WizardAdoptionPreviewResponses = {
      * Successful Response
      */
     200: WizardPreviewOut;
+    /**
+     * Accepted
+     */
+    202: WizardPreviewAccepted;
 };
 
 export type WizardAdoptionPreviewResponse = WizardAdoptionPreviewResponses[keyof WizardAdoptionPreviewResponses];
+
+export type WizardAdoptionPreviewStatusData = {
+    body?: never;
+    path: {
+        /**
+         * Job Id
+         */
+        job_id: string;
+    };
+    query?: never;
+    url: '/api/v1/setup/adoption/preview/{job_id}';
+};
+
+export type WizardAdoptionPreviewStatusErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type WizardAdoptionPreviewStatusError = WizardAdoptionPreviewStatusErrors[keyof WizardAdoptionPreviewStatusErrors];
+
+export type WizardAdoptionPreviewStatusResponses = {
+    /**
+     * Successful Response
+     */
+    200: WizardPreviewStatusOut;
+};
+
+export type WizardAdoptionPreviewStatusResponse = WizardAdoptionPreviewStatusResponses[keyof WizardAdoptionPreviewStatusResponses];
 
 export type WizardKeyringExportData = {
     body: KeyringExportIn;

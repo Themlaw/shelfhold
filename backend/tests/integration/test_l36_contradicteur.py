@@ -51,7 +51,6 @@ def _stored_cbz(page: bytes) -> bytes:
     return buffer.getvalue()
 
 
-@pytest.mark.xfail(strict=True, reason="#341 M1: the screen probes the library twice")
 @pytest.mark.req("EF-EXP-045", "ENF-SEC-003")
 def test_screen_confirm_does_not_probe_the_library_again(
     world: World, monkeypatch: pytest.MonkeyPatch
@@ -69,7 +68,6 @@ def test_screen_confirm_does_not_probe_the_library_again(
     assert ops == ["probe"]
 
 
-@pytest.mark.xfail(strict=True, reason="#341 M2: page buffers alone pass the peak budget")
 @pytest.mark.req("EF-EXP-045", "ENF-PERF-001")
 def test_core_page_buffers_stay_within_the_peak_budget(monkeypatch: pytest.MonkeyPatch) -> None:
     """Four first pages of 60 MiB (under PROBE_MAX_BYTES): the core holds the batch (`read`) and,
@@ -102,7 +100,6 @@ def test_core_page_buffers_stay_within_the_peak_budget(monkeypatch: pytest.Monke
     assert peak < PERF_PEAK_BYTES, f"{peak / 1e6:.0f} MB of buffers in the core"
 
 
-@pytest.mark.xfail(strict=True, reason="#341 M3: no global bound on probe workers")
 @pytest.mark.req("EF-EXP-045", "ENF-SEC-003")
 def test_two_previews_share_one_bound_on_probe_workers(monkeypatch: pytest.MonkeyPatch) -> None:
     """Two previews at once (two tabs, a double click, the CLI and the screen): each opens its own
@@ -164,7 +161,6 @@ def test_a_file_rewritten_in_place_with_its_mtime_put_back_is_probed_again() -> 
     assert _flagged(done) != {}
 
 
-@pytest.mark.xfail(strict=True, reason="#341 m2: a worker that cannot start fails the preview")
 @pytest.mark.req("EF-EXP-045", "ENF-SEC-003")
 def test_a_worker_that_cannot_start_marks_the_file_not_the_preview(
     monkeypatch: pytest.MonkeyPatch,
@@ -196,7 +192,6 @@ print(json.dumps({"isolation": state["isolation"], "unix_connect": ok}))
 """
 
 
-@pytest.mark.xfail(strict=True, reason="#341 m3: `network: shut` while AF_UNIX stays open")
 @pytest.mark.skipif(sys.platform != "linux", reason="the sandbox is Linux only")
 @pytest.mark.req("ENF-SEC-003")
 def test_a_shut_network_also_shuts_unix_sockets(tmp_path: Path) -> None:

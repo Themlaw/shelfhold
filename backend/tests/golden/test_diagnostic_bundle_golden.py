@@ -27,7 +27,7 @@ _VOLATILE = (
 
 _RELEASED = {"schema_revision", "schema_head", "shelfhold_version"}  # move with each release
 # what the host gives the decode worker (a namespace, or a filter, or neither): the runner's own
-_HOST = {"isolation", "seccomp", "network"}
+_HOST = {"isolation", "seccomp", "network", "raw_connect", "unix_socket"}
 
 
 def _shape(value: object) -> object:

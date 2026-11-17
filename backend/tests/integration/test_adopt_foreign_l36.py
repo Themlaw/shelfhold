@@ -66,6 +66,10 @@ def _giant_png() -> bytes:
     return b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", header) + chunk(b"IEND", b"")
 
 
+def _stored_cbz(page: bytes) -> bytes:
+    return _zip([("001.png", page)])
+
+
 def _zip(entries: list[tuple[zipfile.ZipInfo | str, bytes]], *, deflate: bool = False) -> bytes:
     buffer = io.BytesIO()
     with zipfile.ZipFile(buffer, "w") as archive:

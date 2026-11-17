@@ -300,6 +300,7 @@ CLOSED = (
     "DELETE /api/v1/collections/{collection_id}/kavita-public",
     "PUT /api/v1/setup/sources/family",  # M3 L40 (D13): which sources a child's search reaches
     "POST /api/v1/setup/adoption/preview",
+    "GET /api/v1/setup/adoption/preview/{job_id}",  # M4 L36: the preview is a task, admin only
     "POST /api/v1/setup/library",
     "POST /api/v1/setup/shelf",  # ENF-UX-001: the wizard makes the shelf linked to Kavita
     "POST /api/v1/setup/probe",

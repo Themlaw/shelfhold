@@ -5,11 +5,8 @@
   // archive was refused is listed "to check". It is adopted as it is and never touched. All text
   // from the server (paths, codes) is shown as text, never as markup; an admin session only.
   import { onMount } from 'svelte';
-  import {
-    wizardAdoptionConfirm,
-    wizardAdoptionPreview,
-    wizardState
-  } from '#lib/api/index.ts';
+  import { wizardAdoptionConfirm, wizardState } from '#lib/api/index.ts';
+  import { previewAdoption } from '#lib/adoption.ts';
   import type { WizardDestinationOut, WizardPreviewOut } from '#lib/api/types.gen.ts';
   import ProblemCard from '#lib/components/ProblemCard.svelte';
   import ReauthPrompt from '#lib/components/ReauthPrompt.svelte';
@@ -26,6 +23,7 @@
   let problem = $state<ProblemView | null>(null);
   let signedOut = $state(false);
   let busy = $state(false);
+  let waiting = $state(false); // the preview is a task: it can take minutes
   let reauthMethods = $state<string[] | null>(null);
   let retry: (() => Promise<void>) | null = null;
 
@@ -68,12 +66,12 @@
   const look = () =>
     guarded(async () => {
       message = '';
-      const { data } = await wizardAdoptionPreview({
-        headers: headers(),
-        body: { destination_id: destination },
-        throwOnError: true
-      });
-      preview = data;
+      waiting = true;
+      try {
+        preview = await previewAdoption({ destination_id: destination }, headers());
+      } finally {
+        waiting = false;
+      }
     });
 
   const adopt = () =>
@@ -142,9 +140,13 @@
         </label>
       {/if}
       <button type="button" disabled={busy} onclick={look}>{t('adoption.preview')}</button>
+      {#if waiting}
+        <p role="status">{t('adoption.waiting')}</p>
+      {/if}
 
       {#if preview}
         <p>{t('adoption.preview_result', { series: preview.series, files: preview.files })}</p>
+        <p>{t('adoption.not_probed')}</p>
         {#if preview.child_library}
           <p role="status">{t('adoption.child_library')}</p>
         {/if}

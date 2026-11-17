@@ -109,7 +109,7 @@ describe('Réglages : adoption', () => {
     const user = userEvent.setup();
     await user.click(await screen.findByRole('button', { name: 'Voir ce qui serait adopté' }));
     await screen.findByText('2 séries et 5 fichiers seraient adoptés.');
-    expect(screen.queryByText(/à vérifier/)).toBeNull();
+    expect(screen.queryByRole('heading', { name: /à vérifier/ })).toBeNull();
   });
 
   // req: EF-EXP-045
@@ -136,5 +136,50 @@ describe('Réglages : adoption', () => {
     await user.click(await screen.findByRole('button', { name: 'Voir ce qui serait adopté' }));
     expect(await screen.findByRole('alert')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Adopter cette bibliothèque' })).toBeNull();
+  });
+});
+
+describe('Réglages : adoption, aperçu en tâche de fond', () => {
+  // req: EF-EXP-045
+  it('test_a_long_preview_is_followed_until_its_report_and_says_it_is_reading', async () => {
+    let polls = 0;
+    server.use(
+      state(),
+      http.post(`${BASE}/api/v1/setup/adoption/preview`, () =>
+        HttpResponse.json(
+          { job_id: 'J1', status_url: '/api/v1/setup/adoption/preview/J1' },
+          { status: 202 }
+        )
+      ),
+      http.get(`${BASE}/api/v1/setup/adoption/preview/J1`, () => {
+        polls += 1;
+        return HttpResponse.json(
+          polls < 2
+            ? { status: 'running', job_id: 'J1', preview: null }
+            : { status: 'done', job_id: 'J1', preview: previewOut({ files: 9 }) }
+        );
+      })
+    );
+    render(Page);
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole('button', { name: 'Voir ce qui serait adopté' }));
+    expect(await screen.findByText(/Lecture de la bibliothèque en cours/)).toBeInTheDocument();
+    expect(
+      await screen.findByText('2 séries et 9 fichiers seraient adoptés.', {}, { timeout: 10000 })
+    ).toBeInTheDocument();
+    expect(polls).toBe(2);
+    expect(screen.queryByText(/Lecture de la bibliothèque en cours/)).toBeNull();
+  }, 20000);
+
+  // req: EF-EXP-045
+  it('test_the_screen_says_that_cbr_cb7_and_pdf_are_not_probed', async () => {
+    server.use(
+      state(),
+      http.post(`${BASE}/api/v1/setup/adoption/preview`, () => HttpResponse.json(previewOut()))
+    );
+    render(Page);
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole('button', { name: 'Voir ce qui serait adopté' }));
+    expect(await screen.findByText(/CBR, CB7 et PDF ne le sont pas/)).toBeInTheDocument();
   });
 });
