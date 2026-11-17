@@ -130,7 +130,7 @@ WHEN_CLOSED_AUDITED = {
     # M4 L46b: pairing an e-reader and revoking its token: the service writes the line, with the
     # identifier of the token, when one is made or ended; the empty body below is a 422 and an
     # unknown identifier a 404: no line
-    "device_token.issue", "device_token.manage",
+    "device_token.issue", "device_token.manage", "device_token.rotate", "device.remove",
     # M4 L35: the switch to the preferred team: the service writes one line per step (previewed,
     # queued) with the identifier of the switch; the door writes none (a refused call leaves none)
     "team.switch",
@@ -146,7 +146,7 @@ WHEN_CLOSED_AUDITED = {
 # refused by the route (tests/integration/test_l46b_connect_device.py)
 EVERY_ROLE_OWN_ACCOUNT = {
     "session.revoke_others", "destination_account.bind", "destination_account.revoke",
-    "device_token.issue", "device_token.manage",
+    "device_token.issue", "device_token.manage", "device_token.rotate", "device.remove",
     "notify.profile_destination",  # M4 L39: an adult's own (tests/integration/test_m4_l39_*)
 }  # fmt: skip
 
