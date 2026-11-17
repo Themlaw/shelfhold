@@ -22,6 +22,10 @@ from shelfhold.platform.import_tachibk.map import map_backup
 from tests import tachibk_env as env
 
 
+def _gz(raw: bytes) -> bytes:
+    return gzip.compress(raw, mtime=0)  # the same bytes on every run: stable test ids
+
+
 def _refused(data: bytes, limits: Limits | None = None) -> TachibkRefusedError:
     with pytest.raises(TachibkRefusedError) as caught:
         decode_backup(data, limits or Limits())
@@ -87,14 +91,17 @@ def test_tachibk_bomb_and_depth_caps_refused() -> None:
     [
         (b"", "empty"),
         (b"PK\x03\x04 not a gzip file at all", "not_gzip"),
-        (b"{\"version\": 2}", "not_gzip"),  # the legacy JSON backup is no gzip either
-        (gzip.compress(b""), "empty"),
-        (gzip.compress(b"\x0a"), "malformed"),  # a tag with nothing after it
-        (gzip.compress(env.tag(1, 2) + env.varint(10) + b"abc"), "malformed"),  # cut short
-        (gzip.compress(b"\xff" * 11), "malformed"),  # a varint that never ends
-        (gzip.compress(env.tag(1, 0) + env.varint(1)), "malformed"),  # manga must be a message
-        (gzip.compress(env.tag(0, 0) + env.varint(1)), "malformed"),  # field number 0 does not exist
-        (gzip.compress(env.tag(1, 7)), "malformed"),  # a wire type that does not exist
+        (b'{"version": 2}', "not_gzip"),  # the legacy JSON backup is no gzip either
+        (_gz(b""), "empty"),
+        (_gz(b"\x0a"), "malformed"),  # a tag with nothing after it
+        (_gz(env.tag(1, 2) + env.varint(10) + b"abc"), "malformed"),  # cut short
+        (_gz(b"\xff" * 11), "malformed"),  # a varint that never ends
+        (_gz(env.tag(1, 0) + env.varint(1)), "malformed"),  # manga must be a message
+        (
+            _gz(env.tag(0, 0) + env.varint(1)),
+            "malformed",
+        ),  # field number 0 does not exist
+        (_gz(env.tag(1, 7)), "malformed"),  # a wire type that does not exist
     ],
 )
 def test_a_file_that_is_not_a_backup_is_refused_with_a_word(data: bytes, reason: str) -> None:
@@ -187,5 +194,5 @@ def test_titles_are_cleaned_as_upstream_text_and_numbers_never_invented() -> Non
     series = map_backup(decode_backup(env.tachibk(env.backup([nasty])))).series[0]
     assert "<script>" not in series.title and "‮" not in series.title
     # a chapter number that is not a plausible number is not kept: the marker keeps its reference
-    assert [m.number_norm for m in series.markers] == [None, None]
+    assert [m.number for m in series.markers] == [None, None]
     assert [m.chapter_ref for m in series.markers] == ["/c", "/d"]

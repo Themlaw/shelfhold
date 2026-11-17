@@ -1,11 +1,11 @@
-"""M4 L26 (EF-INT-008, ENF-SEC-010, ENF-SEC-002, D14): importing a Mihon backup (`.tachibk`), through
-the real application with real sessions, CSRF and keys.
+"""M4 L26 (EF-INT-008, ENF-SEC-010, ENF-SEC-002, D14): importing a Mihon backup (`.tachibk`),
+through the real application with real sessions, CSRF and keys.
 
 A backup is read as a hostile file by a bounded subprocess. The import is two steps: a preview that
 writes nothing to the library, and an application the admin asks for. A series of the backup is a
 `pending_source_item` (its source is resolved later, through the Fetcher and its guard: no address
 of the file is ever asked); the chapters it lists are known units; what the file proves read is a
-`read_marker` of the profile the admin chose, and of nobody else; a tracker is a hint with no secret.
+`read_marker` of the profile the admin chose and of nobody else; a tracker is a hint, no secret.
 
 The attacks of the card: a forged file (a gzip bomb, a nesting, a huge string), the batch of someone
 else, a child, a member, a key (read-only or not, an admin's included), a stale session.
@@ -61,7 +61,9 @@ def _upload(
 
 
 def _apply(world: World, client: Any, import_id: str) -> Any:
-    return client.post(f"{IMPORTS}/{import_id}/apply", headers={CSRF_HEADER: world.env.csrf(client)})
+    return client.post(
+        f"{IMPORTS}/{import_id}/apply", headers={CSRF_HEADER: world.env.csrf(client)}
+    )
 
 
 def _rows(world: World, sql: str, **params: Any) -> list[Any]:
@@ -82,8 +84,12 @@ def _key_headers(world: World, username: str, **kwargs: Any) -> dict[str, str]:
 
 def _library_untouched(world: World) -> bool:
     return all(
-        _rows(world, f"SELECT 1 FROM {table}") == []
-        for table in ("pending_source_item", "read_marker", "tracker_hint")
+        not _rows(world, query)
+        for query in (
+            "SELECT 1 FROM pending_source_item",
+            "SELECT 1 FROM read_marker",
+            "SELECT 1 FROM tracker_hint",
+        )
     )
 
 
@@ -114,7 +120,7 @@ def test_tachibk_import_pending_source_item_and_read_marker(world: World) -> Non
     ]
     # what the file proves read is a marker of the chosen profile: two read, one started
     markers = _rows(
-        world, "SELECT user_id, chapter_ref, \"read\", last_page FROM read_marker ORDER BY 2"
+        world, 'SELECT user_id, chapter_ref, "read", last_page FROM read_marker ORDER BY 2'
     )
     assert [(m.user_id, m.chapter_ref, bool(m.read), m.last_page) for m in markers] == [
         (ann_id, "/c/1", True, None), (ann_id, "/c/2", True, None), (ann_id, "/c/3", False, 7),
@@ -144,7 +150,7 @@ def test_a_chapter_is_never_read_beyond_what_the_file_proves(world: World) -> No
     made = _upload(world, world.env.client, env.tachibk(env.backup(mangas)), ann_id)
     assert _apply(world, world.env.client, made.json()["id"]).status_code == 200
     # the tracker is at chapter 40, a later chapter is read: the ones before it are not "read"
-    rows = _rows(world, "SELECT chapter_ref, \"read\" FROM read_marker ORDER BY 1")
+    rows = _rows(world, 'SELECT chapter_ref, "read" FROM read_marker ORDER BY 1')
     assert [(r.chapter_ref, bool(r.read)) for r in rows] == [("/c/1", True)]
     # nothing reached the reading journal: a marker waits for its series to be resolved
     assert _rows(world, "SELECT 1 FROM reading_position") == []
@@ -186,16 +192,14 @@ def test_importing_the_same_backup_twice_makes_no_duplicate(world: World) -> Non
 
 
 @pytest.mark.req("EF-INT-008", "ENF-SEC-002")
-def test_tachibk_bomb_and_depth_caps_refused(
-    world: World, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_tachibk_bomb_and_depth_caps_refused(world: World, monkeypatch: pytest.MonkeyPatch) -> None:
     cases = {
         "decompressed_too_large": env.bomb(70),
-        "too_deep": env.tachibk(
-            env.backup([env.manga(1, "/u", "T", extra=env.nested_groups(40))])
-        ),
+        "too_deep": env.tachibk(env.backup([env.manga(1, "/u", "T", extra=env.nested_groups(40))])),
         "too_many_entries": env.tachibk(
-            env.backup([env.manga(1, "/u", "T", extra=b"".join(env.vi(90, 1) for _ in range(100_001)))])
+            env.backup(
+                [env.manga(1, "/u", "T", extra=b"".join(env.vi(90, 1) for _ in range(100_001)))]
+            )
         ),
         "string_too_long": env.tachibk(env.backup([env.manga(1, "/u", "x" * 5_000)])),
         "malformed": b"\x1f\x8b" + b"not really a gzip",

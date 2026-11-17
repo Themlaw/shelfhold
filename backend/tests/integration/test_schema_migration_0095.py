@@ -26,9 +26,9 @@ MARKER = "01HZZZZZZZZZZZZZZZZZZZZZZD"
 HINT = "01HZZZZZZZZZZZZZZZZZZZZZZE"
 
 
-def test_the_revision_is_0095_the_only_head_on_0094() -> None:
+def test_the_revision_is_0095_the_head_on_0094() -> None:
     script = ScriptDirectory(str(default_script_location()))
-    assert len(script.get_heads()) == 1
+    assert script.get_heads() == ["0095"]  # the head is pinned here, by the newest
     assert script.get_revision("0095").down_revision == "0094"
 
 
@@ -85,7 +85,7 @@ def test_a_batch_has_a_state_a_hash_and_goes_with_its_profile(settings: Settings
 
 def test_a_marker_is_one_chapter_of_one_series_for_one_profile(settings: Settings) -> None:
     add = (
-        "INSERT INTO read_marker (id, user_id, pending_item_id, chapter_ref, \"read\", last_page) "
+        'INSERT INTO read_marker (id, user_id, pending_item_id, chapter_ref, "read", last_page) '
         "VALUES (?, ?, ?, ?, ?, ?)"
     )
     with closing(_connect(settings)) as conn:
@@ -102,7 +102,7 @@ def test_a_marker_is_one_chapter_of_one_series_for_one_profile(settings: Setting
 
 def test_a_marker_goes_with_its_profile_and_with_its_series(settings: Settings) -> None:
     add = (
-        "INSERT INTO read_marker (id, user_id, pending_item_id, chapter_ref, \"read\") "
+        'INSERT INTO read_marker (id, user_id, pending_item_id, chapter_ref, "read") '
         "VALUES (?, ?, ?, '/c/1', 1)"
     )
     with closing(_connect(settings)) as conn:

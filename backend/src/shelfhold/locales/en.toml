@@ -640,6 +640,14 @@
   request_list_annotated = "Warning: lines that ask for a precise annotated edition: {count}. Shelfhold cannot promise that edition; check it on the review screen."
   request_list_review = "Review all of it on one screen: /a-approuver/liste/{id}"
   request_list_refused = "The list is not read ({reason}): nothing was imported."
+  help_import_tachibk = "Imports a Mihon backup (.tachibk): the series become pending items (their source is resolved later), what the file proves read is kept as markers for a profile. Without --apply it only previews."
+  help_import_tachibk_path = "The backup file (at most 16 MiB, read as a hostile file: nothing in it is ever called)."
+  help_import_tachibk_profile = "Name of the profile that receives the read markers (yours by default)."
+  help_import_tachibk_apply = "Writes a preview made earlier (its identifier is printed by the first command), once."
+  tachibk_preview = "Backup read: {series} series, {chapters} chapters, {read} proven read, {started} started, {trackers} tracker entries. Nothing is written yet."
+  tachibk_apply_with = "To write it: shelfhold import tachibk --apply {id}"
+  tachibk_applied = "Backup imported: {series} series waiting for their source, {markers} read markers, {hints} tracker hints."
+  tachibk_usage = "Give either a backup file (a preview) or --apply <id> (not both, and no --profile with --apply)."
   help_follow_series = "Follows a series of the service connected from Shelfhold: a single entry in its library, category “Shelfhold”, without automatic download."
   help_unfollow_series = "No longer follows a series: it remains in the connected service, except with --remove-upstream and --confirm."
   help_follow_source_key = "Key to the source of the series, as the service gives it (for example suwayomi:7001)."
@@ -1931,6 +1939,31 @@
     title = "Too many requests are already pending for this profile."
     action = "Wait for a response, or cancel a request, before making another."
     cause = "This profile has already reached the maximum number of pending requests."
+
+  [errors."import.tachibk_invalid"]
+    title = "This backup cannot be read."
+    action = "Export a new backup from Mihon and try again. A file over 16 MiB, nested too deep or holding too many entries is refused whole."
+    cause = "The file is not a gzip-compressed backup, is damaged, or is over a bound (size, expanded size, depth, number of entries, length of a text). The reason word says which."
+
+  [errors."import.tachibk_schema"]
+    title = "This backup comes from a version of the format Shelfhold does not know."
+    action = "Update Shelfhold, or export the backup again from a version of Mihon it supports."
+    cause = "The file uses a part of the backup format that this version does not recognise; it could change what the known parts mean, so it is refused rather than half read."
+
+  [errors."import.tachibk_not_found"]
+    title = "No such import or profile."
+    action = "Start again from a backup file, and pick a profile that exists."
+    cause = "The import, or the profile it was meant for, does not exist (any more)."
+
+  [errors."import.tachibk_applied"]
+    title = "This import was already applied."
+    action = "Nothing to do: read the result, or import the file again."
+    cause = "A preview is applied once."
+
+  [errors."import.tachibk_unavailable"]
+    title = "The backup reader could not run."
+    action = "Try again; if it persists, check the logs and the limits of the machine."
+    cause = "The bounded process that reads backups failed to start or crashed: the file is not the cause."
 
   [errors."request.invalid_list"]
     title = "This list cannot be read."

@@ -13,6 +13,7 @@ Field numbers are those the format documents: `Backup` (1: manga, 2: categories,
 from __future__ import annotations
 
 import gzip
+import secrets
 import struct
 import zlib
 from collections.abc import Iterable
@@ -20,7 +21,7 @@ from collections.abc import Iterable
 SOURCE_NAME = "SynthSource-Xq7"  # an invented source name: it must be found nowhere
 SOURCE_ID = 4_242_424_242
 OTHER_SOURCE_ID = 5_151
-SECRET = "synthetic-token-9f3a"  # what a tracking URL or a preference might hold
+SECRET = "tok-" + secrets.token_hex(6)  # what a URL or a preference might hold; drawn per run
 
 
 def varint(value: int) -> bytes:

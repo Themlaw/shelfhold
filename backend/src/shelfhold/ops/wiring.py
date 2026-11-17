@@ -14,6 +14,7 @@ import sqlalchemy as sa
 from sqlalchemy import Engine
 
 from shelfhold.acquisition.application.request_lists import RequestListService
+from shelfhold.acquisition.application.tachibk_import import TachibkImportService
 from shelfhold.composition import Composition, open_fsops
 from shelfhold.config import Settings
 from shelfhold.events.bus import EventBus
@@ -194,6 +195,7 @@ def open_ops(
         follows=FollowOps(composition), sheet=SheetOps(composition),
         acquire=AcquireOps(composition),
         requests=requests, request_lists=RequestListService(engine, clock, requests),
+        tachibk_import=TachibkImportService(engine, clock),
         roots=RootOps(composition),
         kavita_accounts=KavitaAccountsOps(
             engine, ChildAccountsAuditor(engine, clock, events), clock=clock,

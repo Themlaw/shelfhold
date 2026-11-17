@@ -16,6 +16,10 @@ from typing import Any, Protocol
 
 from shelfhold.acquisition.application.request_lists import InvalidListError
 from shelfhold.acquisition.application.requests import RequestRefusedError
+from shelfhold.acquisition.application.tachibk_import import (
+    TachibkImportError,
+    TachibkRefusedError,
+)
 from shelfhold.export.domain.bindings import BindingError
 from shelfhold.headless import HeadlessError
 from shelfhold.i18n import t
@@ -24,6 +28,7 @@ from shelfhold.infrastructure.local_socket import Peer, RpcError, RpcFailure, ca
 from shelfhold.infrastructure.local_socket.server import APPLICATION_ERROR, INVALID_PARAMS
 from shelfhold.interfaces.local_cli.principal import principal_for_peer
 from shelfhold.ops import CodedRefusal, OpsError, OpsServices, user_of
+from shelfhold.platform.import_tachibk.decode import Limits
 
 __all__ = [
     "OPS_METHODS",
@@ -568,6 +573,39 @@ def _import_list(ops: OpsServices, by: Principal, p: Params, for_user_id: str | 
     }  # fmt: skip
 
 
+def _import_tachibk_preview(ops: OpsServices, by: Principal, p: Params) -> object:
+    """`shelfhold import tachibk <file>` (EF-INT-008): the file the admin names on the host, read
+    here (at most the bound plus one byte, so that a file over it is refused and never cut), then
+    read again as hostile by the bounded reader. A preview: nothing reaches the library."""
+    limit = Limits().max_compressed
+    try:
+        with Path(_text(p, "path")).open("rb") as handle:
+            data = handle.read(limit + 1)
+    except OSError:
+        raise CodedRefusal("import.tachibk_invalid", "unreadable") from None
+    profile = _optional(p, "profile")
+    profile_id = None
+    if profile is not None:
+        profile_id = ops.tachibk_import.profile_id(profile)
+        if profile_id is None:
+            raise CodedRefusal("import.tachibk_not_found", t("local_cli.profile_unknown"))
+    try:
+        view = ops.tachibk_import.preview(by, data, profile_id=profile_id)
+    except TachibkRefusedError as refused:
+        raise CodedRefusal(refused.code, refused.reason) from None
+    except TachibkImportError as refused:
+        raise CodedRefusal(refused.code, refused.code) from None
+    return {k: v for k, v in view.__dict__.items() if k != "items"}
+
+
+def _import_tachibk_apply(ops: OpsServices, by: Principal, p: Params) -> object:
+    try:
+        done = ops.tachibk_import.apply(by, _text(p, "id"))
+    except TachibkImportError as refused:
+        raise CodedRefusal(refused.code, refused.code) from None
+    return done.__dict__
+
+
 def _follow(ops: OpsServices, by: Principal, p: Params) -> object:
     return ops.follows.follow(
         _text(p, "source_key"), _text(p, "remote_id"), requester_user_id=user_of(by)
@@ -858,6 +896,8 @@ OPS_METHODS: Mapping[str, tuple[OpsMethod, str | None]] = {
     "ops.import_tree": (_import_tree, None),
     "ops.normalize_pages": (_normalize_pages, None),
     "ops.assemble_volume": (_assemble_volume, None),
+    "ops.import_tachibk_preview": (_import_tachibk_preview, "import.tachibk"),
+    "ops.import_tachibk_apply": (_import_tachibk_apply, "import.tachibk"),
     "ops.request_from_list": (_request_from_list, None),
     "ops.request_from_list_for_profile": (_request_from_list_for_profile, "reading_shelf.attach"),
     "ops.follow": (_follow, None),
