@@ -153,14 +153,6 @@ symbols = [
 ]
 
 [[allow]]
-category = "m3-l56-deferred-team-switch"
-reason = "2026-11-14 (M3 L56): redated M4. Wiring it means that a click on the series sheet replaces served files, which is an upgrade under intent on a write context with its lease, its guards and its screen of outcomes (`SwitchReport`: switched, blocked, pending): a feature of its own, not a wiring, and the sheet of L43 decided that choosing a team replaces nothing. M4 builds it with the upgrader of the follow cycle (`runtime_jobs._LazyUpgrader`). Before: 2026-11-12: the preferred team is stored and the switch is tested end to end (the files served are replaced by the upgrade under intent), but the upgrader of the running instance is not wired yet: the route of the series sheet only chooses the team (`CatalogService.prefer_team`), nothing already served is replaced."
-until = "M4"  # settled by M4 lot L35
-symbols = [
-  "shelfhold.acquisition.application.team_switch:switch_to_preferred_team",
-]
-
-[[allow]]
 category = "unwired-m4"
 reason = "2026-11-15 (M4 L14a): the sweep of the aliases a crash left without hashes (`heal_alias_hashes`), the internal door of a server state (`record_server_state`) and the live read of a member's key (`live_member_account`, `MemberKeyRevokedError`), and the refusal of a carrier the reader may not see (`UnknownCarrierError`), are the contract of the reading service that L14b (the push of progress to a member's account), L47 and L50 (the kosync relay) are the first callers of: L14a adds no route and no job of its own, the route of each of them enters the surfaces meta-test in its own PR. The sweep takes its locator from the caller, which knows the physical roots. `reading.domain.merge` and `projection` state the rule that the SQL view `reading_progress` implements; a test proves the two equal, and the relays of L14b and L47 are their first production callers (the kosync answer picks the furthest position with `furthest`)."
 until = "M4"  # settled by M4 lots L14b and L47
@@ -172,4 +164,12 @@ symbols = [
   "shelfhold.reading.application.progress:undo_read_mark",
   "shelfhold.reading.domain.merge:latest",
   "shelfhold.reading.domain.merge:furthest",
+]
+
+[[allow]]
+category = "deferred-l24-deprecation-window"
+reason = "2026-11-17 (M4 L24): `Deprecation` builds the window during which an event is sent in two versions of its shape (EF-INT-005). Every event of the catalogue is still at its first version, so no entry declares one: the double emission is proved with a catalogue the test builds, and the bounds are checked when any catalogue is built. It comes with the first change of the shape of an event."
+until = "M5"
+symbols = [
+  "shelfhold.integrations.webhooks.catalogue:Deprecation",
 ]

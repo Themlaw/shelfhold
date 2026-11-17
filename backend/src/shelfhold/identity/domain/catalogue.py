@@ -83,6 +83,9 @@ _DECLARED = (
     # The open export and its import (M3 L37, EF-INT-016): every profile's data leaves, or enters
     _action("export.all", Effect.MOVES_INSTANCE_DATA),
     _action("import.all", Effect.MOVES_INSTANCE_DATA),
+    # M4 L24 (EF-INT-005): registering or removing a webhook sends the household's events to an
+    # address outside the house and hands out a secret once: a fresh admin session, never a key
+    _action("webhook.manage", Effect.MOVES_INSTANCE_DATA),
     # Sessions and the way back in (M3 L07, EF-USR-011): closing the session of ANOTHER profile,
     # and reading the kit that says how to recover. Own sessions are anyone's own and not here
     _action("session.list_all", Effect.MANAGES_CREDENTIALS),
@@ -111,6 +114,9 @@ _DECLARED = (
     # series, read markers and tracker hints in a profile: data enters the instance, so it is a
     # fresh admin session (or the host's command line), never a key, a member or a child
     _action("import.tachibk", Effect.MOVES_INSTANCE_DATA),
+    # M4 L35 (EF-BIB-005): the switch to the preferred team replaces the files already served, so it
+    # is a fresh admin session, never a key, a member or a child (preview, apply and report alike)
+    _action("team.switch", Effect.REWRITES_EXPORTED_FILES),
     # M4 L31 (EF-USR-020): an imported list for a child makes her a reading shelf and requests in
     # her name, which is what she is shown and what she will ask for: a parental decision
     _action("reading_shelf.attach", Effect.PARENTAL_CONTROL),

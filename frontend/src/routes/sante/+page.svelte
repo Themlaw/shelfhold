@@ -96,6 +96,17 @@
       {/if}
     </section>
 
+    {#if view.unreadableWebhooks.length > 0}
+      <section aria-labelledby="h-webhooks">
+        <h2 id="h-webhooks">{t('health_page.unreadable_webhooks')}</h2>
+        <ul>
+          {#each view.unreadableWebhooks as entry, i (i)}
+            <HealthEntry label={entry.subject ?? ''} code={entry.code} action={entry.action} />
+          {/each}
+        </ul>
+      </section>
+    {/if}
+
     <section aria-labelledby="h-types">
       <h2 id="h-types">{t('health_page.library_types')}</h2>
       {#if view.libraryTypeChanges.length === 0}

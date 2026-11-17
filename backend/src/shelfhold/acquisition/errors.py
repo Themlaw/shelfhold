@@ -90,6 +90,10 @@ CODES: tuple[ErrorCode, ...] = (
     ErrorCode("import.tachibk_not_found", 404, "user"),  # no such batch or profile: one answer
     ErrorCode("import.tachibk_applied", 409, "admin"),  # a preview is applied once
     ErrorCode("import.tachibk_unavailable", 503, "admin"),  # the bounded reader could not run
+    # EF-BIB-005 (M4 L35): the switch to the preferred team
+    ErrorCode("team_switch.not_found", 404, "user"),  # no such edition or switch: one answer
+    ErrorCode("team_switch.no_preferred_team", 409, "admin"),  # the Edition has no priority list
+    ErrorCode("team_switch.stale", 409, "admin"),  # the preview is not what would be done now
     ErrorCode("request.invalid_reason", 422, "admin"),
     ErrorCode("request.choose_age", 422, "admin"),  # rating a child's request is approving it
     ErrorCode("request.confirmation_required", 409, "admin"),  # over 100 Units or 5 GiB
@@ -104,4 +108,10 @@ CODES: tuple[ErrorCode, ...] = (
     ErrorCode("source_migration.stale", 409, "admin"),  # not the table shown, or the Edition moved
     ErrorCode("source_migration.held_aside", 409, "admin", event=True),  # a release with no place
     ErrorCode("source_migration.invalid", 422, "admin"),  # a line, a target or a listing refused
+    # EF-INT-005 (M4 L24): webhooks. The answer for a subscription that exists is, for anyone who
+    # may not see it, the refusal of the door; for the administrator, one that is not there
+    ErrorCode("webhook.not_found", 404, "admin"),
+    ErrorCode("webhook.url_refused", 422, "admin"),  # an address that is wrong or leads somewhere
+    ErrorCode("webhook.secret_unreadable", 503, "admin"),  # the sealed address cannot be opened
+    ErrorCode("webhook.event_types", 422, "admin"),  # a type outside the closed list, or none
 )
