@@ -4153,6 +4153,32 @@
         "title": "KavitaAccountOut",
         "type": "object"
       },
+      "KavitaPublicIn": {
+        "properties": {
+          "approved": {
+            "title": "Approved",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "approved"
+        ],
+        "title": "KavitaPublicIn",
+        "type": "object"
+      },
+      "KavitaPublicOut": {
+        "properties": {
+          "approved": {
+            "title": "Approved",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "approved"
+        ],
+        "title": "KavitaPublicOut",
+        "type": "object"
+      },
       "KeyringExportIn": {
         "additionalProperties": false,
         "properties": {
@@ -14377,6 +14403,79 @@
           }
         },
         "summary": "Remove Item",
+        "tags": [
+          "collections"
+        ]
+      }
+    },
+    "/api/v1/collections/{collection_id}/kavita-public": {
+      "put": {
+        "description": "The admin's word that a profile's private list may be promoted in Kavita (L18b). An\nadmin session or a key of scope `admin` of the admin: everyone else is refused before the\nidentifier is looked at, so the refusal never says which lists exist.",
+        "operationId": "approve_for_kavita",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "collection_id",
+            "required": true,
+            "schema": {
+              "title": "Collection Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/KavitaPublicIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KavitaPublicOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Connexion requise, ou mot de passe à confirmer (reauth-required)."
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée)."
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Détail du problème (RFC 9457)."
+          }
+        },
+        "summary": "Approve For Kavita",
         "tags": [
           "collections"
         ]
@@ -28629,6 +28728,10 @@
     },
     "/api/v1/problems/collection.full": {
       "code": "collection.full",
+      "status": 409
+    },
+    "/api/v1/problems/collection.not-private": {
+      "code": "collection.not_private",
       "status": 409
     },
     "/api/v1/problems/config.file-invalid": {

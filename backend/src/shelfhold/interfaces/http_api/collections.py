@@ -123,11 +123,11 @@ def _item(found: ItemView) -> ItemOut:
     )  # fmt: skip
 
 
-class ApprovalIn(BaseModel):
+class KavitaPublicIn(BaseModel):
     approved: bool
 
 
-class ApprovalOut(BaseModel):
+class KavitaPublicOut(BaseModel):
     approved: bool
 
 
@@ -205,10 +205,10 @@ def build_collections_router(
 
     @router.put(
         "/{collection_id}/kavita-public",
-        response_model=ApprovalOut,
+        response_model=KavitaPublicOut,
         dependencies=[Depends(require_admin)],
     )
-    def approve_for_kavita(collection_id: str, body: ApprovalIn) -> ApprovalOut:
+    def approve_for_kavita(collection_id: str, body: KavitaPublicIn) -> KavitaPublicOut:
         """The admin's word that a profile's private list may be promoted in Kavita (L18b). An
         admin session or a key of scope `admin` of the admin: everyone else is refused before the
         identifier is looked at, so the refusal never says which lists exist."""
@@ -222,7 +222,7 @@ def build_collections_router(
             raise ProblemError("collection.not_private") from None
         if after_change is not None:
             after_change()
-        return ApprovalOut(approved=done)
+        return KavitaPublicOut(approved=done)
 
     @router.delete("/{collection_id}", status_code=204)
     def delete_collection(collection_id: str, principal: writer) -> Response:

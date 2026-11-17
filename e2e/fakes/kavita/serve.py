@@ -23,6 +23,7 @@ from tests.fakes.kavita.server import member  # type: ignore[import-not-found]
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from httpshell import serve  # noqa: E402
+from kavita_collections import seen_by  # noqa: E402
 
 LIBRARY_ROOT = Path(os.environ.get("FAKE_LIBRARY_ROOT", "/library"))
 ADMIN = os.environ.get("FAKE_KAVITA_USER", "shelfhold")
@@ -113,6 +114,11 @@ def handle(method: str, target: str, headers: dict[str, str], body: bytes):  # t
             return ceiling < 0 or (unknowns if age == 0 else age <= ceiling)
 
         return _json([s["name"] for s in fake.series if s["libraryId"] in allowed and readable(s)])
+    if path == "/_fake/collections" and method == "GET":
+        # what ?name=<n> is shown of the collections and reading lists (EF-EXP-025)
+        from urllib.parse import parse_qs, urlsplit
+
+        return _json(seen_by(fake, parse_qs(urlsplit(target).query)["name"][0]))
     if path == "/_fake/index" and method == "POST":
         # Kavita looks at a folder of the shared volume: ?folder=<path> (as a scan would)
         from urllib.parse import parse_qs, urlsplit

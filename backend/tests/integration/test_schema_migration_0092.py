@@ -1,6 +1,7 @@
 """Migration 0092 (M4 L31, EF-USR-020): `request_list_import` and `request_list_item`.
 
 One batch per import, for one profile, with its reading shelf; one row per line, either in the
+library or a request. Nothing existing is touched; reversible.
 """
 
 import sqlite3
