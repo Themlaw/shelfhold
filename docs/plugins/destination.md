@@ -4,10 +4,9 @@ Une **destination** reçoit des fichiers rangés par Shelfhold (une bibliothèqu
 Le contrat vit dans `shelfhold.sdk.export_target`, `shelfhold.sdk.api_call` et `shelfhold.sdk.fsops` (licence MIT).
 
 > **Partiellement provisoire.** Le plan d'opérations (`FsOp`, SDK 1.3) et le corps d'`ApiCall` (SDK 1.4) sont figés. Le reste du contrat
-> (éléments d'export, plages de versions, événements, progression) est encore décrit sans type et changera
-> avec la première destination complète, en M4 ; certains membres propres à Kavita sont dépréciés depuis le
-> SDK 1.1. Ne publiez pas de destination tierce avant M4. Le kit de conformité des destinations est
-> **à venir en M4** ([kit.md](kit.md)).
+> (éléments d'export, plages de versions, événements, progression) est encore décrit sans type : `ExportItem`, `VersionRange`,
+> `EventSubscription` changeront avec le second adaptateur — n'écrivez pas de destination tierce contre eux. Le kit de conformité des
+> destinations est livré : [destination-kit.md](destination-kit.md), `assert_destination_conforms`.
 
 ## Ce que fait la destination, ce que fait l'hôte
 
@@ -87,9 +86,10 @@ vrai, elle accepte d'indexer un arbre qu'elle n'a pas créé, sans y écrire) et
 
 ## Le transport `push`
 
-`push` reste refusé par le kit (`run_destination_declaration_check`) tant que la destination ne déclare pas
-`content_body`, et tant qu'elle ne passe pas le kit des destinations (M4, L05). Il ne donne jamais d'accès réseau
-à l'adaptateur : tout part par le `Fetcher` du cœur et sa garde SSRF.
+`push` est ouvert depuis le SDK 1.4, derrière deux conditions : la destination déclare
+`content_body` (ses octets partent par `ApiCall.body`), et elle passe le kit des destinations
+(`assert_destination_conforms`, [destination-kit.md](destination-kit.md)). Il ne donne jamais
+d'accès réseau à l'adaptateur : tout part par le `Fetcher` du cœur et sa garde SSRF.
 
 ## Événements et états d'attente
 
