@@ -7488,6 +7488,10 @@ export type ShelfholdInterfacesHttpApiTachibkImportImportOut = {
      * Trackers
      */
     trackers: number;
+    /**
+     * Unknown Fields
+     */
+    unknown_fields: Array<number>;
 };
 
 /**

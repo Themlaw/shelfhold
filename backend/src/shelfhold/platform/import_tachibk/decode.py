@@ -14,8 +14,11 @@ Only the fields Shelfhold uses are decoded: the series (source id, address, titl
 chapters (address, read flag, last page, number) and its tracker entries (tracker, remote id,
 last chapter). Everything else, a field of a later version included, is skipped by its length
 without being read; the names of the sources and the preferences (which hold tracker tokens) are
-skipped and never kept. A top-level field this build does not know is a later generation of the
-format and is refused by name (`unknown_schema`), because it may change what the known ones mean.
+skipped and never kept. A field this build does not know, at the top or deeper, is skipped the same
+way and counted: protobuf only adds numbers, and the forks of Mihon add their own. The top-level
+ones are reported (`unknown_fields`, generation `mihon-unknown`); a file with no known top-level
+field at all is refused by name (`unknown_schema`). A series with a text over the bound is left
+out and counted, never the whole file.
 
 Nothing here opens a path, asks the network or imports anything outside the standard library: the
 module is run, in a subprocess with no network and bounded memory and time, by `sandbox`.
@@ -53,7 +56,7 @@ class Limits:
     max_compressed: int = 16 * _MIB
     max_decompressed: int = 64 * _MIB
     max_depth: int = 16
-    max_entries: int = 100_000  # messages: series, chapters, tracker entries, skipped fields
+    max_entries: int = 100_000  # messages read (series, chapters, tracker entries) and groups
     max_fields: int = 2_000_000  # every field read or skipped, scalars included
     max_string: int = 2048
 
@@ -105,6 +108,8 @@ class RawBackup:
     schema_version: str
     manga: list[RawManga] = field(default_factory=list)
     source_ids: list[int] = field(default_factory=list)
+    unknown_fields: list[int] = field(default_factory=list)  # top-level numbers of a later version
+    skipped_long: int = 0  # series left out because a text of theirs is over the bound
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -134,6 +139,8 @@ class RawBackup:
                     for m in raw["manga"]
                 ],
                 source_ids=[int(s) for s in raw["source_ids"]],
+                unknown_fields=[int(n) for n in raw["unknown_fields"]],
+                skipped_long=int(raw["skipped_long"]),
             )  # fmt: skip
         except (KeyError, TypeError, ValueError):
             raise TachibkRefusedError("malformed") from None
@@ -189,6 +196,11 @@ class _Reader:
         if self.budget < 0 or self.fields_left < 0:
             raise TachibkRefusedError("too_many_entries")
 
+    def entry(self) -> None:
+        """A message read (a series, a chapter, a tracker entry, a source) is an entry of D14. A
+        string or a message that is skipped is not: it stays in the field and size bounds."""
+        self.count(entry=True)
+
     def fields(self, pos: int, end: int) -> Any:
         """Yield `(field, wire, value)` for each field of the message in `buf[pos:end]`: a varint
         value, the 4 or 8 raw bytes, or a `(start, stop)` slice for a length-delimited field. A
@@ -198,7 +210,7 @@ class _Reader:
             number, wire = key >> 3, key & 7
             if number == 0:
                 raise TachibkRefusedError("malformed")
-            self.count(entry=wire in (2, 3))
+            self.count(entry=wire == 3)
             if wire == 0:
                 value, pos = self.varint(pos, end)
                 yield number, 0, value
@@ -232,7 +244,7 @@ class _Reader:
             inner, wire = key >> 3, key & 7
             if inner == 0:
                 raise TachibkRefusedError("malformed")
-            self.count(entry=wire in (2, 3))
+            self.count(entry=wire == 3)
             if wire == 3:
                 open_groups.append(inner)
                 if len(open_groups) > self.limits.max_depth:
@@ -279,6 +291,7 @@ def _expect(wire: int, wanted: int) -> None:
 
 
 def _chapter(reader: _Reader, span: tuple[int, int]) -> RawChapter:
+    reader.entry()
     chapter = RawChapter()
     for number, wire, value in reader.fields(*span):
         if number == 1:
@@ -296,6 +309,7 @@ def _chapter(reader: _Reader, span: tuple[int, int]) -> RawChapter:
 
 
 def _tracking(reader: _Reader, span: tuple[int, int]) -> RawTracking:
+    reader.entry()
     entry, media = RawTracking(), None
     for number, wire, value in reader.fields(*span):
         if number == 1:
@@ -311,6 +325,7 @@ def _tracking(reader: _Reader, span: tuple[int, int]) -> RawTracking:
 
 
 def _manga(reader: _Reader, span: tuple[int, int]) -> RawManga:
+    reader.entry()
     manga = RawManga()
     for number, wire, value in reader.fields(*span):
         if number == 1:
@@ -335,6 +350,7 @@ def _manga(reader: _Reader, span: tuple[int, int]) -> RawManga:
 
 
 def _source_id(reader: _Reader, span: tuple[int, int]) -> int | None:
+    reader.entry()
     found = None
     for number, wire, value in reader.fields(*span):  # the name (field 1) is never read
         if number == 2:
@@ -344,7 +360,14 @@ def _source_id(reader: _Reader, span: tuple[int, int]) -> int | None:
 
 
 def decode_backup(data: bytes, limits: Limits | None = None) -> RawBackup:
-    """The series, chapters and tracker entries of a backup, or a `TachibkRefusedError`."""
+    """The series, chapters and tracker entries of a backup, or a `TachibkRefusedError`.
+
+    A field this build does not know, at any depth, is skipped by its length and counted in the
+    budget: protobuf only ever adds numbers, and the forks of Mihon add their own at the top
+    (600 and 601 for TachiyomiSY). The top-level numbers met are reported (`unknown_fields`, and
+    the generation `mihon-unknown`). Only a file with no known top-level field at all is not a
+    backup this build recognises (`unknown_schema`). A series with a text over the bound is left
+    out and counted, never the whole file."""
     limits = limits or Limits()
     message = gunzip(data, limits)
     reader = _Reader(message, limits)
@@ -352,11 +375,17 @@ def decode_backup(data: bytes, limits: Limits | None = None) -> RawBackup:
     manga: list[RawManga] = []
     sources: list[int] = []
     seen_sources: set[int] = set()
+    skipped_long = 0
     for number, wire, value in reader.fields(0, len(message)):
         top.add(number)
         if number == 1:
             _expect(wire, 2)
-            manga.append(_manga(reader, value))
+            try:
+                manga.append(_manga(reader, value))
+            except TachibkRefusedError as refused:
+                if refused.reason != "string_too_long":
+                    raise
+                skipped_long += 1
         elif number == 101:
             _expect(wire, 2)
             source = _source_id(reader, value)
@@ -365,7 +394,18 @@ def decode_backup(data: bytes, limits: Limits | None = None) -> RawBackup:
                 sources.append(source)
         elif number in (2, 100, 104, 105, 106):
             _expect(wire, 2)  # skipped by its length: categories, legacy sources, preferences
-    version = next((name for name, known in SCHEMA_VERSIONS.items() if top <= known), None)
-    if version is None:
+    known = set().union(*SCHEMA_VERSIONS.values())
+    if not top & known:
         raise TachibkRefusedError("unknown_schema", SCHEMA)
-    return RawBackup(schema_version=version, manga=manga, source_ids=sources)
+    unknown = sorted(top - known)[:64]
+    version = next(
+        (name for name, fields in SCHEMA_VERSIONS.items() if not unknown and top <= fields),
+        "mihon-unknown",
+    )
+    return RawBackup(
+        schema_version=version,
+        manga=manga,
+        source_ids=sources,
+        unknown_fields=unknown,
+        skipped_long=skipped_long,
+    )

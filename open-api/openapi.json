@@ -12259,6 +12259,13 @@
           "trackers": {
             "title": "Trackers",
             "type": "integer"
+          },
+          "unknown_fields": {
+            "items": {
+              "type": "integer"
+            },
+            "title": "Unknown Fields",
+            "type": "array"
           }
         },
         "required": [
@@ -12273,7 +12280,8 @@
           "trackers",
           "sources",
           "skipped",
-          "items"
+          "items",
+          "unknown_fields"
         ],
         "title": "ImportOut",
         "type": "object"

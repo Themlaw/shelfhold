@@ -89,6 +89,8 @@ class Staged:
     skipped_local: int = 0
     skipped_invalid: int = 0
     skipped_trackers: int = 0
+    skipped_long: int = 0
+    unknown_fields: list[int] = field(default_factory=list)
 
     def to_json(self) -> str:
         return json.dumps(asdict(self), separators=(",", ":"))
@@ -178,7 +180,12 @@ def _chapter(chapter: RawChapter, record: SeriesRecord, seen: set[str]) -> None:
 
 
 def map_backup(raw: RawBackup) -> Staged:
-    staged = Staged(schema_version=raw.schema_version, sources=len(raw.source_ids))
+    staged = Staged(
+        schema_version=raw.schema_version,
+        sources=len(raw.source_ids),
+        skipped_long=raw.skipped_long,
+        unknown_fields=list(raw.unknown_fields),
+    )
     seen: set[tuple[str, str]] = set()
     for manga in raw.manga:
         if not manga.favorite:

@@ -579,11 +579,13 @@ def _import_tachibk_preview(ops: OpsServices, by: Principal, p: Params) -> objec
     here (at most the bound plus one byte, so that a file over it is refused and never cut), then
     read again as hostile by the bounded reader. A preview: nothing reaches the library."""
     limit = Limits().max_compressed
-    path = Path(_text(p, "path"))
-    try:  # only a regular file is opened: never a pipe, which would hold the server, or a device
-        if not stat.S_ISREG(path.stat().st_mode):
-            raise OSError
-        with path.open("rb") as handle:
+    try:  # opened without blocking or following a link, then checked on the descriptor itself
+        fd = os.open(  # noqa: TID251 - a file the host admin names, read once, not under /data
+            _text(p, "path"), os.O_RDONLY | os.O_NONBLOCK | os.O_NOFOLLOW | os.O_CLOEXEC
+        )
+        with os.fdopen(fd, "rb") as handle:
+            if not stat.S_ISREG(os.fstat(handle.fileno()).st_mode):
+                raise OSError
             data = handle.read(limit + 1)
     except OSError:
         raise CodedRefusal("import.tachibk_invalid", "unreadable") from None

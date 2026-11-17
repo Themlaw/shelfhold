@@ -72,14 +72,9 @@ def test_tachibk_bomb_and_depth_caps_refused() -> None:
     except TachibkRefusedError as refused:
         outcome = refused
     assert time.monotonic() - started < 5 and outcome is not None
-    # more entries than the bound: counted over the whole file, the fields skipped included
-    many = env.manga(1, "/u", "T", extra=b"".join(env.ld(90, b"") for _ in range(100_001)))
+    # more entries than the bound: the messages read (here, 100 001 chapters) are the entries
+    many = env.manga(1, "/u", "T", chapters=[b""] * 100_001)
     assert _refused(env.tachibk(env.backup([many]))).reason == "too_many_entries"
-    # a string over the bound, in a field Shelfhold reads
-    long_title = env.manga(1, "/u", "x" * 5_000)
-    assert _refused(env.tachibk(env.backup([long_title]))).reason == "string_too_long"
-    long_url = env.manga(1, "/" + "u" * 5_000, "T")
-    assert _refused(env.tachibk(env.backup([long_url]))).reason == "string_too_long"
     # a string of enormous declared length, truncated file: malformed, never allocated
     truncated = gzip.compress(env.tag(1, 2) + env.varint(2**40) + b"abc")
     assert _refused(truncated).reason == "malformed"
@@ -110,18 +105,32 @@ def test_a_file_that_is_not_a_backup_is_refused_with_a_word(data: bytes, reason:
 
 @pytest.mark.req("EF-INT-008")
 def test_tachibk_unknown_schema_version_refused_with_code() -> None:
-    # a top-level field this build does not know is a later generation of the format: it may mean
-    # something else than what is read from the fields that are known, so it is refused by name
-    future = env.tachibk(env.backup([env.manga(1, "/u", "T")], extra=env.ld(999, "a later field")))
+    # a file with no top-level field this build knows is no backup it recognises: refused by name
+    future = env.tachibk(env.ld(999, "a later field") + env.ld(998, b""))
     refused = _refused(future)
     assert (refused.code, refused.reason) == ("import.tachibk_schema", "unknown_schema")
-    # the same fields at the nested level are ignored: that is not a version
-    assert decode_backup(env.sample()).schema_version in SCHEMA_VERSIONS
+    assert refused.code != _refused(b"").code
     # every recognised generation is accepted
     for extra in (b"", env.ld(104, "p"), env.ld(106, "r")):
         raw = decode_backup(env.tachibk(env.backup([env.manga(1, "/u", "T")], extra=extra)))
-        assert raw.schema_version in SCHEMA_VERSIONS
-    assert refused.code != _refused(b"").code
+        assert raw.schema_version in SCHEMA_VERSIONS and raw.unknown_fields == []
+
+
+@pytest.mark.req("EF-INT-008")
+def test_a_later_field_is_ignored_and_reported_and_a_long_text_costs_only_its_series() -> None:
+    # the forks add their own top-level fields (600, 601) and Mihon adds more: skipped, reported
+    later = env.ld(600, env.ld(1, "a saved search")) + env.ld(601, env.vi(1, 1)) + env.ld(107, b"")
+    raw = decode_backup(env.tachibk(env.backup([env.manga(1, "/u", "T")], extra=later)))
+    assert (raw.schema_version, raw.unknown_fields) == ("mihon-unknown", [107, 600, 601])
+    assert [m.title for m in raw.manga] == ["T"]
+    # a text over the bound leaves its series out, counted, and the rest of the file is read
+    mangas = [
+        env.manga(1, "/a", "x" * 5_000), env.manga(1, "/" + "u" * 5_000, "B"),
+        env.manga(1, "/c", "C", [env.chapter("/" + "c" * 5_000, 1.0)]), env.manga(1, "/d", "D"),
+    ]  # fmt: skip
+    raw = decode_backup(env.tachibk(env.backup(mangas)))
+    assert [m.title for m in raw.manga] == ["D"] and raw.skipped_long == 3
+    assert map_backup(raw).skipped_long == 3
 
 
 @pytest.mark.req("EF-INT-008")
@@ -147,10 +156,11 @@ def test_a_real_sized_library_is_read_and_a_scalar_flood_is_still_refused() -> N
     # two million scalar fields in one series are a flood, whatever their kind
     flood = env.manga(1, "/u", "T", extra=b"".join(env.vi(90, 1) for _ in range(2_000_001)))
     assert _refused(env.tachibk(env.backup([flood]))).reason == "too_many_entries"
-    # a group at the top level is as much a field of a later version as any other
-    assert _refused(env.tachibk(env.backup([], extra=env.nested_groups(2)))).code == (
-        "import.tachibk_schema"
-    )
+    # a group at the top level is a field of a later version: skipped like any other, and a file
+    # made of nothing else knows no field of the format, so it is refused by name
+    only_unknown = env.tachibk(env.nested_groups(2))
+    assert _refused(only_unknown).code == "import.tachibk_schema"
+    assert decode_backup(env.tachibk(env.backup([], extra=env.nested_groups(2)))).unknown_fields
     # many sources are listed once each, quickly
     many = [(n, "s") for n in range(1, 30_001)]
     started = time.monotonic()

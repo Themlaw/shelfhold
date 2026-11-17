@@ -52,9 +52,6 @@ refusé **en entier** (422, `import.tachibk_invalid`, avec un mot de raison, jam
 | `decompressed_too_large` | 64 Mio décompressés (bombe gzip) |
 | `too_deep` | profondeur 16 |
 | `too_many_entries` | 100 000 champs lus |
-| `string_too_long` | 2 048 octets pour une adresse ou un titre |
 | `malformed`, `not_gzip`, `empty` | fichier abîmé, pas une sauvegarde, vide |
 
-Les champs inconnus sont ignorés. Le format n'a pas de numéro de version : Shelfhold reconnaît les générations (`mihon-1` à
-`mihon-3`) à leurs champs de premier niveau, et refuse par son nom (`import.tachibk_schema`) un champ de premier niveau qu'il ne
-connaît pas, plutôt que de lire à moitié une version dont le sens a pu changer.
+Les champs inconnus sont ignorés, et une série dont l'adresse ou le titre dépasse 2 048 octets est écartée (comptée dans l'aperçu), pas le fichier. Le format n'a pas de numéro de version : Shelfhold reconnaît les générations (`mihon-1` à `mihon-3`) à leurs champs de premier niveau. Un champ de premier niveau qu'il ne connaît pas (ceux des forks, ou d'une version plus récente) est ignoré et signalé dans l'aperçu (`unknown_fields`) ; seul un fichier sans aucun champ connu est refusé (`import.tachibk_schema`).

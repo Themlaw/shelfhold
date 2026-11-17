@@ -93,7 +93,7 @@ def test_cli_refuses_what_it_must_not_read(
     assert "unreadable" in capsys.readouterr().err
     assert run(_file(tmp_path, env.bomb(70), "bomb.tachibk")) == 1  # a gzip bomb
     assert "decompressed_too_large" in capsys.readouterr().err
-    future = env.tachibk(env.backup([], extra=env.ld(999, "later")))
+    future = env.tachibk(env.ld(999, "later"))  # no field of the format at all
     assert run(_file(tmp_path, future, "future.tachibk")) == 1  # a generation it does not know
     assert "import.tachibk_schema" in capsys.readouterr().err
     fifo = tmp_path / "pipe.tachibk"

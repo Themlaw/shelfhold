@@ -1,10 +1,11 @@
 """PR #336 (M4 L26), relecture adverse : un `.tachibk` lu comme hostile, et fidèle au format.
 
-Each test is the proof of a hole found in review, red in strict xfail until it is closed. The
-backups are built here by hand from the public models of the format (`Backup`, `BackupManga`,
+Each test is the proof of a hole found in review; both were red in strict xfail until closed.
+The backups are built here by hand from the public models of the format (`Backup`, `BackupManga`,
 `BackupChapter`, `BackupHistory`), not from what the decoder reads.
 
-* C1: a top-level field the decoder does not know refuses the whole file. Protobuf adds fields, it
+* C1 (now ignored and reported): a top-level field the decoder does not know refused the file.
+  Protobuf adds fields, it
   never changes the meaning of a known one; Mihon ignores what it does not know. The forks that
   write the same format add their own top-level fields (TachiyomiSY and the forks built on it:
   600 saved searches, 601 feeds), so their backups, and the next field Mihon adds, are refused.
@@ -19,7 +20,7 @@ import struct
 
 import pytest
 
-from shelfhold.platform.import_tachibk.decode import TachibkRefusedError, decode_backup
+from shelfhold.platform.import_tachibk.decode import decode_backup
 from shelfhold.platform.import_tachibk.map import map_backup
 from tests import tachibk_env as env
 
@@ -46,10 +47,6 @@ def _sources() -> bytes:
     return env.ld(101, env.ld(1, env.SOURCE_NAME) + env.vi(2, env.SOURCE_ID))
 
 
-@pytest.mark.xfail(
-    strict=True, raises=TachibkRefusedError,
-    reason="C1: a top-level field this build does not know refuses the file (unknown_schema)",
-)  # fmt: skip
 @pytest.mark.parametrize(
     "later",
     [
@@ -64,10 +61,6 @@ def test_poc_a_backup_with_a_later_top_level_field_is_read(later: bytes) -> None
     assert len(staged.series) == 1 and staged.read == 3
 
 
-@pytest.mark.xfail(
-    strict=True, raises=TachibkRefusedError,
-    reason="C2: strings count as entries: 20 000 read chapters are refused as too_many_entries",
-)  # fmt: skip
 def test_poc_an_ordinary_library_of_twenty_thousand_read_chapters_is_read() -> None:
     message = b"".join(env.ld(1, _series(env.SOURCE_ID, n, 100)) for n in range(200)) + _sources()
     backup = decode_backup(env.tachibk(message))

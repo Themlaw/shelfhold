@@ -94,6 +94,7 @@ class ImportView:
     sources: int
     skipped: dict[str, int]
     items: list[ImportItem] = field(default_factory=list)
+    unknown_fields: list[int] = field(default_factory=list)  # a later generation of the format
 
 
 @dataclass(frozen=True)
@@ -112,7 +113,9 @@ def _summary(staged: Staged) -> dict[str, Any]:
         "skipped": {
             "not_favorite": staged.skipped_not_favorite, "local": staged.skipped_local,
             "invalid": staged.skipped_invalid, "trackers": staged.skipped_trackers,
+            "too_long": staged.skipped_long,
         },
+        "unknown_fields": staged.unknown_fields,
         "items": [
             {
                 "title": s.title, "source_key": s.source_key, "chapters": len(s.units),
@@ -133,6 +136,7 @@ def _view(row: Any) -> ImportView:
         trackers=int(data.get("trackers", 0)), sources=int(data.get("sources", 0)),
         skipped={str(k): int(v) for k, v in dict(data.get("skipped", {})).items()},
         items=[ImportItem(**i) for i in data.get("items", [])],
+        unknown_fields=[int(n) for n in data.get("unknown_fields", [])],
     )  # fmt: skip
 
 
@@ -253,7 +257,7 @@ class TachibkImportService:
             staged = Staged.from_json(row.staged)
             items = markers = hints = 0
             for series in staged.series:
-                item_id = _upsert_item(connection, series, now)
+                item_id = _upsert_item(connection, series, now, str(row.created_at))
                 items += 1
                 markers += _upsert_markers(connection, row.user_id, item_id, import_id, series)
                 hints += _upsert_hints(connection, row.user_id, item_id, import_id, series)
@@ -282,16 +286,18 @@ def _account(principal: Principal) -> str | None:
     return principal.user_id if principal.credential is Credential.SESSION else None
 
 
-def _memo(series: Any) -> dict[str, Any]:
+def _memo(series: Any, stamp: str) -> dict[str, Any]:
     return {
         "origin": ORIGIN,
+        "import_at": stamp,  # when the preview was read: an older one never replaces a newer
         "units": [{"ref": u.ref, "number": u.number, "state": u.state} for u in series.units],
     }
 
 
-def _upsert_item(connection: Connection, series: Any, now: Any) -> str:
+def _upsert_item(connection: Connection, series: Any, now: Any, stamp: str) -> str:
     """The pending item of a series. One that a search made keeps what it knew; one an earlier
-    backup made takes the newer title and chapters."""
+    backup made takes the title and chapters of the more recent preview, and an older preview
+    applied late changes neither (its markers still only go forward)."""
     existing = connection.execute(
         sa.select(_pending.c.id, _pending.c.memo).where(
             _pending.c.source_key == series.source_key, _pending.c.series_ref == series.series_ref
@@ -302,17 +308,18 @@ def _upsert_item(connection: Connection, series: Any, now: Any) -> str:
         connection.execute(
             sa.insert(_pending).values(
                 id=item_id, source_key=series.source_key, series_ref=series.series_ref,
-                title=series.title, fetched_at=now, memo=_memo(series),
+                title=series.title, fetched_at=now, memo=_memo(series, stamp),
             )
         )  # fmt: skip
         return item_id
     memo = existing.memo
     if isinstance(memo, str):
         memo = json.loads(memo)
-    if isinstance(memo, dict) and memo.get("origin") == ORIGIN:
+    newer = isinstance(memo, dict) and str(memo.get("import_at", "")) <= stamp
+    if isinstance(memo, dict) and memo.get("origin") == ORIGIN and newer:
         connection.execute(
             sa.update(_pending).where(_pending.c.id == existing.id).values(
-                title=series.title, fetched_at=now, memo=_memo(series)
+                title=series.title, fetched_at=now, memo=_memo(series, stamp)
             )
         )  # fmt: skip
     return str(existing.id)

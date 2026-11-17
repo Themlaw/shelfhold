@@ -62,6 +62,7 @@ class ImportOut(BaseModel):
     sources: int
     skipped: dict[str, int]
     items: list[ItemOut]
+    unknown_fields: list[int]  # top-level fields of a later generation, ignored
 
     @classmethod
     def of(cls, view: ImportView) -> "ImportOut":

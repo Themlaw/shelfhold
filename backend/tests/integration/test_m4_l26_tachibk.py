@@ -197,11 +197,8 @@ def test_tachibk_bomb_and_depth_caps_refused(world: World, monkeypatch: pytest.M
         "decompressed_too_large": env.bomb(70),
         "too_deep": env.tachibk(env.backup([env.manga(1, "/u", "T", extra=env.nested_groups(40))])),
         "too_many_entries": env.tachibk(
-            env.backup(
-                [env.manga(1, "/u", "T", extra=b"".join(env.ld(90, b"") for _ in range(100_001)))]
-            )
+            env.backup([env.manga(1, "/u", "T", chapters=[b""] * 100_001)])
         ),
-        "string_too_long": env.tachibk(env.backup([env.manga(1, "/u", "x" * 5_000)])),
         "malformed": b"\x1f\x8b" + b"not really a gzip",
     }
     for reason, data in cases.items():
@@ -224,12 +221,38 @@ def test_tachibk_bomb_and_depth_caps_refused(world: World, monkeypatch: pytest.M
 
 @pytest.mark.req("EF-INT-008")
 def test_tachibk_unknown_schema_version_refused_with_code(world: World) -> None:
-    future = env.tachibk(env.backup([env.manga(1, "/u", "T")], extra=env.ld(999, "later")))
+    future = env.tachibk(env.ld(999, "later"))  # no top-level field this build knows
     answer = _upload(world, world.env.client, future)
     assert answer.status_code == 422, answer.text
     assert answer.json()["code"] == "import.tachibk_schema"
     assert answer.json()["reason"] == "unknown_schema"
     assert _rows(world, "SELECT 1 FROM tachibk_import") == [] and _library_untouched(world)
+
+
+@pytest.mark.req("EF-INT-008")
+def test_a_fork_backup_and_a_long_text_are_read_and_said(world: World) -> None:
+    later = env.ld(600, env.ld(1, "a saved search")) + env.ld(601, env.vi(1, 1))
+    mangas = [env.manga(1, "/ok", "Kept", [env.chapter("/c/1", 1.0, read=True)]),
+              env.manga(1, "/long", "x" * 5_000)]  # fmt: skip
+    answer = _upload(world, world.env.client, env.tachibk(env.backup(mangas, extra=later)))
+    assert answer.status_code == 201, answer.text
+    body = answer.json()
+    assert body["schema_version"] == "mihon-unknown" and body["unknown_fields"] == [600, 601]
+    assert (body["series"], body["read"], body["skipped"]["too_long"]) == (1, 1, 1)
+
+
+@pytest.mark.req("EF-INT-008")
+def test_an_older_preview_applied_late_does_not_rewrite_a_newer_one(world: World) -> None:
+    old = _upload(
+        world, world.env.client, env.tachibk(env.backup([env.manga(1, "/s", "Old Title")]))
+    )
+    world.env.clock.advance(timedelta(minutes=1))
+    new = _upload(
+        world, world.env.client, env.tachibk(env.backup([env.manga(1, "/s", "New Title")]))
+    )
+    assert _apply(world, world.env.client, new.json()["id"]).status_code == 200
+    assert _apply(world, world.env.client, old.json()["id"]).status_code == 200  # no refusal
+    assert _rows(world, "SELECT title FROM pending_source_item") == [("New Title",)]
 
 
 @pytest.mark.req("EF-INT-008", "ENF-SEC-015")
