@@ -35,6 +35,7 @@ from shelfhold.ops.adoption import LibraryAdoptionExit
 from shelfhold.ops.assembly import VolumeAssemblyOps
 from shelfhold.ops.attach import AttachOps
 from shelfhold.ops.backfill import BackfillOps
+from shelfhold.ops.bulk import BulkOps
 from shelfhold.ops.content import ContentOps
 from shelfhold.ops.contributors import ContributorOps
 from shelfhold.ops.dedup import DedupOps
@@ -151,6 +152,9 @@ def open_ops(
         series_migration=SeriesMigrationOps(composition),
         content=ContentOps(composition),
         rating=RatingOps(engine, clock, fresh_auth_s=settings.fresh_auth_s),
+        bulk=BulkOps(
+            engine, clock, fresh_auth_s=settings.fresh_auth_s, pools=lambda: composition.pools()
+        ),
         attach=AttachOps(
             engine, clock, bus, fresh_auth_s=settings.fresh_auth_s,
             screens=CatalogScreens(composition),

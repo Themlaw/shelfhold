@@ -183,3 +183,13 @@ class RatingOps:
 
 def _age_text(rating: AgeRating) -> str:
     return "X" if rating.x else f"{rating.min_age}+"
+
+
+def parse_age_choice(text: str) -> AgeRating:
+    """The age a caller chose, one of the tiers or X (`InvalidChoiceError` otherwise)."""
+    return _age(text)
+
+
+def age_text(rating: AgeRating) -> str:
+    """The age as the screens write it: `13+`, `X`."""
+    return _age_text(rating)

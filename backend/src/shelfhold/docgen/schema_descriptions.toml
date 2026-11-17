@@ -1467,3 +1467,18 @@ day = "The UTC day."
 source_key = "Source the requests were made for."
 requests = "Requests that left the machine that day (after the network guard)."
 bytes_in = "Bytes received that day."
+
+[tables.bulk_order]
+description = "A bulk order: the selection a preview froze, applied once by one job (M4 L28)."
+[tables.bulk_order.columns]
+id = "Order identifier (ULID); the screen gives it back to apply the order."
+kind = "What the order does (`rate`: file the chosen Works at an age)."
+actor_id = "Admin who previewed it (`user.id`); no other profile can read or apply it."
+params = "What the action needs besides the Works (`age`), as JSON."
+work_ids = "The Works chosen that waited in \"À classer\" when it was previewed (JSON list of identifiers)."
+digest = "Fingerprint of kind, age and chosen Works: the job refuses to run if the selection moved."
+state = "`previewed`, `queued` (one job holds it), `applied`, `stale` (the selection moved) or `refused` (the admin lost the right)."
+job_id = "The one job that applies it, once it is queued."
+summary = "Counts of what the job did, for the screen: no title."
+created_at = "When the selection was frozen (UTC); an order not applied within the hour is dropped."
+applied_at = "When the job applied it (UTC)."

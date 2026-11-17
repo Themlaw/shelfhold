@@ -41,7 +41,7 @@ class _Bulk:
 
     def rate_preview(
         self, *, age: str, principal: Any, work_ids: list[str] | None = None,
-        filter: dict[str, Any] | None = None,  # noqa: A002
+        filter: dict[str, Any] | None = None,
     ) -> dict[str, Any]:  # fmt: skip
         self.calls.append(("preview", age, work_ids, filter, principal.credential.value))
         return {
@@ -102,7 +102,9 @@ def test_preview_then_apply_returns_202_and_a_job_id(api: tuple[AuthEnv, _Bulk])
 def test_a_filter_is_passed_as_a_filter_and_never_with_a_list(api: tuple[AuthEnv, _Bulk]) -> None:
     env, bulk = api
     env.login()
-    done = env.post(PREVIEW, json={"age": "13+", "filter": {"state": "rating_pending", "text": "a"}})
+    done = env.post(
+        PREVIEW, json={"age": "13+", "filter": {"state": "rating_pending", "text": "a"}}
+    )
     assert done.status_code == 200
     assert bulk.calls[-1][2:4] == (None, {"state": "rating_pending", "text": "a"})
 

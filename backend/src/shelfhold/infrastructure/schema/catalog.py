@@ -938,3 +938,35 @@ collection_remote = sa.Table(
     sa.PrimaryKeyConstraint("collection_id", "target_id"),
     sa.CheckConstraint("\"remote_id\" <> ''", name="remote_id_named"),
 )
+
+# A bulk order (M4 L28, EF-BIB-023): the selection a preview froze, to be applied once by one job.
+# It holds identifiers and a digest only: the Works chosen that waited then, the parameters of the
+# action (the age), nothing a title or a secret. The job reads it again and checks the selection
+# under the write lock; an order belongs to the session's user and is never read for another.
+BULK_ORDER_KINDS = ("rate",)
+BULK_ORDER_STATES = ("previewed", "queued", "applied", "stale", "refused")
+bulk_order = sa.Table(
+    "bulk_order",
+    metadata,
+    ulid_column("id", primary_key=True),
+    sa.Column("kind", sa.String(), nullable=False),
+    sa.Column(
+        "actor_id", sa.String(26), sa.ForeignKey("user.id", ondelete="CASCADE"), nullable=False
+    ),
+    sa.Column("params", sa.JSON(), nullable=False, server_default="{}"),
+    sa.Column("work_ids", sa.JSON(), nullable=False, server_default="[]"),
+    sa.Column("digest", sa.String(), nullable=False),
+    sa.Column("state", sa.String(), nullable=False, server_default="previewed"),
+    ulid_column("job_id", nullable=True),
+    sa.Column("summary", sa.JSON(), nullable=False, server_default="{}"),
+    now_column(),
+    sa.Column("applied_at", UtcDateTime(), nullable=True),
+    ulid_check("id"),
+    ulid_check("job_id"),
+    in_check("kind", BULK_ORDER_KINDS),
+    in_check("state", BULK_ORDER_STATES),
+    json_shape_check("params", "object"),
+    json_shape_check("work_ids", "array"),
+    json_shape_check("summary", "object"),
+    sa.Index("ix_bulk_order_actor", "actor_id"),
+)

@@ -143,6 +143,7 @@ from shelfhold.library.adapters.units import (
     require_reserved_deletion,
     safe_to_clean,
 )
+from shelfhold.library.application import bulk
 from shelfhold.library.application.anti_echo import (
     EchoOfOwnExport,
     OwnExport,
@@ -498,6 +499,7 @@ __all__ = [
     "binding_warning",
     "binned_export_file",
     "binned_for_unit",
+    "bulk",
     "byte_sources",
     "check_add_fits",
     "clear_page_issue",

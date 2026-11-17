@@ -57,6 +57,7 @@ M4_TABLES = {
     "tachibk_import",
     "read_marker",
     "tracker_hint",  # migration 0095 (M4 L26)
+    "bulk_order",  # migration 0096 (M4 L28)
     "notify_destination",  # migration 0094 (M4 L39)
 }  # migration 0064 (M4 L02); the others sit in their modules
 M1B_TABLES = {"webauthn_credential", "backup_run"}  # migration 0013

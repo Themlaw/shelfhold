@@ -24,6 +24,7 @@ import sqlalchemy as sa
 
 from shelfhold.config import Settings
 from shelfhold.identity.public import Credential, Principal
+from shelfhold.infrastructure.clock import SystemClock
 from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import catalog, platform
@@ -32,10 +33,12 @@ from shelfhold.ops.bulk import BULK_RATE_JOB_KIND, BulkOps, register_bulk_jobs
 from shelfhold.ops.errors import (
     CodedRefusal,
     InvalidChoiceError,
+    NotWaitingError,
     StalePreviewError,
     UnknownSubjectError,
 )
 from shelfhold.ops.job_actions import reserved_job_action
+from shelfhold.ops.rating import RatingOps
 from tests.fakes_clock import ManualClock
 from tests.integration.test_family_shelves_real import family
 from tests.integration.test_schema_catalog import add_edition, add_work
@@ -43,8 +46,8 @@ from tests.l50_env import Seeded, seeded
 
 pytestmark = pytest.mark.req("EF-BIB-023", "EF-BIB-036", "EF-USR-024")
 
-ADMIN = "01JADMIN00000000000000000A"
-OTHER_ADMIN = "01JADMIN00000000000000000B"
+ADMIN = "01HZZZZZZZZZZZZZZZZZZZZZZA"
+OTHER_ADMIN = "01HZZZZZZZZZZZZZZZZZZZZZZB"
 
 
 def _principal(
@@ -93,11 +96,19 @@ class _Rig:
             ).scalar_one()
         return None if value is None else int(value)
 
+    def rate_elsewhere(self, work_id: str, age: str) -> None:
+        """What another admin does meanwhile: `rate`, the production door of one Work."""
+        RatingOps(self.engine, self.clock).rate(
+            age, work_id=work_id, edition_id=None, principal=self.admin()
+        )
+
     def jobs(self) -> list[Any]:
         with self.engine.connect() as connection:
             return list(
                 connection.execute(
-                    sa.select(platform.job_view).where(platform.job_view.c.kind == BULK_RATE_JOB_KIND)
+                    sa.select(platform.job_view).where(
+                        platform.job_view.c.kind == BULK_RATE_JOB_KIND
+                    )
                 )
             )
 
@@ -115,7 +126,7 @@ class _Rig:
     def audit_rates(self) -> list[str]:
         with self.engine.connect() as connection:
             rows = connection.execute(
-                sa.text("SELECT actor_id, target FROM audit_log WHERE action = 'rate' ORDER BY id")
+                sa.text("SELECT actor_id, target FROM audit WHERE action = 'rate' ORDER BY id")
             )
             return [f"{r.actor_id}|{r.target}" for r in rows]
 
@@ -137,7 +148,7 @@ class _Rig:
 def rig(settings: Settings, tmp_path: Path) -> Iterator[_Rig]:
     with seeded(settings, tmp_path) as env:
         family(env)  # a shelf below 18+ exists: an unrated Edition waits out of it
-        clock = ManualClock()
+        clock = ManualClock(SystemClock().now())
         engine = env.inst.engine
         with closing(sqlite3.connect(settings.database_path, isolation_level=None)) as conn:
             for user_id, name in ((ADMIN, "root"), (OTHER_ADMIN, "second")):
@@ -199,18 +210,13 @@ def test_a_chosen_work_that_changed_since_the_preview_stops_the_whole_job(rig: _
     meanwhile makes the preview stale, and not one Work is rated (all or none)."""
     a, b, c = rig.waiting("A", "B", "C")
     preview = rig.preview(work_ids=[a, b, c])
-    with write_transaction(rig.engine) as connection:  # another admin rated B in the meantime
-        connection.execute(
-            sa.update(catalog.work)
-            .where(catalog.work.c.id == b)
-            .values(age_rating=16, rated_at=rig.clock.now())
-        )
+    rig.rate_elsewhere(b, "16+")  # another admin rated B in the meantime
     job_id = rig.queue(preview)
     rig.run()
     job = rig.job(job_id)
     assert job.status in {"failed", "dead_letter"} and job.error_code == "bulk.stale"
     assert rig.age(b) == 16 and rig.age(a) is None and rig.age(c) is None
-    assert rig.audit_rates() == []
+    assert not [line for line in rig.audit_rates() if "bulk:" in line]  # none of the order
 
 
 @pytest.mark.req("EF-BIB-023", "EF-BIB-036")
@@ -218,12 +224,7 @@ def test_ids_outside_the_waiting_list_are_never_rated_and_never_named(rig: _Rig)
     """An id that is not waiting (rated, unknown, an adult Work on a shelf of its own) is skipped
     by the server: it is counted, not named, and stays as it was."""
     (waiting, rated) = rig.waiting("Attend", "Déjà classée")
-    with write_transaction(rig.engine) as connection:
-        connection.execute(
-            sa.update(catalog.work)
-            .where(catalog.work.c.id == rated)
-            .values(age_rating=18, rated_at=rig.clock.now())
-        )
+    rig.rate_elsewhere(rated, "18+")
     ghost = new_ulid()
     preview = rig.preview(work_ids=[waiting, rated, ghost])
     assert [i["work_id"] for i in preview["items"]] == [waiting] and preview["skipped"] == 2
@@ -231,7 +232,7 @@ def test_ids_outside_the_waiting_list_are_never_rated_and_never_named(rig: _Rig)
     rig.queue(preview)
     rig.run()
     assert rig.age(waiting) == 13 and rig.age(rated) == 18  # the rated one was not lowered
-    with pytest.raises(CodedRefusal):  # nothing waits in the selection: nothing to order
+    with pytest.raises(InvalidChoiceError):  # nothing waits in the selection: nothing to order
         rig.preview(work_ids=[rated, ghost])
     assert rig.orders() == 1
 
@@ -253,7 +254,12 @@ def test_a_frozen_filter_cannot_widen(rig: _Rig) -> None:
 @pytest.mark.req("EF-BIB-023", "EF-BIB-036")
 def test_a_filter_and_a_list_together_or_neither_are_refused(rig: _Rig) -> None:
     (a,) = rig.waiting("A")
-    for selection in ({"work_ids": [a], "filter": {"text": "a"}}, {}, {"work_ids": []}):
+    selections: list[dict[str, Any]] = [
+        {"work_ids": [a], "filter": {"text": "a"}},
+        {},
+        {"work_ids": []},
+    ]
+    for selection in selections:
         with pytest.raises(InvalidChoiceError):
             rig.preview(**selection)
     assert rig.orders() == 0
@@ -275,13 +281,17 @@ def test_the_order_of_another_profile_a_forged_one_and_an_expired_one_are_one_an
         with pytest.raises(UnknownSubjectError) as refused:
             rig.ops.rate_queue(order_id=order_id, confirm=preview["token"], principal=who)
         answers.add(str(refused.value))
-    assert len(answers) == 1  # one answer: nothing tells an order that exists from one that does not
+    assert (
+        len(answers) == 1
+    )  # one answer: nothing tells an order that exists from one that does not
     assert str(preview["order_id"]) not in answers.pop()
     with pytest.raises(StalePreviewError):  # the right order, a token that is not its own
-        rig.ops.rate_queue(order_id=preview["order_id"], confirm="1-00000000", principal=rig.admin())
+        rig.ops.rate_queue(
+            order_id=preview["order_id"], confirm="1-00000000", principal=rig.admin()
+        )
     assert rig.jobs() == [] and rig.age(a) is None
 
-    rig.clock.advance(timedelta(hours=1))  # an old preview is not an order any more
+    rig.clock.advance(hours=1)  # an old preview is not an order any more
     with pytest.raises(UnknownSubjectError):
         rig.queue(preview)
     assert rig.jobs() == []
@@ -292,11 +302,11 @@ def test_an_order_applies_once(rig: _Rig) -> None:
     (a,) = rig.waiting("A")
     preview = rig.preview(work_ids=[a])
     rig.queue(preview)
-    with pytest.raises(CodedRefusal):
+    with pytest.raises(NotWaitingError):
         rig.queue(preview)  # replayed: refused, never a second job
     assert len(rig.jobs()) == 1
     rig.run()
-    with pytest.raises(CodedRefusal):
+    with pytest.raises(NotWaitingError):
         rig.queue(preview)  # and not after the job ran either
     assert len(rig.jobs()) == 1
 
@@ -331,8 +341,8 @@ def test_an_actor_who_lost_the_right_before_the_job_ran_rates_nothing(rig: _Rig)
     a, b = rig.waiting("A", "B")
     preview = rig.preview(work_ids=[a, b])
     job_id = rig.queue(preview)
-    with write_transaction(rig.engine) as connection:  # the right is withdrawn while it waits
-        connection.execute(sa.text("UPDATE user SET can_rate = 0 WHERE id = :u"), {"u": ADMIN})
+    with write_transaction(rig.engine) as connection:  # the admin is made a member while it waits
+        connection.execute(sa.text("UPDATE user SET role = 'member' WHERE id = :u"), {"u": ADMIN})
     rig.run()
     job = rig.job(job_id)
     assert job.status in {"failed", "dead_letter"} and job.error_code == "bulk.refused"
