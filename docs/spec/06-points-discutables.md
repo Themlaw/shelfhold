@@ -276,7 +276,8 @@ Ce que l'utilisateur fait chez lui de son côté ne regarde pas le projet. Le pr
 | Lecteur complet seulement pour le contenu non exporté | Pas de concurrence avec Kavita | Règle à expliquer |
 
 **Recommandation.** Option 3, avec « Lire un extrait » pour tout contenu.
-**Statut.** Ouvert : début de **M5**.
+**Décision (porteur, 2026-11-17, D-P1).** Option 3 : lecteur complet pour le contenu **non exporté** (copie conservée, ADR-0028), « Lire un extrait » pour le reste ; Kavita reste le lecteur principal. Voir ADR-0055.
+**Statut.** Tranché (M5, L01).
 
 ## Q23 — Étagère par Œuvre ou par Édition
 
@@ -614,7 +615,8 @@ Ce que l'utilisateur fait chez lui de son côté ne regarde pas le projet. Le pr
 | « Le plus loin gagne » | Simple | Faux après une relecture volontaire en arrière |
 
 **Recommandation.** Deuxième option en M5 (EF-LEC-007) ; le schéma (`client_ts`, historique) est déjà en place dès M1a (EF-LEC-014).
-**Statut.** Tranché sur le principe (G10) ; seuil de conflit à fixer en M5.
+**Décision (M5, D8).** Un conflit n'est proposé que si la position perdante est **plus avancée** que la gagnante de plus de **2 %** de la publication (3 pages au moins) ; une seule proposition par (profil, support) jusqu'au choix ; sinon fusion silencieuse avec historique. Voir ADR-0055.
+**Statut.** Tranché (principe en G10 ; seuil en M5, L01).
 
 ## Q48 — Kavita et Komga indexant le même arbre (ADR avant M4)
 
@@ -1066,7 +1068,7 @@ Chaque risque résiduel accepté a un **responsable** et un jalon de revue (GAP-
 | Q19 | Series | Entité optionnelle au-dessus de Work | Tranché (A6) |
 | Q20 | Compat `api` | N-1 via shim ; 12 mois à valider | Tranché sur le principe (A9), durée M6 |
 | Q21 | Sync Kobo | Laissée à Kavita ; émulation M6 seulement si Kavita ne la livre pas ; proxy opt-in par appareil | Tranché (B18) |
-| Q22 | Rôle du lecteur | Lecteur pour le contenu non exporté + extraits | Ouvert, M5 |
+| Q22 | Rôle du lecteur | Lecteur pour le contenu non exporté + extraits | Tranché (M5, ADR-0055) |
 | Q23 | Étagère | Par Édition | Tranché (A31) |
 | Q24 | OPDS propre | Masqué par défaut | Ouvert, M5 |
 | Q25 | Clé maîtresse | Générer ; `secrets export` en M1a au format age (scrypt), identique à la sauvegarde M1b ; export forcé dans l'assistant (M3) | Ouvert, M1a |
@@ -1091,7 +1093,7 @@ Chaque risque résiduel accepté a un **responsable** et un jalon de revue (GAP-
 | Q44 | Boîte de M1a (passe 7) | 200 h conservées, 7 ajouts de schéma absorbés, EF-INT-026 intouchable | Ouvert, M0 |
 | Q45 | Contenu de `/store` | Toujours l'original ; extraction vérifiée à défaut de source | Tranché (G1) |
 | Q46 | Roman web traduit par des équipes | Discriminant selon `translation_nature` : communautaire → Équipe | Tranché (G6) |
-| Q47 | Positions hors ligne | `client_ts` borné, historique, conflit proposé | Tranché sur le principe (G10) ; seuil M5 |
+| Q47 | Positions hors ligne | `client_ts` borné, historique, conflit proposé | Tranché (G10 ; seuil M5, ADR-0055) |
 | Q48 | Kavita et Komga sur le même arbre | Séparer arbre et indexeurs (ADR-0052) ; recouvrements sans identité refusés | Tranché (H3, D6 de M4) ; ADR-0052 acceptée |
 | Q49 | Provenance des fichiers exportés | Miroir par racine physique, rien dans les fichiers (ADR-0046) | Tranché (H1) |
 | Q50 | Nommage d'un segment de numérotation | Dossier ou track, tranché par golden `plugin/parse` ; `numbering_conflict` d'ici là | Ouvert : M1a |

@@ -485,7 +485,7 @@ Les EF de la partie famille (EF-USR-010, EF-UX-004/005/006, EF-INT-021) portent 
 
 ### M5 — Lecteur intégré
 
-**Objectif.** Un lecteur secondaire (aperçu, œuvres non exportées), OPDS et kosync propres, OIDC, page `/lite` pour liseuses sans ES6.
+**Objectif.** Un lecteur secondaire (lecteur complet pour les œuvres non exportées, « Lire un extrait » pour le reste ; Kavita reste le lecteur principal, D-P1), OPDS et kosync propres, OIDC, page `/lite` pour liseuses sans ES6.
 
 **Exigences couvertes.**
 - EF : EF-BIB-015, EF-BIB-017 ; EF-LEC-001, EF-LEC-002, EF-LEC-003, EF-LEC-005, EF-LEC-006, EF-LEC-007, EF-LEC-008, EF-LEC-009, EF-LEC-010, EF-LEC-011, EF-LEC-012 ; EF-USR-004, EF-USR-008 ; EF-INT-007.
@@ -497,13 +497,13 @@ Les EF de la partie famille (EF-USR-010, EF-UX-004/005/006, EF-INT-021) portent 
 - Passe 11 : EF-LEC-009 et ENF-SEC-013 (« mot de passe » kosync = secret d'un jeton d'appareil, jamais le mot de passe du compte), EF-USR-024 (OIDC : `prompt=login`, `max_age`, claim `auth_time`).
 
 **Tests écrits d'abord.**
-- `test_manga_paged_ltr_rtl`, `test_webtoon_continuous`, `test_foliate_epub_reflow_and_fixed` (foliate-js vendu en sous-module, derrière `ReaderEngine`), `test_book_resources_served_from_dedicated_origin_with_csp_sandbox`, `test_reader_csp_font_media_frame_blob`, `test_settings_priority_per_type`, `test_locator_progress_lww`, `test_continue_reading_home`, `test_keyboard_shortcuts_reader`, `test_pwa_offline_cache`.
-- kosync : `test_kosync_headers_x_auth_user_x_auth_key_accept`, `test_kosync_four_routes`, `test_kosync_users_create_disabled`, `test_kosync_hash_computed_on_exported_file`, `test_kosync_metadata_fallback_match`, `test_kosync_ambiguous_hash_409`.
-- Passe 9 : `test_pdfjs_is_eval_supported_false` (ENF-SEC-004, CVE-2024-4367), `test_remote_processor_refuses_watermarked` (EF-BIB-015).
+- (D-P2, ADR-0055 : chemin dédié `/content/*` par défaut, origine séparée facultative) `test_manga_paged_ltr_rtl`, `test_webtoon_continuous`, `test_foliate_epub_reflow_and_fixed` (foliate-js vendu en sous-module, derrière `ReaderEngine`), `test_book_resources_served_from_dedicated_origin_with_csp_sandbox`, `test_reader_csp_font_media_frame_blob`, `test_settings_priority_per_type`, `test_locator_progress_lww`, `test_continue_reading_home`, `test_keyboard_shortcuts_reader`, `test_pwa_offline_cache`.
+- kosync : `test_kosync_headers_x_auth_user_x_auth_key_accept`, `test_kosync_four_routes`, `test_kosync_users_create_disabled`, `test_kosync_hash_computed_on_exported_file`, `test_kosync_metadata_never_used_to_match`, `test_kosync_ambiguous_hash_never_guesses` (renommés par D6 : l'amendement de l'ADR-0053 prime, `PUT` toujours `200`, aucun appariement par `metadata`, aucun `409` en HTTP ; ADR-0055).
+- Passe 9 : `test_pdfjs_is_eval_supported_false` (ENF-SEC-004, CVE-2024-4367 ; **D7, ADR-0055** : aucun moteur PDF n'est livré en M5, le test prouve qu'aucun moteur PDF n'est enregistré et qu'un moteur PDF enregistré sans `isEvalSupported: false` fait échouer la construction du registre `ReaderEngine`), `test_remote_processor_refuses_watermarked` (EF-BIB-015).
 - Passe 10 : `test_device_token_scoped_to_subject_profile_not_issuer`, `test_pairing_requires_explicit_subject_profile`.
 - Passe 12 : `test_offline_copy_evicted_after_reclassification`, `test_reading_position_on_unexported_content_anchor`.
 - Passe 11 : `test_kosync_auth_uses_device_token_secret`, `test_oidc_reserved_action_requires_max_age`.
-- Passe 7 : `test_kosync_volume_hash_resolves_single_export_item`, `test_offline_position_merge_by_bounded_client_ts`, `test_opds_pull_destination_serves_from_store_or_tree_copy`.
+- Passe 7 : `test_kosync_volume_hash_resolves_single_export_item`, `test_offline_position_merge_by_bounded_client_ts` (seuil de conflit de Q47 fixé par D8, ADR-0055 : position perdante plus avancée de plus de 2 % de la publication, 3 pages au moins), `test_opds_pull_destination_serves_from_store_or_tree_copy`.
 - `test_lite_page_works_without_javascript` (HTML serveur, Kobo WebKit 538.1 / anciens Kindle), `test_lite_greyscale_thumbnails`.
 - `test_opds_feed_respects_visibility`, `test_url_tokens_hashed_readonly_scoped_rotatable`, `test_oidc_login`, `test_devices_registry`, `test_renditions_kepub_and_image_conversion`, `test_saved_selections`.
 - Performance : `bench_reader_page_turn`.
@@ -732,7 +732,7 @@ Marqueur pytest : `@pytest.mark.req("EF-EXP-028")` ; le rapport CI liste, par ja
 | EF-LEC-006 | M5 | `test_settings_priority_per_type` |
 | EF-LEC-007 | M5 | `test_locator_progress_lww` |
 | EF-LEC-008 | M5 | `test_continue_reading_home` |
-| EF-LEC-009 | M5 | `test_kosync_hash_computed_on_exported_file`, `test_kosync_auth_uses_device_token_secret` |
+| EF-LEC-009 | M5 | `test_kosync_hash_computed_on_exported_file`, `test_kosync_auth_uses_device_token_secret`, `test_kosync_metadata_never_used_to_match`, `test_kosync_ambiguous_hash_never_guesses` |
 | EF-LEC-010 | M5 | `test_lite_page_works_without_javascript`, contrôle CI « aucun `<script>` dans `/lite` » |
 | EF-LEC-011 | M5 | `test_keyboard_shortcuts_reader` |
 | EF-LEC-012 | M5 | `test_pwa_offline_cache`, `test_offline_copy_evicted_after_reclassification` |

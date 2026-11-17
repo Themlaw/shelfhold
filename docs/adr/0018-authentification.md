@@ -1,7 +1,7 @@
 ---
 status: accepté
 date: 2026-11-02
-amended: 2026-11-02 (passe 1) ; 2026-11-03 (passe 4) ; 2026-11-03 (passe 5) ; 2026-11-03 (passe 10) ; 2026-11-03 (passe 11) ; 2026-11-03 (passe 12) ; 2026-11-04 (arbitrage porteur 1)
+amended: 2026-11-02 (passe 1) ; 2026-11-03 (passe 4) ; 2026-11-03 (passe 5) ; 2026-11-03 (passe 10) ; 2026-11-03 (passe 11) ; 2026-11-03 (passe 12) ; 2026-11-04 (arbitrage porteur 1) ; 2026-11-17 (M5, ADR-0055)
 decision-makers: mainteneur
 ---
 # ADR-0018 — Authentification, autorisation et scope de visibilité
@@ -121,3 +121,10 @@ P1, P4, P5, P7, P8 (`review/ARBITRAGES-porteur1.md`, qui priment).
   - *fastapi-users* : intégré à FastAPI. Écartée : projet passé en mode maintenance, sans WebAuthn.
   - **Retenu** : composition de briques éprouvées et ciblées — `argon2-cffi` (mots de passe), sessions serveur en table SQLite (révocation immédiate, `auth_time`), `webauthn` (py_webauthn, Duo Labs) pour les passkeys, `Authlib` pour OIDC (M5). Le code propre à Shelfhold se limite à la session et à la table de vérité, qui de toute façon lui sont propres.
 - Sources : https://www.better-auth.com/docs/introduction · https://github.com/fastapi-users/fastapi-users · https://github.com/duo-labs/py_webauthn · https://docs.authlib.org/ · https://github.com/hynek/argon2-cffi
+
+## Amendement M5 (2026-11-17, ADR-0055)
+L01 de M5. En cas de divergence, cette section prévaut sur les jalons annoncés plus haut.
+- **OIDC en M5** (EF-USR-004, EF-USR-024), avec `Authlib` : `prompt=login`, `max_age` et claim `auth_time` pour les actions réservées. Le jalon « OIDC en M4 » du texte d'origine et « OIDC en V2 » de l'index de 02 sont corrigés : c'est **M5**.
+- **Jetons d'appareil** : livrés **en M4** par l'ADR-0053 (jeton émis pour un profil lecteur, secret stocké en SHA-256 de `md5(secret)`, portée fermée OPDS et kosync, révocation et expiration). Il reste en M5 la **rotation** (ENF-SEC-013), le **registre d'appareils** `device` (EF-USR-008) et la documentation.
+- **kosync** : `x-auth-key` est le md5 du **secret du jeton d'appareil**, jamais du mot de passe du compte (02 est corrigé).
+- **Actions réservées** : liaison OIDC d'un compte, rotation d'un jeton d'appareil, retrait d'un appareil et réglage de l'origine du contenu entrent dans la table de vérité d'ENF-SEC-010 dans la PR qui les crée.
