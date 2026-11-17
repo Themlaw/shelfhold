@@ -269,6 +269,9 @@ test('test_key_screens_snapshot_per_theme', async ({ browser }, info) => {
           expect(chosen.status(), `${here}: preferences`).toBe(200);
           await page.goto(url);
           await expect(page.locator('main').first(), here).toBeVisible();
+          // a screen fills its sections from the API after the first paint: capture it once loaded,
+          // or a slow runner records a half-drawn screen for one scheme and not the other
+          await page.waitForLoadState('networkidle');
 
           const root = page.locator('html');
           await expect(root, here).toHaveAttribute('data-theme', theme);
