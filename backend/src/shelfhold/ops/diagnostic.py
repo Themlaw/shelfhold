@@ -13,6 +13,10 @@ default**: each member is built from a positive list, never from a dump that is 
 - `content.json`: counts and sizes by format; a watermarked file is cited by its hash and its size
   only (EF-BIB-041); no content file ever enters;
 - `sources.json`: sub-sources and series counts under `<source-N>` (ENF-LEG-009, GAP-6-22);
+- `sandbox.json`: what the decode worker (the subprocess that reads every image and archive from
+  outside) really runs in: the isolation it got, whether its network is shut, its limits and its
+  environment. Closed words, booleans and numbers: no path, no title, no process id
+  (M4 L36, ENF-SEC-003);
 - `logs.jsonl`: only with `--log-file`; each JSON line reduced to its allowed fields (event, level,
   logger, timestamp, closed words, numbers, internal ULIDs), user identifiers as `<user-N>`.
 
@@ -52,6 +56,7 @@ from shelfhold.config import ResolvedSettings, Settings
 from shelfhold.export.domain.provenance_mirror import is_diagnostic_excluded
 from shelfhold.infrastructure.archives import ArchiveWriter
 from shelfhold.infrastructure.db import create_db_engine
+from shelfhold.infrastructure.imaging import ImageRejected, diagnose_worker
 from shelfhold.infrastructure.logging import (
     known_secret_values,
     redact_source_urls,
@@ -86,6 +91,7 @@ __all__ = [
     "reduce_log_line",
     "reduce_status",
     "rerun_options",
+    "sandbox_report",
 ]
 
 BUNDLE_FORMAT: Final = "1.0"
@@ -100,6 +106,7 @@ MAX_LOG_LINES: Final = 50_000  # the last ones are kept
 SECTIONS: Final = {
     "config": "config.json", "status": "status.json", "schema": "schema.sql",
     "content": "content.json", "sources": "sources.json", "logs": "logs.jsonl",
+    "sandbox": "sandbox.json",
 }  # fmt: skip
 FIRST_PARTY_PLUGINS: Final = frozenset({"suwayomi", "lncrawl"})  # named as is; others: <plugin-N>
 
@@ -861,6 +868,53 @@ def rerun_options(sections: Iterable[str]) -> str:
     return shlex.join(arg for section in sections for arg in ("--exclude", section))
 
 
+_ISOLATIONS: Final = frozenset({"netns", "seccomp", "python"})
+_RLIMITS: Final = ("rlimit_as", "rlimit_cpu", "rlimit_core", "rlimit_nofile", "rlimit_nproc")
+
+
+def _word(value: object, allowed: Iterable[str], other: str = "other") -> str:
+    return value if isinstance(value, str) and value in allowed else other
+
+
+def _number(value: object) -> int:
+    return value if isinstance(value, int) and not isinstance(value, bool) else -1
+
+
+def sandbox_report() -> dict[str, object]:
+    """What the decode worker really runs in, asked of the worker itself (M4 L36, ENF-SEC-003):
+    nothing here comes from a file, a title or a path. `network` is `shut` when the worker has no
+    network namespace or no socket syscall and its Python-level stub refuses sockets, and
+    `python_only` when only the stub does. When the worker cannot be run at all, the section says
+    so with a code, never the reason (it may quote a path)."""
+    try:
+        network = diagnose_worker("network", port=9)  # never connected to: only the facts are read
+        limits = diagnose_worker("limits")
+        environment = diagnose_worker("environment")
+    except (ImageRejected, OSError):
+        return {"unavailable": "worker_failed"}
+    isolation = _word(network.get("isolation"), _ISOLATIONS)
+    python_socket = _word(network.get("python_socket"), ("denied", "allowed"))
+    shut = isolation in ("netns", "seccomp") and python_socket == "denied"
+    return {
+        "isolation": isolation,
+        "seccomp": network.get("seccomp") is True,
+        "python_socket": python_socket,
+        "network": "shut" if shut else "python_only" if python_socket == "denied" else "open",
+        "limits": {
+            "rlimits": {
+                name: [_number(v) for v in (limits.get(name) or [])][:2] for name in _RLIMITS
+            },
+            "no_new_privs": limits.get("no_new_privs") is True,
+        },
+        "environment": {
+            "isolated": environment.get("isolated") is True,
+            # nothing inherited: CPython sets LC_CTYPE itself, any other variable is a leak
+            "env_clean": set(environment.get("env_keys") or []) <= {"LC_CTYPE"},
+            "cwd_is_empty_dir": environment.get("cwd_is_empty_dir") is True,
+        },
+    }
+
+
 _MANIFEST_VALUES: Final = ("shelfhold_version", "created_at", "schema_revision", "schema_head")
 
 
@@ -871,6 +925,7 @@ def build_bundle(
     status: Callable[[], Mapping[str, object]],
     log_files: Sequence[Path] = (),
     exclude: Iterable[str] = (),
+    sandbox: Callable[[], Mapping[str, object]] = sandbox_report,
     now: datetime,
 ) -> BundleReport:
     """Build, check and write the bundle. `status` gives the report of `shelfhold status`
@@ -946,6 +1001,8 @@ def build_bundle(
         members["status.json"] = _dump({"unavailable": "status_failed"})
     if database.exists():
         members["schema.sql"] = _schema_sql(database)
+    if "sandbox" not in excluded:  # a worker run is not made for a section that is left out
+        members["sandbox.json"] = _dump(sandbox())
     if migrated:
         members["content.json"] = _dump(content)
         members["sources.json"] = _dump(sources)

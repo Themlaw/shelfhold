@@ -6754,6 +6754,10 @@ export type WizardPreviewOut = {
      * Series
      */
     series: number;
+    /**
+     * To Check
+     */
+    to_check: Array<WizardToCheckOut>;
 };
 
 /**
@@ -6908,6 +6912,23 @@ export type WizardTargetOut = {
      * Name
      */
     name: string;
+};
+
+/**
+ * WizardToCheckOut
+ *
+ * A file whose first page or archive the decode worker or the safe opener refused: adopted
+ * all the same, never touched, for the admin to look at (`reason` is a code of a closed list).
+ */
+export type WizardToCheckOut = {
+    /**
+     * Path
+     */
+    path: string;
+    /**
+     * Reason
+     */
+    reason: string;
 };
 
 /**

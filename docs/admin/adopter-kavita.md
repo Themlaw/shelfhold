@@ -69,6 +69,25 @@ plus (`plan.stale`) : relisez. Classer l'Œuvre (`shelfhold rate`) la sort du pl
 - Les âges lus dans les ComicInfo restent des **suggestions** à valider ; l'âge des Œuvres reste vide.
 - Un volume sans numéro de chapitre est inscrit comme tel ; aucun chapitre n'est deviné.
 
+## Les fichiers « à vérifier »
+
+Chaque archive de la bibliothèque vient de l'extérieur : Shelfhold ne la lit jamais avec son
+propre code d'image. Pour chaque CBZ adopté, la **première page** (par nom d'entrée) est
+extraite en mémoire par l'ouvreur d'archives sûr (répertoire audité, bornes pendant la
+décompression, aucun chemin d'entrée utilisé, rien d'écrit), puis décodée dans le **bac à sable
+de décodage** (sous-processus sans réseau, bornes en pixels, en octets, en mémoire et en temps).
+L'aperçu donne le format et la taille de cette page.
+
+Une page refusée (image trop grande, pas une image acceptée, décodage hors bornes) ou une
+archive refusée (bombe de décompression, chemin `..`, lien symbolique, entrées qui se recouvrent,
+chiffrée…) met le fichier « **à vérifier** » avec un code de la liste fermée. Le fichier est
+adopté **tel quel** : il n'est ni modifié, ni déplacé, ni supprimé, et la bibliothèque n'est pas
+refusée pour autant : à vous de le regarder avant qu'il soit servi. La liste est dans l'écran
+**Réglages › Adopter une bibliothèque** (administrateur, session récente), dans la sortie de
+`shelfhold adopt --dry-run` et dans l'aperçu `POST /api/v1/setup/adoption/preview`. La marque
+n'est pas gardée en base : elle est relue à chaque aperçu (le verdict d'un fichier inchangé est
+mémorisé tant que le processus tourne).
+
 ## Après l'adoption
 
 1. **Apparier** les séries adoptées au suivi Suwayomi :

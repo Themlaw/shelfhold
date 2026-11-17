@@ -227,11 +227,9 @@ def test_diagnostic_bundle_reports_sandbox(
     members = _members(out)
     sandbox = json.loads(members["sandbox.json"])
     assert sandbox["isolation"] in {"netns", "seccomp", "python"}
-    assert sandbox["python_socket"] == "denied" and sandbox["raw_connect"] in {
-        "failed",
-        "unavailable",
-    }
-    assert sandbox["environment"] == {"isolated": True, "env_keys": 0, "cwd_is_empty_dir": True}
+    assert sandbox["python_socket"] == "denied"
+    assert sandbox["network"] in {"shut", "python_only"}
+    assert sandbox["environment"] == {"isolated": True, "env_clean": True, "cwd_is_empty_dir": True}
     assert sandbox["limits"]["no_new_privs"] is True
     assert set(sandbox["limits"]["rlimits"]) >= {"rlimit_as", "rlimit_cpu", "rlimit_nproc"}
     text = members["sandbox.json"].decode()

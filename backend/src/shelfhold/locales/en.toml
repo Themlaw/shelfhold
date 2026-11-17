@@ -2527,6 +2527,7 @@
   volume_only_line = "Series {name}: volumes only, chapter range unknown (no automatic tracking)."
   rename_line = "Proposed renaming (never applied): {from_path}->{to_path}"
   active_content_line = "Active content (scripts, handlers or remote resources) in the EPUB: {path} (adopted as is, never used or rewritten by Shelfhold)."
+  file_to_check_line = "To check: {path} ({reason}). Adopted as is, never touched: its first page or its archive was refused by the sandbox."
   duplicate_line = "Duplicate of same number in {series} (kept): no.{number}: {files}"
   refused = "Accounts smaller than the ceiling of the shelf read this library, adoption refused: {accounts}"
   child_accounts = "Restricted accounts reading it: {accounts}"

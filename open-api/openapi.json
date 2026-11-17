@@ -11084,6 +11084,13 @@
           "series": {
             "title": "Series",
             "type": "integer"
+          },
+          "to_check": {
+            "items": {
+              "$ref": "#/components/schemas/WizardToCheckOut"
+            },
+            "title": "To Check",
+            "type": "array"
           }
         },
         "required": [
@@ -11092,6 +11099,7 @@
           "series",
           "files",
           "child_library",
+          "to_check",
           "download_dir",
           "roots"
         ],
@@ -11342,6 +11350,25 @@
           "key_expires_at"
         ],
         "title": "WizardTargetOut",
+        "type": "object"
+      },
+      "WizardToCheckOut": {
+        "description": "A file whose first page or archive the decode worker or the safe opener refused: adopted\nall the same, never touched, for the admin to look at (`reason` is a code of a closed list).",
+        "properties": {
+          "path": {
+            "title": "Path",
+            "type": "string"
+          },
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path",
+          "reason"
+        ],
+        "title": "WizardToCheckOut",
         "type": "object"
       },
       "WizardVerdictOut": {

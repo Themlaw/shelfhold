@@ -26,12 +26,14 @@ import json
 import posixpath
 from collections import Counter
 from collections.abc import Callable, Mapping, Sequence
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field, replace
 from datetime import datetime
 from decimal import Decimal, InvalidOperation
 from typing import TYPE_CHECKING, Any, Final
 
 import sqlalchemy as sa
+import structlog
 from sqlalchemy import Connection, Engine
 
 from shelfhold.catalog.public import (
@@ -73,6 +75,7 @@ from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.follow_suspended import suspend as suspend_follow
 from shelfhold.infrastructure.fsops import Fsops
 from shelfhold.infrastructure.ids import new_ulid
+from shelfhold.infrastructure.imaging import ImageKind, ImageRejected, probe_image
 from shelfhold.infrastructure.logging import log_outcome
 from shelfhold.infrastructure.schema import acquisition, catalog, export, storage
 from shelfhold.infrastructure.xml.safe_parse import UnsafeXmlError, safe_parse_xml
@@ -97,6 +100,7 @@ __all__ = [
     "AdoptionSession",
     "BulkParse",
     "Duplicate",
+    "PageProbe",
     "PreviewStale",
     "Rename",
 ]
@@ -129,6 +133,15 @@ class NoFolderError(Exception):
 # -- what the survey says -----------------------------------------------------------------------
 
 
+@dataclass(frozen=True, slots=True)
+class PageProbe:
+    """What the decode worker read of the first page of an adopted archive: format and size."""
+
+    format: str
+    width: int
+    height: int
+
+
 @dataclass(frozen=True)
 class AdoptedFile:
     name: str
@@ -145,6 +158,11 @@ class AdoptedFile:
     # the ComicInfo of a volume file, what `apply_comicinfo_range` reads (EF-BIB-044); as pairs so
     # that the file stays hashable
     comicinfo: tuple[tuple[str, str], ...] = ()
+    # The first page, probed in the decode worker (M4 L36, ENF-SEC-003) and, when the page or the
+    # archive is refused, the closed code of the refusal: the file is "to check" (`check`). Nothing
+    # about it is written anywhere: the file is adopted as it is, and never touched.
+    first_page: PageProbe | None = None
+    check: str = ""
 
 
 @dataclass(frozen=True)
@@ -213,6 +231,12 @@ class AdoptionReport:
     exposed_accounts: tuple[str, ...] = ()  # the restricted accounts that can read it
 
     @property
+    def to_check(self) -> tuple[str, ...]:
+        """The files below the destination root whose first page or archive was refused (a code of
+        the closed list, `AdoptedFile.check`): adopted all the same, for the admin to look at."""
+        return tuple(sorted(f.rel_path for s in self.series for f in s.files if f.check))
+
+    @property
     def suspended(self) -> tuple[str, ...]:
         """The series whose Work is put in "À classer" with its following suspended."""
         if not self.child_library:
@@ -262,6 +286,54 @@ class AdoptionReport:
     @property
     def files(self) -> int:
         return sum(len(s.files) for s in self.series)
+
+
+# -- the first page of an adopted archive, read in the decode worker (M4 L36) -------------------
+
+PAGE_EXTENSIONS: Final = (
+    ".png", ".jpg", ".jpeg", ".webp", ".gif", ".avif", ".bmp", ".tif", ".tiff", ".jp2",
+)  # fmt: skip
+PROBE_MAX_BYTES: Final = 64 * 1024 * 1024  # one page, read in memory before it goes to the worker
+PROBE_CONCURRENCY: Final = 4  # bounded workers at once; each one has its own memory/CPU/time cap
+PROBE_BATCH: Final = PROBE_CONCURRENCY  # pages held in memory at once
+PROBE_CACHE_MAX: Final = 100_000
+_log = structlog.get_logger()
+
+
+def _first_page(fsops: Fsops, local: str) -> bytes | str | None:
+    """The bytes of the first page (by entry name) of an adopted archive, read through the safe
+    opener (audited central directory, bounded reads, never extracted, no entry name used as a
+    path), or the closed code of a refusal, or None when the file holds no page to probe (an EPUB,
+    a PDF, an archive of something else)."""
+    if not local.lower().endswith(ARCHIVES):
+        return None
+    try:
+        with fsops.open_read(local) as stream, safe_open_archive(stream, name=local) as archive:
+            pages = sorted(
+                (
+                    e.name
+                    for e in archive.entries
+                    if not e.is_dir and e.name.lower().endswith(PAGE_EXTENSIONS)
+                ),
+                key=str.casefold,
+            )
+            if not pages:
+                return None
+            return bytes(archive.read(pages[0], max_bytes=PROBE_MAX_BYTES))
+    except UnsafeArchiveError as error:
+        if error.reason == "entry_too_large":  # a page past the cap is a giant image all the same
+            return "image.too_large"
+        return f"archive.{error.reason}"
+    except OSError:
+        return "archive.unreadable"
+
+
+def _probe_page(data: bytes) -> tuple[PageProbe | None, str]:
+    try:
+        info = probe_image(data, ImageKind.PAGE_INPUT)
+    except ImageRejected as error:
+        return None, error.code
+    return PageProbe(info.format.lower(), info.width, info.height), ""
 
 
 # -- plugin/parse in bulk ------------------------------------------------------------------------
@@ -440,6 +512,9 @@ class Adopter:
         self._locate = locate
         self._clock = clock
         self._auditor = auditor
+        # what the worker said of the first page of a file, by what identifies its bytes on disk:
+        # the adoption that follows a preview does not probe the same file again
+        self._pages: dict[tuple[str, int, int, int], tuple[PageProbe | None, str]] = {}
 
     # -- the audit and the link (EF-EXP-055) -----------------------------------------------------
 
@@ -638,6 +713,7 @@ class Adopter:
                     tuple(sorted(info.items())) if kind == "volume" else (),
                 )
             )  # fmt: skip
+        adopted = self._with_pages(adopted)
         parsed_names = [
             (parsed(f.name) if isinstance(parsed, BulkParse) else parsed[f.name]).series_name
             for f in adopted
@@ -665,6 +741,46 @@ class Adopter:
             age=(rating.min_age, rating.x) if rating else None,
             edition_id=edition_id,
         )  # fmt: skip
+
+    def _with_pages(self, files: list[AdoptedFile]) -> list[AdoptedFile]:
+        """Each file with the verdict on its first page. The archive is opened by the safe opener
+        in this process (read only, never extracted), the page is decoded only in the bounded
+        worker, a few at a time; a refusal marks the file and nothing else happens to it."""
+        found: dict[int, tuple[PageProbe | None, str]] = {}
+        todo = [
+            (i, f, (f.local_path, f.size, f.mtime_ns, f.ino))
+            for i, f in enumerate(files)
+            if f.local_path.lower().endswith(ARCHIVES)
+        ]
+        for i, _f, key in todo:
+            if key in self._pages:
+                found[i] = self._pages[key]
+        pending = [(i, f, key) for i, f, key in todo if i not in found]
+        with ThreadPoolExecutor(max_workers=PROBE_CONCURRENCY) as pool:
+            for start in range(0, len(pending), PROBE_BATCH):
+                batch = pending[start : start + PROBE_BATCH]
+                read = [(i, key, _first_page(self._fsops, f.local_path)) for i, f, key in batch]
+                futures = {
+                    i: pool.submit(_probe_page, data)
+                    for i, _key, data in read
+                    if isinstance(data, bytes)
+                }
+                for i, key, data in read:
+                    if isinstance(data, bytes):
+                        verdict = futures[i].result()
+                    elif isinstance(data, str):
+                        verdict = (None, data)
+                    else:
+                        verdict = (None, "")  # no page in it: nothing to probe, nothing to check
+                    if verdict[1]:
+                        _log.info("adopt.file_to_check", reason=verdict[1])
+                    if len(self._pages) >= PROBE_CACHE_MAX:
+                        self._pages.clear()
+                    self._pages[key] = found[i] = verdict
+        return [
+            replace(f, first_page=found[i][0], check=found[i][1]) if i in found else f
+            for i, f in enumerate(files)
+        ]
 
     @staticmethod
     def _proposals(series: Sequence[AdoptedSeries]) -> tuple[list[Rename], list[Duplicate]]:

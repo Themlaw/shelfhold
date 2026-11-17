@@ -28,6 +28,7 @@ Le paquet est **fermé par défaut** : une liste positive dit ce qui entre, rien
 | `schema.sql` | la structure de la base, sans aucune ligne |
 | `content.json` | nombre et taille des fichiers par format ; un fichier **tatoué** n'est cité que par son empreinte et sa taille |
 | `sources.json` | sous-sources et séries amont sous `<source-1>`, `<source-2>`… |
+| `sandbox.json` | ce que le **bac à sable de décodage** (le sous-processus qui lit toute image et toute archive venue de l'extérieur) vit réellement : l'isolement obtenu (`netns`, `seccomp` ou `python`), si son réseau est fermé (`network` : `shut`, `python_only` ou `open`), ses limites (mémoire, processeur, fichiers, processus), `no_new_privs` et un environnement propre. Des mots fermés, des booléens et des nombres : aucun chemin, aucun titre, aucun numéro de processus. Si le sous-processus ne peut pas tourner, la section dit seulement `{"unavailable": "worker_failed"}` |
 | `logs.jsonl` | chaque ligne JSON du journal donné, réduite au **vocabulaire du code** : un événement, un champ, un mot (`outcome`, `code`…), un module ou une classe d'erreur que le code écrit lui-même ; toute autre valeur devient `<other>`, un champ inconnu est retiré ; identifiants internes (ULID) gardés s'ils existent dans la base de l'instance, sinon remplacés par `<id-N>` ; nombres gardés ; un identifiant d'utilisateur devient `<user-N>` |
 
 ## Ce qui n'entre jamais
@@ -63,7 +64,7 @@ les sections refusées. Si le refus persiste, c'est un défaut de Shelfhold : si
 paquet.
 
 `--exclude <section>` (répétable) laisse une section hors du paquet : `config`, `status`,
-`schema`, `content`, `sources` ou `logs`. Le manifeste la note `excluded`. Le manifeste
+`schema`, `content`, `sources`, `sandbox` ou `logs`. Le manifeste la note `excluded`. Le manifeste
 lui-même est toujours là ; seules les valeurs que la commande y écrit (version, date,
 révisions du schéma) sont vérifiées, ses clés et libellés fixes (`secrets`, `titles`…) ne le
 sont pas : un titre « Secrets » ne bloque aucun paquet.

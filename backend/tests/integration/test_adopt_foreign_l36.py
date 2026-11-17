@@ -8,6 +8,8 @@ touched (not a byte, a name, an mtime or an inode). The names of a plan are read
 `BulkParse.for_plan` in the plan preview. The sandbox report is a section of the diagnostic bundle.
 """
 
+# ruff: noqa: F811  (the `world` fixture of L39 is imported, then asked for by name)
+
 from __future__ import annotations
 
 import io
@@ -21,12 +23,22 @@ from typing import Any
 import pytest
 from PIL import Image
 
-from shelfhold.export.targets.kavita.adopt import PageProbe
+from shelfhold.export.targets.kavita.adopt import AdoptionReport, PageProbe
+from shelfhold.infrastructure.fsops import Fsops
 from shelfhold.infrastructure.imaging import client as imaging_client
 from tests.adopt_env import Adoption, adoption
 from tests.export_env import export_env
+from tests.integration.test_auth_keys_reserved import _bearer, _create_key
+from tests.integration.test_l39_wizard import (
+    World,
+    _call,
+    _csrf,
+    _existing_series,
+    world,  # noqa: F401
+)
 from tests.kavita_env import run
 from tests.library_env import cbz_bytes
+from tests.visibility_env import add_profile
 
 
 def _png(size: tuple[int, int] = (64, 48)) -> bytes:
@@ -138,6 +150,7 @@ def test_refused_page_marks_file_to_check_without_touching_it(
         before = a.state()
         preview = run(a.adopter.preview(a.wired.client, env.destination_id))
         done = a.adopt()
+        assert isinstance(done, AdoptionReport)
         after = a.state()
     assert after == before  # not a byte, a name, an mtime or an inode
     flagged = _flagged(preview)
@@ -189,7 +202,7 @@ def test_page_probe_runs_in_the_bounded_worker_and_is_not_repeated(
         a = adoption(env)
         a.add_series("S", {"S - Ch.1.cbz": cbz_bytes((("001.png", _png()),))})
         a.adopt()
-    assert len(caps) == 1 and not ops  # one run for the preview, none for the adoption
+    assert len(caps) == 1 and ops == ["probe"]  # one run: the preview probes, the adoption does not
     limits = caps[0]["limits"]
     assert limits is not None and limits.wall_seconds <= 60 and limits.network_namespace
     assert caps[0]["caps"]["max_pixels"] <= 89_478_485
@@ -242,16 +255,6 @@ def test_probe_and_diagnose_worker_have_a_production_caller() -> None:
 
 # -- the screen: the admin's preview carries the files to check, nobody else gets it -------------
 
-from tests.integration.test_l39_wizard import (  # noqa: E402
-    World,
-    _call,
-    _csrf,
-    _existing_series,
-    world,  # noqa: F401
-)
-from tests.integration.test_auth_keys_reserved import _bearer, _create_key  # noqa: E402
-from tests.visibility_env import add_profile  # noqa: E402
-
 PREVIEW = "/api/v1/setup/adoption/preview"
 
 
@@ -298,10 +301,43 @@ def test_the_file_to_check_is_logged_without_its_name(
     """A journal line says that a file is to check and why, never its name or its series."""
     from shelfhold.infrastructure.logging import configure_logging
 
-    configure_logging(level="debug", log_format="json")
+    configure_logging(level="DEBUG", log_format="json")
     _existing_series(world)
     assert world.post(PREVIEW).status_code == 200
     out = capsys.readouterr()
     text = out.out + out.err
     assert "adopt.file_to_check" in text and "image.format_refused" in text
     assert "Dr Stone" not in text and "Ch.1" not in text
+
+
+@pytest.mark.req("EF-EXP-045", "ENF-SEC-003")
+def test_a_page_past_the_cap_or_an_unreadable_file_is_to_check_not_a_crash(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A first page larger than what the core reads in memory is a giant image; a file that
+    cannot be opened is `archive.unreadable`. Neither stops the adoption."""
+    from shelfhold.export.targets.kavita import adopt as adopt_module
+
+    monkeypatch.setattr(adopt_module, "PROBE_MAX_BYTES", 1024)
+    with export_env() as env:
+        a = adoption(env)
+        a.add_series(
+            "S",
+            {
+                "Big - Ch.1.cbz": cbz_bytes((("001.png", _png((256, 256))),)),
+                "Small - Ch.2.cbz": cbz_bytes((("001.png", b"x" * 100),)),
+            },
+        )
+        real = Fsops.open_read
+
+        def broken(self: Any, local: str) -> Any:
+            if "Small" in local:
+                raise PermissionError(local)
+            return real(self, local)
+
+        monkeypatch.setattr(Fsops, "open_read", broken)
+        report = run(a.adopter.preview(a.wired.client, env.destination_id))
+    assert _flagged(report) == {
+        "Big - Ch.1.cbz": "image.too_large",
+        "Small - Ch.2.cbz": "archive.unreadable",
+    }

@@ -260,12 +260,14 @@ class WizardOps:
                     w.fsops,
                 ).classify_download_dir(destination_id, download_dir)
             roots = self._roots(ctx, w)
+        reasons = {f.rel_path: f.check for s in report.series for f in s.files if f.check}
         return {
             "fingerprint": report.fingerprint,
             "library_ref": report.library_ref,
             "series": len(report.series),
             "files": report.files,
             "child_library": report.child_library,
+            "to_check": [{"path": path, "reason": reasons[path]} for path in report.to_check],
             "download_dir": asdict(verdict) if verdict else None,
             "roots": roots,
         }

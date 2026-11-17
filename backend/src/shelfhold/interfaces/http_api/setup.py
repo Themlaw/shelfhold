@@ -111,12 +111,21 @@ class WizardRootOut(BaseModel):
     present: bool
 
 
+class WizardToCheckOut(BaseModel):
+    """A file whose first page or archive the decode worker or the safe opener refused: adopted
+    all the same, never touched, for the admin to look at (`reason` is a code of a closed list)."""
+
+    path: str
+    reason: str
+
+
 class WizardPreviewOut(BaseModel):
     fingerprint: str
     library_ref: str
     series: int
     files: int
     child_library: bool
+    to_check: list[WizardToCheckOut]
     download_dir: WizardVerdictOut | None
     roots: list[WizardRootOut]
 
