@@ -30,7 +30,7 @@ __all__ = ["settle_hooks"]
 def settle_hooks(
     engine: sa.Engine,
     fsops: Fsops,
-    locate: Callable[..., object],
+    locate: Callable[[str], tuple[str, str]],
     *,
     data_dir: Path,
     clock: Clock,
@@ -38,14 +38,14 @@ def settle_hooks(
 ) -> Callable[[sa.Connection, OpenIntent], None]:
     """The hook to give `resolve_open` / `resolve_one` as `on_done`: every bookkeeping owed by an
     intent whose disk step is done, whatever its type."""
-    adopt = adopt_written_hook(fsops, locate, clock)  # type: ignore[arg-type]
+    adopt = adopt_written_hook(fsops, locate, clock)
     upgraded = SamePathUpgrade(
         engine,
         fsops,
         locate=locate,
         data_dir=data_dir,
         clock=clock,
-        bus=bus,  # type: ignore[arg-type]
+        bus=bus,
     ).settle_hook()
     assembled = VolumeAssembly(
         engine,
@@ -53,14 +53,14 @@ def settle_hooks(
         locate=locate,
         data_dir=data_dir,
         clock=clock,
-        bus=bus,  # type: ignore[arg-type]
+        bus=bus,
     ).settle_hook()
     repaired = LibraryRepair(
-        engine, fsops, locate, clock,  # type: ignore[arg-type]
+        engine, fsops, locate, clock,
         hold_work=lambda _work: contextlib.nullcontext(), bus=bus,
     ).settle_hook()  # fmt: skip
     renamed = RenameBook(
-        engine, fsops, locate=locate, clock=clock,  # type: ignore[arg-type]
+        engine, fsops, locate=locate, clock=clock,
         locks=ResourceLocks(engine, clock=clock),
     ).settle_hook()  # fmt: skip
 
