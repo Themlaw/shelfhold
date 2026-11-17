@@ -419,7 +419,8 @@ class World:
         """What must never reach a child: the titles and the ids of every hidden Work."""
         hidden = [self.seed.title_of(k) for k in HIDDEN_FROM_CEILING_10]
         return hidden + [self.seed.works[k] for k in HIDDEN_FROM_CEILING_10] + [
-            self.seed.editions[k] for k in ("above", "adult_edition", "misfiled", "mixed_new", "reserved")
+            self.seed.editions[k]
+            for k in ("above", "adult_edition", "misfiled", "mixed_new", "reserved")
         ]  # fmt: skip
 
     def clean(self, text: str) -> None:
@@ -1281,7 +1282,7 @@ def test_visibility_scope_by_open_shelf(world: World) -> None:
     with seed.engine.connect() as connection:
         shown = {k for k, w in ids.items() if work_is_visible(connection, scope_of("child", 10), w)}
     assert shown == VISIBLE_FOR_CEILING_10
-    # a rated Work on an adult shelf (open to everyone) is hers; a shelf with no ceiling hides nothing
+    # a rated Work on an adult shelf (open to everyone) is hers
     assert "adult_shelf" in shown
     # an unrated Work misfiled on the family shelf is still not hers: the shelf does not show it
     assert "misfiled" not in shown and "unrated" not in shown

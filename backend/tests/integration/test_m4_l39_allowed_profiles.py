@@ -63,8 +63,9 @@ class World:
     @staticmethod
     def _id(connection: sa.Connection, name: str) -> str:
         return str(
-            connection.execute(sa.text("SELECT id FROM user WHERE username=:n"), {"n": name})
-            .scalar_one()
+            connection.execute(
+                sa.text("SELECT id FROM user WHERE username=:n"), {"n": name}
+            ).scalar_one()
         )
 
 
@@ -77,7 +78,9 @@ def world(monkeypatch: pytest.MonkeyPatch, settings: Settings) -> Iterator[World
         mum = add_profile(env, "mum", "member", "10.0.0.3")
         made = World(env, seed, kid, sib, mum)
         with seed.engine.begin() as connection:
-            kind = str(connection.execute(sa.text("SELECT key FROM work_kind LIMIT 1")).scalar_one())
+            kind = str(
+                connection.execute(sa.text("SELECT key FROM work_kind LIMIT 1")).scalar_one()
+            )
             made.shelf_id = new_ulid()
             connection.execute(
                 sa.insert(export.shelf).values(
