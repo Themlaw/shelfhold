@@ -320,6 +320,7 @@ def test_no_exported_table_holds_a_column_that_looks_like_a_secret() -> None:
         ("source_item", "source_key"),  # the name of an upstream source, not a key
         ("profile_source_policy", "source_key"),
         ("source_migration", "source_key"),  # the name of the new source, not a key
+        ("activity_block", "source_key"),  # the name of an upstream source (L29)
         ("bundle_version", "state_key"),  # a digest of the manifest rows, not a key
     }, found
 
