@@ -22,7 +22,7 @@ from shelfhold.identity.public import local_auth, scope_of
 from shelfhold.infrastructure.db import create_db_engine
 from tests.auth_env import PASSWORD, AuthEnv, auth_env, db_rows, run_cli
 from tests.catalog_env import Harness, harness
-from tests.search_env import alt_title, credit, index_rows, rate
+from tests.search_env import alt_title, credit, index_rows, rate, shelve_rated
 
 
 @pytest.fixture
@@ -190,6 +190,7 @@ def test_search_filters_child_at_query_not_index(h: Harness) -> None:
     sync_search_index(h.connection)
     assert len(index_rows(h)) == 8  # all four, in both tables: the index holds no filter
     assert set(_ids(h, "dragon")) == {kids, teen, adult, unrated}
+    shelve_rated(h, kids, teen, adult)  # a child sees what a shelf open to her carries (D-P3)
     child = scope_of
     assert _ids(h, "dragon", scope=child("child", 8)) == [kids]  # unrated, above: not there
     assert set(_ids(h, "dragon", scope=child("child", 16))) == {kids, teen}

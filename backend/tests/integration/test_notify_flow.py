@@ -266,6 +266,7 @@ def test_child_is_told_nothing_of_an_unrated_work_she_follows(ctx: Env) -> None:
     ctx.profile(CHILD_ID, notify_mode="immediate")
     ctx.chapter(hidden)
     ctx.chapter(visible)
+    ctx.at(8, day=6)  # a child is never told at once (M4 L39): her digest
     ctx.run()
     text = ctx.sink.channel()
     assert "1 new chapter" in ctx.sink.to(CHILD_ID)[0].body  # only the visible one is counted
@@ -304,6 +305,7 @@ def test_series_grouping_does_not_carry_a_hidden_title_to_a_child(ctx: Env) -> N
     ctx.profile(CHILD_ID, notify_mode="immediate")
     ctx.chapter(shown)
     ctx.chapter(plain)
+    ctx.at(8, day=6)  # a child is never told at once (M4 L39): her digest
     ctx.run()
     text = ctx.sink.channel()
     # the control: she is told of what is hers (one chapter, the plain series), not the other
@@ -379,6 +381,9 @@ def test_a_child_request_arrival_goes_to_the_requester_only(ctx: Env) -> None:
     ctx.follow(SIBLING_ID, work)
     ctx.profile(SIBLING_ID, notify_mode="immediate")
     ctx.request_arrived(CHILD_ID, work, visibility="household")
+    ctx.run()
+    assert ctx.sink.sent == []  # a child is never told at once (M4 L39), whatever the event
+    ctx.at(8, day=6)
     ctx.run()
     assert [u for u, _ in ctx.sink.sent] == [CHILD_ID]  # the requester, and no one else
     assert "1 request(s) arrived" in ctx.sink.text(CHILD_ID)

@@ -75,6 +75,8 @@ def test_a_message_names_the_profile_unless_it_is_a_child_and_may_link_the_app(
             ctx.request_arrived(who, work, visibility="household")
         ctx.run()
         assert "For member" in ctx.sink.text(MEMBER_ID)
+        ctx.at(8, day=6)  # a child is never told at once (M4 L39): her digest
+        ctx.run()
         child = ctx.sink.text(CHILD_ID)
         assert "kid" not in child and "For " not in child  # anonymous
         assert "arrived" in child

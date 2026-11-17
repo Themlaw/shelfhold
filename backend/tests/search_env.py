@@ -5,7 +5,7 @@ from datetime import UTC, datetime
 import sqlalchemy as sa
 
 from shelfhold.infrastructure.ids import new_ulid
-from shelfhold.infrastructure.schema import catalog
+from shelfhold.infrastructure.schema import catalog, export
 from tests.catalog_env import Harness
 
 
@@ -50,6 +50,21 @@ def rate(h: Harness, work_id: str, age: int | None, *, adult: bool = False) -> N
             else datetime(2026, 11, 1, tzinfo=UTC),  # an admin rated it
         )
     )
+
+
+def shelve_rated(h: Harness, *work_ids: str) -> None:
+    """File a rated Edition of each Work on a shelf open to everyone (D-P3, M4 L39: a child sees
+    what a shelf open to her carries). Written raw, after the index was built: the index holds no
+    shelf."""
+    shelf_id = new_ulid()
+    h.connection.execute(sa.insert(export.shelf).values(id=shelf_id, name="Open", phrase="open"))
+    for work_id in work_ids:
+        h.connection.execute(
+            sa.insert(catalog.edition).values(
+                id=new_ulid(), work_id=work_id, lang="en", translation_type="official",
+                media="images", rated_at=datetime(2026, 11, 1, tzinfo=UTC), shelf_id=shelf_id,
+            )
+        )  # fmt: skip
 
 
 def index_rows(h: Harness) -> list[tuple[object, ...]]:
