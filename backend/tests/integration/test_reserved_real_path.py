@@ -140,6 +140,7 @@ WHEN_CLOSED_AUDITED = {
 EVERY_ROLE_OWN_ACCOUNT = {
     "session.revoke_others", "destination_account.bind", "destination_account.revoke",
     "device_token.issue", "device_token.manage",
+    "notify.profile_destination",  # M4 L39: an adult's own (tests/integration/test_m4_l39_*)
 }  # fmt: skip
 
 

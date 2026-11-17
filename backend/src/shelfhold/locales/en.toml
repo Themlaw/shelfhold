@@ -1367,6 +1367,11 @@
     action = "Read the reason given: the key must open exactly the declared account, on a reachable Kavita."
     cause = "The key is refused by Kavita or opens another account, the declared account is missing or badly written, or the destination is not a reachable Kavita."
 
+  [errors.notify_destination_refused]
+    title = "This notification destination is refused."
+    action = "Use an Apprise URL of an allowed service, with a public address or a declared LAN target."
+    cause = "The URL is not an allowed notification channel (scheme, address or format)."
+
   [errors.destination_account_child_refused]
     title = "This Kavita account is not one a child may hold."
     action = "Create or edit the child's account in Kavita: no administrator role, no right beyond reading and progress, an age restriction at or below the child's maximum age, unknown ratings excluded."

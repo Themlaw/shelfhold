@@ -3170,6 +3170,26 @@ export type NotificationPrefsOut = {
 };
 
 /**
+ * NotifyDestinationIn
+ */
+export type NotifyDestinationIn = {
+    /**
+     * Url
+     */
+    url: string;
+};
+
+/**
+ * NotifyDestinationOut
+ */
+export type NotifyDestinationOut = {
+    /**
+     * Configured
+     */
+    configured: boolean;
+};
+
+/**
  * OfficialLinkOut
  */
 export type OfficialLinkOut = {
@@ -11179,6 +11199,105 @@ export type MeResponses = {
 };
 
 export type MeResponse = MeResponses[keyof MeResponses];
+
+export type ClearData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/me/notification-destination';
+};
+
+export type ClearErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type ClearError = ClearErrors[keyof ClearErrors];
+
+export type ClearResponses = {
+    /**
+     * Successful Response
+     */
+    204: void;
+};
+
+export type ClearResponse = ClearResponses[keyof ClearResponses];
+
+export type ReadData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/me/notification-destination';
+};
+
+export type ReadErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type ReadError = ReadErrors[keyof ReadErrors];
+
+export type ReadResponses = {
+    /**
+     * Successful Response
+     */
+    200: NotifyDestinationOut;
+};
+
+export type ReadResponse = ReadResponses[keyof ReadResponses];
+
+export type PutData = {
+    body: NotifyDestinationIn;
+    path?: never;
+    query?: never;
+    url: '/api/v1/me/notification-destination';
+};
+
+export type PutErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type PutError = PutErrors[keyof PutErrors];
+
+export type PutResponses = {
+    /**
+     * Successful Response
+     */
+    200: NotifyDestinationOut;
+};
+
+export type PutResponse = PutResponses[keyof PutResponses];
 
 export type GetNotificationsData = {
     body?: never;

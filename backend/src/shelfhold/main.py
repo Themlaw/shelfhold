@@ -49,6 +49,7 @@ from shelfhold.infrastructure.secrets.errors import (
 from shelfhold.infrastructure.secrets.keyring import Keyring
 from shelfhold.infrastructure.settings_store import load_db_settings
 from shelfhold.infrastructure.volumes import ensure_volumes
+from shelfhold.integrations.notify import ProfileDestinations
 from shelfhold.interfaces.http_api.activity import build_activity_router
 from shelfhold.interfaces.http_api.app import HttpApplication, Routers, create_http_app
 from shelfhold.interfaces.http_api.audit import build_audit_router
@@ -78,6 +79,7 @@ from shelfhold.interfaces.http_api.library import build_library_router
 from shelfhold.interfaces.http_api.maintenance import build_maintenance_router
 from shelfhold.interfaces.http_api.me import build_me_router
 from shelfhold.interfaces.http_api.metrics import build_metrics_router
+from shelfhold.interfaces.http_api.notify_destination import build_notify_destination_router
 from shelfhold.interfaces.http_api.opds import SeriesBundleProvider, build_opds_router
 from shelfhold.interfaces.http_api.ops import build_ops_router
 from shelfhold.interfaces.http_api.ops_dashboard import build_ops_dashboard_router
@@ -364,6 +366,9 @@ def create_app(
         build_targets_router(lambda: ShelfService(engine, clock=clock)),  # M4 L33a: the servers
         build_destinations_router(ops_services),
         build_destination_accounts_router(ops_services),  # M4 L12: a member's own Kavita key
+        build_notify_destination_router(  # M4 L39: where an adult's titles go, sealed
+            lambda: ProfileDestinations(engine, composition.vault, clock)
+        ),
         build_sync_status_router(ops_services),  # M4 L33b: the sync state, member by member
         build_edition_shelf_router(lambda: ShelfService(engine, clock=clock)),
         build_headless_router(headless_admin, lambda: resolved.public_url),

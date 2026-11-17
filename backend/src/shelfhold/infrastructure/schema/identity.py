@@ -445,3 +445,25 @@ destination_account = sa.Table(
     ),
     sa.UniqueConstraint("shelf_destination_id", "remote_user"),
 )
+
+# The Apprise destination of one adult profile (M4 L39, EF-INT-021): the titles of their notices go
+# there and nowhere else. The URL carries a token, so it is a sealed envelope like every secret
+# (ENF-SEC-005); nothing reads it back but the sender. A child has none: the service refuses, and
+# the sender never opens one anyway.
+notify_destination = sa.Table(
+    "notify_destination",
+    metadata,
+    ulid_column("id", primary_key=True),  # a sealed table has a single-column key (rotation)
+    sa.Column(
+        "user_id",
+        sa.String(26),
+        sa.ForeignKey("user.id", ondelete="CASCADE"),
+        nullable=False,
+        unique=True,
+    ),
+    *sealed_secret_columns(),
+    now_column(),
+    now_column("updated_at"),
+    ulid_check("id"),
+    sa.CheckConstraint('"secret_ct" IS NOT NULL', name="holds_a_secret"),
+)

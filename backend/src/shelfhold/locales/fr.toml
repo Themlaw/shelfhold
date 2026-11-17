@@ -1336,6 +1336,11 @@ title = "Ce compte Kavita ne peut pas être lié."
 action = "Lisez la raison indiquée : la clé doit ouvrir exactement le compte déclaré, sur un Kavita joignable."
 cause = "La clé est refusée par Kavita ou ouvre un autre compte, le compte déclaré manque ou est mal écrit, ou la destination n'est pas un Kavita joignable."
 
+[errors."notify_destination_refused"]
+title = "Cette destination de notification est refusée."
+action = "Utilisez une URL Apprise d'un service autorisé, avec une adresse publique ou une cible LAN déclarée."
+cause = "L'URL n'est pas un canal de notification autorisé (schéma, adresse ou format)."
+
 [errors."destination_account_child_refused"]
 title = "Ce compte Kavita n'est pas de ceux qu'un enfant peut porter."
 action = "Créez ou corrigez le compte de l'enfant dans Kavita : aucun rôle d'administrateur, aucun droit au-delà de la lecture et de la progression, une restriction d'âge au plus égale à l'âge maximal de l'enfant, inconnus exclus."

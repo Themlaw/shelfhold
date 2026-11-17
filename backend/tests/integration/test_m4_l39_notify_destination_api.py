@@ -52,6 +52,7 @@ class Rig:
 @pytest.fixture
 def rig(monkeypatch: pytest.MonkeyPatch, settings: Settings) -> Iterator[Rig]:
     with auth_env(monkeypatch, settings) as env:
+        assert env.login().status_code == 200  # the admin
         mum = add_profile(env, "mum", "member", "10.0.0.3")
         kid = add_profile(env, "kid", "child", "10.0.0.2", max_age_rating=10)
         yield Rig(env, mum, kid)
@@ -87,8 +88,10 @@ def test_a_child_has_no_destination_of_her_own_through_the_api(rig: Rig) -> None
 
 def test_an_api_key_sets_nothing(rig: Rig) -> None:
     auth = local_auth(rig.engine(), rig.env.settings)
-    for read_only in (True, False):
-        key = auth.create_api_key(name=f"k{read_only}", username="mum", read_only=read_only).value
+    for name, username in (("member", "mum"), ("admin", None)):
+        key = auth.create_api_key(
+            name=name, username=username, read_only=username is not None
+        ).value
         bare = rig.env.other_client("10.0.0.77")
         got = bare.put(PATH, json={"url": CHANNEL_URL}, headers={"Authorization": f"Bearer {key}"})
         assert got.status_code == 403

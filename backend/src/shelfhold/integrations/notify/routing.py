@@ -2,8 +2,10 @@
 
 A person is told in one of two ways. A **digest** leaves once a day at 08:00 in their own time
 zone. An **immediate** one leaves at once, and only two things are ever immediate: "your request
-arrived" and "an outage over one hour" (the latter for the admin alone, the one who can act). A
-profile may choose the `immediate` mode for everything else, which is its own choice.
+arrived" and "an outage over one hour" (the latter for the admin alone, the one who can act). An
+adult may choose the `immediate` mode for everything else, which is their own choice (`notify_mode`,
+read at each event). **A child is never told at once**, whatever her `notify_mode` says and for
+whatever event (M4 L39): `is_immediate` is the one place that says so.
 
 **Quiet hours** (21:00 to 07:00 unless the profile set its own) delay what is not an outage: a
 digest whose hour falls inside them, and an arrival, wait for their end. An outage over one hour
@@ -42,6 +44,14 @@ class Recipient:
     quiet_start: str | None
     quiet_end: str | None
     username: str = ""
+
+
+def is_immediate(person: Recipient, *, urgent: bool) -> bool:
+    """Whether a notice leaves at once: an urgent one, or any one for a person who chose the
+    `immediate` mode. Never for a child."""
+    if person.role == "child":
+        return False
+    return urgent or person.notify_mode == "immediate"
 
 
 def classify(event_type: str) -> Kind | None:

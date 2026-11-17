@@ -10,8 +10,15 @@ Format : [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/). Versionnement
 - **Événements d'arrivée de Kavita (L37)** : Shelfhold écoute le hub de Kavita avec la clé dédiée et regarde plus tôt quand une série arrive ; un événement n'est jamais une preuve, le polling reste actif et une panne du hub ne coupe que cette écoute. Nouvelle dépendance : `websockets` (BSD-3-Clause, Python pur).
 - **Historique d'activité et liste de blocage (L29)** : l'administrateur relit l'historique des événements, bloque un chapitre qu'une source repropose (il est alors ignoré à chaque cycle, sans jamais être débloqué en silence) et le débloque lui-même, avec une ligne d'audit.
 - **Stockage et réseau (L29)** : l'espace occupé par étagère et le trafic par source et par jour, compté par le Fetcher après la garde réseau, sans adresse ni chemin.
+- **Étagères réservées lues partout (L39, D-P3)** : une Œuvre n'est visible pour un enfant que si au moins une étagère qui la porte lui est ouverte (`allowed_profiles` vide ou la nommant), sur le catalogue, la recherche, l'OPDS, le kosync, les collections et les relations, par une seule fonction.
+- **Destination de notification d'un adulte (L39)** : chaque admin ou membre peut sceller une destination Apprise à lui (action réservée, jamais une clé) ; les titres de ses notices vont seulement là, jamais dans le canal partagé. Un enfant n'en a pas.
+- **`notify_mode` lu (L39)** : résumé ou immédiat ; un enfant n'a jamais de notification immédiate.
 
-Migration : oui (0091 et 0092)
+### Modifié
+
+- Une Œuvre ou une Édition rangée sur aucune étagère n'est plus visible pour un enfant (un adulte la voit toujours).
+
+Migration : oui (0091, 0092 et 0094)
 
 ## 1.1.0-rc.2 - 2026-11-16
 

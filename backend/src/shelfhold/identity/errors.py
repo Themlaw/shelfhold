@@ -38,6 +38,8 @@ CODES: tuple[ErrorCode, ...] = (
     ErrorCode("destination_account_conflict", 409, "user"),
     ErrorCode("destination_account_refused", 422, "user"),
     ErrorCode("destination_account_child_refused", 422, "user"),
+    # The Apprise destination of one adult profile (M4 L39): a URL the allowlist refuses
+    ErrorCode("notify_destination_refused", 422, "user"),
     # Notification preferences (M3 L14): a mode, quiet hours or a time zone that is not one
     ErrorCode("notification_prefs_refused", 422, "user"),
 )

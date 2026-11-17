@@ -27,9 +27,9 @@ def _columns(database: object, table: str) -> set[str]:
         return {row[1] for row in conn.execute(f'PRAGMA table_info("{table}")')}
 
 
-def test_the_revision_is_0093_the_only_head_on_0092() -> None:
+def test_the_revision_is_0093_on_0092() -> None:
     script = ScriptDirectory(str(default_script_location()))
-    assert script.get_heads() == ["0093"]
+    assert len(script.get_heads()) == 1  # one head, whichever later lot moved it
     assert script.get_revision("0093").down_revision == "0092"
 
 

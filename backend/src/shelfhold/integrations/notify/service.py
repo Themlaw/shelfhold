@@ -41,6 +41,7 @@ from shelfhold.integrations.notify.routing import (
     Recipient,
     classify,
     delivery_time,
+    is_immediate,
 )
 
 log = structlog.get_logger(__name__)
@@ -56,6 +57,8 @@ _PAGE: Final = 500
 
 digest = identity.notification_digest
 Deliver = Callable[[str, Message], bool]
+ProfileDeliver = Callable[[str, Message], bool | None]  # None: this person has no destination
+_MAX_TITLES: Final = 20
 PendingWithdrawals = Callable[[Connection], int]
 Item = dict[str, Any]
 
@@ -228,7 +231,7 @@ class NotificationRouter:
     def _queue(
         self, connection: Connection, person: Recipient, item: Item, *, urgent: bool
     ) -> None:
-        immediate = urgent or person.notify_mode == "immediate"
+        immediate = is_immediate(person, urgent=urgent)
         due = delivery_time(person, urgent=immediate, now=self._clock.now())
         _put(connection, person.user_id, due, {"urgent": immediate, "items": [item]})
 
@@ -278,12 +281,14 @@ class NotificationSender:
         deliver: Deliver,
         pending_withdrawals: PendingWithdrawals,
         app_url: str | None = None,
+        profile_deliver: ProfileDeliver | None = None,
     ) -> None:
         self._engine = engine
         self._clock = clock
         self._deliver = deliver
         self._withdrawals = pending_withdrawals
         self._app_url = app_url
+        self._profile_deliver = profile_deliver
 
     def run_once(self) -> SendReport:
         now = self._clock.now()
@@ -426,11 +431,19 @@ class NotificationSender:
         with self._engine.connect() as connection:
             person = _person(connection, user_id)
             message = None if person is None else self._build(connection, person, payload)
+            titled = (
+                self._build(connection, person, payload, titles=True)
+                if person is not None and message is not None and self._may_be_titled(person)
+                else None
+            )
         if message is None:  # a person who is gone, or nothing left that is theirs to be told
             self._finish(user_id, leased_at)
             return "dropped"
         try:
-            delivered = bool(self._deliver(user_id, message))
+            private = None if titled is None else self._send_private(user_id, titled)
+            # a destination of their own decides: the titles go there and only there, and a
+            # failure there is a failure (retried), never a fallback to the shared channels
+            delivered = private if private is not None else bool(self._deliver(user_id, message))
         except Exception:
             delivered = False  # never the text of the error: it may carry a URL
         if delivered:
@@ -450,6 +463,16 @@ class NotificationSender:
             _put(connection, user_id, now + wait, {**payload, "attempts": attempts})
         return "failed"
 
+    def _may_be_titled(self, person: Recipient) -> bool:
+        """Only an adult can have a destination of their own (a child never does)."""
+        return self._profile_deliver is not None and person.role != "child"
+
+    def _send_private(self, user_id: str, message: Message) -> bool | None:
+        if self._profile_deliver is None:
+            return None
+        sent = self._profile_deliver(user_id, message)
+        return None if sent is None else bool(sent)
+
     def _finish(self, user_id: str, due_at: datetime) -> None:
         with write_transaction(self._engine) as connection:
             connection.execute(
@@ -458,13 +481,17 @@ class NotificationSender:
 
     # -- the message ----------------------------------------------------------------------------
 
-    def _build(self, connection: Connection, person: Recipient, payload: Any) -> Message | None:
+    def _build(
+        self, connection: Connection, person: Recipient, payload: Any, *, titles: bool = False
+    ) -> Message | None:
         """The text of a notice. It carries **no title, no series name and no request title**: the
         only way out is the instance's channels, which several people read (a child included), so
         a title could reach someone it must not. It says how many news there are, for whom (the
-        profile's name, never a child's) and where to look. Titles in clear wait for a destination
-        per profile (debt, M4)."""
+        profile's name, never a child's) and where to look. With `titles` (M4 L39) it is the message
+        of an adult for the destination of their own, which names the Works they are told about and
+        goes nowhere else."""
         chapters = arrivals = outages = 0
+        named: dict[str, int] = {}
         reminders = False
         alive = self._alive(connection, payload)
         for item in payload.get("items", []):
@@ -482,14 +509,21 @@ class NotificationSender:
                 outages += 1
             elif kind == "request_arrived":
                 arrivals += 1
+                if item.get("work_id"):
+                    named.setdefault(str(item["work_id"]), 0)
             else:
                 chapters += int(item.get("count", 1))
+                if item.get("work_id"):
+                    key = str(item["work_id"])
+                    named[key] = named.get(key, 0) + int(item.get("count", 1))
         if not (chapters or arrivals or outages or reminders):
             return None
         lines: list[str] = []
         if person.role != "child" and person.username:  # a child is never named in a shared place
             lines.append(f"For {neutralize_markdown(person.username)}:")
-        if chapters:
+        if titles and named:
+            lines += self._title_lines(connection, named)
+        elif chapters:
             lines.append(f"- {chapters} new chapter(s)")
         if arrivals:
             lines.append(f"- {arrivals} request(s) arrived")
@@ -506,6 +540,23 @@ class NotificationSender:
             else "Shelfhold - daily digest"
         )  # fmt: skip
         return Message(title=title, body="\n".join(lines))
+
+    @staticmethod
+    def _title_lines(connection: Connection, named: dict[str, int]) -> list[str]:
+        """`- Title: n new chapter(s)` per Work (a request's Work with no chapter: its title)."""
+        rows = connection.execute(
+            sa.select(catalog.work.c.id, catalog.work.c.title)
+            .where(catalog.work.c.id.in_(sorted(named)))
+            .order_by(catalog.work.c.sort_title, catalog.work.c.id)
+        ).all()
+        lines = []
+        for row in rows[:_MAX_TITLES]:
+            count = named[row.id]
+            label = neutralize_markdown(str(row.title))
+            lines.append(f"- {label}: {count} new chapter(s)" if count else f"- {label}")
+        if len(rows) > _MAX_TITLES:
+            lines.append(f"- … and {len(rows) - _MAX_TITLES} more")
+        return lines
 
     @staticmethod
     def _alive(connection: Connection, payload: Any) -> set[str]:

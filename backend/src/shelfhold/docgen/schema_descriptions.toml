@@ -1238,6 +1238,13 @@ token_fingerprint = "Short keyed digest of the token shown instead of it; NULL o
 verified_at = "When the token was last checked to open the declared account (UTC)."
 revoked_at = "When the account was revoked (UTC); the token is erased then."
 
+[tables.notify_destination]
+description = "The Apprise destination of one adult profile, sealed: the titles of their notices go there and nowhere else."
+[tables.notify_destination.columns]
+id = "Destination identifier (ULID)."
+user_id = "The adult profile that owns it; one destination per profile, gone with the profile."
+updated_at = "When the destination was last replaced (UTC)."
+
 [tables.progress_sync_cursor]
 description = "Where the progress synchronisation of an account with its destination stopped."
 [tables.progress_sync_cursor.columns]
