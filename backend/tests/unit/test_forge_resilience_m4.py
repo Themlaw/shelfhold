@@ -1,3 +1,4 @@
+# ruff: noqa: S106 (synthetic secrets)
 """ENF-GOV-004 (L41): the forge can be lost without the family losing its updates.
 
 Update check off by default and silent when it fails, plugin index address configurable, the
@@ -291,7 +292,9 @@ SCRIPT = ROOT / ".github" / "scripts" / "publish-mirror.sh"
 SHA = "a" * 40
 
 
-def _script(mode: str, tmp_path: Path, **env: str) -> tuple[int, str]:
+def _script(
+    mode: str, tmp_path: Path, *, cwd: str | Path | None = None, **env: str
+) -> tuple[int, str]:
     base = {
         "PATH": "/usr/bin:/bin",
         "OWNER": "Acme",
@@ -304,6 +307,7 @@ def _script(mode: str, tmp_path: Path, **env: str) -> tuple[int, str]:
     done = subprocess.run(  # noqa: S603
         ["/bin/bash", str(SCRIPT), mode],
         env={**base, **env},
+        cwd=cwd,
         capture_output=True,
         text=True,
         check=False,
@@ -311,12 +315,117 @@ def _script(mode: str, tmp_path: Path, **env: str) -> tuple[int, str]:
     return done.returncode, done.stdout + done.stderr
 
 
+def _git(repo: Path, *args: str) -> str:
+    env = {
+        "PATH": "/usr/bin:/bin",
+        "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@example.org",
+        "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@example.org",
+        "HOME": str(repo),
+    }  # fmt: skip
+    done = subprocess.run(  # noqa: S603
+        ["/usr/bin/git", "-c", "commit.gpgsign=false", *args],
+        cwd=repo, env=env, capture_output=True, text=True, check=True,
+    )  # fmt: skip
+    return done.stdout.strip()
+
+
+def _repo(tmp_path: Path) -> tuple[Path, str, str]:
+    """A clone with the tag v1.2.0 on the first commit and a later head: (path, tag sha, head)."""
+    repo = tmp_path / "clone"
+    repo.mkdir()
+    _git(repo, "init", "-q", "-b", "main")
+    (repo / "a").write_text("1", encoding="utf-8")
+    _git(repo, "add", "a")
+    _git(repo, "commit", "-q", "-m", "one")
+    _git(repo, "tag", "v1.2.0")
+    tagged = _git(repo, "rev-parse", "HEAD")
+    (repo / "a").write_text("2", encoding="utf-8")
+    _git(repo, "commit", "-q", "-am", "two")
+    return repo, tagged, _git(repo, "rev-parse", "HEAD")
+
+
+@pytest.mark.req("ENF-GOV-004")
+def test_publish_mirror_refuses_a_tag_that_does_not_designate_the_sha(tmp_path: Path) -> None:
+    """C3: a deleted tag makes GitHub report the head of main as the sha of the run."""
+    repo, tagged, head = _repo(tmp_path)
+    tag = {"REF_TYPE": "tag", "REF_NAME": "v1.2.0"}
+    assert _script("check", tmp_path, cwd=repo, SHA=tagged, **tag)[0] == 0
+    code, out = _script("check", tmp_path, cwd=repo, SHA=head, **tag)
+    assert code != 0 and "does not designate" in out
+    code, out = _script("check", tmp_path, cwd=repo, SHA=head, REF_TYPE="tag", REF_NAME="v9.9.9")
+    assert code != 0 and "does not designate" in out  # a tag the clone does not have
+    code, _ = _script(
+        "push", tmp_path, cwd=repo, SHA=head, MIRROR_USER="acme", MIRROR_TOKEN="x", **tag
+    )
+    assert code != 0
+
+
+@pytest.mark.req("ENF-GOV-004")
+def test_publish_mirror_token_only_in_the_environment_of_git_push(tmp_path: Path) -> None:
+    """The token is on no command line, in no output, and only `git push` has it in its
+    environment (every other command runs without it); git gets it back through the askpass."""
+    repo, tagged, _head = _repo(tmp_path)
+    secret = "tok-" + "z9y8x7" * 4  # synthetic
+    fakebin = tmp_path / "fakebin"
+    fakebin.mkdir()
+    log = tmp_path / "git.log"
+    (fakebin / "git").write_text(
+        "#!/bin/sh\n"
+        f'printf "ARGV %s\\n" "$*" >> "{log}"\n'
+        f'env | sed "s/^/ENV[$1] /" >> "{log}"\n'
+        'if [ "$1" = push ]; then\n'
+        f'  printf "ASKUSER %s\\n" "$("$GIT_ASKPASS" "Username for x: ")" >> "{log}"\n'
+        f'  printf "ASKPASS %s\\n" "$("$GIT_ASKPASS" "Password for x: ")" >> "{log}"\n'
+        "fi\n"
+        f'if [ "$1" = rev-parse ]; then echo {tagged}; fi\n',
+        encoding="utf-8",
+    )
+    (fakebin / "git").chmod(0o755)
+    code, out = _script(
+        "push", tmp_path, cwd=repo, PATH=f"{fakebin}:/usr/bin:/bin", REF_TYPE="tag",
+        REF_NAME="v1.2.0", SHA=tagged, MIRROR_USER="mirror-user", MIRROR_TOKEN=secret,
+    )  # fmt: skip
+    assert code == 0, out
+    lines = log.read_text(encoding="utf-8").splitlines()
+    assert any(
+        line.startswith("ARGV push https://codeberg.org/acme/shelfhold.git") for line in lines
+    )
+    assert f"ASKPASS {secret}" in lines and "ASKUSER mirror-user" in lines  # given back by askpass
+    argv = [line for line in lines if line.startswith("ARGV ")]
+    assert all(secret not in line for line in argv)  # not on any command line
+    for line in lines:
+        if line.startswith("ENV[") and secret in line:
+            assert line.startswith("ENV[push] MIRROR_TOKEN="), line  # only git push, only that
+    assert not any(line.startswith("ENV[rev-parse]") and secret in line for line in lines)
+    assert secret not in out and secret not in (tmp_path / "summary").read_text("utf-8")
+    assert not list(tmp_path.glob("tmp.*"))  # the askpass helper is gone
+
+
+@pytest.mark.req("ENF-GOV-004")
+def test_publish_mirror_needs_its_own_user_and_the_mirror_environment(tmp_path: Path) -> None:
+    (job,) = _wf()["jobs"].values()
+    assert job["environment"] == "mirror"  # the secret is reachable from main and v* tags only
+    assert "github.event.deleted != true" in str(job["if"])  # a deleted ref is never mirrored
+    assert _wf()["concurrency"]["cancel-in-progress"] is False  # nor a tag run cancelled
+    text = WORKFLOW.read_text(encoding="utf-8")
+    assert "vars.MIRROR_USER" in text and "SECOND_REGISTRY_USER" not in text
+    detect = next(s for s in job["steps"] if s.get("id") == "token")
+    assert "vars.MIRROR_USER != ''" in yaml.safe_dump(detect)  # no user: succeeds, and says so
+    assert not re.search(r"\bexit [1-9]", str(detect["run"]))
+    assert "MIRROR_USER" in str(detect["run"]) and "GITHUB_STEP_SUMMARY" in str(detect["run"])
+    code, out = _script("push", tmp_path, MIRROR_TOKEN="x")
+    assert (
+        code != 0 and "MIRROR_USER" in out
+    )  # no MIRROR_USER: the script itself refuses, it does not fall back
+
+
 @pytest.mark.req("ENF-GOV-004")
 def test_publish_mirror_default_target_and_refs(tmp_path: Path) -> None:
     code, out = _script("check", tmp_path)
     assert code == 0 and "https://codeberg.org/acme/shelfhold.git" in out
     assert "refs/heads/main" in out
-    code, out = _script("check", tmp_path, REF_TYPE="tag", REF_NAME="v1.2.0")
+    repo, tagged, _head = _repo(tmp_path)
+    code, out = _script("check", tmp_path, cwd=repo, REF_TYPE="tag", REF_NAME="v1.2.0", SHA=tagged)
     assert code == 0 and "refs/tags/v1.2.0" in out
 
 
@@ -337,6 +446,134 @@ def test_publish_mirror_default_target_and_refs(tmp_path: Path) -> None:
 )
 def test_publish_mirror_script_refuses_hostile_input(tmp_path: Path, env: dict[str, str]) -> None:
     fake = "not-a-real-token"
-    code, out = _script("push", tmp_path, MIRROR_TOKEN=fake, **env)
+    code, out = _script("push", tmp_path, MIRROR_TOKEN=fake, MIRROR_USER="acme", **env)
     assert code != 0
     assert fake not in out
+
+
+# --- the real client (simulated transport): what goes on the wire, how much is read -------------
+
+HOST = "updates.example.org"
+
+
+def _network(respond: Any = None) -> tuple[Any, Any]:
+    from shelfhold.infrastructure.fetcher import Network
+    from tests.fakes_fetcher import FakeResolver, Recorder
+
+    recorder = Recorder(respond)
+    return Network(
+        resolver=FakeResolver({HOST: ["93.184.216.34"]}), transport=recorder.transport
+    ), recorder
+
+
+async def _real(network: Any, url: str = URL) -> UpdateStatus:
+    from shelfhold.platform.update_check import update_fetcher
+
+    fetcher = update_fetcher(network)
+    try:
+        return await check_for_update(fetcher, url, current="1.1.0")
+    finally:
+        await fetcher.aclose()
+
+
+@pytest.mark.req("ENF-GOV-004", "ENF-PRIV-001")
+def test_update_check_real_client_sends_a_neutral_agent_and_nothing_else() -> None:
+    import httpx2
+
+    from shelfhold import __version__
+    from shelfhold.platform.update_check import UPDATE_USER_AGENT
+
+    network, recorder = _network(lambda _r: httpx2.Response(200, content=OK))
+    status = asyncio.run(_real(network))
+    assert (status.state, status.latest, status.newer) == ("ok", "1.2.0", True)
+    (request,) = recorder.requests
+    headers = {k.lower(): v for k, v in request.headers.items()}
+    assert headers["user-agent"] == UPDATE_USER_AGENT
+    assert set(headers) <= {"host", "user-agent", "accept", "accept-encoding", "connection"}
+    assert request.method == "GET" and not request.content
+    assert request.url.path == "/shelfhold/latest.json" and not request.url.query
+    wire = repr((str(request.url), sorted(headers.items())))
+    assert __version__ not in wire and "1.1.0" not in wire and "Shelfhold/" not in wire
+
+
+@pytest.mark.req("ENF-GOV-004")
+def test_update_check_real_client_bounds_the_read_not_only_the_result() -> None:
+    import httpx2
+
+    from shelfhold.platform.update_check import MAX_BYTES
+
+    network, _ = _network(lambda _r: httpx2.Response(200, content=b"x" * (MAX_BYTES + 1)))
+    with structlog.testing.capture_logs() as logs:
+        status = asyncio.run(_real(network))
+    assert status.state == "failed"
+    # the Fetcher's own bound stopped it (a FetchTooLarge), not the check made once all was read
+    assert [(e["event"], e["reason"]) for e in logs] == [
+        ("http.refused", "FetchTooLarge"),
+        ("update_check.failed", "FetchTooLarge"),
+    ]
+    assert {e["log_level"] for e in logs} == {"info"}  # the Fetcher's own line too: no warning
+
+
+@pytest.mark.req("ENF-GOV-004")
+def test_update_check_real_client_keeps_the_ssrf_guard() -> None:
+    from shelfhold.infrastructure.fetcher import Network
+    from tests.fakes_fetcher import FakeResolver, Recorder
+
+    recorder = Recorder()
+    network = Network(resolver=FakeResolver({HOST: ["10.0.0.5"]}), transport=recorder.transport)
+    with structlog.testing.capture_logs() as logs:
+        status = asyncio.run(_real(network))
+    assert status.state == "failed" and recorder.requests == []  # a private address: no request
+    assert {e["log_level"] for e in logs} == {"info"}
+
+
+@pytest.mark.req("ENF-GOV-004")
+def test_update_check_cli_is_off_by_default_and_makes_no_connection(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    settings: Settings,
+) -> None:
+    from tests.auth_env import run_cli
+
+    network, recorder = _network()
+    monkeypatch.setattr("shelfhold.composition._DEFAULT_NETWORK", network)
+    monkeypatch.delenv("SHELFHOLD_UPDATE_CHECK_URL", raising=False)
+    assert run_cli(monkeypatch, settings, "update", "check") == 2
+    assert "SHELFHOLD_UPDATE_CHECK_URL" in capsys.readouterr().err
+    assert recorder.requests == []
+
+
+@pytest.mark.req("ENF-GOV-004")
+@pytest.mark.parametrize(
+    ("status", "body", "code", "stream", "key"),
+    [
+        (200, OK, 0, "out", "update.newer"),
+        (200, json.dumps({"version": "1.0.0"}).encode(), 0, "out", "update.current"),
+        (500, b"down", 1, "err", "update.failed"),
+        (200, b"[" * 16_000, 1, "err", "update.failed"),
+    ],
+)
+def test_update_check_cli_through_the_real_client(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    settings: Settings,
+    status: int,
+    body: bytes,
+    code: int,
+    stream: str,
+    key: str,
+) -> None:
+    import httpx2
+
+    from shelfhold.i18n import t
+    from tests.auth_env import run_cli
+
+    network, recorder = _network(lambda _r: httpx2.Response(status, content=body))
+    monkeypatch.setattr("shelfhold.composition._DEFAULT_NETWORK", network)
+    monkeypatch.setenv("SHELFHOLD_UPDATE_CHECK_URL", URL)
+    assert run_cli(monkeypatch, settings, "update", "check") == code
+    captured = capsys.readouterr()
+    latest = json.loads(body)["version"] if status == 200 and body[:1] == b"{" else ""
+    message = t(key, latest=latest) if key != "update.failed" else t(key)
+    assert message in (captured.out if stream == "out" else captured.err)
+    assert len(recorder.requests) == 1

@@ -125,6 +125,8 @@ access_restricted_help = "Suppose qu'un profil restreint existe (le contrôle pa
 search_help = "Recherche locale : reconstruit l'index de recherche."
 search_rebuild_help = "Refait l'index de recherche depuis la base seule (il est une projection)."
 stats_help = "Indicateurs de valeur, calculés sur l'instance seulement (aucune télémétrie)."
+update_help = "Une version plus récente est-elle sortie ? (désactivé tant que SHELFHOLD_UPDATE_CHECK_URL n'est pas défini)."
+update_check_help = "Lit le document de version à SHELFHOLD_UPDATE_CHECK_URL et dit si une version plus récente est sortie. Ne change rien."
 diagnostic_help = "Diagnostic local de l'instance (aucune connexion sortante)."
 diagnostic_bundle_help = "Écrit un paquet de diagnostic sans secret, sans contenu ni fichier tatoué, sources masquées."
 diagnostic_out_help = "Fichier à écrire (zip) ; il ne doit pas exister."
@@ -836,6 +838,12 @@ withheld = "Laissé hors de l'export, parce qu'une pierre tombale le couvre : {u
 files_warning = "Attention : {missing, plural, one {# fichier connu du registre introuvable} other {# fichiers connus du registre introuvables}} sur le disque, {altered, plural, one {# copie qui ne correspond plus} other {# copies qui ne correspondent plus}} à l'empreinte du registre (voir manifest.json)."
 imported = "Import terminé : {rows, plural, one {# ligne} other {# lignes}} dans {tables, plural, one {# table} other {# tables}}, {files, plural, one {# fichier} other {# fichiers}}."
 next_steps = "Suite : « shelfhold admin reset-password » pour chaque profil (aucun mot de passe n'est exporté), « shelfhold search rebuild » pour l'index de recherche, puis « shelfhold reconcile » pour que l'instance recense les fichiers restaurés."
+
+[update]
+off = "La vérification des mises à jour est désactivée : définissez SHELFHOLD_UPDATE_CHECK_URL pour l'activer. Aucune connexion n'a été faite."
+newer = "La version {latest} est sortie. Mettez à jour avec : docker compose pull, puis docker compose up -d."
+current = "Vous êtes à jour (dernière annoncée : {latest})."
+failed = "La vérification n'a pas pu lire le document de version. Rien d'autre n'est affecté."
 
 [diagnostic]
 out_dir_missing = "Le dossier du fichier demandé n'existe pas."

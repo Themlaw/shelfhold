@@ -126,6 +126,8 @@
   search_help = "Local Search: Rebuilds the search index."
   search_rebuild_help = "Redoes the search index from the base alone (it is a projection)."
   stats_help = "Value indicators, calculated on the instance only (no telemetry)."
+  update_help = "Is a newer version out? (off unless SHELFHOLD_UPDATE_CHECK_URL is set)."
+  update_check_help = "Reads the version document at SHELFHOLD_UPDATE_CHECK_URL and says whether a newer version is out. Changes nothing."
   diagnostic_help = "Local diagnosis of the instance (no outgoing connection)."
   diagnostic_bundle_help = "Writes a diagnostic package with no secrets, no content or watermarked files, hidden sources."
   diagnostic_out_help = "File to write (zip); it must not exist."
@@ -847,6 +849,12 @@
   files_warning = "Attention: {missing, plural, one {# file known to registry not found} other {# files known to registry not found}} on the disk, {altered, plural, one {# copy that no longer matches} other {# copies that no longer match}} to the registry fingerprint (see manifest.json)."
   imported = "Import completed: {rows, plural, one {# line} other {# lines}} In {tables, plural, one {# table} other {# tables}}, {files, plural, one {# file} other {# files}}."
   next_steps = "Next: “shelfhold admin reset-password” for each profile (no password is exported), “shelfhold search rebuild” for the search index, then “shelfhold reconcile” for the instance to list the restored files."
+
+[update]
+  off = "The update check is off: set SHELFHOLD_UPDATE_CHECK_URL to turn it on. No connection was made."
+  newer = "Version {latest} is out. Update with: docker compose pull, then docker compose up -d."
+  current = "You are up to date (latest announced: {latest})."
+  failed = "The update check could not read the version document. Nothing else is affected."
 
 [diagnostic]
   out_dir_missing = "The folder for the requested file does not exist."

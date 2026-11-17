@@ -6,7 +6,11 @@ suffix), no header of its own, no body, and not even the running version (the co
 here, not there). The answer is data: only a plain `X.Y.Z` is kept, the rest is ignored. Whatever
 goes wrong (the forge is gone, the host is blocked, the answer is not what was expected) is one
 `info` line and a status `failed`: the checker never raises into the application, never blocks, and
-installs nothing (it informs; the update itself is the administrator's `docker compose pull`)."""
+installs nothing (it informs; the update itself is the administrator's `docker compose pull`).
+
+The client is the host's guarded Fetcher (SSRF guard at every hop), with a User-Agent of its own
+that carries no version (`UPDATE_USER_AGENT`) and a size bound applied while the body is read, not
+after (`update_fetcher`)."""
 
 from __future__ import annotations
 
@@ -19,12 +23,16 @@ from typing import Final, Literal, Protocol
 import structlog
 
 from shelfhold.config import Settings
+from shelfhold.infrastructure.fetcher import FetchLimits, GuardedFetcher, Network
 from shelfhold.sdk.fetcher import Response
 
 log = structlog.get_logger()
 
 MAX_BYTES: Final = 16 * 1024  # a version document, not a page
 DEFAULT_TIMEOUT_S: Final = 10.0
+# The product, nothing else: no version, no contact, nothing of the instance (ADR-0030). The
+# Fetcher of the metadata providers says who is asking and which version; this one must not.
+UPDATE_USER_AGENT: Final = "shelfhold-update-check"
 _VERSION: Final = re.compile(r"(\d{1,4})\.(\d{1,4})\.(\d{1,4})")
 
 State = Literal["off", "ok", "failed"]
@@ -39,6 +47,18 @@ class UpdateStatus:
     state: State
     latest: str | None = None
     newer: bool = False
+
+
+def update_fetcher(network: Network) -> GuardedFetcher:
+    """The one client of the update check: guarded, neutral agent, bounded while it reads."""
+    limits = FetchLimits(max_bytes=MAX_BYTES, total_timeout=DEFAULT_TIMEOUT_S, max_redirects=2)
+    return GuardedFetcher(
+        network.resolver,
+        limits=limits,
+        transport=network.transport,
+        user_agent=UPDATE_USER_AGENT,
+        quiet_failures=True,  # a failure is an `info` line here, not an incident
+    )
 
 
 def update_check_enabled(settings: Settings) -> bool:
@@ -84,11 +104,11 @@ async def check_for_update(
         return _failed("too large")
     try:
         document = json.loads(response.body)
-    except ValueError:
-        return _failed("not json")
-    version = document.get("version") if isinstance(document, dict) else None
-    latest = _triple(version) if isinstance(version, str) else None
-    if latest is None or not isinstance(version, str):
-        return _failed("no version")
-    mine = _triple(_core(current))
+        version = document.get("version") if isinstance(document, dict) else None
+        latest = _triple(version) if isinstance(version, str) else None
+        if latest is None or not isinstance(version, str):
+            return _failed("no version")
+        mine = _triple(_core(current))
+    except Exception as exc:  # not JSON, too deeply nested (RecursionError), not text: all silent
+        return _failed(type(exc).__name__)
     return UpdateStatus("ok", latest=version, newer=mine is not None and latest > mine)

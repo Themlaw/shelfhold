@@ -47,20 +47,17 @@ def _wf() -> dict[Any, Any]:
     return loaded
 
 
-@pytest.mark.xfail(strict=True, reason="C1: RecursionError escapes the update checker")
 def test_c1_deeply_nested_document_is_a_silent_failure() -> None:
     body = b"[" * 16_000  # under MAX_BYTES (16 KiB)
     status = asyncio.run(check_for_update(_Answer(body), "https://x.example/v.json", current="1.0.0"))
     assert status.state == "failed"
 
 
-@pytest.mark.xfail(strict=True, reason="C2: one pending run per group, a tag run can be dropped")
 def test_c2_concurrency_group_is_per_ref() -> None:
     group = str(_wf()["concurrency"]["group"])
     assert "github.ref" in group  # main and each tag queue separately: no run replaces another
 
 
-@pytest.mark.xfail(strict=True, reason="C3: a tag deletion pushes the head of main as the tag")
 def test_c3_ref_deletion_never_pushes_and_tag_sha_is_checked() -> None:
     (job,) = _wf()["jobs"].values()
     guarded = "github.event.deleted" in str(job.get("if", ""))

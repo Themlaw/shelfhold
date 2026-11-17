@@ -29,7 +29,7 @@ Canal : signalement privé GitHub (voir [SECURITY.md](SECURITY.md)).
 
 Si l'hébergeur retire le dépôt ou l'image, la perte est celle d'un hôte, pas de l'authenticité : les images sont signées par le workflow (cosign), l'index de plugins par minisign, et ces signatures valent quel que soit l'hôte ([ADR-0029](docs/adr/0029-resilience-retrait-forge.md), ENF-GOV-004).
 
-**Avant** (en continu) : le workflow `publish-mirror` pousse `main` et les tags vers le miroir `codeberg.org/<owner>/shelfhold`, et la CI publie les images sur le second registre `codeberg.org/<owner>/shelfhold`, tant que le secret `CODEBERG_TOKEN` existe. Sans lui, rien n'y est publié et l'exigence reste ouverte (voir [verifier-les-images](docs/admin/verifier-les-images.md)).
+**Avant** (en continu) : le workflow `publish-mirror` pousse `main` et les tags vers le miroir `codeberg.org/<owner>/shelfhold`, et la CI publie les images sur le second registre `codeberg.org/<owner>/shelfhold`, tant que le secret `CODEBERG_TOKEN` existe. Ce secret se range dans l'**environnement `mirror`** du dépôt GitHub, restreint à la branche `main` et aux tags `v*` (une autre branche, même d'un porteur d'un droit d'écriture, ne peut pas le lire), avec la variable `MIRROR_USER` (le compte du miroir) ; le mainteneur les crée lui-même. Sans lui, rien n'y est publié et l'exigence reste ouverte (voir [verifier-les-images](docs/admin/verifier-les-images.md)).
 
 **Après un retrait**, dans cet ordre :
 

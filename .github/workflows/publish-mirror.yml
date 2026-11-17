@@ -14,14 +14,21 @@ on:
 
 permissions: {}
 
+# One group per ref: GitHub keeps one pending run per group and a newer pending run cancels the older
+# one, so a single group would let a push on main drop the run of a version tag.
 concurrency:
-  group: publish-mirror
+  group: publish-mirror-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
   mirror:
+    # A deleted ref also fires `push`, with the sha of the head of the default branch: never mirror it.
+    if: github.event.deleted != true
     runs-on: ubuntu-24.04
     timeout-minutes: 15
+    # The secret CODEBERG_TOKEN and the variable MIRROR_USER live in this environment, restricted to
+    # main and the tags v* (deployment branches and tags): a branch of a writer cannot read them.
+    environment: mirror
     permissions:
       contents: read
     steps:
@@ -29,14 +36,19 @@ jobs:
         id: token
         env:
           HAS_TOKEN: ${{ secrets.CODEBERG_TOKEN != '' }}
+          HAS_USER: ${{ vars.MIRROR_USER != '' }}
         run: |
-          if [ "$HAS_TOKEN" = true ]; then
+          if [ "$HAS_TOKEN" = true ] && [ "$HAS_USER" = true ]; then
             echo "enabled=true" >> "$GITHUB_OUTPUT"
           else
             echo "enabled=false" >> "$GITHUB_OUTPUT"
             {
               echo "### Repository mirror: skipped"
-              echo "The secret \`CODEBERG_TOKEN\` is absent: nothing was pushed to the mirror, GitHub is the only home of the code (ENF-GOV-004 stays open). Nothing failed."
+              if [ "$HAS_TOKEN" != true ]; then
+                echo "The secret \`CODEBERG_TOKEN\` is absent: nothing was pushed to the mirror, GitHub is the only home of the code (ENF-GOV-004 stays open). Nothing failed."
+              else
+                echo "The variable \`MIRROR_USER\` is absent (the account of the mirror): nothing was pushed to the mirror. Nothing failed."
+              fi
             } >> "$GITHUB_STEP_SUMMARY"
           fi
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -58,7 +70,7 @@ jobs:
         if: steps.token.outputs.enabled == 'true'
         env:
           MIRROR_TOKEN: ${{ secrets.CODEBERG_TOKEN }}
-          MIRROR_USER: ${{ vars.SECOND_REGISTRY_USER || github.repository_owner }}
+          MIRROR_USER: ${{ vars.MIRROR_USER }}
           OWNER: ${{ github.repository_owner }}
           REPO_NAME: ${{ github.event.repository.name }}
           MIRROR_URL: ${{ vars.MIRROR_URL }}

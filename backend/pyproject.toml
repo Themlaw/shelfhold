@@ -105,6 +105,8 @@ show_missing = true
 
 [tool.ruff]
 line-length = 100
+# the adversarial-review proofs are kept exactly as the reviewer wrote them
+extend-exclude = ["tests/unit/test_m4_l41_contradicteur.py"]
 target-version = "py313"
 src = ["src", "tests"]
 

@@ -89,6 +89,7 @@ FROZEN_OPEN: frozenset[tuple[str, ...]] = frozenset(
         ("serve",),
         ("stats",),
         ("status",),
+        ("update", "check"),
     }
 )
 
