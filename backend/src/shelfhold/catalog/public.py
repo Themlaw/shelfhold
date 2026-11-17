@@ -51,6 +51,7 @@ from shelfhold.catalog.application.collections import (
 from shelfhold.catalog.application.collections import (
     CollectionFullError,
     CollectionNotFoundError,
+    CollectionNotPrivateError,
     CollectionNotYoursError,
     Collections,
     CollectionSummary,
@@ -517,6 +518,7 @@ __all__ = [
     "CblError",
     "CollectionFullError",
     "CollectionNotFoundError",
+    "CollectionNotPrivateError",
     "CollectionNotYoursError",
     "CollectionSummary",
     "CollectionView",

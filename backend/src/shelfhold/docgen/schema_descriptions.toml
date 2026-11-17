@@ -1334,6 +1334,7 @@ name = "Name given by the person who made it, or by the CBL file it came from."
 owner_id = "Profile that owns it (`user.id`); NULL: the household's, made by an admin. A profile's own list is read by its owner and by an admin only."
 source = "`manual`, or `cbl` when it came from a reading-list file."
 created_at = "When it was made (UTC)."
+public_approved_at = "When an admin said that this profile's list may be promoted in Kavita (UTC); NULL: not said. An item added afterwards takes it back."
 
 [tables.collection_item]
 description = "A place in a collection: a Work, with the number the list gave it, in order (M4 L18a)."
@@ -1346,12 +1347,13 @@ number = "The number the list gave it (for example an issue number), if any."
 added_at = "When it was added (UTC)."
 
 [tables.collection_remote]
-description = "What a destination called a collection, for the sync of collections to it (M4 L18a; filled by L18b)."
+description = "What a destination called a collection, for the sync of collections to it (M4 L18a, filled by L18b); the identifier `pending` marks a collection asked for whose answer was not noted."
 [tables.collection_remote.columns]
 collection_id = "Collection pushed (`collection.id`)."
 target_id = "Destination target it was made on (`export_target.id`)."
 remote_id = "Identifier the destination gave it."
 synced_at = "When it was last pushed (UTC); NULL: never."
+note = "What Shelfhold put there, noted before each call (JSON): `owned` (the Kavita series it added, which it may take back), `pending` (the title and the identifiers already there, while the identifier is not known), `promoted`."
 
 [tables.export_assembly]
 description = "One assembly of chapter files into a volume of a destination: the volume and what it replaced."

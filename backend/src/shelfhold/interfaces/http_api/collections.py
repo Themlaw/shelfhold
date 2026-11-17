@@ -14,7 +14,7 @@ entity, is a 422 that creates nothing.
 """
 
 from collections.abc import Callable
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, Query, Response
@@ -26,6 +26,7 @@ from shelfhold.catalog.public import (
     CblError,
     CollectionFullError,
     CollectionNotFoundError,
+    CollectionNotPrivateError,
     CollectionNotYoursError,
     Collections,
     CollectionSummary,
@@ -35,6 +36,7 @@ from shelfhold.catalog.public import (
 )
 from shelfhold.identity.public import Credential, Principal, reader_scope
 from shelfhold.interfaces.http_api.auth import require_principal, require_session
+from shelfhold.interfaces.http_api.plans import require_admin
 from shelfhold.interfaces.http_api.problems import ProblemError
 from shelfhold.library.public import cover_hash
 
@@ -121,7 +123,19 @@ def _item(found: ItemView) -> ItemOut:
     )  # fmt: skip
 
 
-def build_collections_router(get_engine: Callable[[], Engine]) -> APIRouter:
+class ApprovalIn(BaseModel):
+    approved: bool
+
+
+class ApprovalOut(BaseModel):
+    approved: bool
+
+
+def build_collections_router(
+    get_engine: Callable[[], Engine], after_change: Callable[[], None] | None = None
+) -> APIRouter:
+    """`after_change`: called when what Kavita may be shown of a list changed (the admin's word
+    given or taken back, an item added to a list): a promotion no longer allowed goes at once."""
     router = APIRouter(prefix="/api/v1/collections", tags=["collections"])
     reader = Annotated[Principal, Depends(require_principal)]
     writer = Annotated[Principal, Depends(require_session)]
@@ -189,6 +203,27 @@ def build_collections_router(get_engine: Callable[[], Engine]) -> APIRouter:
             **_summary(view.summary).model_dump(), items=[_item(i) for i in view.items]
         )
 
+    @router.put(
+        "/{collection_id}/kavita-public",
+        response_model=ApprovalOut,
+        dependencies=[Depends(require_admin)],
+    )
+    def approve_for_kavita(collection_id: str, body: ApprovalIn) -> ApprovalOut:
+        """The admin's word that a profile's private list may be promoted in Kavita (L18b). An
+        admin session or a key of scope `admin` of the admin: everyone else is refused before the
+        identifier is looked at, so the refusal never says which lists exist."""
+        try:
+            done = collections().set_public_approval(
+                collection_id, body.approved, now=datetime.now(UTC)
+            )
+        except CollectionNotFoundError:
+            raise ProblemError("not_found") from None
+        except CollectionNotPrivateError:
+            raise ProblemError("collection.not_private") from None
+        if after_change is not None:
+            after_change()
+        return ApprovalOut(approved=done)
+
     @router.delete("/{collection_id}", status_code=204)
     def delete_collection(collection_id: str, principal: writer) -> Response:
         try:
@@ -211,6 +246,8 @@ def build_collections_router(get_engine: Callable[[], Engine]) -> APIRouter:
             raise ProblemError("forbidden") from None
         except CollectionFullError:
             raise ProblemError("collection.full") from None
+        if after_change is not None:
+            after_change()
         return _item(made)
 
     @router.delete("/{collection_id}/items/{item_id}", status_code=204)

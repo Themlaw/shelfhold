@@ -43,6 +43,7 @@ __all__ = [
     "MAX_ITEMS",
     "CollectionFullError",
     "CollectionNotFoundError",
+    "CollectionNotPrivateError",
     "CollectionNotYoursError",
     "CollectionSummary",
     "CollectionView",
@@ -79,6 +80,10 @@ class CollectionNotYoursError(PermissionError):
 
 class CollectionFullError(ValueError):
     pass
+
+
+class CollectionNotPrivateError(ValueError):
+    """A household collection has nothing to approve: it is not a profile's private list."""
 
 
 @dataclass(frozen=True)
@@ -333,6 +338,12 @@ class Collections:
             if count >= MAX_ITEMS:
                 raise CollectionFullError(collection_id)
             item_id = new_ulid()
+            # an item added is a list the admin has not seen: his word for Kavita is taken back
+            connection.execute(
+                sa.update(catalog.collection)
+                .where(catalog.collection.c.id == collection_id)
+                .values(public_approved_at=None)
+            )
             connection.execute(
                 sa.insert(catalog.collection_item).values(
                     id=item_id, collection_id=collection_id, position=int(last) + 1,
@@ -357,6 +368,23 @@ class Collections:
             if found is None or str(found) not in _shown_works(connection, viewer, [str(found)]):
                 raise CollectionNotFoundError(item_id)
             connection.execute(sa.delete(catalog.collection_item).where(item.id == item_id))
+
+    def set_public_approval(self, collection_id: str, approved: bool, *, now: datetime) -> bool:
+        """The admin's word that a profile's private list may be promoted in Kavita (M4 L18b), or
+        its withdrawal. The caller has checked that it is an admin; a household collection is
+        already seen by everyone and has nothing to approve."""
+        with write_transaction(self._engine) as connection:
+            row = _row(connection, collection_id)
+            if row is None:
+                raise CollectionNotFoundError(collection_id)
+            if row.owner_id is None:
+                raise CollectionNotPrivateError(collection_id)
+            connection.execute(
+                sa.update(catalog.collection)
+                .where(catalog.collection.c.id == collection_id)
+                .values(public_approved_at=now if approved else None)
+            )
+        return approved
 
     def delete(self, viewer: CollectionViewer, collection_id: str) -> None:
         with write_transaction(self._engine) as connection:

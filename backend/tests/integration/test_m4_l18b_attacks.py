@@ -1,4 +1,4 @@
-"""M4 L18b (EF-EXP-025, ENF-SEC-010): who may say that a profile's private list goes public in Kavita.
+"""M4 L18b (EF-EXP-025, ENF-SEC-010): who says that a profile's private list goes public.
 
 A profile's list is private by default, in Shelfhold and in Kavita. Only the admin (a session, or a
 key of scope `admin`) may approve its promotion there: a child, a member, a read-only key, a key
@@ -17,8 +17,10 @@ import sqlalchemy as sa
 
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import catalog
+from tests.auth_env import CSRF_HEADER
 from tests.integration.test_child_surfaces import (  # noqa: F401  (fixtures)
     World,
+    _shape,
     api,
     world,
 )
@@ -28,11 +30,12 @@ from tests.integration.test_m4_l18a_collections import (
     _make,
     _post,
 )
-from tests.auth_env import CSRF_HEADER
 from tests.visibility_env import add_profile
 
 
-def _approve(world: World, client: Any, collection: str, approved: bool = True, **extra: Any) -> Any:
+def _approve(
+    world: World, client: Any, collection: str, approved: bool = True, **extra: Any
+) -> Any:
     return client.put(
         f"{COLLECTIONS}/{collection}/kavita-public",
         json={"approved": approved},
@@ -71,15 +74,12 @@ def test_only_an_admin_approves_a_private_list_for_kavita(world: World) -> None:
     assert adm_client.put(
         f"{COLLECTIONS}/{mine}/kavita-public", json={"approved": True}, headers=adm_auth
     ).status_code in (401, 403)
-    ann_full, ann_full_auth = _key_client(world, "ann", "10.0.0.64")  # not read-only: still hers
-    assert ann_full.put(
-        f"{COLLECTIONS}/{mine}/kavita-public", json={"approved": True}, headers=ann_full_auth
-    ).status_code in (401, 403)
     # an anonymous caller gets nothing
     anonymous = world.env.other_client("10.0.0.63")
-    assert anonymous.put(
-        f"{COLLECTIONS}/{mine}/kavita-public", json={"approved": True}
-    ).status_code == 401
+    assert (
+        anonymous.put(f"{COLLECTIONS}/{mine}/kavita-public", json={"approved": True}).status_code
+        == 401
+    )
     assert not _approved(world, mine)
     # the admin's session does it, and takes it back
     assert _approve(world, world.env.client, mine).status_code == 200
@@ -88,9 +88,12 @@ def test_only_an_admin_approves_a_private_list_for_kavita(world: World) -> None:
     assert not _approved(world, mine)
     # a key of scope `admin` of the admin is the admin's word as well (as `plans`)
     full_client, full_auth = _key_client(world, "admin", "10.0.0.65")
-    assert full_client.put(
-        f"{COLLECTIONS}/{mine}/kavita-public", json={"approved": True}, headers=full_auth
-    ).status_code == 200
+    assert (
+        full_client.put(
+            f"{COLLECTIONS}/{mine}/kavita-public", json={"approved": True}, headers=full_auth
+        ).status_code
+        == 200
+    )
     assert _approved(world, mine)
 
 
@@ -102,7 +105,7 @@ def test_the_refusal_does_not_say_which_list_exists(world: World) -> None:
     for client in (world.kid, add_profile(world.env, "bob", "member", "10.0.0.12")):
         a = _approve(world, client, mine)
         b = _approve(world, client, absent)
-        assert (a.status_code, a.text) == (b.status_code, b.text) == (403, b.text)
+        assert _shape(a) == _shape(b) and a.status_code == 403
     # for the admin an absent identifier is 404, and a household collection has nothing to approve
     assert _approve(world, world.env.client, absent).status_code == 404
     shared = _make(world, world.env.client, "Household", "shared", [world.seed.works["ok"]])

@@ -395,7 +395,9 @@ def create_app(
         build_me_router(cache(lambda: user_state_service(engine, clock))),  # EF-USR-007, EF-BIB-022
         build_activity_router(lambda: engine),  # EF-USR-016: `activity_view`, unmask audited
         build_catalog_lists_router(lambda: engine, since_key),  # M3 L11: `?since=`
-        build_collections_router(lambda: engine),  # M4 L18a: collections and reading lists
+        build_collections_router(
+            lambda: engine, relations_after_audience_change
+        ),  # M4 L18a: collections and reading lists
         build_relations_router(lambda: engine, clock.now),  # M4 L19: related Works
         build_stream_router(
             lambda: engine,

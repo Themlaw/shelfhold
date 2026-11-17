@@ -289,6 +289,9 @@ CLOSED = (
     "GET /api/v1/setup/state",  # M3 L39: the first-run wizard is the admin's, on a fresh session
     "POST /api/v1/setup/adoption/confirm",
     "POST /api/v1/setup/keyring-export",  # M3 L40: the keyring leaves only as an age file
+    # M4 L18b: the admin's word that a profile's list may be promoted in Kavita; refused to a
+    # child and to a key of hers (`test_m4_l18b_attacks.py`)
+    "PUT /api/v1/collections/{collection_id}/kavita-public",
     "PUT /api/v1/setup/sources/family",  # M3 L40 (D13): which sources a child's search reaches
     "POST /api/v1/setup/adoption/preview",
     "POST /api/v1/setup/library",

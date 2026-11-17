@@ -124,11 +124,15 @@ class KavitaCollections:
                 "promoted": c["promoted"], "owner": c["owner"],
                 "itemCount": len(c.get("series", c.get("items", [])))}  # fmt: skip
 
-    def _own(self, table: dict[int, dict[str, Any]], ident: Any, account: str) -> dict[str, Any] | None:
+    def _own(
+        self, table: dict[int, dict[str, Any]], ident: Any, account: str
+    ) -> dict[str, Any] | None:
         found = table.get(ident) if isinstance(ident, int) else None
         return found if found is not None and found["owner"] == account else None
 
-    def _collection_list(self, fake: FakeKavita, r: RecordedRequest, account: str) -> httpx2.Response:
+    def _collection_list(
+        self, fake: FakeKavita, r: RecordedRequest, account: str
+    ) -> httpx2.Response:
         owned_only = r.query.get("ownedOnly", "false") == "true"
         shown = [
             self._dto(c) for c in self.collections.values()
@@ -136,7 +140,9 @@ class KavitaCollections:
         ]  # fmt: skip
         return fake._json(shown)
 
-    def _collection_add(self, fake: FakeKavita, r: RecordedRequest, account: str) -> httpx2.Response:
+    def _collection_add(
+        self, fake: FakeKavita, r: RecordedRequest, account: str
+    ) -> httpx2.Response:
         body = fake._body(r, "CollectionTagBulkAddDto")
         if isinstance(body, httpx2.Response):
             return body
@@ -162,7 +168,9 @@ class KavitaCollections:
         found["series"] += [i for i in ids if i not in found["series"]]
         return fake._text(200, "")
 
-    def _collection_remove(self, fake: FakeKavita, r: RecordedRequest, account: str) -> httpx2.Response:
+    def _collection_remove(
+        self, fake: FakeKavita, r: RecordedRequest, account: str
+    ) -> httpx2.Response:
         body = fake._body(r, "UpdateSeriesForTagDto")
         if isinstance(body, httpx2.Response):
             return body
@@ -173,7 +181,9 @@ class KavitaCollections:
         found["series"] = [s for s in found["series"] if s not in gone]
         return fake._text(200, "")
 
-    def _collection_promote(self, fake: FakeKavita, r: RecordedRequest, account: str) -> httpx2.Response:
+    def _collection_promote(
+        self, fake: FakeKavita, r: RecordedRequest, account: str
+    ) -> httpx2.Response:
         body = fake._body(r, "PromoteCollectionsDto")
         if isinstance(body, httpx2.Response):
             return body
@@ -185,7 +195,9 @@ class KavitaCollections:
             m["promoted"] = bool(body["promoted"])
         return fake._text(200, "")
 
-    def _collection_delete(self, fake: FakeKavita, r: RecordedRequest, account: str) -> httpx2.Response:
+    def _collection_delete(
+        self, fake: FakeKavita, r: RecordedRequest, account: str
+    ) -> httpx2.Response:
         tag = r.query.get("tagId", "")
         found = self._own(self.collections, int(tag) if tag.isdigit() else None, account)
         if found is None:
@@ -216,14 +228,18 @@ class KavitaCollections:
         if isinstance(body, httpx2.Response):
             return body
         title = body.get("title") or ""
-        if not title or any(x["owner"] == account and x["title"] == title for x in self.lists.values()):
+        if not title or any(
+            x["owner"] == account and x["title"] == title for x in self.lists.values()
+        ):
             return fake._violation(f"reading list: the title {title!r} is empty or taken")
         self.next_id += 1
         self.lists[self.next_id] = {"id": self.next_id, "title": title, "promoted": False,
                                     "owner": account, "items": []}  # fmt: skip
         return fake._json({**self._dto(self.lists[self.next_id]), "ownerUserName": account})
 
-    def _list_add_series(self, fake: FakeKavita, r: RecordedRequest, account: str) -> httpx2.Response:
+    def _list_add_series(
+        self, fake: FakeKavita, r: RecordedRequest, account: str
+    ) -> httpx2.Response:
         body = fake._body(r, "UpdateReadingListBySeriesDto")
         if isinstance(body, httpx2.Response):
             return body
@@ -234,7 +250,9 @@ class KavitaCollections:
             self.add_items(found["id"], body["seriesId"])
         return fake._text(200, "")
 
-    def _list_delete_item(self, fake: FakeKavita, r: RecordedRequest, account: str) -> httpx2.Response:
+    def _list_delete_item(
+        self, fake: FakeKavita, r: RecordedRequest, account: str
+    ) -> httpx2.Response:
         body = fake._body(r, "UpdateReadingListPosition")
         if isinstance(body, httpx2.Response):
             return body

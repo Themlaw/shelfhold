@@ -115,6 +115,7 @@ from shelfhold.export.targets.kavita.adopt import BulkParse, library_type_named
 from shelfhold.export.targets.kavita.audit import AccessAuditor
 from shelfhold.export.targets.kavita.carry import KavitaCarry
 from shelfhold.export.targets.kavita.client import KavitaClient
+from shelfhold.export.targets.kavita.collections import CollectionsSync
 from shelfhold.export.targets.kavita.cover import SeriesCovers
 from shelfhold.export.targets.kavita.destination import KavitaDestination
 from shelfhold.export.targets.kavita.dto import LibraryType
@@ -1008,6 +1009,8 @@ async def settle_arrival(
     # profiles only (EF-BIB-039); the database alone says when nothing is due
     if client.target_id is not None:
         await RelatedSeries(comp.engine, comp.clock, events).publish(client, client.target_id)
+        # the collections and reading lists, under the service account, then promoted (EF-EXP-025)
+        await CollectionsSync(comp.engine, comp.clock, events).publish(client, client.target_id)
 
 
 # -- export.apply ---------------------------------------------------------------
@@ -1316,26 +1319,26 @@ def key_expiry(comp: Composition) -> Callable[[], None]:
 
 
 def relations_handler(comp: Composition) -> Callable[[JobContext], None]:
-    """The related series of every connected target, outside an export pass: what a changed
-    audience (ceiling, profiles of a shelf) forbids is withdrawn at once, a pause or a failed pass
-    notwithstanding (a withdrawal is the write that protects; an addition waits for the pause)."""
+    """The related series, the collections and the reading lists of every connected target,
+    outside an export pass: what a changed audience (ceiling, profiles of a shelf) forbids is
+    withdrawn at once, a pause or a failed pass notwithstanding (a withdrawal is the write that
+    protects; an addition waits for the pause)."""
     clients = connected_clients(comp)
 
     def run(context: JobContext) -> None:
         written = 0
         for target_id, client in clients():
-            try:
-                written += len(
-                    asyncio.run(
-                        RelatedSeries(
-                            comp.engine, comp.clock, BusTargetEvents(comp.engine, comp.bus)
-                        ).publish(client, target_id)
+            events = BusTargetEvents(comp.engine, comp.bus)
+            for publish in (
+                RelatedSeries(comp.engine, comp.clock, events).publish,
+                CollectionsSync(comp.engine, comp.clock, events).publish,
+            ):
+                try:  # one unreachable target, or one failing push, must not stop the others
+                    written += len(asyncio.run(publish(client, target_id)))
+                except Exception as error:
+                    log.warning(
+                        "export.relations_failed", target_id=target_id, error=type(error).__name__
                     )
-                )
-            except Exception as error:  # one unreachable target must not stop the others
-                log.warning(
-                    "export.relations_failed", target_id=target_id, error=type(error).__name__
-                )
         context.record(written=written)
 
     return run

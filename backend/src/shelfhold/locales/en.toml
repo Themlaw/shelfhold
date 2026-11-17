@@ -2027,6 +2027,11 @@
     action = "A list holds at most 5,000 items: remove some or make another list."
     cause = "The largest number of items of a collection or reading list is reached."
 
+  [errors."collection.not_private"]
+    title = "This collection is the household's: there is nothing to approve."
+    action = "Only a profile's own list needs your word to be shown in Kavita; the household's collections already are."
+    cause = "The collection has no owner, so it is shown in Kavita to every account that may read its series."
+
   [errors."relation.invalid"]
     title = "These two works cannot be related that way."
     action = "Pick two different works and one of the known kinds of relation."

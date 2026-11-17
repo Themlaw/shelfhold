@@ -891,6 +891,9 @@ collection = sa.Table(
     _fk("owner_id", "user.id", ondelete="CASCADE", nullable=True),
     sa.Column("source", sa.String(), nullable=False, server_default="manual"),
     now_column(),
+    # The admin's word that a profile's private list may be promoted in Kavita (M4 L18b); NULL:
+    # not said. An item added afterwards takes it back.
+    sa.Column("public_approved_at", UtcDateTime(), nullable=True),
     ulid_check("id"),
     in_check("kind", COLLECTION_KINDS),
     in_check("source", COLLECTION_SOURCES),
@@ -918,15 +921,20 @@ collection_item = sa.Table(
     sa.Index("ix_collection_item_work", "work_id"),
 )
 
-# Where a collection was made on a destination (the id the destination gave it): L18b fills it. It
-# goes with the collection and with the destination's target, and is rebuilt by the next sync.
+# Where a collection was made on a destination (the id the destination gave it), and what Shelfhold
+# put there (M4 L18b). `collection_id` is not a foreign key: the note must outlive the collection,
+# or deleting a collection would forget what it left in Kavita. A row whose collection is gone is a
+# withdrawal due, and goes when the destination is clean.
 collection_remote = sa.Table(
     "collection_remote",
     metadata,
-    _fk("collection_id", "collection.id", ondelete="CASCADE"),
+    ulid_column("collection_id"),
     _fk("target_id", "export_target.id", ondelete="CASCADE"),
     sa.Column("remote_id", sa.String(), nullable=False),
     sa.Column("synced_at", UtcDateTime(), nullable=True),
+    # What Shelfhold put there, noted before the call (M4 L18b): the series it added (and may take
+    # back), the title it asked for while the id is not known yet, and whether it promoted it.
+    sa.Column("note", sa.JSON(), nullable=False, server_default="{}"),
     sa.PrimaryKeyConstraint("collection_id", "target_id"),
     sa.CheckConstraint("\"remote_id\" <> ''", name="remote_id_named"),
 )

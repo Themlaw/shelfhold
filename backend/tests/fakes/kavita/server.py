@@ -679,13 +679,16 @@ class FakeKavita:
         }  # Libraries, Equal
         found = [s for s in self.series if not wanted or s["libraryId"] in wanted]
         tags = {
-            int(st["value"]) for st in body.get("statements") or []
+            int(st["value"])
+            for st in body.get("statements") or []
             if st.get("field") == 7 and st.get("comparison") == 0
         }  # CollectionTags, Equal: the series of a collection of the key's account
         if tags:
             account = self.key_accounts.get(recorded.headers.get("x-api-key", ""), self.account[0])
             held = {
-                s for t in tags for s in self.shelves.collections.get(t, {"series": []})["series"]
+                s
+                for t in tags
+                for s in self.shelves.collections.get(t, {"series": []})["series"]
                 if self.shelves.collections.get(t, {}).get("owner") == account
             }
             found = [s for s in found if s["id"] in held]

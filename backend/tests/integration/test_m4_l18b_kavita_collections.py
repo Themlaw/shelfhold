@@ -24,8 +24,8 @@ from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import catalog, export
 from tests.export_env import ExportEnv, Series, export_env
-from tests.family_env import add_adult_shelf
 from tests.fakes.kavita.server import member
+from tests.family_env import add_adult_shelf
 from tests.integration.test_m4_l19_related_push import _library_of, indexed
 from tests.kavita_env import run
 from tests.kavita_export_env import Wired, wire
@@ -77,9 +77,12 @@ def make(
     with write_transaction(env.engine) as c:
         c.execute(
             sa.insert(catalog.collection).values(
-                id=ident, kind=kind, name=name, owner_id=owner,
+                id=ident,
+                kind=kind,
+                name=name,
+                owner_id=owner,
                 public_approved_at=NOW if approved else None,
-            )  # fmt: skip
+            )
         )
         for place, series in enumerate(works):
             c.execute(
@@ -95,8 +98,7 @@ def add_user(env: ExportEnv, username: str, *, ceiling: int | None = None) -> st
     with write_transaction(env.engine) as c:
         c.execute(
             sa.text(
-                'INSERT INTO "user" (id, username, role, max_age_rating) '
-                "VALUES (:i, :u, :r, :m)"
+                'INSERT INTO "user" (id, username, role, max_age_rating) VALUES (:i, :u, :r, :m)'
             ),
             {"i": ident, "u": username, "r": "child" if ceiling else "member", "m": ceiling},
         )
@@ -132,7 +134,7 @@ def pause(env: ExportEnv, w: Wired) -> None:
     w.client.set_write_guard(target_write_guard(env.engine, env.target_id))
 
 
-# -- the sync, under the service account, then promoted ---------------------------------------------
+# -- the sync, under the service account, then promoted ----
 
 
 @pytest.mark.req("EF-EXP-025")
@@ -282,7 +284,7 @@ def test_a_collection_across_libraries_open_to_different_profiles_is_not_pushed(
         assert w.fake.violations == []
 
 
-# -- what a person did by hand is never withdrawn ---------------------------------------------------
+# -- what a person did by hand is never withdrawn ----
 
 
 @pytest.mark.req("EF-EXP-025", "ENF-SEC-010")
@@ -300,9 +302,7 @@ def test_what_a_person_put_in_kavita_by_hand_is_never_withdrawn() -> None:
         assert shelves.collections[mine]["series"] == [s.k_one]  # hers: not read, not touched
         assert [i["seriesId"] for i in shelves.lists[theirs]["items"]] == [s.k_two] * 2
         # a person adds a series to the collection of Shelfhold, and a chapter-set to its list
-        ours = next(
-            c for c in shelves.collections.values() if c["owner"] == SERVICE
-        )
+        ours = next(c for c in shelves.collections.values() if c["owner"] == SERVICE)
         a_hand = w.fake.add_series("By hand", "/manga/By hand", [])
         ours["series"].append(a_hand)
         the_list = next(x for x in shelves.lists.values() if x["owner"] == SERVICE)
@@ -336,14 +336,14 @@ def test_a_collection_of_the_same_title_under_the_service_account_is_not_taken_o
         theirs = w.fake.shelves.by_hand_collection(SERVICE, "Cosy reads", [s.k_two])
         make(env, "Cosy reads", [s.kid_one])
         sync(w)
-        # the title is taken by something Shelfhold did not make: it is left alone, nothing is pushed
+        # the title is taken by something Shelfhold did not make: left alone, nothing is pushed
         assert w.fake.shelves.collections[theirs]["series"] == [s.k_two]
         assert w.fake.shelves.collections[theirs]["promoted"] is False
         assert len(w.fake.shelves.collections) == 1
         assert w.fake.violations == []
 
 
-# -- what a shelf or a ceiling forbids is withdrawn, a pause notwithstanding ------------------------
+# -- what a shelf or a ceiling forbids is withdrawn, a pause notwithstanding ----
 
 
 @pytest.mark.req("EF-EXP-025", "ENF-SEC-010")
@@ -403,7 +403,7 @@ def test_a_series_kavita_has_not_indexed_is_left_out_and_added_when_it_is() -> N
         assert [t[1] for t in state(w)] == ["Cosy reads"]
 
 
-# -- a kill -9 at any step leaves nothing orphaned --------------------------------------------------
+# -- a kill -9 at any step leaves nothing orphaned ----
 
 
 def _scenario(w: Wired) -> str:
@@ -478,11 +478,23 @@ def test_kill_between_kavitas_answer_and_the_registry_is_withdrawn_at_the_next_p
                 )
             )
 
-        def killed(*_args: Any, **_kwargs: Any) -> None:
-            raise _Killed
+        real = CollectionsSync._record
+
+        def killed_on(nth: int) -> Any:
+            """The registry is written `nth` times, then the process dies: the call before it was
+            Kavita's answer, the note after it never came."""
+            calls: list[int] = []
+
+            def record(self: Any, *args: Any, **kwargs: Any) -> None:
+                calls.append(1)
+                if len(calls) >= nth:
+                    raise _Killed
+                real(self, *args, **kwargs)
+
+            return record
 
         with monkeypatch.context() as patch:
-            patch.setattr(CollectionsSync, "_record", killed)
+            patch.setattr(CollectionsSync, "_record", killed_on(1))
             with pytest.raises(_Killed):
                 sync(w)
         sync(w)
@@ -495,9 +507,10 @@ def test_kill_between_kavitas_answer_and_the_registry_is_withdrawn_at_the_next_p
                 )
             )
         with monkeypatch.context() as patch:
-            patch.setattr(CollectionsSync, "_record", killed)
+            patch.setattr(CollectionsSync, "_record", killed_on(2))  # the note before, then death
             with pytest.raises(_Killed):
                 sync(w)
+        assert [t[3] for t in state(w)] == [sorted([s.k_one, s.k_two])]  # it did reach Kavita
         with write_transaction(env.engine) as c:
             c.execute(sa.delete(catalog.collection))
         sync(w)
