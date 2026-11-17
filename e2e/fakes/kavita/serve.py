@@ -125,6 +125,10 @@ def handle(method: str, target: str, headers: dict[str, str], body: bytes):  # t
 
         _scan(json.dumps({"folderPath": parse_qs(urlsplit(target).query)["folder"][0]}).encode())
         return _json({})
+    if lowered == "/hubs/messages":
+        # this simulated Kavita hosts no hub: Shelfhold's listener finds the upgrade refused, so
+        # the hub is down and the polling alone confirms the arrival (EF-EXP-034, M4 L37)
+        return 404, {}, b"Not Found"
     if (method, lowered) == ("POST", "/api/account/login"):
         data = json.loads(body or b"{}")
         if data.get("username") != ADMIN or data.get("password") != PASSWORD:
