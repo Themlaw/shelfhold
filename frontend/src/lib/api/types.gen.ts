@@ -5684,6 +5684,54 @@ export type SupportAuthorOut = {
 };
 
 /**
+ * SyncStatusList
+ */
+export type SyncStatusList = {
+    /**
+     * Items
+     */
+    items: Array<SyncStatusOut>;
+};
+
+/**
+ * SyncStatusOut
+ */
+export type SyncStatusOut = {
+    /**
+     * Last Pull At
+     */
+    last_pull_at: string | null;
+    /**
+     * Last Push At
+     */
+    last_push_at: string | null;
+    /**
+     * Shelf Destination Id
+     */
+    shelf_destination_id: string;
+    /**
+     * Shelf Name
+     */
+    shelf_name: string;
+    /**
+     * State
+     */
+    state: 'linked' | 'no_token';
+    /**
+     * Target Name
+     */
+    target_name: string;
+    /**
+     * User Id
+     */
+    user_id: string;
+    /**
+     * Username
+     */
+    username: string;
+};
+
+/**
  * TargetAuditOut
  */
 export type TargetAuditOut = {
@@ -14796,6 +14844,39 @@ export type StoreReinitResponses = {
 };
 
 export type StoreReinitResponse = StoreReinitResponses[keyof StoreReinitResponses];
+
+export type ReadSyncStatusData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/sync-status';
+};
+
+export type ReadSyncStatusErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type ReadSyncStatusError = ReadSyncStatusErrors[keyof ReadSyncStatusErrors];
+
+export type ReadSyncStatusResponses = {
+    /**
+     * Successful Response
+     */
+    200: SyncStatusList;
+};
+
+export type ReadSyncStatusResponse = ReadSyncStatusResponses[keyof ReadSyncStatusResponses];
 
 export type ListTargetsData = {
     body?: never;
