@@ -236,9 +236,7 @@ class KavitaHubTransport:
                 await self._attempt(client)
             except asyncio.CancelledError:
                 raise
-            except (
-                Exception
-            ) as error:  # the hub, its token, its socket, a look: the polling goes on
+            except Exception as error:  # hub, token, socket or look: the polling goes on
                 log.warning("kavita.hub_down", reason=type(error).__name__)
             await self._sleep(wait)
             wait = min(wait * 2, self._max_wait)

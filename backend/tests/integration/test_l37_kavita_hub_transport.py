@@ -372,3 +372,135 @@ def test_websocket_connector_refuses_a_plain_scheme_downgrade_of_tls() -> None:
     connector = WebSocketConnector()
     context = connector.tls_context
     assert context.verify_mode == ssl.CERT_REQUIRED and context.check_hostname
+
+
+# -- the failures of the token and of the socket: each one is a hub that is down -------------------
+
+
+@pytest.mark.parametrize("body", ["not json", "[]", '{"token": ""}', '{"token": 5}'])
+def test_an_answer_without_a_token_is_a_hub_down(body: str) -> None:
+    with export_env() as env:
+        w = wire(env)
+        w.fake.hub_auth_body = body
+        with pytest.raises(HubDown, match="not in the answer"):
+            run(w.client.hub_endpoint())
+
+
+def test_a_paused_target_or_an_unreachable_kavita_gives_no_endpoint() -> None:
+    with export_env() as env:
+        w = wire(env)
+        w.client.health.paused = True
+        with pytest.raises(HubDown, match="paused"):
+            run(w.client.hub_endpoint())
+        assert w.fake.hub_auth_calls == 0
+        w.client.health.paused = False
+        w.fake.asleep = True
+        with pytest.raises(HubDown, match="could not be asked"):
+            run(w.client.hub_endpoint())
+
+
+def test_an_address_the_guard_refuses_gives_no_endpoint() -> None:
+    from shelfhold.infrastructure.fetcher import SsrfBlocked
+
+    with export_env() as env:
+        w = wire(env)
+
+        real = w.client._fetcher.check_destination
+        calls: list[int] = []
+
+        async def refused_the_second_time(host: str, port: int, **kwargs: Any) -> list[Any]:
+            calls.append(1)
+            if len(calls) > 1:  # the first look is the fetcher's own, for the token request
+                raise SsrfBlocked("synthetic")
+            return await real(host, port, **kwargs)  # type: ignore[no-any-return]
+
+        w.client._fetcher.check_destination = refused_the_second_time  # type: ignore[method-assign]
+        with pytest.raises(HubDown, match="address of the hub is refused"):
+            run(w.client.hub_endpoint())
+
+
+def test_a_target_that_is_not_a_kavita_is_not_listened_to() -> None:
+    def not_kavita() -> Any:
+        raise KeyError("a komga")
+
+    run(KavitaHubTransport(not_kavita, None, FakeHub()).run())  # type: ignore[arg-type]
+
+
+def test_a_client_that_cannot_be_built_is_retried_later() -> None:
+    with export_env() as env:
+        w = wire(env)
+        built: list[int] = []
+
+        def unreadable() -> Any:
+            built.append(1)
+            raise RuntimeError("the key is not readable")
+
+        sleeps = Sleeps(stop_after=3)
+        transport = KavitaHubTransport(unreadable, None, FakeHub(), sleep=sleeps)  # type: ignore[arg-type]
+        with pytest.raises(asyncio.CancelledError):
+            run(transport.run())
+        assert len(built) == 3 and sleeps.delays == [5.0, 10.0, 20.0]
+        assert w.events.codes() == []
+
+
+def test_open_pinned_socket_connects_to_the_address_given_and_nothing_else() -> None:
+    import ipaddress
+
+    from shelfhold.infrastructure.fetcher import open_pinned_socket
+
+    async def scenario() -> None:
+        server = await asyncio.start_server(lambda r, w: w.close(), "127.0.0.1", 0)
+        port = server.sockets[0].getsockname()[1]
+        async with server:
+            sock = await open_pinned_socket(ipaddress.ip_address("127.0.0.1"), port)
+            assert sock.getpeername() == ("127.0.0.1", port) and sock.getblocking() is False
+            sock.close()
+        with pytest.raises(OSError):  # nothing listens any more: the socket is closed, not leaked
+            await open_pinned_socket(ipaddress.ip_address("127.0.0.1"), port, timeout=2)
+
+    run(scenario())
+
+
+def test_websocket_connector_reports_a_refused_upgrade_and_a_closed_connection(
+    tmp_path: Path,
+) -> None:
+    import ipaddress
+    import socket
+
+    from websockets.asyncio.server import unix_serve
+    from websockets.http11 import Response
+
+    async def closing(connection: Any) -> None:
+        await connection.send(ACK.decode())
+        await connection.close()
+
+    def refuse(connection: Any, request: Any) -> Any:
+        if "refuse" in request.path:
+            return Response(403, "Forbidden", connection.protocol.reject(403, "no").headers)
+        return None
+
+    async def scenario() -> None:
+        path = str(tmp_path / "hub.sock")
+        async with unix_serve(closing, path, process_request=refuse):
+
+            async def open_socket(address: object, port: int) -> socket.socket:
+                sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+                sock.setblocking(False)
+                await asyncio.get_running_loop().sock_connect(sock, path)
+                return sock
+
+            address = (ipaddress.ip_address("192.168.1.50"),)
+            connector = WebSocketConnector(open_socket=open_socket)
+            with pytest.raises(HubDown, match="could not be reached"):
+                await connector(HubEndpoint("ws://kavita.lan:5000/refuse?access_token=t", address))
+            connection = await connector(
+                HubEndpoint("ws://kavita.lan:5000/hubs/messages?access_token=t", address)
+            )
+            assert await connection.recv() == ACK
+            with pytest.raises(HubDown, match="ended"):  # the hub closed: not a crash
+                await connection.recv()
+            with pytest.raises(HubDown, match="failed"):
+                await connection.send(b"x")
+            await connection.close()
+
+    run(scenario())

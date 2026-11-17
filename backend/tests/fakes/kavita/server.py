@@ -220,6 +220,7 @@ class FakeKavita:
     sessions: set[str] = field(default_factory=set)  # the bearer tokens a login handed out
     hub_tokens: list[str] = field(default_factory=list)  # the tokens `authenticate` handed out
     hub_auth_calls: int = 0
+    hub_auth_body: str | None = None  # a 200 whose body is this text instead of a user
     hub_auth_status: int = 200  # what `authenticate` answers (401, 404...) instead of a token
 
     def key_is_valid(self, key: object) -> bool:
@@ -245,6 +246,8 @@ class FakeKavita:
         key = recorded.query.get("apiKey")
         if self.hub_auth_status != 200:
             return self._text(self.hub_auth_status, "refused")
+        if self.hub_auth_body is not None:  # an answer that is not a token (a changed Kavita)
+            return self._text(200, self.hub_auth_body)
         if not self.key_is_valid(key) or not recorded.query.get("pluginName"):
             return self._text(401, "Unauthorized")
         token = secrets.token_urlsafe(24)

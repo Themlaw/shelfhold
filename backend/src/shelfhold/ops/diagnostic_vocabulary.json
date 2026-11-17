@@ -1541,6 +1541,7 @@
   "shelfhold.infrastructure.fetcher.refs",
   "shelfhold.infrastructure.fetcher.resolver",
   "shelfhold.infrastructure.fetcher.robots",
+  "shelfhold.infrastructure.fetcher.stream",
   "shelfhold.infrastructure.fetcher.traffic_store",
   "shelfhold.infrastructure.follow_suspended",
   "shelfhold.infrastructure.freeze",
