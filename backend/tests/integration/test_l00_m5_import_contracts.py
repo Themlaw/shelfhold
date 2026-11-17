@@ -1,7 +1,6 @@
-"""Lot L00 (M5): import contracts, reader import fence, allowlist comments, traceability, velocity."""
+"""Lot L00 (M5): import contracts, reader fence, allowlist comments, traceability, velocity."""
 
 import configparser
-import re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[3]
