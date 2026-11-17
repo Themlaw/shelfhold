@@ -299,3 +299,8 @@ since = "1.1"
 file = "0095_tachibk_import.py"
 sha256 = "d7b6b2ab27b6689bfd54f6c7eceae3aec3c6265cd12950b608d0f8299b22ed20"
 since = "1.1"
+
+[[migration]]
+file = "0096_webhooks.py"
+sha256 = "e4870516fb9100b441c60020b8596c393a89f1e97c0c427734f14f9be868e573"
+since = "1.1"

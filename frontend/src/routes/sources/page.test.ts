@@ -22,6 +22,7 @@ const empty = {
   withdrawal_pending: { count: 0, action: null },
   kavita_audit: [],
   library_type_changes: [],
+  unreadable_webhooks: [],
   jurisdiction: null,
   backup: { last_ok_at: null, age_hours: null, warnings: [] },
   stats: { human_interventions: {}, units_exported: 0, arrivals_pending: 0 }

@@ -232,14 +232,18 @@ class GuardedFetcher:
         *,
         data: Mapping[str, Any] | None = None,
         json: Any = None,
+        content: bytes | None = None,
         headers: Mapping[str, str] | None = None,
         max_bytes: int | None = None,
     ) -> Response:
+        """`content`: the exact bytes to send (a body that is signed is not re-encoded)."""
         body: dict[str, Any] = {}
         if data is not None:
             body["data"] = dict(data)
         if json is not None:
             body["json"] = json
+        if content is not None:
+            body["content"] = content
         return await self._fetch(
             "POST", url, dict(headers or {}), None, body, max_bytes, None, None
         )

@@ -31,6 +31,7 @@ const page = (over: Record<string, unknown> = {}) => ({
   ],
   withdrawal_pending: { count: 2, action: action('shelfhold shelf withdraw', { reserved: true }) },
   kavita_audit: [{ code: 'child_exposure', subject: '01TG', action: action('shelfhold target recheck 01TG') }],
+  unreadable_webhooks: [],
   library_type_changes: [
     { code: 'library_type_changed', subject: '01TH', action: action('shelfhold target reconnect 01TH') }
   ],

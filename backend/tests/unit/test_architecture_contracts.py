@@ -333,6 +333,14 @@ VIOLATIONS = [
     ("native-providers-independent", "plugin_host/adapters/native/opds/other.py",
      "import shelfhold.plugin_host.adapters.native.wikisource\n",
      "plugin_host/adapters/native/wikisource/other.py"),
+    # M4 L24: a webhook reads an event only through `activity_view` (never the table, the bus or
+    # the stream); the reader of the events is `events.integration_feed`, outside the package
+    ("webhooks-read-events-through-activity-view", "integrations/webhooks/other.py",
+     "import shelfhold.infrastructure.schema.platform\n", "events/other.py"),
+    ("webhooks-read-events-through-activity-view", "integrations/webhooks/other.py",
+     "from shelfhold.events import stream\n", None),
+    ("webhooks-read-events-through-activity-view", "integrations/webhooks/other.py",
+     "from shelfhold.events import bus\n", "integrations/apprise/other.py"),
 ]  # fmt: skip
 
 
