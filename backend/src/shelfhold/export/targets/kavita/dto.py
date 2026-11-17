@@ -385,6 +385,7 @@ def list_item_series(data: object) -> list[tuple[int, int]]:
         and isinstance(i.get("seriesId"), int)
     ]  # fmt: skip
 
+
 @dataclass(frozen=True)
 class HubEndpoint:
     """Where to open the hub: its URL (which carries the token, so a secret) and the only
