@@ -12,7 +12,7 @@ import sqlalchemy as sa
 from sqlalchemy import Connection
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
-from shelfhold.catalog.public import record_removed
+from shelfhold.catalog.public import record_removed, track_shelf_changes
 from shelfhold.export.application.remove_destination import leave_tree
 from shelfhold.infrastructure.requesters import live_actor
 from shelfhold.infrastructure.schema import acquisition, export, identity, platform
@@ -201,4 +201,5 @@ def unbind(connection: Connection, shelf_id: str, destination_id: str, *, drop_s
     )
     if drop_shelf:
         record_removed(connection, "shelf", shelf_id)  # `GET /shelves?since=` tells the removal
-        connection.execute(sa.delete(export.shelf).where(export.shelf.c.id == shelf_id))
+        with track_shelf_changes(connection, shelf_ids=[shelf_id]):  # its Editions come off it
+            connection.execute(sa.delete(export.shelf).where(export.shelf.c.id == shelf_id))
