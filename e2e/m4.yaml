@@ -57,6 +57,9 @@ services:
     environment:
       SHELFHOLD_MAINTENANCE_WINDOW_START: "00:00"
       SHELFHOLD_MAINTENANCE_WINDOW_END: "23:59"
+      # the journeys drive the e-reader routes (kosync) of a member's device token over the
+      # stack's own loopback: the documented switch for a trusted network without TLS
+      SHELFHOLD_DEVICE_ALLOW_PLAIN_HTTP: "true"
     volumes:
       - library:/library
       - native:/native
