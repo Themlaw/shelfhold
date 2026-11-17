@@ -351,6 +351,52 @@ request_proposal = sa.Table(
     sa.UniqueConstraint("request_id", "position"),
 )
 
+# An imported list of wanted books (EF-USR-020, migration 0092): one batch per import, one row per
+# line, so that the admin reads the whole list on one screen. `user_id` is the profile the list is
+# for (a child's included); `collection_id` is the reading shelf made for it. A line is either
+# already in the library (`in_library`, on the shelf) or a request (`requested`). They go with the
+# profile; a request or a shelf removed later only empties the link.
+request_list_import = sa.Table(
+    "request_list_import",
+    metadata,
+    ulid_column("id", primary_key=True),
+    sa.Column(
+        "user_id", sa.String(26), sa.ForeignKey("user.id", ondelete="CASCADE"), nullable=False
+    ),
+    sa.Column("created_by", sa.String(26), sa.ForeignKey("user.id", ondelete="SET NULL")),
+    sa.Column("name", sa.String(), nullable=False),
+    sa.Column("collection_id", sa.String(26), sa.ForeignKey("collection.id", ondelete="SET NULL")),
+    now_column(),
+    ulid_check("id"),
+    sa.CheckConstraint('length("name") BETWEEN 1 AND 200', name="name_length"),
+    sa.Index("ix_request_list_import_user", "user_id"),
+)
+
+request_list_item = sa.Table(
+    "request_list_item",
+    metadata,
+    ulid_column("id", primary_key=True),
+    sa.Column(
+        "import_id",
+        sa.String(26),
+        sa.ForeignKey("request_list_import.id", ondelete="CASCADE"),
+        nullable=False,
+    ),
+    sa.Column("position", sa.Integer(), nullable=False),
+    sa.Column("line_text", sa.String(), nullable=False),
+    sa.Column("isbn", sa.String(13)),
+    sa.Column("outcome", sa.String(), nullable=False),
+    sa.Column("request_id", sa.String(26), sa.ForeignKey("request.id", ondelete="SET NULL")),
+    sa.Column("work_id", sa.String(26), sa.ForeignKey("work.id", ondelete="SET NULL")),
+    bool_column("annotated", default=False),
+    ulid_check("id"),
+    in_check("outcome", ("in_library", "requested")),
+    sa.CheckConstraint('"position" >= 0', name="position_min"),
+    sa.CheckConstraint('length("line_text") <= 300', name="line_text_length"),
+    sa.UniqueConstraint("import_id", "position"),
+    sa.Index("ix_request_list_item_request", "request_id"),
+)
+
 # The digest being built for a user, sent at `due_at` (EF-INT-021).
 notification_digest = sa.Table(
     "notification_digest",

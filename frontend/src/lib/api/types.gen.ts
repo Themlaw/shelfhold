@@ -2596,6 +2596,178 @@ export type LinkedOut = {
 };
 
 /**
+ * ListImportOut
+ */
+export type ListImportOut = {
+    /**
+     * Annotated
+     */
+    annotated: number;
+    /**
+     * Collection Id
+     */
+    collection_id: string | null;
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * In Library
+     */
+    in_library: number;
+    /**
+     * Requested
+     */
+    requested: number;
+};
+
+/**
+ * ListIn
+ */
+export type ListIn = {
+    /**
+     * Name
+     */
+    name?: string | null;
+    /**
+     * Text
+     */
+    text: string;
+};
+
+/**
+ * ListItemOut
+ */
+export type ListItemOut = {
+    /**
+     * Annotated
+     */
+    annotated: boolean;
+    /**
+     * In Library
+     */
+    in_library: boolean;
+    /**
+     * Isbn
+     */
+    isbn: string | null;
+    /**
+     * Needs Age
+     */
+    needs_age: boolean;
+    /**
+     * Outcome
+     */
+    outcome: string;
+    /**
+     * Position
+     */
+    position: number;
+    /**
+     * Request Id
+     */
+    request_id: string | null;
+    /**
+     * Request State
+     */
+    request_state: string | null;
+    /**
+     * Text
+     */
+    text: string | null;
+};
+
+/**
+ * ListReviewOut
+ */
+export type ListReviewOut = {
+    /**
+     * Annotated
+     */
+    annotated: number;
+    /**
+     * Collection Id
+     */
+    collection_id: string | null;
+    /**
+     * Created At
+     */
+    created_at: string;
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * In Library
+     */
+    in_library: number;
+    /**
+     * Items
+     */
+    items: Array<ListItemOut>;
+    /**
+     * Name
+     */
+    name: string;
+    /**
+     * Requested
+     */
+    requested: number;
+    /**
+     * User Id
+     */
+    user_id: string;
+    /**
+     * User Role
+     */
+    user_role: string;
+};
+
+/**
+ * ListSummariesOut
+ */
+export type ListSummariesOut = {
+    /**
+     * Items
+     */
+    items: Array<ListSummaryOut>;
+};
+
+/**
+ * ListSummaryOut
+ */
+export type ListSummaryOut = {
+    /**
+     * Created At
+     */
+    created_at: string;
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * In Library
+     */
+    in_library: number;
+    /**
+     * Name
+     */
+    name: string;
+    /**
+     * Requested
+     */
+    requested: number;
+    /**
+     * User Id
+     */
+    user_id: string;
+    /**
+     * User Role
+     */
+    user_role: string;
+};
+
+/**
  * LoginRequest
  */
 export type LoginRequest = {
@@ -12585,6 +12757,153 @@ export type RestoreForgetRootResponses = {
 };
 
 export type RestoreForgetRootResponse = RestoreForgetRootResponses[keyof RestoreForgetRootResponses];
+
+export type ListRequestListsData = {
+    body?: never;
+    path?: never;
+    query?: {
+        /**
+         * Limit
+         */
+        limit?: number;
+    };
+    url: '/api/v1/request-lists';
+};
+
+export type ListRequestListsErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type ListRequestListsError = ListRequestListsErrors[keyof ListRequestListsErrors];
+
+export type ListRequestListsResponses = {
+    /**
+     * Successful Response
+     */
+    200: ListSummariesOut;
+};
+
+export type ListRequestListsResponse = ListRequestListsResponses[keyof ListRequestListsResponses];
+
+export type ImportRequestListData = {
+    body: ListIn;
+    path?: never;
+    query?: never;
+    url: '/api/v1/request-lists';
+};
+
+export type ImportRequestListErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type ImportRequestListError = ImportRequestListErrors[keyof ImportRequestListErrors];
+
+export type ImportRequestListResponses = {
+    /**
+     * Successful Response
+     */
+    201: ListImportOut;
+};
+
+export type ImportRequestListResponse = ImportRequestListResponses[keyof ImportRequestListResponses];
+
+export type ImportRequestListForChildData = {
+    body: ListIn;
+    path: {
+        /**
+         * User Id
+         */
+        user_id: string;
+    };
+    query?: never;
+    url: '/api/v1/request-lists/for-child/{user_id}';
+};
+
+export type ImportRequestListForChildErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type ImportRequestListForChildError = ImportRequestListForChildErrors[keyof ImportRequestListForChildErrors];
+
+export type ImportRequestListForChildResponses = {
+    /**
+     * Successful Response
+     */
+    201: ListImportOut;
+};
+
+export type ImportRequestListForChildResponse = ImportRequestListForChildResponses[keyof ImportRequestListForChildResponses];
+
+export type ReadRequestListData = {
+    body?: never;
+    path: {
+        /**
+         * Import Id
+         */
+        import_id: string;
+    };
+    query?: never;
+    url: '/api/v1/request-lists/{import_id}';
+};
+
+export type ReadRequestListErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type ReadRequestListError = ReadRequestListErrors[keyof ReadRequestListErrors];
+
+export type ReadRequestListResponses = {
+    /**
+     * Successful Response
+     */
+    200: ListReviewOut;
+};
+
+export type ReadRequestListResponse = ReadRequestListResponses[keyof ReadRequestListResponses];
 
 export type MineData = {
     body?: never;

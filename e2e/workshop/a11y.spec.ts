@@ -14,6 +14,7 @@ const SCREENS = [
   '/a-classer',
   '/a-ranger',
   '/a-approuver',
+  '/a-approuver/liste',
   '/mes-demandes',
   '/activite',
   '/activite/historique',

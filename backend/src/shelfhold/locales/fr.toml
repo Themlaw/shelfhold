@@ -641,6 +641,14 @@ pages_destination_rewritten = "Fichier de destination réécrit : {item}"
 pages_destination_left = "Fichier de destination laissé tel quel : {item} ({outcome})"
 pages_nothing = "Rien à normaliser : toutes les pages sont déjà en JPEG, PNG, GIF ou WebP."
 backfill_confirm_pair = "--confirm-units et --confirm-bytes vont ensemble."
+help_request = "Importe une liste de livres voulus (un fichier texte, un titre par ligne, un ISBN si vous en avez un) : crée des demandes et une étagère de lecture. Rien n'est cherché dans une source."
+help_request_from_list = "Le fichier de la liste (texte simple, 64 Kio au plus, 100 lignes au plus) ; « - » lit l'entrée standard."
+help_request_for_profile = "Nom du profil d'enfant pour qui est la liste : son étagère de lecture est faite et les demandes sont les siennes (un âge est toujours choisi à l'approbation)."
+help_request_name = "Nom de l'étagère de lecture (par défaut : le nom du fichier)."
+request_list_done = "Liste importée : déjà dans la bibliothèque (sur l'étagère de lecture) : {in_library} ; demandés : {requested}."
+request_list_annotated = "Attention : lignes qui réclament une édition annotée précise : {count}. Shelfhold ne peut pas promettre cette édition ; vérifiez-la sur l'écran de validation."
+request_list_review = "Tout valider sur un seul écran : /a-approuver/liste/{id}"
+request_list_refused = "La liste n'est pas lue ({reason}) : rien n'a été importé."
 help_follow_series = "Suit une série du service connecté depuis Shelfhold : une seule entrée dans sa bibliothèque, catégorie « Shelfhold », sans téléchargement automatique."
 help_unfollow_series = "Ne suit plus une série : elle reste dans le service connecté, sauf avec --remove-upstream et --confirm."
 help_follow_source_key = "Clé de la source de la série, telle que le service la donne (par exemple suwayomi:7001)."
@@ -715,6 +723,7 @@ migrate_ids_applied = "{applied, plural, one {# série migrée} other {# séries
 migrate_ids_preview_stale = "Ce n'est plus l'aperçu que vous avez vu : relancez --preview, relisez, puis appliquez avec la nouvelle empreinte. Rien n'a été modifié."
 
 [local_cli]
+profile_unknown = "aucun profil ne porte ce nom."
 maintenance_active = "le mode maintenance est actif : seule la lecture passe. Lancez « shelfhold maintenance off » pour reprendre."
 restored_behind = "restored_behind : lancez « shelfhold reconcile --adopt-after-restore » ; rien d'autre n'écrit tant que la base est plus ancienne que les fichiers."
 param_invalid = "Paramètre « {name} » invalide : {expected} attendu."
@@ -1906,6 +1915,11 @@ cause = "Le texte n'est ni un identifiant d'œuvre, ni un ISBN valide, ni un tit
 title = "Trop de demandes sont déjà en attente pour ce profil."
 action = "Attendez une réponse, ou annulez une demande, avant d'en faire une autre."
 cause = "Ce profil a déjà atteint le nombre maximal de demandes en attente."
+
+[errors."request.invalid_list"]
+title = "Cette liste ne peut pas être lue."
+action = "Envoyez une liste en texte simple : un titre par ligne, au plus 100 lignes de 300 caractères, moins de 64 Kio."
+cause = "La liste est trop grande, a trop de lignes ou des lignes trop longues, n'est pas du texte, ou est vide. Elle est refusée en entier, jamais coupée."
 
 [errors."request.invalid_reason"]
 title = "Le motif du refus est vide, trop long ou contient des caractères invisibles."

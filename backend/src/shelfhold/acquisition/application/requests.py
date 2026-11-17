@@ -75,6 +75,7 @@ __all__ = [
     "RequestView",
     "Requester",
     "SourceRef",
+    "work_by_isbn",
 ]
 
 MAX_PENDING = 20  # open requests per profile: a child's list is not a place to pile things up
@@ -296,6 +297,16 @@ class RequestService:
                 raise RequestRefusedError("not_found")
             return self._insert(connection, who.user_id, owner, checked)
 
+    def create_listed(
+        self, connection: Connection, user_id: str, target: RequestTarget, *, cap: int
+    ) -> RequestView:
+        """A request that an imported list makes for a profile (EF-USR-020), in the transaction of
+        the import. The list service has already checked who may import and for whom; a child's
+        request made here is a text or an ISBN that is never searched (D22), and still asks for an
+        age at approval like every request of a child. `cap` replaces the per-profile ceiling of
+        open requests, which was meant for one-off asking."""
+        return self._insert(connection, user_id, self._owner(connection, user_id), target, cap=cap)
+
     def _owner(self, connection: Connection, user_id: str) -> _Owner:
         row = connection.execute(
             sa.select(identity.user.c.role, identity.user.c.visibility).where(
@@ -308,7 +319,7 @@ class RequestService:
 
     def _insert(
         self, connection: Connection, user_id: str, owner: _Owner, target: RequestTarget,
-        shown_title: str | None = None,
+        shown_title: str | None = None, cap: int = MAX_PENDING,
     ) -> RequestView:  # fmt: skip
         if target.kind == "source_ref" and not child_may_ask(target.kind):  # pragma: no cover
             raise RequestRefusedError("kind_not_allowed")
@@ -327,7 +338,7 @@ class RequestService:
                 request.c.requester_user_id == user_id, request.c.state == "pending"
             )
         ).scalar_one()
-        if open_count >= MAX_PENDING:
+        if open_count >= cap:
             raise RequestRefusedError("too_many_pending")
         now = self._clock.now()
         request_id = new_ulid()
@@ -384,6 +395,13 @@ class RequestService:
         whose Work or Edition is hidden from her is exactly an absent book: she is told
         `not_found` (EF-USR-010, "introuvable"), with no title, no reason and no link. Hidden
         and absent are one answer; the admin's own steps are untouched."""
+        if (
+            needs_age(view.requester_role)
+            and view.target_kind in ("free_text", "isbn")
+            and view.title is not None
+            and self._names_a_hidden_work(connection, user_id, view.id)
+        ):  # a list an admin made for her: what it names above her ceiling is not told to her
+            view = replace(view, title=None)
         if view.state in REQUEST_ELSEWHERE_STATES and needs_age(view.requester_role):
             # D22: a child is told "under review", whatever the admin did (and never an address)
             return replace(view, state="pending", elsewhere_url=None)
@@ -406,6 +424,16 @@ class RequestService:
         # `not_found`; only the title the catalogue gives for a Work she may not see goes
         title = None if view.target_kind == "work_id" else view.title
         return replace(view, state="not_found", title=title, reject_reason=None)
+
+    def _names_a_hidden_work(self, connection: Connection, user_id: str, request_id: str) -> bool:
+        """The typed text or ISBN of a request is the one Work of the catalogue, and she may not
+        see it: its title is the catalogue's to withhold, whoever typed it."""
+        row = connection.execute(sa.select(request).where(request.c.id == request_id)).one()
+        work = self._resolve(connection, row).work_id
+        if work is None:
+            return False
+        scope = reader_scope(connection, user_id)
+        return not scope.unrestricted and visible_work_ids(connection, scope, {work}) != {work}
 
     def queue(self, principal: Principal) -> list[RequestView]:
         """What waits for an admin, oldest first. The title of a private request of an adult is
@@ -1015,7 +1043,7 @@ class RequestService:
                 return _Resolved(None, None, None, False)
             return _Resolved(None, (item.source_key, item.series_ref), item.title, True)
         if kind == "isbn":
-            found = _work_by_isbn(connection, value)
+            found = work_by_isbn(connection, value)
             return _Resolved(found, None, None, found is not None)
         found = _work_by_title(connection, value)
         return _Resolved(found, None, None, found is not None)
@@ -1155,7 +1183,7 @@ def _work_exists(connection: Connection, work_id: str) -> bool:
     )
 
 
-def _work_by_isbn(connection: Connection, isbn: str) -> str | None:
+def work_by_isbn(connection: Connection, isbn: str) -> str | None:
     ext = catalog.external_id
     rows = connection.execute(
         sa.select(ext.c.entity_type, ext.c.entity_id).where(

@@ -279,3 +279,8 @@ since = "1.1"
 file = "0091_activity_block_traffic.py"
 sha256 = "c2fcc585c3c6b0ff67d7fc9a113ce2855778d1069f4942240fda092db533d239"
 since = "1.1"
+
+[[migration]]
+file = "0092_request_lists.py"
+sha256 = "1227630a2eb7d5971eb72d6a5794ecf944967e5c3d13814a463e6b5f2c1f4954"
+since = "1.1"
