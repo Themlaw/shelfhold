@@ -33,14 +33,20 @@ from test_m1b_journey import shelf_id
 from test_m3_journey import kavita_titles, library_ids, make_profile, manga_install
 
 VECTORS_FILE = (
-    Path(__file__).resolve().parents[2] / "backend" / "tests" / "unit" / "test_document_hash.py"
+    Path(__file__).resolve().parents[2]
+    / "backend"
+    / "tests"
+    / "unit"
+    / "test_document_hash.py"
 )
 # The M4 stack's own layout (EF-EXP-059): a folder Shelfhold writes is a root under /library and
 # two roots never overlap, so Kavita's media folder and the native folder are two roots of the
 # library: the Kavita target's map names /library/manga (the shelf sits at its root, the files
 # land where the other journeys put them) and the native folder is /library/native, a volume of
 # the overlay mounted there, as a mounted share would be.
-M4_KAVITA_PATH_MAP = '[{"local": "/library/manga", "remote": "/library/manga", "mode": "rw"}]'
+M4_KAVITA_PATH_MAP = (
+    '[{"local": "/library/manga", "remote": "/library/manga", "mode": "rw"}]'
+)
 NATIVE_ROOT = "/library/native"
 
 
@@ -49,14 +55,18 @@ NATIVE_ROOT = "/library/native"
 
 def native_files(j: Journey) -> list[str]:
     """The files of the native folder (the M4 overlay mounts its volume at /library/native)."""
-    done = j.compose("exec", "-T", "shelfhold", "find", NATIVE_ROOT, "-type", "f", check=False)
+    done = j.compose(
+        "exec", "-T", "shelfhold", "find", NATIVE_ROOT, "-type", "f", check=False
+    )
     return sorted(line for line in done.stdout.splitlines() if line)
 
 
 def manga_install_m4(j: Journey, *, exported: bool = True) -> tuple[str, str]:
     """`manga_install` on the M4 layout: Kavita's map names /library/manga and the shelf sits at
     its root, so the native folder beside it is a root of its own and breaks no rule."""
-    return manga_install(j, exported=exported, path_map=M4_KAVITA_PATH_MAP, subpath=None)
+    return manga_install(
+        j, exported=exported, path_map=M4_KAVITA_PATH_MAP, subpath=None
+    )
 
 
 def turn_sync_on(j: Journey, destination: str) -> None:
@@ -174,7 +184,9 @@ def link_member_key(
 
 def device_token(j: Journey, who: tuple[str, str]) -> tuple[str, str]:
     """The member pairs an e-reader on the device screen: the token shown once."""
-    [(code, paired)] = j.api(("POST", "/api/v1/device-tokens", {"name": "koreader"}), user=who)
+    [(code, paired)] = j.api(
+        ("POST", "/api/v1/device-tokens", {"name": "koreader"}), user=who
+    )
     assert code == 201, (code, paired)
     return str(paired["public_id"]), str(paired["secret"])  # type: ignore[index]
 
@@ -190,7 +202,9 @@ def test_m4_journey_manga_shelf_kavita_and_native_folder(journey_m4: Journey) ->
     file in the folder Mihon reads, laid out as it reads (a folder per series, `Ch.<n> <title>`,
     a cover, a ComicInfo inside the archive), and nothing left the network namespace."""
     j = journey_m4
-    manga_install_m4(j)  # the shelf, the chapter published upstream, delivered to Kavita
+    manga_install_m4(
+        j
+    )  # the shelf, the chapter published upstream, delivered to Kavita
     # the folder Mihon reads, named by the administrator on the screens of the API (a folder that
     # is written is a reserved action: a fresh session of the admin)
     [(code, made)] = j.api(
@@ -241,11 +255,17 @@ def test_m4_journey_progress_both_ways(journey_m4: Journey) -> None:
     turn_sync_on(j, destination)
     reader = ("reader", "synthetic-reader-password-1")
     user_id = make_profile(j, reader, "member")
-    j.child_account(reader[0], library_ids(j)[library], age=-1)  # the member's Kavita account
+    j.child_account(
+        reader[0], library_ids(j)[library], age=-1
+    )  # the member's Kavita account
     link_member_key(j, reader, user_id, destination, reader[0])
     public_id, secret = device_token(j, reader)
     chapter = next(
-        f for f in j.library_files() if f.startswith("/library/manga/") and f.endswith(".cbz")
+        f
+        for f in j.library_files()
+        if f.startswith("/library/manga/")
+        and f.endswith(".cbz")
+        and "/.shelfhold/" not in f
     )
     document = document_of(j, chapter)
 
@@ -253,7 +273,8 @@ def test_m4_journey_progress_both_ways(journey_m4: Journey) -> None:
     read_in_kavita(j, reader[0], chapter, 5)
     assert j.shelfhold("jobs", "run", "progress.sync").code == 0
     assert wait_for(
-        lambda: kosync(j, "get", public_id, secret, document)[1].get("progress") == "5", 300
+        lambda: kosync(j, "get", public_id, secret, document)[1].get("progress") == "5",
+        300,
     ), "the position read in Kavita never reached the member's own progress"
     [(code, status)] = j.api(("GET", "/api/v1/sync-status"))
     assert code == 200, status
@@ -264,9 +285,9 @@ def test_m4_journey_progress_both_ways(journey_m4: Journey) -> None:
     code, stored = kosync(j, "put", public_id, secret, document, "9")
     assert code == 200 and stored["document"] == document, (code, stored)
     assert j.shelfhold("jobs", "run", "progress.sync").code == 0
-    assert wait_for(lambda: kavita_page(j, reader[0], chapter_of(j, chapter)) == 9, 300), (
-        "the position left by the e-reader never reached Kavita"
-    )
+    assert wait_for(
+        lambda: kavita_page(j, reader[0], chapter_of(j, chapter)) == 9, 300
+    ), "the position left by the e-reader never reached Kavita"
     assert j.kavita()["violations"] == []
     assert j.egress() == []
 
@@ -285,7 +306,11 @@ def test_m4_journey_rename_keeps_each_member_progress(journey_m4: Journey) -> No
     destination, library = manga_install_m4(j)
     turn_sync_on(j, destination)
     chapter = next(
-        f for f in j.library_files() if f.startswith("/library/manga/") and f.endswith(".cbz")
+        f
+        for f in j.library_files()
+        if f.startswith("/library/manga/")
+        and f.endswith(".cbz")
+        and "/.shelfhold/" not in f
     )
     for name in ("alice", "bob"):
         who = (name, f"synthetic-{name}-password-1")
@@ -319,7 +344,9 @@ def test_m4_journey_rename_keeps_each_member_progress(journey_m4: Journey) -> No
         lambda: all(
             " - Chapter " in f
             for f in j.library_files()
-            if f.startswith("/library/manga/") and f.endswith(".cbz")
+            if f.startswith("/library/manga/")
+            and f.endswith(".cbz")
+            and "/.shelfhold/" not in f
         ),
         200,
     ), j.library_files()
@@ -336,7 +363,9 @@ def test_m4_journey_rename_keeps_each_member_progress(journey_m4: Journey) -> No
     assert wait_for(lambda: kavita_page(j, "alice", chapter_of(j, moved)) == 12, 300), (
         "alice's progress was not carried over the rename"
     )
-    assert kavita_page(j, "bob", chapter_of(j, moved)) == 7, "bob's progress was not carried"
+    assert kavita_page(j, "bob", chapter_of(j, moved)) == 7, (
+        "bob's progress was not carried"
+    )
     assert j.kavita()["violations"] == []
     assert j.egress() == []
 
@@ -424,7 +453,12 @@ def test_m4_journey_hash_vectors_green(journey_m4: Journey) -> None:
     j.put("/tmp/hash_vectors.json", json.dumps(vectors))
     j.put("/tmp/hash_vectors.py", HASH_RUNNER)
     done = j.compose(
-        "exec", "-T", "shelfhold", "python", "/tmp/hash_vectors.py", "/tmp/hash_vectors.json"
+        "exec",
+        "-T",
+        "shelfhold",
+        "python",
+        "/tmp/hash_vectors.py",
+        "/tmp/hash_vectors.json",
     )
     computed = {row["size"]: row for row in json.loads(done.stdout)}
     for vector in vectors:
