@@ -109,8 +109,9 @@ class BulkOps:
                 work_ids=[i.work_id for i in matched],
                 now=now,
             )
+        token = bulk.token_of(order.digest, len(order.work_ids))
         return {
-            "order_id": order.id, "age": text, "token": order.token, "skipped": skipped,
+            "order_id": order.id, "age": text, "token": token, "skipped": skipped,
             "expires_at": (now + bulk.ORDER_TTL).isoformat(),
             "items": [
                 {"work_id": i.work_id, "title": i.title, "state": i.state} for i in matched
@@ -134,7 +135,9 @@ class BulkOps:
             raise UnknownSubjectError(_ABSENT)
         if order.state != "previewed":
             raise NotWaitingError("this order was already applied")
-        if not hmac.compare_digest(confirm.strip().encode(), order.token.encode()):
+        if not hmac.compare_digest(
+            confirm.strip().encode(), bulk.token_of(order.digest, len(order.work_ids)).encode()
+        ):
             raise StalePreviewError("the order is not the one that was previewed: look again")
         pools = self._pools()  # a refusal comes first: no state is touched for a queue that is off
         with write_transaction(self._engine) as connection:

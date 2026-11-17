@@ -362,6 +362,8 @@ CLOSED = (
     "POST /api/v1/requests/{request_id}/approve",
     "POST /api/v1/requests/{request_id}/reject",
     "POST /api/v1/requests/{request_id}/not-found",
+    "POST /api/v1/bulk/rate/preview",  # M4 L28: bulk rating, a fresh admin session's
+    "POST /api/v1/bulk/rate/{order_id}/apply",
     "POST /api/v1/imports/tachibk",  # M4 L26: a backup of another reader app, an admin's
     "GET /api/v1/imports/tachibk/{import_id}",
     "POST /api/v1/imports/tachibk/{import_id}/apply",

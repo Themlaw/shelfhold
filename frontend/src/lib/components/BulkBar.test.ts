@@ -112,7 +112,7 @@ describe('BulkBar', () => {
     );
     render(BulkBar, { items: items as never, stateFilter: 'rating_pending', textFilter: 'Tit', onchanged: vi.fn() } as never);
     const user = userEvent.setup();
-    await user.click(screen.getByRole('checkbox', { name: /Toutes celles qui correspondent/ }));
+    await user.click(screen.getByRole('checkbox', { name: /Toutes.*filtre/ }));
     await user.click(screen.getByRole('radio', { name: '13+' }));
     await user.click(screen.getByRole('button', { name: 'Aperçu' }));
     await screen.findByText(/classée/);

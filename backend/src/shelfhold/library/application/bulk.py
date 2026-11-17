@@ -58,10 +58,6 @@ class Order:
     state: str
     job_id: str | None
 
-    @property
-    def token(self) -> str:
-        return token_of(self.digest, len(self.work_ids))
-
 
 def digest_of(kind: str, params: dict[str, Any], work_ids: Iterable[str]) -> str:
     """What the order is: the kind, its parameters, and which Works. The order of the Works is
