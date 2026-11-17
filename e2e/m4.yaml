@@ -59,6 +59,12 @@ services:
       - ../backend/tests:/pkg/tests:ro
       - library:/library:ro
 
+  fake-suwayomi:
+    environment:
+      # Suwayomi has no local source folder here: the root guard (EF-EXP-010) then lets the native
+      # folder be bound; an unread local source would refuse it (target.local_source_unknown)
+      FAKE_SUWAYOMI_LOCAL_SOURCE: ""
+
   shelfhold:
     depends_on:
       library-init: { condition: service_completed_successfully }
