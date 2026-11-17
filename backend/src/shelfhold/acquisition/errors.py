@@ -82,6 +82,7 @@ CODES: tuple[ErrorCode, ...] = (
     ErrorCode("request.invalid_ref", 422, "user"),
     ErrorCode("request.invalid_target", 422, "user"),
     ErrorCode("request.too_many_pending", 429, "user"),
+    ErrorCode("request.invalid_list", 422, "user"),  # EF-USR-020: a list over a bound or not text
     ErrorCode("request.invalid_reason", 422, "admin"),
     ErrorCode("request.choose_age", 422, "admin"),  # rating a child's request is approving it
     ErrorCode("request.confirmation_required", 409, "admin"),  # over 100 Units or 5 GiB

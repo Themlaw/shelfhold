@@ -117,6 +117,7 @@ EXCLUDED_TABLES: Final[Mapping[str, str]] = {
     "notification_pending": _NOISE, "notification_digest": _NOISE, "domain_slot": _NOISE,
     "provider_quota": _NOISE, "provider_release_calendar": _NOISE,  # a cache, asked again
     "request_proposal": _NOISE,  # what a search found, asked again (M4 L30)
+    "request_list_import": _NOISE, "request_list_item": _NOISE,  # the batch of a list (M4 L31)
     "http_cache": _NOISE, "metadata_cache": _NOISE,
     "follow_notice": _NOISE, "follow_request": _NOISE, "download_request": _NOISE,
     "download_request_unit": _NOISE, "source_failure": _NOISE, "series_gap": _NOISE,

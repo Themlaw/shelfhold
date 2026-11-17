@@ -19,6 +19,7 @@ from typing import Any
 import sqlalchemy as sa
 from sqlalchemy import Engine
 
+from shelfhold.acquisition.application.request_lists import RequestListService
 from shelfhold.acquisition.application.requests import RequestService
 from shelfhold.acquisition.application.unit_follow import suppress_follow
 from shelfhold.acquisition.public import FOLLOW_JOB_KIND, make_all_due
@@ -241,6 +242,7 @@ class OpsServices:
         sheet: SheetOps | None = None,
         acquire: AcquireOps | None = None,
         requests: RequestService | None = None,
+        request_lists: RequestListService | None = None,
         roots: RootOps | None = None,
         maintenance: MaintenanceOps | None = None,
         kavita_accounts: KavitaAccountsOps | None = None,
@@ -286,6 +288,7 @@ class OpsServices:
         self._sheet = sheet
         self._acquire = acquire
         self._requests = requests
+        self._request_lists = request_lists
         self._roots = roots
         self._maintenance = maintenance
         self._kavita_accounts = kavita_accounts
@@ -912,6 +915,13 @@ class OpsServices:
         if self._follows is None:
             raise ExitUnavailableError("following is not connected")
         return self._follows
+
+    @property
+    def request_lists(self) -> RequestListService:
+        """Import a list of wanted books, read it on one screen (EF-USR-020)."""
+        if self._request_lists is None:
+            raise ExitUnavailableError("request lists are not connected")
+        return self._request_lists
 
     @property
     def requests(self) -> RequestService:

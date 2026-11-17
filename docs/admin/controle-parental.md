@@ -216,6 +216,13 @@ parent qui ne veut pas que la lecture de son enfant parte plus loin coupe le sui
 enfant dans Kavita. Les chapitres au-dessus du plafond d'âge de l'enfant ne sont jamais lus ni
 écrits. Détails : [progress-sync.md](../reference/progress-sync.md).
 
+## Une liste de lecture pour un enfant
+
+Importer une liste pour un enfant (`POST /api/v1/request-lists/for-child/{id}`, ou `shelfhold request --from-list … --for-profile`)
+est l'action réservée `reading_shelf.attach` : session d'administration fraîche dès qu'un profil restreint existe, jamais une clé,
+jamais un profil enfant ou membre. Son étagère de lecture ne contient que ce qu'elle voit, et chaque demande faite à son nom demande
+un âge à l'approbation. Voir [listes-de-lecture.md](listes-de-lecture.md).
+
 ## Plusieurs destinations pour une étagère (fan-out)
 
 Une étagère peut être liée à plusieurs destinations (`POST /api/v1/shelves/{id}/destinations`, action réservée

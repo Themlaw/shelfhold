@@ -632,6 +632,14 @@
   pages_destination_left = "Destination file left as it is: {item} ({outcome})"
   pages_nothing = "Nothing to normalize: every page is already JPEG, PNG, GIF or WebP."
   backfill_confirm_pair = "--confirm-units and --confirm-bytes go together."
+  help_request = "Imports a list of wanted books (a text file, one title per line, an ISBN if you have one): makes requests and a reading shelf. Nothing is searched in a source."
+  help_request_from_list = "The list file (a plain text, 64 KiB at most, 100 lines at most); “-” reads the standard input."
+  help_request_for_profile = "Name of the child profile the list is for: her reading shelf is made and the requests are hers (an age is still chosen at approval)."
+  help_request_name = "Name of the reading shelf (default: the name of the file)."
+  request_list_done = "List imported: {in_library} already in the library (on the reading shelf), {requested} requested."
+  request_list_annotated = "Warning: {count} line(s) ask for a precise annotated edition. Shelfhold cannot promise that edition; check it on the review screen."
+  request_list_review = "Review all of it on one screen: /a-approuver/liste/{id}"
+  request_list_refused = "The list is not read ({reason}): nothing was imported."
   help_follow_series = "Follows a series of the service connected from Shelfhold: a single entry in its library, category “Shelfhold”, without automatic download."
   help_unfollow_series = "No longer follows a series: it remains in the connected service, except with --remove-upstream and --confirm."
   help_follow_source_key = "Key to the source of the series, as the service gives it (for example suwayomi:7001)."
@@ -717,6 +725,7 @@
   tombstone_row_from = "  (new form, still held by {seqs})"
 
 [local_cli]
+  profile_unknown = "no profile has this name."
   maintenance_active = "maintenance mode is active: only reading passes. Run “shelfhold maintenance off” to resume."
   restored_behind = "restored_behind: run “shelfhold reconcile --adopt-after-restore”; nothing else writes as long as the database is older than the files."
   param_invalid = "Invalid “{name}” parameter: {expected} expected."
@@ -1917,6 +1926,11 @@
     title = "Too many requests are already pending for this profile."
     action = "Wait for a response, or cancel a request, before making another."
     cause = "This profile has already reached the maximum number of pending requests."
+
+  [errors."request.invalid_list"]
+    title = "This list cannot be read."
+    action = "Send a plain text list: one title per line, at most 100 lines of 300 characters, under 64 KiB."
+    cause = "The list is too large, has too many or too long lines, is not text, or is empty. It is refused whole, never cut."
 
   [errors."request.invalid_reason"]
     title = "The refusal reason is empty, too long or holds invisible characters."

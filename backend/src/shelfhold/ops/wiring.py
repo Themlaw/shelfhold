@@ -13,6 +13,7 @@ from functools import cache
 import sqlalchemy as sa
 from sqlalchemy import Engine
 
+from shelfhold.acquisition.application.request_lists import RequestListService
 from shelfhold.composition import Composition, open_fsops
 from shelfhold.config import Settings
 from shelfhold.events.bus import EventBus
@@ -163,6 +164,7 @@ def open_ops(
     window = MaintenanceWindow.from_text(
         settings.maintenance_window_start, settings.maintenance_window_end, settings.timezone
     )
+    requests = build_service(composition)
     return OpsServices(
         engine, clock=clock, bus=bus, fsops=live, targets=targets,
         headless=lazy_headless,
@@ -191,7 +193,8 @@ def open_ops(
         wizard=WizardOps(composition),
         follows=FollowOps(composition), sheet=SheetOps(composition),
         acquire=AcquireOps(composition),
-        requests=build_service(composition), roots=RootOps(composition),
+        requests=requests, request_lists=RequestListService(engine, clock, requests),
+        roots=RootOps(composition),
         kavita_accounts=KavitaAccountsOps(
             engine, ChildAccountsAuditor(engine, clock, events), clock=clock,
             targets=composition.kavita_targets, client_for=composition.kavita_client,

@@ -1133,6 +1133,29 @@ source_item_id = "Result of the search (`pending_source_item.id`)."
 position = "Rank in the search answer, from 1 to 5."
 created_at = "When the search was made (UTC)."
 
+[tables.request_list_import]
+description = "One import of a list of wanted books for one profile, read on one screen by the admin (M4 L31)."
+[tables.request_list_import.columns]
+id = "Import identifier (ULID)."
+user_id = "Profile the list is for (`user.id`); a child's included."
+created_by = "Who imported it (`user.id`); empty once that account is gone."
+name = "Name of the list, and of the reading shelf made for it."
+collection_id = "Reading shelf made for the profile (`collection.id`); empty once it is deleted."
+created_at = "When the list was imported (UTC)."
+
+[tables.request_list_item]
+description = "One line of an imported list: a book already in the library, or a request (M4 L31)."
+[tables.request_list_item.columns]
+id = "Line identifier (ULID)."
+import_id = "Import it belongs to (`request_list_import.id`)."
+position = "Place among the wanted books, from 0."
+line_text = "The title as written in the list, without the ISBN (at most 300 characters)."
+isbn = "ISBN-13 written on the line, normalised."
+outcome = "`in_library` (put on the reading shelf) or `requested` (a request was made)."
+request_id = "Request made for the line (`request.id`); empty once it is deleted."
+work_id = "Work the line was matched to in the library (`work.id`)."
+annotated = "The line asks for an annotated or critical edition: the admin is warned."
+
 [tables.notification_digest]
 description = "The digest being built for a user, sent at its due time."
 [tables.notification_digest.columns]

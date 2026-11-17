@@ -6,10 +6,11 @@ Format : [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/). Versionnement
 
 ### Ajouté
 
+- **Listes de lecture importables (L31)** : `shelfhold request --from-list fichier.txt` et un écran d'import ; une ligne par titre, un ISBN si on en a un. Le texte est borné et lu comme non fiable, résolu dans le catalogue seul (aucune recherche dans une source), ce qui est déjà là va sur une étagère de lecture du profil et le reste devient des demandes, décidées sur **un seul écran**. Pour un enfant, c'est une décision parentale (action réservée) : son étagère ne dépasse pas son plafond et chaque demande garde l'âge à l'approbation. Une ligne qui réclame une édition annotée précise porte un avertissement.
 - **Historique d'activité et liste de blocage (L29)** : l'administrateur relit l'historique des événements, bloque un chapitre qu'une source repropose (il est alors ignoré à chaque cycle, sans jamais être débloqué en silence) et le débloque lui-même, avec une ligne d'audit.
 - **Stockage et réseau (L29)** : l'espace occupé par étagère et le trafic par source et par jour, compté par le Fetcher après la garde réseau, sans adresse ni chemin.
 
-Migration : oui (0091)
+Migration : oui (0091 et 0092)
 
 ## 1.1.0-rc.2 - 2026-11-16
 

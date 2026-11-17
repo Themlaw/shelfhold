@@ -76,6 +76,8 @@
 
 <main>
   <h1>{t('approve.title')}</h1>
+  <!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- the app is served at the root of its origin -->
+  <p><a href="/a-approuver/liste">{t('approve.import_list')}</a></p>
 
   {#if !loaded}
     <p>{t('home.loading')}</p>

@@ -365,6 +365,42 @@ class Collections:
                 sa.delete(catalog.collection).where(catalog.collection.c.id == collection_id)
             )
 
+    @staticmethod
+    def shown_to(
+        connection: sa.Connection, viewer: CollectionViewer, work_ids: Sequence[str]
+    ) -> set[str]:
+        """Which of `work_ids` this reader is shown (the rule of the lists: the catalogue filter,
+        and for a child an Edition filed on a shelf open to her)."""
+        return set(_shown_works(connection, viewer, work_ids))
+
+    @staticmethod
+    def attach_reading_shelf(
+        connection: sa.Connection, owner: CollectionViewer, name: str,
+        entries: Sequence[tuple[int, str]],
+    ) -> str:  # fmt: skip
+        """A reading list that belongs to `owner`, made by someone else (an admin for a child), in
+        the caller's transaction. Only what the owner is shown goes on it, in the order given (a
+        Work twice is kept once): the shelf of a child never holds above her ceiling, whoever made
+        it. `entries` are `(position, work_id)`."""
+        collection_id = new_ulid()
+        Collections._insert(
+            connection, owner, collection_id, name.strip()[:200] or "Reading list",
+            "reading_list", "profile", "manual",
+        )  # fmt: skip
+        shown = _shown_works(connection, owner, [work for _p, work in entries])
+        seen: set[str] = set()
+        for position, work_id in entries:
+            if work_id not in shown or work_id in seen or len(seen) >= MAX_ITEMS:
+                continue
+            seen.add(work_id)
+            connection.execute(
+                sa.insert(catalog.collection_item).values(
+                    id=new_ulid(), collection_id=collection_id, position=position,
+                    work_id=work_id,
+                )
+            )  # fmt: skip
+        return collection_id
+
     # -- the import of a reading-list file -----------------------------------------------------
 
     def import_list(

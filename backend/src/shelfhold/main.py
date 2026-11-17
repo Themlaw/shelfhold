@@ -84,6 +84,7 @@ from shelfhold.interfaces.http_api.ops_dashboard import build_ops_dashboard_rout
 from shelfhold.interfaces.http_api.plans import build_plans_router
 from shelfhold.interfaces.http_api.plugins import build_plugins_router
 from shelfhold.interfaces.http_api.relations import build_relations_router
+from shelfhold.interfaces.http_api.request_lists import build_request_lists_router
 from shelfhold.interfaces.http_api.requests import build_requests_router
 from shelfhold.interfaces.http_api.revisions import build_revisions_router
 from shelfhold.interfaces.http_api.search import build_search_router
@@ -385,6 +386,9 @@ def create_app(
             lambda: ops_services().requests,
             lambda token, owner: resolve_request_ref(ops_services().acquire, token, owner),
             lambda: kavita_open_url_of(engine),  # M3 L41: "Ouvrir dans Kavita"
+        ),
+        build_request_lists_router(  # EF-USR-020: a list of wanted books, one review screen
+            lambda: ops_services().request_lists
         ),
         build_sources_router(ops_services),  # EF-SRC-015, EF-SRC-004: search, acquire, a URL
         build_source_migration_router(ops_services),  # M4 L27: a series moves to another source

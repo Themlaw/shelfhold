@@ -1,32 +1,60 @@
-# Collections et listes de lecture
+# Importer une liste de lecture
 
-Une **collection** est un ensemble nommé et ordonné d'œuvres que l'administrateur fait pour toute la
-maison. Une **liste de lecture** est la même chose, tenue par un profil : elle est **privée par
-défaut**, lue par son auteur et par l'administrateur, et par personne d'autre.
+Une liste de livres voulus, écrite en texte simple, devient en un geste une **étagère de lecture** (ce que la bibliothèque a déjà)
+et des **demandes** (le reste), que l'administrateur lit et décide sur **un seul écran**. Rien n'est cherché dans une source :
+l'import ne regarde que le catalogue.
 
-## Qui voit quoi
+## Le texte
 
-- Un profil lit les collections de la maison et ses propres listes. La liste d'un autre profil
-  n'existe pas pour lui : même réponse qu'un identifiant que personne n'a jamais eu.
-- Un enfant ne voit d'une liste que les œuvres qu'il peut voir ailleurs : sous son plafond d'âge, et
-  rangées sur une étagère qui lui est ouverte (`allowed_profiles`). Le compte, l'ordre (numéroté de 1,
-  sans trou), la couverture et le nom ne viennent que de ces œuvres.
-- Le **nom** d'une collection de la maison qui contient une œuvre cachée à l'enfant lui est retenu :
-  un nom comme « … tome 9 » pourrait en dévoiler une. Une collection qui ne contient que des œuvres
-  cachées n'existe pas pour lui.
-- Seul l'administrateur fait ou modifie une collection de la maison. Une clé d'API lit comme le profil
-  auquel elle appartient et n'écrit rien ici.
+Un titre par ligne, avec un ISBN si vous en avez un :
 
-## Importer un fichier CBL
+```text
+# à lire cet été
+Le Jardin des brumes
+Atlas des marées ; 978-0-306-40615-7
+Un autre titre (édition annotée)
+```
 
-`POST /api/v1/collections/import-cbl` lit un fichier de liste de lecture au format CBL (ComicRack).
-L'**ordre du fichier est gardé**. Chaque ligne est rapprochée d'une œuvre par son **titre**
-(majuscules, espaces et formes larges ignorés) parmi les œuvres que le lecteur peut voir. Une ligne
-qui ne correspond à rien, ou à plusieurs œuvres, est **listée** dans la réponse (`unresolved`, avec sa
-raison `not_found` ou `ambiguous`) et laissée de côté : rien n'est deviné.
+- `#` ouvre une ligne de commentaire, les lignes vides sont ignorées ;
+- l'ISBN peut suivre le titre après `;`, une tabulation ou entre parenthèses, ou occuper la ligne seul ;
+- **bornes** : 64 Kio, 100 lignes, 300 caractères par ligne. Une liste au-delà est refusée **en entier** (jamais coupée), avec le
+  mot qui dit pourquoi (`too_large`, `too_many_lines`, `line_too_long`, `not_text`, `empty`) ;
+- le texte est lu comme non fiable : un chemin, une adresse ou une balise n'est qu'un titre, qui n'est jamais suivi.
 
-Le fichier est traité comme hostile : aucune déclaration de type de document (donc ni entité externe ni
-expansion), 2 Mo, 8 niveaux, 5 000 livres au plus. Un fichier hors limite est refusé en entier
-(422 `collection.cbl_refused`) et ne crée rien.
+## Depuis l'écran
 
-La poussée des collections vers Kavita arrive avec L18b.
+`/a-approuver/liste` : choisissez pour qui (vous, ou un enfant si vous êtes administrateur), collez le texte ou choisissez un
+fichier, puis « Importer ». Le résultat dit combien de lignes sont déjà dans la bibliothèque (elles vont sur l'étagère de
+lecture) et combien sont demandées, avec l'adresse de l'écran de validation. Chaque demande s'y décide comme dans « À
+approuver » : un âge pour une demande d'enfant, une raison pour un refus.
+
+## Depuis la ligne de commande
+
+```bash
+shelfhold request --from-list ete.txt                    # la liste de l'administrateur
+shelfhold request --from-list ete.txt --for-profile noa  # une liste pour un enfant
+cat ete.txt | shelfhold request --from-list - --name "Été"
+```
+
+## Pour un enfant
+
+Faire une liste à un enfant est une décision parentale (action réservée `reading_shelf.attach` : session d'administrateur
+fraîche, jamais une clé). Trois choses ne changent pas :
+
+- son **étagère de lecture** ne porte que ce qu'elle voit déjà : un livre au-dessus de son plafond, ou rangé sur une étagère qui
+  ne lui est pas ouverte, n'y est pas, et elle n'apprend pas qu'il existe ;
+- chaque demande faite en son nom **demande un âge à l'approbation**, comme toute demande d'enfant ;
+- **rien n'est cherché** dans une source pour elle. Une ligne que le catalogue n'a pas reste une demande en attente : l'admin la
+  met de côté (« à acheter », « à emprunter ») ou la refuse.
+
+Un enfant ne fait pas de liste elle-même : elle demande parmi les résultats de sa recherche.
+
+## Édition annotée
+
+Une ligne qui réclame une édition précise (« annotée », « édition critique », « commentée », « avec notes ») porte un
+avertissement : Shelfhold ne peut pas promettre cette édition. L'import n'est pas refusé ; vérifiez l'édition avant d'approuver.
+
+## Vie privée
+
+La liste d'un membre est aussi privée que ses demandes : l'administrateur voit qu'elle existe et ses totaux, pas ses titres. Le lot
+d'une autre personne est, pour un membre ou un enfant, une absence (404).

@@ -103,6 +103,9 @@ _DECLARED = (
     # M4 L06a (EF-EXP-002, EF-EXP-047): binding a shelf to a destination decides which server
     # holds what and who can read it there, so it is a parental decision of the admin's
     _action("shelf.bind_destination", Effect.PARENTAL_CONTROL),
+    # M4 L31 (EF-USR-020): an imported list for a child makes her a reading shelf and requests in
+    # her name, which is what she is shown and what she will ask for: a parental decision
+    _action("reading_shelf.attach", Effect.PARENTAL_CONTROL),
     # Household profiles (M3 L05, EF-USR-001, EF-USR-005): the role, the ceiling, the right to
     # classify and the per-source policy; a fresh session in every profile, never a key
     _action("profile.create", Effect.MANAGES_PROFILES),

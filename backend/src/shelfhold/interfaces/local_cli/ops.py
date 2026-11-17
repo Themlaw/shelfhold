@@ -14,6 +14,8 @@ from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import Any, Protocol
 
+from shelfhold.acquisition.application.request_lists import InvalidListError
+from shelfhold.acquisition.application.requests import RequestRefusedError
 from shelfhold.export.domain.bindings import BindingError
 from shelfhold.headless import HeadlessError
 from shelfhold.i18n import t
@@ -527,6 +529,38 @@ def _import_tree(ops: OpsServices, _by: Principal, p: Params) -> object:
     return ops.import_folder.tree(_text(p, "path"), dry_run=_flag(p, "dry_run"))
 
 
+def _request_from_list(ops: OpsServices, by: Principal, p: Params) -> object:
+    """`shelfhold request --from-list` (EF-USR-020): the text read by the command, bounded again by
+    the parser. The list is the first admin's own; a method that names a profile is the other one,
+    which is the reserved action."""
+    if p.get("profile") is not None:
+        raise RpcError(
+            INVALID_PARAMS, t("local_cli.param_invalid", name="profile", expected="none")
+        )
+    return _import_list(ops, by, p, None)
+
+
+def _request_from_list_for_profile(ops: OpsServices, by: Principal, p: Params) -> object:
+    """The same for a named profile (a child): the reading shelf and the requests are made for
+    her, which is a parental decision (`reading_shelf.attach`)."""
+    for_user_id = ops.request_lists.profile_id(_text(p, "profile"))
+    if for_user_id is None:
+        raise CodedRefusal("request.not_found", t("local_cli.profile_unknown"))
+    return _import_list(ops, by, p, for_user_id)
+
+
+def _import_list(ops: OpsServices, by: Principal, p: Params, for_user_id: str | None) -> object:
+    try:
+        done = ops.request_lists.import_list(
+            by, _text(p, "text"), name=_optional(p, "name"), for_user_id=for_user_id
+        )
+    except InvalidListError as refused:
+        raise CodedRefusal("request.invalid_list", refused.reason) from None
+    except RequestRefusedError as refused:
+        raise CodedRefusal(f"request.{refused.code}", refused.code) from None
+    return dict(vars(done))
+
+
 def _follow(ops: OpsServices, by: Principal, p: Params) -> object:
     return ops.follows.follow(
         _text(p, "source_key"), _text(p, "remote_id"), requester_user_id=user_of(by)
@@ -817,6 +851,8 @@ OPS_METHODS: Mapping[str, tuple[OpsMethod, str | None]] = {
     "ops.import_tree": (_import_tree, None),
     "ops.normalize_pages": (_normalize_pages, None),
     "ops.assemble_volume": (_assemble_volume, None),
+    "ops.request_from_list": (_request_from_list, None),
+    "ops.request_from_list_for_profile": (_request_from_list_for_profile, "reading_shelf.attach"),
     "ops.follow": (_follow, None),
     "ops.unfollow": (_unfollow, None),
     "ops.follow_gap_ack": (_gap_ack, None),
