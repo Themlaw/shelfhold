@@ -90,7 +90,7 @@ async function propose(user: ReturnType<typeof userEvent.setup>) {
   );
   await user.type(
     screen.getByLabelText(/Identifiant de la série/),
-    "/nouvelle-serie",
+    "/new-title",
   );
   await user.click(
     screen.getByRole("button", { name: /Proposer une correspondance/ }),
@@ -136,7 +136,7 @@ describe("Source migration", () => {
     expect(within(table).getByText(/à télécharger/)).toBeInTheDocument();
     expect(seen[0]).toEqual({
       source_key: "suwayomi:7002",
-      remote_id: "/nouvelle-serie",
+      remote_id: "/new-title",
       replaces_binding_id: "OLD",
     });
     // nothing can be applied before the table is validated
