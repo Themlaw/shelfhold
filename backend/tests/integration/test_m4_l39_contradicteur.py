@@ -1,8 +1,8 @@
 """PR #333 (M4 L39, D-P3), relecture adverse : contrôle parental et vie privée.
 
-Each test is a proof of a hole found in review, red in strict xfail: it turns green (and so fails
-the suite) the day the hole is closed, and is then promoted to a plain test. The controls inside
-each test (the named child, the page of the other child) pass today.
+Each test is the proof of a hole found in review. They were red in strict xfail; the holes are
+closed (C1: a waiting Edition carries nothing; C2: `?since=` tells a removal that a shelf list
+makes) and they are plain tests now.
 """
 
 from __future__ import annotations
@@ -35,11 +35,6 @@ def _page(world: World) -> set[str]:
 # -- C1: an Edition waiting in "À classer" carries the Work to a child ---------------------------
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="C1: `visible_works_clause` lets an Edition with an open suggested age above it (out "
-    "of every shelf, 'À classer') carry the Work; its only real copy is on a sibling's shelf",
-)
 def test_poc_a_waiting_edition_on_an_open_shelf_does_not_carry_the_work(world: World) -> None:
     """The Work of the sibling's shelf gets a second Edition on the shared shelf, rated 6, but a
     provider suggests 16 for it: it waits in "À classer" (`visible_editions_clause` hides it). By
@@ -69,11 +64,6 @@ def test_poc_a_waiting_edition_on_an_open_shelf_does_not_carry_the_work(world: W
 # -- C2: `?since=` never reports a Work taken away by a shelf list ---------------------------------
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="C2: a change of `allowed_profiles` writes no event; an offline client syncing with "
-    "`?since=` keeps the Work it may no longer see (ADR-0027 L39, choice (3) to arbitrate)",
-)
 def test_poc_since_reports_a_work_taken_away_by_a_shelf_list(world: World) -> None:
     work = world.seed.works["adult_shelf"]  # filed only on the shared "Adults" shelf
     first = world.kid.get(WORKS, params={"limit": 200})

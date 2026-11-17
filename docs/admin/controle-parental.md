@@ -36,6 +36,8 @@ de la progression, des collections et des Œuvres liées. Une Œuvre rangée seu
 autre enfant répond comme une Œuvre qui n'existe pas. Une Œuvre rangée sur aucune étagère n'est visible
 que pour les adultes. Un adulte n'est jamais borné par une étagère.
 
+Conséquence pour les demandes : **la demande d'un enfant n'apparaît chez lui qu'une fois l'Édition rangée sur une étagère qui lui est ouverte.** Tant qu'elle attend (« À classer », sans étagère, ou sur l'étagère d'un autre profil), elle n'est pas dans son catalogue. Une Édition qui attend un classement (âge suggéré au-dessus de son âge) ne porte pas non plus l'Œuvre jusqu'à lui. Quand l'étagère change (liste de profils, ou Édition déplacée), un client hors ligne de l'enfant reçoit le retrait à sa prochaine synchronisation (`?since=`).
+
 ## Notifications : une destination par adulte
 
 Le canal partagé de l'instance est lu par tous, enfants compris : il ne porte **jamais** de titre. Un

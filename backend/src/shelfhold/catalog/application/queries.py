@@ -147,6 +147,39 @@ def _filed_on_open_shelf(scope: ReaderScope, edition: Any) -> sa.ColumnElement[b
     )
 
 
+def _carries(scope: ReaderScope, table: Any, ceiling: int) -> sa.ColumnElement[bool]:
+    """On an Edition (`table`: `catalog.edition` or an alias of it): it is rated, fits under
+    `ceiling`, does not wait in "À classer" and is filed on a shelf open to this reader. The one
+    definition of an Edition that is hers, shared by `visible_editions_clause` and by the Works she
+    is carried to (`visible_works_clause`): the two can never disagree."""
+    edition, suggestion = table.c, catalog.age_suggestion.c
+    parent = catalog.work.alias().c
+    # what the Edition counts for, by the one definition of the shelves (`age.EditionAge.age`,
+    # `rating._age`): its own age when an admin fixed one (an X counts as X), else its Work's
+    own = sa.or_(edition.age_x.is_(True), edition.age_rating.is_not(None))
+    eff_age = sa.case((own, edition.age_rating), else_=parent.age_rating)
+    eff_x = sa.case((own, edition.age_x), else_=parent.age_x).is_(True)
+    waiting = (
+        sa.select(sa.literal(1))
+        .where(
+            parent.id == edition.work_id,
+            suggestion.state == "open",
+            sa.or_(
+                sa.and_(suggestion.entity_type == "edition", suggestion.entity_id == edition.id),
+                sa.and_(suggestion.entity_type == "work", suggestion.entity_id == edition.work_id),
+            ),
+            _exceeds(suggestion.value, suggestion.x, eff_age, eff_x),
+        )
+        .exists()
+    )  # a suggested age over the rating: "À classer", out of every shelf, so out of sight
+    return sa.and_(
+        edition.rated_at.is_not(None),
+        sa.not_(_above(edition.age_rating, edition.age_x, ceiling)),
+        ~waiting,
+        _filed_on_open_shelf(scope, table),
+    )
+
+
 def visible_works_clause(scope: ReaderScope) -> sa.ColumnElement[bool]:
     """The condition on `catalog.work` for this reader: her ceiling (`age_visible_works_clause`)
     and a shelf open to her that carries the Work (D-P3)."""
@@ -158,14 +191,9 @@ def visible_works_clause(scope: ReaderScope) -> sa.ColumnElement[bool]:
     edition = catalog.edition.alias("carrier")
     carried = (
         sa.select(sa.literal(1))
-        .where(
-            edition.c.work_id == catalog.work.c.id,
-            edition.c.rated_at.is_not(None),  # one that waits in "À classer" carries nothing
-            sa.not_(_above(edition.c.age_rating, edition.c.age_x, ceiling)),
-            _filed_on_open_shelf(scope, edition),
-        )
+        .where(edition.c.work_id == catalog.work.c.id, _carries(scope, edition, ceiling))
         .exists()
-    )
+    )  # an Edition that waits in "À classer", or is on no open shelf, carries nothing
     return sa.and_(age_visible_works_clause(scope), carried)
 
 
@@ -209,34 +237,11 @@ def visible_editions_clause(scope: ReaderScope) -> sa.ColumnElement[bool]:
     ceiling = _ceiling(scope)
     if ceiling is None:
         return sa.false()
-    work, edition, suggestion = catalog.work.c, catalog.edition.c, catalog.age_suggestion.c
-    parent = catalog.work.alias("parent_work").c
-    # what the Edition counts for, by the one definition of the shelves (`age.EditionAge.age`,
-    # `rating._age`): its own age when an admin fixed one (an X counts as X), else its Work's
-    own = sa.or_(edition.age_x.is_(True), edition.age_rating.is_not(None))
-    eff_age = sa.case((own, edition.age_rating), else_=parent.age_rating)
-    eff_x = sa.case((own, edition.age_x), else_=parent.age_x).is_(True)
-    waiting = (
-        sa.select(sa.literal(1))
-        .where(
-            parent.id == edition.work_id,
-            suggestion.state == "open",
-            sa.or_(
-                sa.and_(suggestion.entity_type == "edition", suggestion.entity_id == edition.id),
-                sa.and_(suggestion.entity_type == "work", suggestion.entity_id == edition.work_id),
-            ),
-            _exceeds(suggestion.value, suggestion.x, eff_age, eff_x),
-        )
-        .exists()
-    )  # a suggested age over the rating: "À classer", out of every shelf, so out of sight
-    of_visible_work = edition.work_id.in_(sa.select(work.id).where(visible_works_clause(scope)))
-    return sa.and_(
-        edition.rated_at.is_not(None),
-        sa.not_(_above(edition.age_rating, edition.age_x, ceiling)),
-        ~waiting,
-        of_visible_work,
-        _filed_on_open_shelf(scope, catalog.edition),
+    work = catalog.work.c
+    of_visible_work = catalog.edition.c.work_id.in_(
+        sa.select(work.id).where(visible_works_clause(scope))
     )
+    return sa.and_(_carries(scope, catalog.edition, ceiling), of_visible_work)
 
 
 def _chunks(ids: Iterable[str]) -> Iterable[list[str]]:

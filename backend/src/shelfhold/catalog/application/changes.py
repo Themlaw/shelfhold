@@ -11,7 +11,12 @@ transaction of the change:
   unrated, flagged adult, an open suggested age above its rating). A Work whose need changed is
   recorded; a write that changes nothing writes nothing;
 - `ops.work_removed` `{work_id, need_before, created_seq}`, written before the row goes;
-- `ops.shelf_removed` `{shelf_id}`: shelves have no age, only an admin reads them.
+- `ops.shelf_removed` `{shelf_id}`: shelves have no age, only an admin reads them;
+- `ops.profile_visibility` `{work_id, profile_id, visible_before, visible_after, created_seq}`
+  (M4 L39, D-P3): what a shelf list or the shelf of an Edition changes is not an age, so it is
+  written per child profile, by the filter itself (`visible_works_clause` of that profile), for
+  each Work whose visibility to her moved. `removed_ids` reads, for a child, the events of her own
+  profile besides the needs. Wrapped by `track_shelf_changes`.
 
 The payload holds ids and numbers, never a title: a token reveals nothing about the object.
 
@@ -47,8 +52,8 @@ from typing import Any, Final, Literal
 
 import sqlalchemy as sa
 
-from shelfhold.catalog.application.queries import age_visible_works_clause
-from shelfhold.infrastructure.schema import catalog, platform
+from shelfhold.catalog.application.queries import age_visible_works_clause, visible_work_ids
+from shelfhold.infrastructure.schema import catalog, identity, platform
 
 __all__ = [
     "ADMIN_SCOPE",
@@ -63,6 +68,7 @@ __all__ = [
     "removed_ids",
     "restore_epoch",
     "scope_code",
+    "track_shelf_changes",
     "track_work_changes",
     "window",
     "work_need",
@@ -74,6 +80,7 @@ MAX_REMOVED: int = 1000
 VISIBILITY_EVENT: Final = "ops.work_visibility"
 WORK_REMOVED_EVENT: Final = "ops.work_removed"
 SHELF_REMOVED_EVENT: Final = "ops.shelf_removed"
+PROFILE_EVENT: Final = "ops.profile_visibility"
 _MAX_CEILING = 99  # X
 Kind = Literal["work", "shelf"]
 
@@ -170,6 +177,72 @@ def track_work_changes(
             )
 
 
+def _child_scopes(connection: sa.Connection) -> list[_Ceiling]:
+    """The children, each as the scope the filter reads (her ceiling and her own profile)."""
+    user = identity.user.c
+    rows = connection.execute(
+        sa.select(user.id, user.max_age_rating).where(user.role == "child")
+    ).all()
+    return [
+        _Ceiling(int(r.max_age_rating), profile_id=str(r.id))
+        for r in rows
+        if isinstance(r.max_age_rating, int) and 0 <= r.max_age_rating <= _MAX_CEILING
+    ]
+
+
+def _works_on(connection: sa.Connection, shelf_ids: list[str], edition_ids: list[str]) -> set[str]:
+    """The Works that a shelf holds an Edition of, or that own one of these Editions."""
+    edition = catalog.edition.c
+    found: set[str] = set()
+    for column, ids in ((edition.shelf_id, shelf_ids), (edition.id, edition_ids)):
+        if ids:
+            found.update(
+                r[0] for r in connection.execute(sa.select(edition.work_id).where(column.in_(ids)))
+            )
+    return found
+
+
+@contextmanager
+def track_shelf_changes(
+    connection: sa.Connection,
+    *,
+    shelf_ids: Iterable[str] = (),
+    edition_ids: Iterable[str] = (),
+    now: datetime | None = None,
+) -> Iterator[None]:
+    """Wrap a write that changes the shelf of an Edition, or the profiles a shelf is open to
+    (D-P3). For each child, the Works involved are read through the filter before and after; one
+    that moved gets an `ops.profile_visibility` event for her, so `?since=` tells her to drop what
+    the shelf list took away (and not to drop what it gave back). An error propagates untouched
+    and writes nothing."""
+    shelves, editions = list(dict.fromkeys(shelf_ids)), list(dict.fromkeys(edition_ids))
+    children = _child_scopes(connection)
+    if not children:  # nobody whose view a shelf changes
+        yield
+        return
+    candidates = _works_on(connection, shelves, editions)
+    before = {c.profile_id: visible_work_ids(connection, c, candidates) for c in children}
+    yield
+    candidates |= _works_on(connection, shelves, editions)  # an Edition that moved is the same one
+    for child in children:
+        after = visible_work_ids(connection, child, candidates)
+        was = before[child.profile_id]
+        for work_id in sorted(candidates):
+            if (work_id in was) != (work_id in after):
+                _insert(
+                    connection,
+                    PROFILE_EVENT,
+                    {
+                        "work_id": work_id,
+                        "profile_id": child.profile_id,
+                        "visible_before": work_id in was,
+                        "visible_after": work_id in after,
+                        "created_seq": _created_seq(connection, work_id),
+                    },
+                    now,
+                )
+
+
 def record_work_removed(
     connection: sa.Connection, work_id: str, *, now: datetime | None = None
 ) -> None:
@@ -247,7 +320,7 @@ def removed_ids(
     rows = connection.execute(
         sa.select(platform.event.c.id, platform.event.c.type, platform.event.c.payload)
         .where(
-            platform.event.c.type.in_((VISIBILITY_EVENT, WORK_REMOVED_EVENT)),
+            platform.event.c.type.in_((VISIBILITY_EVENT, WORK_REMOVED_EVENT, PROFILE_EVENT)),
             platform.event.c.id > since_seq,
         )
         .order_by(platform.event.c.id)
@@ -255,8 +328,32 @@ def removed_ids(
     first: dict[str, int] = {}  # the need at the token: `need_before` of the first event
     existed: dict[str, bool] = {}  # the Work was there at the token (its creation is not after)
     last: dict[str, int | None] = {}  # the need now; None once removed
+    profile_first: dict[str, bool] = {}  # her own: visible at the token (first event's `before`)
+    profile_existed: dict[str, bool] = {}
+    profile_last: dict[str, bool] = {}  # visible now, by her last event
+    own = getattr(scope, "profile_id", None)
     for row in rows:
         payload = row.payload
+        if row.type == PROFILE_EVENT:
+            member, was, now = (
+                payload.get("work_id"),
+                payload.get("visible_before"),
+                payload.get("visible_after"),
+            )
+            if payload.get("profile_id") != own or own is None:
+                continue  # the events of another profile say nothing of hers
+            if (
+                not isinstance(member, str)
+                or not isinstance(was, bool)
+                or not isinstance(now, bool)
+            ):
+                continue
+            if member not in profile_first:
+                profile_first[member] = was
+                created = payload.get("created_seq")
+                profile_existed[member] = isinstance(created, int) and created <= since_seq
+            profile_last[member] = now
+            continue
         work_id, before = payload.get("work_id"), payload.get("need_before")
         if not isinstance(work_id, str) or not isinstance(before, int):
             continue  # an event this code did not write: never guessed at
@@ -279,6 +376,14 @@ def removed_ids(
             if gone:
                 out.append(work_id)
         elif need_at_token <= limit and (gone or (need_now is not None and need_now > limit)):
+            out.append(work_id)
+    for work_id, was_visible in profile_first.items():  # taken away by a shelf, not by an age
+        if (
+            profile_existed[work_id]
+            and was_visible
+            and not profile_last[work_id]
+            and work_id not in out
+        ):
             out.append(work_id)
     return _capped(out)
 

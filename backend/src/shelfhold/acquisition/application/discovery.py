@@ -32,6 +32,7 @@ from shelfhold.catalog.public import (
     content_warning_age,
     edition_key_lang,
     numbered_mark,
+    track_shelf_changes,
     track_work_changes,
     translation_type_for,
 )
@@ -413,11 +414,12 @@ class SeriesDiscovery:
                             work_id, lang, translation_type=translation_type, media="images"
                         )
                     ).id
-                connection.execute(
-                    sa.update(catalog.edition)
-                    .where(catalog.edition.c.id == edition_id)
-                    .values(shelf_id=shelf_id)
-                )
+                with track_shelf_changes(connection, edition_ids=[edition_id]):
+                    connection.execute(
+                        sa.update(catalog.edition)
+                        .where(catalog.edition.c.id == edition_id)
+                        .values(shelf_id=shelf_id)
+                    )
                 if suggested is not None:  # the sub-source says X (`isNsfw`): never a rating
                     with track_work_changes(connection, [work_id], now=now):
                         connection.execute(

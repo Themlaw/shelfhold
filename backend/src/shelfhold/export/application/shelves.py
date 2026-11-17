@@ -22,7 +22,7 @@ import sqlalchemy as sa
 from sqlalchemy import Connection, Engine
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
-from shelfhold.catalog.public import Admission, RatingService, file_new_edition
+from shelfhold.catalog.public import Admission, RatingService, file_new_edition, track_shelf_changes
 from shelfhold.export.application import fan_out
 from shelfhold.export.application.komga_audit_state import (
     audit_reason,
@@ -219,11 +219,12 @@ class ShelfService:
     ) -> list[str]:
         clean = sorted(set(profiles))
         with write_transaction(self._engine) as connection:
-            done = connection.execute(
-                sa.update(export.shelf)
-                .where(export.shelf.c.id == shelf_id)
-                .values(allowed_profiles=clean)
-            )
+            with track_shelf_changes(connection, shelf_ids=[shelf_id]):  # `?since=` removals
+                done = connection.execute(
+                    sa.update(export.shelf)
+                    .where(export.shelf.c.id == shelf_id)
+                    .values(allowed_profiles=clean)
+                )
             if done.rowcount != 1:
                 raise LookupError(f"no such shelf: {shelf_id}")
             self._audit(connection, actor, "shelf.set_profiles", f"shelf:{shelf_id};{len(clean)}")
@@ -358,11 +359,12 @@ class ShelfService:
         verdict = self._rating.admission_of(connection, edition_id, shelf_id=shelf_id)
         if verdict is not Admission.ALLOWED:
             return FileResult(False, verdict.value)
-        connection.execute(
-            sa.update(catalog.edition)
-            .where(catalog.edition.c.id == edition_id)
-            .values(shelf_id=shelf_id)
-        )
+        with track_shelf_changes(connection, edition_ids=[edition_id]):
+            connection.execute(
+                sa.update(catalog.edition)
+                .where(catalog.edition.c.id == edition_id)
+                .values(shelf_id=shelf_id)
+            )
         return FileResult(True)
 
     def file_edition(

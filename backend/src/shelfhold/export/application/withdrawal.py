@@ -30,7 +30,7 @@ import sqlalchemy as sa
 import structlog
 from sqlalchemy import Connection, Engine
 
-from shelfhold.catalog.public import RatingService
+from shelfhold.catalog.public import RatingService, track_shelf_changes
 from shelfhold.export.application.fan_out import mark_indexers_recycled
 from shelfhold.export.application.intents import IntentJournal
 from shelfhold.export.application.locks import LockBusyError, ResourceLocks, work_resource
@@ -512,14 +512,15 @@ class WithdrawalService:
 
     def _unshelve(self, item: WithdrawalItem, principal: Principal, now: datetime) -> None:
         with write_transaction(self._engine) as connection:
-            connection.execute(
-                sa.update(catalog.edition)
-                .where(
-                    catalog.edition.c.id == item.edition_id,
-                    catalog.edition.c.shelf_id == item.shelf_id,
+            with track_shelf_changes(connection, edition_ids=[item.edition_id]):
+                connection.execute(
+                    sa.update(catalog.edition)
+                    .where(
+                        catalog.edition.c.id == item.edition_id,
+                        catalog.edition.c.shelf_id == item.shelf_id,
+                    )
+                    .values(shelf_id=None)
                 )
-                .values(shelf_id=None)
-            )
             connection.execute(
                 audit_insert(
                     AuditEntry(
@@ -604,14 +605,15 @@ class WithdrawalService:
                     .values(state="recycled")
                 )
                 mark_indexers_recycled(connection, file.destination_id, file.export_item_id)
-            connection.execute(
-                sa.update(catalog.edition)
-                .where(
-                    catalog.edition.c.id == item.edition_id,
-                    catalog.edition.c.shelf_id == item.shelf_id,
+            with track_shelf_changes(connection, edition_ids=[item.edition_id]):
+                connection.execute(
+                    sa.update(catalog.edition)
+                    .where(
+                        catalog.edition.c.id == item.edition_id,
+                        catalog.edition.c.shelf_id == item.shelf_id,
+                    )
+                    .values(shelf_id=None)
                 )
-                .values(shelf_id=None)
-            )
             connection.execute(
                 audit_insert(
                     AuditEntry(

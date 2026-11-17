@@ -3102,6 +3102,7 @@
   "ops.migration_report",
   "ops.missing_list",
   "ops.pair_propose",
+  "ops.profile_visibility",
   "ops.rate_pending",
   "ops.repatriate_check",
   "ops.repatriate_plan",
