@@ -173,3 +173,12 @@ until = "M5"
 symbols = [
   "shelfhold.integrations.webhooks.catalogue:Deprecation",
 ]
+
+[[allow]]
+category = "deferred-l41-update-check"
+reason = "2026-11-17 (M4 L41): the update checker is off by default and shows its answer nowhere yet: no scheduled job and no administration screen reads it, so no entry point reaches it. Its contract (off by default, silent failure, no instance identifier) is proved against a recording fetcher. It is wired with the administration screen that shows a newer version."
+until = "M5"
+symbols = [
+  "shelfhold.platform.update_check:check_for_update",
+  "shelfhold.platform.update_check:update_check_enabled",
+]
