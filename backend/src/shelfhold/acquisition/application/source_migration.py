@@ -116,6 +116,9 @@ class Override:
 
     number: str
     target: str
+    # a line without a number is named by its place (the id of the line), and its `target` is then
+    # the id of the held Unit it is paired with
+    place: str | None = None
 
 
 @dataclass(frozen=True)
@@ -176,17 +179,49 @@ class NumberMap:
     def __init__(self, rows: dict[str, MigrationRow], offset: int) -> None:
         self._rows = rows
         self._offset = offset
+        self._taken = {r.target_place for r in rows.values()}
+        # the offset is only trusted for a release that the table does not list when it is the one
+        # every line of the table follows: a table with a line moved by hand, or a partial offset,
+        # says nothing of what the source will publish next
+        gaps = {g for r in rows.values() if (g := _gap(r)) is not None}
+        self._uniform = gaps <= {offset}
 
-    def translate(self, raw_number: str | None, source_order: int) -> tuple[str | None, int]:
-        row = self._rows.get(place_key(raw_number, source_order))
-        if row is not None:
-            return row.target, row.target_order
-        # a release the new source publishes after the table was made: the same offset reads it
-        if self._offset and raw_number is not None and _PLAIN.match(raw_number.strip()):
+    def held_aside(self, raw_number: str | None, source_order: int) -> bool:
+        """A release that the table does not list and that cannot be placed safely: it has no
+        number (its rank in another source's list says nothing), or the offset is not the one of
+        the whole table, or it would land on a place that a line of the table already takes."""
+        if place_key(raw_number, source_order) in self._rows:
+            return False
+        if raw_number is None or not self._uniform:
+            return True
+        number, order = self._read(raw_number, source_order)
+        return place_key(number, order) in self._taken
+
+    def _read(self, raw_number: str, source_order: int) -> tuple[str, int]:
+        if self._offset and _PLAIN.match(raw_number.strip()):
             shifted = _shift(raw_number.strip(), self._offset)
             if shifted is not None:
                 return shifted, source_order
         return raw_number, source_order
+
+    def translate(self, raw_number: str | None, source_order: int) -> tuple[str | None, int]:
+        """The library's number for this release; `(None, order)` for one held aside (see
+        `held_aside`): it has no library number until the admin gives it one."""
+        row = self._rows.get(place_key(raw_number, source_order))
+        if row is not None:
+            return row.target, row.target_order
+        if raw_number is None or self.held_aside(raw_number, source_order):
+            return None, source_order
+        return self._read(raw_number, source_order)
+
+
+def _gap(row: MigrationRow) -> int | None:
+    """How far a line moves its number (None for a line that is no plain number)."""
+    have, want = _plain_value(row.number), _plain_value(row.target)
+    if have is None or want is None:
+        return None
+    gap = want - have
+    return int(gap) if gap == gap.to_integral_value() else None
 
 
 def number_map_of(connection: Connection, binding_id: str) -> NumberMap | None:
@@ -317,6 +352,7 @@ class SourceMigrations:
         overrides: Sequence[Override],
         principal: Principal,
         now: datetime,
+        listed: Sequence[ListedUnit] | None = None,
     ) -> MigrationProposal:
         """The admin validates the table he was shown (`digest` is that table's), with the lines
         he changed. Every line is checked again; a collision is refused and nothing is written."""
@@ -331,6 +367,7 @@ class SourceMigrations:
         if current.state != "proposed":
             raise StaleMigrationError(f"a table that is {current.state} is not validated again")
         self._fresh(connection, edition_id, migration_id)
+        _still_listed(current.rows, listed)
         held = _held(connection, edition_id)
         rows = _override(held, current.rows, overrides)
         new_digest = _digest(
@@ -364,6 +401,7 @@ class SourceMigrations:
         digest: str,
         principal: Principal,
         now: datetime,
+        listed: Sequence[ListedUnit] | None = None,
     ) -> MigrationOutcome:
         _require_admin(principal)
         current = self._read(connection, edition_id, migration_id)
@@ -374,6 +412,7 @@ class SourceMigrations:
         if current.state != "validated":
             raise NotValidatedError("validate the table before applying it")
         self._fresh(connection, edition_id, migration_id)
+        _still_listed(current.rows, listed)
         self._reached("checked")
         head = connection.execute(
             sa.select(acquisition.source_migration).where(
@@ -388,12 +427,21 @@ class SourceMigrations:
                 edition_id=edition_id,
                 replaces_binding_id=None if head.replaces_binding_id is None
                 else str(head.replaces_binding_id),
-                memo=dict(head.memo or {}), memo_version=head.memo_version,
+                memo=dict(head.memo or {}), memo_version=head.memo_version, inherit_rank=True,
             ),
             principal=principal, now=now,
         )  # fmt: skip
         self._reached("relinked")
         table = acquisition.source_migration
+        connection.execute(  # one migrated binding by series: the other open tables are closed
+            sa.update(table)
+            .where(
+                table.c.edition_id == edition_id,
+                table.c.id != migration_id,
+                table.c.state.in_(("proposed", "validated")),
+            )
+            .values(state="cancelled")
+        )
         connection.execute(
             sa.update(table)
             .where(table.c.id == migration_id)
@@ -447,6 +495,16 @@ def _require_admin(principal: Principal) -> None:
         Credential.DEVICE_TOKEN,
     ):
         raise MigrationNotAllowedError(f"{principal.credential.value}/{principal.role}")
+
+
+def _still_listed(rows: Sequence[MigrationRow], listed: Sequence[ListedUnit] | None) -> None:
+    """The source, read again, still lists every line of the table (what it lists more is read
+    by the offset); a source that renumbered since is no source this table was made for."""
+    if listed is None:
+        return
+    now = {place_key(u.raw_number, u.source_order) for u in listed}
+    if any(r.place not in now for r in rows):
+        raise StaleMigrationError("the source lists the series otherwise than when it was shown")
 
 
 def _same(sent: str, stored: str) -> bool:
@@ -533,7 +591,10 @@ def _best_offset(held: dict[str, _Held], listed: Sequence[ListedUnit]) -> int:
     for step in sorted(steps, key=lambda k: (abs(k), k)):
         if min(want) + step < 0:
             continue  # a number would go negative: that is no offset
-        matches = len(have & {v + step for v in want})
+        shifted = {v + step for v in want}
+        if not have <= shifted:
+            continue  # a held number that the shift does not reach: no offset of the whole series
+        matches = len(have & shifted)
         if matches > best_matches:
             best, best_matches = step, matches
     if best == 0 or best_matches < min(_MIN_MATCHES, len(have)):
@@ -557,7 +618,8 @@ def _build(
             shifted = _shift(number.strip(), offset)
             if shifted is not None:
                 target, moved = shifted, True
-        found = held.get(place_key(target, order))
+        # a chapter without a number is never paired by its rank: the admin pairs it
+        found = held.get(place_key(target, order)) if number is not None else None
         if found is not None:
             target, order = found.number_raw, found.source_order
         rows[place] = MigrationRow(
@@ -591,8 +653,22 @@ def _override(
     held: dict[str, _Held], rows: Sequence[MigrationRow], overrides: Sequence[Override]
 ) -> tuple[MigrationRow, ...]:
     by_number = {r.number: r for r in rows if r.number is not None}
+    by_place = {r.place: r for r in rows}
     changed = {r.place: r for r in rows}
+    by_id = {h.id: (place, h) for place, h in held.items()}
     for item in overrides:
+        if item.place is not None:
+            row = by_place.get(item.place)
+            if row is None or row.number is not None:
+                raise InvalidMigrationError("a line that is not in the table")
+            if item.target not in by_id:
+                raise InvalidMigrationError("a Unit that is not of this Edition")
+            _, unit = by_id[item.target]
+            changed[row.place] = replace(
+                row, target=unit.number_raw, target_order=unit.source_order,
+                target_place=by_id[item.target][0], unit_id=unit.id, basis="manual",
+            )  # fmt: skip
+            continue
         row = by_number.get(item.number)
         if row is None:
             raise InvalidMigrationError("a line that is not in the table")

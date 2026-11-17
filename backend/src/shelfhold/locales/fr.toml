@@ -2728,6 +2728,11 @@ title = "Ce n'est plus le tableau que vous avez vu, ou la série a changé depui
 action = "Proposez de nouveau la correspondance, relisez-la, puis validez-la."
 cause = "L'empreinte envoyée n'est pas celle du tableau, ou un chapitre a été ajouté ou retiré depuis qu'il a été établi. Rien n'a été modifié."
 
+[errors."source_migration.held_aside"]
+title = "Des chapitres de la série migrée vous attendent."
+action = "Ouvrez la migration de la série, appariez ces chapitres à ceux de la bibliothèque, ou proposez à nouveau la correspondance."
+cause = "La nouvelle source a publié des chapitres dont le numéro ne se place pas sans risque dans la numérotation de la bibliothèque (sans numéro, décalage partiel, ou place déjà prise). Ils ne sont pas téléchargés."
+
 [errors."source_migration.invalid"]
 title = "Cette demande de migration n'est pas recevable."
 action = "Vérifiez la série de la nouvelle source, la source à remplacer et les numéros que vous avez saisis."

@@ -3571,6 +3571,7 @@
   "source_instance_changed",
   "source_item",
   "source_migration",
+  "source_migration.held_aside",
   "source_migration_row",
   "source_name",
   "source_not_loaded",

@@ -51,8 +51,11 @@ class ProposeIn(_Strict):
 
 
 class OverrideIn(_Strict):
-    number: Number  # as the new source writes it
+    number: Annotated[str, StringConstraints(max_length=64)] = ""  # as the new source writes it
     target: Number  # the number it takes in the library's own numbering
+    # a line without a number is named by its `place` (as the table gives it), and its target is
+    # the id of the Unit of the library it is paired with: a rank says nothing across two sources
+    place: Annotated[str, StringConstraints(min_length=1, max_length=200)] | None = None
 
 
 class ValidateIn(_Strict):
@@ -117,7 +120,8 @@ def build_source_migration_router(get_ops: Callable[[], OpsServices]) -> APIRout
         with refusals():
             done = get_ops().series_migration.validate(
                 edition_id, migration_id, digest=body.digest,
-                overrides=[(o.number, o.target) for o in body.overrides], principal=principal,
+                overrides=[(o.number, o.target, o.place) for o in body.overrides],
+                principal=principal,
             )  # fmt: skip
         return MigrationOut(**done)
 

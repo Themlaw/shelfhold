@@ -4851,10 +4851,23 @@
         "additionalProperties": false,
         "properties": {
           "number": {
+            "default": "",
             "maxLength": 64,
-            "minLength": 1,
             "title": "Number",
             "type": "string"
+          },
+          "place": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Place"
           },
           "target": {
             "maxLength": 64,
@@ -4864,7 +4877,6 @@
           }
         },
         "required": [
-          "number",
           "target"
         ],
         "title": "OverrideIn",
@@ -28111,6 +28123,10 @@
     "/api/v1/problems/source-migration.collision": {
       "code": "source_migration.collision",
       "status": 422
+    },
+    "/api/v1/problems/source-migration.held-aside": {
+      "code": "source_migration.held_aside",
+      "status": 409
     },
     "/api/v1/problems/source-migration.invalid": {
       "code": "source_migration.invalid",

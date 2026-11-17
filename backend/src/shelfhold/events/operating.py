@@ -53,6 +53,7 @@ OPERATING_EVENTS: frozenset[str] = frozenset(
         "source.not_loaded",
         "source.ref_has_secret",
         "source.version_unsupported",
+        "source_migration.held_aside",
         "target.child_exposure",
         "target.forbidden",
         "target.foreign_writer_detected",

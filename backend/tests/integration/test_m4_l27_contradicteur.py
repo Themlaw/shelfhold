@@ -15,6 +15,7 @@ import sqlalchemy as sa
 from shelfhold.acquisition.public import Override, StaleMigrationError, number_map_of
 from shelfhold.catalog.public import ListedUnit, place_key
 from shelfhold.infrastructure.db import write_transaction
+from shelfhold.infrastructure.schema import acquisition
 from shelfhold.ops.errors import CodedRefusal
 from shelfhold.ops.series_migration import SeriesMigrationOps
 from tests.integration import test_m4_l27_source_migration as l27
@@ -25,11 +26,6 @@ pytestmark = pytest.mark.req("EF-BIB-014")
 moved = l27.moved  # la fixture du lot, réutilisée telle quelle
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#327 trou 1 : le décalage global lit les chapitres hors table sans tenir compte des "
-    "lignes corrigées à la main ; un futur chapitre retombe sur une place déjà prise",
-)
 def test_a_later_release_never_lands_where_a_corrected_line_already_lands(moved: Moved) -> None:
     """La nouvelle source a sauté un numéro : son 7 est le 8 de la bibliothèque, et l'admin le
     corrige à la main. Le 8 qu'elle publie ensuite (le 9 de la bibliothèque) est lu par le décalage
@@ -55,11 +51,6 @@ def _unnumbered(moved: Moved, order: int) -> str:
         )  # fmt: skip
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#327 trou 2 : un chapitre sans numéro est rapproché par son rang dans la liste "
-    "d'une autre source, et l'admin ne peut pas corriger la ligne",
-)
 def test_an_unnumbered_release_of_the_new_source_is_never_taken_for_a_held_one(
     moved: Moved,
 ) -> None:
@@ -75,11 +66,6 @@ def test_an_unnumbered_release_of_the_new_source_is_never_taken_for_a_held_one(
     assert extra.unit_id != held_extra
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#327 trou 3 : l'application ne relit pas la source ; une table validée sur une "
-    "liste que la source a renumérotée depuis s'applique quand même",
-)
 def test_apply_refuses_a_table_whose_source_listing_changed(moved: Moved) -> None:
     """M4.md promet « une source qui a changé entre-temps donne source_migration.stale ». La
     source listait 11..17 (le 1..7 de la bibliothèque) quand la table a été proposée et validée ;
@@ -105,3 +91,78 @@ def test_apply_refuses_a_table_whose_source_listing_changed(moved: Moved) -> Non
             {"e": moved.edition},
         ).scalar()
     assert bound == 0
+
+
+# -- les correctifs de la relecture adverse : ce que les PoC ne disent pas -----------------------
+
+
+def _applied(moved: Moved, listed: tuple[ListedUnit, ...], **extra: Any) -> Any:
+    return moved.apply(moved.validate(moved.propose(listed, **extra)))
+
+
+def test_a_table_with_a_line_moved_by_hand_holds_a_new_number_aside(
+    moved: Moved,
+) -> None:
+    """Un décalage qui n'est pas celui de toute la table ne dit rien de ce que la source publiera :
+    un numéro que la table ne liste pas n'est placé nulle part, il attend l'admin."""
+    proposal = moved.propose(listing(1, 5))
+    assert proposal.offset == 0
+    done = moved.apply(moved.validate(proposal, (Override("5", "9"),)))  # one line moved by hand
+    with moved.engine.connect() as c:
+        numbers = number_map_of(c, done.binding_id)
+    assert numbers is not None
+    assert numbers.held_aside("6", 5)
+    assert numbers.translate("6", 5)[0] is None
+    assert not numbers.held_aside("2", 1)  # a line of the table is read as the table says
+
+
+def test_a_number_that_would_land_on_a_taken_place_is_held_aside(moved: Moved) -> None:
+    done = _applied(moved, listing(11, 17))
+    with moved.engine.connect() as c:
+        numbers = number_map_of(c, done.binding_id)
+    assert numbers is not None
+    assert not numbers.held_aside("18", 7)  # the library's 8: free
+    assert numbers.translate("18", 7) == ("8", 7)
+    assert numbers.held_aside("1", 0)  # 1 - 10 is no number: and 1 is the library's own: taken
+
+
+def test_a_release_without_a_number_is_paired_by_the_admin_by_its_place(moved: Moved) -> None:
+    held_extra = _unnumbered(moved, 6)
+    proposal = moved.propose((*listing(1, 5), ListedUnit(None, 6)))
+    extra = next(r for r in proposal.rows if r.number is None)
+    assert extra.basis == "new" and extra.unit_id is None
+    validated = moved.validate(proposal, (Override("", held_extra, place=extra.place),))
+    paired = next(r for r in validated.rows if r.place == extra.place)
+    assert paired.unit_id == held_extra and paired.basis == "manual"
+    assert moved.apply(validated).proposal.to_fetch == ()
+    with pytest.raises(Exception):  # noqa: B017 (a line that does not exist)
+        moved.validate(moved.propose(listing(1, 5)), (Override("", held_extra, place="nope"),))
+
+
+def test_applying_one_table_closes_the_others_and_a_second_cannot_follow(moved: Moved) -> None:
+    first = moved.propose(listing(1, 5))
+    second = moved.propose(listing(1, 6), source_key="suwayomi:7003", remote_id="/another")
+    moved.apply(moved.validate(first))
+    with moved.engine.connect() as c:
+        states = dict(c.execute(sa.text("SELECT id, state FROM source_migration")).all())
+    assert states[first.id] == "applied" and states[second.id] == "cancelled"
+    with pytest.raises(Exception):  # noqa: B017 (not validated: it is closed)
+        moved.apply(second)
+    assert moved.bindings() == 2  # the old one and the one migrated
+
+
+def test_the_migrated_binding_keeps_the_rank_of_the_one_it_replaces(moved: Moved) -> None:
+    with write_transaction(moved.engine) as c:
+        c.execute(
+            sa.update(acquisition.source_binding)
+            .where(acquisition.source_binding.c.id == moved.old_binding)
+            .values(priority=3)
+        )
+    done = _applied(moved, listing(1, 5))
+    with moved.engine.connect() as c:
+        rank = c.execute(
+            sa.select(acquisition.source_binding.c.priority).where(
+                acquisition.source_binding.c.id == done.binding_id
+            )
+        ).scalar()
+    assert rank == 3  # a better rank would ask again every held chapter as an upgrade

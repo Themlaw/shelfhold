@@ -94,5 +94,6 @@ CODES: tuple[ErrorCode, ...] = (
     ErrorCode("source_migration.collision", 422, "admin"),  # two numbers land on one place
     ErrorCode("source_migration.not_validated", 409, "admin"),  # applied before it was validated
     ErrorCode("source_migration.stale", 409, "admin"),  # not the table shown, or the Edition moved
+    ErrorCode("source_migration.held_aside", 409, "admin", event=True),  # a release with no place
     ErrorCode("source_migration.invalid", 422, "admin"),  # a line, a target or a listing refused
 )

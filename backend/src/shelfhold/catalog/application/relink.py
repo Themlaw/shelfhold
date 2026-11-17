@@ -62,6 +62,7 @@ class RelinkRequest:
     source_key: str
     remote_id: str
     listed: tuple[ListedUnit, ...] = ()
+    inherit_rank: bool = False  # the new binding takes the rank of the one it replaces
     lang: str | None = None  # None: the Edition of the binding replaced, else the only one
     edition_id: str | None = None  # the Edition itself (a migration names it), of this Work
     replaces_binding_id: str | None = None
@@ -265,11 +266,27 @@ def _bind(
             binding.c.edition_id == edition_id, binding.c.active
         )
     ).scalar()
+    priority = (top or 0) + 1
+    if request.inherit_rank and replaced is not None:
+        # a migrated series keeps its rank: a better-ranked binding would ask again, as an
+        # upgrade, every chapter the library already holds from the old one
+        inherited = connection.execute(
+            sa.select(binding.c.priority).where(binding.c.id == replaced.id)
+        ).scalar()
+        taken = connection.execute(
+            sa.select(binding.c.id).where(
+                binding.c.edition_id == edition_id,
+                binding.c.active,
+                binding.c.priority == inherited,
+            )
+        ).first()
+        if inherited is not None and taken is None:
+            priority = int(inherited)
     binding_id = new_ulid()
     connection.execute(
         sa.insert(binding).values(
             id=binding_id, work_id=request.work_id, edition_id=edition_id,
-            source_item_id=item_id, priority=(top or 0) + 1, active=True,
+            source_item_id=item_id, priority=priority, active=True,
         )
     )  # fmt: skip
     connection.execute(  # a followed series has its follow row; the first numbered look sets it

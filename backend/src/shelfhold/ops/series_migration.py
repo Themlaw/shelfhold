@@ -139,13 +139,16 @@ class SeriesMigrationOps:
 
     def validate(
         self, edition_id: str, migration_id: str, *, digest: str,
-        overrides: Sequence[tuple[str, str]], principal: Principal,
+        overrides: Sequence[tuple[str, str] | tuple[str, str, str | None]],
+        principal: Principal,
     ) -> dict[str, Any]:  # fmt: skip
+        listed = self._relisted(edition_id, migration_id, principal)
+
         def validate(connection: Connection) -> MigrationProposal:
             return SourceMigrations().validate(
                 connection, edition_id, migration_id, digest=digest,
-                overrides=[Override(number, target) for number, target in overrides],
-                principal=principal, now=self._comp.clock.now(),
+                overrides=[Override(*item) for item in overrides],
+                principal=principal, now=self._comp.clock.now(), listed=listed,
             )  # fmt: skip
 
         return shown(_refused(lambda: self._run(validate)))
@@ -153,16 +156,36 @@ class SeriesMigrationOps:
     def apply(
         self, edition_id: str, migration_id: str, *, digest: str, principal: Principal
     ) -> dict[str, Any]:
+        listed = self._relisted(edition_id, migration_id, principal)
+
         def apply(connection: Connection) -> MigrationOutcome:
             return SourceMigrations().apply(
                 connection, edition_id, migration_id, digest=digest, principal=principal,
-                now=self._comp.clock.now(),
+                now=self._comp.clock.now(), listed=listed,
             )  # fmt: skip
 
         done = _refused(lambda: self._run(apply))
         return shown(done.proposal, binding_id=done.binding_id) | {"already": done.already}
 
     # -- plumbing ------------------------------------------------------------------------------
+    def _relisted(
+        self, edition_id: str, migration_id: str, principal: Principal
+    ) -> Sequence[ListedUnit] | None:
+        """What the new source lists now, read again outside any transaction: a source that
+        renumbered since the table was shown is a stale table. A table already applied or closed
+        is a replay or a refusal of its own: the source is not asked."""
+
+        def read(connection: Connection) -> MigrationProposal:
+            return SourceMigrations().get(connection, edition_id, migration_id, principal=principal)
+
+        found = _refused(lambda: self._run(read, write=False))
+        if found.state not in ("proposed", "validated"):
+            return None
+        ref, listed = _refused(lambda: self._listing(found.source_key, found.remote_id))
+        if ref is None:
+            raise CodedRefusal("source_migration.stale", "the service no longer lists the series")
+        return listed
+
     def _run[T](self, work: Callable[[Connection], T], *, write: bool = True) -> T:
         if write:
             with write_transaction(self._comp.engine) as connection:

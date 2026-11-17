@@ -1012,9 +1012,21 @@ class FollowCycle:
         if numbers is None:
             return units
         out: list[UnitInfo] = []
+        aside = 0
         for info in units:
+            if numbers.held_aside(info.number, info.source_order):
+                aside += 1  # no safe place in the library's numbering: the admin decides
+                continue
             number, order = numbers.translate(info.number, info.source_order)
             out.append(info.model_copy(update={"number": number, "source_order": order}))
+        with write_transaction(self._engine) as connection:
+            if not aside:
+                self._ledger.release_aside(connection, binding.id)
+            elif self._ledger.hold_aside(connection, binding.id, aside):
+                self._emit(
+                    connection, "source_migration.held_aside",
+                    {"code": "source_migration.held_aside", "units": aside},
+                )  # fmt: skip
         return out
 
     def _chosen(self, binding: _Binding) -> bool:
