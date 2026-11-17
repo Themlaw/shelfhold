@@ -51,7 +51,7 @@ class BulkRatePreviewIn(_Strict):
     def _one_selection(self) -> "BulkRatePreviewIn":
         """The Works chosen (at least one) or a filter: never both, never neither."""
         if (self.work_ids is None) == (self.filter is None) or self.work_ids == []:
-            raise ValueError("name the Works chosen, or a filter, not both and not neither")
+            raise ValueError("selection_required")
         return self
 
 
