@@ -168,7 +168,7 @@ def test_a_private_address_is_refused_without_the_setting(settings: Settings) ->
         assert fake.requests == [] and _rows(env, "komga") == []
         for url in (
             "http://203.0.113.9:25600",
-            "http://user:pass@komga.lan:25600",
+            f"http://user:{OTHER_KEY}@komga.lan:25600",
             "ftp://komga.lan",
         ):
             with pytest.raises(HeadlessError):
