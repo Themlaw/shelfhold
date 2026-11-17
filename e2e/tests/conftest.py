@@ -92,6 +92,7 @@ def wait_for(predicate: Callable[[], bool], seconds: float = 20.0) -> bool:
 M1B_FILES = ["compose.yaml", "journey.yaml", "m1b.yaml"]
 M2_FILES = ["compose.yaml", "journey.yaml", "m2.yaml"]
 M3_FILES = [*M2_FILES, "m3.yaml"]
+M4_FILES = [*M2_FILES, "m4.yaml"]
 
 
 @pytest.fixture
@@ -119,6 +120,12 @@ def journey_m3(tmp_path: Path) -> Iterator["Journey"]:
     """The M2 stack with the doors of the M3 overlay published (the SPA and the simulated Kavita's
     window), for the journeys a browser plays on the image under test."""
     yield from _journey(M3_FILES, extra_env=_m2_env(tmp_path))
+
+
+@pytest.fixture
+def journey_m4(tmp_path: Path) -> Iterator["Journey"]:
+    """The M2 stack with the M4 overlay (simulated Kavita, Suwayomi and Komga) for the journeys."""
+    yield from _journey(M4_FILES, extra_env=_m2_env(tmp_path))
 
 
 def _m2_env(tmp_path: Path) -> dict[str, str]:

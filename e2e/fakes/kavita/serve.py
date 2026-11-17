@@ -74,7 +74,9 @@ def handle(method: str, target: str, headers: dict[str, str], body: bytes):  # t
         return _json({"series": fake.series, "files": {str(k): v for k, v in fake.files.items()},
                       "libraries": fake.libraries, "violations": fake.violations,
                       "scans": fake.scans, "keys": keys,
-                      "ages": {str(k): v for k, v in fake.ages.items()}})  # fmt: skip
+                      "ages": {str(k): v for k, v in fake.ages.items()},
+                      "progress": [{"account": a, "chapter": c, "page": p["page"]}
+                                   for (a, c), p in fake.member_progress.items()]})  # fmt: skip
     lowered = path.lower()
     if path == "/_fake/foreign_series" and method == "POST":
         # a series Kavita holds from another source, in the first library: ?name=<name>
@@ -119,6 +121,23 @@ def handle(method: str, target: str, headers: dict[str, str], body: bytes):  # t
         from urllib.parse import parse_qs, urlsplit
 
         return _json(seen_by(fake, parse_qs(urlsplit(target).query)["name"][0]))
+    if path == "/_fake/member-key" and method == "POST":
+        # a key of the account ?name=<n> (the account itself is made by /_fake/child): the key is
+        # handed to the test, which pastes it where the member pastes theirs (L12, EF-USR-012)
+        from urllib.parse import parse_qs, urlsplit
+
+        name = parse_qs(urlsplit(target).query)["name"][0]
+        return _json({"key": fake.add_member_key(name, age_rating=None)})
+    if path == "/_fake/read" and method == "POST":
+        # the account ?name=<n> read ?page=<p> of the chapter of ?file=<path>: what Kavita's own
+        # reader leaves behind, stamped with Kavita's clock (the pull of EF-EXP-026 reads this)
+        from urllib.parse import parse_qs, urlsplit
+
+        query = parse_qs(urlsplit(target).query)
+        fake.read_in_kavita(
+            query["name"][0], fake.chapter_id(query["file"][0]), int(query["page"][0])
+        )
+        return _json({})
     if path == "/_fake/index" and method == "POST":
         # Kavita looks at a folder of the shared volume: ?folder=<path> (as a scan would)
         from urllib.parse import parse_qs, urlsplit

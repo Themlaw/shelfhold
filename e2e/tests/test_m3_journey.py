@@ -19,7 +19,7 @@ from pathlib import Path
 
 import pytest
 from journey import KAVITA_PASSWORD, KAVITA_URL, Journey, wait_for
-from test_m1a_journey import install_by_commands
+from test_m1a_journey import KAVITA_PATH_MAP, install_by_commands
 from test_m1b_journey import discovered, family_files, family_install, ids_of, shelf_id
 from test_m2_journey import configure_sources, first_id, library_epubs
 from test_m2_journey import kavita_titles as _kavita_titles
@@ -288,11 +288,19 @@ def export_until_listed(j: Journey, folder: str, title: str) -> None:
 # -- (4) renaming a series two members read: the warning, with a number ------------------------------
 
 
-def manga_install(j: Journey, *, exported: bool = True) -> tuple[str, str]:
+def manga_install(
+    j: Journey,
+    *,
+    exported: bool = True,
+    path_map: str = KAVITA_PATH_MAP,
+    subpath: str | None = "manga",
+) -> tuple[str, str]:
     """Kavita and the 18+ shelf, the series discovered and, unless `exported` is off, the chapter
     published upstream delivered to Kavita (the simulated Suwayomi publishes one only); returns
-    `(destination id, library name)`."""
-    install_by_commands(j)
+    `(destination id, library name)`. `path_map`/`subpath` reach `install_by_commands`: the M4
+    journeys give Kavita a root of its own under the library, with the shelf at its root, so the
+    files land in /library/manga either way."""
+    install_by_commands(j, path_map=path_map, subpath=subpath)
     j.create_admin()
     j.discover_series()
     discovered(j)

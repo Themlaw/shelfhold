@@ -1,0 +1,84 @@
+# M4 overlay (L44), used with compose.yaml and journey.yaml: `-f compose.yaml -f journey.yaml
+# -f m4.yaml`. Adds a second simulated server (Komga) and the native folder a reader (Mihon,
+# Suwayomi local) reads. Nothing leaves the network namespace: `egress-watch` still sees
+# everything.
+#
+# The layout follows the rule of the physical roots (EF-EXP-059): a folder Shelfhold writes is a
+# root under /library, and two roots never overlap. Kavita's media folder and the native folder
+# are two roots of the library: /library/manga (the Kavita target's map names it, the shelf sits
+# at its root) and /library/native (its own volume, as a mounted share would be). Both exist
+# before the first bootstrap, as mounted folders do: a folder that does not exist is no root yet.
+#
+# The journeys:
+# - parcours 1: l'étagère "Manga" alimente Kavita et un dossier natif (Mihon/Suwayomi local) ;
+# - parcours 2: une position écrite par l'API Kavita avec le compte d'un membre remonte dans
+#   "Où j'en suis", et inversement ;
+# - parcours 3: un renommage de série conserve la progression de deux membres ;
+# - parcours 4: les vecteurs de hash KOReader sont verts sur l'image.
+name: shelfhold-e2e-m4
+
+x-fake: &fake
+  image: ${SHELFHOLD_IMAGE:?}
+  user: "1000:1000"
+  read_only: true
+  cap_drop: [ALL]
+  security_opt: ["no-new-privileges:true"]
+  network_mode: service:egress-watch
+  environment:
+    PYTHONPATH: /fakes:/pkg
+    PYTHONDONTWRITEBYTECODE: "1"
+  depends_on:
+    egress-watch: { condition: service_healthy }
+  tmpfs: ["/tmp"]
+
+services:
+  library-init:
+    image: ${SHELFHOLD_IMAGE:?}
+    user: "0:0"
+    read_only: true
+    cap_drop: [ALL]
+    cap_add: [CHOWN]
+    command: ["sh", "-c", "mkdir -p /library/manga && chown 1000:1000 /library /library/manga /library/native"]
+    restart: "no"
+    volumes:
+      - library:/library
+      - native:/library/native
+    network_mode: none
+
+  fake-komga:
+    <<: *fake
+    command: ["python", "/fakes/komga.py"]
+    # a service's `environment` replaces the anchor's: PYTHONPATH is repeated here
+    environment:
+      PYTHONPATH: /fakes:/pkg
+      PYTHONDONTWRITEBYTECODE: "1"
+      FAKE_KOMGA_LIBRARY_ROOT: /library/manga
+      PORT: "25600"
+    volumes:
+      - ./fakes:/fakes:ro
+      - ../backend/tests:/pkg/tests:ro
+      - library:/library:ro
+
+  fake-suwayomi:
+    environment:
+      # Suwayomi has no local source folder here: the root guard (EF-EXP-010) then lets the native
+      # folder be bound; an unread local source would refuse it (target.local_source_unknown)
+      FAKE_SUWAYOMI_LOCAL_SOURCE: ""
+
+  shelfhold:
+    depends_on:
+      library-init: { condition: service_completed_successfully }
+      fake-komga: { condition: service_started }
+    environment:
+      SHELFHOLD_MAINTENANCE_WINDOW_START: "00:00"
+      SHELFHOLD_MAINTENANCE_WINDOW_END: "23:59"
+      # the journeys drive the e-reader routes (kosync) of a member's device token over the
+      # stack's own loopback: the documented switch for a trusted network without TLS
+      SHELFHOLD_DEVICE_ALLOW_PLAIN_HTTP: "true"
+    volumes:
+      - library:/library
+      - native:/library/native
+
+volumes:
+  library:
+  native:

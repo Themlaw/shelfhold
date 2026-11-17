@@ -21,6 +21,7 @@ PROJECT = os.environ.get("SHELFHOLD_E2E_PROJECT", "shelfhold-e2e-journey")
 KAVITA_URL = "http://127.0.0.1:5000"
 SUWAYOMI_URL = "http://127.0.0.1:4567"
 SABLIER_URL = "http://127.0.0.1:10000"
+KOMGA_URL = "http://127.0.0.1:25600"
 KAVITA_USER = "shelfhold"
 KAVITA_PASSWORD = "synthetic-kavita-password"  # noqa: S105 - the simulated server's own
 SUWAYOMI_SECRET = "shelfhold:synthetic-test-password"  # noqa: S105
@@ -169,6 +170,9 @@ class Journey:
 
     def suwayomi(self) -> dict[str, object]:
         return self.fake("suwayomi", SUWAYOMI_URL + "/_fake/state")
+
+    def komga(self) -> dict[str, object]:
+        return self.fake("komga", KOMGA_URL + "/_fake/state")
 
     def sablier(self) -> dict[str, list[dict[str, object]]]:
         return self.fake("sablier", SABLIER_URL + "/_fake/state")  # type: ignore[return-value]
