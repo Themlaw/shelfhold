@@ -150,23 +150,26 @@ class Outbox:
         the others waiting; the lease outlasts the whole batch."""
         now = self._clock.now()
         with write_transaction(self._engine) as connection:
-            candidates = connection.execute(
-                sa.select(_outbox.c.id, _outbox.c.subscription_id, _outbox.c.event_id,
-                          _outbox.c.schema_version, _outbox.c.attempts)
+            order = (_outbox.c.next_try_at, _outbox.c.event_id, _outbox.c.schema_version)
+            ranked = (
+                sa.select(
+                    _outbox.c.id, _outbox.c.subscription_id, _outbox.c.event_id,
+                    _outbox.c.schema_version, _outbox.c.attempts, _outbox.c.next_try_at,
+                    sa.func.row_number().over(
+                        partition_by=_outbox.c.subscription_id, order_by=order
+                    ).label("rank"),
+                )
                 .join(_subscription, _subscription.c.id == _outbox.c.subscription_id)
                 .where(_outbox.c.status == "pending", _outbox.c.next_try_at <= now,
                        _subscription.c.enabled.is_(True))
-                .order_by(_outbox.c.next_try_at, _outbox.c.event_id, _outbox.c.schema_version)
-                .limit(limit * 8)
-            ).all()  # fmt: skip
-            rows: list[Any] = []
-            taken: dict[str, int] = {}
-            for row in candidates:
-                if len(rows) >= limit:
-                    break
-                if taken.get(row.subscription_id, 0) < PER_SUBSCRIPTION:
-                    taken[row.subscription_id] = taken.get(row.subscription_id, 0) + 1
-                    rows.append(row)
+                .subquery()
+            )  # fmt: skip
+            rows = connection.execute(
+                sa.select(ranked)
+                .where(ranked.c.rank <= PER_SUBSCRIPTION)
+                .order_by(ranked.c.next_try_at, ranked.c.event_id, ranked.c.schema_version)
+                .limit(limit)
+            ).all()
             for row in rows:
                 connection.execute(
                     sa.update(_outbox).where(_outbox.c.id == row.id).values(

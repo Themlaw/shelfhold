@@ -42,7 +42,12 @@ from shelfhold.infrastructure.fetcher.lan import normalize_host
 from shelfhold.infrastructure.secrets import SecretVault
 from shelfhold.integrations.webhooks.catalogue import WEBHOOK_EVENTS, Catalogue
 from shelfhold.integrations.webhooks.outbox import BATCH, LEASE, MAX_ATTEMPTS, Due, Outbox
-from shelfhold.integrations.webhooks.subscriptions import Opened, SubscriptionStore
+from shelfhold.integrations.webhooks.subscriptions import (
+    Opened,
+    SubscriptionStore,
+    SubscriptionUnreadable,
+    is_loopback,
+)
 
 __all__ = [
     "MAX_ATTEMPTS",
@@ -121,7 +126,11 @@ class Deliverer:
                     connection, row.event_id, as_user=opened.subscription.created_by,
                     steps=self._steps, require_admin=True,
                 )  # fmt: skip
-        except Exception:  # the database, the keyring: ours, not the receiver's
+        except SubscriptionUnreadable:  # the sealed document: each try counts, up to the ceiling
+            log.warning("webhook.subscription_unreadable")
+            self._retry(row, report, status=None, error="subscription_unreadable")
+            return
+        except Exception:  # the database: ours, not the receiver's
             log.warning("webhook.subscription_unreadable")
             self._outbox.release(row)  # the attempt is not counted: a long outage kills nothing
             return
@@ -148,6 +157,10 @@ class Deliverer:
             "X-Shelfhold-Delivery": row.id,  # stable across attempts: the receiver's dedupe key
             "X-Shelfhold-Schema-Version": str(row.schema_version),
         }
+        if any(is_loopback(ipaddress.ip_address(a)) for a in opened.subscription.private_addresses):
+            report.refused += 1  # written before the rule that keeps the loopback out
+            self._retry(row, report, status=None, error="ssrf.blocked")
+            return
         fetcher = self._fetcher(opened)
         try:
             response = await fetcher.post(opened.url, content=body, headers=headers)

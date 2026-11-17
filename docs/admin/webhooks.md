@@ -19,7 +19,8 @@ Un webhook envoie les événements d'exploitation de Shelfhold (un chapitre rang
 - Les adresses privées, locales ou de métadonnées de nuage (la boucle locale, les plages `10.x` et `192.168.x`, la plage « lien local » des services de métadonnées…) sont refusées.
   Pour un serveur de **votre** réseau, dites-le explicitement avec `"allow_private": true` : c'est alors cet hôte et ce port
   exactement, avec les adresses qu'ils avaient ce jour-là (un enregistrement DNS qui bouge vers une autre machine est refusé).
-  L'adresse de métadonnées de nuage reste refusée quoi que vous autorisiez.
+  L'adresse de métadonnées de nuage reste refusée quoi que vous autorisiez, **et la boucle locale aussi** : `allow_private` ouvre le
+  réseau de la maison, jamais l'hôte de Shelfhold lui-même (un service local, l'interface d'un autre conteneur).
 - Les redirections ne sont jamais suivies : une réponse 3xx est un envoi manqué.
 - Seul l'hôte est montré par la suite : le chemin d'un webhook est souvent un jeton.
 
@@ -41,6 +42,10 @@ montre au rôle « intégration » : aucun événement privé n'en part.
 
 Les envois en attente sont des lignes de la base : un arrêt brutal du serveur n'en perd aucun. Un envoi manqué est repris au
 bout de 30 s, puis 60 s, 120 s… (jusqu'à 6 h), huit fois au plus ; passé cela il est abandonné. Une réponse 2xx règle l'envoi.
+
+Si l'adresse scellée d'un webhook ne peut plus être ouverte (une clé retirée, une ligne modifiée), chaque tentative compte et l'envoi
+s'arrête au plafond comme les autres ; la page Santé l'indique (`webhook.secret_unreadable`) avec la marche à suivre : supprimer
+le webhook et le recréer. Une panne de la base, elle, ne compte pas.
 
 ## Versions
 

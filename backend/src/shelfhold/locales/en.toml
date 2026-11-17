@@ -2817,6 +2817,11 @@
     action = "Give a public https address. For a server on your network, allow it explicitly (host and port)."
     cause = "The address is malformed, does not answer, or leads to a private network you did not allow. Cloud metadata addresses are always refused."
 
+  [errors."webhook.secret_unreadable"]
+    title = "The address of this webhook can no longer be read."
+    action = "Delete this webhook and create it again: a new secret is given once. If a key was removed, restore the keyring."
+    cause = "The sealed document that holds the address and the secret could not be opened: the key is gone or the row was altered. Nothing can be sent, and the tries stop at the ceiling."
+
   [errors."webhook.event_types"]
     title = "These event types are not available."
     action = "Pick one or more types from the closed list offered."

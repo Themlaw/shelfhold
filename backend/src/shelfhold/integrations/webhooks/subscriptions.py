@@ -44,9 +44,11 @@ __all__ = [
     "Opened",
     "Subscription",
     "SubscriptionStore",
+    "SubscriptionUnreadable",
     "Target",
     "WebhookRefused",
     "check_target",
+    "is_loopback",
 ]
 
 MAX_URL_LENGTH: Final = 2000
@@ -79,6 +81,12 @@ class Target:
         return f"{host}:{self.port}"
 
 
+def is_loopback(address: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
+    """127.0.0.0/8 and ::1, however written (an IPv4-mapped form included)."""
+    mapped = getattr(address, "ipv4_mapped", None)
+    return bool(address.is_loopback or (mapped is not None and mapped.is_loopback))
+
+
 async def check_target(url: str, *, allow_private: bool, resolver: Resolver) -> Target:
     """The verdict on a webhook address. Raises `WebhookRefused` for what is wrong with the
     address itself, `SsrfBlocked` (or another `FetchError`) for where it leads."""
@@ -107,6 +115,8 @@ async def check_target(url: str, *, allow_private: bool, resolver: Resolver) -> 
         except InvalidLanTarget:
             raise WebhookRefused("private_target_refused") from None
         declared = lan.addresses(host, port) or frozenset()
+        if any(is_loopback(a) for a in declared):
+            raise WebhookRefused("private_target_refused")  # this host is not the house's network
         private = any(block_reason(a) is not None for a in declared)
         if private:
             addresses = sorted(declared, key=str)
@@ -119,6 +129,11 @@ async def check_target(url: str, *, allow_private: bool, resolver: Resolver) -> 
         if parts.scheme != "https":
             raise WebhookRefused("https_required")
     return Target(parts.scheme, host, port, private, tuple(str(a) for a in addresses))
+
+
+class SubscriptionUnreadable(Exception):
+    """The sealed document of a subscription cannot be opened (a key that is gone, a row that was
+    altered). Carries no detail: nothing of the document may leave through a message."""
 
 
 @dataclass(frozen=True)
@@ -223,10 +238,14 @@ class SubscriptionStore:
             with read_transaction(engine) as connection:
                 return self.open(connection, subscription_id)
         row = engine.execute(sa.select(_table).where(_table.c.id == subscription_id)).one()
-        document = json.loads(self._vault.open_row(engine, _TABLE, subscription_id))
-        register_secret_value(document["secret"])
-        _register_url(document["url"])
-        return Opened(_view(row), document["url"], document["secret"])
+        try:
+            document = json.loads(self._vault.open_row(engine, _TABLE, subscription_id))
+            url, secret = str(document["url"]), str(document["secret"])
+        except Exception:  # the envelope, the key, the document: nothing of it is quoted
+            raise SubscriptionUnreadable from None
+        register_secret_value(secret)
+        _register_url(url)
+        return Opened(_view(row), url, secret)
 
 
 def _gone() -> Subscription:  # pragma: no cover - the row was just written

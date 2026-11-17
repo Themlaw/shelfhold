@@ -191,6 +191,7 @@ class HealthPageOut(BaseModel):
     page_map_warnings: list[
         dict[str, Any]
     ]  # M4 L50 and L53: chapters of a block not relayed to Kavita, chapters set aside for a page
+    unreadable_webhooks: list[dict[str, Any]]  # M4 L24: a sealed address that cannot be opened
     kosync_unknown: list[dict[str, Any]]  # M4 L47: what the e-readers sent that was not taken
     backup: dict[str, Any]
     stats: dict[str, Any]

@@ -426,6 +426,7 @@
   "health_page.backup": "Backup",
   "health_page.backup_last": "Last successful backup: {at}.",
   "health_page.backup_never": "No successful backup yet.",
+  "health_page.unreadable_webhooks": "Webhooks whose address can no longer be read",
   "health_page.kavita_audit": "Kavita account audit",
   "health_page.kavita_audit_none": "No Kavita account sees more than what is allowed.",
   "health_page.library_types": "Library types changed in Kavita",

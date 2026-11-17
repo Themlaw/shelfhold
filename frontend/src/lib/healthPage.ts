@@ -42,6 +42,7 @@ export interface HealthView {
   withdrawalPending: { count: number; action: HealthAction | null };
   kavitaAudit: Entry[];
   libraryTypeChanges: Entry[];
+  unreadableWebhooks: Entry[];
   relay: RelayEntry[];
   jurisdiction: { country: string; confirmed: boolean; action: HealthAction | null } | null;
   stats: { waitingStates: number; unitsExported: number; arrivalsPending: number };
@@ -122,6 +123,7 @@ export function healthView(page: HealthPageOut): HealthView {
     },
     kavitaAudit: entries(page.kavita_audit),
     libraryTypeChanges: entries(page.library_type_changes),
+    unreadableWebhooks: entries(page.unreadable_webhooks),
     relay: relay(page),
     jurisdiction:
       jurisdiction !== null && str(jurisdiction.country) !== null

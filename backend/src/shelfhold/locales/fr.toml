@@ -2815,6 +2815,11 @@ title = "Cette adresse ne peut pas recevoir de webhook."
 action = "Donnez une adresse https publique. Pour un serveur de votre réseau, autorisez-le explicitement (hôte et port)."
 cause = "L'adresse est mal formée, ne répond pas, ou mène à un réseau privé que vous n'avez pas autorisé. Les adresses de métadonnées de nuage sont toujours refusées."
 
+[errors."webhook.secret_unreadable"]
+title = "L'adresse de ce webhook ne peut plus être lue."
+action = "Supprimez ce webhook puis recréez-le : un nouveau secret sera rendu une seule fois. Si une clé a été retirée, restaurez le trousseau."
+cause = "Le document scellé qui garde l'adresse et le secret n'a pas pu être ouvert : la clé a disparu ou la ligne a été modifiée. Aucun envoi n'est possible, et les tentatives s'arrêtent au plafond."
+
 [errors."webhook.event_types"]
 title = "Ces types d'événements ne sont pas disponibles."
 action = "Choisissez un ou plusieurs types dans la liste fermée proposée."

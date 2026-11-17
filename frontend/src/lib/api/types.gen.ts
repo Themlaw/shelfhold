@@ -2101,6 +2101,12 @@ export type HealthPageOut = {
         [key: string]: unknown;
     };
     /**
+     * Unreadable Webhooks
+     */
+    unreadable_webhooks: Array<{
+        [key: string]: unknown;
+    }>;
+    /**
      * Withdrawal Pending
      */
     withdrawal_pending: {

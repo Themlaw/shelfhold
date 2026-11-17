@@ -3423,6 +3423,14 @@
             "title": "Stats",
             "type": "object"
           },
+          "unreadable_webhooks": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Unreadable Webhooks",
+            "type": "array"
+          },
           "withdrawal_pending": {
             "additionalProperties": true,
             "title": "Withdrawal Pending",
@@ -3439,6 +3447,7 @@
           "library_type_changes",
           "jurisdiction",
           "page_map_warnings",
+          "unreadable_webhooks",
           "kosync_unknown",
           "backup",
           "stats"
@@ -30904,6 +30913,10 @@
     "/api/v1/problems/webhook.not-found": {
       "code": "webhook.not_found",
       "status": 404
+    },
+    "/api/v1/problems/webhook.secret-unreadable": {
+      "code": "webhook.secret_unreadable",
+      "status": 503
     },
     "/api/v1/problems/webhook.url-refused": {
       "code": "webhook.url_refused",

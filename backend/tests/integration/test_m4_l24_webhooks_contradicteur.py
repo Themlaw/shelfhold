@@ -26,11 +26,6 @@ def api(monkeypatch: pytest.MonkeyPatch, settings: Settings) -> Iterator[AuthEnv
 
 
 @pytest.mark.req("EF-INT-005", "ENF-SEC-005")
-@pytest.mark.xfail(
-    strict=True,
-    reason="#335 contradicteur: the 201 that carries the signing secret has no "
-    "`Cache-Control: no-store` (device tokens, login and passkeys set it)",
-)
 def test_the_creation_answer_that_carries_the_secret_is_not_stored(api: AuthEnv) -> None:
     made = api.client.post(
         "/api/v1/webhooks",
@@ -42,12 +37,6 @@ def test_the_creation_answer_that_carries_the_secret_is_not_stored(api: AuthEnv)
 
 
 @pytest.mark.req("EF-INT-005")
-@pytest.mark.xfail(
-    strict=True,
-    reason="#335 contradicteur: `claim` reads only `limit * 8` candidates; past 160 due rows, "
-    "one address fills them all and the other subscriptions wait (the 5-per-address cap "
-    "does not hold the promise that a dead receiver does not hold the rest)",
-)
 def test_a_backlog_on_one_address_does_not_starve_another(settings: Settings) -> None:
     with webhook_env(settings) as env:
         noisy, _ = env.subscribe(types=("unit.stored",))

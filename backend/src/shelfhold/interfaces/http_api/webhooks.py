@@ -77,7 +77,7 @@ def build_webhooks_router(admin: Callable[[], WebhookAdmin]) -> APIRouter:
         return WebhookList(items=[_out(s) for s in admin().listing()])
 
     @router.post("", status_code=201)
-    def create_webhook(body: WebhookIn, principal: _Manager) -> WebhookCreated:
+    def create_webhook(body: WebhookIn, principal: _Manager, response: Response) -> WebhookCreated:
         try:
             created, secret = admin().create(
                 principal, url=body.url, event_types=body.event_types,
@@ -89,6 +89,7 @@ def build_webhooks_router(admin: Callable[[], WebhookAdmin]) -> APIRouter:
             raise ProblemError(
                 "webhook.url_refused", extensions={"reason": refused.reason}
             ) from None
+        response.headers["Cache-Control"] = "no-store"  # the one answer that carries the secret
         return WebhookCreated(**_out(created).model_dump(), secret=secret)
 
     @router.get("/{webhook_id}")

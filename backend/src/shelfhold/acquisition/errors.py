@@ -108,5 +108,6 @@ CODES: tuple[ErrorCode, ...] = (
     # may not see it, the refusal of the door; for the administrator, one that is not there
     ErrorCode("webhook.not_found", 404, "admin"),
     ErrorCode("webhook.url_refused", 422, "admin"),  # an address that is wrong or leads somewhere
+    ErrorCode("webhook.secret_unreadable", 503, "admin"),  # the sealed address cannot be opened
     ErrorCode("webhook.event_types", 422, "admin"),  # a type outside the closed list, or none
 )
