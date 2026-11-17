@@ -21,6 +21,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from httpshell import serve  # noqa: E402
 
 fake = FakeSuwayomi(auth_mode=os.environ.get("FAKE_SUWAYOMI_AUTH", "basic_auth"))
+# What `settings { localSourcePath }` answers (EF-EXP-010): unset, the field is null (unreadable),
+# and the guard refuses every native folder; "" is a server without a local source folder.
+if "FAKE_SUWAYOMI_LOCAL_SOURCE" in os.environ:
+    fake.state["local_source_path"] = os.environ["FAKE_SUWAYOMI_LOCAL_SOURCE"]
 # The series starts with its first chapter only; the test publishes the next one upstream.
 _alpha = fake.state["mangas"][0]["chapters"]
 unpublished = [_alpha.pop()] if len(_alpha) > 1 else []

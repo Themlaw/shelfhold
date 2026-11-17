@@ -1,0 +1,11 @@
+{
+  "_comment": "First-run set-up of a throwaway Komga: the administrator is created through the claim of a fresh install, the API key through the API; nothing is edited by hand. Values are synthetic and live as long as the job.",
+  "admin": {
+    "email": "nightly@example.org",
+    "password": "nightly-synthetic-password-0040"
+  },
+  "key_comment": "shelfhold-nightly",
+  "library_root": "/library",
+  "ready_timeout_s": 240,
+  "scan_timeout_s": 180
+}

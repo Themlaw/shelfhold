@@ -15,6 +15,9 @@ import pytest
 
 from journey import KAVITA_URL, PATH_MAP, SUWAYOMI_URL, Journey, wait_for
 
+# what the administrator types on the journey stack: Kavita's media folder is the library volume
+KAVITA_PATH_MAP = '[{"local": "/library", "remote": "/library", "mode": "rw"}]'
+
 SHELFHOLD_TOML = f"""\
 schema_version = 1
 
@@ -43,8 +46,12 @@ subpath = "manga"
 """
 
 
-def install_by_commands(j: Journey) -> None:
-    """target add, source add, shelf create: what the administrator types, in that order."""
+def install_by_commands(
+    j: Journey, *, path_map: str = KAVITA_PATH_MAP, subpath: str | None = "manga"
+) -> None:
+    """target add, source add, shelf create: what the administrator types, in that order.
+    `path_map`/`subpath`: the layout the stack's folders allow (the M4 journeys give Kavita a
+    root of its own under the library, so the native folder beside it breaks no rule)."""
     j.secrets()
     refused = j.shelfhold(
         "target", "add", "kavita", "--url", KAVITA_URL, "--user", "shelfhold",
@@ -55,14 +62,16 @@ def install_by_commands(j: Journey) -> None:
     added = j.shelfhold(
         "target", "add", "kavita", "--url", KAVITA_URL, "--user", "shelfhold",
         "--password-file", "/tmp/kavita.pw", "--accept-admin-risk",
-        "--path-map", '[{"local": "/library", "remote": "/library", "mode": "rw"}]',
+        "--path-map", path_map,
     )  # fmt: skip
     assert added.code == 0, added.err
     source = j.shelfhold("source", "add", "suwayomi", "--url", SUWAYOMI_URL,
                          "--secret-file", "/tmp/suwayomi.secret")  # fmt: skip
     assert source.code == 0, source.err
-    shelf = j.shelfhold("shelf", "create", "Manga", "--max-age", "18+", "--target", "kavita",
-                        "--subpath", "manga")  # fmt: skip
+    create = ["shelf", "create", "Manga", "--max-age", "18+", "--target", "kavita"]
+    if subpath:
+        create += ["--subpath", subpath]
+    shelf = j.shelfhold(*create)
     assert shelf.code == 0, shelf.err
 
 

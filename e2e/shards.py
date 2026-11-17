@@ -54,4 +54,11 @@ SHARDS: dict[str, tuple[str, ...]] = {
     "m3-detach": ("test_m3_detach_journey",),
     "m3-unreachable": ("test_m3_kavita_unreachable_action_journey",),
     "m3-themes": ("test_key_screens_snapshot_per_theme",),
+    # M4 (L44): one journey per runner. The two marked xfail (progress both ways, the rename
+    # that carries) stay red until the switch `shelf_destination.sync_progress` has a write
+    # surface: strict xfail fails the shard the day they turn green, so the marker cannot stay.
+    "m4-fanout": ("test_m4_journey_manga_shelf_kavita_and_native_folder",),
+    "m4-progress": ("test_m4_journey_progress_both_ways",),
+    "m4-rename": ("test_m4_journey_rename_keeps_each_member_progress",),
+    "m4-hash": ("test_m4_journey_hash_vectors_green",),
 }

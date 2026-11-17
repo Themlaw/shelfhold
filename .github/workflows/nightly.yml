@@ -76,6 +76,39 @@ jobs:
           KAVITA_IMAGE: ${{ matrix.image }}
         run: uv run --locked pytest -m nightly tests/nightly/test_kavita_nightly.py -v --no-cov
 
+  komga:
+    name: komga (${{ matrix.label }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # the pinned version (docs/dependencies.md)
+          - label: pinned
+            image: docker.io/gotson/komga:1.12.0
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          version: "0.12.x"
+          enable-cache: false
+      - name: Install dependencies
+        run: uv sync --project backend --locked
+      - name: Pull the official Komga image
+        env:
+          KOMGA_IMAGE: ${{ matrix.image }}
+        run: docker pull "$KOMGA_IMAGE"
+      - name: Komga nightly tests
+        working-directory: backend
+        env:
+          KOMGA_IMAGE: ${{ matrix.image }}
+        run: uv run --locked pytest -m nightly tests/nightly/test_komga_nightly.py -v --no-cov
+
   suwayomi-extension:
     # The JDK of the build is the one the dependency verification was generated with (21, see the
     # README of the extension) AND the one the workflow used until now (17): both are built, so a
