@@ -58,7 +58,6 @@ from shelfhold.acquisition.application.ranges import (
     RangeTickets,
     RangeUnit,
 )
-from shelfhold.acquisition.application.read_markers import ReadableMarker, readable_markers
 from shelfhold.acquisition.application.read_state_push import (
     PushReport,
     ReadStateRemote,
@@ -186,7 +185,6 @@ __all__ = [
     "RangeTickets",
     "RangeUnit",
     "ReadStateRemote",
-    "ReadableMarker",
     "Receiver",
     "RemoteChapter",
     "RemoteRefused",
@@ -238,7 +236,6 @@ __all__ = [
     "present_in",
     "present_units_in",
     "push_read_state",
-    "readable_markers",
     "request_check_job",
     "series_key",
     "source_suggestion",

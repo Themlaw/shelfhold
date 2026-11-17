@@ -18,7 +18,7 @@ from datetime import UTC, datetime
 import pytest
 import sqlalchemy as sa
 
-from shelfhold.acquisition.public import readable_markers
+from shelfhold.acquisition.application.read_markers import readable_markers
 from shelfhold.catalog.public import removed_ids, window
 from shelfhold.headless import records
 from shelfhold.identity.public import reader_scope

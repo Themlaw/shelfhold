@@ -347,9 +347,7 @@ def test_m4_l43_no_exception_waits_for_a_milestone_that_is_over() -> None:
     redated with its reason. ENF-GOV-004 is the one left: its live part (the Codeberg account and
     secret) is the owner's, held by L41 (D-P1)."""
     root = TOOL.parents[1]
-    waiting = [
-        p["requirement"] for p in tr.load_partial(root) if p["milestone"] == "M4"
-    ] + [
+    waiting = [p["requirement"] for p in tr.load_partial(root) if p["milestone"] == "M4"] + [
         d["requirement"]
         for d in tr.load_deferred(root)
         if "M4" in d["reason"] and d["requirement"] != "ENF-GOV-004"
