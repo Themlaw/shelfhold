@@ -131,6 +131,10 @@ WHEN_CLOSED_AUDITED = {
     # identifier of the token, when one is made or ended; the empty body below is a 422 and an
     # unknown identifier a 404: no line
     "device_token.issue", "device_token.manage",
+    # M4 L24: a webhook: the service writes `webhook.subscribe` / `webhook.unsubscribe`, with the
+    # subscription, in the transaction that makes or removes it; the empty body below is a 422
+    # and an unknown identifier a 404: no line
+    "webhook.manage",
 }  # fmt: skip
 # any role may do it on its own account (the guard names KNOWN_ROLES): the role loop skips it
 # M4 L12: an adult handles their own Kavita key (a member's session is not refused by role: the

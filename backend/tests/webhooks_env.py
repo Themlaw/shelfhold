@@ -69,7 +69,10 @@ class WebhookEnv:
     def add_user(self, role: str, *, ceiling: int | None = None) -> str:
         user_id = _new_id()
         values: dict[str, Any] = {
-            "id": user_id, "username": f"u-{user_id.lower()}", "role": role, "can_rate": False,
+            "id": user_id,
+            "username": f"u-{user_id.lower()}",
+            "role": role,
+            "can_rate": role == "admin",
         }
         if role == "child":
             values["max_age_rating"] = 10 if ceiling is None else ceiling
@@ -104,9 +107,12 @@ class WebhookEnv:
         with write_transaction(self.engine) as connection:
             result = connection.execute(
                 sa.insert(platform.event).values(
-                    type=event_type, schema_version=schema_version,
+                    type=event_type,
+                    schema_version=schema_version,
                     payload=payload if payload is not None else {"count": 1},
-                    occurred_at=self.clock.now(), actor_id=actor_id, visibility=visibility,
+                    occurred_at=self.clock.now(),
+                    actor_id=actor_id,
+                    visibility=visibility,
                 )
             )
             return int(result.inserted_primary_key[0])

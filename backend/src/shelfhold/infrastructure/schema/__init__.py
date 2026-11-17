@@ -11,6 +11,7 @@ from shelfhold.infrastructure.schema import (
     reading,
     replica,
     storage,
+    webhooks,
 )
 from shelfhold.infrastructure.schema._base import UtcDateTime, metadata
 
@@ -27,4 +28,5 @@ __all__ = [
     "reading",
     "replica",
     "storage",
+    "webhooks",
 ]

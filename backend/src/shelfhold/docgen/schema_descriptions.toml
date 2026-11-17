@@ -1467,3 +1467,31 @@ day = "The UTC day."
 source_key = "Source the requests were made for."
 requests = "Requests that left the machine that day (after the network guard)."
 bytes_in = "Bytes received that day."
+
+[tables.webhook_subscription]
+description = "A webhook an administrator registered: its address and its signing secret sealed in one document, the host shown, the events it asked for."
+[tables.webhook_subscription.columns]
+id = "ULID; the row identifier the sealed envelope is bound to."
+created_by = "The profile whose view the payload is read through; empty when they are gone (nothing is then sent)."
+url_host = "Host of the address, the only part ever shown."
+event_types = "The event types (a closed list) it receives."
+private_target = "`host:port` the administrator allowed to be a private address, or empty."
+private_addresses = "The addresses that target had when it was allowed; a record that moves is refused."
+enabled = "Whether the outbox makes rows for it."
+last_event_id = "The last event it was offered; moved in the same transaction as the rows it made."
+created_at = "When it was registered (UTC)."
+
+[tables.webhook_outbox]
+description = "What is still to be sent to a webhook: one row per subscription, event and version of the event's shape."
+[tables.webhook_outbox.columns]
+id = "ULID; the identity of the delivery, sent as `X-Shelfhold-Delivery` so a receiver can drop a second copy."
+subscription_id = "The subscription it is for."
+event_id = "The event, read back at delivery through the activity view."
+schema_version = "Version of the event's shape to send (the previous one too, during a deprecation)."
+status = "`pending`, `delivered`, or `dead` after the last attempt."
+attempts = "Attempts made, the one in flight included."
+next_try_at = "When it is next due (UTC); the delay doubles with each attempt."
+last_status = "HTTP status of the last attempt, if there was an answer."
+last_error = "Closed code of the last failure, never a message or an address."
+delivered_at = "When the receiver answered 2xx (UTC)."
+created_at = "When the row was made (UTC)."

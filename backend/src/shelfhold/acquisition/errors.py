@@ -104,4 +104,9 @@ CODES: tuple[ErrorCode, ...] = (
     ErrorCode("source_migration.stale", 409, "admin"),  # not the table shown, or the Edition moved
     ErrorCode("source_migration.held_aside", 409, "admin", event=True),  # a release with no place
     ErrorCode("source_migration.invalid", 422, "admin"),  # a line, a target or a listing refused
+    # EF-INT-005 (M4 L24): webhooks. The answer for a subscription that exists is, for anyone who
+    # may not see it, the refusal of the door; for the administrator, one that is not there
+    ErrorCode("webhook.not_found", 404, "admin"),
+    ErrorCode("webhook.url_refused", 422, "admin"),  # an address that is wrong or leads somewhere
+    ErrorCode("webhook.event_types", 422, "admin"),  # a type outside the closed list, or none
 )

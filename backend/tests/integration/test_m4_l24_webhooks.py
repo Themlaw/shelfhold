@@ -13,7 +13,7 @@ import asyncio
 import hashlib
 import hmac
 import json
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import httpx2
@@ -31,13 +31,13 @@ from shelfhold.integrations.webhooks import (
     CatalogueError,
     Deprecation,
     EventSpec,
-    WebhookUrlRefused,
+    WebhookRefused,
     check_target,
     pick,
     sign_body,
 )
 from tests.fakes_fetcher import FakeResolver
-from tests.webhooks_env import HOOK, HOST, NOW, PUBLIC, Killed, WebhookEnv, webhook_env
+from tests.webhooks_env import HOOK, HOST, NOW, PUBLIC, Killed, webhook_env
 
 CANARIES = ("/srv/synthetic-library/secret", "canary-host.invalid", "10.77.88.99", "Secret Title")
 
@@ -49,7 +49,7 @@ def _signature(request: httpx2.Request) -> tuple[str, str]:
     return parts["t"], parts["v1"]
 
 
-# -- the outbox, the signature, the schema version ------------------------------------------------
+# -- the outbox, the signature, the schema version -----------------------------------------------
 
 
 @pytest.mark.req("EF-INT-005")
@@ -72,7 +72,7 @@ def test_outbox_persisted_webhook_hmac_schema_version(settings: Settings) -> Non
         report = env.deliverer().run_once()
         assert report.delivered == 1
         [request] = env.recorder.requests
-        assert request.method == "POST" and request.url.host == HOST
+        assert request.method == "POST" and request.headers["host"] == HOST
         stamp, digest = _signature(request)
         expected = hmac.new(secret.encode(), f"{stamp}.".encode() + request.content, hashlib.sha256)
         assert hmac.compare_digest(digest, expected.hexdigest())
@@ -110,7 +110,9 @@ def test_failed_delivery_is_retried_with_exponential_delay_then_dead(settings: S
             assert row["attempts"] == attempt and report.delivered == 0
             if attempt < MAX_ATTEMPTS:
                 assert row["status"] == "pending" and row["last_status"] == 503
-                gap = row["next_try_at"].replace(tzinfo=NOW.tzinfo) - env.clock.now()
+                gap = (
+                    datetime.fromisoformat(row["next_try_at"]).replace(tzinfo=UTC) - env.clock.now()
+                )
                 delays.append(gap.total_seconds())
                 # not due yet: nothing is sent before the delay
                 before = len(env.recorder.requests)
@@ -192,7 +194,7 @@ def test_only_events_after_the_subscription_and_of_its_types(settings: Settings)
         assert [b["data"]["count"] for b in env.bodies()] == [3]
 
 
-# -- the SSRF guard ---------------------------------------------------------------------------------
+# -- the SSRF guard ------------------------------------------------------------------------------
 
 
 @pytest.mark.req("EF-INT-005", "ENF-SEC-001")
@@ -219,11 +221,14 @@ def test_only_events_after_the_subscription_and_of_its_types(settings: Settings)
 )
 def test_webhook_url_goes_through_ssrf_guard(settings: Settings, url: str) -> None:
     with webhook_env(settings) as env:
-        with pytest.raises((WebhookUrlRefused, SsrfBlocked)):
+        with pytest.raises((WebhookRefused, SsrfBlocked)):
             env.subscribe(url)
         assert env.recorder.requests == []
         with env.engine.connect() as connection:
-            assert connection.execute(sa.text("SELECT count(*) FROM webhook_subscription")).scalar() == 0
+            assert (
+                connection.execute(sa.text("SELECT count(*) FROM webhook_subscription")).scalar()
+                == 0
+            )
 
 
 @pytest.mark.req("EF-INT-005", "ENF-SEC-001")
@@ -237,7 +242,7 @@ def test_a_public_https_url_is_accepted_and_the_private_one_only_when_the_admin_
         sub, _ = env.subscribe("http://nas.example.lan:8080/hook", allow_private=True)
         assert sub.private_target == "nas.example.lan:8080"
         # the metadata service is never reachable, whatever the admin allows
-        with pytest.raises((WebhookUrlRefused, SsrfBlocked)):
+        with pytest.raises((WebhookRefused, SsrfBlocked)):
             env.subscribe("http://169.254.169.254/", allow_private=True)
         # allowing a private target is that host and that port, not the whole network
         env.resolver.table["other.example.lan"] = ["192.168.1.21"]
@@ -287,8 +292,13 @@ def test_a_private_target_keeps_its_declared_addresses(settings: Settings) -> No
 @pytest.mark.req("EF-INT-005", "ENF-SEC-001")
 @pytest.mark.parametrize("status", [301, 302, 303, 307, 308])
 @pytest.mark.parametrize(
-    "target", ["http://127.0.0.1/admin", "http://169.254.169.254/latest", "http://[::1]/x",
-               "http://inside.example.org/x"],
+    "target",
+    [
+        "http://127.0.0.1/admin",
+        "http://169.254.169.254/latest",
+        "http://[::1]/x",
+        "http://inside.example.org/x",
+    ],
 )
 def test_a_redirect_to_a_private_address_is_not_followed(
     settings: Settings, status: int, target: str
@@ -324,7 +334,7 @@ def test_a_redirect_never_carries_the_signature_elsewhere(settings: Settings) ->
             assert not request.content
 
 
-# -- the payload goes through activity_view ------------------------------------------------------------
+# -- the payload goes through activity_view ------------------------------------------------------
 
 
 @pytest.mark.req("EF-INT-005", "EF-USR-016")
@@ -378,7 +388,7 @@ def test_a_subscription_without_its_creator_sends_nothing(settings: Settings) ->
         assert env.recorder.requests == []
 
 
-# -- the schema version: upcast on read, double emission during a deprecation --------------------------
+# -- the schema version: upcast on read, double emission during a deprecation --------------------
 
 
 def _v1_to_v2(payload: dict[str, Any]) -> dict[str, Any]:
@@ -392,7 +402,9 @@ def _demo_catalogue(since: Any = NOW, window_days: int = 90) -> Catalogue:
                 type="unit.stored",
                 current=2,
                 render={1: pick("count", "status"), 2: pick("count", "state")},
-                deprecated={1: Deprecation(since=since, sunset=since + timedelta(days=window_days))},
+                deprecated={
+                    1: Deprecation(since=since, sunset=since + timedelta(days=window_days))
+                },
             )
         ]
     )
@@ -409,7 +421,10 @@ def test_deprecated_event_double_emitted(settings: Settings) -> None:
         env.deliverer().run_once()
         by_version = {b["schema_version"]: b["data"] for b in env.bodies()}
         assert by_version == {1: {"count": 1, "status": "ok"}, 2: {"count": 1, "state": "ok"}}
-        assert {r.headers["x-shelfhold-schema-version"] for r in env.recorder.requests} == {"1", "2"}
+        assert {r.headers["x-shelfhold-schema-version"] for r in env.recorder.requests} == {
+            "1",
+            "2",
+        }
         assert len({r.headers["x-shelfhold-delivery"] for r in env.recorder.requests}) == 2
         # after the sunset, only the current version is made
         env.clock.advance(days=91)
@@ -430,7 +445,9 @@ def test_double_emission_is_bounded() -> None:
                              {1: Deprecation(NOW, NOW + timedelta(days=30)),
                               2: Deprecation(NOW, NOW + timedelta(days=30))})])  # fmt: skip
     with pytest.raises(CatalogueError):  # a version that has no shape
-        Catalogue([EventSpec("a.b", 2, {2: pick()}, {1: Deprecation(NOW, NOW + timedelta(days=1))})])
+        Catalogue(
+            [EventSpec("a.b", 2, {2: pick()}, {1: Deprecation(NOW, NOW + timedelta(days=1))})]
+        )
     with pytest.raises(CatalogueError):  # the sunset is before the start
         Catalogue([EventSpec("a.b", 2, {1: pick(), 2: pick()},
                              {1: Deprecation(NOW, NOW - timedelta(days=1))})])  # fmt: skip
@@ -461,7 +478,10 @@ def test_event_upcast_for_each_retained_schema_version(settings: Settings) -> No
                 connection, 0, as_user=env.admin_id, current=3, steps=steps
             )
         assert [(e.stored_version, e.payload["count"]) for e in feed] == [
-            (1, 10), (2, 20), (3, 3), (3, 8),
+            (1, 10),
+            (2, 20),
+            (3, 3),
+            (3, 8),
         ]  # every retained version reaches the current shape; the unreadable one is skipped
         assert all("state" in e.payload for e in feed[:2])
         assert cursor == feed[-1].event_id
@@ -480,7 +500,7 @@ def test_a_row_of_a_later_release_does_not_stop_the_outbox(settings: Settings) -
         assert [b["data"]["count"] for b in env.bodies()] == [2]
 
 
-# -- the secret ------------------------------------------------------------------------------------------
+# -- the secret ----------------------------------------------------------------------------------
 
 
 @pytest.mark.req("EF-INT-005", "ENF-SEC-005")
@@ -531,7 +551,7 @@ def test_the_secret_is_bound_to_its_row(settings: Settings) -> None:
                 ),
                 {"a": row[0], "b": row[1], "c": row[2], "d": row[3], "i": two.id},
             )
-        with pytest.raises(Exception):  # noqa: B017, PT011  (an authentication failure)
+        with pytest.raises(Exception):  # noqa: B017  (an authentication failure)
             env.store.open(env.engine, two.id)
 
 
@@ -540,15 +560,16 @@ def test_the_catalogue_is_a_closed_list_and_a_type_outside_it_is_refused(
     settings: Settings,
 ) -> None:
     with webhook_env(settings) as env:
-        with pytest.raises(WebhookUrlRefused):
+        with pytest.raises(WebhookRefused):
             env.subscribe(types=("auth.passkey_registered",))  # a person's event: never exposed
-        with pytest.raises(WebhookUrlRefused):
+        with pytest.raises(WebhookRefused):
             env.subscribe(types=())
-        with pytest.raises(WebhookUrlRefused):
+        with pytest.raises(WebhookRefused):
             env.subscribe(types=("plugin.someone.thing",))
         assert "auth.passkey_registered" not in {s.type for s in WEBHOOK_EVENTS.specs()}
 
 
+@pytest.mark.req("EF-INT-005", "ENF-SEC-001")
 def test_check_target_is_a_coroutine_that_resolves_through_the_given_resolver() -> None:
     resolver = FakeResolver({HOST: [PUBLIC]})
     target = asyncio.run(check_target(HOOK, allow_private=False, resolver=resolver))

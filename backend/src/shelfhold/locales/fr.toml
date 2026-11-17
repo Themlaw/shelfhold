@@ -2804,3 +2804,18 @@ cause = "La nouvelle source a publié des chapitres dont le numéro ne se place 
 title = "Cette demande de migration n'est pas recevable."
 action = "Vérifiez la série de la nouvelle source, la source à remplacer et les numéros que vous avez saisis."
 cause = "La nouvelle source ne liste aucun chapitre, la source à remplacer n'est pas une source de cette série, ou une ligne ou un numéro cible n'existe pas."
+
+[errors."webhook.not_found"]
+title = "Ce webhook n'existe pas."
+action = "Relisez la liste des webhooks et reprenez l'identifiant."
+cause = "Aucun webhook n'a cet identifiant, ou il a été supprimé."
+
+[errors."webhook.url_refused"]
+title = "Cette adresse ne peut pas recevoir de webhook."
+action = "Donnez une adresse https publique. Pour un serveur de votre réseau, autorisez-le explicitement (hôte et port)."
+cause = "L'adresse est mal formée, ne répond pas, ou mène à un réseau privé que vous n'avez pas autorisé. Les adresses de métadonnées de nuage sont toujours refusées."
+
+[errors."webhook.event_types"]
+title = "Ces types d'événements ne sont pas disponibles."
+action = "Choisissez un ou plusieurs types dans la liste fermée proposée."
+cause = "La liste est vide, trop longue, ou nomme un événement que les webhooks n'envoient pas."

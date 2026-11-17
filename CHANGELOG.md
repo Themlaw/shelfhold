@@ -14,12 +14,13 @@ Format : [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/). Versionnement
 - **Étagères réservées lues partout (L39, D-P3)** : une Œuvre n'est visible pour un enfant que si au moins une étagère qui la porte lui est ouverte (`allowed_profiles` vide ou la nommant), sur le catalogue, la recherche, l'OPDS, le kosync, les collections et les relations, par une seule fonction.
 - **Destination de notification d'un adulte (L39)** : chaque admin ou membre peut sceller une destination Apprise à lui (action réservée, jamais une clé) ; les titres de ses notices vont seulement là, jamais dans le canal partagé. Un enfant n'en a pas.
 - **`notify_mode` lu (L39)** : résumé ou immédiat ; un enfant n'a jamais de notification immédiate.
+- **Webhooks signés et outbox persistée (L24)** : l'administrateur enregistre une adresse https et reçoit, une seule fois, le secret qui signe chaque envoi (`X-Shelfhold-Signature: t=…,v1=…`). Les événements passent par la vue d'activité du rôle « intégration » (jamais un titre, jamais un événement privé), partent par le Fetcher et sa garde réseau, vérifiée de nouveau à chaque envoi (une adresse privée ou de métadonnées est refusée, une redirection n'est jamais suivie). Les envois en attente sont en base : un arrêt brutal n'en perd aucun, la reprise est exponentielle et chaque envoi garde la même identité. Pendant la dépréciation d'une forme d'événement, l'ancienne et la nouvelle version sont envoyées, 180 jours au plus. Voir `docs/admin/webhooks.md`.
 
 ### Modifié
 
 - Une Œuvre ou une Édition rangée sur aucune étagère n'est plus visible pour un enfant (un adulte la voit toujours).
 
-Migration : oui (0091, 0092, 0094 et 0095)
+Migration : oui (0091, 0092, 0094, 0095 et 0096)
 
 ## 1.1.0-rc.2 - 2026-11-16
 

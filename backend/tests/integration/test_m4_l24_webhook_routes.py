@@ -21,6 +21,7 @@ from shelfhold.infrastructure.db import create_db_engine
 from shelfhold.infrastructure.ids import new_ulid
 from tests.auth_env import ADMIN, CSRF_COOKIE, CSRF_HEADER, PASSWORD, AuthEnv, auth_env, db_rows
 from tests.fakes_fetcher import FakeResolver, Recorder
+from tests.integration.test_child_surfaces import _routes
 
 BASE = "/api/v1/webhooks"
 PUBLIC = "93.184.216.34"
@@ -129,14 +130,14 @@ def test_every_webhook_route_is_declared_reserved_or_admin_only(api: AuthEnv) ->
 
     assert "webhook.manage" in RESERVED_ACTIONS
     routes = {
-        (m, r.path)  # type: ignore[attr-defined]
-        for r in api.app.routes
-        if getattr(r, "path", "").startswith(BASE)
-        for m in getattr(r, "methods", ())
-        if m not in ("HEAD", "OPTIONS")
+        tuple(entry.split(" ", 1)) for entry in _routes(api.app) if f" {BASE}" in entry
     }
-    assert routes == {("GET", BASE), ("POST", BASE), ("GET", f"{BASE}/{{webhook_id}}"),
-                      ("DELETE", f"{BASE}/{{webhook_id}}")}  # fmt: skip
+    assert routes == {
+        ("GET", BASE),
+        ("POST", BASE),
+        ("GET", f"{BASE}/{{webhook_id}}"),
+        ("DELETE", f"{BASE}/{{webhook_id}}"),
+    }  # fmt: skip
 
 
 @pytest.mark.req("EF-INT-005", "ENF-SEC-005")
@@ -160,9 +161,9 @@ def test_webhook_secret_never_returned_after_creation(api: AuthEnv) -> None:
     assert "/in/one" not in seen[0].text  # the path of the address may be a token: host only
     assert seen[2].json()["secret"] != secret  # each subscription its own
     # nor in the description of the API
-    schema = json.dumps(api.client.get("/openapi.json").json())
-    assert '"secret"' in schema  # the creation answer names it...
-    spec = api.client.get("/openapi.json").json()["components"]["schemas"]
+    document = api.app.openapi()
+    assert '"secret"' in json.dumps(document)  # the creation answer names it...
+    spec = document["components"]["schemas"]
     for name, model in spec.items():
         if "webhook" in name.lower() and "created" not in name.lower():
             assert "secret" not in model.get("properties", {}), name  # ...no other model does
@@ -230,3 +231,20 @@ def test_the_event_types_are_a_closed_list(api: AuthEnv) -> None:
         answer = _send(api, api.client, "POST", BASE, {"url": HOOK, "event_types": types})
         assert answer.status_code in (400, 422), types
     assert _count(api) == 0
+
+
+@pytest.mark.req("EF-INT-005")
+def test_the_api_description_documents_the_webhooks(api: AuthEnv) -> None:
+    from shelfhold.integrations.webhooks import WEBHOOK_EVENTS
+
+    docs = api.app.openapi()["x-webhooks"]
+    assert set(docs["events"]) == WEBHOOK_EVENTS.types()
+    delivery = docs["delivery"]
+    assert (
+        "X-Shelfhold-Signature" in delivery["headers"]
+        and "t=" in delivery["headers"]["X-Shelfhold-Signature"]
+    )
+    assert "180 days" in delivery["deprecation"]  # the double emission is bounded, and says so
+    for event in docs["events"].values():
+        assert event["current_version"] == 1 and event["deprecated"] == {}
+        assert "title" not in event["fields"]["1"]
