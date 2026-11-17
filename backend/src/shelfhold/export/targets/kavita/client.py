@@ -16,7 +16,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any, Final
-from urllib.parse import urlencode
+from urllib.parse import quote, urlencode, urlsplit
 
 import structlog
 
@@ -38,6 +38,7 @@ from shelfhold.export.targets.kavita.credentials import AdminKey
 from shelfhold.export.targets.kavita.destination import KavitaDestination
 from shelfhold.export.targets.kavita.errors import (
     ConfirmationRequired,
+    HubDown,
     ListingIncomplete,
     ProtocolError,
     RouteMissing,
@@ -49,11 +50,12 @@ from shelfhold.export.targets.kavita.errors import (
 )
 from shelfhold.infrastructure.clock import Clock
 from shelfhold.infrastructure.fetcher import FetchError, GuardedFetcher
-from shelfhold.infrastructure.logging import elapsed_ms
+from shelfhold.infrastructure.logging import elapsed_ms, register_secret_value
 from shelfhold.infrastructure.wake import WakeDeferred
 from shelfhold.sdk.api_call import JsonBody
 from shelfhold.sdk.export_target import ApiCall
 
+HUB_PLUGIN_NAME: Final = "Shelfhold"  # what Kavita's `authenticate` asks the caller to be called
 BULK_BATCH: Final = 100  # `parse-bulk` takes 100 names at most
 SERIES_PAGE: Final = 100
 MAX_SERIES_PAGES: Final = 50
@@ -225,6 +227,54 @@ class KavitaClient:
         if response.status not in expect:
             raise ProtocolError(f"{route.label} answered {response.status}", status=response.status)
         return CallResult(response.status, _decode(response.body, route))
+
+    # -- the hub of the events (EF-EXP-034, M4 L37) ------------------------------------------------
+
+    @property
+    def wake_managed(self) -> bool:
+        """True when a hook wakes this Kavita (Sablier, EF-INT-022): a connection that never closes
+        would keep it awake, so the hub is not listened to (the polling alone confirms)."""
+        return self._wake is not None
+
+    async def hub_endpoint(self) -> dto.HubEndpoint:
+        """The URL of the hub with its token, and the addresses the guard lets through for it.
+
+        The token is Kavita's answer to the dedicated key (`POST /api/Plugin/authenticate`, whose
+        query carries the key: the one call that does). Nothing here changes the health of the
+        target, wakes it or reads a body beyond the token: a refusal of this route says nothing of
+        the key (the other calls will), and a hub that cannot be reached is `HubDown`, which only
+        cuts the transport. The token is scrubbed from every log line by value."""
+        if self.health.paused:
+            raise HubDown("the target is paused")
+        route = routes.HUB_AUTHENTICATE
+        query = urlencode({"apiKey": self._key.reveal(), "pluginName": HUB_PLUGIN_NAME})
+        started = time.perf_counter()
+        try:
+            response = await self._fetcher.post(
+                f"{self._base_url}{route.path}?{query}",
+                json={},
+                headers={"Accept": "application/json"},
+            )
+        except FetchError as exc:
+            log.info("kavita.hub_unreachable", route=route.label, reason=type(exc).__name__,
+                     duration_ms=elapsed_ms(started))  # fmt: skip
+            raise HubDown("the hub token could not be asked for") from None
+        log.debug("kavita.call", route=route.label, method=route.method, status=response.status,
+                  duration_ms=elapsed_ms(started))  # fmt: skip
+        if response.status != 200:
+            raise HubDown(f"the hub token was refused ({response.status})")
+        token = _hub_token(response.body)
+        if token is None:
+            raise HubDown("the hub token is not in the answer")
+        register_secret_value(token)
+        parts = urlsplit(self._base_url)
+        port = parts.port or (443 if parts.scheme == "https" else 80)
+        try:
+            addresses = await self._fetcher.check_destination(parts.hostname or "", port)
+        except FetchError as exc:
+            log.info("kavita.hub_unreachable", route="hub", reason=type(exc).__name__)
+            raise HubDown("the address of the hub is refused") from None
+        return dto.HubEndpoint(hub_url(self._base_url, token), tuple(addresses))
 
     async def _awake(self, route: routes.Route) -> None:
         """Before any call (`scan-folder`, the audit, the arrival check): wake Kavita. A Kavita
@@ -661,6 +711,24 @@ class KavitaClient:
             "lockCover": True,
         }
         await self._send(routes.UPLOAD_SERIES_COVER, body=body)
+
+
+def hub_url(base_url: str, token: str) -> str:
+    """The hub of Kavita as a WebSocket address, under the sub-path of the server if it has one.
+    The token travels as `access_token`, the one place SignalR reads it for a WebSocket."""
+    parts = urlsplit(base_url.rstrip("/"))
+    scheme = "wss" if parts.scheme == "https" else "ws"
+    query = urlencode({"access_token": token}, quote_via=quote)
+    return f"{scheme}://{parts.netloc}{parts.path}/hubs/messages?{query}"
+
+
+def _hub_token(raw: bytes) -> str | None:
+    try:
+        document = json.loads(raw)
+    except ValueError:
+        return None
+    token = document.get("token") if isinstance(document, dict) else None
+    return token if isinstance(token, str) and 0 < len(token) <= 8192 else None
 
 
 def _count(value: object) -> int:

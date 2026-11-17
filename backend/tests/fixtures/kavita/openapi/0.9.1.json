@@ -4082,6 +4082,57 @@
     ]
    }
   },
+  "/api/Plugin/authenticate": {
+   "post": {
+    "description": "This API is not fully built out and may require more information in later releases",
+    "parameters": [
+     {
+      "description": "Auth key which will be used to authenticate and return a valid user token back",
+      "in": "query",
+      "name": "apiKey",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "description": "Name of the Plugin",
+      "in": "query",
+      "name": "pluginName",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/UserDto"
+        }
+       },
+       "text/json": {
+        "schema": {
+         "$ref": "#/components/schemas/UserDto"
+        }
+       },
+       "text/plain": {
+        "schema": {
+         "$ref": "#/components/schemas/UserDto"
+        }
+       }
+      },
+      "description": "OK"
+     }
+    },
+    "summary": "Authenticate with the Server given an auth key. This will log you in by returning the user object and the JWT token.",
+    "tags": [
+     "Plugin"
+    ]
+   }
+  },
   "/api/Plugin/authkey-expires": {
    "get": {
     "description": "Will always return null if the Auth Key does not belong to this account",

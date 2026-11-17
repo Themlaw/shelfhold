@@ -68,6 +68,18 @@ chez Kavita : le message d'erreur donne son nom et son identifiant, à révoquer
 | GET | `/api/Account/auth-keys` | Lister les clés du compte (`AuthKeyDto` : `id`, `name`, `key`), à la rotation, pour retrouver l'ancienne | M1a |
 | DELETE | `/api/Account/auth-key` | Révoquer l'ancienne clé après la rotation (`authKeyId` en requête) | M1a |
 
+## Route du jeton du hub (EF-EXP-034, L37, D18)
+
+Kavita rend le jeton de son hub à qui présente la clé dédiée, et **lit cette clé dans la requête**
+(`apiKey`), jamais dans un en-tête : c'est le seul appel dont l'URL porte la clé. Il n'est émis que
+par `KavitaClient.hub_endpoint`, sur le fetcher gardé, dont le journal nomme l'hôte et le chemin et
+jamais la requête ; le jeton est ensuite enregistré pour être masqué par valeur. Un refus de cette
+route ne touche pas à la santé de la destination (le polling reste la preuve).
+
+| Méthode | Route | Usage | Jalon |
+| --- | --- | --- | --- |
+| POST | `/api/Plugin/authenticate` | Obtenir le jeton JWT du hub (`UserDto.token`) avec la clé dédiée, pour le transport WebSocket des événements d'arrivée | M4 |
+
 ## Routes de la clé d'un membre (EF-USR-012, D8)
 
 La liste : `GET /api/Account`, `GET /api/Reader/get-progress`, `POST /api/Reader/progress`,

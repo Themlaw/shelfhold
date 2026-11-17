@@ -19,6 +19,7 @@ until = "permanent"
 symbols = [
   "shelfhold.events.operating:M1B",
   "shelfhold.events.operating:WAITING_WITHOUT_EVENT",
+  "shelfhold.export.targets.kavita.routes:HUB_ROUTES",
   "shelfhold.export.targets.kavita.routes:SETUP_ROUTES",
   "shelfhold.identity.domain.emitters:DELETION_SITES",
   "shelfhold.identity.domain.emitters:REPLACEMENT_SITES",
@@ -157,17 +158,6 @@ reason = "2026-11-14 (M3 L56): redated M4. Wiring it means that a click on the s
 until = "M4"  # settled by M4 lot L35
 symbols = [
   "shelfhold.acquisition.application.team_switch:switch_to_preferred_team",
-]
-
-[[allow]]
-category = "m3-l32-kavita-event-transport"
-reason = "2026-11-13: the reading of Kavita's scan events (EF-EXP-034, D11) is pinned by tests in M3: the frames, the handshake, and the rule that an event is a reason to look and never a proof. No WebSocket client is bundled (a new dependency needs wheels for amd64 and arm64 and a way to authenticate by key): the transport that feeds `HubSession` and calls `ArrivalEventWatcher.on_events` is M4, and until then the polling alone confirms, as D11 allows."
-until = "M4"  # settled by M4 lot L37 (cuttable)
-symbols = [
-  "shelfhold.export.targets.kavita.events:ArrivalEventWatcher",
-  "shelfhold.export.targets.kavita.events:HubSession",
-  "shelfhold.export.targets.kavita.events:ScanEvent",
-  "shelfhold.export.targets.kavita.events:parse_hub_frames",
 ]
 
 [[allow]]

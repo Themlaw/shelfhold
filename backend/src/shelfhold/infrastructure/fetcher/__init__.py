@@ -27,6 +27,7 @@ from shelfhold.infrastructure.fetcher.guard import block_reason, is_sinkhole, pa
 from shelfhold.infrastructure.fetcher.lan import LanTargets
 from shelfhold.infrastructure.fetcher.network import Network
 from shelfhold.infrastructure.fetcher.resolver import Resolver, SystemResolver
+from shelfhold.infrastructure.fetcher.stream import open_pinned_socket
 
 __all__ = [
     "DnsBlocked",
@@ -54,5 +55,6 @@ __all__ = [
     "UnsafeRedirect",
     "block_reason",
     "is_sinkhole",
+    "open_pinned_socket",
     "parse_host",
 ]

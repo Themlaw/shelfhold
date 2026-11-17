@@ -125,8 +125,15 @@ from shelfhold.export.targets.kavita.errors import (
     TargetForbidden,
     TargetUnreachable,
 )
+from shelfhold.export.targets.kavita.events import ArrivalEventWatcher
+from shelfhold.export.targets.kavita.events_transport import (
+    HubConnector,
+    HubListeners,
+    KavitaHubTransport,
+    WebSocketConnector,
+)
 from shelfhold.export.targets.kavita.library_type import LibraryTypeService
-from shelfhold.export.targets.kavita.polling import ArrivalPoller
+from shelfhold.export.targets.kavita.polling import ArrivalPoller, ArrivalReport
 from shelfhold.export.targets.kavita.progress import KavitaProgress
 from shelfhold.export.targets.kavita.reinstall import InstanceService
 from shelfhold.export.targets.kavita.related import RelatedSeries
@@ -196,6 +203,7 @@ __all__ = [
     "RECONCILE_KIND",
     "RELATIONS_JOB_KIND",
     "PlanService",
+    "hub_listeners",
     "progress_sync_handler",
     "read_state_push_handler",
     "register_runtime_jobs",
@@ -997,7 +1005,18 @@ async def settle_arrival(
     except TargetError as error:  # one destination failing never stops the others
         log.info("export.poll_failed", destination_id=destination_id, reason=type(error).__name__)
         return
+    await _after_arrival(comp, client, destination_id, events, disks)
 
+
+async def _after_arrival(
+    comp: Composition,
+    client: KavitaClient,
+    destination_id: str,
+    events: BusTargetEvents,
+    disks: Callable[[], Fsops],
+) -> None:
+    """What follows a look at Kavita, whoever asked for it: the covers of the series it now knows
+    (EF-EXP-045), their classes (EF-EXP-040) and their relations (EF-BIB-039)."""
     covers = SeriesCovers(comp.engine, comp.clock, disks, events)
     try:
         await covers.publish(client, destination_id)
@@ -1011,6 +1030,44 @@ async def settle_arrival(
         await RelatedSeries(comp.engine, comp.clock, events).publish(client, client.target_id)
         # the collections and reading lists, under the service account, then promoted (EF-EXP-025)
         await CollectionsSync(comp.engine, comp.clock, events).publish(client, client.target_id)
+
+
+class _ListeningPoller(ArrivalPoller):
+    """The poller the hub's events call: the same look, then the same follow-up as an export's
+    (a series that arrives late, announced by Kavita, still gets its cover, class and relations)."""
+
+    def __init__(self, comp: Composition, events: BusTargetEvents) -> None:
+        self._comp = comp
+        self._bus_events = events
+        super().__init__(comp.engine, comp.clock, events, fsops=self._disks)
+
+    def _disks(self) -> Fsops:
+        return self._comp.read_context()[0]
+
+    async def poll(self, client: KavitaClient, destination_id: str) -> ArrivalReport:
+        report = await super().poll(client, destination_id)
+        await _after_arrival(self._comp, client, destination_id, self._bus_events, self._disks)
+        return report
+
+
+def hub_listeners(
+    comp: Composition,
+    *,
+    active: Callable[[], bool],
+    connector: HubConnector | None = None,
+) -> HubListeners:
+    """One listener of the hub per Kavita target (EF-EXP-034, D18). It adds a reason to look
+    sooner; the polling of `settle_arrival` stays as it is. `connector` is the WebSocket client
+    (the real one unless a test hands a synthetic hub)."""
+    watcher = ArrivalEventWatcher(
+        comp.clock, _ListeningPoller(comp, BusTargetEvents(comp.engine, comp.bus))
+    )
+    connector = connector or WebSocketConnector()
+
+    def transport_for(target_id: str) -> KavitaHubTransport:
+        return KavitaHubTransport(lambda: comp.kavita_client(target_id), watcher, connector)
+
+    return HubListeners(comp.kavita_targets, transport_for, active=active)
 
 
 # -- export.apply ---------------------------------------------------------------

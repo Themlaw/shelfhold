@@ -68,6 +68,14 @@ LIST_AUTH_KEYS: Final = Route("GET", "/api/Account/auth-keys", write=False)
 DELETE_AUTH_KEY: Final = Route("DELETE", "/api/Account/auth-key", write=True)
 SETUP_ROUTES: Final = (LOGIN, CREATE_AUTH_KEY, LIST_AUTH_KEYS, DELETE_AUTH_KEY)
 
+# The hub (EF-EXP-034, M4 L37): Kavita hands the token of its hub to whoever shows the dedicated
+# key, and takes the key in the query (its own contract: no header is read). So this is the one
+# call whose URL carries the key; it is made by `KavitaClient.hub_endpoint` and nothing else, over
+# the guarded fetcher, whose log line names the route and never the query. Not in ALLOWED_ROUTES:
+# a destination can never describe a call to it (`resolve` refuses it).
+HUB_AUTHENTICATE: Final = Route("POST", "/api/Plugin/authenticate", write=False)
+HUB_ROUTES: Final = (HUB_AUTHENTICATE,)
+
 ALLOWED_ROUTES: Final = (
     SERVER_INFO, KEY_EXPIRES, PARSE, PARSE_BULK, LIBRARIES, LIBRARY_TYPE, LIBRARY_CREATE,
     LIBRARY_UPDATE, SCAN_FOLDER, UPLOAD_SERIES_COVER, USERS, SERIES_OF_LIBRARY, SERIES_BY_IDS,

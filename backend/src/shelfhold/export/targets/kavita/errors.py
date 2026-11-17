@@ -72,3 +72,10 @@ class ListingIncomplete(ProtocolError):
     """A listing hit its cap: what was read is not all there is, so nothing may be concluded."""
 
     incomplete = True
+
+
+class HubDown(Exception):
+    """The hub of Kavita cannot be used right now (no token, no connection, a connection that
+    ended or fell silent). Not a `TargetError`: it says nothing of the destination, only that the
+    transport of the events is cut; the polling goes on. The text never carries a URL or a token.
+    """

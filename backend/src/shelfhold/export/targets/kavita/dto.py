@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from enum import IntEnum
+from ipaddress import IPv4Address, IPv6Address
 from typing import Any, Final
 
 from shelfhold.export.targets.kavita.errors import ProtocolError
@@ -383,3 +384,17 @@ def list_item_series(data: object) -> list[tuple[int, int]]:
         and isinstance(i.get("id"), int)
         and isinstance(i.get("seriesId"), int)
     ]  # fmt: skip
+
+
+@dataclass(frozen=True)
+class HubEndpoint:
+    """Where to open the hub: its URL (which carries the token, so a secret) and the only
+    addresses the guard of the fetcher let through for the host of Kavita."""
+
+    url: str
+    addresses: tuple[IPv4Address | IPv6Address, ...]
+
+    def __repr__(self) -> str:
+        return f"HubEndpoint(<redacted>, addresses={len(self.addresses)})"
+
+    __str__ = __repr__
