@@ -2,6 +2,7 @@ import type { Page } from '@playwright/test';
 import {
   expect,
   expectNoHorizontalScroll,
+  expectTargets44,
   expectScreenAccessible,
   signInAs,
   test,
@@ -26,24 +27,6 @@ const KEY = ['kv', ...Array.from({ length: 3 }, () => Math.random().toString(36)
 async function settle(page: Page): Promise<void> {
   await page.getByRole('heading', { level: 1 }).first().waitFor();
   await page.waitForTimeout(300);
-}
-
-async function expectTargets44(page: Page, path: string): Promise<void> {
-  const tooSmall = await page.evaluate(() => {
-    const small: string[] = [];
-    for (const el of document.querySelectorAll<HTMLElement>(
-      'button, a[href], input:not([type="hidden"]), select, textarea, summary'
-    )) {
-      if (el.getClientRects().length === 0 || getComputedStyle(el).visibility === 'hidden') continue;
-      const isChoice = el instanceof HTMLInputElement && (el.type === 'checkbox' || el.type === 'radio');
-      const rect = (isChoice ? (el.closest('label') ?? el) : el).getBoundingClientRect();
-      if (rect.width < 43.5 || rect.height < 43.5) {
-        small.push(`${el.tagName} ${el.textContent?.trim().slice(0, 20) ?? ''} ${rect.width.toFixed(0)}x${rect.height.toFixed(0)}`);
-      }
-    }
-    return small;
-  });
-  expect(tooSmall, `${path}: targets under 44x44 px`).toEqual([]);
 }
 
 for (const screen of SCREENS) {
