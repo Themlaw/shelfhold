@@ -693,3 +693,29 @@ source_migration_row = sa.Table(
     sa.UniqueConstraint("migration_id", "target_place"),
     sa.Index("ix_source_migration_row_unit", "unit_id"),
 )
+
+# A chapter the administrator does not want back (M4 L29, EF-INT-019): by what the source calls it,
+# `(source_key, remote_unit_id)`, so it holds whether or not a Unit, a binding or even the series
+# still exists here. Only an explicit removal takes a row away: the account that made it being
+# deleted leaves `created_by` empty, never the block. `proposed_count` and `last_proposed_at` are
+# how often the source offered it again and was refused.
+BLOCK_REASONS = ("bad_quality", "wrong_content", "duplicate", "other")
+activity_block = sa.Table(
+    "activity_block",
+    metadata,
+    ulid_column("id", primary_key=True),
+    sa.Column("source_key", sa.String(), nullable=False),
+    sa.Column("remote_unit_id", sa.String(), nullable=False),
+    sa.Column("reason", sa.String(), nullable=False),
+    _fk("created_by", "user.id", ondelete="SET NULL", nullable=True),
+    now_column(),
+    sa.Column("proposed_count", sa.Integer(), nullable=False, server_default=sa.text("0")),
+    sa.Column("last_proposed_at", UtcDateTime(), nullable=True),
+    ulid_check("id"),
+    in_check("reason", BLOCK_REASONS),
+    positive_check("proposed_count"),
+    sa.CheckConstraint(
+        "\"source_key\" <> '' AND \"remote_unit_id\" <> ''", name="source_and_unit_named"
+    ),
+    sa.UniqueConstraint("source_key", "remote_unit_id"),
+)

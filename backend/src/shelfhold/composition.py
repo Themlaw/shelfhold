@@ -41,6 +41,7 @@ from shelfhold.headless.urls import service_url_problem
 from shelfhold.infrastructure.clock import Clock, SystemClock
 from shelfhold.infrastructure.fetcher import GuardedFetcher, Network
 from shelfhold.infrastructure.fetcher.client import FetchLimits
+from shelfhold.infrastructure.fetcher.traffic_store import SqlTrafficCounter
 from shelfhold.infrastructure.fsops import Fsops
 from shelfhold.infrastructure.instance import (
     HEARTBEAT_INTERVAL,
@@ -625,6 +626,7 @@ class Composition:
                 self.network,
                 cache_enabled=self.settings.fetcher_cache,
                 cache_off_sources=self.settings.fetcher_cache_off_sources,
+                traffic=SqlTrafficCounter(self.engine),  # EF-INT-020, after the guard
             )
         return self._fetchers
 

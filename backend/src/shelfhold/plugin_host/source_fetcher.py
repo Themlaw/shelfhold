@@ -32,6 +32,7 @@ from typing import TYPE_CHECKING, Any, Final
 
 from shelfhold.infrastructure.fetcher import FetchLimits, GuardedFetcher, Network
 from shelfhold.infrastructure.fetcher.cache import HttpCache, cache_for
+from shelfhold.infrastructure.fetcher.client import TrafficCounter
 from shelfhold.infrastructure.fetcher.guard import DomainAllowlist
 from shelfhold.infrastructure.fetcher.pacer import Pacer
 from shelfhold.infrastructure.fetcher.robots import RobotsPolicy
@@ -59,8 +60,10 @@ class SourceFetchers:
         limits: FetchLimits | None = None,
         pace_clock: Callable[[], float] = time.monotonic,
         pace_sleep: Callable[[float], Awaitable[object]] = asyncio.sleep,
+        traffic: TrafficCounter | None = None,
     ) -> None:
         self._network = network
+        self._traffic = traffic  # EF-INT-020: what each source's Fetcher carried
         self._pace_clock = pace_clock
         self._pace_sleep = pace_sleep
         self._pacers: dict[str, Pacer] = {}
@@ -119,6 +122,8 @@ class SourceFetchers:
             robots=robots,
             limiter=self.pacer_of(record),
             settings=settings,
+            traffic=self._traffic,
+            traffic_source=record.key,
         )
 
 

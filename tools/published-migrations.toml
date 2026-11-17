@@ -274,3 +274,8 @@ since = "1.1"
 file = "0090_source_migration.py"
 sha256 = "d28faa67ce7c9589789b217c36f688f49be725f461baf4aff1da8ac58d4f1010"
 since = "1.1"
+
+[[migration]]
+file = "0091_activity_block_traffic.py"
+sha256 = "c2fcc585c3c6b0ff67d7fc9a113ce2855778d1069f4942240fda092db533d239"
+since = "1.1"

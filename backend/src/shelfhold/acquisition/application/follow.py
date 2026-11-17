@@ -35,6 +35,7 @@ from shelfhold.acquisition.application.backfill import (
     estimate_with,
     within_ceiling,
 )
+from shelfhold.acquisition.application.blocklist import blocked_ids, note_reproposed
 from shelfhold.acquisition.application.discovery import (
     BOUND_PREFIX,
     Notices,
@@ -187,6 +188,7 @@ class FollowReport:
     fetched: int = 0
     removed: int = 0
     tombstoned: int = 0  # releases and series left alone because they were purged (EF-BIB-053)
+    blocked: int = 0  # blocked chapters the source offered again, ignored (EF-INT-019)
     reactivated: int = 0
     created: int = 0  # series of the library given their Work, Edition and binding (EF-SRC-009)
     skipped_pending_pairing: int = 0  # left to `adopt pair`: an adopted twin waits for it
@@ -209,6 +211,7 @@ class FollowReport:
         return {
             "discovered": self.discovered, "requested": self.requested,
             "fetched": self.fetched, "removed": self.removed, "tombstoned": self.tombstoned,
+            "blocked": self.blocked,
             "reactivated": self.reactivated, "created": self.created,
             "awaiting_shelf": self.awaiting_shelf, "stale": self.stale,
             "paused": self.paused, "unavailable": self.unavailable,
@@ -952,9 +955,17 @@ class FollowCycle:
         # a series followed from now on is asked for what is new, never for its whole archive.
         look = _Look(binding, mark, self._clock.now(), _contested(units))
         key = self._edition_key(binding.edition_id)
+        with self._engine.connect() as connection:
+            blocked = blocked_ids(connection, binding.source_key)  # the admin's blocklist
+        offered_again: list[str] = []
         for info in units:
             if self._release_tombstoned(binding, info, key):
                 report.tombstoned += 1
+                continue
+            if info.remote_unit_id in blocked:  # EF-INT-019: ignored, counted, never unblocked
+                report.blocked += 1
+                offered_again.append(info.remote_unit_id)
+                log.debug("follow.release_blocked", binding_id=binding.id)
                 continue
             info = _trusted(info, look.now)  # text and date: nothing raw goes further (ENF-SEC-015)
             result = ingest_isolated(
@@ -979,6 +990,9 @@ class FollowCycle:
                 variant_id=result.variant_id,
                 outcome=result.outcome.name.lower(),
             )
+        if offered_again:
+            with write_transaction(self._engine) as connection:
+                note_reproposed(connection, binding.source_key, offered_again, look.now)
         for unit_id in sorted(look.touched):  # every offer is known now: one election per Unit
             with write_transaction(self._engine) as connection:
                 self._prefs.elect(connection, unit_id, look.now)

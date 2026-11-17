@@ -1376,3 +1376,23 @@ target_order = "The order the library keeps for it."
 target_place = "The place of that number in the library: unique per migration, two numbers never land on one."
 unit_id = "The Unit it lands on (`unit.id`); NULL: the library lacks it, it is to be fetched."
 basis = "`same_number`, `offset`, `manual` or `new`: why the line says what it says."
+
+[tables.activity_block]
+description = "A chapter the administrator does not want back, by what its source calls it; only an explicit removal lifts it."
+[tables.activity_block.columns]
+id = "Identifier of the block (ULID)."
+source_key = "Source that offers the chapter."
+remote_unit_id = "Identifier the source gives to the chapter."
+reason = "Why it is blocked, from a closed list: `bad_quality`, `wrong_content`, `duplicate` or `other`."
+created_by = "Account that blocked it; empty once that account is deleted (the block stays)."
+created_at = "When it was blocked (UTC)."
+proposed_count = "How many times the source offered it again and it was ignored."
+last_proposed_at = "When the source last offered it again; empty if it never did."
+
+[tables.traffic_counter]
+description = "What the Fetcher carried per source and per UTC day: a count and a size, never an address."
+[tables.traffic_counter.columns]
+day = "The UTC day."
+source_key = "Source the requests were made for."
+requests = "Requests that left the machine that day (after the network guard)."
+bytes_in = "Bytes received that day."

@@ -76,6 +76,9 @@ EXPORTED_TABLES: Final = frozenset(
         # the numbering correspondence of a migrated series (L27): without it a restored instance
         # would read the new source's numbers as numbers the library lacks and fetch them again
         "source_migration", "source_migration_row",
+        # the chapters the administrator blocked (L29): a choice, not a cache. A restore without
+        # them would let a source bring them back, which is an unblocking nobody asked for.
+        "activity_block",
     }
 )  # fmt: skip
 
@@ -130,6 +133,7 @@ EXCLUDED_TABLES: Final[Mapping[str, str]] = {
     "field_owner": _REBUILT,
     "work_relation": _REBUILT,
     "collection_remote": _REBUILT,  # the next sync of collections makes them again (M4 L18a)
+    "traffic_counter": _NOISE,  # what the Fetcher carried per day: a counter, counted again (L29)
     "page_issue": _REBUILT,  # found again by the next look at the content (M4 L53)
 }  # fmt: skip
 
