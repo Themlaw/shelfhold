@@ -131,6 +131,9 @@ WHEN_CLOSED_AUDITED = {
     # identifier of the token, when one is made or ended; the empty body below is a 422 and an
     # unknown identifier a 404: no line
     "device_token.issue", "device_token.manage",
+    # M4 L35: the switch to the preferred team: the service writes one line per step (previewed,
+    # queued) with the identifier of the switch; the door writes none (a refused call leaves none)
+    "team.switch",
     # M4 L24: a webhook: the service writes `webhook.subscribe` / `webhook.unsubscribe`, with the
     # subscription, in the transaction that makes or removes it; the empty body below is a 422
     # and an unknown identifier a 404: no line

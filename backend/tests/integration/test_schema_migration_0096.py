@@ -26,9 +26,8 @@ def _tables(database: object) -> set[str]:
         return {row[0] for row in rows}
 
 
-def test_the_revision_is_0096_the_only_head_on_0095() -> None:
+def test_the_revision_is_0096_on_0095() -> None:
     script = ScriptDirectory(str(default_script_location()))
-    assert script.get_heads() == ["0096"]
     assert script.get_revision("0096").down_revision == "0095"
 
 

@@ -14,6 +14,7 @@ from sqlalchemy import Engine
 
 from shelfhold.acquisition.application.request_lists import RequestListService
 from shelfhold.acquisition.application.tachibk_import import TachibkImportService
+from shelfhold.acquisition.application.team_switch import TeamSwitchService
 from shelfhold.composition import Composition, open_fsops
 from shelfhold.config import Settings
 from shelfhold.events.bus import EventBus
@@ -42,6 +43,7 @@ from shelfhold.ops.destination_accounts import open_destination_accounts
 from shelfhold.ops.detach import DetachOps
 from shelfhold.ops.edition_merge import EditionMergeOps
 from shelfhold.ops.editions import EditionOps
+from shelfhold.ops.errors import ExitUnavailableError
 from shelfhold.ops.events import BusTargetEvents
 from shelfhold.ops.export_all import ExportAllOps
 from shelfhold.ops.export_item import ExportItemOps
@@ -72,6 +74,19 @@ from shelfhold.ops.wizard import WizardOps
 from shelfhold.ops.work_merge import WorkMergeOps
 
 __all__ = ["open_ops"]
+
+
+def _submitter(composition: Composition) -> Callable[[str, str], str]:
+    """`(kind, dedupe key) -> job id`: the order of a person goes to the queue as a request, and an
+    order already queued under the same key is the same job."""
+
+    def submit(kind: str, dedupe_key: str) -> str:
+        pools = composition.pools()
+        if pools is None:
+            raise ExitUnavailableError("the job queue is not running")
+        return str(pools.submit(kind, dedupe_key=dedupe_key, priority_class="request").job_id)
+
+    return submit
 
 
 def _fsops(engine: Engine, umask: int) -> Fsops | None:
@@ -165,6 +180,7 @@ def open_ops(
         acquire=AcquireOps(composition),
         requests=requests, request_lists=RequestListService(engine, clock, requests),
         tachibk_import=TachibkImportService(engine, clock),
+        team_switch=TeamSwitchService(engine, clock, submit=_submitter(composition)),
         roots=RootOps(composition),
         kavita_accounts=KavitaAccountsOps(
             engine, ChildAccountsAuditor(engine, clock, events), clock=clock,

@@ -57,6 +57,7 @@ M4_TABLES = {
     "tachibk_import",
     "read_marker",
     "tracker_hint",  # migration 0095 (M4 L26)
+    "team_switch",  # migration 0097 (M4 L35)
     "webhook_subscription",  # migration 0096 (M4 L24)
     "webhook_outbox",  # migration 0096 (M4 L24)
     "notify_destination",  # migration 0094 (M4 L39)

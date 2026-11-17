@@ -33,6 +33,7 @@
   import BundleSlices from './BundleSlices.svelte';
   import RelatedWorks from './RelatedWorks.svelte';
   import SupportAuthor from './SupportAuthor.svelte';
+  import SwitchReport from './SwitchReport.svelte';
 
   type Status = UpstreamStatusIn['status'];
   const STATUSES: readonly Status[] = ['ongoing', 'finished', 'paused', 'unknown'];
@@ -293,6 +294,8 @@
         </ul>
         <p class="muted">{t('sheet.teams.note')}</p>
       </section>
+      <!-- the second step: replace what is already served (a reserved action, a fresh session) -->
+      <SwitchReport {editionId} />
     {/if}
 
     {#if sheet.can.edit_field && edits.length > 0}

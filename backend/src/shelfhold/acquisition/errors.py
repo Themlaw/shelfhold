@@ -90,6 +90,10 @@ CODES: tuple[ErrorCode, ...] = (
     ErrorCode("import.tachibk_not_found", 404, "user"),  # no such batch or profile: one answer
     ErrorCode("import.tachibk_applied", 409, "admin"),  # a preview is applied once
     ErrorCode("import.tachibk_unavailable", 503, "admin"),  # the bounded reader could not run
+    # EF-BIB-005 (M4 L35): the switch to the preferred team
+    ErrorCode("team_switch.not_found", 404, "user"),  # no such edition or switch: one answer
+    ErrorCode("team_switch.no_preferred_team", 409, "admin"),  # the Edition has no priority list
+    ErrorCode("team_switch.stale", 409, "admin"),  # the preview is not what would be done now
     ErrorCode("request.invalid_reason", 422, "admin"),
     ErrorCode("request.choose_age", 422, "admin"),  # rating a child's request is approving it
     ErrorCode("request.confirmation_required", 409, "admin"),  # over 100 Units or 5 GiB

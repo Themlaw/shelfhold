@@ -608,6 +608,35 @@ tachibk_import = sa.Table(
     sa.Index("ix_tachibk_import_user", "user_id"),
 )
 
+# One preview of the switch of an Edition to its preferred team, then its application (M4 L35,
+# EF-BIB-005): `preview` is what the admin read (the Units that would switch, the blocked ones, the
+# pending ones), `token` its digest, compared with the one of the application so that a preview
+# gone stale is never applied; `report` is what was done. No path and no name is kept.
+TEAM_SWITCH_STATES = ("previewed", "queued", "applying", "done", "stale", "failed")
+team_switch = sa.Table(
+    "team_switch",
+    metadata,
+    ulid_column("id", primary_key=True),
+    sa.Column(
+        "edition_id", sa.String(26), sa.ForeignKey("edition.id", ondelete="CASCADE"), nullable=False
+    ),
+    sa.Column(
+        "team_id", sa.String(26), sa.ForeignKey("team.id", ondelete="CASCADE"), nullable=False
+    ),
+    sa.Column("created_by", sa.String(26), sa.ForeignKey("user.id", ondelete="SET NULL")),
+    sa.Column("state", sa.String(), nullable=False, server_default="previewed"),
+    sa.Column("token", sa.String(64), nullable=False),
+    sa.Column("preview", sa.JSON(), nullable=False, server_default="{}"),
+    sa.Column("report", sa.JSON(), nullable=True),
+    now_column(),
+    sa.Column("applied_at", UtcDateTime(), nullable=True),
+    ulid_check("id"),
+    in_check("state", TEAM_SWITCH_STATES),
+    json_shape_check("preview", "object"),
+    sa.CheckConstraint('length("token") = 64', name="token_length"),
+    sa.Index("ix_team_switch_edition", "edition_id"),
+)
+
 # What a profile read in the series of a backup, waiting for the series to be resolved (EF-INT-008):
 # one row per chapter the file proves read or started, for the profile the admin chose and nobody
 # else. A marker is not a reading position: it says what the backup proved, and nothing more.
