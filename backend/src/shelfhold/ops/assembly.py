@@ -74,4 +74,5 @@ class VolumeAssemblyOps:
             "chapters": len(items),
             "code": "volume.gap" if result.outcome is AssemblyOutcome.GAP else None,
             "missing": list(result.missing),
+            "missing_text": ", ".join(result.missing),
         }
