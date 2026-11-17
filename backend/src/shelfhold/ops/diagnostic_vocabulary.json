@@ -1912,6 +1912,7 @@
   "shelfhold.ops.health",
   "shelfhold.ops.import_folder",
   "shelfhold.ops.intents",
+  "shelfhold.ops.job_actions",
   "shelfhold.ops.kavita",
   "shelfhold.ops.kavita_accounts",
   "shelfhold.ops.keyring",
