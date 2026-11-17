@@ -193,7 +193,7 @@ class TachibkImportService:
                 )
             )
             row = connection.execute(sa.select(_import).where(_import.c.id == import_id)).one()
-        log.info("tachibk_previewed", import_id=import_id, series=len(staged.series))
+        log.info("tachibk.previewed", import_id=import_id, series=len(staged.series))
         return _view(row)
 
     def _subject(self, principal: Principal, profile_id: str | None) -> str:
@@ -274,7 +274,7 @@ class TachibkImportService:
                     )
                 )
             )
-        log.info("tachibk_applied", import_id=import_id, series=items, markers=markers)
+        log.info("tachibk.applied", import_id=import_id, series=items, markers=markers)
         return ApplyDone(import_id, "applied", items, markers, hints)
 
 

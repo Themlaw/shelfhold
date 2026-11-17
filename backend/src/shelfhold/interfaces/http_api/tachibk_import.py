@@ -38,7 +38,6 @@ __all__ = ["build_tachibk_import_router"]
 
 _ACTION = RESERVED_ACTIONS["import.tachibk"]
 Importer = Annotated[Principal, Depends(reserved_action(_ACTION))]
-Reader = Annotated[Principal, Depends(reserved_action(_ACTION, audit=False))]
 
 
 class ItemOut(BaseModel):
@@ -130,7 +129,7 @@ def build_tachibk_import_router(get_service: Callable[[], TachibkImportService])
         return ImportOut.of(view)
 
     @router.get("/{import_id}")
-    def read_import(import_id: str, principal: Reader) -> ImportOut:
+    def read_import(import_id: str, principal: Importer) -> ImportOut:
         try:
             return ImportOut.of(get_service().review(principal, import_id))
         except TachibkImportError as error:
