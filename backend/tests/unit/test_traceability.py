@@ -340,3 +340,21 @@ def test_review_l57_poc_a_journey_that_stops_at_its_known_gap_is_not_coverage() 
         "counted as covering ENF-UX-001 while the journey stops at its known gap: "
         + ", ".join(claiming)
     )
+
+
+def test_m4_l43_no_exception_waits_for_a_milestone_that_is_over() -> None:
+    """M4 L43: a `[[partial]]` or `[[deferred]]` that names M4 at the close of M4 is completed, or
+    redated with its reason. ENF-GOV-004 is the one left: its live part (the Codeberg account and
+    secret) is the owner's, held by L41 (D-P1)."""
+    root = TOOL.parents[1]
+    waiting = [
+        p["requirement"] for p in tr.load_partial(root) if p["milestone"] == "M4"
+    ] + [
+        d["requirement"]
+        for d in tr.load_deferred(root)
+        if "M4" in d["reason"] and d["requirement"] != "ENF-GOV-004"
+    ]
+    assert not waiting, f"exceptions still waiting for M4: {waiting}"
+    redated = [p for p in tr.load_partial(root) if p["requirement"] == "EF-BIB-029"]
+    assert redated, "EF-BIB-029 is still partial: its screen is redated, not dropped"
+    assert "2026-11-17" in redated[0]["reason"]
