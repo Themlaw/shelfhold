@@ -1243,6 +1243,181 @@
         "title": "BlocksOut",
         "type": "object"
       },
+      "BulkFilter": {
+        "additionalProperties": false,
+        "description": "A filter of the list, frozen by the preview into the Works it matched then.",
+        "properties": {
+          "state": {
+            "anyOf": [
+              {
+                "enum": [
+                  "rating_pending",
+                  "follow_suspended"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "State"
+          },
+          "text": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Text"
+          }
+        },
+        "title": "BulkFilter",
+        "type": "object"
+      },
+      "BulkItem": {
+        "properties": {
+          "age": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Age"
+          },
+          "state": {
+            "title": "State",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "work_id": {
+            "title": "Work Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "work_id",
+          "title",
+          "state"
+        ],
+        "title": "BulkItem",
+        "type": "object"
+      },
+      "BulkRateApplyIn": {
+        "additionalProperties": false,
+        "properties": {
+          "confirm": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Confirm",
+            "type": "string"
+          }
+        },
+        "required": [
+          "confirm"
+        ],
+        "title": "BulkRateApplyIn",
+        "type": "object"
+      },
+      "BulkRatePreviewIn": {
+        "additionalProperties": false,
+        "properties": {
+          "age": {
+            "examples": [
+              "13+",
+              "18+",
+              "X"
+            ],
+            "maxLength": 8,
+            "minLength": 1,
+            "title": "Age",
+            "type": "string"
+          },
+          "filter": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BulkFilter"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "work_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "maxLength": 26,
+                  "minLength": 26,
+                  "pattern": "^[0-9A-Za-z]{26}$",
+                  "type": "string"
+                },
+                "maxItems": 1000,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Work Ids"
+          }
+        },
+        "required": [
+          "age"
+        ],
+        "title": "BulkRatePreviewIn",
+        "type": "object"
+      },
+      "BulkRatePreviewOut": {
+        "properties": {
+          "age": {
+            "title": "Age",
+            "type": "string"
+          },
+          "expires_at": {
+            "title": "Expires At",
+            "type": "string"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/BulkItem"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "order_id": {
+            "title": "Order Id",
+            "type": "string"
+          },
+          "skipped": {
+            "title": "Skipped",
+            "type": "integer"
+          },
+          "token": {
+            "title": "Token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "order_id",
+          "age",
+          "token",
+          "skipped",
+          "expires_at",
+          "items"
+        ],
+        "title": "BulkRatePreviewOut",
+        "type": "object"
+      },
       "BundleCanOut": {
         "properties": {
           "set_slice": {
@@ -10112,6 +10287,27 @@
       },
       "ToRateItem": {
         "properties": {
+          "age": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Age"
+          },
+          "age_x": {
+            "default": false,
+            "title": "Age X",
+            "type": "boolean"
+          },
+          "rated": {
+            "default": false,
+            "title": "Rated",
+            "type": "boolean"
+          },
           "reason": {
             "title": "Reason",
             "type": "string"
@@ -11312,6 +11508,25 @@
         "title": "WizardLibraryOut",
         "type": "object"
       },
+      "WizardPreviewAccepted": {
+        "description": "Body of the 202 of a preview that takes longer than a request may: ask `status_url`.",
+        "properties": {
+          "job_id": {
+            "title": "Job Id",
+            "type": "string"
+          },
+          "status_url": {
+            "title": "Status Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "job_id",
+          "status_url"
+        ],
+        "title": "WizardPreviewAccepted",
+        "type": "object"
+      },
       "WizardPreviewIn": {
         "properties": {
           "destination_id": {
@@ -11387,6 +11602,13 @@
           "series": {
             "title": "Series",
             "type": "integer"
+          },
+          "to_check": {
+            "items": {
+              "$ref": "#/components/schemas/WizardToCheckOut"
+            },
+            "title": "To Check",
+            "type": "array"
           }
         },
         "required": [
@@ -11395,10 +11617,44 @@
           "series",
           "files",
           "child_library",
+          "to_check",
           "download_dir",
           "roots"
         ],
         "title": "WizardPreviewOut",
+        "type": "object"
+      },
+      "WizardPreviewStatusOut": {
+        "properties": {
+          "job_id": {
+            "title": "Job Id",
+            "type": "string"
+          },
+          "preview": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WizardPreviewOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "status": {
+            "enum": [
+              "running",
+              "done"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "job_id",
+          "preview"
+        ],
+        "title": "WizardPreviewStatusOut",
         "type": "object"
       },
       "WizardProbeOut": {
@@ -11645,6 +11901,25 @@
           "key_expires_at"
         ],
         "title": "WizardTargetOut",
+        "type": "object"
+      },
+      "WizardToCheckOut": {
+        "description": "A file whose first page or archive the decode worker or the safe opener refused: adopted\nall the same, never touched, for the admin to look at (`reason` is a code of a closed list).",
+        "properties": {
+          "path": {
+            "title": "Path",
+            "type": "string"
+          },
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path",
+          "reason"
+        ],
+        "title": "WizardToCheckOut",
         "type": "object"
       },
       "WizardVerdictOut": {
@@ -14427,6 +14702,144 @@
           }
         },
         "summary": "Session Revoke"
+      }
+    },
+    "/api/v1/bulk/rate/preview": {
+      "post": {
+        "description": "Freeze the Works chosen (or a filter) into an order; nothing is rated or queued.",
+        "operationId": "bulk_rate_preview",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BulkRatePreviewIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BulkRatePreviewOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Connexion requise, ou mot de passe à confirmer (reauth-required)."
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée)."
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Détail du problème (RFC 9457)."
+          }
+        },
+        "summary": "Bulk Rate Preview",
+        "tags": [
+          "bulk"
+        ]
+      }
+    },
+    "/api/v1/bulk/rate/{order_id}/apply": {
+      "post": {
+        "description": "Queue the one job that rates the order's Works; the job checks the selection again.",
+        "operationId": "bulk_rate_apply",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "order_id",
+            "required": true,
+            "schema": {
+              "maxLength": 26,
+              "minLength": 26,
+              "title": "Order Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BulkRateApplyIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobAccepted",
+                  "title": "Response Bulk Rate Apply"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Connexion requise, ou mot de passe à confirmer (reauth-required)."
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée)."
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Détail du problème (RFC 9457)."
+          }
+        },
+        "summary": "Bulk Rate Apply",
+        "tags": [
+          "bulk"
+        ]
       }
     },
     "/api/v1/collections": {
@@ -24533,6 +24946,7 @@
     },
     "/api/v1/setup/adoption/preview": {
       "post": {
+        "description": "The preview probes the first page of every archive of the library in the decode\nworker, which takes minutes for a large one: it is a background task. A library read\nwithin a few seconds is answered `200` with the report; else `202`, and the report is\nread at `GET /adoption/preview/{job_id}` (M4 L36).",
         "operationId": "wizard_adoption_preview",
         "requestBody": {
           "content": {
@@ -24550,6 +24964,78 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/WizardPreviewOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WizardPreviewAccepted"
+                }
+              }
+            },
+            "description": "Accepted"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Connexion requise, ou mot de passe à confirmer (reauth-required)."
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée)."
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Détail du problème (RFC 9457)."
+          }
+        },
+        "summary": "Wizard Adoption Preview",
+        "tags": [
+          "setup"
+        ]
+      }
+    },
+    "/api/v1/setup/adoption/preview/{job_id}": {
+      "get": {
+        "operationId": "wizard_adoption_preview_status",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "title": "Job Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WizardPreviewStatusOut"
                 }
               }
             },
@@ -24586,7 +25072,7 @@
             "description": "Détail du problème (RFC 9457)."
           }
         },
-        "summary": "Wizard Adoption Preview",
+        "summary": "Wizard Adoption Preview Status",
         "tags": [
           "setup"
         ]
@@ -30236,6 +30722,18 @@
     "/api/v1/problems/bad-request": {
       "code": "bad_request",
       "status": 400
+    },
+    "/api/v1/problems/bulk.refused": {
+      "code": "bulk.refused",
+      "status": 403
+    },
+    "/api/v1/problems/bulk.stale": {
+      "code": "bulk.stale",
+      "status": 409
+    },
+    "/api/v1/problems/bulk.unknown": {
+      "code": "bulk.unknown",
+      "status": 409
     },
     "/api/v1/problems/bundle-busy": {
       "code": "bundle_busy",

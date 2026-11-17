@@ -149,16 +149,19 @@ def run_worker(
     request = encode_frame({"op": op, "args": args}, data)
     deadline = time.monotonic() + limits.wall_seconds
     with tempfile.TemporaryDirectory(prefix="shelfhold-decode-") as workdir:
-        proc = subprocess.Popen(  # noqa: S603 - fixed argv, no shell, no user-controlled word
-            argv or _argv(limits),
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.DEVNULL,
-            cwd=workdir,
-            env={},
-            close_fds=True,
-            start_new_session=True,
-        )
+        try:
+            proc = subprocess.Popen(  # noqa: S603 - fixed argv, no shell, no user-controlled word
+                argv or _argv(limits),
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+                cwd=workdir,
+                env={},
+                close_fds=True,
+                start_new_session=True,
+            )
+        except OSError:  # no process to start under load (EAGAIN, ENOMEM): the worker's failure
+            raise _failed("cannot start") from None
         started = time.monotonic()
         try:
             raw = _collect(proc, request, deadline)

@@ -28,6 +28,7 @@ Le paquet est **fermé par défaut** : une liste positive dit ce qui entre, rien
 | `schema.sql` | la structure de la base, sans aucune ligne |
 | `content.json` | nombre et taille des fichiers par format ; un fichier **tatoué** n'est cité que par son empreinte et sa taille |
 | `sources.json` | sous-sources et séries amont sous `<source-1>`, `<source-2>`… |
+| `sandbox.json` | ce que le **bac à sable de décodage** (le sous-processus qui lit toute image et toute archive venue de l'extérieur) vit réellement, mesuré avec les bornes des sondes d'adoption : l'isolement obtenu (`netns`, `seccomp` ou `python`) ; le résultat de deux tentatives faites de l'intérieur, `raw_connect` (connexion à `127.0.0.1:9`, `failed` attendu, `connected` est une alerte) et `unix_socket` (création d'un socket Unix, `denied` attendu) ; `network` : `shut` (ni l'un ni l'autre ne passe), `inet_shut` (internet fermé mais pas les sockets Unix), `python_only` (seul le bouchon Python refuse) ou `open` ; les limites (mémoire, processeur, fichiers, processus ; `-1` veut dire illimité, une liste vide une valeur illisible), `no_new_privs`, un environnement propre ; et `probes` : le nombre de sondes à la fois, la taille maximale d'une page lue, le plafond de pixels, le délai et la mémoire. Des mots fermés, des booléens et des nombres : aucun chemin, aucun titre, aucun numéro de processus. Si le sous-processus ne peut pas tourner, la section dit seulement `{"unavailable": "worker_failed"}` |
 | `logs.jsonl` | chaque ligne JSON du journal donné, réduite au **vocabulaire du code** : un événement, un champ, un mot (`outcome`, `code`…), un module ou une classe d'erreur que le code écrit lui-même ; toute autre valeur devient `<other>`, un champ inconnu est retiré ; identifiants internes (ULID) gardés s'ils existent dans la base de l'instance, sinon remplacés par `<id-N>` ; nombres gardés ; un identifiant d'utilisateur devient `<user-N>` |
 
 ## Ce qui n'entre jamais
@@ -63,7 +64,7 @@ les sections refusées. Si le refus persiste, c'est un défaut de Shelfhold : si
 paquet.
 
 `--exclude <section>` (répétable) laisse une section hors du paquet : `config`, `status`,
-`schema`, `content`, `sources` ou `logs`. Le manifeste la note `excluded`. Le manifeste
+`schema`, `content`, `sources`, `sandbox` ou `logs`. Le manifeste la note `excluded`. Le manifeste
 lui-même est toujours là ; seules les valeurs que la commande y écrit (version, date,
 révisions du schéma) sont vérifiées, ses clés et libellés fixes (`secrets`, `titles`…) ne le
 sont pas : un titre « Secrets » ne bloque aucun paquet.

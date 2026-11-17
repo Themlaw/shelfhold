@@ -23,6 +23,7 @@ from shelfhold.export.application.roots import load_roots, open_fsops
 from shelfhold.export.application.target_state import load_health, target_write_guard
 from shelfhold.export.domain.path_map import PathMap, PathMode
 from shelfhold.export.domain.physical_roots import RootState
+from shelfhold.export.targets.kavita import page_probe
 from shelfhold.export.targets.kavita.adopt import Adopter, AdoptionSession
 from shelfhold.export.targets.kavita.audit import AccessAuditor
 from shelfhold.export.targets.kavita.client import KavitaClient
@@ -121,6 +122,7 @@ def open_adoption(
     the bus of the application (`events_for` builds the sink over the engine opened here).
     """
     network = network or Network()
+    page_probe.configure(settings.adopt_probe_workers)
     engine = create_db_engine(settings.database_path)
     with engine.connect() as connection:
         paths = [r.path_entry for r in connection.execute(sa.select(platform.physical_root))]

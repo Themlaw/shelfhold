@@ -69,6 +69,41 @@ plus (`plan.stale`) : relisez. Classer l'Œuvre (`shelfhold rate`) la sort du pl
 - Les âges lus dans les ComicInfo restent des **suggestions** à valider ; l'âge des Œuvres reste vide.
 - Un volume sans numéro de chapitre est inscrit comme tel ; aucun chapitre n'est deviné.
 
+## Les fichiers « à vérifier »
+
+Chaque archive de la bibliothèque vient de l'extérieur : Shelfhold ne la lit jamais avec son
+propre code d'image. Pour chaque CBZ ou ZIP adopté, la **première page** (par nom d'entrée) est
+extraite en mémoire par l'ouvreur d'archives sûr (répertoire audité, bornes pendant la
+décompression, aucun chemin d'entrée utilisé, rien d'écrit, 32 Mio au plus par page), puis
+décodée dans le **bac à sable de décodage** (sous-processus sans réseau ni socket, bornes en
+pixels, en octets, en mémoire et en temps). L'aperçu donne le format et la taille de cette page.
+**Les fichiers CBR, CB7 et PDF ne sont pas sondés** : ils ne figurent donc jamais dans la liste.
+
+Une page refusée (image trop grande, pas une image acceptée, décodage hors bornes, bac à sable
+en échec) ou une archive refusée (bombe de décompression, chemin `..`, lien symbolique, entrées
+qui se recouvrent, chiffrée, remplacée pendant la lecture…) met le fichier « **à vérifier** » avec
+un code de la liste fermée. Le fichier est adopté **tel quel** : il n'est ni modifié, ni déplacé,
+ni supprimé, et la bibliothèque n'est pas refusée pour autant : à vous de le regarder avant qu'il
+soit servi. La liste est dans l'écran **Réglages › Adopter une bibliothèque** (administrateur,
+session récente), dans la sortie de `shelfhold adopt --dry-run` et dans l'aperçu.
+
+L'aperçu d'une grande bibliothèque dure plusieurs minutes : c'est une **tâche de fond**. L'écran
+affiche « lecture en cours » et suit la tâche ; l'API répond `200` avec le rapport si la lecture
+est rapide, sinon `202` avec l'adresse de la tâche (`GET /api/v1/setup/adoption/preview/{job_id}`).
+Demander le même aperçu pendant qu'il tourne ne le relance pas. La tâche est en mémoire : un
+redémarrage la perd, et l'aperçu se refait.
+
+Les verdicts sont gardés **pour tout le processus** (au plus 100 000, les moins récents partent
+les premiers), sous le chemin, la taille, la date de modification, la date de changement
+d'inode (`ctime`, que `utime` ne remet pas), l'appareil et l'inode : un fichier qui n'a pas
+changé n'est jamais sondé deux fois, et la confirmation ne resonde rien. La même empreinte lie
+la confirmation : un fichier réécrit entre l'aperçu et la confirmation la fait refuser comme
+périmée. La marque n'est pas gardée en base : elle est relue à chaque aperçu.
+
+Au plus **2 sondes à la fois** pour tout le processus (aperçus et ligne de commande
+ensemble), réglable par `SHELFHOLD_ADOPT_PROBE_WORKERS` (1 à 8) : chacune peut occuper environ
+1,5 Gio d'espace d'adressage.
+
 ## Après l'adoption
 
 1. **Apparier** les séries adoptées au suivi Suwayomi :

@@ -137,7 +137,7 @@ def test_diagnostic_bundle_contains_no_secret(
     assert config["values"]["public_url"] == "set" and config["values"]["host"] == "loopback"
     assert set(_members(out)) == {
         "manifest.json", "config.json", "status.json", "schema.sql", "content.json",
-        "sources.json", "logs.jsonl",
+        "sources.json", "logs.jsonl", "sandbox.json",
     }  # fmt: skip
 
 
@@ -213,3 +213,85 @@ def test_every_setting_has_a_bundle_class() -> None:
     assert set(SETTING_CLASSES) == set(Settings.model_fields)
     secrets = {n for n, f in Settings.model_fields.items() if "SecretStr" in str(f.annotation)}
     assert secrets and all(SETTING_CLASSES[name] == "presence" for name in secrets)
+
+
+@pytest.mark.req("ENF-SEC-003", "ENF-LEG-009")
+def test_diagnostic_bundle_reports_sandbox(
+    monkeypatch: pytest.MonkeyPatch, settings: Settings, tmp_path: Path, traps: Traps
+) -> None:
+    """The "sandbox" section is what the decode worker really runs in (M4 L36): the isolation
+    it got, that its network is shut, its limits and its environment. Closed words, booleans and
+    numbers: no path, no title, no process id, no name of the machine."""
+    code, out = _bundle(monkeypatch, settings, tmp_path, log_file(tmp_path / "s.log", traps))
+    assert code == 0
+    members = _members(out)
+    sandbox = json.loads(members["sandbox.json"])
+    assert sandbox["isolation"] in {"netns", "seccomp", "python"}
+    assert sandbox["python_socket"] == "denied"
+    assert sandbox["network"] in {"shut", "inet_shut", "python_only"}
+    assert sandbox["raw_connect"] in {"failed", "unavailable"}  # the real attempt, reported
+    assert sandbox["unix_socket"] in {"denied", "unavailable"}  # no AF_UNIX either
+    assert sandbox["probes"]["workers"] == 2 and sandbox["probes"]["max_page_bytes"] == 32 * 1024**2
+    assert sandbox["environment"] == {"isolated": True, "env_clean": True, "cwd_is_empty_dir": True}
+    assert sandbox["limits"]["no_new_privs"] is True
+    assert set(sandbox["limits"]["rlimits"]) >= {"rlimit_as", "rlimit_cpu", "rlimit_nproc"}
+    text = members["sandbox.json"].decode()
+    assert str(tmp_path) not in text and "/" not in text
+    assert "pid" not in sandbox["environment"]
+    found = leaks(out.read_bytes(), traps)
+    assert found == []
+
+
+@pytest.mark.req("ENF-SEC-003")
+def test_diagnostic_bundle_sandbox_section_can_be_excluded_and_says_when_the_worker_fails(
+    monkeypatch: pytest.MonkeyPatch, settings: Settings, tmp_path: Path, traps: Traps
+) -> None:
+    from shelfhold.infrastructure.imaging import client as imaging_client
+    from shelfhold.infrastructure.imaging.errors import ImageRejected
+
+    out = tmp_path / "out" / "bundle.zip"
+    out.parent.mkdir()
+    assert run_cli(monkeypatch, settings, "diagnostic", "bundle", "--out", str(out),
+                   "--exclude", "sandbox") == 0  # fmt: skip
+    assert "sandbox.json" not in _members(out)
+    assert json.loads(_members(out)["manifest.json"])["sections"]["sandbox"] == "excluded"
+
+    def broken(*_a: object, **_k: object) -> None:
+        raise ImageRejected("image.worker_failed", "/home/someone/secret path", "worker")
+
+    monkeypatch.setattr(imaging_client, "run_worker", broken)
+    again = tmp_path / "out" / "bundle2.zip"
+    assert run_cli(monkeypatch, settings, "diagnostic", "bundle", "--out", str(again)) == 0
+    sandbox = json.loads(_members(again)["sandbox.json"])
+    assert sandbox == {"unavailable": "worker_failed"}  # the code, never the reason
+
+
+@pytest.mark.req("ENF-SEC-003")
+@pytest.mark.parametrize(
+    ("facts", "word"),
+    [
+        ({"raw_connect": "failed", "unix_socket": "denied"}, "shut"),
+        ({"raw_connect": "failed", "unix_socket": "allowed"}, "inet_shut"),  # said honestly
+        ({"raw_connect": "connected", "unix_socket": "denied"}, "open"),  # an alert
+        ({"isolation": "python", "raw_connect": "unavailable", "unix_socket": "allowed"},
+         "python_only"),
+    ],
+)  # fmt: skip
+def test_the_sandbox_section_says_exactly_what_the_attempts_found(
+    monkeypatch: pytest.MonkeyPatch, facts: dict[str, str], word: str
+) -> None:
+    from shelfhold.ops import diagnostic
+
+    def worker(what: str, **_: object) -> dict[str, object]:
+        if what == "network":
+            return {"isolation": "netns", "seccomp": True, "python_socket": "denied", **facts}
+        if what == "limits":
+            return {"rlimit_as": [-1, -1], "rlimit_cpu": "x", "no_new_privs": True}
+        return {"isolated": True, "env_keys": ["LC_CTYPE"], "cwd_is_empty_dir": True}
+
+    monkeypatch.setattr(diagnostic, "diagnose_worker", worker)
+    report = diagnostic.sandbox_report()
+    assert report["network"] == word
+    limits = report["limits"]
+    assert limits["rlimits"]["rlimit_as"] == [-1, -1]  # -1: unlimited
+    assert limits["rlimits"]["rlimit_cpu"] == []  # unreadable is not "unlimited"

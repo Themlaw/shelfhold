@@ -14,11 +14,12 @@ from __future__ import annotations
 import json
 import os
 import subprocess
+import time
 from pathlib import Path
 
 import pytest
 from journey import KAVITA_PASSWORD, KAVITA_URL, Journey, wait_for
-from test_m1a_journey import install_by_commands
+from test_m1a_journey import KAVITA_PATH_MAP, install_by_commands
 from test_m1b_journey import discovered, family_files, family_install, ids_of, shelf_id
 from test_m2_journey import configure_sources, first_id, library_epubs
 from test_m2_journey import kavita_titles as _kavita_titles
@@ -287,11 +288,19 @@ def export_until_listed(j: Journey, folder: str, title: str) -> None:
 # -- (4) renaming a series two members read: the warning, with a number ------------------------------
 
 
-def manga_install(j: Journey, *, exported: bool = True) -> tuple[str, str]:
+def manga_install(
+    j: Journey,
+    *,
+    exported: bool = True,
+    path_map: str = KAVITA_PATH_MAP,
+    subpath: str | None = "manga",
+) -> tuple[str, str]:
     """Kavita and the 18+ shelf, the series discovered and, unless `exported` is off, the chapter
     published upstream delivered to Kavita (the simulated Suwayomi publishes one only); returns
-    `(destination id, library name)`."""
-    install_by_commands(j)
+    `(destination id, library name)`. `path_map`/`subpath` reach `install_by_commands`: the M4
+    journeys give Kavita a root of its own under the library, with the shelf at its root, so the
+    files land in /library/manga either way."""
+    install_by_commands(j, path_map=path_map, subpath=subpath)
     j.create_admin()
     j.discover_series()
     discovered(j)
@@ -434,6 +443,23 @@ def test_m3_detach_journey(journey_m3: Journey) -> None:
     assert j.egress() == []
 
 
+def adoption_preview(j: Journey, destination: object) -> tuple[int, object]:
+    """The preview of the folder screen: answered at once for a small library, else a background
+    task (`202`) whose state is read until it is no longer running (M4 L36)."""
+    [(code, body)] = j.api(
+        ("POST", "/api/v1/setup/adoption/preview", {"destination_id": destination})
+    )
+    if code != 202:
+        return code, body
+    path = str(body["status_url"])  # type: ignore[index]
+    for _ in range(60):
+        [(code, body)] = j.api(("GET", path))
+        if code != 200 or body["status"] != "running":  # type: ignore[index]
+            return code, body
+        time.sleep(2)
+    raise AssertionError("the preview is still running")
+
+
 # -- (6) "Kavita unreachable": understood, and solved by the action shown -----------------------------
 
 
@@ -451,9 +477,7 @@ def test_m3_kavita_unreachable_action_journey(journey_m3: Journey) -> None:
     try:
         # the wizard's folder screen asks Kavita for its libraries: what it answers is the error of
         # the catalogue, in plain words, with what to do
-        [(code, problem)] = j.api(
-            ("POST", "/api/v1/setup/adoption/preview", {"destination_id": destination})
-        )
+        code, problem = adoption_preview(j, destination)
         assert code == 503, (code, problem)
         assert problem["code"] == "target.unreachable", problem  # type: ignore[index]
         assert "Kavita ne répond pas" in problem["title"], problem  # type: ignore[index]
@@ -466,9 +490,7 @@ def test_m3_kavita_unreachable_action_journey(journey_m3: Journey) -> None:
         j.compose("unpause", "fake-kavita")
 
     assert wait_for(lambda: bool(j.kavita()), 60)
-    [(code, again)] = j.api(
-        ("POST", "/api/v1/setup/adoption/preview", {"destination_id": destination})
-    )
+    code, again = adoption_preview(j, destination)
     assert code != 503, again  # Kavita is reached: whatever the preview says, it is not that error
     j.publish_upstream()  # the chapter that came while Kavita was away is delivered now
     assert j.follow_until(lambda: exported_chapter(j, "manga"), 300)

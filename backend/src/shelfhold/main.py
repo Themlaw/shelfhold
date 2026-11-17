@@ -24,6 +24,7 @@ from shelfhold.events.since_key import SinceKey
 from shelfhold.export.application.pipeline import ExportPipeline
 from shelfhold.export.application.shelves import ShelfService
 from shelfhold.export.application.wiring import open_pipeline, roots_signature
+from shelfhold.export.targets.kavita import page_probe
 from shelfhold.headless import HeadlessAdmin, wiring
 from shelfhold.headless.applied import record_applied_public_url
 from shelfhold.identity.adapters.preferences import SqlNotificationPrefsStore, SqlPreferencesStore
@@ -57,6 +58,7 @@ from shelfhold.interfaces.http_api.audit import build_audit_router
 from shelfhold.interfaces.http_api.auth import AuthGate
 from shelfhold.interfaces.http_api.backfill import build_backfill_router
 from shelfhold.interfaces.http_api.bootstrap import build_bootstrap_router
+from shelfhold.interfaces.http_api.bulk import build_bulk_router
 from shelfhold.interfaces.http_api.bundle_slices import build_bundle_slices_router
 from shelfhold.interfaces.http_api.catalog_admin import build_catalog_admin_router
 from shelfhold.interfaces.http_api.catalog_lists import build_catalog_lists_router
@@ -215,6 +217,7 @@ LOGGED_SETTINGS: dict[str, str] = {
     "retention_events_days": "retention_events_days",
     "retention_audit_days": "retention_audit_days",
     "stream_max_per_profile": "stream_max_per_profile",
+    "adopt_probe_workers": "adopt_probe_workers",
     "comicvine_enabled": "comicvine_enabled",  # a switch
     "googlebooks_daily_budget": "googlebooks_daily_budget",  # a number, no secret
 }  # fmt: skip
@@ -252,6 +255,7 @@ def create_app(
 ) -> HttpApplication:
     resolved = settings or load_settings(os.environ, db_loader=load_db_settings).values
     clock = clock or SystemClock()
+    page_probe.configure(resolved.adopt_probe_workers)  # M4 L36: one bound for every preview
 
     runtime = InstanceRuntime(resolved)
     # Opened lazily: no connection before the first request, after the start-up checks.
@@ -455,6 +459,7 @@ def create_app(
         build_ops_dashboard_router(lambda: engine, clock.now),
         build_webhooks_router(webhook_admin),  # M4 L24: signed webhooks; admin only, reserved
         build_triage_router(ops_services),  # EF-USR-015, EF-EXP-046: the two lists, the batch
+        build_bulk_router(ops_services),  # M4 L28 (EF-BIB-023): preview, then one job
         build_library_router(ops_services),  # pairing, repatriation, detach, purge, probe
         # EF-SRC-013, EF-EXP-065: per-source settings (nothing secret read back), attestations
         build_plugins_router(

@@ -739,6 +739,99 @@ export type BlocksOut = {
 };
 
 /**
+ * BulkFilter
+ *
+ * A filter of the list, frozen by the preview into the Works it matched then.
+ */
+export type BulkFilter = {
+    /**
+     * State
+     */
+    state?: 'rating_pending' | 'follow_suspended' | null;
+    /**
+     * Text
+     */
+    text?: string | null;
+};
+
+/**
+ * BulkItem
+ */
+export type BulkItem = {
+    /**
+     * Age
+     */
+    age?: number | null;
+    /**
+     * State
+     */
+    state: string;
+    /**
+     * Title
+     */
+    title: string;
+    /**
+     * Work Id
+     */
+    work_id: string;
+};
+
+/**
+ * BulkRateApplyIn
+ */
+export type BulkRateApplyIn = {
+    /**
+     * Confirm
+     */
+    confirm: string;
+};
+
+/**
+ * BulkRatePreviewIn
+ */
+export type BulkRatePreviewIn = {
+    /**
+     * Age
+     */
+    age: string;
+    filter?: BulkFilter | null;
+    /**
+     * Work Ids
+     */
+    work_ids?: Array<string> | null;
+};
+
+/**
+ * BulkRatePreviewOut
+ */
+export type BulkRatePreviewOut = {
+    /**
+     * Age
+     */
+    age: string;
+    /**
+     * Expires At
+     */
+    expires_at: string;
+    /**
+     * Items
+     */
+    items: Array<BulkItem>;
+    /**
+     * Order Id
+     */
+    order_id: string;
+    /**
+     * Skipped
+     */
+    skipped: number;
+    /**
+     * Token
+     */
+    token: string;
+};
+
+/**
  * BundleCanOut
  */
 export type BundleCanOut = {
@@ -6133,6 +6226,18 @@ export type TitleOut = {
  */
 export type ToRateItem = {
     /**
+     * Age
+     */
+    age?: number | null;
+    /**
+     * Age X
+     */
+    age_x?: boolean;
+    /**
+     * Rated
+     */
+    rated?: boolean;
+    /**
      * Reason
      */
     reason: string;
@@ -6900,6 +7005,22 @@ export type WizardLibraryOut = {
 };
 
 /**
+ * WizardPreviewAccepted
+ *
+ * Body of the 202 of a preview that takes longer than a request may: ask `status_url`.
+ */
+export type WizardPreviewAccepted = {
+    /**
+     * Job Id
+     */
+    job_id: string;
+    /**
+     * Status Url
+     */
+    status_url: string;
+};
+
+/**
  * WizardPreviewIn
  */
 export type WizardPreviewIn = {
@@ -6946,6 +7067,25 @@ export type WizardPreviewOut = {
      * Series
      */
     series: number;
+    /**
+     * To Check
+     */
+    to_check: Array<WizardToCheckOut>;
+};
+
+/**
+ * WizardPreviewStatusOut
+ */
+export type WizardPreviewStatusOut = {
+    /**
+     * Job Id
+     */
+    job_id: string;
+    preview: WizardPreviewOut | null;
+    /**
+     * Status
+     */
+    status: 'running' | 'done';
 };
 
 /**
@@ -7100,6 +7240,23 @@ export type WizardTargetOut = {
      * Name
      */
     name: string;
+};
+
+/**
+ * WizardToCheckOut
+ *
+ * A file whose first page or archive the decode worker or the safe opener refused: adopted
+ * all the same, never touched, for the admin to look at (`reason` is a code of a closed list).
+ */
+export type WizardToCheckOut = {
+    /**
+     * Path
+     */
+    path: string;
+    /**
+     * Reason
+     */
+    reason: string;
 };
 
 /**
@@ -8848,6 +9005,79 @@ export type SessionRevokeResponses = {
 };
 
 export type SessionRevokeResponse = SessionRevokeResponses[keyof SessionRevokeResponses];
+
+export type BulkRatePreviewData = {
+    body: BulkRatePreviewIn;
+    path?: never;
+    query?: never;
+    url: '/api/v1/bulk/rate/preview';
+};
+
+export type BulkRatePreviewErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type BulkRatePreviewError = BulkRatePreviewErrors[keyof BulkRatePreviewErrors];
+
+export type BulkRatePreviewResponses = {
+    /**
+     * Successful Response
+     */
+    200: BulkRatePreviewOut;
+};
+
+export type BulkRatePreviewResponse = BulkRatePreviewResponses[keyof BulkRatePreviewResponses];
+
+export type BulkRateApplyData = {
+    body: BulkRateApplyIn;
+    path: {
+        /**
+         * Order Id
+         */
+        order_id: string;
+    };
+    query?: never;
+    url: '/api/v1/bulk/rate/{order_id}/apply';
+};
+
+export type BulkRateApplyErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type BulkRateApplyError = BulkRateApplyErrors[keyof BulkRateApplyErrors];
+
+export type BulkRateApplyResponses = {
+    /**
+     * Response Bulk Rate Apply
+     *
+     * Successful Response
+     */
+    202: JobAccepted;
+};
+
+export type BulkRateApplyResponse = BulkRateApplyResponses[keyof BulkRateApplyResponses];
 
 export type ListCollectionsData = {
     body?: never;
@@ -14681,9 +14911,51 @@ export type WizardAdoptionPreviewResponses = {
      * Successful Response
      */
     200: WizardPreviewOut;
+    /**
+     * Accepted
+     */
+    202: WizardPreviewAccepted;
 };
 
 export type WizardAdoptionPreviewResponse = WizardAdoptionPreviewResponses[keyof WizardAdoptionPreviewResponses];
+
+export type WizardAdoptionPreviewStatusData = {
+    body?: never;
+    path: {
+        /**
+         * Job Id
+         */
+        job_id: string;
+    };
+    query?: never;
+    url: '/api/v1/setup/adoption/preview/{job_id}';
+};
+
+export type WizardAdoptionPreviewStatusErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type WizardAdoptionPreviewStatusError = WizardAdoptionPreviewStatusErrors[keyof WizardAdoptionPreviewStatusErrors];
+
+export type WizardAdoptionPreviewStatusResponses = {
+    /**
+     * Successful Response
+     */
+    200: WizardPreviewStatusOut;
+};
+
+export type WizardAdoptionPreviewStatusResponse = WizardAdoptionPreviewStatusResponses[keyof WizardAdoptionPreviewStatusResponses];
 
 export type WizardKeyringExportData = {
     body: KeyringExportIn;
