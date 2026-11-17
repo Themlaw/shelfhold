@@ -35,10 +35,11 @@ __all__ = [
     "claim",
     "close",
     "digest_of",
+    "drop_dead_orders",
     "freeze",
     "load",
     "load_for_job",
-    "purge",
+    "progress",
     "release",
     "token_of",
 ]
@@ -82,8 +83,8 @@ def freeze(
 ) -> Order:  # fmt: skip
     """Write an order for what the preview saw; `previewed` until it is applied. `facts` is what
     the digest covers (see `digest_of`): the job recomputes it under the write lock. Orders that
-    can no longer be applied are dropped here, at the next insertion (`purge`)."""
-    purge(connection, now=now)
+    can no longer be applied are dropped here, at the next insertion (`drop_dead_orders`)."""
+    drop_dead_orders(connection, now=now)
     ids = tuple(sorted(set(work_ids)))
     order = Order(
         new_ulid(),
@@ -111,7 +112,7 @@ def freeze(
     return order
 
 
-def purge(connection: Connection, *, now: datetime) -> int:
+def drop_dead_orders(connection: Connection, *, now: datetime) -> int:
     """Drop what is of no use any more: a preview older than `ORDER_TTL` that nobody applied, and
     an order that ended (`applied`, `stale`, `refused`) more than `KEEP_ENDED` ago. An order that is
     queued is never dropped: its job reads it."""
