@@ -206,7 +206,8 @@ def test_m4_journey_manga_shelf_kavita_and_native_folder(journey_m4: Journey) ->
     assert j.shelfhold("jobs", "run", "export.run").code == 0
 
     def visible() -> list[str]:
-        return [f for f in native_files(j) if "/.shelfhold/" not in f]
+        # Shelfhold's own markers (its state folder, the sentinel of a root) are not what Mihon reads
+        return [f for f in native_files(j) if "/.shelfhold" not in f]
 
     expected = [
         f"{NATIVE_ROOT}/manga/Series Alpha/Ch.0002 Chapter 2.cbz",
