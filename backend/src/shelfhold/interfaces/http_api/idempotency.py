@@ -3,6 +3,13 @@
 Pure ASGI middleware. Only JSON (or empty) answers below 500 are retained: a server error is not
 an answer, and a response that must not be stored (`Cache-Control: no-store`, e.g. a one-time
 secret) is never written to the database, so its key is released instead of replayed.
+
+A **reserved route** (one that depends on `reserved_action`) is not kept in the ledger at all
+(M4 L34): the claim of a keyed request holds a digest of its body *before* the route runs, and
+the body of a reserved action is a phrase to type or a password; a process killed mid-request
+would leave that digest in the table for a day. Such a route ignores the key: it is never
+replayed (a replay would skip the freshness checks), and what makes it safe to repeat is its own
+(the dedupe key of its job).
 """
 
 import hashlib
@@ -11,8 +18,11 @@ import re
 from collections.abc import Callable
 from typing import Any
 
+from fastapi import APIRouter
+from fastapi.routing import APIRoute
 from starlette.concurrency import run_in_threadpool
 from starlette.datastructures import Headers, MutableHeaders
+from starlette.routing import compile_path
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from shelfhold.infrastructure.idempotency_store import (
@@ -35,16 +45,55 @@ _DETERMINISTIC_ERRORS = frozenset({400, 404, 409, 422})
 _REPLAYED_HEADERS = ("location", "etag", "content-type")
 
 ActorOf = Callable[[Scope], str]
+ReservedRoute = Callable[[Scope], bool]
 # Set in `scope["state"]` by a route whose answer must never be kept nor replayed: a reserved
 # action (review PR #41) — a replay would skip the credential and freshness checks.
 NEVER_STORE = "idempotency_never_store"
 
 
+def _is_reserved(dependant: Any) -> bool:
+    return any(
+        hasattr(getattr(sub, "call", None), "reserved_action") or _is_reserved(sub)
+        for sub in dependant.dependencies
+    )
+
+
+class ReservedRoutes:
+    """Which requests go to a route that performs a reserved action, read from the routers the
+    application includes (`include`), never from a list kept somewhere else: a new reserved route
+    is covered by declaring its guard, nothing more. Called with an ASGI scope it answers for the
+    request; the routers of `create_app` carry their prefix, so the path of a route is its full
+    path."""
+
+    def __init__(self) -> None:
+        self._patterns: list[tuple[frozenset[str], re.Pattern[str]]] = []
+
+    def add(self, router: APIRouter) -> None:
+        for route in router.routes:
+            inner = getattr(route, "original_router", None)  # a router included in this router
+            if inner is not None:
+                self.add(inner)
+            if isinstance(route, APIRoute) and _is_reserved(route.dependant):
+                regex, _format, _convertors = compile_path(route.path)
+                self._patterns.append((frozenset(route.methods or ()), regex))
+
+    def __call__(self, scope: Scope) -> bool:
+        method, path = scope["method"], scope["path"]
+        return any(method in methods and regex.match(path) for methods, regex in self._patterns)
+
+
 class IdempotencyMiddleware:
-    def __init__(self, app: ASGIApp, store: IdempotencyStore, actor_of: ActorOf) -> None:
+    def __init__(
+        self,
+        app: ASGIApp,
+        store: IdempotencyStore,
+        actor_of: ActorOf,
+        reserved: ReservedRoute | None = None,
+    ) -> None:
         self.app = app
         self.store = store
         self.actor_of = actor_of
+        self.reserved = reserved
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         if scope["type"] != "http" or scope["method"] != "POST":
@@ -52,8 +101,8 @@ class IdempotencyMiddleware:
             return
         headers = Headers(scope=scope)
         key = headers.get(IDEMPOTENCY_HEADER)
-        if key is None:
-            await self.app(scope, receive, send)
+        if key is None or (self.reserved is not None and self.reserved(scope)):
+            await self.app(scope, receive, send)  # no key, or a reserved route: no claim, no digest
             return
         request_id = scope.get("state", {}).get("request_id")
         if not _KEY.fullmatch(key):

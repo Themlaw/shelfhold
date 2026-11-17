@@ -9,7 +9,9 @@ import Page from './+page.svelte';
 // The destinations screen (EF-EXP-031): remove a destination (keep the files, or take them away)
 // and detach Kavita completely, each behind a preview that says what would be lost, a phrase the
 // server gives and the admin types, and the fresh-session prompt; the detachment ends on its
-// final report. Every body is the one the doors take (backend `test_l45_destination_doors.py`).
+// job panel. Every body is the one the doors take (backend `test_l45_destination_doors.py`).
+// M4 L34: a removal that takes the files and the detachment answer 202 with the id of a job; the
+// screen says it may be running, and « Recharger » asks the job and the list again.
 const BASE = 'http://shelfhold.test';
 const server = setupServer();
 const ADMIN_PW = ['synthetic', 'admin', 'pw', '0045'].join('-'); // no literal: gitleaks scans commits
@@ -18,6 +20,7 @@ const DEST = '01JDEST000000000000000000A';
 const TARGET = '01JTARG000000000000000000A';
 const REMOVE_PHRASE = 'RETIRER manga/';
 const DETACH_PHRASE = 'DÉTACHER Kavita';
+const JOB = '01JJOB0000000000000000000A';
 const destination = (over: Record<string, unknown> = {}) => ({
   id: DEST,
   shelf_id: '01JSHLF000000000000000000A',
@@ -58,17 +61,14 @@ const detachPreview = {
   phrase: DETACH_PHRASE,
   warnings: [{ code: 'detach:hidden_erased', count: 12 }]
 };
-const detachReport = (over: Record<string, unknown> = {}) => ({
-  target_id: TARGET, complete: true, hidden_removed: 12, key_revoked: true, key_gone: false,
-  forgotten: 40, cancelled: false, settings_restored: true,
-  settings: [{ exclude_patterns_restored: true, type_unchanged: true }],
-  leftovers: [
-    { code: 'suwayomi_downloads', count: 3 },
-    { code: 'kavita_accounts', count: 1 },
-    { code: 'store', count: 25 }
-  ],
-  ...over
-});
+const accepted = () =>
+  HttpResponse.json({ job_id: JOB, status_url: `/api/v1/jobs/${JOB}` }, { status: 202 });
+const jobStatus = (status: string, error_code: string | null = null) =>
+  HttpResponse.json({
+    id: JOB, kind: 'x', status, error_code, attempts: 1, progress: null,
+    created_at: null, started_at: null, finished_at: null
+  });
+const jobPanel = () => screen.findByRole('region', { name: 'Tâche en arrière-plan' });
 
 beforeAll(() => {
   server.listen({ onUnhandledRequest: 'error' } as never);
@@ -262,7 +262,7 @@ describe('Destinations', () => {
       http.post(`${BASE}/api/v1/targets/${TARGET}/detach-preview`, () => HttpResponse.json(detachPreview)),
       http.post(`${BASE}/api/v1/targets/${TARGET}/detach`, async ({ request }) => {
         body = await request.json();
-        return HttpResponse.json(detachReport());
+        return accepted();
       })
     );
     render(Page);
@@ -273,7 +273,7 @@ describe('Destinations', () => {
     await user.click(screen.getByLabelText('Effacer les données cachées'));
     await user.type(phrase(), DETACH_PHRASE);
     await user.click(screen.getByRole('button', { name: 'Confirmer' }));
-    await screen.findByRole('region', { name: 'Rapport final' });
+    await jobPanel();
     expect(body).toEqual({
       typed: DETACH_PHRASE, credential: KAVITA_PW,
       discard_hidden_data: true, discard_tombstone_journal: false
@@ -288,7 +288,7 @@ describe('Destinations', () => {
       http.post(`${BASE}/api/v1/targets/${TARGET}/detach-preview`, () => HttpResponse.json(detachPreview)),
       http.post(`${BASE}/api/v1/targets/${TARGET}/detach`, async ({ request }) => {
         body = (await request.json()) as Record<string, unknown>;
-        return HttpResponse.json(detachReport());
+        return accepted();
       })
     );
     render(Page);
@@ -297,7 +297,7 @@ describe('Destinations', () => {
     await screen.findByText(DETACH_PHRASE);
     await user.type(phrase(), DETACH_PHRASE);
     await user.click(screen.getByRole('button', { name: 'Confirmer' }));
-    await screen.findByRole('region', { name: 'Rapport final' });
+    await jobPanel();
     expect(body).toEqual({ typed: DETACH_PHRASE, discard_hidden_data: false, discard_tombstone_journal: false });
   });
 
@@ -310,7 +310,7 @@ describe('Destinations', () => {
       http.post(`${BASE}/api/v1/targets/${TARGET}/detach-preview`, () => HttpResponse.json(detachPreview)),
       http.post(`${BASE}/api/v1/targets/${TARGET}/detach`, async ({ request }) => {
         bodies.push(await request.json());
-        return bodies.length === 1 ? stale() : HttpResponse.json(detachReport());
+        return bodies.length === 1 ? stale() : accepted();
       }),
       reauthWith(reauths)
     );
@@ -321,20 +321,26 @@ describe('Destinations', () => {
     await user.type(phrase(), DETACH_PHRASE);
     await user.click(screen.getByRole('button', { name: 'Confirmer' }));
     await user.type(await screen.findByLabelText('Mot de passe'), ADMIN_PW);
-    expect(screen.queryByRole('region', { name: 'Rapport final' })).toBeNull();
+    expect(screen.queryByRole('region', { name: 'Tâche en arrière-plan' })).toBeNull();
     await user.click(reauthConfirm());
-    await screen.findByRole('region', { name: 'Rapport final' });
+    await jobPanel();
     expect(reauths.n).toBe(1);
     expect(bodies).toHaveLength(2);
     expect(bodies[1]).toEqual(bodies[0]);
   });
 
   // req: EF-EXP-031
-  it('test_detach_screen_shows_final_report: what was undone and what was left in place', async () => {
+  it('test_detach_screen_says_it_may_be_running_then_shows_the_end_after_a_reload', async () => {
     list();
+    let status = 'running';
+    let polls = 0;
     server.use(
       http.post(`${BASE}/api/v1/targets/${TARGET}/detach-preview`, () => HttpResponse.json(detachPreview)),
-      http.post(`${BASE}/api/v1/targets/${TARGET}/detach`, () => HttpResponse.json(detachReport()))
+      http.post(`${BASE}/api/v1/targets/${TARGET}/detach`, () => accepted()),
+      http.get(`${BASE}/api/v1/jobs/${JOB}`, () => {
+        polls += 1;
+        return jobStatus(status);
+      })
     );
     render(Page);
     const user = userEvent.setup();
@@ -342,27 +348,26 @@ describe('Destinations', () => {
     await screen.findByText(DETACH_PHRASE);
     await user.type(phrase(), DETACH_PHRASE);
     await user.click(screen.getByRole('button', { name: 'Confirmer' }));
-    const report = await screen.findByRole('region', { name: 'Rapport final' });
-    expect(report).toHaveTextContent('Kavita fonctionne sans Shelfhold.');
-    expect(report).toHaveTextContent('Réglages de Kavita restaurés');
-    expect(report).toHaveTextContent('Clé dédiée révoquée');
-    expect(report).toHaveTextContent('12 fichiers cachés retirés');
-    const left = within(report).getByRole('list', { name: 'Laissé en place' });
-    const items = within(left).getAllByRole('listitem');
-    expect(items).toHaveLength(3);
-    expect(items[0]).toHaveTextContent('Laissé en place : les téléchargements de 3 séries dans Suwayomi ; supprimez-les là-bas si vous voulez.');
-    expect(items[1]).toHaveTextContent('Laissé en place : les comptes Kavita (1 dédié) ; retirez-les dans Kavita si vous voulez.');
-    expect(items[2]).toHaveTextContent('Laissé en place : /store contient 25 fichiers.');
+    const panel = await jobPanel();
+    expect(panel).toHaveTextContent(/peut-être en cours, rechargez/);
+    expect(panel).not.toHaveTextContent('Kavita fonctionne sans Shelfhold.');
+    await user.click(within(panel).getByRole('button', { name: 'Recharger' }));
+    await within(panel).findByText(/peut-être en cours, rechargez/);
+    expect(polls).toBe(1);
+    status = 'succeeded';
+    await user.click(within(panel).getByRole('button', { name: 'Recharger' }));
+    await within(panel).findByText('Kavita fonctionne sans Shelfhold.');
+    expect(panel).toHaveTextContent(/Restent en place/);
+    expect(panel).not.toHaveTextContent(/peut-être en cours/);
   });
 
   // req: EF-EXP-031
-  it('says what is not done when the report is partial: settings not restored, key not revoked, not complete', async () => {
+  it('says what is not done when the detachment job failed: unfinished, to be ordered again', async () => {
     list();
     server.use(
       http.post(`${BASE}/api/v1/targets/${TARGET}/detach-preview`, () => HttpResponse.json(detachPreview)),
-      http.post(`${BASE}/api/v1/targets/${TARGET}/detach`, () =>
-        HttpResponse.json(detachReport({ complete: false, key_revoked: false, settings_restored: false, hidden_removed: 0, leftovers: [] }))
-      )
+      http.post(`${BASE}/api/v1/targets/${TARGET}/detach`, () => accepted()),
+      http.get(`${BASE}/api/v1/jobs/${JOB}`, () => jobStatus('failed', 'detach.incomplete'))
     );
     render(Page);
     const user = userEvent.setup();
@@ -370,12 +375,94 @@ describe('Destinations', () => {
     await screen.findByText(DETACH_PHRASE);
     await user.type(phrase(), DETACH_PHRASE);
     await user.click(screen.getByRole('button', { name: 'Confirmer' }));
-    const report = await screen.findByRole('region', { name: 'Rapport final' });
-    expect(report).toHaveTextContent('Détachement inachevé : reprenez-le.');
-    expect(report).toHaveTextContent('Réglages de Kavita non restaurés');
-    expect(report).toHaveTextContent('Clé dédiée non révoquée');
-    expect(report).not.toHaveTextContent('Kavita fonctionne sans Shelfhold.');
-    expect(within(report).queryByRole('list', { name: 'Laissé en place' })).toBeNull();
+    const panel = await jobPanel();
+    await user.click(within(panel).getByRole('button', { name: 'Recharger' }));
+    expect((await within(panel).findByRole('alert')).textContent).toMatch(/Détachement inachevé[ \u202f]: reprenez-le\./);
+    expect(panel).toHaveTextContent(/mot de passe/);
+    expect(panel).not.toHaveTextContent('Kavita fonctionne sans Shelfhold.');
+  });
+
+  // req: EF-EXP-031
+  it('test_remove_with_files_is_a_job: says it may be running, and the reload shows the end', async () => {
+    let listed = 0;
+    let removal: unknown = null;
+    let status = 'queued';
+    server.use(
+      http.get(`${BASE}/api/v1/destinations`, () => {
+        listed += 1;
+        return HttpResponse.json({ items: listed === 1 ? [destination()] : [] });
+      }),
+      http.post(`${BASE}/api/v1/destinations/${DEST}/removal-preview`, () => HttpResponse.json(removalPreview('delete_files'))),
+      http.post(`${BASE}/api/v1/destinations/${DEST}/removal`, async ({ request }) => {
+        removal = await request.json();
+        return accepted();
+      }),
+      http.get(`${BASE}/api/v1/jobs/${JOB}`, () => jobStatus(status))
+    );
+    render(Page);
+    const user = userEvent.setup();
+    await user.click(within(await row()).getByRole('button', { name: 'Retirer' }));
+    await user.click(screen.getByLabelText('Supprimer les fichiers'));
+    await user.click(screen.getByRole('button', { name: 'Voir ce qui sera perdu' }));
+    await screen.findByText(REMOVE_PHRASE);
+    await user.type(phrase(), REMOVE_PHRASE);
+    await user.click(screen.getByRole('button', { name: 'Confirmer' }));
+    const panel = await jobPanel();
+    expect(removal).toEqual({ mode: 'delete_files', typed: REMOVE_PHRASE });
+    expect(panel).toHaveTextContent(/peut-être en cours, rechargez/);
+    expect(screen.queryByText('Destination retirée.')).toBeNull(); // nothing is said done yet
+    expect(screen.queryByLabelText('Recopiez la phrase pour confirmer')).toBeNull(); // the form is closed
+    status = 'succeeded';
+    await user.click(within(panel).getByRole('button', { name: 'Recharger' }));
+    await screen.findByText('Destination retirée.');
+    expect(listed).toBe(2); // the list was read again
+    expect(screen.queryByText(/manga\//)).toBeNull(); // the destination is gone
+  });
+
+  // req: EF-EXP-031, EF-BIB-045
+  it('says the removal job left files, and why it is not finished', async () => {
+    list();
+    server.use(
+      http.post(`${BASE}/api/v1/destinations/${DEST}/removal-preview`, () => HttpResponse.json(removalPreview('delete_files'))),
+      http.post(`${BASE}/api/v1/destinations/${DEST}/removal`, () => accepted()),
+      http.get(`${BASE}/api/v1/jobs/${JOB}`, () => jobStatus('failed', 'removal.incomplete'))
+    );
+    render(Page);
+    const user = userEvent.setup();
+    await user.click(within(await row()).getByRole('button', { name: 'Retirer' }));
+    await user.click(screen.getByLabelText('Supprimer les fichiers'));
+    await user.click(screen.getByRole('button', { name: 'Voir ce qui sera perdu' }));
+    await screen.findByText(REMOVE_PHRASE);
+    await user.type(phrase(), REMOVE_PHRASE);
+    await user.click(screen.getByRole('button', { name: 'Confirmer' }));
+    const panel = await jobPanel();
+    await user.click(within(panel).getByRole('button', { name: 'Recharger' }));
+    expect((await within(panel).findByRole('alert')).textContent).toMatch(/Retrait inachevé[ \u202f]: reprenez-le\./);
+    expect(panel).toHaveTextContent(/dernier exemplaire|modifiés|restent/);
+  });
+
+  // req: EF-EXP-031
+  it('shows a job that is paused or failed for another reason without claiming success', async () => {
+    list();
+    let status = 'paused';
+    server.use(
+      http.post(`${BASE}/api/v1/targets/${TARGET}/detach-preview`, () => HttpResponse.json(detachPreview)),
+      http.post(`${BASE}/api/v1/targets/${TARGET}/detach`, () => accepted()),
+      http.get(`${BASE}/api/v1/jobs/${JOB}`, () => jobStatus(status, status === 'paused' ? null : 'job.failed'))
+    );
+    render(Page);
+    const user = userEvent.setup();
+    await user.click(within(await row()).getByRole('button', { name: 'Détacher Kavita' }));
+    await screen.findByText(DETACH_PHRASE);
+    await user.type(phrase(), DETACH_PHRASE);
+    await user.click(screen.getByRole('button', { name: 'Confirmer' }));
+    const panel = await jobPanel();
+    await user.click(within(panel).getByRole('button', { name: 'Recharger' }));
+    await within(panel).findByText(/en pause/);
+    status = 'dead_letter';
+    await user.click(within(panel).getByRole('button', { name: 'Recharger' }));
+    expect((await within(panel).findByRole('alert')).textContent).toMatch(/n'a pas abouti/);
+    expect(panel).not.toHaveTextContent('Kavita fonctionne sans Shelfhold.');
   });
 
   // req: EF-EXP-031
@@ -383,7 +470,7 @@ describe('Destinations', () => {
     list();
     server.use(
       http.post(`${BASE}/api/v1/targets/${TARGET}/detach-preview`, () => HttpResponse.json(detachPreview)),
-      http.post(`${BASE}/api/v1/targets/${TARGET}/detach`, () => HttpResponse.json(detachReport()))
+      http.post(`${BASE}/api/v1/targets/${TARGET}/detach`, () => accepted())
     );
     const { container } = render(Page);
     const user = userEvent.setup();
@@ -392,7 +479,7 @@ describe('Destinations', () => {
     await user.type(screen.getByLabelText('Mot de passe du compte Kavita dédié'), KAVITA_PW);
     await user.type(phrase(), DETACH_PHRASE);
     await user.click(screen.getByRole('button', { name: 'Confirmer' }));
-    await screen.findByRole('region', { name: 'Rapport final' });
+    await jobPanel();
     expect(container.textContent).not.toContain(KAVITA_PW);
     for (const field of container.querySelectorAll('input')) expect((field as HTMLInputElement).value).not.toBe(KAVITA_PW);
   });
@@ -411,7 +498,7 @@ describe('Destinations', () => {
     await user.type(phrase(), DETACH_PHRASE);
     await user.click(screen.getByRole('button', { name: 'Confirmer' }));
     expect((await screen.findByRole('alert')).textContent).toMatch(/Le détachement a été refusé\./);
-    expect(screen.queryByRole('region', { name: 'Rapport final' })).toBeNull();
+    expect(screen.queryByRole('region', { name: 'Tâche en arrière-plan' })).toBeNull();
   });
 
   // req: EF-EXP-031

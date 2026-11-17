@@ -152,6 +152,10 @@ _OTHER: Mapping[str, str] = MappingProxyType(
         # intention per root, after the reserved action `detach.full` and the typed phrase.
         f"{_EXPORT_APP}/detach.py::FullDetacher._record_erasure": "detach.full",
         f"{_EXPORT_APP}/detach.py::FullDetacher._record_revocation": "detach.full",
+        # L34: the job key of a detachment (identifiers only) and its reading back; the order
+        # itself is given after the same reserved action and phrase.
+        f"{_EXPORT_APP}/detach.py::detach_job_key": "detach.full",
+        f"{_EXPORT_APP}/detach.py::detach_order_of": "detach.full",
         # The two doors of the screen (L45): the full detachment (reserved: a fresh admin session,
         # never a key) and its preview, named after it and deleting nothing
         "shelfhold/interfaces/http_api/destinations.py::build_destinations_router.detach": (

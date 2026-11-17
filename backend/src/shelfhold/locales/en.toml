@@ -2110,6 +2110,16 @@
     action = "Read the reason: the phrase was not typed as shown, a file operation is still open under the root, an export or a scan holds a destination (try again later), the reserved folder holds a deleted book in its bin or an archive waiting for its export (--discard-hidden-data if you are sure), its erase log would go (--discard-tombstone-journal), --key-gone without --password-file, or the erasure has already begun (run the same command again to finish)."
     cause = "The confirmation phrase is missing or different, an operation is still open, or the reserved folder holds data of yours that the detachment would destroy."
 
+  [errors."removal.incomplete"]
+    title = "The removal is not finished: files are left."
+    action = "Open the destination in Settings: each file left is named with its reason (changed since the export, last copy of an irreplaceable original, outside the root). Deal with them by hand or keep them, then start the removal again."
+    cause = "At least one file was not deleted: it changed since the export, it may be the last copy of an irreplaceable original, or it is not a plain file of the root. The destination is not forgotten while any are left."
+
+  [errors."detach.incomplete"]
+    title = "The detachment is not finished: a step failed or is missing."
+    action = "Read the report: if the dedicated key was not revoked, give the same order a second time, with the Kavita account password (it is never kept between two runs). The steps already done are not done again."
+    cause = "The reserved folder, the library settings or the dedicated key could not be handled to the end: Kavita does not answer, the password is missing (a restart between the order and the work) or a name is already taken."
+
   [errors."tombstone.journal_truncated"]
     title = "The erase log of a root was truncated."
     action = "Nothing was deleted, but the root is blocked (reconcile and reacquire): “shelfhold tombstone set-aside-journal” sets the file aside and rewrites it from the database."

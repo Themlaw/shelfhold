@@ -43,6 +43,7 @@ from shelfhold.infrastructure.fetcher import GuardedFetcher, Network
 from shelfhold.infrastructure.fetcher.client import FetchLimits
 from shelfhold.infrastructure.fetcher.traffic_store import SqlTrafficCounter
 from shelfhold.infrastructure.fsops import Fsops
+from shelfhold.infrastructure.handoff import CredentialHandoff
 from shelfhold.infrastructure.instance import (
     HEARTBEAT_INTERVAL,
     GenerationCounter,
@@ -181,6 +182,7 @@ class Composition:
         # job queues; a command run by itself has neither and says so (`ExitUnavailableError`)
         self.plugins: Callable[[], Any] = lambda: None
         self.pools: Callable[[], Any] = lambda: None
+        self.credential_handoff = CredentialHandoff()  # M4 L34: a secret for one job, in memory
         self._fetchers: Any = None
 
     # -- secrets -----------------------------------------------------------------------------

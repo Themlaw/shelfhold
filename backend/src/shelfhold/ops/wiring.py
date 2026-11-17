@@ -8,7 +8,6 @@ database and never creates a keyring. A component that another lot has not conne
 from __future__ import annotations
 
 from collections.abc import Callable
-from functools import cache
 
 import sqlalchemy as sa
 from sqlalchemy import Engine
@@ -23,8 +22,6 @@ from shelfhold.export.domain.path_map import PathMap
 from shelfhold.export.targets.kavita.accounts_audit import ChildAccountsAuditor
 from shelfhold.export.targets.kavita.audit import AccessAuditor
 from shelfhold.export.targets.kavita.reinstall import InstanceService
-from shelfhold.headless import HeadlessAdmin
-from shelfhold.headless import wiring as headless_wiring
 from shelfhold.identity.public import child_kavita_accounts
 from shelfhold.infrastructure.clock import Clock
 from shelfhold.infrastructure.db import create_db_engine
@@ -54,6 +51,7 @@ from shelfhold.ops.intents import IntentOps
 from shelfhold.ops.kavita import KavitaTargetOps
 from shelfhold.ops.kavita_accounts import KavitaAccountsOps
 from shelfhold.ops.keyring import TombstoneKeyringExit
+from shelfhold.ops.lazy_headless import LazyHeadless
 from shelfhold.ops.library import LibraryOps
 from shelfhold.ops.maintenance import MaintenanceOps
 from shelfhold.ops.meta import MetaOps
@@ -74,35 +72,6 @@ from shelfhold.ops.wizard import WizardOps
 from shelfhold.ops.work_merge import WorkMergeOps
 
 __all__ = ["open_ops"]
-
-
-class _LazyHeadless:
-    """The configuration facade, opened when a credential is renewed (it may create the keyring)."""
-
-    def __init__(self, settings: Settings) -> None:
-        self._settings = settings
-
-    @cache  # noqa: B019 (one instance per process)
-    def _admin(self) -> HeadlessAdmin:
-        return headless_wiring.open_headless(self._settings)
-
-    def target_rotate_key(self, *, target: str, password: str) -> object:
-        return self._admin().target_rotate_key(target=target, password=password)
-
-    def target_find_key(self, *, target: str, password: str | None) -> str | None:
-        return self._admin().target_find_key(target=target, password=password)
-
-    def target_revoke_key_id(self, *, target: str, password: str | None, key_id: str) -> str:
-        return self._admin().target_revoke_key_id(target=target, password=password, key_id=key_id)
-
-    def source_set_secret(self, secret: str) -> object:
-        return self._admin().source_set_secret(secret)
-
-    def source_recheck(self) -> object:
-        return self._admin().source_recheck()
-
-    def source_reconnect(self) -> object:
-        return self._admin().source_reconnect()
 
 
 def _fsops(engine: Engine, umask: int) -> Fsops | None:
@@ -161,7 +130,7 @@ def open_ops(
         return _fsops(engine, settings.umask)
 
     library = LibraryOps(composition)
-    lazy_headless = _LazyHeadless(settings)
+    lazy_headless = LazyHeadless(settings)
     window = MaintenanceWindow.from_text(
         settings.maintenance_window_start, settings.maintenance_window_end, settings.timezone
     )

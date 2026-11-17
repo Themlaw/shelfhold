@@ -9312,9 +9312,11 @@ export type RemovalResponses = {
      *
      * Successful Response
      */
-    200: {
-        [key: string]: unknown;
-    };
+    200: unknown;
+    /**
+     * Accepted
+     */
+    202: JobAccepted;
 };
 
 export type RemovalResponse = RemovalResponses[keyof RemovalResponses];
@@ -15766,9 +15768,11 @@ export type DetachResponses = {
      *
      * Successful Response
      */
-    200: {
-        [key: string]: unknown;
-    };
+    200: unknown;
+    /**
+     * Accepted
+     */
+    202: JobAccepted;
 };
 
 export type DetachResponse = DetachResponses[keyof DetachResponses];

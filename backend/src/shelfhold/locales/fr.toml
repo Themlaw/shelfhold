@@ -2099,6 +2099,16 @@ title = "Le détachement est refusé : rien n'a été modifié."
 action = "Lisez la raison : la phrase n'a pas été tapée telle qu'affichée, une opération sur fichiers est encore ouverte sous la racine, un export ou un scan tient une destination (réessayez après), le dossier réservé contient un livre supprimé dans sa corbeille ou une archive qui attend son export (--discard-hidden-data si vous en êtes sûr), son journal d'effacement partirait (--discard-tombstone-journal), l'option --key-gone sans --password-file, ou l'effacement a déjà commencé (relancez la même commande pour finir)."
 cause = "La phrase de confirmation manque ou diffère, une opération est encore ouverte, une destination est occupée, ou le dossier réservé contient des données à vous que le détachement détruirait."
 
+[errors."removal.incomplete"]
+title = "Le retrait n'est pas terminé : des fichiers restent."
+action = "Ouvrez la destination dans Réglages : chaque fichier restant est nommé avec sa raison (modifié depuis l'export, dernière copie d'un original irremplaçable, hors de la racine). Réglez-les à la main ou gardez-les, puis recommencez le retrait."
+cause = "Au moins un fichier n'a pas été supprimé : il a changé depuis l'export, il est peut-être le dernier exemplaire d'un original irremplaçable, ou il n'est pas un fichier ordinaire de la racine. La destination n'est pas oubliée tant qu'il en reste."
+
+[errors."detach.incomplete"]
+title = "Le détachement n'est pas terminé : une étape a échoué ou manque."
+action = "Relisez le rapport : si la clé dédiée n'a pas été révoquée, donnez le même ordre une seconde fois, avec le mot de passe du compte Kavita (il n'est jamais gardé entre deux lancements). Les étapes déjà faites ne sont pas refaites."
+cause = "Le dossier réservé, les réglages de la bibliothèque ou la clé dédiée n'ont pas pu être traités jusqu'au bout : Kavita ne répond pas, le mot de passe manque (redémarrage entre l'ordre et le travail) ou un nom est déjà pris."
+
 [errors."tombstone.journal_truncated"]
 title = "Le journal d'effacement d'une racine a été tronqué."
 action = "Rien n'a été supprimé, mais la racine est bloquée (rapprochement et réacquisition) : « shelfhold tombstone set-aside-journal » met le fichier de côté et le réécrit depuis la base."

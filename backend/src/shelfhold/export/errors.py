@@ -81,4 +81,7 @@ CODES: tuple[ErrorCode, ...] = (
     # changed (the reason is a closed word: the phrase not typed, an open file operation, a lock)
     ErrorCode("removal.refused", 409, "admin"),
     ErrorCode("detach.refused", 409, "admin"),
+    # M4 L34: the two jobs end `failed` with these when something is left, never silently `done`
+    ErrorCode("removal.incomplete", 409, "admin"),
+    ErrorCode("detach.incomplete", 409, "admin"),
 )

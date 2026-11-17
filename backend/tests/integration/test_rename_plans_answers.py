@@ -184,7 +184,8 @@ def test_retry_of_an_apply_job_asks_for_a_session_and_other_jobs_are_not_affecte
                     last_error="OSError", attempts=5, huey_task_id=new_ulid(),
                 )
             )  # fmt: skip
-    assert ops.jobs_retry_is_reserved(dead) and not ops.jobs_retry_is_reserved(plain)
+    assert ops.jobs_retry_reserved_action(dead) == "plan.apply_rename"
+    assert ops.jobs_retry_reserved_action(plain) is None
     api_key = Principal("u", "u", "admin", Credential.API_KEY)
     for who in (None, api_key):  # nobody, or a key: refused, the job stays dead
         with pytest.raises(CodedRefusal):
