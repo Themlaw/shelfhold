@@ -353,6 +353,10 @@ CLOSED = (
     "POST /api/v1/requests/{request_id}/approve",
     "POST /api/v1/requests/{request_id}/reject",
     "POST /api/v1/requests/{request_id}/not-found",
+    "GET /api/v1/request-lists",  # M4 L31: an adult's lists; a child makes and reads none
+    "POST /api/v1/request-lists",
+    "GET /api/v1/request-lists/{import_id}",
+    "POST /api/v1/request-lists/for-child/{user_id}",  # reserved: reading_shelf.attach
     "POST /api/v1/requests/{request_id}/elsewhere",  # M4 L30: put aside, an admin's (EF-USR-019)
     "POST /api/v1/requests/{request_id}/proposals",
     "GET /api/v1/requests/{request_id}/proposals",
@@ -378,6 +382,8 @@ BODIES = {
     "POST /api/v1/editions/{edition_id}/source-migrations/{migration_id}/application": {
         "digest": "d" * 64
     },
+    "POST /api/v1/request-lists": {"text": "A title"},
+    "POST /api/v1/request-lists/for-child/{user_id}": {"text": "A title"},
     "POST /api/v1/ops/blocklist": {"source_key": "s", "remote_unit_id": "x", "reason": "other"},
 }
 
