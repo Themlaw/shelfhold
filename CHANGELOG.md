@@ -9,7 +9,7 @@ Format : [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/). Versionnement
 - **Historique d'activité et liste de blocage (L29)** : l'administrateur relit l'historique des événements, bloque un chapitre qu'une source repropose (il est alors ignoré à chaque cycle, sans jamais être débloqué en silence) et le débloque lui-même, avec une ligne d'audit.
 - **Stockage et réseau (L29)** : l'espace occupé par étagère et le trafic par source et par jour, compté par le Fetcher après la garde réseau, sans adresse ni chemin.
 
-Migration : oui (0089)
+Migration : oui (0091)
 
 ## 1.1.0-rc.2 - 2026-11-16
 

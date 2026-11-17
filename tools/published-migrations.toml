@@ -266,13 +266,13 @@ sha256 = "792e8072070af0bf5ea40f60d9846e3d4835ad5df5aa2cb4d6f4cb66b3cc4841"
 since = "1.1"
 
 [[migration]]
-<<<<<<< HEAD
 file = "0089_volume_assembly.py"
 sha256 = "7af7a6bb10c0c40dba342dc52e80bcfa594cd36bb0502bdf4370e9dabfdd1a5c"
-=======
-file = "0089_activity_block_traffic.py"
-sha256 = "7e4a963c1054f596da9527c2bfda8c55afa04e869fbfb6a2ca6b28eeec79a591"
->>>>>>> f6a5f6f5 (chore(ops): freeze migration 0089 and regenerate the vocabulary and the client after the rebase (M4 L29))
+since = "1.1"
+
+[[migration]]
+file = "0091_activity_block_traffic.py"
+sha256 = "2c6f7b9477d65ebb3f74b72e1fd5945b0faad50daf14de8777d3e6024ffb349f"
 since = "1.1"
 
 [[migration]]
