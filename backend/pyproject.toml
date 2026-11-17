@@ -31,6 +31,8 @@ dependencies = [
     "pypdf==6.21.4",  # PDF check in the decode worker only (EF-SRC-012); pinned exact, published 2026-10-28
     "resvg-py==0.5.0",
     "pykakasi>=2.3,<3",
+    # M4 (L37, D18): the one new dependency, written exception in docs/dependencies.md.
+    "websockets>=17.4,<18",  # Kavita hub transport, imported only by kavita.events_transport
 ]
 
 [dependency-groups]

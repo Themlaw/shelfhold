@@ -86,6 +86,21 @@ Non critiques (remplaçables sans réécriture), listées pour mémoire :
   BSD-3-Clause), pyOpenSSL (Apache-2.0), pyasn1 et pyasn1-modules (BSD). Importée par le seul
   paquet `shelfhold.identity.webauthn` (contrat `webauthn-confined`) ; repli : `cryptography` et
   `cbor2` directement.
+- **websockets** (BSD-3-Clause, compatible AGPL-3.0) : client WebSocket du hub de Kavita
+  (`SeriesAdded`, `ScanSeries`), pour confirmer une arrivée plus tôt que le polling (EF-EXP-034, M4
+  L37, D18). **Exception écrite au gel de `uv.lock`** (figé par L00) : une seule dépendance ajoutée,
+  plancher `>=17.4,<18`. Version 17.4, publiée le 2026-10-30, donc plus de 14 jours avant le
+  2026-11-17 : aucune exception à `exclude-newer`. **Python pur** : la roue `py3-none-any` est
+  publiée et fonctionne partout, donc sur amd64 comme sur arm64 ; PyPI publie aussi des roues
+  `cp313` `manylinux` pour `x86_64` et `aarch64` (une accélération facultative du masquage des
+  trames, sans autre effet), toutes deux dans `uv.lock`. Aucune dépendance transitive. Importée par
+  le seul `shelfhold.export.targets.kavita.events_transport` (contrat `websockets-confined`). Le
+  jeton du hub vient de la clé dédiée (`POST /api/Plugin/authenticate`) ; la connexion part vers
+  les adresses validées par la garde SSRF du fetcher, jamais résolues une seconde fois, TLS
+  vérifié. Un événement n'est jamais une preuve et le polling reste actif : si le hub tombe, seul
+  le transport est coupé. Repli : retirer la dépendance (le polling seul confirme, comme avant L37)
+  ou `aiohttp`/`wsproto`. Signal de déclenchement : changement de licence, dépôt archivé, 12 mois
+  sans release.
 - **Contrats M1b (L00)** : `sablier-confined` (seul `integrations.sablier` appelle Sablier),
   `backup-dir-sole-writer` (seul `ops.backup` écrit le répertoire de sauvegarde, via
   `ops.backup.store`) et `third-party-plugins-single-loader` (seul `plugin_host` charge des
