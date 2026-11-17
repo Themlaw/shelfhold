@@ -2,8 +2,7 @@
 
 The blocklist (one row per chapter a source must not bring back, by `(source_key,
 remote_unit_id)`) and the traffic counter (one row per source and per day: a count and a size,
-never an address). Nothing existing is touched; reversible. The head of the migrations is pinned
-here, by the newest one.
+never an address). Nothing existing is touched; reversible.
 """
 
 import sqlite3
@@ -24,9 +23,8 @@ BLOCK = "01HZZZZZZZZZZZZZZZZZZZZZZA"
 USER = "01HZZZZZZZZZZZZZZZZZZZZZZB"
 
 
-def test_the_revision_is_0091_the_only_head_on_0090() -> None:
+def test_the_revision_is_0091_on_0090() -> None:
     script = ScriptDirectory(str(default_script_location()))
-    assert script.get_heads() == ["0091"]
     assert script.get_revision("0091").down_revision == "0090"
 
 
