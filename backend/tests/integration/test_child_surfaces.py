@@ -16,6 +16,7 @@ import base64
 import hashlib
 import sys
 from collections.abc import Iterator
+from datetime import timedelta
 from typing import Any
 
 import pytest
@@ -269,6 +270,10 @@ CLOSED = (
     "GET /api/v1/sync-status",  # M4 L33b: the sync state per member, an adult session only
     "PUT /api/v1/profiles/{user_id}/destination-accounts/{shelf_destination_id}",
     "DELETE /api/v1/profiles/{user_id}/destination-accounts/{shelf_destination_id}",
+    # M4 L39 (EF-INT-021): the destination of an adult's own notices; a child has none
+    "GET /api/v1/me/notification-destination",
+    "PUT /api/v1/me/notification-destination",
+    "DELETE /api/v1/me/notification-destination",
     "GET /api/v1/audit/kavita-accounts",  # M3 L10: the audit of the Kavita accounts, the admin's
     "POST /api/v1/audit/kavita-accounts",
     "PUT /api/v1/profiles/{profile_id}/visibility",
@@ -1251,6 +1256,7 @@ def _notification_built_for_a_child(world: World) -> None:
                 {"unit_id": unit_id, "edition_id": edition_id or new_ulid(), "work_id": work_id},
             )  # fmt: skip
         bus.deliver([published])
+    clock.advance(timedelta(days=1))  # a child is never told at once: the digest, tomorrow 08:00
     NotificationSender(engine, clock, deliver=deliver, pending_withdrawals=lambda _c: 0).run_once()
     channel = "\n".join(t for _u, t in sent)  # everything, whoever it was for
     world.clean(channel)

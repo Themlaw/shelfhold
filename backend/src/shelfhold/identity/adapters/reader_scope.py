@@ -30,7 +30,7 @@ def reader_scope(source: Engine | Connection, user_id: str | None) -> ViewerScop
             row = connection.execute(query).first()
     else:
         row = source.execute(query).first()
-    return NOBODY if row is None else scope_of(row.role, row.max_age_rating)
+    return NOBODY if row is None else scope_of(row.role, row.max_age_rating, user_id)
 
 
 @dataclass(frozen=True)
@@ -63,7 +63,7 @@ def family_profile(source: Engine | Connection, user_id: str | None) -> FamilyPr
     if row is None:
         return _UNKNOWN
     return FamilyProfile(
-        scope_of(row.role, row.max_age_rating), row.hide_unrated_remote, row.subject_filter
+        scope_of(row.role, row.max_age_rating, user_id), row.hide_unrated_remote, row.subject_filter
     )
 
 

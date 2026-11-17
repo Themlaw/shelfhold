@@ -318,8 +318,9 @@ def test_a_shelf_shows_only_when_it_is_the_readers_to_see(world: World) -> None:
     assert sorted(titles(mum)) == ["Adults", "Family"]
     shelf = world.seed.shelves["family"]
     family = parse(world.kid.get(f"/opds/shelves/{shelf}"))
-    assert titles(family) == [world.seed.title_of("ok")]  # the misfiled unrated Work is not there
-    assert total(family) == 1
+    # the misfiled unrated Work is not there; the Work filed only here is, now that it is open
+    assert sorted(titles(family)) == sorted(work_titles(world, {"ok", "reserved"}))
+    assert total(family) == 2
 
 
 def test_a_series_with_a_hidden_member_is_neither_listed_nor_opened_by_a_child(

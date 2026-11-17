@@ -31,6 +31,7 @@ class ViewerScope:
 
     kind: Literal["all", "ceiling", "none"]
     ceiling: int | None
+    profile_id: str | None = None  # whose shelves are open: a child's own id (D-P3, ADR-0027)
 
     def __post_init__(self) -> None:
         if self.kind not in _KINDS or (self.kind == "ceiling") != (self.ceiling is not None):
@@ -49,13 +50,13 @@ def _is_ceiling(value: object) -> bool:
     return isinstance(value, int) and not isinstance(value, bool) and 0 <= value <= MAX_AGE_LIMIT
 
 
-def scope_of(role: object, max_age_rating: object) -> ViewerScope:
+def scope_of(role: object, max_age_rating: object, profile_id: str | None = None) -> ViewerScope:
     """The scope of a profile of `role` with this ceiling; anything unknown or malformed sees
-    nothing."""
+    nothing. `profile_id` is the child's own: the shelves reserved to her are open to her."""
     if role in ADULT_ROLES:
         return ALL
     if role == "child" and isinstance(max_age_rating, int) and _is_ceiling(max_age_rating):
-        return ViewerScope("ceiling", max_age_rating)
+        return ViewerScope("ceiling", max_age_rating, profile_id)
     return NOBODY
 
 

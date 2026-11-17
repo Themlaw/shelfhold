@@ -14,15 +14,18 @@ For a child (a ceiling, 99 being X) a Work is visible when:
 and an Edition is visible when its Work is, it was rated (an Edition that arrived after the last
 rating waits in "À classer"), its own age is not above, and no open suggested age is above.
 
-The scope is the library of the profile, never a shelf: where an Edition is filed, and who a shelf
-is allowed to, change nothing here. An adult sees everything; a scope that sees nothing, nothing.
+D-P3 (ADR-0027, amended, M4 L39): a child also needs a shelf. A Work is visible to her only if at
+least one Edition of it is filed on a shelf open to her (`shelf.allowed_profiles` empty, or naming
+her), and an Edition only if its own shelf is. A Work or an Edition on no shelf is nobody's child
+to see. This is the only place the rule lives; every surface asks here. An adult sees everything,
+whatever a shelf allows; a scope that sees nothing, nothing.
 Absent and hidden are the same answer: an identifier that is not visible is simply not returned.
 """
 
 import json
 from collections.abc import Iterable
 from dataclasses import dataclass
-from typing import Final, Protocol
+from typing import Any, Final, Protocol
 
 import sqlalchemy as sa
 
@@ -35,9 +38,9 @@ __all__ = [
     "ReaderScope",
     "VisibleEdition",
     "VisibleWork",
+    "age_visible_works_clause",
     "count_visible_works",
     "cover_ref_visible",
-    "first_open_covers",
     "first_visible_covers",
     "list_visible_series",
     "list_visible_works",
@@ -73,6 +76,9 @@ class ReaderScope(Protocol):
 
     @property
     def unrestricted(self) -> bool: ...
+
+    @property
+    def profile_id(self) -> str | None: ...
 
 
 @dataclass(frozen=True)
@@ -120,8 +126,52 @@ def _ceiling(scope: ReaderScope) -> int | None:
     return None
 
 
+def _shelf_open(scope: ReaderScope) -> sa.ColumnElement[bool]:
+    """On `export.shelf`: the shelf is open to this reader's profile (no list, or she is on it). A
+    scope with no profile opens only the shelves that name nobody."""
+    allowed = export.shelf.c.allowed_profiles
+    listed = sa.func.json_each(allowed).table_valued("value").alias("allowed_profile")
+    named = (
+        sa.select(sa.literal(1)).select_from(listed).where(listed.c.value == scope.profile_id)
+        if scope.profile_id
+        else sa.select(sa.literal(1)).where(sa.false())
+    )
+    return sa.or_(sa.func.json_array_length(allowed) == 0, named.exists())
+
+
+def _filed_on_open_shelf(scope: ReaderScope, edition: Any) -> sa.ColumnElement[bool]:
+    return (
+        sa.select(sa.literal(1))
+        .where(export.shelf.c.id == edition.c.shelf_id, _shelf_open(scope))
+        .exists()
+    )
+
+
 def visible_works_clause(scope: ReaderScope) -> sa.ColumnElement[bool]:
-    """The condition on `catalog.work` for this reader."""
+    """The condition on `catalog.work` for this reader: her ceiling (`age_visible_works_clause`)
+    and a shelf open to her that carries the Work (D-P3)."""
+    if scope.unrestricted:
+        return sa.true()
+    ceiling = _ceiling(scope)
+    if ceiling is None:
+        return sa.false()
+    edition = catalog.edition.alias("carrier")
+    carried = (
+        sa.select(sa.literal(1))
+        .where(
+            edition.c.work_id == catalog.work.c.id,
+            edition.c.rated_at.is_not(None),  # one that waits in "À classer" carries nothing
+            sa.not_(_above(edition.c.age_rating, edition.c.age_x, ceiling)),
+            _filed_on_open_shelf(scope, edition),
+        )
+        .exists()
+    )
+    return sa.and_(age_visible_works_clause(scope), carried)
+
+
+def age_visible_works_clause(scope: ReaderScope) -> sa.ColumnElement[bool]:
+    """The age part of the filter alone (rating, ceiling, adult flag, suggestions). Not a surface:
+    `changes.work_need` asks the lowest ceiling that shows a Work, which no shelf changes."""
     if scope.unrestricted:
         return sa.true()
     ceiling = _ceiling(scope)
@@ -185,6 +235,7 @@ def visible_editions_clause(scope: ReaderScope) -> sa.ColumnElement[bool]:
         sa.not_(_above(edition.age_rating, edition.age_x, ceiling)),
         ~waiting,
         of_visible_work,
+        _filed_on_open_shelf(scope, catalog.edition),
     )
 
 
@@ -417,46 +468,6 @@ def first_visible_covers(
     found: dict[str, tuple[str, str | None]] = {}
     for chunk in _chunks(work_ids):
         found.update(_first_covers(connection, scope, chunk))
-    return found
-
-
-def first_open_covers(
-    connection: sa.Connection, scope: ReaderScope, profile_id: str, work_ids: list[str]
-) -> dict[str, tuple[str, str | None]]:
-    """The perimeter of the shelves (`shelf.allowed_profiles`, L18a): like `_first_covers`, but an
-    Edition counts only when it is filed on a shelf open to this profile (no `allowed_profiles`, or
-    one that names her). A Work with no such Edition is not in the answer: it is not hers to see,
-    ceiling or not, and an Edition on a shelf reserved to someone else lends no cover either."""
-    edition, field, shelf = catalog.edition.c, catalog.metadata_field.c, export.shelf.c
-    found: dict[str, tuple[str, str | None]] = {}
-    for chunk in _chunks(work_ids):
-        rows = connection.execute(
-            sa.select(edition.work_id, edition.id, field.value, shelf.allowed_profiles)
-            .select_from(
-                catalog.edition.join(export.shelf, shelf.id == edition.shelf_id).outerjoin(
-                    catalog.metadata_field,
-                    sa.and_(field.entity_id == edition.id, *_COVER_FIELD_ROWS),
-                )
-            )
-            .where(edition.work_id.in_(chunk), visible_editions_clause(scope))
-            .order_by(edition.work_id, edition.id)
-        ).all()
-        for row in rows:
-            allowed = row.allowed_profiles
-            if allowed and profile_id not in allowed:
-                continue
-            ref: str | None = None
-            if row.value is not None:
-                try:
-                    decoded = json.loads(row.value)
-                except ValueError:
-                    decoded = None
-                ref = decoded if isinstance(decoded, str) else None
-            work_id = str(row.work_id)
-            if work_id not in found:
-                found[work_id] = (str(row.id), ref)
-            elif found[work_id][1] is None and ref is not None:
-                found[work_id] = (found[work_id][0], ref)
     return found
 
 

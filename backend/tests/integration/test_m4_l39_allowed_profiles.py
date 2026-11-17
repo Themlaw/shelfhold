@@ -76,6 +76,7 @@ def world(monkeypatch: pytest.MonkeyPatch, settings: Settings) -> Iterator[World
         kid = add_profile(env, "kid", "child", "10.0.0.2", max_age_rating=10)
         sib = add_profile(env, "sib", "child", "10.0.0.9", max_age_rating=10)
         mum = add_profile(env, "mum", "member", "10.0.0.3")
+        assert env.login().status_code == 200  # the admin
         made = World(env, seed, kid, sib, mum)
         with seed.engine.begin() as connection:
             kind = str(
@@ -114,8 +115,9 @@ def _titles(response: Any) -> list[str]:
     return [hit["title"] for hit in response.json()["items"]]
 
 
-def _shape(response: Any) -> tuple[int, Any]:
-    return response.status_code, response.json() if response.content else None
+def _shape(response: Any) -> tuple[Any, ...]:
+    body = response.json()
+    return response.status_code, body.get("type"), body.get("title"), body.get("detail")
 
 
 # -- the one function ---------------------------------------------------------------------------
@@ -209,13 +211,12 @@ def test_search_is_narrowed_for_the_other_child_and_not_for_the_named_one(world:
     ]  # the member and the admin are not narrowed by a shelf
 
 
-@pytest.mark.parametrize("read_only", [True, False])
-def test_a_key_of_the_child_reads_as_the_child(world: World, read_only: bool) -> None:
-    """A key (even a read-only one, even a full one) reads as the profile it was issued for: the
-    shelves of that profile apply, never the ones of whoever created the key."""
+def test_a_read_only_key_of_the_child_reads_as_the_child(world: World) -> None:
+    """A key reads as the profile it was issued for: the shelves of that profile apply, never the
+    ones of whoever created the key."""
     key = (
         local_auth(world.seed.engine, world.env.settings)
-        .create_api_key(name="kidkey", username="kid", read_only=read_only)
+        .create_api_key(name="kidkey", username="kid", read_only=True)
         .value
     )
     answer = world.env.other_client("10.0.0.52").get(

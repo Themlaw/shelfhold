@@ -20,7 +20,7 @@ import sqlalchemy as sa
 from fastapi.testclient import TestClient
 
 from shelfhold.catalog.application import changes
-from shelfhold.catalog.public import visible_works_clause
+from shelfhold.catalog.public import age_visible_works_clause
 from shelfhold.config import Settings
 from shelfhold.identity.domain.visibility import scope_of
 from shelfhold.identity.public import local_auth
@@ -411,7 +411,7 @@ def test_the_age_of_a_new_edition_that_hides_a_work_is_a_visibility_loss(world: 
     from tests.visibility_env import _edition
 
     with world.seed.engine.begin() as connection, changes.track_work_changes(connection, [work_id]):
-        _edition(connection, work_id, age=16, lang="de")
+        _edition(connection, work_id, age=16, lang="it")
     assert world.removed("kid", token) == [work_id]
 
 
@@ -451,7 +451,8 @@ def test_removals_beyond_the_cap_ask_for_a_resync(
 @pytest.mark.req("EF-INT-001", "EF-USR-006")
 def test_need_of_a_work_is_exactly_the_one_filter(world: World) -> None:
     """`work_need` answers "from which ceiling is this Work visible" by asking the filter of the
-    catalogue itself, so the removals can never disagree with what a reader is shown."""
+    catalogue itself, so the removals can never disagree with what a reader is shown (its age part:
+    a shelf does not change the ceiling a Work needs, D-P3)."""
     with world.seed.engine.connect() as connection:
         for key, work_id in world.seed.works.items():
             need = changes.work_need(connection, work_id)
@@ -461,7 +462,7 @@ def test_need_of_a_work_is_exactly_the_one_filter(world: World) -> None:
                     for r in connection.execute(
                         sa.select(catalog.work.c.id).where(
                             catalog.work.c.id == work_id,
-                            visible_works_clause(scope_of("child", ceiling)),
+                            age_visible_works_clause(scope_of("child", ceiling)),
                         )
                     )
                 }
