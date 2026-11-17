@@ -137,9 +137,17 @@ def test_target_add_komga_is_idempotent_and_refuses_a_name_taken_elsewhere(
         env.admin.target_add_komga(name="Komga", url="http://other.lan:25600", api_key=API_KEY)
     drop = tmp_path / "ingest"
     drop.mkdir()
-    env.admin.target_add_cwa(
-        name="Drop", path_map=[{"local": str(drop), "remote": "/ingest", "mode": "rw"}]
-    )
+    pmap = [{"local": str(drop), "remote": "/ingest", "mode": "rw"}]
+    env.admin.target_add_cwa(name="Drop", path_map=pmap)
+    with pytest.raises(TargetConflict):  # a drop box cannot take the name of a Komga
+        env.admin.target_add_cwa(name="Komga", path_map=pmap)
+    other = tmp_path / "other"
+    other.mkdir()
+    again = env.admin.target_add_komga(  # the same Komga, a new map: the map follows, no new row
+        name="Komga", url=BASE_URL, api_key=API_KEY,
+        path_map=[{"local": str(other), "remote": "/other", "mode": "rw"}],
+    )  # fmt: skip
+    assert not again.created and len(_rows(env, "komga")) == 1
     with pytest.raises(TargetConflict):  # a name that is another kind of target
         env.admin.target_add_komga(name="Drop", url=BASE_URL, api_key=API_KEY)
 
@@ -567,3 +575,118 @@ def test_the_cli_names_cause_and_action_for_a_destination_that_cannot_synchronis
         assert not connection.execute(
             sa.select(export.shelf_destination.c.sync_progress)
         ).scalar_one()
+
+
+# --------------------------------------------------------------- the socket of the running server
+
+
+@pytest.mark.req("EF-EXP-020", "EF-EXP-022", "EF-LEC-014", "EF-USR-024")
+def test_the_socket_methods_create_the_targets_and_switch_the_sync(
+    komga_env: tuple[Headless, FakeKomga], tmp_path: Path
+) -> None:
+    """The host's command line talks to the running server over the socket: the three methods
+    answer with the same shapes, and a refusal crosses it as its catalog code."""
+    from shelfhold.identity.public import local_auth
+    from shelfhold.infrastructure.local_socket import RpcFailure, call
+    from shelfhold.interfaces.local_cli import IdentityDispatcher, SocketHeadless
+    from tests.local_socket_env import serving
+
+    env, _fake = komga_env
+    drop = tmp_path / "library" / "socket-ingest"
+    drop.mkdir(parents=True)
+    pmap = [{"local": str(drop), "remote": "/socket-ingest", "mode": "rw"}]
+    sock = tmp_path / "s.sock"
+    auth = local_auth(env.engine, env.settings)
+    with serving(sock, IdentityDispatcher(auth, headless=env.admin)):
+        remote = SocketHeadless(sock)
+        komga = remote.target_add_komga(name="Salon", url=BASE_URL, api_key=API_KEY)
+        cwa = remote.target_add_cwa(name="Drop", path_map=pmap)
+        assert komga.created and cwa.created and API_KEY not in repr((komga, cwa))
+        assert not remote.target_add_cwa(name="Drop", path_map=pmap).created
+        raw = call(sock, "target.add_komga", {"name": "Salon", "url": BASE_URL, "api_key": API_KEY})
+        assert API_KEY not in repr(raw)
+        with pytest.raises(RpcFailure) as refused:  # the key of an account that is not an admin
+            call(sock, "target.add_komga", {"name": "Autre", "url": BASE_URL, "api_key": OTHER_KEY})
+        assert (refused.value.data or {}).get("code") == "target.exchange_failed"
+        target, shelf, destination = new_ulid(), new_ulid(), new_ulid()
+        with write_transaction(env.engine) as connection:
+            connection.execute(
+                sa.insert(export.export_target).values(id=target, kind="kavita", name="K")
+            )
+            connection.execute(sa.insert(export.shelf).values(id=shelf, name="S", phrase="p"))
+            connection.execute(
+                sa.insert(export.shelf_destination).values(
+                    id=destination, shelf_id=shelf, target_id=target, transport="tree",
+                    egress="foyer", root_subpath="a", template="t", template_origin="default@1",
+                )
+            )  # fmt: skip
+        on = remote.destination_sync_progress(destination_id=destination, enabled=True)
+        assert on.sync_progress and progress_destinations(env.engine) == [destination]
+        off = remote.destination_sync_progress(destination_id=destination, enabled=False)
+        assert not off.sync_progress and progress_destinations(env.engine) == []
+        with pytest.raises(RpcFailure) as unknown:
+            call(sock, "destination.sync_progress", {"destination_id": UNKNOWN, "enabled": True})
+        assert (unknown.value.data or {}).get("code") == "target.unknown"
+
+
+@pytest.mark.req("EF-EXP-020", "EF-EXP-022")
+def test_the_facade_refuses_what_it_cannot_do(settings: Settings, tmp_path: Path) -> None:
+    """No probe wired, no folder given, a name that is another kind, a probe that cannot even
+    open its connection: each is a refusal with its code, and nothing is stored."""
+    from shelfhold.infrastructure.fetcher import FetchError
+
+    drop = tmp_path / "ingest"
+    drop.mkdir()
+    pmap = [{"local": str(drop), "remote": "/ingest", "mode": "rw"}]
+
+    def no_route(_url: str) -> IntegrationFetcher:
+        raise FetchError("refused")
+
+    with headless(settings) as bare:  # no Komga probe at all
+        with pytest.raises(TargetExchangeFailed):
+            bare.admin.target_add_komga(name="Komga", url=BASE_URL, api_key=API_KEY)
+        with pytest.raises(HeadlessError):  # a drop box with no folder to write
+            bare.admin.target_add_cwa(name="Drop", path_map=None)
+        bare.admin.target_add_cwa(name="Drop", path_map=pmap)
+        with pytest.raises(TargetConflict):  # the name is a drop box, not a Komga
+            bare.admin.target_add_komga(name="Drop", url=BASE_URL, api_key=API_KEY)
+    with headless(settings, komga=HttpKomgaProbe(no_route)) as closed:
+        with pytest.raises(TargetExchangeFailed):
+            closed.admin.target_add_komga(name="Komga", url=BASE_URL, api_key=API_KEY)
+        assert _rows(closed, "komga") == []
+
+
+@pytest.mark.req("EF-EXP-020", "EF-EXP-022")
+def test_cli_refuses_a_path_map_that_is_not_json_and_says_a_target_is_already_there(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    komga_env: tuple[Headless, FakeKomga],
+    tmp_path: Path,
+) -> None:
+    env, _fake = komga_env
+    monkeypatch.setattr(wiring, "open_headless", lambda _settings: env.admin)
+    key_file = write_secret(tmp_path, "komga.key", API_KEY + "\n")
+    base = ["target", "add", "komga", "--url", BASE_URL, "--password-file", str(key_file)]
+    assert run_cli(monkeypatch, env.settings, *base, "--path-map", "not json") != 0
+    assert run_cli(monkeypatch, env.settings, *base, "--path-map", '{"a": 1}') != 0
+    assert run_cli(monkeypatch, env.settings, "target", "add", "cwa", "--path-map", "[") != 0
+    assert _rows(env, "komga") == [] and _rows(env, "cwa") == []
+    capsys.readouterr()
+    assert run_cli(monkeypatch, env.settings, *base) == 0
+    assert run_cli(monkeypatch, env.settings, *base) == 0  # already there: nothing to do
+    assert "déjà présente" in capsys.readouterr().out and len(_rows(env, "komga")) == 1
+    drop = tmp_path / "library" / "ingest"
+    drop.mkdir(parents=True)
+    cwa = ["target", "add", "cwa", "--path-map",
+           f'[{{"local": "{drop}", "remote": "/ingest", "mode": "rw"}}]']  # fmt: skip
+    assert run_cli(monkeypatch, env.settings, *cwa) == 0
+    assert run_cli(monkeypatch, env.settings, *cwa) == 0 and len(_rows(env, "cwa")) == 1
+
+
+@pytest.mark.req("EF-EXP-022", "ENF-SEC-001")
+def test_the_cwa_route_refuses_a_read_only_folder(world: World) -> None:
+    body = {"name": "Drop", "path_map": [{"local": str(world.library), "remote": "/x",
+                                          "mode": "adopt_ro"}]}  # fmt: skip
+    refused = world.api.post(CWA, json=body)
+    assert refused.status_code == 422 and refused.json()["code"] == "config.invalid_value"
+    assert _count(world, "cwa") == 0
