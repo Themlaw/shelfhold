@@ -178,9 +178,16 @@ def open_intent_paths(connection: Connection) -> frozenset[str]:
     """Every source and target path of an open intent (I9)."""
     table = coherence.fs_intent
     rows = connection.execute(
-        sa.select(table.c.src_path, table.c.dst_path).where(table.c.state.in_(OPEN_STATES))
+        sa.select(table.c.src_path, table.c.dst_path, table.c.op, table.c.expected_file_id).where(
+            table.c.state.in_(OPEN_STATES)
+        )
     )
-    return frozenset(p for row in rows for p in (row.src_path, row.dst_path) if p)
+    paths: set[str] = set()
+    for row in rows:
+        paths.update(p for p in (row.src_path, row.dst_path) if p)
+        if row.op == "assemble":  # one intent, the volume and every chapter file it replaces
+            paths.update(str(p) for p in dict(row.expected_file_id or {}).get("old_paths", ()))
+    return frozenset(paths)
 
 
 def open_intent_ids(connection: Connection) -> frozenset[str]:
@@ -557,6 +564,8 @@ class IntentJournal:
                 self._resolve_utime(intent, report, on_done)
             elif intent.op == "upgrade" and intent.dst:
                 self._resolve_upgrade(intent, report, on_done)
+            elif intent.op == "assemble" and intent.dst:
+                self._resolve_assemble(intent, report, on_done)
             elif intent.op == "copy_cross_root" and intent.src and intent.dst:
                 self._resolve_copy(intent, report, on_done)
             elif intent.op == "purge_upstream":
@@ -804,6 +813,58 @@ class IntentJournal:
             report.completed.append(intent.id)
         else:
             self._drift(intent, report, "the served path is in no known state of an upgrade")
+
+    def _resolve_assemble(
+        self, intent: OpenIntent, report: ResolveReport, on_done: ManifestHook | None
+    ) -> None:
+        """Chapter files replaced by a volume under one intent (M4 L10, EF-EXP-019). The volume is
+        written first, then each chapter file goes to the bin of its root, then the bookkeeping:
+
+        - the volume is not there: nothing was done, the chapters are untouched, the intent is
+          closed (the assembly is asked again by whoever wanted it);
+        - the volume is there (it is the file the intent names): every chapter file still served
+          goes to the bin, one that is already there is left, then the bookkeeping is owed;
+        - anything else (a third file at the volume's path, a chapter file nobody made, a chapter
+          neither served nor binned) is drift: nothing is touched."""
+        olds, new = intent.payload.get("olds"), intent.expected_sha256
+        if intent.dst is None or new is None or not isinstance(olds, list) or not olds:
+            return self._drift(intent, report, "an assembly needs its volume and its chapters")
+        disk = self._disk
+        found = disk.observe(intent.dst)
+        if found is None:
+            self._close(intent.id, "cancelled")
+            report.abandoned.append(intent.id)
+            return
+        if found[0] != "file" or disk.sha256_of(intent.dst) != new:
+            return self._drift(intent, report, "the volume's path holds another file")
+        replayed = False
+        for old in olds:
+            local, sha, entry = old.get("local"), old.get("sha256"), old.get("entry")
+            if not (isinstance(local, str) and isinstance(sha, str) and isinstance(entry, str)):
+                return self._drift(intent, report, "a chapter of the assembly is not described")
+            seen = disk.observe(local)
+            if seen is None:
+                if not self._binned(local, old):
+                    return self._drift(intent, report, "a chapter is neither served nor binned")
+            elif seen[0] == "file" and disk.sha256_of(local) == sha:
+                disk.recycle(local, entry=entry)
+                replayed = True
+            else:
+                return self._drift(intent, report, "a chapter file is not the one replaced")
+        self._finish(intent, on_done)
+        (report.replayed if replayed else report.completed).append(intent.id)
+
+    def _binned(self, local: str, old: dict[str, Any]) -> bool:
+        """The chapter file is in the bin entry the intent named for it."""
+        root_rel, entry = old.get("root_rel"), old.get("entry")
+        disk = self._disk
+        if not (isinstance(root_rel, str) and isinstance(entry, str)):
+            return False
+        if not hasattr(disk, "observe"):
+            return False
+        root = local[: len(local) - len(root_rel)]
+        found = disk.observe(f"{root}{RECYCLE_DIR}/{entry}/{root_rel}", host=True)  # type: ignore[call-arg]
+        return found is not None and found[0] == "file"
 
     def _resolve_rekey(self, intent: OpenIntent, report: ResolveReport) -> None:
         """A rewrite of a tombstone journal (`tombstone rekey`, EF-BIB-054 (10)): a new file next

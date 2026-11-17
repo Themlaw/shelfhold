@@ -147,7 +147,15 @@ PAYLOAD_ENUMS: Final[dict[str, dict[str, frozenset[str]]]] = {
     },
     # EF-EXP-016: why a served file was replaced at its path (`export_upgrade.reason`).
     "unit.upgraded": {
-        "reason": frozenset({"better_version", "preferred_team", "integrity_reacquire", "restore"})
+        "reason": frozenset(
+            {
+                "better_version",
+                "preferred_team",
+                "integrity_reacquire",
+                "restore",
+                "volume_assembly",
+            }
+        )
     },
     # EF-BIB-012: why a Unit's archive failed the integrity check.
     "ops.integrity_corrupt": {

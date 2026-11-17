@@ -655,3 +655,41 @@ export_upgrade = sa.Table(
     sa.Index("ix_export_upgrade_item", "export_item_id"),
     sa.Index("ix_export_upgrade_created_at", "created_at"),
 )
+
+# A volume assembled from chapters (M4 L10, EF-EXP-019, EF-BIB-044): one row per assembly, the
+# volume that replaced the chapter files of one destination and what it replaced. `old_items`
+# lists `{export_item_id, unit_id, file_hash, trash_item_id}` in reading order: the chapter files
+# are in the bin of their root, never deleted, and their export items (with the positions written
+# on them) are kept. `derived_hash` is the hash of what the volume was made of, never the hash of
+# a content that was received: the volume is no copy of its chapters.
+export_assembly = sa.Table(
+    "export_assembly",
+    metadata,
+    ulid_column("id", primary_key=True),
+    ulid_column("intent_id"),  # the `assemble` intent; no key, the journal is pruned
+    sa.Column(
+        "shelf_destination_id",
+        sa.String(26),
+        sa.ForeignKey("shelf_destination.id", ondelete="CASCADE"),
+        nullable=False,
+    ),
+    sa.Column(
+        "export_item_id",
+        sa.String(26),
+        sa.ForeignKey("export_item.id", ondelete="CASCADE"),
+        nullable=False,
+    ),
+    sa.Column("volume", sa.String(), nullable=False),
+    sa.Column("old_items", sa.JSON(), nullable=False),
+    sa.Column("derived_hash", sa.String(), nullable=False),
+    sa.Column("file_hash", sa.String(), nullable=False),
+    now_column(),
+    ulid_check("id"),
+    ulid_check("intent_id"),
+    json_shape_check("old_items", "array"),
+    prefixed_hash_check("derived_hash"),
+    prefixed_hash_check("file_hash"),
+    sa.UniqueConstraint("intent_id", name="uq_export_assembly_intent"),
+    sa.UniqueConstraint("export_item_id", name="uq_export_assembly_item"),
+    sa.Index("ix_export_assembly_destination", "shelf_destination_id"),
+)

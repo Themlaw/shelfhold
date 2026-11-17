@@ -194,6 +194,13 @@ from shelfhold.library.domain.content_hash import (
     is_rendered_sidecar,
 )
 from shelfhold.library.domain.copies import Copy, CopyFacts, Hash, is_independent
+from shelfhold.library.domain.coverage import (
+    ChapterSpan,
+    VolumeCoverageError,
+    derived_content_hash,
+    spans_of,
+    volume_page_of,
+)
 from shelfhold.library.domain.deletion import (
     BIN_DAYS,
     DeletionLevel,
@@ -365,6 +372,7 @@ __all__ = [
     "ByteSource",
     "Candidate",
     "CatalogScreenAdapter",
+    "ChapterSpan",
     "Collected",
     "ConfirmationRequiredError",
     "ContentErrorCandidate",
@@ -472,6 +480,7 @@ __all__ = [
     "VariantContent",
     "VariantRef",
     "Verdict",
+    "VolumeCoverageError",
     "VolumePolicy",
     "VolumeSlice",
     "WorkBusyError",
@@ -502,6 +511,7 @@ __all__ = [
     "decide_export",
     "decide_replacement",
     "demote_shared_inodes",
+    "derived_content_hash",
     "derived_identity",
     "derived_rels",
     "destination_identities",
@@ -579,6 +589,7 @@ __all__ = [
     "safe_to_clean",
     "servable_epub",
     "sniff_kind",
+    "spans_of",
     "store_unit_ids",
     "title_needles",
     "unit_files",
@@ -591,6 +602,7 @@ __all__ = [
     "upstream_verdict",
     "variant_contents",
     "verify_kept",
+    "volume_page_of",
     "volume_slices",
     "withdraw_upstream_claims",
     "work_path",

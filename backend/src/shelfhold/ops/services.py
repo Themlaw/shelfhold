@@ -49,6 +49,7 @@ from shelfhold.infrastructure.stable_hash import FileChangedError
 from shelfhold.jobs.control import QueueControl
 from shelfhold.jobs.window import DEFAULT_WINDOW, MaintenanceWindow
 from shelfhold.ops.acquire import AcquireOps
+from shelfhold.ops.assembly import VolumeAssemblyOps
 from shelfhold.ops.attach import AttachOps
 from shelfhold.ops.backfill import BackfillOps
 from shelfhold.ops.content import ContentOps
@@ -218,6 +219,7 @@ class OpsServices:
         backfill: BackfillOps | None = None,
         import_folder: ImportOps | None = None,
         page_formats: PageNormalizeOps | None = None,
+        assembly: VolumeAssemblyOps | None = None,
         normalize: NormalizeOps | None = None,
         source_migration: SourceMigrationOps | None = None,
         meta: MetaOps | None = None,
@@ -261,6 +263,7 @@ class OpsServices:
         self._backfill = backfill
         self._import_folder = import_folder
         self._page_formats = page_formats
+        self._assembly = assembly
         self._normalize = normalize
         self._source_migration = source_migration
         self._meta = meta
@@ -955,6 +958,13 @@ class OpsServices:
         if self._page_formats is None:
             raise ExitUnavailableError("the page normalization is not connected")
         return self._page_formats
+
+    @property
+    def assembly(self) -> VolumeAssemblyOps:
+        """`library assemble-volume` (EF-EXP-019)."""
+        if self._assembly is None:
+            raise ExitUnavailableError("the volume assembly is not connected")
+        return self._assembly
 
     @property
     def normalize(self) -> NormalizeOps:

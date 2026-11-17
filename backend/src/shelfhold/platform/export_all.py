@@ -123,7 +123,8 @@ EXCLUDED_TABLES: Final[Mapping[str, str]] = {
     # rebuilt by the instance
     "replica": _REBUILT, "thumbnail": _REBUILT, "team_alias": _REBUILT,
     "export_record": _REBUILT, "export_series": _REBUILT, "edition_export_series": _REBUILT,
-    "export_upgrade": _REBUILT, "bundle_member": _REBUILT, "field_owner": _REBUILT,
+    "export_upgrade": _REBUILT, "export_assembly": _REBUILT, "bundle_member": _REBUILT,
+    "field_owner": _REBUILT,
     "work_relation": _REBUILT,
     "collection_remote": _REBUILT,  # the next sync of collections makes them again (M4 L18a)
     "page_issue": _REBUILT,  # found again by the next look at the content (M4 L53)

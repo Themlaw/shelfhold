@@ -318,15 +318,20 @@ class CbzRenderer:
         """The archive as the destination takes it: pages in allowlisted formats (EF-EXP-046),
         ComicInfo last. The pages of the source are copied as they are unless one is in a format
         to convert; `content_hash` is always the source's, the identity the plan compares."""
+        with self._fsops.open_read(source) as stream:
+            return self.render_stream(stream, PurePath(source).name, comicinfo, target_id=target_id)
+
+    def render_stream(
+        self, stream: BinaryIO, name: str, comicinfo: bytes, *, target_id: str | None = None
+    ) -> RenderedCbz:
+        """`render` of an archive already open (seekable): what a volume assembled from chapters
+        goes through too (M4 L10), so that its pages leave in the formats of the destination."""
         policy = (self._policy_for(target_id) if self._policy_for and target_id else None) or (
             self._pages
         )
         out = tempfile.TemporaryFile(dir=self._staging)  # noqa: SIM115 (closed by the caller)
         try:
-            with (
-                self._fsops.open_read(source) as stream,
-                safe_open_archive(stream, name=PurePath(source).name) as archive,
-            ):
+            with safe_open_archive(stream, name=name) as archive:
                 original = content_hash(archive)
                 report = normalize_cbz(
                     archive, out, target=policy.target, keep=policy.keep, comicinfo=comicinfo

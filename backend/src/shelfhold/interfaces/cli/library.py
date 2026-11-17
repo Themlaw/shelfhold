@@ -25,6 +25,15 @@ def register(commands: argparse._SubParsersAction[argparse.ArgumentParser]) -> N
     )
     pages.add_argument("--dry-run", action="store_true", help=t("ops.help_pages_dry_run"))
     pages.set_defaults(handler=run_normalize_pages, configure_logging=False)
+    volume = actions.add_parser(
+        "assemble-volume", help=t("ops.help_library_assemble_volume"), allow_abbrev=False
+    )
+    volume.add_argument("destination", help=t("ops.help_assemble_destination"))
+    volume.add_argument("edition", help=t("ops.help_assemble_edition"))
+    volume.add_argument("volume", help=t("ops.help_assemble_volume"))
+    volume.add_argument("--first", required=True, help=t("ops.help_assemble_first"))
+    volume.add_argument("--last", required=True, help=t("ops.help_assemble_last"))
+    volume.set_defaults(handler=run_assemble_volume, configure_logging=False)
 
 
 @ops_command
@@ -64,3 +73,19 @@ def run_normalize_pages(args: argparse.Namespace, channel: OpsChannel) -> int:
               kept=answer["kept_as_received"], failed=answer["failed"])
         )  # fmt: skip
     return 1 if answer["failed"] else 0
+
+
+@ops_command
+def run_assemble_volume(args: argparse.Namespace, channel: OpsChannel) -> int:
+    answer = channel.call(
+        "ops.assemble_volume", destination=args.destination, edition=args.edition,
+        volume=args.volume, first=args.first, last=args.last,
+    )  # fmt: skip
+    if answer["assembled"]:
+        print(t("ops.assembled", volume=args.volume, chapters=answer["chapters"]))
+        return 0
+    if answer["outcome"] == "gap":
+        print(t("ops.volume_gap", numbers=answer["missing_text"]))
+        return 1
+    print(t("ops.assembly_refused", outcome=answer["outcome"], chapters=answer["chapters"]))
+    return 1

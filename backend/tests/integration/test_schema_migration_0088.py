@@ -2,7 +2,7 @@
 metadata providers (Hardcover, Google Books).
 
 One table, one row per provider, the key in the four sealed columns of the secret vault; nothing
-else is touched; reversible. The head of the migrations is pinned here, by the newest one.
+else is touched; reversible. The head of the migrations is pinned by the newest one.
 """
 
 import sqlite3
@@ -20,9 +20,8 @@ from tests.integration.test_schema_migration_0002 import alembic_config, tables
 pytestmark = pytest.mark.req("ENF-OPS-002", "ENF-SEC-005", "EF-BIB-013")
 
 
-def test_the_revision_is_0088_the_only_head_on_0087() -> None:
+def test_the_revision_is_0088_on_0087() -> None:
     script = ScriptDirectory(str(default_script_location()))
-    assert script.get_heads() == ["0088"]
     assert script.get_revision("0088").down_revision == "0087"
 
 

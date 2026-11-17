@@ -33,7 +33,6 @@ from shelfhold.export.application.locks import (
     work_resource,
 )
 from shelfhold.export.application.manifest_write import (
-    adopt_written_hook,
     release_reserved_hook,
     reserved_line,
 )
@@ -49,6 +48,7 @@ from shelfhold.ops.errors import (
     StillWaitingError,
     UnknownSubjectError,
 )
+from shelfhold.ops.settle_hooks import settle_hooks
 
 if TYPE_CHECKING:
     from shelfhold.composition import Composition
@@ -216,7 +216,10 @@ class IntentOps:
                 self._comp.engine, w.fsops, clock=self._comp.clock,
                 settled=self._audit(principal),
             )  # fmt: skip
-            hook = adopt_written_hook(w.fsops, w.loaded.locate, self._comp.clock)
+            hook = settle_hooks(
+                self._comp.engine, w.fsops, w.loaded.locate,
+                data_dir=self._comp.settings.data_dir, clock=self._comp.clock, bus=w.bus,
+            )  # fmt: skip
             report = journal.resolve_one(intent_id, on_done=hook)
         if report is None:
             return "open", "the intent is not open any more"
