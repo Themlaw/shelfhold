@@ -22,6 +22,7 @@ from __future__ import annotations
 import hashlib
 import json
 from dataclasses import dataclass, field
+from datetime import timedelta
 from typing import Any
 
 import sqlalchemy as sa
@@ -52,6 +53,7 @@ log = structlog.get_logger(__name__)
 NOT_FOUND = "import.tachibk_not_found"
 APPLIED = "import.tachibk_applied"
 ORIGIN = "tachibk"
+PREVIEW_KEPT = timedelta(days=1)  # a preview is read and applied the same day, or made again
 SHOWN_ITEMS = 100  # the series a preview lists: the counts are those of the whole file
 
 _import = acquisition.tachibk_import
@@ -165,6 +167,11 @@ class TachibkImportService:
         with write_transaction(self._engine) as connection:
             if not self._profile_exists(connection, subject):
                 raise TachibkImportError(NOT_FOUND)
+            connection.execute(  # a preview nobody applied does not stay: its staged text goes
+                sa.delete(_import).where(
+                    _import.c.state == "previewed", _import.c.created_at < now - PREVIEW_KEPT
+                )
+            )
             connection.execute(
                 sa.insert(_import).values(
                     id=import_id, user_id=subject, created_by=_account(principal),

@@ -4,7 +4,7 @@ Only invented names and numbers: no file taken from a real backup, no real sourc
 gzip of a protobuf message; the encoder below writes just the fields Shelfhold reads, and lets a
 test add any other field or any malformed byte, so that a forged file is a few lines.
 
-Field numbers are those the format documents: `Backup` (1: manga, 2: categories, 100: sources,
+Field numbers are those the format documents: `Backup` (1: manga, 2: categories, 101: sources,
 104: preferences), `BackupManga` (1: source, 2: url, 3: title, 16: chapters, 18: tracking,
 100: favorite), `BackupChapter` (1: url, 2: name, 4: read, 6: last page read, 9: number),
 `BackupTracking` (1: tracker, 4: url, 5: title, 6: last chapter read, 100: remote id).
@@ -100,7 +100,7 @@ def backup(
 ) -> bytes:  # fmt: skip
     body = b"".join(ld(1, item) for item in mangas)
     for source_id, name in sources:
-        body += ld(100, ld(1, name) + vi(2, source_id))
+        body += ld(101, ld(1, name) + vi(2, source_id))
     return body + extra
 
 

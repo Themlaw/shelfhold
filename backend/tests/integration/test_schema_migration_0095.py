@@ -100,17 +100,22 @@ def test_a_marker_is_one_chapter_of_one_series_for_one_profile(settings: Setting
             conn.execute(add, ("01HZZZZZZZZZZZZZZZZZZZZZZF", USER, ITEM, "/c/1", 0, 3))
 
 
-def test_a_marker_goes_with_its_profile_and_with_its_series(settings: Settings) -> None:
-    add = (
-        'INSERT INTO read_marker (id, user_id, pending_item_id, chapter_ref, "read") '
-        "VALUES (?, ?, ?, '/c/1', 1)"
-    )
+_ADD_MARKER = (
+    'INSERT INTO read_marker (id, user_id, pending_item_id, chapter_ref, "read") '
+    "VALUES (?, ?, ?, '/c/1', 1)"
+)
+
+
+def test_a_marker_goes_with_its_series(settings: Settings) -> None:
     with closing(_connect(settings)) as conn:
-        conn.execute(add, (MARKER, USER, ITEM))
+        conn.execute(_ADD_MARKER, (MARKER, USER, ITEM))
         conn.execute("DELETE FROM pending_source_item WHERE id = ?", (ITEM,))
         assert conn.execute("SELECT COUNT(*) FROM read_marker").fetchone() == (0,)
+
+
+def test_a_marker_goes_with_its_profile(settings: Settings) -> None:
     with closing(_connect(settings)) as conn:
-        conn.execute(add, (MARKER, USER, ITEM))
+        conn.execute(_ADD_MARKER, (MARKER, USER, ITEM))
         conn.execute("DELETE FROM user WHERE id = ?", (USER,))
         assert conn.execute("SELECT COUNT(*) FROM read_marker").fetchone() == (0,)
 

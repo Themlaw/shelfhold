@@ -13,6 +13,7 @@ line is allowed it. No name of a source is ever printed or kept.
 from __future__ import annotations
 
 import argparse
+from pathlib import Path
 
 from shelfhold.i18n import t
 from shelfhold.interfaces.cli._ops import fail, ops_command
@@ -48,7 +49,8 @@ def _run(args: argparse.Namespace, channel: OpsChannel) -> int:
             )
         )
         return 0
-    view = channel.call("ops.import_tachibk_preview", path=args.path, profile=args.profile)
+    path = str(Path(args.path).resolve())  # the server reads it: its folder is not ours
+    view = channel.call("ops.import_tachibk_preview", path=path, profile=args.profile)
     print(
         t(
             "ops.tachibk_preview",

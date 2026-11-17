@@ -37,8 +37,13 @@ UNIT_STATE: Final = "known"  # what a chapter the backup lists is until its sour
 
 # The ids Mihon gives its trackers; the names are the ones Shelfhold uses for the same services.
 TRACKERS: Final[dict[int, str]] = {
-    1: "myanimelist", 2: "anilist", 3: "kitsu", 4: "mangaupdates", 5: "shikimori", 6: "bangumi",
-}  # fmt: skip
+    1: "myanimelist",
+    2: "anilist",
+    3: "kitsu",
+    4: "shikimori",
+    5: "bangumi",
+    7: "mangaupdates",
+}  # fmt: skip  (6 is a self-hosted server, 8 and 9 too: no hint is kept for them)
 
 
 @dataclass(slots=True)
@@ -168,7 +173,7 @@ def _chapter(chapter: RawChapter, record: SeriesRecord, seen: set[str]) -> None:
     if len(record.units) < MAX_UNITS_PER_SERIES:
         record.units.append(KnownUnit(ref, number))
     page = _page(chapter.last_page)
-    if chapter.read or page is not None:
+    if (chapter.read or page is not None) and len(record.markers) < MAX_UNITS_PER_SERIES:
         record.markers.append(ReadMarker(ref, number, chapter.read, None if chapter.read else page))
 
 

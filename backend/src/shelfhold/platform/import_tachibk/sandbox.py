@@ -42,7 +42,8 @@ def decode_in_sandbox(
             "decode_tachibk", {"limits": limits.to_dict()}, data, limits=run, argv=argv
         )
     except ImageRejected as failed:
-        if failed.code == DECODE_FAILED:  # out of time or CPU: the file is the cause
+        if failed.code == DECODE_FAILED or failed.reason == "reply too large":
+            # out of time or CPU, or too much to say: the file is the cause
             raise TachibkRefusedError("too_expensive", INVALID) from None
         raise TachibkRefusedError("worker_failed", UNAVAILABLE) from None
     refused = result.get("refused")

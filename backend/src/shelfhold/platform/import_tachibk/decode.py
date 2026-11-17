@@ -34,7 +34,8 @@ UNAVAILABLE: Final = "import.tachibk_unavailable"
 
 # Top-level fields of the backup message, by generation of the format. The format carries no
 # version number, so a generation is recognised by the fields it uses: 1 manga, 2 categories,
-# 100 sources, 101 broken sources, 104 preferences, 105 source preferences, 106 extension repos.
+# 100 legacy sources (skipped), 101 sources, 104 preferences, 105 source preferences, 106 extension
+# repos.
 SCHEMA_VERSIONS: Final[dict[str, frozenset[int]]] = {
     "mihon-1": frozenset({1, 2, 100, 101}),
     "mihon-2": frozenset({1, 2, 100, 101, 104, 105}),
@@ -51,7 +52,8 @@ class Limits:
     max_compressed: int = 16 * _MIB
     max_decompressed: int = 64 * _MIB
     max_depth: int = 16
-    max_entries: int = 100_000
+    max_entries: int = 100_000  # messages: series, chapters, tracker entries, skipped fields
+    max_fields: int = 2_000_000  # every field read or skipped, scalars included
     max_string: int = 2048
 
     def to_dict(self) -> dict[str, int]:
@@ -161,10 +163,11 @@ def gunzip(data: bytes, limits: Limits) -> bytes:
 class _Reader:
     """The protobuf wire format over one buffer, counting every field it goes through."""
 
-    __slots__ = ("budget", "buf", "limits")
+    __slots__ = ("budget", "buf", "fields_left", "limits")
 
     def __init__(self, buf: bytes, limits: Limits) -> None:
         self.buf, self.limits, self.budget = buf, limits, limits.max_entries
+        self.fields_left = limits.max_fields
 
     def varint(self, pos: int, end: int) -> tuple[int, int]:
         result = shift = 0
@@ -179,9 +182,10 @@ class _Reader:
             shift += 7
         raise TachibkRefusedError("malformed")  # a varint is at most ten bytes
 
-    def count(self) -> None:
-        self.budget -= 1
-        if self.budget < 0:
+    def count(self, *, entry: bool = False) -> None:
+        self.fields_left -= 1
+        self.budget -= entry
+        if self.budget < 0 or self.fields_left < 0:
             raise TachibkRefusedError("too_many_entries")
 
     def fields(self, pos: int, end: int) -> Any:
@@ -193,7 +197,7 @@ class _Reader:
             number, wire = key >> 3, key & 7
             if number == 0:
                 raise TachibkRefusedError("malformed")
-            self.count()
+            self.count(entry=wire in (2, 3))
             if wire == 0:
                 value, pos = self.varint(pos, end)
                 yield number, 0, value
@@ -211,6 +215,7 @@ class _Reader:
                 pos += length
             elif wire == 3:
                 pos = self._skip_group(number, pos, end)
+                yield number, 3, None  # seen, never read: a top-level group still names a version
             else:  # 4: an end of group nobody opened; 6 and 7 do not exist
                 raise TachibkRefusedError("malformed")
         if pos != end:
@@ -226,7 +231,7 @@ class _Reader:
             inner, wire = key >> 3, key & 7
             if inner == 0:
                 raise TachibkRefusedError("malformed")
-            self.count()
+            self.count(entry=wire in (2, 3))
             if wire == 3:
                 open_groups.append(inner)
                 if len(open_groups) > self.limits.max_depth:
@@ -345,18 +350,20 @@ def decode_backup(data: bytes, limits: Limits | None = None) -> RawBackup:
     top: set[int] = set()
     manga: list[RawManga] = []
     sources: list[int] = []
+    seen_sources: set[int] = set()
     for number, wire, value in reader.fields(0, len(message)):
         top.add(number)
         if number == 1:
             _expect(wire, 2)
             manga.append(_manga(reader, value))
-        elif number == 100:
+        elif number == 101:
             _expect(wire, 2)
             source = _source_id(reader, value)
-            if source is not None and source not in sources:
+            if source is not None and source not in seen_sources:
+                seen_sources.add(source)
                 sources.append(source)
-        elif number in (2, 101, 104, 105, 106):
-            _expect(wire, 2)  # skipped by its length: categories, preferences, repositories
+        elif number in (2, 100, 104, 105, 106):
+            _expect(wire, 2)  # skipped by its length: categories, legacy sources, preferences
     version = next((name for name, known in SCHEMA_VERSIONS.items() if top <= known), None)
     if version is None:
         raise TachibkRefusedError("unknown_schema", SCHEMA)

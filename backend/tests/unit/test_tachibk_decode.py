@@ -73,7 +73,7 @@ def test_tachibk_bomb_and_depth_caps_refused() -> None:
         outcome = refused
     assert time.monotonic() - started < 5 and outcome is not None
     # more entries than the bound: counted over the whole file, the fields skipped included
-    many = env.manga(1, "/u", "T", extra=b"".join(env.vi(90, 1) for _ in range(100_001)))
+    many = env.manga(1, "/u", "T", extra=b"".join(env.ld(90, b"") for _ in range(100_001)))
     assert _refused(env.tachibk(env.backup([many]))).reason == "too_many_entries"
     # a string over the bound, in a field Shelfhold reads
     long_title = env.manga(1, "/u", "x" * 5_000)
@@ -135,6 +135,39 @@ def test_nothing_in_the_decoder_reads_a_path_or_asks_a_network() -> None:
 
 
 # -- the map ---------------------------------------------------------------------------------------
+
+
+@pytest.mark.req("EF-INT-008", "ENF-SEC-002")
+def test_a_real_sized_library_is_read_and_a_scalar_flood_is_still_refused() -> None:
+    # 150 series of 120 chapters: 18 000 chapters of 7 fields each, well under the bounds
+    chapters = [env.chapter(f"/c/{n}", float(n), read=True, page=3) for n in range(120)]
+    series = [env.manga(7, f"/s/{i}", f"Series {i}", chapters) for i in range(150)]
+    big = decode_backup(env.tachibk(env.backup(series)))
+    assert sum(len(m.chapters) for m in big.manga) == 18_000
+    # two million scalar fields in one series are a flood, whatever their kind
+    flood = env.manga(1, "/u", "T", extra=b"".join(env.vi(90, 1) for _ in range(2_000_001)))
+    assert _refused(env.tachibk(env.backup([flood]))).reason == "too_many_entries"
+    # a group at the top level is as much a field of a later version as any other
+    assert _refused(env.tachibk(env.backup([], extra=env.nested_groups(2)))).code == (
+        "import.tachibk_schema"
+    )
+    # many sources are listed once each, quickly
+    many = [(n, "s") for n in range(1, 30_001)]
+    started = time.monotonic()
+    assert len(decode_backup(env.tachibk(env.backup([], sources=many))).source_ids) == 30_000
+    assert time.monotonic() - started < 5
+
+
+@pytest.mark.req("EF-INT-008")
+def test_trackers_are_named_by_the_ids_mihon_gives_them() -> None:
+    ids = {1: "myanimelist", 2: "anilist", 3: "kitsu", 4: "shikimori", 5: "bangumi",
+           7: "mangaupdates"}  # fmt: skip
+    entries = [env.tracking(k, 10 + k) for k in (*ids, 6, 8, 9)]  # 6, 8, 9: self-hosted servers
+    staged = map_backup(
+        decode_backup(env.tachibk(env.backup([env.manga(1, "/u", "T", trackers=entries)])))
+    )
+    assert [h.tracker for h in staged.series[0].hints] == list(ids.values())
+    assert staged.skipped_trackers == 3
 
 
 @pytest.mark.req("EF-INT-008")

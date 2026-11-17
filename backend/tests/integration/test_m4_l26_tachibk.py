@@ -198,7 +198,7 @@ def test_tachibk_bomb_and_depth_caps_refused(world: World, monkeypatch: pytest.M
         "too_deep": env.tachibk(env.backup([env.manga(1, "/u", "T", extra=env.nested_groups(40))])),
         "too_many_entries": env.tachibk(
             env.backup(
-                [env.manga(1, "/u", "T", extra=b"".join(env.vi(90, 1) for _ in range(100_001)))]
+                [env.manga(1, "/u", "T", extra=b"".join(env.ld(90, b"") for _ in range(100_001)))]
             )
         ),
         "string_too_long": env.tachibk(env.backup([env.manga(1, "/u", "x" * 5_000)])),
@@ -374,3 +374,15 @@ def test_a_decoder_that_fails_leaves_nothing_and_says_so_without_the_file(
     assert answer.status_code == 503 and answer.json()["code"] == "import.tachibk_unavailable"
     assert "SynthSource" not in answer.text
     assert _rows(world, "SELECT 1 FROM tachibk_import") == [] and _library_untouched(world)
+
+
+@pytest.mark.req("EF-INT-008")
+def test_a_preview_nobody_applied_does_not_stay(world: World) -> None:
+    first = _upload(world, world.env.client, env.sample())
+    assert first.status_code == 201
+    world.env.clock.advance(timedelta(days=2))
+    assert world.env.login().status_code == 200  # the session is fresh again
+    second = _upload(world, world.env.client, env.sample())
+    assert second.status_code == 201
+    kept = [r[0] for r in _rows(world, "SELECT id FROM tachibk_import")]
+    assert kept == [second.json()["id"]]  # the old one, and its staged text, are gone

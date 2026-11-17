@@ -3,6 +3,7 @@ database. The host's command line has no account: the markers are the first admi
 profile is named. The first command is a preview and writes nothing to the library; `--apply <id>`
 writes it once. A file over a bound is refused whole, and no name of a source is ever printed."""
 
+import os
 from pathlib import Path
 
 import pytest
@@ -95,6 +96,10 @@ def test_cli_refuses_what_it_must_not_read(
     future = env.tachibk(env.backup([], extra=env.ld(999, "later")))
     assert run(_file(tmp_path, future, "future.tachibk")) == 1  # a generation it does not know
     assert "import.tachibk_schema" in capsys.readouterr().err
+    fifo = tmp_path / "pipe.tachibk"
+    os.mkfifo(fifo)  # a pipe is no backup, and reading it must not hold the server
+    assert run(str(fifo)) == 1 and "unreadable" in capsys.readouterr().err
+    assert run("/dev/null") == 1 and "unreadable" in capsys.readouterr().err
     assert run() == 2 and run(good, "--apply", "x") == 2  # one of a file or --apply
     capsys.readouterr()
     assert _rows(engine, "SELECT 1 FROM tachibk_import") == []
