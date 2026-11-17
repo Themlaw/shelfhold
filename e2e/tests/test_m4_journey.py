@@ -37,6 +37,13 @@ from test_m3_journey import kavita_titles, library_ids, make_profile, manga_inst
 VECTORS_FILE = (
     Path(__file__).resolve().parents[2] / "backend" / "tests" / "unit" / "test_document_hash.py"
 )
+# The M4 stack's own layout (EF-EXP-059): a folder Shelfhold writes is a root under /library and
+# two roots never overlap, so Kavita's media folder and the native folder are two roots of the
+# library: the Kavita target's map names /library/manga (the shelf sits at its root, the files
+# land where the other journeys put them) and the native folder is /library/native, a volume of
+# the overlay mounted there, as a mounted share would be.
+M4_KAVITA_PATH_MAP = '[{"local": "/library/manga", "remote": "/library/manga", "mode": "rw"}]'
+NATIVE_ROOT = "/library/native"
 SYNC_PROGRESS_NOT_WRITABLE = (
     "EF-EXP-026/EF-EXP-017: the switch `shelf_destination.sync_progress` has no write surface "
     "yet (no command, no route sets it; M4 L14b left it a column and L33a/L33b added no write), "
@@ -50,9 +57,15 @@ SYNC_PROGRESS_NOT_WRITABLE = (
 
 
 def native_files(j: Journey) -> list[str]:
-    """The files of the native folder volume (the M4 overlay mounts it at /native)."""
-    done = j.compose("exec", "-T", "shelfhold", "find", "/native", "-type", "f", check=False)
+    """The files of the native folder (the M4 overlay mounts its volume at /library/native)."""
+    done = j.compose("exec", "-T", "shelfhold", "find", NATIVE_ROOT, "-type", "f", check=False)
     return sorted(line for line in done.stdout.splitlines() if line)
+
+
+def manga_install_m4(j: Journey, *, exported: bool = True) -> tuple[str, str]:
+    """`manga_install` on the M4 layout: Kavita's map names /library/manga and the shelf sits at
+    its root, so the native folder beside it is a root of its own and breaks no rule."""
+    return manga_install(j, exported=exported, path_map=M4_KAVITA_PATH_MAP, subpath=None)
 
 
 def fake_call(j: Journey, url: str) -> dict[str, object]:
@@ -175,12 +188,13 @@ def test_m4_journey_manga_shelf_kavita_and_native_folder(journey_m4: Journey) ->
     file in the folder Mihon reads, laid out as it reads (a folder per series, `Ch.<n> <title>`,
     a cover, a ComicInfo inside the archive), and nothing left the network namespace."""
     j = journey_m4
-    manga_install(j)  # the shelf, the chapter published upstream, delivered to Kavita
+    manga_install_m4(j)  # the shelf, the chapter published upstream, delivered to Kavita
     # the folder Mihon reads, named by the administrator on the screens of the API (a folder that
     # is written is a reserved action: a fresh session of the admin)
     [(code, made)] = j.api(
         ("POST", "/api/v1/targets/native-folder",
-         {"name": "mihon", "path_map": [{"local": "/native", "remote": "/native", "mode": "rw"}]}),
+         {"name": "mihon",
+          "path_map": [{"local": NATIVE_ROOT, "remote": NATIVE_ROOT, "mode": "rw"}]}),
     )  # fmt: skip
     assert code == 201, (code, made)
     # the shelf takes a second binding, a folder of that target (fan-out, EF-EXP-002)
@@ -195,12 +209,12 @@ def test_m4_journey_manga_shelf_kavita_and_native_folder(journey_m4: Journey) ->
         return [f for f in native_files(j) if "/.shelfhold/" not in f]
 
     expected = [
-        "/native/manga/Series Alpha/Ch.0002 Chapter 2.cbz",
-        "/native/manga/Series Alpha/cover.png",
+        f"{NATIVE_ROOT}/manga/Series Alpha/Ch.0002 Chapter 2.cbz",
+        f"{NATIVE_ROOT}/manga/Series Alpha/cover.png",
     ]
     assert wait_for(lambda: visible() == expected, 300), native_files(j)
     # the archive is one Mihon reads: pages, and the ComicInfo that names the chapter
-    raw = j.read_bytes("/native/manga/Series Alpha/Ch.0002 Chapter 2.cbz")
+    raw = j.read_bytes(f"{NATIVE_ROOT}/manga/Series Alpha/Ch.0002 Chapter 2.cbz")
     with zipfile.ZipFile(io.BytesIO(raw)) as archive:
         names = archive.namelist()
     assert "ComicInfo.xml" in names and any(n.endswith(".png") for n in names), names
@@ -221,7 +235,7 @@ def test_m4_journey_progress_both_ways(journey_m4: Journey) -> None:
     their "Where I am", read by the e-reader routes of their device token; and the position the
     e-reader leaves reaches Kavita. The screen of the sync says what was pulled and pushed."""
     j = journey_m4
-    destination, library = manga_install(j)
+    destination, library = manga_install_m4(j)
     reader = ("reader", "synthetic-reader-password-1")
     user_id = make_profile(j, reader, "member")
     j.child_account(reader[0], library_ids(j)[library], age=-1)  # the member's Kavita account
@@ -266,7 +280,7 @@ def test_m4_journey_rename_keeps_each_member_progress(journey_m4: Journey) -> No
     what they read is pulled before the move and pushed to the renamed chapter after it, and
     nothing is made "read" on the way (EF-EXP-017, EF-EXP-030)."""
     j = journey_m4
-    destination, library = manga_install(j)
+    destination, library = manga_install_m4(j)
     chapter = next(
         f for f in j.library_files() if f.startswith("/library/manga/") and f.endswith(".cbz")
     )

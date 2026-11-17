@@ -1,7 +1,13 @@
 # M4 overlay (L44), used with compose.yaml and journey.yaml: `-f compose.yaml -f journey.yaml
-# -f m4.yaml`. Adds a second simulated server (Komga) and a shared native folder for Mihon/Suwayomi
-# local, plus the third library that Shelfhold will export to as a native folder. Nothing leaves the
-# network namespace: `egress-watch` still sees everything.
+# -f m4.yaml`. Adds a second simulated server (Komga) and the native folder a reader (Mihon,
+# Suwayomi local) reads. Nothing leaves the network namespace: `egress-watch` still sees
+# everything.
+#
+# The layout follows the rule of the physical roots (EF-EXP-059): a folder Shelfhold writes is a
+# root under /library, and two roots never overlap. Kavita's media folder and the native folder
+# are two roots of the library: /library/manga (the Kavita target's map names it, the shelf sits
+# at its root) and /library/native (its own volume, as a mounted share would be). Both exist
+# before the first bootstrap, as mounted folders do: a folder that does not exist is no root yet.
 #
 # The journeys:
 # - parcours 1: l'étagère "Manga" alimente Kavita et un dossier natif (Mihon/Suwayomi local) ;
@@ -32,11 +38,11 @@ services:
     read_only: true
     cap_drop: [ALL]
     cap_add: [CHOWN]
-    command: ["sh", "-c", "chown 1000:1000 /library /native"]
+    command: ["sh", "-c", "mkdir -p /library/manga && chown 1000:1000 /library /library/manga /library/native"]
     restart: "no"
     volumes:
       - library:/library
-      - native:/native
+      - native:/library/native
     network_mode: none
 
   fake-komga:
@@ -65,7 +71,7 @@ services:
       SHELFHOLD_DEVICE_ALLOW_PLAIN_HTTP: "true"
     volumes:
       - library:/library
-      - native:/native
+      - native:/library/native
 
 volumes:
   library:
