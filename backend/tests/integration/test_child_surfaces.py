@@ -300,6 +300,7 @@ CLOSED = (
     "DELETE /api/v1/collections/{collection_id}/kavita-public",
     "PUT /api/v1/setup/sources/family",  # M3 L40 (D13): which sources a child's search reaches
     "POST /api/v1/setup/adoption/preview",
+    "GET /api/v1/setup/adoption/preview/{job_id}",  # M4 L36: the preview is a task, admin only
     "POST /api/v1/setup/library",
     "POST /api/v1/setup/shelf",  # ENF-UX-001: the wizard makes the shelf linked to Kavita
     "POST /api/v1/setup/probe",
@@ -368,6 +369,8 @@ CLOSED = (
     "POST /api/v1/requests/{request_id}/approve",
     "POST /api/v1/requests/{request_id}/reject",
     "POST /api/v1/requests/{request_id}/not-found",
+    "POST /api/v1/bulk/rate/preview",  # M4 L28: bulk rating, a fresh admin session's
+    "POST /api/v1/bulk/rate/{order_id}/apply",
     "POST /api/v1/editions/{edition_id}/team-switch",  # M4 L35: an admin's, replaces served files
     "POST /api/v1/editions/{edition_id}/team-switch/{switch_id}/apply",
     "GET /api/v1/editions/{edition_id}/team-switch/{switch_id}",

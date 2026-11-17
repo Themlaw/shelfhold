@@ -87,6 +87,10 @@ def _show(report: AdoptionReport) -> None:
             print(t("adopt.volume_only_line", name=series.name))
         else:
             print(t("adopt.series_line", name=series.name, files=len(series.files)))
+    for item in report.series:
+        for file in item.files:
+            if file.check:
+                print(t("adopt.file_to_check_line", path=file.rel_path, reason=file.check))
     if report.child_library:
         print(t("adopt.child_library", count=len(report.suspended)))
         if report.exposed_accounts:

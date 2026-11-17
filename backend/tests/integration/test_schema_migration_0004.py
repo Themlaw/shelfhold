@@ -60,6 +60,7 @@ M4_TABLES = {
     "team_switch",  # migration 0097 (M4 L35)
     "webhook_subscription",  # migration 0096 (M4 L24)
     "webhook_outbox",  # migration 0096 (M4 L24)
+    "bulk_order",  # migration 0098 (M4 L28)
     "notify_destination",  # migration 0094 (M4 L39)
 }  # migration 0064 (M4 L02); the others sit in their modules
 M1B_TABLES = {"webauthn_credential", "backup_run"}  # migration 0013

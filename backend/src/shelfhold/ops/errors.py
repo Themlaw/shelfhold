@@ -23,6 +23,10 @@ CODES: tuple[ErrorCode, ...] = (
     ErrorCode("root.unauthenticated", 409, "admin"),
     ErrorCode("root.busy", 409, "admin"),
     ErrorCode("rebaseline.refused", 409, "admin"),
+    # M4 L28: why a bulk rating job ends without rating (the order is closed, nothing was written)
+    ErrorCode("bulk.stale", 409, "admin"),  # a chosen Work no longer waits as the preview saw it
+    ErrorCode("bulk.refused", 403, "admin"),  # the admin who ordered it lost the right meanwhile
+    ErrorCode("bulk.unknown", 409, "admin"),  # the order is gone or was closed
 )
 
 

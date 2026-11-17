@@ -11,8 +11,9 @@ stdin, one reply frame on stdout, then exit. Before it reads a byte of the image
   nothing it runs afterwards can raise them again.
 
 Limit of the Python-level fallback: it stops Python code, not a native decoder that calls the
-`socket` system call itself. Only the network namespace stops that. The mode in force is reported
-(`isolation`: `netns` or `python`) and documented in docs/security.
+`socket` system call itself. Only the network namespace and the seccomp filter (which refuses
+`socket()` of every family, AF_UNIX too: the worker speaks through its pipes) stop that. The
+mode in force is reported (`isolation`: `netns` or `python`) and documented in docs/security.
 
 `ImageOps.exif_transpose` is called here and nowhere else (EXIF is an untrusted IFD; its parser
 runs inside the limits). `Image.open` is always given the allowlist, so EPS (Ghostscript) and
@@ -88,7 +89,6 @@ _RET_ALLOW = 0x7FFF0000
 _RET_KILL_PROCESS = 0x80000000
 _RET_EPERM = 0x00050000 | 1
 _RET_ENOSYS = 0x00050000 | 38  # clone3 -> glibc falls back to clone, which the filter checks
-_BLOCKED_FAMILIES = (2, 10, 17)  # AF_INET, AF_INET6, AF_PACKET
 _CLONE_THREAD = 0x00010000
 
 
@@ -99,9 +99,10 @@ def _bpf(code: int, jt: int, jf: int, k: int) -> bytes:
 def seccomp_program(machine: str) -> bytes | None:
     """The filter for this architecture, or None when it is not covered.
 
-    Refused with EPERM: socket(AF_INET | AF_INET6 | AF_PACKET), fork, vfork and clone without
-    CLONE_THREAD (a thread is fine, a process is not). clone3 answers ENOSYS. A call made through
-    another ABI than the native one kills the process.
+    Refused with EPERM: socket() of any family (the worker speaks through its two pipes only:
+    no AF_INET, and no AF_UNIX to reach a daemon's control socket by path), fork, vfork and clone
+    without CLONE_THREAD (a thread is fine, a process is not). clone3 answers ENOSYS. A call made
+    through another ABI than the native one kills the process.
     """
     if machine not in _SECCOMP_ARCHES:
         return None
@@ -113,13 +114,10 @@ def seccomp_program(machine: str) -> bytes | None:
         (jeq, arch, None, "kill", None),
         (ld, 0, None, None, None),  # syscall number
         (0x35, 0x40000000, "kill", None, None),  # jge: x32 ABI on x86_64 would dodge the numbers
-        (jeq, socket_nr, "sock", None, None),
+        (jeq, socket_nr, "eperm", None, None),
         (jeq, clone_nr, "clone", None, None),
         (jeq, clone3_nr, "enosys", None, None),
         *[(jeq, nr, "eperm", None, None) for nr in forks],
-        (ret, _RET_ALLOW, None, None, None),
-        (ld, 16, None, None, "sock"),  # args[0] of socket(): the family
-        *[(jeq, fam, "eperm", None, None) for fam in _BLOCKED_FAMILIES],
         (ret, _RET_ALLOW, None, None, None),
         (ld, 16, None, None, "clone"),  # args[0] of clone(): the flags
         (jset, _CLONE_THREAD, "allow", "eperm", None),
@@ -221,6 +219,18 @@ def _python_socket() -> str:
     return "allowed"
 
 
+def _raw_unix_socket() -> str:
+    """socket(AF_UNIX) through libc, around the Python stub: `denied` when the filter refuses."""
+    libc = _libc()
+    if libc is None:
+        return "unavailable"
+    fd = libc.socket(1, 1, 0)  # AF_UNIX, SOCK_STREAM
+    if fd < 0:
+        return "denied"
+    libc.close(fd)
+    return "allowed"
+
+
 def _diagnose(op: str, args: dict[str, Any], state: dict[str, Any]) -> dict[str, Any]:
     if op == "network":
         return {
@@ -228,6 +238,7 @@ def _diagnose(op: str, args: dict[str, Any], state: dict[str, Any]) -> dict[str,
             "seccomp": state["seccomp"],
             "python_socket": _python_socket(),
             "raw_connect": _raw_connect(int(args["port"])),
+            "unix_socket": _raw_unix_socket(),
         }
     if op == "limits":
         names = {

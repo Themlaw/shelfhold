@@ -2138,6 +2138,21 @@
     action = "Open the destination in Settings: each file left is named with its reason (changed since the export, last copy of an irreplaceable original, outside the root). Deal with them by hand or keep them, then start the removal again."
     cause = "At least one file was not deleted: it changed since the export, it may be the last copy of an irreplaceable original, or it is not a plain file of the root. The destination is not forgotten while any are left."
 
+  [errors."bulk.stale"]
+    title = "The bulk rating was not applied: the selection changed."
+    action = "Nothing was rated. Open \"À classer\", choose the Works again and preview again."
+    cause = "Between the preview and the job, a chosen Work was rated by someone else or stopped waiting: the job rates all of the preview or none."
+
+  [errors."bulk.refused"]
+    title = "The bulk rating was not applied: the right to classify is gone."
+    action = "Nothing was rated. Ask an administrator who holds the right to classify to do it."
+    cause = "The administrator who gave the order no longer holds the right to classify, or is no longer an administrator."
+
+  [errors."bulk.unknown"]
+    title = "The bulk rating has no order to apply."
+    action = "Nothing was rated. Preview the selection again."
+    cause = "The order the job was queued for is gone or was already closed."
+
   [errors."detach.incomplete"]
     title = "The detachment is not finished: a step failed or is missing."
     action = "Read the report: if the dedicated key was not revoked, give the same order a second time, with the Kavita account password (it is never kept between two runs). The steps already done are not done again."
@@ -2550,6 +2565,7 @@
   volume_only_line = "Series {name}: volumes only, chapter range unknown (no automatic tracking)."
   rename_line = "Proposed renaming (never applied): {from_path}->{to_path}"
   active_content_line = "Active content (scripts, handlers or remote resources) in the EPUB: {path} (adopted as is, never used or rewritten by Shelfhold)."
+  file_to_check_line = "To check: {path} ({reason}). Adopted as is, never touched: its first page or its archive was refused by the sandbox."
   duplicate_line = "Duplicate of same number in {series} (kept): no.{number}: {files}"
   refused = "Accounts smaller than the ceiling of the shelf read this library, adoption refused: {accounts}"
   child_accounts = "Restricted accounts reading it: {accounts}"

@@ -55,6 +55,7 @@ from shelfhold.ops.acquire import AcquireOps
 from shelfhold.ops.assembly import VolumeAssemblyOps
 from shelfhold.ops.attach import AttachOps
 from shelfhold.ops.backfill import BackfillOps
+from shelfhold.ops.bulk import BulkOps
 from shelfhold.ops.content import ContentOps
 from shelfhold.ops.contributors import ContributorOps
 from shelfhold.ops.dedup import DedupOps
@@ -228,6 +229,7 @@ class OpsServices:
         meta: MetaOps | None = None,
         content: ContentOps | None = None,
         rating: RatingOps | None = None,
+        bulk: BulkOps | None = None,
         attach: AttachOps | None = None,
         edition_merge: EditionMergeOps | None = None,
         work_merge: WorkMergeOps | None = None,
@@ -276,6 +278,7 @@ class OpsServices:
         self._meta = meta
         self._content = content
         self._rating = rating
+        self._bulk = bulk
         self._attach = attach
         self._edition_merge = edition_merge
         self._work_merge = work_merge
@@ -887,6 +890,13 @@ class OpsServices:
         if self._export_items is None:
             raise ExitUnavailableError("the export items are not connected")
         return self._export_items
+
+    @property
+    def bulk(self) -> BulkOps:
+        """The bulk rating of "À classer": a preview, then one job (M4 L28, EF-BIB-023)."""
+        if self._bulk is None:
+            raise ExitUnavailableError("the bulk actions are not connected")
+        return self._bulk
 
     @property
     def rating(self) -> RatingOps:

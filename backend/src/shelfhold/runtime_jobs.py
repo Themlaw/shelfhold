@@ -180,6 +180,7 @@ from shelfhold.library.public import (
     UntrustedEpubStore,
 )
 from shelfhold.ops.acquire import AcquireOps
+from shelfhold.ops.bulk import BulkOps, register_bulk_jobs
 from shelfhold.ops.dedup import suggest_on_arrival
 from shelfhold.ops.destination_accounts import open_destination_accounts
 from shelfhold.ops.detach import register_teardown_jobs
@@ -1228,8 +1229,7 @@ class PlanService:
                 if _names_may_refresh(self._comp, destination_id):
                     asyncio.run(refresh_names(self._comp.engine, client, destination_id))
                 asyncio.run(refresh_foreign_names(self._comp.engine, client, destination_id))
-                names, kind = pipeline.wanted_names(destination_id)
-                bulk = asyncio.run(BulkParse.fetch(client, names, library_type_named(kind)))
+                bulk = asyncio.run(BulkParse.for_plan(client, pipeline, destination_id))
                 pipeline.bind_parse(bulk, verified=True)
             except (KeyringUnavailableError, KeyError, sa.exc.NoResultFound, TargetError):
                 pipeline.bind_parse(_no_remote_parse, verified=False)
@@ -1668,6 +1668,9 @@ def register_runtime_jobs(pools: JobPools, comp: Composition) -> None:
     register_integrity_job(pools, comp)  # the rolling integrity check (M3 L23)
     register_thumbnail_jobs(pools, comp)  # cover thumbnails: collect, catch up (M3 L24)
     register_teardown_jobs(pools, comp, LazyHeadless(comp.settings))  # M4 L34: remove, detach
+    register_bulk_jobs(  # M4 L28: the bulk rating of "À classer", one job per order
+        pools, BulkOps(comp.engine, comp.clock, fresh_auth_s=comp.settings.fresh_auth_s)
+    )
 
     def export_stored() -> None:
         pools.submit(EXPORT_JOB_KIND, dedupe_key=EXPORT_JOB_KIND)

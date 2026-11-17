@@ -13,10 +13,10 @@ an admin whose session is stale. Each call leaves a line in the audit.
 """
 
 from collections.abc import Callable
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends
-from fastapi.responses import PlainTextResponse
+from fastapi.responses import JSONResponse, PlainTextResponse
 from pydantic import BaseModel, ConfigDict, Field
 
 from shelfhold.export.domain.bindings import BindingError
@@ -111,14 +111,36 @@ class WizardRootOut(BaseModel):
     present: bool
 
 
+class WizardToCheckOut(BaseModel):
+    """A file whose first page or archive the decode worker or the safe opener refused: adopted
+    all the same, never touched, for the admin to look at (`reason` is a code of a closed list)."""
+
+    path: str
+    reason: str
+
+
 class WizardPreviewOut(BaseModel):
     fingerprint: str
     library_ref: str
     series: int
     files: int
     child_library: bool
+    to_check: list[WizardToCheckOut]
     download_dir: WizardVerdictOut | None
     roots: list[WizardRootOut]
+
+
+class WizardPreviewAccepted(BaseModel):
+    """Body of the 202 of a preview that takes longer than a request may: ask `status_url`."""
+
+    job_id: str
+    status_url: str
+
+
+class WizardPreviewStatusOut(BaseModel):
+    status: Literal["running", "done"]
+    job_id: str
+    preview: WizardPreviewOut | None  # the report, once `done`
 
 
 class WizardAdoptOut(BaseModel):
@@ -220,16 +242,36 @@ def build_setup_router(
         with refusals():
             return WizardProbeOut(**get_ops().wizard.probe(body.destination_id))
 
-    @router.post("/adoption/preview")
-    def wizard_adoption_preview(body: WizardPreviewIn, _admin: Admin) -> WizardPreviewOut:
+    @router.post(
+        "/adoption/preview",
+        response_model=None,
+        responses={200: {"model": WizardPreviewOut}, 202: {"model": WizardPreviewAccepted}},
+    )
+    def wizard_adoption_preview(body: WizardPreviewIn, _admin: Admin) -> Any:
+        """The preview probes the first page of every archive of the library in the decode
+        worker, which takes minutes for a large one: it is a background task. A library read
+        within a few seconds is answered `200` with the report; else `202`, and the report is
+        read at `GET /adoption/preview/{job_id}` (M4 L36)."""
         with refusals():
-            return WizardPreviewOut(
-                **get_ops().wizard.adoption_preview(
-                    body.destination_id,
-                    library_ref=body.library_ref,
-                    download_dir=body.download_dir,
-                )
+            state = get_ops().wizard.adoption_preview_start(
+                body.destination_id,
+                library_ref=body.library_ref,
+                download_dir=body.download_dir,
             )
+        if state["status"] == "done":
+            return WizardPreviewOut(**state["preview"])
+        url = f"/api/v1/setup/adoption/preview/{state['job_id']}"
+        accepted = WizardPreviewAccepted(job_id=state["job_id"], status_url=url)
+        return JSONResponse(accepted.model_dump(), status_code=202, headers={"Location": url})
+
+    @router.get("/adoption/preview/{job_id}")
+    def wizard_adoption_preview_status(job_id: str, _admin: Admin) -> WizardPreviewStatusOut:
+        with refusals():
+            state = get_ops().wizard.adoption_preview_status(job_id)
+        preview = WizardPreviewOut(**state["preview"]) if state["preview"] else None
+        return WizardPreviewStatusOut(
+            status=state["status"], job_id=state["job_id"], preview=preview
+        )
 
     @router.post("/adoption/confirm")
     def wizard_adoption_confirm(body: WizardAdoptIn, _admin: Admin) -> WizardAdoptOut:

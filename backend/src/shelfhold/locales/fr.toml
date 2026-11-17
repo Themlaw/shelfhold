@@ -2127,6 +2127,21 @@ title = "Le retrait n'est pas terminé : des fichiers restent."
 action = "Ouvrez la destination dans Réglages : chaque fichier restant est nommé avec sa raison (modifié depuis l'export, dernière copie d'un original irremplaçable, hors de la racine). Réglez-les à la main ou gardez-les, puis recommencez le retrait."
 cause = "Au moins un fichier n'a pas été supprimé : il a changé depuis l'export, il est peut-être le dernier exemplaire d'un original irremplaçable, ou il n'est pas un fichier ordinaire de la racine. La destination n'est pas oubliée tant qu'il en reste."
 
+[errors."bulk.stale"]
+title = "Le classement en masse n'a pas été appliqué : la sélection a changé."
+action = "Rien n'a été classé. Ouvrez « À classer », choisissez de nouveau les Œuvres et refaites l'aperçu."
+cause = "Entre l'aperçu et la tâche, une Œuvre choisie a été classée par quelqu'un d'autre ou n'attend plus : la tâche classe tout l'aperçu ou rien."
+
+[errors."bulk.refused"]
+title = "Le classement en masse n'a pas été appliqué : le droit de classer a disparu."
+action = "Rien n'a été classé. Demandez à un administrateur qui a le droit de classer de le faire."
+cause = "L'administrateur qui a donné l'ordre n'a plus le droit de classer, ou n'est plus administrateur."
+
+[errors."bulk.unknown"]
+title = "Le classement en masse n'a pas d'ordre à appliquer."
+action = "Rien n'a été classé. Refaites l'aperçu de la sélection."
+cause = "L'ordre pour lequel la tâche a été mise en file a disparu ou était déjà clos."
+
 [errors."detach.incomplete"]
 title = "Le détachement n'est pas terminé : une étape a échoué ou manque."
 action = "Relisez le rapport : si la clé dédiée n'a pas été révoquée, donnez le même ordre une seconde fois, avec le mot de passe du compte Kavita (il n'est jamais gardé entre deux lancements). Les étapes déjà faites ne sont pas refaites."
@@ -2254,6 +2269,7 @@ series_line = "Série {name} : {files, plural, one {# fichier} other {# fichiers
 volume_only_line = "Série {name} : tomes seuls, plage de chapitres inconnue (aucun suivi automatique)."
 rename_line = "Renommage proposé (jamais appliqué) : {from_path} -> {to_path}"
 active_content_line = "Contenu actif (scripts, gestionnaires ou ressources distantes) dans l'EPUB : {path} (adopté tel quel, jamais servi ni réécrit par Shelfhold)."
+file_to_check_line = "À vérifier : {path} ({reason}). Adopté tel quel, jamais touché : la première page ou l'archive a été refusée par le bac à sable."
 duplicate_line = "Doublon de même numéro dans {series} (conservé) : n° {number} : {files}"
 refused = "Des comptes plus restreints que le plafond de l'étagère lisent cette bibliothèque, adoption refusée : {accounts}"
 child_accounts = "Comptes restreints qui la lisent : {accounts}"
