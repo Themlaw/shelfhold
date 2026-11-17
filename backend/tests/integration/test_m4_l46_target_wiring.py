@@ -11,7 +11,6 @@ child), journaled, and refused with a code for a destination that cannot synchro
 # ruff: noqa: F811  (the `world` fixture of L06a is imported, then asked for by name)
 from __future__ import annotations
 
-import asyncio
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
@@ -26,6 +25,7 @@ from shelfhold.headless.adapters import HttpKomgaProbe
 from shelfhold.headless.errors import TargetConflict, TargetExchangeFailed
 from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.fetcher import IntegrationFetcher, LanTargets
+from shelfhold.infrastructure.fetcher.network import Network
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import export, identity
 from shelfhold.runtime_jobs import progress_destinations
@@ -74,7 +74,7 @@ def _undeclared_probe(fake: FakeKomga) -> HttpKomgaProbe:
     resolver = FakeResolver({"komga.lan": ["192.168.1.60"]})
 
     def factory(_url: str) -> IntegrationFetcher:
-        return IntegrationFetcher(resolver, lan_targets=asyncio.run(LanTargets.empty()),
+        return IntegrationFetcher(resolver, lan_targets=LanTargets.empty(),
                                   transport=fake.transport)  # fmt: skip
 
     return HttpKomgaProbe(factory)
@@ -98,7 +98,9 @@ def _rows(env: Headless, kind: str) -> list[Any]:
 
 def _audit(engine: sa.Engine, action: str) -> list[Any]:
     with engine.connect() as connection:
-        return list(connection.execute(sa.select(identity.audit).where(identity.audit.c.action == action)))
+        return list(
+            connection.execute(sa.select(identity.audit).where(identity.audit.c.action == action))
+        )
 
 
 # ------------------------------------------------------------------------------ target add komga
@@ -125,7 +127,7 @@ def test_target_add_komga_probes_seals_and_stores_no_clear_secret(
 
 @pytest.mark.req("EF-EXP-020")
 def test_target_add_komga_is_idempotent_and_refuses_a_name_taken_elsewhere(
-    komga_env: tuple[Headless, FakeKomga],
+    komga_env: tuple[Headless, FakeKomga], tmp_path: Path
 ) -> None:
     env, _fake = komga_env
     first = env.admin.target_add_komga(name="Komga", url=BASE_URL, api_key=API_KEY)
@@ -133,7 +135,11 @@ def test_target_add_komga_is_idempotent_and_refuses_a_name_taken_elsewhere(
     assert not again.created and again.id == first.id and len(_rows(env, "komga")) == 1
     with pytest.raises(TargetConflict):
         env.admin.target_add_komga(name="Komga", url="http://other.lan:25600", api_key=API_KEY)
-    env.admin.target_add_cwa(name="Drop", path_map=None)
+    drop = tmp_path / "ingest"
+    drop.mkdir()
+    env.admin.target_add_cwa(
+        name="Drop", path_map=[{"local": str(drop), "remote": "/ingest", "mode": "rw"}]
+    )
     with pytest.raises(TargetConflict):  # a name that is another kind of target
         env.admin.target_add_komga(name="Drop", url=BASE_URL, api_key=API_KEY)
 
@@ -160,7 +166,11 @@ def test_a_private_address_is_refused_without_the_setting(settings: Settings) ->
         with pytest.raises(TargetExchangeFailed):
             env.admin.target_add_komga(name="Komga", url="http://komga.lan:25600", api_key=API_KEY)
         assert fake.requests == [] and _rows(env, "komga") == []
-        for url in ("http://203.0.113.9:25600", "http://user:pass@komga.lan:25600", "ftp://komga.lan"):
+        for url in (
+            "http://203.0.113.9:25600",
+            "http://user:pass@komga.lan:25600",
+            "ftp://komga.lan",
+        ):
             with pytest.raises(HeadlessError):
                 env.admin.target_add_komga(name="Komga", url=url, api_key=API_KEY)
         assert fake.requests == [] and _rows(env, "komga") == []
@@ -258,7 +268,10 @@ def test_cli_target_add_cwa(
 @pytest.fixture
 def komga_http(monkeypatch: pytest.MonkeyPatch) -> FakeKomga:
     fake = FakeKomga(keys={API_KEY: True, OTHER_KEY: False})
-    monkeypatch.setattr(wiring, "integration_fetcher", lambda _url: build_fetcher(fake))
+    # the application may have opened its configuration facade already: patch the network itself
+    monkeypatch.setattr(
+        Network, "integration_fetcher", lambda _self, _url, *_a, **_k: build_fetcher(fake)
+    )
     return fake
 
 
@@ -289,7 +302,10 @@ def test_an_admin_creates_a_komga_target_and_the_key_never_comes_back(
     wrong = world.api.post(KOMGA, json={**body, "name": "Autre", "api_key": OTHER_KEY})
     assert wrong.status_code == 502 and wrong.json()["code"] == "target.exchange_failed"
     assert OTHER_KEY not in wrong.text and _count(world, "komga") == 1
-    for target in world.api.client.get("/api/v1/status").text, world.api.post(KOMGA, json=body).text:
+    for target in (
+        world.api.client.get("/api/v1/status").text,
+        world.api.post(KOMGA, json=body).text,
+    ):
         assert API_KEY not in target
 
 
@@ -312,7 +328,10 @@ def test_a_child_or_a_member_creates_no_komga_nor_cwa_target(
     client = add_profile(world.api, role, role, "10.0.0.5", **extra)
     headers = {"X-CSRF-Token": world.api.csrf(client)}
     komga = {"name": "Salon", "url": BASE_URL, "api_key": API_KEY}
-    cwa = {"name": "Drop", "path_map": [{"local": str(world.library), "remote": "/x", "mode": "rw"}]}
+    cwa = {
+        "name": "Drop",
+        "path_map": [{"local": str(world.library), "remote": "/x", "mode": "rw"}],
+    }
     for route, body in ((KOMGA, komga), (CWA, cwa)):
         refused = client.post(route, json=body, headers=headers)
         assert refused.status_code == 403 and refused.json()["code"] == "forbidden", route
@@ -330,7 +349,10 @@ def test_an_api_key_creates_no_komga_nor_cwa_target(
 ) -> None:
     other = world.api.other_client("10.0.0.9")
     komga = {"name": "Salon", "url": BASE_URL, "api_key": API_KEY}
-    cwa = {"name": "Drop", "path_map": [{"local": str(world.library), "remote": "/x", "mode": "rw"}]}
+    cwa = {
+        "name": "Drop",
+        "path_map": [{"local": str(world.library), "remote": "/x", "mode": "rw"}],
+    }
     for flags in ((), ("--read-only",)):
         key = _create_key(monkeypatch, capsys, world.api.settings, *flags)
         for route, body in ((KOMGA, komga), (CWA, cwa)):
@@ -347,7 +369,10 @@ def test_the_komga_route_refuses_a_private_address_nobody_declared(
 ) -> None:
     fake = FakeKomga()
     undeclared = _undeclared_probe(fake)
-    monkeypatch.setattr(wiring, "integration_fetcher", undeclared._fetchers)  # noqa: SLF001
+    monkeypatch.setattr(
+        Network, "integration_fetcher",
+        lambda _self, url, *_a, **_k: undeclared._fetchers(url),
+    )  # fmt: skip
     refused = world.api.post(KOMGA, json={"name": "Salon", "url": "http://komga.lan:25600",
                                           "api_key": API_KEY})  # fmt: skip
     assert refused.status_code in {422, 502} and fake.requests == []
@@ -357,8 +382,8 @@ def test_the_komga_route_refuses_a_private_address_nobody_declared(
 # ---------------------------------------------------------------------------- the progress switch
 
 
-def _bind(world: World, shelf: str, sub: str, target: str) -> str:
-    made = world.bind(shelf, sub, target=target)
+def _bind(world: World, shelf: str, sub: str, target: str, **body: Any) -> str:
+    made = world.bind(shelf, sub, target=target, **body)
     assert made.status_code == 201, made.text
     return made.json()["id"]
 
@@ -413,7 +438,8 @@ def _komga_binding(world: World, kind: str) -> str:
                 config={"url": BASE_URL} if kind == "komga" else {},
             )
         )  # fmt: skip
-    return _bind(world, world.adult, f"sub-{kind}", target)
+    extra = {"transport": "dropbox"} if kind == "cwa" else {}
+    return _bind(world, world.adult, f"sub-{kind}", target, **extra)
 
 
 @pytest.mark.req("EF-LEC-014", "EF-EXP-047")
@@ -476,21 +502,33 @@ def test_the_service_switch_is_audited_and_the_cli_does_the_same(
     target = new_ulid()
     shelf, destination = new_ulid(), new_ulid()
     with write_transaction(env.engine) as connection:
-        connection.execute(sa.insert(export.export_target).values(id=target, kind="kavita", name="K"))
+        connection.execute(
+            sa.insert(export.export_target).values(id=target, kind="kavita", name="K")
+        )
         connection.execute(sa.insert(export.shelf).values(id=shelf, name="S", phrase="p"))
         connection.execute(
             sa.insert(export.shelf_destination).values(
-                id=destination, shelf_id=shelf, target_id=target, root_subpath="a"
+                id=destination,
+                shelf_id=shelf,
+                target_id=target,
+                transport="tree",
+                egress="foyer",
+                root_subpath="a",
+                template="t",
+                template_origin="default@1",
             )
         )
     monkeypatch.setattr(wiring, "open_headless", lambda _settings: env.admin)
     assert run_cli(monkeypatch, env.settings, "target", "sync-progress", destination, "--on") == 0
     with env.engine.connect() as connection:
         assert connection.execute(sa.select(export.shelf_destination.c.sync_progress)).scalar_one()
-    assert [r.target for r in _audit(env.engine, "destination.sync_progress")][0].startswith(destination)
+    first = _audit(env.engine, "destination.sync_progress")[0]
+    assert first.target.startswith(destination)
     assert run_cli(monkeypatch, env.settings, "target", "sync-progress", destination, "--off") == 0
     with env.engine.connect() as connection:
-        assert not connection.execute(sa.select(export.shelf_destination.c.sync_progress)).scalar_one()
+        assert not connection.execute(
+            sa.select(export.shelf_destination.c.sync_progress)
+        ).scalar_one()
     capsys.readouterr()
     assert run_cli(monkeypatch, env.settings, "target", "sync-progress", "nope", "--on") != 0
     assert "target.unknown" in capsys.readouterr().err
@@ -511,7 +549,14 @@ def test_the_cli_names_cause_and_action_for_a_destination_that_cannot_synchronis
         connection.execute(sa.insert(export.shelf).values(id=shelf, name="S", phrase="p"))
         connection.execute(
             sa.insert(export.shelf_destination).values(
-                id=destination, shelf_id=shelf, target_id=target, root_subpath="a"
+                id=destination,
+                shelf_id=shelf,
+                target_id=target,
+                transport="tree",
+                egress="foyer",
+                root_subpath="a",
+                template="t",
+                template_origin="default@1",
             )
         )
     monkeypatch.setattr(wiring, "open_headless", lambda _settings: env.admin)
@@ -519,4 +564,6 @@ def test_the_cli_names_cause_and_action_for_a_destination_that_cannot_synchronis
     err = capsys.readouterr().err
     assert "destination.sync_unsupported" in err
     with env.engine.connect() as connection:
-        assert not connection.execute(sa.select(export.shelf_destination.c.sync_progress)).scalar_one()
+        assert not connection.execute(
+            sa.select(export.shelf_destination.c.sync_progress)
+        ).scalar_one()

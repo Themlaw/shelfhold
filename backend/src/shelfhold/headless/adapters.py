@@ -15,14 +15,18 @@ from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
+from shelfhold.export.targets.kavita.errors import TargetError
 from shelfhold.export.targets.kavita.routes import (
     CREATE_AUTH_KEY,
     DELETE_AUTH_KEY,
     LIST_AUTH_KEYS,
     LOGIN,
 )
+from shelfhold.export.targets.komga.client import KomgaClient
+from shelfhold.export.targets.komga.credentials import KomgaKey
 from shelfhold.headless.errors import TargetExchangeFailed
-from shelfhold.headless.ports import ExchangedKey
+from shelfhold.headless.ports import ExchangedKey, KomgaProbed
+from shelfhold.infrastructure.clock import SystemClock
 from shelfhold.infrastructure.fetcher import FetchError, GuardedFetcher
 
 SERVER_INFO = "/api/Server/server-info-slim"
@@ -221,3 +225,33 @@ class HttpKavitaKeyExchange:
             version if isinstance(version, str) else None,
             key_id if isinstance(key_id, int) else None,
         )
+
+
+class HttpKomgaProbe:
+    """One look at Komga with the key an admin gave: the same guarded Fetcher as Kavita's exchange,
+    the same client as the export (so the routes are the allow-listed ones, the key travels in
+    `X-API-Key` only). The key is never kept here: the caller seals it."""
+
+    def __init__(self, fetchers: FetcherFactory) -> None:
+        self._fetchers = fetchers
+
+    def probe(self, *, url: str, api_key: str) -> KomgaProbed:
+        try:
+            fetcher = self._fetchers(url)
+        except FetchError:  # refused by the SSRF guard before any request
+            raise TargetExchangeFailed("Komga cannot be reached at this address") from None
+        try:
+            return KomgaProbed(asyncio.run(self._probe(fetcher, url, api_key)))
+        except (TargetError, FetchError):
+            raise TargetExchangeFailed(
+                "Komga refused this key or cannot be reached: the key of an administrator"
+                " account is needed"
+            ) from None
+
+    @staticmethod
+    async def _probe(fetcher: GuardedFetcher, url: str, api_key: str) -> str | None:
+        try:
+            client = KomgaClient(fetcher, url, KomgaKey(api_key), clock=SystemClock())
+            return await client.probe()
+        finally:
+            await fetcher.aclose()

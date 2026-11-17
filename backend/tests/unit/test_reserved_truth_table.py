@@ -266,6 +266,8 @@ FRESHNESS_LINE = {
             "secrets.import",
             "source.set_secret",
             "target.rotate_key",
+            "target.add_komga",  # M4 L46: the key of a Komga administrator is handed over
+            "destination.sync_progress",  # M4 L46: what each profile read goes to the server
             "tombstone.lift",
             "tombstone.list",
             "tombstone.accept_lost_keyring",

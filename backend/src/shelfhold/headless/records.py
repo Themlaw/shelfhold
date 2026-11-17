@@ -106,19 +106,55 @@ def insert_kavita_target(
     )  # fmt: skip
 
 
-def insert_native_folder_target(
-    connection: Connection, *, target_id: str, name: str, path_map: Sequence[Any]
+def insert_folder_target(
+    connection: Connection, *, kind: str, target_id: str, name: str, path_map: Sequence[Any]
 ) -> None:
-    """A native folder (EF-EXP-010): no server, no key, no address: a name and the folders."""
+    """A target that is only folders (a native folder, a drop box): no server, no key, no address:
+    a name and the folders. It keeps no account apart."""
     connection.execute(
         sa.insert(export.export_target).values(
             id=target_id,
-            kind="native_folder",
+            kind=kind,
             name=name,
             config={},
             path_map=path_map,
             access_partitioning="none",
         )
+    )
+
+
+def insert_komga_target(
+    connection: Connection,
+    *,
+    target_id: str,
+    name: str,
+    config: dict[str, Any],
+    path_map: Sequence[Any],
+    version_seen: str | None,
+) -> None:
+    """A Komga (EF-EXP-020): its address in the clear configuration, its key sealed apart."""
+    connection.execute(
+        sa.insert(export.export_target).values(
+            id=target_id, kind="komga", name=name, config=config, path_map=path_map,
+            version_seen=version_seen,
+        )
+    )  # fmt: skip
+
+
+def destination_row(connection: Connection, destination_id: str) -> Any:
+    """A binding with the kind of its target, or None."""
+    table, target = export.shelf_destination, export.export_target
+    return connection.execute(
+        sa.select(table.c.id, table.c.sync_progress, target.c.kind)
+        .join(target, target.c.id == table.c.target_id)
+        .where(table.c.id == destination_id)
+    ).first()
+
+
+def set_sync_progress(connection: Connection, destination_id: str, enabled: bool) -> None:
+    table = export.shelf_destination
+    connection.execute(
+        sa.update(table).where(table.c.id == destination_id).values(sync_progress=enabled)
     )
 
 
