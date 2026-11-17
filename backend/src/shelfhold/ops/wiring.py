@@ -63,6 +63,7 @@ from shelfhold.ops.resplit import ResplitOps
 from shelfhold.ops.restore import RestoreCredentialsExit, RestoreGuardExit
 from shelfhold.ops.revisions import RevisionOps
 from shelfhold.ops.roots import RootOps
+from shelfhold.ops.series_migration import SeriesMigrationOps
 from shelfhold.ops.services import OpsServices
 from shelfhold.ops.sheet import SheetOps
 from shelfhold.ops.source_migration import SourceMigrationOps
@@ -175,6 +176,7 @@ def open_ops(
         assembly=VolumeAssemblyOps(composition),
         normalize=NormalizeOps(composition),
         source_migration=SourceMigrationOps(composition), meta=MetaOps(composition),
+        series_migration=SeriesMigrationOps(composition),
         content=ContentOps(composition),
         rating=RatingOps(engine, clock, fresh_auth_s=settings.fresh_auth_s),
         attach=AttachOps(

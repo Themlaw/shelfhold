@@ -29,6 +29,8 @@ BACKFILL_MODES = ("none", "gaps", "all")
 UPGRADE_POLICIES = ("keep_first", "prefer_rank")
 CHECK_OVERRIDES = ("completed", "paused")  # "terminée", "en pause" (EF-SRC-038)
 ALIAS_MIGRATION_STATES = ("previewed", "applied", "cancelled")
+SOURCE_MIGRATION_STATES = ("proposed", "validated", "applied", "cancelled")
+SOURCE_MIGRATION_BASES = ("same_number", "offset", "manual", "new")
 DOWNLOAD_TARGETS = ("unit", "range")
 DOWNLOAD_STATES = (
     "requested",
@@ -595,4 +597,99 @@ source_alias_migration = sa.Table(
     sa.CheckConstraint('"from_scheme" <> "to_scheme"', name="schemes_differ"),
     sa.CheckConstraint("\"source_key\" <> ''", name="source_key_not_empty"),
     sa.Index("ix_source_alias_migration_source", "source_key"),
+)
+
+# The migration of one series to another source (M4 L27, EF-BIB-014): a numbering correspondence
+# proposed from what the new source lists, validated by the admin as it was shown, then applied in
+# one transaction. `digest` is the fingerprint of the table, `held_digest` that of the Units the
+# Edition held when it was made: a table is applied only against the Edition it was made for.
+source_migration = sa.Table(
+    "source_migration",
+    metadata,
+    ulid_column("id", primary_key=True),
+    sa.Column(
+        "edition_id",
+        sa.String(26),
+        sa.ForeignKey("edition.id", ondelete="CASCADE"),
+        nullable=False,
+    ),
+    sa.Column(
+        "work_id", sa.String(26), sa.ForeignKey("work.id", ondelete="CASCADE"), nullable=False
+    ),
+    sa.Column("plugin_id", sa.String(), nullable=False),
+    sa.Column("source_key", sa.String(), nullable=False),
+    sa.Column("remote_id", sa.String(), nullable=False),
+    sa.Column("memo", sa.JSON(), nullable=False, server_default="{}"),
+    sa.Column("memo_version", sa.Integer(), nullable=True),
+    sa.Column(
+        "replaces_binding_id",
+        sa.String(26),
+        sa.ForeignKey("source_binding.id", ondelete="SET NULL"),
+        nullable=True,
+    ),
+    sa.Column(
+        "binding_id",
+        sa.String(26),
+        sa.ForeignKey("source_binding.id", ondelete="SET NULL"),
+        nullable=True,
+    ),
+    sa.Column("state", sa.String(), nullable=False, server_default="proposed"),
+    sa.Column("number_offset", sa.Integer(), nullable=False, server_default="0"),
+    sa.Column("digest", sa.String(64), nullable=False),
+    sa.Column("held_digest", sa.String(64), nullable=False),
+    now_column(),
+    sa.Column("validated_at", UtcDateTime(), nullable=True),
+    sa.Column("applied_at", UtcDateTime(), nullable=True),
+    ulid_check("id"),
+    ulid_check("edition_id"),
+    in_check("state", SOURCE_MIGRATION_STATES),
+    json_shape_check("memo", "object"),
+    sa.CheckConstraint(
+        "\"plugin_id\" <> '' AND \"source_key\" <> '' AND \"remote_id\" <> ''", name="named"
+    ),
+    sa.CheckConstraint('"number_offset" BETWEEN -100000 AND 100000', name="offset_range"),
+    sa.CheckConstraint('length("digest") = 64 AND length("held_digest") = 64', name="digests"),
+    sa.CheckConstraint(
+        '("state" = \'applied\') = ("applied_at" IS NOT NULL)', name="applied_is_dated"
+    ),
+    sa.Index("ix_source_migration_edition", "edition_id"),
+)
+# One open table per (Edition, fingerprint): proposing the same listing twice is one table.
+sa.Index(
+    "uq_source_migration_open",
+    source_migration.c.edition_id,
+    source_migration.c.digest,
+    unique=True,
+    sqlite_where=sa.text("\"state\" IN ('proposed', 'validated')"),
+)
+
+# One line of that table: a number of the new source (`place`, as the follow places it), the
+# number it takes in the library (`target`, the library's own numbering, never the source's) and
+# the Unit it lands on, or none when the library lacks it. Two lines never land on one place.
+source_migration_row = sa.Table(
+    "source_migration_row",
+    metadata,
+    sa.Column(
+        "migration_id",
+        sa.String(26),
+        sa.ForeignKey("source_migration.id", ondelete="CASCADE"),
+        nullable=False,
+    ),
+    sa.Column("place", sa.String(), nullable=False),
+    sa.Column("number", sa.String(), nullable=True),
+    sa.Column("source_order", sa.Integer(), nullable=False, server_default="0"),
+    sa.Column("target", sa.String(), nullable=True),
+    sa.Column("target_order", sa.Integer(), nullable=False, server_default="0"),
+    sa.Column("target_place", sa.String(), nullable=False),
+    sa.Column(
+        "unit_id", sa.String(26), sa.ForeignKey("unit.id", ondelete="SET NULL"), nullable=True
+    ),
+    sa.Column("basis", sa.String(), nullable=False),
+    sa.PrimaryKeyConstraint("migration_id", "place"),
+    ulid_check("migration_id"),
+    in_check("basis", SOURCE_MIGRATION_BASES),
+    positive_check("source_order"),
+    positive_check("target_order"),
+    sa.UniqueConstraint("migration_id", "target_place"),
+    sa.Index("ix_source_migration_row_unit", "unit_id"),
 )

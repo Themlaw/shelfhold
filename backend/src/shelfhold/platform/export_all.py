@@ -73,6 +73,9 @@ EXPORTED_TABLES: Final = frozenset(
         "bundle_setting",
         # the lists people made (L18a): a household collection and a profile's own reading list
         "collection", "collection_item",
+        # the numbering correspondence of a migrated series (L27): without it a restored instance
+        # would read the new source's numbers as numbers the library lacks and fetch them again
+        "source_migration", "source_migration_row",
     }
 )  # fmt: skip
 
@@ -212,6 +215,7 @@ class _Kept:
     items: set[str] = field(default_factory=set)
     carriers: set[str] = field(default_factory=set)  # export items that carry a series block part
     bindings: set[str] = field(default_factory=set)
+    migrations: set[str] = field(default_factory=set)  # migrated series (L27) that may be carried
     variants: set[str] = field(default_factory=set)
     contents: set[str] = field(default_factory=set)
     export_items: set[str] = field(default_factory=set)
@@ -281,6 +285,21 @@ def _decide_sources(connection: Connection, screen: ExportScreen, kept: _Kept) -
             sa.select(binding.c.id, binding.c.edition_id, binding.c.source_item_id)
         )
         if r.edition_id in kept.editions and r.source_item_id not in barred
+    }
+    migration = acquisition.source_migration
+    kept.migrations = {  # a table names the new source: a series a tombstone names stays behind
+        str(r.id)
+        for r in connection.execute(
+            sa.select(
+                migration.c.id,
+                migration.c.edition_id,
+                migration.c.plugin_id,
+                migration.c.source_key,
+                migration.c.remote_id,
+            )
+        )
+        if r.edition_id in kept.editions
+        and not screen.series_blocked(None, r.plugin_id, r.source_key, r.remote_id)
     }
     kept.variants = {
         str(r.id)
@@ -408,6 +427,10 @@ def _keep(table: str, row: Mapping[str, Any], kept: _Kept) -> bool:
             return row["id"] in kept.items
         case "source_binding":
             return row["id"] in kept.bindings
+        case "source_migration":
+            return row["id"] in kept.migrations
+        case "source_migration_row":
+            return row["migration_id"] in kept.migrations
         case "unit_variant":
             return row["id"] in kept.variants
         case "variant_revision":
@@ -450,6 +473,12 @@ def _repair(table: str, row: dict[str, Any], kept: _Kept) -> dict[str, Any]:
     was translated from, a Unit that hid a chapter, the Work that was purged."""
     if table == "edition" and row["translated_from_edition_id"] not in (None, *kept.editions):
         row["translated_from_edition_id"] = None
+    if table == "source_migration":
+        for column in ("replaces_binding_id", "binding_id"):
+            if row[column] not in (None, *kept.bindings):
+                row[column] = None
+    if table == "source_migration_row" and row["unit_id"] not in (None, *kept.units):
+        row["unit_id"] = None
     if table == "edition" and row["text_version_contributor_id"] not in (None, *kept.contributors):
         row["text_version_contributor_id"] = None
     return row

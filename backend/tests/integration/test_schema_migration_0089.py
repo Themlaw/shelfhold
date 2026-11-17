@@ -2,7 +2,7 @@
 
 One table that goes with its destination and its volume; the closed list of intent operations gains
 `assemble`; no row is touched; reversible, and the downgrade refuses while an assembly is open. The
-head of the migrations is pinned here, by the newest one.
+head of the migrations is pinned by the newest one.
 """
 
 import sqlite3
@@ -21,9 +21,9 @@ from tests.integration.test_schema_migration_0046 import add_row
 pytestmark = pytest.mark.req("ENF-OPS-002", "EF-EXP-019", "EF-BIB-044")
 
 
-def test_the_revision_is_0089_the_only_head_on_0088() -> None:
+def test_the_revision_is_0089_and_follows_0088() -> None:
     script = ScriptDirectory(str(default_script_location()))
-    assert script.get_heads() == ["0089"]
+    assert len(script.get_heads()) == 1  # the head is pinned by the newest migration test
     assert script.get_revision("0089").down_revision == "0088"
 
 

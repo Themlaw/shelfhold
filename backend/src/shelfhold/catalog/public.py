@@ -144,7 +144,7 @@ from shelfhold.catalog.application.official_links import (
     suggest_pausing_community_binding,
     support_author,
 )
-from shelfhold.catalog.application.places import place_key
+from shelfhold.catalog.application.places import place_key, unit_place_key
 from shelfhold.catalog.application.ports import StoredVariant
 from shelfhold.catalog.application.preferred_edition import (
     EditionPart,
@@ -713,6 +713,7 @@ __all__ = [
     "track_work_changes",
     "translation_discriminant",
     "translation_type_for",
+    "unit_place_key",
     "unlock_field",
     "unrelate_works",
     "verify_item",

@@ -4330,7 +4330,7 @@
           },
           "blocked": {
             "items": {
-              "$ref": "#/components/schemas/MigrationRowOut"
+              "$ref": "#/components/schemas/shelfhold__interfaces__http_api__sources__MigrationRowOut"
             },
             "title": "Blocked",
             "type": "array"
@@ -4345,7 +4345,7 @@
           },
           "migrate": {
             "items": {
-              "$ref": "#/components/schemas/MigrationRowOut"
+              "$ref": "#/components/schemas/shelfhold__interfaces__http_api__sources__MigrationRowOut"
             },
             "title": "Migrate",
             "type": "array"
@@ -4364,7 +4364,7 @@
           },
           "unresolved": {
             "items": {
-              "$ref": "#/components/schemas/MigrationRowOut"
+              "$ref": "#/components/schemas/shelfhold__interfaces__http_api__sources__MigrationRowOut"
             },
             "title": "Unresolved",
             "type": "array"
@@ -4398,6 +4398,88 @@
         "title": "MigrationIn",
         "type": "object"
       },
+      "MigrationOut": {
+        "properties": {
+          "already": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Already"
+          },
+          "binding_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Binding Id"
+          },
+          "digest": {
+            "title": "Digest",
+            "type": "string"
+          },
+          "edition_id": {
+            "title": "Edition Id",
+            "type": "string"
+          },
+          "held_count": {
+            "title": "Held Count",
+            "type": "integer"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "offset": {
+            "title": "Offset",
+            "type": "integer"
+          },
+          "rows": {
+            "items": {
+              "$ref": "#/components/schemas/shelfhold__interfaces__http_api__source_migration__MigrationRowOut"
+            },
+            "title": "Rows",
+            "type": "array"
+          },
+          "state": {
+            "title": "State",
+            "type": "string"
+          },
+          "to_fetch": {
+            "title": "To Fetch",
+            "type": "integer"
+          },
+          "unmatched_units": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Unmatched Units",
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "edition_id",
+          "state",
+          "digest",
+          "offset",
+          "held_count",
+          "unmatched_units",
+          "to_fetch",
+          "binding_id",
+          "rows"
+        ],
+        "title": "MigrationOut",
+        "type": "object"
+      },
       "MigrationProgress": {
         "properties": {
           "done": {
@@ -4414,34 +4496,6 @@
           "total"
         ],
         "title": "MigrationProgress",
-        "type": "object"
-      },
-      "MigrationRowOut": {
-        "properties": {
-          "id": {
-            "title": "Id",
-            "type": "string"
-          },
-          "new": {
-            "title": "New",
-            "type": "string"
-          },
-          "old": {
-            "title": "Old",
-            "type": "string"
-          },
-          "reason": {
-            "title": "Reason",
-            "type": "string"
-          }
-        },
-        "required": [
-          "id",
-          "old",
-          "new",
-          "reason"
-        ],
-        "title": "MigrationRowOut",
         "type": "object"
       },
       "ModeOut": {
@@ -4791,6 +4845,41 @@
           "fetched_at"
         ],
         "title": "OfficialLinkOut",
+        "type": "object"
+      },
+      "OverrideIn": {
+        "additionalProperties": false,
+        "properties": {
+          "number": {
+            "default": "",
+            "maxLength": 64,
+            "title": "Number",
+            "type": "string"
+          },
+          "place": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Place"
+          },
+          "target": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Target",
+            "type": "string"
+          }
+        },
+        "required": [
+          "target"
+        ],
+        "title": "OverrideIn",
         "type": "object"
       },
       "PairAutoIn": {
@@ -5888,6 +5977,42 @@
           "items"
         ],
         "title": "ProposalsOut",
+        "type": "object"
+      },
+      "ProposeIn": {
+        "additionalProperties": false,
+        "properties": {
+          "remote_id": {
+            "maxLength": 1000,
+            "minLength": 1,
+            "title": "Remote Id",
+            "type": "string"
+          },
+          "replaces_binding_id": {
+            "anyOf": [
+              {
+                "maxLength": 26,
+                "minLength": 26,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Replaces Binding Id"
+          },
+          "source_key": {
+            "maxLength": 500,
+            "minLength": 1,
+            "title": "Source Key",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source_key",
+          "remote_id"
+        ],
+        "title": "ProposeIn",
         "type": "object"
       },
       "PurgeIn": {
@@ -9831,6 +9956,29 @@
         "title": "UserExportOut",
         "type": "object"
       },
+      "ValidateIn": {
+        "additionalProperties": false,
+        "properties": {
+          "digest": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Digest",
+            "type": "string"
+          },
+          "overrides": {
+            "items": {
+              "$ref": "#/components/schemas/OverrideIn"
+            },
+            "maxItems": 2000,
+            "title": "Overrides",
+            "type": "array"
+          }
+        },
+        "required": [
+          "digest"
+        ],
+        "title": "ValidateIn",
+        "type": "object"
+      },
       "VisibilityIn": {
         "additionalProperties": false,
         "properties": {
@@ -11092,6 +11240,99 @@
           "total"
         ],
         "title": "SearchOut",
+        "type": "object"
+      },
+      "shelfhold__interfaces__http_api__source_migration__ApplyIn": {
+        "additionalProperties": false,
+        "properties": {
+          "digest": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Digest",
+            "type": "string"
+          }
+        },
+        "required": [
+          "digest"
+        ],
+        "title": "ApplyIn",
+        "type": "object"
+      },
+      "shelfhold__interfaces__http_api__source_migration__MigrationRowOut": {
+        "properties": {
+          "basis": {
+            "title": "Basis",
+            "type": "string"
+          },
+          "number": {
+            "title": "Number",
+            "type": "string"
+          },
+          "place": {
+            "title": "Place",
+            "type": "string"
+          },
+          "source_order": {
+            "title": "Source Order",
+            "type": "integer"
+          },
+          "target": {
+            "title": "Target",
+            "type": "string"
+          },
+          "target_order": {
+            "title": "Target Order",
+            "type": "integer"
+          },
+          "unit_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unit Id"
+          }
+        },
+        "required": [
+          "number",
+          "place",
+          "source_order",
+          "target",
+          "target_order",
+          "unit_id",
+          "basis"
+        ],
+        "title": "MigrationRowOut",
+        "type": "object"
+      },
+      "shelfhold__interfaces__http_api__sources__MigrationRowOut": {
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "new": {
+            "title": "New",
+            "type": "string"
+          },
+          "old": {
+            "title": "Old",
+            "type": "string"
+          },
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "old",
+          "new",
+          "reason"
+        ],
+        "title": "MigrationRowOut",
         "type": "object"
       },
       "shelfhold__interfaces__http_api__sources__SearchOut": {
@@ -15974,6 +16215,311 @@
         "summary": "Shelf Proposal",
         "tags": [
           "shelves"
+        ]
+      }
+    },
+    "/api/v1/editions/{edition_id}/source-migrations": {
+      "post": {
+        "operationId": "source_migration_propose",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "edition_id",
+            "required": true,
+            "schema": {
+              "title": "Edition Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProposeIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MigrationOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Connexion requise, ou mot de passe à confirmer (reauth-required)."
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée)."
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Détail du problème (RFC 9457)."
+          }
+        },
+        "summary": "Source Migration Propose",
+        "tags": [
+          "sources"
+        ]
+      }
+    },
+    "/api/v1/editions/{edition_id}/source-migrations/{migration_id}": {
+      "get": {
+        "operationId": "source_migration_read",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "edition_id",
+            "required": true,
+            "schema": {
+              "title": "Edition Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "migration_id",
+            "required": true,
+            "schema": {
+              "title": "Migration Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MigrationOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Connexion requise, ou mot de passe à confirmer (reauth-required)."
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée)."
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Détail du problème (RFC 9457)."
+          }
+        },
+        "summary": "Source Migration Read",
+        "tags": [
+          "sources"
+        ]
+      }
+    },
+    "/api/v1/editions/{edition_id}/source-migrations/{migration_id}/application": {
+      "post": {
+        "operationId": "source_migration_apply",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "edition_id",
+            "required": true,
+            "schema": {
+              "title": "Edition Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "migration_id",
+            "required": true,
+            "schema": {
+              "title": "Migration Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/shelfhold__interfaces__http_api__source_migration__ApplyIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MigrationOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Connexion requise, ou mot de passe à confirmer (reauth-required)."
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée)."
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Détail du problème (RFC 9457)."
+          }
+        },
+        "summary": "Source Migration Apply",
+        "tags": [
+          "sources"
+        ]
+      }
+    },
+    "/api/v1/editions/{edition_id}/source-migrations/{migration_id}/validation": {
+      "post": {
+        "operationId": "source_migration_validate",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "edition_id",
+            "required": true,
+            "schema": {
+              "title": "Edition Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "migration_id",
+            "required": true,
+            "schema": {
+              "title": "Migration Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ValidateIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MigrationOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Connexion requise, ou mot de passe à confirmer (reauth-required)."
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée)."
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Détail du problème (RFC 9457)."
+          }
+        },
+        "summary": "Source Migration Validate",
+        "tags": [
+          "sources"
         ]
       }
     },
@@ -27572,6 +28118,26 @@
     },
     "/api/v1/problems/shelf.withdrawal-root-read-only": {
       "code": "shelf.withdrawal_root_read_only",
+      "status": 409
+    },
+    "/api/v1/problems/source-migration.collision": {
+      "code": "source_migration.collision",
+      "status": 422
+    },
+    "/api/v1/problems/source-migration.held-aside": {
+      "code": "source_migration.held_aside",
+      "status": 409
+    },
+    "/api/v1/problems/source-migration.invalid": {
+      "code": "source_migration.invalid",
+      "status": 422
+    },
+    "/api/v1/problems/source-migration.not-validated": {
+      "code": "source_migration.not_validated",
+      "status": 409
+    },
+    "/api/v1/problems/source-migration.stale": {
+      "code": "source_migration.stale",
       "status": 409
     },
     "/api/v1/problems/source.auth-expired": {

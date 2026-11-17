@@ -92,6 +92,7 @@ from shelfhold.ops.rating import RatingOps
 from shelfhold.ops.resplit import ResplitOps
 from shelfhold.ops.revisions import RevisionOps
 from shelfhold.ops.roots import RootOps
+from shelfhold.ops.series_migration import SeriesMigrationOps
 from shelfhold.ops.sheet import SheetOps
 from shelfhold.ops.source_migration import SourceMigrationOps
 from shelfhold.ops.status import (
@@ -222,6 +223,7 @@ class OpsServices:
         assembly: VolumeAssemblyOps | None = None,
         normalize: NormalizeOps | None = None,
         source_migration: SourceMigrationOps | None = None,
+        series_migration: SeriesMigrationOps | None = None,
         meta: MetaOps | None = None,
         content: ContentOps | None = None,
         rating: RatingOps | None = None,
@@ -266,6 +268,7 @@ class OpsServices:
         self._assembly = assembly
         self._normalize = normalize
         self._source_migration = source_migration
+        self._series_migration = series_migration
         self._meta = meta
         self._content = content
         self._rating = rating
@@ -979,6 +982,13 @@ class OpsServices:
         if self._source_migration is None:
             raise ExitUnavailableError("the identity migration of a source is not connected")
         return self._source_migration
+
+    @property
+    def series_migration(self) -> SeriesMigrationOps:
+        """The migration of a series to another source (EF-BIB-014)."""
+        if self._series_migration is None:
+            raise ExitUnavailableError("the migration of a series is not connected")
+        return self._series_migration
 
     @property
     def meta(self) -> MetaOps:

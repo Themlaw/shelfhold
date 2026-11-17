@@ -62,6 +62,10 @@ _DECLARED = (
     _action("normalize.migrate", Effect.MIGRATES_IDENTITY),  # EF-BIB-054, ENF-OPS-021
     # M3 L27 (EF-SRC-022): the ids of a source's series change in bulk; preview and apply alike
     _action("source.migrate_ids", Effect.MIGRATES_IDENTITY),
+    # M4 L27 (EF-BIB-014): a series moves to another source: the correspondence of numbers is
+    # proposed, validated and applied; the Units it holds, and what every profile read on them,
+    # stay. Propose, read, validate and apply are one action: a fresh admin session, never a key
+    _action("source.migrate", Effect.MIGRATES_IDENTITY),
     # `edition merge`: one Edition takes the Units of another (EF-BIB-049); it also decides the
     # age and the filing of what it takes, so it is a parental decision too
     _action("edition.merge", Effect.MIGRATES_IDENTITY, Effect.PARENTAL_CONTROL),

@@ -232,6 +232,27 @@ class FailureLedger:
     def release(self, connection: Connection, binding_id: str) -> None:
         self._unset(connection, f"$.quarantine.{json.dumps(binding_id)}")
 
+    # -- releases of a migrated series with no safe place (EF-BIB-014) --------------------------
+    def hold_aside(self, connection: Connection, binding_id: str, count: int) -> bool:
+        """Remember that `count` releases wait for the admin; True the first time, or when the
+        count changed (the one `source_migration.held_aside` is due)."""
+        path = f"$.held_aside.{json.dumps(binding_id)}"
+        fresh = self._set(connection, path, count, if_unset=True)
+        if not fresh:
+            current = connection.execute(
+                sa.text(
+                    "SELECT json_extract(health, :path) FROM source_config WHERE plugin_id = :p"
+                ),
+                {"path": path, "p": self._plugin_id},
+            ).scalar()
+            if current != count:
+                self._set(connection, path, count)
+                return True
+        return fresh
+
+    def release_aside(self, connection: Connection, binding_id: str) -> None:
+        self._unset(connection, f"$.held_aside.{json.dumps(binding_id)}")
+
     # -- absence from the service's library (EF-SRC-027) ---------------------------------------
     def bump_missing(self, connection: Connection, binding_id: str) -> int:
         """One more consecutive cycle in which the binding's series is absent; returns the count."""

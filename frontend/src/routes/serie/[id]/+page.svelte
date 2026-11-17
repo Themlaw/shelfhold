@@ -244,6 +244,12 @@
       canReorder={sheet.can.reorder}
       onreload={load}
     />
+    {#if sheet.bindings.some((b) => !b.active)}
+      <p>
+        <!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- the app is served at the root of its origin -->
+        <a href={`/serie/${sheet.edition_id}/migrer`}>{t('migrate.title')}</a>
+      </p>
+    {/if}
 
     <BundleSlices editionId={sheet.edition_id} />
     <RelatedWorks workId={sheet.work_id} canEdit />

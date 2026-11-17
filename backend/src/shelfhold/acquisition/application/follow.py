@@ -62,6 +62,7 @@ from shelfhold.acquisition.application.preference import TeamPreference, record_
 from shelfhold.acquisition.application.presence import present_for_acquisition
 from shelfhold.acquisition.application.ranges import Keeper, RangeTickets, RangeUnit
 from shelfhold.acquisition.application.root_guard import RootGuard
+from shelfhold.acquisition.application.source_migration import number_map_of
 from shelfhold.acquisition.application.staleness import stale_series
 from shelfhold.acquisition.application.tickets import (
     MAX_ATTEMPTS,
@@ -935,6 +936,7 @@ class FollowCycle:
             units = await from_service(self._service.list_units(self._fetcher, ref))
             self._left_out[binding.remote_id] = self._take_quarantined()
         self._quarantine(binding)
+        units = self._in_library_numbers(binding, units)
         if self._is_ranged():
             units = self._cut(binding, units)
             self._ranged[binding.id] = units
@@ -999,6 +1001,33 @@ class FollowCycle:
                 sa.update(table).where(table.c.id == binding.id).values(last_checked=look.now)
             )
         self._looked.add(binding.id)
+
+    def _in_library_numbers(self, binding: _Binding, units: list[UnitInfo]) -> list[UnitInfo]:
+        """A binding that a migration moved lists the series in its own numbers (EF-BIB-014): each
+        release is read in the library's numbering before anything else sees it (the tombstones,
+        the watermark, the ingest), so an offer lands on the Unit that holds that number and never
+        beside it. A binding with no correspondence reads its numbers as they are."""
+        with self._engine.connect() as connection:
+            numbers = number_map_of(connection, binding.id)
+        if numbers is None:
+            return units
+        out: list[UnitInfo] = []
+        aside = 0
+        for info in units:
+            if numbers.held_aside(info.number, info.source_order):
+                aside += 1  # no safe place in the library's numbering: the admin decides
+                continue
+            number, order = numbers.translate(info.number, info.source_order)
+            out.append(info.model_copy(update={"number": number, "source_order": order}))
+        with write_transaction(self._engine) as connection:
+            if not aside:
+                self._ledger.release_aside(connection, binding.id)
+            elif self._ledger.hold_aside(connection, binding.id, aside):
+                self._emit(
+                    connection, "source_migration.held_aside",
+                    {"code": "source_migration.held_aside", "units": aside},
+                )  # fmt: skip
+        return out
 
     def _chosen(self, binding: _Binding) -> bool:
         """Followed from the add sheet (M3 L42): the discovery set the watermark the choice names,

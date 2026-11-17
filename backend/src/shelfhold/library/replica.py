@@ -97,19 +97,40 @@ def reference_content_hash(connection: Connection, unit_id: str) -> str | None:
 
 
 def _source_is_alive(unit_id: str) -> sa.ColumnElement[bool]:
-    variant, binding = catalog.unit_variant, acquisition.source_binding
+    """The origin of an `upstream` copy still lists the Unit (decided here, row by row).
+
+    The origin is the Variant that gave the content the copy holds: the copy counts while that
+    Variant is listed by an active binding. A Unit that a migration (EF-BIB-014) or a `relink`
+    moved to another source is listed by the new binding, but what that binding offers is another
+    release until it has been fetched and has the same hash: the old source's copy is then no copy
+    of it. A content with no Variant (adopted) has no origin to ask: any live listing does."""
+    variant, binding, content = catalog.unit_variant, acquisition.source_binding, storage.content
+    live = sa.and_(variant.c.removed_at.is_(None), binding.c.active)
     listed = (
         sa.select(variant.c.id)
         .join(binding, binding.c.id == variant.c.source_binding_id)
-        .where(variant.c.unit_id == unit_id, variant.c.removed_at.is_(None), binding.c.active)
+        .where(variant.c.unit_id == unit_id, live)
         .exists()
+    )
+    same_content = sa.and_(
+        content.c.unit_id == unit_id, content.c.content_hash == replica_table.c.content_hash
+    )
+    own_listing = (
+        sa.select(variant.c.id)
+        .join(binding, binding.c.id == variant.c.source_binding_id)
+        .join(content, content.c.variant_id == variant.c.id)
+        .where(same_content, live)
+        .exists()
+    )
+    has_origin = (
+        sa.select(content.c.id).where(same_content, content.c.variant_id.is_not(None)).exists()
     )
     still_there = (
         ~sa.select(catalog.unit.c.id)
         .where(catalog.unit.c.id == unit_id, catalog.unit.c.availability == "removed")
         .exists()
     )
-    return sa.and_(listed, still_there)
+    return sa.and_(still_there, sa.or_(own_listing, sa.and_(~has_origin, listed)))
 
 
 def _derived_hashes(connection: Connection, unit_id: str) -> set[str]:
