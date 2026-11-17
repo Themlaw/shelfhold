@@ -7,7 +7,6 @@
   import { onDestroy, onMount } from 'svelte';
   import {
     wizardAdoptionConfirm,
-    wizardAdoptionPreview,
     wizardNewLibrary,
     wizardProbe,
     wizardShelf,
@@ -18,6 +17,7 @@
     WizardPreviewOut,
     WizardProbeOut
   } from '#lib/api/types.gen.ts';
+  import { previewAdoption } from '#lib/adoption.ts';
   import ProblemCard from '#lib/components/ProblemCard.svelte';
   import ReauthPrompt from '#lib/components/ReauthPrompt.svelte';
   import WizardSteps from '#lib/components/WizardSteps.svelte';
@@ -94,12 +94,10 @@
   const look = () =>
     guarded(async () => {
       message = '';
-      const { data } = await wizardAdoptionPreview({
-        headers: headers(),
-        body: { destination_id: destination, download_dir: downloadDir.trim() || null },
-        throwOnError: true
-      });
-      preview = data;
+      preview = await previewAdoption(
+        { destination_id: destination, download_dir: downloadDir.trim() || null },
+        headers()
+      );
     });
 
   const adopt = () =>

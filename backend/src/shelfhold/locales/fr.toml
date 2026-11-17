@@ -2261,6 +2261,7 @@ series_line = "Série {name} : {files, plural, one {# fichier} other {# fichiers
 volume_only_line = "Série {name} : tomes seuls, plage de chapitres inconnue (aucun suivi automatique)."
 rename_line = "Renommage proposé (jamais appliqué) : {from_path} -> {to_path}"
 active_content_line = "Contenu actif (scripts, gestionnaires ou ressources distantes) dans l'EPUB : {path} (adopté tel quel, jamais servi ni réécrit par Shelfhold)."
+file_to_check_line = "À vérifier : {path} ({reason}). Adopté tel quel, jamais touché : la première page ou l'archive a été refusée par le bac à sable."
 duplicate_line = "Doublon de même numéro dans {series} (conservé) : n° {number} : {files}"
 refused = "Des comptes plus restreints que le plafond de l'étagère lisent cette bibliothèque, adoption refusée : {accounts}"
 child_accounts = "Comptes restreints qui la lisent : {accounts}"

@@ -24,6 +24,7 @@ from shelfhold.events.since_key import SinceKey
 from shelfhold.export.application.pipeline import ExportPipeline
 from shelfhold.export.application.shelves import ShelfService
 from shelfhold.export.application.wiring import open_pipeline, roots_signature
+from shelfhold.export.targets.kavita import page_probe
 from shelfhold.headless import HeadlessAdmin, wiring
 from shelfhold.headless.applied import record_applied_public_url
 from shelfhold.identity.adapters.preferences import SqlNotificationPrefsStore, SqlPreferencesStore
@@ -216,6 +217,7 @@ LOGGED_SETTINGS: dict[str, str] = {
     "retention_events_days": "retention_events_days",
     "retention_audit_days": "retention_audit_days",
     "stream_max_per_profile": "stream_max_per_profile",
+    "adopt_probe_workers": "adopt_probe_workers",
     "comicvine_enabled": "comicvine_enabled",  # a switch
     "googlebooks_daily_budget": "googlebooks_daily_budget",  # a number, no secret
 }  # fmt: skip
@@ -253,6 +255,7 @@ def create_app(
 ) -> HttpApplication:
     resolved = settings or load_settings(os.environ, db_loader=load_db_settings).values
     clock = clock or SystemClock()
+    page_probe.configure(resolved.adopt_probe_workers)  # M4 L36: one bound for every preview
 
     runtime = InstanceRuntime(resolved)
     # Opened lazily: no connection before the first request, after the start-up checks.

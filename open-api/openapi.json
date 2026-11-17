@@ -11434,6 +11434,25 @@
         "title": "WizardLibraryOut",
         "type": "object"
       },
+      "WizardPreviewAccepted": {
+        "description": "Body of the 202 of a preview that takes longer than a request may: ask `status_url`.",
+        "properties": {
+          "job_id": {
+            "title": "Job Id",
+            "type": "string"
+          },
+          "status_url": {
+            "title": "Status Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "job_id",
+          "status_url"
+        ],
+        "title": "WizardPreviewAccepted",
+        "type": "object"
+      },
       "WizardPreviewIn": {
         "properties": {
           "destination_id": {
@@ -11509,6 +11528,13 @@
           "series": {
             "title": "Series",
             "type": "integer"
+          },
+          "to_check": {
+            "items": {
+              "$ref": "#/components/schemas/WizardToCheckOut"
+            },
+            "title": "To Check",
+            "type": "array"
           }
         },
         "required": [
@@ -11517,10 +11543,44 @@
           "series",
           "files",
           "child_library",
+          "to_check",
           "download_dir",
           "roots"
         ],
         "title": "WizardPreviewOut",
+        "type": "object"
+      },
+      "WizardPreviewStatusOut": {
+        "properties": {
+          "job_id": {
+            "title": "Job Id",
+            "type": "string"
+          },
+          "preview": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WizardPreviewOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "status": {
+            "enum": [
+              "running",
+              "done"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "job_id",
+          "preview"
+        ],
+        "title": "WizardPreviewStatusOut",
         "type": "object"
       },
       "WizardProbeOut": {
@@ -11767,6 +11827,25 @@
           "key_expires_at"
         ],
         "title": "WizardTargetOut",
+        "type": "object"
+      },
+      "WizardToCheckOut": {
+        "description": "A file whose first page or archive the decode worker or the safe opener refused: adopted\nall the same, never touched, for the admin to look at (`reason` is a code of a closed list).",
+        "properties": {
+          "path": {
+            "title": "Path",
+            "type": "string"
+          },
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path",
+          "reason"
+        ],
+        "title": "WizardToCheckOut",
         "type": "object"
       },
       "WizardVerdictOut": {
@@ -24720,6 +24799,7 @@
     },
     "/api/v1/setup/adoption/preview": {
       "post": {
+        "description": "The preview probes the first page of every archive of the library in the decode\nworker, which takes minutes for a large one: it is a background task. A library read\nwithin a few seconds is answered `200` with the report; else `202`, and the report is\nread at `GET /adoption/preview/{job_id}` (M4 L36).",
         "operationId": "wizard_adoption_preview",
         "requestBody": {
           "content": {
@@ -24737,6 +24817,78 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/WizardPreviewOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WizardPreviewAccepted"
+                }
+              }
+            },
+            "description": "Accepted"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Connexion requise, ou mot de passe à confirmer (reauth-required)."
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée)."
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Détail du problème (RFC 9457)."
+          }
+        },
+        "summary": "Wizard Adoption Preview",
+        "tags": [
+          "setup"
+        ]
+      }
+    },
+    "/api/v1/setup/adoption/preview/{job_id}": {
+      "get": {
+        "operationId": "wizard_adoption_preview_status",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "title": "Job Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WizardPreviewStatusOut"
                 }
               }
             },
@@ -24773,7 +24925,7 @@
             "description": "Détail du problème (RFC 9457)."
           }
         },
-        "summary": "Wizard Adoption Preview",
+        "summary": "Wizard Adoption Preview Status",
         "tags": [
           "setup"
         ]

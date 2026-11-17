@@ -182,6 +182,10 @@ class Settings(BaseModel):
     # and keys. Each stream holds a subscription and a read on every event; beyond the cap a new
     # one is refused (429) until another closes.
     stream_max_per_profile: int = Field(default=4, ge=1, le=64)
+    # M4 L36: the most decode workers that probe the first pages of an adopted library at once, for
+    # the whole process (every preview and the command line share them). Each may use about 1.5 GiB
+    # of address space: two is right for a small machine.
+    adopt_probe_workers: int = Field(default=2, ge=1, le=8)
 
     # EF-INT-015 (D2): the integrated backup. `backup_dir` is a mounted folder outside `/data` and
     # `/store`; `backup_passphrase_file` names the file that holds the passphrase (a path, never

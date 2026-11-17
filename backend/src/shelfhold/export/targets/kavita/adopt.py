@@ -23,15 +23,18 @@ import asyncio
 import contextlib
 import hashlib
 import json
+import os
 import posixpath
 from collections import Counter
 from collections.abc import Callable, Mapping, Sequence
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field, replace
 from datetime import datetime
 from decimal import Decimal, InvalidOperation
 from typing import TYPE_CHECKING, Any, Final
 
 import sqlalchemy as sa
+import structlog
 from sqlalchemy import Connection, Engine
 
 from shelfhold.catalog.public import (
@@ -63,16 +66,19 @@ from shelfhold.export.domain.naming import (
     normalize_series_name,
 )
 from shelfhold.export.domain.path_map import PathMapError, within
+from shelfhold.export.targets.kavita import page_probe
 from shelfhold.export.targets.kavita.audit import AccessAuditor
 from shelfhold.export.targets.kavita.client import KavitaClient
 from shelfhold.export.targets.kavita.dto import HIDDEN_DIR_PATTERNS, LibraryType, ParseResult
 from shelfhold.export.targets.kavita.errors import ConfirmationRequired
+from shelfhold.export.targets.kavita.page_probe import PageProbe, PageVerdict
 from shelfhold.infrastructure.archives.safe_open import UnsafeArchiveError, safe_open_archive
 from shelfhold.infrastructure.clock import Clock
 from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.follow_suspended import suspend as suspend_follow
 from shelfhold.infrastructure.fsops import Fsops
 from shelfhold.infrastructure.ids import new_ulid
+from shelfhold.infrastructure.imaging import ImageKind, ImageRejected, probe_image
 from shelfhold.infrastructure.logging import log_outcome
 from shelfhold.infrastructure.schema import acquisition, catalog, export, storage
 from shelfhold.infrastructure.xml.safe_parse import UnsafeXmlError, safe_parse_xml
@@ -97,6 +103,7 @@ __all__ = [
     "AdoptionSession",
     "BulkParse",
     "Duplicate",
+    "PageProbe",
     "PreviewStale",
     "Rename",
 ]
@@ -145,6 +152,14 @@ class AdoptedFile:
     # the ComicInfo of a volume file, what `apply_comicinfo_range` reads (EF-BIB-044); as pairs so
     # that the file stays hashable
     comicinfo: tuple[tuple[str, str], ...] = ()
+    # The first page, probed in the decode worker (M4 L36, ENF-SEC-003) and, when the page or the
+    # archive is refused, the closed code of the refusal: the file is "to check" (`check`). Nothing
+    # about it is written anywhere: the file is adopted as it is, and never touched.
+    first_page: PageProbe | None = None
+    check: str = ""
+    # device, inode, size, mtime and ctime when it was looked at: what a verdict is kept under and
+    # what the confirmation binds (`mtime` alone is forged by `utime`, `ctime` is not)
+    stamp: tuple[int, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -213,6 +228,12 @@ class AdoptionReport:
     exposed_accounts: tuple[str, ...] = ()  # the restricted accounts that can read it
 
     @property
+    def to_check(self) -> tuple[str, ...]:
+        """The files below the destination root whose first page or archive was refused (a code of
+        the closed list, `AdoptedFile.check`): adopted all the same, for the admin to look at."""
+        return tuple(sorted(f.rel_path for s in self.series for f in s.files if f.check))
+
+    @property
     def suspended(self) -> tuple[str, ...]:
         """The series whose Work is put in "À classer" with its following suspended."""
         if not self.child_library:
@@ -262,6 +283,67 @@ class AdoptionReport:
     @property
     def files(self) -> int:
         return sum(len(s.files) for s in self.series)
+
+
+# -- the first page of an adopted archive, read in the decode worker (M4 L36) -------------------
+
+PAGE_EXTENSIONS: Final = (
+    ".png", ".jpg", ".jpeg", ".webp", ".gif", ".avif", ".bmp", ".tif", ".tiff", ".jp2",
+)  # fmt: skip
+NOT_PROBED: Final = (".cbr", ".rar", ".cb7", ".7z", ".pdf")  # never opened here: said on the screen
+PROBE_MAX_BYTES: Final = page_probe.PAGE_MAX_BYTES
+PROBE_CONCURRENCY: Final = page_probe.DEFAULT_WORKERS  # threads of one preview; the slots bound all
+_log = structlog.get_logger()
+
+
+def _first_page(fsops: Fsops, local: str, stamp: tuple[int, ...]) -> bytearray | str | None:
+    """The bytes of the first page (by entry name) of an adopted archive, read through the safe
+    opener (audited central directory, bounded reads, never extracted, no entry name used as a
+    path) from the descriptor whose identity is `stamp`, or the closed code of a refusal, or None
+    when the file holds no page to probe (an EPUB, an archive of something else). The page is
+    returned as read: no second copy is made."""
+    if not local.lower().endswith(ARCHIVES):
+        return None
+    try:
+        with fsops.open_read(local) as stream:
+            seen = os.fstat(stream.fileno())
+            if (
+                stamp
+                and (seen.st_dev, seen.st_ino, seen.st_size, seen.st_mtime_ns, seen.st_ctime_ns)
+                != stamp
+            ):  # replaced or rewritten between the look and the read
+                return "archive.changed"
+            with safe_open_archive(stream, name=local) as archive:
+                pages = sorted(
+                    (
+                        e.name
+                        for e in archive.entries
+                        if not e.is_dir and e.name.lower().endswith(PAGE_EXTENSIONS)
+                    ),
+                    key=str.casefold,
+                )
+                if not pages:
+                    return None
+                try:
+                    return archive.read(pages[0], max_bytes=PROBE_MAX_BYTES)
+                except UnsafeArchiveError as error:
+                    if error.reason == "entry_too_large":  # the page itself is past the cap
+                        return "image.too_large"
+                    raise
+    except UnsafeArchiveError as error:  # the audit of the archive, or a lying page
+        return f"archive.{error.reason}"
+    except OSError:
+        return "archive.unreadable"
+
+
+def _probe_page(data: bytes | bytearray) -> PageVerdict:
+    try:
+        info = probe_image(data, ImageKind.PAGE_INPUT)  # type: ignore[arg-type]  # bytes-like
+    except ImageRejected as error:
+        return None, error.code
+    except OSError:  # a worker that cannot start is the worker's failure, marked like any other
+        return None, "image.worker_failed"
+    return PageProbe(info.format.lower(), info.width, info.height), ""
 
 
 # -- plugin/parse in bulk ------------------------------------------------------------------------
@@ -622,6 +704,7 @@ class Adopter:
             seen = self._fsops.observe(local)
             if seen is None or seen[0] != "file":
                 continue
+            stamp = self._fsops.fingerprint(local) or ()
             info = read_comicinfo(self._fsops, local)
             infos.append(info)
             answer = parsed(name) if isinstance(parsed, BulkParse) else parsed[name]
@@ -636,8 +719,10 @@ class Adopter:
                     seen[1].ino, purged,
                     local.lower().endswith(".epub") and has_active_content(self._fsops, local),
                     tuple(sorted(info.items())) if kind == "volume" else (),
+                    stamp=stamp,
                 )
             )  # fmt: skip
+        adopted = self._with_pages(adopted)
         parsed_names = [
             (parsed(f.name) if isinstance(parsed, BulkParse) else parsed[f.name]).series_name
             for f in adopted
@@ -665,6 +750,43 @@ class Adopter:
             age=(rating.min_age, rating.x) if rating else None,
             edition_id=edition_id,
         )  # fmt: skip
+
+    def _with_pages(self, files: list[AdoptedFile]) -> list[AdoptedFile]:
+        """Each file with the verdict on its first page. The archive is opened by the safe opener
+        in this process (read only, never extracted), the page is decoded only in the bounded
+        worker. Verdicts and the bound on workers are the process's (`page_probe`): a file that did
+        not change is not probed again, and no more than the configured workers run at once, for
+        all previews together. A refusal marks the file and nothing else happens to it."""
+        todo = [(i, f) for i, f in enumerate(files) if f.local_path.lower().endswith(ARCHIVES)]
+        found: dict[int, PageVerdict] = {}
+        with ThreadPoolExecutor(max_workers=PROBE_CONCURRENCY) as pool:
+            for (i, _f), verdict in zip(
+                todo, pool.map(lambda item: self._verdict(item[1]), todo), strict=True
+            ):
+                found[i] = verdict
+        return [
+            replace(f, first_page=found[i][0], check=found[i][1]) if i in found else f
+            for i, f in enumerate(files)
+        ]
+
+    def _verdict(self, file: AdoptedFile) -> PageVerdict:
+        kept = page_probe.lookup(file.local_path, file.stamp) if file.stamp else None
+        if kept is not None:
+            return kept
+        with page_probe.slot():  # one page in memory per slot: read, probe, let go
+            data = _first_page(self._fsops, file.local_path, file.stamp)
+            if isinstance(data, str):
+                verdict: PageVerdict = (None, data)
+            elif data is None:
+                verdict = (None, "")  # no page in it: nothing to probe, nothing to check
+            else:
+                verdict = _probe_page(data)
+            del data
+        if verdict[1]:
+            _log.info("adopt.file_to_check", reason=verdict[1])
+        if file.stamp and verdict[1] != "archive.changed":
+            page_probe.remember(file.local_path, file.stamp, verdict)
+        return verdict
 
     @staticmethod
     def _proposals(series: Sequence[AdoptedSeries]) -> tuple[list[Rename], list[Duplicate]]:
@@ -1070,7 +1192,8 @@ class Adopter:
 
 
 def _fingerprint(library_ref: str, series: Sequence[AdoptedSeries]) -> str:
-    """A digest of the series, their paths, sizes and `mtime_ns`: any change moves it."""
+    """A digest of the series, their paths and what identifies their bytes (size, `mtime_ns`, inode,
+    device, `ctime_ns`: a rewrite with the mtime put back moves it): any change moves it."""
     document = [
         library_ref,
         [
@@ -1078,7 +1201,7 @@ def _fingerprint(library_ref: str, series: Sequence[AdoptedSeries]) -> str:
                 s.kavita_series_id,
                 s.name,
                 s.series_dir,
-                [[f.rel_path, f.size, f.mtime_ns, f.ino] for f in s.files],
+                [[f.rel_path, f.size, f.mtime_ns, f.ino, list(f.stamp)] for f in s.files],
             ]
             for s in sorted(series, key=lambda x: x.kavita_series_id)
         ],

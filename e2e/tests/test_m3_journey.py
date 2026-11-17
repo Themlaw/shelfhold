@@ -14,6 +14,7 @@ from __future__ import annotations
 import json
 import os
 import subprocess
+import time
 from pathlib import Path
 
 import pytest
@@ -442,6 +443,23 @@ def test_m3_detach_journey(journey_m3: Journey) -> None:
     assert j.egress() == []
 
 
+def adoption_preview(j: Journey, destination: object) -> tuple[int, object]:
+    """The preview of the folder screen: answered at once for a small library, else a background
+    task (`202`) whose state is read until it is no longer running (M4 L36)."""
+    [(code, body)] = j.api(
+        ("POST", "/api/v1/setup/adoption/preview", {"destination_id": destination})
+    )
+    if code != 202:
+        return code, body
+    path = str(body["status_url"])  # type: ignore[index]
+    for _ in range(60):
+        [(code, body)] = j.api(("GET", path))
+        if code != 200 or body["status"] != "running":  # type: ignore[index]
+            return code, body
+        time.sleep(2)
+    raise AssertionError("the preview is still running")
+
+
 # -- (6) "Kavita unreachable": understood, and solved by the action shown -----------------------------
 
 
@@ -459,9 +477,7 @@ def test_m3_kavita_unreachable_action_journey(journey_m3: Journey) -> None:
     try:
         # the wizard's folder screen asks Kavita for its libraries: what it answers is the error of
         # the catalogue, in plain words, with what to do
-        [(code, problem)] = j.api(
-            ("POST", "/api/v1/setup/adoption/preview", {"destination_id": destination})
-        )
+        code, problem = adoption_preview(j, destination)
         assert code == 503, (code, problem)
         assert problem["code"] == "target.unreachable", problem  # type: ignore[index]
         assert "Kavita ne répond pas" in problem["title"], problem  # type: ignore[index]
@@ -474,9 +490,7 @@ def test_m3_kavita_unreachable_action_journey(journey_m3: Journey) -> None:
         j.compose("unpause", "fake-kavita")
 
     assert wait_for(lambda: bool(j.kavita()), 60)
-    [(code, again)] = j.api(
-        ("POST", "/api/v1/setup/adoption/preview", {"destination_id": destination})
-    )
+    code, again = adoption_preview(j, destination)
     assert code != 503, again  # Kavita is reached: whatever the preview says, it is not that error
     j.publish_upstream()  # the chapter that came while Kavita was away is delivered now
     assert j.follow_until(lambda: exported_chapter(j, "manga"), 300)
