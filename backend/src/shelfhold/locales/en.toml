@@ -637,7 +637,7 @@
   help_request_for_profile = "Name of the child profile the list is for: her reading shelf is made and the requests are hers (an age is still chosen at approval)."
   help_request_name = "Name of the reading shelf (default: the name of the file)."
   request_list_done = "List imported: {in_library} already in the library (on the reading shelf), {requested} requested."
-  request_list_annotated = "Warning: {count} line(s) ask for a precise annotated edition. Shelfhold cannot promise that edition; check it on the review screen."
+  request_list_annotated = "Warning: lines that ask for a precise annotated edition: {count}. Shelfhold cannot promise that edition; check it on the review screen."
   request_list_review = "Review all of it on one screen: /a-approuver/liste/{id}"
   request_list_refused = "The list is not read ({reason}): nothing was imported."
   help_follow_series = "Follows a series of the service connected from Shelfhold: a single entry in its library, category “Shelfhold”, without automatic download."

@@ -552,13 +552,20 @@ def _request_from_list_for_profile(ops: OpsServices, by: Principal, p: Params) -
 def _import_list(ops: OpsServices, by: Principal, p: Params, for_user_id: str | None) -> object:
     try:
         done = ops.request_lists.import_list(
-            by, _text(p, "text"), name=_optional(p, "name"), for_user_id=for_user_id
+            by,
+            _text(p, "text"),
+            name=_optional(p, "name"),
+            for_user_id=for_user_id,
+            host=True,
         )
     except InvalidListError as refused:
         raise CodedRefusal("request.invalid_list", refused.reason) from None
     except RequestRefusedError as refused:
         raise CodedRefusal(f"request.{refused.code}", refused.code) from None
-    return dict(vars(done))
+    return {
+        "id": done.id, "in_library": done.in_library, "requested": done.requested,
+        "annotated": done.annotated, "collection_id": done.collection_id,
+    }  # fmt: skip
 
 
 def _follow(ops: OpsServices, by: Principal, p: Params) -> object:

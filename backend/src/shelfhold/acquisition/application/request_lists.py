@@ -63,7 +63,6 @@ __all__ = [
 ]
 
 MAX_LISTED_PENDING = 200  # open requests of one profile, imports included
-_WRITERS = frozenset({Credential.SESSION, Credential.LOCAL_CLI})
 _NAME_MAX = 200
 request = identity.request
 list_import = identity.request_list_import
@@ -135,11 +134,11 @@ class RequestListService:
 
     def import_list(
         self, principal: Principal, raw: str | bytes, *, name: str | None = None,
-        for_user_id: str | None = None,
+        for_user_id: str | None = None, host: bool = False,
     ) -> ImportDone:  # fmt: skip
         """Import a list for oneself, or (an admin) for a child. `RequestRefusedError` carries a
         code of `request.*`; a list that is not read is `InvalidListError`, with its `reason`."""
-        if principal.credential not in _WRITERS:
+        if principal.credential is not Credential.SESSION and not host:
             raise RequestRefusedError("not_allowed")
         if needs_age(principal.role):  # a child asks among her search results, never with a list
             raise RequestRefusedError("kind_not_allowed")
@@ -149,17 +148,17 @@ class RequestListService:
             raise InvalidListError(refused.reason) from None
         title = " ".join((name or "").split())[:_NAME_MAX] or "Reading list"
         with write_transaction(self._engine) as connection:
-            subject, role = self._subject(connection, principal, for_user_id)
+            subject, role = self._subject(connection, principal, for_user_id, host=host)
             return self._import(connection, principal, subject, role, lines, title)
 
     def _subject(
-        self, connection: Connection, principal: Principal, for_user_id: str | None
+        self, connection: Connection, principal: Principal, for_user_id: str | None, *, host: bool
     ) -> tuple[str, str]:
         """The profile the list is for. A caller's own, or a child's (by an admin: a member makes
         no list for another). The host's command line has no account: its own list is the first
         admin's."""
         if for_user_id is None or for_user_id == principal.user_id:
-            if principal.credential is Credential.LOCAL_CLI:
+            if host:
                 found = connection.execute(
                     sa.select(identity.user.c.id)
                     .where(identity.user.c.role == "admin")

@@ -78,7 +78,7 @@ test('test_request_from_list_bulk_single_review_screen_ui', async ({ page, conte
   await settle(page);
   // one screen, every line of the file, in its order
   await expect(page.getByRole('listitem').filter({ hasText: 'Un livre jamais catalogué' })).toHaveCount(1);
-  expect(await page.getByRole('list').getByRole('listitem').count()).toBe(3);
+  expect(await page.locator('main ol > li').count()).toBe(3);
   void context;
 });
 

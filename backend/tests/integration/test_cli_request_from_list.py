@@ -54,9 +54,9 @@ def test_cli_makes_the_admins_list_from_a_file(
     capsys.readouterr()
     assert run_cli(monkeypatch, settings, "request", "--from-list", _file(tmp_path, text)) == 0
     out = capsys.readouterr().out
-    assert "1 déjà dans la bibliothèque" in out
-    assert "1 ligne(s) réclament une édition annotée précise" in out  # a warning, not a refusal
-    assert "2 demandé(s)" in out and "/a-approuver/liste/" in out
+    assert "lecture)\u202f: 1" in out
+    assert "annotée précise\u202f: 1" in out  # a warning, not a refusal
+    assert "demandés\u202f: 2" in out and "/a-approuver/liste/" in out
     assert _rows(engine, "SELECT name, outcome FROM request_list_import, request_list_item") == [
         ("summer", "in_library"), ("summer", "requested"), ("summer", "requested"),
     ]  # fmt: skip
