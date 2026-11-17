@@ -20,7 +20,7 @@ from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.jobs.public import JobContext, JobFailedError
 from shelfhold.runtime_jobs import team_switch_handler
 from tests.export_env import ExportEnv, export_env
-from tests.team_switch_env import add_team_chapter, team_switch
+from tests.team_switch_env import add_team_chapter, prefer_another_team, team_switch
 from tests.upgrade_env import bin_files
 
 pytestmark = pytest.mark.req("EF-BIB-005", "EF-EXP-041")
@@ -114,13 +114,7 @@ def test_a_stale_preview_fails_the_job_with_its_code_and_writes_nothing() -> Non
         s = team_switch(env)
         old = s.target.read_bytes()
         switch_id = _queued(env, s.edition_id)
-        extra = env.add_chapter(s.exported.series, "2")
-        env.pipeline.run(env.destination_id, job_id=new_ulid())
-        with write_transaction(env.engine) as connection:
-            connection.execute(
-                sa.text("UPDATE unit_variant SET preferred = 1 WHERE unit_id = :u"), {"u": extra}
-            )
-        add_team_chapter(env, s.edition_id, s.exported.series.binding_id, extra, "2", s.team_b)
+        prefer_another_team(env, s)  # nothing the person read holds any more
         comp = _comp(env, [])
         with pytest.raises(JobFailedError) as raised:
             team_switch_handler(comp)(_context(env, switch_id))

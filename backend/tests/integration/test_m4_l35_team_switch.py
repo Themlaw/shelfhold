@@ -30,6 +30,7 @@ from tests.team_switch_env import (
     Switch,
     add_team_chapter,
     count,
+    prefer_another_team,
     preferred_variant,
     team_switch,
     upgrade_intents,
@@ -231,16 +232,19 @@ def test_the_reader_never_sees_a_half_replaced_file() -> None:
                     errors.append("the path was empty")
                 except OSError as error:  # pragma: no cover
                     errors.append(str(error))
+                stop.wait(0.0005)  # a pause: the loop does not starve the application
 
-        thread = threading.Thread(target=reader)
+        thread = threading.Thread(target=reader, daemon=True)
         thread.start()
         try:
             _apply(env, s, None)
         finally:
             stop.set()
-            thread.join()
+            thread.join(timeout=10)
+        assert not thread.is_alive()
         new = s.target.read_bytes()
         assert errors == []
+        assert seen  # the reader did read
         assert seen <= {old, new}  # only ever one of the two, whole
 
 
@@ -295,13 +299,17 @@ def test_the_service_keeps_the_preview_queues_one_job_and_reads_the_report_back(
                     "WHERE action LIKE 'team.switch%' ORDER BY at, rowid"
                 )
             ).all()
-        assert [a[0] for a in audit] == ["team.switch_previewed", "team.switch_queued"]
+        assert [a[0] for a in audit] == [
+            "team.switch_previewed", "team.switch_queued", "team.switch_done",
+        ]  # fmt: skip
         assert all(str(a[1]).startswith("team_switch:") for a in audit)
         # the same job twice does nothing the second time
         assert service.run(switch_id, upgrader=RealUpgrader(env)).switched == ()
 
 
-def test_a_stale_preview_ends_the_job_without_writing() -> None:
+def test_a_chapter_that_arrived_after_the_preview_is_left_alone() -> None:
+    """The application does what the preview said, no more: the chapter that came since is not in
+    it (it waits for its own preview), the one that was is switched."""
     with export_env() as env:
         s = team_switch(env)
         service, _pool = _service(env)
@@ -314,11 +322,84 @@ def test_a_stale_preview_ends_the_job_without_writing() -> None:
                 sa.text("UPDATE unit_variant SET preferred = 1 WHERE unit_id = :u"), {"u": extra}
             )
         add_team_chapter(env, s.edition_id, s.exported.series.binding_id, extra, "2", s.team_b)
+        (other,) = (p for p in env.files() if p != s.target)
+        untouched = other.read_bytes()
+        report = service.run(switch_id, upgrader=RealUpgrader(env))
+        assert report.switched == (s.unit_id,) and report.blocked == {}
+        assert other.read_bytes() == untouched
+        assert service.report(ADMIN, s.edition_id, switch_id)["state"] == "done"
+
+
+def test_a_preview_nothing_of_which_holds_any_more_is_stale_and_writes_nothing() -> None:
+    with export_env() as env:
+        s = team_switch(env)
+        service, _pool = _service(env)
+        switch_id = service.preview(ADMIN, s.edition_id)["id"]
+        service.queue(ADMIN, s.edition_id, switch_id)
+        prefer_another_team(env, s)  # the preferred team is another one: nothing the person read
         old = s.target.read_bytes()
         with pytest.raises(StaleSwitchError):
             service.run(switch_id, upgrader=RealUpgrader(env))
-        assert s.target.read_bytes() == old
+        assert s.target.read_bytes() == old and upgrade_intents(env) == 0
         assert service.report(ADMIN, s.edition_id, switch_id)["state"] == "stale"
+        with env.engine.connect() as connection:
+            last = (
+                connection.execute(
+                    sa.text(
+                        "SELECT action FROM audit WHERE action LIKE 'team.switch%' ORDER BY rowid"
+                    )
+                )
+                .scalars()
+                .all()
+            )
+        assert last[-1] == "team.switch_stale"
+
+
+def test_a_failed_run_says_what_it_wrote_and_the_retry_ends_the_rest() -> None:
+    """A run that raises on the second chapter: the first is replaced and the report says so
+    (never "nothing written"), the audit names the failure, and the retry does the second only."""
+    with export_env() as env:
+        s = team_switch(env)
+        series = s.exported.series
+        second = env.add_chapter(series, "2")
+        env.pipeline.run(env.destination_id, job_id=new_ulid())
+        with write_transaction(env.engine) as connection:
+            connection.execute(
+                sa.text("UPDATE unit_variant SET preferred = 1 WHERE unit_id = :u"), {"u": second}
+            )
+        add_team_chapter(env, s.edition_id, series.binding_id, second, "2", s.team_b, tag=b"two")
+        service, _pool = _service(env)
+        switch_id = service.preview(ADMIN, s.edition_id)["id"]
+        service.queue(ADMIN, s.edition_id, switch_id)
+        real = RealUpgrader(env)
+
+        class _Dies:
+            def upgrade_unit(self, unit_id: str, content_id: str) -> list[str]:
+                if real.calls:
+                    raise TimeoutError("lock held")
+                return real.upgrade_unit(unit_id, content_id)
+
+        with pytest.raises(TimeoutError):
+            service.run(switch_id, upgrader=_Dies())
+        view = service.report(ADMIN, s.edition_id, switch_id)
+        assert view["state"] == "failed" and len(view["switched"]) == 1
+        assert view["to_switch"] == [u for u in (s.unit_id, second) if u not in view["switched"]]
+        retry = RealUpgrader(env)
+        report = service.run(switch_id, upgrader=retry)
+        assert sorted(report.switched) == sorted([s.unit_id, second])
+        assert len(retry.calls) == 1  # the one that was done is not done again
+        assert service.report(ADMIN, s.edition_id, switch_id)["state"] == "done"
+        with env.engine.connect() as connection:
+            actions = (
+                connection.execute(
+                    sa.text(
+                        "SELECT action FROM audit WHERE action LIKE 'team.switch%' ORDER BY rowid"
+                    )
+                )
+                .scalars()
+                .all()
+            )
+        assert actions[-2:] == ["team.switch_failed", "team.switch_done"]
 
 
 def test_the_service_refuses_a_member_a_child_and_a_key_before_anything() -> None:

@@ -35,9 +35,12 @@ jamais.
 
 ## Un aperçu périmé n'est pas appliqué
 
-L'aperçu garde l'empreinte de ce qu'il a dit. Si un chapitre arrive, est lu ou change entre l'aperçu et l'application,
-l'application ne part pas (`team_switch.stale`) : rien n'est remplacé, demandez un nouvel aperçu. Un aperçu non appliqué
-depuis plus d'un jour est supprimé au prochain.
+L'aperçu garde ce qu'il a dit : les chapitres, et le fichier vers lequel chacun serait remplacé. L'application, comme sa
+reprise après un arrêt ou un `jobs retry`, ne remplace **que** ces chapitres-là, vers ces fichiers-là, et seulement si l'état
+d'aujourd'hui le permet encore. Un chapitre dont l'équipe préférée a changé, dont un autre fichier est arrivé ou qui est
+devenu bloqué n'est pas écrit : le rapport le compte comme bloqué (« l'aperçu ne tient plus pour ce chapitre »). Si rien de
+l'aperçu ne peut plus être appliqué, rien n'est remplacé (`team_switch.stale`) : demandez un nouvel aperçu. Un aperçu non
+appliqué depuis plus d'un jour est supprimé au prochain.
 
 ## Si Shelfhold s'arrête en route
 
@@ -46,4 +49,8 @@ avant toute autre tâche (le chemin sert toujours un seul fichier, jamais aucun,
 perdu). La tâche reprend ensuite et finit le travail ; ce qui était fait n'est pas refait. Un lecteur qui ouvre le
 chapitre pendant le remplacement reçoit l'ancien fichier ou le nouveau, entier.
 
-`jobs retry` et `jobs replay` d'une tâche de bascule demandent la même session récente.
+Une tâche qui échoue à mi-chemin (un verrou tenu, un disque plein) garde ce qu'elle a déjà remplacé : le rapport le dit, et
+`jobs retry` finit ce qui reste de l'aperçu, sans refaire le reste.
+
+`jobs retry` et `jobs replay` d'une tâche de bascule demandent la même session récente. L'issue de la tâche (`done`, `stale`,
+`failed`) laisse une ligne d'audit (`team.switch_done`, `team.switch_stale`, `team.switch_failed`).

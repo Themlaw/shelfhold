@@ -39,10 +39,6 @@ def _queued(service: TeamSwitchService, edition_id: str) -> str:
     return switch_id
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#339 trou 1 : la reprise (`applying`) applique le plan d'aujourd'hui, pas l'aperçu lu",
-)
 def test_a_resumed_switch_never_applies_what_the_preview_did_not_say() -> None:
     """La personne a lu « passer à Team B ». Le processus meurt en `applying`. Avant la reprise,
     l'équipe préférée devient Team C (un autre clic sur la fiche). La reprise ne doit remplacer
@@ -90,11 +86,6 @@ class _DiesOnSecond:
         return self.real.upgrade_unit(unit_id, content_id)
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#339 trou 2 : une tâche `failed` à mi-chemin, reprise par `jobs retry`, devient "
-    "`stale` et le rapport dit « rien n'est écrit » alors qu'un fichier a été remplacé",
-)
 def test_a_failed_switch_retried_ends_the_work_or_says_what_was_done() -> None:
     with export_env() as env:
         s = team_switch(env)
@@ -124,11 +115,6 @@ def test_a_failed_switch_retried_ends_the_work_or_says_what_was_done() -> None:
         assert sorted(report["switched"]) == sorted([s.unit_id, second])
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#339 trou 3 (antérieur à L35, atteint par lui) : « chapitre lu » est regardé avant le "
-    "rendu, hors des verrous et de l'intention ; sous les verrous on ne revérifie que l'empreinte",
-)
 def test_a_chapter_read_while_the_new_file_renders_is_not_replaced(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

@@ -117,6 +117,22 @@ def team_switch(env: ExportEnv, *, prefer: bool = True) -> Switch:
     return Switch(exported, exported.unit_id, edition_id, team_b, variant_b, content_b)
 
 
+def prefer_another_team(env: ExportEnv, s: Switch, name: str = "Team C") -> str:
+    """The Edition now prefers another team, which has fetched the Unit: its Variant id."""
+    with write_transaction(env.engine) as connection:
+        team = (
+            Catalog(connection)
+            .resolve_team(BindingRef(s.exported.series.binding_id, s.edition_id), name, NOW)
+            .id
+        )
+    variant, _content = add_team_chapter(
+        env, s.edition_id, s.exported.series.binding_id, s.unit_id, "1", team, tag=b"other"
+    )
+    with write_transaction(env.engine) as connection:
+        Catalog(connection).prefer_team(s.edition_id, team)
+    return variant
+
+
 def preferred_variant(env: ExportEnv, unit_id: str) -> str:
     with env.engine.connect() as connection:
         return str(

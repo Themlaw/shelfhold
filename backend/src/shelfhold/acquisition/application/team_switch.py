@@ -59,6 +59,7 @@ __all__ = [
 TEAM_SWITCH_JOB_KIND = "team.switch"
 NOT_FOUND = "team_switch.not_found"
 _DONE = frozenset({"upgraded", "up_to_date"})
+STALE_WORD = "preview_changed"  # in a report: the Unit was in the preview, no longer is in the plan
 _PREVIEW_KEPT = timedelta(days=1)  # a preview nobody applied does not stay
 _switch = acquisition.team_switch
 
@@ -88,6 +89,9 @@ class SwitchPreview:
             "to_switch": list(self.to_switch),
             "blocked": {unit: list(words) for unit, words in self.blocked.items()},
             "pending": list(self.pending),
+            # what the application upgrades to, kept with what was shown: a resumed or retried
+            # application applies this, never what the plan has become since
+            "targets": {unit: list(pair) for unit, pair in self.targets.items()},
         }
 
 
@@ -158,20 +162,38 @@ def switch_to_preferred_team(
     *,
     upgrader: Upgrader,
     token: str | None = None,
+    kept: dict[str, Any] | None = None,
+    first: bool = True,
 ) -> SwitchReport:
     """Apply the switch. With an `Engine` every step has its own transactions (the upgrade commits
     its own: a read snapshot held across it would be stale); with a `Connection` the caller owns
-    the transaction. `token` is the one of the preview the person read: another plan is refused."""
+    the transaction. `token` is the one of the preview the person read: another plan is refused.
+
+    `kept` is the preview the person read, as the service keeps it (`SwitchPreview.as_json` and
+    the `team_id`): only the Units it named, toward the very content it named, are switched, and
+    only if the plan of now still allows it. What changed since (another preferred team, a
+    refusal that appeared, a different file) is reported as blocked, never applied. On the first
+    pass (`first`), when nothing of it can be applied, the preview is stale and nothing is written;
+    a pass that takes up an earlier one ends with the report instead."""
     if isinstance(target, Engine):
         with target.connect() as connection:
             plan = preview_team_switch(connection, edition_id)
+            already = _already(connection, kept)
     else:
         plan = preview_team_switch(target, edition_id)
+        already = _already(target, kept)
     if token is not None and plan.token != token:
         raise StaleSwitchError(edition_id)
-    switched: list[str] = []
     blocked = dict(plan.blocked)  # refused by the database: the upgrader is never asked
-    for unit_id in plan.to_switch:
+    pending = plan.pending
+    names = plan.to_switch
+    if kept is not None:
+        names, blocked = _intersect(plan, kept, already)
+        pending = tuple(kept.get("pending", ()))
+        if first and not names and kept.get("to_switch"):
+            raise StaleSwitchError(edition_id)
+    switched: list[str] = []
+    for unit_id in names:
         variant_id, content_id = plan.targets[unit_id]
         outcomes = tuple(upgrader.upgrade_unit(unit_id, content_id))
         if all(o in _DONE for o in outcomes):
@@ -179,7 +201,42 @@ def switch_to_preferred_team(
             switched.append(unit_id)
         else:
             blocked[unit_id] = outcomes
-    return SwitchReport(tuple(switched), blocked, plan.pending)
+    return SwitchReport(tuple(switched), blocked, pending)
+
+
+def _already(connection: Connection, kept: dict[str, Any] | None) -> set[str]:
+    """The Units of the kept preview that are served from the very Variant it named: a run before
+    this one (killed, or failed half way) did them."""
+    if kept is None:
+        return set()
+    targets = dict(kept.get("targets", {}))
+    v = catalog.unit_variant
+    rows = connection.execute(
+        sa.select(v.c.unit_id, v.c.id).where(v.c.unit_id.in_(list(targets)), v.c.preferred)
+    )
+    return {str(unit) for unit, variant in rows if list(targets[str(unit)])[:1] == [str(variant)]}
+
+
+def _intersect(
+    plan: SwitchPreview, kept: dict[str, Any], already: set[str]
+) -> tuple[tuple[str, ...], dict[str, tuple[str, ...]]]:
+    """The Units to apply (the kept ones the plan of now still says, to the same content) and the
+    ones that are blocked: by what the plan says now, or `stale` (the preview no longer holds)."""
+    targets = dict(kept.get("targets", {}))
+    same_team = plan.team_id == kept.get("team_id")
+    apply: list[str] = []
+    blocked: dict[str, tuple[str, ...]] = {}
+    for unit_id in kept.get("to_switch", ()):
+        if unit_id in already:
+            continue
+        same = same_team and list(plan.targets.get(unit_id, ())) == list(targets.get(unit_id, ()))
+        if same and unit_id in plan.to_switch:
+            apply.append(unit_id)
+        elif same and unit_id in plan.blocked:
+            blocked[unit_id] = plan.blocked[unit_id]
+        else:
+            blocked[unit_id] = (STALE_WORD,)
+    return tuple(apply), blocked
 
 
 def _follow(target: Connection | Engine, unit_id: str, variant_id: str) -> None:
@@ -289,48 +346,69 @@ class TeamSwitchService:
     def run(self, switch_id: str, *, upgrader: Upgrader) -> SwitchReport:
         """The job: apply what the preview said, once, and keep the report.
 
-        The preview is compared with the plan of now before the first write (a stale one writes
-        nothing and says so); the job holds the lease of the library from there on, so no chapter
-        arrives in between. A job taken up again after a kill (`applying`) has been through that
-        check already: it finds the work done so far (the boot has settled the open intents) and
-        ends it. One already `done` does nothing. The report says what is true now: a Unit the
-        killed run switched is in it."""
+        The plan the person read is kept in the row. Whatever the pass (the first, one taken up
+        again after a kill in `applying`, a `jobs retry` after a failure half way), only what that
+        plan named is applied, to the content it named, and only what the plan of now still
+        allows; the rest is reported as blocked, never written. The job holds the lease of the
+        library from there on, so no chapter arrives in between. A Unit done by an earlier pass
+        is in the report (the boot has settled its open intent). A preview of which nothing can
+        be applied, on the first pass, is `stale`: nothing is written and it says so. One `done`
+        does nothing. The report says what is true now."""
         with self._engine.connect() as connection:
             row = connection.execute(sa.select(_switch).where(_switch.c.id == switch_id)).first()
         if row is None:
             raise TeamSwitchRefusedError(NOT_FOUND)
         if row.state in ("done", "stale"):  # `failed` is taken up again by `jobs retry`
             return SwitchReport()
+        kept = {**dict(row.preview or {}), "team_id": row.team_id}
         if row.state != "applying":
-            with self._engine.connect() as connection:
-                same = preview_team_switch(connection, row.edition_id).token == row.token
-            if not same:
-                self._mark(switch_id, "stale")
-                raise StaleSwitchError(row.edition_id)
             self._mark(switch_id, "applying")
         try:
-            report = switch_to_preferred_team(self._engine, row.edition_id, upgrader=upgrader)
+            report = switch_to_preferred_team(
+                self._engine, row.edition_id, upgrader=upgrader, kept=kept,
+                first=row.state == "queued",
+            )  # fmt: skip
+        except StaleSwitchError:
+            self._mark(switch_id, "stale")
+            self._outcome(switch_id, "team.switch_stale")
+            raise
         except BaseException:
-            self._mark(switch_id, "failed")
+            self._fail(row, kept)
             raise
         report = self._as_done(row, report)
         self._finish(switch_id, report)
         return report
 
+    def _fail(self, row: sa.Row[Any], kept: dict[str, Any]) -> None:
+        """A run that raised: what it wrote stays written, and the report says so."""
+        report = self._as_done(row, SwitchReport(pending=tuple(kept.get("pending", ()))))
+        with write_transaction(self._engine) as connection:
+            connection.execute(
+                sa.update(_switch)
+                .where(_switch.c.id == row.id)
+                .values(state="failed", report=_said(report))
+            )
+        self._outcome(str(row.id), "team.switch_failed")
+
+    def _outcome(self, switch_id: str, action: str) -> None:
+        """The audit line of how the job ended (the doors wrote the others); no person asks."""
+        with write_transaction(self._engine) as connection:
+            connection.execute(
+                audit_insert(
+                    AuditEntry(
+                        actor_id=None, action=action, at=self._clock.now(),
+                        target=f"team_switch:{switch_id}",
+                    )
+                )
+            )  # fmt: skip
+
     def _as_done(self, row: sa.Row[Any], report: SwitchReport) -> SwitchReport:
         """The Units the preview named that are served from the preferred team now, whichever run
         switched them."""
-        said = tuple(dict(row.preview or {}).get("to_switch", ()))
-        v = catalog.unit_variant
+        kept = dict(row.preview or {})
+        said = tuple(kept.get("to_switch", ()))
         with self._engine.connect() as connection:
-            now = {
-                str(unit)
-                for unit in connection.execute(
-                    sa.select(v.c.unit_id).where(
-                        v.c.unit_id.in_(said), v.c.preferred, v.c.team_id == row.team_id
-                    )
-                ).scalars()
-            }
+            now = _already(connection, {"targets": kept.get("targets", {})})
         switched = tuple(unit for unit in said if unit in now)
         return SwitchReport(switched, report.blocked, report.pending)
 
@@ -362,17 +440,13 @@ class TeamSwitchService:
             )
 
     def _finish(self, switch_id: str, report: SwitchReport) -> None:
-        said = {
-            "switched": list(report.switched),
-            "blocked": {unit: list(words) for unit, words in report.blocked.items()},
-            "pending": list(report.pending),
-        }
         with write_transaction(self._engine) as connection:
             connection.execute(
                 sa.update(_switch)
                 .where(_switch.c.id == switch_id)
-                .values(state="done", report=said, applied_at=self._clock.now())
+                .values(state="done", report=_said(report), applied_at=self._clock.now())
             )
+        self._outcome(switch_id, "team.switch_done")
 
     @staticmethod
     def _audit(
@@ -389,6 +463,22 @@ class TeamSwitchService:
         )  # fmt: skip
 
 
+def _said(report: SwitchReport) -> dict[str, Any]:
+    return {
+        "switched": list(report.switched),
+        "blocked": {unit: list(words) for unit, words in report.blocked.items()},
+        "pending": list(report.pending),
+    }
+
+
+def _left(state: str, preview: dict[str, Any], report: dict[str, Any] | None) -> list[str]:
+    """What the application has still to do: all of it before, what a failed run left after."""
+    said = list(preview.get("to_switch", []))
+    if report is None:
+        return said
+    return [u for u in said if u not in report["switched"]] if state == "failed" else []
+
+
 def _view(row: sa.Row[Any]) -> dict[str, Any]:
     preview = dict(row.preview or {})
     report = dict(row.report) if row.report is not None else None
@@ -397,7 +487,7 @@ def _view(row: sa.Row[Any]) -> dict[str, Any]:
         "edition_id": row.edition_id,
         "team_id": row.team_id,
         "state": row.state,
-        "to_switch": list(preview.get("to_switch", [])) if report is None else [],
+        "to_switch": _left(row.state, preview, report),
         "blocked": dict(report["blocked"])
         if report is not None
         else dict(preview.get("blocked", {})),

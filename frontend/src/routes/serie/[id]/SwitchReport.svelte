@@ -104,9 +104,10 @@
 
   {#if view?.state === 'stale'}
     <p role="status">{t('switch.stale')}</p>
-  {:else if view?.state === 'failed'}
-    <p role="status">{t('switch.failed')}</p>
   {:else if ended && view}
+    {#if view.state === 'failed'}
+      <p role="status">{t('switch.failed')}</p>
+    {/if}
     <h3>{t('switch.result')}</h3>
     <ul>
       <li>{t('switch.done_switched', count(view.switched))}</li>

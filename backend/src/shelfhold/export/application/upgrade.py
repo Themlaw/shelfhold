@@ -491,7 +491,7 @@ class SamePathUpgrade:
             )  # fmt: skip
             return self._replace(
                 served, new, reason=request.reason, automatic=request.automatic,
-                job_id=request.job_id,
+                job_id=request.job_id, read_guard=request.reason != "integrity_reacquire",
             )  # fmt: skip
         finally:
             rendered.file.close()
@@ -543,7 +543,7 @@ class SamePathUpgrade:
             return UpgradeResult(UpgradeOutcome.SUSPECT_REVISION)
         new = _New(data, file_hash, content_hash, source_hash, None, spine_count)
         return self._replace_held(
-            served, new, reason="better_version", automatic=True, restores=None
+            served, new, reason="better_version", automatic=True, restores=None, read_guard=True
         )
 
     def upgrade_unit(
@@ -674,21 +674,28 @@ class SamePathUpgrade:
         automatic: bool,
         job_id: str | None = None,
         restores: str | None = None,
+        read_guard: bool = False,
     ) -> UpgradeResult:
         with self._locks.hold(
             job_id or new_ulid(), work=served.work_id,
             series=f"{served.ctx.destination_id}/{served.folder}", timeout=30.0,
         ):  # fmt: skip
-            return self._replace_held(served, new, reason, automatic, restores)
+            return self._replace_held(served, new, reason, automatic, restores, read_guard)
 
     def _replace_held(
-        self, served: _Served, new: _New, reason: str, automatic: bool, restores: str | None
-    ) -> UpgradeResult:
+        self, served: _Served, new: _New, reason: str, automatic: bool, restores: str | None,
+        read_guard: bool = False,
+    ) -> UpgradeResult:  # fmt: skip
         target = served.target
         found = self._fsops.hash_and_identity(target)
         if found is None or found[0] != served.file_hash:
             log.warning("upgrade.target_changed", path=escaped(target))
             return UpgradeResult(UpgradeOutcome.TARGET_CHANGED)
+        if read_guard and served.skip_read and self._read_meanwhile(served):
+            # the guard of `_refusal` was read before the render, outside every lock: a reader
+            # (the progress sync takes none of ours) may have finished the chapter since
+            log.info("upgrade.skipped_read", unit_id=served.unit_id)
+            return UpgradeResult(UpgradeOutcome.SKIPPED_READ)
         old_sha, old_identity, _dev = found
         mark = UpgradeMark(
             old_identity.ino, old_identity.size, old_identity.mtime_ns, old_sha256=old_sha,
@@ -718,6 +725,12 @@ class SamePathUpgrade:
         self._after(served)
         log.info("upgrade.done", unit_id=served.unit_id, reason=reason)
         return UpgradeResult(UpgradeOutcome.UPGRADED, upgrade_id)
+
+    def _read_meanwhile(self, served: _Served) -> bool:
+        """The guard "read", looked at again under the locks and right before the swap, in a write
+        transaction: a read recorded before it is seen, one that comes after waits for it."""
+        with write_transaction(self._engine) as connection:
+            return _is_read(connection, served.unit_ids)
 
     def _after(self, served: _Served) -> None:
         """The provenance mirror of the folder, then Kavita is asked to look at it again; the
