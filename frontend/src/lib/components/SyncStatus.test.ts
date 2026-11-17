@@ -78,7 +78,7 @@ describe('SyncStatus', () => {
     setUiLanguage('en');
     answer([]);
     render(SyncStatus);
-    expect(await screen.findByText(/No Kavita binding/)).toBeTruthy();
+    expect(await screen.findByText(/No Kavita link/)).toBeTruthy();
   });
 
   // req: EF-USR-012
