@@ -30,6 +30,9 @@ class ToRateItem(BaseModel):
     state: str
     reason: str
     suggestions: list[EditionSuggestionOut] = []  # open ones above an Edition's age
+    rated: bool = False  # the Work was rated: a batch never rates it again (M4 L28)
+    age: int | None = None  # the age in place, when it is rated
+    age_x: bool = False
 
 
 class ToRateOut(BaseModel):

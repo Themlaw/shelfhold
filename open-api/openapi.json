@@ -1280,6 +1280,17 @@
       },
       "BulkItem": {
         "properties": {
+          "age": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Age"
+          },
           "state": {
             "title": "State",
             "type": "string"
@@ -10202,6 +10213,27 @@
       },
       "ToRateItem": {
         "properties": {
+          "age": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Age"
+          },
+          "age_x": {
+            "default": false,
+            "title": "Age X",
+            "type": "boolean"
+          },
+          "rated": {
+            "default": false,
+            "title": "Rated",
+            "type": "boolean"
+          },
           "reason": {
             "title": "Reason",
             "type": "string"

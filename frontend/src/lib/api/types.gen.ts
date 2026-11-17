@@ -759,6 +759,10 @@ export type BulkFilter = {
  */
 export type BulkItem = {
     /**
+     * Age
+     */
+    age?: number | null;
+    /**
      * State
      */
     state: string;
@@ -6173,6 +6177,18 @@ export type TitleOut = {
  * ToRateItem
  */
 export type ToRateItem = {
+    /**
+     * Age
+     */
+    age?: number | null;
+    /**
+     * Age X
+     */
+    age_x?: boolean;
+    /**
+     * Rated
+     */
+    rated?: boolean;
     /**
      * Reason
      */

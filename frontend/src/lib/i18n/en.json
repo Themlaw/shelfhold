@@ -593,6 +593,8 @@
   "toRate.bulk.apply": "Apply",
   "toRate.bulk.cancel": "Cancel",
   "toRate.bulk.pending": "Rating in progress, maybe already done: reload",
+  "toRate.bulk.poll_timeout": "The screen stopped looking, the rating goes on: reload the page in a moment to see where it stands.",
+  "toRate.bulk.already_rated": "already rated {age}",
   "toRate.bulk.done": "{count, plural, one {# Work rated} other {# Works rated}}",
   "toRate.bulk.stale": "Nothing was rated, preview again",
   "toRate.bulk.refused": "Rating refused: the right to rate is gone.",

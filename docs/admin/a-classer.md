@@ -32,7 +32,7 @@ d'une Édition passe par `POST /api/v1/editions/{id}/shelf`.
 - `--pending` classe d'un coup toutes les Œuvres de « À classer » : lancée sans `--confirm`, la commande
   affiche la liste et un jeton ; relancez avec `--confirm <jeton>`. Le jeton est recalculé au moment
   d'écrire : si la liste a bougé entre-temps, rien n'est appliqué. Une entrée d'audit est écrite par
-  Œuvre. Les Œuvres qui n'attendent qu'une suggestion d'Édition ne sont jamais classées par le lot.
+  Œuvre. Seules les Œuvres **jamais classées** le sont : une Œuvre déjà classée qui attend une Édition ne l'est jamais par le lot, ni par le classement en masse de l'écran.
 - Un classement qui **relève** l'âge au-dessus du plafond d'une étagère famille n'applique **rien** : il
   affiche le plan de retrait, et c'est `shelfhold shelf withdraw` qui le lance
   ([famille.md](famille.md)).

@@ -27,6 +27,7 @@ from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import catalog
 
 __all__ = [
+    "KEEP_ENDED",
     "MAX_SELECTION",
     "ORDER_TTL",
     "Order",
@@ -37,12 +38,14 @@ __all__ = [
     "freeze",
     "load",
     "load_for_job",
+    "purge",
     "release",
     "token_of",
 ]
 
 MAX_SELECTION: Final = 1000  # Works one order may hold: a bound on what one job rewrites
 ORDER_TTL: Final = timedelta(minutes=30)  # a preview that is not applied by then is not an order
+KEEP_ENDED: Final = timedelta(days=30)  # an ended order is kept this long, for the audit trail
 
 _ORDER = catalog.bulk_order
 
@@ -57,12 +60,14 @@ class Order:
     digest: str
     state: str
     job_id: str | None
+    summary: dict[str, Any]
 
 
-def digest_of(kind: str, params: dict[str, Any], work_ids: Iterable[str]) -> str:
-    """What the order is: the kind, its parameters, and which Works. The order of the Works is
-    not part of it."""
-    body = json.dumps([kind, params, sorted(set(work_ids))], sort_keys=True, separators=(",", ":"))
+def digest_of(kind: str, params: dict[str, Any], facts: Iterable[str]) -> str:
+    """What the order is: the kind, its parameters, and a fact per Work (its identifier and the
+    state it was in: rated or not, at which age). The order of the facts is not part of it, a
+    change of one fact is."""
+    body = json.dumps([kind, params, sorted(set(facts))], sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(body.encode()).hexdigest()
 
 
@@ -73,12 +78,23 @@ def token_of(digest: str, count: int) -> str:
 
 def freeze(
     connection: Connection, *, kind: str, actor_id: str, params: dict[str, Any],
-    work_ids: Sequence[str], now: datetime,
+    work_ids: Sequence[str], facts: Sequence[str], now: datetime,
 ) -> Order:  # fmt: skip
-    """Write an order for what the preview saw; `previewed` until it is applied."""
+    """Write an order for what the preview saw; `previewed` until it is applied. `facts` is what
+    the digest covers (see `digest_of`): the job recomputes it under the write lock. Orders that
+    can no longer be applied are dropped here, at the next insertion (`purge`)."""
+    purge(connection, now=now)
     ids = tuple(sorted(set(work_ids)))
     order = Order(
-        new_ulid(), kind, actor_id, params, ids, digest_of(kind, params, ids), "previewed", None
+        new_ulid(),
+        kind,
+        actor_id,
+        params,
+        ids,
+        digest_of(kind, params, facts),
+        "previewed",
+        None,
+        {},
     )
     connection.execute(
         sa.insert(_ORDER).values(
@@ -95,6 +111,24 @@ def freeze(
     return order
 
 
+def purge(connection: Connection, *, now: datetime) -> int:
+    """Drop what is of no use any more: a preview older than `ORDER_TTL` that nobody applied, and
+    an order that ended (`applied`, `stale`, `refused`) more than `KEEP_ENDED` ago. An order that is
+    queued is never dropped: its job reads it."""
+    gone = connection.execute(
+        sa.delete(_ORDER).where(
+            sa.or_(
+                sa.and_(_ORDER.c.state == "previewed", _ORDER.c.created_at < now - ORDER_TTL),
+                sa.and_(
+                    _ORDER.c.state.in_(("applied", "stale", "refused")),
+                    _ORDER.c.applied_at < now - KEEP_ENDED,
+                ),
+            )
+        )
+    )
+    return int(gone.rowcount)
+
+
 def _of(row: Any) -> Order:
     return Order(
         row.id,
@@ -105,6 +139,7 @@ def _of(row: Any) -> Order:
         row.digest,
         row.state,
         row.job_id,
+        dict(row.summary or {}),
     )
 
 
@@ -161,6 +196,15 @@ def close(
         sa.update(_ORDER)
         .where(_ORDER.c.id == order_id, _ORDER.c.state == "queued")
         .values(state=state, applied_at=now, summary=summary or {})
+    )
+
+
+def progress(connection: Connection, order_id: str, summary: dict[str, Any]) -> None:
+    """Where a queued order stands between two tranches (the cursor, what was rated so far)."""
+    connection.execute(
+        sa.update(_ORDER)
+        .where(_ORDER.c.id == order_id, _ORDER.c.state == "queued")
+        .values(summary=summary)
     )
 
 

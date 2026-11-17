@@ -6,6 +6,7 @@
   import AgePicker from '#lib/components/AgePicker.svelte';
   import ReauthPrompt from '#lib/components/ReauthPrompt.svelte';
   import { t } from '#lib/i18n/index.ts';
+  import { untrack } from 'svelte';
   import { SvelteSet } from 'svelte/reactivity';
   import { csrfToken } from '#lib/passkeys.ts';
   import { ageLabel, isForbidden, needsReauth, needsSession, problemOf, type Age } from '#lib/triage.ts';
@@ -70,7 +71,8 @@
   }
 
   function tickable(item: ToRateItem): boolean {
-    return item.state !== 'suggestion_above';
+    // a Work that is already rated is settled by its own rating, never by a bulk order
+    return item.state !== 'suggestion_above' && !item.rated;
   }
 
   function toggle(id: string): void {
@@ -87,6 +89,13 @@
   function deselectAll(): void {
     selected.clear();
   }
+
+  // A new filter is a new question: what was ticked under the old one is not carried over.
+  $effect(() => {
+    void stateFilter;
+    void textFilter;
+    untrack(() => selected.clear());
+  });
 
   const canPreview = $derived(age !== null && (filterMode || selected.size > 0));
 
@@ -178,6 +187,7 @@
         }
       }
     }
+    say(t('toRate.bulk.poll_timeout'), false); // the job goes on: the screen stops looking
   }
 
   function cancelPreview(): void {
@@ -216,7 +226,12 @@
             {item.title}
           </label>
         {:else}
-          <span>{item.title}</span>
+          <span>
+            {item.title}
+            {#if item.rated && item.age !== null && item.age !== undefined}
+              <span class="muted">{t('toRate.bulk.already_rated', { age: item.age_x ? 'X' : `${item.age}+` })}</span>
+            {/if}
+          </span>
         {/if}
       </li>
     {/each}

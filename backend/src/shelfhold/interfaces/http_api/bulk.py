@@ -59,6 +59,9 @@ class BulkItem(BaseModel):
     work_id: str
     title: str
     state: str
+    age: int | None = (
+        None  # the age in place, when there is one (a bulk order only keeps unrated Works)
+    )
 
 
 class BulkRatePreviewOut(BaseModel):

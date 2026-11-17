@@ -181,4 +181,24 @@ describe('BulkBar', () => {
     expect(await screen.findByText(/classée/)).toBeInTheDocument();
     expect(calls).toBe(2);
   });
+
+  // req: EF-BIB-023
+  it('test_bulk_bar_does_not_offer_an_already_rated_work', async () => {
+    const rated = [{ ...items[0], rated: true, age: 13, age_x: false }, items[1]];
+    render(BulkBar, { items: rated as never, stateFilter: '', textFilter: '' } as never);
+    expect(screen.queryByRole('checkbox', { name: 'Sélectionner Titre A' })).toBeNull();
+    expect(screen.getByRole('checkbox', { name: 'Sélectionner Titre B' })).toBeInTheDocument();
+  });
+
+  // req: EF-BIB-023
+  it('test_bulk_bar_clears_the_selection_when_the_filter_changes', async () => {
+    const view = render(BulkBar, { items: items as never, stateFilter: '', textFilter: '' } as never);
+    const user = userEvent.setup();
+    const tick = screen.getByRole('checkbox', { name: 'Sélectionner Titre A' }) as HTMLInputElement;
+    await user.click(tick);
+    expect(tick.checked).toBe(true);
+    await view.rerender({ items: items as never, stateFilter: 'rating_pending', textFilter: '' } as never);
+    const again = screen.getByRole('checkbox', { name: 'Sélectionner Titre A' }) as HTMLInputElement;
+    expect(again.checked).toBe(false);
+  });
 });

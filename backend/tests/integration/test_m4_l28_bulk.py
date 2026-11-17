@@ -367,3 +367,101 @@ def test_bringing_the_job_back_is_the_reserved_action_rate(rig: _Rig) -> None:
     job_id = rig.queue(rig.preview(work_ids=[a]))
     with rig.engine.connect() as connection:
         assert reserved_job_action(connection, job_id) == "rate"
+
+
+@pytest.mark.req("EF-BIB-023", "EF-BIB-036", "EF-BIB-055")
+def test_a_rated_work_that_waits_for_a_new_edition_is_not_in_a_bulk_order(rig: _Rig) -> None:
+    """The batch keeps the Works nobody rated: one that an administrator rated and that waits only
+    because an Edition arrived is settled by `rate`, never by a bulk order (M1 of the review)."""
+    from shelfhold.export.application.to_rate import rateable, to_rate
+    from tests.integration.test_schema_catalog import add_edition
+
+    adult, fresh = rig.waiting("Adulte", "Neuve")
+    rig.rate_elsewhere(adult, "18+")
+    with write_transaction(rig.engine) as connection:
+        add_edition(connection, adult, lang="en", shelf_id=None)
+    with rig.engine.connect() as connection:
+        listed = {i.work_id: i for i in to_rate(connection)}
+        assert listed[adult].rated and listed[adult].age == 18  # the screen shows the age in place
+        assert {i.work_id for i in rateable(list(listed.values()))} == {
+            fresh
+        }  # `rate --pending` too
+    preview = rig.preview(work_ids=[adult, fresh])
+    assert [i["work_id"] for i in preview["items"]] == [fresh] and preview["skipped"] == 1
+    rig.queue(preview)
+    rig.run()
+    assert rig.age(adult) == 18 and rig.age(fresh) == 13
+
+
+@pytest.mark.req("EF-BIB-023")
+def test_orders_that_can_no_longer_be_applied_are_dropped_at_the_next_preview(rig: _Rig) -> None:
+    a, b, c = rig.waiting("A", "B", "C")
+    old = rig.preview(work_ids=[a])
+    done = rig.preview(work_ids=[b])
+    rig.queue(done)
+    rig.run()  # `applied`: kept for the audit trail, for a month
+    rig.clock.advance(hours=1)
+    rig.preview(work_ids=[c])  # the insertion drops the preview nobody applied
+    with rig.engine.connect() as connection:
+        ids = {r[0] for r in connection.execute(sa.text("SELECT id FROM bulk_order"))}
+    assert old["order_id"] not in ids and done["order_id"] in ids and len(ids) == 2
+    rig.clock.advance(days=31)
+    rig.preview(work_ids=[a])
+    with rig.engine.connect() as connection:
+        ids = {r[0] for r in connection.execute(sa.text("SELECT id FROM bulk_order"))}
+    assert done["order_id"] not in ids  # an order that ended a month ago goes too
+
+
+@pytest.mark.req("EF-BIB-023")
+def test_a_thousand_works_are_rated_in_one_order_and_the_write_lock_is_short(rig: _Rig) -> None:
+    """Measured, not guessed: the 1 000 Works of the largest order, in tranches of `TRANCHE`, each
+    under its own `BEGIN IMMEDIATE` (about a tenth of the total, ~1 s, on the slow test host)."""
+    import time
+
+    ids = rig.waiting(*(f"Titre {n:04d}" for n in range(1000)))
+    job_id = rig.queue(rig.preview(work_ids=ids))
+    started = time.monotonic()
+    rig.run()
+    took = time.monotonic() - started
+    print(f"bulk_rate 1000 works: {took:.2f}s")
+    assert rig.job(job_id).status == "succeeded" and all(rig.age(w) == 13 for w in ids)
+    assert took < 30, f"1000 Works took {took:.1f}s: the tranches are too slow"
+
+
+@pytest.mark.req("EF-BIB-023", "EF-BIB-036")
+def test_an_order_is_rated_in_tranches_and_goes_on_after_a_crash(
+    rig: _Rig, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from shelfhold.ops import bulk as ops_bulk
+
+    monkeypatch.setattr(ops_bulk, "TRANCHE", 2)
+    ids = rig.waiting("A", "B", "C", "D", "E")
+    job_id = rig.queue(rig.preview(work_ids=ids))
+    rig.run()
+    assert rig.job(job_id).status == "succeeded" and all(rig.age(w) == 13 for w in ids)
+    assert len([line for line in rig.audit_rates() if "bulk:" in line]) == 5  # once each
+
+
+@pytest.mark.req("EF-BIB-023", "EF-BIB-036")
+def test_a_work_rated_between_two_tranches_is_never_overwritten(
+    rig: _Rig, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from shelfhold.ops import bulk as ops_bulk
+
+    monkeypatch.setattr(ops_bulk, "TRANCHE", 2)
+    ids = rig.waiting("A", "B", "C", "D")
+    job_id = rig.queue(rig.preview(work_ids=ids))
+    real = BulkOps._tranche
+    calls: list[str] = []
+
+    def between(self: BulkOps, order_id: str, results: dict[str, int]) -> str:
+        out = real(self, order_id, results)
+        calls.append(out)
+        if len(calls) == 1:  # the first tranche is committed: another admin rates D, still to come
+            rig.rate_elsewhere(ids[3], "18+")
+        return out
+
+    monkeypatch.setattr(BulkOps, "_tranche", between)
+    rig.run()
+    assert calls == ["more", "stale"] and rig.job(job_id).error_code == "bulk.stale"
+    assert rig.age(ids[3]) == 18 and rig.age(ids[0]) == 13  # the decision of the other admin stands

@@ -26,7 +26,6 @@ def _new_edition(rig: _Rig, work_id: str) -> None:  # noqa: F811
         add_edition(connection, work_id, lang="en", shelf_id=None)
 
 
-@pytest.mark.xfail(strict=True, reason="contradicteur #338 M1 : une Œuvre classée 18+ est abaissée")
 def test_a_rated_work_with_a_new_edition_is_not_lowered_by_a_bulk_order(
     rig: _Rig,  # noqa: F811
 ) -> None:
@@ -43,7 +42,6 @@ def test_a_rated_work_with_a_new_edition_is_not_lowered_by_a_bulk_order(
     assert rig.age(adult) == 18  # rouge : 13, un enfant 13+ voit désormais l'Œuvre adulte
 
 
-@pytest.mark.xfail(strict=True, reason="contradicteur #338 M2 : l'empreinte ignore l'âge")
 def test_a_rating_given_between_preview_and_job_makes_the_order_stale(
     rig: _Rig,  # noqa: F811
 ) -> None:

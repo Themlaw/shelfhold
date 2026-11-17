@@ -25,7 +25,7 @@ from __future__ import annotations
 
 import hmac
 import re
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from typing import TYPE_CHECKING, Any, Final
 
 import sqlalchemy as sa
@@ -34,6 +34,7 @@ from shelfhold.catalog.public import RatingRefusedError, RatingService
 from shelfhold.export.application.to_rate import ToRate, rateable, to_rate
 from shelfhold.identity.public import Credential, Principal, holds_rate_right
 from shelfhold.infrastructure.db import write_transaction
+from shelfhold.infrastructure.schema import catalog
 from shelfhold.infrastructure.schema import identity as identity_schema
 from shelfhold.jobs.public import JobContext, JobFailedError
 from shelfhold.library.public import bulk
@@ -56,6 +57,8 @@ __all__ = ["BULK_RATE_JOB_KIND", "BulkOps", "register_bulk_jobs"]
 
 BULK_RATE_JOB_KIND: Final = "library.bulk_rate"
 RATE: Final = "rate"
+TRANCHE: Final = 100  # Works per write lock: measured, 1 000 in one lock held ~9 s on a slow host
+_NO_SUMMARY: Final = {"unknown", "applied_before"}
 FILTER_STATES: Final = ("rating_pending", "follow_suspended")
 _ULID = re.compile(r"^[0-9A-HJKMNP-TV-Z]{26}$")
 _ABSENT = "no such order"  # one answer for every reason an order cannot be applied by this caller
@@ -101,12 +104,14 @@ class BulkOps:
             raise InvalidChoiceError(f"at most {bulk.MAX_SELECTION} Works in one order: narrow it")
         now = self._clock.now()
         with write_transaction(self._engine) as connection:
+            ids = [i.work_id for i in matched]
             order = bulk.freeze(
                 connection,
                 kind=RATE,
                 actor_id=principal.user_id,
                 params={"age": text},
-                work_ids=[i.work_id for i in matched],
+                work_ids=ids,
+                facts=_facts(connection, ids),
                 now=now,
             )
         token = bulk.token_of(order.digest, len(order.work_ids))
@@ -114,7 +119,8 @@ class BulkOps:
             "order_id": order.id, "age": text, "token": token, "skipped": skipped,
             "expires_at": (now + bulk.ORDER_TTL).isoformat(),
             "items": [
-                {"work_id": i.work_id, "title": i.title, "state": i.state} for i in matched
+                {"work_id": i.work_id, "title": i.title, "state": i.state, "age": i.age}
+                for i in matched
             ],
         }  # fmt: skip
 
@@ -192,41 +198,58 @@ class BulkOps:
             raise JobFailedError(f"bulk.{outcome}")
 
     def _apply(self, order_id: str) -> tuple[str, dict[str, int]]:
-        now = self._clock.now()
+        """The order in tranches: the first one checks the whole selection against the digest (all
+        or none), each one holds the write lock for `TRANCHE` Works only. The cursor lives in the
+        order, so a run that comes back after a crash goes on where the last tranche stopped."""
         results: dict[str, int] = {"rated": 0, "withdrawals": 0}
+        while True:
+            outcome = self._tranche(order_id, results)
+            if outcome != "more":
+                return outcome, ({} if outcome in _NO_SUMMARY else results)
+
+    def _tranche(self, order_id: str, results: dict[str, int]) -> str:
+        now = self._clock.now()
         with self._engine.connect() as connection:
             connection.execution_options(shelfhold_begin="BEGIN IMMEDIATE")
             with connection.begin():
                 order = bulk.load_for_job(connection, order_id)
                 if order is None or order.kind != RATE:
-                    return "unknown", {}
+                    return "unknown"
                 if order.state == "applied":
-                    return "applied_before", {}
+                    return "applied_before"
                 if order.state != "queued":  # `stale` or `refused` already: it does not come back
-                    return order.state if order.state in {"stale", "refused"} else "unknown", {}
+                    return order.state if order.state in {"stale", "refused"} else "unknown"
                 if not self._owner_may_rate(connection, order.actor_id):
-                    bulk.close(connection, order.id, "refused", now=now)
-                    return "refused", {}
-                chosen = set(order.work_ids)
-                waiting = [i for i in rateable(to_rate(connection)) if i.work_id in chosen]
-                digest = bulk.digest_of(RATE, order.params, (i.work_id for i in waiting))
-                if not hmac.compare_digest(digest.encode(), order.digest.encode()):
-                    bulk.close(connection, order.id, "stale", now=now)  # all or none
-                    return "stale", {}
+                    bulk.close(connection, order.id, "refused", now=now, summary=_kept(order))
+                    return "refused"
+                cursor = int(order.summary.get("cursor", 0))
+                results["rated"] = int(order.summary.get("rated", 0))
+                results["withdrawals"] = int(order.summary.get("withdrawals", 0))
+                chosen = list(order.work_ids)
+                part = chosen[cursor : cursor + TRANCHE]
+                waiting = {i.work_id: i for i in rateable(to_rate(connection)) if i.work_id in part}
+                stale = len(waiting) != len(part)
+                if cursor == 0 and not stale:
+                    # every chosen Work still waits, unrated, as the preview saw it: the state of
+                    # each (`rated_at`, age) is in the digest, read again under the write lock
+                    digest = bulk.digest_of(RATE, order.params, _facts(connection, chosen))
+                    stale = not hmac.compare_digest(digest.encode(), order.digest.encode())
+                if stale:  # at the first tranche nothing was rated; later, never over a decision
+                    bulk.close(connection, order.id, "stale", now=now, summary=_kept(order))
+                    return "stale"
                 rating = parse_age_choice(str(order.params["age"]))
-                for item in waiting:
+                for work_id in part:
                     done = self._service.rate_ordered(
-                        connection,
-                        item.work_id,
-                        rating,
-                        order_id=order.id,
-                        decided_by=order.actor_id,
-                        now=now,
-                    )
+                        connection, work_id, rating,
+                        order_id=order.id, decided_by=order.actor_id, now=now,
+                    )  # fmt: skip
                     results["rated"] += 1
                     results["withdrawals"] += len(done.withdrawals)
-                bulk.close(connection, order.id, "applied", now=now, summary=dict(results))
-        return "applied", results
+                if cursor + len(part) >= len(chosen):
+                    bulk.close(connection, order.id, "applied", now=now, summary=dict(results))
+                    return "applied"
+                bulk.progress(connection, order.id, {**results, "cursor": cursor + len(part)})
+        return "more"
 
     @staticmethod
     def _owner_may_rate(connection: sa.Connection, user_id: str) -> bool:
@@ -241,6 +264,30 @@ def register_bulk_jobs(pools: Any, ops: BulkOps) -> None:
     """The kind of job of M4 L28. A write job: a pause of the queue parks it."""
     ops.attach_pools(pools)
     pools.register(BULK_RATE_JOB_KIND, pool="io", handler=ops.run_rate_job)
+
+
+def _kept(order: bulk.Order) -> dict[str, Any]:
+    return {k: v for k, v in order.summary.items() if k in {"rated", "withdrawals"}}
+
+
+def _facts(connection: sa.Connection, work_ids: Sequence[str]) -> list[str]:
+    """A fact per Work of the selection: its identifier and its rating state, so that a rating
+    given between the preview and the job (even one that a new Edition puts back in the list)
+    changes the digest. A Work that is gone is a fact too."""
+    work = catalog.work
+    rows = {
+        r.id: r
+        for r in connection.execute(
+            sa.select(work.c.id, work.c.rated_at, work.c.age_rating, work.c.age_x).where(
+                work.c.id.in_(list(work_ids))
+            )
+        )
+    }
+    return [
+        f"{w}:gone" if w not in rows
+        else f"{w}:{rows[w].rated_at}:{rows[w].age_rating}:{int(bool(rows[w].age_x))}"
+        for w in work_ids
+    ]  # fmt: skip
 
 
 def _identifiers(work_ids: list[str]) -> set[str]:

@@ -593,6 +593,8 @@
   "toRate.bulk.apply": "Appliquer",
   "toRate.bulk.cancel": "Annuler",
   "toRate.bulk.pending": "Classement en cours, peut-être déjà fini : rechargez",
+  "toRate.bulk.poll_timeout": "Le suivi s'est arrêté, le classement continue : rechargez la page dans un instant pour voir où il en est.",
+  "toRate.bulk.already_rated": "déjà classée à {age}",
   "toRate.bulk.done": "{count, plural, one {# Œuvre classée} other {# Œuvres classées}}",
   "toRate.bulk.stale": "Rien n'a été classé, refaites l'aperçu",
   "toRate.bulk.refused": "Classement refusé : le droit de classer a disparu.",
