@@ -66,6 +66,8 @@ class DeviceTokenView(Protocol):
     @property
     def public_id(self) -> str: ...
     @property
+    def device_id(self) -> str | None: ...
+    @property
     def profile(self) -> str: ...
     @property
     def name(self) -> str | None: ...
@@ -96,8 +98,13 @@ class IdentityCommands(Protocol):
     def api_keys(self) -> Sequence[KeyView]: ...
     def revoke_api_key(self, prefix: str) -> bool: ...
     def create_device_token(
-        self, *, subject_username: str, name: str | None = None, expires_days: int | None = None
-    ) -> CreatedDeviceToken: ...
+        self, *, subject_username: str, name: str | None = None, expires_days: int | None = None,
+        kind: str | None = None,
+    ) -> CreatedDeviceToken: ...  # fmt: skip
+    def rotate_device(
+        self, device_id: str, *, expires_days: int | None = None
+    ) -> CreatedDeviceToken | None: ...
+    def retire_device(self, device_id: str) -> bool: ...
     def device_tokens(self) -> Sequence[DeviceTokenView]: ...
     def revoke_device_token(self, public_id: str) -> bool: ...
     def profile_add(
@@ -130,6 +137,7 @@ class _Key:
 @dataclass(frozen=True)
 class _DeviceToken:
     public_id: str
+    device_id: str | None
     profile: str
     name: str | None
     created_at: datetime
@@ -140,6 +148,18 @@ class _DeviceToken:
 
 def _when(value: object) -> datetime | None:
     return datetime.fromisoformat(value) if isinstance(value, str) else None
+
+
+def _created_token(raw: object) -> CreatedDeviceToken:
+    if not isinstance(raw, dict):
+        raise ValueError("malformed_reply")
+    return CreatedDeviceToken(
+        public_id=raw["public_id"],
+        secret=raw["secret"],
+        subject_user_id=raw["subject_user_id"],
+        expires_at=_when(raw["expires_at"]),
+        device_id=raw.get("device_id", ""),
+    )
 
 
 def _created(raw: object) -> CreatedApiKey:
@@ -228,22 +248,28 @@ class SocketIdentity:
         return bool(self._call("identity.keys_revoke", prefix=prefix))
 
     def create_device_token(
-        self, *, subject_username: str, name: str | None = None, expires_days: int | None = None
-    ) -> CreatedDeviceToken:
+        self, *, subject_username: str, name: str | None = None, expires_days: int | None = None,
+        kind: str | None = None,
+    ) -> CreatedDeviceToken:  # fmt: skip
         raw = self._call(
             "identity.device_tokens_create",
             subject=subject_username,
             name=name,
             expires_days=expires_days,
+            kind=kind,
         )
-        if not isinstance(raw, dict):
-            raise ValueError("malformed_reply")
-        return CreatedDeviceToken(
-            public_id=raw["public_id"],
-            secret=raw["secret"],
-            subject_user_id=raw["subject_user_id"],
-            expires_at=_when(raw["expires_at"]),
+        return _created_token(raw)
+
+    def rotate_device(
+        self, device_id: str, *, expires_days: int | None = None
+    ) -> CreatedDeviceToken | None:
+        raw = self._call(
+            "identity.device_tokens_rotate", device_id=device_id, expires_days=expires_days
         )
+        return None if raw is None else _created_token(raw)
+
+    def retire_device(self, device_id: str) -> bool:
+        return bool(self._call("identity.devices_remove", device_id=device_id))
 
     def device_tokens(self) -> Sequence[DeviceTokenView]:
         rows = self._call("identity.device_tokens_list")
@@ -252,6 +278,7 @@ class SocketIdentity:
         return [
             _DeviceToken(
                 public_id=row["public_id"],
+                device_id=row.get("device_id"),
                 profile=row["profile"],
                 name=row["name"],
                 created_at=datetime.fromisoformat(row["created_at"]),

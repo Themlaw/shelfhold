@@ -37,6 +37,7 @@ from shelfhold.identity.application.ports import (
     ApiKeyRecord,
     AuditEntry,
     ChildKavitaAccount,
+    DeviceRecord,
     DeviceTokenRecord,
     PasskeyRecord,
     ProfileRecord,
@@ -87,6 +88,15 @@ from shelfhold.identity.domain.credentials import (
     SessionPolicy,
     credential_axis,
     session_policy,
+)
+from shelfhold.identity.domain.device import (
+    DEFAULT_KIND as DEFAULT_DEVICE_KIND,
+)
+from shelfhold.identity.domain.device import (
+    KINDS as DEVICE_KINDS,
+)
+from shelfhold.identity.domain.device import (
+    Device,
 )
 from shelfhold.identity.domain.device_secret import normalise_secret
 from shelfhold.identity.domain.device_token import DeviceToken, device_token, token_principal
@@ -148,9 +158,11 @@ __all__ = [
     "CHALLENGE_TTL",
     "CLOSED_SITES",
     "CREDENTIAL_AXIS",
+    "DEFAULT_DEVICE_KIND",
     "DEFAULT_FRESH_AUTH_S",
     "DEFAULT_RESERVED_ROLES",
     "DELETION_SITES",
+    "DEVICE_KINDS",
     "EXIT_ROUTES",
     "FORWARD_REJECTED_AUDIT",
     "IDENTITY_HEADER_AUDIT",
@@ -191,6 +203,8 @@ __all__ = [
     "DestinationAccountStore",
     "DestinationAccounts",
     "DestinationRef",
+    "Device",
+    "DeviceRecord",
     "DeviceToken",
     "DeviceTokenRecord",
     "Effect",

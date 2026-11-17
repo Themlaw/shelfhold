@@ -152,6 +152,11 @@ _DECLARED = (
     # M4 L46b: pairing an e-reader shows a new secret, once: a fresh session in every profile,
     # never a key or a token
     _action("device_token.issue", Effect.TOUCHES_SECRETS),
+    # M5 L02 (D19): a rotation shows a new secret, once, and refuses the old one at once: the same
+    # rule as pairing. Retiring a device ends every token it holds: the rule of the other
+    # credential actions (a fresh session in the hardened profile only), never a key or a token
+    _action("device_token.rotate", Effect.TOUCHES_SECRETS),
+    _action("device.remove", Effect.MANAGES_CREDENTIALS),
     # A passkey is a persistent way in: adding one needs a fresh proof in every profile (porteur,
     # 2026-11-11); retiring one keeps the rule of the other credential actions (hardened only)
     _action("passkey.register", Effect.ENROLS_PASSKEY),

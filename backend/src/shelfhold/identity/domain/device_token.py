@@ -6,11 +6,15 @@ ceiling of EF-USR-006, the table of truth of ENF-SEC-010) is that of the subject
 pairs the e-reader of a child gives it the child's view, not their own. The subject has no default
 (the pairing asks for the profile), and the issuer is kept for the audit and nothing else.
 
-A reset of the subject's password (`admin reset-password`) must close the tokens issued for that
-profile, as it closes its sessions, passkeys and API keys: the M5 store that holds them joins
-`reset_credentials` (EF-USR-011), or a reader's e-reader would outlive a stolen-device reset.
+A reset of the subject's password (`admin reset-password`), a change of the subject's role and a
+restore close the tokens held for that profile, as they close its sessions, passkeys and API keys
+(EF-USR-011, M4 L46): a reader's e-reader does not outlive a stolen-device reset.
 
-M3 lands the hook and its rule; the token itself (storage, pairing, revocation) is M5 (EF-USR-008).
+M3 landed the hook and its rule; M4 (L46, ADR-0053 §4) stores the token (one SHA-256 of the md5 of
+a generated secret, never the secret), pairs it and revokes it; M5 L02 (EF-USR-008, D19) adds the
+**device** a token belongs to (`identity/domain/device.py`: one per pairing, a label, a kind, when
+it was seen last) and the **rotation** of its secret, in place and with no grace period: the old
+secret is refused from the next request, nothing is paired again.
 """
 
 from dataclasses import dataclass, field

@@ -19,7 +19,10 @@ from shelfhold.interfaces.http_api.auth import (
 )
 from shelfhold.interfaces.http_api.auth import actor_of as principal_actor
 from shelfhold.interfaces.http_api.device_auth import build_device_router
-from shelfhold.interfaces.http_api.device_tokens import build_device_tokens_router
+from shelfhold.interfaces.http_api.device_tokens import (
+    build_device_tokens_router,
+    build_devices_router,
+)
 from shelfhold.interfaces.http_api.health import HealthPort, build_health_router
 from shelfhold.interfaces.http_api.idempotency import (
     ActorOf,
@@ -172,6 +175,7 @@ def create_http_app(
     include(build_own_visibility_router())  # EF-USR-016
     include(build_about_router(version=version, source_url=resolved_source))
     include(build_device_tokens_router())  # M4 L46b: pairing an e-reader
+    include(build_devices_router())  # M5 L02: the registry of devices, rotation, removal
     include(build_device_router())  # M4 L46: the e-reader's own credential
     for router in routers:
         include(router)

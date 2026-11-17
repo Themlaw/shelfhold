@@ -54,7 +54,9 @@ class World:
             body["subject_user_id"] = self.ids[subject]
         return self.send(client, "POST", TOKENS, body)
 
-    def paired(self, client: TestClient, subject: str | None = None, **extra: Any) -> dict[str, Any]:
+    def paired(
+        self, client: TestClient, subject: str | None = None, **extra: Any
+    ) -> dict[str, Any]:
         made = self.pair(client, subject, **extra)
         assert made.status_code == 201, made.text
         return dict(made.json())
@@ -215,6 +217,7 @@ def test_rotation_of_an_expired_token_asks_for_a_new_expiry(world: World) -> Non
     made = world.paired(world.mum, expires_days=1)
     world.env.clock.advance(timedelta(days=2))
     assert world.kosync_status(made["public_id"], made["secret"]) == 401
+    assert world.env.login("mum", client=world.mum).status_code == 200  # a fresh session again
     stale = world.send(world.mum, "POST", f"{DEVICES}/{made['device_id']}/rotate", {})
     assert stale.status_code == 422 and stale.json()["reason"] == "expiry_required"
     fresh = world.send(
@@ -274,22 +277,27 @@ def test_child_cannot_pair_or_rotate(world: World) -> None:
     assert sent.status_code in (401, 403)
     # the child's own e-reader token manages nothing either
     as_kid = basic(by_admin["public_id"], by_admin["secret"])
-    for method in ("GET", "POST", "DELETE"):
-        path = DEVICES if method == "GET" else f"{DEVICES}/{by_admin['device_id']}"
+    one = f"{DEVICES}/{by_admin['device_id']}"
+    for method, path in (("GET", DEVICES), ("POST", f"{one}/rotate"), ("DELETE", one)):
         sent = alone.request(method, path, headers=as_kid)
         assert sent.status_code in (401, 403)
     assert world.kosync_status(by_admin["public_id"], by_admin["secret"]) == 200
 
 
 @pytest.mark.req("EF-USR-024", "ENF-SEC-010")
-def test_the_rotation_and_the_removal_are_reserved_actions(world: World) -> None:
+def test_the_rotation_needs_a_fresh_session_and_the_removal_the_rule_of_revocations(
+    world: World,
+) -> None:
+    """Rotating shows a new secret: a fresh session in every profile, like pairing. Retiring a
+    device is a revocation: the rule of the other credential actions (fresh only in the hardened
+    profile), and never a key or a token (tested above)."""
     made = world.paired(world.mum)
-    world.env.clock.advance(timedelta(hours=2))  # the session of the member is no longer fresh
-    for call in (world.rotate, world.remove):
-        stale = call(world.mum, made["device_id"])
-        assert stale.status_code == 401, stale.text
-        assert stale.json()["code"] == "reauth_required"
+    world.env.clock.advance(timedelta(seconds=1200))  # the session of the member is not fresh
+    stale = world.rotate(world.mum, made["device_id"])
+    assert stale.status_code == 401 and stale.json()["code"] == "reauth_required"
     assert world.kosync_status(made["public_id"], made["secret"]) == 200, "nothing moved"
+    assert world.remove(world.mum, made["device_id"]).status_code == 204
+    assert world.kosync_status(made["public_id"], made["secret"]) == 401
 
 
 @pytest.mark.req("ENF-SEC-013")
@@ -323,7 +331,11 @@ def test_the_redaction_filter_masks_the_device_credentials_in_a_line() -> None:
     key = md5(typed)
     line = redact_value(
         {
-            "headers": {"x-auth-key": key, "x-auth-user": "abcd1234", "authorization": "Basic Zm9v"},
+            "headers": {
+                "x-auth-key": key,
+                "x-auth-user": "abcd1234",
+                "authorization": "Basic Zm9v",
+            },
             "event": f"kosync x-auth-key: {key} secret={typed}",
         }
     )
