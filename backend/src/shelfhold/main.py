@@ -119,7 +119,7 @@ from shelfhold.plugin_host.settings import SettingsSchema, SourceSettings, parse
 from shelfhold.reading.bundle import SeriesBundles
 from shelfhold.reading.public import Kosync
 from shelfhold.runtime import RETAKE_INTERVAL_S, InstanceRuntime
-from shelfhold.runtime_jobs import RELATIONS_JOB_KIND, PlanService
+from shelfhold.runtime_jobs import RELATIONS_JOB_KIND, PlanService, hub_listeners
 
 PACKAGED_FRONTEND = Path(__file__).parent / "static"
 
@@ -564,11 +564,19 @@ def create_app(
             if server is not None:
                 await server.stop()
 
+    @asynccontextmanager
+    async def background() -> AsyncIterator[None]:
+        """What runs beside the HTTP server: the socket of the host CLI, and the listening to the
+        hub of each Kavita (EF-EXP-034), which only adds a reason to look before the polling."""
+        listeners = hub_listeners(composition, active=lambda: runtime.owns_volumes)
+        async with local_cli_socket(), listeners.running():
+            yield
+
     return create_http_app(
         health=health,
         on_startup=on_startup,
         on_shutdown=on_shutdown,
-        background=local_cli_socket,
+        background=background,
         version=__version__,
         frontend_dir=resolved.frontend_dir or PACKAGED_FRONTEND,
         routers=(*routers, *export_routers),

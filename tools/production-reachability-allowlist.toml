@@ -160,17 +160,6 @@ symbols = [
 ]
 
 [[allow]]
-category = "m3-l32-kavita-event-transport"
-reason = "2026-11-13: the reading of Kavita's scan events (EF-EXP-034, D11) is pinned by tests in M3: the frames, the handshake, and the rule that an event is a reason to look and never a proof. No WebSocket client is bundled (a new dependency needs wheels for amd64 and arm64 and a way to authenticate by key): the transport that feeds `HubSession` and calls `ArrivalEventWatcher.on_events` is M4, and until then the polling alone confirms, as D11 allows."
-until = "M4"  # settled by M4 lot L37 (cuttable)
-symbols = [
-  "shelfhold.export.targets.kavita.events:ArrivalEventWatcher",
-  "shelfhold.export.targets.kavita.events:HubSession",
-  "shelfhold.export.targets.kavita.events:ScanEvent",
-  "shelfhold.export.targets.kavita.events:parse_hub_frames",
-]
-
-[[allow]]
 category = "unwired-m4"
 reason = "2026-11-15 (M4 L14a): the sweep of the aliases a crash left without hashes (`heal_alias_hashes`), the internal door of a server state (`record_server_state`) and the live read of a member's key (`live_member_account`, `MemberKeyRevokedError`), and the refusal of a carrier the reader may not see (`UnknownCarrierError`), are the contract of the reading service that L14b (the push of progress to a member's account), L47 and L50 (the kosync relay) are the first callers of: L14a adds no route and no job of its own, the route of each of them enters the surfaces meta-test in its own PR. The sweep takes its locator from the caller, which knows the physical roots. `reading.domain.merge` and `projection` state the rule that the SQL view `reading_progress` implements; a test proves the two equal, and the relays of L14b and L47 are their first production callers (the kosync answer picks the furthest position with `furthest`)."
 until = "M4"  # settled by M4 lots L14b and L47

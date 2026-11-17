@@ -55,7 +55,8 @@ def _transport(w: Wired, hub: FakeHub, **options: Any) -> KavitaHubTransport:
 
 
 def _state(env: ExportEnv) -> str:
-    return env.rows(export.export_record)[0].state
+    state: str = env.rows(export.export_record)[0].state
+    return state
 
 
 def _ready(w: Wired) -> None:
@@ -145,7 +146,12 @@ def test_hub_event_never_confirms_alone() -> None:
     with export_env() as env:
         w = wire(env)
         w.written()  # written, never scanned, never indexed by Kavita
-        body = {"state": "resolved", "remoteRef": "1", "folderPath": REMOTE_ROOT, "seriesId": 999}
+        body: dict[str, Any] = {
+            "state": "resolved",
+            "remoteRef": "1",
+            "folderPath": REMOTE_ROOT,
+            "seriesId": 999,
+        }
         hub = FakeHub([[ACK, frame("SeriesAdded", **body), frame("ScanSeries", **body)]])
         with pytest.raises(HubDown):
             run(_transport(w, hub).run_once())
@@ -164,7 +170,8 @@ def test_nothing_is_read_as_an_event_before_the_handshake_is_acknowledged() -> N
         with pytest.raises(HubDown):
             run(_transport(w, hub).run_once())
         assert _state(env) == "written" and hub.connections[0].closed
-        assert [r.path for r in w.fake.requests[before:]] == []  # not even a look
+        asked = [r.path for r in w.fake.requests[before:]]
+        assert asked == ["/api/Plugin/authenticate"]  # the token, and not even a look
 
 
 def test_a_refused_handshake_closes_the_connection() -> None:
@@ -191,7 +198,12 @@ def test_a_failing_look_does_not_end_the_connection() -> None:
     with export_env() as env:
         w = wire(env)
         _ready(w)
-        w.fake.asleep = True  # the look itself fails (Kavita unreachable)
+
+        def after_token(request: Any) -> None:  # Kavita goes away once the token is handed out
+            if request.path.endswith("/Plugin/authenticate"):
+                w.fake.asleep = True
+
+        w.fake.hook = after_token  # the look itself then fails (Kavita unreachable)
         hub = FakeHub([[ACK, frame("SeriesAdded"), frame("ScanSeries")]])
         with pytest.raises(HubDown) as stopped:
             run(_transport(w, hub).run_once())
@@ -217,12 +229,15 @@ def test_neither_the_key_nor_the_token_is_logged() -> None:
         w = wire(env)
         _ready(w)
         hub = FakeHub([[ACK, frame("SeriesAdded"), OSError("synthetic reset")], ConnectionError()])
-        with structlog.testing.capture_logs() as logs:
-            with pytest.raises(asyncio.CancelledError):
-                run(_transport(w, hub, sleep=Sleeps(stop_after=3)).run())
-        (token,) = w.fake.hub_tokens
+        with (
+            structlog.testing.capture_logs() as logs,
+            pytest.raises(asyncio.CancelledError),
+        ):
+            run(_transport(w, hub, sleep=Sleeps(stop_after=3)).run())
+        assert len(w.fake.hub_tokens) == 3
         text = repr(logs) + repr(hub.endpoints) + repr(_transport(w, hub))
-        assert API_KEY not in text and token not in text
+        assert API_KEY not in text
+        assert all(token not in text for token in w.fake.hub_tokens)
         assert any(entry["event"] == "kavita.hub_down" for entry in logs)  # it said so, safely
 
 
@@ -233,7 +248,7 @@ def test_a_kavita_woken_by_a_hook_gets_no_standing_connection() -> None:
 
         async def wake() -> None: ...
 
-        w.client._wake = wake  # type: ignore[attr-defined]
+        w.client._wake = wake
         hub = FakeHub([[ACK]])
         run(_transport(w, hub).run())  # returns at once: nothing to listen to
         assert hub.endpoints == [] and w.fake.hub_auth_calls == 0
@@ -306,7 +321,7 @@ def test_websocket_connector_reaches_the_hub_through_the_pinned_socket(tmp_path:
         await connection.send(frame("SeriesAdded", seriesId=3).decode())
         await asyncio.sleep(0.2)
 
-    async def scenario() -> list[object]:
+    async def scenario() -> list[bytes]:
         path = str(tmp_path / "hub.sock")
         async with unix_serve(hub, path):
             opened: list[tuple[str, int]] = []
@@ -336,7 +351,7 @@ def test_websocket_connector_reaches_the_hub_through_the_pinned_socket(tmp_path:
     assert got[0] == ACK and got[1] == frame("SeriesAdded", seriesId=3)  # bytes, whatever the type
     assert seen["path"] == "/hubs/messages?access_token=synthetic"
     assert seen["host"] == "kavita.lan:5000"  # the name that was validated, not an address
-    assert seen["handshake"] == '{"protocol": "json", "version": 1}\x1e'
+    assert seen["handshake"] == '{"protocol": "json", "version": 1}\x1e'  # a text frame
 
 
 def test_websocket_connector_turns_every_failure_into_hub_down() -> None:

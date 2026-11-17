@@ -8,9 +8,9 @@ always the API of Kavita, read by the same poller as ever (`ArrivalPoller`), whi
 fallback and the only road when no event comes. An event carries no state, no path and no series
 that is believed; a flood of them costs one look per destination and per interval.
 
-No WebSocket client is bundled (D11: a new dependency needs wheels for amd64 and arm64, and a
-way to authenticate by key): without a transport, nothing feeds `ArrivalEventWatcher` and the
-polling alone confirms. The transport only has to hand the bytes it reads to `HubSession`.
+The transport that hands the bytes it reads to `HubSession` is `events_transport` (M4 L37, D18);
+without it, or while the hub is down, nothing feeds `ArrivalEventWatcher` and the polling alone
+confirms.
 """
 
 from __future__ import annotations
@@ -94,6 +94,12 @@ class HubSession:
 
     def __init__(self) -> None:
         self._state = _State.HANDSHAKE
+
+    @property
+    def closed(self) -> bool:
+        """True once the hub refused the handshake or answered something else: the connection is
+        to be dropped."""
+        return self._state is _State.CLOSED
 
     def handshake_request(self) -> bytes:
         return (json.dumps({"protocol": "json", "version": 1}) + RECORD_SEPARATOR).encode()

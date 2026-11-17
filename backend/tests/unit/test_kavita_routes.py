@@ -13,6 +13,7 @@ from shelfhold.export.targets.kavita import (
     RouteNotAllowed,
 )
 from shelfhold.export.targets.kavita.accounts import MEMBER_ROUTES
+from shelfhold.export.targets.kavita.routes import HUB_ROUTES
 from shelfhold.sdk.export_target import ApiCall
 from tests.fakes.kavita import API_KEY
 from tests.kavita_env import OPENAPI_DIR, documented_routes, harness, run
@@ -31,7 +32,7 @@ def test_kavita_allowlisted_routes_exist_in_pinned_openapi(fixture: str) -> None
     documented = documented_routes()
     assert documented, "docs/kavita-routes.md lists no route"
     assert documented == {
-        (r.method, r.path) for r in (*ALLOWED_ROUTES, *SETUP_ROUTES, *MEMBER_ROUTES)
+        (r.method, r.path) for r in (*ALLOWED_ROUTES, *SETUP_ROUTES, *HUB_ROUTES, *MEMBER_ROUTES)
     }  # one list
     paths = _openapi(fixture)["paths"]
     assert isinstance(paths, dict)
@@ -96,11 +97,12 @@ def test_kavita_adapter_calls_only_allowlisted_routes() -> None:
     seen = {(r.method, r.path) for r in h.fake.requests}
     assert h.fake.violations == []  # the referee's own list agrees
     setup = {(r.method, r.path) for r in SETUP_ROUTES}  # used once, by `target add`, not here
+    hub = {(r.method, r.path) for r in HUB_ROUTES}  # the token of the hub, by `hub_endpoint`
     admin = {(r.method, r.path) for r in ALLOWED_ROUTES}
     member = {
         (r.method, r.path) for r in MEMBER_ROUTES
     } - admin  # a member's key, never this client
-    assert seen == documented_routes() - setup - member  # every route is used, none else is
+    assert seen == documented_routes() - setup - hub - member  # every route is used, none else is
     assert API_KEY not in "".join(r.raw_url for r in h.fake.requests)  # never in a URL
 
 
@@ -138,3 +140,19 @@ def test_setup_routes_are_never_callable_by_a_destination() -> None:
     for route in SETUP_ROUTES:
         with pytest.raises(RouteNotAllowed):
             routes.resolve(route.method, route.path)
+
+
+@pytest.mark.req("EF-EXP-034", "EF-EXP-009")
+def test_the_hub_route_is_never_callable_by_a_destination() -> None:
+    """The one route whose URL carries the key is the client's own, never a destination's."""
+    from shelfhold.export.targets.kavita import routes
+
+    assert {(r.method, r.path) for r in HUB_ROUTES} == {("POST", "/api/Plugin/authenticate")}
+    for route in HUB_ROUTES:
+        with pytest.raises(RouteNotAllowed):
+            routes.resolve(route.method, route.path)
+    h = harness()
+    call = ApiCall(method="POST", path="/api/Plugin/authenticate", auth="target_admin")
+    with pytest.raises(RouteNotAllowed):
+        run(h.client.execute(call))
+    assert h.fake.requests == []

@@ -22,3 +22,5 @@ tag `v0.9.1.4` dit `0.9.1.1` : Kavita ne le met pas à jour à chaque tag, le ta
 **2026-11-16 (M4 L19).** Les trois fichiers ont été réduits de nouveau, depuis les mêmes tags, pour y ajouter les deux routes des « séries liées » (`GET /api/Series/all-related`, `POST /api/Series/update-related`) qu'ajoute `docs/kavita-routes.md`. Aucune autre route n'est entrée.
 
 **2026-11-17 (M4 L18b).** Les trois fichiers ont été réduits de nouveau, depuis les mêmes tags, pour y ajouter les routes des collections et des listes de lecture (`/api/Collection…`, `/api/ReadingList…`) qu'ajoute `docs/kavita-routes.md`. Aucune autre route n'est entrée.
+
+**2026-11-17 (M4 L37).** Les trois fichiers ont été réduits de nouveau, depuis les mêmes tags, pour y ajouter la route du jeton du hub (`POST /api/Plugin/authenticate`) qu'ajoute `docs/kavita-routes.md`. Aucune autre route n'est entrée.
