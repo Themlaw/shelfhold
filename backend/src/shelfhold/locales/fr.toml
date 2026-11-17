@@ -1954,6 +1954,21 @@ title = "Le lecteur de sauvegardes n'a pas pu tourner."
 action = "Réessayez ; si cela dure, regardez les journaux et les limites de la machine."
 cause = "Le processus borné qui lit les sauvegardes n'a pas démarré ou s'est arrêté : le fichier n'y est pour rien."
 
+[errors."team_switch.not_found"]
+title = "Ce changement d'équipe n'existe pas."
+action = "Recommencez depuis la fiche de la série."
+cause = "L'édition ou le changement n'existe pas (ou plus), ou appartient à une autre série."
+
+[errors."team_switch.no_preferred_team"]
+title = "Cette série n'a pas encore d'équipe préférée."
+action = "Choisissez d'abord une équipe préférée sur la fiche de la série."
+cause = "On ne peut basculer vers une équipe que si elle a été choisie."
+
+[errors."team_switch.stale"]
+title = "L'aperçu n'est plus à jour."
+action = "Demandez un nouvel aperçu, lisez-le, puis appliquez-le."
+cause = "Un chapitre est arrivé, a été lu ou a changé depuis l'aperçu : rien n'a été remplacé."
+
 [errors."request.invalid_list"]
 title = "Cette liste ne peut pas être lue."
 action = "Envoyez une liste en texte simple : un titre par ligne, au plus 100 lignes de 300 caractères, moins de 64 Kio."
@@ -2805,3 +2820,23 @@ cause = "La nouvelle source a publié des chapitres dont le numéro ne se place 
 title = "Cette demande de migration n'est pas recevable."
 action = "Vérifiez la série de la nouvelle source, la source à remplacer et les numéros que vous avez saisis."
 cause = "La nouvelle source ne liste aucun chapitre, la source à remplacer n'est pas une source de cette série, ou une ligne ou un numéro cible n'existe pas."
+
+[errors."webhook.not_found"]
+title = "Ce webhook n'existe pas."
+action = "Relisez la liste des webhooks et reprenez l'identifiant."
+cause = "Aucun webhook n'a cet identifiant, ou il a été supprimé."
+
+[errors."webhook.url_refused"]
+title = "Cette adresse ne peut pas recevoir de webhook."
+action = "Donnez une adresse https publique. Pour un serveur de votre réseau, autorisez-le explicitement (hôte et port)."
+cause = "L'adresse est mal formée, ne répond pas, ou mène à un réseau privé que vous n'avez pas autorisé. Les adresses de métadonnées de nuage sont toujours refusées."
+
+[errors."webhook.secret_unreadable"]
+title = "L'adresse de ce webhook ne peut plus être lue."
+action = "Supprimez ce webhook puis recréez-le : un nouveau secret sera rendu une seule fois. Si une clé a été retirée, restaurez le trousseau."
+cause = "Le document scellé qui garde l'adresse et le secret n'a pas pu être ouvert : la clé a disparu ou la ligne a été modifiée. Aucun envoi n'est possible, et les tentatives s'arrêtent au plafond."
+
+[errors."webhook.event_types"]
+title = "Ces types d'événements ne sont pas disponibles."
+action = "Choisissez un ou plusieurs types dans la liste fermée proposée."
+cause = "La liste est vide, trop longue, ou nomme un événement que les webhooks n'envoient pas."

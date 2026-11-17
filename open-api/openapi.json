@@ -3423,6 +3423,14 @@
             "title": "Stats",
             "type": "object"
           },
+          "unreadable_webhooks": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Unreadable Webhooks",
+            "type": "array"
+          },
           "withdrawal_pending": {
             "additionalProperties": true,
             "title": "Withdrawal Pending",
@@ -3439,6 +3447,7 @@
           "library_type_changes",
           "jurisdiction",
           "page_map_warnings",
+          "unreadable_webhooks",
           "kosync_unknown",
           "backup",
           "stats"
@@ -9928,6 +9937,75 @@
         "title": "TargetsOut",
         "type": "object"
       },
+      "TeamSwitchOut": {
+        "properties": {
+          "blocked": {
+            "additionalProperties": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "title": "Blocked",
+            "type": "object"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "edition_id": {
+            "title": "Edition Id",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "pending": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Pending",
+            "type": "array"
+          },
+          "state": {
+            "title": "State",
+            "type": "string"
+          },
+          "switched": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Switched",
+            "type": "array"
+          },
+          "team_id": {
+            "title": "Team Id",
+            "type": "string"
+          },
+          "to_switch": {
+            "items": {
+              "type": "string"
+            },
+            "title": "To Switch",
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "edition_id",
+          "team_id",
+          "state",
+          "to_switch",
+          "blocked",
+          "pending",
+          "switched",
+          "created_at"
+        ],
+        "title": "TeamSwitchOut",
+        "type": "object"
+      },
       "TitleOut": {
         "properties": {
           "lang": {
@@ -10724,6 +10802,157 @@
           "reserved"
         ],
         "title": "WaitingOut",
+        "type": "object"
+      },
+      "WebhookCreated": {
+        "description": "The answer to the creation: the only one that carries the secret.",
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "event_types": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Event Types",
+            "type": "array"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "private_target": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Private Target"
+          },
+          "secret": {
+            "title": "Secret",
+            "type": "string"
+          },
+          "url_host": {
+            "title": "Url Host",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "url_host",
+          "event_types",
+          "private_target",
+          "enabled",
+          "created_at",
+          "secret"
+        ],
+        "title": "WebhookCreated",
+        "type": "object"
+      },
+      "WebhookIn": {
+        "additionalProperties": false,
+        "properties": {
+          "allow_private": {
+            "default": false,
+            "title": "Allow Private",
+            "type": "boolean"
+          },
+          "event_types": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 64,
+            "minItems": 1,
+            "title": "Event Types",
+            "type": "array"
+          },
+          "url": {
+            "maxLength": 2000,
+            "minLength": 1,
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "url",
+          "event_types"
+        ],
+        "title": "WebhookIn",
+        "type": "object"
+      },
+      "WebhookList": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/WebhookOut"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "WebhookList",
+        "type": "object"
+      },
+      "WebhookOut": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "event_types": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Event Types",
+            "type": "array"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "private_target": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Private Target"
+          },
+          "url_host": {
+            "title": "Url Host",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "url_host",
+          "event_types",
+          "private_target",
+          "enabled",
+          "created_at"
+        ],
+        "title": "WebhookOut",
         "type": "object"
       },
       "WindowOut": {
@@ -17679,6 +17908,211 @@
         "summary": "Support Author Read",
         "tags": [
           "support-author"
+        ]
+      }
+    },
+    "/api/v1/editions/{edition_id}/team-switch": {
+      "post": {
+        "operationId": "team_switch_preview",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "edition_id",
+            "required": true,
+            "schema": {
+              "title": "Edition Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TeamSwitchOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Connexion requise, ou mot de passe à confirmer (reauth-required)."
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée)."
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Détail du problème (RFC 9457)."
+          }
+        },
+        "summary": "Team Switch Preview",
+        "tags": [
+          "teams"
+        ]
+      }
+    },
+    "/api/v1/editions/{edition_id}/team-switch/{switch_id}": {
+      "get": {
+        "operationId": "team_switch_report",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "edition_id",
+            "required": true,
+            "schema": {
+              "title": "Edition Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "switch_id",
+            "required": true,
+            "schema": {
+              "title": "Switch Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TeamSwitchOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Connexion requise, ou mot de passe à confirmer (reauth-required)."
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée)."
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Détail du problème (RFC 9457)."
+          }
+        },
+        "summary": "Team Switch Report",
+        "tags": [
+          "teams"
+        ]
+      }
+    },
+    "/api/v1/editions/{edition_id}/team-switch/{switch_id}/apply": {
+      "post": {
+        "operationId": "team_switch_apply",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "edition_id",
+            "required": true,
+            "schema": {
+              "title": "Edition Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "switch_id",
+            "required": true,
+            "schema": {
+              "title": "Switch Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobAccepted",
+                  "title": "Response Team Switch Apply"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Connexion requise, ou mot de passe à confirmer (reauth-required)."
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée)."
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Détail du problème (RFC 9457)."
+          }
+        },
+        "summary": "Team Switch Apply",
+        "tags": [
+          "teams"
         ]
       }
     },
@@ -27622,6 +28056,231 @@
         ]
       }
     },
+    "/api/v1/webhooks": {
+      "get": {
+        "operationId": "list_webhooks",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebhookList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Connexion requise, ou mot de passe à confirmer (reauth-required)."
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée)."
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Détail du problème (RFC 9457)."
+          }
+        },
+        "summary": "List Webhooks",
+        "tags": [
+          "webhooks"
+        ]
+      },
+      "post": {
+        "operationId": "create_webhook",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WebhookIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebhookCreated"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Connexion requise, ou mot de passe à confirmer (reauth-required)."
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée)."
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Détail du problème (RFC 9457)."
+          }
+        },
+        "summary": "Create Webhook",
+        "tags": [
+          "webhooks"
+        ]
+      }
+    },
+    "/api/v1/webhooks/{webhook_id}": {
+      "delete": {
+        "operationId": "remove_webhook",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "webhook_id",
+            "required": true,
+            "schema": {
+              "title": "Webhook Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Connexion requise, ou mot de passe à confirmer (reauth-required)."
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée)."
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Détail du problème (RFC 9457)."
+          }
+        },
+        "summary": "Remove Webhook",
+        "tags": [
+          "webhooks"
+        ]
+      },
+      "get": {
+        "operationId": "read_webhook",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "webhook_id",
+            "required": true,
+            "schema": {
+              "title": "Webhook Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebhookOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Connexion requise, ou mot de passe à confirmer (reauth-required)."
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée)."
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Détail du problème (RFC 9457)."
+          }
+        },
+        "summary": "Read Webhook",
+        "tags": [
+          "webhooks"
+        ]
+      }
+    },
     "/api/v1/works": {
       "get": {
         "operationId": "list_works",
@@ -30468,6 +31127,18 @@
       "code": "target.version_unsupported",
       "status": 503
     },
+    "/api/v1/problems/team-switch.no-preferred-team": {
+      "code": "team_switch.no_preferred_team",
+      "status": 409
+    },
+    "/api/v1/problems/team-switch.not-found": {
+      "code": "team_switch.not_found",
+      "status": 404
+    },
+    "/api/v1/problems/team-switch.stale": {
+      "code": "team_switch.stale",
+      "status": 409
+    },
     "/api/v1/problems/tombstone.confirmation-required": {
       "code": "tombstone.confirmation_required",
       "status": 409
@@ -30548,6 +31219,22 @@
       "code": "wake.deferred",
       "status": 503
     },
+    "/api/v1/problems/webhook.event-types": {
+      "code": "webhook.event_types",
+      "status": 422
+    },
+    "/api/v1/problems/webhook.not-found": {
+      "code": "webhook.not_found",
+      "status": 404
+    },
+    "/api/v1/problems/webhook.secret-unreadable": {
+      "code": "webhook.secret_unreadable",
+      "status": 503
+    },
+    "/api/v1/problems/webhook.url-refused": {
+      "code": "webhook.url_refused",
+      "status": 422
+    },
     "/api/v1/problems/window.preempted": {
       "code": "window.preempted",
       "status": 503
@@ -30555,6 +31242,335 @@
     "/api/v1/problems/work.merge-refused": {
       "code": "work.merge_refused",
       "status": 409
+    }
+  },
+  "x-webhooks": {
+    "delivery": {
+      "body": {
+        "data": "object, identifiers, counts and codes only: never a title",
+        "event_id": "integer, the number of the event",
+        "occurred_at": "string, an ISO 8601 instant (UTC)",
+        "schema_version": "integer, the version of the shape of `data`",
+        "type": "string, one of `events`"
+      },
+      "content_type": "application/json",
+      "deprecation": "while a shape is deprecated, an event is sent twice (the old version, then the current one), for at most 180 days",
+      "headers": {
+        "X-Shelfhold-Delivery": "identity of the delivery, the same at every retry: drop a second copy",
+        "X-Shelfhold-Event": "the event type",
+        "X-Shelfhold-Schema-Version": "the version of the shape of `data`",
+        "X-Shelfhold-Signature": "t=<unix seconds>,v1=<hex HMAC-SHA256 of '<t>.' followed by the exact body, keyed by the secret given once at registration>"
+      },
+      "method": "POST",
+      "retries": "8 attempts, the delay doubling from 30 s up to 6 h; a 2xx answer settles it; a redirection is not followed"
+    },
+    "events": {
+      "backup.failed": {
+        "current_version": 1,
+        "deprecated": {},
+        "fields": {
+          "1": [
+            "count",
+            "state",
+            "reason",
+            "code",
+            "kind",
+            "number",
+            "work_id",
+            "series_id",
+            "edition_id",
+            "unit_id"
+          ]
+        }
+      },
+      "backup.stale": {
+        "current_version": 1,
+        "deprecated": {},
+        "fields": {
+          "1": [
+            "count",
+            "state",
+            "reason",
+            "code",
+            "kind",
+            "number",
+            "work_id",
+            "series_id",
+            "edition_id",
+            "unit_id"
+          ]
+        }
+      },
+      "disk.low": {
+        "current_version": 1,
+        "deprecated": {},
+        "fields": {
+          "1": [
+            "count",
+            "state",
+            "reason",
+            "code",
+            "kind",
+            "number",
+            "work_id",
+            "series_id",
+            "edition_id",
+            "unit_id"
+          ]
+        }
+      },
+      "job.dead_lettered": {
+        "current_version": 1,
+        "deprecated": {},
+        "fields": {
+          "1": [
+            "count",
+            "state",
+            "reason",
+            "code",
+            "kind",
+            "number",
+            "work_id",
+            "series_id",
+            "edition_id",
+            "unit_id"
+          ]
+        }
+      },
+      "metadata.provider_down": {
+        "current_version": 1,
+        "deprecated": {},
+        "fields": {
+          "1": [
+            "count",
+            "state",
+            "reason",
+            "code",
+            "kind",
+            "number",
+            "work_id",
+            "series_id",
+            "edition_id",
+            "unit_id"
+          ]
+        }
+      },
+      "reconcile.drift": {
+        "current_version": 1,
+        "deprecated": {},
+        "fields": {
+          "1": [
+            "count",
+            "state",
+            "reason",
+            "code",
+            "kind",
+            "number",
+            "work_id",
+            "series_id",
+            "edition_id",
+            "unit_id"
+          ]
+        }
+      },
+      "series.gap": {
+        "current_version": 1,
+        "deprecated": {},
+        "fields": {
+          "1": [
+            "count",
+            "state",
+            "reason",
+            "code",
+            "kind",
+            "number",
+            "work_id",
+            "series_id",
+            "edition_id",
+            "unit_id"
+          ]
+        }
+      },
+      "series.removed_upstream": {
+        "current_version": 1,
+        "deprecated": {},
+        "fields": {
+          "1": [
+            "count",
+            "state",
+            "reason",
+            "code",
+            "kind",
+            "number",
+            "work_id",
+            "series_id",
+            "edition_id",
+            "unit_id"
+          ]
+        }
+      },
+      "series.stale": {
+        "current_version": 1,
+        "deprecated": {},
+        "fields": {
+          "1": [
+            "count",
+            "state",
+            "reason",
+            "code",
+            "kind",
+            "number",
+            "work_id",
+            "series_id",
+            "edition_id",
+            "unit_id"
+          ]
+        }
+      },
+      "source.auth_expired": {
+        "current_version": 1,
+        "deprecated": {},
+        "fields": {
+          "1": [
+            "count",
+            "state",
+            "reason",
+            "code",
+            "kind",
+            "number",
+            "work_id",
+            "series_id",
+            "edition_id",
+            "unit_id"
+          ]
+        }
+      },
+      "source.broken": {
+        "current_version": 1,
+        "deprecated": {},
+        "fields": {
+          "1": [
+            "count",
+            "state",
+            "reason",
+            "code",
+            "kind",
+            "number",
+            "work_id",
+            "series_id",
+            "edition_id",
+            "unit_id"
+          ]
+        }
+      },
+      "source.fallback": {
+        "current_version": 1,
+        "deprecated": {},
+        "fields": {
+          "1": [
+            "count",
+            "state",
+            "reason",
+            "code",
+            "kind",
+            "number",
+            "work_id",
+            "series_id",
+            "edition_id",
+            "unit_id"
+          ]
+        }
+      },
+      "target.forbidden": {
+        "current_version": 1,
+        "deprecated": {},
+        "fields": {
+          "1": [
+            "count",
+            "state",
+            "reason",
+            "code",
+            "kind",
+            "number",
+            "work_id",
+            "series_id",
+            "edition_id",
+            "unit_id"
+          ]
+        }
+      },
+      "target.unreachable": {
+        "current_version": 1,
+        "deprecated": {},
+        "fields": {
+          "1": [
+            "count",
+            "state",
+            "reason",
+            "code",
+            "kind",
+            "number",
+            "work_id",
+            "series_id",
+            "edition_id",
+            "unit_id"
+          ]
+        }
+      },
+      "unit.revision_suspect": {
+        "current_version": 1,
+        "deprecated": {},
+        "fields": {
+          "1": [
+            "count",
+            "state",
+            "reason",
+            "code",
+            "kind",
+            "number",
+            "work_id",
+            "series_id",
+            "edition_id",
+            "unit_id"
+          ]
+        }
+      },
+      "unit.stored": {
+        "current_version": 1,
+        "deprecated": {},
+        "fields": {
+          "1": [
+            "count",
+            "state",
+            "reason",
+            "code",
+            "kind",
+            "number",
+            "work_id",
+            "series_id",
+            "edition_id",
+            "unit_id"
+          ]
+        }
+      },
+      "unit.upgraded": {
+        "current_version": 1,
+        "deprecated": {},
+        "fields": {
+          "1": [
+            "count",
+            "state",
+            "reason",
+            "code",
+            "kind",
+            "number",
+            "work_id",
+            "series_id",
+            "edition_id",
+            "unit_id"
+          ]
+        }
+      }
     }
   }
 }

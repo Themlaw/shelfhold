@@ -8,7 +8,7 @@ panorama renvoie aux pages de détail.
 
 | Cas | Ce qui se passe | Page |
 |---|---|---|
-| Meilleure version, version de l'équipe préférée, réacquisition après échec d'intégrité | Le fichier est remplacé **au même chemin** ; Kavita garde la progression, KOReader repart du début | [mise-a-niveau.md](mise-a-niveau.md) |
+| Meilleure version, version de l'équipe préférée (voir [equipe-preferee.md](equipe-preferee.md)), réacquisition après échec d'intégrité | Le fichier est remplacé **au même chemin** ; Kavita garde la progression, KOReader repart du début | [mise-a-niveau.md](mise-a-niveau.md) |
 | Nouvelle version qui compte moins de la moitié des pages, ou `stubbed` | Mise en **quarantaine** : l'ancienne version reste exportée, `unit.revision_suspect` prévient | [revisions-en-attente.md](revisions-en-attente.md) |
 | Révision d'avant M2, ou qui ne change qu'un champ de métadonnées | Entre dans la **file** `revisions` ; un champ que l'API Kavita accepte est poussé sans toucher au fichier | [revisions-en-attente.md](revisions-en-attente.md) |
 | Chapitre retiré à la source | La copie locale reste ; le chapitre devient irremplaçable | [revisions-en-attente.md](revisions-en-attente.md) |
