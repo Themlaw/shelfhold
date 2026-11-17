@@ -42,6 +42,7 @@ OTHER_KEY = "synthetic-admin-key-0002"  # another key of the same account
 # (method, lower-cased path) -> needs an administrator. Written here, not imported.
 ALLOWED: dict[tuple[str, str], bool] = {
     ("POST", "/api/account/login"): False,
+    ("POST", "/api/plugin/authenticate"): False,  # the hub's token: the key travels in its query
     ("GET", "/api/server/server-info-slim"): False,
     ("GET", "/api/plugin/authkey-expires"): False,
     ("GET", "/api/plugin/parse"): False,
@@ -217,6 +218,9 @@ class FakeKavita:
     hook: Any = None  # called with each recorded request, before it is answered (a race)
     inaccessible: set[tuple[str, int]] = field(default_factory=set)  # (account, chapter id): 403
     sessions: set[str] = field(default_factory=set)  # the bearer tokens a login handed out
+    hub_tokens: list[str] = field(default_factory=list)  # the tokens `authenticate` handed out
+    hub_auth_calls: int = 0
+    hub_auth_status: int = 200  # what `authenticate` answers (401, 404...) instead of a token
 
     def key_is_valid(self, key: object) -> bool:
         return any(k["key"] == key for k in self.auth_keys)
@@ -232,6 +236,21 @@ class FakeKavita:
         session = secrets.token_hex(8)
         self.sessions.add(session)
         return self._json({"username": self.account[0], "token": session})
+
+    def _hub_token(self, recorded: RecordedRequest) -> httpx2.Response:
+        """`POST /api/Plugin/authenticate`: the key (and the name of the plugin) in the query, the
+        `UserDto` back, with a JWT for the hub. A key that is not listed is refused, as is a call
+        with no plugin name."""
+        self.hub_auth_calls += 1
+        key = recorded.query.get("apiKey")
+        if self.hub_auth_status != 200:
+            return self._text(self.hub_auth_status, "refused")
+        if not self.key_is_valid(key) or not recorded.query.get("pluginName"):
+            return self._text(401, "Unauthorized")
+        token = secrets.token_urlsafe(24)
+        self.sessions.add(token)
+        self.hub_tokens.append(token)
+        return self._json({"username": self.key_accounts.get(str(key), "admin"), "token": token})
 
     # -- scenario helpers -------------------------------------------------------------------
     def add_member_key(
@@ -382,7 +401,9 @@ class FakeKavita:
         route = (request.method, url.path.lower())
         if route not in ALLOWED:
             return self._violation(f"{request.method} {url.path} is not an allow-listed route")
-        if any(name.lower() in {"apikey", "api_key", "key", "token"} for name in recorded.query):
+        if route[1] != "/api/plugin/authenticate" and any(
+            name.lower() in {"apikey", "api_key", "key", "token"} for name in recorded.query
+        ):
             return self._violation("a credential travels in the URL")
         if route in self.problem_404:
             return self._json({"title": "Not Found", "status": 404}, 404)
@@ -390,6 +411,8 @@ class FakeKavita:
             return self._text(404, "Not Found")
         if route[1] == "/api/account/login":
             return self._login(recorded)
+        if route[1] == "/api/plugin/authenticate":
+            return self._hub_token(recorded)
         if not self._authenticated(recorded.headers):
             return self._text(401, "Unauthorized")
         if ALLOWED[route] and not self.is_admin:
