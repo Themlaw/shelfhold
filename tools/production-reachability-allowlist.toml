@@ -154,4 +154,5 @@ reason = "2026-11-18 (M5 L20b, part 1): the pure-Python KEPUB transform is deliv
 until = "M5"  # settled by L20b part 2, once L20a and L17a are merged
 symbols = [
   "shelfhold.library.application.kepub:KepubError",
+  "shelfhold.library.application.kepub:kepubify",
 ]
