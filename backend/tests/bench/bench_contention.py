@@ -7,6 +7,10 @@ of those answers during the export must not exceed twice their p95 at rest. The 
 spec's, read from `.github/bench-reference.json`, and is never loosened here: there is no floor
 under the at-rest latency, so a fast API is held to a fast answer.
 
+The budget is xfailed strict while the known finding lasts (the export is a thread of the API
+process, x2.3 to x2.5 measured), and an aggravation bound of its own, never xfailed, stands next
+to it: a measure above x3 breaks the nightly whatever the finding.
+
 Out of the required CI: `nightly.yml` (`bench-perf`), see `tools/traceability-exceptions.toml`.
 """
 
@@ -55,6 +59,13 @@ KNOWN_OVER_BUDGET = pytest.mark.xfail(
     strict=True,
     reason="ENF-PERF-007: the export runs as a thread of the API process (x2.3 to x2.5 measured)",
 )
+
+# An xfail cannot see an aggravation: a measure at x6 would be filed as XFAIL just the same, and
+# the consumers are threads of the API process in production, so the users live this contention.
+# This bound stands next to the xfailed budget, and it is never xfailed: a run whose answers to
+# the library list take more than three times their at-rest latency breaks the nightly whatever
+# the known finding. Recorded with every measure (see `check`); the true fix stays M5's.
+AGGRAVATION_MAX_FACTOR = 3
 
 PATH = "/api/v1/works?limit=50&offset=0"
 
@@ -154,6 +165,7 @@ def check(name: str, got: Contention) -> None:
         during_p95_ms=got.during_p95_s * 1000,
         factor=got.factor,
         budget_factor=budget,
+        aggravation_max_factor=AGGRAVATION_MAX_FACTOR,
         samples=got.answers,
     )
     assert got.during_p95_s <= budget * got.at_rest_p95_s, (
@@ -163,20 +175,52 @@ def check(name: str, got: Contention) -> None:
     )
 
 
-@KNOWN_OVER_BUDGET
-@pytest.mark.req("ENF-PERF-007")
-def test_bench_contention_export_500_chapters() -> None:
-    """500 new chapters over 500 followed series."""
-    chapters = int(budgets()["export_chapters"])
-    check("contention_export_500_chapters", measure_contention(chapters=chapters, one_series=False))
-
-
-@KNOWN_OVER_BUDGET
-@pytest.mark.req("ENF-PERF-007")
-def test_bench_contention_export_500_chapters_of_one_series() -> None:
-    """The worst shape: 500 chapters of a single series."""
-    chapters = int(budgets()["export_chapters"])
-    check(
-        "contention_export_500_chapters_one_series",
-        measure_contention(chapters=chapters, one_series=True),
+def aggravation_is_bounded(got: Contention) -> None:
+    """The never-xfailed bound of J-PERF-1: an aggravation breaks the nightly, the known finding
+    about the budget does not."""
+    assert got.factor <= AGGRAVATION_MAX_FACTOR, (
+        f"during the export p95 {got.during_p95_s * 1000:.1f} ms vs "
+        f"{got.at_rest_p95_s * 1000:.1f} ms at rest (factor {got.factor:.2f}, aggravation bound "
+        f"x{AGGRAVATION_MAX_FACTOR:g}); {got.answers} answers"
     )
+
+
+@pytest.fixture(scope="module")
+def catch_up() -> Contention:
+    """500 new chapters over 500 followed series: the shape of a night's catch-up, measured once
+    for the budget and for the aggravation bound of this module."""
+    return measure_contention(chapters=int(budgets()["export_chapters"]), one_series=False)
+
+
+@pytest.fixture(scope="module")
+def one_series() -> Contention:
+    """The worst shape: 500 chapters of a single series, measured once for both bounds."""
+    return measure_contention(chapters=int(budgets()["export_chapters"]), one_series=True)
+
+
+@KNOWN_OVER_BUDGET
+@pytest.mark.req("ENF-PERF-007")
+def test_bench_contention_export_500_chapters(catch_up: Contention) -> None:
+    """500 new chapters over 500 followed series."""
+    check("contention_export_500_chapters", catch_up)
+
+
+@pytest.mark.req("ENF-PERF-007")
+def test_bench_contention_aggravation_of_the_catch_up_is_bounded(catch_up: Contention) -> None:
+    """A x6 aggravation must break the nightly even though the x2 budget is xfailed."""
+    aggravation_is_bounded(catch_up)
+
+
+@KNOWN_OVER_BUDGET
+@pytest.mark.req("ENF-PERF-007")
+def test_bench_contention_export_500_chapters_of_one_series(one_series: Contention) -> None:
+    """The worst shape: 500 chapters of a single series."""
+    check("contention_export_500_chapters_one_series", one_series)
+
+
+@pytest.mark.req("ENF-PERF-007")
+def test_bench_contention_aggravation_of_the_one_series_shape_is_bounded(
+    one_series: Contention,
+) -> None:
+    """The same never-xfailed bound on the worst shape."""
+    aggravation_is_bounded(one_series)
