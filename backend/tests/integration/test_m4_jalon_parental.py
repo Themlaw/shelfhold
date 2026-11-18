@@ -155,11 +155,6 @@ def test_a_migration_to_an_adult_only_source_holds_the_edition_out_of_the_family
 
 
 @pytest.mark.req("EF-EXP-045", "EF-BIB-055")
-@pytest.mark.xfail(
-    strict=True,
-    reason="M4 jalon J-PAR-2: adoption files a foreign series under the rated Edition of the same "
-    "name, and a child sees the adopted chapter nobody rated",
-)
 def test_an_adopted_foreign_chapter_is_not_shown_to_a_child_before_an_admin_rates_it() -> None:
     with export_env() as env:  # an adult shelf (18+), its allowed list empty: open to everyone
         series = env.new_series("Tale of Orchard")
