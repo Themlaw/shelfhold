@@ -80,6 +80,17 @@ def _retire_devices(
     connection.execute(query.values(revoked_at=now))
 
 
+def _retire_devices(
+    connection: sa.Connection, now: datetime, subject_user_id: str | None = None
+) -> None:
+    """The devices of a profile (or of all) are retired with their tokens, in the same transaction
+    that revoked the tokens: a registry never lists an e-reader that nothing can open."""
+    query = sa.update(_registry).where(_registry.c.revoked_at.is_(None))
+    if subject_user_id is not None:
+        query = query.where(_registry.c.subject_user_id == subject_user_id)
+    connection.execute(query.values(revoked_at=now))
+
+
 _account = identity.destination_account
 _NO_SECRET = {
     "secret_kid": None,
