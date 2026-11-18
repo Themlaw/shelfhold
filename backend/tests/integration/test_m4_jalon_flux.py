@@ -57,11 +57,6 @@ def _reading_list(env: AuthEnv, owner_id: str | None, name: str) -> str:
     return collection_id
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="M4 jalon J-FLUX-1: the profile export omits the M4 personal tables "
-    "(device tokens, own reading lists)",
-)
 def test_the_export_of_a_profile_holds_her_e_readers_and_her_own_lists(api: AuthEnv) -> None:
     """A member with an e-reader paired for her and a reading list of her own: both are her data
     and are in her export. Another member's token and list are not."""
