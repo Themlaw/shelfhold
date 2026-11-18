@@ -284,7 +284,7 @@ class PlanExecutor:
             binding, call_id, tree, plan, planned,
             snapshot=snapshot,
             keys=_keys(snapshot),
-            done=self._settled(call_id, binding.destination_id, tree.local),
+            done=self._settled(call_id, binding.destination_id, tree.local, dropbox=dropbox),
             sidecars=self._ledger.sidecars(call_id, binding.destination_id),
             dropped=self._dropped(binding.destination_id) if dropbox else {},
         )  # fmt: skip
@@ -520,7 +520,9 @@ class PlanExecutor:
             raise PlanRefusedError("the plan is not one the host will run") from None
         return plan
 
-    def _settled(self, call_id: str, destination_id: str, tree_local: str) -> frozenset[str]:
+    def _settled(
+        self, call_id: str, destination_id: str, tree_local: str, *, dropbox: bool = False
+    ) -> frozenset[str]:
         """The operations an earlier run finished, by the **key** of each (its type, its target,
         its content reference: see `_keys`), never by its place in a plan: a plan that was made
         again redoes what is missing. An intent that is still open stops the run: the boot settles
@@ -544,6 +546,7 @@ class PlanExecutor:
                     call.label("call"),
                     table.c.op,
                     table.c.dst_path,
+                    table.c.src_path,
                     table.c.expected_sha256,
                 ).where(
                     dest == destination_id,
@@ -564,17 +567,34 @@ class PlanExecutor:
             }
         prefix = tree_local.rstrip("/") + "/"
         settled: set[str] = set()
+        moved_on = {r.src_path for r in rows if r.op in ("rename", "recycle") and r.src_path}
         for r in rows:
             if r.k is None:
                 continue
-            if r.call != call_id and r.op == "write" and r.dst_path is not None:
-                rel = r.dst_path[len(prefix) :] if r.dst_path.startswith(prefix) else None
-                if rel is None or (rel, str(r.expected_sha256)) in manifest:
-                    continue  # of another pass, and already in the manifest: it is the truth
+            if r.op == "write" and r.dst_path is not None:
+                if r.call != call_id:
+                    rel = r.dst_path[len(prefix) :] if r.dst_path.startswith(prefix) else None
+                    if rel is None or (rel, str(r.expected_sha256)) in manifest:
+                        continue  # of another pass, in the manifest already: it is the truth
+                if not dropbox and not self._still_there(
+                    r.dst_path, str(r.expected_sha256), moved_on=r.dst_path in moved_on
+                ):
+                    continue  # gone or changed since (C1): written again, or refused as foreign
             elif r.call != call_id and r.op == "write":
                 continue
             settled.add(str(r.k))
         return frozenset(settled)
+
+    def _still_there(self, path: str, digest: str, *, moved_on: bool) -> bool:
+        """The file of an intent an earlier call finished is on the disk with the bytes it wrote,
+        or is gone because a later operation of ours (rename, bin) took it away."""
+        try:
+            found = self._disk.observe(path)
+            if found is None:
+                return moved_on
+            return found[0] == "file" and self._disk.sha256_of(path) == digest
+        except (FsopsError, OSError):
+            return False
 
     # -- one operation --------------------------------------------------------------------------
 

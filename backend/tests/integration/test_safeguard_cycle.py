@@ -12,7 +12,7 @@ import sqlalchemy as sa
 
 from shelfhold.acquisition.public import FailureLedger
 from shelfhold.export.application.intents import IntentJournal
-from shelfhold.infrastructure.schema import acquisition, identity, storage
+from shelfhold.infrastructure.schema import acquisition, identity, platform, storage
 from shelfhold.library.adapters.meta_projection import meta_path
 from shelfhold.library.adapters.origin_comicinfo import origin_rel
 from shelfhold.library.public import (
@@ -408,6 +408,32 @@ hold_work=work_lock(env.engine),
 # -- the failure matrix -------------------------------------------------------------------------
 
 
+@pytest.mark.req("EF-BIB-045")
+def test_the_failure_event_passes_the_real_bus_and_is_stored() -> None:
+    """The bus of production judges the payload: a list, a text or a word it does not know is
+    refused, the transaction rolls back and the nightly job fails. No stub stands in here."""
+    with lib_env() as env:
+        world = World(env)
+        for _ in range(2):
+            item = world.add(owed=True)
+            item.library.write_bytes(b"not an archive")
+        report = world.run_cycle(real_bus=True)
+        assert report.failed == 2
+        with env.engine.connect() as c:
+            rows = (
+                c.execute(
+                    sa.select(platform.event.c.payload).where(
+                        platform.event.c.type == "unit.safeguard_failed"
+                    )
+                )
+                .scalars()
+                .all()
+            )
+        assert len(rows) == 1 and rows[0]["count"] == 2
+        assert rows[0]["reason"] == "library_differs_from_manifest"  # the most frequent word
+        assert rows[0]["distinct_reasons"] == 1
+
+
 def test_one_event_per_run_for_failures() -> None:
     with lib_env() as env:
         world = World(env)
@@ -421,3 +447,17 @@ def test_one_event_per_run_for_failures() -> None:
         with env.engine.connect() as c:
             tickets = c.execute(sa.select(acquisition.download_request.c.ticket)).scalars().all()
         assert len(tickets) == 2 and all(tickets)  # nothing upstream was touched
+
+
+def test_every_reason_the_copy_can_give_is_a_word_the_event_knows() -> None:
+    import re
+    from pathlib import Path
+
+    from shelfhold.library.adapters import safeguard_job
+
+    words: set[str] = set()
+    for source in Path(safeguard_job.__file__).parent.parent.rglob("*.py"):
+        words |= set(re.findall(r'SafeguardFailedError\(\s*"([a-z_]+)"', source.read_text()))
+    assert words and words <= safeguard_job.SAFEGUARD_REASONS, (
+        words - safeguard_job.SAFEGUARD_REASONS
+    )

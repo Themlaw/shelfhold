@@ -124,6 +124,7 @@ def test_missed_window_on_a_weekly_cron_replays_next_night(
         events = conn.execute(sa.select(platform.event)).all()
     assert [(e.type, e.visibility) for e in events] == [("ops.window_missed", "ops")]
     assert "job_kind" in events[0].payload
+    assert "scope_key" not in events[0].payload  # free text: the bus would refuse it
     clock.set(utc(2026, 11, 3, 2, 0, 5))
     pools.tick()
     assert pools.huey("maint").pending_count() == 1
