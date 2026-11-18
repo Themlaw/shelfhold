@@ -40,7 +40,8 @@ EXPORT_TABLES = {
 }  # fmt: skip
 READING_TABLES = {
     "reading_position", "progress_sync_cursor", "progress_sync_note", "read_state_push_note",
-}  # 0064, 0078, 0080  # fmt: skip
+    "reading_conflict",
+}  # 0064, 0078, 0080, 0102  # fmt: skip
 M4_TABLES = {
     "destination_account",
     "device_token",
