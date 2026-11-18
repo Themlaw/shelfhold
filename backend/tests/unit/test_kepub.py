@@ -10,6 +10,7 @@ own error, never with an exception of the parser or of the archive layer.
 
 import hashlib
 import io
+import time
 import zipfile
 
 import pytest
@@ -307,3 +308,93 @@ def test_kepub_refuses_characters_xml_cannot_write() -> None:
     element = Element(f"{XHTML}p", {"title": "a\x0cb"})
     with pytest.raises(KepubError):
         _Serializer().document(element)
+
+
+@pytest.mark.req("EF-BIB-015")
+def test_kepub_accepts_a_simple_doctype_and_refuses_any_other() -> None:
+    # the common form of EPUB 3: a bare declaration, no subset, no external identifier
+    simple = (
+        b"<!DOCTYPE html>\n"
+        b'<html xmlns="http://www.w3.org/1999/xhtml"><body><p>With a doctype. Twice.</p></body></html>'
+    )
+    written = read_entry(
+        kepubify(epub(book(**{"OEBPS/chapter1.xhtml": simple}))), "OEBPS/chapter1.xhtml"
+    )
+    assert b"koboSpan" in written
+    # an internal subset can declare an entity: it stays in the bytes and the parser refuses it
+    subset = (
+        b'<!DOCTYPE html [<!ENTITY x "y">]>\n'
+        b'<html xmlns="http://www.w3.org/1999/xhtml"><body><p>&x;</p></body></html>'
+    )
+    with pytest.raises(KepubError) as caught:
+        kepubify(epub(book(**{"OEBPS/chapter1.xhtml": subset})))
+    assert caught.value.reason == "xml_dtd"
+    # an external identifier points the parser at a DTD of its own: refused too
+    external = (
+        b'<!DOCTYPE html SYSTEM "book.dtd">\n'
+        b'<html xmlns="http://www.w3.org/1999/xhtml"><body><p>Text.</p></body></html>'
+    )
+    with pytest.raises(KepubError) as caught:
+        kepubify(epub(book(**{"OEBPS/chapter1.xhtml": external})))
+    assert caught.value.reason == "xml_dtd"
+
+
+@pytest.mark.req("EF-BIB-015")
+def test_kepub_refuses_a_manifest_that_names_one_id_twice() -> None:
+    opf = OPF.replace(
+        b'<item id="css"',
+        b'<item id="c1" href="other.xhtml" media-type="application/xhtml+xml"/>\n    '
+        b'<item id="css"',
+    )
+    assert opf != OPF  # the edit landed
+    with pytest.raises(KepubError) as caught:
+        kepubify(epub(book(**{"OEBPS/content.opf": opf})))
+    assert caught.value.reason == "manifest"
+
+
+@pytest.mark.req("EF-BIB-015")
+def test_kepub_leaves_a_page_it_cannot_rewrite_without_loss() -> None:
+    # already converted once: a second pass must not number the spans again
+    converted = (
+        b'<?xml version="1.0" encoding="utf-8"?>\n'
+        b'<html xmlns="http://www.w3.org/1999/xhtml"><body><div class="book-inner">'
+        b'<div class="book-columns"><p><span class="koboSpan" id="kobo.1.1">Once.</span></p>'
+        b"</div></div></body></html>"
+    )
+    result = kepubify(epub(book(**{"OEBPS/chapter1.xhtml": converted})))
+    assert read_entry(result, "OEBPS/chapter1.xhtml") == converted
+    # the safe parser drops comments and processing instructions: a page that carries one is
+    # left as it is, not rewritten without them
+    commented = (
+        b'<?xml version="1.0" encoding="utf-8"?>\n'
+        b'<html xmlns="http://www.w3.org/1999/xhtml"><body><!-- keep me --><p>Text.</p>'
+        b"<?keep me too?></body></html>"
+    )
+    result = kepubify(epub(book(**{"OEBPS/chapter1.xhtml": commented})))
+    assert read_entry(result, "OEBPS/chapter1.xhtml") == commented
+
+
+@pytest.mark.req("EF-BIB-015")
+def test_kepub_transform_time_follows_the_size_of_the_page() -> None:
+    """No absolute threshold (a shared machine has no stable second): the same work on four
+    times the page must stay under six times the time, which a transform that rebuilds each
+    list of children once passes and a transform that inserts each span on its own does not."""
+
+    def hostile(segments: int, children: int) -> bytes:
+        return (
+            b'<?xml version="1.0" encoding="utf-8"?>\n'
+            b'<html xmlns="http://www.w3.org/1999/xhtml"><body><p>'
+            + b". " * segments
+            + b"<i/>" * children
+            + b"</p></body></html>"
+        )
+
+    small = epub(book(**{"OEBPS/chapter1.xhtml": hostile(20_000, 5_000)}))
+    big = epub(book(**{"OEBPS/chapter1.xhtml": hostile(80_000, 20_000)}))
+    start = time.perf_counter()
+    kepubify(small)
+    small_seconds = time.perf_counter() - start
+    start = time.perf_counter()
+    kepubify(big)
+    big_seconds = time.perf_counter() - start
+    assert big_seconds < 6 * small_seconds, (small_seconds, big_seconds)
