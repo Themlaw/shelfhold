@@ -22,7 +22,7 @@ from shelfhold.infrastructure.fsops import Fsops
 from shelfhold.infrastructure.restore_notice import clear_notice, read_notice
 from shelfhold.infrastructure.schema import identity
 from shelfhold.ops.errors import ExitUnavailableError, NotWaitingError
-from shelfhold.ops.ports import WaitingItem
+from shelfhold.ops.ports import OIDC_LINK_PREFIX, WaitingItem
 
 __all__ = ["RestoreCredentialsExit", "RestoreGuardExit"]
 
@@ -70,7 +70,6 @@ class RestoreGuardExit:
 
 
 _oidc = identity.oidc_identity
-OIDC_LINK_PREFIX = "oidc: "  # what tells the CLI a line of `acknowledge` is a link, not a passkey
 _MAX_LISTED_LINKS = 20
 
 

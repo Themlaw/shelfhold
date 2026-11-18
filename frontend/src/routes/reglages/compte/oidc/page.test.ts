@@ -111,7 +111,7 @@ describe('Identité du fournisseur (réglages du compte)', () => {
     expect(sessionStorage.getItem('oidc-intent')).toBeNull();
     const user = userEvent.setup();
     const buttons = await screen.findAllByRole('button', { name: /^Délier$/ });
-    await user.click(buttons[buttons.length - 1]);
+    await user.click(buttons.at(-1) as HTMLElement);
     await vi.waitFor(() => expect(deleted).toBe(1));
   });
 

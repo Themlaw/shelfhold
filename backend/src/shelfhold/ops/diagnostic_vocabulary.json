@@ -3198,6 +3198,7 @@
   "oidc_client_secret",
   "oidc_confirm.html",
   "oidc_issuer",
+  "oidc_max_age_s",
   "ok",
   "ol",
   "oneshot",
