@@ -39,6 +39,7 @@ __all__ = [
     "sniff_source",
     "source_format",
     "target_kind",
+    "webp_announced_size",
 ]
 
 REMOTE_REFUSED_WATERMARKED: Final = "rendition.remote_refused_watermarked"
@@ -163,3 +164,48 @@ def avif_announced_size(data: bytes) -> tuple[int, int] | None:
 
     walk(0, len(data), 0)
     return best if complete else None
+
+
+_MAX_CHUNKS: Final = 1024
+
+
+def webp_announced_size(data: bytes) -> tuple[int, int] | None:
+    """The largest `(width, height)` any chunk of a WebP announces (`VP8X`, `VP8`, `VP8L`), read
+    by walking every RIFF chunk by its size (an odd one is padded to an even length). None when
+    the file is not a coherent RIFF/WEBP (the RIFF size is longer than the bytes, a chunk runs past
+    the end), when no chunk announces a size, or past the bound on chunks: a refusal for the
+    caller, never a pass. A size can sit behind `ALPH`, `ANIM` or `ICCP`; nothing is decoded."""
+    if len(data) < 12 or data[:4] != b"RIFF" or data[8:12] != b"WEBP":
+        return None
+    end = 8 + struct.unpack_from("<I", data, 4)[0]
+    if end > len(data) or end < 12:
+        return None
+    best: tuple[int, int] | None = None
+    at = 12
+    for _ in range(_MAX_CHUNKS):
+        if at == end:
+            return best
+        if at + 8 > end:
+            return None
+        fourcc = data[at : at + 4]
+        size = struct.unpack_from("<I", data, at + 4)[0]
+        body = at + 8
+        if body + size > end:
+            return None
+        found = _webp_chunk_size(fourcc, data[body : body + size])
+        if found is not None and (best is None or found[0] * found[1] > best[0] * best[1]):
+            best = found
+        at = body + size + (size & 1)
+    return None  # more chunks than the bound
+
+
+def _webp_chunk_size(fourcc: bytes, payload: bytes) -> tuple[int, int] | None:
+    le = int.from_bytes
+    if fourcc == b"VP8X" and len(payload) >= 10:
+        return 1 + le(payload[4:7], "little"), 1 + le(payload[7:10], "little")
+    if fourcc == b"VP8 " and len(payload) >= 10 and payload[3:6] == b"\x9d\x01\x2a":
+        return le(payload[6:8], "little") & 0x3FFF, le(payload[8:10], "little") & 0x3FFF
+    if fourcc == b"VP8L" and len(payload) >= 5 and payload[0] == 0x2F:
+        bits = le(payload[1:5], "little")
+        return 1 + (bits & 0x3FFF), 1 + ((bits >> 14) & 0x3FFF)
+    return None

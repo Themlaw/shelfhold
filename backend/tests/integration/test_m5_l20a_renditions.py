@@ -331,7 +331,7 @@ def test_a_failed_record_leaves_no_file_and_a_purged_source_is_not_recorded() ->
         service = _service(env)
         content = _content(env, unit)
 
-        def fail(rendition: object) -> None:
+        def fail(rendition: object, origin: object) -> None:
             raise RuntimeError("database is locked")
 
         original = service._record
@@ -387,6 +387,10 @@ class _Tombstoned:
         self.asked += 1
         return True
 
+    def has_values(self, candidate: object) -> bool:
+        self.asked += 1
+        return True
+
 
 @pytest.mark.req("EF-BIB-015", "EF-BIB-052")
 def test_nothing_is_made_from_a_file_whose_purge_has_begun() -> None:
@@ -407,6 +411,9 @@ def test_nothing_is_made_from_a_file_whose_purge_has_begun() -> None:
             on = False
 
             def check_content(self, hashes: object = ()) -> bool:
+                return self.on
+
+            def has_values(self, candidate: object) -> bool:
                 return self.on
 
         late = Late()

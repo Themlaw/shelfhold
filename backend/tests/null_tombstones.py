@@ -11,6 +11,9 @@ class NoTombstones:
     def check_content(self, hashes: object = (), **_: Any) -> bool:
         return False
 
+    def has_values(self, candidate: object) -> bool:
+        return False
+
 
 NONE_PURGED = NoTombstones()
 

@@ -14,6 +14,7 @@ from shelfhold.library.domain.rendition import (
     RenditionParams,
     avif_announced_size,
     ensure_processor_allowed,
+    webp_announced_size,
 )
 
 pytestmark = pytest.mark.req("EF-BIB-015")
@@ -110,3 +111,39 @@ def test_the_largest_ispe_of_an_avif_counts_wherever_it_is() -> None:
     assert avif_announced_size(avif((100_000, 100_000), padding=300_000)) == (100_000, 100_000)
     assert avif_announced_size(avif()) is None  # no `ispe`: a refusal for the caller
     assert avif_announced_size(_box(b"ftyp", b"avif\0\0\0\0")) is None  # no `meta`
+
+
+def _chunk(fourcc: bytes, payload: bytes) -> bytes:
+    pad = b"\0" if len(payload) % 2 else b""
+    return fourcc + struct.pack("<I", len(payload)) + payload + pad
+
+
+def _riff(*chunks: bytes) -> bytes:
+    body = b"WEBP" + b"".join(chunks)
+    return b"RIFF" + struct.pack("<I", len(body)) + body
+
+
+def _vp8x(width: int, height: int) -> bytes:
+    canvas = (width - 1).to_bytes(3, "little") + (height - 1).to_bytes(3, "little")
+    return _chunk(b"VP8X", b"\0\0\0\0" + canvas)
+
+
+def test_the_largest_size_of_a_webp_counts_behind_any_chunk() -> None:
+    assert webp_announced_size(_riff(_vp8x(321, 123))) == (321, 123)
+    odd = _chunk(b"ICCP", b"\0" * 7)  # an odd chunk is padded: the next one still lines up
+    assert webp_announced_size(_riff(odd, _vp8x(65_535, 65_535))) == (65_535, 65_535)
+    lossless = _chunk(b"VP8L", b"\x2f" + ((50 - 1) | ((40 - 1) << 14)).to_bytes(4, "little"))
+    assert webp_announced_size(_riff(lossless)) == (50, 40)
+    lossy = _chunk(b"VP8 ", b"\0\0\0\x9d\x01\x2a" + struct.pack("<HH", 30, 20) + b"\0" * 4)
+    assert webp_announced_size(_riff(lossy, _vp8x(8, 8))) == (30, 20)
+    assert webp_announced_size(_riff(_vp8x(10, 10), lossless)) == (50, 40)  # the biggest, not first
+
+
+def test_a_webp_that_is_not_coherent_announces_nothing() -> None:
+    good = _riff(_vp8x(10, 10))
+    assert webp_announced_size(b"") is None and webp_announced_size(b"RIFF" + b"\0" * 20) is None
+    assert webp_announced_size(good[:-3]) is None  # the RIFF size runs past the bytes
+    assert webp_announced_size(_riff(_chunk(b"ALPH", b"\0" * 4))) is None  # no size anywhere
+    overrun = b"RIFF" + struct.pack("<I", 4 + 8) + b"WEBP" + b"VP8X" + struct.pack("<I", 999)
+    assert webp_announced_size(overrun) is None  # a chunk longer than the file
+    assert webp_announced_size(_riff(*[_chunk(b"JUNK", b"")] * 2000, _vp8x(8, 8))) is None

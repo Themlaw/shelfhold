@@ -50,7 +50,6 @@ def _webp_size_behind(decoy: bytes) -> bytes:
 
 
 @pytest.mark.req("EF-BIB-015", "ENF-SEC-003")
-@pytest.mark.xfail(strict=True)
 @pytest.mark.parametrize(
     "decoy",
     [
@@ -79,7 +78,6 @@ def test_a_webp_that_announces_its_size_behind_another_chunk_is_refused_before_t
 
 
 @pytest.mark.req("EF-BIB-015", "EF-BIB-052")
-@pytest.mark.xfail(strict=True)
 def test_a_rendition_is_not_read_back_once_the_purge_of_its_source_has_begun(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -117,7 +115,6 @@ def test_a_rendition_is_not_read_back_once_the_purge_of_its_source_has_begun(
 
 
 @pytest.mark.req("EF-BIB-015", "EF-BIB-052")
-@pytest.mark.xfail(strict=True)
 def test_the_unit_that_holds_the_same_bytes_makes_its_rendition_again() -> None:
     """The purge of a rendition follows its source's *file*, whichever Unit holds it: the
     decision of L20a says the other Unit that holds the same bytes has it made again, and the

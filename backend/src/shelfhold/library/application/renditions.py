@@ -34,7 +34,6 @@ import sqlalchemy as sa
 import structlog
 
 from shelfhold.infrastructure.clock import Clock
-from shelfhold.infrastructure.content_trust.page_header import announced_size
 from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.imaging import (
     ImageCaps,
@@ -43,7 +42,7 @@ from shelfhold.infrastructure.imaging import (
     caps_for,
     reencode_image,
 )
-from shelfhold.infrastructure.schema import storage
+from shelfhold.infrastructure.schema import catalog, storage
 from shelfhold.infrastructure.volumes import erase_data_path, open_data_folder, write_data_file
 from shelfhold.library.domain.content_hash import FILE_HASH_BY
 from shelfhold.library.domain.failures import TombstonedContentError
@@ -58,8 +57,9 @@ from shelfhold.library.domain.rendition import (
     avif_announced_size,
     ensure_processor_allowed,
     sniff_source,
+    webp_announced_size,
 )
-from shelfhold.library.tombstones.values import ContentHash
+from shelfhold.library.tombstones.values import EDITION_KEY_COLUMNS, ContentHash, PlaceRef
 
 __all__ = [
     "CACHE_DIR",
@@ -83,10 +83,24 @@ _FORMATS: Final = ("WEBP", "AVIF")  # what the worker is allowed to open for a r
 
 
 class SourceTombstones(Protocol):
-    """The part of the tombstone service a render needs: is this file purged, or being purged?
-    A purge records its tombstones before it deletes anything (ADR-0048)."""
+    """The part of the tombstone service a render needs. A purge records its tombstones before
+    it deletes anything (ADR-0048): the `place` of each Unit it takes, and the hashes of its
+    files. Only the place is the content's own: another Unit that holds the same bytes is not
+    covered by it, and is not refused (its rendition is made again)."""
+
+    def has_values(self, candidate: PlaceRef) -> bool: ...
 
     def check_content(self, hashes: Iterable[ContentHash] = ()) -> bool: ...
+
+
+@dataclass(frozen=True, slots=True)
+class _Origin:
+    """What a content says of itself: the hash of its file, the flag, and its own `place`
+    (None for a file that carries several Units)."""
+
+    source: str
+    watermarked: bool
+    place: PlaceRef | None
 
 
 class UnknownSourceError(LookupError):
@@ -139,14 +153,15 @@ def _check_source(data: bytes, *, max_bytes: int, max_pixels: int) -> None:
     found = sniff_source(data[:64])
     if found not in DECODABLE_SOURCES:  # JPEG XL has no decoder; anything else is not a source
         raise UnsupportedSourceError(found or "unknown")
-    head = data[: 1 << 16]
     if found == "avif":
         announced = avif_announced_size(data)  # the whole file is in hand: boxes are walked by size
         if announced is None:  # no `meta`, no `ispe`, a malformed box: not a header to trust
             raise ImageRejected("image.format_refused", "avif header", "header")
     else:
-        announced = announced_size(head, found)
-    if announced is not None and announced[0] * announced[1] > max_pixels:
+        announced = webp_announced_size(data)  # every chunk is walked, the largest size counts
+        if announced is None:
+            raise ImageRejected("image.format_refused", "webp header", "header")
+    if announced[0] * announced[1] > max_pixels:
         raise ImageRejected("image.too_large", "pixels", "header")
 
 
@@ -176,20 +191,47 @@ class RenditionService:
         body["src"] = hashlib.sha256(data).hexdigest()
         return json.dumps(body, sort_keys=True, separators=(",", ":"))
 
-    def _refuse_purged(self, source: str) -> None:
-        if self._tombstones.check_content([ContentHash(FILE_HASH_BY, source)]):
+    def _purged(self, origin: _Origin) -> bool:
+        """This content is being purged, or was: its own place is tombstoned. A file that
+        carries several Units has no one place: the hash of its file then decides."""
+        if origin.place is not None:
+            return self._tombstones.has_values(origin.place)
+        return self._tombstones.check_content([ContentHash(FILE_HASH_BY, origin.source)])
+
+    def _refuse_purged(self, origin: _Origin) -> None:
+        if self._purged(origin):
             raise TombstonedContentError("the content was purged: nothing is made from it")
 
-    def _source(self, content_id: str) -> tuple[str, bool]:
+    def _origin(self, content_id: str) -> _Origin:
+        c, u, e = storage.content, catalog.unit, catalog.edition
         with self._engine.connect() as connection:
             row = connection.execute(
-                sa.select(storage.content.c.original_sha256, storage.content.c.watermarked).where(
-                    storage.content.c.id == content_id
+                sa.select(c.c.original_sha256, c.c.watermarked, c.c.unit_id).where(
+                    c.c.id == content_id
                 )
             ).first()
-        if row is None:
-            raise UnknownSourceError(content_id)
-        return str(row.original_sha256), bool(row.watermarked)
+            if row is None:
+                raise UnknownSourceError(content_id)
+            place: PlaceRef | None = None
+            if row.unit_id is not None:
+                unit = connection.execute(
+                    sa.select(
+                        u.c.track,
+                        u.c.number_segment,
+                        u.c.number_raw,
+                        u.c.part,
+                        *(getattr(e.c, k) for k in EDITION_KEY_COLUMNS),
+                    )
+                    .select_from(u.join(e, e.c.id == u.c.edition_id))
+                    .where(u.c.id == row.unit_id)
+                ).first()
+                if unit is not None:
+                    key = {k: str(getattr(unit, k)) for k in EDITION_KEY_COLUMNS}
+                    place = PlaceRef.of(
+                        key, track=unit.track, number_segment=unit.number_segment,
+                        number_raw=unit.number_raw, part=unit.part,
+                    )  # fmt: skip
+        return _Origin(str(row.original_sha256), bool(row.watermarked), place)
 
     # -- reading ---------------------------------------------------------------------------
     def read(self, rendition: Rendition) -> bytes | None:
@@ -210,8 +252,10 @@ class RenditionService:
     def cached(self, content_id: str, params: RenditionParams, data: bytes) -> Rendition | None:
         """The rendition already made from these bytes of this content, if its file is there and
         intact."""
-        source, _ = self._source(content_id)
-        return self._cached(source, params, self._key(params, data))
+        origin = self._origin(content_id)
+        if self._purged(origin):  # as `render` refuses: nothing is handed back during a purge
+            return None
+        return self._cached(origin.source, params, self._key(params, data))
 
     def _cached(self, source: str, params: RenditionParams, key: str) -> Rendition | None:
         with self._engine.connect() as connection:
@@ -244,9 +288,10 @@ class RenditionService:
         Raises `UnknownSourceError`, `RemoteProcessorRefusedError` (a remote processor and a
         watermarked file), `UnsupportedSourceError` (not AVIF or WebP) and `ImageRejected`
         (`image.too_large`, `image.decode_failed`, `image.worker_failed`...)."""
-        source, watermarked = self._source(content_id)
-        self._refuse_purged(source)
-        ensure_processor_allowed(processor, watermarked=watermarked)
+        origin = self._origin(content_id)
+        source = origin.source
+        self._refuse_purged(origin)
+        ensure_processor_allowed(processor, watermarked=origin.watermarked)
         if processor != LOCAL_PROCESSOR:
             raise UnsupportedProcessorError(processor.name)  # none is shipped
         key = self._key(params, data)
@@ -271,13 +316,13 @@ class RenditionService:
         rendition = Rendition(source, params.kind, key, out_hash, len(made.data))
         write_data_file(self._data, rendition.rel, made.data)
         try:
-            self._record(rendition)
+            self._record(rendition, origin)
         except BaseException:
             self._drop_if_unreferenced(rendition.content_hash, rendition.kind)
             raise
         return rendition
 
-    def _record(self, rendition: Rendition) -> None:
+    def _record(self, rendition: Rendition, origin: _Origin) -> None:
         table = storage.rendition
         stale: tuple[str, str] | None = None
         with write_transaction(self._engine) as connection:
@@ -288,7 +333,7 @@ class RenditionService:
                 raise UnknownSourceError(rendition.source_content_hash)
             # read again under the write lock: a purge records its tombstones first, then lists
             # and erases the rows under this same lock, so a row written here is seen by it
-            self._refuse_purged(rendition.source_content_hash)
+            self._refuse_purged(origin)
             old = connection.execute(
                 sa.select(table.c.content_hash, table.c.kind).where(
                     table.c.source_content_hash == rendition.source_content_hash,
