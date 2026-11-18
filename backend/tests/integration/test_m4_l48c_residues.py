@@ -88,3 +88,38 @@ def test_c4_a_disk_failure_of_a_binding_is_kept_in_the_health_of_its_target(
             ).scalar_one()
             failures = load_health(connection, target).binding_failures
         assert failures == {destination: "export.write_failed"}
+
+
+@pytest.mark.req("EF-EXP-045", "EF-BIB-055")
+@pytest.mark.parametrize("declared", ["Everyone", "Early Childhood"])
+def test_c2_a_declared_age_below_the_rating_is_no_age_and_the_chapter_is_held(
+    declared: str,
+) -> None:
+    import sqlalchemy as sa
+
+    from shelfhold.catalog.public import visible_unit_ids
+    from shelfhold.infrastructure.schema import catalog
+    from tests.adopt_env import adoption, comicinfo
+    from tests.family_env import rate
+    from tests.integration.test_m4_jalon_parental import CHILD
+
+    with export_env() as env:
+        series = env.new_series("Tale of Orchard")
+        held = env.add_chapter(series, "1")
+        rate(env, series, 10)  # rated 10, on an adult shelf open to everyone (D-P3)
+        a = adoption(env)
+        # a forged ComicInfo says the file is for everyone
+        a.add_series(
+            "Tale of Orchard", ["Tale of Orchard - Ch.2.cbz"],
+            info=comicinfo("Tale of Orchard", age=declared),
+        )
+        a.adopt()
+        with env.engine.connect() as c:
+            adopted = c.execute(
+                sa.select(catalog.unit.c.id).where(
+                    catalog.unit.c.edition_id == series.edition_id,
+                    catalog.unit.c.number_norm == "2",
+                )
+            ).scalar_one()
+            assert visible_unit_ids(c, CHILD, [adopted]) == set()
+            assert visible_unit_ids(c, CHILD, [held]) == set()  # the Edition waits for an admin

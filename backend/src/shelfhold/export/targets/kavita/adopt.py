@@ -40,6 +40,7 @@ from sqlalchemy import Connection, Engine
 from shelfhold.catalog.public import (
     LANG_NORMALIZER_ID,
     LanguageError,
+    RatingService,
     content_warning_age,
     edition_key_lang,
     suggest_age,
@@ -91,7 +92,7 @@ from shelfhold.library.public import (
     has_active_content,
     record_destination_copy,
 )
-from shelfhold.sdk.age import from_comicinfo
+from shelfhold.sdk.age import AgeRating, from_comicinfo
 
 if TYPE_CHECKING:
     from shelfhold.export.application.pipeline import ExportPipeline
@@ -949,8 +950,12 @@ class Adopter:
         if suspend and item.unrated:  # this Work alone, never the shelf (EF-EXP-048)
             suspend_follow(connection, ctx.shelf_id, [self._work_of(connection, edition_id)])
         self._freeze_series(connection, ctx, item, edition_id, now)
-        self._suggest_age(connection, item, edition_id, now)
-        if item.edition_id is not None and item.age is None:
+        forged = item.edition_id is not None and self._declared_below(
+            connection, item, edition_id
+        )
+        if not forged:
+            self._suggest_age(connection, item, edition_id, now)
+        if item.edition_id is not None and (item.age is None or forged):
             self._hold_unrated_join(connection, edition_id, now)
         order = _next_order(connection, edition_id)
         volumes: list[tuple[AdoptedFile, str]] = []
@@ -1043,6 +1048,22 @@ class Adopter:
                 export_series_id=series_id, assigned_at=now, assigned_by="first_export",
             )
         )  # fmt: skip
+
+    @staticmethod
+    def _declared_below(connection: Connection, item: AdoptedSeries, edition_id: str) -> bool:
+        """The age a file declares is **below** the rating of the Edition it joined by its name
+        (C2): nobody read that file, and a ComicInfo is written by whoever made the archive, so
+        it never lowers a rating. It counts as no age: the join is held like a file without one."""
+        if item.age is None:
+            return False
+        work = connection.execute(
+            sa.select(catalog.edition.c.work_id).where(catalog.edition.c.id == edition_id)
+        ).scalar()
+        if work is None:
+            return False
+        rated = RatingService().effective_age_of(connection, str(work))
+        value, x = item.age
+        return rated is not None and AgeRating(value, x=x) < rated
 
     @staticmethod
     def _hold_unrated_join(connection: Connection, edition_id: str, now: datetime) -> None:
