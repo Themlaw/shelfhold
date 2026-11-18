@@ -58,7 +58,7 @@ def test_locator_v1_progression_and_the_stored_form() -> None:
     assert epub.stored() == EPUB
     page = parse_locator_v1(PAGE)
     assert page.kind == "page" and page.progression == pytest.approx(12 / 180)
-    assert page.stored() == {**PAGE, "page": 11}
+    assert page.stored() == {**PAGE, "page": 12}  # `page` counts from 1, `index` from 0
     assert parse_locator_v1({**PAGE, "index": 179}).progression == 1.0
 
 

@@ -10,13 +10,25 @@ ADR-0055, on a kept copy (`content`: a Work that is not exported) or on an expor
 * **An excerpt writes nothing.** A call that says `excerpt`, one that carries an excerpt ticket and
   a carrier that can only be read as an excerpt (an exported file: D-P1) are refused with nothing
   stored, no history and no proposal, so that nothing of it can reach Kavita or kosync.
-* **Where the reader is.** The latest `client_ts`, bounded by `server_ts` (`reading.domain.merge`):
-  an offline position is dated by when it was made, never later than the server's date, and a
-  date more than `CLIENT_SKEW` ahead of the server's clock is refused. Going back is allowed; the
-  history (bounded by `HISTORY_LIMIT`) keeps the rest, and a Unit that was read stays read.
+* **Where the reader is.** The latest position in **effective time** (`client_ts` bounded by
+  `server_ts`, `reading.domain.merge`), never in order of arrival: an offline position is dated by
+  when it was made, a date more than `CLIENT_SKEW` ahead of the server's clock is refused, and a
+  date out of range is refused too. The window of `HISTORY_LIMIT` positions is cut on that same
+  time (the latest in effective time are kept), so a batch of late positions never pushes the
+  current one out; an older position enters the history only. Going back is allowed, and a Unit
+  that was read stays read.
+* **`device_id`** is optional. Without it, positions are told apart by nothing: two devices that
+  omit it count as one and no conflict is proposed between them (the web reader sends a stable
+  browser identifier, L10).
+* **`page`** (what the progress reads) counts from 1, like the coverage of a Unit and kosync; the
+  locator's `index` counts from 0 (ADR-0055): `page = index + 1`.
 * **A divergence.** When another device's latest position is further than the winner by D8's
   threshold, `reading_conflict` records it once; the reader chooses (`resolve`) and what she
-  dismissed is not proposed again until that device speaks again.
+  dismissed is not proposed again until that device speaks again. A proposal is judged again each
+  time (`_overtaken`): it holds while the same device goes on reading (its `winner` follows the
+  current position) and the far device has said nothing since; once another device wrote, or the
+  far one spoke again, it is closed (`stale`), no longer shown, and answering it is refused
+  (`StaleConflictError`) without writing anything.
 * **Another filter.** A position written under another version of the filter, or on a content that
   was replaced, is restored as it was written and marked `approximate`, never moved in silence.
 """
@@ -51,16 +63,19 @@ log = structlog.get_logger(__name__)
 __all__ = [
     "CLIENT_SKEW",
     "ClientTsInFutureError",
+    "ClientTsOutOfRangeError",
     "Conflict",
     "Current",
     "ExcerptWritesNoPositionError",
     "InvalidTicketError",
     "ReaderPositions",
+    "StaleConflictError",
     "StoredPosition",
     "UnknownConflictError",
 ]
 
 CLIENT_SKEW: Final = timedelta(minutes=5)  # a clock a little ahead is bounded, a far one refused
+MIN_CLIENT_TS: Final = datetime(2000, 1, 1, tzinfo=UTC)  # nothing was read before this
 Choice = Literal["winner", "loser"]
 
 
@@ -70,6 +85,14 @@ class ExcerptWritesNoPositionError(Exception):
 
 class ClientTsInFutureError(ValueError):
     """`client_ts` is more than `CLIENT_SKEW` ahead of the server's clock."""
+
+
+class ClientTsOutOfRangeError(ValueError):
+    """`client_ts` cannot be a date of reading: before 2000, or past what a date can hold."""
+
+
+class StaleConflictError(Exception):
+    """The proposal was overtaken by a later position: there is nothing left to choose."""
 
 
 class InvalidTicketError(ValueError):
@@ -133,11 +156,18 @@ class ReaderPositions:
         """Record where `user_id` is, as herself; returns where she is now and any proposal.
 
         Raises `InvalidLocatorV1Error`, `ClientTsInFutureError`, `InvalidTicketError`,
-        `UnknownCarrierError` (absent and hidden alike), `ExcerptWritesNoPositionError`,
+        `ClientTsOutOfRangeError`, `UnknownCarrierError` (absent and hidden alike),
+        `ExcerptWritesNoPositionError`,
         `NoReadableCopyError` (a content with no hash cannot anchor a position)."""
         parsed = parse_locator_v1(locator)
         now = self._now()
-        if _utc(client_ts) > now + CLIENT_SKEW:
+        try:
+            when = client_ts.astimezone(UTC)  # a far date overflows when brought to UTC
+        except (OverflowError, ValueError):
+            raise ClientTsOutOfRangeError from None
+        if when < MIN_CLIENT_TS:
+            raise ClientTsOutOfRangeError
+        if when > now + CLIENT_SKEW:
             raise ClientTsInFutureError
         ticket_scope = None
         if ticket is not None:
@@ -159,7 +189,7 @@ class ReaderPositions:
             insert_position(
                 connection, user_id=user_id, carrier_type=carrier_type, carrier_id=carrier_id,
                 content_hash=content_hash, locator=parsed.stored(), percent=parsed.progression,
-                client_ts=_utc(client_ts), device_id=device_id, source="device", now=now,
+                client_ts=when, device_id=device_id, source="device", now=now,
                 traverse=parsed.kind == "page",  # a place in a reflowable text proves no reading
             )  # fmt: skip
             self._propose(connection, user_id, carrier_type, carrier_id, now)
@@ -174,25 +204,36 @@ class ReaderPositions:
         now: datetime,
     ) -> None:
         """Record the divergence of two devices, once (D8), if there is one."""
+        rows = self._v1_rows(connection, user_id, carrier_type, carrier_id)
+        if not rows:
+            return
         table = reading.reading_conflict
         mine = sa.and_(
             table.c.user_id == user_id,
             table.c.carrier_type == carrier_type,
             table.c.carrier_id == carrier_id,
         )
-        if connection.execute(
-            sa.select(sa.literal(1)).where(mine, table.c.resolved_at.is_(None)).limit(1)
-        ).first():
-            return  # one is open: proposed once, until she chooses
-        settled = connection.execute(
-            sa.select(sa.func.max(table.c.resolved_at)).where(mine)
-        ).scalar()
-        since = None if settled is None else _utc(settled)
-        rows = self._v1_rows(connection, user_id, carrier_type, carrier_id)
-        if not rows:
-            return
         reports = {r.id: _reported(r) for r in rows}
         won = winner(list(reports.values()))
+        opened = connection.execute(
+            sa.select(table).where(mine, table.c.resolved_at.is_(None))
+        ).first()
+        if opened is not None:
+            if not _overtaken(opened, reports, won):
+                if opened.winner_position_id != won.position_id:  # the same device reads on
+                    connection.execute(
+                        sa.update(table).where(table.c.id == opened.id)
+                        .values(winner_position_id=won.position_id)
+                    )  # fmt: skip
+                return  # still true: proposed once, until she chooses
+            connection.execute(  # a later position overtook it: closed, and room for a new one
+                sa.update(table).where(table.c.id == opened.id).values(choice="stale",
+                                                                        resolved_at=now)
+            )  # fmt: skip
+        settled = connection.execute(
+            sa.select(sa.func.max(table.c.resolved_at)).where(mine, table.c.choice != "stale")
+        ).scalar()
+        since = None if settled is None else _utc(settled)
         latest_by_device: dict[str | None, Reported] = {}
         for report in reports.values():
             if report.position_id == won.position_id:
@@ -247,7 +288,11 @@ class ReaderPositions:
                     table.c.source == "device",
                     sa.func.json_extract(table.c.locator, "$.v") == 1,
                 )
-                .order_by(table.c.server_ts.desc(), table.c.id.desc())
+                # the window is cut on effective time (`client_ts` bounded by `server_ts`), never
+                # on arrival: a late batch cannot push the current position out of it
+                .order_by(
+                    sa.func.min(table.c.client_ts, table.c.server_ts).desc(), table.c.id.desc()
+                )
                 .limit(HISTORY_LIMIT)
             )
         )
@@ -262,10 +307,16 @@ class ReaderPositions:
         if rows:
             best = winner([_reported(r) for r in rows])
             position = _stored(by_id[best.position_id], now_hash)
-        return Current(position, self._open_conflict(connection, user_id, carrier_type, carrier_id))
+        open_one = self._open_conflict(connection, user_id, carrier_type, carrier_id, rows)
+        return Current(position, open_one)
 
     def _open_conflict(
-        self, connection: sa.Connection, user_id: str, carrier_type: str, carrier_id: str
+        self,
+        connection: sa.Connection,
+        user_id: str,
+        carrier_type: str,
+        carrier_id: str,
+        rows: list[Any],
     ) -> Conflict | None:
         table = reading.reading_conflict
         row = connection.execute(
@@ -276,9 +327,17 @@ class ReaderPositions:
                 table.c.resolved_at.is_(None),
             )
         ).first()
-        return None if row is None else self._conflict(connection, row)
+        if row is None or not rows:
+            return None
+        reports = {r.id: _reported(r) for r in rows}
+        won = winner(list(reports.values()))
+        if _overtaken(row, reports, won):
+            return None  # not proposed any more (the next write closes it)
+        return self._conflict(connection, row, won.position_id)
 
-    def _conflict(self, connection: sa.Connection, row: Any) -> Conflict | None:
+    def _conflict(
+        self, connection: sa.Connection, row: Any, winner_id: str | None = None
+    ) -> Conflict | None:
         position = reading.reading_position
         now_hash = _current_hash(connection, row.carrier_type, row.carrier_id)
         found = {
@@ -290,10 +349,22 @@ class ReaderPositions:
                 )
             )
         }
-        if row.winner_position_id not in found or row.loser_position_id not in found:
+        if winner_id is not None and winner_id not in found:  # the one she is on now
+            found.update(
+                {
+                    r.id: r
+                    for r in connection.execute(
+                        sa.select(position).where(
+                            position.c.id == winner_id, position.c.user_id == row.user_id
+                        )
+                    )
+                }
+            )
+        shown = winner_id or row.winner_position_id
+        if shown not in found or row.loser_position_id not in found:
             return None  # a side is gone: there is nothing left to choose between
         return Conflict(
-            row.id, _stored(found[row.winner_position_id], now_hash),
+            row.id, _stored(found[shown], now_hash),
             _stored(found[row.loser_position_id], now_hash), _utc(row.created_at),
         )  # fmt: skip
 
@@ -305,20 +376,23 @@ class ReaderPositions:
         """The reader chose. `winner` keeps the latest and dismisses what the other device said;
         `loser` resumes where the other device was: that place is written again as the latest
         position (a new anchor, the history is kept). An open proposal of hers, else
-        `UnknownConflictError` (also for another profile's, and once settled)."""
+        `UnknownConflictError` (also for another profile's, and once settled); one that a later
+        position overtook is `StaleConflictError`, and an answer never installs a position older
+        than the current one."""
         table = reading.reading_conflict
         now = self._now()
         with write_transaction(self._engine) as connection:
             row = connection.execute(
-                sa.select(table).where(
-                    table.c.id == conflict_id,
-                    table.c.user_id == user_id,
-                    table.c.resolved_at.is_(None),
-                )
+                sa.select(table).where(table.c.id == conflict_id, table.c.user_id == user_id)
             ).first()
-            if row is None:
-                raise UnknownConflictError
+            if row is None or (row.resolved_at is not None and row.choice != "stale"):
+                raise UnknownConflictError  # absent, another profile's, or already settled
             check_carrier(connection, user_id, row.carrier_type, row.carrier_id)
+            if row.choice == "stale":
+                raise StaleConflictError
+            now_here = self._current(connection, user_id, row.carrier_type, row.carrier_id)
+            if now_here.conflict is None or now_here.conflict.id != row.id:
+                raise StaleConflictError  # a later position came: nothing is written
             if choice == "loser":
                 position = reading.reading_position
                 sides = {
@@ -345,6 +419,16 @@ class ReaderPositions:
                 sa.update(table).where(table.c.id == row.id).values(choice=choice, resolved_at=now)
             )
             return self._current(connection, user_id, row.carrier_type, row.carrier_id)
+
+
+def _overtaken(row: Any, reports: dict[str, Reported], won: Reported) -> bool:
+    """The proposal no longer says what is true: the position she is on now is another device's,
+    or the far device wrote again, or one of its two positions is gone."""
+    on, far = reports.get(row.winner_position_id), reports.get(row.loser_position_id)
+    if on is None or far is None or won.device_id != on.device_id:
+        return True
+    same = [r for r in reports.values() if r.device_id == far.device_id]
+    return winner(same).position_id != far.position_id
 
 
 def _reported(row: Any) -> Reported:

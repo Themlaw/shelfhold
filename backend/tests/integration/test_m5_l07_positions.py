@@ -110,7 +110,7 @@ def test_locator_progress_lww(world: World) -> None:
     back = put(world, world.admin, content, page(4), minutes=-5)
     assert back.status_code == 200
     got = current(world.admin, content).json()
-    assert got["position"]["locator"] == {**page(4), "page": 4}  # the latest, not the furthest
+    assert got["position"]["locator"] == {**page(4), "page": 5}  # the latest, not the furthest
     assert got["position"]["id"] == back.json()["position"]["id"]
     assert got["conflict"] is None  # one device: going back is not a conflict
     listed = history(world.admin, content).json()["items"]
@@ -176,7 +176,7 @@ def test_reading_position_on_unexported_content_anchor(world: World) -> None:
         row = connection.execute(sa.select(reading.reading_position)).one()
     assert (row.carrier_type, row.carrier_id, row.content_hash) == ("content", content, HASH)
     assert (row.source, row.device_id, row.read_units) == ("device", "tablet", [])
-    assert row.percent == 1.0 and row.locator == {**page(29), "page": 29}
+    assert row.percent == 1.0 and row.locator == {**page(29), "page": 30}
     assert count(world, export.export_item) == 0  # no export_item was needed
     admin = user_id_of(world.seed.engine, "admin")
     with world.seed.engine.connect() as connection:
@@ -449,4 +449,47 @@ def test_reader_positions_credentials_and_identifiers(world: World) -> None:
         404,
         422,
     }
+    assert count(world, reading.reading_position) == 0
+
+
+@pytest.mark.req("EF-LEC-007")
+def test_overtaken_proposal_is_closed_and_refused_without_writing(world: World) -> None:
+    """A proposal that a later position overtook is no longer shown; answering it is a typed 409
+    that writes nothing; the next divergence may be proposed again."""
+    content, _unit = kept(world)
+    assert put(world, world.admin, content, page(20, 50), device="tab", minutes=-30).is_success
+    first = put(world, world.admin, content, page(2, 50), device="phone", minutes=-10).json()
+    assert first["conflict"] is not None
+    assert put(world, world.admin, content, page(40, 50), device="tab", minutes=-5).is_success
+    assert current(world.admin, content).json()["conflict"] is None  # overtaken: not proposed
+    before = count(world, reading.reading_position)
+    stale = world.admin.post(
+        f"/api/reader/conflicts/{first['conflict']['id']}/resolve",
+        json={"choice": "loser", "device_id": "phone"},
+        headers={CSRF_HEADER: world.env.csrf(world.admin)},
+    )
+    assert stale.status_code == 409 and stale.json()["code"] == "conflict_stale"
+    assert count(world, reading.reading_position) == before  # nothing written
+    # the phone is behind again: a new proposal, the stale one having been closed
+    again = put(world, world.admin, content, page(3, 50), device="phone", minutes=-1).json()
+    assert again["conflict"] is not None and again["conflict"]["id"] != first["conflict"]["id"]
+    assert again["conflict"]["loser"]["locator"]["index"] == 40
+
+
+@pytest.mark.req("EF-LEC-007")
+def test_dates_that_cannot_be_a_reading_are_a_typed_422(world: World) -> None:
+    content, _unit = kept(world)
+    for text in (
+        "1999-12-31T23:59:59+00:00",
+        "0001-01-01T00:00:00+14:00",
+        "9999-12-31T23:59:59-14:00",
+    ):
+        got = world.admin.put(
+            "/api/reader/positions",
+            json={"carrier_type": "content", "carrier_id": content, "locator": page(3),
+                  "client_ts": text},
+            headers={CSRF_HEADER: world.env.csrf(world.admin)},
+        )  # fmt: skip
+        assert got.status_code == 422, (text, got.status_code)
+        assert got.json()["code"] in {"client_ts_out_of_range", "client_ts_in_future"}, text
     assert count(world, reading.reading_position) == 0

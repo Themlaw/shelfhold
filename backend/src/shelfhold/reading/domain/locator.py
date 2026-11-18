@@ -53,12 +53,13 @@ class LocatorV1:
 
     def stored(self) -> dict[str, Any]:
         """The JSON kept in `reading_position.locator`. A page also carries `page`, the integer the
-        view of the progress reads (`reading_progress`), the same number as `index`."""
+        view of the progress reads (`reading_progress`): counted from 1 like the coverage of a Unit
+        and kosync, so `index + 1` (the locator's own `index` counts from 0, ADR-0055)."""
         if self.kind == "cfi":
             return {"v": 1, "type": "cfi", "cfi": self.cfi, "totalProgression": self.progression,
                     "filter": self.filter}  # fmt: skip
         return {"v": 1, "type": "page", "index": self.index, "count": self.count,
-                "page": self.index}  # fmt: skip
+                "page": (self.index or 0) + 1}  # fmt: skip
 
 
 def _integer(value: Any) -> int:

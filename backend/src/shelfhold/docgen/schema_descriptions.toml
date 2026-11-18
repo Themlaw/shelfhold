@@ -463,7 +463,7 @@ carrier_type = "`content` (a kept copy) or `export_item` (an exported file)."
 carrier_id = "The file the two positions are on."
 winner_position_id = "The latest position (`client_ts` bounded by `server_ts`): where the reader is."
 loser_position_id = "The further position, on another device, that lost by date."
-choice = "What she chose: `winner` (keep the latest) or `loser` (resume at the further one); empty while open."
+choice = "What closed it: `winner` (she kept the latest), `loser` (she resumed at the further one) or `stale` (a later position overtook it); empty while open."
 created_at = "When the divergence was noticed (UTC)."
 resolved_at = "When she chose (UTC); empty while the proposal is open."
 

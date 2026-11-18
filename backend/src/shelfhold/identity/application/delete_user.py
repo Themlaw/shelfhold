@@ -31,6 +31,8 @@ SECTIONS = (
     "device_tokens", "collections", "collection_items", "destination_accounts",
     "notify_destinations", "read_markers", "tracker_hints", "request_list_imports",
     "source_accounts", "tachibk_imports",
+    # M5 L07: the questions put to the reader (identifiers, choice, dates: no locator)
+    "reading_conflicts",
 )  # fmt: skip
 
 

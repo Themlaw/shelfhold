@@ -1443,6 +1443,16 @@ title = "L'horloge de cet appareil avance sur celle du serveur."
 action = "Réglez la date et l'heure de l'appareil, puis continuez la lecture."
 cause = "Une position datée bien après l'horloge du serveur ne se distingue pas d'une horloge fausse : elle n'est pas enregistrée."
 
+[errors."client_ts_out_of_range"]
+title = "Cette position porte une date qui ne peut pas être juste."
+action = "Réglez la date et l'heure de l'appareil, puis continuez la lecture."
+cause = "Une date de lecture antérieure à l'an 2000, ou trop éloignée pour être conservée, n'est pas enregistrée."
+
+[errors."conflict_stale"]
+title = "Vous avez lu plus loin depuis que cette question a été posée."
+action = "Continuez : le lecteur montre où vous en êtes maintenant."
+cause = "Une position plus récente a remplacé celle dont parlait la question : il n'y a plus rien à choisir."
+
 [errors."bundle_busy"]
 title = "Trop de blocs sont servis en ce moment."
 action = "Patientez quelques instants, puis relancez le téléchargement."

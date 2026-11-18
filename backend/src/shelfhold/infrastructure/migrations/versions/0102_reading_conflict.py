@@ -2,12 +2,15 @@
 
 `reading_conflict` keeps identifiers and the reader's choice only (the positions themselves are the
 history). It belongs to one user and goes with that user. At most one open proposal per user and
-carrier (a partial unique index): once settled, a later divergence may be proposed again. Nothing
+carrier (a partial unique index): once settled, or overtaken by a later position (`stale`), a later
+divergence may be proposed again. Nothing
 existing is touched; reversible.
 
 Number: 0102 is the number the plan reserved for L07. TODO(2026-11-18): `down_revision` is 0098, the
 head of this branch's base, because the migration of L03 (0101, OIDC) is not merged yet; it is
-re-chained on 0101 at the merge, and the test that pins the head follows.
+re-chained on 0101 at the merge, and the test that pins the head follows. The file stays frozen in
+`tools/published-migrations.toml`; its fingerprint is recomputed in the same commit as the
+re-chaining.
 """
 # ruff: noqa: E501  (the DDL is the one SQLAlchemy writes, kept as it is)
 
@@ -38,7 +41,7 @@ CREATE TABLE reading_conflict (
 	CONSTRAINT ck_reading_conflict_winner_position_id_ulid CHECK (length("winner_position_id") = 26 AND "winner_position_id" NOT GLOB '*[^0-9A-HJKMNP-TV-Z]*'),
 	CONSTRAINT ck_reading_conflict_loser_position_id_ulid CHECK (length("loser_position_id") = 26 AND "loser_position_id" NOT GLOB '*[^0-9A-HJKMNP-TV-Z]*'),
 	CONSTRAINT ck_reading_conflict_carrier_type_values CHECK ("carrier_type" IN ('export_item', 'content')),
-	CONSTRAINT ck_reading_conflict_choice_values CHECK ("choice" IN ('winner', 'loser')),
+	CONSTRAINT ck_reading_conflict_choice_values CHECK ("choice" IN ('winner', 'loser', 'stale')),
 	CONSTRAINT ck_reading_conflict_choice_with_its_date CHECK (("choice" IS NULL) = ("resolved_at" IS NULL)),
 	CONSTRAINT fk_reading_conflict_user_id_user FOREIGN KEY(user_id) REFERENCES user (id) ON DELETE CASCADE
 )

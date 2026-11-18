@@ -13333,6 +13333,9 @@
           "404": {
             "description": "not-found"
           },
+          "409": {
+            "description": "conflict-stale"
+          },
           "default": {
             "content": {
               "application/problem+json": {
@@ -31567,6 +31570,10 @@
       "code": "client_ts_in_future",
       "status": 422
     },
+    "/api/v1/problems/client-ts-out-of-range": {
+      "code": "client_ts_out_of_range",
+      "status": 422
+    },
     "/api/v1/problems/collection.cbl-refused": {
       "code": "collection.cbl_refused",
       "status": 422
@@ -31594,6 +31601,10 @@
     "/api/v1/problems/config.unknown-key": {
       "code": "config.unknown_key",
       "status": 404
+    },
+    "/api/v1/problems/conflict-stale": {
+      "code": "conflict_stale",
+      "status": 409
     },
     "/api/v1/problems/content.untrusted-entry": {
       "code": "content.untrusted_entry",

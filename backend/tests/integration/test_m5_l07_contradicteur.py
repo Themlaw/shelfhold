@@ -31,11 +31,6 @@ def world(monkeypatch: pytest.MonkeyPatch, settings: Settings) -> Iterator[World
 
 
 @pytest.mark.req("EF-LEC-007")
-@pytest.mark.xfail(
-    strict=True,
-    reason="C1: the winner is taken among the last HISTORY_LIMIT rows by server_ts, not by "
-    "bounded client_ts: a batch of late offline positions pushes the latest one out of the window",
-)
 def test_late_offline_batch_never_moves_the_reader_back(
     world: World, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -55,11 +50,6 @@ def test_late_offline_batch_never_moves_the_reader_back(
 
 
 @pytest.mark.req("EF-LEC-007")
-@pytest.mark.xfail(
-    strict=True,
-    reason="C2: an open proposal is never revisited: once the far device writes again, its "
-    "« winner » is no longer where the reader is, and choosing « loser » moves her back",
-)
 def test_stale_proposal_never_moves_the_reader_back(world: World) -> None:
     content, _unit = kept(world)
     assert put(world, world.admin, content, page(20, 50), device="tab", minutes=-30).is_success
@@ -81,11 +71,6 @@ def test_stale_proposal_never_moves_the_reader_back(world: World) -> None:
 
 
 @pytest.mark.req("EF-LEC-014", "EF-LEC-007")
-@pytest.mark.xfail(
-    strict=True,
-    reason="C3: the reader stores `page = index` (from 0) while the coverage counts pages from 1: "
-    "turning every page of a Unit in the reader never reaches its last page, never marks it read",
-)
 def test_reading_every_page_in_the_reader_marks_the_unit_read(world: World) -> None:
     content, unit = kept(world)
     with write_transaction(world.seed.engine) as connection:
@@ -104,11 +89,6 @@ def test_reading_every_page_in_the_reader_marks_the_unit_read(world: World) -> N
 
 
 @pytest.mark.req("EF-LEC-007")
-@pytest.mark.xfail(
-    strict=True,
-    reason="C4: an aware `client_ts` near the bounds of datetime passes the 5 minute check and "
-    "overflows when stored in UTC: an unhandled 500 instead of a 422",
-)
 def test_extreme_client_ts_is_a_422_not_a_500(world: World) -> None:
     content, _unit = kept(world)
     got = world.admin.put(

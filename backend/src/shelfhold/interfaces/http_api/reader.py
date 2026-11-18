@@ -30,11 +30,13 @@ from shelfhold.reading.application.content_access import (
 )
 from shelfhold.reading.application.positions import (
     ClientTsInFutureError,
+    ClientTsOutOfRangeError,
     Conflict,
     Current,
     ExcerptWritesNoPositionError,
     InvalidTicketError,
     ReaderPositions,
+    StaleConflictError,
     StoredPosition,
     UnknownConflictError,
 )
@@ -96,6 +98,8 @@ class PositionIn(BaseModel):
     carrier_id: str = Field(max_length=26)
     locator: dict[str, Any]  # a locator v1 (ADR-0055), checked by the domain
     client_ts: AwareDatetime
+    # a stable label of the device inside the profile; without it two devices count as one and no
+    # conflict is proposed between them (the web reader sends a browser identifier, L10)
     device_id: str | None = Field(default=None, min_length=1, max_length=64)
     scope: Literal["full", "excerpt"] = "full"
     ticket: str | None = Field(default=None, max_length=1024)
@@ -230,6 +234,8 @@ def build_reader_router(
             raise ProblemError("invalid_locator") from None
         except ClientTsInFutureError:
             raise ProblemError("client_ts_in_future") from None
+        except ClientTsOutOfRangeError:
+            raise ProblemError("client_ts_out_of_range") from None
         except InvalidTicketError:
             raise ProblemError("validation_failed") from None
         except UnknownCarrierError:
@@ -294,7 +300,7 @@ def build_reader_router(
         "/conflicts/{conflict_id}/resolve",
         operation_id="reader_resolve_conflict",
         response_model=CurrentOut,
-        responses={404: {"description": "not-found"}},
+        responses={404: {"description": "not-found"}, 409: {"description": "conflict-stale"}},
     )
     def resolve(
         conflict_id: str, body: ResolveIn, response: Response, principal: Session
@@ -316,5 +322,7 @@ def build_reader_router(
             )
         except (UnknownConflictError, UnknownCarrierError):
             raise ProblemError("not_found", headers=_ABSENT) from None
+        except StaleConflictError:
+            raise ProblemError("conflict_stale") from None
 
     return router

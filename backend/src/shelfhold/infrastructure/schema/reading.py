@@ -77,8 +77,9 @@ reading_position = sa.Table(
 # « resume at page 143 or 210? », until she chooses. It holds identifiers and her choice only: the
 # positions themselves are the history (no foreign key on them, like the carrier: a position
 # outlives what it was read on). At most one open proposal per profile and carrier (the partial
-# unique index); once settled, a later divergence may be proposed again.
-CONFLICT_CHOICES = ("winner", "loser")
+# unique index); once settled, or overtaken by a later position (`stale`), a divergence may be
+# proposed again.
+CONFLICT_CHOICES = ("winner", "loser", "stale")  # `stale`: a later position overtook it
 reading_conflict = sa.Table(
     "reading_conflict",
     metadata,

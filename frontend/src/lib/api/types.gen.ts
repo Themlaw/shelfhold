@@ -8093,6 +8093,10 @@ export type ReaderResolveConflictErrors = {
      */
     404: unknown;
     /**
+     * conflict-stale
+     */
+    409: unknown;
+    /**
      * Détail du problème (RFC 9457).
      */
     default: Problem;

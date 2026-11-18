@@ -1474,6 +1474,16 @@
     action = "Set the date and time of the device, then carry on reading."
     cause = "A position dated well after the server's own clock cannot be told from a wrong clock, so it is not saved."
 
+  [errors.client_ts_out_of_range]
+    title = "This position carries a date that cannot be right."
+    action = "Set the date and time of the device, then carry on reading."
+    cause = "A reading date before the year 2000, or one too far off to be stored, is not saved."
+
+  [errors.conflict_stale]
+    title = "You have read on since this question was asked."
+    action = "Carry on: the reader shows where you are now."
+    cause = "A more recent position replaced the one this question was about, so there is nothing left to choose."
+
   [errors.bundle_busy]
     title = "Too many blocks are being served right now."
     action = "Wait a few moments, then start the download again."
