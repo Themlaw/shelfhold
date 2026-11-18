@@ -32,6 +32,9 @@ __all__ = ["build_headless_router"]
 _RISK = RESERVED_ACTIONS["admin_risk.accept"]
 _SECRET = RESERVED_ACTIONS["source.set_secret"]
 _PATH_MAP = reserved_action(RESERVED_ACTIONS["config.path_map"])
+# the service writes its own audit line, with its target, in the transaction that does the thing
+_ADD_KOMGA = reserved_action(RESERVED_ACTIONS["target.add_komga"], audit=False)
+_SYNC_PROGRESS = reserved_action(RESERVED_ACTIONS["destination.sync_progress"], audit=False)
 
 
 class ConfigRow(BaseModel):
@@ -67,6 +70,22 @@ class TargetIn(BaseModel):
 class NativeFolderIn(BaseModel):
     name: str = Field(min_length=1)
     path_map: list[dict[str, str]] = Field(min_length=1)
+
+
+class KomgaIn(BaseModel):
+    name: str = Field(min_length=1)
+    url: str = Field(min_length=1)
+    api_key: str = Field(min_length=1, repr=False)  # the key of a dedicated administrator account
+    path_map: list[dict[str, str]] | None = None
+
+
+class SyncProgressIn(BaseModel):
+    enabled: bool
+
+
+class SyncProgressOut(BaseModel):
+    destination_id: str
+    sync_progress: bool
 
 
 class SourceIn(BaseModel):
@@ -179,6 +198,61 @@ def build_headless_router(
             raise _problem(error) from None
         located(response, f"/api/v1/targets/{added.id}")
         return Created(id=added.id)
+
+    @router.post("/targets/komga", status_code=201)
+    def add_komga(
+        body: KomgaIn,
+        response: Response,
+        principal: Principal = Depends(_ADD_KOMGA),  # noqa: B008
+    ) -> Created:
+        """EF-EXP-020: a Komga with the API key of a dedicated administrator account. The key is
+        shown to Komga once, sealed, and never answered back. Reserved (a secret): a fresh admin
+        session or the host CLI, never a key, a member or a child."""
+        try:
+            added = get_admin().target_add_komga(
+                name=body.name, url=body.url, api_key=body.api_key, path_map=body.path_map,
+                actor=_actor_of(principal),
+            )  # fmt: skip
+        except HeadlessError as error:
+            raise _problem(error) from None
+        located(response, f"/api/v1/targets/{added.id}")
+        return Created(id=added.id)
+
+    @router.post("/targets/cwa", status_code=201)
+    def add_cwa(
+        body: NativeFolderIn,
+        response: Response,
+        principal: Principal = Depends(_PATH_MAP),  # noqa: B008
+    ) -> Created:
+        """EF-EXP-022: the drop box of a Calibre-Web Automated. Which folders are written is a
+        reserved action, like a native folder."""
+        try:
+            added = get_admin().target_add_cwa(
+                name=body.name, path_map=body.path_map, actor=_actor_of(principal)
+            )
+        except BindingError as error:
+            raise ProblemError(error.code) from None
+        except HeadlessError as error:
+            raise _problem(error) from None
+        located(response, f"/api/v1/targets/{added.id}")
+        return Created(id=added.id)
+
+    @router.post("/destinations/{destination_id}/sync-progress")
+    def sync_progress(
+        destination_id: str,
+        body: SyncProgressIn,
+        principal: Principal = Depends(_SYNC_PROGRESS),  # noqa: B008
+    ) -> SyncProgressOut:
+        """EF-LEC-014: turn the progress sync of a binding on or off. Reserved (a fresh admin
+        session or the host CLI, never a key, a member or a child) and journaled; a destination
+        that keeps no reading position answers 409 `destination.sync_unsupported`."""
+        try:
+            done = get_admin().destination_sync_progress(
+                destination_id=destination_id, enabled=body.enabled, actor=_actor_of(principal)
+            )
+        except HeadlessError as error:
+            raise _problem(error) from None
+        return SyncProgressOut(destination_id=done.destination_id, sync_progress=done.sync_progress)
 
     @router.post("/sources", status_code=201)
     def add_source(

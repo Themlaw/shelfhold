@@ -223,6 +223,19 @@ def test_traceability_reports_m5_without_blocking() -> None:
 
 
 @pytest.mark.req("ENF-SEC-007")
+def test_traceability_does_not_exempt_m4() -> None:
+    """M4 blocks since its closure (L45): the job has no branch that reports it without failing."""
+    ci: dict[str, Any] = yaml.safe_load(CI.read_text(encoding="utf-8"))
+    run = next(
+        s["run"]
+        for s in ci["jobs"]["traceability"]["steps"]
+        if "run" in s and "traceability.py" in s["run"]
+    )
+    assert '"$ms" = M4' not in run
+    assert "report only" not in run
+
+
+@pytest.mark.req("ENF-SEC-007")
 def test_image_paths_filter_covers_every_dockerfile_copy_source() -> None:
     root = CI.parents[2]
     ci: dict[str, Any] = yaml.safe_load(CI.read_text(encoding="utf-8"))

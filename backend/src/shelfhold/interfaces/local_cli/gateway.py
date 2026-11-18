@@ -18,6 +18,7 @@ from shelfhold.headless import (
     PlanChange,
     ShelfCreated,
     SourceAdded,
+    SyncProgressSet,
     TargetAdded,
 )
 from shelfhold.headless.admin import ConfigValues, PathMapSpec
@@ -349,6 +350,13 @@ class HeadlessCommands(Protocol):
         self, *, name: str, url: str, username: str, password: str, accept_admin_risk: bool,
         path_map: PathMapSpec | None = None,
     ) -> TargetAdded: ...  # fmt: skip
+    def target_add_komga(
+        self, *, name: str, url: str, api_key: str, path_map: PathMapSpec | None = None
+    ) -> TargetAdded: ...
+    def target_add_cwa(self, *, name: str, path_map: PathMapSpec | None) -> TargetAdded: ...
+    def destination_sync_progress(
+        self, *, destination_id: str, enabled: bool
+    ) -> SyncProgressSet: ...
     def source_add_suwayomi(
         self, *, url: str, secret: str | None, fix_suwayomi_settings: bool = False
     ) -> SourceAdded: ...
@@ -417,6 +425,28 @@ class SocketHeadless:
         if not isinstance(raw, dict):
             raise ValueError("malformed_reply")
         return TargetAdded(raw["id"], raw["name"], raw["created"], _when(raw["key_expires_at"]))
+
+    def target_add_komga(
+        self, *, name: str, url: str, api_key: str, path_map: PathMapSpec | None = None
+    ) -> TargetAdded:
+        raw = self._call("target.add_komga", name=name, url=url, api_key=api_key,
+                         path_map=path_map)  # fmt: skip
+        if not isinstance(raw, dict):
+            raise ValueError("malformed_reply")
+        return TargetAdded(raw["id"], raw["name"], raw["created"])
+
+    def target_add_cwa(self, *, name: str, path_map: PathMapSpec | None) -> TargetAdded:
+        raw = self._call("target.add_cwa", name=name, path_map=path_map)
+        if not isinstance(raw, dict):
+            raise ValueError("malformed_reply")
+        return TargetAdded(raw["id"], raw["name"], raw["created"])
+
+    def destination_sync_progress(self, *, destination_id: str, enabled: bool) -> SyncProgressSet:
+        raw = self._call("destination.sync_progress", destination_id=destination_id,
+                         enabled=enabled)  # fmt: skip
+        if not isinstance(raw, dict):
+            raise ValueError("malformed_reply")
+        return SyncProgressSet(raw["destination_id"], bool(raw["sync_progress"]))
 
     def source_confirm_roles(self) -> bool:
         return bool(self._call("source.confirm_roles"))

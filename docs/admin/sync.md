@@ -26,12 +26,25 @@ Ce que la passe ne fait jamais :
 - **elle n'échoue jamais le job** : une clé refusée, révoquée ou un Kavita muet termine la passe
   du membre (`unavailable`), les autres attendent le tour suivant.
 
-## Allumer la synchronisation d'une liaison : pas encore disponible
+## Allumer la synchronisation d'une liaison
 
-La synchronisation se règle **par liaison** (la colonne `sync_progress` de la liaison, Kavita
-seulement). **Aucune interface ne l'écrit encore** : ni écran, ni commande, ni route — le job lit
-le réglage, rien ne l'allume. Elle sera une action réservée quand sa surface existera. Jusque-là,
-une instance de production n'a pas de synchronisation active.
+La synchronisation se règle **par liaison** (le réglage `sync_progress` de la liaison, Kavita
+seulement) et elle est éteinte au départ. Trois portes, la même opération :
+
+```sh
+shelfhold target sync-progress <liaison> --on     # ou --off
+```
+
+- HTTP : `POST /api/v1/destinations/{id}/sync-progress` avec `{"enabled": true}` (ou `false`) ;
+- écran : la case « Synchroniser la progression » de **Réglages, Destinations**, sur les liaisons qui
+  savent le faire (`GET /api/v1/destinations` dit `sync_progress` et `can_sync_progress`).
+
+C'est une **action réservée** (`destination.sync_progress`) : une session d'administrateur récente ou la
+ligne de commande de l'hôte, jamais une clé d'API, un membre ni un enfant. Chaque changement est
+journalisé (table `audit`, cible `<liaison> on|off`) ; répéter l'état déjà posé n'écrit rien. Sur une
+destination qui ne garde pas de position de lecture par compte (Komga, boîte CWA, dossier natif), allumer
+est refusé avec `destination.sync_unsupported` (409) ; éteindre est toujours permis. Le prochain tour du
+job (au plus 10 min) prend la liaison allumée.
 
 ## La progression survit aux rangements
 
@@ -56,6 +69,5 @@ réparé au tour suivant, avec ou sans plan de renommage.
 
 ## Ce qui n'existe pas encore
 
-- **Allumer la synchronisation d'une liaison** : pas encore disponible (voir plus haut).
-- **La synchronisation avec une autre destination que Kavita** : le job ne lit que les liaisons
+- **La synchronisation avec une autre destination que Kavita** : pas encore disponible. Le job ne lit que les liaisons
   Kavita où le réglage est allumé ; rien n'est écrit pour une autre destination.

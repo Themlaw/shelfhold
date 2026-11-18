@@ -24,6 +24,7 @@ import asyncio
 import threading
 import time
 from collections.abc import Callable, Coroutine, Sequence
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Final, Protocol
 
 import sqlalchemy as sa
@@ -288,7 +289,7 @@ class KavitaProgress:
         if cached is not None and cached[1] == key and now - cached[0] < self._structure_ttl:
             return list(cached[2])  # the same files, read lately: `all-v2` and `series-detail` rest
         try:
-            found = run_sync(self._structure(target_id, library, wanted))
+            found = self._structure_in_thread(target_id, library, wanted)
             self._structures[destination_id] = (now, key, found)
             return list(found)
         except TargetError:  # unreachable, asleep, paused, refused: Kavita cannot be asked now
@@ -331,10 +332,22 @@ class KavitaProgress:
         ).scalar()
         return int(ref) if isinstance(ref, str) and ref.isdigit() else None
 
-    async def _structure(
+    def _structure_in_thread(
         self, target_id: str, library_id: int, wanted: dict[str, str]
     ) -> list[ChapterRef]:
-        client = self._admin_client(target_id)
+        """The client is made in a thread of its own, with no running loop (building the fetcher of
+        a target runs one), then used on the loop of that thread."""
+
+        def ask() -> list[ChapterRef]:
+            client = self._admin_client(target_id)
+            return asyncio.run(self._structure(client, library_id, wanted))
+
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            return pool.submit(ask).result()
+
+    async def _structure(
+        self, client: KavitaClient, library_id: int, wanted: dict[str, str]
+    ) -> list[ChapterRef]:
         folders = {path.rsplit("/", 1)[0] for path in wanted}
         found: list[ChapterRef] = []
         for series in await client.series_of_library(library_id):

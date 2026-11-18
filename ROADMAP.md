@@ -1,6 +1,6 @@
 # Feuille de route
 
-Source : [`docs/spec/03-roadmap-tdd.md`](docs/spec/03-roadmap-tdd.md) (jalons détaillés, tests écrits d'abord, matrice de traçabilité). Statut actuel : **V1 close (M0 à M3 livrés)**, `v1.0.0-rc.1` puis `v1.0.0` ; le test d'utilisabilité ([guide](docs/governance/test-utilisabilite.md)) conditionne l'annonce publique, plus le tag. Aucune version 0.3 à 0.5 n'a été publiée : la 1.0.0 regroupe M1b, M2 et M3.
+Source : [`docs/spec/03-roadmap-tdd.md`](docs/spec/03-roadmap-tdd.md) (jalons détaillés, tests écrits d'abord, matrice de traçabilité). Statut actuel : **M4 clos dans le dépôt (en attente du contradicteur de jalon et de la release `v1.1.0`)** ; V1 close (M0 à M3 livrés), `v1.0.0-rc.1` puis `v1.0.0` ; le test d'utilisabilité ([guide](docs/governance/test-utilisabilite.md)) conditionne l'annonce publique, plus le tag. Aucune version 0.3 à 0.5 n'a été publiée : la 1.0.0 regroupe M1b, M2 et M3.
 
 Le développement est mené par des agents (voir [AI_POLICY.md](AI_POLICY.md)) : les estimations en heures-homme de la spécification ne s'appliquent pas telles quelles. L'effort est converti en « effort agent » et **suivi dans `docs/governance/velocite.md`**.
 
@@ -13,11 +13,11 @@ Le développement est mené par des agents (voir [AI_POLICY.md](AI_POLICY.md)) :
 | M1b | Pont complet | Contrôle parental par étagère, « À classer », copie conservée et « Mettre à l'abri », Suwayomi piloté avec sonde de santé, sauvegarde intégrée (second registre d'images reporté en M4) | `v1.0.0` (pas de 0.3) |
 | M2 | Sources de livres légales | OPDS générique, Gutenberg (libre de droits aux États-Unis) via catalogues et miroirs, Wikisource, Standard Ebooks (libre de droits aux États-Unis), dossier d'import, fournisseur de métadonnées OpenLibrary | `v1.0.0` (pas de 0.4) |
 | M3 | Interface d'atelier, puis 1.0 | Assistant de premier lancement, recherche unifiée, étagères, activité, mode famille (précédé de la porte P2, repli « M3-lite »), `SECURITY.md` complet, parcours d'auteur de plugin | `v1.0.0` |
-| M4 | Multi-destinations et synchronisation | Dossier natif, Komga, autres destinations, synchronisation de progression, webhooks, autres fournisseurs de métadonnées ; second registre d'images, miroir du dépôt et vérificateur de mises à jour (ENF-GOV-004) ; écrans reportés de M3 (suppression à trois niveaux, « Même œuvre ? », indicateurs de la page Santé), thèmes B, C et D | `v1.x` |
+| M4 | Multi-destinations et synchronisation | Dossier natif, Komga, autres destinations, synchronisation de progression, webhooks, autres fournisseurs de métadonnées ; second registre d'images, miroir du dépôt et vérificateur de mises à jour (ENF-GOV-004) ; écrans reportés de M3 (suppression à trois niveaux, « Même œuvre ? » ; les indicateurs de la page Santé passent en « Plus tard »), thèmes B, C et D | `v1.1.0` (candidates `v1.1.0-rc.1` et `-rc.2`) |
 | M5 | Lecteur intégré | Lecteur EPUB et manga (secondaire), OPDS et kosync propres, OIDC, page légère pour liseuses, PWA | `v1.x` |
 | M6 | Écosystème | SDK publié sur PyPI (`shelfhold-sdk`, MIT), plugins tiers isolés, index signé, trackers ; relecture juridique de l'exception de plugin avant publication | `v2.0.0` |
 
-Hors planning (« plus tard ») : migration d’une liaison d’une racine à l’autre (une copie, pas un renommage), moteur YAML, PDF, annotations, Calibre, envoi vers liseuses, autres serveurs de lecture, import V2.
+Hors planning (« plus tard ») : indicateurs de valeur de la page Santé, migration d’une liaison d’une racine à l’autre (une copie, pas un renommage), moteur YAML, PDF, annotations, Calibre, envoi vers liseuses, autres serveurs de lecture, import V2.
 
 ## Critère de sortie commun
 
@@ -30,3 +30,10 @@ Hors planning (« plus tard ») : migration d’une liaison d’une racine à l�
 - **Coupables de M4 (D-P2).** Au-delà de 353 h d'effort agent (150 % de la boîte de 235 h), seuls ces trois éléments glissent à M5, sans débat : les thèmes B, C et D avec le sélecteur (~10 h), le plugin ComicVine (~3 h) et le transport WebSocket des événements de Kavita (~4 h, EF-EXP-034). Les thèmes A ne sont jamais coupés ; aucun coupable ne touche à la sécurité, au contrôle parental ni à l'intégrité.
 - **Coupables de M5.** Les trois éléments reportés de M4 (thèmes B, C et D avec le sélecteur, plugin ComicVine, transport WebSocket des événements de Kavita, EF-EXP-034) sont les coupables de M5 ; aucun nouveau coupable n'est ajouté. Aucun ne touche à la sécurité, au contrôle parental ni à l'intégrité.
 - **Avant l'annonce.** Test d'utilisabilité (D3) et vérifications sur appareils par le porteur, avis du juriste (D4, porte P3) : aucune promotion publique avant.
+
+## Bilan de M4 (clôture, `docs/decisions/M4.md`)
+
+- **Livré.** 47 exigences couvertes (`tools/traceability.py --milestone M4`, bloquant dans la CI depuis la clôture) : dossier natif, Komga, CWA et Kavita, plusieurs destinations par étagère, synchronisation de la progression (Kavita, kosync, Suwayomi), webhooks signés, import `.tachibk`, métadonnées enrichies, thèmes B, C et D. ≈ 80 h d'horloge sur une boîte de 235 h.
+- **Coupes.** Aucune : les trois coupables de M4 (thèmes B, C et D, plugin ComicVine, transport du hub de Kavita) sont livrés.
+- **Reporté en M5** (écrit dans `docs/decisions/M4.md`, section de L43) : l'écran « Même œuvre ? » (EF-BIB-029), l'audit Komga et le relais de scan appelés par la passe (une liaison familiale vers Komga reste refusée), la garde « chapitre lu » de la montée de version, `plan_migration` des normaliseurs. Les indicateurs de valeur de la page Santé n'ont eu aucune carte en M4 : « Plus tard » (décision du porteur).
+- **Encore ouvert à la clôture.** L47 (alias d'export, #348), la lecture réelle dans Kover (D-P5, `[[partial]]` d'EF-EXP-026 inscrit ; repli : conformité OPDS-PSE et KOReader en CI), le second registre et le miroir en direct (ENF-GOV-004, D-P1 : `v1.1.0` signée sur GHCR seul sans jeton), le contradicteur de jalon.

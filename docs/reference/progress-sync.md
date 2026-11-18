@@ -3,7 +3,10 @@
 The job `progress.sync` (class `background`, every ten minutes, parked by the maintenance mode like
 any job) keeps each member's reading progress and the one Kavita holds for **their own account**
 in step. It runs for a destination with `sync_progress` on, for every member whose own key is linked
-and live (`destination_account`, L12). The shape of the view it reads and writes through is
+and live (`destination_account`, L12). The switch is the binding's own and is off at the start: `shelfhold
+target sync-progress <binding> --on`, `POST /api/v1/destinations/{id}/sync-progress` or the box of the
+destinations screen (a reserved action, fresh admin session, journaled; M4 L46). Only a Kavita binding can
+take it: a destination that keeps no reading position answers `destination.sync_unsupported`. The shape of the view it reads and writes through is
 `docs/reference/reading-progress.md`; this page is the sync's contract.
 
 ## One pass, one member

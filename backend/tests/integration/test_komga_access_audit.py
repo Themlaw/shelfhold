@@ -33,12 +33,12 @@ from tests.fakes.komga import (
     reader,
 )
 from tests.family_env import add_adult_shelf, family_env
-from tests.fan_out_env import add_target, bind
+from tests.fan_out_env import add_target, bind, service, tree_of
 from tests.kavita_env import RecordingEvents
 from tests.komga_env import run
 
 LIBRARY = "0KIDSLIB01"
-ROOT = "/manga/Komga"  # the remote folder of the shelf bound under the subpath "Komga"
+ROOT = "/manga/Kavita"  # the tree of the shelf's own binding, the one Komga indexes (J-SIMP-4)
 
 
 def library(ref: str = LIBRARY, root: str = ROOT) -> dict[str, object]:
@@ -66,12 +66,25 @@ def codes(report: KomgaAuditReport) -> set[str]:
 
 
 def try_bind(env: ExportEnv, target: str) -> str | None:
-    """The refusal of the binding of the family shelf, None when it was accepted."""
+    """The refusal of the family shelf to the Komga target, None when the indexer binding was
+    accepted. A Komga binding never owns a tree (J-SIMP-4): the tree of the shelf's own binding
+    is the one it indexes."""
+    service(env).list_bindings(env.shelf_id)
+    tree_id = tree_of(env, env.destination_id)
+    assert tree_id is not None
     try:
-        bind(env, "Komga", target_id=target, link=False)
+        bind(env, "Kavita", target_id=target, attach_to_tree=tree_id, link=False)
     except UnpartitionedDestinationError as refused:
         return str(refused)
     return None
+
+
+def bind_indexer(env: ExportEnv, target: str) -> str:
+    """The indexer binding of the Komga target on the tree of the shelf's own binding."""
+    service(env).list_bindings(env.shelf_id)
+    tree_id = tree_of(env, env.destination_id)
+    assert tree_id is not None
+    return bind(env, "Kavita", target_id=target, attach_to_tree=tree_id, link=False)
 
 
 # -- the attack of the child ------------------------------------------------------------------
@@ -219,7 +232,7 @@ def test_a_gap_that_opens_later_pauses_the_shelf_and_shows_in_health() -> None:
         fake, client, auditor, events, target = kit(env)
         fake.users = [administrator(), reader("teen", [LIBRARY], age=13)]
         assert admit(env, auditor, client, target).proved
-        destination = bind(env, "Komga", target_id=target, link=False)
+        destination = bind_indexer(env, target)
         report = run(auditor.audit(client, target))
         assert report.proved and report.paused_shelves == []
         fake.users = [administrator(), reader("teen", [LIBRARY], age=6)]  # lowered in Komga
@@ -245,7 +258,7 @@ def test_an_audit_that_fails_after_a_proof_withdraws_it_and_pauses() -> None:
     with family_env(13) as env:
         fake, client, auditor, events, target = kit(env)
         assert admit(env, auditor, client, target).proved
-        bind(env, "Komga", target_id=target, link=False)
+        bind_indexer(env, target)
         fake.asleep = True
         report = run(auditor.audit(client, target))
         assert report.failed and not report.proved and report.paused_shelves == [env.shelf_id]

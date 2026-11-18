@@ -4352,6 +4352,49 @@
         "title": "KeyringOut",
         "type": "object"
       },
+      "KomgaIn": {
+        "properties": {
+          "api_key": {
+            "minLength": 1,
+            "title": "Api Key",
+            "type": "string"
+          },
+          "name": {
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "path_map": {
+            "anyOf": [
+              {
+                "items": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Path Map"
+          },
+          "url": {
+            "minLength": 1,
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "url",
+          "api_key"
+        ],
+        "title": "KomgaIn",
+        "type": "object"
+      },
       "LanguageIn": {
         "properties": {
           "lang": {
@@ -9871,6 +9914,37 @@
           "pause_suggestions"
         ],
         "title": "SupportAuthorOut",
+        "type": "object"
+      },
+      "SyncProgressIn": {
+        "properties": {
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "enabled"
+        ],
+        "title": "SyncProgressIn",
+        "type": "object"
+      },
+      "SyncProgressOut": {
+        "properties": {
+          "destination_id": {
+            "title": "Destination Id",
+            "type": "string"
+          },
+          "sync_progress": {
+            "title": "Sync Progress",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "destination_id",
+          "sync_progress"
+        ],
+        "title": "SyncProgressOut",
         "type": "object"
       },
       "SyncStatusList": {
@@ -15969,6 +16043,79 @@
         "summary": "Removal Preview",
         "tags": [
           "destinations"
+        ]
+      }
+    },
+    "/api/v1/destinations/{destination_id}/sync-progress": {
+      "post": {
+        "description": "EF-LEC-014: turn the progress sync of a binding on or off. Reserved (a fresh admin\nsession or the host CLI, never a key, a member or a child) and journaled; a destination\nthat keeps no reading position answers 409 `destination.sync_unsupported`.",
+        "operationId": "sync_progress",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "destination_id",
+            "required": true,
+            "schema": {
+              "title": "Destination Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SyncProgressIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SyncProgressOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Connexion requise, ou mot de passe à confirmer (reauth-required)."
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée)."
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Détail du problème (RFC 9457)."
+          }
+        },
+        "summary": "Sync Progress",
+        "tags": [
+          "configuration"
         ]
       }
     },
@@ -27342,6 +27489,130 @@
         ]
       }
     },
+    "/api/v1/targets/cwa": {
+      "post": {
+        "description": "EF-EXP-022: the drop box of a Calibre-Web Automated. Which folders are written is a\nreserved action, like a native folder.",
+        "operationId": "add_cwa",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NativeFolderIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Created"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Connexion requise, ou mot de passe à confirmer (reauth-required)."
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée)."
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Détail du problème (RFC 9457)."
+          }
+        },
+        "summary": "Add Cwa",
+        "tags": [
+          "configuration"
+        ]
+      }
+    },
+    "/api/v1/targets/komga": {
+      "post": {
+        "description": "EF-EXP-020: a Komga with the API key of a dedicated administrator account. The key is\nshown to Komga once, sealed, and never answered back. Reserved (a secret): a fresh admin\nsession or the host CLI, never a key, a member or a child.",
+        "operationId": "add_komga",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/KomgaIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Created"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Connexion requise, ou mot de passe à confirmer (reauth-required)."
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée)."
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Détail du problème (RFC 9457)."
+          }
+        },
+        "summary": "Add Komga",
+        "tags": [
+          "configuration"
+        ]
+      }
+    },
     "/api/v1/targets/native-folder": {
       "post": {
         "description": "EF-EXP-010: a folder Mihon or the local source of Suwayomi reads. Which folders are\nwritten is a reserved action (admin, fresh session, never a key, a child or a member), and\na root that meets the local source of Suwayomi is refused\n(`target.root_overlaps_local_source`).",
@@ -30452,6 +30723,10 @@
       "code": "bad_request",
       "status": 400
     },
+    "/api/v1/problems/binding.komga-primary-unsupported": {
+      "code": "binding.komga_primary_unsupported",
+      "status": 409
+    },
     "/api/v1/problems/bulk.refused": {
       "code": "bulk.refused",
       "status": 403
@@ -30539,6 +30814,10 @@
     "/api/v1/problems/destination-account-refused": {
       "code": "destination_account_refused",
       "status": 422
+    },
+    "/api/v1/problems/destination.sync-unsupported": {
+      "code": "destination.sync_unsupported",
+      "status": 409
     },
     "/api/v1/problems/detach.incomplete": {
       "code": "detach.incomplete",

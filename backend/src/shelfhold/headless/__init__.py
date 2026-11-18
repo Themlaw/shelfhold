@@ -11,12 +11,14 @@ from shelfhold.headless.admin import (
     PlanChange,
     ShelfCreated,
     SourceAdded,
+    SyncProgressSet,
     TargetAdded,
 )
 from shelfhold.headless.desired import DesiredConfig, parse_desired
 from shelfhold.headless.errors import (
     AdminRiskNotAccepted,
     ConfigFileError,
+    DestinationCannotSync,
     DestinationNotWritable,
     HeadlessError,
     InvalidConfigValue,
@@ -31,7 +33,13 @@ from shelfhold.headless.errors import (
     UnknownConfigKey,
     UnknownTarget,
 )
-from shelfhold.headless.ports import ExchangedKey, KavitaKeyExchange, SuwayomiProbe
+from shelfhold.headless.ports import (
+    ExchangedKey,
+    KavitaKeyExchange,
+    KomgaProbe,
+    KomgaProbed,
+    SuwayomiProbe,
+)
 from shelfhold.headless.urls import PublicUrlMissing, absolute_url
 
 __all__ = [
@@ -39,12 +47,15 @@ __all__ = [
     "ConfigFileError",
     "ConfigValue",
     "DesiredConfig",
+    "DestinationCannotSync",
     "DestinationNotWritable",
     "ExchangedKey",
     "HeadlessAdmin",
     "HeadlessError",
     "InvalidConfigValue",
     "KavitaKeyExchange",
+    "KomgaProbe",
+    "KomgaProbed",
     "Plan",
     "PlanChange",
     "PublicUrlMissing",
@@ -55,6 +66,7 @@ __all__ = [
     "SourceAuthModeUnsupported",
     "SourceUpdateFiltersBlocking",
     "SuwayomiProbe",
+    "SyncProgressSet",
     "TargetAdded",
     "TargetConflict",
     "TargetExchangeFailed",
