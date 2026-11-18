@@ -68,9 +68,6 @@ def _read_elsewhere(world: World, content: str) -> None:
 
 
 @pytest.mark.req("EF-LEC-007", "EF-LEC-014", "ENF-SEC-010")
-@pytest.mark.xfail(
-    strict=True, reason="the choice settles a proposal on a carrier only an excerpt may be read of"
-)
 def test_the_choice_writes_nothing_where_only_an_excerpt_is_read(world: World) -> None:
     """The proposal was made while the kept copy could still be read in full; the Work has since
     been sent where the member reads it, so her copy is an excerpt now (D-P1). The reader still
@@ -98,9 +95,6 @@ def test_the_choice_writes_nothing_where_only_an_excerpt_is_read(world: World) -
 
 
 @pytest.mark.req("EF-BIB-052", "EF-LEC-007")
-@pytest.mark.xfail(
-    strict=True, reason="the purge of a Work erases its anchors and not its open proposals"
-)
 def test_a_purged_work_takes_its_proposals_with_it(tmp_path: Path) -> None:
     """`PurgeService._erase_rows` is the step of `purge --now` that takes the rows of a Work out
     of the base, and it takes the `reading_position` anchors with it (EF-BIB-052: nothing of the

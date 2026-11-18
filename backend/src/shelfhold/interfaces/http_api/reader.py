@@ -324,5 +324,7 @@ def build_reader_router(
             raise ProblemError("not_found", headers=_ABSENT) from None
         except StaleConflictError:
             raise ProblemError("conflict_stale") from None
+        except ExcerptWritesNoPositionError:
+            raise ProblemError("excerpt_writes_no_position") from None
 
     return router

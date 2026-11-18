@@ -493,3 +493,45 @@ def test_dates_that_cannot_be_a_reading_are_a_typed_422(world: World) -> None:
         assert got.status_code == 422, (text, got.status_code)
         assert got.json()["code"] in {"client_ts_out_of_range", "client_ts_in_future"}, text
     assert count(world, reading.reading_position) == 0
+
+
+@pytest.mark.req("EF-LEC-007")
+def test_an_answer_never_installs_a_position_older_than_the_current_one(world: World) -> None:
+    """The winning device goes on reading, the proposal stays open and follows it; the other
+    device's place is then chosen (`loser`): the answer is a position written now, at the place
+    that was proposed, never one older than the position she is on. And when the far device has
+    spoken again meanwhile, the answer is refused."""
+    content, _unit = kept(world)
+    assert put(world, world.admin, content, page(20, 50), device="tab", minutes=-30).is_success
+    asked = put(world, world.admin, content, page(2, 50), device="phone", minutes=-10).json()
+    proposal = asked["conflict"]
+    assert proposal is not None
+    onward = put(world, world.admin, content, page(5, 50), device="phone", minutes=-5).json()
+    assert onward["conflict"]["id"] == proposal["id"]  # the same proposal, the phone reads on
+    assert onward["conflict"]["winner"]["id"] == onward["position"]["id"]  # and it follows her
+    before = datetime.fromisoformat(onward["position"]["client_ts"])
+    done = world.admin.post(
+        f"/api/reader/conflicts/{proposal['id']}/resolve",
+        json={"choice": "loser", "device_id": "phone"},
+        headers={CSRF_HEADER: world.env.csrf(world.admin)},
+    )
+    assert done.status_code == 200, done.text
+    installed = done.json()["position"]
+    assert installed["locator"]["index"] == 20  # the place that was proposed
+    assert datetime.fromisoformat(installed["client_ts"]) >= before  # never older than hers
+    assert current(world.admin, content).json()["position"]["id"] == installed["id"]
+    listed = history(world.admin, content).json()["items"]
+    assert listed[0]["id"] == installed["id"]  # the latest of the history
+    # the same, but the far device spoke again before the answer: refused, nothing written
+    assert put(world, world.admin, content, page(30, 50), device="tab", minutes=1).is_success
+    third = put(world, world.admin, content, page(4, 50), device="phone", minutes=2).json()
+    assert third["conflict"] is not None
+    assert put(world, world.admin, content, page(45, 50), device="tab", minutes=3).is_success
+    written = count(world, reading.reading_position)
+    refused = world.admin.post(
+        f"/api/reader/conflicts/{third['conflict']['id']}/resolve",
+        json={"choice": "loser", "device_id": "phone"},
+        headers={CSRF_HEADER: world.env.csrf(world.admin)},
+    )
+    assert refused.status_code == 409 and refused.json()["code"] == "conflict_stale"
+    assert count(world, reading.reading_position) == written

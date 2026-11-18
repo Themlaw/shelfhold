@@ -176,13 +176,17 @@ class ReaderPositions:
             )
             if ticket_scope is None:
                 raise InvalidTicketError
-        resolved = self._access.resolve(user_id, carrier_type, carrier_id)  # absent = hidden
-        if scope == "excerpt" or ticket_scope == "excerpt" or not resolved.full_allowed:
+        if scope == "excerpt" or ticket_scope == "excerpt":
+            self._access.resolve(user_id, carrier_type, carrier_id)  # absent = hidden, first
             raise ExcerptWritesNoPositionError
-        if (parsed.kind == "cfi") != (resolved.format == "epub"):
-            raise InvalidLocatorV1Error("the locator is not one of this format")
         with write_transaction(self._engine) as connection:
-            check_carrier(connection, user_id, carrier_type, carrier_id)  # again, in the write
+            # « full or excerpt » is read here, in the write itself: what was checked is what is
+            # written under (a Work sent elsewhere a moment ago is an excerpt now)
+            resolved = self._access.resolve_in(connection, user_id, carrier_type, carrier_id)
+            if not resolved.full_allowed:
+                raise ExcerptWritesNoPositionError
+            if (parsed.kind == "cfi") != (resolved.format == "epub"):
+                raise InvalidLocatorV1Error("the locator is not one of this format")
             content_hash = _current_hash(connection, carrier_type, carrier_id)
             if content_hash is None:
                 raise NoReadableCopyError
@@ -376,7 +380,8 @@ class ReaderPositions:
         """The reader chose. `winner` keeps the latest and dismisses what the other device said;
         `loser` resumes where the other device was: that place is written again as the latest
         position (a new anchor, the history is kept). An open proposal of hers, else
-        `UnknownConflictError` (also for another profile's, and once settled); one that a later
+        `UnknownConflictError` (also for another profile's, and once settled),
+        `ExcerptWritesNoPositionError` (the carrier is only an excerpt now); one that a later
         position overtook is `StaleConflictError`, and an answer never installs a position older
         than the current one."""
         table = reading.reading_conflict
@@ -387,7 +392,13 @@ class ReaderPositions:
             ).first()
             if row is None or (row.resolved_at is not None and row.choice != "stale"):
                 raise UnknownConflictError  # absent, another profile's, or already settled
-            check_carrier(connection, user_id, row.carrier_type, row.carrier_id)
+            # the same refusals as the write: a carrier she may no longer see is an absent one, and
+            # one that is only an excerpt now (D-P1) takes no choice, which is not a reading
+            resolved = self._access.resolve_in(
+                connection, user_id, row.carrier_type, row.carrier_id
+            )
+            if not resolved.full_allowed:
+                raise ExcerptWritesNoPositionError
             if row.choice == "stale":
                 raise StaleConflictError
             now_here = self._current(connection, user_id, row.carrier_type, row.carrier_id)

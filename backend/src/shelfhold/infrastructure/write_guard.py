@@ -57,7 +57,7 @@ EXEMPT_TABLES: Final[dict[str, str]] = {
     "plugin_install": _SETTING, "plugin_state": _SETTING, "provider_quota": _LOCK,
     "provider_secret": _SEALED,
     "webhook_subscription": _SEALED, "webhook_outbox": _LOCK,
-    "reading_position": _CATALOG, "remote_library": _SETTING, "resource_lock": _LOCK,
+    "reading_position": _CATALOG, "reading_conflict": _CATALOG, "remote_library": _SETTING, "resource_lock": _LOCK,
     "schedule": _LOCK, "secret_key": _SEALED, "series": _CATALOG, "series_member": _CATALOG,
     "session": _SEALED, "shelf": _SETTING, "shelf_destination": _SETTING,
     "shelf_destination_remote_library": _SETTING, "source_account": _SEALED,
