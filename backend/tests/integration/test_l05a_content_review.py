@@ -95,14 +95,6 @@ def _cut(data: bytes) -> frozenset[str] | None:
         return epub_excerpt(archive)
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="seconde relecture T1 : un document unique répété cinq fois dans l'ordre de lecture "
-    "passe la garde `len(spine) < 2` et gonfle le total du cinquième (la garde et la taille "
-    "comptent des itemrefs, pas des documents distincts), et l'extrait est le livre entier "
-    "(ADR-0055 N3 : un EPUB à un seul document répond « extrait indisponible », jamais le "
-    "fichier entier)",
-)
 @pytest.mark.req("EF-LEC-005", "ENF-SEC-010")
 def test_poc_a_single_document_repeated_in_the_spine_has_no_excerpt() -> None:
     whole = _PAGE.format(head="", body="<p>" + "x" * 50_000 + "</p>")
@@ -110,13 +102,6 @@ def test_poc_a_single_document_repeated_in_the_spine_has_no_excerpt() -> None:
     assert got is None, f"l'extrait d'un livre à un seul document est ce document entier : {got}"
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="seconde relecture T2 : tout attribut « ressource » d'un document autorisé (un "
-    "`<link href>` sans `rel`, aussi `src`, `data`, `poster`, `srcset`, `xlink:href`) fait entrer "
-    "dans la liste fermée un document entier hors de l'ordre de lecture, sans borne (ADR-0055 : "
-    "une image, une police ou une feuille de style seulement ; une page hors borne n'obtient rien)",
-)
 @pytest.mark.req("EF-LEC-005", "ENF-SEC-010")
 def test_poc_a_document_beyond_the_bound_is_not_a_resource_of_the_excerpt() -> None:
     first = _PAGE.format(head='<link href="rest.xhtml"/>', body="<p>" + "x" * 100 + "</p>")
