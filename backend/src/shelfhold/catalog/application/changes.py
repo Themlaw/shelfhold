@@ -53,6 +53,7 @@ from typing import Any, Final, Literal
 import sqlalchemy as sa
 
 from shelfhold.catalog.application.queries import age_visible_works_clause, visible_work_ids
+from shelfhold.events.bus import check_payload
 from shelfhold.infrastructure.schema import catalog, identity, platform
 
 __all__ = [
@@ -139,6 +140,7 @@ def _created_seq(connection: sa.Connection, work_id: str) -> int:
 def _insert(
     connection: sa.Connection, event_type: str, payload: dict[str, Any], now: datetime | None
 ) -> None:
+    check_payload(payload, event_type)  # the rule of the bus, though this write skips the bus
     connection.execute(
         sa.insert(platform.event).values(
             type=event_type,

@@ -40,6 +40,7 @@ from sqlalchemy import Connection, Engine
 from shelfhold.catalog.public import (
     LANG_NORMALIZER_ID,
     LanguageError,
+    RatingService,
     content_warning_age,
     edition_key_lang,
     suggest_age,
@@ -91,7 +92,7 @@ from shelfhold.library.public import (
     has_active_content,
     record_destination_copy,
 )
-from shelfhold.sdk.age import from_comicinfo
+from shelfhold.sdk.age import AgeRating, from_comicinfo
 
 if TYPE_CHECKING:
     from shelfhold.export.application.pipeline import ExportPipeline
@@ -949,8 +950,10 @@ class Adopter:
         if suspend and item.unrated:  # this Work alone, never the shelf (EF-EXP-048)
             suspend_follow(connection, ctx.shelf_id, [self._work_of(connection, edition_id)])
         self._freeze_series(connection, ctx, item, edition_id, now)
-        self._suggest_age(connection, item, edition_id, now)
-        if item.edition_id is not None and item.age is None:
+        forged = item.edition_id is not None and self._declared_below(connection, item, edition_id)
+        if not forged:
+            self._suggest_age(connection, item, edition_id, now)
+        if item.edition_id is not None and (item.age is None or forged):
             self._hold_unrated_join(connection, edition_id, now)
         order = _next_order(connection, edition_id)
         volumes: list[tuple[AdoptedFile, str]] = []
@@ -1045,6 +1048,22 @@ class Adopter:
         )  # fmt: skip
 
     @staticmethod
+    def _declared_below(connection: Connection, item: AdoptedSeries, edition_id: str) -> bool:
+        """The age a file declares is **below** the rating of the Edition it joined by its name
+        (C2): nobody read that file, and a ComicInfo is written by whoever made the archive, so
+        it never lowers a rating. It counts as no age: the join is held like a file without one."""
+        if item.age is None:
+            return False
+        work = connection.execute(
+            sa.select(catalog.edition.c.work_id).where(catalog.edition.c.id == edition_id)
+        ).scalar()
+        if work is None:
+            return False
+        rated = RatingService().effective_age_of(connection, str(work))
+        value, x = item.age
+        return rated is not None and AgeRating(value, x=x) < rated
+
+    @staticmethod
     def _hold_unrated_join(connection: Connection, edition_id: str, now: datetime) -> None:
         """A foreign file that joins an Edition **by its name alone**, and says no age, was seen by
         nobody (J-PAR-2): it never takes the rating of the Edition it joined. Where that
@@ -1052,11 +1071,21 @@ class Adopter:
         so the shelf's one door keeps the Edition out of a child's view until an admin rates it
         again, in "À classer"."""
         edition, work = catalog.edition, catalog.work
-        rated = connection.execute(
-            sa.select(sa.or_(edition.c.rated_at.is_not(None), work.c.rated_at.is_not(None)))
+        row = connection.execute(
+            sa.select(
+                edition.c.work_id,
+                sa.or_(edition.c.rated_at.is_not(None), work.c.rated_at.is_not(None)),
+            )
             .select_from(edition.join(work, work.c.id == edition.c.work_id))
             .where(edition.c.id == edition_id)
-        ).scalar()
+        ).first()
+        if row is None:
+            return
+        # the effective rating, not the Edition's own: a sibling Edition that is rated rates the
+        # Work for whoever reads it (C2, second review)
+        rated = (
+            bool(row[1]) or RatingService().effective_age_of(connection, str(row[0])) is not None
+        )
         unknown = content_warning_age(None)  # not known to be safe: 18+
         if rated and unknown is not None:
             suggest_age(connection, "edition", edition_id, unknown, provenance="import", now=now)

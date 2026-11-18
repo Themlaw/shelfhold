@@ -35,6 +35,7 @@ import structlog
 from sqlalchemy import Connection, Engine
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
+from shelfhold.events.bus import PAYLOAD_ENUMS
 from shelfhold.identity.public import AuditEntry, audit_insert
 from shelfhold.infrastructure.archives import UnsafeArchiveError
 from shelfhold.infrastructure.clock import Clock
@@ -108,6 +109,9 @@ Publish = Callable[[Connection, str, dict[str, object]], None]
 # (connection, plugin id, upstream source key) -> why the service must not be asked to erase
 # anything now (`service_paused`, `roles_unverified`, `source_not_loaded`), None when it may be
 ServiceGate = Callable[[Connection, str, str], str | None]
+
+
+SAFEGUARD_REASONS = PAYLOAD_ENUMS["unit.safeguard_failed"]["reason"]
 
 
 class TombstoneScreen(Protocol):
@@ -332,9 +336,19 @@ class SafeguardCycle:
             with write_transaction(self._engine) as connection:
                 self._publish(
                     connection, "unit.safeguard_failed",
-                    {"count": report.failed, "reasons": sorted(self._failures)},
+                    self._failure_payload(report.failed),
                 )  # fmt: skip
         self._failures = {}
+
+    def _failure_payload(self, failed: int) -> dict[str, object]:
+        """Scalars only (the bus refuses a list): the number of Units, the most frequent reason
+        (a word of the closed list, else `other`) and how many reasons there were."""
+        top = min(self._failures, key=lambda r: (-self._failures[r], r), default="other")
+        return {
+            "count": failed,
+            "reason": top if top in SAFEGUARD_REASONS else "other",
+            "distinct_reasons": len(self._failures),
+        }
 
 
 # -- 2. the purge of the upstream copy ---------------------------------------------------------

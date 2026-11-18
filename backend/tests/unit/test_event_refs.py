@@ -30,3 +30,14 @@ def test_event_refs_finds_names_in_nested_payloads_and_ignores_the_rest() -> Non
     for _ in range(10):
         too_deep = {"inner": too_deep}
     assert event_refs(too_deep).opaque  # a bound on the walk, never a way round the filter
+
+
+@pytest.mark.req("EF-USR-006")
+def test_a_row_of_the_destination_is_not_read_as_a_catalogue_series() -> None:
+    """`export_series_id` names a row of `export_series` and `kavita_series_id` a series of the
+    server: neither is a series of the catalogue, and none is looked for there."""
+    refs = event_refs(
+        {"export_series_id": "x", "kavita_series_id": "k", "remote_unit_id": "r", "series_id": "s"}
+    )
+    assert refs.series == {"s"} and refs.units == frozenset()
+    assert not event_refs({"export_series_id": "x"})
