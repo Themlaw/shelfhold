@@ -34,6 +34,7 @@ from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime
+from pathlib import Path
 from typing import Any, BinaryIO, Literal, Protocol
 
 import sqlalchemy as sa
@@ -42,6 +43,7 @@ from sqlalchemy import Connection, Engine
 
 from shelfhold.catalog.public import Admission, RatingService
 from shelfhold.export.application.cover_image import prepare_cover
+from shelfhold.export.application.export_alias import record_export_alias
 from shelfhold.export.application.komga_audit_state import partitioning_of
 from shelfhold.export.application.page_policy import PagePolicy
 from shelfhold.export.application.plan_executor import (
@@ -972,6 +974,13 @@ class FanOut:
                 connection, destination_id=destination_id, files=files, now=self._clock.now(),
                 moved=report.moved, recycled=report.recycled,
             )  # fmt: skip
+            for written in report.files:  # L47: found by its digest from the first export
+                if written.path is not None:
+                    record_export_alias(
+                        connection, destination_id=destination_id,
+                        export_item_id=written.export_item_id, file_hash=written.file_hash,
+                        content_hash=None, path=Path(written.path),
+                    )  # fmt: skip
 
 
 # -- what the composition root gives the executor -----------------------------------------------

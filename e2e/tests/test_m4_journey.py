@@ -244,12 +244,6 @@ def test_m4_journey_manga_shelf_kavita_and_native_folder(journey_m4: Journey) ->
 # -- (2) the members' progress, both ways -------------------------------------------
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#342: the pull works (Kavita's page is stored on the exported file), but a first export "
-    "writes no `document_alias` (only an assembly or a rewrite does, M4 L10/L13): the e-reader "
-    "routes cannot find the file by its digest, so `GET /kosync/syncs/progress/{digest}` is `{}`",
-)
 @pytest.mark.e2e_timeout(900)
 @pytest.mark.req("EF-EXP-026")
 def test_m4_journey_progress_both_ways(journey_m4: Journey) -> None:

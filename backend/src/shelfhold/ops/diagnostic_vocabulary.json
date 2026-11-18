@@ -1350,6 +1350,7 @@
   "shelfhold.export.application.coverage",
   "shelfhold.export.application.deletion",
   "shelfhold.export.application.detach",
+  "shelfhold.export.application.export_alias",
   "shelfhold.export.application.export_items",
   "shelfhold.export.application.exposure_holds",
   "shelfhold.export.application.fan_out",
