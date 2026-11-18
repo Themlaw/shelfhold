@@ -171,6 +171,30 @@ api_key = sa.Table(
     sa.Index("ix_api_key_user", "user_id"),
 )
 
+# A device (M5 L02, EF-USR-008): what a pairing makes, one per e-reader or client, the unit the
+# registry lists and the unit that is retired. It belongs to a reader profile (deleted with it);
+# `kind` is a closed list; `last_seen_at` moves when one of its tokens is accepted; `revoked_at` is
+# the retirement (every token of the device ends with it). The secret is the token's, never here.
+device = sa.Table(
+    "device",
+    metadata,
+    ulid_column("id", primary_key=True),
+    sa.Column(
+        "subject_user_id",
+        sa.String(26),
+        sa.ForeignKey("user.id", ondelete="CASCADE"),
+        nullable=False,
+    ),
+    sa.Column("label", sa.String(), nullable=True),
+    sa.Column("kind", sa.String(), nullable=False, server_default="other"),
+    now_column(),
+    sa.Column("last_seen_at", UtcDateTime(), nullable=True),
+    sa.Column("revoked_at", UtcDateTime(), nullable=True),
+    ulid_check("id"),
+    in_check("kind", ("koreader", "kobo", "opds", "browser", "other")),
+    sa.Index("ix_device_subject", "subject_user_id"),
+)
+
 # A device token (M4 L46, ADR-0053 §4, ADR-0049): the credential of an e-reader (OPDS, kosync).
 # It is issued FOR a reader profile (`subject_user_id`, no default, the rights and the filters are
 # the subject's) and the issuer is kept for the audit and nothing else. `public_id` is the short
@@ -189,6 +213,8 @@ device_token = sa.Table(
         nullable=False,
     ),
     sa.Column("issued_by", sa.String(26), sa.ForeignKey("user.id", ondelete="SET NULL")),
+    # M5 L02: the device the token belongs to (a rotation changes the digest, never the device)
+    sa.Column("device_id", sa.String(26), sa.ForeignKey("device.id", ondelete="CASCADE")),
     sa.Column("secret_digest", sa.String(), nullable=False),
     sa.Column("expires_at", UtcDateTime(), nullable=True),
     sa.Column("last_used_at", UtcDateTime(), nullable=True),

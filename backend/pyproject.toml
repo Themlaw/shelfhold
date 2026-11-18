@@ -1,6 +1,6 @@
 [project]
 name = "shelfhold"
-version = "1.1.0rc2"
+version = "1.1.0"
 description = "Shelfhold : l'atelier de la bibliothèque personnelle de votre foyer, pour Kavita."
 requires-python = ">=3.13,<3.14"
 license = "AGPL-3.0-or-later"
@@ -51,6 +51,7 @@ dev = [
     "xmlschema>=4.3.2",
     "pyyaml>=6.0.3",
     "types-pyyaml>=6.0.12.20260906",
+    "vulture>=2.4",
     { include-group = "docs" },
 ]
 # Documentation site (D17, ENF-DOC-001): pinned exactly, built offline by docs.yml and by a unit
@@ -59,6 +60,29 @@ docs = ["zensical==0.0.74"]
 
 [project.scripts]
 shelfhold = "shelfhold.interfaces.cli:main"
+
+# The dead-code pass (M4 contradicteur, J-SIMP-5). Advisory, never a gate: the guard that blocks
+# is `tools/reachability.py` (decision M1b L31), which sees what the tests cite; vulture is the
+# pass for its blind spot, code no caller reaches at all, in src as in tests. The whitelist stays
+# minimal: only the two families vulture cannot see through — alembic calls `upgrade`/`downgrade`
+# by revision, and the FastAPI, CLI and pydantic registration decorators call their handlers by
+# name — are excluded. Everything the pass still reports is read by hand: model and DTO fields
+# (serialised, never read by attribute), SDK contract members (third parties call them) and the
+# governance catalogues (tests prove them). Run it from backend/: `uv run vulture`.
+[tool.vulture]
+paths = ["src/shelfhold"]
+exclude = ["src/shelfhold/infrastructure/migrations"]
+ignore_decorators = [
+    "@router.*",
+    "@app.*",
+    "@ops_command",
+    "@headless_command",
+    "@_command",
+    "@field_validator",
+    "@model_validator",
+    "@field_serializer",
+]
+sort_by_size = true
 
 [tool.uv]
 # Supply chain: only releases published at least 14 days ago (decision M0 10, ADR-0016).

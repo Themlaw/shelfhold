@@ -6,14 +6,19 @@ compare-and-swap on its old ciphertext, so a kill leaves every row either old or
 open because retired keys are kept. Running the command again finds the marker and finishes the
 job without creating a third key. The marker is cleared only when no row is left on an old key.
 
+The sealed envelopes inside the payloads of `upstream_snapshot` move like the sealed columns, in
+their own transactions and under the same compare-and-swap (J-SEC-1).
+
 Only secrets are re-sealed. The tombstone table and journal are append-only and never rewritten
 by a rotation (ADR-0048).
 """
 
-from collections.abc import Callable, Sequence
+import json
+from collections.abc import Callable, Mapping, Sequence
 from contextlib import nullcontext
 from dataclasses import dataclass
 from datetime import datetime
+from typing import Any
 
 import sqlalchemy as sa
 from sqlalchemy import Engine
@@ -22,6 +27,7 @@ from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.fsops.tombstone_journal import sentinel_kid_names
 from shelfhold.infrastructure.schema import platform
 from shelfhold.infrastructure.secrets import registry
+from shelfhold.infrastructure.secrets.envelope import envelope_of_json, envelope_to_json
 from shelfhold.infrastructure.secrets.errors import KeyRetirementRefusedError, SecretsError
 from shelfhold.infrastructure.secrets.keyring import Keyring, KeyringStore
 from shelfhold.infrastructure.secrets.vault import SecretVault
@@ -82,6 +88,55 @@ def _reseal_row(
             raise
 
 
+def _reseal_snapshot(engine: Engine, vault: SecretVault, row_id: str) -> bool:
+    """Move the sealed envelope of one snapshot payload to the active key, under the same
+    compare-and-swap as a sealed column: the row must still carry the envelope that was read, and
+    only the envelope key of the payload is patched, so a payload rewritten in between (its own
+    exclusions) is never lost."""
+    table = registry.snapshot_table()
+    with engine.execution_options(shelfhold_begin="BEGIN IMMEDIATE").connect() as connection:
+        connection.begin()
+        try:
+            payload = connection.execute(
+                sa.select(table.c.payload).where(table.c.id == row_id)
+            ).scalar_one_or_none()
+            sealed_part: Mapping[str, Any] | None = (
+                payload.get(registry.SNAPSHOT_ENVELOPE_KEY) if isinstance(payload, dict) else None
+            )
+            if not isinstance(sealed_part, dict) or "kid" not in sealed_part:
+                connection.rollback()
+                return False  # gone, or a snapshot with no sealed part: nothing to move
+            envelope = envelope_of_json(sealed_part)
+            plaintext = vault.open(
+                envelope, table=registry.SNAPSHOT_TABLE, column="payload", row_id=row_id
+            )
+            sealed = vault.seal(
+                plaintext, table=registry.SNAPSHOT_TABLE, column="payload", row_id=row_id
+            )
+            result = connection.execute(
+                sa.update(table)
+                .where(
+                    table.c.id == row_id,
+                    sa.func.json_extract(table.c.payload, registry.envelope_path("kid"))
+                    == envelope.kid,
+                    sa.func.json_extract(table.c.payload, registry.envelope_path("nonce"))
+                    == str(sealed_part["nonce"]),
+                )
+                .values(
+                    payload=sa.func.json_set(
+                        table.c.payload,
+                        f'$."{registry.SNAPSHOT_ENVELOPE_KEY}"',
+                        sa.func.json(json.dumps(envelope_to_json(sealed))),
+                    )
+                )
+            )
+            connection.commit()
+            return result.rowcount == 1
+        except BaseException:
+            connection.rollback()
+            raise
+
+
 def rotate(
     store: KeyringStore,
     engine: Engine,
@@ -112,6 +167,14 @@ def rotate(
                         progressed = True
                         if on_row is not None:
                             on_row(sealed.name, row_id)
+            with engine.connect() as connection:  # the envelopes inside snapshot payloads
+                pending = registry.stale_snapshot_ids(connection, keyring.active.kid)
+            for row_id in pending:
+                if _reseal_snapshot(engine, vault, row_id):
+                    moved += 1
+                    progressed = True
+                    if on_row is not None:
+                        on_row(registry.SNAPSHOT_TABLE, row_id)
             if not progressed:
                 break
         remaining = _remaining(engine, keyring.active.kid)
@@ -144,10 +207,11 @@ def mark_compromised(
 
 def _remaining(engine: Engine, active_kid: str) -> int:
     with engine.connect() as connection:
-        return sum(
+        left = sum(
             len(registry.stale_row_ids(connection, sealed, active_kid))
             for sealed in registry.sealed_tables().values()
         )
+        return left + len(registry.stale_snapshot_ids(connection, active_kid))
 
 
 def retire_key(store: KeyringStore, engine: Engine, kid: str) -> None:

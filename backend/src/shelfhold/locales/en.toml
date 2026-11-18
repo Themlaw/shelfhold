@@ -191,6 +191,10 @@
   admin_device_name_help = "Device name (for example \"Living-room e-reader\")."
   admin_device_expires_help = "Validity period in days (optional)."
   admin_device_id_help = "Public identifier of the token (8 characters)."
+  admin_device_kind_help = "Kind of device (koreader, kobo, opds, browser, other; default: other)."
+  admin_devices_rotate_help = "Puts a new secret on a device: the old one is refused at once, nothing is paired again (the secret is displayed only once)."
+  admin_devices_remove_help = "Removes a device: every token it holds is revoked at once."
+  admin_device_registry_id_help = "Identifier of the device (first column of the list)."
 
 [migrate]
   up_to_date = "The database is already up to date."
@@ -826,7 +830,12 @@
   device_revoked = "Token {public_id} revoked."
   device_unknown = "No active token with identifier {public_id}."
   no_devices = "No device tokens."
-  device_line = "{public_id} {profile} {name} {state}"
+  device_line = "{device_id} {public_id} {profile} {name} {state}"
+  device_rotated = "New secret for the device with identifier {public_id}; the old one is refused from now on. Type it exactly as shown, without spaces or dashes:"
+  device_removed = "Device {device_id} removed; its tokens are revoked."
+  device_registry_unknown = "No active device with identifier {device_id}."
+  device_expiry_required = "This token has expired: give --expires-days for the new secret."
+  device_rotated_meanwhile = "The secret of this device was changed in the meantime: nothing was done here. List the devices and try again."
   database_missing = "Database missing or not up to date: first run “shelfhold migrate”."
   socket_refused = "The running server refused this command: {detail}."
   socket_untrusted = "Unreliable local socket, nothing was sent: {detail}."
@@ -1379,6 +1388,11 @@
     action = "Refresh the list of your devices."
     cause = "The token is unknown, already revoked, or is not yours."
 
+  [errors.device_rotation_conflict]
+    title = "This device's secret was changed in the meantime."
+    action = "Refresh the list of your devices, then rotate again if the secret shown elsewhere is not the one you want."
+    cause = "Another rotation of the same device was written first: only its secret is valid."
+
   [errors.destination_account_not_found]
     title = "This Kavita account does not exist for you."
     action = "Refresh the list of your accounts."
@@ -1843,6 +1857,11 @@
     title = "This destination cannot be bound this way."
     action = "A CWA drop box is bound as a drop box (transport “dropbox”): choose that transport."
     cause = "A drop box has no tree to index and no server to read from: another transport would not write where it should."
+
+  [errors."binding.komga_primary_unsupported"]
+    title = "Komga cannot be the primary destination of a shelf."
+    action = "Bind the shelf to a destination that writes its tree first (Kavita or a native folder), then bind Komga to that tree: a secondary destination that indexes it. Until M5, Komga receives no file of its own."
+    cause = "The executor plans no write for a tree owned by Komga: a shelf whose primary destination is Komga would never receive its files."
 
   [errors."target.folder_outside_root"]
     title = "This folder is not inside the folder of the destination."
