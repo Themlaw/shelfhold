@@ -42,10 +42,6 @@ def _registered(engine: sa.Engine) -> list[str]:
         return [str(p) for p in connection.execute(sa.text("SELECT path_entry FROM physical_root"))]
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="M4 jalon J-FS-1: a library folder that is a link to /data becomes a writable root",
-)
 @pytest.mark.req("EF-EXP-059", "ENF-SEC-012")
 @pytest.mark.parametrize("add", [_add_native, _add_cwa], ids=["native_folder", "cwa"])
 @pytest.mark.parametrize("leads_to", ["data", "elsewhere"])
