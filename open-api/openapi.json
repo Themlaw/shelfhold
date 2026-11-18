@@ -31057,6 +31057,10 @@
       "code": "config.unknown_key",
       "status": 404
     },
+    "/api/v1/problems/content-changed": {
+      "code": "content_changed",
+      "status": 409
+    },
     "/api/v1/problems/content.untrusted-entry": {
       "code": "content.untrusted_entry",
       "status": 422
