@@ -68,6 +68,10 @@ PUBLIC = (
     "POST /api/v1/setup/admin",  # ...and makes it, behind the secret of the compose
     "POST /api/v1/auth/passkeys/login",
     "POST /api/v1/auth/passkeys/login/options",
+    # M5 L03: the OpenID Connect sign-in is anonymous by nature (a browser sent to the provider and
+    # back); absent (404) unless configured, never a catalogue datum
+    "GET /api/v1/auth/oidc/login",
+    "GET /api/v1/auth/oidc/callback",
     "GET /healthz",
     "GET /readyz",
 )
@@ -202,6 +206,10 @@ CLOSED = (
     "POST /api/v1/device-tokens",
     "GET /api/v1/device-tokens/setup",
     "DELETE /api/v1/device-tokens/{public_id}",
+    # M5 L03: linking an identity provider to an account is an adult's reserved action (the
+    # admin's for another account): a child is refused by session and by key
+    "POST /api/v1/auth/oidc/link",
+    "PUT /api/v1/profiles/{profile_id}/oidc",
     # M5 L02: the registry of devices, its rotation and its removal: the same rule
     "GET /api/v1/devices",
     "POST /api/v1/devices/{device_id}/rotate",

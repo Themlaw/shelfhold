@@ -3160,7 +3160,7 @@
   "offset_inconsistent",
   "offset_unexplained",
   "offset_unverified",
-  "oidc.link",
+  "oidc.link_own",
   "oidc.link_account",
   "oidc_button.html",
   "oidc_client_id",

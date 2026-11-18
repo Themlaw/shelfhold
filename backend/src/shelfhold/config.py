@@ -269,8 +269,6 @@ class Settings(BaseModel):
     def _oidc_is_whole(self) -> Self:
         if (self.oidc_issuer is None) != (self.oidc_client_id is None):
             raise ValueError("oidc_issuer and oidc_client_id are given together or not at all")
-        if self.oidc_client_secret is not None and self.oidc_issuer is None:
-            raise ValueError("oidc_client_secret needs oidc_issuer and oidc_client_id")
         if self.oidc_issuer is not None and not (self.public_url or "").startswith("https://"):
             raise ValueError("OIDC needs public_url (https): the provider sends the browser back")
         return self

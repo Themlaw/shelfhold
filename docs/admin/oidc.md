@@ -50,7 +50,7 @@ https, et une redirection n'est jamais suivie.
 
 - **Soi-même** : depuis sa session, **fraîche** (mot de passe ou clé d'accès redonné dans les
   15 dernières minutes), `POST /api/v1/auth/oidc/link` renvoie l'adresse du fournisseur ; la
-  personne s'y connecte et revient. Action réservée `oidc.link` : jamais une clé d'API ni un
+  personne s'y connecte et revient. Action réservée `oidc.link_own` : jamais une clé d'API ni un
   jeton d'appareil, jamais un enfant.
 - **L'administrateur**, pour un compte existant : `PUT /api/v1/profiles/{id}/oidc` avec le `sub`
   (action réservée `oidc.link_account`, session fraîche d'un administrateur).

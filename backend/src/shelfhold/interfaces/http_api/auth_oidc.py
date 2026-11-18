@@ -4,7 +4,7 @@
   unless `SHELFHOLD_OIDC_*` is set.
 - `GET /api/v1/auth/oidc/callback`: where the provider sends the browser back. A sign-in opens a
   session; every refusal is the same redirect to the login page, with no cookie of a session.
-- `POST /api/v1/auth/oidc/link`: the reserved action `oidc.link`, from the account's own fresh
+- `POST /api/v1/auth/oidc/link`: the reserved action `oidc.link_own`, from the account's own fresh
   session (an adult's: a child is refused): answers the address to send the browser to.
 - `PUT /api/v1/profiles/{id}/oidc`: the reserved action `oidc.link_account`, an admin's, for an
   account that already exists (a child profile is refused).
@@ -47,7 +47,7 @@ OIDC_LINK_PATH = f"{OIDC_PATH}/link"
 LINK_RESULT_PATH = "/reglages/compte/oidc"
 
 _ADULTS = ("admin", "member")  # a child profile is never linked
-_LINK = reserved_action(RESERVED_ACTIONS["oidc.link"], roles=_ADULTS, audit=False)
+_LINK = reserved_action(RESERVED_ACTIONS["oidc.link_own"], roles=_ADULTS, audit=False)
 _LINK_ACCOUNT = reserved_action(
     RESERVED_ACTIONS["oidc.link_account"], roles=("admin",), audit=False
 )
