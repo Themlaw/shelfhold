@@ -346,7 +346,13 @@ def test_rolling_tail_never_replaces_a_volume_a_reader_finished() -> None:
         run(env)
         (path,) = env.files()
         served = digest(path)
-        read_by_a_reader(env.lib, bench.item_id)
+        with env.engine.connect() as connection:  # the hash the alias says the file carries
+            carried = connection.execute(
+                sa.select(export.document_alias.c.content_hash).where(
+                    export.document_alias.c.export_item_id == bench.item_id
+                )
+            ).scalar_one()
+        read_by_a_reader(env.lib, bench.item_id, carried)  # anchored as a reader's position is
         regrow(bench, 3)
         assert run(env) == 0 and digest(path) == served
         assert upgrades(env) == 0 and binned(env) == []

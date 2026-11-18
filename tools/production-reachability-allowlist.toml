@@ -130,11 +130,9 @@ symbols = [
 
 [[allow]]
 category = "m4-l43-reading-service"
-reason = "2026-11-17 (M4 L43): what L14a wrote for the relays of progress is still not called, and none of L14b, L47 and L50 turned out to need it: the sweep of the aliases a crash left without hashes (`heal_alias_hashes`, `verified_hashes`) needs a locator under the physical roots of a binding, which is a security contract of its own (no symbolic link, never outside the roots) and is not a simple wiring; the read of a position (`position_of`), the delivery of a server state (`record_delivery`) and the undo of a read mark (`undo_read_mark`) wait for the reader of M5 (the screen where a member undoes a mark); `reading.domain.merge` (`latest`, `furthest`) states the rule that the SQL view `reading_progress` implements, and a test proves the two equal. Redated M5 in writing (docs/decisions/M4.md, table of the debts)."
+reason = "2026-11-17 (M4 L43): what L14a wrote for the relays of progress is still not called, and none of L14b, L47 and L50 turned out to need it: the sweep of the aliases a crash left without hashes (`heal_alias_hashes`, `verified_hashes`: since M4 L47 the export itself calls them, they left this entry) needs a locator under the physical roots of a binding, which is a security contract of its own (no symbolic link, never outside the roots) and is not a simple wiring; the read of a position (`position_of`), the delivery of a server state (`record_delivery`) and the undo of a read mark (`undo_read_mark`) wait for the reader of M5 (the screen where a member undoes a mark); `reading.domain.merge` (`latest`, `furthest`) states the rule that the SQL view `reading_progress` implements, and a test proves the two equal. Redated M5 in writing (docs/decisions/M4.md, table of the debts)."
 until = "M5"  # settled by the reader of M5 (undo, position of a member) and the lazy read of the aliases
 symbols = [
-  "shelfhold.export.application.render_hooks:heal_alias_hashes",
-  "shelfhold.reading.domain.document_hash:verified_hashes",
   "shelfhold.reading.application.progress:position_of",
   "shelfhold.reading.application.progress:record_delivery",
   "shelfhold.reading.application.progress:undo_read_mark",
