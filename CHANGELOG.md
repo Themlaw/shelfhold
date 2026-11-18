@@ -43,9 +43,11 @@ Clôture de M4 : plusieurs destinations par étagère, synchronisation de la pro
 ### Modifié
 
 - Une Œuvre ou une Édition rangée sur aucune étagère n'est plus visible pour un enfant (un adulte la voit toujours).
+- **Adoption (L48)** : un fichier adopté qui n'annonce aucun âge et rejoint, par son nom, une Édition déjà classée met cette Édition dans « À classer » (suggestion 18+) : un enfant ne voit plus un chapitre que personne n'a regardé.
 
 ### Corrigé
 
+- **Réponse au contradicteur de jalon M4 (L48)** : une migration de source ou un relink vers une sous-source adulte pose la suggestion d'âge de la sous-source (l'Édition quitte l'étagère enfant) ; la reprise de la passe du dossier natif reconnaît ses fichiers après un redémarrage (identité de liaison, plus l'appel) et une liaison en échec est visible dans la santé de sa cible ; un retrait avec suppression des fichiers ne tourne plus pendant une passe qui écrit dans le dossier ; l'écho de kosync après un redémarrage ne marque plus « lu » un chapitre sauté ; une racine en écriture qui est un lien (ou passe par un lien) hors de la bibliothèque est refusée ; l'export d'un profil contient les données personnelles ajoutées en M4 (sans secret), tenu au schéma par un test.
 - **Une liseuse retrouve un fichier dès son premier export (L47)** : l'export écrit la ligne `document_alias` du fichier qu'il produit (empreintes KOReader et Kavita comprises), une seule fois par fichier ; avant, `GET /kosync/syncs/progress/{empreinte}` d'un fichier tout juste exporté répondait `{}`. Aucune migration.
 - **Suppression d'une étagère (L43)** : les enfants qui voyaient une Œuvre par cette étagère reçoivent l'événement de visibilité ; ils ne la voient plus.
 

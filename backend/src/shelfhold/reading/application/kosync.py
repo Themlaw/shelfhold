@@ -348,7 +348,7 @@ class Kosync:
                     locator["bundle"] = doc.version.id
                     locator["bundle_page"] = page
                     locator["who"] = _who(device_id, token)
-                    if self._is_echo(connection, user_id, token, doc.version, page):
+                    if self._is_echo(connection, user_id, token, doc, doc.version, page):
                         locator["anchor"] = True  # a start (the page a GET gave), never a reading
             elif doc.item_id is not None:
                 item_id = doc.item_id
@@ -442,15 +442,24 @@ class Kosync:
         return str(last.id)
 
     def _is_echo(
-        self, connection: Connection, user_id: str, token: str, version: store.VersionRow, page: int
-    ) -> bool:
+        self, connection: Connection, user_id: str, token: str, doc: _Doc,
+        version: store.VersionRow, page: int,
+    ) -> bool:  # fmt: skip
         """The page is the one a GET gave this token (or an earlier page of the same chapter): the
         device went there because it was told to, and sends it back. It is where the reader starts,
         not a place the reader got to."""
         entry = self._returned.get((user_id, token.lower()))
-        if entry is None or entry[0] != version.id:
-            return False
-        given = entry[1]
+        if entry is not None and entry[0] == version.id:
+            given = entry[1]
+        else:
+            # Nothing in memory (a restart since the GET, J-REP-3): the page a GET would give is
+            # read again from the positions as they are, before this PUT is written. A device
+            # that goes where it was told, and sends it back, is never a reader who skipped
+            # the chapters in between. Where nothing would be given, it is no echo.
+            found = self._furthest(connection, user_id, doc, None)
+            if found is None or not found.progress.isdigit():
+                return False
+            given = int(found.progress)
         return any(
             m.first_page <= given < m.first_page + m.page_count and m.first_page <= page <= given
             for m in self._members(connection, version.id)
@@ -574,47 +583,54 @@ class Kosync:
                 return None  # nothing is guessed: the answer is the one of nothing known
             if doc is None:
                 return None
-            order: list[tuple[str, _Member | None]]
-            if doc.version is not None:
-                members = self._members(connection, doc.version.id)
-                order = [(m.unit_id, m) for m in reversed(members) if m.unit_id]
-            elif doc.item_id is not None:
-                units = connection.execute(
-                    sa.select(export.unit_coverage.c.unit_id)
-                    .where(
-                        export.unit_coverage.c.carrier_type == "export_item",
-                        export.unit_coverage.c.carrier_id == doc.item_id,
-                    )
-                    .order_by(export.unit_coverage.c.position.desc())
-                ).scalars()
-                order = [(str(u), None) for u in units]
-            else:
-                return None
-            if not order:
-                return None
-            rows = {
-                r.unit_id: r
-                for r in progress_of(
-                    connection, viewer_id=user_id, subject_id=user_id,
-                    unit_ids=[str(u) for u, _m in order], proven=True,  # never a guess
+            return self._furthest(connection, user_id, doc, token)
+
+    def _furthest(
+        self, connection: Connection, user_id: str, doc: _Doc, token: str | None
+    ) -> Pulled | None:
+        """What `pull` gives for a document resolved; `token=None` reads it without remembering
+        the page (the question "what would a GET give now?", asked by a PUT)."""
+        order: list[tuple[str, _Member | None]]
+        if doc.version is not None:
+            members = self._members(connection, doc.version.id)
+            order = [(m.unit_id, m) for m in reversed(members) if m.unit_id]
+        elif doc.item_id is not None:
+            units = connection.execute(
+                sa.select(export.unit_coverage.c.unit_id)
+                .where(
+                    export.unit_coverage.c.carrier_type == "export_item",
+                    export.unit_coverage.c.carrier_id == doc.item_id,
                 )
-            }  # fmt: skip
-            for unit_id, member in order:
-                row = rows.get(unit_id)
-                if row is None:
-                    continue
-                position = connection.execute(
-                    sa.select(reading.reading_position).where(
-                        reading.reading_position.c.id == row.last_position_id,
-                        reading.reading_position.c.user_id == user_id,
-                    )
-                ).first()
-                if position is None or position.device_id == _DELIVERY:
-                    continue
-                found = self._in_frame(connection, doc, member, position)  # the furthest decides
-                if found is not None and doc.version is not None:
-                    self._remember(user_id, token, doc.version.id, int(found.progress))
-                return found
+                .order_by(export.unit_coverage.c.position.desc())
+            ).scalars()
+            order = [(str(u), None) for u in units]
+        else:
+            return None
+        if not order:
+            return None
+        rows = {
+            r.unit_id: r
+            for r in progress_of(
+                connection, viewer_id=user_id, subject_id=user_id,
+                unit_ids=[str(u) for u, _m in order], proven=True,  # never a guess
+            )
+        }  # fmt: skip
+        for unit_id, member in order:
+            row = rows.get(unit_id)
+            if row is None:
+                continue
+            position = connection.execute(
+                sa.select(reading.reading_position).where(
+                    reading.reading_position.c.id == row.last_position_id,
+                    reading.reading_position.c.user_id == user_id,
+                )
+            ).first()
+            if position is None or position.device_id == _DELIVERY:
+                continue
+            found = self._in_frame(connection, doc, member, position)  # the furthest decides
+            if found is not None and doc.version is not None and token is not None:
+                self._remember(user_id, token, doc.version.id, int(found.progress))
+            return found
         return None
 
     def _remember(self, user_id: str, token: str, version_id: str, page: int) -> None:

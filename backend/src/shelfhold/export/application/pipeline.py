@@ -530,6 +530,7 @@ class ExportPipeline:
             clock=self._clock,
             events=events,
             barrier=barrier,
+            locks=self._locks,
         )
 
     @property

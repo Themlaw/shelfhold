@@ -121,6 +121,7 @@ class RootPolicy:
     def check(self, path: str, mode: PathMode, known: Iterable[str] = ()) -> None:
         if path == clean_absolute(os.path.abspath(self.store_dir)):
             return  # the store is registered by the instance itself, outside the library
+        self._check_destination(path, mode)
         for name, reserved in (("data", self.data_dir), ("store", self.store_dir)):
             fixed = clean_absolute(os.path.abspath(reserved))
             if within(path, fixed) is not None or within(fixed, path) is not None:
@@ -134,11 +135,49 @@ class RootPolicy:
             ):
                 raise RootRefusedError(f"{path} overlaps the root {other}")
 
+    def _check_destination(self, path: str, mode: PathMode) -> None:
+        """A root is judged by where it leads, not by its spelling (J-FS-1): the real path of the
+        folder and of the three references, and the identity `(st_dev, st_ino)` of the folder
+        against every folder from `/data` and `/store` up to `/` (a bind mount keeps no name)."""
+        real = clean_absolute(os.path.realpath(path))
+        for name, reserved in (("data", self.data_dir), ("store", self.store_dir)):
+            fixed = clean_absolute(os.path.realpath(reserved))
+            if within(real, fixed) is not None or within(fixed, real) is not None:
+                raise RootRefusedError(f"{path} leads into, contains or lies in the {name} folder")
+            if _same_folder_on_the_way_up(path, reserved):
+                raise RootRefusedError(f"{path} is, or holds, the {name} folder")
+        if mode is PathMode.RW:
+            library = clean_absolute(os.path.realpath(self.library_dir))
+            if within(real, library) is None:
+                raise RootRefusedError(f"{path} leads out of the library folder {library}")
+
     def check_all(self, wanted: Iterable[tuple[str, PathMode]]) -> None:
         paths = [(clean_absolute(os.path.abspath(raw)), mode) for raw, mode in wanted]
         for index, (path, mode) in enumerate(paths):
             others = [p for j, (p, _m) in enumerate(paths) if j != index]
             self.check(path, mode, others)
+
+
+def _identity(path: str | Path) -> tuple[int, int] | None:
+    try:
+        found = os.stat(path)
+    except OSError:
+        return None
+    return found.st_dev, found.st_ino
+
+
+def _same_folder_on_the_way_up(path: str, reserved: Path) -> bool:
+    """`path` is `reserved` or lies in it, or holds it, by identity: one of them is the other, or
+    one of the folders above `reserved` (resp. `path`) is the other."""
+    mine, theirs = _identity(path), _identity(reserved)
+    if mine is None or theirs is None:
+        return False
+    if mine == theirs:
+        return True
+    above = Path(os.path.realpath(reserved)).parents
+    if mine in {_identity(p) for p in above}:
+        return True  # `path` holds the reserved folder (a link-free spelling that hides it)
+    return theirs in {_identity(p) for p in Path(os.path.realpath(path)).parents}
 
 
 def register_roots(
@@ -199,13 +238,15 @@ def _stamp(path: str, mode: PathMode, instance_id: str) -> str | None:
     root_id = new_ulid()
     if mode is not PathMode.RW:
         return root_id
-    with ConfinedRoot.open(path) as root:
+    with ConfinedRoot.open(path, nofollow=True) as root:  # a link is never a root (J-FS-1)
         stamped = read_sentinel(root)
     if stamped is not None and stamped.instance_id == instance_id:
         return stamped.root_id  # a crash left it stamped: adopt it as it is
     if stamped is None:
         create_sentinel(
-            path, SentinelDocument(root_id=root_id, instance_id=instance_id, generation=1)
+            path,
+            SentinelDocument(root_id=root_id, instance_id=instance_id, generation=1),
+            nofollow=True,
         )
         return root_id
     log.warning("root_bootstrap.foreign_sentinel", path=path)  # `root takeover` (M1b) is the exit

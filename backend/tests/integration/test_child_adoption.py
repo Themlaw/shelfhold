@@ -19,7 +19,7 @@ from shelfhold.sdk.age import AgeRating
 from tests.adopt_env import Adoption, adoption, comicinfo
 from tests.export_env import ExportEnv, Series, export_env
 from tests.fakes.kavita import member
-from tests.family_env import NOW, add_edition_to, admin, family_env, rate
+from tests.family_env import NOW, add_edition_to, admin, family_env, rate, rate_edition
 from tests.kavita_env import run
 from tests.kavita_export_env import LIBRARY_ID
 from tests.ops_env import make_ops
@@ -97,8 +97,10 @@ def test_adopt_heterogeneous_child_library_suspends_unrated_only() -> None:
         assert set(waiting) == set(suspended)
         assert all(i.command.startswith("shelfhold rate ") for i in waiting.values())
         # the files that are there stay readable: `status` says so, nothing is taken out by itself
+        # the two rated Editions a file of no age joined by its name are held too (J-PAR-2): 18+ is
+        # suggested for them, as nobody looked at the file
         held = {i.subject for i in ops.status().waiting if i.state == "withdrawal_pending"}
-        assert len(held) == 2
+        assert len(held) == 4
 
 
 def test_adopted_comicinfo_age_is_suggestion_only() -> None:
@@ -149,8 +151,14 @@ def test_no_unrated_adopted_file_is_made_readable() -> None:
             env.add_chapter(series, "9")
         there = {p.name for p in env.files()}
         assert {b.code for b in env.pipeline.preview(env.destination_id).blocked} == {
-            "shelf.rating_required"
+            "shelf.rating_required",
+            "shelf.suggestion_above",  # a rated Edition joined by name, by a file of no age
         }
+        env.pipeline.run(env.destination_id, job_id=new_ulid())
+        new = {p.name for p in env.files()} - there
+        assert new == set()  # J-PAR-2: nothing arrives before an admin looked at it
+        for series in known.values():  # an admin rates the joined Editions again: they enter
+            rate_edition(env, series.edition_id, 10)
         env.pipeline.run(env.destination_id, job_id=new_ulid())
         new = {p.name for p in env.files()} - there
         assert new == {"Akira - Ch.9.cbz", "Lupin - Ch.9.cbz"}  # the rated ones, nothing else
