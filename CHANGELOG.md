@@ -2,7 +2,7 @@
 
 Format : [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/). Versionnement : [SemVer](https://semver.org/lang/fr/). Procédure de release : `docs/releasing.md`.
 
-## 1.1.0 - AAAA-MM-JJ
+## 1.1.0 - 2026-11-18
 
 Clôture de M4 : plusieurs destinations par étagère, synchronisation de la progression avec Kavita et les liseuses, ouverture vers l'écosystème, métadonnées enrichies. Reprend les changements des candidates `1.1.0-rc.1` et `1.1.0-rc.2` (sections ci-dessous). La date est celle de la release.
 
@@ -65,8 +65,9 @@ Clôture de M4 : plusieurs destinations par étagère, synchronisation de la pro
 - **Montage lié sous un dossier d'une autre destination (J-FS-2)** : la liaison ne lit pas `/proc/self/mountinfo` ; il faut être root pour monter. Prévu en M5 (L22b).
 - **Collections Kavita en double (J-REP-4)** : la passe, l'écouteur du hub et le travail `export.relations` publient sans verrou commun ; deux collections peuvent naître pour une seule. Prévu en M5 (L22b).
 - **Ancre kosync après un redémarrage (C3)** : si la progression a changé de chapitre entre le `GET` et le `PUT` qui suit un redémarrage, l'écho n'est pas reconnu et le `PUT` compte comme une position ordinaire (les règles de vitesse et de session le bornent). Prévu en M5.
+- **Image de base** : à la date de la version, l'analyse de `python:3.13-slim` signale deux CVE OpenSSL « high » (CVE-2026-107493, CVE-2026-124709) et quelques « medium » sans correctif publié par Debian. Shelfhold n'utilise OpenSSL que par Python (TLS sortant vers les sources et les destinations) ; l'image sera reconstruite dès que Debian publie le correctif (Dependabot suit le digest).
 
-Migration : oui (0065 à 0098 depuis la 1.0.1 ; 0084 à 0098 depuis la 1.1.0-rc.2)
+Migration : oui (0065 à 0098 depuis la 1.0.1 ; 0084 à 0098 depuis la 1.1.0-rc.2), réversible : non (`shelfhold migrate` sauvegarde la base avant de migrer, `docs/admin/retour-arriere.md`)
 
 ## 1.1.0-rc.2 - 2026-11-16
 
