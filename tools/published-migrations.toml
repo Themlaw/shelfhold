@@ -318,4 +318,4 @@ since = "1.1"
 [[migration]]
 file = "0100_device_registry.py"
 sha256 = "aa34519af06ba1aed29fa1275152e504d1d0d928535af146ed1f8a32c6affb8f"
-since = "1.1"
+since = "1.2"

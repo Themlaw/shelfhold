@@ -381,3 +381,24 @@ def test_opds_and_kosync_are_rate_limited_per_address(path: str) -> None:
         asyncio.run(call())
     assert statuses[:120] == [204] * 120 and statuses[120] == 429
     assert len(served) == 120
+
+
+@pytest.mark.req("EF-USR-008", "ENF-SEC-013")
+def test_a_token_under_a_retired_device_is_refused(world: World) -> None:
+    """Defence in depth (#347 MIN-2): every writer retires a device and its tokens together, but
+    the check of a token reads the device too: a live token under a retired device opens nothing."""
+    made = world.paired(world.mum, kind="kobo")
+    assert world.kosync_status(made["public_id"], made["secret"]) == 200
+    import sqlite3
+    from contextlib import closing
+
+    with closing(sqlite3.connect(world.env.settings.database_path, isolation_level=None)) as conn:
+        conn.execute(
+            "UPDATE device SET revoked_at = CURRENT_TIMESTAMP WHERE id = ?", (made["device_id"],)
+        )
+    assert db_rows(
+        world.env.settings, "SELECT revoked_at IS NULL FROM device_token WHERE public_id=?",
+        made["public_id"],
+    ) == [(1,)], "the token alone is still live"
+    assert world.kosync_status(made["public_id"], made["secret"]) == 401
+    assert world.opds_status(made["public_id"], made["secret"]) == 401
