@@ -1413,6 +1413,21 @@ title = "La liseuse ne crée pas de compte."
 action = "Demandez à l'administrateur de Shelfhold un jeton d'appareil, puis saisissez-le dans les réglages de synchronisation de la liseuse."
 cause = "Les comptes sont les profils de Shelfhold : une liseuse ne peut pas en créer, elle se connecte avec un jeton d'appareil."
 
+[errors."no_readable_copy"]
+title = "Aucun exemplaire de cette œuvre ne peut être lu ici."
+action = "Importez ou téléchargez un exemplaire lisible, ou ouvrez-le dans l'application où il a été envoyé."
+cause = "Aucun fichier de ce volume n'est conservé sous une forme que le lecteur sait ouvrir (copie absente, fichier abîmé, version neutralisée manquante ou format non pris en charge)."
+
+[errors."excerpt_unavailable"]
+title = "Aucun extrait n'est disponible pour ce livre."
+action = "Lisez-le dans l'application où il a été envoyé, ou demandez à un administrateur de conserver une copie."
+cause = "Le livre ne peut pas être coupé dans la limite d'un extrait (un seul fichier, ou un premier chapitre trop long) : le fichier entier n'est jamais servi."
+
+[errors."full_read_not_allowed"]
+title = "Ce livre ne se lit pas en entier ici."
+action = "Demandez un extrait, ou lisez le livre complet dans l'application où il a été envoyé."
+cause = "Un livre exporté vers une destination que vous pouvez lire se lit là-bas ; Shelfhold n'en montre qu'un extrait."
+
 [errors."bundle_busy"]
 title = "Trop de blocs sont servis en ce moment."
 action = "Patientez quelques instants, puis relancez le téléchargement."

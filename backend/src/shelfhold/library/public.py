@@ -280,6 +280,7 @@ from shelfhold.library.page_issues import (
 )
 from shelfhold.library.replica import (
     ByteSource,
+    LibraryCopy,
     ShelfSpace,
     UnitFile,
     adopted_original_unprotected,
@@ -295,6 +296,7 @@ from shelfhold.library.replica import (
     has_independent_store_copy,
     has_readable_copy,
     independent_copies,
+    library_copies,
     mark_damaged,
     median_unit_bytes,
     readable_unit_ids,
@@ -410,6 +412,7 @@ __all__ = [
     "Irreplaceability",
     "KeepCopier",
     "Kept",
+    "LibraryCopy",
     "LibraryPageNormalizer",
     "LinkPolicy",
     "MetaProjection",
@@ -553,6 +556,7 @@ __all__ = [
     "latest_deletion",
     "leftover_tickets",
     "let_go_tickets",
+    "library_copies",
     "make_precheck",
     "mark_damaged",
     "median_unit_bytes",

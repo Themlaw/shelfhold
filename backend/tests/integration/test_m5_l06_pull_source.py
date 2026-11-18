@@ -15,6 +15,7 @@ import sqlalchemy as sa
 
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import export
+from shelfhold.reading.bundle.limits import BundleLimits
 from shelfhold.reading.bundle.plan import load_candidates
 from shelfhold.reading.bundle.sources import open_source
 from tests.export_env import ExportEnv, export_env
@@ -84,12 +85,12 @@ def test_pull_destination_never_serves_a_format_the_block_does_not_take() -> Non
     with export_env(transport="pull") as env:
         edition, unit = exported(env)
         with env.engine.begin() as connection:
-            connection.execute(sa.text("UPDATE content SET format = 'epub' WHERE unit_id = :u"), {"u": unit})
+            connection.execute(
+                sa.text("UPDATE content SET format = 'epub' WHERE unit_id = :u"), {"u": unit}
+            )
         with env.engine.connect() as connection:
             assert load_candidates(connection, edition) == []  # an EPUB is no page of a block
 
 
-def _limits() -> object:
-    from shelfhold.reading.bundle.limits import BundleLimits
-
+def _limits() -> BundleLimits:
     return BundleLimits()

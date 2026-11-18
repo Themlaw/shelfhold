@@ -1444,6 +1444,21 @@
     action = "Ask the Shelfhold administrator for a device token, then enter it in the e-reader's sync settings."
     cause = "Accounts are Shelfhold profiles: an e-reader cannot create one, it signs in with a device token."
 
+  [errors.no_readable_copy]
+    title = "No copy of this work can be read here."
+    action = "Import or download a readable copy, or open it in the app it was sent to."
+    cause = "No file of this volume is kept in a form the reader can open (missing copy, damaged file, neutralized version missing, or unsupported format)."
+
+  [errors.excerpt_unavailable]
+    title = "No excerpt is available for this book."
+    action = "Read it in the app it was sent to, or ask an administrator to keep a copy."
+    cause = "The book cannot be cut within the limit of an excerpt (a single file, or a first chapter that is too long): the whole file is never served."
+
+  [errors.full_read_not_allowed]
+    title = "This book is not read in full here."
+    action = "Ask for an excerpt, or read the full book in the app it was sent to."
+    cause = "A book exported to a destination you can read is read there; Shelfhold only shows an excerpt of it."
+
   [errors.bundle_busy]
     title = "Too many blocks are being served right now."
     action = "Wait a few moments, then start the download again."

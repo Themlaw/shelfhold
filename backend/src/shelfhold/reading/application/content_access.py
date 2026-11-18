@@ -37,7 +37,7 @@ from typing import Protocol
 import sqlalchemy as sa
 
 from shelfhold.identity.public import live_session_ids
-from shelfhold.infrastructure.schema import export, identity
+from shelfhold.infrastructure.schema import export, identity, storage
 from shelfhold.infrastructure.secrets.keyring import Keyring
 from shelfhold.infrastructure.secrets.tombstone_aead import hkdf_sha256
 from shelfhold.reading.application.progress import UnknownCarrierError, check_carrier
@@ -61,6 +61,7 @@ __all__ = [
     "FullReadNotAllowedError",
     "IssuedTicket",
     "NoReadableCopyError",
+    "ResolvedCarrier",
     "ServedEntry",
 ]
 
@@ -128,6 +129,16 @@ class ContentKey:
 class IssuedTicket:
     token: str
     expires_at: datetime
+
+
+@dataclass(frozen=True)
+class ResolvedCarrier:
+    """What a carrier the profile sees is: the content it resolves to, its format, and whether the
+    profile may read it in full (ADR-0055 D-P1) or only as an excerpt."""
+
+    content_id: str
+    format: str
+    full_allowed: bool
 
 
 @dataclass(frozen=True)
@@ -199,6 +210,19 @@ class ContentAccess:
             ),
         )
         return IssuedTicket(token, expires)
+
+    def resolve(self, user_id: str, carrier_type: str, carrier_id: str) -> ResolvedCarrier:
+        """The carrier as `issue` would judge it, without a ticket: `UnknownCarrierError` when the
+        profile does not see it (the one answer for absent and hidden)."""
+        with self._engine.connect() as connection:
+            content_id = self._checked(connection, user_id, carrier_type, carrier_id)
+            kind = connection.execute(
+                sa.select(storage.content.c.format).where(storage.content.c.id == content_id)
+            ).scalar()
+            allowed = self._full_allowed(connection, user_id, carrier_type, content_id)
+        if kind is None:
+            raise UnknownCarrierError
+        return ResolvedCarrier(content_id, str(kind), allowed)
 
     def url(self, token: str, entry: str) -> str:
         """Where the reader fetches `entry`: this origin, or the separate one when it is set."""

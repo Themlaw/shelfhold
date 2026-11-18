@@ -148,8 +148,9 @@ def fetch(world: World, client: Any, href: str) -> Any:
 def positions(world: World) -> int:
     with world.seed.engine.connect() as connection:
         return int(
-            connection.execute(sa.select(sa.func.count()).select_from(reading.reading_position))
-            .scalar_one()
+            connection.execute(
+                sa.select(sa.func.count()).select_from(reading.reading_position)
+            ).scalar_one()
         )
 
 
@@ -212,10 +213,13 @@ def test_publication_of_exported_unit_chooses_the_exported_file_only_if_read_els
     with write_transaction(world.seed.engine) as connection:
         target = add_target(connection)
         destination = add_destination(connection, world.seed.shelves["family"], target)
-        connection.execute(sa.text("INSERT OR IGNORE INTO secret_key (kid, state) VALUES ('k1', 'active')"))
+        connection.execute(
+            sa.text("INSERT OR IGNORE INTO secret_key (kid, state) VALUES ('k1', 'active')")
+        )
+        import os
+
         from shelfhold.infrastructure.ids import new_ulid
         from shelfhold.infrastructure.schema import identity
-        import os
 
         admin = connection.execute(
             sa.select(identity.user.c.id).where(identity.user.c.username == "admin")
@@ -230,7 +234,9 @@ def test_publication_of_exported_unit_chooses_the_exported_file_only_if_read_els
         )  # fmt: skip
         connection.execute(
             sa.insert(export.export_record).values(
-                shelf_destination_id=destination, export_item_id=item, locator_type="none",
+                shelf_destination_id=destination,
+                export_item_id=item,
+                locator_type="none",
                 state="written",
             )
         )
@@ -277,7 +283,9 @@ def test_publication_reading_direction_follows_the_series_then_the_mode(
 
 @pytest.mark.req("EF-LEC-014")
 def test_publication_of_an_epub_lists_the_spine_in_reading_order(world: World) -> None:
-    entries = epub_entries([("ch2.xhtml", 10), ("ch1.xhtml", 10), ("ch3.xhtml", 10)], direction="rtl")
+    entries = epub_entries(
+        [("ch2.xhtml", 10), ("ch1.xhtml", 10), ("ch3.xhtml", 10)], direction="rtl"
+    )
     content = book(world, entries, fmt="epub")
     with write_transaction(world.seed.engine) as connection:
         connection.execute(
@@ -352,7 +360,7 @@ def test_excerpt_publication_is_bounded(world: World) -> None:
     assert refused.status_code == 409 and refused.json()["code"] == "excerpt_unavailable"
     assert refused.json().get("action") or refused.json().get("detail")
     # an EPUB: the first documents within a fifth of the text, with their resources
-    chapters = [(f"c{n}.xhtml", 400) for n in range(1, 11)]
+    chapters = [(f"c{n}.xhtml", 400) for n in range(1, 12)]
     epub = book(world, epub_entries(chapters), fmt="epub")
     cut = publication(world.admin, "content", epub, scope="excerpt").json()
     assert cut["scope"] == "excerpt" and cut["kind"] == "epub"
@@ -395,7 +403,9 @@ def test_publication_hidden_work_404_for_child(world: World) -> None:
     unit = unit_of(world, hidden)
     absent = publication(world.kid, "content", ABSENT)
     assert absent.status_code == 404
-    crossed = world.export_item(world.seed.editions["ok"], hidden)  # a visible Edition, a hidden file
+    crossed = world.export_item(
+        world.seed.editions["ok"], hidden
+    )  # a visible Edition, a hidden file
     world.src.item_content[crossed] = hidden
     for carrier in (("content", hidden), ("unit", unit), ("export_item", crossed)):
         for scope in ({}, {"scope": "excerpt"}, {"scope": "full"}):

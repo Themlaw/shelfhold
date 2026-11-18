@@ -3,6 +3,10 @@
 Nothing here opens a file: the feed lists a shelf of series with this, and a file is opened only
 when a version is made or served. A chapter of the block is an `export_item` of the Edition with a
 live record that is a path in a tree destination; the Units it covers give its place in the series.
+A `pull` destination has no file of its own (its record has no locator): an `export_item` it
+carries that no tree destination holds is read from the kept copy of its Unit (`/library`, never
+the original of `/store`), when that copy is a CBZ the integrity check has not marked damaged
+(M5 L06, EF-EXP-058): a `pull` binding is served only from a readable copy, else not at all.
 
 Parts are cut on boundaries that are *written* (`bundle_partition.first_unit_id`) when a part is
 first made, and never move: a chapter added goes to the last part until the cap, then opens the
@@ -19,7 +23,8 @@ import sqlalchemy as sa
 from sqlalchemy import Connection
 
 from shelfhold.infrastructure.ids import new_ulid
-from shelfhold.infrastructure.schema import bundle, catalog, export
+from shelfhold.infrastructure.schema import bundle, catalog, export, storage
+from shelfhold.library.public import library_copies
 from shelfhold.reading.bundle import store
 from shelfhold.reading.bundle.limits import BundleLimits
 from shelfhold.reading.bundle.sources import clean_relative, root_of
@@ -131,7 +136,77 @@ def load_candidates(connection: Connection, edition_id: str) -> list[Candidate]:
         held = best.get(r.item_id)
         if held is None or (found.order, found.destination_id) < (held.order, held.destination_id):
             best[r.item_id] = found  # the first Unit it covers, the lowest destination
+    for found in _kept_copies(connection, edition_id, set(best)):
+        best[found.item_id] = found
     return sorted(best.values(), key=lambda c: (c.order, c.item_id))
+
+
+def _kept_copies(connection: Connection, edition_id: str, held: set[str]) -> list[Candidate]:
+    """The chapters a `pull` destination carries and no tree destination holds, read from the
+    kept copy of the Unit they cover: the file `library_copies` names, a CBZ, not damaged. The
+    folder is the one the replica registry names and the name is the file's: nothing a client
+    supplies, opened beneath that folder by `open_source` like any chapter."""
+    item, coverage, unit, record = (
+        export.export_item,
+        export.unit_coverage,
+        catalog.unit,
+        export.export_record,
+    )
+    destination = export.shelf_destination
+    rows = connection.execute(
+        sa.select(
+            item.c.id.label("item_id"),
+            unit.c.id.label("unit_id"),
+            unit.c.number_norm,
+            unit.c.number_sort,
+            unit.c.number_segment_ordinal,
+            unit.c.source_order,
+            destination.c.id.label("destination_id"),
+            storage.content.c.format.label("format"),
+        )
+        .select_from(
+            item.join(
+                coverage,
+                sa.and_(
+                    coverage.c.carrier_type == "export_item", coverage.c.carrier_id == item.c.id
+                ),
+            )
+            .join(unit, unit.c.id == coverage.c.unit_id)
+            .join(record, record.c.export_item_id == item.c.id)
+            .join(destination, destination.c.id == record.c.shelf_destination_id)
+            .join(storage.content, storage.content.c.unit_id == unit.c.id)
+        )
+        .where(
+            item.c.edition_id == edition_id,
+            item.c.kind.in_(ITEM_KINDS),
+            record.c.state.in_(LIVE),
+            destination.c.transport == "pull",
+            storage.content.c.format == "cbz",
+        )
+        .order_by(item.c.id, coverage.c.position, destination.c.id)
+    ).all()
+    found: dict[str, Candidate] = {}
+    for r in rows:
+        if r.item_id in held or r.item_id in found:
+            continue
+        copy = next((c for c in library_copies(connection, r.unit_id) if not c.damaged), None)
+        if copy is None or not copy.local.startswith("/"):
+            continue
+        root, _slash, name = copy.local.rpartition("/")
+        if not root or not clean_relative(name):
+            continue
+        order = (
+            r.number_sort is None,
+            r.number_sort or 0.0,
+            r.number_segment_ordinal,
+            r.source_order,
+            r.unit_id,
+        )
+        found[r.item_id] = Candidate(
+            r.item_id, r.unit_id, r.number_norm, order, r.destination_id, name, r.format,
+            None, None, None, root,
+        )  # fmt: skip
+    return list(found.values())
 
 
 @dataclass(frozen=True)
