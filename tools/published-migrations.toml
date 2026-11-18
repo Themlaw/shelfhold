@@ -314,3 +314,8 @@ since = "1.1"
 file = "0098_bulk_order.py"
 sha256 = "eaeab68ed573584dffc0d9233e05fcc46f429bfdaa62c4add4bf92d86f3e4820"
 since = "1.1"
+
+[[migration]]
+file = "0104_rendition.py"
+sha256 = "5d3c510df315bb90e9d885461c82163b5229ff9912493751e18bd610e674b7fa"
+since = "1.2"

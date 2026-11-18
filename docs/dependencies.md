@@ -64,6 +64,7 @@ Non critiques (remplaçables sans réécriture), listées pour mémoire :
   figé. Une page dans l'un de ces formats est refusée avec le code `page.format_unsupported`.
   Un lot suivant est possible pour JPEG XL (un seul fil, essai seccomp, relecture adverse).
   L'AVIF, lui, est lu par Pillow ≥ 13.
+  Les rendus d'images (M5 L20a, EF-BIB-015) s'appuient sur ce seul décodeur : AVIF et WebP vers JPEG ou PNG ; un JPEG XL est refusé (`rendition.format_unsupported`). Aucune dépendance ajoutée.
 - **pypdf** (BSD-3-Clause) : lecture stricte d'un PDF du dossier d'import (EF-SRC-012), version
   exacte `6.21.4` (publiée le 2026-10-28, plus de 14 jours). Importée par le seul worker de décodage
   (contrat `pypdf-confined`), donc dans un sous-processus borné en mémoire et en temps ; un PDF
