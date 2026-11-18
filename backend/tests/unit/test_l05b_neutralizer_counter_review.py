@@ -34,7 +34,6 @@ def _page(body: str) -> str:
     return neutralize(_PAGE.format(body).encode(), "xhtml").decode()
 
 
-@pytest.mark.xfail(strict=True, reason="C1: a newline ends a CSS string, the filter reads on")
 def test_c1_style_attribute_hides_image_set_behind_a_newline_in_a_string() -> None:
     out = _page(
         "<p style=\"content:&quot;a&#10;;background-image:image-set('/api/session' 1x);"
@@ -43,7 +42,6 @@ def test_c1_style_attribute_hides_image_set_behind_a_newline_in_a_string() -> No
     assert "/api/session" not in out
 
 
-@pytest.mark.xfail(strict=True, reason="C1: a newline ends a CSS string, the filter reads on")
 def test_c1_style_element_hides_image_set_behind_a_newline_in_a_string() -> None:
     out = _page(
         "<style>p{content:\"a\n;background-image:image-set('//evil.example/b.png' 1x);"
@@ -52,14 +50,12 @@ def test_c1_style_element_hides_image_set_behind_a_newline_in_a_string() -> None
     assert "evil.example" not in out
 
 
-@pytest.mark.xfail(strict=True, reason="C1: a newline ends a CSS string, the filter reads on")
 def test_c1_style_sheet_file_hides_image_set_behind_a_newline_in_a_string() -> None:
     sheet = "p{content:\"a\n;background-image:image-set('//evil.example/c.png' 1x);x:\"}\n"
     out = neutralize(sheet.encode(), "css").decode()
     assert "evil.example" not in out
 
 
-@pytest.mark.xfail(strict=True, reason="C2: a CSS escape hides url( in an SVG paint attribute")
 def test_c2_svg_presentation_attribute_hides_url_behind_a_css_escape() -> None:
     out = _page(
         '<svg xmlns="http://www.w3.org/2000/svg">'

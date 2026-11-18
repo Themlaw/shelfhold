@@ -193,6 +193,7 @@ _CSS_BAD: Final = re.compile(
     r"|image-set\s*\(|(?:src|image|cross-fade|element|paint)\s*\(|@namespace",
     re.I,
 )
+_CSS_NEWLINES: Final = "\n\r\f"
 _CSS_URL_CALL: Final = re.compile(r"url\s*\(", re.I)
 _CSS_URL_FULL: Final = re.compile(r"""url\s*\(\s*(?:"([^"]*)"|'([^']*)'|([^)\s"']*))\s*\)""", re.I)
 
@@ -219,8 +220,8 @@ def _css_split(text: str, sep: str = " ") -> tuple[str, str] | None:
             j = i + 1
             while j < n and text[j] != ch:
                 j += 2 if text[j] == "\\" else 1
-            if j >= n:
-                return None
+            if j >= n or any(c in _CSS_NEWLINES for c in text[i : j + 1]):
+                return None  # not closed, or a `bad-string` (CSS Syntax 3): never emitted
             out.append(text[i : j + 1])
             bare.append(ch + ch)
             i = j + 1
@@ -276,9 +277,9 @@ def _css_chunks(text: str) -> list[str]:
             continue
         if ch in "\"'":
             j = i + 1
-            while j < n and text[j] != ch:
+            while j < n and text[j] != ch and text[j] not in _CSS_NEWLINES:
                 j += 2 if text[j] == "\\" else 1
-            i = j + 1
+            i = j if j < n and text[j] in _CSS_NEWLINES else j + 1  # a newline ends the string
             continue
         if ch == "{":
             depth += 1
@@ -377,6 +378,30 @@ def _inert(context: str, parent: str) -> str:
     return "<span></span>"
 
 
+_SVG_PLAIN: Final = _words("id class lang dir title role version media type")
+
+
+def _svg_plain(name: str) -> bool:
+    """An SVG attribute that is text, not a CSS value."""
+    return name in _SVG_PLAIN or name.startswith("aria-")
+
+
+def _svg_css_value(value: str) -> str | None:
+    """A presentation attribute (`fill`, `mask`, `clip-path`...) as it is written out, or None.
+
+    A backslash is refused (a CSS escape can spell `url(`); what is left goes through the same
+    analysis as a `style` attribute, and a `url()` there can only name a fragment of the page.
+    """
+    if "\\" in value:
+        return None
+    text = _css_text(value)
+    if text is None:
+        return None
+    if "url" in _squash(text) and (not _URL_PAINT.match(text) or not _Writer._fragment_urls(text)):
+        return None
+    return text
+
+
 class _Writer:
     """Walks the parsed tree and writes the allowlisted subset as a new document."""
 
@@ -402,8 +427,10 @@ class _Writer:
                 elif name in ("href", "src"):
                     if not self._url_attr(local, name, value, context):
                         continue
-                elif context == "svg" and "url" in _squash(value):
-                    if not _URL_PAINT.match(value) or not self._fragment_urls(value):
+                elif context == "svg" and not _svg_plain(name):
+                    # read by the browser as a CSS value, escapes included (`u\\72l(` is `url(`)
+                    value = _svg_css_value(value)  # type: ignore[assignment]
+                    if value is None:
                         continue
                 qname = name
             elif ns == XML_NS and name in ("lang", "space"):
@@ -483,7 +510,7 @@ class _Writer:
         if local == "link":
             return self._link(el)
         if local == "meta":
-            return self._meta(el)
+            return self._meta(el) if parent == "head" else ""  # a meta in the body: inert
         attrs = self._attributes(el, local, context)
         if local == "img" and not any(k == "src" for k, _ in attrs):
             return ""
@@ -558,7 +585,8 @@ def _charset_ok(value: str) -> bool:
 
 # --- nh3, the second gate ------------------------------------------------------------------------
 
-_NH3_TAGS: Final = (_XHTML_TAGS - {"link", "meta"}) | _SVG_TAGS | {t.lower() for t in _SVG_TAGS}
+# a `link` in the body is written only when it is a style sheet of the package (`_link`)
+_NH3_TAGS: Final = (_XHTML_TAGS - {"meta"}) | _SVG_TAGS | {t.lower() for t in _SVG_TAGS}
 _NH3_ATTRS: Final = {
     "*": set(_SVG_ATTRS)
     | {a.lower() for a in _SVG_ATTRS}
