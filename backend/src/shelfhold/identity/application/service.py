@@ -1167,10 +1167,8 @@ class LocalAuth:
         if record is None or not same_secret(record.hash, parsed.digest):
             return None
         now = self.now()
-        if (
-            record.revoked_at is not None
-            or record.device_revoked_at is not None  # a retired device opens nothing (#347 MIN-2)
-            or (record.expires_at is not None and now >= record.expires_at)
+        if record.revoked_at is not None or (
+            record.expires_at is not None and now >= record.expires_at
         ):
             return None
         if record.last_used_at is None or now - record.last_used_at >= API_KEY_TOUCH_INTERVAL:
@@ -1421,8 +1419,10 @@ class LocalAuth:
             self._device_failed(ip, at)
             return None
         now = self.now()
-        if record.revoked_at is not None or (
-            record.expires_at is not None and now >= record.expires_at
+        if (
+            record.revoked_at is not None
+            or record.device_revoked_at is not None  # a retired device opens nothing (#347 MIN-2)
+            or (record.expires_at is not None and now >= record.expires_at)
         ):
             self._device_failed(ip, at)  # the guess had the right shape: counted
             return None

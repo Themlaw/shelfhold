@@ -397,7 +397,8 @@ def test_a_token_under_a_retired_device_is_refused(world: World) -> None:
             "UPDATE device SET revoked_at = CURRENT_TIMESTAMP WHERE id = ?", (made["device_id"],)
         )
     assert db_rows(
-        world.env.settings, "SELECT revoked_at IS NULL FROM device_token WHERE public_id=?",
+        world.env.settings,
+        "SELECT revoked_at IS NULL FROM device_token WHERE public_id=?",
         made["public_id"],
     ) == [(1,)], "the token alone is still live"
     assert world.kosync_status(made["public_id"], made["secret"]) == 401
