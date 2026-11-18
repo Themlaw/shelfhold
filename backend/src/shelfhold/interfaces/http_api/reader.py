@@ -1,4 +1,5 @@
-"""The routes of the integrated reader: what it opens (M5 L06) and where it is (M5 L07).
+"""The routes of the integrated reader: what it opens (M5 L06), where it is (M5 L07) and how it
+reads (M5 L13).
 
 `GET /api/reader/{carrier_type}/{carrier_id}/publication`: what the reader opens (M5 L06).
 
@@ -42,6 +43,13 @@ from shelfhold.reading.application.positions import (
 )
 from shelfhold.reading.application.progress import HISTORY_LIMIT
 from shelfhold.reading.application.publication import Publication, PublicationService
+from shelfhold.reading.application.settings import (
+    DIRECTIONS,
+    DeviceScopeError,
+    Effective,
+    InvalidSettingError,
+    ReaderSettings,
+)
 from shelfhold.reading.domain.locator import InvalidLocatorV1Error
 from shelfhold.reading.public import UnknownCarrierError
 
@@ -60,6 +68,7 @@ class EntryOut(BaseModel):
 class PublicationOut(BaseModel):
     carrier_type: Literal["content", "export_item"]
     carrier_id: str
+    series_id: str  # the Œuvre: the anchor of a setting pinned to this series (L13)
     scope: Literal["full", "excerpt"]
     kind: Literal["pages", "epub"]
     title: str
@@ -76,6 +85,7 @@ def _out(found: Publication) -> PublicationOut:
     return PublicationOut(
         carrier_type=found.carrier_type,  # type: ignore[arg-type]
         carrier_id=found.carrier_id,
+        series_id=found.series_id,
         scope=found.scope,
         kind=found.kind,
         title=found.title,
@@ -138,6 +148,28 @@ class ResolveIn(BaseModel):
     device_id: str | None = Field(default=None, min_length=1, max_length=64)
 
 
+class ReaderSettingsOut(BaseModel):
+    """What the reader reads with. `direction` is `None` when the profile chose nothing: the
+    publication's own direction wins (the Œuvre's, ADR-0055)."""
+
+    direction: Literal["ltr", "rtl", "webtoon"] | None
+    comfort: dict[str, str]
+
+
+class SettingIn(BaseModel):
+    """One choice, with the portée the reader was asked for: `device` names the device the choice
+    belongs to (« pour cet appareil »), `everywhere` names none (« partout »). The profile is the
+    session's: no field names one."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    kind: Literal["direction", "comfort"]
+    key: str = Field(min_length=1, max_length=64)  # a series, or `default`, or a comfort's name
+    value: str = Field(min_length=1, max_length=64)
+    scope: Literal["device", "everywhere"]
+    device_id: str | None = Field(default=None, min_length=1, max_length=64)
+
+
 def _stored(found: StoredPosition) -> StoredOut:
     return StoredOut(
         id=found.id, locator=found.locator, client_ts=found.client_ts,
@@ -166,9 +198,17 @@ def _own_session(principal: Principal) -> None:
         raise ProblemError("credential_not_allowed")  # the reader acts under a real session
 
 
+def _settings(found: Effective) -> ReaderSettingsOut:
+    return ReaderSettingsOut(
+        direction=found.direction if found.direction in DIRECTIONS else None,  # type: ignore[arg-type]
+        comfort=dict(found.comfort),
+    )
+
+
 def build_reader_router(
     get_service: Callable[[], PublicationService],
     get_positions: Callable[[], ReaderPositions],
+    get_settings: Callable[[], ReaderSettings],
 ) -> APIRouter:
     router = APIRouter(prefix="/api/reader", tags=["reader"])
 
@@ -326,5 +366,55 @@ def build_reader_router(
             raise ProblemError("conflict_stale") from None
         except ExcerptWritesNoPositionError:
             raise ProblemError("excerpt_writes_no_position") from None
+
+    @router.get(
+        "/settings",
+        operation_id="reader_settings",
+        response_model=ReaderSettingsOut,
+    )
+    def settings(
+        response: Response,
+        principal: Session,
+        series_id: Annotated[str | None, Query(max_length=26)] = None,
+        device_id: Annotated[str | None, Query(max_length=64)] = None,
+    ) -> ReaderSettingsOut:
+        """The settings of the profile that asks, for one series and one device: the direction
+        pinned to that series (her own default when the series has none) and the comfort of that
+        device (the default of every device when it has none)."""
+        _own_session(principal)
+        response.headers["Cache-Control"] = "no-store"
+        if series_id is not None and not is_ulid(series_id):
+            raise ProblemError("validation_failed")
+        found = get_settings().resolve(
+            user_id=principal.user_id, series_id=series_id, device_id=device_id
+        )
+        return _settings(found)
+
+    @router.put(
+        "/settings",
+        operation_id="reader_put_settings",
+        response_model=ReaderSettingsOut,
+        responses={422: {"description": "unknown-choice"}},
+    )
+    def put_settings(body: SettingIn, response: Response, principal: Session) -> ReaderSettingsOut:
+        """Write one choice with its portée — « pour cet appareil » (`device`, which names the
+        device) or « partout » (`everywhere`, which names none) — and answer what is effective
+        now. Only the reader's own settings exist here; a row never widens what parental control
+        hides."""
+        _own_session(principal)
+        response.headers["Cache-Control"] = "no-store"
+        try:
+            get_settings().set(
+                user_id=principal.user_id, kind=body.kind, key=body.key, value=body.value,
+                scope=body.scope, device_id=body.device_id,
+            )  # fmt: skip
+        except (InvalidSettingError, DeviceScopeError):
+            raise ProblemError("validation_failed") from None
+        found = get_settings().resolve(
+            user_id=principal.user_id,
+            series_id=body.key if body.kind == "direction" and body.key != "default" else None,
+            device_id=body.device_id,
+        )
+        return _settings(found)
 
     return router

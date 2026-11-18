@@ -23,10 +23,9 @@ CARRIER = "01HZZZZZZZZZZZZZZZZZZZZZZC"
 WIN, LOSE = "01HZZZZZZZZZZZZZZZZZZZZZZD", "01HZZZZZZZZZZZZZZZZZZZZZZE"
 
 
-def test_the_revision_is_0102_the_head_on_0100() -> None:
+def test_the_revision_is_0102_chained_on_0100() -> None:
     script = ScriptDirectory(str(default_script_location()))
-    assert script.get_heads() == ["0102"]  # the head is pinned here, by the newest
-    # chained on 0100 (L02), the head of main; re-chained on 0101 if L03 lands first
+    # the head is pinned by the newest migration (0103)
     assert script.get_revision("0102").down_revision == "0100"
 
 

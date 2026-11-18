@@ -88,6 +88,7 @@ class Entry:
 class Publication:
     carrier_type: str
     carrier_id: str
+    series_id: str  # the Œuvre: where a setting pinned to this series is anchored (L13)
     scope: Scope
     kind: Literal["pages", "epub"]
     title: str
@@ -274,10 +275,13 @@ class PublicationService:
         def entry_of(index: int, name: str) -> Entry:
             return Entry(index, self._access.url(issued.token, name), media_type_of(name))
 
-        title, number, kind_direction, work_direction = self._describe(resolved.content_id)
+        title, number, kind_direction, work_direction, series_id = self._describe(
+            resolved.content_id
+        )
         return Publication(
             carrier_type=carrier_type,
             carrier_id=carrier_id,
+            series_id=series_id,
             scope=chosen,
             kind=listing.kind,
             title=title,
@@ -290,8 +294,9 @@ class PublicationService:
             package=self._access.url(issued.token, listing.package) if listing.package else None,
         )
 
-    def _describe(self, content_id: str) -> tuple[str, str | None, str | None, str | None]:
-        """The title and number of what is read, and the two places a direction may be set."""
+    def _describe(self, content_id: str) -> tuple[str, str | None, str | None, str | None, str]:
+        """The title and number of what is read, the two places a direction may be set, and the
+        Œuvre it belongs to (the anchor of a series' own settings, L13)."""
         with self._engine.connect() as connection:
             row = connection.execute(
                 sa.select(
@@ -299,6 +304,7 @@ class PublicationService:
                     catalog.unit.c.number_raw,
                     catalog.work.c.reading_direction,
                     catalog.work_kind.c.default_direction,
+                    catalog.work.c.id,
                 )
                 .select_from(
                     storage.content.join(
@@ -312,4 +318,10 @@ class PublicationService:
             ).first()
         if row is None:
             raise UnknownCarrierError
-        return str(row.title), row.number_raw, row.default_direction, row.reading_direction
+        return (
+            str(row.title),
+            row.number_raw,
+            row.default_direction,
+            row.reading_direction,
+            str(row.id),
+        )

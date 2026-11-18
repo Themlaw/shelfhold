@@ -324,3 +324,8 @@ since = "1.2"
 file = "0102_reading_conflict.py"
 sha256 = "cbad44ba0ff791136e428ffd1d9db277b2fc7e355c7f925bd3e24ed08e5f06e8"
 since = "1.2"
+
+[[migration]]
+file = "0103_reader_settings.py"
+sha256 = "7366989fbaf053f1db21ffa8ee96979bd95ae7db2631c81501acc9a2c3492b8d"
+since = "1.2"
