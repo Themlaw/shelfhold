@@ -403,3 +403,70 @@ def test_a_token_under_a_retired_device_is_refused(world: World) -> None:
     ) == [(1,)], "the token alone is still live"
     assert world.kosync_status(made["public_id"], made["secret"]) == 401
     assert world.opds_status(made["public_id"], made["secret"]) == 401
+
+
+def _gate_rotations(world: World, monkeypatch: pytest.MonkeyPatch, before_write: Any) -> None:
+    """Every rotation reads its device first (the service), then reaches the store: `before_write`
+    runs there, once per call, so that a test decides what happens between the read and the
+    write."""
+    store = world.env.app.state.auth_gate.auth._store  # type: ignore[attr-defined]
+    real = store.rotate_device_secret
+
+    def gated(*args: Any, **kwargs: Any) -> Any:
+        before_write()
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(store, "rotate_device_secret", gated)
+
+
+@pytest.mark.req("EF-USR-008", "ENF-SEC-013")
+def test_two_simultaneous_rotations_show_one_secret_and_leave_one_audit_line(
+    world: World, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Second opinion on #347: two rotations that read the same state must not both show a secret
+    when only the last one lives. One wins; the other is a 409 and writes nothing."""
+    import threading
+
+    made = world.paired(world.mum, name="Kobo")
+    twin = world.env.other_client("10.0.0.60")
+    assert world.env.login("mum", client=twin).status_code == 200
+    barrier = threading.Barrier(2, timeout=20)
+    _gate_rotations(world, monkeypatch, barrier.wait)  # both have read before either writes
+    answers: list[Any] = []
+
+    def call(client: TestClient) -> None:
+        answers.append(world.rotate(client, made["device_id"]))
+
+    threads = [threading.Thread(target=call, args=(c,)) for c in (world.mum, twin)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=60)
+    assert sorted(a.status_code for a in answers) == [200, 409], [a.text for a in answers]
+    won = next(a for a in answers if a.status_code == 200).json()
+    lost = next(a for a in answers if a.status_code == 409).json()
+    assert lost["code"] == "device_rotation_conflict" and "secret" not in lost
+    assert world.kosync_status(won["public_id"], won["secret"]) == 200, "the shown secret lives"
+    assert world.kosync_status(made["public_id"], made["secret"]) == 401
+    rotated = db_rows(
+        world.env.settings, "SELECT count(*) FROM audit WHERE action = 'device_token.rotated'"
+    )
+    assert rotated == [(1,)], "a refused rotation leaves no line"
+
+
+@pytest.mark.req("EF-USR-008", "ENF-SEC-013")
+def test_a_token_that_expires_between_the_read_and_the_write_is_not_rotated(
+    world: World, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The expiry is read again in the transaction that writes: no secret is shown that is
+    refused the moment it is typed."""
+    made = world.paired(world.mum, expires_days=1)
+    before = db_rows(world.env.settings, "SELECT secret_digest FROM device_token")
+    _gate_rotations(world, monkeypatch, lambda: world.env.clock.advance(timedelta(days=2)))
+    late = world.rotate(world.mum, made["device_id"])
+    assert late.status_code == 422 and late.json()["reason"] == "expiry_required", late.text
+    assert "secret" not in late.json()
+    assert db_rows(world.env.settings, "SELECT secret_digest FROM device_token") == before
+    assert db_rows(
+        world.env.settings, "SELECT count(*) FROM audit WHERE action = 'device_token.rotated'"
+    ) == [(0,)]
