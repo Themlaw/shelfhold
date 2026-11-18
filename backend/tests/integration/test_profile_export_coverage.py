@@ -33,6 +33,7 @@ EXPORTED: dict[str, str] = {
     "webauthn_credential": "passkeys",  # the list of keys, never the key material
     "audit": "audit",
     "device_token": "device_tokens",
+    "device": "devices",  # M5 L02: name, kind and dates; the token behind it stays out
     "collection": "collections",
     "destination_account": "destination_accounts",
     "notify_destination": "notify_destinations",

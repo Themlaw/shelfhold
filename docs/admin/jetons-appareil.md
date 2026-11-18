@@ -39,13 +39,37 @@ catalogue **seulement** : jamais l'identifiant ni le secret.
   ignore en silence les positions plus récentes (KOReader n'envoie aucune heure) : comparez avec
   l'heure du serveur affichée.
 
+## Le registre d'appareils (M5)
+
+Chaque appairage fait **un appareil** : un libellé, un type (`koreader`, `kobo`, `opds`, `browser`,
+`other`), le profil qu'il lit, et « vu pour la dernière fois » (la dernière requête acceptée). L'écran
+« Connecter une liseuse » les liste (`GET /api/v1/devices`) : un membre voit ceux de son profil, un
+administrateur ceux de tous, un enfant aucun. Un appareil d'un autre profil répond comme un appareil
+inconnu.
+
+- **Nouveau secret** (`POST /api/v1/devices/{id}/rotate`, action réservée `device_token.rotate`, session
+  récente) : un nouveau secret sur le **même** appareil. **L'ancien est refusé dès la requête suivante**
+  (pas de période de grâce) ; l'identifiant, le profil et l'échéance restent. Il suffit de ressaisir le
+  secret dans la liseuse, rien n'est à réappairer. Le secret n'est montré qu'une fois. Un jeton expiré
+  demande une nouvelle durée (`expires_days`).
+- **Retirer** (`DELETE /api/v1/devices/{id}`, action réservée `device.remove`) : tous les jetons de
+  l'appareil sont révoqués à l'instant. Une réinitialisation du mot de passe du profil, un changement de
+  rôle et une restauration retirent aussi les appareils.
+- Rien de tout cela n'est ouvert à une clé d'API ni à un jeton d'appareil. Ni le secret, ni son md5, ni
+  l'en-tête `x-auth-key` n'entrent dans un journal.
+
 ## L'émettre, le lister, le révoquer en ligne de commande
 
 ```
-shelfhold admin device-tokens create --profile NOM [--name "Liseuse du salon"] [--expires-days N]
+shelfhold admin device-tokens create --profile NOM [--name "Liseuse du salon"] [--kind koreader] [--expires-days N]
 shelfhold admin device-tokens list [--json]
 shelfhold admin device-tokens revoke IDENTIFIANT
+shelfhold admin device-tokens rotate IDENTIFIANT_APPAREIL [--expires-days N]
+shelfhold admin device-tokens remove IDENTIFIANT_APPAREIL
 ```
+
+`rotate` et `remove` prennent l'identifiant de l'**appareil** (première colonne de `list`). `rotate` affiche
+le nouveau secret sur la sortie standard, une fois ; l'ancien est refusé aussitôt.
 
 `create` affiche l'**identifiant** (8 caractères, public) sur la sortie d'erreur et le **secret** (26
 caractères, sans séparateur) sur la sortie standard, **une seule fois**. Saisissez-le **tel quel** dans

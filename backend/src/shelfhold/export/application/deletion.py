@@ -852,16 +852,6 @@ class DeletionService:
             return False
         return False
 
-    # -- level 1 --------------------------------------------------------------------------------
-
-    def apply_unfollow(
-        self, unit_ids: Sequence[str], *, if_match: str, principal: Principal, now: datetime
-    ) -> DeletionReport:
-        return self.apply(
-            DeletionLevel.UNFOLLOW, unit_ids, if_match=if_match, typed=None,
-            principal=principal, now=now,
-        )  # fmt: skip
-
     # -- the restore ----------------------------------------------------------------------------
 
     def restore(

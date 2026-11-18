@@ -21,7 +21,8 @@ def _copy(tmp_path: Path) -> Path:
 @pytest.mark.req("ENF-OPS-002")
 def test_every_migration_of_main_is_frozen() -> None:
     # The pull-request CI runs the same check without --tag: a PR that adds a migration freezes it
-    # itself (`--freeze 1.1`, the next minor line), so a release never finds one unfrozen.
+    # itself (`--freeze <minor>`: 1.1 for the M4 line, 1.2 for the M5 migrations, which leave with
+    # `v1.2.0`), so a release never finds one unfrozen.
     assert guard.check(REPO) == []
 
 
