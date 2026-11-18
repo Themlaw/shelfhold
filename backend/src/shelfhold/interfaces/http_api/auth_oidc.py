@@ -43,8 +43,9 @@ from shelfhold.interfaces.http_api.problems import ProblemError
 OIDC_PATH = "/api/v1/auth/oidc"
 OIDC_CALLBACK_PATH = f"{OIDC_PATH}/callback"
 OIDC_LINK_PATH = f"{OIDC_PATH}/link"
-# where a person who linked from their account goes back to (the settings screen of L04)
-LINK_RESULT_PATH = "/reglages/compte/oidc"
+# where a person who linked from their account goes back to: the home screen, with the result in
+# the query (the settings screen of L04 takes it over)
+LINK_RESULT_PATH = "/"
 
 _ADULTS = ("admin", "member")  # a child profile is never linked
 _LINK = reserved_action(RESERVED_ACTIONS["oidc.link_own"], roles=_ADULTS, audit=False)

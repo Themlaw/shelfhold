@@ -50,8 +50,10 @@ log = structlog.get_logger()
 
 LEEWAY = timedelta(seconds=60)
 DISCOVERY_TTL = timedelta(minutes=10)
+FAILURE_TTL = timedelta(seconds=30)  # a provider that does not answer is not asked again at once
+LOCK_WAIT_S = 2.0  # never a queue of requests behind one slow provider
 MAX_BYTES = 256 * 1024  # a discovery document, a key set, a token response: never a page
-TOTAL_TIMEOUT_S = 15.0
+TOTAL_TIMEOUT_S = 10.0
 VERIFIER_LENGTH = 64  # RFC 7636: 43 to 128
 # Asymmetric only: a symmetric one would have the client's own secret sign what it then trusts
 ALGORITHMS = ["RS256", "RS384", "RS512", "PS256", "PS384", "PS512", "ES256", "ES384", "ES512"]
@@ -96,6 +98,7 @@ class AuthlibOidcProvider:
         self._client_secret = client_secret or None
         self._network = network
         self._discovery: _Discovery | None = None
+        self._failed_until: datetime | None = None
         self._lock = threading.Lock()
 
     # --- what the application asks -------------------------------------------------------------
@@ -141,16 +144,33 @@ class AuthlibOidcProvider:
         return await self._network.open_integration_fetcher(self.issuer, limits)
 
     def _discover(self) -> _Discovery:
-        with self._lock:
-            now = datetime.now(UTC)
-            if self._discovery is not None and now < self._discovery.expires_at:
-                return self._discovery
+        now = datetime.now(UTC)
+        known = self._discovery
+        if known is not None and now < known.expires_at:
+            return known
+        if self._failed_until is not None and now < self._failed_until:
+            raise OidcUnavailableError("recently_failed")
+        # One request asks the provider; the others do not queue behind it (they would hold every
+        # worker of the server for as long as the provider is slow)
+        if not self._lock.acquire(timeout=LOCK_WAIT_S):
+            raise OidcUnavailableError("busy")
+        try:
+            known = self._discovery
+            if known is not None and now < known.expires_at:
+                return known
             try:
                 found = asyncio.run(self._read_discovery(now))
-            except FetchError as error:
-                raise OidcUnavailableError(error.code) from None
-            self._discovery = found
+            except (FetchError, OidcUnavailableError) as error:
+                self._failed_until = datetime.now(UTC) + FAILURE_TTL
+                raise (
+                    error
+                    if isinstance(error, OidcUnavailableError)
+                    else OidcUnavailableError(error.code)
+                ) from None
+            self._discovery, self._failed_until = found, None
             return found
+        finally:
+            self._lock.release()
 
     async def _read_discovery(self, now: datetime) -> _Discovery:
         fetcher = await self._fetcher()

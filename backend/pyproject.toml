@@ -33,7 +33,8 @@ dependencies = [
     "pykakasi>=2.3,<3",
     # M4 (L37, D18): the one new dependency, written exception in docs/dependencies.md.
     "websockets>=17.4,<18",  # Kavita hub transport, imported only by kavita.events_transport
-    "authlib>=1.6,<2",
+    "authlib>=1.9,<2",  # OpenID Connect (M5 L03, 06 Q73), imported only by shelfhold.identity.adapters.oidc_client
+    "joserfc>=1.8,<2",  # JOSE of the ID token (Authlib's own, `authlib.jose` being deprecated); same module
 ]
 
 [dependency-groups]

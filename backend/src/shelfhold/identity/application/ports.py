@@ -79,6 +79,9 @@ class NewSession:
     password_hash: str | None = None  # the hash the sign-in checked: re-read under the lock
     device: str | None = None  # the coarse label of the device (`device_label`), never the header
     auth_time: datetime | None = None  # None: `now` (a password or a passkey was just checked)
+    # (issuer, sub) of an OpenID Connect sign-in: the link and the role are read again under the
+    # write lock, as a password hash or a passkey is (a link removed or a child since: refused)
+    oidc: tuple[str, str] | None = None
 
 
 @dataclass(frozen=True)

@@ -603,6 +603,7 @@ class LocalAuth:
         user_agent: str | None = None,
         password_hash: str | None = None,
         auth_time: datetime | None = None,
+        oidc: tuple[str, str] | None = None,
     ) -> IssuedSession:
         now = self.now()
         policy = self._policy(user.role)
@@ -622,6 +623,7 @@ class LocalAuth:
                 password_hash=password_hash,
                 device=device_label(user_agent),
                 auth_time=auth_time,
+                oidc=oidc,
             )
         )
         principal = Principal(
@@ -1049,6 +1051,7 @@ class LocalAuth:
         user_agent: str | None,
         presented_token: str | None,
         auth_time: datetime,
+        oidc: tuple[str, str] | None = None,
     ) -> IssuedSession:
         """A session for a person an identity provider vouched for: new token whatever the browser
         held (no fixation), `auth_time` is what the provider said about when they signed in there
@@ -1056,9 +1059,13 @@ class LocalAuth:
         if presented_token:  # whatever the browser held is closed, never adopted
             self._store.revoke_session_by_token_hash(token_digest(presented_token), now=self.now())
         remember = self._policy(user.role).remember_default
-        issued = self._issue(
-            user, remember=remember, ip=ip, user_agent=user_agent, auth_time=auth_time
-        )
+        try:
+            issued = self._issue(
+                user, remember=remember, ip=ip, user_agent=user_agent, auth_time=auth_time,
+                oidc=oidc,
+            )  # fmt: skip
+        except ProofWithdrawnError:  # unlinked, or turned into a child profile, meanwhile
+            raise InvalidCredentialsError from None
         self._audit("auth.oidc_login", issued.principal)
         return issued
 

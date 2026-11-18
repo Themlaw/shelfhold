@@ -90,7 +90,7 @@ Non critiques (remplaçables sans réécriture), listées pour mémoire :
   L03, 06 Q73). **Exception écrite au gel de `uv.lock`** (figé par L00) : une seule dépendance
   ajoutée, plancher `>=1.6,<2`. Version 1.9.3, publiée le 2026-11-03, donc plus de 14 jours avant le
   2026-11-18 : aucune exception à `exclude-newer`. **Elle apporte `joserfc`** (BSD-3-Clause, même
-  auteur, 1.8.0 publiée le 2026-11-03), sa bibliothèque JOSE, que `authlib.jose` (dépréciée en
+  auteur, 1.8.0 publiée le 2026-11-03, déclarée elle aussi : `>=1.8,<2`), sa bibliothèque JOSE, que `authlib.jose` (dépréciée en
   1.9) remplace : la signature du jeton d'identité est vérifiée par `joserfc`, avec une liste fermée
   d'algorithmes asymétriques ; Authlib fournit le vérificateur PKCE et son défi S256. `cryptography`
   y est déjà. Aucun client HTTP d'Authlib n'est utilisé : le réseau est celui du Fetcher et de sa

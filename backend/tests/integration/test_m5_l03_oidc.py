@@ -173,14 +173,18 @@ def test_oidc_login(world: World) -> None:
     token_call = next(r for r in world.idp.requests if r.url.path == "/token")
     assert b"code_verifier=" in token_call.content
     assert world.idp.paths.count("/token") == 1 and "/jwks" in world.idp.paths
+    assert "authorization" in token_call.headers  # a confidential client proves itself
 
 
-def test_oidc_session_without_auth_time_is_not_fresh(world: World) -> None:
-    """No local password was typed and the provider says nothing of when the person signed in
-    there: the session cannot do what asks for a recent proof (the freshness of L04 builds on
-    this)."""
+@pytest.mark.parametrize("age", [None, 0, 30], ids=["no-claim", "just-now", "half-a-minute"])
+def test_oidc_session_is_never_fresh_whatever_the_provider_says(
+    world: World, age: int | None
+) -> None:
+    """No local secret was typed and nothing asked the provider to sign the person in again: a
+    recent `auth_time` is not believed (L04 asks with `prompt=login` and `max_age` first). Else a
+    compromised account at the provider would open every action that asks for a fresh session."""
     world.link_admin("mum")
-    world.idp.auth_time_age_s = None
+    world.idp.auth_time_age_s = age
     browser = world.browser()
     assert world.sign_in(browser).status_code == 303
     refused_link = world.send(browser, "POST", LINK)
@@ -230,11 +234,27 @@ def test_oidc_unknown_sub_creates_no_account(world: World) -> None:
         {"exp": 1},
         {"sub": None},
         {"sub": ""},
+        {"iat": 4102444800},  # the year 2100
+        {"exp": None},
+        {"__alg": "HS256"},  # signed with the client's own secret
     ],
-    ids=["aud", "aud-list", "iss", "nonce", "no-nonce", "expired", "no-sub", "empty-sub"],
+    ids=[
+        "aud",
+        "aud-list",
+        "iss",
+        "nonce",
+        "no-nonce",
+        "expired",
+        "no-sub",
+        "empty-sub",
+        "iat-future",
+        "no-exp",
+        "shared-secret-signature",
+    ],
 )
 def test_oidc_state_nonce_and_audience_checked(world: World, tamper: dict[str, Any]) -> None:
     world.link_admin("mum")
+    world.idp.publish_shared_secret = tamper.get("__alg") == "HS256"
     world.idp.tamper = tamper
     browser = world.browser()
     assert refused(world.sign_in(browser))
@@ -390,8 +410,7 @@ def test_oidc_link_finishes_for_the_account_that_started_it(world: World) -> Non
     started = world.send(world.mum, "POST", LINK).json()["authorization_url"]
     back = world.idp.authorize(started)
     # another browser, even with a session of its own, cannot finish mum's link
-    dad_browser = world.dad
-    assert refused(world.callback(dad_browser, back)) or world.identities() == []
+    assert refused(world.callback(world.dad, back))
     assert world.identities() == []
     # a session closed between the start and the end ends the link with it
     started = world.send(world.mum, "POST", LINK).json()["authorization_url"]
@@ -454,8 +473,8 @@ def test_oidc_discovery_of_another_issuer_is_refused(world: World) -> None:
     # a discovery document that names another issuer (mix-up) is not the configured provider
     world.idp.discovery_overrides = {"issuer": "https://elsewhere.example.test"}
     answer = world.browser().get(LOGIN, follow_redirects=False)
-    assert answer.status_code in (303, 503)
-    assert "authorize" not in answer.headers.get("location", "")
+    assert answer.status_code == 303 and answer.headers["location"] == "/login?oidc_error=1"
+    assert FLOW_COOKIE not in "".join(answer.headers.get_list("set-cookie"))
 
 
 def test_oidc_provider_unreachable_is_a_refusal_not_an_error(
@@ -468,7 +487,8 @@ def test_oidc_provider_unreachable_is_a_refusal_not_an_error(
     )
     with world_for(monkeypatch, settings, provider=provider, network=down) as world:
         answer = world.browser().get(LOGIN, follow_redirects=False)
-        assert answer.status_code in (303, 503)
+        assert answer.status_code == 303 and answer.headers["location"] == "/login?oidc_error=1"
+        assert FLOW_COOKIE not in "".join(answer.headers.get_list("set-cookie"))
         # the password login is untouched
         assert world.env.login(client=world.browser("198.51.100.90")).status_code == 200
 
@@ -532,10 +552,6 @@ def test_forward_auth_stays_refused_on_opds_kosync_and_lite(
             answer = client.get(path, headers={"Remote-User": "admin"})
             assert answer.status_code == 403, path
             assert answer.headers["content-type"].startswith("application/problem+json")
-        # and OIDC being on does not make a forward identity a session anywhere else
-        assert world.browser("10.1.2.3").get(
-            SESSION, headers={"Remote-User": "admin"}
-        ).status_code in (200, 401)
 
 
 def test_oidc_a_redirect_from_the_provider_is_never_followed(

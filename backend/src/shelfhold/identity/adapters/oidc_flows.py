@@ -2,8 +2,9 @@
 
 A flow lives ten minutes in one process: the instance is unique (lease, ENF-OPS-015) and a restart
 only asks the person to start again, so nothing about a sign-in in progress is written to disk.
-The table is bounded: an owner (an address, an account) keeps a few flows and the oldest go first;
-`consume` removes the entry whatever the outcome, so a replay never succeeds.
+The table is bounded: an owner (an address, an account) keeps a few flows, the oldest of its own
+going first; a full table refuses the new flow rather than push out another's. `consume`
+removes the entry whatever the outcome, so a replay never succeeds.
 """
 
 from __future__ import annotations
@@ -13,7 +14,7 @@ import threading
 from collections import OrderedDict
 from datetime import datetime
 
-from shelfhold.identity.application.oidc import OidcFlow
+from shelfhold.identity.application.oidc import OidcFlow, OidcUnavailableError
 
 PER_OWNER = 8
 CAPACITY = 4096
@@ -36,8 +37,10 @@ class MemoryOidcFlows:
             mine = [key for key, value in live.items() if value[0] == owner]
             for key in mine[: max(0, len(mine) - self._per_owner + 1)]:
                 live.pop(key)
-            while len(live) >= self._capacity:
-                live.popitem(last=False)
+            if len(live) >= self._capacity:
+                # never push out another person's flow in progress: the new one is refused
+                self._entries = live
+                raise OidcUnavailableError("flows_full")
             live[_key(state)] = (owner, flow)
             self._entries = live
 

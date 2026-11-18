@@ -723,6 +723,19 @@ class SqlIdentityStore:
                     .where(_user.c.id == user_id)
                     .values(hide_unrated_remote=True, subject_filter=[])
                 )
+                if role == "child":  # a child is never linked to a provider (M5 L03)
+                    gone = conn.execute(sa.delete(_oidc).where(_oidc.c.user_id == user_id)).rowcount
+                    if gone:
+                        conn.execute(
+                            audit_insert(
+                                AuditEntry(
+                                    actor_id=actor_id,
+                                    action="oidc.unlinked_role_change",
+                                    target=user_id,
+                                    at=now,
+                                )
+                            )
+                        )
                 if role != "child":  # only a child is audited by her Kavita account (M3 L10)
                     conn.execute(
                         sa.update(_user).where(_user.c.id == user_id).values(kavita_username=None)
@@ -1139,7 +1152,11 @@ class SqlIdentityStore:
     def insert_session(self, session: NewSession) -> None:
         # the write lock is taken first whenever the proof can be withdrawn meanwhile: a passkey
         # revoked or a password reset between the check and the insert must not leave a session
-        guarded = session.passkey_id is not None or session.password_hash is not None
+        guarded = (
+            session.passkey_id is not None
+            or session.password_hash is not None
+            or session.oidc is not None
+        )
         engine = (
             self._engine.execution_options(shelfhold_begin="BEGIN IMMEDIATE")
             if guarded
@@ -1151,6 +1168,20 @@ class SqlIdentityStore:
                     sa.select(_user.c.password_hash).where(_user.c.id == session.user_id)
                 ).scalar()
                 if stored != session.password_hash:  # reset (or removed) since it was checked
+                    raise ProofWithdrawnError
+            if session.oidc is not None:  # still this account's identity, and not a child profile
+                issuer, sub = session.oidc
+                live = conn.execute(
+                    sa.select(_oidc.c.id)
+                    .join(_user, _user.c.id == _oidc.c.user_id)
+                    .where(
+                        _oidc.c.user_id == session.user_id,
+                        _oidc.c.issuer == issuer,
+                        _oidc.c.sub == sub,
+                        _user.c.role != "child",
+                    )
+                ).first()
+                if live is None:
                     raise ProofWithdrawnError
             if session.passkey_id:  # the write lock is held: no revocation can come in between
                 live = conn.execute(

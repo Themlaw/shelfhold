@@ -59,7 +59,9 @@ Chaque liaison est inscrite à l'audit (le compte, jamais le `sub`).
 
 ## Fraîcheur d'une session ouverte par OIDC
 
-Aucun mot de passe local n'a été saisi : la session n'est « fraîche » que dans la mesure où le
-fournisseur dit quand la personne s'y est connectée (`auth_time`). Sans cette information, une
-action réservée redemande un mot de passe ou une clé d'accès. Le renvoi au fournisseur avec
-`prompt=login` et `max_age` arrive avec le lot suivant (L04).
+Aucun mot de passe local n'a été saisi : une session ouverte par le fournisseur n'est **jamais**
+« fraîche ». Toute action réservée qui demande une preuve récente (enregistrer une clé d'accès,
+exporter le trousseau, lier un compte…) redemande un mot de passe ou une clé d'accès. Le renvoi au
+fournisseur avec `prompt=login` et `max_age`, qui permettra de s'appuyer sur son `auth_time`,
+arrive avec le lot suivant. Un compte qui n'a ni mot de passe ni clé d'accès ne peut donc pas, en
+attendant, faire ces actions : gardez le mot de passe de l'administrateur.

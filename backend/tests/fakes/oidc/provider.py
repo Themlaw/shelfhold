@@ -22,7 +22,7 @@ from urllib.parse import parse_qs, urlsplit
 
 import httpx2
 from joserfc import jwt
-from joserfc.jwk import KeySet, RSAKey
+from joserfc.jwk import KeySet, OctKey, RSAKey
 
 from tests.fakes_fetcher import FakeResolver
 
@@ -54,11 +54,12 @@ class FakeOidcProvider:
         self.requests: list[httpx2.Request] = []
         self.tamper: dict[str, Any] = {}
         self.sign_with_other_key = False
+        self.public_client = False  # no secret expected (PKCE alone)
+        self.publish_shared_secret = False  # the client secret listed among the keys, as `oct`
         self.discovery_overrides: dict[str, Any] = {}
         self.now = time.time  # replaced by a test that moves its own clock
         self.auth_time_age_s: int | None = 0
         self._codes: dict[str, dict[str, Any]] = {}
-        self._jwks = KeySet([_key("signing-1")])
 
     # --- what the host reads --------------------------------------------------------------------
 
@@ -121,6 +122,9 @@ class FakeOidcProvider:
         return {k: v for k, v in claims.items() if v is not None}
 
     def id_token(self, grant: Mapping[str, Any]) -> str:
+        if self.tamper.get("__alg") == "HS256":  # signed with the client secret: key confusion
+            shared = OctKey.import_key(self.client_secret, {"kid": "shared"})
+            return jwt.encode({"alg": "HS256", "kid": "shared"}, self.claims(grant), shared)
         if self.tamper.get("__alg") == "none":  # an unsigned token: `alg: none`, empty signature
             part = [{"alg": "none", "typ": "JWT"}, self.claims(grant)]
             enc = [
@@ -139,7 +143,10 @@ class FakeOidcProvider:
         if request.method == "GET" and path == "/.well-known/openid-configuration":
             return httpx2.Response(200, json=self.discovery())
         if request.method == "GET" and path == "/jwks":
-            return httpx2.Response(200, json=self._jwks.as_dict(private=False))
+            keys: list[Any] = [_key("signing-1")]
+            if self.publish_shared_secret:  # a provider (or an attacker) that lists a secret key
+                keys.append(OctKey.import_key(self.client_secret, {"kid": "shared", "use": "sig"}))
+            return httpx2.Response(200, json=KeySet(keys).as_dict(private=False))
         if request.method == "POST" and path == "/token":
             return self._token(request)
         return httpx2.Response(404, json={"error": "not_found"})
@@ -154,7 +161,9 @@ class FakeOidcProvider:
         authorization = request.headers.get("authorization", "")
         if authorization.startswith("Basic "):
             _, _, presented = base64.b64decode(authorization[6:]).decode().partition(":")
-        if presented is not None and presented != self.client_secret:
+        if self.public_client:
+            presented = self.client_secret if presented is None else presented
+        if presented != self.client_secret:  # a confidential client must prove it
             return httpx2.Response(401, json={"error": "invalid_client"})
         verifier = form.get("code_verifier", "")
         if (

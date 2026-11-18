@@ -24,12 +24,20 @@ from typing import Literal, Protocol
 import structlog
 
 from shelfhold.identity.application.ports import IdentityStore, OidcLink
-from shelfhold.identity.application.service import IssuedSession, LocalAuth
+from shelfhold.identity.application.service import (
+    InvalidCredentialsError,
+    IssuedSession,
+    LocalAuth,
+)
+from shelfhold.identity.domain.throttle import address_key
 
 FLOW_TTL = timedelta(minutes=10)
 FLOW_COOKIE_MAX_AGE_S = int(FLOW_TTL.total_seconds())
-# "No local proof of when the person signed in": the session is as old as the epoch, so no reserved
-# action that asks for a recent proof is open to it (L04 turns the provider's `auth_time` into one)
+# "No local proof of when the person signed in": a session opened by the provider is as old as the
+# epoch, so no reserved action that asks for a recent proof is open to it. The provider's own
+# `auth_time` is not trusted for that here: nothing asked it to sign the person in again
+# (`prompt=login`, `max_age`), so a compromised provider account would open every fresh action.
+# L04 asks, verifies the claim, and only then makes a session fresh.
 NEVER = datetime(1970, 1, 1, tzinfo=UTC)
 
 log = structlog.get_logger()
@@ -169,7 +177,7 @@ class OidcAuth:
     def begin_login(self, *, ip: str) -> OidcStart:
         """Anonymous and cheap to call: each address gets a few a minute (`ThrottledError`)."""
         self._auth.reserve_options(ip=ip)
-        return self._begin("login", owner=f"ip:{ip}")
+        return self._begin("login", owner=address_key(ip))  # the limiter's own unit (a /64)
 
     def begin_link(self, *, user_id: str, session_id: str) -> OidcStart:
         """For the account of a session the caller has already shown to be fresh and an adult's."""
@@ -231,13 +239,17 @@ class OidcAuth:
             raise self._refuse("no_linked_account", ip, "login")  # no account is ever created here
         if user.role == "child":
             raise self._refuse("child_profile", ip, "login")
-        issued = self._auth.open_federated_session(
-            user,
-            ip=ip,
-            user_agent=user_agent,
-            presented_token=presented,
-            auth_time=_proof_time(claims, self._auth.now()),
-        )
+        try:
+            issued = self._auth.open_federated_session(
+                user,
+                ip=ip,
+                user_agent=user_agent,
+                presented_token=presented,
+                auth_time=NEVER,
+                oidc=(claims.issuer, claims.sub),
+            )
+        except InvalidCredentialsError:  # unlinked or made a child since it was read
+            raise self._refuse("link_withdrawn", ip, "login") from None
         return OidcOutcome("login", issued)
 
     def _finish_link(self, flow: OidcFlow, claims: OidcClaims, *, ip: str) -> OidcOutcome:
@@ -251,15 +263,6 @@ class OidcAuth:
         if outcome not in (OidcLink.LINKED, OidcLink.UNCHANGED):
             raise self._refuse(f"link_{outcome.value}", ip, "link")
         return OidcOutcome("link")
-
-
-def _proof_time(claims: OidcClaims, now: datetime) -> datetime:
-    """When the person signed in at the provider, if it says so and cannot be in the future;
-    otherwise never (see `NEVER`)."""
-    stated = claims.auth_time
-    if stated is None or stated > now:
-        return NEVER
-    return stated
 
 
 __all__ = [
