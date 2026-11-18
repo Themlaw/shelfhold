@@ -117,3 +117,48 @@ describe('SPA CSP', () => {
     }
   );
 });
+
+describe('the reader entry (ADR-0055, "CSP du lecteur")', () => {
+  const BOOT = "import('/reader-entry/assets/main.js');";
+  const readerHtml = (head = '', scripts = [BOOT]) =>
+    `<!doctype html><html><head><meta charset="utf-8">${head}${scripts.map((s) => `<script>${s}</script>`).join('')}</head><body><div id="app"></div></body></html>`;
+
+  // req: ENF-SEC-004
+  it('test_reader_csp_font_media_frame_blob: the policy of the table, directive by directive', async () => {
+    const { readerCsp } = await import('./csp.ts');
+    const csp = readerCsp(readerHtml());
+    expect(csp['default-src']).toEqual(["'none'"]);
+    expect(csp['script-src']).toEqual([scriptHash(BOOT), "'strict-dynamic'"]);
+    for (const name of ['style-src', 'style-src-elem']) expect(csp[name]).toEqual(["'self'", 'blob:', "'unsafe-inline'"]);
+    expect(csp['style-src-attr']).toEqual(["'unsafe-inline'"]);
+    expect(csp['img-src']).toEqual(["'self'", 'blob:']);
+    expect(csp['font-src']).toEqual(["'self'", 'blob:']);
+    expect(csp['media-src']).toEqual(["'self'", 'blob:']);
+    expect(csp['frame-src']).toEqual(['blob:']);
+    expect(csp['worker-src']).toEqual(["'none'"]);
+    expect(csp['manifest-src']).toEqual(["'none'"]);
+    expect(csp['connect-src']).toEqual(["'self'"]);
+    for (const name of ['object-src', 'base-uri', 'form-action']) expect(csp[name]).toEqual(["'none'"]);
+    for (const bad of ["'self'", 'blob:', "'unsafe-inline'", "'unsafe-eval'", '*', 'data:']) expect(csp['script-src']).not.toContain(bad);
+    for (const name of ['img-src', 'font-src', 'media-src']) {
+      expect(csp[name]).not.toContain('data:');
+      expect(csp[name]).not.toContain('*');
+    }
+  });
+
+  // req: ENF-SEC-004
+  it('refuses a page that is not the audited one: a <meta> policy, a second script, a preload', async () => {
+    const { readerCsp } = await import('./csp.ts');
+    expect(() => readerCsp(readerHtml('<meta http-equiv="Content-Security-Policy" content="default-src *">'))).toThrow(/reader/i);
+    expect(() => readerCsp(readerHtml('', [BOOT, 'alert(1)']))).toThrow(/reader/i);
+    expect(() => readerCsp(readerHtml('<link rel="modulepreload" href="/x.js">'))).toThrow(/reader/i);
+  });
+
+  // req: ENF-SEC-004
+  it('the SPA keeps its own policy: no widening of the style, and no blob: image any more', () => {
+    const csp = kitCsp(appHtml);
+    expect(csp['img-src']).toEqual(["'self'"]);
+    expect(csp['style-src']).toEqual(["'self'"]);
+    expect(JSON.stringify(csp)).not.toContain('strict-dynamic');
+  });
+});
