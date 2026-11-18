@@ -750,3 +750,27 @@ def test_a_path_map_changed_through_an_add_door_leaves_its_line(
             "Komga uid=" + str(os.getuid()),
             "K uid=" + str(os.getuid()),
         ]
+
+
+@pytest.mark.req("EF-EXP-026", "EF-LEC-014")
+def test_the_client_of_a_target_is_built_where_no_loop_runs(tmp_path: Path) -> None:
+    """Building the fetcher of a target runs a loop of its own (`Network.integration_fetcher`):
+    the progress pass must not build the client inside the loop it reads Kavita on, or the job
+    dies on `asyncio.run() cannot be called from a running event loop` (found by the e2e)."""
+    import asyncio
+
+    from tests.sync_env import sync_env
+
+    with sync_env(tmp_path) as env:
+        admin = env.remote._admin_client
+
+        def client_of(target: str):  # type: ignore[no-untyped-def]
+            asyncio.run(asyncio.sleep(0))  # what the real fetcher does when it is built
+            return admin(target)
+
+        env.remote._admin_client = client_of
+        reader = env.member("reader")
+        chapter = env.chapter("Orchard Road", 1)
+        env.read_in_kavita(reader, chapter, 7)
+        assert env.sync(reader).code == "ok"
+        assert [p.locator["page"] for p in env.positions(reader, source="server")] == [7]
