@@ -31,6 +31,8 @@ export interface PublicationView {
   readingDirection: ReadingDirection;
   title: string;
   language: string | null;
+  /** The Œuvre: the anchor of a setting pinned to this series (L13). */
+  seriesId: string;
   pages: PublicationEntry[];
 }
 
@@ -60,6 +62,7 @@ export function toView(out: PublicationOut): PublicationView {
     readingDirection: out.reading_direction,
     title: out.title,
     language: out.language,
+    seriesId: out.series_id,
     pages: out.pages.map((p) => ({ index: p.index, href: p.href, mediaType: p.media_type }))
   };
 }

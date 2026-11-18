@@ -11,6 +11,7 @@ function publication(over: Partial<PublicationView> = {}, count = 10): Publicati
     readingDirection: 'ltr',
     title: 'Une série',
     language: 'fr',
+    seriesId: '01HZZZZZZZZZZZZZZZZZZZZZZW',
     pages: Array.from({ length: count }, (_, i) => ({
       index: i,
       href: `/content/TICKET/p${i + 1}.jpg`,
