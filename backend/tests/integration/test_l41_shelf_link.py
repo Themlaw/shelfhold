@@ -15,8 +15,6 @@ from shelfhold.export.targets.kavita.adopt import AdoptionRefused
 from shelfhold.export.targets.kavita.audit import AccessAuditor
 from shelfhold.export.targets.kavita.linking import ShelfLinker
 from shelfhold.headless.adapters import HttpKomgaProbe
-from shelfhold.headless.errors import ShelfExposedToChildren
-from shelfhold.headless.wiring import _ShelfLinker
 from shelfhold.infrastructure.schema import export, platform
 from shelfhold.infrastructure.secrets.diagnostics import boot_check
 from tests.export_env import export_env
@@ -193,7 +191,8 @@ def test_shelf_create_on_a_komga_target_is_refused_with_its_own_code(
 ) -> None:
     """A Komga binding never owns a tree (J-SIMP-4), and `shelf create` binds a primary
     destination: on a Komga target the command answers the typed refusal, never the crash of the
-    Kavita client it used to open for a target that is not Kavita, and no folder is left behind."""
+    Kavita client it used to open for a target that is not Kavita. The refusal comes before any
+    folder is made."""
     root = tmp_path / "library" / "manga"
     root.mkdir(parents=True)
     fake = FakeKomga(keys={KOMGA_KEY: True})
@@ -210,7 +209,7 @@ def test_shelf_create_on_a_komga_target_is_refused_with_its_own_code(
         assert refused.value.code == "binding.komga_primary_unsupported"
         assert env.count("shelf") == 1  # the shelf is there; its binding is not
         assert env.count("shelf_destination") == 0
-        assert not (root / "K").exists()  # no folder was made for a refused binding
+        assert not (root / "K").exists()  # the refusal came before any folder was made
         assert len(fake.requests) == asked
 
 
@@ -231,34 +230,6 @@ def test_shelf_create_on_a_native_folder_target_links_no_kavita_library(
         assert created.created
         assert (root / "K").is_dir()
         assert env.count("shelf") == 1 and env.count("shelf_destination") == 1
-
-
-def test_a_shelf_create_whose_link_fails_leaves_no_folder_behind(
-    settings: Settings, tmp_path
-) -> None:
-    """The audit that refuses a shelf unbinds it: the folder it had made goes too, or a later
-    binding would adopt a folder no destination owns."""
-    root = tmp_path / "library" / "manga"
-    root.mkdir(parents=True)
-    roots = _roots(settings, tmp_path)
-    boot_check(settings, announce=False)  # the first start creates the keyring, as in production
-
-    class Refusing(_ShelfLinker):
-        def link(self, target_id: str, destination_id: str, *, library_name: str) -> str:
-            raise ShelfExposedToChildren(("kid8",))
-
-    with headless(settings, roots=roots) as probe:
-        linker = Refusing(settings, probe.engine)
-    with headless(settings, roots=roots, linker=linker) as env:
-        env.admin.target_add_kavita(
-            name="k", url="http://kavita.internal:5000", username="u", password=PASSWORD,
-            accept_admin_risk=True,
-            path_map=[{"local": str(root), "remote": "/manga", "mode": "rw"}],
-        )  # fmt: skip
-        with pytest.raises(ShelfExposedToChildren):
-            env.admin.shelf_create(name="Famille", max_age="13+", target="k", subpath="famille")
-        assert not (root / "famille").exists()
-        assert env.count("shelf") == 0 and env.count("shelf_destination") == 0
 
 
 def _roots(settings: Settings, tmp_path) -> RootPolicy:

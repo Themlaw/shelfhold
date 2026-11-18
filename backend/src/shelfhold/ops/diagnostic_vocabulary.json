@@ -743,7 +743,6 @@
   "headless.channel_saved",
   "headless.config_set",
   "headless.shelf_created",
-  "headless.shelf_folder_left_behind",
   "headless.source_added",
   "headless.suwayomi_settings_fix_failed",
   "headless.sync_progress",

@@ -1065,31 +1065,27 @@ class HeadlessAdmin:
             shelf_id=shelf_id, target_id=target_row.id, transport="tree", plugin_egress="foyer",
             root_subpath=subpath,
         )  # fmt: skip
-        made: str | None = None
         try:
             self._bootstrap()  # the folder of the shelf lives under a registered root
-            made = self._make_folder(destination_id)
+            self._make_folder(destination_id)
             if target_row.kind == "kavita" and self._linker is not None:
                 # only a Kavita target has a library to link: a Komga or a folder target would
                 # open no client at all
                 self._linker.link(target_row.id, destination_id, library_name=name)
         except Exception:
             self._unbind(shelf_id, destination_id, shelf_was_new=shelf is None)
-            if made is not None:
-                self._remove_folder(made)
-            raise
+            raise  # the empty folder `_make_folder` made stays: deleting is fsops' alone
         _log.info("headless.shelf_created", name=name, target=target)
         return ShelfCreated(shelf_id, destination_id, True)
 
-    def _make_folder(self, destination_id: str) -> str | None:
+    def _make_folder(self, destination_id: str) -> None:
         """The folder of the destination exists before the first export and the library link: the
         permission probe and Kavita both look at it. It is made under a registered writable root,
-        by the process that will write in it. Returns the folder, or None when this target has no
-        folder of its own to make."""
+        by the process that will write in it."""
         with self._engine.connect() as connection:
             local = load_context(connection, destination_id).root_local
         if local is None or self._roots is None or self._linker is None:
-            return None
+            return
         try:
             self._roots.check(local, PathMode.RW)
         except RootRefusedError as refusal:
@@ -1098,18 +1094,6 @@ class HeadlessAdmin:
             self._linker.make_folder(local)
         except DestinationNotWritableError as refusal:  # EF-UX-002: the cause and the fix
             raise DestinationNotWritable(str(refusal)) from None
-        return local
-
-    def _remove_folder(self, local: str) -> None:
-        """The folder a failed creation made goes away too, or a later binding would adopt a
-        folder no destination owns. Best effort: a folder that is not empty, or already gone, is
-        left alone; the refusal that caused the failure is what surfaces."""
-        if self._linker is None:
-            return
-        try:
-            self._linker.remove_folder(local)
-        except OSError:
-            _log.warning("headless.shelf_folder_left_behind", name=os.path.basename(local))
 
     def _unbind(self, shelf_id: str, destination_id: str, *, shelf_was_new: bool) -> None:
         """A shelf the audit refused leaves nothing behind (nothing was written in Kavita)."""

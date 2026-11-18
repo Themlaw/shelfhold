@@ -83,12 +83,6 @@ class _ShelfLinker:
         with self._comp.write_context() as w:
             make_folder(w.fsops, local)  # type: ignore[arg-type]
 
-    def remove_folder(self, local: str) -> None:
-        """The folder of a destination a failed creation had made, removed by the sole writer: it
-        is empty, and a folder no destination owns would be adopted by a later binding."""
-        with self._comp.write_context() as w:
-            w.fsops.rmdir(local)
-
 
 def shelf_linker(settings: Settings, engine: Engine) -> ShelfLinkPort:
     return _ShelfLinker(settings, engine)

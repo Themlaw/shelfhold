@@ -47,7 +47,7 @@ Clôture de M4 : plusieurs destinations par étagère, synchronisation de la pro
 
 ### Corrigé
 
-- **`shelfhold shelf create` sur une cible Komga ou un dossier natif** : la commande plantait (elle ouvrait le client Kavita pour une cible qui n'en est pas un) et laissait le dossier créé sur le disque ; seule une cible Kavita est liée à une bibliothèque, et un échec de liaison retire le dossier créé.
+- **`shelfhold shelf create` sur une cible Komga ou un dossier natif** : la commande plantait (elle ouvrait le client Kavita pour une cible qui n'en est pas un) ; seule une cible Kavita est liée à une bibliothèque. Un dossier natif se lie et reçoit son dossier ; une cible Komga répond désormais le refus de la ligne « Liaison Komga » ci-dessous. Le dossier vide créé avant un échec de liaison reste, comme avant.
 
 ### Retiré
 
