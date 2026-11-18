@@ -3,10 +3,13 @@ rendered inline unless a raster image (ENF-SEC-004)."""
 
 from fastapi.responses import Response
 
-from shelfhold.infrastructure.http_headers import CSP_SANDBOX, attachment_disposition
+from shelfhold.infrastructure.http_headers import (
+    CSP_SANDBOX,
+    PRIVATE_CACHE,
+    attachment_disposition,
+)
 
 _INLINE_TYPES = frozenset({"image/png", "image/jpeg", "image/webp", "image/gif", "image/avif"})
-PRIVATE = "private, no-cache"  # a copy for the browser of one profile, checked again each time
 
 
 def content_response(
@@ -17,7 +20,7 @@ def content_response(
     `Referrer-Policy`, `frame-ancestors`) are the middleware's."""
     response = Response(body, media_type=media_type)
     response.headers["Content-Security-Policy"] = CSP_SANDBOX
-    response.headers["Cache-Control"] = PRIVATE
+    response.headers["Cache-Control"] = PRIVATE_CACHE
     if etag is not None:
         response.headers["ETag"] = etag
     if media_type.split(";", 1)[0].strip().lower() not in _INLINE_TYPES:

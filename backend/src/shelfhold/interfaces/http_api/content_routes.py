@@ -15,6 +15,7 @@ from fastapi import APIRouter, Request
 from fastapi.responses import Response
 
 from shelfhold.identity.public import Credential
+from shelfhold.infrastructure.http_headers import PRIVATE_CACHE
 from shelfhold.interfaces.http_api.auth import current_principal
 from shelfhold.interfaces.http_api.content import content_response
 from shelfhold.interfaces.http_api.problems import ProblemError
@@ -60,7 +61,7 @@ def build_content_router(
         "/content/{ticket}/{path:path}",
         response_class=Response,
         responses={
-            200: {"content": {"application/octet-stream": {}}, "description": "the entry"},
+            200: {"content": {"application/octet-stream": {}}, "description": "entry"},
             304: {"description": "not-modified"},
             404: {"description": "not-found"},
         },
@@ -82,7 +83,7 @@ def build_content_router(
             raise ProblemError("not_found", headers=_ABSENT) from None
         if _matches(request.headers.get("if-none-match"), served.etag):
             response: Response = Response(status_code=304, headers={"ETag": served.etag})
-            response.headers["Cache-Control"] = "private, no-cache"
+            response.headers["Cache-Control"] = PRIVATE_CACHE
         else:
             response = content_response(
                 served.body,

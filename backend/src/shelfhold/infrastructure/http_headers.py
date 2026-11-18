@@ -13,6 +13,7 @@ from urllib.parse import quote, urlsplit
 
 IMMUTABLE_CACHE = "public, max-age=31536000, immutable"
 NO_CACHE = "no-cache"
+PRIVATE_CACHE = "private, no-cache"  # the bytes of a book: one profile's browser, checked each time
 NOSNIFF = "nosniff"
 REFERRER_POLICY = "no-referrer"
 ROBOTS_TAG = "noindex, nofollow"

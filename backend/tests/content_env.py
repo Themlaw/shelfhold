@@ -10,6 +10,7 @@ from typing import Any
 
 import sqlalchemy as sa
 
+from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import identity, storage
 from tests.integration.test_schema_catalog import add_unit
@@ -65,7 +66,7 @@ class FakeArchives:
 def add_carrier(engine: sa.Engine, edition_id: str, *, format: str = "cbz") -> str:
     """A `content` of a Unit of the Edition, adopted in place (no Variant, no path): the carrier
     id the tickets are issued for."""
-    with engine.begin() as connection:
+    with write_transaction(engine) as connection:
         unit_id = add_unit(connection, edition_id)
         content_id = new_ulid()
         connection.execute(

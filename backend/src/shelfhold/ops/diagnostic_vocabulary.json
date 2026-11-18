@@ -2393,6 +2393,7 @@
   "content_hash",
   "content_hash_by",
   "content_id",
+  "content_origin",
   "content_trust",
   "contents",
   "contribution",
