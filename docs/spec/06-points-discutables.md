@@ -276,7 +276,7 @@ Ce que l'utilisateur fait chez lui de son côté ne regarde pas le projet. Le pr
 | Lecteur complet seulement pour le contenu non exporté | Pas de concurrence avec Kavita | Règle à expliquer |
 
 **Recommandation.** Option 3, avec « Lire un extrait » pour tout contenu.
-**Décision (porteur, 2026-11-17, D-P1).** Option 3 : lecteur complet pour le contenu **non exporté** (copie conservée, ADR-0028), « Lire un extrait » pour le reste ; Kavita reste le lecteur principal. Voir ADR-0055.
+**Décision (porteur, 2026-11-17, D-P1).** Option 3 : lecteur complet pour le contenu **non exporté** (copie conservée, ADR-0028), « Lire un extrait » pour le reste (borné côté serveur, n'écrit jamais de position) ; Kavita reste le lecteur principal. Voir ADR-0055.
 **Statut.** Tranché (M5, L01).
 
 ## Q23 — Étagère par Œuvre ou par Édition
@@ -615,7 +615,7 @@ Ce que l'utilisateur fait chez lui de son côté ne regarde pas le projet. Le pr
 | « Le plus loin gagne » | Simple | Faux après une relecture volontaire en arrière |
 
 **Recommandation.** Deuxième option en M5 (EF-LEC-007) ; le schéma (`client_ts`, historique) est déjà en place dès M1a (EF-LEC-014).
-**Décision (M5, D8).** Un conflit n'est proposé que si la position perdante est **plus avancée** que la gagnante de plus de **2 %** de la publication (3 pages au moins) ; une seule proposition par (profil, support) jusqu'au choix ; sinon fusion silencieuse avec historique. Voir ADR-0055.
+**Décision (M5, D8).** Un conflit n'est proposé que si la position perdante est **plus avancée** que la gagnante de plus de **2 %** de progression (EPUB : `totalProgression` seul ; supports de pages : 3 pages au moins) ; une seule proposition par (profil, support) jusqu'au choix ; sinon fusion silencieuse avec historique. Voir ADR-0055.
 **Statut.** Tranché (principe en G10 ; seuil en M5, L01).
 
 ## Q48 — Kavita et Komga indexant le même arbre (ADR avant M4)

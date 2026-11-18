@@ -1,5 +1,5 @@
 ---
-status: acceptée
+status: acceptée (décision déléguée au mainteneur, plan M5 D-P1/D-P2)
 date: 2026-11-17
 decision-makers: mainteneur
 ---
@@ -24,33 +24,97 @@ S'y ajoutent des contradictions relevées à l'extraction des livrables : 01 (EF
 ## Décisions du porteur (D-P1, D-P2) et décisions déléguées (D6 à D9)
 
 ### D-P1 — Rôle du lecteur (06 Q22, tranchée)
-**Option 3.** Le lecteur est **complet pour le contenu non exporté** (copie conservée, ADR-0028) : lecture, réglages, position enregistrée sur l'ancre `content` (ADR-0045, EF-LEC-014). Pour **tout autre contenu**, il propose « **Lire un extrait** » : lecture bornée, sans lecture complète du catalogue. **Kavita reste le lecteur principal.** Un contenu déjà exporté se lit dans Kavita ; Shelfhold n'ouvre pas un second lieu de lecture complet pour lui.
+**Option 3.** Le lecteur est **complet pour le contenu non exporté** (copie conservée, ADR-0028) : lecture, réglages, position enregistrée sur l'ancre `content` (ADR-0045, EF-LEC-014). Pour **tout autre contenu**, il propose « **Lire un extrait** ». **Kavita reste le lecteur principal.**
+
+Un contenu **exporté vers une destination que le profil peut lire** (par exemple Kavita avec un compte lié) se lit là-bas ; Shelfhold n'ouvre pas un second lieu de lecture complet pour lui. Pour un profil sans accès à la destination (pas de compte Kavita, export vers Komga, CWA, un arbre ou une liaison `pull` seulement), le lecteur complet reste disponible sur la copie conservée. Une Œuvre lue en copie conservée puis exportée **garde sa position sur l'ancre `content`** : l'invariant I30 interdit de la recoller sur l'`export_item`, et « Continuer la lecture » (L14) l'affiche comme telle.
 
 Écartées : l'aperçu seul (peu utile hors atelier) et le lecteur complet de tout le catalogue (concurrence frontale avec Kavita, deux lieux de lecture, conflits de progression).
 
-L'extrait est borné par le serveur (nombre de pages ou de caractères, valeur par défaut réglable) et ne fait pas progresser la lecture d'une Œuvre : il n'écrit pas de position qui compterait dans « Continuer la lecture ».
+#### « Lire un extrait » : borné côté serveur, n'écrit rien
+- **Borne** : le **premier chapitre** (première entrée de la table des matières qui n'est ni couverture ni page de garde), ou à défaut les **N premières pages** (réglable, **N = 10** par défaut ; pour un EPUB sans chapitre exploitable, l'équivalent de N pages de 1 800 caractères). Dans tous les cas, jamais plus de **20 %** de la publication (valeur par défaut, réglable).
+- **Le ticket porte la portée** (`full` ou `excerpt`) **et la liste fermée des entrées autorisées**. `/content` refuse toute page ou ressource hors de cette liste (`404`, sans oracle d'existence), ressources liées comprises : une image, une police ou une feuille de style n'est servie que si un document autorisé la référence. Un client qui forge `/content/<ticket>/…/ch42.xhtml` ou une page hors borne n'obtient rien.
+- **Aucune écriture** : ni `reading_position`, ni historique, ni `reading_conflict`, ni état « en cours », ni renvoi vers Kavita ou kosync. `PUT /api/reader/positions` refuse une publication ou un ticket de portée `excerpt`.
+- Tests : `test_content_excerpt_ticket_refuses_out_of_bound_entry` (L05), `test_excerpt_publication_is_bounded` (L06), `test_excerpt_writes_no_position` et `test_excerpt_never_pushed_to_kavita` (L07).
 
 ### D-P2 — Chemin du contenu (EF-LEC-005, ENF-SEC-004)
-Le contenu est servi sur **`/content/*`, même origine**, isolé par une **CSP `sandbox` sur chaque réponse**. Plus précisément :
-- toute réponse de `/content/*` passe par `content_response` (aucune route ad hoc) : `Content-Security-Policy: sandbox`, `X-Content-Type-Options: nosniff`, `Content-Disposition: attachment` pour SVG et HTML, aucune réponse inline hors images matricielles ;
-- le livre s'affiche dans une **iframe `sandbox` sans `allow-same-origin` ni `allow-scripts`** ; ses ressources (feuilles de style, images, polices) sont lues par `blob:` ;
-- la CSP de la page du lecteur ajoute `font-src`, `media-src` et `frame-src blob:` (`frontend/scripts/csp.ts`, `infrastructure/http_headers.py`) ; aucune directive ne desserre `default-src` ou `script-src` ;
-- la visibilité du profil est revérifiée à **chaque** service : un classement ou un retrait qui change fait cesser le service tout de suite.
+Le contenu est servi sur **`/content/*`, même origine**, isolé par une **CSP `sandbox` sur chaque réponse**. Une **origine séparée** reste possible plus tard (option documentée ci-dessous), jamais exigée.
 
-**Origine séparée en option, pas par défaut.** Une seconde origine (sous-domaine) reste possible par un réglage `SHELFHOLD_CONTENT_ORIGIN`, documentée avec compose et étapes à la charge du porteur (DNS, TLS, proxy), **jamais exigée**. Fixer ce réglage est une **action réservée** (table de vérité d'ENF-SEC-010, énumération d'EF-USR-024). Le défaut est la même origine ; le porteur dit s'il veut l'origine séparée sur son déploiement.
+#### Ce que protège la CSP `sandbox` de `/content/*`, et ce qu'elle ne protège pas
+Elle protège la **navigation directe** vers une URL de contenu (onglet, lien copié) : le document s'y ouvre dans une origine opaque, sans cookie ni script. Elle **ne protège pas le rendu dans le lecteur** : les octets sont lus par `fetch`, puis passent en `blob:`, et les en-têtes de la réponse sont perdus. Le rendu repose donc sur les mécanismes suivants.
 
-**Risque connu à prouver en L11 et L12.** Une iframe sans `allow-same-origin` ne laisse pas la page parente lire son document : le moteur EPUB ne peut pas paginer en accédant directement au DOM de l'iframe. La première réalisation prouve, par un test d'intégration, la voie retenue (document neutralisé servi en `blob:` et échange par messages, sans script dans le livre). Si aucune voie ne tient sans `allow-same-origin`, la décision n'est **pas** assouplie en silence : un amendement de cette ADR est exigé avant L12.
+#### Modèle de rendu (corrigé après relecture adverse)
+- **Images (manga, webtoon, CBZ)** : aucune iframe. Les pages sont des `<img>` (ou `createImageBitmap`) alimentés par des `blob:` d'images matricielles.
+- **EPUB (foliate-js)** : foliate-js pose lui-même `sandbox="allow-same-origin allow-scripts"` sur l'iframe et lit `iframe.contentDocument` pour charger, paginer et calculer les CFI. Son README rend `allow-scripts` obligatoire à cause du bogue WebKit 218086 (clic, toucher et clavier). **Le sous-module n'est pas patché** : l'iframe sandbox sans ces drapeaux, voulue à l'origine, est **abandonnée** pour l'EPUB. Les documents du livre sont des `blob:` créés par la SPA : ils sont **de l'origine de la SPA**.
+- **L'isolation repose donc entièrement sur** : (1) la CSP que le document `blob:` hérite ; (2) le neutraliseur (ADR-0047) pour un EPUB `untrusted` ; (3) le filtre client et le filtre de type de `/content` ci-dessous, qui valent aussi pour un EPUB `publisher` (lu tel quel, scripts compris, sans eux).
+
+#### CSP du lecteur, directive par directive
+`/lire` est servi par une **entrée HTML séparée** (navigation complète depuis la SPA), avec sa propre CSP par hachage (`frontend/scripts/csp.ts`, `infrastructure/http_headers.py`). La CSP de la SPA n'est pas élargie. Un document `blob:` hérite de la CSP du document qui l'a créé :
+
+| Directive | Valeur | Remarque |
+|---|---|---|
+| `default-src` | `'none'` | |
+| `script-src` | hachage du script d'amorçage et `'self'` | jamais `'unsafe-inline'` ni `'unsafe-eval'` ; un script de livre en ligne, `on*` ou `javascript:` est bloqué |
+| `style-src`, `style-src-elem` | `'self' blob: 'unsafe-inline'` | les EPUB portent des `<style>` en ligne ; élargissement assumé, limité à l'entrée `/lire` |
+| `style-src-attr` | `'unsafe-inline'` | attributs `style=` omniprésents dans les EPUB |
+| `img-src` | `'self' blob:` | jamais `data:`, jamais d'hôte distant |
+| `font-src` | `'self' blob:` | jamais `data:`, jamais `*` |
+| `media-src` | `'self' blob:` | jamais `*` |
+| `frame-src` | `blob:` | |
+| `connect-src` | `'self'` | pour `fetch` de `/content/*` |
+| `object-src`, `base-uri`, `form-action` | `'none'` | |
+| `frame-ancestors` | `'none'` | ajouté par l'intergiciel |
+| `Referrer-Policy` | `no-referrer` | |
+
+**Origines distantes interdites** : toutes. Aucune directive n'admet un hôte distant ; `@import` et `url()` distants dans une CSS ou un attribut `style`, `<link rel="dns-prefetch|preconnect|prefetch">` et toute ressource distante sont donc refusés. Quand l'URL publique est connue, `script-src` peut être restreint à `<URL>/_app/immutable/` ; sinon la défense est le filtre de type ci-dessous.
+
+Tests : `test_reader_csp_font_media_frame_blob` (les directives du tableau, y compris `img-src blob:`) et `test_blob_document_inherits_reader_csp` (L12).
+
+#### Types servis par `/content`
+`content_response` **ne sert jamais un type exécutable** (`text/javascript`, `application/javascript`, JSON de module, `application/wasm`, `text/html` hors affichage du lecteur). Une liste blanche fixe ce qui sort tel quel : images matricielles, CSS, polices, XHTML et SVG pour le lecteur ; tout le reste devient `application/octet-stream`. Le type est déduit de l'**extension contrôlée par le serveur**, jamais du manifeste de l'EPUB. Avec `nosniff`, un `<script src="/content/<ticket>/x.js">` ne s'exécute pas, même autorisé par `script-src 'self'`. `Content-Disposition: attachment` s'applique à SVG et HTML **sans exception** pour les réponses directes ; le lecteur ne les affiche qu'après lecture par `fetch` et passage en `blob:` (le plan L05, qui disait « hors iframe du lecteur », est aligné sur cette règle).
+
+#### Contenu actif hors script
+- **Liens externes** : interceptés par le lecteur, qui exige une **confirmation** et ouvre l'adresse **hors du lecteur** en `noopener noreferrer`, jamais dans l'iframe. Les liens internes sont résolus par foliate. `javascript:` (y compris dans `xlink:href`) est retiré.
+- `<meta http-equiv="refresh">`, `<base>` et tout `<link>` autre qu'une feuille de style locale sont **retirés** du document avant affichage, pour tout EPUB (`publisher` compris). Le neutraliseur de l'ADR-0047 reçoit la même liste pour un EPUB `untrusted`.
+- Le corpus d'EPUB piégés du kit de conformité reçoit ces vecteurs : script en ligne, `on*`, `<script src>` absolu et relatif (dont `/content/…`), `javascript:` dans un lien et dans `xlink:href`, `meta refresh`, `<base>`, `<link rel="prefetch">`, `@import` et `url()` distants.
+- Tests : `test_epub_script_never_runs` sur **Chromium, Firefox et WebKit**, `test_content_never_serves_executable_type` (dont l'EPUB `publisher` avec `<script src="/content/…">`) et `test_external_link_never_navigates_iframe` (L11, L12).
+
+#### Crédential de `/content`
+- Admis : la **session** de l'utilisateur **et** le **ticket** de contenu (`/content/{ticket}/{path}`), lié au profil, au support, à la portée, à la liste d'entrées (extrait) et à une **empreinte de session** revérifiée côté serveur, de courte durée. Les **clés d'API et les jetons d'appareil sont refusés** sur `/content` (D11 ne disait que l'inverse).
+- Le ticket est un porteur dans le chemin : `Referrer-Policy: no-referrer`, **absent des journaux d'accès et de l'application**.
+- `Cache-Control: private` ; l'autorisation est évaluée **avant** l'`ETag` (ENF-SEC-010).
+- La visibilité du profil est revérifiée à **chaque requête** : la requête suivante est refusée ; le lecteur ouvert affiche une erreur typée ; les copies hors ligne sont évincées à la reconnexion (L16b).
+- Le service worker de la PWA (L16a) **exclut `/content/*` de son cache** : le contenu n'y entre que par la copie hors ligne de L16b, par profil, avec les en-têtes d'origine conservés.
+- Tests : attaques enfant, membre, clé d'API, jeton d'appareil et IDOR sur la ressource d'autrui (L05).
+
+#### Origine séparée (option)
+Réglage de déploiement `SHELFHOLD_CONTENT_ORIGIN` (variable d'environnement : ce n'est **pas** une action réservée, ni dans la table d'ENF-SEC-010 ni dans l'énumération d'EF-USR-024, tant qu'il n'est pas modifiable à l'exécution), documenté avec compose et étapes à la charge du porteur (DNS, TLS, proxy).
+- **Ce qu'elle apporte** : le cookie de session n'est pas envoyé à cette origine ; la navigation directe vers un contenu est isolée par l'origine elle-même.
+- **Ce qu'elle n'apporte pas** : le rendu dans le lecteur. Les documents `blob:` prennent l'origine de la SPA, quelle que soit l'origine qui a servi les octets.
+- **Règles à écrire pour elle** : CORS (`Access-Control-Allow-Origin` limité à l'origine de la SPA, sans `Allow-Credentials`) pour que la SPA puisse `fetch` ; l'empreinte de session du ticket est la seule liaison à la session (le cookie n'est pas envoyé).
+
+### Accessibilité du lecteur (ENF-A11Y-002, volet M5)
+- **Clavier** : foliate relaie les événements clavier de l'iframe (rendu possible par `allow-scripts`) ; le lecteur les transmet à la fenêtre hôte et applique ses raccourcis (`postMessage` entre le lecteur et son iframe quand un moteur en a besoin). Le focus est **toujours sortable** : une touche dédiée (Échap) rend le focus à la barre du lecteur ; pas de piège au clavier.
+- **Ordre de tabulation** : barre du lecteur, puis contenu (iframe ou liste d'images), puis commandes de pagination.
+- **`lang` et `dir`** du document du livre posés depuis la publication (RTL compris).
+- **Page d'images** : texte alternatif « Page 12 sur 180 », sans le contenu de l'image.
+- **Région live** : le changement de page est annoncé.
+- Test : `test_keyboard_shortcuts_reader` exécuté **focus dans l'iframe**, sur Chromium, Firefox et WebKit (L13, L24).
 
 ### Port `ReaderEngine`
 Un seul port côté front (`frontend/src/lib/reader/`) que le lecteur utilise ; deux moteurs :
-- **moteur d'images maison** : manga paginé (LTR et RTL, doubles pages) et webtoon vertical (liste d'images, `IntersectionObserver`, préchargement) ; le décodage d'image passe par le worker sans réseau (02 §5.8) ;
-- **moteur EPUB sur foliate-js** (reflow et fixed-layout) : foliate-js est **vendu en sous-module git épinglé par commit** (ADR-0012), jamais en paquet npm, et **importé par son seul adaptateur** (règle ESLint `no-restricted-imports`, posée par L00).
+- **moteur d'images maison** : manga paginé (LTR et RTL, doubles pages) et webtoon vertical (liste d'images, `IntersectionObserver`, préchargement) ; il décode par `<img>` ou `createImageBitmap`. Le worker sans réseau (02 §5.8) sert **côté serveur** aux dimensions et au manifeste ;
+- **moteur EPUB sur foliate-js** (reflow et fixed-layout) : sous-module git épinglé par commit, jamais un paquet npm, **importé par son seul adaptateur** (règle ESLint `no-restricted-imports`, posée par L00).
 
-Le port expose : ouvrir une publication, rendre une page ou un segment, produire et restaurer un locator, annoncer les raccourcis clavier (ENF-A11Y-002) et libérer ses ressources. Un moteur déclare les types de média qu'il sait lire ; le **registre** choisit le moteur par type de média et refuse la construction si un moteur ne tient pas ses garde-fous. Le lecteur lit le **dérivé neutralisé** d'un EPUB `untrusted` (ADR-0047), jamais l'original d'une source.
+Le port expose : ouvrir une publication, rendre une page ou un segment, produire et restaurer un locator (format ci-dessous), annoncer et relayer les raccourcis clavier, libérer ses ressources. Un moteur déclare les types de média qu'il lit **et ses garde-fous dans un champ typé** (`guards`) ; le **registre** choisit le moteur par type de média et refuse la construction si les garde-fous exigés pour ce type manquent. Le lecteur lit le **dérivé neutralisé** d'un EPUB `untrusted` (ADR-0047) ; un EPUB `publisher` passe par les mêmes filtres de balises côté client.
+
+### Format du locator stocké (figé pour L07)
+JSON versionné, colonne `locator` de `reading_position` :
+- **EPUB** : `{"v": 1, "type": "cfi", "cfi": "epubcfi(…)", "totalProgression": 0.37}` ; `cfi` et `totalProgression` (0 à 1) sont **obligatoires**. Aucune liste de positions Readium n'est supposée : foliate n'en calcule pas.
+- **CBZ, PDF et tout support de pages** : `{"v": 1, "type": "page", "index": 11, "count": 180}` ; `index` est un **index de page à partir de 0**, `count` le nombre de pages du support ; `totalProgression = (index + 1) / count`.
 
 ### D6 — kosync : l'ADR-0053 amendée prime
 01 (EF-LEC-009) et 03 sont alignés sur l'ADR-0053 amendée le 2026-11-16 :
-- **`200` à tout `PUT`**, y compris pour une empreinte inconnue, cachée, d'un autre profil, ambiguë ou une garde d'intégrité qui refuse ; le motif réel va au journal et à un compteur par jeton ; seul un corps mal formé reste un `422` (ou un `413`) ;
+- **`200` à tout `PUT`**, y compris pour une empreinte inconnue, cachée, d'un autre profil, ambiguë ou une garde d'intégrité qui refuse ; le motif réel va au journal et à un compteur par jeton ; seul un corps mal formé reste un `422` (ou un `413`) ; **un crédential invalide reste `401`** (ADR-0053) ;
 - **aucune devinette** : le champ `metadata` est reçu et ignoré, aucun appariement par titre, taille ou métadonnée ; un hash tenu par deux supports ne se résout pas ;
 - **`GET`** d'un document non résolu : `200 {}` ;
 - **aucun `409` en HTTP** ;
@@ -58,10 +122,14 @@ Le port expose : ouvrir une publication, rendre une page ou un segment, produire
 - les deux tests de 03 sont **renommés** : `test_kosync_metadata_fallback_match` devient `test_kosync_metadata_never_used_to_match` et `test_kosync_ambiguous_hash_409` devient `test_kosync_ambiguous_hash_never_guesses`.
 
 ### D7 — Aucun moteur PDF en M5
-EF-LEC-004 reste « Plus tard ». Le port `ReaderEngine` n'enregistre **aucun moteur PDF** en M5. `test_pdfjs_is_eval_supported_false` (ENF-SEC-004, CVE-2024-4367) prouve deux choses : aucun moteur PDF n'est enregistré ; un moteur PDF qui s'enregistrerait sans `isEvalSupported: false` fait **échouer la construction du registre**. La garde est donc posée avant que le format n'arrive.
+EF-LEC-004 reste « Plus tard ». Le port n'enregistre **aucun moteur PDF** en M5. Un moteur déclare ses garde-fous par un champ typé (`guards: { isEvalSupported: false }`) que le registre **exige pour `application/pdf`** ; le registre ne peut pas inspecter les options réellement passées à pdf.js, il vérifie le contrat déclaré. `test_pdfjs_is_eval_supported_false` (ENF-SEC-004, CVE-2024-4367) prouve deux choses : aucun moteur PDF n'est enregistré ; un moteur PDF qui s'enregistrerait sans ce garde-fou déclaré fait **échouer la construction du registre**.
 
 ### D8 — Seuil de conflit des positions (06 Q47, tranchée)
-Le principe de G10 est conservé : `client_ts` le plus récent, borné par `server_ts`, historique conservé (EF-LEC-007). Un **conflit n'est proposé** que si la position perdante est **plus avancée** que la gagnante de plus de **2 %** de la publication, avec **au moins 3 pages**. Une seule proposition par (profil, support) jusqu'au choix de l'utilisateur ; en dessous du seuil, fusion silencieuse avec historique. Valeurs par défaut, réglables.
+Le principe de G10 est conservé : `client_ts` le plus récent, borné par `server_ts`, historique conservé (EF-LEC-007). Un **conflit n'est proposé** que si la position perdante est **plus avancée** que la gagnante de plus de **2 % de progression** :
+- **EPUB** : écart de `totalProgression` supérieur à 0,02 ; la borne de « 3 pages » ne s'applique pas (en reflow, le nombre de pages dépend de la fenêtre) ;
+- **supports de pages** : écart supérieur à 2 % **et** d'au moins 3 pages.
+
+Une seule proposition par (profil, support) jusqu'au choix de l'utilisateur ; en dessous du seuil, fusion silencieuse avec historique. Valeurs par défaut, réglables.
 
 ### D9 — Dates dans 01
 - **ENF-A11Y-002** est datée « M3 (atelier) / M5 (lecteur) » : son texte nomme déjà le lecteur de M5.
@@ -70,17 +138,17 @@ Le principe de G10 est conservé : `client_ts` le plus récent, borné par `serv
 
 ## Conséquences
 - **Positives** : le lecteur tient la définition de fini sans concurrencer Kavita ; l'isolation par défaut ne demande rien au porteur ; la sync des liseuses reste sûre ; les contradictions de 01, 02 et 03 sont fermées avant que du code en dépende.
-- **Négatives** : deux moteurs à maintenir (images et EPUB) ; foliate-js n'a pas de release stable (R13) ; la même origine repose sur l'exactitude de la CSP `sandbox` par réponse, d'où l'option d'origine séparée ; la contrainte de l'iframe sans `allow-same-origin` est à prouver.
+- **Négatives** : deux moteurs à maintenir (images et EPUB) ; foliate-js n'a pas de release stable (R13) ; foliate-js impose `allow-same-origin allow-scripts` à son iframe : l'isolation de l'EPUB repose sur la CSP héritée par le `blob:`, le neutraliseur et les filtres, pas sur un sandbox d'iframe ; la CSP du lecteur élargit `style-src` (limité à l'entrée `/lire`).
 - **Aucune migration** dans ce lot : documentation seule.
 
 ## Risque principal
-L'isolation du contenu. Mitigation : une seule sortie (`content_response`), tests d'attaque sur le corpus d'EPUB piégés (enfant, membre, clé d'API, IDOR sur la ressource d'autrui), CSP du lecteur testée, option d'origine séparée.
+L'isolation du contenu. Mitigation : une seule sortie (`content_response`), tests d'attaque sur le corpus d'EPUB piégés (enfant, membre, clé d'API, IDOR sur la ressource d'autrui), CSP du lecteur testée directive par directive, filtre de type de `/content`, trois navigateurs dont WebKit. L'origine séparée n'est pas une mitigation du rendu (voir D-P2).
 
 ## Réversibilité
 Bonne pour le moteur (derrière `ReaderEngine`) et pour l'origine (un réglage). Moyenne pour le rôle du lecteur (D-P1) : élargir au catalogue entier est un ajout de routes, pas une refonte, mais rouvre Q22.
 
 ## Amendements et corrections portés par cette ADR
-- **ADR-0012** : rôle selon D-P1, chemin `/content/*` par défaut (D-P2), port `ReaderEngine`, aucun moteur PDF en M5 (D7). Le texte d'origine de pdf.js « livré avec le lecteur » est suspendu.
+- **ADR-0012** : rôle selon D-P1, chemin `/content/*` par défaut (D-P2), modèle de rendu (l'iframe sans `allow-scripts` de la passe 1 est abandonnée pour l'EPUB), port `ReaderEngine`, aucun moteur PDF en M5 (D7). Le texte d'origine de pdf.js « livré avec le lecteur » est suspendu.
 - **ADR-0018** : OIDC et registre d'appareils en M5 ; jetons d'appareil livrés en M4 par l'ADR-0053 ; `x-auth-key` = md5 du secret du jeton.
 - **ADR-0053** : l'amendement du 2026-11-16 prime sur 01 et 03 (D6) ; passage d'EPUB repris en M5 (L09).
 - **01** : EF-LEC-009 (D6), ENF-A11Y-002 et EF-EXP-058 (D9). **02** : `x-auth-key` (route kosync), index des ADR (« OIDC en V2 » devient « OIDC en M5 »). **03** : tests kosync renommés, D7, D8, D-P2. **04** : module `reading/`. **06** : Q22 et Q47 « tranchées ».
@@ -94,5 +162,5 @@ EF-LEC-001, EF-LEC-002, EF-LEC-003, EF-LEC-005, EF-LEC-006, EF-LEC-007, EF-LEC-0
 - https://github.com/johnfactotum/foliate-js
 - https://github.com/advisories/GHSA-wgrm-67xf-hhpq (pdf.js, CVE-2024-4367)
 
-## Acceptation (2026-11-17)
-Acceptée par le mainteneur pour D-P1 et D-P2 (décisions déléguées à l'exécution de M5, écrites telles quelles) ; D6 à D9 sont des décisions déléguées révisables par écrit.
+## Acceptation (2026-11-18)
+Acceptée (décision déléguée au mainteneur, plan M5 D-P1/D-P2), après relecture adverse (section « #345 : contradicteur » de `docs/decisions/M5.md`) dont les constats sont corrigés ici. D6 à D9 sont des décisions déléguées révisables par écrit.

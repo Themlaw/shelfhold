@@ -127,4 +127,5 @@ L01 de M5. En cas de divergence, cette section prévaut sur les jalons annoncés
 - **OIDC en M5** (EF-USR-004, EF-USR-024), avec `Authlib` : `prompt=login`, `max_age` et claim `auth_time` pour les actions réservées. Le jalon « OIDC en M4 » du texte d'origine et « OIDC en V2 » de l'index de 02 sont corrigés : c'est **M5**.
 - **Jetons d'appareil** : livrés **en M4** par l'ADR-0053 (jeton émis pour un profil lecteur, secret stocké en SHA-256 de `md5(secret)`, portée fermée OPDS et kosync, révocation et expiration). Il reste en M5 la **rotation** (ENF-SEC-013), le **registre d'appareils** `device` (EF-USR-008) et la documentation.
 - **kosync** : `x-auth-key` est le md5 du **secret du jeton d'appareil**, jamais du mot de passe du compte (02 est corrigé).
-- **Actions réservées** : liaison OIDC d'un compte, rotation d'un jeton d'appareil, retrait d'un appareil et réglage de l'origine du contenu entrent dans la table de vérité d'ENF-SEC-010 dans la PR qui les crée.
+- **Actions réservées** : liaison OIDC d'un compte, rotation d'un jeton d'appareil et retrait d'un appareil entrent dans la table de vérité d'ENF-SEC-010 dans la PR qui les crée. L'origine du contenu (`SHELFHOLD_CONTENT_ORIGIN`) est un réglage de déploiement, pas une action réservée.
+- **`/content`** n'accepte ni clé d'API ni jeton d'appareil (ADR-0055).
