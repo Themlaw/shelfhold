@@ -18,7 +18,6 @@ data `upstream_snapshot`, `payload`, id), and stored under `$sealed`. Without a 
 sensitive is kept at all.
 """
 
-import base64
 import json
 import re
 from collections.abc import Collection, Iterable, Mapping
@@ -27,7 +26,8 @@ from typing import Any, Final
 from shelfhold.infrastructure.fetcher.refs import has_userinfo
 from shelfhold.infrastructure.logging import known_secret_index
 from shelfhold.infrastructure.secret_text import SecretIndex, contains_secret
-from shelfhold.infrastructure.secrets.envelope import Envelope
+from shelfhold.infrastructure.secrets.envelope import envelope_of_json, envelope_to_json
+from shelfhold.infrastructure.secrets.registry import SNAPSHOT_ENVELOPE_KEY
 from shelfhold.infrastructure.secrets.vault import SecretVault
 
 __all__ = [
@@ -45,7 +45,9 @@ __all__ = [
 CAPABILITY: Final = "upstream_restore"
 SCHEMA_VERSION: Final = 1
 MAX_PAYLOAD_BYTES: Final = 16 * 1024
-SEALED_KEY: Final = "$sealed"
+# The key the sealed envelope lives under in the payload; the rotation and the retirement read
+# it from `infrastructure.secrets.registry`, the single place that knows where sealed data lives.
+SEALED_KEY: Final = SNAPSHOT_ENVELOPE_KEY
 _TOKEN_VALUE: Final = re.compile(
     r"eyJ[\w-]+\.[\w-]+\.[\w-]*|\b(?:Bearer|Basic|Token)\s+[A-Za-z0-9._~+/=-]{8,}", re.IGNORECASE
 )
@@ -165,20 +167,13 @@ def seal_fields(vault: SecretVault, row_id: str, hidden: Mapping[str, Any]) -> d
         json.dumps(dict(hidden), sort_keys=True).encode(),
         table="upstream_snapshot", column="payload", row_id=row_id,
     )  # fmt: skip
-    return {
-        "v": sealed.v, "kid": sealed.kid, "alg": sealed.alg,
-        "nonce": base64.b64encode(sealed.nonce).decode(),
-        "ct": base64.b64encode(sealed.ct).decode(),
-    }  # fmt: skip
+    return envelope_to_json(sealed)
 
 
 def open_sealed(vault: SecretVault, row_id: str, blob: Mapping[str, Any]) -> dict[str, Any]:
     """The sensitive fields back. Fails (an `EnvelopeError`) when the row is not the one they were
     sealed for."""
-    envelope = Envelope(
-        int(blob["v"]), str(blob["kid"]), str(blob["alg"]),
-        base64.b64decode(str(blob["nonce"])), base64.b64decode(str(blob["ct"])),
-    )  # fmt: skip
+    envelope = envelope_of_json(blob)
     plain = vault.open(envelope, table="upstream_snapshot", column="payload", row_id=row_id)
     loaded = json.loads(plain)
     if not isinstance(loaded, dict):
