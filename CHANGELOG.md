@@ -91,6 +91,7 @@ Correctif de publication, sans changement de comportement : l'image `1.0.0` a é
 
 ### Corrigé
 
+- **Une liseuse retrouve un fichier dès son premier export (L47)** : l'export écrit la ligne `document_alias` du fichier qu'il produit (empreintes KOReader et Kavita comprises), dans la transaction qui ferme sa ligne du manifeste, une seule fois par fichier ; une copie octet pour octet n'en reçoit pas, et l'alias suit l'effacement de son document. Avant, `GET /kosync/syncs/progress/{empreinte}` d'un fichier tout juste exporté répondait `{}`. Aucune migration.
 - **Migrations figées** : `0064_m4_schema.py` et `0071_provider_quota.py`, déjà livrées dans l'image 1.0.0, entrent dans `tools/published-migrations.toml` avec `since = "1.0"`. `check_patch_migrations.py --tag v1.0.1` passe.
 - **Garde en CI de PR** : le job `lint` lance `tools/check_patch_migrations.py` sans `--tag` (donc dans `ci-success`). Une PR qui ajoute une migration la fige elle-même, avec la prochaine mineure (`--freeze 1.1`) ; `docs/releasing.md` et `CONTRIBUTING.md` le décrivent, et un test tient la liste complète.
 
