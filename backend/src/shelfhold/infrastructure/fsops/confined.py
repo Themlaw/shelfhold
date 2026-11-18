@@ -216,9 +216,6 @@ class ConfinedRoot:
             raise
         return fd
 
-    def open_dir(self, rel: str = ".") -> int:
-        return self._walk(split_rel(rel))
-
     def stat(self, rel: str) -> os.stat_result:
         """`lstat` semantics: a link is described, never followed."""
         if not split_rel(rel):

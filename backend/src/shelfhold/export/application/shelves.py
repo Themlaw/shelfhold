@@ -235,19 +235,6 @@ class ShelfService:
         if self._on_audience_change is not None:
             self._on_audience_change()  # after the commit: the job reads what was written
 
-    def set_hold_until_rated(
-        self, shelf_id: str, hold: bool, *, actor: Actor | None = None
-    ) -> None:
-        with write_transaction(self._engine) as connection:
-            done = connection.execute(
-                sa.update(export.shelf)
-                .where(export.shelf.c.id == shelf_id)
-                .values(hold_until_rated=hold)
-            )
-            if done.rowcount != 1:
-                raise LookupError(f"no such shelf: {shelf_id}")
-            self._audit(connection, actor, "shelf.set_hold", f"shelf:{shelf_id};{hold}")
-
     def set_skip_read_upgrades(
         self, shelf_id: str, skip: bool, *, actor: Actor | None = None
     ) -> None:
