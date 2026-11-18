@@ -161,6 +161,8 @@ hors EPUB :
 
 Un chemin nouveau, issu d'une mise à jour, est écarté ou passe par le filtre avant la fusion.
 
+**Mise en œuvre (L12).** `frontend/src/lib/reader/engines/foliate.ts` est le seul importeur (chemin relatif vers `frontend/vendor/foliate-js/epub.js` et `view.js`, jamais un pointeur dans `package.json`) ; il construit l'objet livre et passe cet objet. `frontend/vite.reader.config.ts` remplace par un module qui lève les `import()` de `view.js` vers `pdf`, `mobi`, `fb2`, `comic-book`, `tts`, `search`, `footnotes`, `quote-image`, `opds`, `dict`, `reader`, `ui/` et `vendor/{pdfjs,fflate,zip}` ; `frontend/scripts/reader-build.test.ts` échoue si le build du lecteur contient un morceau ou une marque de l'un d'eux. ESLint refuse tout import de foliate hors de l'adaptateur (statique, `import()`, chemin relatif).
+
 ## Autres dépendances notables
 
 Non critiques (remplaçables sans réécriture), listées pour mémoire :
