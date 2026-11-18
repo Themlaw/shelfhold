@@ -2043,6 +2043,97 @@
         "title": "ConflictOut",
         "type": "object"
       },
+      "ContinueItemOut": {
+        "properties": {
+          "approximate": {
+            "title": "Approximate",
+            "type": "boolean"
+          },
+          "number": {
+            "title": "Number",
+            "type": "string"
+          },
+          "state": {
+            "enum": [
+              "in_progress",
+              "next"
+            ],
+            "title": "State",
+            "type": "string"
+          },
+          "target": {
+            "enum": [
+              "reader",
+              "kavita"
+            ],
+            "title": "Target",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "unit_id": {
+            "title": "Unit Id",
+            "type": "string"
+          },
+          "unit_title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unit Title"
+          },
+          "work_id": {
+            "title": "Work Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "work_id",
+          "title",
+          "unit_id",
+          "number",
+          "unit_title",
+          "state",
+          "target",
+          "approximate"
+        ],
+        "title": "ContinueItemOut",
+        "type": "object"
+      },
+      "ContinueOut": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ContinueItemOut"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "kavita_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Kavita Url"
+          }
+        },
+        "required": [
+          "items",
+          "kavita_url"
+        ],
+        "title": "ContinueOut",
+        "type": "object"
+      },
       "ContributorsIn": {
         "additionalProperties": false,
         "properties": {
@@ -13513,6 +13604,72 @@
           }
         },
         "summary": "Resolve",
+        "tags": [
+          "reader"
+        ]
+      }
+    },
+    "/api/reader/continue": {
+      "get": {
+        "description": "« Reprendre la lecture »: the next Unit of every series under way, for the profile of\nthe session only (the progress is hers, the filter is the one of every surface).",
+        "operationId": "reader_continue",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 12,
+              "maximum": 24,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ContinueOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Connexion requise, ou mot de passe à confirmer (reauth-required)."
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée)."
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Détail du problème (RFC 9457)."
+          }
+        },
+        "summary": "Continue Reading",
         "tags": [
           "reader"
         ]

@@ -1220,6 +1220,58 @@ export type ConflictOut = {
 };
 
 /**
+ * ContinueItemOut
+ */
+export type ContinueItemOut = {
+    /**
+     * Approximate
+     */
+    approximate: boolean;
+    /**
+     * Number
+     */
+    number: string;
+    /**
+     * State
+     */
+    state: 'in_progress' | 'next';
+    /**
+     * Target
+     */
+    target: 'reader' | 'kavita';
+    /**
+     * Title
+     */
+    title: string;
+    /**
+     * Unit Id
+     */
+    unit_id: string;
+    /**
+     * Unit Title
+     */
+    unit_title: string | null;
+    /**
+     * Work Id
+     */
+    work_id: string;
+};
+
+/**
+ * ContinueOut
+ */
+export type ContinueOut = {
+    /**
+     * Items
+     */
+    items: Array<ContinueItemOut>;
+    /**
+     * Kavita Url
+     */
+    kavita_url: string | null;
+};
+
+/**
  * ContributorsIn
  */
 export type ContributorsIn = {
@@ -8190,6 +8242,44 @@ export type ReaderResolveConflictResponses = {
 };
 
 export type ReaderResolveConflictResponse = ReaderResolveConflictResponses[keyof ReaderResolveConflictResponses];
+
+export type ReaderContinueData = {
+    body?: never;
+    path?: never;
+    query?: {
+        /**
+         * Limit
+         */
+        limit?: number;
+    };
+    url: '/api/reader/continue';
+};
+
+export type ReaderContinueErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type ReaderContinueError = ReaderContinueErrors[keyof ReaderContinueErrors];
+
+export type ReaderContinueResponses = {
+    /**
+     * Successful Response
+     */
+    200: ContinueOut;
+};
+
+export type ReaderContinueResponse = ReaderContinueResponses[keyof ReaderContinueResponses];
 
 export type ReaderPutPositionData = {
     body: PositionIn;

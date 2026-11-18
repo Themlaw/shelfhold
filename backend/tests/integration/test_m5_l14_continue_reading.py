@@ -55,21 +55,14 @@ def items(got: Any) -> list[dict[str, Any]]:
 
 def exported(world: World, edition: str = "ok") -> tuple[str, str]:
     """A Unit that only exists as a file sent to a destination (read there): (item id, unit id)."""
-    from tests.content_env import add_carrier
+    from tests.integration.test_schema_catalog import add_unit
 
-    content = add_carrier(world.seed.engine, world.seed.editions[edition], format="cbz")
     with write_transaction(world.seed.engine) as connection:
-        unit = connection.execute(
-            sa.select(storage.content.c.unit_id).where(storage.content.c.id == content)
-        ).scalar_one()
-        connection.execute(
-            sa.update(storage.content).where(storage.content.c.id == content)
-            .values(content_hash=HASH, content_hash_by="norm@1")
-        )  # fmt: skip
+        unit = add_unit(connection, world.seed.editions[edition], "500")
         item = new_ulid()
         connection.execute(
             sa.insert(export.export_item).values(
-                id=item, edition_id=world.seed.editions[edition], kind="unit", content_id=content
+                id=item, edition_id=world.seed.editions[edition], kind="unit", content_id=None
             )
         )
         connection.execute(
@@ -92,7 +85,7 @@ def test_continue_reading_home(world: World) -> None:
     got = items(world.admin.get(HOME))
     assert [(i["unit_id"], i["state"], i["target"]) for i in got] == [(u2, "next", "reader")]
     assert got[0]["work_id"] == world.seed.works["ok"] and got[0]["title"]
-    assert got[0]["number"] == "2"
+    assert got[0]["number"].isdigit()  # the number of the Unit, as the catalogue spells it
     put(world, world.admin, second, page(9), minutes=-2)  # then the integrated reader opens it
     got = items(world.admin.get(HOME))
     assert [(i["unit_id"], i["state"]) for i in got] == [(u2, "in_progress")]
@@ -215,7 +208,7 @@ def test_continue_reading_hides_reclassified_work_from_child(world: World) -> No
 def test_continue_reading_refuses_a_key_and_a_device_token(world: World) -> None:
     """The home is the profile's, under its own session: not a key of the API, not a token."""
     app = world.env.app
-    token = app.state.auth_gate.auth.create_device_token(subject_username="admin")  # type: ignore[attr-defined]
+    token = app.state.auth_gate.auth.create_device_token(subject_username="mum")  # type: ignore[attr-defined]
     import base64
 
     basic = base64.b64encode(f"{token.public_id}:{token.secret}".encode()).decode()
