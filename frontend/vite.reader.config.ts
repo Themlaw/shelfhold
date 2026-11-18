@@ -1,0 +1,74 @@
+// The build of the reader (`/lire`, ADR-0055): an HTML entry of its own, outside the SvelteKit
+// router, so that its policy is the only one that applies (a route of the SPA would carry the
+// SPA's `<meta>` policy next to it). It is built after the SPA, into `build/reader-entry/`, and the
+// server writes its header from the very page this produces (`reader_csp`).
+import { svelte } from '@sveltejs/vite-plugin-svelte';
+import { fileURLToPath } from 'node:url';
+import type { Plugin } from 'vite';
+import { defineConfig } from 'vite';
+import { auditReaderPage } from './scripts/csp.ts';
+
+const BASE = '/reader-entry/';
+const root = fileURLToPath(new URL('.', import.meta.url));
+
+// The formats of foliate that M5 does not read. `view.js` imports them dynamically and Vite would
+// make a chunk of each: they are resolved to a module that throws instead, so that no PDF, MOBI,
+// FB2, comic-book, zip (the entries are read one by one from the content route), speech or search
+// code is ever shipped, with the submodule left as it is.
+const NOT_READ = /\/vendor\/foliate-js\/(pdf|mobi|fb2|comic-book|tts|search|footnotes|quote-image|opds|dict|reader)\.js$|\/vendor\/foliate-js\/ui\/|\/vendor\/foliate-js\/vendor\/(pdfjs|fflate|zip)(\.js|\/)/;
+const STUB = '\0shelfhold-foliate-not-read';
+
+function foliateNotRead(): Plugin {
+  return {
+    name: 'shelfhold-foliate-not-read',
+    enforce: 'pre',
+    async resolveId(source, importer, options) {
+      if (source === STUB) return STUB;
+      if (!importer || !importer.includes('/vendor/foliate-js/')) return null;
+      const resolved = await this.resolve(source, importer, { ...options, skipSelf: true });
+      if (resolved && NOT_READ.test(resolved.id.replaceAll('\\', '/'))) return STUB;
+      return null;
+    },
+    load(id) {
+      if (id !== STUB) return null;
+      return 'const refuse = () => { throw new Error("this format is not read by the reader of Shelfhold"); };\nexport const makePDF = refuse, isMOBI = refuse, MOBI = refuse, makeFB2 = refuse, makeComicBook = refuse, TTS = refuse, searchMatcher = refuse, FootnoteHandler = refuse;\nexport default refuse;\n';
+    }
+  };
+}
+
+// The page that is served: one inline script (hashed by the policy) imports the entry, which is
+// then a dynamic import of a script of trusted code (`'strict-dynamic'`). No `<script src>`, no
+// `modulepreload` (under `'strict-dynamic'` `'self'` is ignored and they would be refused).
+function readerPage(): Plugin {
+  return {
+    name: 'shelfhold-reader-page',
+    enforce: 'post',
+    generateBundle(_, bundle) {
+      const page = bundle['reader.html'];
+      if (!page || page.type !== 'asset') throw new Error('the reader page was not produced');
+      const entry = Object.values(bundle).find((chunk) => chunk.type === 'chunk' && chunk.isEntry);
+      if (!entry) throw new Error('the reader entry was not produced');
+      let html = String(page.source);
+      html = html.replace(/<script\b[^>]*\bsrc=[^>]*><\/script>\s*/gi, '');
+      html = html.replace(/<link\b[^>]*\brel="?modulepreload"?[^>]*>\s*/gi, '');
+      html = html.replace('</head>', `<script>import(${JSON.stringify(BASE + entry.fileName)});</script></head>`);
+      auditReaderPage(html);
+      page.source = html;
+    }
+  };
+}
+
+export default defineConfig({
+  root,
+  base: BASE,
+  publicDir: false,
+  plugins: [svelte(), foliateNotRead(), readerPage()],
+  build: {
+    outDir: 'build/reader-entry',
+    emptyOutDir: true,
+    modulePreload: false,
+    cssCodeSplit: false,
+    assetsInlineLimit: 0, // no `data:` URL: the policy admits none
+    rollupOptions: { input: { reader: fileURLToPath(new URL('./reader.html', import.meta.url)) } }
+  }
+});

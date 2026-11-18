@@ -46,19 +46,31 @@ export default ts.config(
             "ImportDeclaration[source.value=/themes\\/index/]",
             'Only the root layout reads the theme mechanism (I51): use CSS custom properties'
           ]
-        ].map(([selector, message]) => ({ selector, message: `theme: ${message} (I51)` }))
+        ].map(([selector, message]) => ({ selector, message: `theme: ${message} (I51)` })),
+        // M5 L12: a dynamic import reaches foliate as well as a static one (the rule below only sees the latter)
+        {
+          selector: "ImportExpression[source.value=/foliate-js|#foliate/]",
+          message: 'foliate-js is imported by the reader engine alone (ENF-SEC-004, ADR-0055)'
+        }
       ]
     }
   },
   {
-    files: ['src/lib/themes/**', 'src/routes/+layout.ts', 'src/routes/+layout.svelte', 'src/**/*.test.ts'],
+    files: [
+      'src/lib/themes/**',
+      'src/routes/+layout.ts',
+      'src/routes/+layout.svelte',
+      'src/reader/main.ts', // the entry of the reader applies the theme like the root layout
+      'src/lib/reader/engines/foliate.ts', // the adapter
+      'src/**/*.test.ts'
+    ],
     rules: { 'no-restricted-syntax': 'off' }
   },
   // M5: foliate-js is imported by the reader engine alone (ENF-SEC-004 volet lecteur).
   {
     files: ['src/**/*.{ts,svelte}'],
     rules: {
-      'no-restricted-imports': ['error', { patterns: ['foliate-js', 'foliate-js/*'] }]
+      'no-restricted-imports': ['error', { patterns: ['foliate-js', 'foliate-js/*', '**/foliate-js', '**/foliate-js/**', '\\#foliate', '\\#foliate/*'] }]
     }
   },
   {

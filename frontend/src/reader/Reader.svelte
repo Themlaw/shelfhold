@@ -1,10 +1,11 @@
 <script lang="ts">
-  // The reader of images (M5 L10, EF-LEC-001, EF-LEC-002, EF-UX-006). The screen knows the port
-  // `ReaderEngine` and nothing of how a page is drawn: the engine is loaded on demand when a book
-  // is opened (ADR-0013), so the rest of the app does not carry it. Every byte comes through the
-  // links of the publication, that is through the content route, which asks the profile's
-  // visibility again at each page. An extract says so, writes nothing and ends on a sentence.
-  import { page } from '$app/state';
+  // The reader (M5 L10 and L12, EF-LEC-001 to EF-LEC-003, EF-UX-006), mounted by the entry
+  // `reader.html`, which is not a route of the SPA (ADR-0055). The screen knows the port
+  // `ReaderEngine` and the registry, and nothing of how a page is drawn: an engine is loaded on
+  // demand when a book is opened. Every byte comes through the links of the publication, that is
+  // through the content route, which asks the profile's visibility again at each page. An extract
+  // says so, writes nothing and ends on a sentence. Titles and every word of a book are inserted
+  // as text, never as markup (the page itself allows inline styles).
   import { onDestroy, onMount } from 'svelte';
   import { readerPublication, readerPutPosition } from '#lib/api/index.ts';
   import ProblemCard from '#lib/components/ProblemCard.svelte';
@@ -12,6 +13,8 @@
   import { csrfToken } from '#lib/passkeys.ts';
   import { problemView, type ProblemView } from '#lib/problems.ts';
   import { readerDeviceId } from '#lib/reader/device.ts';
+  import { detectBrowser, type Browser } from '#lib/reader/browser.ts';
+  import { checkReaderCsp, type GuardVerdict } from '#lib/reader/csp-guard.ts';
   import {
     keyAction,
     toView,
@@ -20,11 +23,22 @@
     type ReaderEngine
   } from '#lib/reader/engine.ts';
   import { createPositionSender, type PositionSender } from '#lib/reader/positions.ts';
+  import { EPUB_TYPE, EngineRefusedError, defaultRegistry } from '#lib/reader/registry.ts';
+
+  interface Props {
+    carrierType: string;
+    carrierId: string;
+    scope: 'excerpt' | null;
+    /** The check of the policy in force; replaced by the tests, which have none. */
+    guard?: () => Promise<GuardVerdict>;
+    browser?: Browser | null;
+  }
+  let { carrierType, carrierId, scope, guard = () => checkReaderCsp(), browser }: Props = $props();
 
   let host = $state<HTMLElement | null>(null);
   let toolbar = $state<HTMLElement | null>(null);
   let problem = $state<ProblemView | null>(null);
-  let unsupported = $state(false);
+  let unsupported = $state<'format' | 'browser' | 'policy' | null>(null);
   let view = $state<PublicationView | null>(null);
   let at = $state<Locator | null>(null);
   let finished = $state(false);
@@ -37,23 +51,32 @@
   // place another device holds must not be replaced by the first page just because the book opened.
   let moved = false;
 
-  const asksExcerpt = $derived(page.url.searchParams.get('scope') === 'excerpt');
+  const asksExcerpt = $derived(scope === 'excerpt');
   const isExcerpt = $derived(view?.scope === 'excerpt');
   const direction = $derived(view?.readingDirection ?? 'ltr');
-  const status = $derived(at ? t('reader.status', { n: at.index + 1, count: at.count }) : '');
+  const status = $derived(
+    !at
+      ? ''
+      : at.type === 'page'
+        ? t('reader.status', { n: at.index + 1, count: at.count })
+        : t('reader.status_epub', { percent: Math.round(at.totalProgression * 100) })
+  );
 
-  const path = () => ({
-    carrier_type: page.params.carrier_type ?? '',
-    carrier_id: page.params.carrier_id ?? ''
-  });
+  const path = () => ({ carrier_type: carrierType, carrier_id: carrierId });
 
   /** The same book again, with new tickets and the same scope: a reading outlives a ticket. */
   async function renew(): Promise<PublicationView | null> {
     const { data } = await readerPublication({ path: path(), query: { scope: view?.scope ?? 'full' } });
-    return data && data.kind === 'pages' ? toView(data) : null;
+    return data ? toView(data) : null;
   }
 
   async function open(): Promise<void> {
+    // nothing is asked, nothing is drawn, under a policy that is not the reader's (ADR-0055)
+    if ((await guard()) !== 'ok') {
+      unsupported = 'policy';
+      return;
+    }
+    if (left) return;
     const { data, error } = await readerPublication({
       path: path(),
       query: asksExcerpt ? { scope: 'excerpt' } : undefined
@@ -61,10 +84,6 @@
     if (left) return;
     if (error !== undefined || !data) {
       problem = problemView(error);
-      return;
-    }
-    if (data.kind !== 'pages') {
-      unsupported = true; // the EPUB engine comes with L12
       return;
     }
     view = toView(data);
@@ -80,9 +99,18 @@
           throwOnError: true
         })
     });
-    const { createImageEngine } = await import('#lib/reader/engines/images.ts');
-    if (left || !host) return;
-    engine = createImageEngine({ renew });
+    try {
+      const registry = defaultRegistry({ browser: browser === undefined ? detectBrowser(navigator) : browser, renew });
+      const found = await registry.engineFor(data.kind === 'epub' ? EPUB_TYPE : (view.pages[0]?.mediaType ?? ''));
+      if (left || !host) {
+        found.destroy();
+        return;
+      }
+      engine = found;
+    } catch (e) {
+      unsupported = e instanceof EngineRefusedError && e.reason === 'browser' ? 'browser' : 'format';
+      return;
+    }
     stops = [
       engine.onLocator((locator) => {
         at = locator;
@@ -93,7 +121,7 @@
       engine.onError((e) => (failed = e.kind === 'undisplayable' ? 'display' : 'load'))
     ];
     await engine.open(view, host);
-    at = { v: 1, type: 'page', index: 0, count: view.pages.length };
+    if (view.kind === 'pages') at = { v: 1, type: 'page', index: 0, count: view.pages.length };
   }
 
   function turn(action: 'next' | 'previous'): void {
@@ -154,7 +182,13 @@
   {#if problem}
     <ProblemCard {problem} level={1} />
   {:else if unsupported}
-    <p role="alert">{t('reader.unsupported')}</p>
+    <p role="alert">
+      {unsupported === 'policy'
+        ? t('reader.csp_refused')
+        : unsupported === 'browser'
+          ? t('reader.browser_unsupported')
+          : t('reader.unsupported')}
+    </p>
   {:else}
     <header bind:this={toolbar} role="group" aria-label={t('reader.toolbar')}>
       <button type="button" onclick={() => history.back()}>{t('reader.close')}</button>

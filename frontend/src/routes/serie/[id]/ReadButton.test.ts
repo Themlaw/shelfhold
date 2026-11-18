@@ -64,11 +64,12 @@ describe('the read button of the series sheet', () => {
   });
 
   // req: EF-UX-006
-  it('offers nothing for a book that has no reader yet', async () => {
+  it('offers an EPUB like any book, through a full navigation to the reader (its own page, its own policy)', async () => {
     server.use(answer(() => HttpResponse.json({ ...publication('full'), kind: 'epub', pages: [] })));
     render(ReadButton, { unitId: 'U1' });
-    await new Promise((resolve) => setTimeout(resolve, 100));
-    expect(screen.queryByRole('link')).toBeNull();
+    const link = await screen.findByRole('link', { name: 'Lire' });
+    expect(link).toHaveAttribute('href', '/lire/unit/U1');
+    expect(link).toHaveAttribute('data-sveltekit-reload');
   });
 
   // req: EF-UX-006

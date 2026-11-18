@@ -294,9 +294,9 @@ describe('the reader of images', () => {
   // req: ENF-SEC-004
   it('the reader screen never writes markup: no `@html`, no `innerHTML`', async () => {
     const { readFileSync, readdirSync } = await import('node:fs');
-    const dir = new URL('./', import.meta.url);
+    const dir = `${process.cwd()}/src/reader/`;
     for (const name of readdirSync(dir).filter((n) => n.endsWith('.svelte') || (n.endsWith('.ts') && !n.endsWith('.test.ts')))) {
-      const text = readFileSync(new URL(name, dir), 'utf8');
+      const text = readFileSync(dir + name, 'utf8');
       expect(text, name).not.toMatch(/@html|innerHTML|outerHTML|insertAdjacentHTML|document\.write/);
     }
   });

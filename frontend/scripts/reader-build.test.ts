@@ -49,10 +49,16 @@ describe('the build of the reader', () => {
   it('holds no PDF, MOBI, FB2 or comic-book chunk, no speech and no footnote mover', () => {
     const files = walk(out);
     const names = files.map((f) => f.slice(out.length)).join('\n');
-    expect(names).not.toMatch(/pdf|mobi|fb2|comic|fflate|tts|footnotes|quote-image|opds|dict/i);
+    expect(names).not.toMatch(/pdf|mobi|fb2|comic|fflate|zip|tts|footnotes|quote-image|opds|dict/i);
     for (const file of files.filter((f) => f.endsWith('.js'))) {
       const text = readFileSync(file, 'utf8');
-      expect(text, file).not.toMatch(/makePDF|pdfjs|makeFB2|makeComicBook|isMOBI|x-mobipocket|fictionbook|FootnoteHandler|SSML|quote-image/);
+      if (/_shelfhold-foliate-not-read/.test(file)) {
+        // the one module that stands in for every format that is not read: a few bytes that throw
+        expect(text.length, file).toBeLessThan(600);
+        expect(text).toContain('is not read by the reader of Shelfhold');
+        continue;
+      }
+      expect(text, file).not.toMatch(/getDocument|pdfjs|gribuser|PalmDOC|BOOKMOBI|FictionBook|SpeechSynthesis|FootnoteHandler|SSML|quote-image/);
     }
   });
 

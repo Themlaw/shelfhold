@@ -7,7 +7,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { kitCsp } from '../../../scripts/csp.ts';
+import { kitCsp, readerCsp } from '../../../scripts/csp.ts';
 import type { Locator, PublicationView } from './engine.ts';
 import { createImageEngine } from './engines/images.ts';
 
@@ -98,13 +98,13 @@ describe('the review of the image reader (L10)', () => {
   // with every image refused.
   // req: ENF-SEC-004
   it('the policy of the page the reader mounts in lets its blob: images load', () => {
-    const here = fileURLToPath(import.meta.url);
-    const appHtml = readFileSync(resolve(here, '../../../app.html'), 'utf-8'); // the SPA's shell
-    const built = Object.entries(kitCsp(appHtml))
+    // L12: the reader is its own entry, and the policy of that page is the one that counts
+    const page = `<!doctype html><head><script>import('/reader-entry/assets/main.js');</script></head><body></body>`;
+    expect(imageSources(Object.entries(readerCsp(page)).map(([name, sources]) => `${name} ${sources.join(' ')}`).join('; '))).toEqual(["'self'", 'blob:']);
+    const spa = Object.entries(kitCsp(readFileSync(resolve(fileURLToPath(import.meta.url), '../../../app.html'), 'utf-8')))
       .map(([name, sources]) => `${name} ${sources.join(' ')}`)
       .join('; ');
-    expect(built).toContain('default-src'); // what the build carries on every page it serves
-    expect(imageSources(built)).toContain('blob:'); // red: 'self' alone, and no img-src at all
+    expect(imageSources(spa)).not.toContain('blob:'); // nothing of the SPA draws one
   });
 
   // req: EF-LEC-001 — the control of the proof below: the manifest of the server, read page by

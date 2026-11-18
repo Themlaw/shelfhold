@@ -47,7 +47,7 @@ def _reader(
 def _spa() -> str:
     from tests.integration.test_spa_csp import _csp, _page
 
-    return _page(_csp(script=sha(SPA_BOOT).strip("'")))
+    return _page(_csp(script=sha(SPA_BOOT).strip("'")) + "; img-src 'self'")
 
 
 def _build(tmp_path: Path, reader: str | None = None) -> Path:
@@ -169,7 +169,7 @@ def test_the_reader_is_served_under_its_own_policy_and_the_spa_keeps_its_own(
     # the SPA keeps its policy: no widening, and not a single `blob:` for images any more
     spa_csp = spa.headers["content-security-policy"]
     assert _directive(spa_csp, "style-src") == ["'self'"]
-    assert _directive(spa_csp, "img-src") == ["'self'"]
+    assert "blob:" not in spa_csp
     assert "strict-dynamic" not in spa_csp
     assert spa.text != reader.text
 

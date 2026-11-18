@@ -59,8 +59,8 @@ describe('SPA CSP', () => {
   });
 
   // req: ENF-SEC-004
-  it('lets the reader draw its blob: pages, and admits no other image source', () => {
-    expect(kitCsp(appHtml)['img-src']).toEqual(["'self'", 'blob:']); // not data:, not a host, not *
+  it('admits images of its own origin only: the reader draws its blob: pages in its own entry (L12)', () => {
+    expect(kitCsp(appHtml)['img-src']).toEqual(["'self'"]); // not blob:, not data:, not a host, not *
   });
 
   // req: ENF-SEC-004

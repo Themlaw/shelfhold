@@ -3,7 +3,7 @@
 import { ESLint } from 'eslint';
 import { describe, expect, it } from 'vitest';
 
-const eslint = new ESLint({ cwd: new URL('..', import.meta.url).pathname });
+const eslint = new ESLint({ cwd: process.cwd() });
 const messages = async (code: string, filePath: string) => {
   const [result] = await eslint.lintText(code, { filePath });
   return result!.messages.filter((m) => m.ruleId === 'no-restricted-imports' || m.ruleId === 'no-restricted-syntax');
@@ -23,7 +23,7 @@ describe('foliate is only imported by its adapter', () => {
   // req: ENF-SEC-004
   for (const line of imports) {
     it(`refuses ${line} anywhere else`, async () => {
-      for (const file of ['src/lib/reader/engines/images.ts', 'src/lib/reader/filter.ts', 'src/reader/main.ts', 'src/routes/page.ts']) {
+      for (const file of ['src/lib/reader/engines/images.ts', 'src/lib/reader/filter.ts', 'src/lib/reader/registry.ts', 'src/routes/page.ts']) {
         expect((await messages(line, file)).length, `${file}: ${line}`).toBeGreaterThan(0);
       }
     });
