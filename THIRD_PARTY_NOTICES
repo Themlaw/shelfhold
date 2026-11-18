@@ -48,7 +48,9 @@ authors; the reader loads fflate and zip.js only (pdf.js is not registered in M5
 
 fflate 0.8.2 (vendor/fflate.js)
   https://github.com/101arrowz/fflate
-  Licence: MIT. Copyright (c) Arjun Barrett (upstream LICENSE, read 2026-11-18).
+  Licence: MIT. Copyright (c) 2023 Arjun Barrett (upstream LICENSE, read 2026-11-18). The upstream
+  repository now carries a 2026 notice; the bundle has no header, its version is that of
+  foliate-js's package-lock (not rebuilt).
 
 zip.js 2.8.22 (vendor/zip.js)
   https://github.com/gildas-lormeau/zip.js
@@ -61,8 +63,9 @@ pdf.js 5.5.207 (vendor/pdfjs/)
   of vendor/pdfjs/pdf.mjs and vendor/pdfjs/pdf.worker.mjs.
   Not loaded by Shelfhold in M5. Companion data under vendor/pdfjs/:
     cmaps/              Adobe Systems Incorporated, BSD-3-Clause style licence (cmaps/LICENSE)
-    standard_fonts/     Foxit fonts (BSD-3-Clause style, standard_fonts/LICENSE_FOXIT) and
-                        Liberation fonts (SIL Open Font License 1.1,
+    standard_fonts/     Foxit fonts (BSD-3-Clause style, copyright PDFium Authors,
+                        standard_fonts/LICENSE_FOXIT) and Liberation fonts (SIL Open Font
+                        License 1.1, copyright Google Corporation 2010 and Red Hat 2012,
                         standard_fonts/LICENSE_LIBERATION)
 
 Each licence text is in the submodule, next to the file it covers.

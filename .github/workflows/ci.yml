@@ -81,6 +81,10 @@ jobs:
               - '.github/workflows/ci.yml'
             unit_tests:
               - 'backend/tests/unit/**'
+              - 'tools/check_submodule_pin.py'
+              - '.gitmodules'
+              - 'THIRD_PARTY_NOTICES'
+              - 'docs/dependencies.md'
             integration_tests:
               - 'backend/tests/integration/**'
             golden_tests:
@@ -100,6 +104,8 @@ jobs:
             frontend:
               - 'frontend/**'
               - 'open-api/**'
+              - 'tools/check_submodule_pin.py'
+              - '.gitmodules'
               - '.github/workflows/ci.yml'
             openapi:
               - 'backend/**'
