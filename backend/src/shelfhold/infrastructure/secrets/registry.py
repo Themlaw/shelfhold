@@ -8,6 +8,7 @@ import sqlite3
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Final
 
 import sqlalchemy as sa
 from sqlalchemy import Connection
@@ -107,13 +108,46 @@ def kids_in_use(connection: Connection) -> set[str]:
         used |= set(
             connection.execute(sa.select(column).where(column.is_not(None)).distinct()).scalars()
         )
-    return used
+    return used | snapshot_kids_in_use(connection)
 
 
 def stale_row_ids(connection: Connection, sealed: SealedTable, active_kid: str) -> list[str]:
     column = sealed.table.c.secret_kid
     statement = sa.select(sealed.pk).where(column.is_not(None), column != active_kid)
     return [str(value) for value in connection.execute(statement.order_by(sealed.pk)).scalars()]
+
+
+# The sensitive fields of an upstream snapshot are sealed inside its payload, under one key of the
+# JSON document: the row has no secret columns, so the discovery above cannot see it. The
+# rotation, the retirement and the start-up diagnostic look after it here (J-SEC-1).
+SNAPSHOT_TABLE: Final = "upstream_snapshot"
+SNAPSHOT_ENVELOPE_KEY: Final = "$sealed"
+_snapshot = metadata.tables[SNAPSHOT_TABLE]
+
+
+def envelope_path(field: str) -> str:
+    """The JSON path of one field of the sealed envelope inside a snapshot payload."""
+    return f'$."{SNAPSHOT_ENVELOPE_KEY}".{field}'
+
+
+def snapshot_kids_in_use(connection: Connection) -> set[str]:
+    """The kids the sealed envelopes of snapshots use: a rotation interrupted before it reached
+    them leaves a retired key there, and that key cannot be dropped."""
+    kid = sa.func.json_extract(_snapshot.c.payload, envelope_path("kid"))
+    return set(connection.execute(sa.select(kid).where(kid.is_not(None)).distinct()).scalars())
+
+
+def stale_snapshot_ids(connection: Connection, active_kid: str) -> list[str]:
+    """The snapshots whose sealed envelope is not under `active_kid`, oldest id first."""
+    kid = sa.func.json_extract(_snapshot.c.payload, envelope_path("kid"))
+    statement = sa.select(_snapshot.c.id).where(kid.is_not(None), kid != active_kid)
+    ordered = statement.order_by(_snapshot.c.id)
+    return [str(value) for value in connection.execute(ordered).scalars()]
+
+
+def snapshot_table() -> sa.Table:
+    """The table whose payloads carry a sealed envelope (for the rotation's own transaction)."""
+    return _snapshot
 
 
 def _read_only(database_path: Path) -> sqlite3.Connection:
@@ -171,6 +205,15 @@ def rows_not_on_key(database_path: Path, active_kid: str) -> int:
                 active_kid,
             )
             total += int(row[0]) if isinstance(row, tuple) else 0
+        # the sealed envelopes inside snapshot payloads are on the same account (J-SEC-1)
+        row = _first_row(
+            connection,
+            f'SELECT count(*) FROM "{SNAPSHOT_TABLE}" WHERE json_extract(payload, '  # noqa: S608
+            f"'{envelope_path('kid')}') IS NOT NULL "
+            f"AND json_extract(payload, '{envelope_path('kid')}') <> ?",
+            active_kid,
+        )
+        total += int(row[0]) if isinstance(row, tuple) else 0
         return total
     finally:
         connection.close()

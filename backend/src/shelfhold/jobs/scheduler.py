@@ -17,6 +17,7 @@ from typing import Any, Protocol
 import sqlalchemy as sa
 from sqlalchemy import Engine
 
+from shelfhold.events.bus import check_payload
 from shelfhold.infrastructure.clock import Clock
 from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.freeze import FreezeState
@@ -252,11 +253,13 @@ class Scheduler:
                 .values(next_due_at=due, window=_window_json(span))
             ).rowcount
             if won:
+                payload: dict[str, object] = {"job_kind": row.job_kind}  # never the scope: text
+                check_payload(payload, "ops.window_missed")  # the rule of the bus
                 conn.execute(
                     sa.insert(platform.event).values(
                         type="ops.window_missed",
                         schema_version=1,
-                        payload={"job_kind": row.job_kind, "scope_key": row.scope_key},
+                        payload=payload,
                         occurred_at=now,
                         visibility="ops",
                     )
