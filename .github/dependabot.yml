@@ -68,3 +68,14 @@ updates:
     groups:
       npm-minor-patch:
         update-types: [minor, patch]
+
+  # foliate-js (frontend/vendor/foliate-js): a proposal, never a decision. The pull request stays
+  # red until a person updates docs/dependencies.md and THIRD_PARTY_NOTICES and reviews the diff
+  # (rule in docs/dependencies.md). The reader code is untrusted-content handling: monthly, 14 days.
+  - package-ecosystem: gitsubmodule
+    directory: /
+    schedule:
+      interval: monthly
+    cooldown:
+      default-days: 14
+    open-pull-requests-limit: 1
