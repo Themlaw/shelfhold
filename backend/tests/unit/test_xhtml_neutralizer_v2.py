@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import re
 from collections.abc import Iterator
-from xml.etree import ElementTree as ET
 
 import pytest
 from hypothesis import given, settings
@@ -20,6 +19,7 @@ from shelfhold.infrastructure.content_trust import (
     NeutralizationError,
     neutralize,
 )
+from shelfhold.infrastructure.xml import Element, safe_parse_xml
 from shelfhold.sdk.testing.corpus.trapped_epubs import find_active_css, find_active_patterns, xhtml
 
 pytestmark = pytest.mark.req("EF-LEC-005", "ENF-SEC-004")
@@ -29,17 +29,17 @@ SVG = "http://www.w3.org/2000/svg"
 XLINK = "http://www.w3.org/1999/xlink"
 
 
-def _body(data: bytes) -> ET.Element:
-    root = ET.fromstring(data)
+def _body(data: bytes) -> Element:
+    root = safe_parse_xml(data)
     (body,) = root.findall(f"{{{XHTML}}}body")
     return body
 
 
-def _local(el: ET.Element) -> str:
+def _local(el: Element) -> str:
     return el.tag.rsplit("}", 1)[-1]
 
 
-def _walk(el: ET.Element) -> Iterator[ET.Element]:
+def _walk(el: Element) -> Iterator[Element]:
     yield el
     for child in el:
         yield from _walk(child)
@@ -108,7 +108,9 @@ def test_the_text_around_a_removed_element_stays_in_two_separate_nodes() -> None
 
 
 def test_the_content_of_a_removed_element_goes_with_it() -> None:
-    out = neutralize(xhtml("<object data='a'><p>kept?</p></object><iframe>kept too?</iframe>"), "xhtml")
+    out = neutralize(
+        xhtml("<object data='a'><p>kept?</p></object><iframe>kept too?</iframe>"), "xhtml"
+    )
     assert b"kept" not in out
 
 
@@ -131,8 +133,18 @@ def test_nested_removal_keeps_every_ancestor_and_sibling_rank() -> None:
 )
 def test_the_inert_element_is_one_the_parent_accepts(parent: str, inert: str) -> None:
     """A `span` in a table would be moved by an HTML parser: the rank would not be the same."""
-    wrap = {"table": "{}", "tbody": "<table><tbody>{}</tbody></table>", "tr": "<table><tbody><tr>{}</tr></tbody></table>", "colgroup": "<table><colgroup>{}</colgroup></table>", "ul": "<ul>{}</ul>"}[parent]
-    inner = wrap.format("<script>1</script>") if parent != "table" else "<table><script>1</script></table>"
+    wrap = {
+        "table": "{}",
+        "tbody": "<table><tbody>{}</tbody></table>",
+        "tr": "<table><tbody><tr>{}</tr></tbody></table>",
+        "colgroup": "<table><colgroup>{}</colgroup></table>",
+        "ul": "<ul>{}</ul>",
+    }[parent]
+    inner = (
+        wrap.format("<script>1</script>")
+        if parent != "table"
+        else "<table><script>1</script></table>"
+    )
     out = neutralize(xhtml(inner), "xhtml")
     found = [e for e in _walk(_body(out)) if _local(e) == parent and len(e)]
     assert found, out
@@ -145,7 +157,7 @@ def test_svg_element_removed_is_replaced_by_an_inert_group() -> None:
         '<set attributeName="href" to="javascript:alert(1)"/><circle r="1"/></svg>'
     ).encode()
     out = neutralize(svg, "svg")
-    root = ET.fromstring(out)
+    root = safe_parse_xml(out)
     assert [_local(c) for c in root] == ["rect", "g", "circle"]
     assert find_active_patterns(out) == []
 
@@ -153,7 +165,19 @@ def test_svg_element_removed_is_replaced_by_an_inert_group() -> None:
 @settings(max_examples=60, deadline=None)
 @given(
     st.lists(
-        st.sampled_from(["<p>a</p>", "<h2>t</h2>", "<script>1</script>", "<form/>", "<iframe/>", "<object/>", "<base href='a'/>", "<ul><li>a</li></ul>", "<div><script/><b>x</b></div>"]),
+        st.sampled_from(
+            [
+                "<p>a</p>",
+                "<h2>t</h2>",
+                "<script>1</script>",
+                "<form/>",
+                "<iframe/>",
+                "<object/>",
+                "<base href='a'/>",
+                "<ul><li>a</li></ul>",
+                "<div><script/><b>x</b></div>",
+            ]
+        ),
         min_size=0,
         max_size=12,
     )
@@ -224,7 +248,24 @@ def test_content_filter_whitelist_corpus(name: str) -> None:
     assert find_active_patterns(out) == [], out
     assert find_active_css(out) == [], out
     text = out.decode("utf-8")
-    for needle in ("javascript:", "e.example", "srcdoc", "/content/", "/_app/", "/api/", "<script", "http-equiv", "<base", "<form", "<iframe", "<object", "<embed", "formaction", " ping=", "annotation-xml"):
+    for needle in (
+        "javascript:",
+        "e.example",
+        "srcdoc",
+        "/content/",
+        "/_app/",
+        "/api/",
+        "<script",
+        "http-equiv",
+        "<base",
+        "<form",
+        "<iframe",
+        "<object",
+        "<embed",
+        "formaction",
+        " ping=",
+        "annotation-xml",
+    ):
         assert needle not in text.lower().replace("&#10;", ""), (name, needle)
     assert re.search(r"\son\w+=", text) is None
     # the page is still a page: its paragraph, when there is one, is where it was
@@ -234,9 +275,12 @@ def test_content_filter_whitelist_corpus(name: str) -> None:
 
 def test_removed_elements_in_the_head_leave_no_inert_element() -> None:
     """The head is not walked by a reading position: no placeholder there."""
-    document = xhtml("<p>a</p>", head='<base href="https://e.example/"/><meta http-equiv="refresh" content="1"/><script>1</script>')
+    document = xhtml(
+        "<p>a</p>",
+        head='<base href="https://e.example/"/><meta http-equiv="refresh" content="1"/><script>1</script>',
+    )
     out = neutralize(document, "xhtml")
-    head = ET.fromstring(out).find(f"{{{XHTML}}}head")
+    head = safe_parse_xml(out).find(f"{{{XHTML}}}head")
     assert head is not None and [_local(c) for c in head] == ["title"]
 
 
@@ -248,7 +292,7 @@ def test_stylesheet_with_remote_import_and_url_is_cut_rule_by_rule() -> None:
 
 def test_a_lying_manifest_does_not_change_what_the_neutralizer_does_with_a_page() -> None:
     """The neutralizer works on the kind the server chose, never on the media type of the OPF."""
-    page = xhtml('<script>1</script><p>a</p>')
+    page = xhtml("<script>1</script><p>a</p>")
     assert neutralize(page, "xhtml") == neutralize(page, "xhtml")
     with pytest.raises(NeutralizationError):
         neutralize(b"<html><body><script>1</script></body></html>", "svg")

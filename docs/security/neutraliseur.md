@@ -1,11 +1,11 @@
-# Le neutraliseur de XHTML : `xhtml-neutralizer@v1`
+# Le neutraliseur de XHTML : `xhtml-neutralizer@v2`
 
 Frontière de confiance du **corps** des fichiers (EF-BIB-051, ENF-SEC-015, ADR-0047). Un EPUB dont la source est `untrusted` (service connecté qui récupère du web, flux OPDS de tiers, dossier d'import non qualifié) n'est jamais exporté tel quel : la destination reçoit un **dérivé**, produit par la fonction décrite ici. Le lecteur de livres de Kavita injecte le XHTML sans assainissement et garde ses jetons dans `localStorage` ; la défense ne repose donc jamais sur la destination.
 
 ## Ce qu'est la fonction
 
 - Une seule fonction, `neutralize(data, kind)` (`infrastructure/content_trust/xhtml_neutralizer.py`), avec `kind` parmi `xhtml`, `svg` et `css`. Elle est **pure et déterministe** : mêmes octets en entrée, mêmes octets en sortie. Aucune horloge, aucun réseau, aucun état global.
-- Elle est **versionnée** (`NEUTRALIZER_VERSION`, `derived_by = xhtml-neutralizer@v1`). Corriger un contournement, c'est publier `@v2` : la version fait partie de l'identité du dérivé, ce qui permet de tout régénérer (migration explicite, depuis l'original conservé dans `/store`, `derived_chain` tenue ; lot L03).
+- Elle est **versionnée** (`NEUTRALIZER_VERSION`, `derived_by = xhtml-neutralizer@v2`). Corriger un contournement, c'est publier la version suivante : la version fait partie de l'identité du dérivé, ce qui permet de tout régénérer (migration explicite, depuis l'original conservé dans `/store`, `derived_chain` tenue ; lot L03).
 - `epub_scan.neutralize_epub(source, out)` lit l'archive et écrit le dérivé. Il renvoie `derived_by`, `derived_hash`, `derived_hash_by` (`content-hash@2`) et le même hash calculé sur l'original (égaux si rien n'a changé).
 - Aucun paramètre ne dit « cette source est de confiance » : un tatouage trouvé par heuristique (EF-BIB-041) ne dispense jamais du neutraliseur. Seule l'attestation d'achat (`publisher`) en dispense, et ce choix se fait en amont, dans le pipeline (L03), jamais ici.
 - nh3 n'est appelé sur du XHTML d'EPUB **que** par ce module (contrat `epub-derivative-single-producer`).
@@ -14,7 +14,9 @@ Frontière de confiance du **corps** des fichiers (EF-BIB-051, ENF-SEC-015, ADR-
 
 1. Le document est lu par `safe_parse_xml` (ni DTD, ni entité, plafonds de taille, de profondeur et de nombre d'éléments). Un `DOCTYPE` XHTML simple, sans sous-ensemble interne, est retiré et ses entités HTML nommées (`&nbsp;`) deviennent numériques ; tout autre DTD (entité externe, XXE, billion laughs, entité paramètre) est refusé.
 2. Le résultat n'est pas l'entrée amputée : c'est un **nouveau document**, écrit depuis l'arbre, élément par élément, selon une liste blanche. Commentaires, instructions de traitement et sections CDATA ne sont jamais recopiés (un lecteur qui lit la page comme du HTML les voit autrement qu'un analyseur XML : `<![CDATA[ > <script>…` cache un script).
-3. Un élément hors liste blanche est **déballé** (son texte reste) ; un élément dangereux est **supprimé avec son sous-arbre** (`script`, `iframe`, `object`, `embed`, `form` et ses contrôles, `base`, `foreignObject`, `animate*`, `set`, `video`, `audio`, `math`, `noscript`, `template`…), quel que soit son espace de noms et sa casse (`SCRIPT`, `x:script`, `svg:script`).
+3. Un élément hors liste blanche est **déballé** (son texte reste) ; un élément dangereux est **supprimé avec son sous-arbre et remplacé, à la même place, par un élément inerte** (voir plus bas) (`script`, `iframe`, `object`, `embed`, `form` et ses contrôles, `base`, `foreignObject`, `animate*`, `set`, `video`, `audio`, `math`, `noscript`, `template`…), quel que soit son espace de noms et sa casse (`SCRIPT`, `x:script`, `svg:script`).
+   - **Élément inerte (depuis `@v2`, ADR-0055).** Un élément retiré du corps laisse un élément vide, sans attribut, au même rang : `span`, ou celui que le parent accepte (`tr` dans un tableau, `td` dans une ligne, `col` dans un groupe de colonnes, `g` dans un SVG). Une position de lecture (un CFI EPUB) compte les frères d'un nœud : sans cette règle, retirer un script déplacerait toutes les positions qui le suivent, d'une version à l'autre. Le texte autour reste en deux nœuds distincts ; l'en-tête n'a pas de remplaçant. Le seul cas qui décale encore des rangs est l'élément hors liste blanche **déballé** (ses enfants montent d'un niveau).
+   - **Version du filtre.** `CONTENT_FILTER` (`content-filter@2`) est le champ `filter` du locator stocké : une position écrite sous une autre version est recalée (`approximate`) ou signalée, jamais déplacée en silence.
 4. Les attributs sont filtrés par liste blanche, après une règle générale : tout `on*` est supprimé. Les URL sont jugées sur une copie « aplatie » (sans caractère de contrôle, d'espace ou invisible, en minuscules, `\` lu comme `/`), comme le fait un navigateur, quelle que soit la façon dont les entités l'ont écrite.
    - sont conservés : les références **relatives** au paquet ; sur les images, `data:image/{png,jpeg,gif,webp,avif};base64` ;
    - sont supprimés : `javascript:`, `vbscript:`, `data:` actif, tout autre schéma, `//hôte`, les chemins enracinés (`/…`) ;
@@ -45,12 +47,13 @@ Frontière de confiance du **corps** des fichiers (EF-BIB-051, ENF-SEC-015, ADR-
 - Un EPUB réel avec des fichiers hors liste (`.txt`, `.plist`, `.DS_Store`, audio) est refusé en entier : c'est le prix de la liste blanche positive.
 - Une référence relative qui remonte au-delà de la racine du paquet (`../../…`) n'est pas bornée ici : la fonction ne connaît pas le chemin de l'entrée.
 - Le MathML est supprimé ; l'audio et la vidéo aussi.
+- Un dérivé régénéré **depuis le dérivé rangé** (sans `/store`) ne retrouve pas les éléments inertes d'un dérivé `@v1` : le texte et l'ordre restent, les rangs d'une position EPUB ne reviennent pas. Garder `/store` évite ce cas.
 - `content-hash@2` (hash d'un EPUB sans son OPF) est défini dans `epub_scan.py` ; le lot qui fournit le hash du contenu EPUB (L09) doit l'adopter tel quel ou changer la version.
 
 ## Où le dérivé est produit et servi (M2 L03)
 
 - À l'ingestion d'un EPUB de source `untrusted` (ou sans liaison lisible) : dérivé vers `/library`, original vers `/store/untrusted/`. Rien d'autre que le dérivé n'est lisible par une destination.
 - Un EPUB refusé n'a ni dérivé ni original rangé : l'Unité est en quarantaine avec la raison.
-- Après une mise à jour de sécurité du neutraliseur : `shelfhold content reneutralize` (aperçu), puis `--confirm <empreinte>`. Il repart de l'original, sinon du dérivé rangé, et garde l'ancienne génération dans `derived_chain`.
+- Après une mise à jour du neutraliseur (le passage `@v1` vers `@v2` en est la migration nommée, ENF-OPS-021 ; `test_neutralizer_v2_migration_regenerates_derivatives`) : `shelfhold content reneutralize` (aperçu), puis `--confirm <empreinte>`. Une nouvelle version ne réécrit jamais rien d'elle-même. Il repart de l'original, sinon du dérivé rangé, et garde l'ancienne génération dans `derived_chain`.
 - Sans `/store`, seul le dérivé est gardé (avertissement `content.original_not_kept`) : une correction du neutraliseur ne repart alors que du dérivé.
 - Le rapport d'adoption signale les EPUB déjà présents qui contiennent du contenu actif ; il ne les modifie pas.

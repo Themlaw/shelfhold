@@ -41,7 +41,10 @@ symbols = [
 category = "unwired-m5"
 reason = "2026-11-14 (M3 L56, D9): `content_response` serves untrusted content under a sandbox (B1). M3 serves no content: reading goes through Kavita, and the reader of Shelfhold is M5's. Redated M5 in writing (docs/decisions/M3.md). The diagnostic bundle is wired by its CLI (M2 L30) and by its download over HTTP (M3 L46); `attachment_disposition` left this entry with M3 L40. The `?since=` tokens left this entry with M3 L11."
 until = "M5"
+# 2026-11-18 (M5 L05b): `CONTENT_FILTER` (`content-filter@2`, the `filter` field of a stored locator)
+# is written by the neutralizer; its first reader is the locator of L07 (reading positions).
 symbols = [
+  "shelfhold.infrastructure.content_trust.xhtml_neutralizer:CONTENT_FILTER",
   "shelfhold.interfaces.http_api.content:content_response",
 ]
 

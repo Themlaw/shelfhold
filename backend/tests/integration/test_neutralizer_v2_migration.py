@@ -29,7 +29,9 @@ from tests.null_tombstones import NONE_PURGED
 pytestmark = pytest.mark.req("ENF-OPS-021", "EF-LEC-005")
 
 V1 = "xhtml-neutralizer@v1"
-BOOK = epub_bytes(xhtml("<p>one</p><script>alert(1)</script><p>two</p><form><input/></form><p>three</p>"))
+BOOK = epub_bytes(
+    xhtml("<p>one</p><script>alert(1)</script><p>two</p><form><input/></form><p>three</p>")
+)
 
 
 def neutralize_v1(source: Any, out: Any, **kw: Any) -> Any:
@@ -84,7 +86,7 @@ def test_neutralizer_v2_migration_regenerates_derivatives() -> None:
 
 
 def test_neutralizer_v2_migration_without_original_keeps_the_v1_text() -> None:
-    """From the stored derivative only: the text and the order are kept, the ranks cannot come back."""
+    """From the stored derivative only: text and order are kept, the ranks cannot come back."""
     with lib_env() as env:
         legacy = _ingest_with(env, neutralize_v1, with_store=False)
         plan = Reneutralizer(store(env, with_store=False), engine=env.engine).plan()
@@ -107,10 +109,13 @@ def _ingest_with(env: Any, neutralize: Callable[..., Any], *, with_store: bool =
     dest = str(env.manga / "Book" / "Book.epub")
     staged = env.stage(BOOK, "received.epub")
     UntrustedEpubStore(
-        env.engine, env.fsops, env.locate, env.data,
+        env.engine,
+        env.fsops,
+        env.locate,
+        env.data,
         store_dir=str(env.store) if with_store else None,
         tombstones=NONE_PURGED,
         hold_work=work_lock_for(env.engine, clock=SystemClock(), timeout=0.0),
         neutralize=neutralize,
-    ).ingest(unit_id=env.chain["unit"], variant_id=env.chain["variant"], staged=staged, dest=dest)  # fmt: skip
+    ).ingest(unit_id=env.chain["unit"], variant_id=env.chain["variant"], staged=staged, dest=dest)
     return Path(dest)

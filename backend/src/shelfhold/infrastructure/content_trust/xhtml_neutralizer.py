@@ -1,4 +1,4 @@
-"""xhtml-neutralizer@v1: the one producer of the derivative of an `untrusted` EPUB (EF-BIB-051).
+"""xhtml-neutralizer@v2: the one producer of the derivative of an `untrusted` EPUB (EF-BIB-051).
 
 One pure, deterministic function, `neutralize(data, kind)`, over one XHTML page, one SVG image or
 one style sheet. The same bytes always give the same bytes; nothing is read from the clock, the
@@ -16,6 +16,13 @@ How it works, and why it is shaped this way.
   parser, which is how `<![CDATA[ > <script>...` hides a script). What is not on the allowlist is
   unwrapped (its text stays) and what is dangerous is dropped with its whole subtree. Element and
   attribute names are compared in lower case too, since the reader's HTML parser does.
+* **An element that is removed leaves an inert element at its rank** (since v2, ADR-0055): an
+  empty element without attribute (`span`, or the one the parent accepts: `tr` in a table, `td` in
+  a row, `col` in a column group, `g` in an SVG). A reading position (an EPUB CFI) counts the
+  siblings of a node: with nothing left in place, removing a script would move every position
+  after it, from one release to the next. The text around it stays in two separate nodes. The
+  head has no placeholder. What is unwrapped (an element outside the allowlist that is not
+  dangerous) keeps its text and shifts the ranks of its children: that is the one case left.
 * URLs are checked on a squashed copy (no control, space or invisible character, lower case, `\\`
   read as `/`), the way a browser's parser would, whatever entities wrote them. Only relative
   references pass, plus small raster `data:image` URLs on images. Anything with a scheme (a link to
@@ -46,8 +53,11 @@ from shelfhold.infrastructure.xml import Element, UnsafeXmlError, XmlLimits, saf
 
 Kind = Literal["xhtml", "svg", "css"]
 
-NEUTRALIZER_VERSION: Final = 1
+NEUTRALIZER_VERSION: Final = 2
 DERIVED_BY: Final = f"xhtml-neutralizer@v{NEUTRALIZER_VERSION}"
+# The `filter` field of a stored reading position: the version of the filter and of this
+# neutralizer that produced the DOM the position was written on (ADR-0055, locator v1).
+CONTENT_FILTER: Final = f"content-filter@{NEUTRALIZER_VERSION}"
 
 XHTML_NS: Final = "http://www.w3.org/1999/xhtml"
 SVG_NS: Final = "http://www.w3.org/2000/svg"
@@ -298,6 +308,28 @@ def _split(name: str) -> tuple[str | None, str]:
     return None, name
 
 
+_TABLE_PARENTS: Final = frozenset({"table", "tbody", "thead", "tfoot"})
+
+
+def _inert(context: str, parent: str) -> str:
+    """What stands where an element was removed: empty, no attribute, accepted by its parent.
+
+    A `span` inside a table would be moved by an HTML parser, so the rank would not be kept.
+    Nothing in the head (`parent == "head"`): no reading position goes there.
+    """
+    if parent == "head":
+        return ""
+    if context == "svg":
+        return "<g/>"
+    if parent in _TABLE_PARENTS:
+        return "<tr></tr>"
+    if parent == "tr":
+        return "<td></td>"
+    if parent == "colgroup":
+        return "<col/>"
+    return "<span></span>"
+
+
 class _Writer:
     """Walks the parsed tree and writes the allowlisted subset as a new document."""
 
@@ -369,15 +401,20 @@ class _Writer:
         return f"<{qname}{extra}{decl}{body}"
 
     def children(self, el: Element, context: str) -> str:
+        parent = _split(el.tag)[1].lower() if isinstance(el.tag, str) else ""
         parts = [_esc_text(el.text or "")]
         for child in el:
-            parts.append(self.element(child, context))
+            parts.append(self.element(child, context, parent))
             parts.append(_esc_text(child.tail or ""))
         return "".join(parts)
 
-    def element(self, el: Element, context: str) -> str:
-        if not isinstance(el.tag, str):
+    def element(self, el: Element, context: str, parent: str = "") -> str:
+        """The element as written, or the inert element that holds its rank."""
+        if not isinstance(el.tag, str):  # a comment or an instruction is not a sibling
             return ""
+        return self._element(el, context) or _inert(context, parent)
+
+    def _element(self, el: Element, context: str) -> str:
         ns, local = _split(el.tag)
         low = local.lower()
         if low in _DANGEROUS:
@@ -559,7 +596,7 @@ def _head(writer: _Writer, root: Element) -> str:
             if local == "title":
                 parts.append(f"<title>{_esc_text(''.join(child.itertext()))}</title>")
             elif local in ("meta", "link", "style"):
-                parts.append(writer.element(child, "xhtml"))
+                parts.append(writer.element(child, "xhtml", "head"))
     return "".join(parts)
 
 
@@ -613,7 +650,7 @@ def _css(data: bytes) -> bytes:
 
 
 def neutralize(data: bytes, kind: Kind) -> bytes:
-    """The neutralized form of one XHTML page, SVG image or style sheet (`xhtml-neutralizer@v1`).
+    """The neutralized form of one XHTML page, SVG image or style sheet (`xhtml-neutralizer@v2`).
 
     Pure and deterministic. Raises `NeutralizationError` for a document it refuses to touch
     (unsafe XML, wrong root, a disagreement with nh3): the EPUB it belongs to is then not exported.
