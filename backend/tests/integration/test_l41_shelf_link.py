@@ -23,8 +23,14 @@ from tests.fakes.kavita import API_KEY, BASE_URL, FakeKavita, build_fetcher
 from tests.fakes.kavita.server import member
 from tests.fakes.komga import (
     API_KEY as KOMGA_KEY,
+)
+from tests.fakes.komga import (
     BASE_URL as KOMGA_URL,
+)
+from tests.fakes.komga import (
     FakeKomga,
+)
+from tests.fakes.komga import (
     build_fetcher as komga_fetcher,
 )
 from tests.headless_env import headless
@@ -214,7 +220,8 @@ def test_shelf_create_on_a_native_folder_target_links_no_kavita_library(
     boot_check(settings, announce=False)  # the first start creates the keyring, as in production
     with headless(settings, real_linker=True, roots=_roots(settings, tmp_path)) as env:
         env.admin.target_add_native_folder(
-            name="mihon", path_map=[{"local": str(root), "remote": "/manga", "mode": "rw"}],
+            name="mihon",
+            path_map=[{"local": str(root), "remote": "/manga", "mode": "rw"}],
         )
         created = env.admin.shelf_create(name="Adultes", max_age="18+", target="mihon", subpath="K")
         assert created.created

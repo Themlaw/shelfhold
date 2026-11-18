@@ -1111,7 +1111,6 @@ class HeadlessAdmin:
         except OSError:
             _log.warning("headless.shelf_folder_left_behind", name=os.path.basename(local))
 
-
     def _unbind(self, shelf_id: str, destination_id: str, *, shelf_was_new: bool) -> None:
         """A shelf the audit refused leaves nothing behind (nothing was written in Kavita)."""
         with write_transaction(self._engine) as connection:
