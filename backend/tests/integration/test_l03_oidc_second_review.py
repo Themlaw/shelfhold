@@ -67,7 +67,6 @@ def test_oidc_another_sessions_confirmation_is_refused_and_writes_nothing(world:
     assert "oidc.linked" not in world.actions()
 
 
-@pytest.mark.xfail(strict=True)
 def test_oidc_a_refused_theft_leaves_the_holders_link_confirmable(world: World) -> None:
     """A link refused to another session is not the holder's to lose: her confirmation must
     still be hers to give. Today `confirm_link` takes the pending link before it compares the

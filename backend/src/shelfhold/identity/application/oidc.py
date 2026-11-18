@@ -342,12 +342,18 @@ class OidcAuth:
         self, *, binder: str, user_id: str, session_id: str, accept: bool
     ) -> OidcLink | None:
         """Raises `OidcRefusedError` (nothing pending, another session, a session closed since).
-        None: declined. The pending link is used up whatever the answer."""
-        pending = self._flows.take(_digest(binder), now=self._auth.now())
+        None: declined. The conditions are checked **before** the link is used up: a refusal for
+        another session writes nothing and consumes nothing, so a person who shares the browser
+        cannot burn the holder's pending link. Answered by its owner, it is used up whatever the
+        answer."""
+        digest = _digest(binder)
+        pending = self._flows.peek(digest, now=self._auth.now())
         if pending is None:
             raise self._refuse("link_expired", "-", "link")
         if (pending.user_id, pending.session_id) != (user_id, session_id):
             raise self._refuse("link_other_session", "-", "link")
+        if self._flows.take(digest, now=self._auth.now()) is None:  # answered meanwhile
+            raise self._refuse("link_expired", "-", "link")
         if not accept:
             return None
         if not self._store.session_is_live(session_id, now=self._auth.now()):
