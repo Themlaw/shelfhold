@@ -8,8 +8,8 @@ gives the same output, and an invalid, oversized or trapped EPUB is refused with
 own error, never with an exception of the parser or of the archive layer.
 """
 
+import hashlib
 import io
-import random
 import zipfile
 
 import pytest
@@ -200,7 +200,7 @@ def test_kepub_refuses_invalid_or_oversized_epub() -> None:
     # a spine document over the XML cap: refused before it is parsed
     big = (
         b'<html xmlns="http://www.w3.org/1999/xhtml"><body><p>'
-        + random.Random(0).randbytes(9 * 1024 * 1024)
+        + hashlib.shake_256(b"oversized spine document").digest(9 * 1024 * 1024)
         + b"</p></body></html>"
     )
     with pytest.raises(KepubError) as caught:
@@ -222,7 +222,10 @@ def test_kepub_never_resolves_entities() -> None:
     )
     laughs = (
         b'<?xml version="1.0" encoding="utf-8"?>\n'
-        b'<!DOCTYPE html [<!ENTITY a "' + b"ha" * 64 + b'"><!ENTITY b "&a;&a;&a;&a;&a;&a;&a;&a;">]>\n'
+        b'<!DOCTYPE html [<!ENTITY a "'
+        + b"ha" * 64
+        + b'">'
+        + b'<!ENTITY b "&a;&a;&a;&a;&a;&a;&a;&a;">]>\n'
         b'<html xmlns="http://www.w3.org/1999/xhtml"><body><p>&b;</p></body></html>'
     )
     for trapped in (external, laughs):
