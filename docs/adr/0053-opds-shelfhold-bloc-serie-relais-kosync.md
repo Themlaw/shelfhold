@@ -317,3 +317,9 @@ Dans la source de KOReader, `update_progress` ne compte comme réussi que le sta
 
 ## Acceptation (2026-11-15)
 Acceptée par le mainteneur, qui a demandé cette voie, avec la révision qui répond au contradicteur. Points tranchés par défaut, révisables : L10 passe en « Plus tard » (EF-EXP-019 redatée) ; plafond de 500 Mio par partie avec découpage « (1 sur N) » ; secret de jeton saisi une fois sur la liseuse ; EPUB hors du relais (L51). Ordre : le premier incrément (L46, L46b, L48, L49a) passe dès que L12 et L13 sont fusionnés ; L50 n'ouvre qu'après les vérifications sur appareil réel listées plus haut.
+
+## Amendement du 2026-11-17 (M5, ADR-0055)
+
+- **L'ADR prime sur 01 et 03 pour kosync** (D6) : 01 (EF-LEC-009) et 03 sont alignés sur les amendements du 2026-11-16 (`PUT` toujours `200`, `GET` non résolu `200 {}`, `metadata` ignoré, aucun `409` en HTTP). Les tests de 03 `test_kosync_metadata_fallback_match` et `test_kosync_ambiguous_hash_409` sont renommés `test_kosync_metadata_never_used_to_match` et `test_kosync_ambiguous_hash_never_guesses`.
+- `x-auth-key` est le md5 du secret du **jeton d'appareil** : 02 (§ routes kosync) est corrigé.
+- Le passage d'EPUB (ancien L51, « positions EPUB jamais une ancre de traversée ») est **repris en M5** par L09.

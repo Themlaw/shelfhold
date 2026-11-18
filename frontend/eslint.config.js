@@ -43,5 +43,16 @@ export default ts.config(
   {
     files: ['src/lib/themes/**', 'src/routes/+layout.ts', 'src/routes/+layout.svelte', 'src/**/*.test.ts'],
     rules: { 'no-restricted-syntax': 'off' }
+  },
+  // M5: foliate-js is imported by the reader engine alone (ENF-SEC-004 volet lecteur).
+  {
+    files: ['src/**/*.{ts,svelte}'],
+    rules: {
+      'no-restricted-imports': ['error', { patterns: ['foliate-js', 'foliate-js/*'] }]
+    }
+  },
+  {
+    files: ['src/lib/reader/engines/foliate.ts'],
+    rules: { 'no-restricted-imports': 'off' }
   }
 );

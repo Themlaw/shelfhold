@@ -1795,6 +1795,7 @@
   "shelfhold.interfaces.http_api.kosync",
   "shelfhold.interfaces.http_api.library",
   "shelfhold.interfaces.http_api.lists",
+  "shelfhold.interfaces.http_api.lite",
   "shelfhold.interfaces.http_api.login",
   "shelfhold.interfaces.http_api.maintenance",
   "shelfhold.interfaces.http_api.me",
