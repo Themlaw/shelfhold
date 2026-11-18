@@ -172,6 +172,8 @@ select = ["E", "F", "W", "I", "B", "UP", "SIM", "S", "RUF", "TID"]
 [tool.ruff.lint.per-file-ignores]
 # the CLI registry discovers its own command modules by name (package-local, never user input)
 "src/shelfhold/interfaces/cli/registry.py" = ["TID251"]
+# the adverse review file is kept as delivered (only its xfail marks were removed)
+"tests/unit/test_l05b_neutralizer_counter_review.py" = ["F401"]
 "src/shelfhold/infrastructure/fsops/**" = ["TID251"]
 "src/shelfhold/infrastructure/migrate.py" = ["TID251"]
 "src/shelfhold/infrastructure/volumes.py" = ["TID251"]
