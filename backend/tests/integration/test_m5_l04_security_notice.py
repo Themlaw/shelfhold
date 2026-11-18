@@ -13,7 +13,7 @@ import sqlalchemy as sa
 
 from shelfhold.config import Settings
 from shelfhold.infrastructure.schema import identity
-from tests.notify_env import MEMBER_ID, Env, PrivateSink, world
+from tests.notify_env import ADMIN_ID, MEMBER_ID, Env, PrivateSink, world
 
 pytestmark = pytest.mark.req("EF-USR-004")
 
@@ -83,7 +83,7 @@ def test_an_unknown_kind_of_notice_says_nothing(settings: Settings) -> None:
 
 def test_the_shared_message_of_a_mixed_digest_omits_the_security_line(settings: Settings) -> None:
     """If a notice ever shares a digest row with other news, the shared text keeps only the news."""
-    with world(settings, private=PrivateSink(users={MEMBER_ID})) as env:
+    with world(settings, private=PrivateSink(users={ADMIN_ID})) as env:
         payload = {
             "items": [
                 {"kind": "outage", "type": "target.unreachable", "start_id": 1, "vis": "ops"},
@@ -91,16 +91,16 @@ def test_the_shared_message_of_a_mixed_digest_omits_the_security_line(settings: 
             ]
         }
         with env.engine.connect() as connection:
-            person = _person(connection)
+            person = _person(connection, ADMIN_ID)
             shared = env.sender._build(connection, person, payload)
             titled = env.sender._build(connection, person, payload, titles=True)
     assert shared is not None and "identity-provider" not in shared.body
     assert titled is not None and "identity-provider" in titled.body
 
 
-def _person(connection: sa.Connection):  # type: ignore[no-untyped-def]
+def _person(connection: sa.Connection, user_id: str):  # type: ignore[no-untyped-def]
     from shelfhold.integrations.notify.service import _person as person
 
-    found = person(connection, MEMBER_ID)
+    found = person(connection, user_id)
     assert found is not None
     return found
