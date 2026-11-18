@@ -33,6 +33,10 @@ Format : [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/). Versionnement
 
 - **Réglage `SHELFHOLD_READING_MAX_PAGES_PER_MINUTE`** : aucun code de production ne le lisait ; la vitesse plausible de lecture garde sa borne de 20 pages par minute dans le code (`DEFAULT_MAX_PAGES_PER_MINUTE`). Le réglage sort de la configuration, de sa référence et du paquet de diagnostic.
 
+### Limites connues
+
+- **Contention de l'API pendant l'export (ENF-PERF-007)** : sur le profil de référence, la liste de la bibliothèque répond **2,3 à 2,5 fois** plus lentement pendant qu'un export de 500 chapitres tourne, parce que l'export est un fil du processus API. Le budget de la spécification reste **×2** (xfail strict au banc `tests/bench/bench_contention.py`) ; une aggravation au-delà de **×3** casse le nightly, et chaque passage enregistre sa mesure. Le fan-out vers le dossier natif (ComicInfo et couverture rendus dans le processus) est mesuré par la même passe. Correctif prévu en M5 : sortir l'export du processus API.
+
 Migration : oui (0091, 0092, 0094, 0095, 0096, 0097 et 0098)
 
 ## 1.1.0-rc.2 - 2026-11-16
