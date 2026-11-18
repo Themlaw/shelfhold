@@ -75,7 +75,11 @@ from shelfhold.identity.domain.device_secret import (
     new_device_credential,
     secret_digest,
 )
-from shelfhold.identity.domain.device_token import device_token, token_principal
+from shelfhold.identity.domain.device_token import (
+    device_token,
+    device_token_is_live,
+    token_principal,
+)
 from shelfhold.identity.domain.reserved import (
     DEFAULT_FRESH_AUTH_S,
     DEFAULT_RESERVED_ROLES,
@@ -1509,11 +1513,9 @@ class LocalAuth:
             self._device_failed(ip, at)
             return None
         now = self.now()
-        if (
-            record.revoked_at is not None
-            or record.device_revoked_at is not None  # a retired device opens nothing (#347 MIN-2)
-            or (record.expires_at is not None and now >= record.expires_at)
-        ):
+        if not device_token_is_live(
+            record.revoked_at, record.device_revoked_at, record.expires_at, now
+        ):  # a retired device opens nothing (#347 MIN-2), same rule as an open stream
             self._device_failed(ip, at)  # the guess had the right shape: counted
             return None
         self._device_throttle.release(ip=ip, account=account, at=at, skip_address=True)

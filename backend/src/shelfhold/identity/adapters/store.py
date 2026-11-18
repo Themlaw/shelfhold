@@ -607,7 +607,7 @@ class SqlIdentityStore:
             request, digest = identity.request, identity.notification_digest
             audit, positions = identity.audit, reading.reading_position
             follow, download = acquisition.follow_request, acquisition.download_request
-            device, account = identity.device_token, identity.destination_account
+            token, account = identity.device_token, identity.destination_account
             notify, listing = identity.notify_destination, identity.request_list_import
             collection, item = catalog.collection, catalog.collection_item
             marker, hint = acquisition.read_marker, acquisition.tracker_hint
@@ -668,9 +668,14 @@ class SqlIdentityStore:
                 # what M4 added (J-FLUX-1). Never a secret: no digest of a token, no sealed column,
                 # no fingerprint; a notice destination is told only as present.
                 "device_tokens": rows(
-                    conn, "device_tokens", device, device.c.subject_user_id == user_id,
+                    conn, "device_tokens", token, token.c.subject_user_id == user_id,
                     "id", "public_id", "name", "expires_at", "last_used_at", "revoked_at",
                     "created_at",
+                ),
+                # M5 L02: the devices are data of the profile; their tokens stay as above
+                "devices": rows(
+                    conn, "devices", _registry, _registry.c.subject_user_id == user_id,
+                    "id", "label", "kind", "created_at", "last_seen_at", "revoked_at",
                 ),
                 "collections": rows(
                     conn, "collections", collection, collection.c.owner_id == user_id,
@@ -1480,7 +1485,7 @@ class SqlIdentityStore:
             )
 
     def revoke_device_token(self, public_id: str, *, now: datetime) -> bool:
-        with self._changing() as conn:
+        with self._changing(immediate=True) as conn:
             held = conn.execute(
                 sa.select(_device.c.device_id).where(_device.c.public_id == public_id)
             ).scalar()

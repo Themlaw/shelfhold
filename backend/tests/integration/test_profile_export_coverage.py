@@ -32,6 +32,7 @@ EXPORTED: dict[str, str] = {
     "webauthn_credential": "passkeys",  # the list of keys, never the key material
     "audit": "audit",
     "device_token": "device_tokens",
+    "device": "devices",  # M5 L02: name, kind and dates; the token behind it stays out
     "collection": "collections",
     "destination_account": "destination_accounts",
     "notify_destination": "notify_destinations",
@@ -54,7 +55,6 @@ EXCLUDED: dict[str, str] = {
     "instance": "the instance row (`maintenance_by`): a state of the host",
     "unit": "`deleted_by` and the like: who acted on a Unit, not data of the person",
     "read_state_push_note": "a note of the push to Kavita, rebuilt by the next pass; no content",
-    "device": "the registry of the e-readers whose tokens stay behind (M5 L02): paired again",
     "oidc_identity": "who of the provider may sign in as her (M5 L03): a credential, linked again",
 }
 

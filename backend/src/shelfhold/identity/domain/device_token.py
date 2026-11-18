@@ -18,6 +18,7 @@ secret is refused from the next request, nothing is paired again.
 """
 
 from dataclasses import dataclass, field
+from datetime import datetime
 from secrets import token_hex
 
 from shelfhold.identity.domain.credentials import Credential, Principal
@@ -60,4 +61,20 @@ def token_principal(token: DeviceToken, *, username: str, role: str, can_rate: b
         credential=Credential.DEVICE_TOKEN,
         key_id=token.token_id,
         can_rate=can_rate,
+    )
+
+
+def device_token_is_live(
+    revoked_at: datetime | None,
+    device_revoked_at: datetime | None,
+    expires_at: datetime | None,
+    now: datetime,
+) -> bool:
+    """The one rule of a device token, for the door and for the streams it opened: not revoked,
+    its device not retired, not past its expiry. A token with no device (a row older than the
+    registry) has `device_revoked_at` None."""
+    return (
+        revoked_at is None
+        and device_revoked_at is None
+        and (expires_at is None or now < expires_at)
     )

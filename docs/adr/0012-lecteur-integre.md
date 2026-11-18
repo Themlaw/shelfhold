@@ -1,12 +1,12 @@
 ---
 status: accepté (livraison M5, rôle secondaire)
 date: 2026-11-02
-amended: 2026-11-02 (passe 1) ; 2026-11-03 (passe 7) ; 2026-11-03 (passe 12)
+amended: 2026-11-02 (passe 1) ; 2026-11-03 (passe 7) ; 2026-11-03 (passe 12) ; 2026-11-17 (M5, ADR-0055)
 decision-makers: mainteneur
 ---
 # ADR-0012 — Lecteur intégré : foliate-js, pdf.js, lecteur manga/webtoon maison
 
-> **Amendée le 2026-11-02 (passe 1).** En cas de divergence, la section « Amendement passe 1 » prévaut sur le texte d'origine, conservé pour l'historique.
+> **Amendée le 2026-11-02 (passe 1).** En cas de divergence, la section « Amendement passe 1 » prévaut sur le texte d'origine, conservé pour l'historique. **Amendée le 2026-11-17 (M5, ADR-0055)** : la section « Amendement M5 » prévaut sur toutes les précédentes pour le rôle du lecteur, le chemin du contenu, le port `ReaderEngine` et le PDF.
 
 ## Contexte et problème
 Le lecteur intégré vient après le noyau d'export (D0b), mais il doit couvrir EPUB (reflow et fixed), PDF, manga paginé RTL et webtoon vertical, avec un contenu non fiable (EPUB scrapés) et des locators Readium (D30).
@@ -89,3 +89,11 @@ M10 (AA4, AA5).
 - **Ancre** : une Œuvre non exportée lue depuis sa copie conservée a une position ancrée sur `content` (ADR-0045) ; le lecteur lit le dérivé neutralisé, jamais l'original `untrusted`.
 
 Source : `deliverables/review/chasseur-trous-passe12.md`, `deliverables/review/explorateur-passe12.md`, `deliverables/review/ARBITRAGES-passe12.md` (passe 12)
+
+## Amendement M5 (2026-11-17, ADR-0055)
+L01 de M5 (D-P1, D-P2, D7). En cas de divergence, cette section prévaut.
+- **Rôle (D-P1, Q22 tranchée)** : lecteur **complet pour le contenu non exporté** (copie conservée, ADR-0028), « Lire un extrait » pour le reste (borné côté serveur, n'écrit jamais de position) ; Kavita reste le lecteur principal. Précise « aperçu et lecture des œuvres non exportées » de la passe 1.
+- **Chemin du contenu (D-P2)** : `/content/*` sur la **même origine** par défaut, avec `Content-Security-Policy: sandbox` sur chaque réponse (`content_response`), qui protège la navigation directe. Le **rendu** lit les octets par `fetch` puis `blob:` ; pour l'EPUB, foliate-js impose `allow-same-origin allow-scripts` à son iframe (WebKit 218086), ce qui **remplace** « iframe `sandbox` sans `allow-scripts` » de la décision d'origine : l'isolation repose sur deux barrières indépendantes, la CSP du lecteur héritée par le `blob:` et un filtre de contenu client en liste blanche (plus le neutraliseur pour un EPUB `untrusted`), et sur le filtre de type de `/content`. **DOMPurify** (décision d'origine, « en plus de nh3 ») est **remplacé** par ce filtre, sans nouvelle dépendance ; la **CSP d'origine** (`img-src 'self' blob: data:`, `style-src 'self' 'unsafe-inline'`) est **remplacée** par celle de l'ADR-0055 (jamais `data:`, `script-src` par hachage et `'strict-dynamic'`). Un EPUB `publisher` est rendu sans aucun script. L'**origine séparée** (`SHELFHOLD_CONTENT_ORIGIN`, réglage de déploiement) est une option documentée, jamais exigée, qui n'isole pas le rendu. Précise « origine/chemin dédié » de la passe 1.
+- **Port `ReaderEngine`** : deux moteurs en M5, le moteur d'images maison (manga paginé, webtoon) et foliate-js (EPUB), ce dernier importé par son seul adaptateur.
+- **PDF (D7)** : aucun moteur PDF en M5 (EF-LEC-004 reste « Plus tard »). La décision de la passe 9 (pdf.js avec `isEvalSupported: false`) est conservée comme garde : un moteur PDF qui ne déclare pas ce garde-fou (`guards`) fait échouer le registre (`test_pdfjs_is_eval_supported_false`).
+- **Conflit de positions (D8)** : seuil de 2 % de progression ; pour l'EPUB sur `totalProgression` seul, pour les supports de pages avec 3 pages au moins (Q47 tranchée). Locator stocké : CFI pour l'EPUB, index de page pour CBZ et PDF.
