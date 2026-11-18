@@ -24,7 +24,6 @@ from shelfhold.identity.application.passkeys import (
     PasskeyRefusedError,
     PasskeyUnavailableError,
 )
-from shelfhold.identity.application.reauth import NEVER
 from shelfhold.identity.application.ports import (
     ApiKeyRecord,
     AuditEntry,
@@ -50,6 +49,7 @@ from shelfhold.identity.application.ports import (
     UserRecord,
 )
 from shelfhold.identity.application.profiles import ProfileService
+from shelfhold.identity.application.reauth import NEVER
 from shelfhold.identity.application.sessions import SessionView, device_label
 from shelfhold.identity.domain.credentials import (
     HARDENED_KEY_MAX_AGE,

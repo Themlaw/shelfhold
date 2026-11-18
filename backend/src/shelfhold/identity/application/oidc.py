@@ -19,22 +19,22 @@ import hashlib
 import ipaddress
 import secrets
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
 from typing import Literal, Protocol
 
 import structlog
 
 from shelfhold.identity.application.ports import IdentityStore, OidcLink
-from shelfhold.identity.application.service import (
-    InvalidCredentialsError,
-    IssuedSession,
-    LocalAuth,
-)
 from shelfhold.identity.application.reauth import (
     DEFAULT_MAX_AGE_S,
     NEVER,
     FreshnessRefusedError,
     check_provider_auth_time,
+)
+from shelfhold.identity.application.service import (
+    InvalidCredentialsError,
+    IssuedSession,
+    LocalAuth,
 )
 from shelfhold.identity.domain.throttle import address_key
 
@@ -354,9 +354,7 @@ class OidcAuth:
         if not secrets.compare_digest(held.sub, claims.sub):
             raise self._refuse("other_subject", ip, "reauth")
         try:
-            fresh = check_provider_auth_time(
-                claims.auth_time, now=now, max_age_s=self._max_age_s
-            )
+            fresh = check_provider_auth_time(claims.auth_time, now=now, max_age_s=self._max_age_s)
         except FreshnessRefusedError as stale:
             raise self._refuse(stale.reason, ip, "reauth") from None
         issued = self._auth.renew_session_from_provider(

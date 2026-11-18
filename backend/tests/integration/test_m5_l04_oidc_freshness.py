@@ -85,7 +85,7 @@ def is_fresh(world: World, browser: TestClient) -> bool:
     """`oidc.link_own` is reserved and asks a fresh session: 200 when it is, 401 when it is not."""
     answer = world.send(browser, "POST", LINK)
     assert answer.status_code in (200, 401), answer.text
-    return answer.status_code == 200
+    return bool(answer.status_code == 200)
 
 
 # --- the reserved action asks the provider ----------------------------------------------------
@@ -156,8 +156,9 @@ def test_oidc_an_auth_time_inside_max_age_is_accepted_and_is_the_freshness(world
     back = world.callback(mum, world.idp.authorize(reauth_url(world, mum)))
     assert back.headers["location"].endswith("?oidc=reauth")
     # the session is as fresh as the provider's own sign-in, not fresher
-    (auth_time,) = db_rows(world.env.settings, "SELECT auth_time FROM session WHERE user_id=?",
-                           world.ids["mum"])[-1:]
+    (auth_time,) = db_rows(
+        world.env.settings, "SELECT auth_time FROM session WHERE user_id=?", world.ids["mum"]
+    )[-1:]
     assert auth_time[0] is not None
     world.env.clock.advance(timedelta(seconds=700))  # 299 + 700 s: past the 900 s allowed
     assert not is_fresh(world, mum)
@@ -204,7 +205,10 @@ def test_oidc_reauth_is_refused_to_a_key(world: World) -> None:
 def test_oidc_reauth_after_the_link_was_removed_is_refused(world: World) -> None:
     mum = signed_in(world)
     url = world.idp.authorize(reauth_url(world, mum))
-    assert world.send(world.admin, "DELETE", f"/api/v1/profiles/{world.ids['mum']}/oidc").status_code == 204
+    assert (
+        world.send(world.admin, "DELETE", f"/api/v1/profiles/{world.ids['mum']}/oidc").status_code
+        == 204
+    )
     back = world.callback(mum, url)
     assert not back.headers["location"].endswith("?oidc=reauth")
     assert world.signed_in_as(mum) is None  # the link was the session's ground
@@ -217,7 +221,8 @@ def test_oidc_reauth_during_a_restore_notice_is_refused(world: World) -> None:
     try:
         with write_transaction(engine) as connection:
             write_notice(
-                connection, RestoreNoticeData(world.env.clock.now().isoformat(), None, 0, 0),
+                connection,
+                RestoreNoticeData(world.env.clock.now().isoformat(), None, 0, 0),
                 keep_existing=False,
             )
     finally:
@@ -264,14 +269,22 @@ def test_oidc_unlink_of_nothing_is_a_plain_answer(world: World) -> None:
 def test_oidc_unlink_attacks(world: World) -> None:
     world.link_admin("mum")
     # IDOR: a member cannot unlink another account, and the admin route is the admin's alone
-    assert world.send(world.dad, "DELETE", f"/api/v1/profiles/{world.ids['mum']}/oidc").status_code == 403
-    assert world.send(world.kid, "DELETE", f"/api/v1/profiles/{world.ids['mum']}/oidc").status_code == 403
+    assert (
+        world.send(world.dad, "DELETE", f"/api/v1/profiles/{world.ids['mum']}/oidc").status_code
+        == 403
+    )
+    assert (
+        world.send(world.kid, "DELETE", f"/api/v1/profiles/{world.ids['mum']}/oidc").status_code
+        == 403
+    )
     assert world.send(world.kid, "DELETE", IDENTITIES).status_code == 403  # a child has none
     assert world.browser("198.51.100.34").delete(IDENTITIES).status_code == 401
     # an API key, whatever its scope
     bearer = api_key(world, "admin")
     bare = world.browser("198.51.100.35")
-    assert bare.delete(f"/api/v1/profiles/{world.ids['mum']}/oidc", headers=bearer).status_code == 403
+    assert (
+        bare.delete(f"/api/v1/profiles/{world.ids['mum']}/oidc", headers=bearer).status_code == 403
+    )
     assert len(world.identities()) == 1
 
 
@@ -300,7 +313,10 @@ def test_oidc_an_admin_cannot_unlink_another_admin(world: World) -> None:
 
     add_profile(world.env, "boss", "admin", "10.0.0.9")
     boss = db_rows(world.env.settings, "SELECT id FROM user WHERE username='boss'")[0][0]
-    assert world.send(world.admin, "DELETE", f"/api/v1/profiles/{boss}/oidc").status_code in (403, 404)
+    assert world.send(world.admin, "DELETE", f"/api/v1/profiles/{boss}/oidc").status_code in (
+        403,
+        404,
+    )
 
 
 # --- telling the holder ------------------------------------------------------------------------
@@ -353,7 +369,8 @@ def test_oidc_restore_acknowledge_lists_the_links_to_check(world: World) -> None
     try:
         with write_transaction(engine) as connection:
             write_notice(
-                connection, RestoreNoticeData(world.env.clock.now().isoformat(), None, 0, 0),
+                connection,
+                RestoreNoticeData(world.env.clock.now().isoformat(), None, 0, 0),
                 keep_existing=False,
             )
         listed = RestoreCredentialsExit(engine, world.env.clock).acknowledge(principal=HOST)
@@ -369,7 +386,8 @@ def test_oidc_restore_waiting_item_names_the_links(world: World) -> None:
     try:
         with write_transaction(engine) as connection:
             write_notice(
-                connection, RestoreNoticeData(world.env.clock.now().isoformat(), None, 0, 0),
+                connection,
+                RestoreNoticeData(world.env.clock.now().isoformat(), None, 0, 0),
                 keep_existing=False,
             )
         (item,) = RestoreCredentialsExit(engine, world.env.clock).waiting()

@@ -55,4 +55,4 @@ def test_an_auth_time_far_in_the_future_is_refused() -> None:
 
 def test_a_naive_moment_is_refused_rather_than_guessed() -> None:
     with pytest.raises(FreshnessRefusedError):
-        check_provider_auth_time(datetime(2026, 11, 18, 11, 59), now=NOW, max_age_s=300)  # noqa: DTZ001
+        check_provider_auth_time(datetime(2026, 11, 18, 11, 59), now=NOW, max_age_s=300)

@@ -22,8 +22,8 @@ from shelfhold.identity.application.ports import (
     NewDeviceToken,
     NewPasskey,
     NewSession,
-    OidcIdentityRecord,
     OidcIdentityListing,
+    OidcIdentityRecord,
     OidcIdentityView,
     OidcLink,
     PasskeyGoneError,
@@ -144,7 +144,9 @@ def _tell(conn: sa.Connection, user_id: str, what: str, now: datetime) -> None:
     if held is None:
         conn.execute(
             sa.insert(table).values(
-                user_id=user_id, due_at=now, payload={"urgent": True, "attempts": 0, "items": [item]}
+                user_id=user_id,
+                due_at=now,
+                payload={"urgent": True, "attempts": 0, "items": [item]},
             )
         )
         return
@@ -491,7 +493,12 @@ class SqlIdentityStore:
             )
             conn.execute(self._audit_insert(audit))
             # always told, the holder's own unlink included: a stolen fresh session could do it
-            _tell(conn, user_id, "identity_unlinked_by_admin" if by_other else "identity_unlinked", now)
+            _tell(
+                conn,
+                user_id,
+                "identity_unlinked_by_admin" if by_other else "identity_unlinked",
+                now,
+            )
         return True
 
     def oidc_identity_list(self) -> list[OidcIdentityListing]:

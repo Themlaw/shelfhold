@@ -316,7 +316,7 @@ def build_oidc_router() -> APIRouter:
                     issuer=v.issuer, linked_at=v.linked_at, linked_by_other=v.linked_by_other
                 )
                 for v in views
-            ]
+            ],
         )
 
     def _unlinked(outcome: OidcUnlink) -> Response:
