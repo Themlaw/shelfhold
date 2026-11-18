@@ -8,8 +8,7 @@
     "node": ">=24"
   },
   "imports": {
-    "#lib/*": "./src/lib/*",
-    "#foliate/*": "./vendor/foliate-js/*"
+    "#lib/*": "./src/lib/*"
   },
   "scripts": {
     "tokens": "node scripts/build-tokens.ts",

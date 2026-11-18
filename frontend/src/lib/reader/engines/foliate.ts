@@ -8,8 +8,8 @@
 // - it always cancels the `external-link` of foliate (which would open the address with no
 //   `noopener`), asks, then opens the address apart;
 // - it moves no node of a book, never clones or imports one: the keys it relays are events of its own.
-import { EPUB } from '#foliate/epub.js';
-import '#foliate/view.js'; // defines <foliate-view>; its dynamic imports are stubbed by the build of the reader
+import { EPUB } from '../../../../vendor/foliate-js/epub.js';
+import '../../../../vendor/foliate-js/view.js'; // defines <foliate-view>; its dynamic imports are stubbed by the build of the reader
 import { t } from '#lib/i18n/index.ts';
 import type { CfiLocator, EngineError, Locator, PublicationView, ReaderEngine } from '../engine.ts';
 import { CONTENT_FILTER, FilterRefusal, installFilter } from '../filter.ts';

@@ -13,13 +13,12 @@ const messages = async (code: string, filePath: string) => {
 
 describe('foliate is only imported by its adapter', () => {
   const imports = [
-    "import { View } from '#foliate/view.js';",
-    "import { EPUB } from '#foliate/epub.js';",
+    "import { View } from '../../../../vendor/foliate-js/view.js';",
     "import { EPUB } from '../../../vendor/foliate-js/epub.js';",
     "import '../../vendor/foliate-js/view.js';",
     "const m = await import('../vendor/foliate-js/pdf.js');",
     "import { x } from 'foliate-js/view.js';",
-    "export * from '#foliate/footnotes.js';"
+    "export * from '../vendor/foliate-js/footnotes.js';"
   ];
 
   for (const line of imports) {

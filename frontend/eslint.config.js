@@ -49,7 +49,7 @@ export default ts.config(
         ].map(([selector, message]) => ({ selector, message: `theme: ${message} (I51)` })),
         // M5 L12: a dynamic import reaches foliate as well as a static one (the rule below only sees the latter)
         {
-          selector: "ImportExpression[source.value=/foliate-js|#foliate/]",
+          selector: "ImportExpression[source.value=/foliate-js/]",
           message: 'foliate-js is imported by the reader engine alone (ENF-SEC-004, ADR-0055)'
         }
       ]
@@ -70,7 +70,7 @@ export default ts.config(
   {
     files: ['src/**/*.{ts,svelte}'],
     rules: {
-      'no-restricted-imports': ['error', { patterns: ['foliate-js', 'foliate-js/*', '**/foliate-js', '**/foliate-js/**', '\\#foliate', '\\#foliate/*'] }]
+      'no-restricted-imports': ['error', { patterns: ['foliate-js', 'foliate-js/*', '**/foliate-js', '**/foliate-js/**'] }]
     }
   },
   {
