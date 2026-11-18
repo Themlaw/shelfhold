@@ -61,8 +61,8 @@ reason = "porte P0 et règles d'arrêt documentées (portes.md), relevé de dép
 
 [[partial]]
 requirement = "EF-BIB-029"
-milestone = "M4"
-reason = "détection d'une migration Suwayomi et API livrées (test_m3_l21_suwayomi_migration.py) ; l'écran « Même œuvre ? » (proposition, plan de fusion ou de réaffectation) est reporté en M4 (L58 contradicteur M2)"
+milestone = "M5"
+reason = "détection d'une migration Suwayomi et API livrées (test_m3_l21_suwayomi_migration.py), migration complète de source avec table de correspondance et son écran (M4 L27) ; l'écran « Même œuvre ? » (proposition, plan de fusion ou de réaffectation) n'a eu aucune carte en M4 : redaté M5 par écrit le 2026-11-17 (M4 L43, dette de L58 contradicteur M2)"
 
 [[partial]]
 requirement = "EF-EXP-023"

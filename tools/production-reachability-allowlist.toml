@@ -48,7 +48,7 @@ symbols = [
 [[allow]]
 category = "unwired-m4-komga"
 reason = "2026-11-16 (M4 L08a): the Komga destination is described, tested against a fake and declared to the core (`KomgaDestination.capabilities`, read by `FirstPartyDestinations`). 2026-11-17 (M4 L46): the target is now created (`target add komga`, `POST /api/v1/targets/komga`: the key is sealed by `store_komga_key` and shown to the server once by `KomgaClient.probe`), which settles the key, the routes and the scan calls. What is left is the scan relay of the export pass (`open_client`, `KomgaNoLibrary`, the inventory) and the audit of the accounts (`admit` before a binding, `audit` daily), written down in docs/decisions/M4.md."
-until = "M4"  # settled by M4 lot L44 (Komga journey) or the lot that creates the target
+until = "M5"  # redated by M4 L43 (2026-11-17, docs/decisions/M4.md): the scan relay and the audit of the pass
 # 2026-11-16 (M4 L08b): the audit of the accounts (`KomgaAuditor`, `KomgaClient.list_accounts`) is
 # written and tested against the fake, and its proof is read by every binding and every pass
 # (`partitioning_of`), but nothing creates a Komga target: its callers are the link of a shelf
@@ -66,7 +66,7 @@ symbols = [
 [[allow]]
 category = "unwired-m4-cwa"
 reason = "2026-11-16 (M4 L09): the CWA drop box is described, executed by the pass (`dropbox_destinations`, `CwaSource` read by `FirstPartyDestinations`) and tested end to end, the target is now created (M4 L46: `target add cwa`, `POST /api/v1/targets/cwa`, reserved action). What stays unwired are the two calls a drop box never makes (an inventory and sidecars: nothing is indexed, nothing is written beside the book)."
-until = "M4"
+until = "M5"  # redated by M4 L43 (2026-11-17, docs/decisions/M4.md): a drop box never calls them
 symbols = [
   "shelfhold.export.targets.cwa.destination:CwaDestination.inventory_calls",
   "shelfhold.export.targets.cwa.destination:CwaDestination.render_sidecars",
@@ -94,9 +94,9 @@ tests = [
 ]
 
 [[allow]]
-category = "deferred-l31-normalizer-migration"
-reason = "The preview of a migration to a new version of a normalizer (`normalize migrate`, EF-BIB-054, ENF-OPS-021): every normalizer is still at its first version, so no command runs it. It is proved by its tests and comes with the first version bump."
-until = "M4"  # settled by M4 lot L43
+category = "m4-l43-normalizer-migration"
+reason = "2026-11-17 (M4 L43, D21): the preview of a migration to a new version of a normalizer (`normalize migrate`, EF-BIB-054, ENF-OPS-021) has no caller before a normalizer changes version. M4 raises none: the Unicode folding of L30 is a function of comparison, not a normalizer, and every normalizer is still at its first version. Redated M5, then to the first version bump of a normalizer, whichever milestone brings it (docs/decisions/M4.md, table of the debts). It is proved by its tests until then."
+until = "M5"  # settled by the first version bump of a normalizer
 symbols = [
   "shelfhold.catalog.domain.normalizers:NormalizerRegistry.plan_migration",
 ]
@@ -129,9 +129,9 @@ symbols = [
 ]
 
 [[allow]]
-category = "unwired-m4"
-reason = "2026-11-15 (M4 L14a): the sweep of the aliases a crash left without hashes (`heal_alias_hashes`), the internal door of a server state (`record_server_state`) and the live read of a member's key (`live_member_account`, `MemberKeyRevokedError`), and the refusal of a carrier the reader may not see (`UnknownCarrierError`), are the contract of the reading service that L14b (the push of progress to a member's account), L47 and L50 (the kosync relay) are the first callers of: L14a adds no route and no job of its own, the route of each of them enters the surfaces meta-test in its own PR. The sweep takes its locator from the caller, which knows the physical roots. `reading.domain.merge` and `projection` state the rule that the SQL view `reading_progress` implements; a test proves the two equal, and the relays of L14b and L47 are their first production callers (the kosync answer picks the furthest position with `furthest`)."
-until = "M4"  # settled by M4 lots L14b and L47
+category = "m4-l43-reading-service"
+reason = "2026-11-17 (M4 L43): what L14a wrote for the relays of progress is still not called, and none of L14b, L47 and L50 turned out to need it: the sweep of the aliases a crash left without hashes (`heal_alias_hashes`, `verified_hashes`) needs a locator under the physical roots of a binding, which is a security contract of its own (no symbolic link, never outside the roots) and is not a simple wiring; the read of a position (`position_of`), the delivery of a server state (`record_delivery`) and the undo of a read mark (`undo_read_mark`) wait for the reader of M5 (the screen where a member undoes a mark); `reading.domain.merge` (`latest`, `furthest`) states the rule that the SQL view `reading_progress` implements, and a test proves the two equal. Redated M5 in writing (docs/decisions/M4.md, table of the debts)."
+until = "M5"  # settled by the reader of M5 (undo, position of a member) and the lazy read of the aliases
 symbols = [
   "shelfhold.export.application.render_hooks:heal_alias_hashes",
   "shelfhold.reading.domain.document_hash:verified_hashes",
