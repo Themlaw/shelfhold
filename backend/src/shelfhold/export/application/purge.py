@@ -825,7 +825,9 @@ class PurgeService:
             for rel in derived_rels(unit_id):
                 if self._erase_data(rel):
                     progress.erased += 1
-        for rel in plan.renditions:  # converted images, named by hash: derived from its files
+        with self._engine.connect() as connection:
+            late = rendition_rels(connection, plan.unit_ids)  # a render that raced the plan
+        for rel in sorted({*plan.renditions, *late}):  # converted images, named by hash
             if self._erase_data(rel):
                 progress.erased += 1
         if plan.kind == "work" and self._erase_data(work_rel(plan.work_id)):

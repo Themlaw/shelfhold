@@ -107,7 +107,7 @@ def sniff_source(head: bytes) -> str | None:
     say; the worker is the one that decides whether it is really that."""
     if head[:4] == b"RIFF" and head[8:12] == b"WEBP":
         return "webp"
-    if head[4:8] == b"ftyp" and head[8:12] in (b"avif", b"avis"):
+    if head[4:8] == b"ftyp" and head[8:12] in (b"avif", b"avis", b"mif1"):
         return "avif"
     if head[:2] == b"\xff\x0a" or head[:12] == b"\x00\x00\x00\x0cJXL \r\n\x87\n":
         return "jxl"

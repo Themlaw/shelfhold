@@ -5,6 +5,7 @@ the network-less worker, kept under a name that is the hash of what was made, an
 source. Synthetic images only."""
 
 import io
+import os
 import struct
 from collections.abc import Callable
 from datetime import UTC, datetime
@@ -16,7 +17,7 @@ from PIL import Image
 
 from shelfhold.infrastructure.clock import Clock
 from shelfhold.infrastructure.db import write_transaction
-from shelfhold.infrastructure.imaging import ImageRejected, Reencoded, reencode_image
+from shelfhold.infrastructure.imaging import ImageCaps, ImageRejected, Reencoded, reencode_image
 from shelfhold.infrastructure.schema import storage
 from shelfhold.library.application.renditions import (
     RenditionService,
@@ -45,10 +46,12 @@ class Counting:
 
     def __init__(self) -> None:
         self.calls = 0
+        self.caps: list[ImageCaps] = []
 
-    def __call__(self, data: bytes, params: RenditionParams) -> Reencoded:
+    def __call__(self, data: bytes, params: RenditionParams, caps: ImageCaps) -> Reencoded:
         self.calls += 1
-        return reencode_image(data, fmt=params.kind, quality=params.quality)
+        self.caps.append(caps)
+        return reencode_image(data, fmt=params.kind, quality=params.quality, caps=caps)
 
 
 def _service(env: ExportEnv, convert: Counting | Callable[..., Reencoded] | None = None,
@@ -122,7 +125,7 @@ def test_a_rendition_is_checked_when_it_is_read() -> None:
         (file,) = _files(env)
         file.write_bytes(b"not what was made")
         assert service.read(made) is None
-        assert service.cached(_content(env, unit), JPEG) is None  # and it is made again
+        assert service.cached(_content(env, unit), JPEG, pf.webp()) is None  # and it is made again
         assert service.render(_content(env, unit), pf.webp(), JPEG) == made
 
 
@@ -192,11 +195,17 @@ def test_rendition_caps_are_the_callers_to_lower_never_to_raise_past_the_worker(
             service.render(_content(env, unit), b"x" * 2048, JPEG, max_bytes=1024)
         assert (heavy.value.code, heavy.value.stage) == ("image.too_large", "input")
         assert counting.calls == 0 and _rows(env) == [] and _files(env) == []
+        # a render that passes is given the lowered caps, WebP and AVIF only, to take to the worker
+        service.render(_content(env, unit), pf.webp(), JPEG, max_pixels=100_000)
+        (given,) = counting.caps
+        assert given.max_pixels == 100_000 and given.formats == ("WEBP", "AVIF")
+        with pytest.raises(ImageRejected):  # zero is a cap of zero, not "no cap"
+            service.render(_content(env, unit), pf.webp(), PNG, max_pixels=0)
 
 
 @pytest.mark.req("EF-BIB-015")
 def test_a_worker_that_fails_leaves_nothing_behind() -> None:
-    def broken(data: bytes, params: RenditionParams) -> Reencoded:
+    def broken(data: bytes, params: RenditionParams, caps: ImageCaps) -> Reencoded:
         raise ImageRejected("image.worker_failed", "cannot start", "worker")
 
     with export_env() as env:
@@ -291,3 +300,71 @@ def test_a_rendition_row_cannot_outlive_a_malformed_name() -> None:
                     ),
                     values,
                 )
+
+
+@pytest.mark.req("EF-BIB-015")
+def test_the_cache_is_keyed_by_the_bytes_that_were_converted() -> None:
+    """Other bytes handed for the same content never get the answer made for the first."""
+    with export_env() as env:
+        unit = env.add_chapter(env.new_series(TITLE), "1")
+        counting = Counting()
+        service = _service(env, counting)
+        one = service.render(_content(env, unit), pf.webp((200, 0, 0)), JPEG)
+        two = service.render(_content(env, unit), pf.webp((0, 200, 0)), JPEG)
+        assert one.content_hash != two.content_hash and counting.calls == 2
+        assert len(_rows(env)) == 2
+
+
+@pytest.mark.req("EF-BIB-015")
+def test_a_failed_record_leaves_no_file_and_a_purged_source_is_not_recorded() -> None:
+    with export_env() as env:
+        unit = env.add_chapter(env.new_series(TITLE), "1")
+        service = _service(env)
+        content = _content(env, unit)
+
+        def fail(rendition: object) -> None:
+            raise RuntimeError("database is locked")
+
+        original = service._record
+        service._record = fail  # type: ignore[method-assign,assignment]
+        with pytest.raises(RuntimeError):
+            service.render(content, pf.webp(), JPEG)
+        assert _files(env) == [] and _rows(env) == []
+        service._record = original  # type: ignore[method-assign]
+
+        def purge_meanwhile(data: bytes, params: RenditionParams, caps: ImageCaps) -> Reencoded:
+            made = reencode_image(data, fmt=params.kind, quality=params.quality, caps=caps)
+            with write_transaction(env.engine) as connection:  # the source goes during the work
+                connection.execute(
+                    sa.update(storage.content)
+                    .where(storage.content.c.id == content)
+                    .values(original_sha256="sha256:" + "9" * 64)
+                )
+            return made
+
+        racing = _service(env, purge_meanwhile)
+        with pytest.raises(UnknownSourceError):
+            racing.render(content, pf.webp(), PNG)
+        assert _files(env) == [] and _rows(env) == []
+
+
+@pytest.mark.req("EF-BIB-015", "EF-BIB-052")
+def test_orphans_are_collected_after_a_day_and_named_files_never() -> None:
+    with export_env() as env:
+        unit = env.add_chapter(env.new_series(TITLE), "1")
+        clock = ManualClock(NOW)
+        service = _service(env, clock=clock)
+        made = service.render(_content(env, unit), pf.webp(), JPEG)
+        folder = env.lib.data / "cache" / "renditions" / "ab"
+        folder.mkdir(parents=True)
+        stray = folder / ("c" * 64 + ".png")
+        stray.write_bytes(b"left by a crash")
+        odd = folder / "notes.txt"
+        odd.write_bytes(b"not ours")
+        os.utime(stray, (NOW.timestamp(), NOW.timestamp()))
+        assert service.collect_orphans() == 0  # younger than a day by the clock
+        old = NOW.timestamp() - 2 * 86400
+        os.utime(stray, (old, old))
+        assert service.collect_orphans() == 1
+        assert not stray.exists() and odd.exists()  # only a name this module writes
+        assert service.read(made) is not None  # the file a row names stays

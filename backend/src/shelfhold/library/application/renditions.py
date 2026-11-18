@@ -12,7 +12,8 @@ The bytes are untrusted (ENF-SEC-003). In this order, and nothing is written bef
    their own hash, then the row. A failure at any step leaves neither.
 
 A rendition is derived from a `content` and goes with it: `purge --now` erases the files, then the
-rows (`rendition_rels`, `erase_renditions` of the purge inventory, ADR-0048). The source is not
+rows (`rendition_rels` of the purge inventory, ADR-0048; `collect_orphans` sweeps what a race
+leaves). The source is not
 modified, a `watermarked` file included: the converted file is a separate one that stays at home.
 Nothing here knows who may see a content: that is the caller's decision, taken first.
 """
@@ -20,8 +21,12 @@ Nothing here knows who may see a content: that is the caller's decision, taken f
 from __future__ import annotations
 
 import hashlib
+import json
+import os
+import re
 from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Final
 
@@ -31,7 +36,13 @@ import structlog
 from shelfhold.infrastructure.clock import Clock
 from shelfhold.infrastructure.content_trust.page_header import announced_size
 from shelfhold.infrastructure.db import write_transaction
-from shelfhold.infrastructure.imaging import ImageRejected, Reencoded, caps_for, reencode_image
+from shelfhold.infrastructure.imaging import (
+    ImageCaps,
+    ImageRejected,
+    Reencoded,
+    caps_for,
+    reencode_image,
+)
 from shelfhold.infrastructure.schema import storage
 from shelfhold.infrastructure.volumes import erase_data_path, open_data_folder, write_data_file
 from shelfhold.library.domain.rendition import (
@@ -59,7 +70,11 @@ log = structlog.get_logger(__name__)
 
 CACHE_DIR: Final = "cache/renditions"  # under /data
 MAX_RENDITION_BYTES: Final = 128 * 1024 * 1024  # the byte cap of a page: what may be read back
-Converter = Callable[[bytes, RenditionParams], Reencoded]
+Converter = Callable[[bytes, RenditionParams, ImageCaps], Reencoded]
+STRAY_GRACE: Final = timedelta(days=1)  # a file with no row may be a render in flight
+_SHARD: Final = re.compile(r"[0-9a-f]{2}")
+_NAME: Final = re.compile(r"([0-9a-f]{64})\.(jpeg|png)")
+_FORMATS: Final = ("WEBP", "AVIF")  # what the worker is allowed to open for a rendition
 
 
 class UnknownSourceError(LookupError):
@@ -99,9 +114,10 @@ def _rel(content_hash: str, kind: str) -> str:
     return f"{CACHE_DIR}/{digest[:2]}/{digest}.{kind}"
 
 
-def convert_in_worker(data: bytes, params: RenditionParams) -> Reencoded:
-    """The default converter: the bounded, network-less decode worker (`page_input` caps)."""
-    return reencode_image(data, fmt=params.kind, quality=params.quality)
+def convert_in_worker(data: bytes, params: RenditionParams, caps: ImageCaps) -> Reencoded:
+    """The default converter: the bounded, network-less decode worker, with the caps of this ask
+    (lowered by the caller, WebP and AVIF only): the worker checks them on the header again."""
+    return reencode_image(data, fmt=params.kind, quality=params.quality, caps=caps)
 
 
 def _check_source(data: bytes, *, max_bytes: int, max_pixels: int) -> None:
@@ -132,6 +148,15 @@ class RenditionService:
         self._convert = convert or convert_in_worker
 
     # -- what a content is -----------------------------------------------------------------
+    @staticmethod
+    def _key(params: RenditionParams, data: bytes) -> str:
+        """The canonical parameters plus the hash of the bytes that are converted: the cache is
+        keyed by what was really read, so another version of the file (the neutralized one, a
+        newer derivative) or the page of another content never answers for this one."""
+        body = json.loads(params.canonical())
+        body["src"] = hashlib.sha256(data).hexdigest()
+        return json.dumps(body, sort_keys=True, separators=(",", ":"))
+
     def _source(self, content_id: str) -> tuple[str, bool]:
         with self._engine.connect() as connection:
             row = connection.execute(
@@ -159,24 +184,24 @@ class RenditionService:
             return None
         return data
 
-    def cached(self, content_id: str, params: RenditionParams) -> Rendition | None:
-        """The rendition already made for this content and these parameters, if its file is
-        there and intact."""
+    def cached(self, content_id: str, params: RenditionParams, data: bytes) -> Rendition | None:
+        """The rendition already made from these bytes of this content, if its file is there and
+        intact."""
         source, _ = self._source(content_id)
-        return self._cached(source, params)
+        return self._cached(source, params, self._key(params, data))
 
-    def _cached(self, source: str, params: RenditionParams) -> Rendition | None:
+    def _cached(self, source: str, params: RenditionParams, key: str) -> Rendition | None:
         with self._engine.connect() as connection:
             row = connection.execute(
                 sa.select(storage.rendition.c.content_hash, storage.rendition.c.size).where(
                     storage.rendition.c.source_content_hash == source,
                     storage.rendition.c.kind == params.kind,
-                    storage.rendition.c.params == _text(params.canonical()),
+                    storage.rendition.c.params == _text(key),
                 )
             ).first()
         if row is None:
             return None
-        found = Rendition(source, params.kind, params.canonical(), row.content_hash, row.size)
+        found = Rendition(source, params.kind, key, row.content_hash, row.size)
         return found if self.read(found) is not None else None
 
     # -- making ----------------------------------------------------------------------------
@@ -200,27 +225,52 @@ class RenditionService:
         ensure_processor_allowed(processor, watermarked=watermarked)
         if processor != LOCAL_PROCESSOR:
             raise UnsupportedProcessorError(processor.name)  # none is shipped
-        hit = self._cached(source, params)
+        key = self._key(params, data)
+        hit = self._cached(source, params, key)
         if hit is not None:
             return hit
-        caps = caps_for("page_input")
-        _check_source(
-            data,
-            max_bytes=min(max_bytes or caps.max_bytes, caps.max_bytes),
-            max_pixels=min(max_pixels or caps.max_pixels, caps.max_pixels),
+        base = caps_for("page_input")
+        if (max_pixels is not None and max_pixels <= 0) or (
+            max_bytes is not None and max_bytes <= 0
+        ):
+            raise ImageRejected("image.too_large", "cap", "input")  # a cap of zero admits nothing
+        caps = ImageCaps(
+            min(base.max_pixels if max_pixels is None else max_pixels, base.max_pixels),
+            min(base.max_bytes if max_bytes is None else max_bytes, base.max_bytes),
+            formats=_FORMATS,
         )
-        made = self._convert(data, params)  # the worker: own caps, memory, CPU, time; no network
+        _check_source(data, max_bytes=caps.max_bytes, max_pixels=caps.max_pixels)
+        made = self._convert(data, params, caps)  # the worker: its caps, memory, CPU, time; no net
         if made.format.lower() != params.kind or not made.data:
             raise ImageRejected("image.worker_failed", "bad reply", "worker")
         out_hash = "sha256:" + hashlib.sha256(made.data).hexdigest()
-        rendition = Rendition(source, params.kind, params.canonical(), out_hash, len(made.data))
+        rendition = Rendition(source, params.kind, key, out_hash, len(made.data))
         write_data_file(self._data, rendition.rel, made.data)
-        self._record(rendition)
+        try:
+            self._record(rendition)
+        except BaseException:
+            self._drop_if_unreferenced(rendition.content_hash, rendition.kind)
+            raise
         return rendition
 
     def _record(self, rendition: Rendition) -> None:
         table = storage.rendition
+        stale: tuple[str, str] | None = None
         with write_transaction(self._engine) as connection:
+            held = storage.content.c.original_sha256 == rendition.source_content_hash
+            if not connection.execute(  # a purge may have taken the source since the read
+                sa.select(sa.literal(1)).where(sa.exists().where(held))
+            ).first():
+                raise UnknownSourceError(rendition.source_content_hash)
+            old = connection.execute(
+                sa.select(table.c.content_hash, table.c.kind).where(
+                    table.c.source_content_hash == rendition.source_content_hash,
+                    table.c.kind == rendition.kind,
+                    table.c.params == _text(rendition.params),
+                )
+            ).first()
+            if old is not None and old.content_hash != rendition.content_hash:
+                stale = (old.content_hash, old.kind)
             connection.execute(  # a stale row (its file altered or gone) is replaced
                 sa.delete(table).where(
                     table.c.source_content_hash == rendition.source_content_hash,
@@ -238,11 +288,60 @@ class RenditionService:
                     created_at=self._clock.now(),
                 )
             )
+        if stale is not None:
+            self._drop_if_unreferenced(*stale)
+
+    def _drop_if_unreferenced(self, content_hash: str, kind: str) -> None:
+        """Erase a cache file no row points at (a render that failed after writing, the file a
+        replaced row named). A file another row still names is that row's."""
+        table = storage.rendition
+        with self._engine.connect() as connection:
+            used = connection.execute(
+                sa.select(sa.func.count()).where(
+                    table.c.content_hash == content_hash, table.c.kind == kind
+                )
+            ).scalar_one()
+        if not used:
+            digest = _hex(content_hash)
+            _erase(self._data, f"{CACHE_DIR}/{digest[:2]}/{digest}.{kind}")
+
+    def collect_orphans(self) -> int:
+        """Erase the files of the cache that no row names and that are older than a day (a render
+        in flight is younger): what a crash between the file and the row, or a render that raced a
+        purge, leaves behind. Names are checked; nothing else is touched. How many went."""
+        table = storage.rendition
+        with self._engine.connect() as connection:
+            named = {
+                (str(r.content_hash), str(r.kind))
+                for r in connection.execute(sa.select(table.c.content_hash, table.c.kind))
+            }
+        cutoff = self._clock.now() - STRAY_GRACE
+        gone = 0
+        try:
+            with open_data_folder(self._data, CACHE_DIR) as root:
+                shards = [n for n in root.names() if _SHARD.fullmatch(n)]
+        except (OSError, ValueError):
+            return 0
+        for shard in shards:
+            try:
+                with open_data_folder(self._data, f"{CACHE_DIR}/{shard}") as folder:
+                    entries = folder.names()
+                    for name in entries:
+                        found = _NAME.fullmatch(name)
+                        stat = folder.stat_of(name)
+                        if found is None or stat is None or not stat_is_old(stat, cutoff):
+                            continue
+                        if (f"sha256:{found.group(1)}", found.group(2)) in named:
+                            continue
+                        if _erase(self._data, f"{CACHE_DIR}/{shard}/{name}"):
+                            gone += 1
+            except (OSError, ValueError):
+                continue
+        return gone
 
 
-def erase_rendition_files(data_dir: Path, rels: list[str]) -> int:
-    """Erase these cache files (the purge's step, before the rows); how many went."""
-    return sum(1 for rel in rels if _erase(data_dir, rel))
+def stat_is_old(stat: os.stat_result, cutoff: datetime) -> bool:
+    return datetime.fromtimestamp(stat.st_mtime, tz=UTC) < cutoff
 
 
 def _erase(data_dir: Path, rel: str) -> bool:
