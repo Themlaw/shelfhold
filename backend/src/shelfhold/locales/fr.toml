@@ -432,6 +432,7 @@ help_restore = "Après une restauration : les identifiants révoqués."
 help_restore_acknowledge = "Confirme que les passkeys et les mots de passe changés depuis la sauvegarde ont été revérifiés (action réservée) ; ôte l'avertissement de « status »."
 restore_acknowledged = "Noté : l'avertissement de restauration est levé, la connexion par clé d'accès est rétablie."
 restore_passkey_change = "Clé d'accès modifiée depuis la sauvegarde : {change}"
+restore_oidc_link = "Lien du fournisseur d'identité à vérifier (un lien retiré depuis la sauvegarde revient) : {link}"
 help_store_reinit = "Estampille /store ; les chapitres dont la copie conservée y était passent en « store_missing » (action réservée)."
 root_done = "{command} : racine {root} ({path}), état quitté : {previous}. Aucun fichier n'a été supprimé."
 root_predecessors = "{count, plural, one {# identité précédente conservée} other {# identités précédentes conservées}} (les pierres tombales restent lisibles)."
@@ -1388,6 +1389,11 @@ cause = "Lier une identité du fournisseur à un autre administrateur lui donner
 title = "Cette liaison n'attend plus de confirmation."
 action = "Recommencez la liaison depuis votre compte."
 cause = "La liaison a déjà été confirmée ou refusée, elle a expiré, ou la confirmation ne vient pas de la session qui l'a demandée."
+
+[errors."oidc_not_linked"]
+title = "Ce compte n'est lié à aucun fournisseur d'identité."
+action = "Liez-le d'abord depuis les réglages de votre compte."
+cause = "Il n'y a aucun lien à retirer ni à prouver de nouveau : il n'a jamais été fait, ou il a été retiré."
 
 [errors."device_token_not_found"]
 title = "Ce jeton d'appareil n'existe pas pour vous."

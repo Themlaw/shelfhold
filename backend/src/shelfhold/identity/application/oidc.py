@@ -30,20 +30,20 @@ from shelfhold.identity.application.service import (
     IssuedSession,
     LocalAuth,
 )
+from shelfhold.identity.application.reauth import (
+    DEFAULT_MAX_AGE_S,
+    NEVER,
+    FreshnessRefusedError,
+    check_provider_auth_time,
+)
 from shelfhold.identity.domain.throttle import address_key
 
 FLOW_TTL = timedelta(minutes=10)
 FLOW_COOKIE_MAX_AGE_S = int(FLOW_TTL.total_seconds())
-# "No local proof of when the person signed in": a session opened by the provider is as old as the
-# epoch, so no reserved action that asks for a recent proof is open to it. The provider's own
-# `auth_time` is not trusted for that here: nothing asked it to sign the person in again
-# (`prompt=login`, `max_age`), so a compromised provider account would open every fresh action.
-# L04 asks, verifies the claim, and only then makes a session fresh.
-NEVER = datetime(1970, 1, 1, tzinfo=UTC)
 
 log = structlog.get_logger()
 
-Purpose = Literal["login", "link"]
+Purpose = Literal["login", "link", "reauth"]
 
 
 def flow_group(ip: str) -> str:
@@ -96,9 +96,16 @@ class OidcProvider(Protocol):
         ...
 
     def authorization_url(
-        self, *, redirect_uri: str, state: str, nonce: str, code_challenge: str
+        self,
+        *,
+        redirect_uri: str,
+        state: str,
+        nonce: str,
+        code_challenge: str,
+        max_age: int | None = None,
     ) -> str:
-        """Raises `OidcUnavailableError`."""
+        """`max_age`: ask the provider to sign the person in again (`prompt=login`) and to report
+        a sign-in no older than that. Raises `OidcUnavailableError`."""
         ...
 
     def complete(
@@ -116,8 +123,9 @@ class OidcFlow:
     verifier: str
     binder_digest: str  # of the cookie value only the starting browser holds
     expires_at: datetime
-    user_id: str | None = None  # a link: the account it is for
-    session_id: str | None = None  # a link: the session that started it, which must still live
+    user_id: str | None = None  # a link or a reauth: the account it is for
+    # a link or a reauth: the session that started it, which must still live
+    session_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -162,7 +170,7 @@ class OidcStart:
 @dataclass(frozen=True)
 class OidcOutcome:
     purpose: Purpose
-    issued: IssuedSession | None = None  # a sign-in: the new session
+    issued: IssuedSession | None = None  # a sign-in or a reauth: the session to set
     pending: bool = False  # a link vouched for by the provider, waiting for the confirmation
 
 
@@ -179,7 +187,9 @@ class OidcAuth:
         provider: OidcProvider,
         flows: OidcFlows,
         redirect_uri: str,
+        max_age_s: int = DEFAULT_MAX_AGE_S,
     ) -> None:
+        self._max_age_s = max_age_s
         self._auth = auth
         self._store = store
         self._provider = provider
@@ -203,7 +213,11 @@ class OidcAuth:
         state, nonce, binder = (secrets.token_urlsafe(32) for _ in range(3))
         verifier, challenge = self._provider.pkce()
         url = self._provider.authorization_url(
-            redirect_uri=self._redirect_uri, state=state, nonce=nonce, code_challenge=challenge
+            redirect_uri=self._redirect_uri,
+            state=state,
+            nonce=nonce,
+            code_challenge=challenge,
+            max_age=self._max_age_s if purpose == "reauth" else None,
         )
         self._flows.issue(
             state,
@@ -219,7 +233,7 @@ class OidcAuth:
     def begin_login(self, *, ip: str) -> OidcStart:
         """Anonymous and cheap to call: each address gets a few a minute (`ThrottledError`)."""
         self._refuse_while_restore_pending()
-        self._auth.reserve_options(ip=ip)
+        self._auth.reserve_oidc_start(ip=ip)  # its own budget, not the passkeys'
         # the limiter's own unit (a /64), and the /48 it belongs to
         return self._begin("login", owner=address_key(ip), group=flow_group(ip))
 
@@ -227,6 +241,20 @@ class OidcAuth:
         """For the account of a session the caller has already shown to be fresh and an adult's."""
         owner = f"user:{user_id}"
         return self._begin("link", owner=owner, group=owner, user_id=user_id, session_id=session_id)
+
+    def begin_reauth(self, *, user_id: str, session_id: str) -> OidcStart:
+        """Sends a session back to the provider to be proved again: `prompt=login` and `max_age`.
+        For an account that is linked (and an adult's); the answer must be that very identity."""
+        self._refuse_while_restore_pending()
+        account = self._store.user_by_id(user_id)
+        if account is None or account.role == "child":
+            raise OidcRefusedError("reauth_account", "reauth")
+        if self._store.oidc_identity_of(user_id, self._provider.issuer) is None:
+            raise OidcRefusedError("reauth_not_linked", "reauth")
+        owner = f"user:{user_id}"
+        return self._begin(
+            "reauth", owner=owner, group=owner, user_id=user_id, session_id=session_id
+        )
 
     def _refuse_while_restore_pending(self) -> None:
         """After a restore a link removed since the backup is live again: nobody signs in through
@@ -271,11 +299,14 @@ class OidcAuth:
             raise self._refuse(f"provider_{down.reason}", ip, flow.purpose) from None
         if claims.issuer != self._provider.issuer:  # the adapter checks it; belt and braces
             raise self._refuse("issuer", ip, flow.purpose)
-        outcome = (
-            self._finish_login(claims, ip=ip, user_agent=user_agent, presented=presented_token)
-            if flow.purpose == "login"
-            else self._finish_link(flow, claims, ip=ip)
-        )
+        if flow.purpose == "login":
+            outcome = self._finish_login(
+                claims, ip=ip, user_agent=user_agent, presented=presented_token
+            )
+        elif flow.purpose == "reauth":
+            outcome = self._finish_reauth(flow, claims, ip=ip)
+        else:
+            outcome = self._finish_link(flow, claims, ip=ip)
         self._auth.release_attempt(ip=ip, account=account, at=at)
         return outcome
 
@@ -305,6 +336,35 @@ class OidcAuth:
         except InvalidCredentialsError:  # unlinked or made a child since it was read
             raise self._refuse("link_withdrawn", ip, "login") from None
         return OidcOutcome("login", issued)
+
+    def _finish_reauth(self, flow: OidcFlow, claims: OidcClaims, *, ip: str) -> OidcOutcome:
+        """The session is as fresh as the provider's own sign-in, and only if all of this holds: the
+        session still lives, the account is linked to this very identity (not another person of the
+        provider), no restore is waiting, and the `auth_time` of the token is inside `max_age`."""
+        if flow.user_id is None or flow.session_id is None:
+            raise self._refuse("reauth_without_session", ip, "reauth")
+        if self._store.restore_notice_active():
+            raise self._refuse("restore_pending", ip, "reauth")
+        now = self._auth.now()
+        if not self._store.session_is_live(flow.session_id, now=now):
+            raise self._refuse("session_gone", ip, "reauth")
+        held = self._store.oidc_identity_of(flow.user_id, claims.issuer)
+        if held is None:
+            raise self._refuse("link_withdrawn", ip, "reauth")
+        if not secrets.compare_digest(held.sub, claims.sub):
+            raise self._refuse("other_subject", ip, "reauth")
+        try:
+            fresh = check_provider_auth_time(
+                claims.auth_time, now=now, max_age_s=self._max_age_s
+            )
+        except FreshnessRefusedError as stale:
+            raise self._refuse(stale.reason, ip, "reauth") from None
+        issued = self._auth.renew_session_from_provider(
+            user_id=flow.user_id, session_id=flow.session_id, auth_time=fresh
+        )
+        if issued is None:
+            raise self._refuse("session_gone", ip, "reauth")
+        return OidcOutcome("reauth", issued)
 
     def _finish_link(self, flow: OidcFlow, claims: OidcClaims, *, ip: str) -> OidcOutcome:
         if flow.user_id is None or flow.session_id is None:

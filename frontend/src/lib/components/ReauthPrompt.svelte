@@ -1,15 +1,22 @@
 <script lang="ts">
   // "Confirmez votre identité" (EF-USR-022): asked in place, so the action in progress is not
   // lost. The methods come from the 401 (`reauth_methods`); the password is the default.
-  import { passkeyReauthOptions, reauth } from '#lib/api/index.ts';
+  import { oidcReauth, passkeyReauthOptions, reauth } from '#lib/api/index.ts';
   import { t } from '#lib/i18n/index.ts';
   import { csrfToken, getPasskey, passkeysSupported } from '#lib/passkeys.ts';
 
   let {
     methods = ['password'],
     ondone,
-    oncancel
-  }: { methods?: string[]; ondone: () => void | Promise<void>; oncancel: () => void } = $props();
+    oncancel,
+    onprovider
+  }: {
+    methods?: string[];
+    ondone: () => void | Promise<void>;
+    oncancel: () => void;
+    /** The identity provider takes the browser away: the caller notes what to take up on return. */
+    onprovider?: () => void;
+  } = $props();
 
   let password = $state('');
   let failed = $state(false);
@@ -18,6 +25,7 @@
   const headers = () => ({ 'X-CSRF-Token': csrfToken() });
   const canPassword = $derived(methods.length === 0 || methods.includes('password'));
   const canPasskey = $derived(methods.includes('passkey') && passkeysSupported());
+  const canProvider = $derived(methods.includes('oidc'));
 
   async function submit(send: () => Promise<unknown>): Promise<void> {
     busy = true;
@@ -40,6 +48,22 @@
     );
   };
 
+  /** The person signs in again at the provider (`prompt=login`, `max_age`): the page is left, and
+   * the settings screen takes the action up when the provider sends the browser back. */
+  const withProvider = async (): Promise<void> => {
+    busy = true;
+    failed = false;
+    try {
+      const { data } = await oidcReauth({ headers: headers(), throwOnError: true });
+      onprovider?.();
+      window.location.assign(data.authorization_url);
+    } catch {
+      failed = true;
+    } finally {
+      busy = false;
+    }
+  };
+
   const withPasskey = () =>
     submit(async () => {
       const { data: started } = await passkeyReauthOptions({
@@ -58,6 +82,9 @@
 <section class="reauth" aria-labelledby="reauth-title">
   <h2 id="reauth-title">{t('reauth.title')}</h2>
   <p>{t('reauth.explain')}</p>
+  {#if canProvider}
+    <button type="button" disabled={busy} onclick={withProvider}>{t('reauth.provider')}</button>
+  {/if}
   {#if canPassword}
     <form onsubmit={withPassword}>
       <label for="reauth-password">{t('reauth.password')}</label>

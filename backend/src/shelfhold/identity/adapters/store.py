@@ -23,6 +23,7 @@ from shelfhold.identity.application.ports import (
     NewPasskey,
     NewSession,
     OidcIdentityRecord,
+    OidcIdentityListing,
     OidcIdentityView,
     OidcLink,
     PasskeyGoneError,
@@ -126,6 +127,35 @@ def _user_of(row: Any) -> UserRecord:
         password_hash=row.u_password_hash,
         can_rate=bool(row.u_can_rate),
         locale=row.u_locale,
+    )
+
+
+def _tell(conn: sa.Connection, user_id: str, what: str, now: datetime) -> None:
+    """A security notice for the holder of an account, by the channel that already tells people
+    what is new (M5 L04): a row of the notification digest, due now and urgent, which the sweep
+    sends to the account's channels like any other. It says what happened to the account, never
+    an identifier and never who did it. Quiet hours do not hold it back: it is the one notice a
+    person must not find out about in the morning."""
+    table = identity.notification_digest
+    item = {"kind": "security", "what": what}
+    held = conn.execute(
+        sa.select(table.c.payload).where(table.c.user_id == user_id, table.c.due_at == now)
+    ).scalar_one_or_none()
+    if held is None:
+        conn.execute(
+            sa.insert(table).values(
+                user_id=user_id, due_at=now, payload={"urgent": True, "attempts": 0, "items": [item]}
+            )
+        )
+        return
+    payload = dict(held)
+    items = list(payload.get("items", []))
+    if item not in items:
+        items.append(item)
+    conn.execute(
+        sa.update(table)
+        .where(table.c.user_id == user_id, table.c.due_at == now)
+        .values(payload={**payload, "urgent": True, "items": items})
     )
 
 
@@ -422,7 +452,56 @@ class SqlIdentityStore:
                 )
             )
             conn.execute(self._audit_insert(audit))
+            if admin_actor is not None and admin_actor != user_id:
+                _tell(conn, user_id, "identity_linked_by_admin", now)  # M5 L04 (#362 MIN-B)
         return OidcLink.LINKED
+
+    def unlink_oidc_identity(
+        self,
+        *,
+        user_id: str,
+        issuer: str,
+        now: datetime,
+        audit: AuditEntry,
+        by_other: bool,
+    ) -> bool:
+        """One transaction under the write lock: the link, the sessions the provider opened for
+        this account, the audit line and (when someone else did it) the notice to the holder. A
+        session is the provider's when the audit says it was opened by a sign-in through it."""
+        engine = self._engine.execution_options(shelfhold_begin="BEGIN IMMEDIATE")
+        with write_transaction(engine) as conn:
+            gone = conn.execute(
+                sa.delete(_oidc).where(_oidc.c.user_id == user_id, _oidc.c.issuer == issuer)
+            ).rowcount
+            if not gone:
+                return False
+            opened = (
+                sa.select(identity.audit.c.session_id)
+                .where(identity.audit.c.action == "auth.oidc_login")
+                .where(identity.audit.c.session_id.is_not(None))
+            )
+            conn.execute(
+                sa.update(_session)
+                .where(
+                    _session.c.user_id == user_id,
+                    _session.c.revoked_at.is_(None),
+                    _session.c.id.in_(opened),
+                )
+                .values(revoked_at=now)
+            )
+            conn.execute(self._audit_insert(audit))
+            # always told, the holder's own unlink included: a stolen fresh session could do it
+            _tell(conn, user_id, "identity_unlinked_by_admin" if by_other else "identity_unlinked", now)
+        return True
+
+    def oidc_identity_list(self) -> list[OidcIdentityListing]:
+        with self._engine.connect() as conn:
+            rows = conn.execute(
+                sa.select(_user.c.username, _oidc.c.issuer, _oidc.c.linked_at)
+                .join(_user, _user.c.id == _oidc.c.user_id)
+                .order_by(_user.c.username, _oidc.c.issuer)
+            ).all()
+        return [OidcIdentityListing(r.username, r.issuer, r.linked_at) for r in rows]
 
     def session_is_live(self, session_id: str, *, now: datetime) -> bool:
         with self._engine.connect() as conn:
@@ -1331,15 +1410,29 @@ class SqlIdentityStore:
             )
 
     def rotate_session(
-        self, session_id: str, *, token_hash: str, csrf_secret: str, now: datetime
-    ) -> None:
+        self,
+        session_id: str,
+        *,
+        token_hash: str,
+        csrf_secret: str,
+        now: datetime,
+        auth_time: datetime | None = None,
+    ) -> bool:
+        """`auth_time`: when the proof was given (a provider's sign-in a moment ago), `now` unless
+        said. False when the session is closed: nothing was changed."""
         with write_transaction(self._engine) as conn:
-            conn.execute(
-                sa.update(_session)
-                .where(_session.c.id == session_id, _session.c.revoked_at.is_(None))
-                .values(
-                    token_hash=token_hash, csrf_secret=csrf_secret, auth_time=now, last_seen_at=now
-                )
+            return (
+                conn.execute(
+                    sa.update(_session)
+                    .where(_session.c.id == session_id, _session.c.revoked_at.is_(None))
+                    .values(
+                        token_hash=token_hash,
+                        csrf_secret=csrf_secret,
+                        auth_time=auth_time or now,
+                        last_seen_at=now,
+                    )
+                ).rowcount
+                > 0
             )
 
     def revoke_session_by_token_hash(self, token_hash: str, *, now: datetime) -> None:

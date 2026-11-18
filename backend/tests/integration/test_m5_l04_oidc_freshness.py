@@ -19,7 +19,7 @@ import sqlalchemy as sa
 from fastapi.testclient import TestClient
 
 from shelfhold.config import Settings
-from shelfhold.identity.public import Credential, Principal
+from shelfhold.identity.public import Credential, Principal, local_auth
 from shelfhold.infrastructure.db import create_db_engine, write_transaction
 from shelfhold.infrastructure.restore_notice import RestoreNoticeData, write_notice
 from shelfhold.infrastructure.schema import identity
@@ -67,6 +67,18 @@ def reauth_url(world: World, browser: TestClient) -> str:
 
 def query(url: str) -> dict[str, str]:
     return {k: v[0] for k, v in parse_qs(urlsplit(url).query).items()}
+
+
+def api_key(world: World, scope: str) -> dict[str, str]:
+    """The header of a key of the admin's, whatever its scope: no key does a reserved action."""
+    engine = create_db_engine(world.env.settings.database_path)
+    try:
+        created = local_auth(engine, world.env.settings, world.env.clock).create_api_key(
+            name="probe", username="admin", scope=scope
+        )
+    finally:
+        engine.dispose()
+    return {"Authorization": f"Bearer {created.value}"}
 
 
 def is_fresh(world: World, browser: TestClient) -> bool:
@@ -165,26 +177,28 @@ def test_oidc_reauth_flow_is_bound_to_the_browser_and_single_use(world: World) -
     url = world.idp.authorize(reauth_url(world, mum))
     thief = world.browser("198.51.100.99")
     assert world.callback(thief, url).headers["location"].startswith("/login")  # no flow cookie
+    assert world.callback(mum, url).headers["location"].startswith("/login")  # a state is used once
     assert not is_fresh(world, mum)
-    assert world.callback(mum, url).headers["location"].endswith("?oidc=reauth")
-    assert world.callback(mum, url).headers["location"].startswith("/login")  # used up
+    again = world.idp.authorize(reauth_url(world, mum))
+    assert world.callback(mum, again).headers["location"].endswith("?oidc=reauth")
+    assert world.callback(mum, again).headers["location"].startswith("/login")  # used up
 
 
-def test_oidc_reauth_is_for_the_session_the_provider_opened(world: World) -> None:
-    """A session opened with a password stays fresh by the password: the provider's word is not
-    what makes it fresh (a compromised provider account would otherwise open every action)."""
+def test_oidc_reauth_is_for_a_linked_account_only(world: World) -> None:
+    """The provider can prove a session of an account that is linked to it, and only that one."""
+    answer = world.send(world.mum, "POST", REAUTH)  # not linked
+    assert answer.status_code == 404 and answer.json()["code"] == "oidc_not_linked"
+    assert world.send(world.kid, "POST", REAUTH).status_code == 403  # a child has no link
+    assert world.browser("198.51.100.31").post(REAUTH).status_code == 401
     world.link_admin("mum")
-    answer = world.send(world.mum, "POST", REAUTH)
-    assert answer.status_code == 403 and answer.json()["code"] == "forbidden"
-    assert world.send(world.browser("198.51.100.31"), "POST", REAUTH).status_code == 401
+    assert world.send(world.mum, "POST", REAUTH).status_code == 200  # a password session too
 
 
-def test_oidc_reauth_is_refused_to_a_key_and_to_a_device_token(world: World) -> None:
-    key = world.send(world.admin, "POST", "/api/v1/api-keys", {"name": "k", "scopes": ["read"]})
-    assert key.status_code in (200, 201), key.text
+def test_oidc_reauth_is_refused_to_a_key(world: World) -> None:
+    world.link_admin("admin", sub="mine")
     bare = world.browser("198.51.100.32")
-    answer = bare.post(REAUTH, headers={"Authorization": f"Bearer {key.json()['key']}"})
-    assert answer.status_code in (401, 403)
+    answer = bare.post(REAUTH, headers=api_key(world, "admin"))
+    assert answer.status_code == 403 and answer.json()["code"] == "credential_not_allowed"
 
 
 def test_oidc_reauth_after_the_link_was_removed_is_refused(world: World) -> None:
@@ -228,6 +242,7 @@ def test_oidc_unlink_is_reserved(world: World) -> None:
     assert world.identities() == []
     assert "oidc.unlinked" in world.actions()
     assert world.signed_in_as(mum) is None  # the sessions the link opened go with it
+    assert notices(world, "mum")[-1] == "identity_unlinked"  # even the holder's own is told
     assert world.sign_in(world.browser("198.51.100.33")).headers["location"].startswith("/login")
 
 
@@ -237,11 +252,13 @@ def test_oidc_unlink_with_a_password_session_needs_a_fresh_one_too(world: World)
     stale = world.send(world.mum, "DELETE", IDENTITIES)
     assert stale.status_code == 401 and stale.json()["code"] == "reauth_required"
     assert len(world.identities()) == 1
-    assert "oidc" not in stale.json()["reauth_methods"]  # not a session of the provider
+    methods = stale.json()["reauth_methods"]
+    assert "oidc" in methods and methods[0] != "oidc"  # offered, but the password comes first
 
 
 def test_oidc_unlink_of_nothing_is_a_plain_answer(world: World) -> None:
-    assert world.send(world.mum, "DELETE", IDENTITIES).status_code == 404
+    answer = world.send(world.mum, "DELETE", IDENTITIES)
+    assert answer.status_code == 404 and answer.json()["code"] == "oidc_not_linked"
 
 
 def test_oidc_unlink_attacks(world: World) -> None:
@@ -252,8 +269,7 @@ def test_oidc_unlink_attacks(world: World) -> None:
     assert world.send(world.kid, "DELETE", IDENTITIES).status_code == 403  # a child has none
     assert world.browser("198.51.100.34").delete(IDENTITIES).status_code == 401
     # an API key, whatever its scope
-    key = world.send(world.admin, "POST", "/api/v1/api-keys", {"name": "k", "scopes": ["admin"]})
-    bearer = {"Authorization": f"Bearer {key.json()['key']}"}
+    bearer = api_key(world, "admin")
     bare = world.browser("198.51.100.35")
     assert bare.delete(f"/api/v1/profiles/{world.ids['mum']}/oidc", headers=bearer).status_code == 403
     assert len(world.identities()) == 1
@@ -274,8 +290,9 @@ def test_oidc_an_admin_unlinks_another_account_and_the_holder_is_told(world: Wor
         world.env.settings, "SELECT actor_id, target FROM audit WHERE action='oidc.unlinked'"
     )
     assert [(a, t) for a, t in rows] == [(world.ids["admin"], world.ids["mum"])]
-    assert notices(world, "mum") == ["identity_unlinked"]
-    assert world.send(world.admin, "DELETE", f"/api/v1/profiles/{world.ids['mum']}/oidc").status_code == 404
+    assert notices(world, "mum")[-1] == "identity_unlinked_by_admin"
+    again = world.send(world.admin, "DELETE", f"/api/v1/profiles/{world.ids['mum']}/oidc")
+    assert again.status_code == 404
 
 
 def test_oidc_an_admin_cannot_unlink_another_admin(world: World) -> None:

@@ -99,6 +99,11 @@ class Settings(BaseModel):
     oidc_issuer: str | None = None
     oidc_client_id: str | None = None
     oidc_client_secret: SecretStr | None = None
+    # M5 L04: a session opened by the provider does a reserved action only after the person signed
+    # in there again (`prompt=login`) within this many seconds (`max_age`, and the `auth_time` of
+    # the ID token is held to it). Bounded: below 30 s a slow sign-in could never succeed, above
+    # 900 s it would outlast the freshness a reserved action asks for.
+    oidc_max_age_s: int = Field(default=300, ge=30, le=900)
     # ENF-OBS-002: `/metrics` (Prometheus text) answers only when the host turns it on; a key of
     # scope `metrics` is then the only credential that reads it. Off: the route says 404.
     metrics_enabled: bool = False

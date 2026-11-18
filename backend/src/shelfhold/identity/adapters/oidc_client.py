@@ -110,22 +110,30 @@ class AuthlibOidcProvider:
         return verifier, create_s256_code_challenge(verifier)
 
     def authorization_url(
-        self, *, redirect_uri: str, state: str, nonce: str, code_challenge: str
+        self,
+        *,
+        redirect_uri: str,
+        state: str,
+        nonce: str,
+        code_challenge: str,
+        max_age: int | None = None,
     ) -> str:
+        """`max_age` (seconds) asks the provider to sign the person in again: `prompt=login` makes
+        it do so whatever session it holds, `max_age` is the age of that sign-in it may report."""
         found = self._discover()
-        query = urlencode(
-            {
-                "response_type": "code",
-                "client_id": self._client_id,
-                "redirect_uri": redirect_uri,
-                "scope": "openid",
-                "state": state,
-                "nonce": nonce,
-                "code_challenge": code_challenge,
-                "code_challenge_method": "S256",
-            },
-            quote_via=quote,
-        )
+        asked = {
+            "response_type": "code",
+            "client_id": self._client_id,
+            "redirect_uri": redirect_uri,
+            "scope": "openid",
+            "state": state,
+            "nonce": nonce,
+            "code_challenge": code_challenge,
+            "code_challenge_method": "S256",
+        }
+        if max_age is not None:
+            asked |= {"prompt": "login", "max_age": str(max_age)}
+        query = urlencode(asked, quote_via=quote)
         separator = "&" if "?" in found.authorization_endpoint else "?"
         return f"{found.authorization_endpoint}{separator}{query}"
 

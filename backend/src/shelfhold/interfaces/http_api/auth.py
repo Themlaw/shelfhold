@@ -542,7 +542,7 @@ def reserved_action(
         if isinstance(verdict, CredentialNotAllowed):
             raise ProblemError("credential_not_allowed", extensions={"action": action.name})
         if isinstance(verdict, ReauthRequired):
-            methods = list(auth.reauth_method_names)
+            methods = auth.reauth_methods_for(principal)  # the provider's too, for a linked account
             raise ProblemError(
                 "reauth_required",
                 extensions={

@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
+import sqlalchemy as sa
 from sqlalchemy import Engine
 
 from shelfhold.events.bus import EventBus
@@ -19,6 +20,7 @@ from shelfhold.infrastructure.clock import Clock
 from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.fsops import Fsops
 from shelfhold.infrastructure.restore_notice import clear_notice, read_notice
+from shelfhold.infrastructure.schema import identity
 from shelfhold.ops.errors import ExitUnavailableError, NotWaitingError
 from shelfhold.ops.ports import WaitingItem
 
@@ -67,6 +69,9 @@ class RestoreGuardExit:
             raise NotWaitingError(f"forget-root refused: {refused.reason}") from refused
 
 
+_oidc = identity.oidc_identity
+
+
 class RestoreCredentialsExit:
     """`restore acknowledge`: the person has looked at the passkeys and the passwords changed
     since the backup. The notice is a row of the database (written in the transaction of the
@@ -105,7 +110,10 @@ class RestoreCredentialsExit:
         return [WaitingItem("restored_credentials", "instance", "instance", reason)]
 
     def acknowledge(self, *, principal: Principal) -> list[str]:
-        """The passkeys that changed since the backup, as far as they are known."""
+        """What is left to check: the passkeys that changed since the backup, as far as they are
+        known, then every identity-provider link of the database as it stands (`oidc: <account> @
+        <issuer> (linked <date>)`, never the identifier): a link removed since the backup is back,
+        and nobody can tell which from the backup alone (M5 L04, #362 review)."""
         with write_transaction(self._engine) as connection:
             data = read_notice(connection)
             if data is None:
@@ -123,4 +131,12 @@ class RestoreCredentialsExit:
                 )
             )
             clear_notice(connection)
-        return list(data.passkey_changes)
+            links = connection.execute(
+                sa.select(identity.user.c.username, _oidc.c.issuer, _oidc.c.linked_at)
+                .join(identity.user, identity.user.c.id == _oidc.c.user_id)
+                .order_by(identity.user.c.username, _oidc.c.issuer)
+            ).all()
+        return [
+            *data.passkey_changes,
+            *(f"oidc: {r.username} @ {r.issuer} (linked {r.linked_at:%Y-%m-%d})" for r in links),
+        ]

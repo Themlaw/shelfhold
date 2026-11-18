@@ -34,6 +34,7 @@ from shelfhold.identity.public import (
     OidcLink,
     OidcRefusedError,
     OidcUnavailableError,
+    OidcUnlink,
     Principal,
     ThrottledError,
 )
@@ -56,14 +57,19 @@ OIDC_CALLBACK_PATH = f"{OIDC_PATH}/callback"
 OIDC_LINK_PATH = f"{OIDC_PATH}/link"
 OIDC_CONFIRM_PATH = f"{OIDC_LINK_PATH}/confirm"
 OIDC_IDENTITIES_PATH = f"{OIDC_PATH}/identities"
-# where a person who linked from their account goes back to: the home screen, with the result in
-# the query (the settings screen of L04 takes it over)
-LINK_RESULT_PATH = "/"
+OIDC_REAUTH_PATH = f"{OIDC_PATH}/reauth"
+# where a person who linked, or proved themselves again, comes back to: the settings screen of
+# their provider identities, with the result in the query (`linked`, `reauth`, `refused`)
+LINK_RESULT_PATH = "/reglages/compte/oidc"
 
 _ADULTS = ("admin", "member")  # a child profile is never linked
 _LINK = reserved_action(RESERVED_ACTIONS["oidc.link_own"], roles=_ADULTS, audit=False)
 _LINK_ACCOUNT = reserved_action(
     RESERVED_ACTIONS["oidc.link_account"], roles=("admin",), audit=False
+)
+_UNLINK = reserved_action(RESERVED_ACTIONS["oidc.unlink_own"], roles=_ADULTS, audit=False)
+_UNLINK_ACCOUNT = reserved_action(
+    RESERVED_ACTIONS["oidc.unlink_account"], roles=("admin",), audit=False
 )
 
 
@@ -93,6 +99,8 @@ class OidcIdentityItem(BaseModel):
 
 
 class OidcIdentityList(BaseModel):
+    # the provider this instance is set to ask, None when no provider is configured
+    configured_issuer: str | None
     items: list[OidcIdentityItem]
 
 
@@ -177,7 +185,7 @@ def build_oidc_router() -> APIRouter:
         except OidcRefusedError as refused:
             response = (
                 RedirectResponse(f"{LINK_RESULT_PATH}?oidc=refused", status_code=303)
-                if refused.purpose == "link"
+                if refused.purpose in ("link", "reauth")
                 else _refused_to_login()
             )
             clear_oidc_cookie(response, names)
@@ -188,7 +196,10 @@ def build_oidc_router() -> APIRouter:
             response.headers["Cache-Control"] = "no-store"
             return response
         if outcome.issued is not None:
-            response = RedirectResponse("/", status_code=303)
+            response = RedirectResponse(
+                f"{LINK_RESULT_PATH}?oidc=reauth" if outcome.purpose == "reauth" else "/",
+                status_code=303,
+            )
             set_session_cookies(response, names, outcome.issued)
         else:
             response = RedirectResponse(f"{LINK_RESULT_PATH}?oidc=linked", status_code=303)
@@ -207,6 +218,34 @@ def build_oidc_router() -> APIRouter:
             )
         except OidcUnavailableError:
             raise ProblemError("oidc_unavailable") from None
+        response = JSONResponse({"authorization_url": start.url})
+        set_oidc_cookie(
+            response, gate.cookies_for(request.scope), start.binder, max_age=FLOW_COOKIE_MAX_AGE_S
+        )
+        response.headers["Cache-Control"] = "no-store"
+        return response
+
+    @router.post(OIDC_REAUTH_PATH, response_model=OidcLinkStart)
+    def oidc_reauth(
+        request: Request, principal: Annotated[Principal, Depends(require_session)]
+    ) -> Response:
+        """The session proves itself again at the provider (`prompt=login`, `max_age`). Not a
+        reserved action: it is the proof one asks for. For a session of a linked adult only."""
+        gate = gate_of(request)
+        if not gate.auth.oidc_available or principal.session_id is None:
+            raise ProblemError("oidc_unavailable")
+        if principal.role == "child" or principal.via_forward:
+            raise ProblemError("forbidden", extensions={"action": "oidc.reauth"})
+        try:
+            start = gate.auth.oidc.begin_reauth(
+                user_id=principal.user_id, session_id=principal.session_id
+            )
+        except OidcRefusedError:
+            raise ProblemError("oidc_not_linked") from None
+        except OidcUnavailableError:
+            raise ProblemError("oidc_unavailable") from None
+        except ThrottledError as error:
+            raise _throttled(error) from None
         response = JSONResponse({"authorization_url": start.url})
         set_oidc_cookie(
             response, gate.cookies_for(request.scope), start.binder, max_age=FLOW_COOKIE_MAX_AGE_S
@@ -268,14 +307,45 @@ def build_oidc_router() -> APIRouter:
     def oidc_identities(
         request: Request, principal: Annotated[Principal, Depends(require_session)]
     ) -> OidcIdentityList:
-        views = gate_of(request).auth.oidc_identities_of(principal)
+        auth = gate_of(request).auth
+        views = auth.oidc_identities_of(principal)
         return OidcIdentityList(
+            configured_issuer=auth.oidc.issuer if auth.oidc_available else None,
             items=[
                 OidcIdentityItem(
                     issuer=v.issuer, linked_at=v.linked_at, linked_by_other=v.linked_by_other
                 )
                 for v in views
             ]
+        )
+
+    def _unlinked(outcome: OidcUnlink) -> Response:
+        if outcome is OidcUnlink.UNLINKED:
+            return Response(status_code=204, headers={"Cache-Control": "no-store"})
+        if outcome is OidcUnlink.ADMIN_TARGET:
+            raise ProblemError("oidc_admin_target")
+        if outcome is OidcUnlink.NO_ACCOUNT:
+            raise ProblemError("profile_not_found")
+        raise ProblemError("oidc_not_linked")
+
+    @router.delete(OIDC_IDENTITIES_PATH, status_code=204)
+    def oidc_unlink(
+        request: Request, principal: Annotated[Principal, Depends(_UNLINK)]
+    ) -> Response:
+        """The reserved action `oidc.unlink_own`: a fresh session (for one the provider opened,
+        proved again there), and the holder is told."""
+        return _unlinked(
+            gate_of(request).auth.unlink_oidc_identities(user_id=principal.user_id, by=principal)
+        )
+
+    @router.delete("/api/v1/profiles/{profile_id}/oidc", status_code=204, tags=["profiles"])
+    def oidc_unlink_account(
+        request: Request,
+        profile_id: str,
+        principal: Annotated[Principal, Depends(_UNLINK_ACCOUNT)],
+    ) -> Response:
+        return _unlinked(
+            gate_of(request).auth.unlink_oidc_identities(user_id=profile_id[:26], by=principal)
         )
 
     @router.put("/api/v1/profiles/{profile_id}/oidc", status_code=204, tags=["profiles"])

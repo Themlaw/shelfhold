@@ -991,7 +991,7 @@
   "lists.state.to_buy": "To buy",
   "lists.state.borrow_elsewhere": "To borrow elsewhere",
   "approve.import_list": "Import a list",
-  "oidc.title": "Identity provider links",
+  "oidc.title": "Identity provider",
   "oidc.none": "No identity linked. Your password and passkeys remain your ways in.",
   "oidc.linked_since": "Linked on {date}",
   "oidc.by_admin": "Linked by an administrator",
@@ -999,5 +999,14 @@
   "oidc.error": "The link could not be started. The identity provider may not be configured.",
   "oidc.refused": "The link was refused.",
   "oidc.linked": "Identity linked.",
-  "oidc.list_error": "The list of identities could not be loaded."
+  "oidc.list_error": "The list of identities could not be loaded.",
+  "reauth.provider": "Confirm with the identity provider",
+  "oidc.issuer": "Provider: {issuer}",
+  "oidc.not_configured": "No identity provider is configured on this instance: there is nothing to link.",
+  "oidc.unlink": "Unlink",
+  "oidc.unlinked": "Identity unlinked. You will be told through your notification channels.",
+  "oidc.unlink_error": "Unlinking failed.",
+  "oidc.reauth_done": "Identity confirmed with the provider.",
+  "oidc.reauth_refused": "The provider could not confirm it is you. Try again.",
+  "oidc.back": "Settings"
 }

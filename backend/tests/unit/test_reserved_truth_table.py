@@ -319,6 +319,8 @@ FRESHNESS_LINE = {
             "device_token.rotate",  # M5 L02: a new secret of an e-reader is shown once
             "oidc.link_own",  # M5 L03: a way in that outlives the session that added it
             "oidc.link_account",  # M5 L03: the admin adds one for another account
+            "oidc.unlink_own",  # M5 L04: a stolen session must not cut the owner off
+            "oidc.unlink_account",  # M5 L04: nor an admin do it unseen
         ),
         "p3",
     ),

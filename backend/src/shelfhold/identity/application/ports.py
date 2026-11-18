@@ -232,6 +232,13 @@ class OidcLink(StrEnum):
     ADMIN_TARGET = "admin_target"  # an admin links her own account or an adult member's, no other
 
 
+class OidcUnlink(StrEnum):
+    UNLINKED = "unlinked"
+    NOT_LINKED = "not_linked"  # the account holds no link
+    NO_ACCOUNT = "no_account"
+    ADMIN_TARGET = "admin_target"  # an admin unlinks her own account or an adult member's only
+
+
 @dataclass(frozen=True)
 class OidcIdentityView:
     """What the holder of an account is shown of a link: the provider and since when, never the
@@ -240,6 +247,15 @@ class OidcIdentityView:
     issuer: str
     linked_at: datetime
     linked_by_other: bool | None
+
+
+@dataclass(frozen=True)
+class OidcIdentityListing:
+    """A link as `restore acknowledge` lists it: the account and the provider, never the `sub`."""
+
+    username: str
+    issuer: str
+    linked_at: datetime
 
 
 class ProofWithdrawnError(Exception):
@@ -271,6 +287,16 @@ class IdentityStore(Protocol):
         audit: AuditEntry,
         admin_actor: str | None = None,
     ) -> OidcLink: ...
+    def unlink_oidc_identity(
+        self,
+        *,
+        user_id: str,
+        issuer: str,
+        now: datetime,
+        audit: AuditEntry,
+        by_other: bool,
+    ) -> bool: ...
+    def oidc_identity_list(self) -> Sequence[OidcIdentityListing]: ...
     def session_is_live(self, session_id: str, *, now: datetime) -> bool: ...
     def admins(self) -> Sequence[UserRecord]: ...
     def has_role(self, role: str) -> bool: ...
@@ -429,8 +455,14 @@ class IdentityStore(Protocol):
         self, session_id: str, *, now: datetime, absolute_expiry: datetime
     ) -> None: ...
     def rotate_session(
-        self, session_id: str, *, token_hash: str, csrf_secret: str, now: datetime
-    ) -> None: ...
+        self,
+        session_id: str,
+        *,
+        token_hash: str,
+        csrf_secret: str,
+        now: datetime,
+        auth_time: datetime | None = None,
+    ) -> bool: ...
     def revoke_session_by_token_hash(self, token_hash: str, *, now: datetime) -> None: ...
     def revoke_sessions(
         self, *, now: datetime, user_id: str | None = None, session_id: str | None = None

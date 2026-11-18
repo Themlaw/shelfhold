@@ -70,5 +70,7 @@ def local_auth(
             ),
             flows=MemoryOidcFlows(),
             redirect_uri=f"{(settings.public_url or '').rstrip('/')}{OIDC_CALLBACK_PATH}",
+            # never more than a session stays fresh, or the proof would be stale on arrival
+            max_age_s=min(settings.oidc_max_age_s, settings.fresh_auth_s),
         )
     return auth

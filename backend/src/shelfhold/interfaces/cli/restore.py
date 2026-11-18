@@ -28,6 +28,10 @@ def register(commands: argparse._SubParsersAction[argparse.ArgumentParser]) -> N
 def run_acknowledge(_args: argparse.Namespace, channel: OpsChannel) -> int:
     done = channel.call("ops.restore_acknowledge")
     for change in done.get("passkey_changes", []) if isinstance(done, dict) else []:
-        print(t("ops.restore_passkey_change", change=change))
+        link = str(change).removeprefix("oidc: ")
+        if link != change:  # an identity-provider link to check, not a passkey
+            print(t("ops.restore_oidc_link", link=link))
+        else:
+            print(t("ops.restore_passkey_change", change=change))
     print(t("ops.restore_acknowledged"))
     return 0

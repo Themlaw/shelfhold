@@ -24,6 +24,7 @@ from shelfhold.identity.application.passkeys import (
     PasskeyRefusedError,
     PasskeyUnavailableError,
 )
+from shelfhold.identity.application.reauth import NEVER
 from shelfhold.identity.application.ports import (
     ApiKeyRecord,
     AuditEntry,
@@ -38,6 +39,7 @@ from shelfhold.identity.application.ports import (
     NewSession,
     OidcIdentityView,
     OidcLink,
+    OidcUnlink,
     PasskeyGoneError,
     PasskeyRecord,
     PasswordHasherPort,
@@ -352,6 +354,11 @@ class LocalAuth:
         methods = list(reauth_methods if reauth_methods is not None else [PasswordReauth(hasher)])
         self._passkeys = passkeys
         self._options_throttle = LoginThrottle(
+            per_address=OPTIONS_PER_MINUTE, per_account=OPTIONS_PER_MINUTE
+        )
+        # the provider's start has a budget of its own (M5 L04, #362 review): one script spending
+        # the passkey options must not close the provider's sign-in, nor the reverse
+        self._oidc_start_throttle = LoginThrottle(
             per_address=OPTIONS_PER_MINUTE, per_account=OPTIONS_PER_MINUTE
         )
         if passkeys is not None and passkeys.available:  # the method exists in a secure context
@@ -1042,6 +1049,13 @@ class LocalAuth:
         if wait is not None:
             raise ThrottledError(max(1, math.ceil(wait)))
 
+    def reserve_oidc_start(self, *, ip: str) -> None:
+        """The start of a sign-in at the provider: the same ceiling as passkey options, counted
+        apart from them (`ThrottledError`)."""
+        wait = self._oidc_start_throttle.reserve(ip=ip, account=ip, now=self.now())
+        if wait is not None:
+            raise ThrottledError(max(1, math.ceil(wait)))
+
     def reserve_attempt(self, *, ip: str, account: str) -> datetime:
         return self._reserve_attempt(ip=ip, account=account)
 
@@ -1100,6 +1114,95 @@ class LocalAuth:
             now=self.now(),
             audit=entry,
             admin_actor=by.user_id if by is not None else None,
+        )
+
+    def unlink_oidc_identities(self, *, user_id: str, by: Principal) -> OidcUnlink:
+        """Removes the links of an account, each in one transaction with its audit line, the end of
+        the sessions the provider opened for the account and the notice to the holder (also when
+        the holder did it themselves: a stolen fresh session could). The caller has passed the
+        reserved action (`oidc.unlink_own`, `oidc.unlink_account`). An admin unlinks her own
+        account or any other that is not an admin's, as for linking."""
+        account = self._store.user_by_id(user_id)
+        if account is None:
+            return OidcUnlink.NO_ACCOUNT
+        if account.role == "admin" and user_id != by.user_id:
+            return OidcUnlink.ADMIN_TARGET
+        removed = False
+        for view in self._store.oidc_identities_of(user_id):
+            entry = AuditEntry(
+                actor_id=audit_actor(by),
+                action="oidc.unlinked",
+                at=self.now(),
+                target=user_id,
+                session_id=by.session_id,
+                auth_time=by.auth_time,
+            )
+            removed |= self._store.unlink_oidc_identity(
+                user_id=user_id,
+                issuer=view.issuer,
+                now=self.now(),
+                audit=entry,
+                by_other=by.user_id != user_id,
+            )
+        return OidcUnlink.UNLINKED if removed else OidcUnlink.NOT_LINKED
+
+    def reauth_methods_for(self, principal: Principal) -> list[str]:
+        """The ways this session can be proved again: the local ones, and the provider's when the
+        account is linked to it. First for a session the provider opened (it carries no local
+        proof, `NEVER`), last for any other."""
+        methods = list(self._reauth)
+        if (
+            self.oidc is not None
+            and principal.credential is Credential.SESSION
+            and principal.role != "child"
+            and self._store.oidc_identity_of(principal.user_id, self.oidc.issuer) is not None
+        ):
+            if principal.auth_time is not None and principal.auth_time <= NEVER:
+                methods.insert(0, "oidc")
+            else:
+                methods.append("oidc")
+        return methods
+
+    def renew_session_from_provider(
+        self, *, user_id: str, session_id: str, auth_time: datetime
+    ) -> IssuedSession | None:
+        """The provider signed the person in again (verified by the caller, who gives the moment
+        it said): the same session row gets a new token, a new CSRF secret and that `auth_time`.
+        None when the session or the account is gone, or the account is a child's."""
+        user = self._store.user_by_id(user_id)
+        if user is None or user.role == "child":
+            return None
+        now = self.now()
+        token, csrf = new_token(), new_token()
+        if not self._store.rotate_session(
+            session_id,
+            token_hash=token_digest(token),
+            csrf_secret=csrf,
+            now=now,
+            auth_time=auth_time,
+        ):
+            return None
+        record = self._store.session_by_token_hash(token_digest(token))
+        if record is None or record.revoked_at is not None or record.user.id != user_id:
+            return None
+        principal = Principal(
+            user_id=user.id,
+            username=user.username,
+            role=user.role,
+            credential=Credential.SESSION,
+            session_id=session_id,
+            auth_time=auth_time,
+            can_rate=user.can_rate,
+            locale=user.locale,
+        )
+        self._audit("auth.reauth", principal, target="oidc")
+        policy = self._policy(user.role)
+        return IssuedSession(
+            token=token,
+            csrf_secret=csrf,
+            principal=principal,
+            remember=record.remember,
+            cookie_max_age_s=_seconds(policy.idle) if record.remember else None,
         )
 
     def oidc_identities_of(self, principal: Principal) -> Sequence[OidcIdentityView]:
