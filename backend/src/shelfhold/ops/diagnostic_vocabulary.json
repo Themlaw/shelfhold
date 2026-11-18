@@ -1223,6 +1223,7 @@
   "shelfhold.acquisition.application.presence",
   "shelfhold.acquisition.application.ranges",
   "shelfhold.acquisition.application.reacquire",
+  "shelfhold.acquisition.application.read_markers",
   "shelfhold.acquisition.application.read_state_push",
   "shelfhold.acquisition.application.request_lists",
   "shelfhold.acquisition.application.requests",
