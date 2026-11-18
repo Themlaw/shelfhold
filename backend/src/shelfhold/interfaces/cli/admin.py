@@ -29,6 +29,7 @@ from shelfhold.config import ResolvedSettings, Settings
 from shelfhold.i18n import t
 from shelfhold.identity.domain.roles import ProfileError
 from shelfhold.identity.public import (
+    DEVICE_KINDS,
     AdminExistsError,
     LocalAuth,
     UnknownUserError,
@@ -143,6 +144,7 @@ def register(commands: argparse._SubParsersAction[argparse.ArgumentParser]) -> N
     issue.add_argument(
         "--expires-days", type=int, metavar="DAYS", help=t("cli.admin_device_expires_help")
     )
+    issue.add_argument("--kind", choices=DEVICE_KINDS, help=t("cli.admin_device_kind_help"))
     issue.set_defaults(handler=run_device_tokens_create, configure_logging=False)
     device_list = device_actions.add_parser("list", help=t("cli.admin_devices_list_help"))
     device_list.add_argument("--json", action="store_true", help=t("cli.json_help"))
@@ -150,6 +152,17 @@ def register(commands: argparse._SubParsersAction[argparse.ArgumentParser]) -> N
     device_revoke = device_actions.add_parser("revoke", help=t("cli.admin_devices_revoke_help"))
     device_revoke.add_argument("public_id", help=t("cli.admin_device_id_help"))
     device_revoke.set_defaults(handler=run_device_tokens_revoke)
+    device_rotate = device_actions.add_parser(
+        "rotate", help=t("cli.admin_devices_rotate_help"), allow_abbrev=False
+    )
+    device_rotate.add_argument("device_id", help=t("cli.admin_device_registry_id_help"))
+    device_rotate.add_argument(
+        "--expires-days", type=int, metavar="DAYS", help=t("cli.admin_device_expires_help")
+    )
+    device_rotate.set_defaults(handler=run_device_tokens_rotate, configure_logging=False)
+    device_remove = device_actions.add_parser("remove", help=t("cli.admin_devices_remove_help"))
+    device_remove.add_argument("device_id", help=t("cli.admin_device_registry_id_help"))
+    device_remove.set_defaults(handler=run_device_remove)
 
 
 def _fail(message: str) -> int:
@@ -413,8 +426,9 @@ def run_keys_revoke(args: argparse.Namespace, auth: IdentityCommands) -> int:
 def run_device_tokens_create(args: argparse.Namespace, auth: IdentityCommands) -> int:
     try:
         created = auth.create_device_token(
-            subject_username=args.profile, name=args.name, expires_days=args.expires_days
-        )
+            subject_username=args.profile, name=args.name, expires_days=args.expires_days,
+            kind=args.kind,
+        )  # fmt: skip
     except UnknownUserError:
         return _fail(t("admin.unknown_user", username=args.profile))
     except ProfileError:  # the subject is an administrator
@@ -440,6 +454,7 @@ def run_device_tokens_list(args: argparse.Namespace, auth: IdentityCommands) -> 
     rows: list[dict[str, object]] = [
         {
             "id": token.public_id,
+            "device_id": token.device_id,
             "profile": token.profile,
             "name": token.name,
             "created_at": token.created_at.isoformat(),
@@ -460,6 +475,7 @@ def run_device_tokens_list(args: argparse.Namespace, auth: IdentityCommands) -> 
         print(
             t(
                 "admin.device_line",
+                device_id=token.device_id or "-",
                 public_id=token.public_id,
                 profile=token.profile,
                 name=token.name or "-",
@@ -474,4 +490,31 @@ def run_device_tokens_revoke(args: argparse.Namespace, auth: IdentityCommands) -
     if not auth.revoke_device_token(args.public_id):
         return _fail(t("admin.device_unknown", public_id=args.public_id))
     print(t("admin.device_revoked", public_id=args.public_id))
+    return 0
+
+
+@_command
+def run_device_tokens_rotate(args: argparse.Namespace, auth: IdentityCommands) -> int:
+    """A new secret on the same device: the old one is refused at once, the identifier stays."""
+    try:
+        rotated = auth.rotate_device(args.device_id, expires_days=args.expires_days)
+    except ProfileError as error:
+        if error.code == "device_rotated_meanwhile":  # another rotation won: nothing was shown
+            return _fail(t("admin.device_rotated_meanwhile"))
+        return _fail(t("admin.device_expiry_required"))  # past its expiry: ask for a new one
+    except ValueError:
+        return _fail(t("cli.admin_device_expires_help"))
+    if rotated is None:
+        return _fail(t("admin.device_registry_unknown", device_id=args.device_id))
+    print(t("admin.device_rotated", public_id=rotated.public_id), file=sys.stderr)
+    print(rotated.secret)  # stdout carries the secret alone, once
+    print(t("admin.device_hint"), file=sys.stderr)
+    return 0
+
+
+@_revocation
+def run_device_remove(args: argparse.Namespace, auth: IdentityCommands) -> int:
+    if not auth.retire_device(args.device_id):
+        return _fail(t("admin.device_registry_unknown", device_id=args.device_id))
+    print(t("admin.device_removed", device_id=args.device_id))
     return 0

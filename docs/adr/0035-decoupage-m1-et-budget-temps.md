@@ -82,3 +82,7 @@ ENF-GOV-005, ENF-GOV-003, ENF-GOV-001, EF-USR-021, EF-INT-023, ENF-SEC-015, EF-E
 ## Amendement M2 (2026-11-12) : coupables de M2 (D2)
 
 Lot M2 L33. 03 ne listait aucun élément coupable pour M2, ce qui, d'après la règle de coupe, interdisait toute coupe. La liste de M2 est : rastérisation SVG, Standard Ebooks, EF-SRC-038, EF-INT-009 et l'option lien dur d'EF-EXP-015 (environ 17 h). **Aucun n'a été coupé : tous ont été livrés** : SVG rastérisé dans le worker de décodage (PR #164, L10), Standard Ebooks (PR #155, L24), cadence adaptative EF-SRC-038 (PR #169, L29), import d'un arbre Suwayomi EF-INT-009 (PR #166, L21), option lien dur (PR #171, L18). Les garanties de cohérence, la sécurité, le contrôle parental et la surface d'exploitation restent non coupables.
+
+## Amendement M5 (2026-11-17) : coupables de M5 (D-P2)
+
+Les trois éléments reportés de M4 (thèmes B, C et D avec le sélecteur, plugin ComicVine, transport WebSocket des événements de Kavita, EF-EXP-034) sont les coupables de M5 : au-delà de 150 % de la boîte de 235 h, seuls ils glissent, sans débat (~17 h). Aucun nouveau coupable n'est ajouté en M5 ; les thèmes A ne sont jamais coupés ; aucun coupable ne touche à la sécurité, au contrôle parental ni à l'intégrité.

@@ -27,7 +27,7 @@ plans of the Editions that would then share a key. It applies nothing.
 import hashlib
 import hmac
 import json
-from collections.abc import Callable, Sequence
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
@@ -474,8 +474,3 @@ def plan_after_contributor_merge(
         if twin is not None:
             plans.append(plan_edition_merge(connection, str(twin), row.id, screen=screen))
     return tuple(sorted(plans, key=lambda p: (p.keep_id, p.drop_id)))
-
-
-def edition_key_of(connection: Connection, edition_id: str) -> Sequence[tuple[str, str]]:
-    row = _edition(connection, edition_id)
-    return tuple((c, str(row._mapping[c])) for c in EDITION_KEY)

@@ -378,6 +378,17 @@ rotated_from = "Key this one replaces."
 subject_user_id = "User the key acts as."
 issued_by = "Actor that issued the key."
 
+[tables.device]
+description = "Devices: what a pairing makes (an e-reader, a client), one per pairing, listed by the registry. It reads as one reader profile; its secret is its token's, never here."
+[tables.device.columns]
+id = "Device identifier (ULID)."
+subject_user_id = "Reader profile the device reads as."
+label = "Name a person gave it (for example the living-room e-reader); empty when none."
+kind = "Closed list: koreader, kobo, opds, browser, other."
+created_at = "When it was paired (UTC)."
+last_seen_at = "When one of its tokens was last accepted (UTC); empty: never seen."
+revoked_at = "When it was removed (UTC); its tokens end with it."
+
 [tables.device_token]
 description = "Device tokens: the credential of an e-reader (OPDS, kosync), issued for a reader profile. Only the SHA-256 of the md5 of the secret is stored; the secret is shown once."
 [tables.device_token.columns]
@@ -386,6 +397,7 @@ public_id = "Short public identifier: the x-auth-user header and the HTTP Basic 
 name = "Name given when it was issued (the device)."
 subject_user_id = "Reader profile the token acts as; its rights and filters are this profile's."
 issued_by = "Account that issued the token (audit only); empty when the host operator did."
+device_id = "Device the token belongs to; a rotation changes the digest and keeps the device."
 secret_digest = "SHA-256 of the md5 of the secret, never the secret or its md5."
 expires_at = "When the token stops working (UTC); empty: it does not expire."
 last_used_at = "When the token was last accepted (UTC)."
