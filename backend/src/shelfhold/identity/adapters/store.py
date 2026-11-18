@@ -1241,8 +1241,10 @@ class SqlIdentityStore:
     def _device_tokens(
         self, where: sa.ColumnElement[bool] | None = None
     ) -> list[DeviceTokenRecord]:
-        query = sa.select(_device, *_USER_COLUMNS).join(
-            _user, _user.c.id == _device.c.subject_user_id
+        query = (
+            sa.select(_device, *_USER_COLUMNS, _registry.c.revoked_at.label("device_revoked_at"))
+            .join(_user, _user.c.id == _device.c.subject_user_id)
+            .outerjoin(_registry, _registry.c.id == _device.c.device_id)
         )
         if where is not None:
             query = query.where(where)
@@ -1261,6 +1263,7 @@ class SqlIdentityStore:
                 revoked_at=row.revoked_at,
                 secret_digest=row.secret_digest,
                 device_id=row.device_id,
+                device_revoked_at=row.device_revoked_at,
             )
             for row in rows
         ]

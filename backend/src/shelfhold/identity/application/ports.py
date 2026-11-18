@@ -127,6 +127,7 @@ class DeviceTokenRecord:
     revoked_at: datetime | None
     secret_digest: str = field(repr=False, default="")
     device_id: str | None = None  # M5 L02: every token is paired to a device
+    device_revoked_at: datetime | None = None  # its device, retired: the token opens nothing
 
     @property
     def profile(self) -> str:
