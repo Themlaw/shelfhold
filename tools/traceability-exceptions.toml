@@ -121,6 +121,11 @@ path = "backend/tests/unit/test_production_reachability.py"
 reason = "garde de joignabilité des tests `req` (L58) : contrôle les tests, pas une exigence du produit"
 
 [[exception]]
+path = "backend/tests/integration/test_l00_m5_import_contracts.py"
+tests = ["test_allowlist_m5_entries_are_commented"]
+reason = "hygiène de la liste blanche de joignabilité (M5 L00) : chaque entrée `until = \"M5\"` porte son commentaire en ligne ; contrôle la garde, pas une exigence du produit"
+
+[[exception]]
 path = "backend/tests/unit/test_openapi_diff.py"
 reason = "règles de rupture de tools/openapi_diff.py (L58) : test de l'outil lui-même"
 
