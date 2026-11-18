@@ -751,6 +751,11 @@ def _plain(value: object) -> str:
     return repr(value)
 
 
+# The binding an alias was made for is not carried (the shelf and its bindings are re-made by the
+# next instance): the alias comes back without it, and outlives it anyway (M4 L47).
+NOT_CARRIED = {"document_alias": frozenset({"shelf_destination_id"})}
+
+
 def dump(engine: sa.Engine) -> dict[str, list[dict[str, str]]]:
     """Every row of every exported table, as text, in a stable order (the dropped columns left)."""
     result: dict[str, list[dict[str, str]]] = {}
@@ -759,6 +764,7 @@ def dump(engine: sa.Engine) -> dict[str, list[dict[str, str]]]:
             if table.name not in EXPORTED_TABLES:
                 continue
             dropped = DROPPED_COLUMNS.get(table.name, frozenset())
+            dropped |= NOT_CARRIED.get(table.name, frozenset())
             names = [c.name for c in table.columns if c.name not in dropped]
             found = [
                 {n: _plain(row._mapping[n]) for n in names}

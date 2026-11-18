@@ -16,6 +16,7 @@ import sqlalchemy as sa
 
 from shelfhold.export.application.fan_out import EpubFile
 from shelfhold.export.application.intents import IntentJournal, open_intent_paths
+from shelfhold.export.application.locks import ResourceLocks
 from shelfhold.infrastructure.schema import coherence
 from tests.cwa_env import add_book, bind_cwa, folder, names, records, rig
 from tests.export_env import export_env
@@ -125,6 +126,7 @@ def test_kill9_during_a_cwa_drop_resumes_without_duplicate_or_partial_file(
         assert seen.violations == []
 
         IntentJournal(env.engine, env.lib.fsops, clock=env.clock).resolve_open()
+        ResourceLocks(env.engine, clock=env.clock).release_all()  # the lock the dead run held
         with env.engine.connect() as connection:
             assert open_intent_paths(connection) == frozenset()
         restart, _source = rig(env, store)

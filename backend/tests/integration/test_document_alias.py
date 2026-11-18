@@ -85,6 +85,7 @@ def test_alias_failure_never_fails_nor_rolls_back_an_export(
         assert scans  # the rest of the run went on
         aliases = _aliases(env, exported.export_item_id)  # the transaction's own aliases are there
         assert exported.old_file_hash in aliases and row.file_hash in aliases
-        assert all(
-            a.koreader_partial_md5 is None and a.kavita_md5 is None for a in aliases.values()
-        )
+        # the rewrite's own alias has no hashes (the hook failed); the first file's was hashed by
+        # the export that placed it (M4 L47), before the hook broke
+        written = aliases[row.file_hash]
+        assert written.koreader_partial_md5 is None and written.kavita_md5 is None

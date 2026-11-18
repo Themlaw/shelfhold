@@ -76,3 +76,11 @@ class OneShotFetcher:
             return await fetcher.get(url, **options)
         finally:
             await fetcher.aclose()
+
+    async def post(self, url: str, **options: Any) -> Response:
+        """The writes of a member's progress go the same way: one connection, closed after."""
+        fetcher = await self._network.open_integration_fetcher(self._url, self._limits)
+        try:
+            return await fetcher.post(url, **options)
+        finally:
+            await fetcher.aclose()

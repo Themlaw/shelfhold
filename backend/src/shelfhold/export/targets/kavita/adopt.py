@@ -40,7 +40,9 @@ from sqlalchemy import Connection, Engine
 from shelfhold.catalog.public import (
     LANG_NORMALIZER_ID,
     LanguageError,
+    content_warning_age,
     edition_key_lang,
+    suggest_age,
     translation_type_for,
 )
 from shelfhold.export.application.coverage import (
@@ -948,6 +950,8 @@ class Adopter:
             suspend_follow(connection, ctx.shelf_id, [self._work_of(connection, edition_id)])
         self._freeze_series(connection, ctx, item, edition_id, now)
         self._suggest_age(connection, item, edition_id, now)
+        if item.edition_id is not None and item.age is None:
+            self._hold_unrated_join(connection, edition_id, now)
         order = _next_order(connection, edition_id)
         volumes: list[tuple[AdoptedFile, str]] = []
         for file in fresh:
@@ -1039,6 +1043,23 @@ class Adopter:
                 export_series_id=series_id, assigned_at=now, assigned_by="first_export",
             )
         )  # fmt: skip
+
+    @staticmethod
+    def _hold_unrated_join(connection: Connection, edition_id: str, now: datetime) -> None:
+        """A foreign file that joins an Edition **by its name alone**, and says no age, was seen by
+        nobody (J-PAR-2): it never takes the rating of the Edition it joined. Where that
+        Edition is rated, 18+ is suggested (provenance `import`, as nothing in the file said it),
+        so the shelf's one door keeps the Edition out of a child's view until an admin rates it
+        again, in "À classer"."""
+        edition, work = catalog.edition, catalog.work
+        rated = connection.execute(
+            sa.select(sa.or_(edition.c.rated_at.is_not(None), work.c.rated_at.is_not(None)))
+            .select_from(edition.join(work, work.c.id == edition.c.work_id))
+            .where(edition.c.id == edition_id)
+        ).scalar()
+        unknown = content_warning_age(None)  # not known to be safe: 18+
+        if rated and unknown is not None:
+            suggest_age(connection, "edition", edition_id, unknown, provenance="import", now=now)
 
     @staticmethod
     def _suggest_age(

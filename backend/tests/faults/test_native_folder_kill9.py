@@ -18,6 +18,7 @@ import sqlalchemy as sa
 from shelfhold.acquisition.public import RootGuard
 from shelfhold.export.application.fan_out import FanOut, HostContentStore
 from shelfhold.export.application.intents import IntentJournal, open_intent_paths
+from shelfhold.export.application.locks import ResourceLocks
 from shelfhold.export.targets.native_folder.source import NativeFolderSource
 from shelfhold.infrastructure.schema import coherence
 from tests.byte_source_env import unit_with_item
@@ -139,6 +140,7 @@ def test_kill9_during_a_native_folder_pass_resumes_without_duplicate_or_loss(
         _whole_archives(root)  # whatever the step: nothing visible is half written
 
         IntentJournal(env.engine, env.lib.fsops, clock=env.clock).resolve_open()
+        ResourceLocks(env.engine, clock=env.clock).release_all()  # the lock the dead run held
         with env.engine.connect() as connection:
             assert open_intent_paths(connection) == frozenset()
         source = NativeFolderSource(env.engine, root_check=RootGuard().check_root)

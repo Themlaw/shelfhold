@@ -7,6 +7,7 @@ CODES: tuple[ErrorCode, ...] = (
     ErrorCode("target.exchange_failed", 502, "admin"),
     ErrorCode("target.conflict", 409, "admin"),
     ErrorCode("target.unknown", 404, "admin"),
+    ErrorCode("destination.sync_unsupported", 409, "admin"),
     ErrorCode("config.unknown_key", 404, "admin"),
     ErrorCode("config.invalid_value", 422, "admin"),
     ErrorCode("config.key_readonly", 409, "admin"),
@@ -119,3 +120,11 @@ class ShelfExposedToChildren(HeadlessError):
     def __init__(self, accounts: tuple[str, ...]) -> None:
         super().__init__("library exposed to children: " + ", ".join(accounts))
         self.accounts = accounts
+
+
+class DestinationCannotSync(HeadlessError):
+    """The progress sync reads and writes the reading position on the server: only a destination
+    that keeps one per account (Kavita) can take it. Komga, a drop box and a native folder cannot
+    (M4 L46)."""
+
+    code = "destination.sync_unsupported"
