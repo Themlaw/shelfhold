@@ -54,6 +54,7 @@ __all__ = [
     "let_go_tickets",
     "rendition_rels",
     "request_ids",
+    "take_renditions",
     "title_needles",
     "unresolved_bin_items",
     "upstream_tokens",
@@ -169,6 +170,35 @@ def rendition_rels(connection: Connection, unit_ids: Collection[str]) -> list[st
                 )
             ).scalar_one()
             if not shared:
+                digest = row.content_hash.removeprefix("sha256:")
+                rels.add(f"cache/renditions/{digest[:2]}/{digest}.{row.kind}")
+    return sorted(rels)
+
+
+def take_renditions(connection: Connection, unit_ids: Collection[str]) -> list[str]:
+    """Delete the `rendition` rows made from the contents of these Units and return the cache
+    files (relative to `/data`) that no remaining row names: the rows are listed and erased by the
+    same statements of one write transaction, so a render that recorded its row before this
+    transaction is in the list, and one after it is refused by its own transaction (the tombstone
+    is already recorded). The files go afterwards: a cache may lose its row before its file
+    (ADR-0048, EF-BIB-015)."""
+    r = storage.rendition
+    rels: set[str] = set()
+    for chunk in _chunks(_source_hashes(connection, unit_ids)):
+        taken = list(
+            connection.execute(
+                sa.delete(r)
+                .where(r.c.source_content_hash.in_(chunk))
+                .returning(r.c.content_hash, r.c.kind)
+            )
+        )
+        for row in taken:
+            still = connection.execute(
+                sa.select(sa.func.count()).where(
+                    r.c.content_hash == row.content_hash, r.c.kind == row.kind
+                )
+            ).scalar_one()
+            if not still:
                 digest = row.content_hash.removeprefix("sha256:")
                 rels.add(f"cache/renditions/{digest[:2]}/{digest}.{row.kind}")
     return sorted(rels)

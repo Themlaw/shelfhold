@@ -130,6 +130,7 @@ from shelfhold.library.public import (
     rendition_rels,
     request_ids,
     require_purge_allowed,
+    take_renditions,
     title_needles,
     unresolved_bin_items,
     upstream_claims,
@@ -827,7 +828,9 @@ class PurgeService:
                     progress.erased += 1
         with self._engine.connect() as connection:
             late = rendition_rels(connection, plan.unit_ids)  # a render that raced the plan
-        for rel in sorted({*plan.renditions, *late}):  # converted images, named by hash
+        with write_transaction(self._engine) as connection:  # rows and files, one lock (ADR-0048)
+            taken = take_renditions(connection, plan.unit_ids)
+        for rel in sorted({*plan.renditions, *late, *taken}):  # converted images, named by hash
             if self._erase_data(rel):
                 progress.erased += 1
         if plan.kind == "work" and self._erase_data(work_rel(plan.work_id)):

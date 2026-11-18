@@ -28,7 +28,7 @@ Kavita Books library (D19): another type is announced, never changed.
 from collections import defaultdict
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import asdict, dataclass, field
-from typing import Final, Literal
+from typing import Final, Literal, overload
 
 from shelfhold.export.domain.bindings import is_family
 from shelfhold.export.domain.export_series import EditionNaming, propose_series_name
@@ -100,14 +100,35 @@ class ContentOffer:
     content_id: str
     format: str  # a slug: cbz, epub, pdf
     media_type: str  # the MIME type
-    # M5 (EF-BIB-015): set on a *rendition* offer, the id of the `content` it is converted from;
-    # `format` and `media_type` are then those of the converted file. None for a native content.
-    rendition_of: str | None = None
+
+
+@dataclass(frozen=True)
+class RenditionOffer:
+    """A converted file a destination may be offered when no content is accepted as it is
+    (EF-BIB-015). It has no `content_id`: there is no content to serve until the rendition has
+    been made from `source_content_id`, so a caller that forgets the difference fails with an
+    `AttributeError` instead of serving the source's bytes under the converted type."""
+
+    source_content_id: str
+    format: str  # the converted file's slug: jpeg, png
+    media_type: str  # and its MIME type
+
+
+@overload
+def choose_content(
+    accepted: Iterable[str], offers: Iterable[ContentOffer], *, renditions: Literal[False] = False
+) -> ContentOffer | None: ...
+
+
+@overload
+def choose_content(
+    accepted: Iterable[str], offers: Iterable[ContentOffer], *, renditions: bool
+) -> ContentOffer | RenditionOffer | None: ...
 
 
 def choose_content(
     accepted: Iterable[str], offers: Iterable[ContentOffer], *, renditions: bool = False
-) -> ContentOffer | None:
+) -> ContentOffer | RenditionOffer | None:
     """The native format of a binding: the first of its `accepted_content_types`, in the order the
     destination declares them, that the Variant has as a `content` (a slug or a MIME type names
     one). Deterministic: the order of `accepted` decides, then the id of the content, whatever the
@@ -115,9 +136,10 @@ def choose_content(
 
     With `renditions=True` (M5, EF-BIB-015), and only when no content is accepted as it is, the
     first accepted token that a conversion can make (JPEG or PNG) from an image the worker can
-    decode (AVIF, WebP) gives a *rendition* offer: `rendition_of` names the source, the format is
-    the converted one. A native content always wins; without the opt-in, None as before: a
-    converted file is never made up by a caller that did not ask for one."""
+    decode (AVIF, WebP) gives a `RenditionOffer`: another type than a `ContentOffer`, with no
+    `content_id` to serve. A native content always wins; without the opt-in the result is a
+    `ContentOffer` or None as before: a converted file is never made up by a caller that did not
+    ask for one."""
     ranked = sorted({o.content_id: o for o in offers}.values(), key=lambda o: o.content_id)
     wanted_tokens = [w.strip().lower() for w in accepted]
     for token in wanted_tokens:
@@ -132,7 +154,7 @@ def choose_content(
             continue
         for offer in ranked:
             if source_format(offer.format, offer.media_type) in DECODABLE_SOURCES:
-                return ContentOffer(offer.content_id, kind, KIND_MEDIA[kind], offer.content_id)
+                return RenditionOffer(offer.content_id, kind, KIND_MEDIA[kind])
     return None
 
 

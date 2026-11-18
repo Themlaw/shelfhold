@@ -21,6 +21,7 @@ from shelfhold.infrastructure.imaging import ImageCaps, ImageRejected, Reencoded
 from shelfhold.infrastructure.schema import storage
 from shelfhold.library.application.renditions import (
     RenditionService,
+    SourceTombstones,
     UnknownSourceError,
 )
 from shelfhold.library.domain.rendition import (
@@ -33,6 +34,7 @@ from shelfhold.library.domain.rendition import (
 from tests import page_formats_env as pf
 from tests.export_env import ExportEnv, export_env
 from tests.fakes_clock import ManualClock
+from tests.null_tombstones import NONE_PURGED
 from tests.purge_env import ADMIN, TITLE, make_purge_env, spread
 
 NOW = datetime(2026, 11, 18, 9, 0, tzinfo=UTC)
@@ -55,8 +57,15 @@ class Counting:
 
 
 def _service(env: ExportEnv, convert: Counting | Callable[..., Reencoded] | None = None,
-             clock: Clock | None = None) -> RenditionService:  # fmt: skip
-    return RenditionService(env.engine, env.lib.data, clock or ManualClock(NOW), convert=convert)
+             clock: Clock | None = None, tombstones: SourceTombstones | None = None,
+             ) -> RenditionService:  # fmt: skip
+    return RenditionService(
+        env.engine,
+        env.lib.data,
+        clock or ManualClock(NOW),
+        tombstones=tombstones or NONE_PURGED,
+        convert=convert,
+    )
 
 
 def _content(env: ExportEnv, unit: str) -> str:
@@ -349,7 +358,7 @@ def test_a_failed_record_leaves_no_file_and_a_purged_source_is_not_recorded() ->
 
 
 @pytest.mark.req("EF-BIB-015", "EF-BIB-052")
-def test_orphans_are_collected_after_a_day_and_named_files_never() -> None:
+def test_orphans_are_collected_after_minutes_and_named_files_never() -> None:
     with export_env() as env:
         unit = env.add_chapter(env.new_series(TITLE), "1")
         clock = ManualClock(NOW)
@@ -362,9 +371,83 @@ def test_orphans_are_collected_after_a_day_and_named_files_never() -> None:
         odd = folder / "notes.txt"
         odd.write_bytes(b"not ours")
         os.utime(stray, (NOW.timestamp(), NOW.timestamp()))
-        assert service.collect_orphans() == 0  # younger than a day by the clock
-        old = NOW.timestamp() - 2 * 86400
+        assert service.collect_orphans() == 0  # younger than the grace by the clock
+        old = NOW.timestamp() - 11 * 60  # minutes, not a day: a render takes seconds
         os.utime(stray, (old, old))
         assert service.collect_orphans() == 1
         assert not stray.exists() and odd.exists()  # only a name this module writes
         assert service.read(made) is not None  # the file a row names stays
+
+
+class _Tombstoned:
+    def __init__(self) -> None:
+        self.asked = 0
+
+    def check_content(self, hashes: object = ()) -> bool:
+        self.asked += 1
+        return True
+
+
+@pytest.mark.req("EF-BIB-015", "EF-BIB-052")
+def test_nothing_is_made_from_a_file_whose_purge_has_begun() -> None:
+    """The tombstone comes first in a purge: a render started or finished after it is refused,
+    its file removed and no row written."""
+    from shelfhold.library.domain.failures import TombstonedContentError
+
+    with export_env() as env:
+        unit = env.add_chapter(env.new_series(TITLE), "1")
+        counting = Counting()
+        with pytest.raises(TombstonedContentError):
+            _service(env, counting, tombstones=_Tombstoned()).render(
+                _content(env, unit), pf.webp(), JPEG
+            )
+        assert counting.calls == 0 and _rows(env) == [] and _files(env) == []
+
+        class Late:  # the purge records its tombstone while the worker runs
+            on = False
+
+            def check_content(self, hashes: object = ()) -> bool:
+                return self.on
+
+        late = Late()
+
+        def convert(data: bytes, params: RenditionParams, caps: ImageCaps) -> Reencoded:
+            made = reencode_image(data, fmt=params.kind, quality=params.quality, caps=caps)
+            late.on = True
+            return made
+
+        with pytest.raises(TombstonedContentError):
+            _service(env, convert, tombstones=late).render(_content(env, unit), pf.webp(), JPEG)
+        assert _rows(env) == [] and _files(env) == []
+
+
+@pytest.mark.req("EF-BIB-015", "EF-BIB-052")
+def test_the_orphan_sweep_is_part_of_the_window_job_of_the_cache() -> None:
+    from types import SimpleNamespace
+
+    from shelfhold.jobs.thumbnail_gc import THUMBNAIL_GC_KIND, thumbnail_gc_handler
+    from tests.integration.test_thumbnails import context
+
+    with export_env() as env:
+        folder = env.lib.data / "cache" / "renditions" / "ab"
+        folder.mkdir(parents=True)
+        stray = folder / ("d" * 64 + ".jpeg")
+        stray.write_bytes(b"left by a race")
+        old = datetime.now(UTC).timestamp() - 3600
+        os.utime(stray, (old, old))
+        comp = SimpleNamespace(engine=env.engine, settings=SimpleNamespace(data_dir=env.lib.data))
+        ctx = context(THUMBNAIL_GC_KIND)
+        thumbnail_gc_handler(comp)(ctx)  # type: ignore[arg-type]
+        assert ctx.counters["renditions"] == 1 and not stray.exists()
+
+
+@pytest.mark.req("EF-BIB-015", "ENF-SEC-003")
+def test_an_avif_whose_header_cannot_be_walked_is_refused_before_the_worker() -> None:
+    with export_env() as env:
+        unit = env.add_chapter(env.new_series(TITLE), "1")
+        counting = Counting()
+        no_meta = _box(b"ftyp", b"avif\0\0\0\0avifmif1") + _box(b"free", b"\0" * 64)
+        with pytest.raises(ImageRejected) as refused:
+            _service(env, counting).render(_content(env, unit), no_meta, JPEG)
+        assert (refused.value.code, refused.value.stage) == ("image.format_refused", "header")
+        assert counting.calls == 0 and _rows(env) == []

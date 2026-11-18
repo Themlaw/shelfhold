@@ -63,6 +63,7 @@ from shelfhold.library.adapters.purge_inventory import (
     let_go_tickets,
     rendition_rels,
     request_ids,
+    take_renditions,
     title_needles,
     unresolved_bin_items,
     upstream_tokens,
@@ -172,6 +173,9 @@ from shelfhold.library.application.reclaim import (
     TrashConfirmationError,
     oldest_first,
     require_empty_phrase,
+)
+from shelfhold.library.application.renditions import (
+    collect_orphans as collect_rendition_orphans,
 )
 from shelfhold.library.application.reneutralize import (
     ReneutralizePlan,
@@ -510,6 +514,7 @@ __all__ = [
     "check_add_fits",
     "clear_page_issue",
     "closed_request_ids",
+    "collect_rendition_orphans",
     "complete_interrupted_keep",
     "confirmation_phrase",
     "content_error_candidates",
@@ -607,6 +612,7 @@ __all__ = [
     "space_by_shelf",
     "spans_of",
     "store_unit_ids",
+    "take_renditions",
     "title_needles",
     "unit_files",
     "unit_tombstoned",

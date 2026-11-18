@@ -2,6 +2,12 @@
 
 Format : [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/). Versionnement : [SemVer](https://semver.org/lang/fr/). Procédure de release : `docs/releasing.md`.
 
+## Non publié
+
+### Ajouté
+
+- **Images converties pour un client sans le format (M5 L20a)** : une image AVIF ou WebP peut être servie en JPEG ou en PNG, faite une fois par le bac à sable de décodage sans réseau (taille, format et pixels bornés dans l'en-tête avant tout décodage), gardée sous `/data/cache/renditions` par le hash du résultat et effacée avec sa source par `purge --now`. JPEG XL est refusé (pas de décodeur). Un processeur qui envoie des octets hors de l'hôte ne reçoit jamais un fichier tatoué. Migration 0104 (cache régénérable, hors de l'export).
+
 ## 1.1.0 - AAAA-MM-JJ
 
 Clôture de M4 : plusieurs destinations par étagère, synchronisation de la progression avec Kavita et les liseuses, ouverture vers l'écosystème, métadonnées enrichies. Reprend les changements des candidates `1.1.0-rc.1` et `1.1.0-rc.2` (sections ci-dessous). La date est celle de la release.

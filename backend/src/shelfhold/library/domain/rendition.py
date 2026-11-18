@@ -115,40 +115,51 @@ def sniff_source(head: bytes) -> str | None:
 
 
 _CONTAINERS: Final = (b"meta", b"iprp", b"ipco")
-_MAX_BOXES: Final = 256
+_MAX_BOXES: Final = 1024
 _MAX_DEPTH: Final = 6
 
 
-def avif_announced_size(head: bytes) -> tuple[int, int] | None:
-    """`(width, height)` from the `ispe` box of an AVIF, or None when the bytes given do not reach
-    it. A bounded walk (depth and box count) over `meta > iprp > ipco`; nothing is decoded."""
+def avif_announced_size(data: bytes) -> tuple[int, int] | None:
+    """The largest `(width, height)` any `ispe` box of an AVIF declares (a grid declares one per
+    tile and one for the whole image: the biggest is what a decoder may have to hold), or None
+    when the walk does not find one: no `meta`, a malformed box, more boxes than the bound. The
+    walk goes box to box by their sizes (a `free` box of any length is skipped, not read) through
+    `meta > iprp > ipco`; nothing is decoded. A None is a refusal for the caller, never a pass."""
     seen = 0
+    best: tuple[int, int] | None = None
+    complete = True
 
-    def walk(start: int, end: int, depth: int) -> tuple[int, int] | None:
-        nonlocal seen
+    def walk(start: int, end: int, depth: int) -> None:
+        nonlocal seen, best, complete
         at = start
-        while at + 8 <= end and seen < _MAX_BOXES:
+        while at + 8 <= end:
+            if seen >= _MAX_BOXES:
+                complete = False
+                return
             seen += 1
-            size, kind = struct.unpack_from(">I4s", head, at)
+            size, kind = struct.unpack_from(">I4s", data, at)
             header = 8
             if size == 1:
                 if at + 16 > end:
-                    return None
-                size, header = struct.unpack_from(">Q", head, at + 8)[0], 16
+                    complete = False
+                    return
+                size, header = struct.unpack_from(">Q", data, at + 8)[0], 16
             elif size == 0:
                 size = end - at
             if size < header:
-                return None
+                complete = False
+                return
             body, stop = at + header, min(at + size, end)
             if kind == b"ispe":
                 if body + 12 > stop:
-                    return None
-                return struct.unpack_from(">II", head, body + 4)
-            if kind in _CONTAINERS and depth < _MAX_DEPTH:
-                inner = walk(body + (4 if kind == b"meta" else 0), stop, depth + 1)
-                if inner is not None:
-                    return inner
+                    complete = False
+                    return
+                found = struct.unpack_from(">II", data, body + 4)
+                if best is None or found[0] * found[1] > best[0] * best[1]:
+                    best = (found[0], found[1])
+            elif kind in _CONTAINERS and depth < _MAX_DEPTH:
+                walk(body + (4 if kind == b"meta" else 0), stop, depth + 1)
             at += size
-        return None
 
-    return walk(0, len(head), 0)
+    walk(0, len(data), 0)
+    return best if complete else None

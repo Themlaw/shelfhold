@@ -44,7 +44,6 @@ def _avif(*boxes: bytes, padding: int = 0) -> bytes:
 
 
 @pytest.mark.req("EF-BIB-015", "ENF-SEC-003")
-@pytest.mark.xfail(strict=True, reason="#373 m: the AVIF header bound reads 64 KiB, first `ispe`")
 @pytest.mark.parametrize(
     "bomb",
     [
@@ -67,7 +66,6 @@ def test_rev373_avif_bomb_is_refused_on_the_header_wherever_its_size_is(bomb: by
 
 
 @pytest.mark.req("EF-BIB-015", "EF-BIB-052")
-@pytest.mark.xfail(strict=True, reason="#373 M: a render after the late list outlives purge")
 def test_rev373_a_render_that_lands_after_the_late_list_leaves_no_file(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

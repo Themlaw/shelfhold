@@ -24,11 +24,11 @@ import hashlib
 import json
 import os
 import re
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Final
+from typing import Final, Protocol
 
 import sqlalchemy as sa
 import structlog
@@ -45,6 +45,8 @@ from shelfhold.infrastructure.imaging import (
 )
 from shelfhold.infrastructure.schema import storage
 from shelfhold.infrastructure.volumes import erase_data_path, open_data_folder, write_data_file
+from shelfhold.library.domain.content_hash import FILE_HASH_BY
+from shelfhold.library.domain.failures import TombstonedContentError
 from shelfhold.library.domain.rendition import (
     DECODABLE_SOURCES,
     KIND_MEDIA,
@@ -57,13 +59,16 @@ from shelfhold.library.domain.rendition import (
     ensure_processor_allowed,
     sniff_source,
 )
+from shelfhold.library.tombstones.values import ContentHash
 
 __all__ = [
     "CACHE_DIR",
+    "STRAY_GRACE",
     "Converter",
     "Rendition",
     "RenditionService",
     "UnknownSourceError",
+    "collect_orphans",
 ]
 
 log = structlog.get_logger(__name__)
@@ -71,10 +76,17 @@ log = structlog.get_logger(__name__)
 CACHE_DIR: Final = "cache/renditions"  # under /data
 MAX_RENDITION_BYTES: Final = 128 * 1024 * 1024  # the byte cap of a page: what may be read back
 Converter = Callable[[bytes, RenditionParams, ImageCaps], Reencoded]
-STRAY_GRACE: Final = timedelta(days=1)  # a file with no row may be a render in flight
+STRAY_GRACE: Final = timedelta(minutes=10)  # a render writes its file, then its row: seconds
 _SHARD: Final = re.compile(r"[0-9a-f]{2}")
 _NAME: Final = re.compile(r"([0-9a-f]{64})\.(jpeg|png)")
 _FORMATS: Final = ("WEBP", "AVIF")  # what the worker is allowed to open for a rendition
+
+
+class SourceTombstones(Protocol):
+    """The part of the tombstone service a render needs: is this file purged, or being purged?
+    A purge records its tombstones before it deletes anything (ADR-0048)."""
+
+    def check_content(self, hashes: Iterable[ContentHash] = ()) -> bool: ...
 
 
 class UnknownSourceError(LookupError):
@@ -128,7 +140,12 @@ def _check_source(data: bytes, *, max_bytes: int, max_pixels: int) -> None:
     if found not in DECODABLE_SOURCES:  # JPEG XL has no decoder; anything else is not a source
         raise UnsupportedSourceError(found or "unknown")
     head = data[: 1 << 16]
-    announced = avif_announced_size(head) if found == "avif" else announced_size(head, found)
+    if found == "avif":
+        announced = avif_announced_size(data)  # the whole file is in hand: boxes are walked by size
+        if announced is None:  # no `meta`, no `ispe`, a malformed box: not a header to trust
+            raise ImageRejected("image.format_refused", "avif header", "header")
+    else:
+        announced = announced_size(head, found)
     if announced is not None and announced[0] * announced[1] > max_pixels:
         raise ImageRejected("image.too_large", "pixels", "header")
 
@@ -140,8 +157,10 @@ class RenditionService:
         data_dir: Path,
         clock: Clock,
         *,
+        tombstones: SourceTombstones,
         convert: Converter | None = None,
     ) -> None:
+        self._tombstones = tombstones
         self._engine = engine
         self._data = data_dir
         self._clock = clock
@@ -156,6 +175,10 @@ class RenditionService:
         body = json.loads(params.canonical())
         body["src"] = hashlib.sha256(data).hexdigest()
         return json.dumps(body, sort_keys=True, separators=(",", ":"))
+
+    def _refuse_purged(self, source: str) -> None:
+        if self._tombstones.check_content([ContentHash(FILE_HASH_BY, source)]):
+            raise TombstonedContentError("the content was purged: nothing is made from it")
 
     def _source(self, content_id: str) -> tuple[str, bool]:
         with self._engine.connect() as connection:
@@ -222,6 +245,7 @@ class RenditionService:
         watermarked file), `UnsupportedSourceError` (not AVIF or WebP) and `ImageRejected`
         (`image.too_large`, `image.decode_failed`, `image.worker_failed`...)."""
         source, watermarked = self._source(content_id)
+        self._refuse_purged(source)
         ensure_processor_allowed(processor, watermarked=watermarked)
         if processor != LOCAL_PROCESSOR:
             raise UnsupportedProcessorError(processor.name)  # none is shipped
@@ -262,6 +286,9 @@ class RenditionService:
                 sa.select(sa.literal(1)).where(sa.exists().where(held))
             ).first():
                 raise UnknownSourceError(rendition.source_content_hash)
+            # read again under the write lock: a purge records its tombstones first, then lists
+            # and erases the rows under this same lock, so a row written here is seen by it
+            self._refuse_purged(rendition.source_content_hash)
             old = connection.execute(
                 sa.select(table.c.content_hash, table.c.kind).where(
                     table.c.source_content_hash == rendition.source_content_hash,
@@ -306,38 +333,43 @@ class RenditionService:
             _erase(self._data, f"{CACHE_DIR}/{digest[:2]}/{digest}.{kind}")
 
     def collect_orphans(self) -> int:
-        """Erase the files of the cache that no row names and that are older than a day (a render
-        in flight is younger): what a crash between the file and the row, or a render that raced a
-        purge, leaves behind. Names are checked; nothing else is touched. How many went."""
-        table = storage.rendition
-        with self._engine.connect() as connection:
-            named = {
-                (str(r.content_hash), str(r.kind))
-                for r in connection.execute(sa.select(table.c.content_hash, table.c.kind))
-            }
-        cutoff = self._clock.now() - STRAY_GRACE
-        gone = 0
+        """See `collect_orphans`: the same sweep, with this service's engine, folder and clock."""
+        return collect_orphans(self._engine, self._data, self._clock)
+
+
+def collect_orphans(engine: sa.Engine, data_dir: Path, clock: Clock) -> int:
+    """Erase the files of the cache that no row names and that are older than `STRAY_GRACE` (a
+    render in flight is younger): what a crash between the file and the row, or a render that
+    raced a purge, leaves behind. Names are checked; nothing else is touched. How many went. Run
+    by the maintenance window job of the thumbnails (`jobs/thumbnail_gc.py`)."""
+    table = storage.rendition
+    with engine.connect() as connection:
+        named = {
+            (str(r.content_hash), str(r.kind))
+            for r in connection.execute(sa.select(table.c.content_hash, table.c.kind))
+        }
+    cutoff = clock.now() - STRAY_GRACE
+    gone = 0
+    try:
+        with open_data_folder(data_dir, CACHE_DIR) as root:
+            shards = [n for n in root.names() if _SHARD.fullmatch(n)]
+    except (OSError, ValueError):
+        return 0
+    for shard in shards:
         try:
-            with open_data_folder(self._data, CACHE_DIR) as root:
-                shards = [n for n in root.names() if _SHARD.fullmatch(n)]
+            with open_data_folder(data_dir, f"{CACHE_DIR}/{shard}") as folder:
+                for name in folder.names():
+                    found = _NAME.fullmatch(name)
+                    stat = folder.stat_of(name)
+                    if found is None or stat is None or not stat_is_old(stat, cutoff):
+                        continue
+                    if (f"sha256:{found.group(1)}", found.group(2)) in named:
+                        continue
+                    if _erase(data_dir, f"{CACHE_DIR}/{shard}/{name}"):
+                        gone += 1
         except (OSError, ValueError):
-            return 0
-        for shard in shards:
-            try:
-                with open_data_folder(self._data, f"{CACHE_DIR}/{shard}") as folder:
-                    entries = folder.names()
-                    for name in entries:
-                        found = _NAME.fullmatch(name)
-                        stat = folder.stat_of(name)
-                        if found is None or stat is None or not stat_is_old(stat, cutoff):
-                            continue
-                        if (f"sha256:{found.group(1)}", found.group(2)) in named:
-                            continue
-                        if _erase(self._data, f"{CACHE_DIR}/{shard}/{name}"):
-                            gone += 1
-            except (OSError, ValueError):
-                continue
-        return gone
+            continue
+    return gone
 
 
 def stat_is_old(stat: os.stat_result, cutoff: datetime) -> bool:
