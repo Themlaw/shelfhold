@@ -33,6 +33,7 @@ from collections.abc import Callable, Collection
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Protocol
+from urllib.parse import quote
 
 import sqlalchemy as sa
 
@@ -225,8 +226,10 @@ class ContentAccess:
         return ResolvedCarrier(content_id, str(kind), allowed)
 
     def url(self, token: str, entry: str) -> str:
-        """Where the reader fetches `entry`: this origin, or the separate one when it is set."""
-        return f"{self.content_origin or ''}/content/{token}/{entry}"
+        """Where the reader fetches `entry`: this origin, or the separate one when it is set. The
+        name is the archive's own, so it is percent-encoded: an entry called `%2e%2e/x?y#z` must
+        not climb out of `/content/<ticket>/` or end the path where the archive's name does not."""
+        return f"{self.content_origin or ''}/content/{token}/{quote(entry, safe='/')}"
 
     # -- serving -----------------------------------------------------------------------------
 

@@ -18,7 +18,6 @@ from fastapi import APIRouter, Depends, Query, Response
 from pydantic import BaseModel
 
 from shelfhold.identity.public import Principal
-from shelfhold.infrastructure.http_headers import PRIVATE_CACHE
 from shelfhold.infrastructure.ids import is_ulid
 from shelfhold.interfaces.http_api.auth import require_session
 from shelfhold.interfaces.http_api.problems import ProblemError
@@ -110,7 +109,7 @@ def build_reader_router(get_service: Callable[[], PublicationService]) -> APIRou
             raise ProblemError("excerpt_unavailable") from None
         except NoReadableCopyError:
             raise ProblemError("no_readable_copy") from None
-        response.headers["Cache-Control"] = PRIVATE_CACHE  # it holds tickets: one profile's browser
+        response.headers["Cache-Control"] = "no-store"  # it holds tickets: kept nowhere
         return _out(found)
 
     return router

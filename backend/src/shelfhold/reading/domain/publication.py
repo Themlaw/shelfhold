@@ -9,19 +9,15 @@ kind; a webtoon is the `vertical` of the catalogue and is called `webtoon` here.
 from __future__ import annotations
 
 import posixpath
-from dataclasses import dataclass
 from typing import Final, Literal
 from urllib.parse import unquote, urlsplit
 
-from shelfhold.reading.domain.content_ticket import Scope
-from shelfhold.reading.domain.content_types import media_type_of
+from shelfhold.reading.domain.content_types import media_type_of, safe_entry
 from shelfhold.reading.domain.excerpt import natural_key
 
 __all__ = [
     "PAGE_TYPES",
     "ReadingDirection",
-    "Scope",
-    "Spine",
     "page_names",
     "reading_direction",
     "resolve_in_package",
@@ -31,16 +27,6 @@ ReadingDirection = Literal["ltr", "rtl", "webtoon"]
 
 PAGE_TYPES: Final = frozenset({"image/png", "image/jpeg", "image/webp", "image/gif", "image/avif"})
 _NAMES: Final = {"ltr": "ltr", "rtl": "rtl", "vertical": "webtoon", "webtoon": "webtoon"}
-
-
-@dataclass(frozen=True)
-class Spine:
-    """The reading order of an EPUB, as the entries of its archive."""
-
-    package: str
-    documents: tuple[str, ...]
-    language: str | None
-    direction: str | None  # `page-progression-direction` of the package, as written
 
 
 def reading_direction(
@@ -55,8 +41,11 @@ def reading_direction(
 
 
 def page_names(names: frozenset[str]) -> list[str]:
-    """The pages of an image carrier among the names of its archive, `p2` before `p10`."""
-    return sorted((n for n in names if media_type_of(n) in PAGE_TYPES), key=natural_key)
+    """The pages of an image carrier among the names of its archive, `p2` before `p10`. A name that
+    `/content` would refuse (a climbing or odd name) is no page: it could never be served."""
+    return sorted(
+        (n for n in names if media_type_of(n) in PAGE_TYPES and safe_entry(n)), key=natural_key
+    )
 
 
 def resolve_in_package(package: str, href: str, names: frozenset[str]) -> str | None:

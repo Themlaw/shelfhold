@@ -34,10 +34,9 @@ from shelfhold.reading.application.content_access import (
 from shelfhold.reading.domain.content_ticket import Scope
 from shelfhold.reading.domain.content_types import media_type_of
 from shelfhold.reading.domain.excerpt import page_excerpt
+from shelfhold.reading.domain.publication import PAGE_TYPES
 
 __all__ = ["ReadableCopies"]
-
-_PAGES = frozenset({"image/png", "image/jpeg", "image/webp", "image/gif", "image/avif"})
 
 
 class _Open:
@@ -124,7 +123,11 @@ class ReadableCopies:
         if kind == "epub":
             return epub_excerpt(archive)
         pages = page_excerpt(
-            [e.name for e in archive.entries if not e.is_dir and media_type_of(e.name) in _PAGES]
+            [
+                e.name
+                for e in archive.entries
+                if not e.is_dir and media_type_of(e.name) in PAGE_TYPES
+            ]
         )
         return None if pages is None else frozenset(pages)
 

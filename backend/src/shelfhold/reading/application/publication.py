@@ -42,10 +42,9 @@ from shelfhold.reading.application.content_access import (
 )
 from shelfhold.reading.application.progress import UnknownCarrierError
 from shelfhold.reading.domain.content_ticket import Scope
-from shelfhold.reading.domain.content_types import media_type_of
+from shelfhold.reading.domain.content_types import media_type_of, safe_entry
 from shelfhold.reading.domain.publication import (
     ReadingDirection,
-    Spine,
     page_names,
     reading_direction,
     resolve_in_package,
@@ -141,17 +140,17 @@ def _epub_listing(archive: ContentArchive) -> Listing:
     documents: list[str] = []
     for ref, linear in refs[:_MAX_SPINE]:
         entry = resolve_in_package(package, manifest.get(ref, ""), names)
-        if entry is not None and linear and media_type_of(entry) == "application/xhtml+xml":
+        if (
+            entry is not None
+            and linear
+            and safe_entry(entry)
+            and media_type_of(entry) == "application/xhtml+xml"
+        ):
             documents.append(entry)
     if not documents:
         raise NoReadableCopyError  # a package without a reading order is no book to open
-    spine = Spine(package, tuple(documents), language, direction)
     return Listing(
-        "epub",
-        spine=spine.documents,
-        package=spine.package,
-        language=spine.language,
-        direction=spine.direction,
+        "epub", spine=tuple(documents), package=package, language=language, direction=direction
     )
 
 
@@ -272,7 +271,7 @@ class PublicationService:
             scope=chosen,
         )
 
-        def link(index: int, name: str) -> Entry:
+        def entry_of(index: int, name: str) -> Entry:
             return Entry(index, self._access.url(issued.token, name), media_type_of(name))
 
         title, number, kind_direction, work_direction = self._describe(resolved.content_id)
@@ -286,8 +285,8 @@ class PublicationService:
             language=listing.language,
             reading_direction=reading_direction(work_direction, listing.direction, kind_direction),
             expires_at=issued.expires_at,
-            pages=tuple(link(i, n) for i, n in enumerate(listing.pages, start=1)),
-            spine=tuple(link(i, n) for i, n in enumerate(listing.spine, start=1)),
+            pages=tuple(entry_of(i, n) for i, n in enumerate(listing.pages, start=1)),
+            spine=tuple(entry_of(i, n) for i, n in enumerate(listing.spine, start=1)),
             package=self._access.url(issued.token, listing.package) if listing.package else None,
         )
 

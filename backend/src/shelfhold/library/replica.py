@@ -608,6 +608,10 @@ class LibraryCopy:
     file_hash: str | None  # what the manifest says
     content_hash: str | None  # the content it is a copy of: a derivative says its original's
     damaged: bool = False  # the integrity check read it and it failed (`damaged_at`)
+    root: str = ""  # the physical root's path alone: the folder a reader confines itself to
+    rel_path: str = ""  # the path beneath that root, as the registry holds it
+    size: int | None = None  # what the registry recorded: a reader checks the file against it
+    mtime_ns: int | None = None
 
 
 def library_copies(connection: Connection, unit_id: str) -> Sequence[LibraryCopy]:
@@ -638,6 +642,8 @@ def library_copies_of(
                 root.c.path_entry,
                 replica_table.c.independent,
                 replica_table.c.damaged_at,
+                replica_table.c.size,
+                replica_table.c.mtime_ns,
             )
             .join(root, root.c.root_id == replica_table.c.physical_root_id)
             .where(
@@ -654,6 +660,10 @@ def library_copies_of(
                     r.file_hash,
                     r.identity,
                     r.damaged_at is not None,
+                    r.path_entry.rstrip("/"),
+                    r.rel_path,
+                    r.size,
+                    r.mtime_ns,
                 )
             )
     return found

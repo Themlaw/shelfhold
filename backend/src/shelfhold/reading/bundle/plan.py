@@ -143,26 +143,41 @@ def load_candidates(connection: Connection, edition_id: str) -> list[Candidate]:
 
 def _kept_copies(connection: Connection, edition_id: str, held: set[str]) -> list[Candidate]:
     """The chapters a `pull` destination carries and no tree destination holds, read from the
-    kept copy of the Unit they cover: the file `library_copies` names, a CBZ, not damaged. The
-    folder is the one the replica registry names and the name is the file's: nothing a client
-    supplies, opened beneath that folder by `open_source` like any chapter."""
+    kept copy of the one Unit they cover (EF-EXP-058).
+
+    Nothing ties an `export_item` to what it points at, so each link is checked here: the Unit is
+    of this Edition (the one the reader's scope was checked on), the item covers that Unit alone
+    (a volume of several is no one chapter's file and is left out), the file is a CBZ replica of
+    the very content the item names, not damaged, and its folder, name, size and modification time
+    are the registry's: `open_source` opens it beneath that folder and `_open_one` refuses a file
+    that is no longer what the registry recorded (a 410, nothing sent)."""
     item, coverage, unit, record = (
         export.export_item,
         export.unit_coverage,
         catalog.unit,
         export.export_record,
     )
-    destination = export.shelf_destination
+    destination, content = export.shelf_destination, storage.content
+    live_pull = (
+        sa.select(sa.literal(1))
+        .select_from(record.join(destination, destination.c.id == record.c.shelf_destination_id))
+        .where(
+            record.c.export_item_id == item.c.id,
+            record.c.state.in_(LIVE),
+            destination.c.transport == "pull",
+        )
+        .exists()
+    )
     rows = connection.execute(
         sa.select(
             item.c.id.label("item_id"),
+            item.c.content_id,
             unit.c.id.label("unit_id"),
+            unit.c.edition_id,
             unit.c.number_norm,
             unit.c.number_sort,
             unit.c.number_segment_ordinal,
             unit.c.source_order,
-            destination.c.id.label("destination_id"),
-            storage.content.c.format.label("format"),
         )
         .select_from(
             item.join(
@@ -170,30 +185,39 @@ def _kept_copies(connection: Connection, edition_id: str, held: set[str]) -> lis
                 sa.and_(
                     coverage.c.carrier_type == "export_item", coverage.c.carrier_id == item.c.id
                 ),
-            )
-            .join(unit, unit.c.id == coverage.c.unit_id)
-            .join(record, record.c.export_item_id == item.c.id)
-            .join(destination, destination.c.id == record.c.shelf_destination_id)
-            .join(storage.content, storage.content.c.unit_id == unit.c.id)
+            ).join(unit, unit.c.id == coverage.c.unit_id)
         )
-        .where(
-            item.c.edition_id == edition_id,
-            item.c.kind.in_(ITEM_KINDS),
-            record.c.state.in_(LIVE),
-            destination.c.transport == "pull",
-            storage.content.c.format == "cbz",
-        )
-        .order_by(item.c.id, coverage.c.position, destination.c.id)
+        .where(item.c.edition_id == edition_id, item.c.kind.in_(ITEM_KINDS), live_pull)
+        .order_by(item.c.id, coverage.c.position)
     ).all()
-    found: dict[str, Candidate] = {}
+    covered: dict[str, list[Any]] = {}
     for r in rows:
-        if r.item_id in held or r.item_id in found:
+        if r.item_id not in held:
+            covered.setdefault(r.item_id, []).append(r)
+    found: list[Candidate] = []
+    for item_id, units in covered.items():
+        if len(units) != 1 or units[0].edition_id != edition_id:
             continue
-        copy = next((c for c in library_copies(connection, r.unit_id) if not c.damaged), None)
-        if copy is None or not copy.local.startswith("/"):
-            continue
-        root, _slash, name = copy.local.rpartition("/")
-        if not root or not clean_relative(name):
+        r = units[0]
+        kept = connection.execute(
+            sa.select(content.c.id, content.c.content_hash, content.c.format).where(
+                content.c.unit_id == r.unit_id,
+                *([content.c.id == r.content_id] if r.content_id is not None else []),
+            )
+        ).all()
+        copy = next(
+            (
+                c
+                for k in kept
+                if k.format == "cbz"
+                for c in library_copies(connection, r.unit_id)
+                if not c.damaged
+                and c.rel_path.lower().endswith(".cbz")
+                and (k.content_hash is None or c.content_hash == k.content_hash)
+            ),
+            None,
+        )
+        if copy is None or not copy.root.startswith("/") or not clean_relative(copy.rel_path):
             continue
         order = (
             r.number_sort is None,
@@ -202,11 +226,22 @@ def _kept_copies(connection: Connection, edition_id: str, held: set[str]) -> lis
             r.source_order,
             r.unit_id,
         )
-        found[r.item_id] = Candidate(
-            r.item_id, r.unit_id, r.number_norm, order, r.destination_id, name, r.format,
-            None, None, None, root,
-        )  # fmt: skip
-    return list(found.values())
+        found.append(
+            Candidate(
+                item_id,
+                r.unit_id,
+                r.number_norm,
+                order,
+                "",
+                copy.rel_path,
+                "cbz",
+                copy.size,
+                copy.mtime_ns,
+                copy.file_hash,
+                copy.root,
+            )
+        )
+    return found
 
 
 @dataclass(frozen=True)

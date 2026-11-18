@@ -28,6 +28,8 @@ from tests.content_env import (
     FakeArchive,
     FakeArchives,
     add_carrier,
+    session_id_of,
+    user_id_of,
     zip_of,
 )
 from tests.integration.test_l05a_content_route import World, _shape, _world
@@ -176,9 +178,7 @@ def test_publication_of_unexported_work_uses_kept_copy(world: World) -> None:
         for page in manifest["pages"]:
             served = fetch(world, world.admin, page["href"])
             assert served.status_code == 200 and served.content.startswith(PNG)
-        assert got.headers["cache-control"].startswith("private") or "no-store" in got.headers.get(
-            "cache-control", ""
-        )
+        assert got.headers["cache-control"] == "no-store"  # it holds tickets
     assert "ticket" not in got.text.lower().replace("/content/", "")  # no ticket field, only links
 
 
@@ -487,3 +487,37 @@ def test_publication_without_readable_copy_has_action(world: World) -> None:
     pdf = add_carrier(world.seed.engine, world.seed.editions["ok"], format="pdf")
     world.src.by_content[pdf] = {"book.pdf": b"%PDF-1.7"}
     assert publication(world.admin, "content", pdf).json()["code"] == "no_readable_copy"
+
+
+@pytest.mark.req("EF-LEC-014", "EF-LEC-005", "ENF-SEC-004")
+def test_publication_links_cannot_climb_out_of_the_ticket_path(world: World) -> None:
+    """A name of an archive is the book's, not ours (a CBZ is not neutralized): `%2e%2e`, `?`, `#`
+    and `%` in it are encoded in the link, which a browser resolves under `/content/<ticket>/` and
+    which the route decodes back to the very name of the archive."""
+    from urllib.parse import unquote, urljoin, urlsplit
+
+    odd = ["%2e%2e/%2e%2e/api/session?.png", "a b#c.png", "100%.png", "p1.png"]
+    content = book(world, {name: PNG + name.encode() for name in odd})
+    manifest = publication(world.admin, "content", content).json()
+    assert len(manifest["pages"]) == 4
+    ticket = manifest["pages"][0]["href"].split("/content/", 1)[1].split("/", 1)[0]
+    for page in manifest["pages"]:
+        resolved = urlsplit(urljoin("https://testserver/api/reader/x/y/publication", page["href"]))
+        assert resolved.path.startswith(f"/content/{ticket}/"), page["href"]
+        assert resolved.query == "" and resolved.fragment == ""
+        # what a server decodes (once) is the very name of the archive; the test client decodes
+        # twice, so the route is asked through the access service it calls
+        entry = unquote(resolved.path.removeprefix(f"/content/{ticket}/"))
+        assert entry in odd, page["href"]
+        served = world.access.read(
+            ticket,
+            entry,
+            session=(
+                user_id_of(world.seed.engine, "admin"),
+                session_id_of(world.seed.engine, "admin"),
+            ),
+        )
+        assert served.body == PNG + entry.encode()
+    # a name `/content` would refuse is no page of the manifest: it could never be served
+    bad = book(world, {"p1.png": PNG, "../x.png": PNG, "a\\b.png": PNG, "ok/p2.png": PNG})
+    assert entries_of(publication(world.admin, "content", bad).json()) == ["ok/p2.png", "p1.png"]
