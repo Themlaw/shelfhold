@@ -64,10 +64,6 @@ def _boot(env: ExportEnv) -> None:
 
 
 @pytest.mark.req("EF-EXP-010", "EF-EXP-001")
-@pytest.mark.xfail(
-    strict=True,
-    reason="M4 jalon J-REP-1: the executor resumes by call id, the job gives a new one each pass",
-)
 def test_a_pass_killed_before_its_manifest_is_finished_by_the_next_pass_of_the_job(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -108,10 +104,6 @@ def test_a_pass_killed_before_its_manifest_is_finished_by_the_next_pass_of_the_j
 
 
 @pytest.mark.req("EF-EXP-031", "EF-EXP-010")
-@pytest.mark.xfail(
-    strict=True,
-    reason="M4 jalon J-REP-2: the plan executor writes without the shared dest: lock of L30/L34",
-)
 def test_a_removal_with_its_files_never_runs_alongside_a_pass_that_writes_into_the_folder(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

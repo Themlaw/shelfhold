@@ -130,11 +130,6 @@ def _migrate(series: FamilySeries, *, source_key: str) -> Any:
 
 
 @pytest.mark.req("EF-BIB-014", "EF-BIB-055")
-@pytest.mark.xfail(
-    strict=True,
-    reason="M4 jalon J-PAR-1: a source migration to an nsfw sub-source writes no age suggestion: "
-    "the Edition stays admitted on the shelf below 18+",
-)
 def test_a_migration_to_an_adult_only_source_holds_the_edition_out_of_the_family_shelf(
     family_series: FamilySeries,
 ) -> None:

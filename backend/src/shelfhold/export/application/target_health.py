@@ -33,6 +33,7 @@ class TargetHealth:
     library_type_changed: bool = False  # a library changed its type in Kavita (EF-EXP-049)
     replayed_version: str | None = None  # the Kavita line the names were last replayed for
     replay_rejected: list[str] = field(default_factory=list)  # paths `parse-bulk` rejected then
+    binding_failures: dict[str, str] = field(default_factory=dict)  # destination id -> error code
 
     @property
     def mode(self) -> TargetMode:
@@ -84,6 +85,7 @@ class TargetHealth:
             "library_type_changed": self.library_type_changed,
             "replayed_version": self.replayed_version,
             "replay_rejected": list(self.replay_rejected),
+            "binding_failures": dict(self.binding_failures),
         }
 
     @classmethod
@@ -113,4 +115,7 @@ class TargetHealth:
             library_type_changed=bool(data.get("library_type_changed", False)),
             replayed_version=data.get("replayed_version"),
             replay_rejected=[str(path) for path in data.get("replay_rejected", ())],
+            binding_failures={
+                str(k): str(v) for k, v in (data.get("binding_failures") or {}).items()
+            },
         )
