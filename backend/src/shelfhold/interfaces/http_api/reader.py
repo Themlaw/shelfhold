@@ -107,6 +107,10 @@ class PositionIn(BaseModel):
 
 class StoredOut(BaseModel):
     id: str
+    carrier_type: (
+        str  # the file it was written on: an EPUB read on a device is on its exported file
+    )
+    carrier_id: str
     locator: dict[str, Any]
     client_ts: datetime
     server_ts: datetime
@@ -140,7 +144,8 @@ class ResolveIn(BaseModel):
 
 def _stored(found: StoredPosition) -> StoredOut:
     return StoredOut(
-        id=found.id, locator=found.locator, client_ts=found.client_ts,
+        id=found.id, carrier_type=found.carrier_type, carrier_id=found.carrier_id,
+        locator=found.locator, client_ts=found.client_ts,
         server_ts=found.server_ts, device_id=found.device_id, approximate=found.approximate,
     )  # fmt: skip
 

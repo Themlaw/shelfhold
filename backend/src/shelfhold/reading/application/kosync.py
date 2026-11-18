@@ -24,9 +24,15 @@ version, a purged chapter) is not given: the furthest decides, and an older one 
 it, since it would move the reader backwards.
 
 **The page** arrives as text (`tostring(progress)`): it is a whole number from 1, else
-`InvalidProgressError` (a 422). An EPUB (reflowable) sends an xpointer instead; it is stored as it
-is, in `locator.xpointer`, and marks nothing read (`traverse=False`) until L51. The device name is
-kept in the locator (`device`); the date of a position is always the server's.
+`InvalidProgressError` (a 422). An EPUB (reflowable) sends an xpointer instead (M5 L09): it is
+stored
+as it is, in `locator.xpointer` (opaque: given back and relayed to Kavita as it came), with the
+index of the spine document it names (`locator.spine`, read with bounds by
+`reading.domain.epub_locator`, absent when it does not fit the grammar) and the writer (`who`). A
+Unit is read **only** when the position is in the last document of the spine at its end
+(`locator.end`, set here and never taken from the request) and that device walked there
+(`progress._mark_traversed`): the position of one device is never the proof for another. The device
+name is kept in the locator (`device`); the date of a position is always the server's.
 """
 
 import hashlib
@@ -57,6 +63,12 @@ from shelfhold.reading.application.progress import (
 )
 from shelfhold.reading.bundle import store
 from shelfhold.reading.bundle.plan import LIVE
+from shelfhold.reading.domain.epub_locator import (
+    END_SHARE,
+    parse_xpointer,
+    reaches_end,
+    spine_index,
+)
 from shelfhold.reading.domain.traversal import Span, Step
 
 log = structlog.get_logger(__name__)
@@ -78,6 +90,7 @@ _ABSENT: Final = "0" * 26  # a placeholder that is no Edition: a lookup always r
 _REFLOWABLE = frozenset({"epub"})
 _DELIVERY = "delivery"  # the page 0 the server writes when it hands a file over
 _UNKNOWN_BOUND = 1024  # tokens kept by the counter
+_SPINES_BOUND = 256  # (file, content) pairs whose spine length is kept
 _RETURNED_BOUND = 1024  # (profile, token) pairs whose last given page is kept
 WINDOW_S: Final = 60  # one first and one last position per file, device and window (MIN-4)
 GUARD_FLOOR: Final = 0.0001  # KOReader floors the share to the ten-thousandth
@@ -184,6 +197,12 @@ def _who(device_id: str | None, token: str) -> str:
     return "t:" + hashlib.sha256(token.lower().encode()).hexdigest()[:16]
 
 
+def _writer(device_id: str | None, token: str) -> str:
+    """The writer of an EPUB position: the device the token pairs **and** the identifier it says. An
+    identifier is the client's word: another token that repeats it is another writer."""
+    return _who(device_id, token) + ":" + hashlib.sha256(token.lower().encode()).hexdigest()[:16]
+
+
 def _digest_of(raw: str) -> str | None:
     return "md5:" + raw.lower() if _DIGEST.fullmatch(raw) else None
 
@@ -195,10 +214,14 @@ class Kosync:
         keyring: Callable[[], Keyring],
         now: Callable[[], datetime],
         unknown: UnknownCounter | None = None,
+        spine_of: Callable[[str], int | None] | None = None,
     ) -> None:
         self._engine = engine
         self._keyring = keyring
         self._now = now
+        # how many documents the spine of an exported EPUB has (`None`: cannot be told, so no end)
+        self._spine_of = spine_of or (lambda _item: None)
+        self._spines: dict[tuple[str, str | None], int | None] = {}
         self.unknown = unknown or UnknownCounter()
         # The last page of a block a GET gave to each (profile, token): (version, page of the block,
         # when). In memory and bounded, on purpose: it is a hint about a start, not a fact to keep
@@ -354,8 +377,11 @@ class Kosync:
                 item_id = doc.item_id
                 kind = self._kind(connection, item_id)
                 if kind == "reflowable":
-                    locator = {"xpointer": _xpointer(progress)}
-                    traverse = False
+                    locator = self._epub_locator(
+                        connection, item_id, _xpointer(progress), percentage
+                    )
+                    traverse = locator.get("end") is True  # a walk to the end, or nothing
+                    locator["who"] = _writer(device_id, token)
                 elif kind == "paged" or _DIGITS.fullmatch(progress.strip()):
                     locator = {"page": _page(progress)}
                     traverse = True
@@ -386,6 +412,36 @@ class Kosync:
             if bundled is not None and locator.get("anchor") is not True:
                 self._cross_chapters(connection, user_id, position_id, token, *bundled)
             return True
+
+    def _epub_locator(
+        self, connection: Connection, item_id: str, text: str, percentage: float
+    ) -> dict[str, Any]:
+        """The xpointer as it came, the index of its document when it fits the grammar and, when it
+        may be the end of the book, whether it is (the spine is asked only then: the file of a
+        position in the middle of a book is not opened). All of it the server's, none of it from the
+        request."""
+        locator: dict[str, Any] = {"xpointer": text}
+        parsed = parse_xpointer(text)
+        if parsed is None:
+            return locator
+        locator["spine"] = spine_index(text)
+        if percentage >= END_SHARE and parsed.fragment >= 1:
+            spine = self._spine(connection, item_id)
+            if reaches_end(text, percentage, spine):
+                locator["end"] = True
+        return locator
+
+    def _spine(self, connection: Connection, item_id: str) -> int | None:
+        """The documents of the spine of this file, asked of the file once per (file, content) and
+        kept (bounded): a device that sends the end of a book over and over opens it once."""
+        key = (item_id, self._anchor(connection, item_id))
+        if key in self._spines:
+            return self._spines[key]
+        found = self._spine_of(item_id)
+        if len(self._spines) >= _SPINES_BOUND:
+            del self._spines[next(iter(self._spines))]
+        self._spines[key] = found
+        return found
 
     def _refused(self, token: str, reason: str) -> bool:
         self.unknown.hit(token, reason)

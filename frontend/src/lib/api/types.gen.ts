@@ -7876,6 +7876,14 @@ export type ShelfholdInterfacesHttpApiReaderStoredOut = {
      */
     approximate: boolean;
     /**
+     * Carrier Id
+     */
+    carrier_id: string;
+    /**
+     * Carrier Type
+     */
+    carrier_type: string;
+    /**
      * Client Ts
      */
     client_ts: string;

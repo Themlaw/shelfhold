@@ -226,7 +226,8 @@ class FakeKavita:
     hub_auth_calls: int = 0
     hub_auth_body: str | None = None  # a 200 whose body is this text instead of a user
     hub_auth_status: int = 200  # what `authenticate` answers (401, 404...) instead of a token
-    # The kosync routes of Kavita (`KoreaderController`, tag v0.9.1.4, M5 L09): the key of the account
+    # The kosync routes of Kavita (`KoreaderController`, tag v0.9.1.4, M5 L09): the key of the
+    # account
     # is in the PATH. (account, document digest) -> what the last PUT said.
     kosync_progress: dict[tuple[str, str], dict[str, Any]] = field(default_factory=dict)
     kosync_writes: list[dict[str, Any]] = field(default_factory=list)  # every PUT that was taken
@@ -601,8 +602,10 @@ class FakeKavita:
             return self._text(401, "Unauthorized")
         if method == "GET" and digest is not None:
             got = self.kosync_progress.get((account, digest))
-            return self._text(400, "Bad Request") if got is None else self._json(
-                {"document": digest, **got}
+            return (
+                self._text(400, "Bad Request")
+                if got is None
+                else self._json({"document": digest, **got})
             )
         if method == "PUT" and digest is None:
             body = self._body(recorded, "KoreaderBookDto")

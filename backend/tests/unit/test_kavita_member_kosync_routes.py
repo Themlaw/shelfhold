@@ -1,8 +1,10 @@
-"""M5 L09 (EF-LEC-009, EF-USR-012, ENF-SEC-005, ADR-0053 section 6): the kosync routes of Kavita on the
+"""M5 L09 (EF-LEC-009, EF-USR-012, ENF-SEC-005, ADR-0053 section 6): the kosync routes of Kavita on
+the
 closed list of a member's key, and nothing else of `Koreader`.
 
 Kavita reads the key of the account **in the path** of these routes (`/api/Koreader/{apiKey}/...`):
-the one place where a member's key is in a URL. It is put there by the client from its own key, never
+the one place where a member's key is in a URL. It is put there by the client from its own key,
+never
 by the caller; the call is logged under the template (never the key); and no other `Koreader` route
 (`users/auth`, `users/create`) is reachable.
 """
@@ -51,7 +53,8 @@ def test_member_kosync_calls_put_the_key_in_the_path_from_the_client_and_nowhere
     sent = run(
         client.call(
             "PUT", PUT[1],
-            body={"document": DOCUMENT, "progress": "/body/DocFragment[2]/body/p", "percentage": 0.4,
+            body={"document": DOCUMENT, "progress": "/body/DocFragment[2]/body/p", "percentage":
+            0.4,
                   "device": "Libra 2", "device_id": "A1"},
         )
     )  # fmt: skip
@@ -62,7 +65,7 @@ def test_member_kosync_calls_put_the_key_in_the_path_from_the_client_and_nowhere
     for request in fake.requests:
         assert request.path.startswith(f"/api/Koreader/{mine}/syncs/progress")  # the key, once
         assert "x-api-key" not in request.headers  # not twice
-        assert mine not in request.raw_url.split("?", 1)[-1] and mine.encode() not in request.body
+        assert "?" not in request.raw_url and mine.encode() not in request.body  # the path, only
     assert fake.violations == []
 
 

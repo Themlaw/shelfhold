@@ -35,9 +35,9 @@ TOKEN_HASH = "sha256:" + "cd" * 32
 EXPORT_KEYS = {
     "format", "version", "profile", "preferences", "source_policies", "user_state", "requests",
     "reading_positions", "sessions", "api_keys", "passkeys", "audit", "follow_requests",
-    "download_requests", "notification_digests", "truncated", "device_tokens", "devices", "collections",
-    "collection_items", "destination_accounts", "notify_destinations", "read_markers",
-    "tracker_hints", "request_list_imports", "source_accounts", "tachibk_imports",
+    "download_requests", "notification_digests", "truncated", "device_tokens", "devices",
+    "collections", "collection_items", "destination_accounts", "notify_destinations",
+    "read_markers", "tracker_hints", "request_list_imports", "source_accounts", "tachibk_imports",
     "reading_conflicts",
 }  # fmt: skip
 

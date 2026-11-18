@@ -1,4 +1,5 @@
-"""M5 L09 (EF-LEC-014, EF-LEC-007): the reader of the web and KOReader on one EPUB, by the rule of L07.
+"""M5 L09 (EF-LEC-014, EF-LEC-007): the reader of the web and KOReader on one EPUB, by the rule of
+L07.
 
 The reader writes a `cfi` on the kept copy; a device writes an xpointer on the exported file of the
 same content. Both are the positions of one reader on one book: the latest in effective time is
@@ -39,10 +40,16 @@ def exported_twin(world: World, content: str) -> str:
     """The file the export placed for the same content: an `export_item` that points at it."""
     item = new_ulid()
     with write_transaction(world.seed.engine) as connection:
-        edition = connection.execute(
-            sa.text("SELECT edition_id FROM unit WHERE id = (SELECT unit_id FROM content "
-                    "WHERE id = :c)"), {"c": content},
-        ).scalar_one_or_none() or world.seed.editions["ok"]
+        edition = (
+            connection.execute(
+                sa.text(
+                    "SELECT edition_id FROM unit WHERE id = (SELECT unit_id FROM content "
+                    "WHERE id = :c)"
+                ),
+                {"c": content},
+            ).scalar_one_or_none()
+            or world.seed.editions["ok"]
+        )
         connection.execute(
             sa.insert(export.export_item).values(
                 id=item, edition_id=edition, kind="volume", content_id=content
@@ -97,19 +104,27 @@ def test_reader_and_koreader_positions_merge_on_same_epub(world: World) -> None:
     proposal = back.json()["conflict"]
     assert proposal is not None
     assert proposal["winner"]["locator"]["totalProgression"] == 0.22
-    assert proposal["loser"]["locator"]["xpointer"] == XPOINTER  # « reprendre là où KOReader en est »
-    assert put(world, world.admin, content, cfi(0.23), device="phone", minutes=1).json()[
-        "conflict"
-    ]["id"] == proposal["id"]  # once
+    assert (
+        proposal["loser"]["locator"]["xpointer"] == XPOINTER
+    )  # « reprendre là où KOReader en est »
+    assert (
+        put(world, world.admin, content, cfi(0.23), device="phone", minutes=1).json()["conflict"][
+            "id"
+        ]
+        == proposal["id"]
+    )  # once
     assert conflicts(world) == 1
-    # she resumes from the device's place: that is the latest position, an xpointer on the device's file
+    # she resumes from the device's place: that is the latest position, an xpointer on the device's
+    # file
     done = resolve(world, proposal["id"], "loser")
     assert done.status_code == 200, done.text
     assert done.json()["conflict"] is None
     assert done.json()["position"]["locator"]["xpointer"] == XPOINTER
     with world.seed.engine.connect() as connection:
         copies = connection.execute(
-            sa.select(sa.func.count()).select_from(reading.reading_position).where(
+            sa.select(sa.func.count())
+            .select_from(reading.reading_position)
+            .where(
                 reading.reading_position.c.carrier_id == content,
                 sa.func.json_extract(reading.reading_position.c.locator, "$.xpointer").is_not(None),
             )

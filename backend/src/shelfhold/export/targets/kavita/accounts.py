@@ -7,18 +7,23 @@ who the key is, once, when it is pasted, and read and write that member's readin
 else is refused before a request is built, and the dedicated client refuses all of them in turn.
 
 Every request goes through the `GuardedFetcher` of the target (declared LAN address, SSRF guard).
-The key is a header and nothing else: never in a URL, a log line, an error or a `repr`.
+The key is a header and nothing else: never in a URL, a log line, an error or a `repr`. **One
+exception** (M5 L09): the two kosync routes of Kavita read the key of the account in their path
+(`/api/Koreader/{apiKey}/...`), so it is put there by this client from its own key, never by the
+caller, and sent in no header; the call is logged under the template of the route, and the key
+is registered to be masked by value (and by shape) in every other line that names the path.
 """
 
 from __future__ import annotations
 
 import asyncio
 import json
+import re
 import threading
 from collections.abc import Callable, Coroutine, Mapping
 from dataclasses import dataclass
 from typing import Any, Final
-from urllib.parse import urlencode, urlsplit
+from urllib.parse import quote, urlencode, urlsplit
 
 import sqlalchemy as sa
 import structlog
@@ -30,11 +35,14 @@ from shelfhold.export.targets.kavita.errors import ProtocolError, RouteNotAllowe
 from shelfhold.export.targets.kavita.routes import Route
 from shelfhold.infrastructure.fetcher import FetchError, GuardedFetcher
 from shelfhold.infrastructure.kavita_names import same_kavita_username
+from shelfhold.infrastructure.logging import register_secret_value
 from shelfhold.infrastructure.schema import export
 
 __all__ = [
     "CONTINUE_POINT",
     "GET_PROGRESS",
+    "KOSYNC_GET",
+    "KOSYNC_PUT",
     "MEMBER_ROUTES",
     "POST_PROGRESS",
     "SERIES_PROGRESS",
@@ -62,11 +70,24 @@ CONTINUE_POINT: Final = Route("GET", "/api/Reader/continue-point", write=False)
 # despite the POST).
 SERIES_PROGRESS: Final = Route("POST", "/api/Series/all-v2", write=False)
 
-MEMBER_ROUTES: Final = (WHOAMI, GET_PROGRESS, POST_PROGRESS, CONTINUE_POINT, SERIES_PROGRESS)
+# The kosync routes of Kavita (`KoreaderController`): how an EPUB goes out, by its share alone
+# (Kavita
+# counts an EPUB in documents, ours is a share). The key is in the PATH (`{apiKey}`); `{ebookHash}`
+# is
+# the partial md5 of the file, as KOReader computes it. `users/auth` and `users/create` are not
+# here.
+KOSYNC_GET: Final = Route("GET", "/api/Koreader/{apiKey}/syncs/progress/{ebookHash}", write=False)
+KOSYNC_PUT: Final = Route("PUT", "/api/Koreader/{apiKey}/syncs/progress", write=True)
+
+MEMBER_ROUTES: Final = (
+    WHOAMI, GET_PROGRESS, POST_PROGRESS, CONTINUE_POINT, SERIES_PROGRESS, KOSYNC_GET, KOSYNC_PUT,
+)  # fmt: skip
 _BY_KEY: Final[dict[tuple[str, str], Route]] = {
     (r.method, r.path.lower()): r for r in MEMBER_ROUTES
 }
 _MAX_NAME: Final = 128
+_EBOOK_HASH = re.compile(r"[0-9a-f]{32}")
+_PLACEHOLDER = re.compile(r"\{([A-Za-z]+)\}")
 
 
 class AccountCheckFailed(TargetError):
@@ -164,14 +185,25 @@ class MemberKavitaClient:
         *,
         query: Mapping[str, Any] | None = None,
         body: Any = None,
+        path_params: Mapping[str, str] | None = None,
     ) -> CallResult:
         route = _resolve(method, path)
-        headers = {"x-api-key": self._key.reveal(), "Accept": "application/json"}
-        url = self._base_url + route.path
+        headers = {"Accept": "application/json"}
+        if "{apiKey}" in route.path:
+            url = self._base_url + self._kosync_path(route, path_params)
+        else:
+            if path_params:
+                raise RouteNotAllowed(method, path)
+            headers["x-api-key"] = self._key.reveal()
+            url = self._base_url + route.path
         try:
             if route.method == "GET":
                 response = await self._fetcher.get(
                     url, headers=headers, params=dict(query or {}) or None
+                )
+            elif route.method == "PUT":
+                response = await self._fetcher.put(
+                    url, json=body if body is not None else {}, headers=headers
                 )
             else:
                 if query:  # the fetcher takes the parameters of a POST in the URL
@@ -193,6 +225,21 @@ class MemberKavitaClient:
         except ValueError:
             raise ProtocolError(f"{route.label}: the answer is not JSON") from None
         return CallResult(response.status, data)
+
+    def _kosync_path(self, route: Route, params: Mapping[str, str] | None) -> str:
+        """The path of a kosync route: the key is the client's own and registered to be masked, the
+        digest is the one value a caller gives, and it must be a lower-case md5. Any other name, or
+        a
+        caller that names the key, is a refusal before a request is built."""
+        given = dict(params or {})
+        wanted = set(_PLACEHOLDER.findall(route.path)) - {"apiKey"}
+        if set(given) != wanted:
+            raise RouteNotAllowed(route.method, route.path)
+        if "ebookHash" in given and _EBOOK_HASH.fullmatch(given["ebookHash"]) is None:
+            raise RouteNotAllowed(route.method, route.path)
+        register_secret_value(self._key.reveal())
+        values = {"apiKey": quote(self._key.reveal(), safe=""), **given}
+        return _PLACEHOLDER.sub(lambda m: values[m.group(1)], route.path)
 
     async def whoami(self) -> WhoAmI:
         """The account the key opens. Nothing else of the answer leaves this method."""

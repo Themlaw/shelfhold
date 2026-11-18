@@ -6,6 +6,7 @@ Format : [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/). Versionnement
 
 ### Ajouté
 
+- **Passage d'EPUB par kosync (M5 L09)** : le xpointer d'une liseuse est gardé tel quel et son document du spine est lu avec des bornes ; un livre n'est « lu » qu'à la fin du dernier document du spine, par une lecture plausible du même appareil (la position d'un autre appareil n'est plus une preuve). Vers Kavita, un EPUB part par son pourcentage seul, par les deux routes kosync de Kavita ajoutées à la liste fermée de la clé d'un membre (la clé est dans le chemin : contrat de Kavita). La position d'une liseuse et celle du lecteur fusionnent par la règle du lecteur (`carrier_type` et `carrier_id` dans les positions rendues). Aucune migration.
 - **Registre d'appareils et rotation du secret (M5 L02)** : chaque appairage fait un appareil (libellé, type, « vu pour la dernière fois ») ; l'écran « Connecter une liseuse » les liste par profil, change le secret d'un appareil sans réappairer (l'ancien est refusé à la requête suivante) et retire un appareil (tous ses jetons sont révoqués). Actions réservées `device_token.rotate` et `device.remove`, jamais ouvertes à une clé ni à un jeton ; un membre ne voit que ses appareils, un enfant aucun. `GET /api/v1/devices`, `POST /api/v1/devices/{id}/rotate`, `DELETE /api/v1/devices/{id}` ; `shelfhold admin device-tokens rotate|remove`. Migration 0100 (ligne 1.2) : chaque jeton existant reçoit son appareil ; un jeton dont l'appareil est retiré est refusé.
 
 ## 1.1.0 - 2026-11-18

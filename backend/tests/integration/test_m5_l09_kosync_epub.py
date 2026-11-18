@@ -78,9 +78,7 @@ def walk(
 def state(lab: World, unit: str) -> str:
     with lab.seed.engine.connect() as c:
         found = (
-            c.execute(
-                sa.text("SELECT state FROM reading_progress WHERE unit_id = :u"), {"u": unit}
-            )
+            c.execute(sa.text("SELECT state FROM reading_progress WHERE unit_id = :u"), {"u": unit})
             .scalars()
             .all()
         )
@@ -125,7 +123,9 @@ def test_epub_xpointer_off_grammar_is_kept_opaque_and_gives_no_index(lab: World)
 def test_epub_read_only_at_end_of_spine(lab: World, spines: Spines) -> None:
     item, digest = volume(lab, count=1, fmt="epub")
     spines.by_item[item.item_id] = 3
-    assert set(walk(lab, lab.mum, digest, stop=0.96)) == {200}  # in the last document, not at its end
+    assert set(walk(lab, lab.mum, digest, stop=0.96)) == {
+        200
+    }  # in the last document, not at its end
     assert state(lab, item.unit_id) != "read" and marks(lab) == 0
     lab.env.clock.advance(timedelta(minutes=2))
     assert push(lab.mum, digest, xp(3, 9000), 1.0, device_id="A1B2C3").status_code == 200
@@ -137,7 +137,9 @@ def test_epub_not_read_when_the_spine_is_longer_than_the_last_document_reached(
     lab: World, spines: Spines
 ) -> None:
     item, digest = volume(lab, count=1, fmt="epub")
-    spines.by_item[item.item_id] = 5  # the device is in document 3 of 5, at "100 %" of what it knows
+    spines.by_item[item.item_id] = (
+        5  # the device is in document 3 of 5, at "100 %" of what it knows
+    )
     walk(lab, lab.mum, digest, stop=1.0, documents=3)
     assert state(lab, item.unit_id) != "read" and marks(lab) == 0
 
@@ -178,7 +180,7 @@ def test_epub_position_not_proof_of_other_writer(lab: World, spines: Spines) -> 
     not a step of its chain."""
     item, digest = volume(lab, count=1, fmt="epub")
     spines.by_item[item.item_id] = 3
-    walk(lab, lab.mum, digest, stop=0.92, device_id="TABLET")  # a long read, on the tablet
+    walk(lab, lab.mum, digest, stop=0.96, device_id="TABLET")  # a long read, on the tablet
     assert state(lab, item.unit_id) != "read"
     lab.env.clock.advance(timedelta(minutes=2))
     # a phone shows up at the end of the book: it has said nothing before
@@ -285,9 +287,54 @@ def test_epub_a_forged_spine_or_end_in_the_body_changes_nothing(lab: World, spin
     """The index and the end are the server's: a body that carries them is no more than a body."""
     item, digest = volume(lab, count=1, fmt="epub")
     spines.by_item[item.item_id] = 3
-    assert push(lab.mum, digest, xp(1), 0.1, spine=99, end=True, who="x", locator={"end": True}
-                ).status_code == 200
+    assert (
+        push(
+            lab.mum, digest, xp(1), 0.1, spine=99, end=True, who="x", locator={"end": True}
+        ).status_code
+        == 200
+    )
     (row,) = positions(lab)
     assert row.locator["spine"] == 0 and "end" not in row.locator
     assert row.locator.get("who") != "x"
     assert state(lab, item.unit_id) != "read"
+
+
+def test_epub_a_leap_is_no_read_even_when_the_book_has_a_page_count(
+    lab: World, spines: Spines
+) -> None:
+    """The page count of an EPUB is its number of sections: it is no speed to judge a share by."""
+    item, digest = volume(lab, count=1, fmt="epub")
+    spines.by_item[item.item_id] = 30
+    with lab.seed.engine.begin() as c:
+        c.execute(
+            sa.text(
+                "UPDATE content SET page_count = 30 "
+                "WHERE id = (SELECT content_id FROM export_item WHERE id = :i)"
+            ),
+            {"i": item.item_id},
+        )
+    assert push(lab.mum, digest, at(0.04, 30), 0.04, device_id="A").status_code == 200
+    lab.env.clock.advance(timedelta(minutes=2))
+    assert push(lab.mum, digest, xp(30, 9000), 1.0, device_id="A").status_code == 200
+    assert state(lab, item.unit_id) != "read" and marks(lab) == 0
+
+
+def test_epub_the_spine_of_a_file_is_opened_once(lab: World, spines: Spines) -> None:
+    item, digest = volume(lab, count=1, fmt="epub")
+    spines.by_item[item.item_id] = 3
+    for _ in range(5):
+        lab.env.clock.advance(timedelta(minutes=2))
+        push(lab.mum, digest, xp(3, 9000), 1.0, device_id="A")
+    assert spines.asked == [item.item_id]
+
+
+def test_epub_two_tokens_repeating_one_device_id_are_two_writers(
+    lab: World, spines: Spines
+) -> None:
+    item, digest = volume(lab, count=1, fmt="epub")
+    spines.by_item[item.item_id] = 3
+    walk(lab, lab.mum, digest, stop=0.96, device_id="CLONE")
+    lab.env.clock.advance(timedelta(minutes=2))
+    mine = {r.locator["who"] for r in positions(lab)}
+    push(lab.kid, digest, xp(3, 9000), 1.0, device_id="CLONE")
+    assert len(mine) == 1 and state(lab, item.unit_id) != "read"

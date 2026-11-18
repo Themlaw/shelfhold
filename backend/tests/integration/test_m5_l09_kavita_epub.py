@@ -10,7 +10,6 @@ nothing computed here (no page, no index of the spine) goes at all. What the rea
 
 from __future__ import annotations
 
-from datetime import timedelta
 from pathlib import Path
 
 import pytest
@@ -83,7 +82,7 @@ def test_epub_sync_with_kavita_by_percent_only(tmp_path: Path) -> None:
             assert env.keys[reader] in request.path and "x-api-key" not in request.headers
         assert env.fake.violations == []
         # nothing new: nothing is sent again
-        env.clock.advance(timedelta(minutes=5))
+        env.clock.advance(minutes=5)
         assert env.sync(reader).pushed == 0 and len(env.fake.kosync_writes) == 1
 
 
@@ -94,7 +93,7 @@ def test_epub_share_goes_forward_only(tmp_path: Path) -> None:
         env.fake.read_in_kavita_epub(env.names[reader], DIGEST, 0.8)  # read further in Kavita
         device_xpointer(env, reader, chapter, 0.5)
         assert env.sync(reader).pushed == 0 and env.fake.kosync_writes == []
-        env.clock.advance(timedelta(minutes=5))
+        env.clock.advance(minutes=5)
         device_xpointer(env, reader, chapter, 0.9)
         assert env.sync(reader).pushed == 1
         assert [w["percentage"] for w in env.fake.kosync_writes] == [0.9]
@@ -104,7 +103,9 @@ def test_epub_unknown_to_kavita_is_a_start_not_an_error(tmp_path: Path) -> None:
     with sync_env(tmp_path) as env:
         reader = env.member("reader")
         chapter = epub_chapter(env)
-        device_xpointer(env, reader, chapter, 0.3)  # Kavita answers 400 to a book it holds no state of
+        device_xpointer(
+            env, reader, chapter, 0.3
+        )  # Kavita answers 400 to a book it holds no state of
         assert env.sync(reader).pushed == 1
         assert [w["percentage"] for w in env.fake.kosync_writes] == [0.3]
 
@@ -134,7 +135,9 @@ def test_epub_never_pushed_as_a_page_even_when_read_to_the_end(tmp_path: Path) -
         device_xpointer(env, reader, chapter, 1.0, extra={"end": True})
         env.sync(reader)
         assert not env.fake.requests_to("/api/reader/progress")
-        assert [w["percentage"] for w in env.fake.kosync_writes] == [1.0]  # « finished », as a share
+        assert [w["percentage"] for w in env.fake.kosync_writes] == [
+            1.0
+        ]  # « finished », as a share
 
 
 def test_epub_each_member_is_relayed_with_their_own_key_and_nobody_elses(tmp_path: Path) -> None:
@@ -160,7 +163,9 @@ def test_epub_revoked_key_relays_nothing_and_falls_back_on_no_other_key(tmp_path
         assert env.fake.kosync_writes == [] and not env.fake.requests_to("/api/Koreader")
 
 
-def test_epub_chapter_of_another_file_under_the_same_digest_is_never_guessed(tmp_path: Path) -> None:
+def test_epub_chapter_of_another_file_under_the_same_digest_is_never_guessed(
+    tmp_path: Path,
+) -> None:
     """A file with no digest (no alias) has no kosync identity: nothing is sent for it."""
     with sync_env(tmp_path) as env:
         reader = env.member("reader")
