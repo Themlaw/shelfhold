@@ -57,6 +57,7 @@ from shelfhold.infrastructure.content_trust.xhtml_neutralizer import (
     XML_LIMITS_INSPECT,
     NeutralizationError,
     is_relative_reference,
+    neutralize,
     neutralize_page,
     page_references,
     parse_xml_document,
@@ -398,7 +399,10 @@ def _derive(archive: SafeArchive, out: BinaryIO) -> Derivative:
                 continue
             data = bytes(archive.read(entry_name, _PAGE_BYTES))
             try:
-                result = neutralize_page(data, kind, path=entry_name, blocked=blocked)  # type: ignore[arg-type]
+                if kind == "css":
+                    result = neutralize(data, "css")
+                else:  # a page: its place in the package decides which links survive
+                    result = neutralize_page(data, kind, path=entry_name, blocked=blocked)  # type: ignore[arg-type]
             except NeutralizationError as error:
                 raise NeutralizationError(error.reason, entry_name) from None
             writer.add(entry_name, result, compress=True)
