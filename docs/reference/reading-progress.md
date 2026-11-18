@@ -41,8 +41,8 @@ ou un changement de sens attend la 2.0. Aucune écriture : un lecteur enregistre
    plausible** : une Unité est lue quand les déplacements plausibles entre positions successives du
    profil sur le même contenu la couvrent en entier (de ses premières pages, ≤ 3, à sa dernière
    page). Un déplacement vers l'avant de A à B est plausible s'il fait au plus 3 pages (toujours
-   admis), ou si `pages / (server_ts(B) − server_ts(A))` reste sous `reading.max_pages_per_minute`
-   (20 par défaut). Seule la date du **serveur** compte : le `client_ts` n'entre jamais dans la
+   admis), ou si `pages / (server_ts(B) − server_ts(A))` reste sous 20 pages par minute (borne
+   propre au code, `DEFAULT_MAX_PAGES_PER_MINUTE`). Seule la date du **serveur** compte : le `client_ts` n'entre jamais dans la
    vitesse. KOReader ne pousse pas à chaque page (`auto_sync` éteint et `pages_before_update = nil`
    par défaut, `plugins/kosync.koplugin/main.lua`) : **sans `auto_sync`, la liseuse n'envoie rien d'elle-même**
    (ni à l'ouverture, ni à la fermeture, ni à la mise en veille) ; avec lui, elle demande la position à

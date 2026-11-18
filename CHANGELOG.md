@@ -25,6 +25,14 @@ Format : [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/). Versionnement
 
 - Une Œuvre ou une Édition rangée sur aucune étagère n'est plus visible pour un enfant (un adulte la voit toujours).
 
+### Corrigé
+
+- **`shelfhold shelf create` sur une cible Komga ou un dossier natif** : la commande plantait (elle ouvrait le client Kavita pour une cible qui n'en est pas un) et laissait le dossier créé sur le disque ; seule une cible Kavita est liée à une bibliothèque, et un échec de liaison retire le dossier créé.
+
+### Retiré
+
+- **Réglage `SHELFHOLD_READING_MAX_PAGES_PER_MINUTE`** : aucun code de production ne le lisait ; la vitesse plausible de lecture garde sa borne de 20 pages par minute dans le code (`DEFAULT_MAX_PAGES_PER_MINUTE`). Le réglage sort de la configuration, de sa référence et du paquet de diagnostic.
+
 Migration : oui (0091, 0092, 0094, 0095, 0096, 0097 et 0098)
 
 ## 1.1.0-rc.2 - 2026-11-16
