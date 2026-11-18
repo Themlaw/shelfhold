@@ -2513,6 +2513,7 @@
   "device_token.manage",
   "device_token.rotate",
   "device_tokens",
+  "devices",
   "dewey",
   "diagnostic_vocabulary.json",
   "digest",
