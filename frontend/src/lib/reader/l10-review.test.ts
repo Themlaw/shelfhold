@@ -96,6 +96,7 @@ describe('the review of the image reader (L10)', () => {
   // entry, with a guard (`test_reader_refuses_to_mount_under_spa_csp`, L12) that does not exist
   // yet; the e2e spec asserts boxes and attributes, never a decoded pixel, so it stays green
   // with every image refused.
+  // req: ENF-SEC-004
   it('the policy of the page the reader mounts in lets its blob: images load', () => {
     const here = fileURLToPath(import.meta.url);
     const appHtml = readFileSync(resolve(here, '../../../app.html'), 'utf-8'); // the SPA's shell
