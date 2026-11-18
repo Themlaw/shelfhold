@@ -627,6 +627,7 @@
   "discovery.series_created",
   "discovery.series_tombstoned",
   "discovery.translation_nature_unknown",
+  "document_alias.complete_failed",
   "document_alias.hash_failed",
   "document_alias.heal_failed",
   "document_alias.heal_read_failed",

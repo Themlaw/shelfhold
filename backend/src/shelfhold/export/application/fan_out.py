@@ -43,7 +43,7 @@ from sqlalchemy import Connection, Engine
 
 from shelfhold.catalog.public import Admission, RatingService
 from shelfhold.export.application.cover_image import prepare_cover
-from shelfhold.export.application.export_alias import record_export_alias
+from shelfhold.export.application.export_alias import complete_hashes, record_export_alias
 from shelfhold.export.application.komga_audit_state import partitioning_of
 from shelfhold.export.application.page_policy import PagePolicy
 from shelfhold.export.application.plan_executor import (
@@ -979,8 +979,13 @@ class FanOut:
                     record_export_alias(
                         connection, destination_id=destination_id,
                         export_item_id=written.export_item_id, file_hash=written.file_hash,
-                        path=Path(written.path),
                     )  # fmt: skip
+        for written in report.files:  # then their hashes, once the manifest is committed
+            if written.path is not None:
+                complete_hashes(
+                    self._engine, export_item_id=written.export_item_id,
+                    file_hash=written.file_hash, path=Path(written.path),
+                )  # fmt: skip
 
 
 # -- what the composition root gives the executor -----------------------------------------------

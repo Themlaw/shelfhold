@@ -22,7 +22,7 @@ import threading
 import pytest
 import sqlalchemy as sa
 
-from shelfhold.export.application.export_alias import record_export_alias
+from shelfhold.export.application.export_alias import complete_hashes, record_export_alias
 from shelfhold.infrastructure.schema import export
 from shelfhold.reading.domain.document_hash import koreader_partial_md5
 from tests.bundle_env import Chapter
@@ -44,11 +44,6 @@ def sha(data: bytes) -> str:
     return "sha256:" + hashlib.sha256(data).hexdigest()
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#348 contradicteur: the alias samples the file at its path without checking it is "
-    "the file `file_hash` names (and follows a link): A's alias takes B's digest, B is ambiguous",
-)
 def test_the_alias_never_takes_the_digest_of_another_file(lab: World) -> None:  # noqa: F811
     a = library(lab, "ok").add(Chapter.simple("1", count=20))
     b = library(lab, "ok").add(Chapter.simple("2", count=20))
@@ -59,6 +54,9 @@ def test_the_alias_never_takes_the_digest_of_another_file(lab: World) -> None:  
             connection, destination_id=None, export_item_id=b.item_id, file_hash=sha(b_bytes),
             path=b.path,
         )  # fmt: skip
+    complete_hashes(  # after the commit, as the export does
+        lab.seed.engine, export_item_id=b.item_id, file_hash=sha(b_bytes), path=b.path
+    )
     # A was written as `a_bytes`; before `FanOut._keep` reads it, its path is a link to B
     a.path.unlink()
     a.path.symlink_to(b.path)
@@ -67,6 +65,9 @@ def test_the_alias_never_takes_the_digest_of_another_file(lab: World) -> None:  
             connection, destination_id=None, export_item_id=a.item_id, file_hash=sha(a_bytes),
             path=a.path,
         )  # fmt: skip
+    complete_hashes(  # the path is a link: nothing is read through it
+        lab.seed.engine, export_item_id=a.item_id, file_hash=sha(a_bytes), path=a.path
+    )
     digest_b = koreader_partial_md5(io.BytesIO(b_bytes))
     with lab.seed.engine.connect() as connection:
         holders = set(
@@ -82,11 +83,6 @@ def test_the_alias_never_takes_the_digest_of_another_file(lab: World) -> None:  
     assert len(positions(lab)) == 1
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#348 contradicteur: the alias opens the destination file with a plain open() inside "
-    "the write transaction: a FIFO at the path blocks it, the database write lock held",
-)
 def test_a_fifo_at_the_path_never_blocks_the_alias() -> None:
     with export_env() as env:
         exported = export_one(env)
