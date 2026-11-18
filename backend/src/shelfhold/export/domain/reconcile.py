@@ -13,8 +13,11 @@ from typing import Final
 
 import structlog
 
+from shelfhold.infrastructure.schema.export import LIVE_STATES
+
 __all__ = [
     "FLOOR_MISSING",
+    "LIVE_STATES",
     "REEXPORT_WINDOW",
     "Change",
     "Disappeared",
@@ -36,7 +39,6 @@ REEXPORT_WINDOW: Final = timedelta(hours=24)  # EF-EXP-018
 # `error_code` of a record that the reconcile already put back once: gone a second time, it is
 # somebody else's habit (a nightly script), not an accident.
 REEXPORT_ATTEMPTED: Final = "reconcile.reexport_attempted"
-LIVE_STATES: Final = frozenset({"written", "scanned", "resolved", "adopted"})
 
 
 MAX_RATIO: Final = 0.5  # beyond half the files, the guard could never see an absent mount

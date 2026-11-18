@@ -1454,6 +1454,11 @@
     action = "Read it in the app it was sent to, or ask an administrator to keep a copy."
     cause = "The book cannot be cut within the limit of an excerpt (a single file, or a first chapter that is too long): the whole file is never served."
 
+  [errors.content_changed]
+    title = "The book changed while you were reading."
+    action = "Reload the book: the reader starts again from an up-to-date manifest."
+    cause = "The file being read was replaced since the book was opened."
+
   [errors.full_read_not_allowed]
     title = "This book is not read in full here."
     action = "Ask for an excerpt, or read the full book in the app it was sent to."

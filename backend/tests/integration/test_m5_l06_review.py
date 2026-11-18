@@ -1,7 +1,7 @@
 """#366, independent adverse review of M5 L06 (ADR-0055 D-P1, EF-LEC-014, I35 extended).
 
-Each test is a proof of a hole found by the review, marked `xfail(strict=True)`: it fails today and
-must pass once the hole is closed (then the mark goes).
+Each test is a proof of a hole found by the review, first written as `xfail(strict=True)`: it failed
+until the hole was closed (the mark is gone).
 
 - R1: the full reader is refused for a kept copy « read elsewhere » only while its export record is
   `written`; once the destination has scanned it (`scanned`, `resolved`, `adopted`: the states in
@@ -66,10 +66,6 @@ def _read_elsewhere(world: World, item: str, state: str) -> None:
         )
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="R1: `_full_allowed` counts only `written`; scanned/resolved/adopted re-open the book",
-)
 @pytest.mark.req("EF-LEC-014")
 @pytest.mark.parametrize("state", ["scanned", "resolved", "adopted"])
 def test_r1_poc_scanned_export_is_still_read_elsewhere(world: World, state: str) -> None:
@@ -91,10 +87,6 @@ def test_r1_poc_scanned_export_is_still_read_elsewhere(world: World, state: str)
     assert (chosen["carrier_type"], chosen["scope"]) == ("export_item", "excerpt")
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="R2: a CBZ `content` is opened from the first library copy of its Unit, whatever it is",
-)
 @pytest.mark.req("EF-LEC-005", "EF-LEC-014")
 def test_r2_poc_a_content_reads_only_a_copy_of_itself() -> None:
     """A Unit holds two library copies: its content's, and one registered as a copy of another

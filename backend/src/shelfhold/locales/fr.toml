@@ -1423,6 +1423,11 @@ title = "Aucun extrait n'est disponible pour ce livre."
 action = "Lisez-le dans l'application où il a été envoyé, ou demandez à un administrateur de conserver une copie."
 cause = "Le livre ne peut pas être coupé dans la limite d'un extrait (un seul fichier, ou un premier chapitre trop long) : le fichier entier n'est jamais servi."
 
+[errors."content_changed"]
+title = "Le livre a changé pendant la lecture."
+action = "Rechargez le livre : le lecteur reprend depuis un manifeste à jour."
+cause = "Le fichier lu a été remplacé depuis l'ouverture du livre."
+
 [errors."full_read_not_allowed"]
 title = "Ce livre ne se lit pas en entier ici."
 action = "Demandez un extrait, ou lisez le livre complet dans l'application où il a été envoyé."

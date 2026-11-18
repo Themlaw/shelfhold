@@ -14,6 +14,7 @@ and the replica registry name: nothing a client supplies is ever part of it.
 
 from __future__ import annotations
 
+import os
 from collections.abc import Callable
 from contextlib import ExitStack
 from typing import Any
@@ -26,7 +27,7 @@ from shelfhold.infrastructure.schema import export, storage
 from shelfhold.library.adapters.epub_derivative import servable_epub
 from shelfhold.library.adapters.epub_excerpt import epub_excerpt
 from shelfhold.library.domain.failures import OriginalNotServableError
-from shelfhold.library.replica import library_copies
+from shelfhold.library.replica import LibraryCopy, library_copies
 from shelfhold.reading.application.content_access import (
     ExcerptUnavailableError,
     NoReadableCopyError,
@@ -44,9 +45,16 @@ class _Open:
     there, for `names()` and for `read()`."""
 
     def __init__(
-        self, stack: ExitStack, archive: Any, allowed: frozenset[str] | None = None
+        self,
+        stack: ExitStack,
+        archive: Any,
+        allowed: frozenset[str] | None = None,
+        pin: str = "",
     ) -> None:
-        self._stack, self._archive, self._allowed = stack, archive, allowed
+        self._stack, self._archive, self._allowed, self._pin = stack, archive, allowed, pin
+
+    def fingerprint(self) -> str:
+        return self._pin
 
     def names(self) -> frozenset[str]:
         every = frozenset(e.name for e in self._archive.entries if not e.is_dir)
@@ -59,6 +67,18 @@ class _Open:
 
     def close(self) -> None:
         self._stack.close()
+
+
+def _is_copy_of(copy: LibraryCopy, content_hash: str | None, stat: os.stat_result) -> bool:
+    """The registry's copy is this content's: its identity is the content's (`content_hash`), or,
+    for a content with no hash, it is the file the registry recorded (size and modification time),
+    never « the first copy of the Unit ». A file that is no longer the recorded one is refused."""
+    recorded = copy.size is not None and copy.mtime_ns is not None
+    if recorded and (copy.size != stat.st_size or copy.mtime_ns != stat.st_mtime_ns):
+        return False
+    if content_hash is not None:
+        return copy.content_hash == content_hash
+    return recorded
 
 
 class ReadableCopies:
@@ -74,7 +94,10 @@ class ReadableCopies:
         with self._engine.connect() as connection:
             row = connection.execute(
                 sa.select(
-                    storage.content.c.id, storage.content.c.unit_id, storage.content.c.format
+                    storage.content.c.id,
+                    storage.content.c.unit_id,
+                    storage.content.c.format,
+                    storage.content.c.content_hash,
                 ).where(storage.content.c.id == content_id)
             ).first()
             if row is None or row.unit_id is None:
@@ -84,6 +107,8 @@ class ReadableCopies:
                 if row.format != "cbz"
                 else [c for c in library_copies(connection, row.unit_id) if not c.damaged]
             )
+            # a CBZ is read only from a copy that is proved to be this content (see `_is_copy_of`)
+            copies = [c for c in copies if c.rel_path.lower().endswith(".cbz")]
         fsops = self._fsops()
         if row.format == "epub":
             try:
@@ -92,21 +117,26 @@ class ReadableCopies:
                 raise NoReadableCopyError from None
             if served.content_id != row.id:
                 raise NoReadableCopyError
-            paths = [served.path]
+            paths: list[tuple[str, LibraryCopy | None]] = [(served.path, None)]
         elif row.format == "cbz":
-            paths = [c.local for c in copies]
+            paths = [(c.local, c) for c in copies]
         else:
             raise NoReadableCopyError
-        for path in paths:
+        for path, copy in paths:
             stack = ExitStack()
             try:
                 stream = stack.enter_context(fsops.open_read(path))
+                stat = os.fstat(stream.fileno())
+                if copy is not None and not _is_copy_of(copy, row.content_hash, stat):
+                    stack.close()
+                    continue
                 archive = stack.enter_context(safe_open_archive(stream, name=path))
             except (OSError, FsopsError, UnsafeArchiveError):
                 stack.close()
                 continue
+            pin = f"{row.id}|{row.content_hash}|{stat.st_size}|{stat.st_mtime_ns}"
             if scope == "full":
-                return _Open(stack, archive)
+                return _Open(stack, archive, None, pin)
             try:  # an excerpt: the list is the server's, computed from this very file
                 allowed = self._excerpt(row.format, archive)
             except BaseException:
@@ -115,7 +145,7 @@ class ReadableCopies:
             if allowed is None:
                 stack.close()
                 raise ExcerptUnavailableError
-            return _Open(stack, archive, allowed)
+            return _Open(stack, archive, allowed, pin)
         raise NoReadableCopyError
 
     @staticmethod
