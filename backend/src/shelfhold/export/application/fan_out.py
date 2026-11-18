@@ -961,7 +961,7 @@ class FanOut:
         """A binding that fails is kept in the health of its target (the admin reads it there, and
         the next pass that succeeds clears it): a failure that only went to the log stayed unseen
         for as long as it lasted (J-REP-1). Nothing is written when nothing changes."""
-        from shelfhold.export.application.target_state import load_health, save_health
+        from shelfhold.export.application.target_state import load_health
 
         try:
             with write_transaction(self._engine) as connection:
@@ -972,7 +972,11 @@ class FanOut:
                     health.binding_failures.pop(destination_id, None)
                 else:
                     health.binding_failures[destination_id] = code
-                save_health(connection, target_id, health)
+                connection.execute(  # the health only: `version_seen` is the probe's, not ours
+                    sa.update(export.export_target)
+                    .where(export.export_target.c.id == target_id)
+                    .values(health=health.to_json())
+                )
         except Exception:  # the report of a failure never becomes one
             log.warning("fan_out.failure_not_kept", destination_id=destination_id)
 
