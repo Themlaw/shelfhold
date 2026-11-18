@@ -67,3 +67,26 @@ def test_every_literal_payload_of_a_publisher_passes_the_check_of_the_bus() -> N
             except EventPayloadError as error:
                 refused.append(f"{path.relative_to(SRC)}:{call.lineno} {event}: {error}")
     assert not refused, "\n".join(refused)
+
+
+def test_the_events_written_straight_to_the_table_pass_the_check_of_the_bus() -> None:
+    """`changes._insert` skips `publish` but runs the same check: the payloads it writes (the
+    child of a visibility change included) must be accepted, whatever the id of a person is."""
+    from shelfhold.catalog.application import changes
+    from shelfhold.infrastructure.ids import new_ulid
+
+    work, child, shelf = new_ulid(), new_ulid(), new_ulid()
+    for event, payload in (
+        (
+            changes.PROFILE_EVENT,
+            {
+                "work_id": work,
+                "profile_id": child,
+                "visible_before": False,
+                "visible_after": True,
+                "created_seq": 3,
+            },
+        ),
+        (changes.SHELF_REMOVED_EVENT, {"shelf_id": shelf}),
+    ):
+        check_payload(payload, event)

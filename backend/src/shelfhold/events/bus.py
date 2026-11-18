@@ -62,7 +62,11 @@ VOLUME_VALUES: Final = frozenset(
 # refuses a field that looks like a person's identifier unless the type declares it here, and a
 # test erases the events of every declared type.
 USER_FIELDS: Final[Mapping[str, frozenset[str]]] = MappingProxyType(
-    {"auth.passkey_registered": frozenset({"user_id"})}
+    {
+        "auth.passkey_registered": frozenset({"user_id"}),
+        # the child whose view of a Work changed (written by `changes._insert`)
+        "ops.profile_visibility": frozenset({"profile_id"}),
+    }
 )
 _USER_KEY: Final = re.compile(r"(?:user|actor|requester|owner|subject|profile)_id\Z|by\Z")
 
