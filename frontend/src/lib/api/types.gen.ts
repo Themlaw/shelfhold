@@ -3398,6 +3398,28 @@ export type OfficialLinkOut = {
 };
 
 /**
+ * OidcLinkStart
+ *
+ * Where to send the browser: the provider's page, with the flow already begun.
+ */
+export type OidcLinkStart = {
+    /**
+     * Authorization Url
+     */
+    authorization_url: string;
+};
+
+/**
+ * OidcSubject
+ */
+export type OidcSubject = {
+    /**
+     * Sub
+     */
+    sub: string;
+};
+
+/**
  * OverrideIn
  */
 export type OverrideIn = {
@@ -8687,6 +8709,39 @@ export type LogoutResponses = {
 
 export type LogoutResponse = LogoutResponses[keyof LogoutResponses];
 
+export type OidcLinkData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/auth/oidc/link';
+};
+
+export type OidcLinkErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type OidcLinkError = OidcLinkErrors[keyof OidcLinkErrors];
+
+export type OidcLinkResponses = {
+    /**
+     * Successful Response
+     */
+    200: OidcLinkStart;
+};
+
+export type OidcLinkResponse = OidcLinkResponses[keyof OidcLinkResponses];
+
 export type PasskeysListData = {
     body?: never;
     path?: never;
@@ -13564,6 +13619,44 @@ export type SetKavitaAccountResponses = {
 
 export type SetKavitaAccountResponse = SetKavitaAccountResponses[keyof SetKavitaAccountResponses];
 
+export type LinkAccountData = {
+    body: OidcSubject;
+    path: {
+        /**
+         * Profile Id
+         */
+        profile_id: string;
+    };
+    query?: never;
+    url: '/api/v1/profiles/{profile_id}/oidc';
+};
+
+export type LinkAccountErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type LinkAccountError = LinkAccountErrors[keyof LinkAccountErrors];
+
+export type LinkAccountResponses = {
+    /**
+     * Successful Response
+     */
+    204: void;
+};
+
+export type LinkAccountResponse = LinkAccountResponses[keyof LinkAccountResponses];
+
 export type SourcePoliciesData = {
     body?: never;
     path: {
@@ -13762,7 +13855,7 @@ export type RevokeAccountResponses = {
 
 export type RevokeAccountResponse = RevokeAccountResponses[keyof RevokeAccountResponses];
 
-export type LinkAccountData = {
+export type LinkAccount2Data = {
     body: LinkIn;
     path: {
         /**
@@ -13778,7 +13871,7 @@ export type LinkAccountData = {
     url: '/api/v1/profiles/{user_id}/destination-accounts/{shelf_destination_id}';
 };
 
-export type LinkAccountErrors = {
+export type LinkAccount2Errors = {
     /**
      * Connexion requise, ou mot de passe à confirmer (reauth-required).
      */
@@ -13793,16 +13886,16 @@ export type LinkAccountErrors = {
     default: Problem;
 };
 
-export type LinkAccountError = LinkAccountErrors[keyof LinkAccountErrors];
+export type LinkAccount2Error = LinkAccount2Errors[keyof LinkAccount2Errors];
 
-export type LinkAccountResponses = {
+export type LinkAccount2Responses = {
     /**
      * Successful Response
      */
     200: LinkedOut;
 };
 
-export type LinkAccountResponse = LinkAccountResponses[keyof LinkAccountResponses];
+export type LinkAccount2Response = LinkAccount2Responses[keyof LinkAccount2Responses];
 
 export type ListChoicesData = {
     body?: never;

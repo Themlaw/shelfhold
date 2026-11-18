@@ -23,8 +23,8 @@ from typing import Literal, Protocol
 
 import structlog
 
-from shelfhold.identity.application.ports import IdentityStore, OidcLink, UserRecord
-from shelfhold.identity.application.service import IssuedSession, LocalAuth, ThrottledError
+from shelfhold.identity.application.ports import IdentityStore, OidcLink
+from shelfhold.identity.application.service import IssuedSession, LocalAuth
 
 FLOW_TTL = timedelta(minutes=10)
 FLOW_COOKIE_MAX_AGE_S = int(FLOW_TTL.total_seconds())
@@ -51,14 +51,9 @@ class OidcRefusedError(OidcError):
     """The sign-in or the link is refused: one answer whatever the reason. `purpose` is set only
     once the browser has shown it is the one that began the flow (else it is not told anything)."""
 
-    def __init__(self, reason: str, purpose: "Purpose | None" = None) -> None:
+    def __init__(self, reason: str, purpose: Purpose | None = None) -> None:
         super().__init__(reason)
         self.purpose = purpose
-
-
-class OidcLinkRefusedError(OidcError):
-    """An admin's link that the rules refuse: the reason is the answer (the admin is trusted with
-    it): `child`, `subject_taken`, `account_has_another`, `no_account`."""
 
 
 @dataclass(frozen=True)
@@ -257,9 +252,6 @@ class OidcAuth:
             raise self._refuse(f"link_{outcome.value}", ip, "link")
         return OidcOutcome("link")
 
-    def account_of(self, claims: OidcClaims) -> UserRecord | None:
-        return self._store.oidc_user(claims.issuer, claims.sub)
-
 
 def _proof_time(claims: OidcClaims, now: datetime) -> datetime:
     """When the person signed in at the provider, if it says so and cannot be in the future;
@@ -278,11 +270,9 @@ __all__ = [
     "OidcError",
     "OidcFlow",
     "OidcFlows",
-    "OidcLinkRefusedError",
     "OidcOutcome",
     "OidcProvider",
     "OidcRefusedError",
     "OidcStart",
     "OidcUnavailableError",
-    "ThrottledError",
 ]

@@ -281,7 +281,11 @@ def create_app(
             )
 
     auth = local_auth(
-        engine, resolved, clock, on_passkey_registered=passkey_registered, network=composition.network
+        engine,
+        resolved,
+        clock,
+        on_passkey_registered=passkey_registered,
+        network=composition.network,
     )
     ready = Readiness()
     gate = AuthGate(auth, public_url=resolved.public_url, ready=ready.is_set)

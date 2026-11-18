@@ -12,8 +12,8 @@ to look up.
 Never `X-Forwarded-For` here, never a header written by the caller: the peer is the socket's.
 
 A believed proxy that sends an identity to a route with its own credentials (`/opds`, `/kosync`,
-`/kobo`, `/lite`) is refused (403) and audited once per route: that is a mistake of configuration, not
-something to guess around. `/healthz` and `/readyz` simply never take an identity.
+`/kobo`, `/lite`) is refused (403) and audited once per route: that is a mistake of configuration,
+not something to guess around. `/healthz` and `/readyz` simply never take an identity.
 
 Each header name stripped from a stranger is logged once per process and recorded in the audit,
 which `shelfhold status` turns into a warning.

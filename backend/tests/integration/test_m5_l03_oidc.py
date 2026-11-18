@@ -97,7 +97,10 @@ class World:
 
     def link_admin(self, username: str, sub: str | None = None) -> Any:
         return self.send(
-            self.admin, "PUT", f"/api/v1/profiles/{self.ids[username]}/oidc", {"sub": sub or self.idp.sub}
+            self.admin,
+            "PUT",
+            f"/api/v1/profiles/{self.ids[username]}/oidc",
+            {"sub": sub or self.idp.sub},
         )
 
     def identities(self) -> list[tuple[Any, ...]]:
@@ -203,7 +206,9 @@ def test_oidc_unknown_sub_creates_no_account(world: World) -> None:
     world.idp.tamper = {"preferred_username": "admin", "email": "admin@example.test"}
     answer = world.sign_in(browser, sub="somebody-else")
     assert refused(answer)
-    assert db_rows(world.env.settings, "SELECT username FROM user ORDER BY username") == users_before
+    assert (
+        db_rows(world.env.settings, "SELECT username FROM user ORDER BY username") == users_before
+    )
     assert world.identities() == []
     assert world.signed_in_as(browser) is None
     assert "somebody-else" not in db_dump(world.env.settings)  # not even kept
@@ -343,7 +348,10 @@ def test_oidc_link_requires_fresh_session(world: World) -> None:
     # the password again: fresh, and it starts
     assert (
         world.send(
-            world.mum, "POST", "/api/v1/auth/reauth", {"method": "password", "password": "correct horse battery staple"}
+            world.mum,
+            "POST",
+            "/api/v1/auth/reauth",
+            {"method": "password", "password": "correct horse battery staple"},
         ).status_code
         == 200
     )
@@ -367,7 +375,12 @@ def test_oidc_link_is_refused_to_a_key_and_to_another_member(world: World) -> No
     # IDOR: a member names another account
     theft = world.send(world.dad, "PUT", f"/api/v1/profiles/{world.ids['mum']}/oidc", {"sub": "x"})
     assert theft.status_code == 403
-    assert world.send(world.dad, "PUT", f"/api/v1/profiles/{world.ids['dad']}/oidc", {"sub": "x"}).status_code == 403
+    assert (
+        world.send(
+            world.dad, "PUT", f"/api/v1/profiles/{world.ids['dad']}/oidc", {"sub": "x"}
+        ).status_code
+        == 403
+    )
     # an anonymous caller
     assert anonymous.post(LINK).status_code in (401, 403)
     assert world.identities() == []
@@ -416,7 +429,7 @@ def test_oidc_discovery_goes_through_fetcher_ssrf_guard(
 
     def spy(request: httpx2.Request) -> httpx2.Response:
         reached.append(request.url.host)
-        return provider._handle(request)  # noqa: SLF001
+        return provider._handle(request)
 
     network = Network(resolver=provider.resolver, transport=httpx2.MockTransport(spy))
     with world_for(monkeypatch, settings, provider=provider, network=network) as world:
@@ -501,7 +514,7 @@ def test_oidc_settings_are_checked() -> None:
         {**full, "oidc_issuer": "https://idp.example.test/?x=1"},  # a query is not an issuer
         {**full, "oidc_issuer": "https://user:pw@idp.example.test"},  # credentials in a URL
     ):
-        with pytest.raises(Exception):  # noqa: B017, PT011
+        with pytest.raises(Exception):  # noqa: B017
             load(**broken)
     assert "s" * 24 not in repr(load(**full))  # a secret never in a repr
 
@@ -520,4 +533,24 @@ def test_forward_auth_stays_refused_on_opds_kosync_and_lite(
             assert answer.status_code == 403, path
             assert answer.headers["content-type"].startswith("application/problem+json")
         # and OIDC being on does not make a forward identity a session anywhere else
-        assert world.browser("10.1.2.3").get(SESSION, headers={"Remote-User": "admin"}).status_code in (200, 401)
+        assert world.browser("10.1.2.3").get(
+            SESSION, headers={"Remote-User": "admin"}
+        ).status_code in (200, 401)
+
+
+def test_oidc_a_redirect_from_the_provider_is_never_followed(
+    monkeypatch: pytest.MonkeyPatch, settings: Settings
+) -> None:
+    provider = FakeOidcProvider()
+    provider.resolver.table["internal.example.test"] = ["10.0.0.9"]
+    reached: list[str] = []
+
+    def bounce(request: httpx2.Request) -> httpx2.Response:
+        reached.append(request.url.host)
+        return httpx2.Response(302, headers={"location": "https://internal.example.test/steal"})
+
+    network = Network(resolver=provider.resolver, transport=httpx2.MockTransport(bounce))
+    with world_for(monkeypatch, settings, provider=provider, network=network) as world:
+        answer = world.browser().get(LOGIN, follow_redirects=False)
+        assert answer.status_code == 303 and answer.headers["location"].startswith("/login")
+        assert "internal.example.test" not in reached  # the discovery is not chased elsewhere

@@ -86,6 +86,17 @@ Non critiques (remplaçables sans réécriture), listées pour mémoire :
   BSD-3-Clause), pyOpenSSL (Apache-2.0), pyasn1 et pyasn1-modules (BSD). Importée par le seul
   paquet `shelfhold.identity.webauthn` (contrat `webauthn-confined`) ; repli : `cryptography` et
   `cbor2` directement.
+- **Authlib** (BSD-3-Clause, compatible AGPL-3.0) : connexion par OpenID Connect (EF-USR-004, M5
+  L03, 06 Q73). **Exception écrite au gel de `uv.lock`** (figé par L00) : une seule dépendance
+  ajoutée, plancher `>=1.6,<2`. Version 1.9.3, publiée le 2026-11-03, donc plus de 14 jours avant le
+  2026-11-18 : aucune exception à `exclude-newer`. **Elle apporte `joserfc`** (BSD-3-Clause, même
+  auteur, 1.8.0 publiée le 2026-11-03), sa bibliothèque JOSE, que `authlib.jose` (dépréciée en
+  1.9) remplace : la signature du jeton d'identité est vérifiée par `joserfc`, avec une liste fermée
+  d'algorithmes asymétriques ; Authlib fournit le vérificateur PKCE et son défi S256. `cryptography`
+  y est déjà. Aucun client HTTP d'Authlib n'est utilisé : le réseau est celui du Fetcher et de sa
+  garde SSRF, jamais le leur (découverte, jeton et clés). Importées par le seul
+  `shelfhold.identity.adapters.oidc_client` (contrat `authlib-confined`). Repli : `joserfc` et
+  `cryptography` seuls (le flux est court : PKCE, un `POST` de jeton, une vérification de signature).
 - **websockets** (BSD-3-Clause, compatible AGPL-3.0) : client WebSocket du hub de Kavita
   (`SeriesAdded`, `ScanSeries`), pour confirmer une arrivée plus tôt que le polling (EF-EXP-034, M4
   L37, D18). **Exception écrite au gel de `uv.lock`** (figé par L00) : une seule dépendance ajoutée,

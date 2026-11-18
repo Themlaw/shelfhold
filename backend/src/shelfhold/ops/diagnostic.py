@@ -1029,7 +1029,11 @@ def build_bundle(
         for index, path in enumerate(log_files, start=1)
     ]
     for name in (
-        "public_url", "source_url", "wake_url", "update_check_url", "plugin_index_url",
+        "public_url",
+        "source_url",
+        "wake_url",
+        "update_check_url",
+        "plugin_index_url",
         "oidc_issuer",
     ):
         forbidden.add(f"settings.{name}", getattr(settings, name))

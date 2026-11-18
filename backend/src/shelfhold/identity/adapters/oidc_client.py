@@ -29,7 +29,7 @@ import threading
 from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from typing import Any
+from typing import Any, TypeGuard, cast
 from urllib.parse import quote, urlencode, urlsplit
 
 import structlog
@@ -208,7 +208,7 @@ class AuthlibOidcProvider:
         if keys.status != 200 or not isinstance(document.get("keys"), list):
             raise OidcUnavailableError("keys_unavailable")
         try:
-            return token, KeySet.import_key_set(document)
+            return token, KeySet.import_key_set(cast("Any", document))
         except (JoseError, ValueError, KeyError, TypeError):
             raise OidcUnavailableError("keys_unreadable") from None
 
@@ -244,5 +244,5 @@ class AuthlibOidcProvider:
         return OidcClaims(issuer=self.issuer, sub=sub, auth_time=auth_time)
 
 
-def _number(value: object) -> bool:
+def _number(value: object) -> TypeGuard[float]:
     return isinstance(value, int | float) and not isinstance(value, bool)

@@ -123,7 +123,9 @@ class FakeOidcProvider:
     def id_token(self, grant: Mapping[str, Any]) -> str:
         if self.tamper.get("__alg") == "none":  # an unsigned token: `alg: none`, empty signature
             part = [{"alg": "none", "typ": "JWT"}, self.claims(grant)]
-            enc = [base64.urlsafe_b64encode(json.dumps(p).encode()).rstrip(b"=").decode() for p in part]
+            enc = [
+                base64.urlsafe_b64encode(json.dumps(p).encode()).rstrip(b"=").decode() for p in part
+            ]
             return ".".join(enc) + "."
         key = _key("unpublished") if self.sign_with_other_key else _key("signing-1")
         # the header always names the published key: the signature is what differs
@@ -164,4 +166,6 @@ class FakeOidcProvider:
             return failure
         body = {"token_type": "Bearer", "access_token": secrets.token_urlsafe(16)}
         body["id_token"] = self.id_token(grant)
-        return httpx2.Response(200, content=json.dumps(body), headers={"content-type": "application/json"})
+        return httpx2.Response(
+            200, content=json.dumps(body), headers={"content-type": "application/json"}
+        )

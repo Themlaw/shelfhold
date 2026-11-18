@@ -32,7 +32,9 @@ def test_the_revision_is_0101_the_head_on_0100() -> None:
 
 def _users(conn: sqlite3.Connection) -> None:
     for ident, name in ((USER, "mum"), (OTHER, "dad")):
-        conn.execute(f'INSERT INTO "user" (id, username, role) VALUES (?, "{name}", "member")', (ident,))
+        conn.execute(
+            'INSERT INTO "user" (id, username, role) VALUES (?, ?, "member")', (ident, name)
+        )
 
 
 def test_upgrade_adds_the_table_and_changes_nothing_else(settings: Settings) -> None:
@@ -60,7 +62,9 @@ def test_the_pair_is_unique_and_an_identity_goes_with_its_account(settings: Sett
             conn.execute(insert, (new_ulid(), OTHER, ISSUER, "sub-1"))
         with pytest.raises(sqlite3.IntegrityError):  # an account holds one identity per provider
             conn.execute(insert, (new_ulid(), USER, ISSUER, "sub-2"))
-        conn.execute(insert, (new_ulid(), USER, "https://other.example.test", "sub-1"))  # another one
+        conn.execute(
+            insert, (new_ulid(), USER, "https://other.example.test", "sub-1")
+        )  # another one
         with pytest.raises(sqlite3.IntegrityError):  # an empty sub is no identity
             conn.execute(insert, (new_ulid(), OTHER, ISSUER, ""))
         with pytest.raises(sqlite3.IntegrityError):  # no account, no identity

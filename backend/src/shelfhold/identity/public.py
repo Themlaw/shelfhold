@@ -160,10 +160,6 @@ from shelfhold.identity.domain.visibility import (
 )
 
 __all__ = [
-    "FLOW_COOKIE_MAX_AGE_S",
-    "OidcLink",
-    "OidcRefusedError",
-    "OidcUnavailableError",
     "ADD_DIRECTLY_REFUSALS",
     "CHALLENGE_TTL",
     "CLOSED_SITES",
@@ -174,6 +170,7 @@ __all__ = [
     "DELETION_SITES",
     "DEVICE_KINDS",
     "EXIT_ROUTES",
+    "FLOW_COOKIE_MAX_AGE_S",
     "FORWARD_REJECTED_AUDIT",
     "IDENTITY_HEADER_AUDIT",
     "INTEGRATION_ROLE",
@@ -226,6 +223,9 @@ __all__ = [
     "LocalAuth",
     "LoginThrottle",
     "NotAllowedError",
+    "OidcLink",
+    "OidcRefusedError",
+    "OidcUnavailableError",
     "PasskeyError",
     "PasskeyOptions",
     "PasskeyRecord",

@@ -48,7 +48,9 @@ LINK_RESULT_PATH = "/reglages/compte/oidc"
 
 _ADULTS = ("admin", "member")  # a child profile is never linked
 _LINK = reserved_action(RESERVED_ACTIONS["oidc.link"], roles=_ADULTS, audit=False)
-_LINK_ACCOUNT = reserved_action(RESERVED_ACTIONS["oidc.link_account"], roles=("admin",), audit=False)
+_LINK_ACCOUNT = reserved_action(
+    RESERVED_ACTIONS["oidc.link_account"], roles=("admin",), audit=False
+)
 
 
 class OidcLinkStart(BaseModel):
@@ -89,7 +91,10 @@ def build_oidc_router() -> APIRouter:
 
     @router.get(OIDC_CALLBACK_PATH, include_in_schema=False)
     def oidc_callback(
-        request: Request, code: str | None = None, state: str | None = None, error: str | None = None
+        request: Request,
+        code: str | None = None,
+        state: str | None = None,
+        error: str | None = None,
     ) -> Response:
         gate = getattr(request.app.state, "auth_gate", None)
         if gate is None or not gate.auth.oidc_available:
@@ -125,9 +130,7 @@ def build_oidc_router() -> APIRouter:
         return response
 
     @router.post(OIDC_LINK_PATH, response_model=OidcLinkStart)
-    def oidc_link(
-        request: Request, principal: Annotated[Principal, Depends(_LINK)]
-    ) -> Response:
+    def oidc_link(request: Request, principal: Annotated[Principal, Depends(_LINK)]) -> Response:
         gate = gate_of(request)
         if not gate.auth.oidc_available or principal.session_id is None:
             raise ProblemError("oidc_unavailable")

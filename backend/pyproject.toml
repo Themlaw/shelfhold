@@ -201,3 +201,8 @@ ignore_missing_imports = true
 # pyrage (age) ships no types; it is only imported by shelfhold.infrastructure.secrets.export.
 module = ["defusedxml", "defusedxml.*", "pyrage", "pyrage.*"]
 ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+# Authlib ships no types; it is only imported by shelfhold.identity.adapters.oidc_client (M5 L03).
+module = ["authlib", "authlib.*"]
+ignore_missing_imports = true

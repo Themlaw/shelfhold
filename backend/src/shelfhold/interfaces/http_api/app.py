@@ -18,6 +18,7 @@ from shelfhold.interfaces.http_api.auth import (
     install_auth,
 )
 from shelfhold.interfaces.http_api.auth import actor_of as principal_actor
+from shelfhold.interfaces.http_api.auth_oidc import build_oidc_router
 from shelfhold.interfaces.http_api.device_auth import build_device_router
 from shelfhold.interfaces.http_api.device_tokens import (
     build_device_tokens_router,
@@ -34,7 +35,6 @@ from shelfhold.interfaces.http_api.identity_headers import (
     IdentityHeaderFilter,
     parse_networks,
 )
-from shelfhold.interfaces.http_api.auth_oidc import build_oidc_router
 from shelfhold.interfaces.http_api.login import build_login_router
 from shelfhold.interfaces.http_api.maintenance import MaintenanceGuard
 from shelfhold.interfaces.http_api.middleware import (
