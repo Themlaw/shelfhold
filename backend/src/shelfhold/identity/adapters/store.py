@@ -15,6 +15,7 @@ from shelfhold.identity.application.ports import (
     ApiKeyRecord,
     AuditEntry,
     ChildKavitaAccount,
+    DeviceRecord,
     DeviceTokenRecord,
     KeyConflictError,
     NewApiKey,
@@ -25,11 +26,13 @@ from shelfhold.identity.application.ports import (
     PasskeyRecord,
     ProfileRecord,
     ProofWithdrawnError,
+    RotationOutcome,
     SessionRecord,
     SourcePolicyRecord,
     UserRecord,
 )
 from shelfhold.identity.application.sessions import SessionView
+from shelfhold.identity.domain.device import Device
 from shelfhold.identity.domain.kavita_mapping import same_kavita_username
 from shelfhold.identity.domain.policy import check_source_policy, effective_source_policy
 from shelfhold.identity.domain.roles import ProfileError
@@ -58,7 +61,19 @@ _user = identity.user
 _session = identity.session
 _key = identity.api_key
 _device = identity.device_token
+_registry = identity.device  # M5 L02: the device a token belongs to
 _passkey = identity.webauthn_credential
+
+
+def _retire_devices(
+    connection: sa.Connection, now: datetime, subject_user_id: str | None = None
+) -> None:
+    """The devices of a profile (or of all) are retired with their tokens, in the same transaction
+    that revoked the tokens: a registry never lists an e-reader that nothing can open."""
+    query = sa.update(_registry).where(_registry.c.revoked_at.is_(None))
+    if subject_user_id is not None:
+        query = query.where(_registry.c.subject_user_id == subject_user_id)
+    connection.execute(query.values(revoked_at=now))
 
 
 _account = identity.destination_account
@@ -144,6 +159,7 @@ def revoke_all_credentials(
     devices = connection.execute(  # an e-reader of the backup is a credential of a past, too
         sa.update(_device).where(_device.c.revoked_at.is_(None)).values(revoked_at=now)
     ).rowcount
+    _retire_devices(connection, now)
     connection.execute(
         audit_insert(
             AuditEntry(
@@ -496,7 +512,7 @@ class SqlIdentityStore:
             request, digest = identity.request, identity.notification_digest
             audit, positions = identity.audit, reading.reading_position
             follow, download = acquisition.follow_request, acquisition.download_request
-            device, account = identity.device_token, identity.destination_account
+            token, account = identity.device_token, identity.destination_account
             notify, listing = identity.notify_destination, identity.request_list_import
             collection, item = catalog.collection, catalog.collection_item
             marker, hint = acquisition.read_marker, acquisition.tracker_hint
@@ -557,9 +573,14 @@ class SqlIdentityStore:
                 # what M4 added (J-FLUX-1). Never a secret: no digest of a token, no sealed column,
                 # no fingerprint; a notice destination is told only as present.
                 "device_tokens": rows(
-                    conn, "device_tokens", device, device.c.subject_user_id == user_id,
+                    conn, "device_tokens", token, token.c.subject_user_id == user_id,
                     "id", "public_id", "name", "expires_at", "last_used_at", "revoked_at",
                     "created_at",
+                ),
+                # M5 L02: the devices are data of the profile; their tokens stay as above
+                "devices": rows(
+                    conn, "devices", _registry, _registry.c.subject_user_id == user_id,
+                    "id", "label", "kind", "created_at", "last_seen_at", "revoked_at",
                 ),
                 "collections": rows(
                     conn, "collections", collection, collection.c.owner_id == user_id,
@@ -721,6 +742,7 @@ class SqlIdentityStore:
                     .where(_device.c.subject_user_id == user_id, _device.c.revoked_at.is_(None))
                     .values(revoked_at=now)
                 ).rowcount
+                _retire_devices(conn, now, user_id)
                 if closed:
                     conn.execute(
                         audit_insert(
@@ -1106,6 +1128,7 @@ class SqlIdentityStore:
                 .where(_device.c.subject_user_id == user_id, _device.c.revoked_at.is_(None))
                 .values(revoked_at=now)
             )
+            _retire_devices(conn, now, user_id)
         return int(sessions), int(passkeys), int(keys)
 
     # --- sessions ----------------------------------------------------------------------------
@@ -1255,8 +1278,18 @@ class SqlIdentityStore:
         try:
             with self._changing() as conn:
                 conn.execute(
+                    sa.insert(_registry).values(
+                        id=token.device_id,
+                        subject_user_id=token.subject_user_id,
+                        label=token.name,
+                        kind=token.kind,
+                        created_at=token.now,
+                    )
+                )
+                conn.execute(
                     sa.insert(_device).values(
                         id=token.id,
+                        device_id=token.device_id,
                         public_id=token.public_id,
                         name=token.name,
                         subject_user_id=token.subject_user_id,
@@ -1275,8 +1308,10 @@ class SqlIdentityStore:
     def _device_tokens(
         self, where: sa.ColumnElement[bool] | None = None
     ) -> list[DeviceTokenRecord]:
-        query = sa.select(_device, *_USER_COLUMNS).join(
-            _user, _user.c.id == _device.c.subject_user_id
+        query = (
+            sa.select(_device, *_USER_COLUMNS, _registry.c.revoked_at.label("device_revoked_at"))
+            .join(_user, _user.c.id == _device.c.subject_user_id)
+            .outerjoin(_registry, _registry.c.id == _device.c.device_id)
         )
         if where is not None:
             query = query.where(where)
@@ -1294,6 +1329,8 @@ class SqlIdentityStore:
                 last_used_at=row.last_used_at,
                 revoked_at=row.revoked_at,
                 secret_digest=row.secret_digest,
+                device_id=row.device_id,
+                device_revoked_at=row.device_revoked_at,
             )
             for row in rows
         ]
@@ -1310,15 +1347,150 @@ class SqlIdentityStore:
             conn.execute(
                 sa.update(_device).where(_device.c.id == token_id).values(last_used_at=now)
             )
+            conn.execute(  # the device is seen when one of its tokens is accepted
+                sa.update(_registry)
+                .where(
+                    _registry.c.id
+                    == sa.select(_device.c.device_id)
+                    .where(_device.c.id == token_id)
+                    .scalar_subquery()
+                )
+                .values(last_seen_at=now)
+            )
 
     def revoke_device_token(self, public_id: str, *, now: datetime) -> bool:
-        with self._changing() as conn:
+        with self._changing(immediate=True) as conn:
+            held = conn.execute(
+                sa.select(_device.c.device_id).where(_device.c.public_id == public_id)
+            ).scalar()
             result = conn.execute(
                 sa.update(_device)
                 .where(_device.c.public_id == public_id, _device.c.revoked_at.is_(None))
                 .values(revoked_at=now)
             )
+            if result.rowcount > 0 and held is not None:  # the last live token retires the device
+                still = conn.execute(
+                    sa.select(sa.func.count())
+                    .select_from(_device)
+                    .where(_device.c.device_id == held, _device.c.revoked_at.is_(None))
+                ).scalar()
+                if not still:
+                    conn.execute(
+                        sa.update(_registry)
+                        .where(_registry.c.id == held, _registry.c.revoked_at.is_(None))
+                        .values(revoked_at=now)
+                    )
         return result.rowcount > 0
+
+    # --- devices (M5 L02) --------------------------------------------------------------------
+
+    def _devices(self, where: sa.ColumnElement[bool] | None = None) -> list[DeviceRecord]:
+        live = sa.and_(_device.c.device_id == _registry.c.id, _device.c.revoked_at.is_(None))
+        query = (
+            sa.select(
+                _registry,
+                *_USER_COLUMNS,
+                _device.c.public_id,
+                _device.c.expires_at,
+                _device.c.secret_digest,
+            )
+            .join(_user, _user.c.id == _registry.c.subject_user_id)
+            .outerjoin(_device, live)
+        )
+        if where is not None:
+            query = query.where(where)
+        with self._engine.connect() as conn:
+            rows = conn.execute(query.order_by(_registry.c.created_at, _registry.c.id)).all()
+        found: dict[str, DeviceRecord] = {}
+        for row in rows:
+            found.setdefault(
+                row.id,
+                DeviceRecord(
+                    device=Device(
+                        id=row.id,
+                        subject_user_id=row.subject_user_id,
+                        label=row.label,
+                        kind=row.kind,
+                        created_at=row.created_at,
+                        last_seen_at=row.last_seen_at,
+                        revoked_at=row.revoked_at,
+                    ),
+                    subject=_user_of(row),
+                    public_id=row.public_id,
+                    expires_at=row.expires_at,
+                    secret_digest=row.secret_digest or "",
+                ),
+            )
+        return list(found.values())
+
+    def devices(self, subject_user_id: str | None = None) -> Sequence[DeviceRecord]:
+        where = _registry.c.subject_user_id == subject_user_id if subject_user_id else None
+        return self._devices(where)
+
+    def device_by_id(self, device_id: str) -> DeviceRecord | None:
+        found = self._devices(_registry.c.id == device_id)
+        return found[0] if found else None
+
+    def rotate_device_secret(
+        self,
+        device_id: str,
+        *,
+        expected_digest: str,
+        secret_digest: str,
+        expires_at: datetime | None,
+        now: Callable[[], datetime],
+        audit: AuditEntry,
+    ) -> RotationOutcome:
+        """Compare and swap, in one write transaction with its audit line. The live token of the
+        device is read again under the lock: gone (retired, revoked) is `gone`; a digest other than
+        the one the caller saw is `conflict` (another rotation won meanwhile: nothing is written,
+        so only the secret that is shown lives); an expiry now past, with no new one given, is
+        `expired` (a secret that would be refused as it is typed is never made)."""
+        with self._changing(immediate=True) as conn:
+            live = conn.execute(
+                sa.select(_device.c.id, _device.c.secret_digest, _device.c.expires_at)
+                .join(_registry, _registry.c.id == _device.c.device_id)
+                .where(
+                    _device.c.device_id == device_id,
+                    _device.c.revoked_at.is_(None),
+                    _registry.c.revoked_at.is_(None),
+                )
+            ).first()
+            if live is None:
+                return "gone"
+            if live.secret_digest != expected_digest:
+                return "conflict"
+            if expires_at is None and live.expires_at is not None and now() >= live.expires_at:
+                return "expired"
+            values: dict[str, Any] = {"secret_digest": secret_digest}
+            if expires_at is not None:
+                values["expires_at"] = expires_at
+            swapped = conn.execute(
+                sa.update(_device)
+                .where(_device.c.id == live.id, _device.c.secret_digest == expected_digest)
+                .values(**values)
+            )
+            if swapped.rowcount == 0:  # cannot happen under the lock; refuse rather than show it
+                return "conflict"
+            conn.execute(self._audit_insert(audit))
+        return "rotated"
+
+    def retire_device(self, device_id: str, *, now: datetime, audit: AuditEntry) -> bool:
+        with self._changing() as conn:
+            result = conn.execute(
+                sa.update(_registry)
+                .where(_registry.c.id == device_id, _registry.c.revoked_at.is_(None))
+                .values(revoked_at=now)
+            )
+            if result.rowcount == 0:
+                return False
+            conn.execute(
+                sa.update(_device)
+                .where(_device.c.device_id == device_id, _device.c.revoked_at.is_(None))
+                .values(revoked_at=now)
+            )
+            conn.execute(self._audit_insert(audit))
+        return True
 
     # --- API keys ----------------------------------------------------------------------------
 
