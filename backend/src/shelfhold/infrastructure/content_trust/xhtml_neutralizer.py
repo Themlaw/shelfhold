@@ -14,15 +14,17 @@ How it works, and why it is shaped this way.
   tree, element by element, from an allowlist. Comments, processing instructions and CDATA sections
   are never copied (a reader that parses the page as HTML would see them differently from an XML
   parser, which is how `<![CDATA[ > <script>...` hides a script). What is not on the allowlist is
-  unwrapped (its text stays) and what is dangerous is dropped with its whole subtree. Element and
-  attribute names are compared in lower case too, since the reader's HTML parser does.
+  wrapped in a plain element (its content stays) and what is dangerous is dropped with its whole
+  subtree. Element and attribute names are compared in lower case too, since the reader's HTML
+  parser does.
 * **An element that is removed leaves an inert element at its rank** (since v2, ADR-0055): an
   empty element without attribute (`span`, or the one the parent accepts: `tr` in a table, `td` in
   a row, `col` in a column group, `g` in an SVG). A reading position (an EPUB CFI) counts the
   siblings of a node: with nothing left in place, removing a script would move every position
   after it, from one release to the next. The text around it stays in two separate nodes. The
-  head has no placeholder. What is unwrapped (an element outside the allowlist that is not
-  dangerous) keeps its text and shifts the ranks of its children: that is the one case left.
+  head has no placeholder. An element off the allowlist that is not
+  dangerous (`font`, `center`, a foreign namespace) is not unwrapped either: it becomes a plain
+  `span` (`div` for a block element of old HTML) that keeps its children, so no rank moves.
 * URLs are checked on a squashed copy (no control, space or invisible character, lower case, `\\`
   read as `/`), the way a browser's parser would, whatever entities wrote them. Only relative
   references pass, plus small raster `data:image` URLs on images. Anything with a scheme (a link to
@@ -41,10 +43,12 @@ How it works, and why it is shaped this way.
 from __future__ import annotations
 
 import html.entities
+import posixpath
 import re
 import unicodedata
 from html.parser import HTMLParser
 from typing import Final, Literal
+from urllib.parse import unquote
 
 import nh3
 
@@ -193,8 +197,12 @@ _CSS_URL_CALL: Final = re.compile(r"url\s*\(", re.I)
 _CSS_URL_FULL: Final = re.compile(r"""url\s*\(\s*(?:"([^"]*)"|'([^']*)'|([^)\s"']*))\s*\)""", re.I)
 
 
-def _css_split(text: str) -> tuple[str, str] | None:
-    """(text without comments, the same with every string emptied), or None if it is not closed."""
+def _css_split(text: str, sep: str = " ") -> tuple[str, str] | None:
+    """(text without comments, the same with every string emptied), or None if it is not closed.
+
+    A comment becomes `sep`: a space (what a browser's tokenizer sees) or nothing (what a naive
+    reader sees, `ur/**/l(` read as `url(`).
+    """
     out: list[str] = []
     bare: list[str] = []
     i, n = 0, len(text)
@@ -204,8 +212,8 @@ def _css_split(text: str) -> tuple[str, str] | None:
             end = text.find("*/", i + 2)
             if end < 0:
                 return None
-            out.append(" ")
-            bare.append(" ")
+            out.append(sep)
+            bare.append(sep)
             i = end + 2
         elif ch in "\"'":
             j = i + 1
@@ -223,16 +231,8 @@ def _css_split(text: str) -> tuple[str, str] | None:
     return "".join(out), "".join(bare)
 
 
-def _css_unsafe(chunk: str) -> bool:
-    """True if a rule, or a declaration list, must not survive."""
-    if any(ch in "<&" for ch in chunk) or "]]>" in chunk:
-        return True
-    if any(unicodedata.category(ch) == "Cc" and ch not in "\t\n\r\f" for ch in chunk):
-        return True
-    split = _css_split(chunk)
-    if split is None:
-        return True
-    text, bare = split
+def _css_checks(text: str, bare: str) -> bool:
+    """True if the comment-free `text` (and `bare`, its strings emptied) must not survive."""
     if "\\" in bare or _CSS_BAD.search(bare):
         return True
     calls = len(_CSS_URL_CALL.findall(bare))
@@ -243,6 +243,24 @@ def _css_unsafe(chunk: str) -> bool:
         if not (_is_relative(target) or _is_fragment(target)):
             return True
     return len(_CSS_URL_FULL.findall(text)) != calls
+
+
+def _css_text(chunk: str) -> str | None:
+    """The rule as it is written out (comments gone), or None if it must not survive.
+
+    What is emitted is the analyzed text, never the bytes it was cut from, and it is analyzed
+    twice: a comment read as a space and as nothing (`@/**/import`, `ur/**/l(`).
+    """
+    if any(ch in "<&" for ch in chunk) or "]]>" in chunk:
+        return None
+    if any(unicodedata.category(ch) == "Cc" and ch not in "\t\n\r\f" for ch in chunk):
+        return None
+    spaced, joined = _css_split(chunk, " "), _css_split(chunk, "")
+    if spaced is None or joined is None:
+        return None
+    if _css_checks(*spaced) or _css_checks(*joined):
+        return None
+    return spaced[0]
 
 
 def _css_chunks(text: str) -> list[str]:
@@ -279,12 +297,18 @@ def _css_chunks(text: str) -> list[str]:
 
 
 def _clean_sheet(text: str) -> str:
-    """The style sheet without the rules that fetch, import or run something."""
-    return "".join(c for c in _css_chunks(text) if not _css_unsafe(c) or not c.strip())
+    """The style sheet without the rules that fetch, import or run something, as analyzed."""
+    out: list[str] = []
+    for chunk in _css_chunks(text):
+        if not chunk.strip():
+            out.append(chunk)
+        elif (kept := _css_text(chunk)) is not None:
+            out.append(kept)
+    return "".join(out)
 
 
 def _clean_style_attr(value: str) -> str | None:
-    return None if _css_unsafe(value) else value
+    return _css_text(value)
 
 
 # --- Writer --------------------------------------------------------------------------------------
@@ -308,7 +332,30 @@ def _split(name: str) -> tuple[str | None, str]:
     return None, name
 
 
+def _resolve(base: str, reference: str) -> str:
+    """The package path a relative reference names ("" if it leaves the package)."""
+    target = unquote(reference.split("#", 1)[0].split("?", 1)[0]).replace("\\", "/")
+    if not target:
+        return ""
+    path = posixpath.normpath(posixpath.join(base, target))
+    return "" if path == ".." or path.startswith(("../", "/")) else path
+
+
 _TABLE_PARENTS: Final = frozenset({"table", "tbody", "thead", "tfoot"})
+_BLOCK_UNKNOWN: Final = frozenset({"center", "dir", "listing", "marquee", "multicol"})
+
+
+def _wrapper_tag(context: str, parent: str, name: str) -> str:
+    """The tag that stands for an element off the allowlist, one the parent accepts."""
+    if context == "svg":
+        return "g"
+    if parent in _TABLE_PARENTS:
+        return "tr"
+    if parent == "tr":
+        return "td"
+    if parent == "colgroup":
+        return "col"
+    return "div" if name in _BLOCK_UNKNOWN else "span"
 
 
 def _inert(context: str, parent: str) -> str:
@@ -332,6 +379,10 @@ def _inert(context: str, parent: str) -> str:
 
 class _Writer:
     """Walks the parsed tree and writes the allowlisted subset as a new document."""
+
+    def __init__(self, path: str = "", blocked: frozenset[str] = frozenset()) -> None:
+        self._dir = posixpath.dirname(path)
+        self._blocked = blocked  # package paths a style sheet link must not name (R1)
 
     def _attributes(self, el: Element, local: str, context: str) -> list[tuple[str, str]]:
         allowed = _SVG_ATTRS if context == "svg" else _GLOBAL_ATTRS | _XHTML_ATTRS.get(local, set())
@@ -412,9 +463,9 @@ class _Writer:
         """The element as written, or the inert element that holds its rank."""
         if not isinstance(el.tag, str):  # a comment or an instruction is not a sibling
             return ""
-        return self._element(el, context) or _inert(context, parent)
+        return self._element(el, context, parent) or _inert(context, parent)
 
-    def _element(self, el: Element, context: str) -> str:
+    def _element(self, el: Element, context: str, parent: str = "") -> str:
         ns, local = _split(el.tag)
         low = local.lower()
         if low in _DANGEROUS:
@@ -422,11 +473,11 @@ class _Writer:
         if ns == SVG_NS or (ns is None and context == "xhtml" and local == "svg"):
             context = "svg"
         elif ns not in (XHTML_NS, None):
-            return self.children(el, context)
+            return self._wrap(el, context, parent, low)
         if context == "svg":
-            return self._svg(el, local)
+            return self._svg(el, local, parent)
         if local not in _XHTML_TAGS:
-            return self.children(el, context)
+            return self._wrap(el, context, parent, low)
         if local == "style":
             return self._style(el, local, context)
         if local == "link":
@@ -441,9 +492,22 @@ class _Writer:
             return start + "/>"
         return f"{start}>{self.children(el, context)}</{local}>"
 
-    def _svg(self, el: Element, local: str) -> str:
+    def _wrap(self, el: Element, context: str, parent: str, name: str) -> str:
+        """An element off the allowlist (not dangerous) keeps its children in a plain wrapper.
+
+        The wrapper takes its rank and the children keep theirs one level down, as they were:
+        the CFI steps do not move. `div` for a block element of old HTML, `span` otherwise, what
+        the parent accepts in a table, `g` in an SVG.
+        """
+        tag = _wrapper_tag(context, parent, name)
+        if tag == "col":  # a column has no content
+            return "<col/>"
+        inner = self.children(el, context)
+        return f"<{tag}/>" if tag == "g" and not inner else f"<{tag}>{inner}</{tag}>"
+
+    def _svg(self, el: Element, local: str, parent: str = "") -> str:
         if local not in _SVG_TAGS:
-            return self.children(el, "svg")
+            return self._wrap(el, "svg", parent, local.lower())
         if local == "style":
             return self._style(el, local, "svg")
         attrs = self._attributes(el, local, "svg")
@@ -469,6 +533,8 @@ class _Writer:
         rel = dict(attrs).get("rel", "").lower().split()
         if rel != ["stylesheet"] or not any(k == "href" for k, _ in attrs):
             return ""
+        if self._blocked and _resolve(self._dir, dict(attrs)["href"]) in self._blocked:
+            return ""  # an entry that cannot be a style sheet: its link leaves an inert element
         return self._start("link", attrs) + "/>"
 
     def _meta(self, el: Element) -> str:
@@ -611,12 +677,11 @@ def parse_xml_document(data: bytes, limits: XmlLimits = XML_LIMITS) -> Element:
         raise NeutralizationError(f"xml_{error.reason}") from None
 
 
-def _xhtml(data: bytes) -> bytes:
+def _xhtml(data: bytes, writer: _Writer) -> bytes:
     root = _parse(data)
     ns, local = _split(root.tag)
     if local.lower() != "html" or ns not in (XHTML_NS, None):
         raise NeutralizationError("root")
-    writer = _Writer()
     bodies = [b for b in root if _split(b.tag)[1].lower() == "body"]
     inner = "".join(writer.children(b, "xhtml") for b in bodies)
     if not _nh3_agrees(inner):
@@ -630,12 +695,12 @@ def _xhtml(data: bytes) -> bytes:
     return f"{_PROLOG}{html_start}><head>{head}</head>{body_start}>{inner}</body></html>".encode()
 
 
-def _svg_document(data: bytes) -> bytes:
+def _svg_document(data: bytes, writer: _Writer) -> bytes:
     root = _parse(data)
     ns, local = _split(root.tag)
     if local != "svg" or ns not in (SVG_NS, None):
         raise NeutralizationError("root")
-    written = _Writer().element(root, "svg")
+    written = writer.element(root, "svg")
     if not written or not _nh3_agrees(written):
         raise NeutralizationError("invariant" if written else "root")
     return (_PROLOG + written).encode()
@@ -655,10 +720,42 @@ def neutralize(data: bytes, kind: Kind) -> bytes:
     Pure and deterministic. Raises `NeutralizationError` for a document it refuses to touch
     (unsafe XML, wrong root, a disagreement with nh3): the EPUB it belongs to is then not exported.
     """
+    return neutralize_page(data, kind)
+
+
+def neutralize_page(
+    data: bytes, kind: Kind, *, path: str = "", blocked: frozenset[str] = frozenset()
+) -> bytes:
+    """`neutralize` for a page of a package: `path` is its place in the package and `blocked` the
+    entries a `link rel="stylesheet"` must not name (they cannot be neutralized as style sheets)."""
     if kind == "xhtml":
-        return _xhtml(data)
+        return _xhtml(data, _Writer(path, blocked))
     if kind == "svg":
-        return _svg_document(data)
+        return _svg_document(data, _Writer(path, blocked))
     if kind == "css":
         return _css(data)
     raise ValueError(f"unknown kind {kind!r}")
+
+
+def page_references(data: bytes, path: str) -> tuple[frozenset[str], frozenset[str]]:
+    """(entries the page loads as style sheets, entries it names otherwise), as package paths.
+
+    Read on the page as it was received, with the attribute names compared in lower case: it
+    must see at least what a browser would load.
+    """
+    root = _parse(data)
+    base = posixpath.dirname(path)
+    sheets: set[str] = set()
+    others: set[str] = set()
+    for el in root.iter():
+        if not isinstance(el.tag, str):
+            continue
+        local = _split(el.tag)[1].lower()
+        rel = el.attrib.get("rel", "").lower().split()
+        for key, value in el.attrib.items():
+            if _split(key)[1].lower() not in ("href", "src") or not value:
+                continue
+            target = _resolve(base, value)
+            if target:
+                (sheets if local == "link" and "stylesheet" in rel else others).add(target)
+    return frozenset(sheets), frozenset(others)

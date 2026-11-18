@@ -56,7 +56,6 @@ EVIL_SHEET = (
 )
 
 
-@pytest.mark.xfail(strict=True, reason="R1: a style sheet link may target a verbatim .xml entry")
 def test_a_style_sheet_link_to_a_verbatim_xml_entry_ships_remote_css() -> None:
     """`link rel="stylesheet" href="evil.xml"`: the page is clean, the entry it loads is not."""
     book = epub_bytes(
@@ -73,21 +72,18 @@ def test_a_style_sheet_link_to_a_verbatim_xml_entry_ships_remote_css() -> None:
     assert find_active_css(sheet) == []  # … so the entry it names must be a clean style sheet
 
 
-@pytest.mark.xfail(strict=True, reason="R2: a style attribute is emitted unanalyzed")
 def test_a_style_attribute_is_emitted_as_the_text_that_was_analyzed() -> None:
     """`ur/**/l(…)`: the comment hides the keyword from the check, not from the output."""
     document = xhtml('<p style="background:ur/**/l(https://e.example/p.png)">a</p>')
     assert find_active_patterns(neutralize(document, "xhtml")) == []
 
 
-@pytest.mark.xfail(strict=True, reason="R3: a style sheet is emitted unanalyzed")
 def test_a_style_sheet_is_emitted_as_the_text_that_was_analyzed() -> None:
     """`@/**/import 'https://…';`: kept verbatim, flagged by the corpus detector."""
     sheet = b"@/**/import 'https://e.example/a.css'; a { color: red }"
     assert find_active_css(neutralize(sheet, "css")) == []
 
 
-@pytest.mark.xfail(strict=True, reason="R4: the detector exempts <img> only, not the SVG <image>")
 def test_a_raster_data_url_on_an_svg_image_is_clean_output() -> None:
     """The ADR allows small raster `data:image` URLs on images; the output must be empty."""
     svg = (
