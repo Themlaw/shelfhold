@@ -145,6 +145,10 @@ tests = [
 ]
 reason = "PoC de la relecture adverse de #342 (L46), fichier figé par le contradicteur : les exigences du lot (EF-EXP-020, EF-EXP-022) sont prouvées par test_m4_l46_target_wiring.py"
 
+[[exception]]
+path = "backend/tests/unit/test_l05b_neutralizer_counter_review.py"
+reason = "preuves de la relecture adverse de #365 (M5 L05b), livrées telles quelles par le contradicteur sans marqueur req ; les mêmes vecteurs sont couverts sous EF-LEC-005 et ENF-SEC-004 par test_xhtml_neutralizer_css_tokens.py"
+
 [[deferred]]
 requirement = "ENF-GOV-004"
 aspect = "première publication vérifiée sur le second registre (digest signé) et premier push du miroir : D-P1 (secret CODEBERG_TOKEN, compte et dépôt miroir du porteur)"

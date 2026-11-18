@@ -7,6 +7,7 @@ Format : [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/). Versionnement
 ### Ajouté
 
 - **Registre d'appareils et rotation du secret (M5 L02)** : chaque appairage fait un appareil (libellé, type, « vu pour la dernière fois ») ; l'écran « Connecter une liseuse » les liste par profil, change le secret d'un appareil sans réappairer (l'ancien est refusé à la requête suivante) et retire un appareil (tous ses jetons sont révoqués). Actions réservées `device_token.rotate` et `device.remove`, jamais ouvertes à une clé ni à un jeton ; un membre ne voit que ses appareils, un enfant aucun. `GET /api/v1/devices`, `POST /api/v1/devices/{id}/rotate`, `DELETE /api/v1/devices/{id}` ; `shelfhold admin device-tokens rotate|remove`. Migration 0100 (ligne 1.2) : chaque jeton existant reçoit son appareil ; un jeton dont l'appareil est retiré est refusé.
+- **Neutraliseur `xhtml-neutralizer@v2` (L05b)** : un élément retiré du corps laisse un élément inerte (vide, sans attribut) au même rang, de sorte que les positions de lecture d'un EPUB restent stables d'une version à l'autre (ADR-0055) ; version du filtre exposée pour le locator (`content-filter@2`). Les dérivés `@v1` existants se régénèrent par la migration nommée `shelfhold content reneutralize` (aperçu, puis `--confirm`), qui garde l'original et la chaîne `derived_chain` ; rien n'est réécrit sans cette commande.
 
 ## 1.1.0 - 2026-11-18
 
