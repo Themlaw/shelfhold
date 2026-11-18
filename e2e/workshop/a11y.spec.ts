@@ -27,6 +27,7 @@ const SCREENS = [
   '/assistant/fin',
   '/assistant/kavita',
   '/compte/passkeys',
+  '/reglages/compte/oidc',
   '/reglages',
   '/reglages/apparence',
   '/reglages/compte-kavita',

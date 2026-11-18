@@ -61,6 +61,10 @@ class FakeOidcProvider:
         self.discovery_overrides: dict[str, Any] = {}
         self.now = time.time  # replaced by a test that moves its own clock
         self.auth_time_age_s: int | None = 0
+        # a provider that does what `prompt=login` asks: the person signs in again, so the
+        # `auth_time` is now. Off, it answers from its own session (an old `auth_time`)
+        self.honours_prompt = True
+        self.authorizations: list[dict[str, str]] = []  # what each authorization request asked
         self._codes: dict[str, dict[str, Any]] = {}
 
     # --- what the host reads --------------------------------------------------------------------
@@ -105,7 +109,9 @@ class FakeOidcProvider:
             "redirect_uri": query["redirect_uri"],
             "sub": sub or self.sub,
             "client_id": query["client_id"],
+            "relogin": self.honours_prompt and query.get("prompt") == "login",
         }
+        self.authorizations.append(query)
         return f"{query['redirect_uri']}?code={code}&state={query['state']}"
 
     def claims(self, grant: Mapping[str, Any]) -> dict[str, Any]:
@@ -119,7 +125,8 @@ class FakeOidcProvider:
             "nonce": grant["nonce"],
         }
         if self.auth_time_age_s is not None:
-            claims["auth_time"] = now - self.auth_time_age_s
+            age = 0 if grant.get("relogin") and self.auth_time_age_s >= 0 else self.auth_time_age_s
+            claims["auth_time"] = now - age
         claims.update({k: v for k, v in self.tamper.items() if not k.startswith("__")})
         return {k: v for k, v in claims.items() if v is not None}
 
