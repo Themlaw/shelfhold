@@ -26,11 +26,6 @@ def world(monkeypatch: pytest.MonkeyPatch, settings: Settings) -> Iterator[World
     yield from _world(monkeypatch, settings)
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#361 C1 : un ticket d'extrait sur un EPUB à un seul document sert le livre entier "
-    "(ADR-0055 N3 : dérivé d'extrait coupé côté serveur, ou refus « extrait indisponible »)",
-)
 @pytest.mark.req("EF-LEC-005", "ENF-SEC-010")
 def test_poc_excerpt_of_a_single_document_epub_is_never_the_whole_book(world: World) -> None:
     single = add_carrier(world.seed.engine, world.seed.editions["ok"], format="epub")
@@ -43,11 +38,6 @@ def test_poc_excerpt_of_a_single_document_epub_is_never_the_whole_book(world: Wo
     assert got.status_code == 404 or len(got.content) < len(WHOLE)
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#361 C1 : la liste fermée d'un extrait est celle que fournit l'appelant, pas celle "
-    "que le serveur calcule à l'émission depuis le dérivé (ADR-0055 « Liste fermée »)",
-)
 @pytest.mark.req("EF-LEC-005", "ENF-SEC-010")
 def test_poc_excerpt_list_is_computed_by_the_server_not_supplied(world: World) -> None:
     every = sorted(world.src.by_content[world.open_item])  # tout le livre, pages comprises
