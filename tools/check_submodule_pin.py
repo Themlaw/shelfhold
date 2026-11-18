@@ -25,6 +25,7 @@ import hashlib
 import re
 import subprocess
 import sys
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -52,15 +53,9 @@ NAMESPACE_HOSTS = frozenset(
 )
 # The subtrees of the submodule that are not part of the library: tests, CI, build scripts.
 NOT_RUNTIME = ("tests/", ".github/", "rollup/", "rollup.config.js", "eslint.config.js")
-# Third-party bundles shipped in the submodule's vendor/ : pinned by SHA-256 (commit above). Any
-# other script in vendor/ is refused. fflate and zip.js are loaded; pdf.js is not (ADR-0055, D7).
-VENDOR_PINS = {
-    "vendor/zip.js": "2a0d43157e4a447c6e43351225758795b75a33e8dfec10c6767248df2182949a",
-    "vendor/fflate.js": "e63bcc21f83a43e5f71d5cbefd351ff4d4dbd57bef8b29ad65c8bd65752f6e6b",
-    "vendor/pdfjs/pdf.mjs": "70f8fd59e1c947d32ebfc7e5b101cc164d305fe98c44523355355ab79875d9e9",
-    "vendor/pdfjs/pdf.worker.mjs": "682770dbc7ac4d94017b79628aa8c231934415f80a76ed99be09ed743912a0ab",  # noqa: E501
-}
-VENDOR_DATA_SUFFIXES = {".bcmap", ".pfb", ".ttf", ".css", ".map", ""}
+# Every file of the submodule's vendor/ (bundles, pdf.js, data) is pinned by SHA-256 in this
+# manifest, whatever its extension: an extra, missing or changed file stops the update.
+VENDOR_MANIFEST = "tools/foliate-vendor.sha256"
 # Every way for the library's own code to reach outside the page or load code. The count of each
 # primitive per file is pinned to the audited commit: an update that adds one stops here and goes
 # to the manual review (docs/dependencies.md). This is an alarm, not the barrier: the barrier is
@@ -75,6 +70,7 @@ PRIMITIVES = {
     "EventSource": re.compile(r"\bEventSource\b"),
     "sendBeacon": re.compile(r"\bsendBeacon\b"),
     "Worker": re.compile(r"\b(?:Shared)?Worker\b"),
+    "import-from": re.compile(r"\bfrom\s*['\"]|^\s*import\s*['\"]", re.MULTILINE),
     "src=": re.compile(r"\.src\s*="),
     "srcdoc": re.compile(r"\bsrcdoc\b"),
     "location": re.compile(r"\blocation\b"),
@@ -87,19 +83,19 @@ PRIMITIVES = {
 }
 # Audited at the pinned commit (docs/dependencies.md, audit): {file: {primitive: count}}.
 INVENTORY: dict[str, dict[str, int]] = {
-    "epub.js": {"src=": 1},
+    "epub.js": {"import-from": 1, "src=": 1},
     "fb2.js": {"fetch": 1, "innerHTML": 2},
     "fixed-layout.js": {"open": 1, "src=": 1},
     "footnotes.js": {"node-move": 1, "open": 1},
     "mobi.js": {"innerHTML": 1, "open": 3, "src=": 2},
     "opds.js": {"import()": 1, "innerHTML": 1},
     "paginator.js": {"innerHTML": 1, "open": 1, "src=": 1},
-    "pdf.js": {"fetch": 1, "node-move": 1},
+    "pdf.js": {"fetch": 1, "import-from": 1, "node-move": 1},
     "progress.js": {"location": 1},
     "quote-image.js": {"innerHTML": 1, "node-move": 1, "src=": 1},
-    "reader.js": {"import()": 1, "location": 3, "open": 6, "src=": 1},
+    "reader.js": {"import()": 1, "import-from": 4, "location": 3, "open": 6, "src=": 1},
     "tts.js": {"node-move": 3},
-    "view.js": {"fetch": 1, "import()": 13, "open": 4},
+    "view.js": {"fetch": 1, "import()": 13, "import-from": 4, "open": 4},
 }
 
 URL_LITERAL = re.compile(r"(?<![\w.-])https?://([A-Za-z0-9._-]+)")
@@ -182,6 +178,20 @@ def pin_problems(root: Path = ROOT) -> list[str]:
     return problems
 
 
+def min_age_problems(root: Path, days: int, *, now: datetime | None = None) -> list[str]:
+    """The pinned commit is at least `days` old: a release ages before it is proposed."""
+    linked = gitlink_commit(root)
+    if linked is None:
+        return [f"{SUBMODULE} is not a gitlink"]
+    stamp = _git(root / SUBMODULE, "show", "-s", "--format=%cI", linked).strip()
+    if not stamp:
+        return [f"{SUBMODULE}: commit {linked} not found (check out the submodule)"]
+    age = (now or datetime.now(UTC)) - datetime.fromisoformat(stamp)
+    if age < timedelta(days=days):
+        return [f"pinned commit {linked} is {age.days} days old, the minimum is {days}"]
+    return []
+
+
 def _gitlinks(root: Path) -> dict[str, str]:
     out: dict[str, str] = {}
     for line in _git(root, "ls-files", "-s").splitlines():
@@ -236,26 +246,53 @@ def _gitmodules_problems(root: Path) -> list[str]:
     return problems
 
 
-def _code(text: str) -> str:
-    """Drop comment-only lines and trailing line comments (never inside a string or a URL)."""
+_REGEX_AFTER = frozenset("(,=:[!&|?{};+-*%<>~^")
+
+
+def _code(text: str, *, css: bool = False) -> str:
+    """The text without its comments (a small tokenizer: strings, regexes and comments).
+
+    Whatever follows a closed comment on the same line is kept: `/**/ fetch(u)` is code.
+    """
     out: list[str] = []
-    in_block = False
-    for line in text.splitlines():
-        stripped = line.strip()
-        if in_block:
-            if "*/" in stripped:
-                in_block = False
-                stripped = stripped.split("*/", 1)[1].strip()
-            else:
-                continue
-        if stripped.startswith("/*"):
-            if "*/" not in stripped:
-                in_block = True
-            continue
-        if stripped.startswith("//"):
-            continue
-        out.append(re.sub(r"\s//(?=[^'\"`]*$).*$", "", line))
-    return "\n".join(out)
+    i, n = 0, len(text)
+    last = ""  # last significant character of the code, to tell a regex from a division
+    while i < n:
+        c, two = text[i], text[i : i + 2]
+        if two == "/*":
+            j = text.find("*/", i + 2)
+            i = n if j < 0 else j + 2
+            out.append(" ")
+        elif two == "//" and not css:
+            j = text.find("\n", i)
+            i = n if j < 0 else j
+        elif c in "'\"`":
+            j = i + 1
+            while j < n and text[j] != c:
+                j += 2 if text[j] == "\\" else 1
+            literal = text[i : j + 1]
+            if c == "`":  # embedded CSS or HTML: its own comments are not code either
+                literal = re.sub(r"/\*.*?\*/", " ", literal, flags=re.DOTALL)
+            out.append(literal)
+            i, last = j + 1, c
+        elif c == "/" and not css and (last == "" or last in _REGEX_AFTER):
+            j, in_class = i + 1, False
+            while j < n and text[j] != "\n" and (in_class or text[j] != "/"):
+                if text[j] == "\\":
+                    j += 1
+                elif text[j] == "[":
+                    in_class = True
+                elif text[j] == "]":
+                    in_class = False
+                j += 1
+            out.append(text[i : j + 1])
+            i, last = j + 1, ")"
+        else:
+            out.append(c)
+            if not c.isspace():
+                last = c
+            i += 1
+    return "".join(out)
 
 
 def _app_files(root: Path) -> list[Path]:
@@ -295,21 +332,85 @@ def inventory(base: Path) -> dict[str, dict[str, int]]:
     return found
 
 
-def _vendor_problems(base: Path, prefix: str) -> list[str]:
-    problems: list[str] = []
+def _vendor_files(base: Path) -> dict[str, Path]:
     vendor = base / "vendor"
     if not vendor.is_dir():
+        return {}
+    return {p.relative_to(base).as_posix(): p for p in sorted(vendor.rglob("*")) if p.is_file()}
+
+
+def vendor_digests(base: Path) -> dict[str, str]:
+    return {
+        rel: hashlib.sha256(path.read_bytes()).hexdigest()
+        for rel, path in _vendor_files(base).items()
+    }
+
+
+def _manifest(root: Path) -> dict[str, str]:
+    path = root / VENDOR_MANIFEST
+    if not path.exists():
+        path = ROOT / VENDOR_MANIFEST  # synthetic trees are checked against the real manifest
+    out: dict[str, str] = {}
+    for line in path.read_text(encoding="utf-8").splitlines():
+        digest, _, rel = line.partition("  ")
+        if digest:
+            out[rel] = digest
+    return out
+
+
+def _vendor_problems(root: Path, base: Path, prefix: str) -> list[str]:
+    problems: list[str] = []
+    files = _vendor_files(base)
+    if not files:
         return problems
-    for path in sorted(vendor.rglob("*")):
-        if not path.is_file():
+    manifest = _manifest(root)
+    actual = vendor_digests(base)
+    for rel in sorted(actual.keys() - manifest.keys()):
+        problems.append(f"{prefix}/{rel}: file of vendor/ that is not pinned")
+    for rel in sorted(manifest.keys() - actual.keys()):
+        problems.append(f"{prefix}/{rel}: pinned file of vendor/ is missing")
+    for rel in sorted(actual.keys() & manifest.keys()):
+        if actual[rel] != manifest[rel]:
+            problems.append(f"{prefix}/{rel}: differs from the audited file (SHA-256)")
+    # Sweep every file of vendor/ whatever its extension: no remote load, text or not.
+    for rel, path in files.items():
+        if path.suffix == ".map":
+            continue  # source maps: JSON text of the sources, never executed, pinned above
+        try:
+            text = path.read_bytes().decode("utf-8")
+        except UnicodeDecodeError:
+            continue  # binary data (fonts, glyph maps)
+        code = _code(text, css=path.suffix == ".css")
+        if any(loader.search(code) for loader in APP_LOADERS):
+            problems.append(f"{prefix}/{rel}: loads from a third-party origin")
+    return problems
+
+
+_CONFIGURE = re.compile(r"\bconfigure\s*\(")
+_WORKERS_OFF = re.compile(r"\bconfigure\(\s*\{\s*useWebWorkers\s*:\s*false\s*,?\s*\}\s*\)")
+
+
+def _worker_problems(base: Path) -> list[str]:
+    """zip.js workers stay off: the only `configure` is the one that turns them off."""
+    problems: list[str] = []
+    seen_off = False
+    for path in _runtime_files(base):
+        if path.suffix not in {".js", ".mjs", ".html"}:
             continue
+        code = _code(path.read_text(encoding="utf-8", errors="replace"))
         rel = path.relative_to(base).as_posix()
-        pinned = VENDOR_PINS.get(rel)
-        if pinned is not None:
-            if hashlib.sha256(path.read_bytes()).hexdigest() != pinned:
-                problems.append(f"{prefix}/{rel}: differs from the audited bundle (SHA-256)")
-        elif path.suffix not in VENDOR_DATA_SUFFIXES and path.name != "LICENSE":
-            problems.append(f"{prefix}/{rel}: unexpected script in vendor/ (not pinned)")
+        calls = len(_CONFIGURE.findall(code))
+        off = len(_WORKERS_OFF.findall(code))
+        if calls != off:
+            problems.append(
+                f"{SUBMODULE}/{rel}: a `configure` call other than useWebWorkers: false"
+            )
+        if len(re.findall(r"\buseWebWorkers\b", code)) != off:
+            problems.append(f"{SUBMODULE}/{rel}: useWebWorkers set to something else than false")
+        if rel == "view.js" and off:
+            seen_off = True
+    if (base / "view.js").is_file() and not seen_off:
+        problems.append(f"{SUBMODULE}/view.js no longer disables zip.js workers (useWebWorkers)")
     return problems
 
 
@@ -317,9 +418,10 @@ def asset_problems(root: Path = ROOT, *, require_checkout: bool = False) -> list
     problems: list[str] = []
     for path in _app_files(root):
         text = path.read_text(encoding="utf-8", errors="replace")
-        if path.suffix in {".ts", ".js"}:
-            text = _code(text)
-        if any(loader.search(text) for loader in APP_LOADERS):
+        # Both readings: as script (no `//` comment hides code) and as stylesheet (an unquoted
+        # `url(https://…)` is not a comment).
+        views = (_code(text), _code(text, css=True))
+        if any(loader.search(view) for view in views for loader in APP_LOADERS):
             problems.append(f"{path.relative_to(root)}: loads from a third-party origin")
     base = root / SUBMODULE
     if not base.is_dir() or not any(base.iterdir()):
@@ -340,35 +442,41 @@ def asset_problems(root: Path = ROOT, *, require_checkout: bool = False) -> list
                 f"{SUBMODULE}/{name}: more primitives than audited {audited}: {more} "
                 "(review the diff, then update INVENTORY)"
             )
-    problems.extend(_vendor_problems(base, SUBMODULE))
-    view = base / "view.js"
-    if view.is_file() and not re.search(
-        r"^\s*configure\(\s*\{\s*useWebWorkers:\s*false",
-        _code(view.read_text("utf-8")),
-        re.M,
-    ):
-        problems.append(f"{SUBMODULE}/view.js no longer disables zip.js workers (useWebWorkers)")
+    problems.extend(_vendor_problems(root, base, SUBMODULE))
+    problems.extend(_worker_problems(base))
     return problems
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     sub = parser.add_subparsers(dest="command", required=True)
-    sub.add_parser("pin")
+    pin = sub.add_parser("pin")
+    pin.add_argument(
+        "--min-age",
+        type=int,
+        metavar="DAYS",
+        help="also require the pinned commit to be at least DAYS old (needs the checkout)",
+    )
     assets = sub.add_parser("assets")
     assets.add_argument("--require-checkout", action="store_true")
     sub.add_parser("inventory", help="print the primitives found, to review then pin in INVENTORY")
+    sub.add_parser("vendor-manifest", help="print the SHA-256 manifest of vendor/ (to review)")
     args = parser.parse_args(argv)
     if args.command == "inventory":
         import json
 
         print(json.dumps(inventory(ROOT / SUBMODULE), indent=4, sort_keys=True))
         return 0
-    problems = (
-        pin_problems()
-        if args.command == "pin"
-        else asset_problems(require_checkout=args.require_checkout)
-    )
+    if args.command == "vendor-manifest":
+        for rel, digest in vendor_digests(ROOT / SUBMODULE).items():
+            print(f"{digest}  {rel}")
+        return 0
+    if args.command == "pin":
+        problems = pin_problems()
+        if args.min_age is not None:
+            problems.extend(min_age_problems(ROOT, args.min_age))
+    else:
+        problems = asset_problems(require_checkout=args.require_checkout)
     for problem in problems:
         print(f"FAIL {problem}", file=sys.stderr)
     if not problems:

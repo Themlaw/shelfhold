@@ -43,29 +43,113 @@ SOFTWARE.
 ------------------------------------------------------------------------------------------
 Code shipped inside foliate-js (its vendor/ directory)
 ------------------------------------------------------------------------------------------
-These files are part of the submodule at the commit above. Their notices are the ones of their
-authors; the reader loads fflate and zip.js only (pdf.js is not registered in M5, ADR-0055 D7).
+These files are part of the submodule at the commit above. fflate.js and zip.js are minified
+bundles without a header, and foliate-js ships no licence file next to them: their licence texts
+are therefore reproduced in full below, from the npm packages whose versions foliate-js's
+package-lock records (fflate 0.8.2, @zip.js/zip.js 2.8.22; texts read from those packages on
+2026-11-18). The bundles themselves are not rebuilt here. The reader loads fflate and zip.js only
+(pdf.js is not registered in M5, ADR-0055 D7, and is excluded from the image build context).
 
-fflate 0.8.2 (vendor/fflate.js)
-  https://github.com/101arrowz/fflate
-  Licence: MIT. Copyright (c) 2023 Arjun Barrett (upstream LICENSE, read 2026-11-18). The upstream
-  repository now carries a 2026 notice; the bundle has no header, its version is that of
-  foliate-js's package-lock (not rebuilt).
+fflate 0.8.2 (vendor/fflate.js), https://github.com/101arrowz/fflate
+------------------------------------------------------------------------------------------
+MIT License
 
-zip.js 2.8.22 (vendor/zip.js)
-  https://github.com/gildas-lormeau/zip.js
-  Licence: BSD-3-Clause. Copyright (c) 2023, Gildas Lormeau (upstream LICENSE, read 2026-11-18).
-  Web workers are turned off by foliate-js (`useWebWorkers: false`).
+Copyright (c) 2023 Arjun Barrett
 
-pdf.js 5.5.207 (vendor/pdfjs/)
-  https://github.com/mozilla/pdf.js
-  Licence: Apache-2.0. Copyright 2024 Mozilla Foundation. The licence header is kept at the top
-  of vendor/pdfjs/pdf.mjs and vendor/pdfjs/pdf.worker.mjs.
-  Not loaded by Shelfhold in M5. Companion data under vendor/pdfjs/:
-    cmaps/              Adobe Systems Incorporated, BSD-3-Clause style licence (cmaps/LICENSE)
-    standard_fonts/     Foxit fonts (BSD-3-Clause style, copyright PDFium Authors,
-                        standard_fonts/LICENSE_FOXIT) and Liberation fonts (SIL Open Font
-                        License 1.1, copyright Google Corporation 2010 and Red Hat 2012,
-                        standard_fonts/LICENSE_LIBERATION)
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
 
-Each licence text is in the submodule, next to the file it covers.
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+zip.js 2.8.22 (vendor/zip.js), https://github.com/gildas-lormeau/zip.js
+------------------------------------------------------------------------------------------
+vendor/zip.js is the "zip-core" build: web workers are turned off by foliate-js
+(useWebWorkers: false). It embeds SJCL (AES and PBKDF2 of the encrypted-zip support), declared next.
+
+BSD 3-Clause License
+
+Copyright (c) 2023, Gildas Lormeau
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are met:
+
+1. Redistributions of source code must retain the above copyright notice, this
+   list of conditions and the following disclaimer.
+
+2. Redistributions in binary form must reproduce the above copyright notice,
+   this list of conditions and the following disclaimer in the documentation
+   and/or other materials provided with the distribution.
+
+3. Neither the name of the copyright holder nor the names of its
+   contributors may be used to endorse or promote products derived from
+   this software without specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+SJCL, the Stanford Javascript Crypto Library (inside vendor/zip.js), https://github.com/bitwiseshiftleft/sjcl
+------------------------------------------------------------------------------------------
+Licence: dual BSD-2-Clause / GPL-2.0 ("SJCL is open. You can use, modify and redistribute it under
+a BSD license or under the GNU GPL, version 2.0."). Shelfhold uses it under the BSD-2-Clause option.
+
+BSD 2-Clause License (the BSD option of SJCL's dual BSD / GPL-2.0 licence, chosen here)
+
+Copyright (c) 2009-2015, Emily Stark, Mike Hamburg and Dan Boneh at
+Stanford University. All rights reserved.
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are
+met:
+
+1. Redistributions of source code must retain the above copyright
+notice, this list of conditions and the following disclaimer.
+
+2. Redistributions in binary form must reproduce the above copyright
+notice, this list of conditions and the following disclaimer in the
+documentation and/or other materials provided with the distribution.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS
+IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
+TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A
+PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED
+TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
+LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
+NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+pdf.js 5.5.207 (vendor/pdfjs/), https://github.com/mozilla/pdf.js
+------------------------------------------------------------------------------------------
+Licence: Apache-2.0. Copyright 2024 Mozilla Foundation. The licence header is kept at the top of
+vendor/pdfjs/pdf.mjs and vendor/pdfjs/pdf.worker.mjs, and the full text is at
+https://www.apache.org/licenses/LICENSE-2.0 .
+Not loaded by Shelfhold in M5 and not part of the image. Companion data under vendor/pdfjs/:
+  cmaps/              Adobe Systems Incorporated, BSD-3-Clause style licence (cmaps/LICENSE)
+  standard_fonts/     Foxit fonts (BSD-3-Clause style, copyright PDFium Authors,
+                      standard_fonts/LICENSE_FOXIT) and Liberation fonts (SIL Open Font
+                      License 1.1, copyright Google Corporation 2010 and Red Hat 2012,
+                      standard_fonts/LICENSE_LIBERATION)
+These licence texts are shipped in the submodule next to the files they cover.

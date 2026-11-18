@@ -526,6 +526,9 @@ jobs:
       - name: no reader asset from a third-party origin, vendored code included (EF-LEC-003)
         working-directory: .
         run: python3 tools/check_submodule_pin.py assets --require-checkout
+      - name: pinned foliate-js commit is at least 14 days old (EF-LEC-003, update rule)
+        working-directory: .
+        run: python3 tools/check_submodule_pin.py pin --min-age 14
       - name: eslint
         run: npm run lint
       - name: svelte-check (TypeScript strict)

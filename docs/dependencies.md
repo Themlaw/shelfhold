@@ -46,15 +46,19 @@ Commit épinglé : `78914aef4466eb960965702401634c2cb348e9b1`
   de l'auteur), date 2026-05-01 (« Use original hrefs for external links and add isExternal in fb2.js »),
   dépôt non archivé, licence détectée MIT.
 - **Licence** : MIT (© John Factotum), relue dans le `LICENSE` du sous-module. Le code embarqué dans
-  son `vendor/` garde ses licences : fflate (MIT), zip.js (BSD-3-Clause), pdf.js (Apache-2.0, avec
-  cmaps Adobe, polices Foxit et Liberation, SIL OFL 1.1). Tout est dans `THIRD_PARTY_NOTICES`. pdf.js
+  son `vendor/` garde ses licences : fflate (MIT), zip.js (BSD-3-Clause), SJCL embarquée dans `vendor/zip.js` (double licence BSD-2-Clause ou GPL-2.0 : **l'option BSD-2-Clause est retenue**), pdf.js (Apache-2.0, avec
+  cmaps Adobe, polices Foxit et Liberation, SIL OFL 1.1). Les textes complets de fflate (MIT), de zip.js (BSD-3-Clause) et de SJCL (BSD-2-Clause) sont reproduits dans `THIRD_PARTY_NOTICES`, car les bundles minifiés n'ont ni en-tête ni fichier de licence voisin. pdf.js
   n'est enregistré par aucun moteur en M5 (ADR-0055, D7). MIT, BSD-3-Clause et Apache-2.0
   sont compatibles avec l'AGPL-3.0 (ADR-0014) ; les polices (SIL OFL 1.1) et les données de pdf.js
   sont de simples fichiers de données, agrégés et jamais chargés en M5 : l'image n'embarque pas
-  `vendor/pdfjs`.
+  `vendor/pdfjs` : `.dockerignore` l'exclut du contexte de construction (avec les tests, les workflows et
+  la configuration de build du sous-module), l'image d'exécution ne reçoit que `frontend/build`, et
+  `test_the_image_does_not_contain_pdfjs` le vérifie.
 - **Aucun script exécuté depuis le sous-module** : son `package.json` (`build` : rollup) et ses
   dépendances de développement ne sont jamais installés ni lancés. Les bundles de son `vendor/` sont
-  utilisés tels quels et épinglés par SHA-256 dans `tools/check_submodule_pin.py` ; leurs versions
+  utilisés tels quels ; **chaque fichier de `vendor/`**, quelle que soit son extension, est épinglé par
+  SHA-256 dans `tools/foliate-vendor.sha256` (fichier en trop, manquant ou modifié : échec) et balayé
+  (aucun `@import`, `url()`, `import` ni `src` vers un hôte distant, CSS compris) ; leurs versions
   (zip.js 2.8.22, fflate 0.8.2, pdf.js 5.5.207) sont celles du `package-lock.json` de foliate :
   **déduites du verrou, non reproduites** (reproduire les bundles à partir des tarballs npm vérifiés
   par leur `integrity`, dans un bac à sable hors CI, est un travail laissé à la première mise à jour). `frontend/package.json` ne le référence pas (ni dépendance, ni espace de
@@ -65,13 +69,13 @@ Commit épinglé : `78914aef4466eb960965702401634c2cb348e9b1`
   FB2 et les feuilles de pdf.js ; la sortie d'un lien externe est `globalThis.open` (`view.js`),
   annulée par l'adaptateur (ADR-0055). L'adaptateur ne passe jamais d'adresse, de `File` ni de `Blob`
   à `view.open` (voir l'audit). zip.js embarque du code de Web Worker, inerte tant que `view.js`
-  appelle `configure({ useWebWorkers: false })` (vérifié dans le code, hors commentaires). Les seules
+  appelle `configure({ useWebWorkers: false })` (vérifié dans le code, commentaires retirés par un analyseur lexical : tout autre appel `configure`, ou tout `useWebWorkers` autre que `false`, fait échouer le garde). Les seules
   adresses absolues du code sont des espaces de noms XML et des liens de commentaires.
   **La barrière d'exécution est la CSP du lecteur** (`connect-src 'self'`, `worker-src 'none'`,
   ADR-0055), pas un balayage. `tools/check_submodule_pin.py assets` (CI, job `frontend`, après
   checkout du sous-module) et `test_no_reader_asset_from_third_party_origin` sont une **alarme** :
   elles refusent un nouvel hôte, un script de `vendor/` hors de ceux épinglés, et tout nombre d'appels
-  supérieur à l'inventaire audité (`fetch`, `open`, `import()`, `Worker`, `WebSocket`, `sendBeacon`,
+  supérieur à l'inventaire audité (`fetch`, `open`, `import()` et les `import … from` statiques, `Worker`, `WebSocket`, `sendBeacon`,
   `.src =`, `srcdoc`, `location`, `eval`, `innerHTML`, déplacement de nœuds) ; elles ne comprennent
   pas du code construit dynamiquement.
 - **CI** : les jobs qui construisent le frontend ou l'image récupèrent le sous-module avec
@@ -98,7 +102,7 @@ et relue.
   moins 14 jours ; (2) `git -C frontend/vendor/foliate-js fetch origin` puis
   `git -C frontend/vendor/foliate-js checkout <sha>` ; (3) dans le **même commit** : le lien Git, la
   ligne « Commit épinglé » et sa date de vérification, `THIRD_PARTY_NOTICES`, la section du jalon dans
-  `docs/decisions/` ; (4) `python3 tools/check_submodule_pin.py pin` et `assets --require-checkout`,
+  `docs/decisions/` ; (4) `python3 tools/check_submodule_pin.py pin --min-age 14` (l'âge du commit épinglé, lu dans le sous-module extrait) et `assets --require-checkout`,
   puis les suites du lecteur (corpus d'EPUB piégés sur les trois navigateurs, filtre de contenu, CSP du
   lecteur).
 - **Relecture** : `git diff <ancien>..<nouveau>` du sous-module lu en entier pour les fichiers du
