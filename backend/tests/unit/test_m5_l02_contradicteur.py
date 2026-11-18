@@ -2,7 +2,7 @@
 
 `tools/published-migrations.toml` range `0100_device_registry.py` en `since = "1.1"`. M5 sort en
 `v1.2.0` (PLAN-M5, L25) et `v1.1.0` n'est pas encore publiée (`v1.1.0-rc.2`). Avec ce gel, la garde
-d'ENF-OPS-002 laisse passer la migration du registre d'appareils dans un correctif `v1.1.x` :
+d'ENF-OPS-002 laisse passer la migration de la table `device` dans un correctif `v1.1.x` :
 un correctif de M4 porterait le schéma de M5.
 
 Vert depuis que l'entrée est en `since = "1.2"` (la PR attend `v1.1.0` et L00, ses dépendances de
