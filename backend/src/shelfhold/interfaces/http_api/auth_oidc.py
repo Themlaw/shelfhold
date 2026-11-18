@@ -241,10 +241,10 @@ def build_oidc_router() -> APIRouter:
         """The session proves itself again at the provider (`prompt=login`, `max_age`). Not a
         reserved action: it is the proof one asks for. For a session of a linked adult only."""
         gate = gate_of(request)
-        if not gate.auth.oidc_available or principal.session_id is None:
-            raise ProblemError("oidc_unavailable")
         if principal.role == "child" or principal.via_forward:
             raise ProblemError("forbidden", extensions={"action": "oidc.reauth"})
+        if not gate.auth.oidc_available or principal.session_id is None:
+            raise ProblemError("oidc_unavailable")
         try:
             start = gate.auth.oidc.begin_reauth(
                 user_id=principal.user_id, session_id=principal.session_id

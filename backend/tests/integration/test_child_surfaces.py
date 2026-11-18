@@ -215,6 +215,10 @@ CLOSED = (
     "POST /api/v1/auth/oidc/link",
     "POST /api/v1/auth/oidc/link/confirm",
     "PUT /api/v1/profiles/{profile_id}/oidc",
+    # M5 L04: unlinking, and proving oneself again at the provider: the same rule
+    "DELETE /api/v1/auth/oidc/identities",
+    "DELETE /api/v1/profiles/{profile_id}/oidc",
+    "POST /api/v1/auth/oidc/reauth",
     # M5 L02: the registry of devices, its rotation and its removal: the same rule
     "GET /api/v1/devices",
     "POST /api/v1/devices/{device_id}/rotate",

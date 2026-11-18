@@ -199,6 +199,7 @@ LOGGED_SETTINGS: dict[str, str] = {
     "auth_hardened": "hardened_profile",  # a switch
     "metrics_enabled": "metrics_enabled",  # a switch
     "fresh_auth_s": "recent_login_window_s",  # a duration
+    "oidc_max_age_s": "oidc_max_age_s",  # a duration
     "revision_min_page_ratio": "revision_min_page_ratio",
     "reading_relay_max_session_hours": "reading_relay_max_hours",  # a duration
     "follow_fallback_return": "follow_fallback_return",
