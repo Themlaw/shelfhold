@@ -147,3 +147,11 @@ until = "M5"
 symbols = [
   "shelfhold.integrations.webhooks.catalogue:Deprecation",
 ]
+
+[[allow]]
+category = "m5-l20b-kepub-core"
+reason = "2026-11-18 (M5 L20b, part 1): the pure-Python KEPUB transform is delivered before its callers; the OPDS acquisition link, /lite and the rendition cache that call it come with L20a and L17a (docs/decisions/M5.md, L20b)."
+until = "M5"  # settled by L20b part 2, once L20a and L17a are merged
+symbols = [
+  "shelfhold.library.application.kepub:KepubError",
+]

@@ -235,7 +235,7 @@ def test_kepub_never_resolves_entities() -> None:
     # a numeric character reference is not an entity: the page passes and keeps its text
     plain = (
         b'<?xml version="1.0" encoding="utf-8"?>\n'
-        b'<html xmlns="http://www.w3.org/1999/xhtml"><body><p>caf&#233; au lait.</p></body></html>'
+        b'<html xmlns="http://www.w3.org/1999/xhtml"><body><p>th&#233; au lait.</p></body></html>'
     )
     result = kepubify(epub(book(**{"OEBPS/chapter1.xhtml": plain})))
-    assert "café au lait.".encode() in read_entry(result, "OEBPS/chapter1.xhtml")
+    assert "thé au lait.".encode() in read_entry(result, "OEBPS/chapter1.xhtml")
