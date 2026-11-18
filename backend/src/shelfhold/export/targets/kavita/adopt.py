@@ -1046,8 +1046,8 @@ class Adopter:
 
     @staticmethod
     def _hold_unrated_join(connection: Connection, edition_id: str, now: datetime) -> None:
-        """A foreign file that joins an Edition **by its name alone**, and says no age, was looked at
-        by nobody (J-PAR-2): it never takes the rating of the Edition it joined. Where that
+        """A foreign file that joins an Edition **by its name alone**, and says no age, was seen by
+        nobody (J-PAR-2): it never takes the rating of the Edition it joined. Where that
         Edition is rated, 18+ is suggested (provenance `import`, as nothing in the file said it),
         so the shelf's one door keeps the Edition out of a child's view until an admin rates it
         again, in "À classer"."""
@@ -1057,11 +1057,9 @@ class Adopter:
             .select_from(edition.join(work, work.c.id == edition.c.work_id))
             .where(edition.c.id == edition_id)
         ).scalar()
-        if rated:
-            suggest_age(
-                connection, "edition", edition_id, content_warning_age(None),
-                provenance="import", now=now,
-            )  # fmt: skip
+        unknown = content_warning_age(None)  # not known to be safe: 18+
+        if rated and unknown is not None:
+            suggest_age(connection, "edition", edition_id, unknown, provenance="import", now=now)
 
     @staticmethod
     def _suggest_age(

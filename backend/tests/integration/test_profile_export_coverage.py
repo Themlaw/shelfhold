@@ -8,6 +8,8 @@ export (`platform/export_all.py`).
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 import sqlalchemy as sa
 
@@ -48,13 +50,16 @@ EXCLUDED: dict[str, str] = {
     "gap_ack": "an admin's acknowledgement (`acked_by`); the audit holds it",
     "plugin_attestation": "an admin's attestation on a plugin (`attested_by`)",
     "team_switch": "an operation an admin ran on an Edition (`created_by`); the audit holds it",
-    "webhook_subscription": "a delivery setting of the host (`created_by`), not hers; secret inside",
+    "webhook_subscription": "a delivery setting of the host (`created_by`); secret inside",
     "instance": "the instance row (`maintenance_by`): a state of the host",
     "unit": "`deleted_by` and the like: who acted on a Unit, not data of the person",
     "read_state_push_note": "a note of the push to Kavita, rebuilt by the next pass; no content",
 }
 
-SECRET_NAMES = ("secret", "password", "digest", "fingerprint", "key_hash", "public_key", "_ct", "_nonce", "_kid")
+SECRET_NAMES = (
+    "secret", "password", "digest", "fingerprint", "key_hash", "public_key", "_ct", "_nonce",
+    "_kid",
+)  # fmt: skip
 
 
 def _points_at_a_profile(table: sa.Table) -> bool:
@@ -85,7 +90,7 @@ def test_every_section_of_the_export_has_its_table() -> None:
 def test_no_exported_table_gives_a_secret_column() -> None:
     from shelfhold.identity.adapters import store
 
-    source = open(store.__file__).read()
+    source = Path(store.__file__).read_text()
     start = source.index("def export_rows")
     body = source[start : source.index("# --- household profiles", start)]
     asked = {

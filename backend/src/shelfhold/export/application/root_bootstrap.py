@@ -244,7 +244,8 @@ def _stamp(path: str, mode: PathMode, instance_id: str) -> str | None:
         return stamped.root_id  # a crash left it stamped: adopt it as it is
     if stamped is None:
         create_sentinel(
-            path, SentinelDocument(root_id=root_id, instance_id=instance_id, generation=1),
+            path,
+            SentinelDocument(root_id=root_id, instance_id=instance_id, generation=1),
             nofollow=True,
         )
         return root_id

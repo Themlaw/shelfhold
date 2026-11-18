@@ -45,7 +45,14 @@ from shelfhold.infrastructure.restore_notice import (
     read_notice,
     write_notice,
 )
-from shelfhold.infrastructure.schema import acquisition, catalog, coherence, identity, platform, reading
+from shelfhold.infrastructure.schema import (
+    acquisition,
+    catalog,
+    coherence,
+    identity,
+    platform,
+    reading,
+)
 
 _user = identity.user
 _session = identity.session

@@ -10,7 +10,6 @@ import json
 import signal
 import subprocess
 import sys
-from pathlib import Path
 
 import pytest
 import sqlalchemy as sa

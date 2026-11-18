@@ -539,8 +539,12 @@ class PlanExecutor:
         with self._engine.connect() as connection:
             rows = connection.execute(
                 sa.select(
-                    table.c.state, key.label("k"), call.label("call"), table.c.op,
-                    table.c.dst_path, table.c.expected_sha256,
+                    table.c.state,
+                    key.label("k"),
+                    call.label("call"),
+                    table.c.op,
+                    table.c.dst_path,
+                    table.c.expected_sha256,
                 ).where(
                     dest == destination_id,
                     table.c.state.in_(("pending", "applying", "done")),
