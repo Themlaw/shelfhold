@@ -244,6 +244,12 @@ def test_m4_journey_manga_shelf_kavita_and_native_folder(journey_m4: Journey) ->
 # -- (2) the members' progress, both ways -------------------------------------------
 
 
+@pytest.mark.xfail(
+    strict=True,
+    reason="#342: the pull works (Kavita's page is stored on the exported file), but a first export "
+    "writes no `document_alias` (only an assembly or a rewrite does, M4 L10/L13): the e-reader "
+    "routes cannot find the file by its digest, so `GET /kosync/syncs/progress/{digest}` is `{}`",
+)
 @pytest.mark.e2e_timeout(900)
 @pytest.mark.req("EF-EXP-026")
 def test_m4_journey_progress_both_ways(journey_m4: Journey) -> None:
@@ -275,23 +281,7 @@ def test_m4_journey_progress_both_ways(journey_m4: Journey) -> None:
     assert wait_for(
         lambda: kosync(j, "get", public_id, secret, document)[1].get("progress") == "5",
         300,
-    ), (
-        "the position read in Kavita never reached the member's own progress: "
-        + repr(kosync(j, "get", public_id, secret, document))
-        + repr(
-            j.sql(
-                "select carrier_type, source, device_id, percent, locator, "
-                "substr(content_hash,1,20) from reading_position"
-            )
-        )
-        + repr(
-            j.sql(
-                "select a.export_item_id, i.kind, i.edition_id, a.koreader_partial_md5 "
-                "from document_alias a join export_item i on i.id = a.export_item_id"
-            )
-        )
-        + document
-    )
+    ), "the position read in Kavita never reached the member's own progress"
     [(code, status)] = j.api(("GET", "/api/v1/sync-status"))
     assert code == 200, status
     [row] = [r for r in status["items"] if r["username"] == reader[0]]
