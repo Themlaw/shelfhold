@@ -19,7 +19,7 @@ import io
 import pytest
 import sqlalchemy as sa
 
-from shelfhold.export.application.export_alias import record_export_alias
+from shelfhold.export.application.export_alias import complete_hashes, record_export_alias
 from shelfhold.infrastructure.schema import export
 from shelfhold.reading.domain.document_hash import koreader_partial_md5
 from tests.auth_env import PASSWORD
@@ -57,11 +57,17 @@ def exported(
     digest KOReader computes on its bytes."""
     item = library(world, key).add(Chapter.simple(number, count=count), kind=kind, covers=covers)
     data = item.path.read_bytes()
+    file_hash = "sha256:" + hashlib.sha256(data).hexdigest()
     with world.seed.engine.begin() as connection:
         assert record_export_alias(
             connection, destination_id=None, export_item_id=item.item_id,
-            file_hash="sha256:" + hashlib.sha256(data).hexdigest(), path=item.path,
+            file_hash=file_hash, path=item.path,
         )  # fmt: skip
+    # the contract of #348: the row is committed without hashes, completed after, never in the
+    # transaction (no link, no FIFO, the bytes checked against the hash the alias names)
+    assert complete_hashes(
+        world.seed.engine, export_item_id=item.item_id, file_hash=file_hash, path=item.path
+    )
     return item, koreader_partial_md5(io.BytesIO(data))
 
 
@@ -168,6 +174,12 @@ def test_kosync_hash_computed_on_exported_file(lab: World) -> None:  # noqa: F81
             connection, destination_id=None, export_item_id=item.item_id,
             file_hash="sha256:" + hashlib.sha256(data).hexdigest(), path=item.path,
         )  # fmt: skip
+    assert complete_hashes(  # the new line gets its hashes after the commit, as the export does
+        lab.seed.engine,
+        export_item_id=item.item_id,
+        file_hash="sha256:" + hashlib.sha256(data).hexdigest(),
+        path=item.path,
+    )
     new_digest = koreader_partial_md5(io.BytesIO(data))
     assert new_digest != digest
     assert push(lab.mum, digest, "9", 9 / 25).status_code == 200  # the old hash, the same book
