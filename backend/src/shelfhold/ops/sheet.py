@@ -39,6 +39,10 @@ if TYPE_CHECKING:
 __all__ = ["UPSTREAM_STATUSES", "SheetOps"]
 
 UPSTREAM_STATUSES: Final = ("ongoing", "finished", "paused", "unknown")
+_READABLE: Final = (
+    "cbz",
+    "epub",
+)  # the formats the reader can open (reading/application/publication)
 _FIELDS: Final = ("title", "description", "series_name")  # what the sheet shows and lets one edit
 
 
@@ -224,7 +228,10 @@ class SheetOps:
             sa.select(u.id)
             .where(
                 u.edition_id == edition_id,
-                sa.exists().where(storage.content.c.unit_id == u.id),
+                sa.exists().where(
+                    storage.content.c.unit_id == u.id,
+                    storage.content.c.format.in_(_READABLE),
+                ),
             )
             .order_by(
                 u.number_sort.is_(None),

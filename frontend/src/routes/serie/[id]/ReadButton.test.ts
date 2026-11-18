@@ -64,6 +64,27 @@ describe('the read button of the series sheet', () => {
   });
 
   // req: EF-UX-006
+  it('offers nothing for a book that has no reader yet', async () => {
+    server.use(answer(() => HttpResponse.json({ ...publication('full'), kind: 'epub', pages: [] })));
+    render(ReadButton, { unitId: 'U1' });
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    expect(screen.queryByRole('link')).toBeNull();
+  });
+
+  // req: EF-UX-006
+  it('follows the Unit when the sheet is kept for another series', async () => {
+    server.use(
+      http.get(`${BASE}/api/reader/unit/U1/publication`, () => HttpResponse.json(publication('full'))),
+      http.get(`${BASE}/api/reader/unit/U2/publication`, () => problem(409, 'no_readable_copy'))
+    );
+    const { rerender } = render(ReadButton, { unitId: 'U1' });
+    await screen.findByRole('link', { name: 'Lire' });
+    await rerender({ unitId: 'U2' });
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    expect(screen.queryByRole('link')).toBeNull(); // the label of the other series is not kept
+  });
+
+  // req: EF-UX-006
   it('does not ask anything when the edition has no unit', async () => {
     render(ReadButton, { unitId: null });
     await new Promise((resolve) => setTimeout(resolve, 50));

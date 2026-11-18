@@ -63,3 +63,14 @@ export function toView(out: PublicationOut): PublicationView {
     pages: out.pages.map((p) => ({ index: p.index, href: p.href, mediaType: p.media_type }))
   };
 }
+
+export type KeyAction = 'next' | 'previous';
+
+/** What a key does in a paged book: the arrows follow the reading direction, never the numbers. */
+export function keyAction(direction: ReadingDirection, key: string): KeyAction | null {
+  const forward = direction === 'rtl' ? 'ArrowLeft' : 'ArrowRight';
+  const backward = direction === 'rtl' ? 'ArrowRight' : 'ArrowLeft';
+  if (key === forward || key === 'PageDown' || key === ' ' || key === 'ArrowDown') return 'next';
+  if (key === backward || key === 'PageUp' || key === 'ArrowUp') return 'previous';
+  return null;
+}

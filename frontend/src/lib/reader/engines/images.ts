@@ -26,18 +26,12 @@ export interface ImageEngineOptions {
   preloadPages?: number;
   /** How many bytes of pages are held at most (the page on screen excepted). */
   preloadBytes?: number;
+  /** Asks the server for the publication again (new tickets). Called when a page is refused, as a
+   * ticket lives 10 minutes and a long reading outlives it; `null`: nothing more to give. */
+  renew?: () => Promise<PublicationView | null>;
 }
 
-export type KeyAction = 'next' | 'previous';
-
-/** What a key does in a paged book: the arrows follow the reading direction, never the numbers. */
-export function keyAction(direction: ReadingDirection, key: string): KeyAction | null {
-  const forward = direction === 'rtl' ? 'ArrowLeft' : 'ArrowRight';
-  const backward = direction === 'rtl' ? 'ArrowRight' : 'ArrowLeft';
-  if (key === forward || key === 'PageDown' || key === ' ' || key === 'ArrowDown') return 'next';
-  if (key === backward || key === 'PageUp' || key === 'ArrowUp') return 'previous';
-  return null;
-}
+export { keyAction } from '../engine.ts';
 
 interface Held {
   url: string;
@@ -79,6 +73,7 @@ export function createImageEngine(options: ImageEngineOptions = {}): ReaderEngin
   let held = new Map<number, Held>();
   const asking = new Map<number, Promise<void>>();
   const missing = new Set<number>();
+  let renewing: Promise<boolean> | null = null;
   const images: HTMLImageElement[] = [];
   let aborter = new AbortController();
   let observers: IntersectionObserver[] = [];
@@ -115,6 +110,7 @@ export function createImageEngine(options: ImageEngineOptions = {}): ReaderEngin
     if (entry) {
       if (image.getAttribute('src') !== entry.url) image.src = entry.url;
       image.style.removeProperty('height');
+      image.style.removeProperty('min-height');
     } else {
       image.removeAttribute('src');
     }
@@ -147,8 +143,26 @@ export function createImageEngine(options: ImageEngineOptions = {}): ReaderEngin
     return true;
   }
 
-  async function load(entry: PublicationEntry): Promise<void> {
-    const { index } = entry;
+  /** New tickets, once at a time: true when the links were replaced. */
+  function renewLinks(): Promise<boolean> {
+    if (!options.renew || !pub) return Promise.resolve(false);
+    renewing ??= options
+      .renew()
+      .then((fresh) => {
+        if (!fresh || !pub || fresh.pages.length !== pub.pages.length) return false;
+        pub = { ...pub, pages: fresh.pages };
+        return true;
+      })
+      .catch(() => false)
+      .finally(() => {
+        renewing = null;
+      });
+    return renewing;
+  }
+
+  async function load(index: number, renewed = false): Promise<void> {
+    const entry = pub?.pages[index];
+    if (!entry) return;
     if (!contentLink(entry.href)) {
       missing.add(index);
       return;
@@ -161,6 +175,10 @@ export function createImageEngine(options: ImageEngineOptions = {}): ReaderEngin
       });
       if (destroyed) return;
       if (!response.ok) {
+        // 404: a ticket that ran out, or a book that is no longer allowed. New links settle it once;
+        // the same refusal after that is final. Any other status may pass: asked again later.
+        if (response.status !== 404) return fail({ kind: 'failed', index });
+        if (!renewed && (await renewLinks()) && !destroyed) return load(index, true);
         missing.add(index);
         return;
       }
@@ -185,9 +203,7 @@ export function createImageEngine(options: ImageEngineOptions = {}): ReaderEngin
     }
     const running = asking.get(index);
     if (running) return running;
-    const entry = pub.pages[index];
-    if (!entry) return Promise.resolve();
-    const job = load(entry).finally(() => asking.delete(index));
+    const job = load(index).finally(() => asking.delete(index));
     asking.set(index, job);
     return job;
   }
@@ -201,7 +217,7 @@ export function createImageEngine(options: ImageEngineOptions = {}): ReaderEngin
     if (at === current) {
       if (missing.has(at)) {
         fail({ kind: 'missing', index: at });
-        end(); // an extract ends on its bound; a page the server refuses ends the reading
+        if (pub?.scope === 'excerpt') end(); // an extract ends on its bound, with a sentence
       } else {
         show(at);
       }
@@ -251,6 +267,7 @@ export function createImageEngine(options: ImageEngineOptions = {}): ReaderEngin
       const image = document.createElement('img');
       image.alt = alt(page.index);
       image.style.display = 'block';
+      image.style.minHeight = '60vh'; // a page not yet loaded still has a place in the column
       image.style.width = '100%';
       image.style.maxWidth = '60rem';
       image.decoding = 'async';
@@ -265,6 +282,8 @@ export function createImageEngine(options: ImageEngineOptions = {}): ReaderEngin
         for (const entry of entries) {
           if (!entry.isIntersecting) continue;
           const index = Number((entry.target as HTMLElement).dataset.page);
+          // the same bound as the preload: a column of hundreds of pages asks for none of them at once
+          if (index < current - 1 || index > current + preloadPages) continue;
           void ensure(index).then(() => show(index));
         }
       },
@@ -301,6 +320,7 @@ export function createImageEngine(options: ImageEngineOptions = {}): ReaderEngin
       destroyed = false;
       aborter = new AbortController();
       held = new Map();
+      missing.clear();
       images.length = 0;
       root.replaceChildren();
       if (publication.readingDirection === 'webtoon') mountColumn(root, publication.pages);

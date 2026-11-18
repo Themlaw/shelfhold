@@ -22,6 +22,7 @@ export function createPositionSender(options: {
   carrier: Carrier;
   scope: Scope;
   put: (body: PositionIn) => Promise<unknown>;
+  deviceId?: string;
   delayMs?: number;
   now?: () => Date;
 }): PositionSender {
@@ -47,7 +48,8 @@ export function createPositionSender(options: {
         carrier_id: carrier.id,
         client_ts: now().toISOString(),
         locator: { ...locator },
-        scope
+        scope,
+        ...(options.deviceId ? { device_id: options.deviceId } : {})
       });
     } catch {
       // the next page turn says where the reader is again: a write lost is not a reading stopped

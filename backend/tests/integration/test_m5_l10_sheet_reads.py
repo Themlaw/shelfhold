@@ -1,9 +1,9 @@
 """M5 L10 (EF-UX-006): the series sheet names the Unit its "Lire" button opens.
 
-The sheet is the admin's (a child, a member and a key keep their 403, with no new field of it
-reachable); it names the first Unit of the Edition that has a file, by number, and nothing when
-there is none. Which file is read, and in full or as an excerpt, is the server's choice on the
-publication route (L06), never the sheet's.
+The sheet is the admin's (a child and a member keep their 403, with no new field of it
+reachable); it names the first Unit of the Edition that has a file, by number, among the formats
+the reader opens, and nothing when there is none. Which file is read, and in full or as an
+excerpt, is the server's choice on the publication route (L06), never the sheet's.
 """
 
 from __future__ import annotations
@@ -35,6 +35,12 @@ def test_the_sheet_names_the_first_unit_that_has_a_file(world: World) -> None:  
     first = add_carrier(world.seed.engine, world.edition)
     add_carrier(world.seed.engine, world.edition)
     assert world.sheet()["first_unit_id"] == _unit_of(world.seed.engine, first)
+
+
+def test_the_sheet_skips_a_unit_whose_file_the_reader_cannot_open(world: World) -> None:  # noqa: F811
+    add_carrier(world.seed.engine, world.edition, format="pdf")
+    readable = add_carrier(world.seed.engine, world.edition, format="cbz")
+    assert world.sheet()["first_unit_id"] == _unit_of(world.seed.engine, readable)
 
 
 def test_the_sheet_stays_the_admins(world: World) -> None:  # noqa: F811

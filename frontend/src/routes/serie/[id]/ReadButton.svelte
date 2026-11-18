@@ -3,19 +3,27 @@
   // "Lire un extrait" when only an extract may be read here, nothing when there is nothing to
   // read or nothing the profile may see. The server decides which; asking for the manifest only
   // tells it, and writes nothing.
-  import { onMount } from 'svelte';
   import { readerPublication } from '#lib/api/index.ts';
   import { t } from '#lib/i18n/index.ts';
 
   let { unitId }: { unitId: string | null } = $props();
   let scope = $state<'full' | 'excerpt' | null>(null);
 
-  onMount(async () => {
-    if (!unitId) return;
-    const { data, error } = await readerPublication({
-      path: { carrier_type: 'unit', carrier_id: unitId }
-    });
-    scope = error === undefined && data ? data.scope : null;
+  // The sheet is kept when one series gives way to another: the answer follows the Unit.
+  $effect(() => {
+    const id = unitId;
+    scope = null;
+    if (!id) return;
+    let stale = false;
+    void readerPublication({ path: { carrier_type: 'unit', carrier_id: id } }).then(
+      ({ data, error }) => {
+        // an EPUB has no reader yet (L12): no verb for it rather than a door that opens on a refusal
+        if (!stale) scope = error === undefined && data && data.kind === 'pages' ? data.scope : null;
+      }
+    );
+    return () => {
+      stale = true;
+    };
   });
 </script>
 

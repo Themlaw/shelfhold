@@ -11,7 +11,14 @@
   import { t } from '#lib/i18n/index.ts';
   import { csrfToken } from '#lib/passkeys.ts';
   import { problemView, type ProblemView } from '#lib/problems.ts';
-  import { toView, type Locator, type PublicationView, type ReaderEngine } from '#lib/reader/engine.ts';
+  import { readerDeviceId } from '#lib/reader/device.ts';
+  import {
+    keyAction,
+    toView,
+    type Locator,
+    type PublicationView,
+    type ReaderEngine
+  } from '#lib/reader/engine.ts';
   import { createPositionSender, type PositionSender } from '#lib/reader/positions.ts';
 
   let host = $state<HTMLElement | null>(null);
@@ -25,17 +32,33 @@
   let engine: ReaderEngine | null = null;
   let sender: PositionSender | null = null;
   let stops: (() => void)[] = [];
+  let left = false;
+  // Nothing is written before the reader moved: opening a book is not a reading position, and the
+  // place another device holds must not be replaced by the first page just because the book opened.
+  let moved = false;
 
   const asksExcerpt = $derived(page.url.searchParams.get('scope') === 'excerpt');
   const isExcerpt = $derived(view?.scope === 'excerpt');
   const direction = $derived(view?.readingDirection ?? 'ltr');
   const status = $derived(at ? t('reader.status', { n: at.index + 1, count: at.count }) : '');
 
+  const path = () => ({
+    carrier_type: page.params.carrier_type ?? '',
+    carrier_id: page.params.carrier_id ?? ''
+  });
+
+  /** The same book again, with new tickets and the same scope: a reading outlives a ticket. */
+  async function renew(): Promise<PublicationView | null> {
+    const { data } = await readerPublication({ path: path(), query: { scope: view?.scope ?? 'full' } });
+    return data && data.kind === 'pages' ? toView(data) : null;
+  }
+
   async function open(): Promise<void> {
     const { data, error } = await readerPublication({
-      path: { carrier_type: page.params.carrier_type ?? '', carrier_id: page.params.carrier_id ?? '' },
+      path: path(),
       query: asksExcerpt ? { scope: 'excerpt' } : undefined
     });
+    if (left) return;
     if (error !== undefined || !data) {
       problem = problemView(error);
       return;
@@ -48,33 +71,38 @@
     sender = createPositionSender({
       carrier: { type: data.carrier_type, id: data.carrier_id },
       scope: data.scope,
+      deviceId: readerDeviceId(),
       put: (body) =>
-        readerPutPosition({ body, headers: { 'X-CSRF-Token': csrfToken() }, throwOnError: true })
+        readerPutPosition({
+          body,
+          headers: { 'X-CSRF-Token': csrfToken() },
+          keepalive: true, // the last position still leaves when the tab is closing
+          throwOnError: true
+        })
     });
     const { createImageEngine } = await import('#lib/reader/engines/images.ts');
-    if (!host) return;
-    engine = createImageEngine();
+    if (left || !host) return;
+    engine = createImageEngine({ renew });
     stops = [
       engine.onLocator((locator) => {
         at = locator;
         finished = false;
-        sender?.push(locator);
+        if (moved) sender?.push(locator);
       }),
       engine.onEnd(() => (finished = true)),
-      engine.onError((e) => {
-        if (e.kind === 'failed') failed = true;
-      })
+      engine.onError(() => (failed = true))
     ];
     await engine.open(view, host);
     at = { v: 1, type: 'page', index: 0, count: view.pages.length };
   }
 
   function turn(action: 'next' | 'previous'): void {
+    moved = true;
     if (action === 'next') engine?.next();
     else engine?.previous();
   }
 
-  async function onKey(event: KeyboardEvent): Promise<void> {
+  function onKey(event: KeyboardEvent): void {
     if (event.altKey || event.ctrlKey || event.metaKey) return;
     const target = event.target as HTMLElement | null;
     if (target?.closest('input, textarea, select')) return;
@@ -84,7 +112,6 @@
       return;
     }
     if (!view || view.readingDirection === 'webtoon') return; // a column scrolls by itself
-    const { keyAction } = await import('#lib/reader/engines/images.ts');
     const action = keyAction(view.readingDirection, event.key);
     if (action === null) return;
     if (target?.closest('button, a') && event.key === ' ') return; // a focused control keeps its key
@@ -96,13 +123,21 @@
     void sender?.flush();
   }
 
+  // a column moves by scrolling: the first scroll of the reader is the first move
+  const scrolled = () => (moved = true);
+
   onMount(() => {
     void open();
     window.addEventListener('pagehide', leave);
+    window.addEventListener('scroll', scrolled, { passive: true, once: true });
   });
 
   onDestroy(() => {
-    if (typeof window !== 'undefined') window.removeEventListener('pagehide', leave);
+    left = true;
+    if (typeof window !== 'undefined') {
+      window.removeEventListener('pagehide', leave);
+      window.removeEventListener('scroll', scrolled);
+    }
     leave();
     for (const stop of stops) stop();
     engine?.destroy();
@@ -121,16 +156,17 @@
   {:else if unsupported}
     <p role="alert">{t('reader.unsupported')}</p>
   {:else}
-    <header bind:this={toolbar} role="toolbar" aria-label={t('reader.toolbar')}>
+    <header bind:this={toolbar} role="group" aria-label={t('reader.toolbar')}>
       <button type="button" onclick={() => history.back()}>{t('reader.close')}</button>
       <h1>{view?.title ?? t('reader.loading')}</h1>
       {#if isExcerpt}<span class="badge">{t('reader.excerpt_badge')}</span>{/if}
       <button
         type="button"
         onclick={() => turn('previous')}
-        disabled={!at || at.index === 0}>{t('reader.previous')}</button
+        aria-disabled={!at || at.index === 0}>{t('reader.previous')}</button
       >
-      <button type="button" onclick={() => turn('next')} disabled={!at}>{t('reader.next')}</button>
+      <button type="button" onclick={() => turn('next')} aria-disabled={!at}>{t('reader.next')}</button
+      >
     </header>
     <p class="hint">{t('reader.keys')}</p>
     <p role="status" class="status">{status}</p>

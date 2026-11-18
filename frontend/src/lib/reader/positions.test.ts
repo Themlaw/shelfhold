@@ -34,6 +34,20 @@ describe('the position sender', () => {
   });
 
   // req: EF-LEC-007
+  it('names the device when it has a name, so that two devices are never taken for one', async () => {
+    const put = vi.fn(async () => undefined);
+    const sender = createPositionSender({
+      carrier: { type: 'content', id: 'C1' },
+      scope: 'full',
+      deviceId: 'web-abc',
+      put
+    });
+    sender.push(page(1));
+    await sender.flush();
+    expect(put.mock.calls[0]).toEqual([expect.objectContaining({ device_id: 'web-abc' })]);
+  });
+
+  // req: EF-LEC-007
   it('sends what is waiting when the reader is left', async () => {
     const put = vi.fn(async () => undefined);
     const sender = createPositionSender({ carrier: { type: 'content', id: 'C1' }, scope: 'full', put });

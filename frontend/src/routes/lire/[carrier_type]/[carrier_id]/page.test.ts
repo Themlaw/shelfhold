@@ -113,6 +113,7 @@ describe('the reader of images', () => {
     await screen.findByAltText('Page 1 sur 3');
     await user.keyboard('{ArrowRight}{ArrowRight}');
     await waitFor(() => expect(puts).toHaveLength(1), { timeout: 3000 });
+    expect(puts[0]?.device_id).toMatch(/^web-/);
     expect(puts[0]).toMatchObject({
       carrier_type: 'content',
       carrier_id: 'C1',
@@ -189,5 +190,40 @@ describe('the reader of images', () => {
     render(Page);
     expect(await screen.findByRole('alert')).toHaveTextContent('Ce format n’est pas encore lisible ici');
     expect(asked).toEqual([]);
+  });
+  // req: EF-LEC-007
+  it('writes nothing just because a book was opened: the place of another device is not replaced', async () => {
+    server.use(...serve(publication({ reading_direction: 'webtoon' })));
+    render(Page);
+    await screen.findByAltText('Page 1 sur 3');
+    await new Promise((resolve) => setTimeout(resolve, 1200));
+    expect(puts).toEqual([]);
+  });
+
+  // req: EF-LEC-001
+  it('asks for new links, with the same scope, when the tickets ran out during a long reading', async () => {
+    const queries: string[] = [];
+    let first = true;
+    server.use(
+      http.get(`${BASE}/api/reader/unit/U1/publication`, ({ request }) => {
+        queries.push(new URL(request.url).search);
+        const fresh = !first;
+        first = false;
+        return HttpResponse.json(
+          publication({
+            pages: [1, 2, 3].map((n) => ({
+              index: n - 1,
+              href: `/content/${fresh ? 'NEW' : 'OLD'}/p${n}.jpg`,
+              media_type: 'image/jpeg'
+            }))
+          })
+        );
+      }),
+      http.get(`${BASE}/content/OLD/:name`, () => new HttpResponse(null, { status: 404 })),
+      http.get(`${BASE}/content/NEW/:name`, () => new HttpResponse(new Uint8Array(16), { headers: { 'Content-Type': 'image/jpeg' } }))
+    );
+    render(Page);
+    await waitFor(() => expect(screen.getByAltText('Page 1 sur 3')).toHaveAttribute('src'));
+    expect(queries).toEqual(['', '?scope=full']);
   });
 });
