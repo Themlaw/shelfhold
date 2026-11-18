@@ -43,7 +43,7 @@ def kept(world: World, *, edition: str = "ok", fmt: str = "cbz") -> tuple[str, s
     with write_transaction(world.seed.engine) as connection:
         connection.execute(
             sa.update(storage.content).where(storage.content.c.id == content)
-            .values(content_hash=HASH, content_hash_by="v1")
+            .values(content_hash=HASH, content_hash_by="norm@1")
         )  # fmt: skip
         connection.execute(
             sa.insert(export.unit_coverage).values(
@@ -65,8 +65,9 @@ def cfi(progression: float, version: str = FILTER) -> dict[str, Any]:
     }  # fmt: skip
 
 
-def stamp(minutes: float = 0) -> str:
-    return (datetime.now(UTC) + timedelta(minutes=minutes)).isoformat()
+def stamp(world: World, minutes: float = 0) -> str:
+    """A date relative to the application's own clock (the tests move it by hand)."""
+    return (world.env.clock.now() + timedelta(minutes=minutes)).isoformat()
 
 
 def put(
@@ -75,7 +76,7 @@ def put(
 ) -> Any:  # fmt: skip
     body = {
         "carrier_type": carrier_type, "carrier_id": carrier, "locator": locator,
-        "client_ts": stamp(minutes), "device_id": device, **extra,
+        "client_ts": stamp(world, minutes), "device_id": device, **extra,
     }  # fmt: skip
     return client.put(
         "/api/reader/positions", json=body, headers={CSRF_HEADER: world.env.csrf(client)}
@@ -138,7 +139,7 @@ def test_offline_position_merge_by_bounded_client_ts(world: World) -> None:
     ahead = put(world, world.admin, content, page(7), minutes=3)  # a clock a little ahead
     assert ahead.status_code == 200
     stored = ahead.json()["position"]
-    assert datetime.fromisoformat(stored["client_ts"]) <= datetime.now(UTC)  # bounded
+    assert datetime.fromisoformat(stored["client_ts"]) <= world.env.clock.now()  # bounded
     assert current(world.admin, content).json()["position"]["locator"]["index"] == 7
     with world.seed.engine.connect() as connection:
         rows = connection.execute(
@@ -195,7 +196,7 @@ def test_conflict_proposed_once_above_threshold(world: World) -> None:
     """Two devices that diverge: the latest wins, and when the other is further by more than D8's
     threshold the reader is asked once (`reading_conflict`) until she chooses."""
     content, _unit = kept(world)
-    assert put(world, world.admin, content, page(20, 50), device="tab", minutes=-30).ok
+    assert put(world, world.admin, content, page(20, 50), device="tab", minutes=-30).is_success
     raised = put(world, world.admin, content, page(2, 50), device="phone", minutes=-10)
     proposal = raised.json()["conflict"]
     assert proposal is not None
@@ -226,8 +227,8 @@ def test_conflict_proposed_once_above_threshold(world: World) -> None:
 @pytest.mark.req("EF-LEC-007")
 def test_conflict_kept_winner_is_not_proposed_again(world: World) -> None:
     """Keeping the latest dismisses what the other device had said until it speaks again."""
-    content, _unit = kept(world)
-    assert put(world, world.admin, content, cfi(0.60), device="tab", minutes=-30).ok
+    content, _unit = kept(world, fmt="epub")
+    assert put(world, world.admin, content, cfi(0.60), device="tab", minutes=-30).is_success
     proposal = put(world, world.admin, content, cfi(0.10), device="phone", minutes=-10).json()
     assert proposal["conflict"] is not None
     kept_winner = world.admin.post(
@@ -236,10 +237,11 @@ def test_conflict_kept_winner_is_not_proposed_again(world: World) -> None:
         headers={CSRF_HEADER: world.env.csrf(world.admin)},
     )
     assert kept_winner.status_code == 200 and kept_winner.json()["conflict"] is None
-    assert put(world, world.admin, content, cfi(0.12), device="phone", minutes=-2).ok
+    world.env.clock.advance(timedelta(minutes=1))  # what comes next is after her choice
+    assert put(world, world.admin, content, cfi(0.12), device="phone", minutes=-2).is_success
     assert conflicts(world) == 1  # the tablet's old word is dismissed
-    assert put(world, world.admin, content, cfi(0.80), device="tab", minutes=-1).ok
-    assert put(world, world.admin, content, cfi(0.15), device="phone", minutes=0).ok
+    assert put(world, world.admin, content, cfi(0.80), device="tab", minutes=-1).is_success
+    assert put(world, world.admin, content, cfi(0.15), device="phone", minutes=0).is_success
     assert conflicts(world) == 2  # the tablet spoke again: it is a new divergence
 
 
@@ -258,7 +260,7 @@ def test_conflict_threshold_per_kind(
 ) -> None:
     content, _unit = kept(world, fmt="epub" if kind == "epub" else "cbz")
     make = (lambda v: cfi(v)) if kind == "epub" else (lambda v: page(int(v), 50))
-    assert put(world, world.admin, content, make(far), device="tab", minutes=-20).ok
+    assert put(world, world.admin, content, make(far), device="tab", minutes=-20).is_success
     got = put(world, world.admin, content, make(near), device="phone", minutes=-10)
     assert (got.json()["conflict"] is not None) is proposed
     assert conflicts(world) == int(proposed)
@@ -270,10 +272,10 @@ def test_locator_restored_across_filter_versions(world: World) -> None:
     was written (never moved in silence) and marked `approximate`; under the current one, exact."""
     content, _unit = kept(world, fmt="epub")
     old = "xhtml-neutralizer@v0"
-    assert put(world, world.admin, content, cfi(0.42, old), minutes=-5).ok
+    assert put(world, world.admin, content, cfi(0.42, old), minutes=-5).is_success
     got = current(world.admin, content).json()["position"]
     assert got["locator"] == cfi(0.42, old) and got["approximate"] is True
-    assert put(world, world.admin, content, cfi(0.44), minutes=-1).ok
+    assert put(world, world.admin, content, cfi(0.44), minutes=-1).is_success
     got = current(world.admin, content).json()["position"]
     assert got["locator"] == cfi(0.44) and got["approximate"] is False
     listed = history(world.admin, content).json()["items"]
@@ -307,7 +309,7 @@ def test_excerpt_writes_no_position(world: World) -> None:
         user_id=user, session_id=session_id_of(world.seed.engine, "admin"),
         carrier_type="content", carrier_id=content,
     )  # fmt: skip
-    assert put(world, world.admin, content, page(3), ticket=full.token).ok  # a full ticket: fine
+    assert put(world, world.admin, content, page(3), ticket=full.token).is_success  # a full ticket: fine
     with write_transaction(world.seed.engine) as connection:
         connection.execute(sa.delete(reading.reading_position))
     item = world.export_item(world.seed.editions["ok"], content)
@@ -363,14 +365,14 @@ def test_member_cannot_write_position_for_another_profile(world: World) -> None:
     """IDOR: the profile is the session's, never a field of the request; another profile's
     history, conflict and position are not hers to read or settle."""
     content, _unit = kept(world)
-    assert put(world, world.admin, content, page(20, 50), device="tab", minutes=-30).ok
+    assert put(world, world.admin, content, page(20, 50), device="tab", minutes=-30).is_success
     proposal = put(world, world.admin, content, page(2, 50), device="phone", minutes=-10).json()
     admin = user_id_of(world.seed.engine, "admin")
     mum = user_id_of(world.seed.engine, "mum")
     smuggled = put(world, world.mum, content, page(5), user_id=admin, subject_id=admin)
     assert smuggled.status_code == 422  # an unknown field never chooses the profile
     assert count(world, reading.reading_position) == 2  # nothing was written
-    assert put(world, world.mum, content, page(5), device="mums").ok
+    assert put(world, world.mum, content, page(5), device="mums").is_success
     with world.seed.engine.connect() as connection:
         owners = sorted(
             (r.user_id, r.device_id)
@@ -428,7 +430,7 @@ def test_reader_positions_credentials_and_identifiers(world: World) -> None:
     key = auth.create_api_key(name="reader", username="admin", read_only=False).value
     bare = world.env.other_client("10.0.0.9")
     body = {"carrier_type": "content", "carrier_id": content, "locator": page(1),
-            "client_ts": stamp()}  # fmt: skip
+            "client_ts": stamp(world)}  # fmt: skip
     got = bare.put("/api/reader/positions", json=body, headers={"Authorization": f"Bearer {key}"})
     assert got.status_code in {401, 403}
     created = auth.create_device_token(subject_username="mum", name="liseuse")
@@ -441,7 +443,8 @@ def test_reader_positions_credentials_and_identifiers(world: World) -> None:
     no_csrf = world.admin.put("/api/reader/positions", json=body)
     assert no_csrf.status_code == 403
     for carrier in ("not-an-id", "01HZZZZZZZZZZZZZZZZZZZZZZZ"):
-        assert put(world, world.admin, carrier, page(1)).status_code == 404
+        got = put(world, world.admin, carrier, page(1))
+    assert got.status_code == 404, got.text
     assert put(world, world.admin, content, page(1), carrier_type="nothing").status_code in {
         404, 422,
     }

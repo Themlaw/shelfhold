@@ -225,6 +225,21 @@ class ContentAccess:
             raise UnknownCarrierError
         return ResolvedCarrier(content_id, str(kind), allowed)
 
+    def scope_of(
+        self, token: str, *, user_id: str, carrier_type: str, carrier_id: str
+    ) -> Scope | None:
+        """The scope of a ticket that is ours, alive, this profile's and for this very carrier,
+        else None (one answer for forged, expired and someone else's). Reads nothing else: it
+        grants nothing."""
+        claims = open_ticket(self._key(), token, now=self._now())
+        if (
+            claims is None
+            or claims.user_id != user_id
+            or (claims.carrier_type, claims.carrier_id) != (carrier_type, carrier_id)
+        ):
+            return None
+        return claims.scope
+
     def url(self, token: str, entry: str) -> str:
         """Where the reader fetches `entry`: this origin, or the separate one when it is set. The
         name is the archive's own, so it is percent-encoded: an entry called `%2e%2e/x?y#z` must

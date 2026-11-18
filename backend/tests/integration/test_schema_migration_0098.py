@@ -22,10 +22,9 @@ USER = "01HZZZZZZZZZZZZZZZZZZZZZZB"
 ORDER = "01HZZZZZZZZZZZZZZZZZZZZZZA"
 
 
-def test_the_revision_is_0098_the_head_on_0097() -> None:
+def test_the_revision_is_0098_on_0097() -> None:
     script = ScriptDirectory(str(default_script_location()))
-    assert script.get_heads() == ["0098"]  # the head is pinned here, by the newest
-    assert script.get_revision("0098").down_revision == "0097"
+    assert script.get_revision("0098").down_revision == "0097"  # the head is pinned by the newest
 
 
 def test_the_table_comes_and_goes_with_the_migration(settings: Settings) -> None:

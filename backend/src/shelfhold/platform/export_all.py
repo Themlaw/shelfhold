@@ -121,6 +121,7 @@ EXCLUDED_TABLES: Final[Mapping[str, str]] = {
     "request_proposal": _NOISE,  # what a search found, asked again (M4 L30)
     "request_list_import": _NOISE, "request_list_item": _NOISE,  # the batch of a list (M4 L31)
     # a Mihon backup waiting for its series (M4 L26): the file is the source, import it again
+    "reading_conflict": _NOISE,  # a question put to the reader, asked again on the next position
     "bulk_order": _NOISE,  # a preview frozen for one job, dropped when it expires (M4 L28)
     "tachibk_import": _NOISE, "read_marker": _NOISE, "tracker_hint": _NOISE,
     "team_switch": _NOISE,  # a preview and its report: rebuilt by asking again

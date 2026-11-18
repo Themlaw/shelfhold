@@ -454,6 +454,19 @@ covered_units = "The Units the file covered when the position was written (order
 read_units = "The Units a page-by-page traversal marked read at this position (a journal)."
 undone_units = "Marks a member undid, by Unit, with the time (UTC)."
 
+[tables.reading_conflict]
+description = "Two devices that diverged on one file: the reader is asked once which place to resume (M5 L07)."
+[tables.reading_conflict.columns]
+id = "Proposal identifier (ULID)."
+user_id = "The reader it was proposed to (`user.id`); nobody else can read or settle it."
+carrier_type = "`content` (a kept copy) or `export_item` (an exported file)."
+carrier_id = "The file the two positions are on."
+winner_position_id = "The latest position (`client_ts` bounded by `server_ts`): where the reader is."
+loser_position_id = "The further position, on another device, that lost by date."
+choice = "What she chose: `winner` (keep the latest) or `loser` (resume at the further one); empty while open."
+created_at = "When the divergence was noticed (UTC)."
+resolved_at = "When she chose (UTC); empty while the proposal is open."
+
 [tables.session]
 description = "Login sessions. Only the hash of the token is stored."
 [tables.session.columns]
