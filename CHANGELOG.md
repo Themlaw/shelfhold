@@ -2,7 +2,7 @@
 
 Format : [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/). Versionnement : [SemVer](https://semver.org/lang/fr/). Procédure de release : `docs/releasing.md`.
 
-## 1.1.0 - AAAA-MM-JJ
+## 1.1.0 - 2026-11-18
 
 Clôture de M4 : plusieurs destinations par étagère, synchronisation de la progression avec Kavita et les liseuses, ouverture vers l'écosystème, métadonnées enrichies. Reprend les changements des candidates `1.1.0-rc.1` et `1.1.0-rc.2` (sections ci-dessous). La date est celle de la release.
 
@@ -49,6 +49,8 @@ Clôture de M4 : plusieurs destinations par étagère, synchronisation de la pro
 ### Corrigé
 
 - **`shelfhold shelf create` sur une cible Komga ou un dossier natif** : la commande plantait (elle ouvrait le client Kavita pour une cible qui n'en est pas un) ; seule une cible Kavita est liée à une bibliothèque. Un dossier natif se lie et reçoit son dossier ; une cible Komga répond désormais le refus de la ligne « Liaison Komga » ci-dessous. Le dossier vide créé avant un échec de liaison reste, comme avant.
+- **Mise à l'abri et événements (L48c, second avis)** : un échec de mise à l'abri d'une copie vers `/store` ne fait plus échouer le travail de nuit (l'événement `unit.safeguard_failed` portait une liste, que le bus refuse : il porte désormais le nombre d'Unités, la raison la plus fréquente et le nombre de raisons) ; un test lit le code et refuse toute charge d'événement littérale que le bus refuserait ; `export_series_id`, `kavita_series_id` et `remote_unit_id` ne sont plus lus comme des séries ou des Unités du catalogue (l'événement n'est plus masqué à tort aux lecteurs plafonnés) ; les événements écrits hors de `publish` (changements de visibilité, fenêtre manquée) passent par la même vérification de charge ; une Édition non notée rejointe par nom à l'adoption est tenue aussi quand une Édition sœur est notée.
+- **Résidus de la réponse au contradicteur (L48c)** : une écriture d'un appel précédent n'est réputée faite que si le fichier est encore sur le disque avec les octets écrits (sinon il est réécrit, ou refusé s'il est étranger) ; un âge déclaré par un fichier adopté **sous** la note de l'Édition rejointe compte pour aucun âge (chapitre tenu, 18+ suggéré) ; un échec disque d'une liaison est gardé dans la santé de sa cible ; la rotation des clés ressèle les champs sensibles des instantanés amont et leur clé compte pour le retrait ; `publish` refuse une clé `*_id` que la projection ne lirait pas comme un contenu.
 - **Réponse au contradicteur de jalon M4 (L48)** : une migration de source ou un relink vers une sous-source adulte pose la suggestion d'âge de la sous-source (l'Édition quitte l'étagère enfant) ; la reprise de la passe du dossier natif reconnaît ses fichiers après un redémarrage (identité de liaison, plus l'appel) et une liaison en échec est visible dans la santé de sa cible ; un retrait avec suppression des fichiers ne tourne plus pendant une passe qui écrit dans le dossier ; l'écho de kosync après un redémarrage ne marque plus « lu » un chapitre sauté ; une racine en écriture qui est un lien (ou passe par un lien) hors de la bibliothèque est refusée ; l'export d'un profil contient les données personnelles ajoutées en M4 (sans secret), tenu au schéma par un test.
 - **Une liseuse retrouve un fichier dès son premier export (L47)** : l'export écrit la ligne `document_alias` du fichier qu'il produit (empreintes KOReader et Kavita comprises), une seule fois par fichier ; avant, `GET /kosync/syncs/progress/{empreinte}` d'un fichier tout juste exporté répondait `{}`. Aucune migration.
 - **Suppression d'une étagère (L43)** : les enfants qui voyaient une Œuvre par cette étagère reçoivent l'événement de visibilité ; ils ne la voient plus.
@@ -60,8 +62,12 @@ Clôture de M4 : plusieurs destinations par étagère, synchronisation de la pro
 ### Limites connues
 
 - **Contention de l'API pendant l'export (ENF-PERF-007)** : sur le profil de référence, la liste de la bibliothèque répond **2,3 à 2,5 fois** plus lentement pendant qu'un export de 500 chapitres tourne, parce que l'export est un fil du processus API. Le budget de la spécification reste **×2** (xfail strict au banc `tests/bench/bench_contention.py`) ; une aggravation au-delà de **×3** casse le nightly, et chaque passage enregistre sa mesure. Le fan-out vers le dossier natif (ComicInfo et couverture rendus dans le processus) est mesuré par la même passe. Correctif prévu en M5 : sortir l'export du processus API.
+- **Montage lié sous un dossier d'une autre destination (J-FS-2)** : la liaison ne lit pas `/proc/self/mountinfo` ; il faut être root pour monter. Prévu en M5 (L22b).
+- **Collections Kavita en double (J-REP-4)** : la passe, l'écouteur du hub et le travail `export.relations` publient sans verrou commun ; deux collections peuvent naître pour une seule. Prévu en M5 (L22b).
+- **Ancre kosync après un redémarrage (C3)** : si la progression a changé de chapitre entre le `GET` et le `PUT` qui suit un redémarrage, l'écho n'est pas reconnu et le `PUT` compte comme une position ordinaire (les règles de vitesse et de session le bornent). Prévu en M5.
+- **Image de base** : à la date de la version, l'analyse de `python:3.13-slim` signale deux CVE OpenSSL « high » (CVE-2026-107493, CVE-2026-124709) et quelques « medium » sans correctif publié par Debian. Shelfhold n'utilise OpenSSL que par Python (TLS sortant vers les sources et les destinations) ; l'image sera reconstruite dès que Debian publie le correctif (Dependabot suit le digest).
 
-Migration : oui (0065 à 0098 depuis la 1.0.1 ; 0084 à 0098 depuis la 1.1.0-rc.2)
+Migration : oui (0065 à 0098 depuis la 1.0.1 ; 0084 à 0098 depuis la 1.1.0-rc.2), réversible : non (`shelfhold migrate` sauvegarde la base avant de migrer, `docs/admin/retour-arriere.md`)
 
 ## 1.1.0-rc.2 - 2026-11-16
 

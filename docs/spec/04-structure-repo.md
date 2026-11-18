@@ -57,6 +57,8 @@ shelfhold/
 │   │   │                    domain/export_item.py (export_item, chemin figé I22, ADR-0040), domain/export_series.py (ULID propre + edition_export_series, passe 7, EF-EXP-062), domain/physical_roots.py (sonde statfs/st_dev, EF-EXP-059),
 │   │   │                    targets/kavita/, public.py}                          # targets/folder, komga, cwa en M4 (transports dropbox/push/pull)
 │   │   ├── identity/       {…, visibility.py (portée + classement maximal), activity_view.py, requests.py, public.py}
+│   │   ├── reading/        {domain/ (document_hash.py, merge.py, projection.py, traversal.py), application/ (kosync, progress, sync), bundle/ (blocs série, ADR-0053), public.py}
+│   │   │                   # positions de lecture (`reading_position`, ancre fichier ou `content`), kosync, vues de progression ; M5 : lecteur, conflits de positions (ADR-0055)
 │   │   ├── integrations/   {apprise/, sablier/, public.py}                      # webhooks/ en M4, trackers/ en M6
 │   │   ├── jobs/           {huey_app.py (pools io/cpu/maint), slots.py (domain_slot), progress.py, public.py}
 │   │   ├── events/         {bus.py}                                             # outbox.py en M4

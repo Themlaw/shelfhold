@@ -40,7 +40,7 @@ symbols = [
 [[allow]]
 category = "unwired-m5"
 reason = "2026-11-14 (M3 L56, D9): `content_response` serves untrusted content under a sandbox (B1). M3 serves no content: reading goes through Kavita, and the reader of Shelfhold is M5's. Redated M5 in writing (docs/decisions/M3.md). The diagnostic bundle is wired by its CLI (M2 L30) and by its download over HTTP (M3 L46); `attachment_disposition` left this entry with M3 L40. The `?since=` tokens left this entry with M3 L11."
-until = "M5"
+until = "M5"  # settled by M5 (reader content route)
 symbols = [
   "shelfhold.interfaces.http_api.content:content_response",
 ]
@@ -88,7 +88,7 @@ tests = [
 [[route_test]]
 category = "unwired-m5"
 reason = "2026-11-14 (M3 L56, D9): content_response (B1) has no route before the reader of M5: the sandbox/attachment headers are proved on a route declared by the test."
-until = "M5"
+until = "M5"  # settled by M5 (reader content route)
 tests = [
   "backend/tests/integration/test_http_headers.py::test_svg_served_as_attachment_with_csp_sandbox",
 ]
@@ -143,7 +143,7 @@ symbols = [
 [[allow]]
 category = "deferred-l24-deprecation-window"
 reason = "2026-11-17 (M4 L24): `Deprecation` builds the window during which an event is sent in two versions of its shape (EF-INT-005). Every event of the catalogue is still at its first version, so no entry declares one: the double emission is proved with a catalogue the test builds, and the bounds are checked when any catalogue is built. It comes with the first change of the shape of an event."
-until = "M5"
+until = "M5"  # settled by M5 (first event shape change)
 symbols = [
   "shelfhold.integrations.webhooks.catalogue:Deprecation",
 ]
