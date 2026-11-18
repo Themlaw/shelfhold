@@ -522,6 +522,7 @@ def test_an_answer_never_installs_a_position_older_than_the_current_one(world: W
     assert current(world.admin, content).json()["position"]["id"] == installed["id"]
     listed = history(world.admin, content).json()["items"]
     assert listed[0]["id"] == installed["id"]  # the latest of the history
+    world.env.clock.advance(timedelta(minutes=1))  # what follows is after her choice
     # the same, but the far device spoke again before the answer: refused, nothing written
     assert put(world, world.admin, content, page(30, 50), device="tab", minutes=1).is_success
     third = put(world, world.admin, content, page(4, 50), device="phone", minutes=2).json()
