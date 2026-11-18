@@ -127,6 +127,10 @@ reason = "garde de l'hygiène des fixtures (aucun dossier laissé dans /tmp) : p
 path = "backend/tests/unit/test_sdk_export_target.py"
 reason = "dépréciations du contrat SDK ExportTarget (D9, M1b L31) : le contrat reste lisible, ce n'est pas une exigence EF-/ENF-"
 
+[[exception]]
+path = "backend/tests/unit/test_l05b_neutralizer_counter_review.py"
+reason = "preuves de la relecture adverse de #365 (M5 L05b), livrées telles quelles par le contradicteur sans marqueur req ; les mêmes vecteurs sont couverts sous EF-LEC-005 et ENF-SEC-004 par test_xhtml_neutralizer_css_tokens.py"
+
 [[deferred]]
 requirement = "ENF-GOV-004"
 aspect = "première publication vérifiée sur le second registre (digest signé) et premier push du miroir : D-P1 (secret CODEBERG_TOKEN, compte et dépôt miroir du porteur)"
