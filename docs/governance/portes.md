@@ -39,3 +39,4 @@ Décision M0 : la porte P0 est jugée sur S1, S2, S4, S5 et une veille concurren
 | P1 | | à venir | |
 | P2 | 2026-11-13 | franchie par délégation | Le porteur a délégué la décision (13/11). Le test concierge n'a pas été mesuré : aucun chiffre n'est consigné. Décision : M3 complet, parcours famille compris (déjà livré par L35, L41 et L44) ; `FAMILY_NAV_LITE` reste à `false`. À réexaminer au bilan de M3 si l'usage réel ne suit pas. |
 | P3 | | à venir | |
+| M4 (revue de jalon) | 2026-11-18 | aucune porte au jalon | Aucune porte P0 à P3 n'est attachée à M4. P3 (avant l'annonce de la 1.0) reste « à venir » : le test d'utilisabilité et l'avis juridique conditionnent l'annonce, pas les tags `v1.0.0` et `v1.1.0`. Règle d'arrêt : vélocité de M4 à ≈ 80 h pour 235 h prévues, aucune porte en échec. |

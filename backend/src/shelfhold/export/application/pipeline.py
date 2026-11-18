@@ -22,6 +22,7 @@ from structlog.contextvars import bound_contextvars
 
 from shelfhold.events.bus import EventBus
 from shelfhold.export.application import blocked_memo, fan_out, waiting_marks
+from shelfhold.export.application.export_alias import complete_hashes
 from shelfhold.export.application.export_items import create_export_item, ensure_export_series
 from shelfhold.export.application.intents import IntentJournal, open_intent_paths
 from shelfhold.export.application.locks import ResourceLocks, library_resource
@@ -529,6 +530,7 @@ class ExportPipeline:
             clock=self._clock,
             events=events,
             barrier=barrier,
+            locks=self._locks,
         )
 
     @property
@@ -1357,6 +1359,11 @@ class ExportPipeline:
                         identity=identity,
                     )  # fmt: skip
                     journal.mark_done(intent, within=connection)
+                # L47: the hashes of the alias, once the line is committed (never inside it)
+                complete_hashes(
+                    self._engine, export_item_id=item_id, file_hash=rendered.file_hash,
+                    path=Path(target),
+                )  # fmt: skip
                 # same write session, after the file and its manifest line (EF-EXP-063, I33)
                 try:
                     self.mirror.sync_destination(

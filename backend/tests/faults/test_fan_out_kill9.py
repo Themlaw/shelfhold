@@ -14,6 +14,7 @@ import pytest
 import sqlalchemy as sa
 
 from shelfhold.export.application.intents import IntentJournal, open_intent_paths
+from shelfhold.export.application.locks import ResourceLocks
 from shelfhold.infrastructure.schema import coherence
 from tests.export_env import export_env
 from tests.fan_out_env import bind, records_of, service
@@ -129,6 +130,7 @@ def test_kill9_in_a_pass_over_several_bindings_resumes_without_duplicate_or_loss
 
         # the restart: the boot settles the journal first, then the pass runs again, twice
         IntentJournal(env.engine, env.lib.fsops, clock=env.clock).resolve_open()
+        ResourceLocks(env.engine, clock=env.clock).release_all()  # the lock the dead run held
         with env.engine.connect() as connection:
             assert open_intent_paths(connection) == frozenset()
         for _ in range(2):

@@ -21,7 +21,7 @@ from shelfhold.catalog.public import (
 )
 from shelfhold.identity.public import Credential, Principal
 from shelfhold.infrastructure.ids import new_ulid
-from shelfhold.infrastructure.schema import catalog, export, identity
+from shelfhold.infrastructure.schema import acquisition, catalog, export, identity
 from shelfhold.sdk.age import AgeRating
 from tests.catalog_env import Harness, at, harness
 
@@ -150,6 +150,12 @@ def test_relink_new_edition_keeps_the_shelf_when_nothing_guards_it(h: Harness) -
     edition, _old = fifty_rated(h)
     adults = shelf(h, None)
     file_on(h, edition.id, adults)
+    h.connection.execute(  # a source that says it is safe: nothing to suggest (J-PAR-1)
+        sa.insert(acquisition.sub_source).values(
+            plugin_id="suwayomi", source_key="src-new", name="Safe",
+            content_warning="safe", enabled=True,
+        )
+    )  # fmt: skip
     result = SERVICE.relink(
         h.connection, request(edition.work_id, lang="de"), principal=admin(), now=NOW
     )

@@ -79,9 +79,13 @@ class ConfinedRoot:
 
     @classmethod
     def open(
-        cls, path: str | Path, *, strategy: Strategy = Strategy.AUTO, umask: int | None = None
-    ) -> Self:
-        fd = os.open(os.fspath(path), os.O_RDONLY | os.O_DIRECTORY | os.O_CLOEXEC)
+        cls, path: str | Path, *, strategy: Strategy = Strategy.AUTO, umask: int | None = None,
+        nofollow: bool = False,
+    ) -> Self:  # fmt: skip
+        flags = os.O_RDONLY | os.O_DIRECTORY | os.O_CLOEXEC
+        if nofollow:
+            flags |= os.O_NOFOLLOW  # the last component, if a link, is an error (ELOOP)
+        fd = os.open(os.fspath(path), flags)
         try:
             if strategy is Strategy.AUTO:
                 strategy = Strategy.OPENAT2 if openat2_supported(fd) else Strategy.FALLBACK
@@ -215,9 +219,6 @@ class ConfinedRoot:
             os.close(fd)
             raise
         return fd
-
-    def open_dir(self, rel: str = ".") -> int:
-        return self._walk(split_rel(rel))
 
     def stat(self, rel: str) -> os.stat_result:
         """`lstat` semantics: a link is described, never followed."""

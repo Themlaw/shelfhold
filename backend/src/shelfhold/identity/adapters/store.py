@@ -48,7 +48,14 @@ from shelfhold.infrastructure.restore_notice import (
     read_notice,
     write_notice,
 )
-from shelfhold.infrastructure.schema import acquisition, coherence, identity, platform, reading
+from shelfhold.infrastructure.schema import (
+    acquisition,
+    catalog,
+    coherence,
+    identity,
+    platform,
+    reading,
+)
 
 _user = identity.user
 _session = identity.session
@@ -505,6 +512,11 @@ class SqlIdentityStore:
             request, digest = identity.request, identity.notification_digest
             audit, positions = identity.audit, reading.reading_position
             follow, download = acquisition.follow_request, acquisition.download_request
+            device, account = identity.device_token, identity.destination_account
+            notify, listing = identity.notify_destination, identity.request_list_import
+            collection, item = catalog.collection, catalog.collection_item
+            marker, hint = acquisition.read_marker, acquisition.tracker_hint
+            src_account, backup = acquisition.source_account, acquisition.tachibk_import
             # a key issued FOR her (a device token), or one of hers that is for nobody else: the
             # keys that an admin issued for a child belong to the child's export, not the admin's
             own_keys = sa.or_(
@@ -557,6 +569,55 @@ class SqlIdentityStore:
                 "passkeys": rows(
                     conn, "passkeys", _passkey, _passkey.c.user_id == user_id,
                     "id", "name", "created_at", "last_used_at", "revoked_at",
+                ),
+                # what M4 added (J-FLUX-1). Never a secret: no digest of a token, no sealed column,
+                # no fingerprint; a notice destination is told only as present.
+                "device_tokens": rows(
+                    conn, "device_tokens", device, device.c.subject_user_id == user_id,
+                    "id", "public_id", "name", "expires_at", "last_used_at", "revoked_at",
+                    "created_at",
+                ),
+                "collections": rows(
+                    conn, "collections", collection, collection.c.owner_id == user_id,
+                    "id", "kind", "name", "source", "public_approved_at", "created_at",
+                ),
+                "collection_items": rows(
+                    conn, "collection_items", item,
+                    item.c.collection_id.in_(
+                        sa.select(collection.c.id).where(collection.c.owner_id == user_id)
+                    ),
+                    "id", "collection_id", "position", "work_id", "number", "added_at",
+                ),
+                "destination_accounts": rows(
+                    conn, "destination_accounts", account, account.c.user_id == user_id,
+                    "id", "shelf_destination_id", "remote_user", "verified_at", "revoked_at",
+                    "created_at",
+                ),
+                "notify_destinations": rows(  # present or not: where it goes is a secret
+                    conn, "notify_destinations", notify, notify.c.user_id == user_id,
+                    "id", "created_at", "updated_at",
+                ),
+                "read_markers": rows(
+                    conn, "read_markers", marker, marker.c.user_id == user_id,
+                    "id", "pending_item_id", "chapter_ref", "number", "read", "last_page",
+                    "created_at",
+                ),
+                "tracker_hints": rows(
+                    conn, "tracker_hints", hint, hint.c.user_id == user_id,
+                    "id", "pending_item_id", "tracker", "remote_id", "last_chapter", "created_at",
+                ),
+                "request_list_imports": rows(
+                    conn, "request_list_imports", listing, listing.c.user_id == user_id,
+                    "id", "name", "collection_id", "created_at",
+                ),
+                "source_accounts": rows(  # which service she signed in to, never the session
+                    conn, "source_accounts", src_account, src_account.c.user_id == user_id,
+                    "id", "plugin_id", "kind", "auth_mode", "auth_kind", "session_expires_at",
+                    "created_at",
+                ),
+                "tachibk_imports": rows(  # that a backup was read, not what it held
+                    conn, "tachibk_imports", backup, backup.c.user_id == user_id,
+                    "id", "schema_version", "state", "created_at", "applied_at",
                 ),
                 "audit": rows(
                     conn, "audit", audit, audit.c.actor_id == user_id, "at", "action", "target"

@@ -23,7 +23,7 @@ from shelfhold.runtime_jobs import FirstPartyDestinations
 from tests.export_env import export_env
 from tests.fakes.komga import API_KEY, BASE_URL, FakeKomga, build_fetcher
 from tests.fakes_clock import ManualClock
-from tests.fan_out_env import add_target, bind
+from tests.fan_out_env import add_target, bind, service, tree_of
 from tests.komga_env import run
 from tests.l41_env import instance
 
@@ -34,7 +34,11 @@ NOW = datetime(2026, 11, 16, 12, 0, tzinfo=UTC)
 def test_komga_client_is_opened_with_its_sealed_key_and_the_write_guard() -> None:
     with export_env() as env:
         target = add_target(env, kind="komga", partitioning="none", name="Komga")
-        bind(env, "Komga", target_id=target)
+        # a Komga binding never owns a tree (J-SIMP-4): the shelf's own binding is the tree
+        service(env).list_bindings(env.shelf_id)
+        tree_id = tree_of(env, env.destination_id)
+        assert tree_id is not None
+        bind(env, "Kavita", target_id=target, attach_to_tree=tree_id)
         vault = SecretVault(Keyring.generate(NOW))
         with write_transaction(env.engine) as connection:
             registry.sync_registry(connection, vault.keyring)

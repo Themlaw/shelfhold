@@ -11,6 +11,7 @@ from datetime import datetime
 import sqlalchemy as sa
 from sqlalchemy import Connection
 
+from shelfhold.export.application.export_alias import record_export_alias
 from shelfhold.export.application.fan_out import is_secondary, mirror_to_indexers
 from shelfhold.export.application.intents import ManifestHook, OpenIntent
 from shelfhold.export.domain.provenance_mirror import MIRROR_DIR
@@ -65,6 +66,11 @@ def complete_write(
         connection, unit_id=unit_id, export_item_id=item_id, content_hash=row.content_hash,
         file_hash=row.file_hash, physical_root_id=root_id, rel_path=root_rel, size=identity.size,
         mtime_ns=identity.mtime_ns, ino=identity.ino, dev=fsops.device_of(target), verified_at=now,
+    )  # fmt: skip
+    # L47: the e-reader finds the file by its digest from the first export (same transaction)
+    record_export_alias(
+        connection, destination_id=destination_id, export_item_id=item_id,
+        file_hash=row.file_hash,
     )  # fmt: skip
     # T9: the indexers of the tree say what the primary says, in this same transaction (and, after
     # a crash, in the transaction of the boot that completes the line)

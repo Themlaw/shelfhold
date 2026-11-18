@@ -20,11 +20,13 @@ from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
 from shelfhold.catalog.application.dedup import SAME_WORK_REASON, told_apart, tombstoned
 from shelfhold.catalog.application.dto import BindingRef, EditionSpec
+from shelfhold.catalog.application.fields import suggest_age
 from shelfhold.catalog.application.new_edition_gate import file_new_edition
 from shelfhold.catalog.application.places import place_key, unit_place_key
 from shelfhold.catalog.application.rating import RatingService
 from shelfhold.catalog.application.service import CatalogService
 from shelfhold.catalog.application.tombstone_screen import TombstoneScreen
+from shelfhold.catalog.domain.age import content_warning_age
 from shelfhold.catalog.domain.identity import sort_title
 from shelfhold.identity.public import AuditEntry, Credential, Principal, audit_insert
 from shelfhold.infrastructure.ids import new_ulid
@@ -108,6 +110,8 @@ class Relinker:
         to_rate = False
         if created:
             to_rate = self._file_new_edition(connection, edition_id, base, work_rated)
+        if _warn_of_source(connection, request, edition_id, now):
+            to_rate = True  # what the source says is a suggestion: the shelf's door judges it
         missing = _missing(connection, edition_id, request.listed)
         connection.execute(
             audit_insert(
@@ -223,6 +227,25 @@ def _base_edition(
         raise ValueError("the Work has several Editions: give a language")
     first = rows[0]
     return _Base(first.id, first.translation_type, first.media, first.shelf_id)
+
+
+def _warn_of_source(
+    connection: Connection, request: RelinkRequest, edition_id: str, now: datetime
+) -> bool:
+    """The `content_warning` of the sub-source the Edition now follows, as at the discovery and
+    the acquisition of a book (J-PAR-1): a suggestion of provenance `sub_source`, never a rating.
+    A sub-source nobody listed is not known to be safe (18+). Returns whether one was written."""
+    table = acquisition.sub_source
+    warning = connection.execute(
+        sa.select(table.c.content_warning).where(
+            table.c.plugin_id == request.plugin_id, table.c.source_key == request.source_key
+        )
+    ).scalar()
+    age = content_warning_age(None if warning is None else str(warning))
+    if age is None:
+        return False
+    suggest_age(connection, "edition", edition_id, age, provenance="sub_source", now=now)
+    return True
 
 
 def _retire(connection: Connection, binding_id: str) -> None:

@@ -10,8 +10,8 @@ from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.schema import export
 from tests.fakes.komga import administrator, reader
 from tests.family_env import family_env
-from tests.fan_out_env import bind, service
-from tests.integration.test_komga_access_audit import LIBRARY, admit, kit, library
+from tests.fan_out_env import service
+from tests.integration.test_komga_access_audit import LIBRARY, admit, bind_indexer, kit, library
 from tests.komga_env import run
 
 
@@ -52,7 +52,7 @@ def test_an_unheld_pause_of_a_shelf_bound_to_this_server_alone_is_lifted() -> No
         fake, client, auditor, _events, target = kit(env)
         fake.users = [administrator(), reader("teen", [LIBRARY], age=13)]
         assert admit(env, auditor, client, target).proved
-        bind(env, "Komga", target_id=target, link=False)
+        bind_indexer(env, target)
         pause_by_hand(env, env.shelf_id)  # a change of ceiling or of path map, no audit's hold
         run(auditor.audit(client, target))
         # the shelf is also bound to the first server of the environment: not alone, not lifted
@@ -65,6 +65,6 @@ def test_the_ceiling_a_shelf_is_about_to_have_is_the_one_checked() -> None:
         fake, client, auditor, _events, target = kit(env)
         fake.users = [administrator(), reader("teen", [LIBRARY], age=13)]
         assert admit(env, auditor, client, target).proved
-        bind(env, "Komga", target_id=target, link=False)
+        bind_indexer(env, target)
         with pytest.raises(UnpartitionedDestinationError):  # proved for 13, not for 16
             service(env).set_max_age(env.shelf_id, 16)

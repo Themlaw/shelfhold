@@ -35,8 +35,9 @@ def write_sentinel(root: ConfinedRoot, doc: SentinelDocument) -> None:
 
 
 def create_sentinel(
-    path: str | Path, doc: SentinelDocument, *, strategy: Strategy = Strategy.AUTO
-) -> None:
+    path: str | Path, doc: SentinelDocument, *, strategy: Strategy = Strategy.AUTO,
+    nofollow: bool = False,
+) -> None:  # fmt: skip
     """Stamp a root for the first time (or recreate a lost sentinel)."""
-    with ConfinedRoot.open(path, strategy=strategy) as root:
+    with ConfinedRoot.open(path, strategy=strategy, nofollow=nofollow) as root:
         write_sentinel(root, doc)
