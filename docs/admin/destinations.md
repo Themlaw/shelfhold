@@ -16,7 +16,7 @@ Kavita par lecteur) est dans [famille.md](famille.md).
 |---|---|---|
 | **Kavita** | la bibliothèque où se fait la lecture ; Shelfhold écrit dans le dossier que Kavita scanne et l'invite à analyser | `shelfhold target add kavita` (ci-dessous) |
 | **dossier natif** | un dossier à la disposition locale de Mihon, ou que lit la source locale de Suwayomi ; aucun serveur, aucune clé | `POST /api/v1/targets/native-folder` |
-| **Komga** | une bibliothèque Komga ; le cloisonnement par bibliothèque est prouvé par l'audit des comptes | `shelfhold target add komga` (plus bas) |
+| **Komga** | une bibliothèque Komga ; le cloisonnement par bibliothèque est prouvé par l'audit des comptes ; **destination secondaire seulement jusqu'à M5** : Komga indexe un arbre écrit par une autre liaison, aucun arbre ne lui appartient | `shelfhold target add komga` (plus bas) |
 | **CWA** | la boîte de dépôt de Calibre-Web Automated : un EPUB déposé, l'importeur le prend | `shelfhold target add cwa` (plus bas) |
 
 Le détail de chaque contrat (routes appelées, dépôt atomique, refus) est dans
@@ -68,6 +68,13 @@ chemins d'une cible existante par cette porte est journalisé comme `config.path
 Tant que l'audit des comptes n'est pas appelé en production, une étagère sous 18+ n'est pas liée à Komga
 ([komga-routes.md](../destinations/komga-routes.md)).
 
+**Komga en destination secondaire seulement jusqu'à M5.** Une liaison Komga n'écrit jamais de
+fichier : l'exécuteur n'a pas de plan d'écriture pour un arbre Komga, et une étagère dont Komga
+serait la destination principale ne recevrait rien. Lier d'abord l'étagère à une destination qui
+écrit son arbre (Kavita ou un dossier natif), puis lier Komga à cet arbre (liaison secondaire, qui
+l'indexe et demande les scans) : une liaison Komga qui prétendrait posséder l'arbre est refusée
+(`binding.komga_primary_unsupported`).
+
 ### CWA
 
 ```sh
@@ -92,6 +99,8 @@ Ce qui est refusé à la liaison, et à chaque passe :
 
 - une étagère sous 18+ vers une destination qui ne cloisonne pas les comptes
   (`shelf.destination_not_partitioned`) : CWA et Komga non audité ne cloisonnent rien ;
+- une liaison Komga qui posséderait l'arbre au lieu de l'indexer
+  (`binding.komga_primary_unsupported`, voir plus haut : destination secondaire seulement) ;
 - un sous-dossier qui remonte (`..`), absolu, ou qui sort de la racine par un lien
   (`target.folder_outside_root`) ;
 - un transport que la destination ne propose pas (`target.transport_not_supported`).

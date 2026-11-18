@@ -44,12 +44,22 @@ Clôture de M4 : plusieurs destinations par étagère, synchronisation de la pro
 
 - Une Œuvre ou une Édition rangée sur aucune étagère n'est plus visible pour un enfant (un adulte la voit toujours).
 - **Adoption (L48)** : un fichier adopté qui n'annonce aucun âge et rejoint, par son nom, une Édition déjà classée met cette Édition dans « À classer » (suggestion 18+) : un enfant ne voit plus un chapitre que personne n'a regardé.
+- **Liaison Komga** : une liaison Komga qui posséderait l'arbre est refusée (`binding.komga_primary_unsupported`, cause et action dans les deux langues) : l'exécuteur n'écrit pas de plan pour un arbre Komga et l'étagère ne recevrait jamais ses fichiers. Komga se lie en destination secondaire — l'arbre écrit par une autre liaison, qu'il indexe — jusqu'à M5.
 
 ### Corrigé
 
+- **`shelfhold shelf create` sur une cible Komga ou un dossier natif** : la commande plantait (elle ouvrait le client Kavita pour une cible qui n'en est pas un) ; seule une cible Kavita est liée à une bibliothèque. Un dossier natif se lie et reçoit son dossier ; une cible Komga répond désormais le refus de la ligne « Liaison Komga » ci-dessous. Le dossier vide créé avant un échec de liaison reste, comme avant.
 - **Réponse au contradicteur de jalon M4 (L48)** : une migration de source ou un relink vers une sous-source adulte pose la suggestion d'âge de la sous-source (l'Édition quitte l'étagère enfant) ; la reprise de la passe du dossier natif reconnaît ses fichiers après un redémarrage (identité de liaison, plus l'appel) et une liaison en échec est visible dans la santé de sa cible ; un retrait avec suppression des fichiers ne tourne plus pendant une passe qui écrit dans le dossier ; l'écho de kosync après un redémarrage ne marque plus « lu » un chapitre sauté ; une racine en écriture qui est un lien (ou passe par un lien) hors de la bibliothèque est refusée ; l'export d'un profil contient les données personnelles ajoutées en M4 (sans secret), tenu au schéma par un test.
 - **Une liseuse retrouve un fichier dès son premier export (L47)** : l'export écrit la ligne `document_alias` du fichier qu'il produit (empreintes KOReader et Kavita comprises), une seule fois par fichier ; avant, `GET /kosync/syncs/progress/{empreinte}` d'un fichier tout juste exporté répondait `{}`. Aucune migration.
 - **Suppression d'une étagère (L43)** : les enfants qui voyaient une Œuvre par cette étagère reçoivent l'événement de visibilité ; ils ne la voient plus.
+
+### Retiré
+
+- **Réglage `SHELFHOLD_READING_MAX_PAGES_PER_MINUTE`** : aucun code de production ne le lisait ; la vitesse plausible de lecture garde sa borne de 20 pages par minute dans le code (`DEFAULT_MAX_PAGES_PER_MINUTE`). Le réglage sort de la configuration, de sa référence et du paquet de diagnostic.
+
+### Limites connues
+
+- **Contention de l'API pendant l'export (ENF-PERF-007)** : sur le profil de référence, la liste de la bibliothèque répond **2,3 à 2,5 fois** plus lentement pendant qu'un export de 500 chapitres tourne, parce que l'export est un fil du processus API. Le budget de la spécification reste **×2** (xfail strict au banc `tests/bench/bench_contention.py`) ; une aggravation au-delà de **×3** casse le nightly, et chaque passage enregistre sa mesure. Le fan-out vers le dossier natif (ComicInfo et couverture rendus dans le processus) est mesuré par la même passe. Correctif prévu en M5 : sortir l'export du processus API.
 
 Migration : oui (0065 à 0098 depuis la 1.0.1 ; 0084 à 0098 depuis la 1.1.0-rc.2)
 
@@ -259,7 +269,6 @@ Migrations de M2 que l'image taggée depuis `main` applique aussi (voir « Avant
 - **Qualité** (ENF-QUAL-006, ENF-OPS-008) : suite de propriétés sur le classement, parcours de bout en bout sur l'image réelle (famille, mise à l'abri, Sablier, sauvegarde et restauration, compte de service, passkey, retour arrière vers la 0.2.0), additions de nuit contre de vrais Kavita et Suwayomi.
 - **Documentation d'administration** : `docs/admin/` complété (rôles, famille, « À classer », Suwayomi multi-comptes, purge, copie conservée, retour arrière, restauration), `docs/decisions/M1b.md`.
 - Variables : `SHELFHOLD_BACKUP_DIR`, `SHELFHOLD_BACKUP_PASSPHRASE_FILE`, `SHELFHOLD_BACKUP_RETENTION`, `SHELFHOLD_BACKUP_STALE_HOURS`, `SHELFHOLD_WAKE_URL`, `_WAKE_SUWAYOMI`, `_WAKE_KAVITA`, `_WAKE_TIMEOUT_S`, `_WAKE_SESSION_S`, `_WAKE_TOKEN`, `SHELFHOLD_MAINTENANCE_WINDOW_START`, `_END`, `SHELFHOLD_TIMEZONE`, `SHELFHOLD_RETENTION_EVENTS_DAYS`, `SHELFHOLD_RETENTION_AUDIT_DAYS` (`docs/reference/config.md`).
-
 
 #### Modifié
 

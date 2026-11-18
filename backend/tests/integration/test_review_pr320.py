@@ -21,7 +21,14 @@ from tests.export_env import ExportEnv
 from tests.fakes.komga import administrator, reader
 from tests.family_env import add_adult_shelf, family_env
 from tests.fan_out_env import bind
-from tests.integration.test_komga_access_audit import LIBRARY, ROOT, admit, kit, library
+from tests.integration.test_komga_access_audit import (
+    LIBRARY,
+    ROOT,
+    admit,
+    bind_indexer,
+    kit,
+    library,
+)
 from tests.kavita_env import run
 from tests.kavita_export_env import wire
 
@@ -50,7 +57,7 @@ def test_m1_a_stale_reading_never_lifts_a_newer_pause() -> None:
         fake, client, auditor, _events, target = kit(env)
         fake.users = [administrator(), reader("teen", [LIBRARY], age=13)]
         assert admit(env, auditor, client, target).proved
-        bind(env, "Komga", target_id=target, link=False)
+        bind_indexer(env, target)
         stale = run(KomgaAuditor._read(client))  # l'audit A a lu Komga, puis traîne
         fake.users = [administrator(), reader("teen", [LIBRARY], age=6)]  # restriction abaissée
         newer = run(auditor.audit(client, target))  # l'audit B, plus récent, pose la pause
@@ -88,7 +95,7 @@ def test_m4_an_unclassified_account_on_family_and_adult_libraries_proves_nothing
             env, libraries=[library(), library(ADULT_LIBRARY, ADULT_ROOT)]
         )
         assert admit(env, auditor, client, target).proved
-        bind(env, "Komga", target_id=target, link=False)  # l'étagère familiale
+        bind_indexer(env, target)  # l'étagère familiale
         fake.users = [administrator(), reader("kid", [], shared_all=True)]  # oubli de restriction
         report = admit(env, auditor, client, target, ceiling=None, root=ADULT_ROOT)
         assert not report.proved
@@ -101,7 +108,7 @@ def test_m5_kavita_never_lifts_a_pause_komga_posed() -> None:
         fake, client, auditor, _events, target = kit(env)
         fake.users = [administrator(), reader("teen", [LIBRARY], age=13)]
         assert admit(env, auditor, client, target).proved
-        bind(env, "Komga", target_id=target, link=False)
+        bind_indexer(env, target)
         fake.users = [administrator(), reader("kid", [LIBRARY], age=6)]
         assert run(auditor.audit(client, target)).paused_shelves == [env.shelf_id]
         kavita = AccessAuditor(env.engine, env.clock, wired.events)
