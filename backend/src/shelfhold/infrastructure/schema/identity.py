@@ -137,6 +137,11 @@ session = sa.Table(
     sa.Column("revoked_at", UtcDateTime(), nullable=True),
     # The passkey that opened it: revoking the passkey closes the session (review PR #95).
     sa.Column("passkey_id", sa.String(26), nullable=True),  # no FK: see migration 0015
+    # What proved the session (M5 L04): `local` (a password or a passkey typed here) or `provider`
+    # (a sign-in at the identity provider). A freshness proved by the provider alone does not add
+    # a way in that outlives the session
+    sa.Column("proof", sa.String(), nullable=False, server_default="local"),
+    sa.CheckConstraint("\"proof\" IN ('local', 'provider')", name="proof_values"),
     ulid_check("id"),
     prefixed_hash_check("token_hash"),
     sa.UniqueConstraint("token_hash"),

@@ -106,7 +106,7 @@ qui omet le `kid` ne fonctionne que lorsqu'une seule clé est publiée.
 Aucun mot de passe local n'a été saisi : une session ouverte par le fournisseur n'est **jamais**
 « fraîche » d'elle-même, et ce que le fournisseur dit de `auth_time` à la connexion n'est pas cru
 (rien ne lui avait demandé de reconnecter la personne). Pour une action réservée qui demande une
-preuve récente, le 401 `reauth-required` propose, en premier, la méthode `oidc` (puis le mot de
+preuve récente, le 401 `reauth-required` propose, en premier, la méthode `oidc` (sauf pour une action qui l'écarte, voir plus bas ; puis le mot de
 passe et la clé d'accès, qui restent possibles). `POST /api/v1/auth/oidc/reauth` renvoie alors la
 personne au fournisseur avec `prompt=login` et `max_age` (`SHELFHOLD_OIDC_MAX_AGE_S`). Au retour, la
 session redevient fraîche **seulement si** :
@@ -126,8 +126,18 @@ contrat est celui de `max_age` : si la session du fournisseur date de moins de `
 son `auth_time` est accepté même s'il n'a pas redemandé le mot de passe. Chez un fournisseur
 conforme, `prompt=login` le force toujours.
 
-**Limite à connaître.** `prompt=login` protège d'une session restée ouverte chez le fournisseur,
-**pas d'un compte du fournisseur compromis** : qui connaît les identifiants de la personne chez lui
-ouvre une session, puis rend la sienne fraîche, et peut alors enregistrer une clé d'accès. Un
-fournisseur qui impose une double authentification ferme cette porte ; sinon, gardez-la en tête
-(l'enregistrement d'une clé d'accès est à l'audit, `passkey.register`).
+**Ce que la preuve du fournisseur ne fait pas.** `prompt=login` protège d'une session restée
+ouverte chez le fournisseur, pas d'un compte du fournisseur compromis : qui connaît les identifiants
+de la personne chez lui ouvre une session et la rend fraîche. Shelfhold garde donc la preuve qui a
+rendu la session fraîche (`session.proof`, `local` ou `provider`). Ce qui ajoute un accès qui
+survit à la session (enregistrer une clé d'accès, créer une clé d'API ou un jeton, lier une
+identité, gérer les identifiants) **refuse** une fraîcheur prouvée par le fournisseur seul quand le
+compte a un **mot de passe ou une clé d'accès** : la personne les redonne ici (le 401 ne propose plus
+`oidc`). Délier, en revanche, n'ajoute aucun accès et se contente de la preuve du fournisseur.
+
+**Compte sans mot de passe ni clé d'accès.** Le fournisseur est sa seule autorité : sa preuve est
+acceptée pour ces actions (sinon le compte ne pourrait jamais ajouter de clé d'accès). Qui compromet
+ce compte chez le fournisseur peut donc y ajouter une clé. Pour ces comptes, imposez une double
+authentification chez le fournisseur, et ajoutez une clé d'accès dès que possible : le compte
+repasse alors sous la règle ci-dessus. L'enregistrement d'une clé d'accès est à l'audit
+(`passkey.register`).

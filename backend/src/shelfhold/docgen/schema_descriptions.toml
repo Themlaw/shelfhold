@@ -487,6 +487,7 @@ remember = "The user ticked \"remember me\"."
 user_agent_label = "Short label of the browser."
 ip = "Client address at login."
 passkey_id = "Passkey that opened the session (`webauthn_credential.id`); revoking it closes the session."
+proof = "What proved the session: `local` (a password or a passkey typed here) or `provider` (a sign-in at the identity provider). A freshness proved by the provider alone does not add a way in that outlives the session."
 
 [tables.source_account]
 description = "Per-user credentials of a connected service. Secrets are sealed."

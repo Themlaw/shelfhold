@@ -324,3 +324,8 @@ since = "1.2"
 file = "0101_oidc_identity.py"
 sha256 = "b052b7e0b3071b30bc57dc65be876d7f4d2e7a2e9483bca07388a23c0cc4952f"
 since = "1.2"
+
+[[migration]]
+file = "0102_session_proof.py"
+sha256 = "fda45bcdf3be9fdcf06ba24dd963bdece9db01526d4475d94d83d738f42dcbf6"
+since = "1.2"

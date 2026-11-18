@@ -170,8 +170,8 @@ _DECLARED = (
     # M5 L04: removing a link closes a way in (and the sessions it opened). Whoever holds a stolen
     # session must not be able to cut the owner off from the provider, nor an admin to do it
     # unseen: fresh in every profile like the link, and the holder is told
-    _action("oidc.unlink_own", Effect.LINKS_IDENTITY),
-    _action("oidc.unlink_account", Effect.LINKS_IDENTITY),
+    _action("oidc.unlink_own", Effect.UNLINKS_IDENTITY),
+    _action("oidc.unlink_account", Effect.UNLINKS_IDENTITY),
     # A passkey is a persistent way in: adding one needs a fresh proof in every profile (porteur,
     # 2026-11-11); retiring one keeps the rule of the other credential actions (hardened only)
     _action("passkey.register", Effect.ENROLS_PASSKEY),

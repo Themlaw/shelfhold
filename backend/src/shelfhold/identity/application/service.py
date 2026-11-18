@@ -50,7 +50,6 @@ from shelfhold.identity.application.ports import (
     UserRecord,
 )
 from shelfhold.identity.application.profiles import ProfileService
-from shelfhold.identity.application.reauth import NEVER
 from shelfhold.identity.application.sessions import SessionView, device_label
 from shelfhold.identity.domain.credentials import (
     HARDENED_KEY_MAX_AGE,
@@ -617,6 +616,7 @@ class LocalAuth:
         password_hash: str | None = None,
         auth_time: datetime | None = None,
         oidc: tuple[str, str] | None = None,
+        proof: str = "local",
     ) -> IssuedSession:
         now = self.now()
         policy = self._policy(user.role)
@@ -637,6 +637,7 @@ class LocalAuth:
                 device=device_label(user_agent),
                 auth_time=auth_time,
                 oidc=oidc,
+                proof=proof,
             )
         )
         principal = Principal(
@@ -648,6 +649,7 @@ class LocalAuth:
             auth_time=auth_time or now,
             can_rate=user.can_rate,
             locale=user.locale,
+            provider_proof=proof == "provider",
         )
         return IssuedSession(
             token=token,
@@ -756,6 +758,7 @@ class LocalAuth:
             auth_time=record.auth_time,
             can_rate=record.user.can_rate,
             locale=record.user.locale,
+            provider_proof=record.proof == "provider",
         )
         max_age = _seconds(min(policy.idle, expiry - now)) if record.remember else None
         return SessionAuth(
@@ -874,9 +877,13 @@ class LocalAuth:
         now = self.now()
         token, csrf = new_token(), new_token()
         self._store.rotate_session(
-            principal.session_id, token_hash=token_digest(token), csrf_secret=csrf, now=now
+            principal.session_id,
+            token_hash=token_digest(token),
+            csrf_secret=csrf,
+            now=now,
+            proof="local",
         )
-        renewed = replace(principal, auth_time=now)
+        renewed = replace(principal, auth_time=now, provider_proof=False)
         self._audit("auth.reauth", renewed, target=method)
         record = self._store.session_by_token_hash(token_digest(token))
         remember = record.remember if record else True
@@ -1082,7 +1089,7 @@ class LocalAuth:
         try:
             issued = self._issue(
                 user, remember=remember, ip=ip, user_agent=user_agent, auth_time=auth_time,
-                oidc=oidc,
+                oidc=oidc, proof="provider",
             )  # fmt: skip
         except ProofWithdrawnError:  # unlinked, or turned into a child profile, meanwhile
             raise InvalidCredentialsError from None
@@ -1149,10 +1156,11 @@ class LocalAuth:
     def oidc_last_unlink(self, principal: Principal) -> OidcLastUnlink | None:
         return self._store.oidc_last_unlink(principal.user_id)
 
-    def reauth_methods_for(self, principal: Principal) -> list[str]:
+    def reauth_methods_for(self, principal: Principal, *, local_only: bool = False) -> list[str]:
         """The ways this session can be proved again: the local ones, and the provider's when the
         account is linked to it. First for a session the provider opened (it carries no local
-        proof, `NEVER`), last for any other."""
+        proof), last for any other. `local_only`: the action refuses the provider's proof, so it is
+        not offered."""
         methods = list(self._reauth)
         if (
             self.oidc is not None
@@ -1161,7 +1169,9 @@ class LocalAuth:
             and principal.role != "child"
             and self._store.oidc_identity_of(principal.user_id, self.oidc.issuer) is not None
         ):
-            if principal.auth_time is not None and principal.auth_time <= NEVER:
+            if local_only:
+                pass
+            elif principal.provider_proof:
                 methods.insert(0, "oidc")
             else:
                 methods.append("oidc")
@@ -1184,6 +1194,7 @@ class LocalAuth:
             csrf_secret=csrf,
             now=now,
             auth_time=auth_time,
+            proof="provider",
         ):
             return None
         record = self._store.session_by_token_hash(token_digest(token))
@@ -1198,6 +1209,7 @@ class LocalAuth:
             auth_time=auth_time,
             can_rate=user.can_rate,
             locale=user.locale,
+            provider_proof=True,
         )
         self._audit("auth.reauth", principal, target="oidc")
         policy = self._policy(user.role)
@@ -1688,6 +1700,7 @@ class LocalAuth:
             restricted_profile_exists=restricted_profile_exists,
             hardened=self.hardened,
             allowed_roles=allowed_roles,
+            has_local_factor=not principal.provider_proof or self._has_local_factor(principal),
         )
         if isinstance(verdict, Allowed):  # EF-USR-022 (3): session and auth_time in the audit
             if audit:
@@ -1702,6 +1715,14 @@ class LocalAuth:
                 actor_id=audit_actor(principal),
             )
         return verdict
+
+    def _has_local_factor(self, principal: Principal) -> bool:
+        """A password or a live passkey: what the account can prove itself with here. Without
+        either the provider is its only authority and its proof stands (docs/admin/oidc.md)."""
+        user = self._store.user_by_id(principal.user_id)
+        if user is not None and user.password_hash is not None:
+            return True
+        return any(p.revoked_at is None for p in self._store.passkeys_of(principal.user_id))
 
     def recent_audit_targets(self, action: str, *, days: int = 30) -> list[str]:
         return self._store.audit_targets(action, since=self.now() - timedelta(days=days))

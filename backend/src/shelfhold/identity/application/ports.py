@@ -63,6 +63,7 @@ class SessionRecord:
     absolute_expiry: datetime
     remember: bool
     revoked_at: datetime | None
+    proof: str = "local"  # `local` or `provider`: what proved the session (M5 L04)
 
 
 @dataclass(frozen=True)
@@ -82,6 +83,7 @@ class NewSession:
     # (issuer, sub) of an OpenID Connect sign-in: the link and the role are read again under the
     # write lock, as a password hash or a passkey is (a link removed or a child since: refused)
     oidc: tuple[str, str] | None = None
+    proof: str = "local"  # `provider` for a session opened by the provider's sign-in (M5 L04)
 
 
 @dataclass(frozen=True)
@@ -462,6 +464,7 @@ class IdentityStore(Protocol):
         csrf_secret: str,
         now: datetime,
         auth_time: datetime | None = None,
+        proof: str = "local",
     ) -> bool: ...
     def revoke_session_by_token_hash(self, token_hash: str, *, now: datetime) -> None: ...
     def revoke_sessions(

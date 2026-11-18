@@ -87,15 +87,24 @@ def is_fresh(world: World, browser: TestClient) -> bool:
     return bool(answer.status_code == 200)
 
 
+def is_fresh_without_a_way_in(world: World, browser: TestClient) -> bool:
+    """`session.revoke_others` is reserved and adds no way in: the provider's proof is enough."""
+    answer = world.send(browser, "POST", "/api/v1/auth/sessions/revoke-others")
+    assert answer.status_code in (200, 401), answer.text
+    return bool(answer.status_code == 200)
+
+
 # --- the reserved action asks the provider ----------------------------------------------------
 
 
 def test_oidc_reserved_action_requires_max_age(world: World) -> None:
     mum = signed_in(world)
-    refused = world.send(mum, "POST", LINK)
+    refused = world.send(mum, "POST", "/api/v1/auth/sessions/revoke-others")
     assert refused.status_code == 401 and refused.json()["code"] == "reauth_required"
     assert refused.json()["reauth_methods"][0] == "oidc"  # the way the session was opened first
     assert "password" in refused.json()["reauth_methods"]  # and the local ones stay possible
+    link = world.send(mum, "POST", LINK)  # a way in: the provider's word is not offered
+    assert link.status_code == 401 and "oidc" not in link.json()["reauth_methods"]
 
     url = reauth_url(world, mum)
     asked = query(url)
@@ -105,7 +114,8 @@ def test_oidc_reserved_action_requires_max_age(world: World) -> None:
 
     back = world.callback(mum, world.idp.authorize(url))
     assert back.status_code == 303 and back.headers["location"] == f"{SETTINGS_SCREEN}?oidc=reauth"
-    assert is_fresh(world, mum)  # the same browser, now fresh, whatever the old token was
+    assert is_fresh_without_a_way_in(world, mum)  # the same browser, now fresh, whatever the token
+    assert not is_fresh(world, mum)  # not for a way in, the account having a password (MAJ-1)
     assert "auth.reauth" in world.actions()
     assert world.signed_in_as(mum) == "mum"
 
@@ -157,9 +167,9 @@ def test_oidc_an_auth_time_inside_max_age_is_accepted_and_is_the_freshness(world
     # the session is as fresh as the provider's own sign-in, not fresher: 299 s old already, so
     # 650 s later it is past the 900 s allowed (it would not be had it been dated "now")
     world.env.clock.advance(timedelta(seconds=300))
-    assert is_fresh(world, mum)
+    assert is_fresh_without_a_way_in(world, mum)
     world.env.clock.advance(timedelta(seconds=350))
-    assert not is_fresh(world, mum)
+    assert not is_fresh_without_a_way_in(world, mum)
 
 
 def test_oidc_reauth_by_another_person_of_the_provider_is_refused(world: World) -> None:
@@ -297,7 +307,7 @@ def test_oidc_unlink_attacks(world: World) -> None:
 def test_oidc_unlink_without_the_csrf_token_is_refused(world: World) -> None:
     mum = signed_in(world)
     world.callback(mum, world.idp.authorize(reauth_url(world, mum)))
-    assert is_fresh(world, mum)  # the proof was given: only the missing header refuses
+    assert is_fresh_without_a_way_in(world, mum)  # the proof was given: only the header refuses
     assert mum.delete(IDENTITIES).status_code in (401, 403)  # no CSRF header
     assert len(world.identities()) == 1
 
@@ -463,8 +473,7 @@ def test_oidc_no_session_cookie_is_set_by_a_refused_reauth(world: World) -> None
 def test_oidc_unlink_closes_the_providers_sessions_even_if_the_audit_was_purged(
     world: World,
 ) -> None:
-    """The audit line of the sign-in says which sessions the provider opened; when it is gone, a
-    session that never had a local proof (its `auth_time` is the epoch) is still the provider's."""
+    """`session.proof` says which sessions the provider opened: the audit line is not read."""
     mum = signed_in(world)
     assert world.send(mum, "DELETE", IDENTITIES).status_code == 401  # no proof yet
     connection = sqlite3.connect(world.env.settings.database_path)
@@ -498,3 +507,99 @@ def test_oidc_the_holder_finds_the_last_removal_on_the_settings_screen(world: Wo
     assert seen["last_unlinked"]["by_other"] is True and seen["last_unlinked"]["at"]
     assert seen["configured_issuer"] == ISSUER and seen["items"] == []
     assert world.dad.get(IDENTITIES).json()["last_unlinked"] is None  # only one's own
+
+
+# --- the provider's proof does not add a way in (#362 review MAJ-1) -----------------------------
+
+
+def forget_password(world: World, name: str) -> None:
+    """An account of the provider only: no password, no passkey."""
+    connection = sqlite3.connect(world.env.settings.database_path)
+    try:
+        connection.execute('UPDATE "user" SET password_hash = NULL WHERE username = ?', (name,))
+        connection.commit()
+    finally:
+        connection.close()
+
+
+def test_oidc_a_compromised_provider_account_adds_no_way_in_to_a_password_account(
+    world: World,
+) -> None:
+    """Whoever holds the account at the provider opens a session and signs in there again, which
+    makes it fresh; for an account with a password that is not enough to link, enrol or issue."""
+    mum = signed_in(world)  # the provider's session of an account that has a password
+    back = world.callback(mum, world.idp.authorize(reauth_url(world, mum)))
+    assert back.headers["location"].endswith("?oidc=reauth")
+    # fresh as far as the provider is concerned, which is not enough for what adds a way in; and
+    # the provider is not offered again
+    refused = world.send(mum, "POST", LINK)
+    body = refused.json()
+    assert refused.status_code == 401 and body["code"] == "reauth_required"
+    assert "oidc" not in body["reauth_methods"] and body["reauth_methods"]
+    assert body["reauth_method"] != "oidc"
+    # the password: proved here, and the same session now adds a way in
+    done = world.send(
+        mum,
+        "POST",
+        "/api/v1/auth/reauth",
+        {"method": "password", "password": "correct horse battery staple"},
+    )
+    assert done.status_code == 200
+    assert world.send(mum, "POST", LINK).status_code == 200
+
+
+def test_oidc_an_account_of_the_provider_only_keeps_its_proof(world: World) -> None:
+    """Its only authority is the provider: without it the account could never add a key."""
+    assert world.link_admin("mum").status_code == 204
+    forget_password(world, "mum")
+    browser = world.browser("198.51.100.31")
+    assert world.sign_in(browser).status_code == 303
+    assert not is_fresh(world, browser)
+    back = world.callback(browser, world.idp.authorize(reauth_url(world, browser)))
+    assert back.headers["location"].endswith("?oidc=reauth")
+    assert is_fresh(world, browser)  # the link is a way in, and the provider is the authority
+
+
+def test_oidc_the_proof_of_a_local_reauthentication_replaces_the_provider_s(world: World) -> None:
+    mum = signed_in(world)
+    world.callback(mum, world.idp.authorize(reauth_url(world, mum)))
+    assert not is_fresh(world, mum)
+    assert (
+        world.send(
+            mum,
+            "POST",
+            "/api/v1/auth/reauth",
+            {"method": "password", "password": "correct horse battery staple"},
+        ).status_code
+        == 200
+    )
+    assert is_fresh(world, mum)
+    assert db_rows(world.env.settings, "SELECT proof FROM session WHERE revoked_at IS NULL")
+
+
+def test_oidc_a_session_opened_by_the_provider_is_marked_as_its_own(world: World) -> None:
+    signed_in(world)
+    proofs = {p for (p,) in db_rows(world.env.settings, "SELECT proof FROM session")}
+    assert proofs == {"local", "provider"}  # the admin's password session, mum's provider one
+
+
+@pytest.mark.parametrize("name", ["passkey.register", "session.list_all", "oidc.link_own"])
+def test_oidc_every_way_in_refuses_a_provider_proof_for_an_account_with_a_local_factor(
+    name: str,
+) -> None:
+    from dataclasses import replace
+    from datetime import UTC, datetime
+
+    from shelfhold.identity.domain.catalogue import RESERVED_ACTIONS
+    from shelfhold.identity.domain.reserved import Allowed, ReauthRequired, authorize_reserved
+
+    now = datetime(2026, 11, 18, 12, 0, tzinfo=UTC)
+    principal = Principal("01J00000000000000000000MUM", "mum", "admin", Credential.SESSION)
+    fresh = replace(principal, auth_time=now, provider_proof=True)
+    ask = {"now": now, "fresh_auth_s": 900, "restricted_profile_exists": False, "hardened": False}
+    action = RESERVED_ACTIONS[name]
+    refused = authorize_reserved(fresh, action, has_local_factor=True, **ask)
+    assert isinstance(refused, ReauthRequired) and refused.local_only
+    assert isinstance(authorize_reserved(fresh, action, has_local_factor=False, **ask), Allowed)
+    typed = replace(fresh, provider_proof=False)
+    assert isinstance(authorize_reserved(typed, action, has_local_factor=True, **ask), Allowed)

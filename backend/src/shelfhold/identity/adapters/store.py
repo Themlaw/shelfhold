@@ -36,7 +36,6 @@ from shelfhold.identity.application.ports import (
     SourcePolicyRecord,
     UserRecord,
 )
-from shelfhold.identity.application.reauth import NEVER
 from shelfhold.identity.application.sessions import SessionView
 from shelfhold.identity.domain.device import Device
 from shelfhold.identity.domain.kavita_mapping import same_kavita_username
@@ -471,9 +470,8 @@ class SqlIdentityStore:
     ) -> OidcUnlink:
         """One transaction under the write lock: the rule (an admin unlinks her own account or a
         non-admin's, never another admin's), the link, the sessions the provider opened for this
-        account, the audit line and the notice to the holder. A session is the provider's when the
-        audit says a sign-in through it opened it, or when no local proof was ever given (its
-        `auth_time` is still the epoch): the audit alone could be purged."""
+        account, the audit line and the notice to the holder. A session is the provider's when what
+        proved it last is the provider (`session.proof`), whatever the audit still holds."""
         engine = self._engine.execution_options(shelfhold_begin="BEGIN IMMEDIATE")
         with write_transaction(engine) as conn:
             role = conn.execute(sa.select(_user.c.role).where(_user.c.id == user_id)).scalar()
@@ -486,17 +484,12 @@ class SqlIdentityStore:
             ).rowcount
             if not gone:
                 return OidcUnlink.NOT_LINKED
-            opened = (
-                sa.select(identity.audit.c.session_id)
-                .where(identity.audit.c.action == "auth.oidc_login")
-                .where(identity.audit.c.session_id.is_not(None))
-            )
             conn.execute(
                 sa.update(_session)
                 .where(
                     _session.c.user_id == user_id,
                     _session.c.revoked_at.is_(None),
-                    sa.or_(_session.c.id.in_(opened), _session.c.auth_time <= NEVER),
+                    _session.c.proof == "provider",
                 )
                 .values(revoked_at=now)
             )
@@ -1396,6 +1389,7 @@ class SqlIdentityStore:
                     ip=session.ip,
                     user_agent_label=session.device,
                     passkey_id=session.passkey_id,
+                    proof=session.proof,
                 )
             )
 
@@ -1419,6 +1413,7 @@ class SqlIdentityStore:
             absolute_expiry=row.absolute_expiry,
             remember=bool(row.remember),
             revoked_at=row.revoked_at,
+            proof=row.proof,
         )
 
     def touch_session(self, session_id: str, *, now: datetime, absolute_expiry: datetime) -> None:
@@ -1437,9 +1432,10 @@ class SqlIdentityStore:
         csrf_secret: str,
         now: datetime,
         auth_time: datetime | None = None,
+        proof: str = "local",
     ) -> bool:
         """`auth_time`: when the proof was given (a provider's sign-in a moment ago), `now` unless
-        said. False when the session is closed: nothing was changed."""
+        said; `proof`: what gave it. False when the session is closed: nothing was changed."""
         with write_transaction(self._engine) as conn:
             return (
                 conn.execute(
@@ -1449,6 +1445,7 @@ class SqlIdentityStore:
                         token_hash=token_hash,
                         csrf_secret=csrf_secret,
                         auth_time=auth_time or now,
+                        proof=proof,
                         last_seen_at=now,
                     )
                 ).rowcount
