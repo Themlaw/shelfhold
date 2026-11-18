@@ -13,10 +13,20 @@ from shelfhold.export.targets.kavita import AdminKey, KavitaClient
 from shelfhold.export.targets.kavita.adopt import AdoptionRefused
 from shelfhold.export.targets.kavita.audit import AccessAuditor
 from shelfhold.export.targets.kavita.linking import ShelfLinker
+from shelfhold.headless.adapters import HttpKomgaProbe
+from shelfhold.headless.errors import ShelfExposedToChildren
+from shelfhold.headless.wiring import _ShelfLinker
 from shelfhold.infrastructure.schema import export, platform
+from shelfhold.infrastructure.secrets.diagnostics import boot_check
 from tests.export_env import export_env
 from tests.fakes.kavita import API_KEY, BASE_URL, FakeKavita, build_fetcher
 from tests.fakes.kavita.server import member
+from tests.fakes.komga import (
+    API_KEY as KOMGA_KEY,
+    BASE_URL as KOMGA_URL,
+    FakeKomga,
+    build_fetcher as komga_fetcher,
+)
 from tests.headless_env import headless
 from tests.kavita_env import RecordingEvents
 
@@ -165,3 +175,80 @@ def test_the_jurisdiction_follows_the_locale_until_the_admin_sets_it(
         assert env.admin.get("instance.jurisdiction").value == "BE"
         with pytest.raises(Exception, match="two-letter"):
             env.admin.set("instance.jurisdiction", "belgium")
+
+
+# -- `shelf create` on a target that is not Kavita (J-HL-1) ------------------------------------
+
+
+@pytest.mark.req("EF-EXP-020")
+def test_shelf_create_on_a_komga_target_links_no_kavita_library(
+    settings: Settings, tmp_path
+) -> None:
+    """Only a Kavita target is linked to a library: on a Komga target `shelf create` keeps the
+    shelf and its binding, makes the folder, and opens no Kavita client (which a Komga or a
+    folder target would refuse with a KeyError of the composition)."""
+    root = tmp_path / "library" / "manga"
+    root.mkdir(parents=True)
+    fake = FakeKomga(keys={KOMGA_KEY: True})
+    probe = HttpKomgaProbe(lambda _url: komga_fetcher(fake))
+    boot_check(settings, announce=False)  # the first start creates the keyring, as in production
+    with headless(settings, komga=probe, real_linker=True, roots=_roots(settings, tmp_path)) as env:
+        env.admin.target_add_komga(
+            name="komga", url=KOMGA_URL, api_key=KOMGA_KEY,
+            path_map=[{"local": str(root), "remote": "/manga", "mode": "rw"}],
+        )  # fmt: skip
+        asked = len(fake.requests)  # the probe of `target add` was the last ask of Komga
+        created = env.admin.shelf_create(name="Adultes", max_age="18+", target="komga", subpath="K")
+        assert created.created
+        assert (root / "K").is_dir()  # the folder of the shelf exists before the first export
+        assert len(fake.requests) == asked
+
+
+@pytest.mark.req("EF-EXP-010")
+def test_shelf_create_on_a_native_folder_target_links_no_kavita_library(
+    settings: Settings, tmp_path
+) -> None:
+    """The same for the folder Mihon reads: the shelf, its binding and its folder, no library."""
+    root = tmp_path / "library" / "manga"
+    root.mkdir(parents=True)
+    boot_check(settings, announce=False)  # the first start creates the keyring, as in production
+    with headless(settings, real_linker=True, roots=_roots(settings, tmp_path)) as env:
+        env.admin.target_add_native_folder(
+            name="mihon", path_map=[{"local": str(root), "remote": "/manga", "mode": "rw"}],
+        )
+        created = env.admin.shelf_create(name="Adultes", max_age="18+", target="mihon", subpath="K")
+        assert created.created
+        assert (root / "K").is_dir()
+        assert env.count("shelf") == 1 and env.count("shelf_destination") == 1
+
+
+def test_a_shelf_create_whose_link_fails_leaves_no_folder_behind(
+    settings: Settings, tmp_path
+) -> None:
+    """The audit that refuses a shelf unbinds it: the folder it had made goes too, or a later
+    binding would adopt a folder no destination owns."""
+    root = tmp_path / "library" / "manga"
+    root.mkdir(parents=True)
+    roots = _roots(settings, tmp_path)
+    boot_check(settings, announce=False)  # the first start creates the keyring, as in production
+
+    class Refusing(_ShelfLinker):
+        def link(self, target_id: str, destination_id: str, *, library_name: str) -> str:
+            raise ShelfExposedToChildren(("kid8",))
+
+    with headless(settings, roots=roots) as probe:
+        linker = Refusing(settings, probe.engine)
+    with headless(settings, roots=roots, linker=linker) as env:
+        env.admin.target_add_kavita(
+            name="k", url="http://kavita.internal:5000", username="u", password=PASSWORD,
+            accept_admin_risk=True,
+            path_map=[{"local": str(root), "remote": "/manga", "mode": "rw"}],
+        )  # fmt: skip
+        with pytest.raises(ShelfExposedToChildren):
+            env.admin.shelf_create(name="Famille", max_age="13+", target="k", subpath="famille")
+        assert not (root / "famille").exists()
+        assert env.count("shelf") == 0 and env.count("shelf_destination") == 0
+
+
+def _roots(settings: Settings, tmp_path) -> RootPolicy:
+    return RootPolicy(tmp_path / "library", settings.data_dir, settings.store_dir)

@@ -93,3 +93,7 @@ class ShelfLinkPort(Protocol):
 
     def make_folder(self, local: str) -> None:
         """Creates the folder of a destination, through the sole writer of the disk."""
+
+    def remove_folder(self, local: str) -> None:
+        """Removes the folder of a destination a failed creation had made (it is empty), through
+        the sole writer of the disk."""
