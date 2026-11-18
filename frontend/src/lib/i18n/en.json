@@ -1006,5 +1006,6 @@
   "reader.pages": "Pages of the book",
   "reader.read": "Read",
   "reader.read_excerpt": "Read an excerpt",
-  "reader.keys": "Arrow keys, Page Down or Space turn the page; Escape goes back to the controls."
+  "reader.keys": "Arrow keys, Page Down or Space turn the page; Escape goes back to the controls.",
+  "reader.page_undisplayable": "This page could not be displayed."
 }

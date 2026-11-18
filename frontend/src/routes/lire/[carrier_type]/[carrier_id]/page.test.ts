@@ -26,7 +26,7 @@ const publication = (over: Pub = {}): Pub => ({
   language: 'fr',
   number: '3',
   package: null,
-  pages: [1, 2, 3].map((n) => ({ index: n - 1, href: `/content/TICKET/p${n}.jpg`, media_type: 'image/jpeg' })),
+  pages: [1, 2, 3].map((n) => ({ index: n, href: `/content/TICKET/p${n}.jpg`, media_type: 'image/jpeg' })), // the server counts from 1
   reading_direction: 'ltr',
   scope: 'full',
   spine: [],
@@ -93,6 +93,16 @@ describe('the reader of images', () => {
     expect(screen.getByRole('status')).toHaveTextContent('Page 2 sur 3');
     await user.click(screen.getByRole('button', { name: 'Page précédente' }));
     expect(await screen.findByAltText('Page 1 sur 3')).toBeInTheDocument();
+  });
+
+  // req: EF-LEC-001
+  it('says so when the browser refuses to draw a page, instead of leaving an empty screen', async () => {
+    server.use(...serve(publication()));
+    render(Page);
+    const image = await screen.findByAltText('Page 1 sur 3');
+    await waitFor(() => expect(image).toHaveAttribute('src'));
+    image.dispatchEvent(new Event('error'));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Cette page n’a pas pu s’afficher.');
   });
 
   // req: EF-LEC-001
@@ -212,7 +222,7 @@ describe('the reader of images', () => {
         return HttpResponse.json(
           publication({
             pages: [1, 2, 3].map((n) => ({
-              index: n - 1,
+              index: n,
               href: `/content/${fresh ? 'NEW' : 'OLD'}/p${n}.jpg`,
               media_type: 'image/jpeg'
             }))

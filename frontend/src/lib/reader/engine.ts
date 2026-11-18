@@ -19,6 +19,8 @@ export type ReadingDirection = 'ltr' | 'rtl' | 'webtoon';
 export type Scope = 'full' | 'excerpt';
 
 export interface PublicationEntry {
+  /** The place in the book, from 0, in reading order. The server numbers its entries from 1: that
+   * number never gets past `toView`, the one point of conversion. */
   index: number;
   /** A link into `/content`, ticket included: the only place a byte of a book comes from. */
   href: string;
@@ -35,7 +37,10 @@ export interface PublicationView {
 }
 
 /** The typed ways an engine is stopped; the screen words them. */
-export type EngineError = { kind: 'missing'; index: number } | { kind: 'failed'; index: number };
+export type EngineError =
+  | { kind: 'missing'; index: number }
+  | { kind: 'failed'; index: number }
+  | { kind: 'undisplayable'; index: number };
 
 export interface ReaderEngine {
   /** The media types it reads. A registry asks for the guards a type needs (ADR-0055, D7). */
@@ -60,7 +65,9 @@ export function toView(out: PublicationOut): PublicationView {
     readingDirection: out.reading_direction,
     title: out.title,
     language: out.language,
-    pages: out.pages.map((p) => ({ index: p.index, href: p.href, mediaType: p.media_type }))
+    pages: [...out.pages]
+      .sort((a, b) => a.index - b.index)
+      .map((p, place) => ({ index: place, href: p.href, mediaType: p.media_type }))
   };
 }
 

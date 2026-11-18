@@ -1006,5 +1006,6 @@
   "reader.pages": "Pages du livre",
   "reader.read": "Lire",
   "reader.read_excerpt": "Lire un extrait",
-  "reader.keys": "Flèches, Page suivante ou Espace pour tourner la page ; Échap pour revenir aux commandes."
+  "reader.keys": "Flèches, Page suivante ou Espace pour tourner la page ; Échap pour revenir aux commandes.",
+  "reader.page_undisplayable": "Cette page n’a pas pu s’afficher."
 }

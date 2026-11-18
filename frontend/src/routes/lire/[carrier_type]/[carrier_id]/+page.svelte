@@ -28,7 +28,7 @@
   let view = $state<PublicationView | null>(null);
   let at = $state<Locator | null>(null);
   let finished = $state(false);
-  let failed = $state(false);
+  let failed = $state<'load' | 'display' | null>(null);
   let engine: ReaderEngine | null = null;
   let sender: PositionSender | null = null;
   let stops: (() => void)[] = [];
@@ -90,7 +90,7 @@
         if (moved) sender?.push(locator);
       }),
       engine.onEnd(() => (finished = true)),
-      engine.onError(() => (failed = true))
+      engine.onError((e) => (failed = e.kind === 'undisplayable' ? 'display' : 'load'))
     ];
     await engine.open(view, host);
     at = { v: 1, type: 'page', index: 0, count: view.pages.length };
@@ -170,7 +170,11 @@
     </header>
     <p class="hint">{t('reader.keys')}</p>
     <p role="status" class="status">{status}</p>
-    {#if failed}<p class="notice">{t('reader.page_failed')}</p>{/if}
+    {#if failed}
+      <p class="notice" role="alert">
+        {failed === 'display' ? t('reader.page_undisplayable') : t('reader.page_failed')}
+      </p>
+    {/if}
     <div
       class="pages"
       bind:this={host}

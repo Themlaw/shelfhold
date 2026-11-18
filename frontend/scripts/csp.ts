@@ -45,6 +45,9 @@ export function kitCsp(html: string): Record<string, string[]> {
     'default-src': ["'self'"],
     'script-src': ["'self'", scriptHash(bootScript(html))],
     'style-src': ["'self'"],
+    // the reader draws each page as a `blob:` image (ADR-0055); nothing else, no `data:`, no host.
+    // L12 gives the reader its own policy and takes this back.
+    'img-src': ["'self'", 'blob:'],
     'base-uri': ["'none'"],
     'form-action': ["'self'"],
     'object-src': ["'none'"],

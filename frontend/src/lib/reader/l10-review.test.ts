@@ -96,7 +96,7 @@ describe('the review of the image reader (L10)', () => {
   // entry, with a guard (`test_reader_refuses_to_mount_under_spa_csp`, L12) that does not exist
   // yet; the e2e spec asserts boxes and attributes, never a decoded pixel, so it stays green
   // with every image refused.
-  it.fails('the policy of the page the reader mounts in lets its blob: images load', () => {
+  it('the policy of the page the reader mounts in lets its blob: images load', () => {
     const here = fileURLToPath(import.meta.url);
     const appHtml = readFileSync(resolve(here, '../../../app.html'), 'utf-8'); // the SPA's shell
     const built = Object.entries(kitCsp(appHtml))
@@ -124,7 +124,7 @@ describe('the review of the image reader (L10)', () => {
   // reaches is written one page ahead of the page on screen, and a page that was never shown
   // keeps the label the mount gave it from that number — the last of ten is announced « Page 11
   // sur 10 ». The locator of ADR-0055 counts from 0.
-  it.fails('a webtoon is announced and written by the page on screen, not one ahead', async () => {
+  it('a webtoon is announced and written by the page on screen, not one ahead', async () => {
     const { engine, host, seen } = await opened(serverPublication({ readingDirection: 'webtoon' }));
     const first = host.querySelector('img');
     if (first === null) throw new Error('the column holds no image to read');
@@ -139,7 +139,7 @@ describe('the review of the image reader (L10)', () => {
   // leaks the bytes of the one before it for the life of the document. (The screen of L10 opens
   // one book and frees it at the unmount; the port it calls, which resets itself for the next
   // reading, says otherwise.)
-  it.fails('opening a book again frees what the reading before it held', async () => {
+  it('opening a book again frees what the reading before it held', async () => {
     const b = bench(2048);
     const host = document.createElement('div');
     document.body.append(host);

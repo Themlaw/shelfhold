@@ -59,7 +59,7 @@ async function serveBook(page: Page, book: Book): Promise<Bench> {
         number: '1',
         package: null,
         pages: Array.from({ length: book.count }, (_, i) => ({
-          index: i,
+          index: i + 1, // the server counts the entries of a manifest from 1
           href: `/content/TICKET/p${i + 1}.png`,
           media_type: 'image/png'
         })),
@@ -86,11 +86,32 @@ async function serveBook(page: Page, book: Book): Promise<Bench> {
 
 const status = (page: Page) => page.getByRole('status');
 
+/** The page the browser really decoded under the policy the server sent: not a box, a pixel size. */
+const decoded = (page: Page, selector: string) =>
+  page.locator(selector).evaluateAll((images) =>
+    images.map((image) => ({
+      width: (image as HTMLImageElement).naturalWidth,
+      complete: (image as HTMLImageElement).complete
+    }))
+  );
+
+function watchPolicy(page: Page): string[] {
+  const refused: string[] = [];
+  page.on('console', (message) => {
+    if (/content security policy/i.test(message.text())) refused.push(message.text());
+  });
+  return refused;
+}
+
 // req: EF-LEC-001
 test('test_manga_paged_ltr_rtl', async ({ page }) => {
+  const refused = watchPolicy(page);
   const ltr = await serveBook(page, { direction: 'ltr', count: 4, width: 300, height: 450 });
   await page.goto('/lire/unit/U1');
   await expect(page.getByAltText('Page 1 sur 4')).toBeVisible();
+  // a real image under the CSP the real server sends: decoded, and no policy violation
+  await expect.poll(async () => (await decoded(page, '[data-reader-page] img'))[0]?.width).toBe(300);
+  expect(refused).toEqual([]);
   await page.keyboard.press('ArrowRight');
   await expect(status(page)).toHaveText('Page 2 sur 4');
   await page.keyboard.press('ArrowLeft');
@@ -118,11 +139,16 @@ test('test_manga_paged_ltr_rtl', async ({ page }) => {
 
 // req: EF-LEC-002
 test('test_webtoon_continuous', async ({ page }) => {
+  const refused = watchPolicy(page);
   const bench = await serveBook(page, { direction: 'webtoon', count: 6, width: 400, height: 700 });
   await page.goto('/lire/unit/U1');
   const column = page.locator('[data-reader-column]');
   await expect(column.locator('img')).toHaveCount(6);
   await expect(column.locator('img').first()).toBeVisible();
+  await expect
+    .poll(async () => (await decoded(page, '[data-reader-column] img')).filter((i) => i.width === 400).length)
+    .toBeGreaterThan(0);
+  expect(refused).toEqual([]);
   // no space between two pages: the top of one is the bottom of the one before
   const boxes = await column.locator('img').evaluateAll((images) =>
     images.map((image) => {
