@@ -549,7 +549,9 @@ class JobPools:
         if attempts < MAX_ATTEMPTS:
             self.ledger.mark_retry(job_id, error)
             delay = self._backoff[min(attempts, len(self._backoff)) - 1]
-            log.warning("job.retry", error=error, attempt=attempts, delay_s=delay)
+            # the frames (file:line in function), never the message: where it failed
+            frames = exception_detail(exc, depth=6)["frames"]
+            log.warning("job.retry", error=error, attempt=attempts, delay_s=delay, frames=frames)
             return delay
         log.error("job.dead_lettered", error=error, attempts=attempts)
         with write_transaction(self._engine) as conn:

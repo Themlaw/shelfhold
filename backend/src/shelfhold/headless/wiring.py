@@ -17,7 +17,7 @@ from shelfhold.export.application.root_bootstrap import RootPolicy
 from shelfhold.export.targets.kavita.adopt import AdoptionRefused
 from shelfhold.export.targets.kavita.audit import AccessAuditor
 from shelfhold.export.targets.kavita.linking import ShelfLinker
-from shelfhold.headless.adapters import HttpKavitaKeyExchange
+from shelfhold.headless.adapters import HttpKavitaKeyExchange, HttpKomgaProbe
 from shelfhold.headless.admin import HeadlessAdmin
 from shelfhold.headless.errors import ShelfExposedToChildren
 from shelfhold.headless.ports import ShelfLinkPort
@@ -96,6 +96,7 @@ def open_headless(settings: Settings) -> HeadlessAdmin:
         vault,
         clock=SystemClock(),
         kavita=HttpKavitaKeyExchange(integration_fetcher),
+        komga=HttpKomgaProbe(integration_fetcher),
         suwayomi=HttpSuwayomiProbe(integration_fetcher),
         channels=_Channels(),
         resolve=lambda: load_settings(os.environ, db_loader=load_db_settings),

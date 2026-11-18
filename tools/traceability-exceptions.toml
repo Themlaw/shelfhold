@@ -127,6 +127,14 @@ reason = "garde de l'hygiène des fixtures (aucun dossier laissé dans /tmp) : p
 path = "backend/tests/unit/test_sdk_export_target.py"
 reason = "dépréciations du contrat SDK ExportTarget (D9, M1b L31) : le contrat reste lisible, ce n'est pas une exigence EF-/ENF-"
 
+[[exception]]
+path = "backend/tests/integration/test_m4_l46_target_wiring_contradicteur.py"
+tests = [
+  "test_poc_a_path_map_change_through_the_komga_door_is_journaled",
+  "test_poc_a_new_key_for_an_existing_komga_is_not_silently_dropped",
+]
+reason = "PoC de la relecture adverse de #342 (L46), fichier figé par le contradicteur : les exigences du lot (EF-EXP-020, EF-EXP-022) sont prouvées par test_m4_l46_target_wiring.py"
+
 [[deferred]]
 requirement = "ENF-GOV-004"
 aspect = "première publication vérifiée sur le second registre (digest signé) et premier push du miroir : D-P1 (secret CODEBERG_TOKEN, compte et dépôt miroir du porteur)"
