@@ -29,6 +29,28 @@ shelfhold shelf create Manga --max-age 18+ --target kavita --subpath manga
   `path_map.<cible>`, donné d'emblée plutôt que par `config set` ensuite). Options de `shelf create` :
   `--subpath` et `--phrase` (libellé affiché, défaut : le nom). Fichiers de secrets : voir
   [installation-headless.md](installation-headless.md) (conteneur en lecture seule, entrée standard `-`).
+- `target add komga` et `target add cwa` (M4 L46) :
+  - **Komga** : `shelfhold target add komga --url http://komga:25600 --password-file ./komga.key`. Le fichier
+    (ou `-` pour l'entrée standard, jamais un argument) contient la **clé d'API d'un compte administrateur
+    dédié** de Komga (le scan et `empty-trash` exigent ce rôle ; `--api-key-file` est un synonyme). La clé est
+    montrée une fois à Komga (`/actuator/info`, ce qui prouve le rôle), **scellée** dans la ligne de sa
+    destination et **jamais relue** : ni une réponse de l'API, ni l'export intégral, ni un journal ne la portent.
+    Une clé refusée ou une adresse hors de portée (adresse privée qu'on n'a pas déclarée comprise) n'enregistre rien.
+    Options : `--name` (défaut `komga`), `--path-map`. Chaque création est journalisée (`target.add_komga`).
+  - **CWA** : `shelfhold target add cwa --name depot --path-map '[{"local": "/library/depot", "remote":
+    "/cwa-ingest", "mode": "rw"}]'`. C'est le dossier que Calibre-Web Automated surveille : pas de secret, des dossiers
+    en écriture seulement, jamais la source locale de Suwayomi. Journalisé (`target.add_cwa`).
+  - HTTP : `POST /api/v1/targets/komga` (`name`, `url`, `api_key`, `path_map`) et `POST /api/v1/targets/cwa`
+    (`name`, `path_map`). La première est une action réservée (`target.add_komga`), la seconde l'est comme la
+    création d'un dossier natif (`config.path_map`) : session d'administrateur fraîche, jamais une clé, un membre ou un enfant.
+- `target sync-progress <liaison> --on|--off` (M4 L46) allume ou éteint la **synchro de progression** d'une
+  liaison (`shelf_destination.sync_progress`, lue par la passe `progress.sync`). Même opération en HTTP :
+  `POST /api/v1/destinations/{id}/sync-progress` avec `{"enabled": true|false}`, et la case de l'écran des
+  destinations. Action réservée (`destination.sync_progress`) : session fraîche d'administrateur ou ligne de commande
+  de l'hôte, jamais une clé, un membre ou un enfant. Chaque changement est journalisé (`<liaison> on|off`),
+  une répétition ne l'est pas. Seule une destination qui garde une position de lecture par compte (Kavita) peut
+  l'allumer : Komga, une boîte de dépôt CWA et un dossier natif répondent `destination.sync_unsupported` (409) ;
+  éteindre est toujours permis.
 - La clé est créée par `/api/Account/create-auth-key` ; si Shelfhold ne peut pas l'enregistrer, l'erreur donne son nom et son identifiant : révoquez-la dans Kavita.
 - L'adresse d'une destination : `http://` seulement sur le réseau local (adresse privée, nom sans point, `.local`, `.lan`, `.internal`), sinon `https://` ; une IP publique est refusée.
 - `source add suwayomi` lit le mode d'authentification du serveur (`none`, `basic_auth` ou

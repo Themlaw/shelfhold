@@ -34,6 +34,7 @@ from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime
+from pathlib import Path
 from typing import Any, BinaryIO, Literal, Protocol
 
 import sqlalchemy as sa
@@ -42,6 +43,7 @@ from sqlalchemy import Connection, Engine
 
 from shelfhold.catalog.public import Admission, RatingService
 from shelfhold.export.application.cover_image import prepare_cover
+from shelfhold.export.application.export_alias import complete_hashes, record_export_alias
 from shelfhold.export.application.komga_audit_state import partitioning_of
 from shelfhold.export.application.page_policy import PagePolicy
 from shelfhold.export.application.plan_executor import (
@@ -940,6 +942,7 @@ class FanOut:
                 self._pipeline.send_destination_calls(
                     binding, call_id, calls, send=self._source.sender(binding)
                 )
+            self._note_failure(view.target_id, destination_id, None)
             return BindingOutcome(
                 destination_id, "indexer" if view.role == "secondary" else "done", None, executed,
                 lost,
@@ -947,11 +950,36 @@ class FanOut:
         except DestinationPausedError as error:
             return BindingOutcome(destination_id, "paused", str(error))
         except PlanRefusedError as error:
-            log.info("fan_out.failed", destination_id=destination_id, reason=error.reason)
+            log.warning("fan_out.failed", destination_id=destination_id, reason=error.reason)
+            self._note_failure(view.target_id, destination_id, error.code)
             return BindingOutcome(destination_id, "failed", error.code)
         except (FsopsError, OSError) as error:
             log.warning("fan_out.disk", destination_id=destination_id, reason=type(error).__name__)
+            self._note_failure(view.target_id, destination_id, "export.write_failed")
             return BindingOutcome(destination_id, "failed", "export.write_failed")
+
+    def _note_failure(self, target_id: str, destination_id: str, code: str | None) -> None:
+        """A binding that fails is kept in the health of its target (the admin reads it there, and
+        the next pass that succeeds clears it): a failure that only went to the log stayed unseen
+        for as long as it lasted (J-REP-1). Nothing is written when nothing changes."""
+        from shelfhold.export.application.target_state import load_health
+
+        try:
+            with write_transaction(self._engine) as connection:
+                health = load_health(connection, target_id)
+                if health.binding_failures.get(destination_id) == code:
+                    return
+                if code is None:
+                    health.binding_failures.pop(destination_id, None)
+                else:
+                    health.binding_failures[destination_id] = code
+                connection.execute(  # the health only: `version_seen` is the probe's, not ours
+                    sa.update(export.export_target)
+                    .where(export.export_target.c.id == target_id)
+                    .values(health=health.to_json())
+                )
+        except Exception:  # the report of a failure never becomes one
+            log.warning("fan_out.failure_not_kept", destination_id=destination_id)
 
     def _keep(self, destination_id: str, report: ExecutionReport) -> None:
         """The manifest of the tree, and the copy to its indexers, in one transaction."""
@@ -972,6 +1000,18 @@ class FanOut:
                 connection, destination_id=destination_id, files=files, now=self._clock.now(),
                 moved=report.moved, recycled=report.recycled,
             )  # fmt: skip
+            for written in report.files:  # L47: found by its digest from the first export
+                if written.path is not None:
+                    record_export_alias(
+                        connection, destination_id=destination_id,
+                        export_item_id=written.export_item_id, file_hash=written.file_hash,
+                    )  # fmt: skip
+        for written in report.files:  # then their hashes, once the manifest is committed
+            if written.path is not None:
+                complete_hashes(
+                    self._engine, export_item_id=written.export_item_id,
+                    file_hash=written.file_hash, path=Path(written.path),
+                )  # fmt: skip
 
 
 # -- what the composition root gives the executor -----------------------------------------------

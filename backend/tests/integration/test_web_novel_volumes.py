@@ -68,8 +68,10 @@ def sha(path: Path) -> str:
     return "sha256:" + hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-def read_by_a_reader(lib: LibEnv, item_id: str) -> None:
-    """A reader reached the end of the file (the position of the file, `percent = 1`)."""
+def read_by_a_reader(lib: LibEnv, item_id: str, content_hash: str = "sha256:" + "a" * 64) -> None:
+    """A reader reached the end of the file (the position of the file, `percent = 1`), anchored on
+    `content_hash`: the hash the file carries when it has an alias (a rolling tail exported by the
+    pipeline), any hash for a file the exporter placed alone."""
     user = new_ulid()
     with lib.engine.begin() as connection:
         connection.execute(
@@ -80,7 +82,7 @@ def read_by_a_reader(lib: LibEnv, item_id: str) -> None:
         connection.execute(
             sa.insert(reading.reading_position).values(
                 id=new_ulid(), user_id=user, carrier_type="export_item", carrier_id=item_id,
-                content_hash="sha256:" + "a" * 64, locator={"progression": 1.0}, percent=1.0,
+                content_hash=content_hash, locator={"progression": 1.0}, percent=1.0,
                 client_ts=sa.func.current_timestamp(), source="server",
             )
         )  # fmt: skip

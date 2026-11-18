@@ -22,6 +22,8 @@ updates:
     ignore:
       - dependency-name: node
         update-types: ["version-update:semver-major"]  # LTS only: bumped by hand
+      - dependency-name: python
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]  # Python 3.13 is pinned by uv.lock: bumped by hand
     groups:
       docker-base-images:
         patterns: ["*"]

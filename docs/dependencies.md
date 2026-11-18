@@ -109,7 +109,10 @@ Non critiques (remplaçables sans réécriture), listées pour mémoire :
 - **python-ulid** (MIT) : identifiants. **langcodes** (MIT) : `normalize_lang()` (ADR-0042) ; repli :
   table d'alias figée et versionnée. Contrat `lang-single-producer`.
 - Développement : **hypothesis** (MPL-2.0), **syrupy** (MIT), **pytest-xdist** (MIT) et
-  **xmlschema** (MIT) pour les suites `tests/property`, `tests/golden` et la validation de schémas.
+  **xmlschema** (MIT) pour les suites `tests/property`, `tests/golden` et la validation de
+  schémas ; **vulture** (MIT, M4) pour la passe de code mort sans appelant (`[tool.vulture]` dans
+  `backend/pyproject.toml`, lue par l'opérateur : la garde bloquante reste
+  `tools/reachability.py`).
 
 ### Exception à la fenêtre `exclude-newer`
 

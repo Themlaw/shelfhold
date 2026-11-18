@@ -4,16 +4,25 @@ import shutil
 from collections.abc import Iterator
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
 import pytest
 import sqlalchemy as sa
 from sqlalchemy import Engine
 from sqlalchemy.exc import IntegrityError
 
+from shelfhold.acquisition.application.upstream_snapshot import (
+    CAPABILITY,
+    SCHEMA_VERSION,
+    SEALED_KEY,
+    open_sealed,
+    seal_fields,
+)
 from shelfhold.config import Settings
 from shelfhold.infrastructure.db import create_db_engine
+from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.migrate import migrate
-from shelfhold.infrastructure.schema import metadata
+from shelfhold.infrastructure.schema import acquisition, metadata
 from shelfhold.infrastructure.secrets import registry
 from shelfhold.infrastructure.secrets.errors import (
     DecryptionError,
@@ -319,3 +328,90 @@ def test_review_rows_left_under_a_retired_key_are_reported(
     assert info.value.reason == "in_use"
     rotate(store, engine, now=LATER)  # a second run catches the straggler
     assert "rows_on_retired_key" not in {w.code for w in diagnostics.collect_warnings(settings)}
+
+
+# -- the sealed fields of an upstream snapshot (J-SEC-1) ---------------------------------------
+
+
+def seed_snapshot(engine: Engine, store: KeyringStore, *, row_id: str) -> None:
+    """One snapshot row whose payload carries a sealed part, written as the taker writes it."""
+    vault = SecretVault(store.load())
+    with engine.begin() as connection:
+        registry.sync_registry(connection, vault.keyring)
+        connection.execute(
+            sa.insert(acquisition.upstream_snapshot).values(
+                id=row_id, connected_service_id="svc-1", series_ref="suwayomi:77|42",
+                capability=CAPABILITY,
+                payload={
+                    "categories": [],
+                    SEALED_KEY: seal_fields(vault, row_id, {"password": "synthetic"}),
+                },
+                schema_version=SCHEMA_VERSION, taken_at=NOW,
+            )
+        )  # fmt: skip
+
+
+def payload_of(engine: Engine, row_id: str) -> dict[str, Any]:
+    with engine.connect() as connection:
+        return dict(
+            connection.execute(
+                sa.select(acquisition.upstream_snapshot.c.payload).where(
+                    acquisition.upstream_snapshot.c.id == row_id
+                )
+            ).scalar_one()
+        )
+
+
+@pytest.mark.req("ENF-SEC-005")
+def test_rotation_reseals_the_sensitive_fields_of_an_upstream_snapshot(
+    engine: Engine, store: KeyringStore
+) -> None:
+    """The sealed part of a snapshot is a secret like any other: the rotation moves it too, and
+    the old key is droppable once it is gone."""
+    row_id = new_ulid()
+    old_kid = store.load().active.kid
+    seed_snapshot(engine, store, row_id=row_id)
+    rotate(store, engine, now=LATER)
+    keyring = store.load()
+    sealed = payload_of(engine, row_id)[SEALED_KEY]
+    assert sealed["kid"] == keyring.active.kid != old_kid
+    assert open_sealed(SecretVault(keyring), row_id, sealed) == {"password": "synthetic"}
+    assert sealed["kid"] in kids_of_the_registry(engine)
+    retire_key(store, engine, old_kid)  # nothing holds the old key anymore
+
+
+@pytest.mark.req("ENF-SEC-005")
+def test_a_kid_a_snapshot_envelope_still_uses_is_never_retired(
+    engine: Engine, store: KeyringStore
+) -> None:
+    """A rotation killed before it reaches a snapshot leaves the retired key in use: the
+    retirement refuses (the envelope would be unreadable forever), the resume moves it, and the
+    retirement then succeeds."""
+    row_id = new_ulid()
+    old_kid = store.load().active.kid
+    seed_snapshot(engine, store, row_id=row_id)
+    with engine.begin() as connection:  # a row the crash stops on, before the envelope
+        connection.execute(sa.insert(source_config).values(plugin_id="plugin-00"))
+        SecretVault(store.load()).seal_row(connection, "source_config", "plugin-00", b"s")
+
+    def crash(_table: str, _row_id: str) -> None:
+        raise RuntimeError("boom")
+
+    with pytest.raises(RuntimeError):
+        rotate(store, engine, now=LATER, on_row=crash)
+    assert payload_of(engine, row_id)[SEALED_KEY]["kid"] == old_kid
+    with pytest.raises(KeyRetirementRefusedError) as info:
+        retire_key(store, engine, old_kid)
+    assert info.value.reason == "in_use"
+    assert store.load().get(old_kid).material  # kept, and the envelope still opens
+    assert open_sealed(
+        SecretVault(store.load()), row_id, payload_of(engine, row_id)[SEALED_KEY]
+    ) == {"password": "synthetic"}
+    rotate(store, engine, now=LATER)  # the resume moves the envelope too
+    assert payload_of(engine, row_id)[SEALED_KEY]["kid"] == store.load().active.kid
+    retire_key(store, engine, old_kid)
+
+
+def kids_of_the_registry(engine: Engine) -> set[str]:
+    with engine.connect() as connection:
+        return registry.kids_in_use(connection)
