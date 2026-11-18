@@ -10,8 +10,6 @@ Conventions of this module:
   series belongs to the library of that link.
 """
 
-from typing import Final
-
 import sqlalchemy as sa
 
 from shelfhold.infrastructure.schema import catalog, storage
@@ -33,9 +31,6 @@ from shelfhold.infrastructure.schema._base import (
 from shelfhold.infrastructure.schema.acquisition import sealed_secret_columns
 from shelfhold.infrastructure.schema.catalog import lang_check, norm_by_check
 
-# States of an export record that stand for a file on the destination (shared by the reconcile
-# and by the reading side, which asks whether a profile reads the file elsewhere).
-LIVE_STATES: Final = frozenset({"written", "scanned", "resolved", "adopted"})
 ACCESS_PARTITIONINGS = ("none", "library", "user")
 FORMAT_POLICIES = ("cbz_per_chapter", "per_volume")
 RETENTION_MODES = ("passthrough", "keep")

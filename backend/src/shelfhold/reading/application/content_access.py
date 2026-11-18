@@ -38,6 +38,7 @@ from urllib.parse import quote
 import sqlalchemy as sa
 
 from shelfhold.identity.public import live_session_ids
+from shelfhold.infrastructure.export_states import LIVE_STATES
 from shelfhold.infrastructure.schema import export, identity, storage
 from shelfhold.infrastructure.secrets.keyring import Keyring
 from shelfhold.infrastructure.secrets.tombstone_aead import hkdf_sha256
@@ -352,7 +353,7 @@ class ContentAccess:
             )
             .where(
                 item.c.content_id == content_id,
-                record.c.state.in_(sorted(export.LIVE_STATES)),
+                record.c.state.in_(sorted(LIVE_STATES)),
                 account.c.user_id == user_id,
                 account.c.revoked_at.is_(None),
                 account.c.verified_at.is_not(None),

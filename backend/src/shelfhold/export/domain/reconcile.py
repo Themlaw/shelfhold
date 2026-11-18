@@ -13,7 +13,7 @@ from typing import Final
 
 import structlog
 
-from shelfhold.infrastructure.schema.export import LIVE_STATES
+from shelfhold.infrastructure.export_states import LIVE_STATES
 
 __all__ = [
     "FLOOR_MISSING",

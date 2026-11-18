@@ -136,11 +136,6 @@ def account_on(world: World, destination: str, username: str = "admin") -> None:
 # -- S1: a record the destination was seen to hold is an export the profile reads -----------------
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="D-P1: a record the destination was seen to hold (scanned, resolved, adopted) is an "
-    "export the profile reads there, not a full read here",
-)
 @pytest.mark.req("EF-LEC-014", "EF-EXP-058")
 @pytest.mark.parametrize("state", ["resolved", "scanned", "adopted"])
 def test_a_record_the_destination_was_seen_to_hold_is_read_there_not_in_full(
@@ -190,11 +185,6 @@ def test_a_record_the_destination_was_seen_to_hold_is_read_there_not_in_full(
 # -- S2: the manifest of a Unit is made of a content of that Unit ----------------------------------
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="the manifest of a Unit serves a content of that Unit: an export_item that covers it "
-    "while naming another Unit's content is no file of it",
-)
 @pytest.mark.req("EF-LEC-014", "EF-EXP-058")
 def test_a_unit_is_read_from_no_other_units_file(world: World) -> None:
     """Nothing ties an `export_item` to the Unit its coverage names (the `pull` binding checks

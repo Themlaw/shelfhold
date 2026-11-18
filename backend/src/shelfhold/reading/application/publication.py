@@ -200,6 +200,7 @@ class PublicationService:
                 str(i)
                 for i in connection.execute(
                     sa.select(export.export_item.c.id)
+                    .join(storage.content, storage.content.c.id == export.export_item.c.content_id)
                     .join(
                         export.unit_coverage,
                         sa.and_(
@@ -209,7 +210,7 @@ class PublicationService:
                     )
                     .where(
                         export.unit_coverage.c.unit_id == carrier_id,
-                        export.export_item.c.content_id.is_not(None),
+                        storage.content.c.unit_id == carrier_id,  # a file of this Unit, no other
                     )
                     .order_by(export.export_item.c.id)
                 ).scalars()

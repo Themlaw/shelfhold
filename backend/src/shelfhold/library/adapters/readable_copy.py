@@ -70,15 +70,14 @@ class _Open:
 
 
 def _is_copy_of(copy: LibraryCopy, content_hash: str | None, stat: os.stat_result) -> bool:
-    """The registry's copy is this content's: its identity is the content's (`content_hash`), or,
-    for a content with no hash, it is the file the registry recorded (size and modification time),
-    never « the first copy of the Unit ». A file that is no longer the recorded one is refused."""
-    recorded = copy.size is not None and copy.mtime_ns is not None
-    if recorded and (copy.size != stat.st_size or copy.mtime_ns != stat.st_mtime_ns):
+    """The registry's copy is this content's: it is the file the registry recorded (size and
+    modification time, always required) and, when the content has a hash, of that identity; never
+    « the first copy of the Unit ». A file that is no longer the recorded one is refused."""
+    if copy.size is None or copy.mtime_ns is None:
+        return False  # a row that never recorded the file proves nothing
+    if copy.size != stat.st_size or copy.mtime_ns != stat.st_mtime_ns:
         return False
-    if content_hash is not None:
-        return copy.content_hash == content_hash
-    return recorded
+    return content_hash is None or copy.content_hash == content_hash
 
 
 class ReadableCopies:
