@@ -1563,6 +1563,7 @@
   "shelfhold.infrastructure.cover_store",
   "shelfhold.infrastructure.db",
   "shelfhold.infrastructure.event_sequence",
+  "shelfhold.infrastructure.export_states",
   "shelfhold.infrastructure.fetcher",
   "shelfhold.infrastructure.fetcher.cache",
   "shelfhold.infrastructure.fetcher.client",
