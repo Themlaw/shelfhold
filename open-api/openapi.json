@@ -29547,7 +29547,7 @@
             "content": {
               "application/octet-stream": {}
             },
-            "description": "the entry"
+            "description": "entry"
           },
           "304": {
             "description": "not-modified"

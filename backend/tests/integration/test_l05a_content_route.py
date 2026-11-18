@@ -10,7 +10,6 @@ could run.
 from __future__ import annotations
 
 import base64
-import hashlib
 from collections.abc import Iterator
 from datetime import timedelta
 from typing import Any
@@ -31,6 +30,7 @@ from tests.content_env import (
     session_id_of,
     user_id_of,
 )
+from tests.integration.test_l46_device_tokens import kosync
 from tests.visibility_env import Seed, add_profile, seed_catalogue
 
 SHELF = "https://shelf.example"
@@ -301,10 +301,7 @@ def test_content_refuses_api_key_and_device_token(
     for headers in (
         {"Authorization": f"Basic {raw}"},
         {"Authorization": f"Bearer {created.secret}"},
-        {
-            "x-auth-user": created.public_id,
-            "x-auth-key": hashlib.md5(created.secret.encode()).hexdigest(),  # noqa: S324
-        },
+        kosync(created.public_id, created.secret),
     ):
         bare = world.env.other_client("10.0.0.8")
         got = world.get(bare, world.ticket("mum"), "OEBPS/cover.png", headers=headers)

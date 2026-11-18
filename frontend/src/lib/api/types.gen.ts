@@ -17505,7 +17505,7 @@ export type ContentError = ContentErrors[keyof ContentErrors];
 
 export type ContentResponses = {
     /**
-     * the entry
+     * entry
      */
     200: Blob | File;
 };
