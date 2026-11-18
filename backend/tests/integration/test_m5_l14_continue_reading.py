@@ -19,7 +19,7 @@ import sqlalchemy as sa
 from shelfhold.config import Settings
 from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.ids import new_ulid
-from shelfhold.infrastructure.schema import catalog, export, reading, storage
+from shelfhold.infrastructure.schema import catalog, export, reading
 from shelfhold.reading.application.progress import insert_position
 from tests.content_env import user_id_of
 from tests.integration.test_l05a_content_route import World, _world
@@ -80,7 +80,7 @@ def test_continue_reading_home(world: World) -> None:
     assert items(world.admin.get(HOME)) == []  # nothing started: nothing offered
     first, u1 = kept(world)
     second, u2 = kept(world)
-    third, u3 = kept(world)
+    _third, u3 = kept(world)
     pulled(world, "admin", "content", first, done=True)  # read in the other reader, pulled
     got = items(world.admin.get(HOME))
     assert [(i["unit_id"], i["state"], i["target"]) for i in got] == [(u2, "next", "reader")]
@@ -130,7 +130,9 @@ def test_continue_reading_is_per_profile(world: World) -> None:
     assert len(items(world.admin.get(HOME))) == 1
     assert items(world.mum.get(HOME)) == []  # hers is hers: nothing of the admin's
     other = world.admin.get(HOME, params={"user_id": user_id_of(world.seed.engine, "mum")})
-    assert [i["unit_id"] for i in items(other)] == [i["unit_id"] for i in items(world.admin.get(HOME))]
+    assert [i["unit_id"] for i in items(other)] == [
+        i["unit_id"] for i in items(world.admin.get(HOME))
+    ]
     mine = world.mum.get(HOME, params={"user_id": user_id_of(world.seed.engine, "admin")})
     assert items(mine) == []  # naming someone else's identifier changes nothing
 
@@ -161,7 +163,9 @@ def test_continue_reading_opens_kavita_for_an_exported_unit(world: World) -> Non
     item, unit = exported(world)
     pulled(world, "admin", "export_item", item, done=False)
     got = items(world.admin.get(HOME))
-    assert [(i["unit_id"], i["state"], i["target"]) for i in got] == [(unit, "in_progress", "kavita")]
+    assert [(i["unit_id"], i["state"], i["target"]) for i in got] == [
+        (unit, "in_progress", "kavita")
+    ]
     assert "kavita_url" in world.admin.get(HOME).json()
 
 
@@ -200,7 +204,10 @@ def test_continue_reading_hides_reclassified_work_from_child(world: World) -> No
     after = world.kid.get(HOME)
     assert after.status_code == nothing.status_code == 200
     assert after.json() == nothing.json()
-    assert set(after.headers) - {"set-cookie", "date"} == set(nothing.headers) - {"set-cookie", "date"}
+    assert set(after.headers) - {"set-cookie", "date"} == set(nothing.headers) - {
+        "set-cookie",
+        "date",
+    }
     assert world.seed.title_of("ok") not in after.text
     assert kid_id
 
@@ -216,7 +223,9 @@ def test_continue_reading_refuses_a_key_and_a_device_token(world: World) -> None
     assert got.status_code in (401, 403)
     auth = app.state.auth_gate.auth  # type: ignore[attr-defined]
     key = auth.create_api_key(name="home", username="admin", read_only=True).value
-    keyed = world.env.other_client("10.0.0.73").get(HOME, headers={"Authorization": f"Bearer {key}"})
+    keyed = world.env.other_client("10.0.0.73").get(
+        HOME, headers={"Authorization": f"Bearer {key}"}
+    )
     assert keyed.status_code in (401, 403)
     anonymous = world.env.other_client("10.0.0.72").get(HOME)
     assert anonymous.status_code in (401, 403)

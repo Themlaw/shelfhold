@@ -17,7 +17,7 @@ copy): two sources that agree are one row per (profile, Unit), so a series is ne
 """
 
 from dataclasses import dataclass
-from typing import Final, Literal
+from typing import Any, Final, Literal
 
 import sqlalchemy as sa
 
@@ -57,7 +57,7 @@ class ContinueEntry:
     approximate: bool
 
 
-def _order(row: sa.Row[tuple[object, ...]]) -> tuple[bool, float, int, int, str]:
+def _order(row: Any) -> tuple[bool, float, int, int, str]:
     """Reading order of the Units of an Edition (the order of the series bundle)."""
     return (
         row.number_sort is None,
@@ -101,7 +101,7 @@ class ContinueReading:
     def _works_under_way(
         connection: sa.Connection, user_id: str, scope: object, offset: int, size: int
     ) -> list[str]:
-        """The Works the profile has started, most recently touched first, only those she may see."""
+        """The Works she has started, the most recently touched first, only those she may see."""
         progress, unit, edition = _PROGRESS, catalog.unit, catalog.edition
         position = reading.reading_position
         touched = sa.func.min(position.c.client_ts, position.c.server_ts)
@@ -134,8 +134,13 @@ class ContinueReading:
         touched = sa.func.min(position.c.client_ts, position.c.server_ts)
         rows = connection.execute(
             sa.select(
-                unit.c.id, unit.c.edition_id, unit.c.number_sort, unit.c.number_segment_ordinal,
-                unit.c.source_order, progress.c.state, progress.c.approximate,
+                unit.c.id,
+                unit.c.edition_id,
+                unit.c.number_sort,
+                unit.c.number_segment_ordinal,
+                unit.c.source_order,
+                progress.c.state,
+                progress.c.approximate,
                 touched.label("ts"),
             )
             .select_from(
@@ -190,12 +195,15 @@ class ContinueReading:
             return None
         row = connection.execute(
             sa.select(
-                catalog.unit.c.number_raw, catalog.unit.c.title, catalog.work.c.id,
+                catalog.unit.c.number_raw,
+                catalog.unit.c.title,
+                catalog.work.c.id,
                 catalog.work.c.title.label("work_title"),
             )
             .select_from(
-                catalog.unit.join(catalog.edition, catalog.edition.c.id == catalog.unit.c.edition_id)
-                .join(catalog.work, catalog.work.c.id == catalog.edition.c.work_id)
+                catalog.unit.join(
+                    catalog.edition, catalog.edition.c.id == catalog.unit.c.edition_id
+                ).join(catalog.work, catalog.work.c.id == catalog.edition.c.work_id)
             )
             .where(catalog.unit.c.id == unit_id)
         ).one()
