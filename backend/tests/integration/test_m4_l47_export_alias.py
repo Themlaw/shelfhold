@@ -70,7 +70,17 @@ def test_first_export_writes_the_alias_of_the_file() -> None:
         assert row.shelf_destination_id == env.destination_id
         assert row.koreader_partial_md5 == "md5:" + koreader_partial_md5(io.BytesIO(data))
         assert row.kavita_md5 == "md5:" + kavita_hash(io.BytesIO(data)).lower()
-        assert row.content_hash == exported.old_content_hash
+        with env.engine.connect() as connection:  # what a position is anchored on
+            anchor = connection.execute(
+                sa.select(storage.content.c.content_hash)
+                .select_from(
+                    export.export_item.join(
+                        storage.content, storage.content.c.id == export.export_item.c.content_id
+                    )
+                )
+                .where(export.export_item.c.id == exported.export_item_id)
+            ).scalar_one()
+        assert row.content_hash == (anchor or exported.old_file_hash)
 
 
 def test_replaying_the_export_keeps_a_single_alias() -> None:
@@ -83,7 +93,7 @@ def test_replaying_the_export_keeps_a_single_alias() -> None:
                 record_export_alias(
                     connection, destination_id=env.destination_id,
                     export_item_id=exported.export_item_id, file_hash=exported.old_file_hash,
-                    content_hash=exported.old_content_hash, path=exported.target,
+                    path=exported.target,
                 )  # fmt: skip
         assert len(aliases(env.engine, exported.export_item_id)) == 1
 
@@ -105,7 +115,7 @@ def test_a_copy_identical_to_the_source_writes_no_alias() -> None:
             written = record_export_alias(
                 connection, destination_id=env.destination_id,
                 export_item_id=exported.export_item_id, file_hash=exported.old_file_hash,
-                content_hash=exported.old_content_hash, path=exported.target,
+                path=exported.target,
             )  # fmt: skip
         assert written is False
         assert aliases(env.engine) == []
@@ -120,7 +130,7 @@ def test_a_file_that_cannot_be_hashed_leaves_the_export_and_a_row_to_heal(tmp_pa
             written = record_export_alias(
                 connection, destination_id=env.destination_id,
                 export_item_id=exported.export_item_id, file_hash=exported.old_file_hash,
-                content_hash=exported.old_content_hash, path=tmp_path / "gone.cbz",
+                path=tmp_path / "gone.cbz",
             )  # fmt: skip
         (row,) = aliases(env.engine)
         assert written is True and row.koreader_partial_md5 is None and row.kavita_md5 is None
@@ -146,7 +156,7 @@ def exported_digest(world: World, key: str) -> str:
     with world.seed.engine.begin() as connection:
         assert record_export_alias(
             connection, destination_id=None, export_item_id=item.item_id, file_hash=sha(data),
-            content_hash=sha(b"content:" + data), path=item.path,
+            path=item.path,
         )  # fmt: skip
     return koreader_partial_md5(io.BytesIO(data))  # bare, as KOReader sends it
 

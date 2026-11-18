@@ -979,7 +979,7 @@ class FanOut:
                     record_export_alias(
                         connection, destination_id=destination_id,
                         export_item_id=written.export_item_id, file_hash=written.file_hash,
-                        content_hash=None, path=Path(written.path),
+                        path=Path(written.path),
                     )  # fmt: skip
 
 

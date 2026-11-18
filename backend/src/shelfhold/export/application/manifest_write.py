@@ -71,7 +71,7 @@ def complete_write(
     # L47: the e-reader finds the file by its digest from the first export (same transaction)
     record_export_alias(
         connection, destination_id=destination_id, export_item_id=item_id,
-        file_hash=row.file_hash, content_hash=row.content_hash, path=Path(target),
+        file_hash=row.file_hash, path=Path(target),
     )  # fmt: skip
     # T9: the indexers of the tree say what the primary says, in this same transaction (and, after
     # a crash, in the transaction of the boot that completes the line)

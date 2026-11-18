@@ -39,11 +39,14 @@ def record_export_alias(
     destination_id: str | None,
     export_item_id: str,
     file_hash: str,
-    content_hash: str | None,
     path: Path,
 ) -> bool:
     """Make the alias of the file at `path` for its item, in the caller's transaction. True when a
-    row was added. A row that exists keeps its place; only hashes it lacks are completed."""
+    row was added. A row that exists keeps its place; only hashes it lacks are completed.
+
+    `content_hash` is the one a reader's position is anchored on: the content's, else the file's own
+    (a volume has no content), the very order of `progress._current_hash` and `kosync._anchor`, so
+    that no position taken before the alias existed becomes a "replaced" one."""
     alias = export.document_alias
     source = connection.execute(
         sa.select(storage.content.c.original_sha256, storage.content.c.content_hash)
@@ -79,7 +82,7 @@ def record_export_alias(
     connection.execute(
         sa.insert(alias).values(
             export_item_id=export_item_id, file_hash=file_hash,
-            content_hash=content_hash or source.content_hash or file_hash,
+            content_hash=source.content_hash or file_hash,
             shelf_destination_id=destination_id, **values,
         )
     )  # fmt: skip
