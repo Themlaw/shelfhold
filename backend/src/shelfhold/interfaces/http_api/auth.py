@@ -310,7 +310,11 @@ class AuthMiddleware:
             # `/lite` has one credential, its own cookie (a token's secret opened it), read by the
             # pages themselves at each request; a session, a key or a proxy identity opens
             # nothing there, and the CSRF of a session (a header a form cannot send) is not its
-            # check: its forms carry a token of their own. Nobody is signed in here.
+            # check: its forms carry a token of their own. Nobody is signed in here. A key
+            # presented here is refused, never ignored: a scoped key reaches nothing but its route.
+            if _bearer(headers) is not None:
+                await self._problem(scope, receive, send, "credential_not_allowed")
+                return
             await self.app(scope, receive, send)
             return
         refused = self._key_attempts_refused(scope, headers)

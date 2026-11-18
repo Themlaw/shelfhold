@@ -283,12 +283,16 @@ def test_lite_needs_no_other_credential_and_accepts_none_but_its_own(world: Worl
     key = auth_of(world.env).create_api_key(name="kidkey", username="kid", read_only=True).value
     for client, headers in (
         (world.kid_session, {}),  # her browser session (cookie jar of `sid`, sent to every path)
-        (browser(world, "10.0.1.8"), {"Authorization": f"Bearer {key}"}),
         (browser(world, "10.0.1.9"), {"Authorization": world.kid.headers["Authorization"]}),
     ):
         got = client.get("/lite/works", headers=headers, follow_redirects=False)
         assert got.status_code == 303 and "sign-in" in got.headers["location"]
         assert VISIBLE_TITLES["ok"] not in got.text
+    # an API key is refused, not ignored: a key of a narrow scope reaches nothing else
+    refused = browser(world, "10.0.1.8").get(
+        "/lite/works", headers={"Authorization": f"Bearer {key}"}, follow_redirects=False
+    )
+    assert refused.status_code == 403 and VISIBLE_TITLES["ok"] not in refused.text
     # the web session of an adult still works as before; `/lite` did not touch the session
     assert world.kid_session.get("/api/v1/me").status_code == 200
 
