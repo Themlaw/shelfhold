@@ -69,6 +69,7 @@ def test_every_literal_payload_of_a_publisher_passes_the_check_of_the_bus() -> N
     assert not refused, "\n".join(refused)
 
 
+@pytest.mark.req("ENF-OBS-003")
 def test_the_events_written_straight_to_the_table_pass_the_check_of_the_bus() -> None:
     """`changes._insert` skips `publish` but runs the same check: the payloads it writes (the
     child of a visibility change included) must be accepted, whatever the id of a person is."""
