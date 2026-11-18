@@ -4,8 +4,14 @@ Computed here, from the archive the server is about to read, with `safe_parse_xm
 from a caller: the first documents of the reading order within the bound (`spine_excerpt`), the
 package and the container, the navigation document, and the resources those documents reference
 (images, styles, fonts, `@import` and `url()` chains included). A link `<a href>` to another chapter
-is not a resource and is never followed. A document that cannot be read, a package without a
-usable reading order, or a first document beyond the bound: `None`, « extrait indisponible ».
+is not a resource and is never followed.
+
+A file enters the list as a **resource** only if the manifest of the package types it as an image
+(an SVG document excepted), a font or a style sheet: never a document (XHTML, HTML, SVG), never a
+type the manifest does not name, whatever the attribute that points at it. And the resources
+together stay within `EXCERPT_RATIO` of the archive: one that does not fit is not served, the
+others are. A document that cannot be read, a package without a usable reading order, or a first
+document beyond the bound: `None`, « extrait indisponible ».
 """
 
 from __future__ import annotations
@@ -18,7 +24,7 @@ from urllib.parse import unquote, urlsplit
 from shelfhold.infrastructure.archives import SafeArchive, UnsafeArchiveError
 from shelfhold.infrastructure.packaging.epub.opf import OpfError, find_opf_path
 from shelfhold.infrastructure.xml import Element, UnsafeXmlError, safe_parse_xml
-from shelfhold.reading.domain.excerpt import spine_excerpt
+from shelfhold.reading.domain.excerpt import EXCERPT_RATIO, spine_excerpt
 
 __all__ = ["epub_excerpt"]
 
@@ -28,6 +34,21 @@ _URL = re.compile(r"""url\(\s*['"]?([^'")\s]+)""", re.IGNORECASE)
 _IMPORT = re.compile(r"""@import\s+['"]([^'"]+)""", re.IGNORECASE)
 _RESOURCE_ATTRIBUTES: Final = ("src", "poster", "data", _XLINK)
 _MAX_ROUNDS = 8  # `@import` chains: bounded, never a loop
+_FONT_TYPES: Final = frozenset(
+    {"application/vnd.ms-opentype", "application/font-woff", "application/font-sfnt"}
+)
+
+
+def _is_resource_type(kind: str) -> bool:
+    """An image (not an SVG document), a font or a style sheet, by the manifest's word."""
+    kind = kind.split(";", 1)[0].strip().lower()
+    if kind == "image/svg+xml":
+        return False
+    return (
+        kind.startswith(("image/", "font/", "application/x-font-"))
+        or kind in _FONT_TYPES
+        or kind == "text/css"
+    )
 
 
 def _local(tag: object) -> str:
@@ -83,13 +104,16 @@ def epub_excerpt(archive: SafeArchive) -> frozenset[str] | None:
                         str(item.get("media-type", "")),
                         str(item.get("properties", "")),
                     )
-        spine = [
-            manifest[str(ref.get("idref"))][0]
-            for ref in package.iter()
-            if _local(ref.tag) == "itemref"
-            and str(ref.get("idref")) in manifest
-            and manifest[str(ref.get("idref"))][1] in _DOCUMENT_TYPES
-        ]
+        spine = list(  # distinct documents: one repeated in the reading order is still one
+            dict.fromkeys(
+                manifest[str(ref.get("idref"))][0]
+                for ref in package.iter()
+                if _local(ref.tag) == "itemref"
+                and str(ref.get("idref")) in manifest
+                and manifest[str(ref.get("idref"))][1] in _DOCUMENT_TYPES
+            )
+        )
+        kinds = {entry: kind for entry, kind, _p in manifest.values()}
         chosen = spine_excerpt([(entry, sizes.get(entry, 0)) for entry in spine])
         if chosen is None:
             return None
@@ -99,11 +123,12 @@ def epub_excerpt(archive: SafeArchive) -> frozenset[str] | None:
         for entry, kind, properties in manifest.values():  # the way into the book
             if "nav" in properties.split() or kind == "application/x-dtbncx+xml":
                 allowed.add(entry)
+        budget = int(sum(sizes.values()) * EXCERPT_RATIO)  # resources, all together
         pending = [*chosen]
         for _ in range(_MAX_ROUNDS):
             following: list[str] = []
             for entry in pending:
-                if entry.lower().endswith(".css"):
+                if kinds.get(entry, "").lower() == "text/css":
                     references = _css_references(archive.read(entry).decode("utf-8", "replace"))
                 elif entry in chosen:
                     references = _document_references(safe_parse_xml(archive.read(entry)))
@@ -111,9 +136,16 @@ def epub_excerpt(archive: SafeArchive) -> frozenset[str] | None:
                     continue
                 for raw in references:
                     target = _resolve(entry, raw, names)
-                    if target is not None and target not in allowed and target not in spine:
-                        allowed.add(target)
-                        following.append(target)
+                    if (
+                        target is None
+                        or target in allowed
+                        or not _is_resource_type(kinds.get(target, ""))
+                        or sizes.get(target, 0) > budget
+                    ):
+                        continue  # not a resource, not typed as one, or beyond the bound
+                    budget -= sizes.get(target, 0)
+                    allowed.add(target)
+                    following.append(target)
             if not following:
                 break
             pending = following
