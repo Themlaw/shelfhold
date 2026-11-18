@@ -127,6 +127,7 @@ from shelfhold.library.public import (
     erase_history,
     erase_units,
     erase_work_rows,
+    rendition_rels,
     request_ids,
     require_purge_allowed,
     title_needles,
@@ -247,6 +248,7 @@ class _Plan:
     payload: list[ContentHash]
     derived: list[ContentHash]
     bindings: list[Any]
+    renditions: list[str] = field(default_factory=list)  # /data cache files made from its contents
     tickets: list[DownloadTicket] = field(default_factory=list)
     requests: list[str] = field(default_factory=list)
     needles: list[str] = field(default_factory=list)
@@ -438,6 +440,7 @@ class PurgeService:
             [ContentHash(h.by, h.value) for h in payload],
             [ContentHash(h.by, h.value) for h in derived], bindings,
         )  # fmt: skip
+        plan.renditions = rendition_rels(connection, unit_ids)
         plan.tickets = download_tickets(connection, unit_ids)
         plan.requests = request_ids(connection, unit_ids)
         plan.needles = title_needles(connection, unit_ids, work_id if kind == "work" else None)
@@ -822,6 +825,9 @@ class PurgeService:
             for rel in derived_rels(unit_id):
                 if self._erase_data(rel):
                     progress.erased += 1
+        for rel in plan.renditions:  # converted images, named by hash: derived from its files
+            if self._erase_data(rel):
+                progress.erased += 1
         if plan.kind == "work" and self._erase_data(work_rel(plan.work_id)):
             progress.erased += 1  # its `work.json` spells the title: gone before the rows are
 

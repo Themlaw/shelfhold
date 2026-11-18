@@ -240,9 +240,7 @@ def test_rendition_purged_with_source() -> None:
         )
         assert len(_rows(env)) == 3 and len(_files(env)) == 3
 
-        report = purge.purge.purge_unit(
-            unit, now=purge.clock.now(), principal=ADMIN, typed=unit
-        )
+        report = purge.purge.purge_unit(unit, now=purge.clock.now(), principal=ADMIN, typed=unit)
 
         assert report.complete
         remaining = _rows(env)
@@ -277,20 +275,19 @@ def test_a_rendition_file_two_sources_share_goes_when_the_last_one_does() -> Non
 @pytest.mark.req("EF-BIB-015")
 def test_a_rendition_row_cannot_outlive_a_malformed_name() -> None:
     """The ledger only holds hashes and closed kinds: a path or a kind off the list is refused."""
-    with export_env() as env:
-        with write_transaction(env.engine) as connection:
-            for bad in (
-                {"source_content_hash": "../x", "kind": "jpeg"},
-                {"source_content_hash": "sha256:" + "a" * 64, "kind": "gif"},
-                {"source_content_hash": "sha256:" + "a" * 64, "kind": "jpeg", "size": 0},
-            ):
-                values = {"content_hash": "sha256:" + "b" * 64, "size": 10, "params": "{}"} | bad
-                with pytest.raises(sa.exc.IntegrityError), connection.begin_nested():
-                    connection.execute(
-                        sa.text(
-                            "INSERT INTO rendition (source_content_hash, kind, params, "
-                            "content_hash, size) VALUES (:source_content_hash, :kind, :params, "
-                            ":content_hash, :size)"
-                        ),
-                        values,
-                    )
+    with export_env() as env, write_transaction(env.engine) as connection:
+        for bad in (
+            {"source_content_hash": "../x", "kind": "jpeg"},
+            {"source_content_hash": "sha256:" + "a" * 64, "kind": "gif"},
+            {"source_content_hash": "sha256:" + "a" * 64, "kind": "jpeg", "size": 0},
+        ):
+            values = {"content_hash": "sha256:" + "b" * 64, "size": 10, "params": "{}"} | bad
+            with pytest.raises(sa.exc.IntegrityError), connection.begin_nested():
+                connection.execute(
+                    sa.text(
+                        "INSERT INTO rendition (source_content_hash, kind, params, "
+                        "content_hash, size) VALUES (:source_content_hash, :kind, :params, "
+                        ":content_hash, :size)"
+                    ),
+                    values,
+                )

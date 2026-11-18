@@ -74,7 +74,7 @@ def test_params_have_one_canonical_form() -> None:
     a = RenditionParams(kind="jpeg", quality=80, entry="p/1.webp")
     assert a.canonical() == RenditionParams(kind="jpeg", entry="p/1.webp", quality=80).canonical()
     assert a.canonical() != RenditionParams(kind="png", entry="p/1.webp").canonical()
-    for bad in ({"kind": "gif"}, {"kind": "jpeg", "quality": 0}, {"kind": "png", "max_edge": 0}):
+    for bad in ({"kind": "gif"}, {"kind": "jpeg", "quality": 0}, {"kind": "png", "quality": 101}):
         with pytest.raises(ValueError):
             RenditionParams(**bad)  # type: ignore[arg-type]
 

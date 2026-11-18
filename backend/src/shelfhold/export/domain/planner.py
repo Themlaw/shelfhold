@@ -41,6 +41,12 @@ from shelfhold.export.domain.naming import (
     checked_export_path,
     volume_number,
 )
+from shelfhold.infrastructure.imaging.rendition_formats import (
+    DECODABLE_SOURCES,
+    KIND_MEDIA,
+    source_format,
+    target_kind,
+)
 from shelfhold.sdk.age import AgeRating
 
 __all__ = [
@@ -94,20 +100,39 @@ class ContentOffer:
     content_id: str
     format: str  # a slug: cbz, epub, pdf
     media_type: str  # the MIME type
+    # M5 (EF-BIB-015): set on a *rendition* offer, the id of the `content` it is converted from;
+    # `format` and `media_type` are then those of the converted file. None for a native content.
+    rendition_of: str | None = None
 
 
-def choose_content(accepted: Iterable[str], offers: Iterable[ContentOffer]) -> ContentOffer | None:
+def choose_content(
+    accepted: Iterable[str], offers: Iterable[ContentOffer], *, renditions: bool = False
+) -> ContentOffer | None:
     """The native format of a binding: the first of its `accepted_content_types`, in the order the
     destination declares them, that the Variant has as a `content` (a slug or a MIME type names
-    one). None when no content is accepted: the `Rendition` of M5 is reserved, a converted file is
-    never made up here. Deterministic: the order of `accepted` decides, then the id of the content,
-    whatever the order the Variant lists its contents in (EF-EXP-046, EF-EXP-058)."""
+    one). Deterministic: the order of `accepted` decides, then the id of the content, whatever the
+    order the Variant lists its contents in (EF-EXP-046, EF-EXP-058).
+
+    With `renditions=True` (M5, EF-BIB-015), and only when no content is accepted as it is, the
+    first accepted token that a conversion can make (JPEG or PNG) from an image the worker can
+    decode (AVIF, WebP) gives a *rendition* offer: `rendition_of` names the source, the format is
+    the converted one. A native content always wins; without the opt-in, None as before: a
+    converted file is never made up by a caller that did not ask for one."""
     ranked = sorted({o.content_id: o for o in offers}.values(), key=lambda o: o.content_id)
-    for wanted in accepted:
-        token = wanted.strip().lower()
+    wanted_tokens = [w.strip().lower() for w in accepted]
+    for token in wanted_tokens:
         for offer in ranked:
             if token in (offer.format.lower(), offer.media_type.lower()):
                 return offer
+    if not renditions:
+        return None
+    for token in wanted_tokens:
+        kind = target_kind(token)
+        if kind is None:
+            continue
+        for offer in ranked:
+            if source_format(offer.format, offer.media_type) in DECODABLE_SOURCES:
+                return ContentOffer(offer.content_id, kind, KIND_MEDIA[kind], offer.content_id)
     return None
 
 
