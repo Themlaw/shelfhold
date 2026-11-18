@@ -2895,7 +2895,7 @@
   busy_text = "Too many downloads in progress. Try again in a moment."
   edition_in = "Edition ({lang})"
   excluded = "{count, plural, one {# chapter left out} other {# chapters left out}}: format not readable on an e-reader, or file unavailable."
-  size = "{mb} MB"
+  download_sized = "Download ({mb} MB)"
   download = "Download"
   no_download = "No file to download for this work."
 

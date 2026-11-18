@@ -412,11 +412,15 @@ def build_lite_router(
                     t("lite.excluded", page, count=offer.excluded) if offer.excluded else ""
                 )
                 name = safe_filename(offer.filename).rsplit(".", 1)[0]
-                size = t("lite.size", page, mb=f"{offer.size / 1_000_000:.1f}")
+                label = (
+                    t("lite.download_sized", page, mb=f"{offer.size / 1_000_000:.1f}")
+                    if offer.size is not None
+                    else t("lite.download", page)
+                )
                 href = paths.complete(edition.edition_id, offer.part)
                 block += fragment("heading", text=name)
                 block += fragment("note", text=notice) if notice else ""
-                block += fragment("offer", href=href, label=t("lite.download", page), size=size)
+                block += fragment("offer", href=href, label=label)
             sections.append(block)
         none = "" if offered else fragment("paragraph", text=t("lite.no_download", page))
         body = render_fragment("work", html_editions="".join(sections), html_none=none)

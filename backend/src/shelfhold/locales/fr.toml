@@ -2893,7 +2893,7 @@ busy_title = "Trop de téléchargements"
 busy_text = "Trop de téléchargements en cours. Réessayez dans un instant."
 edition_in = "Édition ({lang})"
 excluded = "{count, plural, one {# chapitre exclu} other {# chapitres exclus}} : format non lisible sur liseuse ou fichier indisponible."
-size = "{mb} Mo"
+download_sized = "Télécharger ({mb} Mo)"
 download = "Télécharger"
 no_download = "Aucun fichier à télécharger pour cette œuvre."
 
