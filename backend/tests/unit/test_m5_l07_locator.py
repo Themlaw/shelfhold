@@ -1,4 +1,4 @@
-"""M5 L07 (EF-LEC-007, EF-LEC-014): the locator v1 of ADR-0055 and the bounded merge, as pure values.
+"""M5 L07 (EF-LEC-007, EF-LEC-014): the locator v1 of ADR-0055 and the bounded merge (pure).
 
 The locator the reader sends is closed: an EPUB says where (`cfi`), how far (`totalProgression`)
 and under which version of the filter the DOM was made (`filter`); a support of pages says which
@@ -63,8 +63,15 @@ def test_locator_v1_progression_and_the_stored_form() -> None:
 
 
 def reported(
-    ident: str, progression: float, minutes: int, *, device: str | None = "a", index: int | None
-    = None, count: int | None = None, seen: int | None = None, content: str = "sha256:" + "a" * 64,
+    ident: str,
+    progression: float,
+    minutes: int,
+    *,
+    device: str | None = "a",
+    index: int | None = None,
+    count: int | None = None,
+    seen: int | None = None,
+    content: str = "sha256:" + "a" * 64,
 ) -> Reported:
     sent = NOW + timedelta(minutes=minutes)
     return Reported(

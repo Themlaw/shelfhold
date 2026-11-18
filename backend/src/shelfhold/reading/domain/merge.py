@@ -110,12 +110,15 @@ def conflicting(won: Reported, others: Sequence[Reported]) -> Reported | None:
             continue
         if other.progression - won.progression - CONFLICT_PROGRESSION <= _EPSILON:
             continue
-        if other.index is not None and won.index is not None and other.index - won.index < (
-            CONFLICT_MIN_PAGES
+        if (
+            other.index is not None
+            and won.index is not None
+            and other.index - won.index < (CONFLICT_MIN_PAGES)
         ):
             continue
         if best is None or (other.progression, other.position_id) > (
-            best.progression, best.position_id
+            best.progression,
+            best.position_id,
         ):
             best = other
     return best

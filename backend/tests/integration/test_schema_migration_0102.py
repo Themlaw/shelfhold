@@ -53,7 +53,9 @@ def _connect(settings: Settings) -> sqlite3.Connection:
 
 def _conflict(conn: sqlite3.Connection, ident: str, **over: str | None) -> None:
     values: dict[str, str | None] = {
-        "carrier_type": "content", "choice": None, "resolved_at": None
+        "carrier_type": "content",
+        "choice": None,
+        "resolved_at": None,
     } | over
     conn.execute(
         "INSERT INTO reading_conflict (id, user_id, carrier_type, carrier_id, winner_position_id,"

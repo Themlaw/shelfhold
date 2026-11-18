@@ -57,7 +57,8 @@ class LocatorV1:
         if self.kind == "cfi":
             return {"v": 1, "type": "cfi", "cfi": self.cfi, "totalProgression": self.progression,
                     "filter": self.filter}  # fmt: skip
-        return {"v": 1, "type": "page", "index": self.index, "count": self.count, "page": self.index}
+        return {"v": 1, "type": "page", "index": self.index, "count": self.count,
+                "page": self.index}  # fmt: skip
 
 
 def _integer(value: Any) -> int:

@@ -35,7 +35,6 @@ from shelfhold.infrastructure.schema import reading
 from shelfhold.reading.application.content_access import ContentAccess, NoReadableCopyError
 from shelfhold.reading.application.progress import (
     HISTORY_LIMIT,
-    UnknownCarrierError,
     _current_hash,
     check_carrier,
     insert_position,
@@ -185,7 +184,9 @@ class ReaderPositions:
             sa.select(sa.literal(1)).where(mine, table.c.resolved_at.is_(None)).limit(1)
         ).first():
             return  # one is open: proposed once, until she chooses
-        settled = connection.execute(sa.select(sa.func.max(table.c.resolved_at)).where(mine)).scalar()
+        settled = connection.execute(
+            sa.select(sa.func.max(table.c.resolved_at)).where(mine)
+        ).scalar()
         since = None if settled is None else _utc(settled)
         rows = self._v1_rows(connection, user_id, carrier_type, carrier_id)
         if not rows:
@@ -341,9 +342,7 @@ class ReaderPositions:
                         source="device", now=now, traverse=False,
                     )  # fmt: skip
             connection.execute(
-                sa.update(table)
-                .where(table.c.id == row.id)
-                .values(choice=choice, resolved_at=now)
+                sa.update(table).where(table.c.id == row.id).values(choice=choice, resolved_at=now)
             )
             return self._current(connection, user_id, row.carrier_type, row.carrier_id)
 

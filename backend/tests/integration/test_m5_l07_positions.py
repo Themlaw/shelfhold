@@ -1,4 +1,4 @@
-"""M5 L07 (EF-LEC-007, EF-LEC-014 reader side, EF-USR-006, ENF-SEC-010): the positions of the reader.
+"""M5 L07 (EF-LEC-007, EF-LEC-014, EF-USR-006, ENF-SEC-010): the positions of the reader.
 
 `PUT /api/reader/positions` writes the anchor `reading_position` of the integrated reader (locator
 v1 of ADR-0055) on a kept copy (`content`) or on an `export_item`; the progress of a Unit comes
@@ -309,7 +309,7 @@ def test_excerpt_writes_no_position(world: World) -> None:
         user_id=user, session_id=session_id_of(world.seed.engine, "admin"),
         carrier_type="content", carrier_id=content,
     )  # fmt: skip
-    assert put(world, world.admin, content, page(3), ticket=full.token).is_success  # a full ticket: fine
+    assert put(world, world.admin, content, page(3), ticket=full.token).is_success  # full: fine
     with write_transaction(world.seed.engine) as connection:
         connection.execute(sa.delete(reading.reading_position))
     item = world.export_item(world.seed.editions["ok"], content)
@@ -446,6 +446,7 @@ def test_reader_positions_credentials_and_identifiers(world: World) -> None:
         got = put(world, world.admin, carrier, page(1))
     assert got.status_code == 404, got.text
     assert put(world, world.admin, content, page(1), carrier_type="nothing").status_code in {
-        404, 422,
+        404,
+        422,
     }
     assert count(world, reading.reading_position) == 0

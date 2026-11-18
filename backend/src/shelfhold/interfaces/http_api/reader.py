@@ -142,14 +142,12 @@ def _stored(found: StoredPosition) -> StoredOut:
 
 
 def _conflict(found: Conflict | None) -> ConflictOut | None:
-    return (
-        None
-        if found is None
-        else ConflictOut(
-            id=found.id, winner=_stored(found.winner), loser=_stored(found.loser),
-            created_at=found.created_at,
-        )  # fmt: skip
-    )
+    if found is None:
+        return None
+    return ConflictOut(
+        id=found.id, winner=_stored(found.winner), loser=_stored(found.loser),
+        created_at=found.created_at,
+    )  # fmt: skip
 
 
 def _current(found: Current) -> CurrentOut:
@@ -310,7 +308,9 @@ def build_reader_router(
         try:
             return _current(
                 get_positions().resolve(
-                    user_id=principal.user_id, conflict_id=conflict_id, choice=body.choice,
+                    user_id=principal.user_id,
+                    conflict_id=conflict_id,
+                    choice=body.choice,
                     device_id=body.device_id,
                 )
             )

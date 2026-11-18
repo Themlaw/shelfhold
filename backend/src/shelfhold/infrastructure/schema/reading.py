@@ -99,9 +99,7 @@ reading_conflict = sa.Table(
     ulid_check("loser_position_id"),
     in_check("carrier_type", POSITION_CARRIERS),
     in_check("choice", CONFLICT_CHOICES),
-    sa.CheckConstraint(
-        '("choice" IS NULL) = ("resolved_at" IS NULL)', name="choice_with_its_date"
-    ),
+    sa.CheckConstraint('("choice" IS NULL) = ("resolved_at" IS NULL)', name="choice_with_its_date"),
     sa.Index(
         "ux_reading_conflict_open",
         "user_id",
