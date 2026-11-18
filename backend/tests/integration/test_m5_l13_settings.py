@@ -16,12 +16,17 @@ import pytest
 import sqlalchemy as sa
 
 from shelfhold.config import Settings
+from shelfhold.infrastructure.ids import new_ulid
+from shelfhold.infrastructure.schema import reading
 from shelfhold.reading.application.settings import (
+    MAX_SETTINGS,
     DeviceScopeError,
     InvalidSettingError,
     ReaderSettings,
+    SettingsLimitError,
 )
 from tests.auth_env import CSRF_HEADER
+from tests.content_env import user_id_of
 from tests.integration.test_l05a_content_route import World, _shape, _world
 from tests.integration.test_m5_l06_publication import (
     ABSENT,
@@ -233,3 +238,53 @@ def test_no_setting_widens_what_parental_control_hides(world: World) -> None:
     assert _shape(publication(world.kid, "content", hidden)) == _shape(absent)
     assert _shape(publication(world.kid, "unit", unit)) == _shape(absent)
     assert "/content/" not in publication(world.kid, "content", hidden).text
+
+
+@pytest.mark.req("EF-LEC-006", "EF-USR-006")
+def test_a_series_she_cannot_see_answers_like_one_that_is_not_there(world: World) -> None:
+    """A key that names a Work the profile cannot see leaves no row behind, and the write answers
+    exactly what the write of an identifier that names nothing answers: no oracle tells a hidden
+    Œuvre from an absent one."""
+    hidden, absent = world.seed.works["twelve"], new_ulid()
+    for key in (hidden, absent):
+        got = put_setting(
+            world,
+            world.kid,
+            {"kind": "direction", "key": key, "value": "rtl", "scope": "everywhere"},
+        )
+        assert got.status_code == 200
+        assert got.json() == {"direction": None, "comfort": {}}
+    with world.seed.engine.connect() as connection:
+        kept = connection.execute(
+            sa.select(sa.func.count())
+            .select_from(reading.reader_setting)
+            .where(
+                reading.reader_setting.c.user_id == user_id_of(world.seed.engine, "kid")
+            )
+        ).scalar_one()
+    assert kept == 0
+
+
+@pytest.mark.req("EF-LEC-006")
+def test_a_profile_holds_at_most_max_settings_rows(tmp_path: Any) -> None:
+    """A profile keeps at most `MAX_SETTINGS` rows: the write of a place she does not hold yet is
+    a typed refusal beyond the bound, and the write of a place she already holds replaces it,
+    bound or not."""
+    with reading_env(tmp_path) as env:
+        reader = env.user("lectrice")
+        service = ReaderSettings(env.engine)
+        for n in range(MAX_SETTINGS):
+            service.set(
+                user_id=reader, kind="comfort", key="fit", value="width",
+                scope="device", device_id=f"web-{n}",
+            )  # fmt: skip
+        with pytest.raises(SettingsLimitError):
+            service.set(
+                user_id=reader, kind="direction", key="default", value="ltr",
+                scope="everywhere",
+            )  # fmt: skip
+        service.set(
+            user_id=reader, kind="comfort", key="fit", value="contain",
+            scope="device", device_id="web-0",
+        )  # fmt: skip
+        assert service.resolve(user_id=reader, device_id="web-0").comfort == {"fit": "contain"}

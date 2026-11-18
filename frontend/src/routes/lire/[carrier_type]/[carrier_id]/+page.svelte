@@ -157,14 +157,22 @@
     engine?.goTo({ v: 1, type: 'page', index, count: view.pages.length });
   }
 
-  /** Writes one choice with its portée, then keeps what the server says is effective now. */
+  /** Writes one choice with its portée. The answer of a comfort write is resolved without the
+   * series (a comfort's name says nothing of the book that is open), so only the field that was
+   * written is taken from it: the direction the profile pinned to this series stays what the
+   * reader read it to be. */
   async function write(change: PendingSetting, scope: SettingScope): Promise<void> {
     const { data } = await readerPutSettings({
       body: settingBody(change, scope, readerDeviceId()),
       headers: { 'X-CSRF-Token': csrfToken() },
       throwOnError: false
     });
-    if (!left && data) settings = toSettingsView(data);
+    if (left || !data) return;
+    settings = {
+      direction:
+        change.kind === 'direction' ? data.direction : (settings?.direction ?? null),
+      comfort: change.kind === 'direction' ? (settings?.comfort ?? {}) : data.comfort
+    };
   }
 
   /** The sens of this series: written for the series, and the book is drawn again at once. */
@@ -341,7 +349,8 @@
     {/if}
     {#if pending}
       <div class="scope" role="group" aria-label={t('reader.scope_question')} data-reader-scope>
-        <p>{t('reader.scope_question')}</p>
+        <!-- a question that appears must be told: the region is polite, the reader hears it -->
+        <p aria-live="polite">{t('reader.scope_question')}</p>
         <button type="button" onclick={() => void answer('device')}>{t('reader.scope_device')}</button>
         <button type="button" onclick={() => void answer('everywhere')}>{t('reader.scope_everywhere')}</button>
         <button type="button" onclick={() => (pending = null)}>{t('reader.cancel')}</button>

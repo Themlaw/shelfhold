@@ -13780,7 +13780,7 @@
         ]
       },
       "put": {
-        "description": "Write one choice with its portée — « pour cet appareil » (`device`, which names the\ndevice) or « partout » (`everywhere`, which names none) — and answer what is effective\nnow. Only the reader's own settings exist here; a row never widens what parental control\nhides.",
+        "description": "Write one choice with its portée — « pour cet appareil » (`device`, which names the\ndevice) or « partout » (`everywhere`, which names none) — and answer what is effective\nnow. Only the reader's own settings exist here; a row never widens what parental control\nhides, and a series the profile cannot see answers like one that is not there. Beyond\nthe bound of rows a profile may hold, the write of a new place is a typed refusal.",
         "operationId": "reader_put_settings",
         "requestBody": {
           "content": {
@@ -33079,6 +33079,10 @@
     "/api/v1/problems/session-not-found": {
       "code": "session_not_found",
       "status": 404
+    },
+    "/api/v1/problems/settings-limit-reached": {
+      "code": "settings_limit_reached",
+      "status": 422
     },
     "/api/v1/problems/setup-closed": {
       "code": "setup_closed",

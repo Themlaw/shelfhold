@@ -28,6 +28,7 @@ EXPORTED: dict[str, str] = {
     "notification_digest": "notification_digests",
     "reading_position": "reading_positions",
     "reading_conflict": "reading_conflicts",
+    "reader_settings": "reader_settings",  # M5 L13: her choices of the reader, place by place
     "session": "sessions",
     "api_key": "api_keys",
     "webauthn_credential": "passkeys",  # the list of keys, never the key material

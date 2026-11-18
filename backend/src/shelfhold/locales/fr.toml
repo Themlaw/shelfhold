@@ -1467,6 +1467,11 @@ title = "Vous avez lu plus loin depuis que cette question a été posée."
 action = "Continuez : le lecteur montre où vous en êtes maintenant."
 cause = "Une position plus récente a remplacé celle dont parlait la question : il n'y a plus rien à choisir."
 
+[errors."settings_limit_reached"]
+title = "Vos réglages de lecture sont au maximum."
+action = "Reprenez la lecture : un réglage déjà écrit peut toujours être changé."
+cause = "Un profil garde au plus 500 réglages de lecture : au-delà, aucune nouvelle place n'est écrite."
+
 [errors."bundle_busy"]
 title = "Trop de blocs sont servis en ce moment."
 action = "Patientez quelques instants, puis relancez le téléchargement."

@@ -104,7 +104,7 @@ afterAll(() => {
 
 describe('the settings of the reader, read adversarially', () => {
   // req: EF-LEC-006
-  it.fails('a comfort change does not make the open reader forget the direction of the series', async () => {
+  it('a comfort change does not make the open reader forget the direction of the series', async () => {
     // The series is pinned to right-to-left, then the fit is changed and the portée answered.
     // The answer of a comfort write resolves without the series, and the screen takes it as
     // the whole of its settings: the direction the profile pinned to this series is forgotten
@@ -132,7 +132,7 @@ describe('the settings of the reader, read adversarially', () => {
   });
 
   // req: ENF-A11Y-002
-  it.fails('the portée question is announced when it appears', async () => {
+  it('the portée question is announced when it appears', async () => {
     // A comfort change is asked its portée before it is written: the question appears when a
     // radio is picked, and nothing says it did — no live region holds it, so a reader of the
     // screen learns of the question only by wandering into it. A message that appears must be

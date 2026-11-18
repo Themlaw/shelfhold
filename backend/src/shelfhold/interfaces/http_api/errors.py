@@ -19,6 +19,7 @@ CODES: tuple[ErrorCode, ...] = (
     ErrorCode("client_ts_in_future", 422, "user"),  # M5 L07: a clock set ahead of the server's
     ErrorCode("client_ts_out_of_range", 422, "user"),  # M5 L07: a date that cannot be a reading
     ErrorCode("conflict_stale", 409, "user"),  # M5 L07: a later position overtook the proposal
+    ErrorCode("settings_limit_reached", 422, "user"),  # M5 L13: the profile holds the most rows
     ErrorCode("bundle_busy", 429, "user"),  # M4 L49a: too many blocks at a time
     ErrorCode("kosync_registration_disabled", 402, "user"),  # M4 L47: accounts are Shelfhold's
     ErrorCode("precondition_failed", 412, "user"),

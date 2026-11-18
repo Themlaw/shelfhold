@@ -49,6 +49,7 @@ from shelfhold.reading.application.settings import (
     Effective,
     InvalidSettingError,
     ReaderSettings,
+    SettingsLimitError,
 )
 from shelfhold.reading.domain.locator import InvalidLocatorV1Error
 from shelfhold.reading.public import UnknownCarrierError
@@ -394,13 +395,16 @@ def build_reader_router(
         "/settings",
         operation_id="reader_put_settings",
         response_model=ReaderSettingsOut,
-        responses={422: {"description": "unknown-choice"}},
+        responses={
+            422: {"description": "unknown-choice, settings-limit-reached"},
+        },
     )
     def put_settings(body: SettingIn, response: Response, principal: Session) -> ReaderSettingsOut:
         """Write one choice with its portée — « pour cet appareil » (`device`, which names the
         device) or « partout » (`everywhere`, which names none) — and answer what is effective
         now. Only the reader's own settings exist here; a row never widens what parental control
-        hides."""
+        hides, and a series the profile cannot see answers like one that is not there. Beyond
+        the bound of rows a profile may hold, the write of a new place is a typed refusal."""
         _own_session(principal)
         response.headers["Cache-Control"] = "no-store"
         try:
@@ -410,6 +414,8 @@ def build_reader_router(
             )  # fmt: skip
         except (InvalidSettingError, DeviceScopeError):
             raise ProblemError("validation_failed") from None
+        except SettingsLimitError:
+            raise ProblemError("settings_limit_reached") from None
         found = get_settings().resolve(
             user_id=principal.user_id,
             series_id=body.key if body.kind == "direction" and body.key != "default" else None,

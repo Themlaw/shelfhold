@@ -33,6 +33,9 @@ SECTIONS = (
     "source_accounts", "tachibk_imports",
     # M5 L07: the questions put to the reader (identifiers, choice, dates: no locator)
     "reading_conflicts",
+    # M5 L13: the choices of the reader (a series is named by its identifier, a device by its
+    # label: no title, and nothing that opens or proves anything)
+    "reader_settings",
 )  # fmt: skip
 
 

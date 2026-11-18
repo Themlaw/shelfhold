@@ -512,6 +512,7 @@ class SqlIdentityStore:
             request, digest = identity.request, identity.notification_digest
             audit, positions = identity.audit, reading.reading_position
             conflict = reading.reading_conflict
+            setting = reading.reader_setting
             follow, download = acquisition.follow_request, acquisition.download_request
             token, account = identity.device_token, identity.destination_account
             notify, listing = identity.notify_destination, identity.request_list_import
@@ -561,6 +562,10 @@ class SqlIdentityStore:
                     conn, "reading_conflicts", conflict, conflict.c.user_id == user_id,
                     "id", "carrier_type", "carrier_id", "winner_position_id",
                     "loser_position_id", "choice", "created_at", "resolved_at",
+                ),
+                "reader_settings": rows(  # M5 L13: her choices of the reader, place by place
+                    conn, "reader_settings", setting, setting.c.user_id == user_id,
+                    "id", "scope", "device_id", "kind", "key", "value", "updated_at",
                 ),
                 "sessions": rows(
                     conn, "sessions", _session, _session.c.user_id == user_id,

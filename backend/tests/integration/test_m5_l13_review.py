@@ -33,7 +33,6 @@ from tests.reading_env import NEW_HASH, reading_env
 
 
 @pytest.mark.req("EF-USR-013")
-@pytest.mark.xfail(strict=True)
 def test_the_export_of_a_member_holds_her_reading_settings(tmp_path: Path) -> None:
     """`reader_settings` points at a profile by a foreign key: her export (EF-USR-013,
     "everything that is hers") must hold it. `SECTIONS` names no `reader_settings` and the store
@@ -68,7 +67,6 @@ def test_the_export_of_a_member_holds_her_reading_settings(tmp_path: Path) -> No
 
 
 @pytest.mark.req("EF-BIB-052")
-@pytest.mark.xfail(strict=True)
 def test_a_purged_work_takes_its_pinned_settings_with_it(tmp_path: Path) -> None:
     """`PurgeService._erase_rows` is the step of `purge --now` that takes the rows of a Work out
     of the base, and it takes the anchors and the proposals of the Work's files (EF-BIB-052:
@@ -106,7 +104,6 @@ def test_a_purged_work_takes_its_pinned_settings_with_it(tmp_path: Path) -> None
 
 
 @pytest.mark.req("EF-LEC-006")
-@pytest.mark.xfail(strict=True)
 def test_a_direction_written_for_one_device_does_not_decide_for_another(tmp_path: Path) -> None:
     """The portée is part of the write: the route takes « pour cet appareil » for any kind of
     choice. A direction written for one device is kept as such, then read as if it had been
@@ -134,7 +131,6 @@ def test_a_direction_written_for_one_device_does_not_decide_for_another(tmp_path
 
 
 @pytest.mark.req("EF-LEC-006")
-@pytest.mark.xfail(strict=True)
 def test_a_choice_is_not_anchored_to_a_work_that_is_not_there(tmp_path: Path) -> None:
     """A direction is « a series named by its identifier »: a key that is not any Work at all is
     taken all the same, and nothing bounds how many rows a profile may hold — one write per

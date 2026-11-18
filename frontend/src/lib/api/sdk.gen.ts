@@ -63,7 +63,8 @@ export const readerSettings = <ThrowOnError extends boolean = false>(options?: O
  * Write one choice with its portée — « pour cet appareil » (`device`, which names the
  * device) or « partout » (`everywhere`, which names none) — and answer what is effective
  * now. Only the reader's own settings exist here; a row never widens what parental control
- * hides.
+ * hides, and a series the profile cannot see answers like one that is not there. Beyond
+ * the bound of rows a profile may hold, the write of a new place is a typed refusal.
  */
 export const readerPutSettings = <ThrowOnError extends boolean = false>(options: Options<ReaderPutSettingsData, ThrowOnError>): RequestResult<ReaderPutSettingsResponses, ReaderPutSettingsErrors, ThrowOnError> => (options.client ?? client).put<ReaderPutSettingsResponses, ReaderPutSettingsErrors, ThrowOnError>({
     url: '/api/reader/settings',
