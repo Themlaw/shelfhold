@@ -322,5 +322,5 @@ since = "1.2"
 
 [[migration]]
 file = "0102_reading_conflict.py"
-sha256 = "cbad44ba0ff791136e428ffd1d9db277b2fc7e355c7f925bd3e24ed08e5f06e8"
+sha256 = "0605a4775caaa3c9160fe2be591b504a15aec8bee9c33b745251ec7db7d923b5"
 since = "1.2"
