@@ -316,6 +316,8 @@ FRESHNESS_LINE = {
             "notify.profile_destination",  # M4 L39: an Apprise URL with a token, sealed
             "device_token.issue",  # M4 L46b: the secret of an e-reader is shown once
             "device_token.rotate",  # M5 L02: a new secret of an e-reader is shown once
+            "oidc.link",  # M5 L03: a way in that outlives the session that added it
+            "oidc.link_account",  # M5 L03: the admin adds one for another account
         ),
         "p3",
     ),

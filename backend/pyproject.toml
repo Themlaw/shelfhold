@@ -33,6 +33,7 @@ dependencies = [
     "pykakasi>=2.3,<3",
     # M4 (L37, D18): the one new dependency, written exception in docs/dependencies.md.
     "websockets>=17.4,<18",  # Kavita hub transport, imported only by kavita.events_transport
+    "authlib>=1.6,<2",
 ]
 
 [dependency-groups]
