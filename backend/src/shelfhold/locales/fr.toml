@@ -1773,6 +1773,11 @@ title = "Cette destination ne se lie pas ainsi."
 action = "Une boîte de dépôt CWA se lie comme boîte de dépôt (transport « dropbox ») : choisissez ce transport."
 cause = "Une boîte de dépôt n'a ni arbre à indexer ni serveur à lire : un autre transport n'écrirait pas là où il faut."
 
+[errors."binding.komga_primary_unsupported"]
+title = "Komga ne peut pas être la destination principale d'une étagère."
+action = "Liez d'abord l'étagère à une destination qui écrit son arbre (Kavita ou un dossier natif), puis liez Komga à cet arbre : une destination secondaire qui l'indexe. Jusqu'à M5, Komga ne reçoit aucun fichier à lui."
+cause = "L'exécuteur n'écrit pas de plan pour un arbre appartenant à Komga : une étagère dont Komga serait la destination principale ne recevrait jamais ses fichiers."
+
 [errors."target.folder_outside_root"]
 title = "Ce dossier n'est pas dans le dossier de la destination."
 action = "Donnez un sous-dossier du dossier que la destination déclare : un nom relatif, sans « .. », qui ne passe par aucun lien."

@@ -40,12 +40,12 @@ def test_no_production_symbol_only_called_from_tests() -> None:
 
 
 def test_no_allowlist_entry_until_past_milestone() -> None:
-    """L31 (M2) and L56 (M3): a milestone that is over has no entry waiting for it. What was not
-    wired is wired, deleted with its code, or written down for the milestone of its culprit, with
-    a date and a reason (docs/decisions/M3.md, section of the debts)."""
+    """L31 (M2), L56 (M3) and L43 (M4): a milestone that is over has no entry waiting for it. What
+    was not wired is wired, deleted with its code, or written down for the milestone of its
+    culprit, with a date and a reason (docs/decisions/M3.md and M4.md, sections of the debts)."""
     entries = [*reach.load_allowlist(REPO), *reach.load_route_tests(REPO)]
     waiting = [
-        f"{e['category']} (until {e['until']})" for e in entries if e["until"] in ("M2", "M3")
+        f"{e['category']} (until {e['until']})" for e in entries if e["until"] in ("M2", "M3", "M4")
     ]
     assert not waiting, f"entries still waiting for a milestone that is over: {waiting}"
     late = [
@@ -66,6 +66,12 @@ def test_no_allowlist_entry_until_past_milestone() -> None:
         if e["category"].startswith("m3-l56") and "2026-11-14" not in e["reason"]
     ]
     assert not deferred, f"a deferral of M3 L56 is written down with its date: {deferred}"
+    redated = [
+        e["category"]
+        for e in entries
+        if e["category"].startswith("m4-l43") and "2026-11-17" not in e["reason"]
+    ]
+    assert not redated, f"a deferral of M4 L43 is written down with its date: {redated}"
 
 
 def test_req_tests_declare_no_routes() -> None:

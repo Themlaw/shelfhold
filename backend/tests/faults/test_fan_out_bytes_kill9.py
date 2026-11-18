@@ -17,6 +17,7 @@ import sqlalchemy as sa
 
 from shelfhold.export.application.fan_out import FanOut, HostContentStore
 from shelfhold.export.application.intents import IntentJournal, open_intent_paths
+from shelfhold.export.application.locks import ResourceLocks
 from shelfhold.infrastructure.schema import coherence
 from shelfhold.library.public import independent_copies
 from tests.byte_source_env import unit_with_item
@@ -129,6 +130,7 @@ def test_kill9_while_two_bindings_copy_one_archive_resumes_without_duplicate_or_
         assert result.returncode in (-signal.SIGKILL, 0), result.stderr.decode()
 
         IntentJournal(env.engine, env.lib.fsops, clock=env.clock).resolve_open()
+        ResourceLocks(env.engine, clock=env.clock).release_all()  # the lock the dead run held
         with env.engine.connect() as connection:
             assert open_intent_paths(connection) == frozenset()
         # the restart reads the bytes from the registry of the host (the library copy is there),

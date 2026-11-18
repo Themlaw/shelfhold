@@ -14,7 +14,7 @@ from pathlib import Path
 import pytest
 import sqlalchemy as sa
 
-from shelfhold.export.application.export_alias import record_export_alias
+from shelfhold.export.application.export_alias import complete_hashes, record_export_alias
 from shelfhold.infrastructure.schema import export, storage
 from shelfhold.reading.domain.document_hash import kavita_hash, koreader_partial_md5
 from tests.bundle_env import Chapter
@@ -158,6 +158,9 @@ def exported_digest(world: World, key: str) -> str:
             connection, destination_id=None, export_item_id=item.item_id, file_hash=sha(data),
             path=item.path,
         )  # fmt: skip
+    complete_hashes(
+        world.seed.engine, export_item_id=item.item_id, file_hash=sha(data), path=item.path
+    )  # after the commit, as the export does
     return koreader_partial_md5(io.BytesIO(data))  # bare, as KOReader sends it
 
 
