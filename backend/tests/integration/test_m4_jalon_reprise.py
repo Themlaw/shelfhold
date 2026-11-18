@@ -159,10 +159,6 @@ def _restart_kosync() -> None:
 
 
 @pytest.mark.req("EF-LEC-009", "EF-LEC-014", "EF-EXP-026")
-@pytest.mark.xfail(
-    strict=True,
-    reason="M4 jalon J-REP-3: a restart between a GET and its echo pushes a skipped chapter read",
-)
 def test_a_restart_between_a_get_and_its_echo_never_pushes_a_skipped_chapter_read(
     lab: Any,
 ) -> None:
