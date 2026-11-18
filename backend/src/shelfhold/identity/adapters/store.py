@@ -26,6 +26,7 @@ from shelfhold.identity.application.ports import (
     PasskeyRecord,
     ProfileRecord,
     ProofWithdrawnError,
+    RotationOutcome,
     SessionRecord,
     SourcePolicyRecord,
     UserRecord,
@@ -1320,7 +1321,13 @@ class SqlIdentityStore:
     def _devices(self, where: sa.ColumnElement[bool] | None = None) -> list[DeviceRecord]:
         live = sa.and_(_device.c.device_id == _registry.c.id, _device.c.revoked_at.is_(None))
         query = (
-            sa.select(_registry, *_USER_COLUMNS, _device.c.public_id, _device.c.expires_at)
+            sa.select(
+                _registry,
+                *_USER_COLUMNS,
+                _device.c.public_id,
+                _device.c.expires_at,
+                _device.c.secret_digest,
+            )
             .join(_user, _user.c.id == _registry.c.subject_user_id)
             .outerjoin(_device, live)
         )
@@ -1345,6 +1352,7 @@ class SqlIdentityStore:
                     subject=_user_of(row),
                     public_id=row.public_id,
                     expires_at=row.expires_at,
+                    secret_digest=row.secret_digest or "",
                 ),
             )
         return list(found.values())
@@ -1361,25 +1369,45 @@ class SqlIdentityStore:
         self,
         device_id: str,
         *,
+        expected_digest: str,
         secret_digest: str,
         expires_at: datetime | None,
+        now: Callable[[], datetime],
         audit: AuditEntry,
-    ) -> bool:
-        """The live token of the device takes a new digest (and the new expiry, if one is given),
-        in one transaction with its audit line: the old secret is refused from the next request."""
-        with self._changing() as conn:
+    ) -> RotationOutcome:
+        """Compare and swap, in one write transaction with its audit line. The live token of the
+        device is read again under the lock: gone (retired, revoked) is `gone`; a digest other than
+        the one the caller saw is `conflict` (another rotation won meanwhile: nothing is written,
+        so only the secret that is shown lives); an expiry now past, with no new one given, is
+        `expired` (a secret that would be refused as it is typed is never made)."""
+        with self._changing(immediate=True) as conn:
+            live = conn.execute(
+                sa.select(_device.c.id, _device.c.secret_digest, _device.c.expires_at)
+                .join(_registry, _registry.c.id == _device.c.device_id)
+                .where(
+                    _device.c.device_id == device_id,
+                    _device.c.revoked_at.is_(None),
+                    _registry.c.revoked_at.is_(None),
+                )
+            ).first()
+            if live is None:
+                return "gone"
+            if live.secret_digest != expected_digest:
+                return "conflict"
+            if expires_at is None and live.expires_at is not None and now() >= live.expires_at:
+                return "expired"
             values: dict[str, Any] = {"secret_digest": secret_digest}
             if expires_at is not None:
                 values["expires_at"] = expires_at
-            result = conn.execute(
+            swapped = conn.execute(
                 sa.update(_device)
-                .where(_device.c.device_id == device_id, _device.c.revoked_at.is_(None))
+                .where(_device.c.id == live.id, _device.c.secret_digest == expected_digest)
                 .values(**values)
             )
-            if result.rowcount == 0:
-                return False
+            if swapped.rowcount == 0:  # cannot happen under the lock; refuse rather than show it
+                return "conflict"
             conn.execute(self._audit_insert(audit))
-        return True
+        return "rotated"
 
     def retire_device(self, device_id: str, *, now: datetime, audit: AuditEntry) -> bool:
         with self._changing() as conn:

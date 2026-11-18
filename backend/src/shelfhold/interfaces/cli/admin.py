@@ -498,8 +498,10 @@ def run_device_tokens_rotate(args: argparse.Namespace, auth: IdentityCommands) -
     """A new secret on the same device: the old one is refused at once, the identifier stays."""
     try:
         rotated = auth.rotate_device(args.device_id, expires_days=args.expires_days)
-    except ProfileError:  # a token past its expiry: a new one has to be asked for
-        return _fail(t("admin.device_expiry_required"))
+    except ProfileError as error:
+        if error.code == "device_rotated_meanwhile":  # another rotation won: nothing was shown
+            return _fail(t("admin.device_rotated_meanwhile"))
+        return _fail(t("admin.device_expiry_required"))  # past its expiry: ask for a new one
     except ValueError:
         return _fail(t("cli.admin_device_expires_help"))
     if rotated is None:

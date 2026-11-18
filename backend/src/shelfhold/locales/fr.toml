@@ -824,6 +824,7 @@ device_rotated = "Nouveau secret pour l'appareil d'identifiant {public_id} ; l'a
 device_removed = "Appareil {device_id} retiré ; ses jetons sont révoqués."
 device_registry_unknown = "Aucun appareil actif d'identifiant {device_id}."
 device_expiry_required = "Ce jeton a expiré : donnez --expires-days pour le nouveau secret."
+device_rotated_meanwhile = "Le secret de cet appareil a été changé entre-temps : rien n'a été fait ici. Listez les appareils et recommencez."
 database_missing = "Base absente ou pas à jour : lancez d'abord « shelfhold migrate »."
 socket_refused = "Le serveur en marche a refusé cette commande : {detail}."
 socket_untrusted = "Socket locale non fiable, rien n'a été envoyé : {detail}."
@@ -1355,6 +1356,11 @@ cause = "Les réglages demandés enfreignent une règle des profils : un enfant 
 title = "Ce jeton d'appareil n'existe pas pour vous."
 action = "Actualisez la liste de vos appareils."
 cause = "Le jeton est inconnu, déjà révoqué, ou n'est pas le vôtre."
+
+[errors."device_rotation_conflict"]
+title = "Le secret de cet appareil a été changé entre-temps."
+action = "Actualisez la liste de vos appareils, puis recommencez la rotation si le secret affiché ailleurs n'est pas celui que vous voulez."
+cause = "Une autre rotation du même appareil a été écrite la première : seul son secret est valable."
 
 [errors."destination_account_not_found"]
 title = "Ce compte Kavita n'existe pas pour vous."

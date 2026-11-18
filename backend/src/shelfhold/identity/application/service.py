@@ -1329,13 +1329,19 @@ class LocalAuth:
             raise ProfileError("expiry_required")
         expires_at = now + timedelta(days=expires_days) if expires_days is not None else None
         credential = new_device_credential()
-        done = self._store.rotate_device_secret(
+        outcome = self._store.rotate_device_secret(
             found.device.id,
+            expected_digest=found.secret_digest,
             secret_digest=secret_digest(credential.secret),
             expires_at=expires_at,
+            now=self.now,
             audit=self._entry("device_token.rotated", by, _by_host_user(found.device.id, by)),
         )
-        if not done:
+        if outcome == "expired":  # it expired between the read and the write
+            raise ProfileError("expiry_required")
+        if outcome == "conflict":  # another rotation won: only its secret lives
+            raise ProfileError("device_rotated_meanwhile")
+        if outcome != "rotated":
             return None
         return CreatedDeviceToken(
             public_id=found.public_id,

@@ -835,6 +835,7 @@
   device_removed = "Device {device_id} removed; its tokens are revoked."
   device_registry_unknown = "No active device with identifier {device_id}."
   device_expiry_required = "This token has expired: give --expires-days for the new secret."
+  device_rotated_meanwhile = "The secret of this device was changed in the meantime: nothing was done here. List the devices and try again."
   database_missing = "Database missing or not up to date: first run “shelfhold migrate”."
   socket_refused = "The running server refused this command: {detail}."
   socket_untrusted = "Unreliable local socket, nothing was sent: {detail}."
@@ -1386,6 +1387,11 @@
     title = "This device token does not exist for you."
     action = "Refresh the list of your devices."
     cause = "The token is unknown, already revoked, or is not yours."
+
+  [errors.device_rotation_conflict]
+    title = "This device's secret was changed in the meantime."
+    action = "Refresh the list of your devices, then rotate again if the secret shown elsewhere is not the one you want."
+    cause = "Another rotation of the same device was written first: only its secret is valid."
 
   [errors.destination_account_not_found]
     title = "This Kavita account does not exist for you."

@@ -3,7 +3,7 @@
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any, Protocol
+from typing import Any, Literal, Protocol
 
 from shelfhold.i18n import DEFAULT_LANGUAGE
 from shelfhold.identity.application.sessions import SessionView
@@ -111,6 +111,9 @@ class NewApiKey:
     issued_by: str | None = None
 
 
+RotationOutcome = Literal["rotated", "gone", "conflict", "expired"]
+
+
 @dataclass(frozen=True)
 class DeviceTokenRecord:
     """A device token as stored. `secret_digest` verifies a secret and is never shown: it is out
@@ -143,6 +146,7 @@ class DeviceRecord:
     subject: UserRecord
     public_id: str | None
     expires_at: datetime | None
+    secret_digest: str = field(repr=False, default="")  # what a rotation compares and swaps
 
 
 @dataclass(frozen=True)
@@ -400,10 +404,12 @@ class IdentityStore(Protocol):
         self,
         device_id: str,
         *,
+        expected_digest: str,
         secret_digest: str,
         expires_at: datetime | None,
+        now: Callable[[], datetime],
         audit: AuditEntry,
-    ) -> bool: ...
+    ) -> RotationOutcome: ...
     def retire_device(self, device_id: str, *, now: datetime, audit: AuditEntry) -> bool: ...
     def insert_api_key(self, key: NewApiKey) -> None: ...
     def api_key_by_prefix(self, prefix: str) -> ApiKeyRecord | None: ...

@@ -263,6 +263,8 @@ def build_devices_router() -> APIRouter:
         except NotAllowedError:
             raise ProblemError("forbidden") from None
         except ProfileError as error:
+            if error.code == "device_rotated_meanwhile":  # another rotation won: nothing was shown
+                raise ProblemError("device_rotation_conflict") from None
             raise ProblemError("profile_refused", extensions={"reason": error.code}) from None
         if rotated is None:
             raise ProblemError("device_token_not_found")
