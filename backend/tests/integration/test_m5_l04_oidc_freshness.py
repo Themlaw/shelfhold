@@ -9,9 +9,9 @@ was opened for. Unlinking an identity is itself a reserved action, tells its hol
 
 from __future__ import annotations
 
+import sqlite3
 from collections.abc import Iterator
 from datetime import timedelta
-from typing import Any
 from urllib.parse import parse_qs, urlsplit
 
 import pytest
@@ -31,7 +31,6 @@ from tests.integration.test_m5_l03_oidc import (
     LINK,
     LOGIN,
     OIDC,
-    SESSION,
     World,
     world_for,
 )
@@ -155,12 +154,11 @@ def test_oidc_an_auth_time_inside_max_age_is_accepted_and_is_the_freshness(world
     world.idp.auth_time_age_s = 299
     back = world.callback(mum, world.idp.authorize(reauth_url(world, mum)))
     assert back.headers["location"].endswith("?oidc=reauth")
-    # the session is as fresh as the provider's own sign-in, not fresher
-    (auth_time,) = db_rows(
-        world.env.settings, "SELECT auth_time FROM session WHERE user_id=?", world.ids["mum"]
-    )[-1:]
-    assert auth_time[0] is not None
-    world.env.clock.advance(timedelta(seconds=700))  # 299 + 700 s: past the 900 s allowed
+    # the session is as fresh as the provider's own sign-in, not fresher: 299 s old already, so
+    # 650 s later it is past the 900 s allowed (it would not be had it been dated "now")
+    world.env.clock.advance(timedelta(seconds=300))
+    assert is_fresh(world, mum)
+    world.env.clock.advance(timedelta(seconds=350))
     assert not is_fresh(world, mum)
 
 
@@ -203,15 +201,23 @@ def test_oidc_reauth_is_refused_to_a_key(world: World) -> None:
 
 
 def test_oidc_reauth_after_the_link_was_removed_is_refused(world: World) -> None:
+    """A session that a password opened outlives the removal of the link: the proof the provider
+    gives afterwards is for an identity that is no longer the account's, and is refused."""
+    world.link_admin("mum")
+    url = world.idp.authorize(reauth_url(world, world.mum))
+    removed = world.send(world.admin, "DELETE", f"/api/v1/profiles/{world.ids['mum']}/oidc")
+    assert removed.status_code == 204
+    back = world.callback(world.mum, url)
+    assert back.headers["location"] == f"{SETTINGS_SCREEN}?oidc=refused"
+    assert world.signed_in_as(world.mum) == "mum"  # the password session is not the link's
+
+
+def test_oidc_reauth_by_a_session_closed_meanwhile_is_refused(world: World) -> None:
     mum = signed_in(world)
     url = world.idp.authorize(reauth_url(world, mum))
-    assert (
-        world.send(world.admin, "DELETE", f"/api/v1/profiles/{world.ids['mum']}/oidc").status_code
-        == 204
-    )
+    assert world.send(mum, "POST", "/api/v1/auth/logout").status_code == 204
     back = world.callback(mum, url)
-    assert not back.headers["location"].endswith("?oidc=reauth")
-    assert world.signed_in_as(mum) is None  # the link was the session's ground
+    assert back.headers["location"] == f"{SETTINGS_SCREEN}?oidc=refused"
 
 
 def test_oidc_reauth_during_a_restore_notice_is_refused(world: World) -> None:
@@ -291,6 +297,7 @@ def test_oidc_unlink_attacks(world: World) -> None:
 def test_oidc_unlink_without_the_csrf_token_is_refused(world: World) -> None:
     mum = signed_in(world)
     world.callback(mum, world.idp.authorize(reauth_url(world, mum)))
+    assert is_fresh(world, mum)  # the proof was given: only the missing header refuses
     assert mum.delete(IDENTITIES).status_code in (401, 403)  # no CSRF header
     assert len(world.identities()) == 1
 
@@ -312,11 +319,24 @@ def test_oidc_an_admin_cannot_unlink_another_admin(world: World) -> None:
     from tests.visibility_env import add_profile
 
     add_profile(world.env, "boss", "admin", "10.0.0.9")
-    boss = db_rows(world.env.settings, "SELECT id FROM user WHERE username='boss'")[0][0]
-    assert world.send(world.admin, "DELETE", f"/api/v1/profiles/{boss}/oidc").status_code in (
-        403,
-        404,
-    )
+    boss = str(db_rows(world.env.settings, "SELECT id FROM user WHERE username='boss'")[0][0])
+    engine = create_db_engine(world.env.settings.database_path)
+    try:
+        with write_transaction(engine) as connection:  # a link boss made from her own session
+            connection.execute(
+                sa.insert(identity.oidc_identity).values(
+                    id="01J00000000000000000000BSS",
+                    user_id=boss,
+                    issuer=ISSUER,
+                    sub="boss-sub",
+                    linked_at=world.env.clock.now(),
+                )
+            )
+    finally:
+        engine.dispose()
+    answer = world.send(world.admin, "DELETE", f"/api/v1/profiles/{boss}/oidc")
+    assert answer.status_code == 403 and answer.json()["code"] == "oidc_admin_target"
+    assert len(world.identities()) == 1  # still there
 
 
 # --- telling the holder ------------------------------------------------------------------------
@@ -381,7 +401,12 @@ def test_oidc_restore_acknowledge_lists_the_links_to_check(world: World) -> None
     assert "the-subject-of-mum" not in " ".join(listed)  # the identifier is not printed
 
 
-def test_oidc_restore_waiting_item_names_the_links(world: World) -> None:
+def test_oidc_restore_waiting_item_shows_the_links_before_the_acknowledgement(
+    world: World,
+) -> None:
+    """`status` lists them while the provider's sign-in is still suspended: the acknowledgement is
+    what reopens it, so it is too late to look only after it."""
+    world.link_admin("mum", sub="the-subject-of-mum")
     engine = create_db_engine(world.env.settings.database_path)
     try:
         with write_transaction(engine) as connection:
@@ -393,7 +418,8 @@ def test_oidc_restore_waiting_item_names_the_links(world: World) -> None:
         (item,) = RestoreCredentialsExit(engine, world.env.clock).waiting()
     finally:
         engine.dispose()
-    assert "identity-provider" in item.reason and "acknowledge" in item.reason
+    assert "mum @ " + ISSUER in item.reason and "acknowledge" in item.reason
+    assert "the-subject-of-mum" not in item.reason
 
 
 # --- the budget of options ---------------------------------------------------------------------
@@ -424,7 +450,7 @@ def test_oidc_the_result_of_a_link_is_shown_on_the_settings_screen(world: World)
     page = world.mum.get(back.headers["location"])
     assert f"{SETTINGS_SCREEN}?oidc=linked" in page.text
     refused = world.callback(world.mum, "/api/v1/auth/oidc/callback?state=x&code=y")
-    assert refused.status_code in (303, 429)
+    assert refused.headers["location"].startswith("/login")  # no flow at all: the plain refusal
 
 
 def test_oidc_no_session_cookie_is_set_by_a_refused_reauth(world: World) -> None:
@@ -434,5 +460,41 @@ def test_oidc_no_session_cookie_is_set_by_a_refused_reauth(world: World) -> None
     assert SESSION_COOKIE not in "".join(back.headers.get_list("set-cookie"))
 
 
-def _unused(*_: Any) -> None:  # keeps the shared helpers imported for the type checker
-    assert CSRF_HEADER and SESSION
+def test_oidc_unlink_closes_the_providers_sessions_even_if_the_audit_was_purged(
+    world: World,
+) -> None:
+    """The audit line of the sign-in says which sessions the provider opened; when it is gone, a
+    session that never had a local proof (its `auth_time` is the epoch) is still the provider's."""
+    mum = signed_in(world)
+    assert world.send(mum, "DELETE", IDENTITIES).status_code == 401  # no proof yet
+    connection = sqlite3.connect(world.env.settings.database_path)
+    try:
+        connection.execute("DELETE FROM audit WHERE action='auth.oidc_login'")
+        connection.commit()
+    finally:
+        connection.close()
+    assert (
+        world.send(world.admin, "DELETE", f"/api/v1/profiles/{world.ids['mum']}/oidc").status_code
+        == 204
+    )
+    assert world.signed_in_as(mum) is None
+
+
+def test_oidc_unlink_leaves_a_password_session_of_the_account_alone(world: World) -> None:
+    world.link_admin("mum")
+    assert (
+        world.send(world.admin, "DELETE", f"/api/v1/profiles/{world.ids['mum']}/oidc").status_code
+        == 204
+    )
+    assert world.signed_in_as(world.mum) == "mum"
+
+
+def test_oidc_the_holder_finds_the_last_removal_on_the_settings_screen(world: World) -> None:
+    """The notice goes to a destination of their own, or nowhere: this is the trace that stays."""
+    world.link_admin("mum")
+    assert world.mum.get(IDENTITIES).json()["last_unlinked"] is None
+    world.send(world.admin, "DELETE", f"/api/v1/profiles/{world.ids['mum']}/oidc")
+    seen = world.mum.get(IDENTITIES).json()
+    assert seen["last_unlinked"]["by_other"] is True and seen["last_unlinked"]["at"]
+    assert seen["configured_issuer"] == ISSUER and seen["items"] == []
+    assert world.dad.get(IDENTITIES).json()["last_unlinked"] is None  # only one's own

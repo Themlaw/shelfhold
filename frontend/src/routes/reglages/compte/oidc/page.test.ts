@@ -87,12 +87,15 @@ describe('Identité du fournisseur (réglages du compte)', () => {
     await user.click(await screen.findByRole('button', { name: /fournisseur/i }));
     await vi.waitFor(() => expect(asked).toBe(1));
     expect(assign).toHaveBeenCalledWith(`${ISSUER}/authorize?prompt=login&max_age=300`);
-    expect(sessionStorage.getItem('oidc-intent')).toBe('unlink'); // taken up on the way back
+    // noted with its time, for the way back
+    const noted = JSON.parse(sessionStorage.getItem('oidc-intent') ?? 'null');
+    expect(noted.intent).toBe('unlink');
+    expect(Date.now() - noted.at).toBeLessThan(5000);
   });
 
   // req: EF-USR-024
-  it('takes up the unlink after the provider confirmed the person', async () => {
-    sessionStorage.setItem('oidc-intent', 'unlink');
+  it('offers to go on with the unlink after the provider confirmed, and waits for the click', async () => {
+    sessionStorage.setItem('oidc-intent', JSON.stringify({ intent: 'unlink', at: Date.now() }));
     vi.stubGlobal('location', { ...window.location, search: '?oidc=reauth' });
     let deleted = 0;
     server.use(
@@ -103,8 +106,42 @@ describe('Identité du fournisseur (réglages du compte)', () => {
       })
     );
     render(Page);
-    await vi.waitFor(() => expect(deleted).toBe(1));
+    expect(await screen.findByText(/Voulez-vous délier/)).toBeTruthy();
+    expect(deleted).toBe(0); // nothing is done by the return alone
     expect(sessionStorage.getItem('oidc-intent')).toBeNull();
+    const user = userEvent.setup();
+    const buttons = await screen.findAllByRole('button', { name: /^Délier$/ });
+    await user.click(buttons[buttons.length - 1]);
+    await vi.waitFor(() => expect(deleted).toBe(1));
+  });
+
+  // req: EF-USR-024
+  it('forgets a request that is older than the flow that carried it', async () => {
+    sessionStorage.setItem(
+      'oidc-intent',
+      JSON.stringify({ intent: 'unlink', at: Date.now() - 11 * 60 * 1000 })
+    );
+    vi.stubGlobal('location', { ...window.location, search: '?oidc=reauth' });
+    server.use(linked());
+    render(Page);
+    await screen.findByText(ISSUER);
+    expect(screen.queryByText(/Voulez-vous délier/)).toBeNull();
+  });
+
+  // req: EF-USR-024
+  it('keeps the trace of the last removal for a person who had no notice', async () => {
+    server.use(
+      http.get(`${BASE}/api/v1/auth/oidc/identities`, () =>
+        HttpResponse.json({
+          configured_issuer: ISSUER,
+          items: [],
+          last_unlinked: { at: '2026-11-17T09:00:00Z', by_other: true }
+        })
+      )
+    );
+    render(Page);
+    expect(await screen.findByText(/Dernier lien retiré/)).toBeTruthy();
+    expect(screen.getByText(/par un administrateur/)).toBeTruthy();
   });
 
   // req: EF-USR-024
@@ -118,7 +155,7 @@ describe('Identité du fournisseur (réglages du compte)', () => {
 
   // req: EF-USR-024
   it('does not take up an intent the provider did not confirm', async () => {
-    sessionStorage.setItem('oidc-intent', 'unlink');
+    sessionStorage.setItem('oidc-intent', JSON.stringify({ intent: 'unlink', at: Date.now() }));
     vi.stubGlobal('location', { ...window.location, search: '?oidc=refused' });
     let deleted = 0;
     server.use(

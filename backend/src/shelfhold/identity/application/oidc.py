@@ -251,7 +251,8 @@ class OidcAuth:
             raise OidcRefusedError("reauth_account", "reauth")
         if self._store.oidc_identity_of(user_id, self._provider.issuer) is None:
             raise OidcRefusedError("reauth_not_linked", "reauth")
-        owner = f"user:{user_id}"
+        # its own owner: a session that cannot be proved must not push out the account's own link
+        owner = f"reauth:{user_id}"
         return self._begin(
             "reauth", owner=owner, group=owner, user_id=user_id, session_id=session_id
         )

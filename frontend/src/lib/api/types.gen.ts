@@ -3439,6 +3439,24 @@ export type OidcIdentityList = {
      * Items
      */
     items: Array<OidcIdentityItem>;
+    last_unlinked?: OidcLastUnlink | null;
+};
+
+/**
+ * OidcLastUnlink
+ *
+ * The last removal of a link of this account: the trace for a person whose notice had no
+ * destination to go to (it is never told in the shared channels).
+ */
+export type OidcLastUnlink = {
+    /**
+     * At
+     */
+    at: string;
+    /**
+     * By Other
+     */
+    by_other: boolean;
 };
 
 /**

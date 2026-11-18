@@ -250,12 +250,12 @@ class OidcIdentityView:
 
 
 @dataclass(frozen=True)
-class OidcIdentityListing:
-    """A link as `restore acknowledge` lists it: the account and the provider, never the `sub`."""
+class OidcLastUnlink:
+    """The last time a link of the account was removed, and whether someone else did it: the trace
+    the settings screen keeps for a person whose notice had nowhere to go."""
 
-    username: str
-    issuer: str
-    linked_at: datetime
+    at: datetime
+    by_other: bool
 
 
 class ProofWithdrawnError(Exception):
@@ -294,9 +294,9 @@ class IdentityStore(Protocol):
         issuer: str,
         now: datetime,
         audit: AuditEntry,
-        by_other: bool,
-    ) -> bool: ...
-    def oidc_identity_list(self) -> Sequence[OidcIdentityListing]: ...
+        by_user_id: str,
+    ) -> OidcUnlink: ...
+    def oidc_last_unlink(self, user_id: str) -> OidcLastUnlink | None: ...
     def session_is_live(self, session_id: str, *, now: datetime) -> bool: ...
     def admins(self) -> Sequence[UserRecord]: ...
     def has_role(self, role: str) -> bool: ...

@@ -22,10 +22,11 @@ from shelfhold.identity.application.ports import (
     NewDeviceToken,
     NewPasskey,
     NewSession,
-    OidcIdentityListing,
     OidcIdentityRecord,
     OidcIdentityView,
+    OidcLastUnlink,
     OidcLink,
+    OidcUnlink,
     PasskeyGoneError,
     PasskeyRecord,
     ProfileRecord,
@@ -35,6 +36,7 @@ from shelfhold.identity.application.ports import (
     SourcePolicyRecord,
     UserRecord,
 )
+from shelfhold.identity.application.reauth import NEVER
 from shelfhold.identity.application.sessions import SessionView
 from shelfhold.identity.domain.device import Device
 from shelfhold.identity.domain.kavita_mapping import same_kavita_username
@@ -465,18 +467,25 @@ class SqlIdentityStore:
         issuer: str,
         now: datetime,
         audit: AuditEntry,
-        by_other: bool,
-    ) -> bool:
-        """One transaction under the write lock: the link, the sessions the provider opened for
-        this account, the audit line and (when someone else did it) the notice to the holder. A
-        session is the provider's when the audit says it was opened by a sign-in through it."""
+        by_user_id: str,
+    ) -> OidcUnlink:
+        """One transaction under the write lock: the rule (an admin unlinks her own account or a
+        non-admin's, never another admin's), the link, the sessions the provider opened for this
+        account, the audit line and the notice to the holder. A session is the provider's when the
+        audit says a sign-in through it opened it, or when no local proof was ever given (its
+        `auth_time` is still the epoch): the audit alone could be purged."""
         engine = self._engine.execution_options(shelfhold_begin="BEGIN IMMEDIATE")
         with write_transaction(engine) as conn:
+            role = conn.execute(sa.select(_user.c.role).where(_user.c.id == user_id)).scalar()
+            if role is None:
+                return OidcUnlink.NO_ACCOUNT
+            if role == "admin" and user_id != by_user_id:
+                return OidcUnlink.ADMIN_TARGET
             gone = conn.execute(
                 sa.delete(_oidc).where(_oidc.c.user_id == user_id, _oidc.c.issuer == issuer)
             ).rowcount
             if not gone:
-                return False
+                return OidcUnlink.NOT_LINKED
             opened = (
                 sa.select(identity.audit.c.session_id)
                 .where(identity.audit.c.action == "auth.oidc_login")
@@ -487,28 +496,32 @@ class SqlIdentityStore:
                 .where(
                     _session.c.user_id == user_id,
                     _session.c.revoked_at.is_(None),
-                    _session.c.id.in_(opened),
+                    sa.or_(_session.c.id.in_(opened), _session.c.auth_time <= NEVER),
                 )
                 .values(revoked_at=now)
             )
             conn.execute(self._audit_insert(audit))
             # always told, the holder's own unlink included: a stolen fresh session could do it
+            by_other = by_user_id != user_id
             _tell(
                 conn,
                 user_id,
                 "identity_unlinked_by_admin" if by_other else "identity_unlinked",
                 now,
             )
-        return True
+        return OidcUnlink.UNLINKED
 
-    def oidc_identity_list(self) -> list[OidcIdentityListing]:
+    def oidc_last_unlink(self, user_id: str) -> OidcLastUnlink | None:
         with self._engine.connect() as conn:
-            rows = conn.execute(
-                sa.select(_user.c.username, _oidc.c.issuer, _oidc.c.linked_at)
-                .join(_user, _user.c.id == _oidc.c.user_id)
-                .order_by(_user.c.username, _oidc.c.issuer)
-            ).all()
-        return [OidcIdentityListing(r.username, r.issuer, r.linked_at) for r in rows]
+            row = conn.execute(
+                sa.select(identity.audit.c.actor_id, identity.audit.c.at)
+                .where(
+                    identity.audit.c.action == "oidc.unlinked", identity.audit.c.target == user_id
+                )
+                .order_by(identity.audit.c.at.desc(), identity.audit.c.id.desc())
+                .limit(1)
+            ).first()
+        return None if row is None else OidcLastUnlink(row.at, row.actor_id != user_id)
 
     def session_is_live(self, session_id: str, *, now: datetime) -> bool:
         with self._engine.connect() as conn:

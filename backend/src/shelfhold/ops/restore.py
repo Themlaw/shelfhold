@@ -11,7 +11,7 @@ from __future__ import annotations
 from collections.abc import Callable
 
 import sqlalchemy as sa
-from sqlalchemy import Engine
+from sqlalchemy import Connection, Engine
 
 from shelfhold.events.bus import EventBus
 from shelfhold.export.application.restore import ForgetRootRefusedError, RestoreGuard
@@ -70,6 +70,21 @@ class RestoreGuardExit:
 
 
 _oidc = identity.oidc_identity
+OIDC_LINK_PREFIX = "oidc: "  # what tells the CLI a line of `acknowledge` is a link, not a passkey
+_MAX_LISTED_LINKS = 20
+
+
+def _links(connection: Connection, *, dated: bool = False) -> list[str]:
+    """The links of the provider as they stand: the account and the issuer, never the `sub`."""
+    rows = connection.execute(
+        sa.select(identity.user.c.username, _oidc.c.issuer, _oidc.c.linked_at)
+        .join(identity.user, identity.user.c.id == _oidc.c.user_id)
+        .order_by(identity.user.c.username, _oidc.c.issuer)
+    ).all()
+    return [
+        f"{r.username} @ {r.issuer}" + (f" (linked {r.linked_at:%Y-%m-%d})" if dated else "")
+        for r in rows
+    ]
 
 
 class RestoreCredentialsExit:
@@ -85,6 +100,7 @@ class RestoreCredentialsExit:
     def waiting(self) -> list[WaitingItem]:
         with self._engine.connect() as connection:
             data = read_notice(connection)
+            links = _links(connection) if data is not None else []
         if data is None:
             return []
         since = data.backup_created_at or "the backup"
@@ -93,6 +109,8 @@ class RestoreCredentialsExit:
             f"restore; passkey and identity-provider sign-in is suspended. Check the passkeys "
             f"and the identity-provider links created or removed since {since}"
         )
+        if links:  # seen before the acknowledgement, which is what reopens the provider's sign-in
+            reason += f" [links now: {', '.join(links[:_MAX_LISTED_LINKS])}]"
         if data.passwords_carried:
             reason += " (revocations and password hashes of the live database carried over)"
         else:
@@ -131,12 +149,5 @@ class RestoreCredentialsExit:
                 )
             )
             clear_notice(connection)
-            links = connection.execute(
-                sa.select(identity.user.c.username, _oidc.c.issuer, _oidc.c.linked_at)
-                .join(identity.user, identity.user.c.id == _oidc.c.user_id)
-                .order_by(identity.user.c.username, _oidc.c.issuer)
-            ).all()
-        return [
-            *data.passkey_changes,
-            *(f"oidc: {r.username} @ {r.issuer} (linked {r.linked_at:%Y-%m-%d})" for r in links),
-        ]
+            links = _links(connection, dated=True)
+        return [*data.passkey_changes, *(f"{OIDC_LINK_PREFIX}{link}" for link in links)]

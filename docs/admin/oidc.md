@@ -77,9 +77,13 @@ dans tous les profils** : jamais une clé d'API ni un jeton d'appareil. La déli
 sessions que le fournisseur avait ouvertes pour ce compte, est inscrite à l'audit
 (`oidc.unlinked`) et **le titulaire est prévenu** : liaison faite par un administrateur,
 déliaison (par lui ou par un administrateur), par le canal qui prévient déjà les personnes
-(le condensé de notification, envoyé aux canaux du compte, sans identifiant ni nom de l'auteur ;
-les heures calmes ne le retiennent pas). Une liaison au mauvais `sub` se corrige donc en déliant,
-puis en liant de nouveau.
+(le condensé de notification, sans identifiant ni nom de l'auteur ; les heures calmes ne le
+retiennent pas). **Il part à la destination de notification du titulaire** (réglages de
+notification, un compte Apprise à lui) **et à elle seule** : jamais dans les canaux partagés, que
+lit tout le foyer (un enfant, l'administrateur qui l'aurait fait). Sans destination à lui, rien ne
+part, et la trace reste sur l'écran `/reglages/compte/oidc` (« dernier lien retiré le… »). Invitez
+chaque adulte à régler la sienne. Une liaison au mauvais `sub` se corrige en déliant, puis en liant
+de nouveau.
 
 ## Après une restauration
 
@@ -87,7 +91,8 @@ Tant que l'avis de restauration est actif (`shelfhold status`), la connexion par
 **suspendue**, comme celle par clé d'accès : un lien retiré depuis la sauvegarde est de nouveau
 vivant. Vérifiez les comptes, puis `shelfhold restore acknowledge` : la commande **liste les liens**
 du fournisseur tels qu'ils sont dans la base (le compte et l'émetteur, jamais le `sub`) en plus des
-clés d'accès modifiées. Lier un compte reste possible. Le début d'une connexion chez le fournisseur
+clés d'accès modifiées (`shelfhold status` les montre déjà avant l'acquittement, qui est ce qui
+rouvre la connexion). Lier un compte reste possible. Le début d'une connexion chez le fournisseur
 a son propre plafond (30 par minute et par adresse), distinct de celui des options de clé d'accès.
 
 ## Rotation des clés du fournisseur
@@ -116,4 +121,13 @@ session redevient fraîche **seulement si** :
 La session est alors aussi fraîche que la connexion chez le fournisseur, pas davantage, et reçoit un
 nouveau jeton. Le retour se fait sur l'écran des réglages d'identité (`?oidc=reauth`) ; l'action
 demandée y est reprise. Un fournisseur qui ignore `prompt=login` et répond depuis sa propre session
-donne un `auth_time` ancien : il est refusé, et le mot de passe reste la voie de secours.
+donne un `auth_time` ancien : il est refusé, et le mot de passe reste la voie de secours. Le
+contrat est celui de `max_age` : si la session du fournisseur date de moins de `max_age` secondes,
+son `auth_time` est accepté même s'il n'a pas redemandé le mot de passe. Chez un fournisseur
+conforme, `prompt=login` le force toujours.
+
+**Limite à connaître.** `prompt=login` protège d'une session restée ouverte chez le fournisseur,
+**pas d'un compte du fournisseur compromis** : qui connaît les identifiants de la personne chez lui
+ouvre une session, puis rend la sienne fraîche, et peut alors enregistrer une clé d'accès. Un
+fournisseur qui impose une double authentification ferme cette porte ; sinon, gardez-la en tête
+(l'enregistrement d'une clé d'accès est à l'audit, `passkey.register`).

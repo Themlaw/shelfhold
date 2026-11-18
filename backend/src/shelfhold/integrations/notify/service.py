@@ -443,17 +443,28 @@ class NotificationSender:
             message = None if person is None else self._build(connection, person, payload)
             titled = (
                 self._build(connection, person, payload, titles=True)
-                if person is not None and message is not None and self._may_be_titled(person)
+                if person is not None and self._may_be_titled(person)
                 else None
             )
-        if message is None:  # a person who is gone, or nothing left that is theirs to be told
+        if message is None and titled is None:  # a person who is gone, or nothing left to tell
             self._finish(user_id, leased_at)
             return "dropped"
         try:
             private = None if titled is None else self._send_private(user_id, titled)
-            # a destination of their own decides: the titles go there and only there, and a
-            # failure there is a failure (retried), never a fallback to the shared channels
-            delivered = private if private is not None else bool(self._deliver(user_id, message))
+            if message is None:
+                # only what the person alone may read (a security notice about their account): it
+                # goes to their own destination or nowhere, never to the shared channels. The
+                # settings screen of the account keeps the trace for whoever has none.
+                if private is None:
+                    self._finish(user_id, leased_at)
+                    return "dropped"
+                delivered = private
+            else:
+                # a destination of their own decides: the titles go there and only there, and a
+                # failure there is a failure (retried), never a fallback to the shared channels
+                delivered = (
+                    private if private is not None else bool(self._deliver(user_id, message))
+                )
         except Exception:
             delivered = False  # never the text of the error: it may carry a URL
         if delivered:
@@ -508,7 +519,9 @@ class NotificationSender:
         for item in payload.get("items", []):
             kind = item["kind"]
             if kind == "security":  # M5 L04: what happened to the account itself, always theirs
-                if item.get("what") in _SECURITY_LINES:
+                # said only where the person alone reads: never in the shared channels, which a
+                # household (a child, the admin who did it) reads
+                if titles and item.get("what") in _SECURITY_LINES:
                     security.append(str(item["what"]))
                 continue
             if kind == "withdrawal_pending":

@@ -26,6 +26,8 @@
   const canPassword = $derived(methods.length === 0 || methods.includes('password'));
   const canPasskey = $derived(methods.includes('passkey') && passkeysSupported());
   const canProvider = $derived(methods.includes('oidc'));
+  // the server puts the provider first for a session it opened (no local proof), last for another
+  const providerFirst = $derived(methods[0] === 'oidc');
 
   async function submit(send: () => Promise<unknown>): Promise<void> {
     busy = true;
@@ -82,7 +84,7 @@
 <section class="reauth" aria-labelledby="reauth-title">
   <h2 id="reauth-title">{t('reauth.title')}</h2>
   <p>{t('reauth.explain')}</p>
-  {#if canProvider}
+  {#if canProvider && providerFirst}
     <button type="button" disabled={busy} onclick={withProvider}>{t('reauth.provider')}</button>
   {/if}
   {#if canPassword}
@@ -102,6 +104,9 @@
   {/if}
   {#if canPasskey}
     <button type="button" disabled={busy} onclick={withPasskey}>{t('reauth.passkey')}</button>
+  {/if}
+  {#if canProvider && !providerFirst}
+    <button type="button" disabled={busy} onclick={withProvider}>{t('reauth.provider')}</button>
   {/if}
   <button type="button" class="plain" onclick={oncancel}>{t('reauth.cancel')}</button>
   {#if failed}

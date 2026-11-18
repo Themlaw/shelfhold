@@ -5815,6 +5815,16 @@
             },
             "title": "Items",
             "type": "array"
+          },
+          "last_unlinked": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OidcLastUnlink"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
@@ -5822,6 +5832,26 @@
           "items"
         ],
         "title": "OidcIdentityList",
+        "type": "object"
+      },
+      "OidcLastUnlink": {
+        "description": "The last removal of a link of this account: the trace for a person whose notice had no\ndestination to go to (it is never told in the shared channels).",
+        "properties": {
+          "at": {
+            "format": "date-time",
+            "title": "At",
+            "type": "string"
+          },
+          "by_other": {
+            "title": "By Other",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "at",
+          "by_other"
+        ],
+        "title": "OidcLastUnlink",
         "type": "object"
       },
       "OidcLinkStart": {

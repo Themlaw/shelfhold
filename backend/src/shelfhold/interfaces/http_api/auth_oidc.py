@@ -98,10 +98,19 @@ class OidcIdentityItem(BaseModel):
     linked_by_other: bool | None
 
 
+class OidcLastUnlink(BaseModel):
+    """The last removal of a link of this account: the trace for a person whose notice had no
+    destination to go to (it is never told in the shared channels)."""
+
+    at: datetime
+    by_other: bool
+
+
 class OidcIdentityList(BaseModel):
     # the provider this instance is set to ask, None when no provider is configured
     configured_issuer: str | None
     items: list[OidcIdentityItem]
+    last_unlinked: OidcLastUnlink | None = None
 
 
 _CONFIRM = _fragment("oidc_confirm.html")
@@ -309,8 +318,12 @@ def build_oidc_router() -> APIRouter:
     ) -> OidcIdentityList:
         auth = gate_of(request).auth
         views = auth.oidc_identities_of(principal)
+        last = auth.oidc_last_unlink(principal)
         return OidcIdentityList(
             configured_issuer=auth.oidc.issuer if auth.oidc_available else None,
+            last_unlinked=None
+            if last is None
+            else OidcLastUnlink(at=last.at, by_other=last.by_other),
             items=[
                 OidcIdentityItem(
                     issuer=v.issuer, linked_at=v.linked_at, linked_by_other=v.linked_by_other

@@ -37,6 +37,7 @@ from shelfhold.identity.application.ports import (
     NewDeviceToken,
     NewSession,
     OidcIdentityView,
+    OidcLastUnlink,
     OidcLink,
     OidcUnlink,
     PasskeyGoneError,
@@ -1117,18 +1118,15 @@ class LocalAuth:
         )
 
     def unlink_oidc_identities(self, *, user_id: str, by: Principal) -> OidcUnlink:
-        """Removes the links of an account, each in one transaction with its audit line, the end of
-        the sessions the provider opened for the account and the notice to the holder (also when
-        the holder did it themselves: a stolen fresh session could). The caller has passed the
-        reserved action (`oidc.unlink_own`, `oidc.unlink_account`). An admin unlinks her own
-        account or any other that is not an admin's, as for linking."""
-        account = self._store.user_by_id(user_id)
-        if account is None:
-            return OidcUnlink.NO_ACCOUNT
-        if account.role == "admin" and user_id != by.user_id:
-            return OidcUnlink.ADMIN_TARGET
-        removed = False
-        for view in self._store.oidc_identities_of(user_id):
+        """Removes the links of an account, each in one transaction (which also decides, under the
+        write lock, whether this caller may: an admin unlinks her own account or a non-admin's)
+        with its audit line, the end of the sessions the provider opened for the account and the
+        notice to the holder (also when the holder did it themselves: a stolen fresh session
+        could). The caller has passed the reserved action (`oidc.unlink_own`,
+        `oidc.unlink_account`)."""
+        issuers = [view.issuer for view in self._store.oidc_identities_of(user_id)] or [""]
+        outcome = OidcUnlink.NOT_LINKED
+        for issuer in issuers:  # none: the store still says whether the account may be asked about
             entry = AuditEntry(
                 actor_id=audit_actor(by),
                 action="oidc.unlinked",
@@ -1137,14 +1135,19 @@ class LocalAuth:
                 session_id=by.session_id,
                 auth_time=by.auth_time,
             )
-            removed |= self._store.unlink_oidc_identity(
+            result = self._store.unlink_oidc_identity(
                 user_id=user_id,
-                issuer=view.issuer,
+                issuer=issuer,
                 now=self.now(),
                 audit=entry,
-                by_other=by.user_id != user_id,
+                by_user_id=by.user_id,
             )
-        return OidcUnlink.UNLINKED if removed else OidcUnlink.NOT_LINKED
+            if result is OidcUnlink.UNLINKED or outcome is OidcUnlink.NOT_LINKED:
+                outcome = result
+        return outcome
+
+    def oidc_last_unlink(self, principal: Principal) -> OidcLastUnlink | None:
+        return self._store.oidc_last_unlink(principal.user_id)
 
     def reauth_methods_for(self, principal: Principal) -> list[str]:
         """The ways this session can be proved again: the local ones, and the provider's when the
@@ -1154,6 +1157,7 @@ class LocalAuth:
         if (
             self.oidc is not None
             and principal.credential is Credential.SESSION
+            and not principal.via_forward  # the route refuses it
             and principal.role != "child"
             and self._store.oidc_identity_of(principal.user_id, self.oidc.issuer) is not None
         ):

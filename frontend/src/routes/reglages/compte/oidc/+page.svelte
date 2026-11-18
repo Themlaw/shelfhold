@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { oidcIdentities, oidcLink, oidcUnlink } from '#lib/api/index.ts';
-  import type { OidcIdentityItem } from '#lib/api/types.gen.ts';
+  import type { OidcIdentityItem, OidcLastUnlink } from '#lib/api/types.gen.ts';
   import ReauthPrompt from '#lib/components/ReauthPrompt.svelte';
   import { formatDate } from '#lib/i18n/format.ts';
   import { t } from '#lib/i18n/index.ts';
@@ -9,11 +9,18 @@
   import { needsReauth, problemOf } from '#lib/triage.ts';
 
   const INTENT = 'oidc-intent';
+  // what a person asked for before the provider took the browser away is worth no more than the
+  // flow that carried it: ten minutes
+  const INTENT_TTL_MS = 10 * 60 * 1000;
   type Intent = 'link' | 'unlink';
 
   let items = $state<OidcIdentityItem[]>([]);
   let issuer = $state<string | null>(null);
   let loaded = $state(false);
+  let lastUnlinked = $state<OidcLastUnlink | null>(null);
+  // proved at the provider, not yet done: the person says it again (a page restored from the
+  // history must never act on a request made earlier)
+  let resumable = $state<Intent | null>(null);
   let message = $state('');
   let failed = $state(false);
   let busy = $state(false);
@@ -27,6 +34,7 @@
       const { data } = await oidcIdentities({ throwOnError: true });
       items = data.items;
       issuer = data.configured_issuer;
+      lastUnlinked = data.last_unlinked ?? null;
     } catch {
       failed = true;
       message = t('oidc.list_error');
@@ -37,9 +45,15 @@
 
   /** What was asked before the provider took the browser away: taken up once it is back. */
   const takeIntent = (): Intent | null => {
-    const value = sessionStorage.getItem(INTENT);
+    const raw = sessionStorage.getItem(INTENT);
     sessionStorage.removeItem(INTENT);
-    return value === 'link' || value === 'unlink' ? value : null;
+    try {
+      const noted = JSON.parse(raw ?? 'null') as { intent?: string; at?: number } | null;
+      const fresh = typeof noted?.at === 'number' && Date.now() - noted.at < INTENT_TTL_MS;
+      return fresh && (noted?.intent === 'link' || noted?.intent === 'unlink') ? noted.intent : null;
+    } catch {
+      return null;
+    }
   };
 
   onMount(() => {
@@ -53,9 +67,9 @@
       failed = true;
       message = t('oidc.refused');
     }
-    // only a proof the provider gave is followed by what the person had asked for
-    const resume = result === 'reauth' && intent ? run(intent) : Promise.resolve();
-    return resume.then(load);
+    // only a proof the provider gave offers to go on with what the person had asked for
+    if (result === 'reauth' && intent) resumable = intent;
+    return load();
   });
 
   /** A stale session asks for a proof in place (EF-USR-022); a session the provider opened is
@@ -92,6 +106,12 @@
 
   const link = () => run('link');
   const unlink = () => run('unlink');
+
+  const resume = async (): Promise<void> => {
+    const intent = resumable;
+    resumable = null;
+    if (intent) await run(intent);
+  };
 
   async function afterReauth(): Promise<void> {
     reauthMethods = null;
@@ -137,12 +157,27 @@
     <button type="button" disabled={busy} onclick={link}>{t('oidc.link')}</button>
   {/if}
 
+  {#if resumable}
+    <p>{t(resumable === 'unlink' ? 'oidc.resume_unlink' : 'oidc.resume_link')}</p>
+    <button type="button" disabled={busy} onclick={resume}>
+      {t(resumable === 'unlink' ? 'oidc.unlink' : 'oidc.link')}
+    </button>
+  {/if}
+
+  {#if lastUnlinked}
+    <p class="muted">
+      {t('oidc.last_unlinked', { date: formatDate(lastUnlinked.at) })}
+      {#if lastUnlinked.by_other}· {t('oidc.by_admin_removed')}{/if}
+    </p>
+  {/if}
+
   {#if reauthMethods}
     <ReauthPrompt
       methods={reauthMethods}
       ondone={afterReauth}
       oncancel={() => (reauthMethods = null)}
-      onprovider={() => sessionStorage.setItem(INTENT, pending ?? 'link')}
+      onprovider={() =>
+        sessionStorage.setItem(INTENT, JSON.stringify({ intent: pending ?? 'link', at: Date.now() }))}
     />
   {/if}
 
