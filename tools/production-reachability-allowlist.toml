@@ -47,7 +47,7 @@ symbols = [
 
 [[allow]]
 category = "unwired-m4-komga"
-reason = "2026-11-16 (M4 L08a): the Komga destination is described, tested against a fake and declared to the core (`KomgaDestination.capabilities`, read by `FirstPartyDestinations`), but nothing creates a Komga target yet and the export pass does not ask it for a scan: the card of L08a stops at the client and the destination. Its first callers are the creation of the target (key sealed by `store_komga_key`) and the scan relay of the pass, written down in docs/decisions/M4.md for the lot that wires them."
+reason = "2026-11-16 (M4 L08a): the Komga destination is described, tested against a fake and declared to the core (`KomgaDestination.capabilities`, read by `FirstPartyDestinations`). 2026-11-17 (M4 L46): the target is now created (`target add komga`, `POST /api/v1/targets/komga`: the key is sealed by `store_komga_key` and shown to the server once by `KomgaClient.probe`), which settles the key, the routes and the scan calls. What is left is the scan relay of the export pass (`open_client`, `KomgaNoLibrary`, the inventory) and the audit of the accounts (`admit` before a binding, `audit` daily), written down in docs/decisions/M4.md."
 until = "M5"  # redated by M4 L43 (2026-11-17, docs/decisions/M4.md): the scan relay and the audit of the pass
 # 2026-11-16 (M4 L08b): the audit of the accounts (`KomgaAuditor`, `KomgaClient.list_accounts`) is
 # written and tested against the fake, and its proof is read by every binding and every pass
@@ -56,15 +56,8 @@ until = "M5"  # redated by M4 L43 (2026-11-17, docs/decisions/M4.md): the scan r
 symbols = [
   "shelfhold.export.targets.komga.audit:KomgaAuditor",
   "shelfhold.export.targets.komga.client:KomgaClient",
-  "shelfhold.export.targets.komga.credentials:KomgaKey",
-  "shelfhold.export.targets.komga.credentials:load_komga_key",
-  "shelfhold.export.targets.komga.credentials:store_komga_key",
   "shelfhold.export.targets.komga.errors:KomgaNoLibrary",
-  "shelfhold.export.targets.komga.errors:KomgaRouteNotAllowed",
-  "shelfhold.export.targets.komga.routes:ALLOWED_ROUTES",
   "shelfhold.export.targets.komga.target:KomgaDestination.layout_conflicts",
-  "shelfhold.export.targets.komga.target:KomgaDestination.scan_library_call",
-  "shelfhold.export.targets.komga.target:KomgaDestination.forget_removed_call",
   "shelfhold.export.targets.komga.target:KomgaDestination.inventory_calls",
   "shelfhold.export.targets.kavita.destination:KavitaDestination.inventory_calls",
   "shelfhold.export.targets.komga.wiring:open_client",
@@ -72,7 +65,7 @@ symbols = [
 
 [[allow]]
 category = "unwired-m4-cwa"
-reason = "2026-11-16 (M4 L09): the CWA drop box is described, executed by the pass (`dropbox_destinations`, `CwaSource` read by `FirstPartyDestinations`) and tested end to end, but nothing creates a `cwa` target yet: the card of L09 stops at the destination. The creation of the target (a reserved action) is for the lot that writes it, recorded in docs/decisions/M4.md."
+reason = "2026-11-16 (M4 L09): the CWA drop box is described, executed by the pass (`dropbox_destinations`, `CwaSource` read by `FirstPartyDestinations`) and tested end to end, the target is now created (M4 L46: `target add cwa`, `POST /api/v1/targets/cwa`, reserved action). What stays unwired are the two calls a drop box never makes (an inventory and sidecars: nothing is indexed, nothing is written beside the book)."
 until = "M5"  # redated by M4 L43 (2026-11-17, docs/decisions/M4.md): a drop box never calls them
 symbols = [
   "shelfhold.export.targets.cwa.destination:CwaDestination.inventory_calls",

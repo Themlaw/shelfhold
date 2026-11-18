@@ -21,6 +21,8 @@
     shelf_name: string;
     target_id: string;
     root_subpath: string;
+    sync_progress?: boolean; // M4 L46: the progress sync of the binding
+    can_sync_progress?: boolean; // only a destination that keeps a reading position per account
   };
   type Line = { code: string; count: number };
   type RemovalPreview = { phrase: string; warnings: Line[] };
@@ -104,6 +106,32 @@
       return;
     }
     destinations = (data as { items: Destination[] }).items;
+  }
+
+  /** The progress sync of a binding (M4 L46, EF-LEC-014): a reserved action, so the fresh-session
+   * prompt may come first and the same call is replayed. The box shows the state the server
+   * answered: a refusal puts it back where it was and says why. */
+  async function setSync(dest: Destination, enabled: boolean, box: HTMLInputElement): Promise<void> {
+    const call = async (): Promise<void> => {
+      const { error } = await client.post({
+        url: '/api/v1/destinations/{destination_id}/sync-progress',
+        path: { destination_id: dest.id },
+        headers: headers(),
+        body: { enabled },
+        throwOnError: false
+      });
+      if (error) {
+        box.checked = Boolean(dest.sync_progress);
+        if (askAgain(error, call)) return;
+        const unsupported = problemOf(error).code === 'destination.sync_unsupported';
+        say(t(unsupported ? 'destinations.sync.unsupported' : 'destinations.refused'), 'alert');
+        return;
+      }
+      dest.sync_progress = enabled;
+      box.checked = enabled;
+      say(t(enabled ? 'destinations.sync.on' : 'destinations.sync.off'), 'status');
+    };
+    await call();
   }
 
   function startRemove(dest: Destination): void {
@@ -277,6 +305,16 @@
         <li>
           <span>{dest.shelf_name}</span>
           <span>{dest.root_subpath}</span>
+          {#if dest.can_sync_progress}
+            <label>
+              <input
+                type="checkbox"
+                checked={Boolean(dest.sync_progress)}
+                onchange={(event) => setSync(dest, event.currentTarget.checked, event.currentTarget)}
+              />
+              {t('destinations.sync.label')}
+            </label>
+          {/if}
           <button type="button" onclick={() => startRemove(dest)}>{t('destinations.remove')}</button>
           <button type="button" aria-describedby="scope-{dest.id}" onclick={() => startDetach(dest)}>
             {t('destinations.detach')}

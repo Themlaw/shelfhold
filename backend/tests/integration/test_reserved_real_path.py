@@ -138,6 +138,9 @@ WHEN_CLOSED_AUDITED = {
     # subscription, in the transaction that makes or removes it; the empty body below is a 422
     # and an unknown identifier a 404: no line
     "webhook.manage",
+    # M4 L46: the doors that create a Komga and switch the progress sync write none (`audit=False`):
+    # the service writes the line, with its target, when it acts; the empty body below is a 422
+    "target.add_komga", "destination.sync_progress",
 }  # fmt: skip
 # any role may do it on its own account (the guard names KNOWN_ROLES): the role loop skips it
 # M4 L12: an adult handles their own Kavita key (a member's session is not refused by role: the

@@ -8,6 +8,8 @@ __all__ = [
     "ChannelValidator",
     "ExchangedKey",
     "KavitaKeyExchange",
+    "KomgaProbe",
+    "KomgaProbed",
     "ShelfLinkPort",
     "SuwayomiProbe",
 ]
@@ -45,6 +47,21 @@ class KavitaKeyExchange(Protocol):
         """Delete the key with this identifier and no other: `revoked` (deleted now, or already
         gone: the identifier was recorded before the first try), `reused` (the identifier now
         names a key whose value is not `key`, the sealed one: left alone) or `failed`."""
+
+
+@dataclass(frozen=True)
+class KomgaProbed:
+    """What Komga said of itself when the key was shown to it."""
+
+    version: str | None
+
+
+class KomgaProbe(Protocol):
+    def probe(self, *, url: str, api_key: str) -> KomgaProbed:
+        """Show the key to Komga (`/actuator/info`, an administrator's route, so a reply proves the
+        role). `TargetExchangeFailed` for an address out of reach, a refused key or a key without
+        the role: never the key in the message."""
+        ...
 
 
 class SuwayomiProbe(Protocol):
