@@ -1204,6 +1204,22 @@ export type ConfigRow = {
 };
 
 /**
+ * ConflictOut
+ */
+export type ConflictOut = {
+    /**
+     * Created At
+     */
+    created_at: string;
+    /**
+     * Id
+     */
+    id: string;
+    loser: ShelfholdInterfacesHttpApiReaderStoredOut;
+    winner: ShelfholdInterfacesHttpApiReaderStoredOut;
+};
+
+/**
  * ContributorsIn
  */
 export type ContributorsIn = {
@@ -1247,6 +1263,14 @@ export type CsrfToken = {
      * Csrf Token
      */
     csrf_token: string;
+};
+
+/**
+ * CurrentOut
+ */
+export type CurrentOut = {
+    conflict: ConflictOut | null;
+    position: ShelfholdInterfacesHttpApiReaderStoredOut | null;
 };
 
 /**
@@ -2288,20 +2312,6 @@ export type HistoryEntryOut = {
      * Visibility
      */
     visibility: string;
-};
-
-/**
- * HistoryOut
- */
-export type HistoryOut = {
-    /**
-     * Items
-     */
-    items: Array<HistoryEntryOut>;
-    /**
-     * Next Before
-     */
-    next_before: number | null;
 };
 
 /**
@@ -3651,6 +3661,44 @@ export type PolicyOut = {
      * Source Key
      */
     source_key: string;
+};
+
+/**
+ * PositionIn
+ *
+ * What a reader says of where it is. The profile is the session's: no field names one.
+ */
+export type PositionIn = {
+    /**
+     * Carrier Id
+     */
+    carrier_id: string;
+    /**
+     * Carrier Type
+     */
+    carrier_type: 'content' | 'export_item';
+    /**
+     * Client Ts
+     */
+    client_ts: string;
+    /**
+     * Device Id
+     */
+    device_id?: string | null;
+    /**
+     * Locator
+     */
+    locator: {
+        [key: string]: unknown;
+    };
+    /**
+     * Scope
+     */
+    scope?: 'full' | 'excerpt';
+    /**
+     * Ticket
+     */
+    ticket?: string | null;
 };
 
 /**
@@ -5998,16 +6046,6 @@ export type StorageOut = {
 };
 
 /**
- * StoredOut
- */
-export type StoredOut = {
-    /**
-     * State
-     */
-    state: string;
-};
-
-/**
  * SuggestionOut
  */
 export type SuggestionOut = {
@@ -7660,6 +7698,20 @@ export type ShelfholdInterfacesHttpApiOpsSecretIn = {
 };
 
 /**
+ * HistoryOut
+ */
+export type ShelfholdInterfacesHttpApiOpsDashboardHistoryOut = {
+    /**
+     * Items
+     */
+    items: Array<HistoryEntryOut>;
+    /**
+     * Next Before
+     */
+    next_before: number | null;
+};
+
+/**
  * ShelfOut
  */
 export type ShelfholdInterfacesHttpApiOpsDashboardShelfOut = {
@@ -7707,6 +7759,66 @@ export type ShelfholdInterfacesHttpApiPluginsSecretIn = {
      * Value
      */
     value: string;
+};
+
+/**
+ * HistoryOut
+ */
+export type ShelfholdInterfacesHttpApiReaderHistoryOut = {
+    /**
+     * Items
+     */
+    items: Array<ShelfholdInterfacesHttpApiReaderStoredOut>;
+    /**
+     * Limit
+     */
+    limit: number;
+};
+
+/**
+ * ResolveIn
+ */
+export type ShelfholdInterfacesHttpApiReaderResolveIn = {
+    /**
+     * Choice
+     */
+    choice: 'winner' | 'loser';
+    /**
+     * Device Id
+     */
+    device_id?: string | null;
+};
+
+/**
+ * StoredOut
+ */
+export type ShelfholdInterfacesHttpApiReaderStoredOut = {
+    /**
+     * Approximate
+     */
+    approximate: boolean;
+    /**
+     * Client Ts
+     */
+    client_ts: string;
+    /**
+     * Device Id
+     */
+    device_id: string | null;
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Locator
+     */
+    locator: {
+        [key: string]: unknown;
+    };
+    /**
+     * Server Ts
+     */
+    server_ts: string;
 };
 
 /**
@@ -7838,6 +7950,16 @@ export type ShelfholdInterfacesHttpApiSourcesSearchOut = {
 };
 
 /**
+ * StoredOut
+ */
+export type ShelfholdInterfacesHttpApiSourcesStoredOut = {
+    /**
+     * State
+     */
+    state: string;
+};
+
+/**
  * QueueOut
  */
 export type ShelfholdInterfacesHttpApiStatusQueueOut = {
@@ -7944,6 +8066,186 @@ export type ShelfholdInterfacesHttpApiTachibkImportItemOut = {
      */
     trackers: number;
 };
+
+export type ReaderResolveConflictData = {
+    body: ShelfholdInterfacesHttpApiReaderResolveIn;
+    path: {
+        /**
+         * Conflict Id
+         */
+        conflict_id: string;
+    };
+    query?: never;
+    url: '/api/reader/conflicts/{conflict_id}/resolve';
+};
+
+export type ReaderResolveConflictErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * not-found
+     */
+    404: unknown;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type ReaderResolveConflictError = ReaderResolveConflictErrors[keyof ReaderResolveConflictErrors];
+
+export type ReaderResolveConflictResponses = {
+    /**
+     * Successful Response
+     */
+    200: CurrentOut;
+};
+
+export type ReaderResolveConflictResponse = ReaderResolveConflictResponses[keyof ReaderResolveConflictResponses];
+
+export type ReaderPutPositionData = {
+    body: PositionIn;
+    path?: never;
+    query?: never;
+    url: '/api/reader/positions';
+};
+
+export type ReaderPutPositionErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * not-found
+     */
+    404: unknown;
+    /**
+     * excerpt-writes-no-position
+     */
+    409: unknown;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type ReaderPutPositionError = ReaderPutPositionErrors[keyof ReaderPutPositionErrors];
+
+export type ReaderPutPositionResponses = {
+    /**
+     * Successful Response
+     */
+    200: CurrentOut;
+};
+
+export type ReaderPutPositionResponse = ReaderPutPositionResponses[keyof ReaderPutPositionResponses];
+
+export type ReaderPositionData = {
+    body?: never;
+    path: {
+        /**
+         * Carrier Type
+         */
+        carrier_type: string;
+        /**
+         * Carrier Id
+         */
+        carrier_id: string;
+    };
+    query?: never;
+    url: '/api/reader/{carrier_type}/{carrier_id}/position';
+};
+
+export type ReaderPositionErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * not-found
+     */
+    404: unknown;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type ReaderPositionError = ReaderPositionErrors[keyof ReaderPositionErrors];
+
+export type ReaderPositionResponses = {
+    /**
+     * Successful Response
+     */
+    200: CurrentOut;
+};
+
+export type ReaderPositionResponse = ReaderPositionResponses[keyof ReaderPositionResponses];
+
+export type ReaderPositionHistoryData = {
+    body?: never;
+    path: {
+        /**
+         * Carrier Type
+         */
+        carrier_type: string;
+        /**
+         * Carrier Id
+         */
+        carrier_id: string;
+    };
+    query?: {
+        /**
+         * Limit
+         */
+        limit?: number;
+    };
+    url: '/api/reader/{carrier_type}/{carrier_id}/positions';
+};
+
+export type ReaderPositionHistoryErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * not-found
+     */
+    404: unknown;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type ReaderPositionHistoryError = ReaderPositionHistoryErrors[keyof ReaderPositionHistoryErrors];
+
+export type ReaderPositionHistoryResponses = {
+    /**
+     * Successful Response
+     */
+    200: ShelfholdInterfacesHttpApiReaderHistoryOut;
+};
+
+export type ReaderPositionHistoryResponse = ReaderPositionHistoryResponses[keyof ReaderPositionHistoryResponses];
 
 export type ReaderPublicationData = {
     body?: never;
@@ -8063,7 +8365,7 @@ export type AcquireResponses = {
      *
      * Successful Response
      */
-    202: JobAccepted | StoredOut;
+    202: JobAccepted | ShelfholdInterfacesHttpApiSourcesStoredOut;
 };
 
 export type AcquireResponse = AcquireResponses[keyof AcquireResponses];
@@ -12798,7 +13100,7 @@ export type OpsActivityHistoryResponses = {
     /**
      * Successful Response
      */
-    200: HistoryOut;
+    200: ShelfholdInterfacesHttpApiOpsDashboardHistoryOut;
 };
 
 export type OpsActivityHistoryResponse = OpsActivityHistoryResponses[keyof OpsActivityHistoryResponses];
