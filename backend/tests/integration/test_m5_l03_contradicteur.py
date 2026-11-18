@@ -47,9 +47,6 @@ def _restore_pending(world: World) -> None:
         engine.dispose()
 
 
-@pytest.mark.xfail(
-    strict=True, reason="MIN-A : la connexion OIDC ignore l'avis de restauration en attente"
-)
 def test_oidc_login_is_refused_while_a_restore_is_pending(world: World) -> None:
     assert world.link_admin("mum").status_code == 204
     _restore_pending(world)
@@ -58,11 +55,6 @@ def test_oidc_login_is_refused_while_a_restore_is_pending(world: World) -> None:
     assert world.signed_in_as(browser) is None
 
 
-@pytest.mark.xfail(
-    strict=True,
-    raises=(OverflowError, ValueError, OSError),
-    reason="NIT-B : un auth_time hors plage lève au lieu d'être un refus",
-)
 def test_oidc_auth_time_out_of_range_is_one_refusal(world: World) -> None:
     assert world.link_admin("mum").status_code == 204
     world.idp.tamper = {"auth_time": 10**20}

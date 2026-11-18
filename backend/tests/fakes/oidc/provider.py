@@ -54,6 +54,8 @@ class FakeOidcProvider:
         self.requests: list[httpx2.Request] = []
         self.tamper: dict[str, Any] = {}
         self.sign_with_other_key = False
+        self.second_key = False  # a second published key (a rotation under way)
+        self.omit_kid = False  # the token header does not name its key
         self.public_client = False  # no secret expected (PKCE alone)
         self.publish_shared_secret = False  # the client secret listed among the keys, as `oct`
         self.discovery_overrides: dict[str, Any] = {}
@@ -133,7 +135,8 @@ class FakeOidcProvider:
             return ".".join(enc) + "."
         key = _key("unpublished") if self.sign_with_other_key else _key("signing-1")
         # the header always names the published key: the signature is what differs
-        return jwt.encode({"alg": "RS256", "kid": "signing-1"}, self.claims(grant), key)
+        header = {"alg": "RS256"} if self.omit_kid else {"alg": "RS256", "kid": "signing-1"}
+        return jwt.encode(header, self.claims(grant), key)
 
     # --- the wire -------------------------------------------------------------------------------
 
@@ -144,6 +147,8 @@ class FakeOidcProvider:
             return httpx2.Response(200, json=self.discovery())
         if request.method == "GET" and path == "/jwks":
             keys: list[Any] = [_key("signing-1")]
+            if self.second_key:
+                keys.append(_key("signing-2"))
             if self.publish_shared_secret:  # a provider (or an attacker) that lists a secret key
                 keys.append(OctKey.import_key(self.client_secret, {"kid": "shared", "use": "sig"}))
             return httpx2.Response(200, json=KeySet(keys).as_dict(private=False))
