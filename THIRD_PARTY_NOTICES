@@ -1,0 +1,68 @@
+THIRD-PARTY NOTICES
+
+Shelfhold is licensed under the AGPL-3.0-or-later (see LICENSE). This file lists the third-party
+code that the repository carries as source (not through a package manager) and the licence of each
+part. The Python and npm dependencies are recorded by their lock files; the generated inventory of
+those is produced in CI at release time.
+
+==========================================================================================
+foliate-js
+==========================================================================================
+Where:    frontend/vendor/foliate-js (git submodule, never patched, never built)
+Source:   https://github.com/johnfactotum/foliate-js
+Commit:   78914aef4466eb960965702401634c2cb348e9b1
+Licence:  MIT
+Author:   John Factotum
+Role:     EPUB engine of the integrated reader, imported by its single adapter only
+          (docs/dependencies.md, docs/adr/0055-lecteur-integre-m5.md)
+
+The pinned commit is the one written in docs/dependencies.md; CI refuses any difference.
+
+MIT License
+
+Copyright (c) 2022 John Factotum
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+------------------------------------------------------------------------------------------
+Code shipped inside foliate-js (its vendor/ directory)
+------------------------------------------------------------------------------------------
+These files are part of the submodule at the commit above. Their notices are the ones of their
+authors; the reader loads fflate and zip.js only (pdf.js is not registered in M5, ADR-0055 D7).
+
+fflate 0.8.2 (vendor/fflate.js)
+  https://github.com/101arrowz/fflate
+  Licence: MIT. Copyright (c) Arjun Barrett (upstream LICENSE, read 2026-11-18).
+
+zip.js 2.8.22 (vendor/zip.js)
+  https://github.com/gildas-lormeau/zip.js
+  Licence: BSD-3-Clause. Copyright (c) 2023, Gildas Lormeau (upstream LICENSE, read 2026-11-18).
+  Web workers are turned off by foliate-js (`useWebWorkers: false`).
+
+pdf.js 5.5.207 (vendor/pdfjs/)
+  https://github.com/mozilla/pdf.js
+  Licence: Apache-2.0. Copyright 2024 Mozilla Foundation. The licence header is kept at the top
+  of vendor/pdfjs/pdf.mjs and vendor/pdfjs/pdf.worker.mjs.
+  Not loaded by Shelfhold in M5. Companion data under vendor/pdfjs/:
+    cmaps/              Adobe Systems Incorporated, BSD-3-Clause style licence (cmaps/LICENSE)
+    standard_fonts/     Foxit fonts (BSD-3-Clause style, standard_fonts/LICENSE_FOXIT) and
+                        Liberation fonts (SIL Open Font License 1.1,
+                        standard_fonts/LICENSE_LIBERATION)
+
+Each licence text is in the submodule, next to the file it covers.

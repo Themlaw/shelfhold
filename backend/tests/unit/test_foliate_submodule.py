@@ -24,7 +24,11 @@ WORKFLOWS = REPO / ".github" / "workflows"
 
 
 def _git(root: Path, *args: str) -> None:
-    subprocess.run(["git", "-C", str(root), *args], check=True, capture_output=True)
+    subprocess.run(  # noqa: S603
+        ["git", "-C", str(root), *args],  # noqa: S607
+        check=True,
+        capture_output=True,
+    )
 
 
 def _repo(
@@ -35,6 +39,7 @@ def _repo(
     gitmodules: str | None = None,
 ) -> Path:
     """A throwaway repository with one gitlink, `.gitmodules` and a dependencies page."""
+    tmp_path.mkdir(parents=True, exist_ok=True)
     _git(tmp_path, "init", "-q")
     _git(tmp_path, "update-index", "--add", "--cacheinfo", f"160000,{gitlink},{SUBMODULE}")
     (tmp_path / ".gitmodules").write_text(
@@ -57,6 +62,8 @@ def _repo(
 @pytest.mark.req("EF-LEC-003")
 def test_foliate_submodule_pinned_to_documented_commit() -> None:
     """The real repository: one gitlink, the commit written in `docs/dependencies.md`."""
+    if pin.gitlink_commit(REPO) is None and not (REPO / ".git").exists():
+        pytest.skip("not a Git work tree (remote copy): CI and `tools/check_submodule_pin.py pin`")
     assert pin.pin_problems(REPO) == []
     documented = pin.documented_commit(REPO)
     assert documented is not None
@@ -81,7 +88,6 @@ def test_pin_check_refuses_a_gitlink_that_differs_from_the_documented_commit(
 def test_pin_check_refuses_a_short_or_missing_documented_commit(tmp_path: Path) -> None:
     short = pin.pin_problems(_repo(tmp_path / "short", documented=SHA_A[:7]))
     assert short, "a 7-hex commit is not a pin"
-    (tmp_path / "none").mkdir()
     root = _repo(tmp_path / "none")
     (root / "docs" / "dependencies.md").write_text("rien\n", encoding="utf-8")
     assert pin.pin_problems(root)
@@ -194,7 +200,7 @@ def test_decision_record_gives_the_pin_and_its_verification_date() -> None:
     text = (REPO / "docs" / "decisions" / "M5.md").read_text(encoding="utf-8")
     body = text.split("## L11", 1)[1]
     assert pin.documented_commit(REPO) in body
-    assert re.search(r"vérifié .*20\d\d-\d\d-\d\d", body)
+    assert re.search(r"vérifié .*20\d\d-\d\d-\d\d", body, re.I)
 
 
 # --- CI: checkout, no build script ---------------------------------------------------------------
@@ -215,7 +221,10 @@ def _steps(job: dict[str, object]) -> list[dict[str, object]]:
 def _needs_frontend_sources(job: dict[str, object]) -> bool:
     for step in _steps(job):
         run = str(step.get("run", ""))
-        if re.search(r"\b(npm|npx|node)\b", run) or "build-push-action" in str(step.get("uses", "")):
+        # lint, type-check, test or build of the frontend, or an image whose context holds it
+        if re.search(r"\bnpm (run|test)\b", run) or "build-push-action" in str(
+            step.get("uses", "")
+        ):
             return True
     return False
 
@@ -326,7 +335,9 @@ def test_asset_scan_flags_a_new_host_and_a_new_loader_in_the_vendored_code(
     """An update that adds a network path is stopped here and goes to the manual review."""
     vendored = tmp_path / SUBMODULE
     vendored.mkdir(parents=True)
-    (vendored / "view.js").write_text("const u = 'https://tracker.example.test/x'\n")
+    (vendored / "view.js").write_text(
+        "configure({ useWebWorkers: false })\nconst u = 'https://tracker.example.test/x'\n"
+    )
     (vendored / "paginator.js").write_text("const w = new WebSocket(url)\n")
     (vendored / "epub.js").write_text("navigator.sendBeacon(url)\n")
     problems = pin.asset_problems(tmp_path)

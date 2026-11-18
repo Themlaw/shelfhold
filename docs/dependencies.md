@@ -32,6 +32,91 @@ ouvre une issue `dependency-risk` et fait basculer vers le repli décrit.
 - FastAPI et Starlette sont confinés à `shelfhold.interfaces` (contrat
   `fastapi-only-in-interfaces`).
 
+## foliate-js (sous-module)
+
+Moteur EPUB du lecteur intégré (M5, ADR-0055, EF-LEC-003, risque R13). Le code de foliate-js n'est
+ni copié ni installé par un gestionnaire de paquets : c'est un **sous-module Git**
+(`frontend/vendor/foliate-js`, `.gitmodules`) épinglé par **commit**, jamais par branche ni par tag.
+
+Commit épinglé : `78914aef4466eb960965702401634c2cb348e9b1`
+
+- **Dépôt officiel** : `https://github.com/johnfactotum/foliate-js` (HTTPS, aucune autre URL
+  admise). Commit vérifié sur le dépôt officiel le 2026-11-18 : tête de `main`, signature GitHub
+  vérifiée, date 2026-05-01 (« Use original hrefs for external links and add isExternal in fb2.js »),
+  dépôt non archivé, licence détectée MIT.
+- **Licence** : MIT (© John Factotum), relue dans le `LICENSE` du sous-module. Le code embarqué dans
+  son `vendor/` garde ses licences : fflate (MIT), zip.js (BSD-3-Clause), pdf.js (Apache-2.0, avec
+  cmaps Adobe, polices Foxit et Liberation, SIL OFL 1.1). Tout est dans `THIRD_PARTY_NOTICES`. pdf.js
+  n'est enregistré par aucun moteur en M5 (ADR-0055, D7). Aucune de ces licences n'est incompatible
+  avec l'AGPL-3.0 (ADR-0014).
+- **Aucun script exécuté depuis le sous-module** : son `package.json` (`build` : rollup) et ses
+  dépendances de développement ne sont jamais installés ni lancés. Les bundles de son `vendor/` sont
+  utilisés tels quels. `frontend/package.json` ne le référence pas (ni dépendance, ni espace de
+  travail) ; lint, typos et vérificateur de types l'ignorent. `.gitmodules` n'a ni `branch` ni
+  `update`.
+- **Aucune requête réseau à l'exécution, aucune ressource d'un CDN** : le seul `fetch` de la
+  bibliothèque sert à ouvrir une adresse (`view.js`, `makeBook` reçoit une chaîne) ou une couverture
+  FB2 ; l'adaptateur ne lui passe que des `File` ou des `Blob`. zip.js embarque du code de
+  Web Worker, inerte tant que `view.js` appelle `configure({ useWebWorkers: false })`. Les seules
+  adresses absolues du code sont des espaces de noms XML et des liens de commentaires. Garde :
+  `tools/check_submodule_pin.py assets` (CI, job `frontend`, après checkout du sous-module) et
+  `test_no_reader_asset_from_third_party_origin` : un nouvel hôte ou une nouvelle primitive réseau
+  (`WebSocket`, `sendBeacon`, `importScripts`, `new Worker`) arrête la mise à jour.
+- **CI** : les jobs qui construisent le frontend ou l'image récupèrent le sous-module avec
+  `actions/checkout` (`submodules: true`, jamais `recursive`, `persist-credentials: false`) : le
+  commit est celui du lien Git, donc l'arbre extrait est celui du SHA. `tools/check_submodule_pin.py pin`
+  (job `lint`, toujours exécuté) échoue si le lien Git n'est pas le « Commit épinglé » ci-dessus ou si
+  `.gitmodules` change (branche, commande, autre URL). `test_foliate_submodule_pinned_to_documented_commit` le
+  prouve.
+- **Mises à jour** : Dependabot (`gitsubmodule`, mensuel, `cooldown` de 14 jours, jamais de
+  fusion automatique) ouvre une proposition ; elle reste rouge tant que le commit documenté, les
+  notices et la date de vérification ne sont pas mis à jour par une personne.
+
+### Règle de mise à jour
+
+Une mise à jour de foliate-js est un changement de code non fiable dans le lecteur : elle est lente
+et relue.
+
+- **Qui** : le porteur du dépôt, seul. Jamais une fusion automatique, jamais un agent sans relecture
+  d'un second regard. Une PR de Dependabot est une proposition, pas une autorisation.
+- **Comment** : (1) choisir un **commit** de `main` du dépôt officiel, vérifié par GitHub, vieux d'au
+  moins 14 jours ; (2) `git -C frontend/vendor/foliate-js fetch origin` puis
+  `git -C frontend/vendor/foliate-js checkout <sha>` ; (3) dans le **même commit** : le lien Git, la
+  ligne « Commit épinglé » et sa date de vérification, `THIRD_PARTY_NOTICES`, la section du jalon dans
+  `docs/decisions/` ; (4) `python3 tools/check_submodule_pin.py pin` et `assets --require-checkout`,
+  puis les suites du lecteur (corpus d'EPUB piégés sur les trois navigateurs, filtre de contenu, CSP du
+  lecteur).
+- **Relecture** : `git diff <ancien>..<nouveau>` du sous-module lu en entier pour les fichiers du
+  tableau d'audit ci-dessous et pour `epub.js`, `view.js`, `paginator.js`, `fixed-layout.js` ; le
+  tableau d'audit est refait (recherche de `cloneNode`, `importNode`, `adoptNode`, `extractContents`,
+  `cloneContents`, `insertNode`, `innerHTML`, `srcdoc`, `eval`) ; `LICENSE` et `vendor/` relus (licence,
+  versions, notices) ; toute nouvelle primitive réseau ou tout nouvel hôte est refusé. Une relecture
+  adverse indépendante est exigée dès qu'un fichier du tableau change.
+
+## foliate-js : audit des chemins qui déplacent des nœuds
+
+Condition de `'strict-dynamic'` (ADR-0055) : sous cette CSP, un script inséré par l'analyseur est
+refusé, mais un nœud `<script>` que du code de confiance clone, importe ou rattache à un document
+vivant s'exécuterait. L'audit porte sur le commit `78914aef4466eb960965702401634c2cb348e9b1`, relu le 2026-11-18 : chaque appel qui
+clone, importe, extrait, insère ou réinsère un nœud, et chaque `innerHTML`.
+
+| Fichier | Chemin relevé | Verdict |
+| --- | --- | --- |
+| `footnotes.js` | `FootnoteHandler.#showFragment` : une seconde `<foliate-view>` du même livre, puis `range.extractContents()` et `appendChild` dans le même document. Les nœuds du livre sont déplacés par du code de foliate. | **écarté** : `footnotes.js` n'est pas importé en M5 (condition posée à L12, qui la fait tenir par ESLint). Les notes passent par un nouveau document `blob:` filtré. |
+| `overlayer.js` | Crée des éléments SVG avec le `document` hôte ; ne lit du livre que `range.getClientRects()`. | sans déplacement : aucun nœud du livre cloné ni déplacé. |
+| `search.js` | `textWalker` et des `Range` : produit des chaînes et des CFI. `view.js` lit les sections par `createDocument()`, soit `DOMParser` sur le texte brut (scripts désactivés, jamais rattaché). | inerte : documents détachés, jamais insérés. La recherche plein texte n'est pas branchée en M5. |
+| `tts.js` | `range.cloneContents()`, `range.insertNode(mark)` sur le fragment cloné, `importNode` vers un document XML SSML détaché. | **écarté** : `view.initTTS` n'est jamais appelé en M5 (import dynamique) ; les clones restent dans des fragments détachés. |
+| `paginator.js` | Ajoute deux `<style>` créés par `doc.createElement` dans le `<head>` ; `replaceChildren` sur l'en-tête et le pied de l'hôte ; `innerHTML` d'un gabarit statique dans son propre shadow root. | sans déplacement : aucun nœud du livre n'est déplacé (les `<style>` ajoutés sont créés par foliate). |
+| `fixed-layout.js` | Crée ses iframes et ses éléments ; `replaceChildren` sur sa propre racine. | sans déplacement : aucun nœud du livre. |
+| `epub.js` | Le chargeur analyse chaque XHTML, HTML ou SVG par `DOMParser`, réécrit des attributs, sérialise en chaîne puis crée un `blob:` ; l'événement `data` est le point d'accroche du filtre. | inerte : le document analysé n'est jamais rattaché ; seul le texte filtré devient un `blob:`. |
+| `mobi.js`, `fb2.js` | `innerHTML` sur un `<textarea>` hôte, `DOMParser`. | inerte : formats non enregistrés en M5 (EPUB et images seulement). |
+
+Conséquence pour L12 : ne pas importer `footnotes.js`, `tts.js` ni `pdf.js`, ne pas appeler
+`initTTS`, ne cloner ni importer ni réinsérer aucun nœud du livre, et cadrer ces règles par ESLint
+et par le corpus de livres piégés (cas « script déplacé par une API DOM »). Ces règles sont des
+conditions de `'strict-dynamic'` : un chemin nouveau, issu d'une mise à jour, est écarté ou passe par
+le filtre avant la fusion.
+
 ## Autres dépendances notables
 
 Non critiques (remplaçables sans réécriture), listées pour mémoire :

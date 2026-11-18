@@ -197,6 +197,8 @@ jobs:
         run: uv run --locked python ../tools/i18n_parity.py
       - name: published migrations frozen (a new migration is frozen by its own PR, ENF-OPS-002)
         run: python3 tools/check_patch_migrations.py
+      - name: foliate-js submodule pinned to the commit of docs/dependencies.md (EF-LEC-003, R13)
+        run: python3 tools/check_submodule_pin.py pin
       - name: typos
         id: typos-first
         continue-on-error: true  # the action downloads its binary from a release: one more try below
@@ -508,12 +510,16 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          submodules: true  # frontend/vendor/foliate-js, the commit of the gitlink (never recursive)
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: "24"
           cache: npm
           cache-dependency-path: frontend/package-lock.json
       - run: npm ci
+      - name: no reader asset from a third-party origin, vendored code included (EF-LEC-003)
+        working-directory: .
+        run: python3 tools/check_submodule_pin.py assets --require-checkout
       - name: eslint
         run: npm run lint
       - name: svelte-check (TypeScript strict)
@@ -571,6 +577,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          submodules: true  # frontend/vendor/foliate-js, the commit of the gitlink (never recursive)
       - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
         with:
           version: "0.12.x"
@@ -623,6 +630,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          submodules: true  # frontend/vendor/foliate-js, the commit of the gitlink (never recursive)
       - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
         with:
           version: "0.12.x"
