@@ -6,7 +6,7 @@ from sqlalchemy import Engine
 
 from shelfhold.config import Settings
 from shelfhold.identity.adapters.challenges import MemoryChallenges
-from shelfhold.identity.adapters.device_cookie import DeviceCookieSigner
+from shelfhold.identity.adapters.device_cookie import DeviceCookieSigner, LiteCookieSigner
 from shelfhold.identity.adapters.passwords import Argon2Hasher
 from shelfhold.identity.adapters.store import SqlIdentityStore
 from shelfhold.identity.application.passkeys import PasskeyCeremony
@@ -47,5 +47,6 @@ def local_auth(
         hardened=settings.auth_hardened,
         fresh_auth_s=settings.fresh_auth_s,
         device_proof=DeviceCookieSigner(settings.data_dir),
+        lite_session=LiteCookieSigner(settings.data_dir),
         on_passkey_registered=on_passkey_registered,
     )

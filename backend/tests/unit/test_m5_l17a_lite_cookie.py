@@ -71,6 +71,10 @@ def test_csrf_token_of_a_session_is_not_a_flow_token_nor_another_sessions(tmp_pa
     second = lite.issue("abcd1234", DIGEST, NOW + timedelta(seconds=1))
     token = lite.csrf_of(first)
     assert lite.csrf_ok(first, token)
-    assert not lite.csrf_ok(second, token) and not lite.csrf_ok(first, "") and not lite.csrf_ok("", token)
+    assert (
+        not lite.csrf_ok(second, token)
+        and not lite.csrf_ok(first, "")
+        and not lite.csrf_ok("", token)
+    )
     nonce, flow = lite.new_flow()
     assert not lite.csrf_ok(nonce, flow) and not lite.flow_ok(first, token)

@@ -482,6 +482,34 @@ class ReauthMethod(Protocol):
     def verify(self, user: UserRecord, payload: Mapping[str, object]) -> bool: ...
 
 
+@dataclass(frozen=True)
+class LiteClaims:
+    """What a `/lite` session cookie says: which token, and a binding to its secret (never the
+    secret, never its digest)."""
+
+    public_id: str
+    binding: str
+
+
+class LiteSessionPort(Protocol):
+    """The proofs of `/lite` (M5 L17a): a session bound to the secret of one device token, and
+    the form tokens (bound to a browser's flow, or to a session) that stand for the CSRF check."""
+
+    def issue(self, public_id: str, secret_digest: str, now: datetime) -> str: ...
+
+    def verify(self, value: str | None, now: datetime) -> LiteClaims | None: ...
+
+    def bound(self, claims: LiteClaims, secret_digest: str) -> bool: ...
+
+    def new_flow(self) -> tuple[str, str]: ...
+
+    def flow_ok(self, nonce: str | None, token: str | None) -> bool: ...
+
+    def csrf_of(self, session: str) -> str: ...
+
+    def csrf_ok(self, session: str | None, token: str | None) -> bool: ...
+
+
 class DeviceProofPort(Protocol):
     """Signed proof that a browser already logged in to an account (skips the account counter)."""
 

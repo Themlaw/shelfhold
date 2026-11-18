@@ -6,6 +6,7 @@ Format : [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/). Versionnement
 
 ### Ajouté
 
+- **Pages `/lite` sans JavaScript (M5 L17a)** : HTML rendu côté serveur pour les navigateurs de liseuse sans script moderne : connexion par l'identifiant et le secret d'un jeton d'appareil, étagères, séries, œuvres, recherche, couvertures et téléchargement du bloc de série, en lecture seule. Cookie limité à `/lite`, lié au secret du jeton (la rotation ou la révocation l'arrête à la requête suivante), profil et visibilité relus à chaque requête (un enfant ne voit que ce que son plafond permet ; caché et absent donnent la même page), CSRF sur chaque formulaire, CSP sans script, `no-store` partout. Aucune migration.
 - **Registre d'appareils et rotation du secret (M5 L02)** : chaque appairage fait un appareil (libellé, type, « vu pour la dernière fois ») ; l'écran « Connecter une liseuse » les liste par profil, change le secret d'un appareil sans réappairer (l'ancien est refusé à la requête suivante) et retire un appareil (tous ses jetons sont révoqués). Actions réservées `device_token.rotate` et `device.remove`, jamais ouvertes à une clé ni à un jeton ; un membre ne voit que ses appareils, un enfant aucun. `GET /api/v1/devices`, `POST /api/v1/devices/{id}/rotate`, `DELETE /api/v1/devices/{id}` ; `shelfhold admin device-tokens rotate|remove`. Migration 0100 (ligne 1.2) : chaque jeton existant reçoit son appareil ; un jeton dont l'appareil est retiré est refusé.
 
 ## 1.1.0 - 2026-11-18

@@ -33,6 +33,7 @@ from shelfhold.identity.application.ports import (
     DeviceTokenRecord,
     IdentityStore,
     KeyConflictError,
+    LiteSessionPort,
     NewApiKey,
     NewDeviceToken,
     NewSession,
@@ -332,6 +333,7 @@ class LocalAuth:
         throttle: LoginThrottle | None = None,
         reauth_methods: Sequence[ReauthMethod] | None = None,
         device_proof: DeviceProofPort | None = None,
+        lite_session: LiteSessionPort | None = None,
         passkeys: PasskeyCeremony | None = None,
         on_passkey_registered: Callable[[PasskeyRecord], None] | None = None,
     ) -> None:
@@ -347,6 +349,7 @@ class LocalAuth:
             per_address=DEVICE_FAILURES_PER_ADDRESS, per_account=DEVICE_FAILURES_PER_PAIR
         )
         self._device_proof = device_proof
+        self._lite = lite_session
         methods = list(reauth_methods if reauth_methods is not None else [PasswordReauth(hasher)])
         self._passkeys = passkeys
         self._options_throttle = LoginThrottle(
@@ -1396,6 +1399,12 @@ class LocalAuth:
         secret: str | None = None,
         md5_key: str | None = None,
     ) -> Principal | None:
+        found = self._device_authenticated(public_id, ip=ip, secret=secret, md5_key=md5_key)
+        return found[0] if found is not None else None
+
+    def _device_authenticated(
+        self, public_id: str, *, ip: str, secret: str | None, md5_key: str | None
+    ) -> tuple[Principal, DeviceTokenRecord] | None:
         """The profile a device token acts as, or None. One of `secret` (HTTP Basic, OPDS) or
         `md5_key` (`x-auth-key` of KOReader, kosync). The answer is the same for an unknown
         identifier and a wrong key. A wrong attempt is counted before the check, per (address,
@@ -1436,6 +1445,9 @@ class LocalAuth:
             return None
         self._device_throttle.release(ip=ip, account=account, at=at, skip_address=True)
         self._device_throttle.reset_account(account)
+        return self._device_principal(record, now), record
+
+    def _device_principal(self, record: DeviceTokenRecord, now: datetime) -> Principal:
         if record.last_used_at is None or now - record.last_used_at >= API_KEY_TOUCH_INTERVAL:
             self._store.touch_device_token(record.id, now=now)
         held = device_token(
@@ -1447,6 +1459,57 @@ class LocalAuth:
         return token_principal(
             held, username=record.subject.username, role=record.subject.role, can_rate=False
         )
+
+    # --- `/lite` (M5 L17a, EF-LEC-010): a browser with no script signs in with a token's secret --
+
+    def lite_sign_in(self, public_id: str, secret: str, *, ip: str) -> str | None:
+        """The session cookie of `/lite` for a token and its secret, or None (one answer for an
+        unknown identifier, a wrong secret, a revoked, a retired and an expired token). The check
+        and its counting are those of the e-reader's own door (`authenticate_device_token`), so
+        a guess is slowed the same way and a `ThrottledError` is the same answer."""
+        if self._lite is None:
+            return None
+        found = self._device_authenticated(public_id, ip=ip, secret=secret, md5_key=None)
+        if found is None:
+            return None
+        record = found[1]
+        return self._lite.issue(record.public_id, record.secret_digest, self.now())
+
+    def lite_resume(self, value: str | None) -> Principal | None:
+        """Who a `/lite` cookie is, at this request: the token is read again (live, its device not
+        retired, its secret the one the session was made with) and the profile is the token's
+        subject, read now. A rotated secret ends the session; so does anything that ends the
+        token. Nothing is counted here: the cookie is signed, there is nothing to guess."""
+        if self._lite is None:
+            return None
+        now = self.now()
+        claims = self._lite.verify(value, now)
+        if claims is None:
+            return None
+        record = self._store.device_token_by_public_id(claims.public_id)
+        if record is None or not self._lite.bound(claims, record.secret_digest):
+            return None
+        if not device_token_is_live(
+            record.revoked_at, record.device_revoked_at, record.expires_at, now
+        ):
+            return None
+        return self._device_principal(record, now)
+
+    def lite_new_flow(self) -> tuple[str, str]:
+        if self._lite is None:
+            raise RuntimeError("lite sessions are not configured")
+        return self._lite.new_flow()
+
+    def lite_flow_ok(self, nonce: str | None, token: str | None) -> bool:
+        return self._lite is not None and self._lite.flow_ok(nonce, token)
+
+    def lite_csrf(self, session: str) -> str:
+        if self._lite is None:
+            raise RuntimeError("lite sessions are not configured")
+        return self._lite.csrf_of(session)
+
+    def lite_csrf_ok(self, session: str | None, token: str | None) -> bool:
+        return self._lite is not None and self._lite.csrf_ok(session, token)
 
     def _device_failed(self, ip: str, at: datetime) -> None:
         """A wrong attempt: counted against the address; past its limit it is a 429, not a 401."""

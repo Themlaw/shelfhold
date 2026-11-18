@@ -1,0 +1,22 @@
+<!--@header-->
+<header><a href="$home">$home_label</a>
+<form method="get" action="$search_action"><label for="q">$search_label</label><input id="q" name="q" type="search" maxlength="200" value="$query"><button type="submit">$search_button</button></form>
+<form method="post" action="$sign_out_action"><input type="hidden" name="csrf" value="$csrf"><button type="submit">$sign_out_label</button></form></header>
+<!--@row-->
+<li><a href="$href">$html_image$label</a></li>
+<!--@thumb-->
+<img src="$src" alt="">
+<!--@link-->
+<a href="$href">$label</a>
+<!--@alert-->
+<p class="note" role="alert">$text</p>
+<!--@cover-->
+<p><img class="cover" src="$src" alt=""></p>
+<!--@heading-->
+<h2>$text</h2>
+<!--@note-->
+<p class="note">$text</p>
+<!--@offer-->
+<p><a class="button" href="$href">$label ($size)</a></p>
+<!--@paragraph-->
+<p>$text</p>

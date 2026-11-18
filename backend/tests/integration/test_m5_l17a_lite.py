@@ -20,11 +20,11 @@ from typing import Any
 
 import pytest
 import sqlalchemy as sa
+from fastapi.routing import iter_route_contexts
 from fastapi.testclient import TestClient
 
 from shelfhold.config import Settings
 from shelfhold.infrastructure.schema import catalog
-from tests.auth_env import AuthEnv
 from tests.integration.test_l48_opds import (
     ABSENT_ULID,
     HIDDEN_KID,
@@ -42,9 +42,7 @@ pytestmark = pytest.mark.req("EF-LEC-010", "ENF-COMP-002", "ENF-SEC-010", "EF-US
 
 CSRF_FIELD = re.compile(r'name="csrf"\s+value="([^"]+)"')
 HTTP = "http://testserver"
-LITE_TEMPLATES = (
-    Path(__file__).parents[2] / "src/shelfhold/interfaces/http_api/lite/templates"
-)
+LITE_TEMPLATES = Path(__file__).parents[2] / "src/shelfhold/interfaces/http_api/lite/templates"
 
 
 class Links(HTMLParser):
@@ -179,7 +177,7 @@ def test_lite_pages_contain_no_script(world: World) -> None:
             assert "script-src" not in csp
             assert "'unsafe-eval'" not in csp
     templates = sorted(LITE_TEMPLATES.glob("*.html"))
-    assert 4 <= len(templates) <= 8
+    assert 4 <= len(templates) <= 8  # five, and one of small pieces
     for template in templates:
         source = template.read_text("utf-8").lower()
         assert "<script" not in source and "javascript:" not in source, template.name
@@ -187,6 +185,11 @@ def test_lite_pages_contain_no_script(world: World) -> None:
 
 
 # -- the cookie ---------------------------------------------------------------------------------
+
+
+def scrub(response: Any) -> str:
+    """The page without the token of its form (a new one is drawn for each browser)."""
+    return CSRF_FIELD.sub("", response.text)
 
 
 def _cookies(response: Any) -> list[str]:
@@ -217,12 +220,12 @@ def test_lite_cookie_scoped_to_lite_and_read_only(world: World) -> None:
         assert client.request(method, "/lite/works").status_code in (404, 405)
     for path in ("/lite/works", f"/lite/works/{world.seed.works['ok']}", "/lite/shelves"):
         assert client.post(path).status_code in (403, 404, 405)
-    app_routes = {
-        (method, route.path)  # type: ignore[attr-defined]
-        for route in world.env.app.routes
-        if getattr(route, "path", "").startswith("/lite")
-        for method in (getattr(route, "methods", None) or set()) - {"HEAD", "OPTIONS"}
-    }
+    app_routes = set()
+    for context in iter_route_contexts(world.env.app.routes):  # routers included lazily too
+        own = context.methods or getattr(context.original_route, "methods", None) or set()
+        if context.path and context.path.startswith("/lite"):
+            app_routes |= {(method, context.path) for method in own - {"HEAD", "OPTIONS"}}
+    assert ("GET", "/lite") in app_routes
     writes = {path for method, path in app_routes if method != "GET"}
     assert writes == {"/lite/sign-in", "/lite/sign-out"}
 
@@ -245,7 +248,9 @@ def test_lite_forged_and_stale_cookies_open_nothing(world: World) -> None:
         payload + ".",
         "A" * 600,
     ):
-        got = anonymous.get("/lite/works", headers={"Cookie": f"{name}={forged}"})
+        got = anonymous.get(
+            "/lite/works", headers={"Cookie": f"{name}={forged}"}, follow_redirects=False
+        )
         assert got.status_code in (303, 401, 403), forged
         assert HIDDEN_TITLES["above"] not in got.text and VISIBLE_TITLES["ok"] not in got.text
 
@@ -329,10 +334,11 @@ def test_lite_sign_in_is_one_answer_for_every_failure_and_never_echoes_the_secre
     unknown = sign_in(client, world.mum, identifier="zzzzzzzz")
     empty = sign_in(client, world.mum, secret="")
     assert (wrong.status_code, unknown.status_code) == (401, 401)
-    assert wrong.text == unknown.text  # nothing tells an unknown identifier from a wrong secret
+    assert scrub(wrong) == scrub(unknown)  # nothing tells an unknown identifier from a wrong secret
     assert empty.status_code in (400, 401, 422)
-    assert not any("lite" in c.split("=", 1)[0].lower() and "flow" not in c.lower()
-                   for c in _cookies(wrong)), _cookies(wrong)
+    assert not any(
+        "lite" in c.split("=", 1)[0].lower() and "flow" not in c.lower() for c in _cookies(wrong)
+    ), _cookies(wrong)
     for response in (wrong, unknown, empty):
         assert "z" * 26 not in response.text and world.mum.secret not in response.text
         assert response.headers["cache-control"] == "no-store"
@@ -340,7 +346,7 @@ def test_lite_sign_in_is_one_answer_for_every_failure_and_never_echoes_the_secre
     created = auth_of(world.env).create_device_token(subject_username="mum", name="gone")
     assert auth_of(world.env).revoke_device_token(created.public_id)
     gone = sign_in(client, world.mum, identifier=created.public_id, secret=created.secret)
-    assert gone.status_code == 401 and gone.text == wrong.text
+    assert gone.status_code == 401 and scrub(gone) == scrub(wrong)
 
 
 def test_lite_sign_in_takes_the_secret_as_typed_on_a_small_keyboard(world: World) -> None:
@@ -387,9 +393,12 @@ def test_lite_forms_carry_a_csrf_token_and_refuse_a_foreign_one(world: World) ->
         "/lite/sign-in", data={**good, "csrf": token.group(1)}, follow_redirects=False
     )
     assert bare.status_code == 403
-    assert client.post(
-        "/lite/sign-in", data={**good, "csrf": token.group(1)}, follow_redirects=False
-    ).status_code == 303
+    assert (
+        client.post(
+            "/lite/sign-in", data={**good, "csrf": token.group(1)}, follow_redirects=False
+        ).status_code
+        == 303
+    )
 
 
 def test_lite_sign_out_is_a_post_with_its_own_token(world: World) -> None:
@@ -400,12 +409,15 @@ def test_lite_sign_out_is_a_post_with_its_own_token(world: World) -> None:
     assert token
     assert client.get("/lite/sign-out").status_code in (404, 405)
     assert client.post("/lite/sign-out", follow_redirects=False).status_code == 403
-    assert client.post(
-        "/lite/sign-out", data={"csrf": "x" * 40}, follow_redirects=False
-    ).status_code == 403
+    assert (
+        client.post("/lite/sign-out", data={"csrf": "x" * 40}, follow_redirects=False).status_code
+        == 403
+    )
     assert client.get("/lite/works").status_code == 200  # still in
     cross = client.post(
-        "/lite/sign-out", data={"csrf": token.group(1)}, headers={"Sec-Fetch-Site": "cross-site"},
+        "/lite/sign-out",
+        data={"csrf": token.group(1)},
+        headers={"Sec-Fetch-Site": "cross-site"},
         follow_redirects=False,
     )
     assert cross.status_code == 403
@@ -417,9 +429,12 @@ def test_lite_sign_out_is_a_post_with_its_own_token(world: World) -> None:
     second = signed_in(world, world.mum, "10.0.1.19")
     mine = CSRF_FIELD.search(first.get("/lite").text)
     assert mine
-    assert second.post(
-        "/lite/sign-out", data={"csrf": mine.group(1)}, follow_redirects=False
-    ).status_code == 403
+    assert (
+        second.post(
+            "/lite/sign-out", data={"csrf": mine.group(1)}, follow_redirects=False
+        ).status_code
+        == 403
+    )
 
 
 def test_lite_refuses_plain_http_before_any_secret_is_read(world: World) -> None:
@@ -501,7 +516,7 @@ def test_lite_search_finds_only_what_the_profile_may_see(world: World) -> None:
     assert f"/lite/works/{world.seed.works['ok']}" in Links(seen.text).hrefs
     for hostile in ("<b>x</b>", '"><script>x</script>', "' OR 1=1 --", "a" * 5000, "%00"):
         got = client.get("/lite/search", params={"q": hostile})
-        assert got.status_code in (200, 400, 422)
+        assert got.status_code in (200, 400, 404, 422)  # too long: an absent page, no search
         assert "<script" not in got.text.lower() and "<b>x</b>" not in got.text
 
 
@@ -512,9 +527,9 @@ def test_lite_follows_the_profile_at_the_next_request(world: World) -> None:
     work, edition = world.seed.works["adult_shelf"], world.seed.editions.get("adult_shelf")
     assert client.get(f"/lite/works/{work}").status_code == 200
     with world.seed.engine.begin() as connection:
-        connection.execute(sa.update(catalog.work).where(catalog.work.c.id == work).values(
-            age_rating=18
-        ))
+        connection.execute(
+            sa.update(catalog.work).where(catalog.work.c.id == work).values(age_rating=18)
+        )
     assert client.get(f"/lite/works/{work}").status_code == 404
     assert world.seed.title_of("adult_shelf") not in client.get("/lite/works").text
     if edition is not None:
@@ -542,7 +557,12 @@ def test_lite_download_is_the_block_of_the_series_and_only_for_a_visible_edition
     client = signed_in(world, world.kid, "10.0.1.27")
     work = client.get(f"/lite/works/{world.seed.works['ok']}")
     links = [h for h in Links(work.text).hrefs if "/complete" in h]
-    assert links == [f"/lite/editions/{world.seed.editions['ok']}/complete"]
+    editions = world.seed.editions  # the third Edition of this Work is on a shelf kept for others
+    assert sorted(links) == sorted(
+        f"/lite/editions/{editions[k]}/complete" for k in ("ok", "ok_second")
+    )
+    assert editions["ok_reserved"] not in work.text
+    links = [f"/lite/editions/{editions['ok']}/complete"]
     assert "3 chapitres exclus" in work.text  # the notice of the provider, escaped text
     got = client.get(links[0])
     assert got.status_code == 200 and got.content == PAYLOAD
