@@ -2,10 +2,28 @@
 
 Format : [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/). Versionnement : [SemVer](https://semver.org/lang/fr/). Procédure de release : `docs/releasing.md`.
 
-## Non publié
+## 1.1.0 - AAAA-MM-JJ
+
+Clôture de M4 : plusieurs destinations par étagère, synchronisation de la progression avec Kavita et les liseuses, ouverture vers l'écosystème, métadonnées enrichies. Reprend les changements des candidates `1.1.0-rc.1` et `1.1.0-rc.2` (sections ci-dessous). La date est celle de la release.
 
 ### Ajouté
 
+- **Dossier natif (L07)** : une destination qui écrit `<série>/Ch.<n> <titre>.cbz` avec `ComicInfo.xml` et `cover.jpg`, à la disposition locale de Mihon ; une racine qui recouvre la source locale de Suwayomi est refusée, dans les deux sens, et revérifiée à chaque cycle.
+- **Komga (L08a, L08b)** : un scan de bibliothèque débouncé (jamais un scan par dossier) ; le cloisonnement par âge n'est accordé qu'après l'audit en lecture seule des comptes ; versions antérieures à 1.22.0 refusées.
+- **CWA (L09)** : dépôt atomique d'un EPUB par livre dans un dossier d'ingestion, suivi par identifiant ; refusé pour une étagère réservée aux adultes.
+- **Plusieurs destinations par étagère (L06a, L06b)** : un fan-out qui lit ses octets dans le magasin ou sur un exemplaire vérifié, refait le rendu par destination (jamais copié d'une destination à l'autre) et choisit le format natif de chacune.
+- **Tome assemblé (L10)** : un fichier remplace les chapitres d'un tome ; la progression des chapitres est reportée sur le tome.
+- **Progression gardée (L16, L15)** : un renommage, un reclassement ou un changement d'Édition préférée conserve la progression de chaque membre (position approximative marquée comme telle).
+- **Collections et listes de lecture (L18a, L18b)** : import CBL, listes par profil, poussée dans Kavita par le compte de service, puis promotion approuvée par l'administrateur.
+- **Œuvres liées (L19)** : relations visibles sur les deux fiches, poussées vers les séries liées de Kavita.
+- **Migration complète de source (L27)** : numérotation traduite, aucun nouveau téléchargement, historique conservé.
+- **Acheter ou emprunter ailleurs (L30)** : états de demande, arrivée appariée à la demande ouverte, propositions de recherche acceptées une à une par l'administrateur.
+- **Fournisseurs de métadonnées (L21a)** : Hardcover et Google Books, clés scellées données par `shelfhold meta provider-key`.
+- **Thèmes (L32b, L32c, L32d)** : « Console », « Galerie » et « Calme », à côté de « Bibliothèque », choisis par chaque personne ; contraste AA vérifié pour chacun, en clair et en sombre.
+- **Retrait d'une destination (L34)** : avec ses fichiers ou en détachement complet, en tâches de fond (202 et identifiant de tâche), avec confirmation, sans jamais supprimer la dernière copie.
+- **Documentation (L42)** : pages d'administration sur les destinations, la synchronisation et les métriques ; page famille sur la progression ; chaque code d'erreur a sa cause et son action en français et en anglais.
+- **Parcours de bout en bout sur l'image (L44)** : étagère vers Kavita et dossier natif, progression dans les deux sens, renommage ; contrat Komga en nightly.
+- **Fermeture du navigateur de test (L40)** : toute requête hors de l'adresse de base est refusée et comptée.
 - **Résilience à un retrait de la forge (L41)** : le vérificateur de mises à jour (`SHELFHOLD_UPDATE_CHECK_URL`) est désactivé par défaut, ne bloque rien (un échec n'est qu'une ligne `info`) et n'envoie aucun identifiant de l'instance ; l'adresse de l'index de plugins est un réglage (`SHELFHOLD_PLUGIN_INDEX_URL`, la signature authentifie le contenu) ; le workflow `publish-mirror` pousse `main` et les tags vers le miroir quand `CODEBERG_TOKEN` existe (sans lui, il réussit en le disant) ; le compose de référence nomme les deux images et `GOVERNANCE.md` écrit la procédure de continuité ; `shelfhold update check` lit à la demande le document de version (Fetcher gardé, User-Agent sans version, lecture bornée). ENF-GOV-004 reste ouverte sur la première publication vérifiée du second registre.
 - **Adoption d'une bibliothèque étrangère (L36)** : la première page de chaque CBZ adopté est lue dans le bac à sable de décodage (format et taille dans l'aperçu) ; une page ou une archive refusée (image géante, bombe, chemin `..`, lien symbolique) marque le fichier « à vérifier », sans jamais le toucher. Écran « Adopter une bibliothèque » dans les réglages ; section « bac à sable » dans le paquet de diagnostic ; l'aperçu des plans lit ses noms en lot (`BulkParse.for_plan`).
 - **Classement en masse avec aperçu (L28)** : dans « À classer », l'administrateur coche les Œuvres (ou fige un filtre), voit un aperçu qui ne classe rien, puis applique : **un seul** travail de la file classe la sélection, vérifiée de nouveau sous verrou ; si une Œuvre choisie a changé entre-temps, rien n'est classé et l'écran le dit. Une Œuvre hors de la sélection n'est jamais touchée, même si la liste a changé. Action réservée « classer » (session administrateur fraîche, jamais une clé, un membre ni un enfant). `POST /api/v1/bulk/rate/preview` et `/bulk/rate/{id}/apply`. Seules les Œuvres jamais classées sont retenues (aussi pour `rate --pending`). Classement par tranches de 100 Œuvres, repris après un arrêt. Le lot « tout classer » de l'écran est remplacé par cette sélection (la ligne de commande `rate --pending` reste).
@@ -25,7 +43,13 @@ Format : [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/). Versionnement
 
 - Une Œuvre ou une Édition rangée sur aucune étagère n'est plus visible pour un enfant (un adulte la voit toujours).
 
-Migration : oui (0091, 0092, 0094, 0095, 0096, 0097 et 0098)
+### Corrigé
+
+- **Une liseuse retrouve un fichier dès son premier export (L47)** : l'export écrit la ligne `document_alias` du fichier qu'il produit (empreintes KOReader et Kavita comprises), une seule fois par fichier ; avant, `GET /kosync/syncs/progress/{empreinte}` d'un fichier tout juste exporté répondait `{}`. Aucune migration.
+- **QR « Connecter un appareil » (L38)** : le sous-chemin de Kavita n'est plus perdu ; l'aperçu d'un import avertit quand la source s'ajoute à la famille.
+- **Suppression d'une étagère (L43)** : les enfants qui voyaient une Œuvre par cette étagère reçoivent l'événement de visibilité ; ils ne la voient plus.
+
+Migration : oui (0065 à 0098 depuis la 1.0.1 ; 0084 à 0098 depuis la 1.1.0-rc.2)
 
 ## 1.1.0-rc.2 - 2026-11-16
 
