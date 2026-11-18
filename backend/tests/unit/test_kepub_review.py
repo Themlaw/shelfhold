@@ -96,7 +96,6 @@ def page(body: bytes) -> bytes:
 
 
 @pytest.mark.req("EF-BIB-015")
-@pytest.mark.xfail(strict=True)
 def test_kepub_span_ids_never_collide_with_existing_ones() -> None:
     """A span id must not duplicate an id the page already carries: `kobo.1.1` on the
     paragraph becomes two elements with the same id once the first span is numbered, and
@@ -112,7 +111,6 @@ def test_kepub_span_ids_never_collide_with_existing_ones() -> None:
 
 
 @pytest.mark.req("EF-BIB-015")
-@pytest.mark.xfail(strict=True)
 def test_kepub_transforms_only_the_itemrefs_of_the_spine() -> None:
     """The reading order is what the `<spine>` of the OPF references. An `<itemref>` that
     sits in `<metadata>` is not part of it: the entry it names must stay byte for byte,
@@ -127,7 +125,6 @@ def test_kepub_transforms_only_the_itemrefs_of_the_spine() -> None:
 
 
 @pytest.mark.req("EF-BIB-015")
-@pytest.mark.xfail(strict=True)
 def test_kepub_keeps_a_carriage_reference_through_the_round_trip() -> None:
     """What the safe parser read must be what the written document says. The parser hands
     `&#13;` over as one carriage return; the writer puts that CR into the text literally,
@@ -159,7 +156,6 @@ def test_kepub_keeps_the_comments_and_instructions_of_a_page() -> None:
 
 
 @pytest.mark.req("EF-BIB-015")
-@pytest.mark.xfail(strict=True)
 def test_kepub_stays_linear_on_a_paragraph_of_many_segments() -> None:
     """Each segment of one text node becomes one span, inserted with its own `insert` in
     front of the other children of its holder: every insert shifts them all, so a

@@ -315,7 +315,8 @@ def test_kepub_accepts_a_simple_doctype_and_refuses_any_other() -> None:
     # the common form of EPUB 3: a bare declaration, no subset, no external identifier
     simple = (
         b"<!DOCTYPE html>\n"
-        b'<html xmlns="http://www.w3.org/1999/xhtml"><body><p>With a doctype. Twice.</p></body></html>'
+        b'<html xmlns="http://www.w3.org/1999/xhtml"><body>'
+        b"<p>With a doctype. Twice.</p></body></html>"
     )
     written = read_entry(
         kepubify(epub(book(**{"OEBPS/chapter1.xhtml": simple}))), "OEBPS/chapter1.xhtml"

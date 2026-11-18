@@ -4,16 +4,27 @@ One function, `kepubify(data)`: the bytes of an EPUB (already neutralized, but t
 untrusted all the same) become the bytes of a KEPUB for a Kobo reader, in Python only: no
 external binary is run and nothing is written to the file system.
 
-The reading order is walked from the OPF. Each XHTML document of the spine — the navigation
-document excepted — receives the Kobo spans around the sentences of its paragraphs:
+The reading order is walked from the OPF: only the `item` children of a `manifest` and the
+`itemref` children of a `spine`, all in the OPF namespace, count, and a manifest id that
+names two items is a refusal. Each XHTML document of the spine — the navigation document
+excepted — receives the Kobo spans around the sentences of its paragraphs:
 `<span class="koboSpan" id="kobo.N.M">`, N the paragraph (1-based, document order) and M the
-segment (1-based, reset at each paragraph), the numbering kepubify uses. A paragraph is a
+segment (1-based, reset at each paragraph), the numbering kepubify uses; the ids are taken
+from one past the highest `kobo.N.M` the page already carries, so they never collide with an
+id that is there. A paragraph is a
 block text container (`p`, `h1`-`h6`, `li`, `dd`, `dt`, `td`, `th`, `caption`, `figcaption`,
 `blockquote`); a segment is a sentence, cut after `.`, `!`, `?` and their CJK counterparts
 followed by whitespace; a text node with no sentence boundary is one segment, and whitespace-only
 text is left as it is. The body content is then wrapped in the `book-inner` / `book-columns`
 divs. Every other entry — the OPF, the spine, nav.xhtml, toc.ncx, the metadata, the images, the
 style sheets — is copied byte for byte, in its original order; `mimetype` stays first and stored.
+
+Two kinds of spine documents are left alone, byte for byte, rather than converted: a page
+already converted (its `koboSpan` spans are in place), and a page that carries a comment or a
+processing instruction — the safe parser drops both, so a converted page would come out
+without them, and what the reader would get is not the document that was read. A bare
+`<!DOCTYPE html>` (no internal subset, no external identifier), the common form of EPUB 3, is
+accepted; any other DTD is refused.
 
 The archive is read through `safe_open_archive` (the single archive entry point: the existing
 bounds of the repository — entry count, sizes, compression ratio, overlap) and written by
@@ -51,6 +62,7 @@ SVG_NS: Final = "http://www.w3.org/2000/svg"
 XLINK_NS: Final = "http://www.w3.org/1999/xlink"
 EPUB_NS: Final = "http://www.idpf.org/2007/ops"
 XML_NS: Final = "http://www.w3.org/XML/1998/namespace"
+OPF_NS: Final = "http://www.idpf.org/2007/opf"
 OPF_MEDIA_TYPE: Final = "application/oebps-package+xml"
 XHTML_TYPES: Final = frozenset({"application/xhtml+xml", "text/html"})
 MIMETYPE: Final = "mimetype"
@@ -64,6 +76,9 @@ _PARAGRAPHS: Final = frozenset(
 )  # fmt: skip
 _SENTENCE: Final = re.compile(r"[.!?\u3002\uFF01\uFF1F]+[\"'\u2019\u201D\u00BB)\]]*\s+")
 _KNOWN_PREFIXES: Final = {XHTML_NS: "", SVG_NS: "svg", XLINK_NS: "xlink", EPUB_NS: "epub"}
+_KOBO_ID: Final = re.compile(r"^kobo\.(\d+)\.\d+$")
+_ELEMENT_START: Final = re.compile(rb"<[A-Za-z_:]")
+_SIMPLE_DOCTYPE: Final = re.compile(rb"<!DOCTYPE\s+[\w.-]+\s*>")
 
 
 class KepubError(ValueError):
@@ -127,36 +142,52 @@ def _resolve(base: str, href: str) -> tuple[str, str] | None:
 
 
 def _reading_order(package: Element, opf_path: str, names: set[str]) -> list[tuple[str, str, str]]:
-    """(path, media type, properties) of each spine item, in order; a spine item that points at
-    no item of the archive makes the EPUB invalid: it is refused, not skipped."""
+    """(path, media type, properties) of each spine item, in order. Only the `item` children
+    of a `manifest` and the `itemref` children of a `spine`, all three in the OPF namespace,
+    count: an `itemref` anywhere else names no reading order. A manifest id that names two
+    items, and a spine item that points at no item of the archive, make the EPUB invalid:
+    both are refused, not skipped."""
     manifest: dict[str, tuple[str, str, str]] = {}
-    for item in package.iter():
-        if _local(item.tag) != "item":
+    seen: set[str] = set()
+    for element in package.iter():
+        if _split(element.tag) != (OPF_NS, "manifest"):
             continue
-        item_id, href = item.get("id"), item.get("href")
-        if not item_id or not href:
-            continue
-        resolved = _resolve(opf_path, href)
-        if resolved is None or resolved[0] not in names:
-            continue
-        manifest[str(item_id)] = (
-            resolved[0], item.get("media-type", ""), item.get("properties", ""),
-        )  # fmt: skip
+        for item in element:
+            if _split(item.tag) != (OPF_NS, "item"):
+                continue
+            item_id, href = item.get("id"), item.get("href")
+            if not item_id:
+                continue
+            if str(item_id) in seen:
+                raise KepubError("manifest", f"the id {item_id} names two items")
+            seen.add(str(item_id))
+            if not href:
+                continue
+            resolved = _resolve(opf_path, href)
+            if resolved is None or resolved[0] not in names:
+                continue
+            manifest[str(item_id)] = (
+                resolved[0], item.get("media-type", ""), item.get("properties", ""),
+            )  # fmt: skip
     order: list[tuple[str, str, str]] = []
-    for ref in package.iter():
-        if _local(ref.tag) != "itemref" or not ref.get("idref"):
+    for element in package.iter():
+        if _split(element.tag) != (OPF_NS, "spine"):
             continue
-        entry = manifest.get(str(ref.get("idref")))
-        if entry is None:
-            raise KepubError(
-                "spine", f"itemref {ref.get('idref')} points at no item of the archive"
-            )
-        order.append(entry)
+        for ref in element:
+            if _split(ref.tag) != (OPF_NS, "itemref") or not ref.get("idref"):
+                continue
+            entry = manifest.get(str(ref.get("idref")))
+            if entry is None:
+                raise KepubError(
+                    "spine", f"itemref {ref.get('idref')} points at no item of the archive"
+                )
+            order.append(entry)
     return order
 
 
 def _spine_documents(archive: SafeArchive) -> dict[str, bytes]:
-    """The transformed bytes of each XHTML document of the spine, by archive path."""
+    """The converted bytes of each XHTML document of the spine, by archive path; a document
+    the module leaves alone is not in the map and is copied as it is."""
     names = {entry.name for entry in archive.entries}
     if MIMETYPE not in names:
         raise KepubError("mimetype", "no mimetype entry")
@@ -169,21 +200,68 @@ def _spine_documents(archive: SafeArchive) -> dict[str, bytes]:
             continue
         if "nav" in properties.split():
             continue  # the navigation document keeps its bytes, spine or not
-        changed[path] = _kepub_page(_read_xml(archive, path))
+        converted = _kepub_page(bytes(archive.read(path, max_bytes=XML_LIMITS.max_bytes)))
+        if converted is not None:
+            changed[path] = converted
     return changed
 
 
 # --- one page ------------------------------------------------------------------------------------
 
 
-def _kepub_page(root: Element) -> bytes:
+def _parse_page(raw: bytes) -> Element:
+    """A bare `<!DOCTYPE html>` — no internal subset, no external identifier, the common form
+    of EPUB 3 — is dropped before the parse; any other DTD stays in the bytes, and the parser
+    refuses it."""
+    first = _ELEMENT_START.search(raw)
+    prolog = raw[: first.start()] if first else raw
+    found = _SIMPLE_DOCTYPE.search(prolog)
+    data = raw if found is None else raw[: found.start()] + raw[found.end() :]
+    try:
+        return safe_parse_xml(data, limits=XML_LIMITS)
+    except UnsafeXmlError as error:
+        raise KepubError(f"xml_{error.reason}", str(error)) from None
+
+
+def _already_converted(root: Element) -> bool:
+    return any("koboSpan" in (e.get("class") or "").split() for e in root.iter())
+
+
+def _has_comments_or_instructions(raw: bytes) -> bool:
+    """True when the document carries a comment or a processing instruction: the safe parser
+    drops both, so a converted page would come out without them."""
+    if b"<!--" in raw:
+        return True
+    stripped = raw.lstrip(b"\xef\xbb\xbf")  # a byte-order mark may precede the declaration
+    rest = stripped[2:] if stripped.startswith(b"<?") else stripped  # not the declaration
+    return b"<?" in rest
+
+
+def _first_paragraph(root: Element) -> int:
+    """1, or one past the highest N of a `kobo.N.M` id the page already carries: the ids the
+    spans receive never collide with an id that is already there."""
+    highest = 0
+    for element in root.iter():
+        found = _KOBO_ID.match(element.get("id") or "")
+        if found:
+            highest = max(highest, int(found.group(1)))
+    return highest + 1
+
+
+def _kepub_page(raw: bytes) -> bytes | None:
+    """The converted form of one spine document, or None to keep its bytes as they are: a
+    page already converted (its spans are in place), and a page whose comments or processing
+    instructions the parser would drop, are left alone rather than rewritten with loss."""
+    root = _parse_page(raw)
+    if _already_converted(root) or _has_comments_or_instructions(raw):
+        return None
     ns, local = _split(root.tag)
     if ns not in (XHTML_NS, None) or local.lower() != "html":
         raise KepubError("page", "the spine document is not XHTML")
     bodies = [b for b in root if _split(b.tag)[1].lower() == "body"]
     if len(bodies) != 1:
         raise KepubError("page", "a spine document needs exactly one body")
-    _Spanner().run(bodies[0])
+    _Spanner(_first_paragraph(root)).run(bodies[0])
     _wrap_body(bodies[0])
     return (_Serializer().document(root)).encode()
 
@@ -212,70 +290,72 @@ def _segments(text: str) -> list[str]:
 
 
 class _Spanner:
-    """Adds the Kobo spans to the paragraphs of one page, in document order."""
+    """Adds the Kobo spans to the paragraphs of one page, in document order.
 
-    def __init__(self) -> None:
-        self._paragraphs = 0
+    Each list of children is rebuilt once and put back in one move: no span is inserted on
+    its own, so a paragraph with S segments and K children costs S+K, not S*K.
+    """
+
+    def __init__(self, first: int) -> None:
+        self._paragraphs = first - 1  # the N of the next paragraph (ids never collide)
 
     def run(self, body: Element) -> None:
         self._walk(body)
 
     def _walk(self, element: Element) -> None:
-        for child in list(element):
+        for child in element:
             if self._is_paragraph(child):
                 self._paragraph(child)
             elif not self._is_svg(child):
                 self._walk(child)
 
     def _paragraph(self, element: Element) -> None:
-        self._paragraphs += 1
-        n = self._paragraphs
-        children = list(element)  # before the spans of the own text shift the positions
-        m = self._slot(element, None, n, 0, 0)
-        at = m  # the spans of the own text pushed the first child to this live index
-        for child in children:
+        n = self._paragraphs + 1
+        self._paragraphs = n
+        rebuilt: list[Element] = []
+        m = self._text(element, None, n, 0, rebuilt)
+        for child in element:
+            rebuilt.append(child)
             if self._is_paragraph(child):
                 self._paragraph(child)  # a nested paragraph is numbered on its own
             elif not self._is_svg(child):
                 m = self._inline(child, n, m)
-            before = m
-            m = self._slot(element, child, n, m, at + 1)
-            at += 1 + m - before
+            m = self._text(element, child, n, m, rebuilt)
+        del element[:]
+        element.extend(rebuilt)
 
     def _inline(self, element: Element, n: int, m: int) -> int:
-        children = list(element)  # before the spans of the own text shift the positions
-        before = m
-        m = self._slot(element, None, n, m, 0)
-        at = m - before
-        for child in children:
+        rebuilt: list[Element] = []
+        m = self._text(element, None, n, m, rebuilt)
+        for child in element:
+            rebuilt.append(child)
             if self._is_paragraph(child):
                 self._paragraph(child)
             elif not self._is_svg(child):
                 m = self._inline(child, n, m)
-            before = m
-            m = self._slot(element, child, n, m, at + 1)
-            at += 1 + m - before
+            m = self._text(element, child, n, m, rebuilt)
+        del element[:]
+        element.extend(rebuilt)
         return m
 
-    def _slot(self, holder: Element, child: Element | None, n: int, m: int, at: int) -> int:
-        """Wrap the text at one slot (the holder's own text, or the tail of `child`) in one
-        span per segment, inserted at live index `at`. Whitespace-only text is left as it is,
-        unwrapped and unnumbered."""
+    def _text(
+        self, holder: Element, child: Element | None, n: int, m: int, out: list[Element]
+    ) -> int:
+        """The text at one slot (the holder's own text, or the tail of `child`) becomes one
+        span per segment, appended to `out`. Whitespace-only text is left as it is, unwrapped
+        and unnumbered."""
         text = holder.text if child is None else child.tail
         if not text or not text.strip():
             return m
-        spans: list[Element] = []
-        for segment in _segments(text):
-            m += 1
-            span = Element(f"{{{XHTML_NS}}}span", {"class": "koboSpan", "id": f"kobo.{n}.{m}"})
-            span.text = segment
-            spans.append(span)
         if child is None:
             holder.text = ""
         else:
             child.tail = ""
-        for offset, span in enumerate(spans):
-            holder.insert(at + offset, span)
+        for segment in _segments(text):
+            m += 1
+            span = Element(f"{{{XHTML_NS}}}span", {"class": "koboSpan", "id": f"kobo.{n}.{m}"})
+            span.text = segment
+            out.append(span)
         return m
 
     @staticmethod
@@ -310,7 +390,10 @@ _FORBIDDEN: Final = re.compile("[\x00-\x08\x0b\x0c\x0e-\x1f\ufffe\uffff\ud800-\u
 def _esc_text(text: str) -> str:
     if _FORBIDDEN.search(text):
         raise KepubError("character", "a character XML 1.0 cannot write")
-    return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+    return (
+        text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+        .replace("\r", "&#13;")  # a literal CR is read back as LF: only the reference survives
+    )  # fmt: skip
 
 
 def _esc_attr(text: str) -> str:
