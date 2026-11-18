@@ -11,7 +11,6 @@ provenance mirror, and the fingerprint that ties a confirmation to the preview t
 
 import hashlib
 import json
-from collections.abc import Iterable
 from dataclasses import dataclass
 from enum import StrEnum
 from typing import Final
@@ -123,7 +122,3 @@ def judge_line(facts: LineFacts) -> tuple[LineOutcome, str | None]:
     if facts.unresolved_reason is not None:
         return LineOutcome.UNRESOLVED, facts.unresolved_reason
     return LineOutcome.READOPT, None
-
-
-def sorted_unique(items: Iterable[str]) -> list[str]:
-    return sorted(set(items))

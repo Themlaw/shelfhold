@@ -11,6 +11,7 @@ from typing import Any
 
 import sqlalchemy as sa
 
+from shelfhold.events.bus import EventBus
 from shelfhold.export.application.intents import IntentJournal
 from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.ids import new_ulid
@@ -170,8 +171,14 @@ class World:
 hold_work=work_lock(env.engine),
         )  # fmt: skip
 
-    def cycle(self, budget: StoreBudget = ROOMY, gate: Any = NONE_PURGED) -> SafeguardCycle:
+    def cycle(
+        self, budget: StoreBudget = ROOMY, gate: Any = NONE_PURGED, *, real_bus: bool = False
+    ) -> SafeguardCycle:
+        bus = EventBus(self.clock)
+
         def publish(connection: sa.Connection, event: str, payload: dict[str, object]) -> None:
+            if real_bus:  # the bus of production: its payload check is the one that judges
+                bus.publish(connection, event, payload)
             self.events.append((event, payload))
 
         return SafeguardCycle(
@@ -179,8 +186,10 @@ hold_work=work_lock(env.engine),
             self.clock,
         )  # fmt: skip
 
-    def run_cycle(self, budget: StoreBudget = ROOMY, gate: Any = NONE_PURGED) -> CycleReport:
-        cycle = self.cycle(budget, gate)
+    def run_cycle(
+        self, budget: StoreBudget = ROOMY, gate: Any = NONE_PURGED, *, real_bus: bool = False
+    ) -> CycleReport:
+        cycle = self.cycle(budget, gate, real_bus=real_bus)
         report = CycleReport()
         batch = cycle.plan(report)
         for step in cycle.steps(batch, report):

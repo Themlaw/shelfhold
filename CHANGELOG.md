@@ -2,7 +2,14 @@
 
 Format : [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/). Versionnement : [SemVer](https://semver.org/lang/fr/). Procédure de release : `docs/releasing.md`.
 
-## 1.1.0 - AAAA-MM-JJ
+## 1.2.0 - non publié
+
+### Ajouté
+
+- **Registre d'appareils et rotation du secret (M5 L02)** : chaque appairage fait un appareil (libellé, type, « vu pour la dernière fois ») ; l'écran « Connecter une liseuse » les liste par profil, change le secret d'un appareil sans réappairer (l'ancien est refusé à la requête suivante) et retire un appareil (tous ses jetons sont révoqués). Actions réservées `device_token.rotate` et `device.remove`, jamais ouvertes à une clé ni à un jeton ; un membre ne voit que ses appareils, un enfant aucun. `GET /api/v1/devices`, `POST /api/v1/devices/{id}/rotate`, `DELETE /api/v1/devices/{id}` ; `shelfhold admin device-tokens rotate|remove`. Migration 0100 (ligne 1.2) : chaque jeton existant reçoit son appareil ; un jeton dont l'appareil est retiré est refusé.
+- **Neutraliseur `xhtml-neutralizer@v2` (L05b)** : un élément retiré du corps laisse un élément inerte (vide, sans attribut) au même rang, de sorte que les positions de lecture d'un EPUB restent stables d'une version à l'autre (ADR-0055) ; version du filtre exposée pour le locator (`content-filter@2`). Les dérivés `@v1` existants se régénèrent par la migration nommée `shelfhold content reneutralize` (aperçu, puis `--confirm`), qui garde l'original et la chaîne `derived_chain` ; rien n'est réécrit sans cette commande.
+
+## 1.1.0 - 2026-11-18
 
 Clôture de M4 : plusieurs destinations par étagère, synchronisation de la progression avec Kavita et les liseuses, ouverture vers l'écosystème, métadonnées enrichies. Reprend les changements des candidates `1.1.0-rc.1` et `1.1.0-rc.2` (sections ci-dessous). La date est celle de la release.
 
@@ -44,14 +51,30 @@ Clôture de M4 : plusieurs destinations par étagère, synchronisation de la pro
 
 - Une Œuvre ou une Édition rangée sur aucune étagère n'est plus visible pour un enfant (un adulte la voit toujours).
 - **Adoption (L48)** : un fichier adopté qui n'annonce aucun âge et rejoint, par son nom, une Édition déjà classée met cette Édition dans « À classer » (suggestion 18+) : un enfant ne voit plus un chapitre que personne n'a regardé.
+- **Liaison Komga** : une liaison Komga qui posséderait l'arbre est refusée (`binding.komga_primary_unsupported`, cause et action dans les deux langues) : l'exécuteur n'écrit pas de plan pour un arbre Komga et l'étagère ne recevrait jamais ses fichiers. Komga se lie en destination secondaire — l'arbre écrit par une autre liaison, qu'il indexe — jusqu'à M5.
 
 ### Corrigé
 
+- **`shelfhold shelf create` sur une cible Komga ou un dossier natif** : la commande plantait (elle ouvrait le client Kavita pour une cible qui n'en est pas un) ; seule une cible Kavita est liée à une bibliothèque. Un dossier natif se lie et reçoit son dossier ; une cible Komga répond désormais le refus de la ligne « Liaison Komga » ci-dessous. Le dossier vide créé avant un échec de liaison reste, comme avant.
+- **Mise à l'abri et événements (L48c, second avis)** : un échec de mise à l'abri d'une copie vers `/store` ne fait plus échouer le travail de nuit (l'événement `unit.safeguard_failed` portait une liste, que le bus refuse : il porte désormais le nombre d'Unités, la raison la plus fréquente et le nombre de raisons) ; un test lit le code et refuse toute charge d'événement littérale que le bus refuserait ; `export_series_id`, `kavita_series_id` et `remote_unit_id` ne sont plus lus comme des séries ou des Unités du catalogue (l'événement n'est plus masqué à tort aux lecteurs plafonnés) ; les événements écrits hors de `publish` (changements de visibilité, fenêtre manquée) passent par la même vérification de charge ; une Édition non notée rejointe par nom à l'adoption est tenue aussi quand une Édition sœur est notée.
+- **Résidus de la réponse au contradicteur (L48c)** : une écriture d'un appel précédent n'est réputée faite que si le fichier est encore sur le disque avec les octets écrits (sinon il est réécrit, ou refusé s'il est étranger) ; un âge déclaré par un fichier adopté **sous** la note de l'Édition rejointe compte pour aucun âge (chapitre tenu, 18+ suggéré) ; un échec disque d'une liaison est gardé dans la santé de sa cible ; la rotation des clés ressèle les champs sensibles des instantanés amont et leur clé compte pour le retrait ; `publish` refuse une clé `*_id` que la projection ne lirait pas comme un contenu.
 - **Réponse au contradicteur de jalon M4 (L48)** : une migration de source ou un relink vers une sous-source adulte pose la suggestion d'âge de la sous-source (l'Édition quitte l'étagère enfant) ; la reprise de la passe du dossier natif reconnaît ses fichiers après un redémarrage (identité de liaison, plus l'appel) et une liaison en échec est visible dans la santé de sa cible ; un retrait avec suppression des fichiers ne tourne plus pendant une passe qui écrit dans le dossier ; l'écho de kosync après un redémarrage ne marque plus « lu » un chapitre sauté ; une racine en écriture qui est un lien (ou passe par un lien) hors de la bibliothèque est refusée ; l'export d'un profil contient les données personnelles ajoutées en M4 (sans secret), tenu au schéma par un test.
 - **Une liseuse retrouve un fichier dès son premier export (L47)** : l'export écrit la ligne `document_alias` du fichier qu'il produit (empreintes KOReader et Kavita comprises), une seule fois par fichier ; avant, `GET /kosync/syncs/progress/{empreinte}` d'un fichier tout juste exporté répondait `{}`. Aucune migration.
 - **Suppression d'une étagère (L43)** : les enfants qui voyaient une Œuvre par cette étagère reçoivent l'événement de visibilité ; ils ne la voient plus.
 
-Migration : oui (0065 à 0098 depuis la 1.0.1 ; 0084 à 0098 depuis la 1.1.0-rc.2)
+### Retiré
+
+- **Réglage `SHELFHOLD_READING_MAX_PAGES_PER_MINUTE`** : aucun code de production ne le lisait ; la vitesse plausible de lecture garde sa borne de 20 pages par minute dans le code (`DEFAULT_MAX_PAGES_PER_MINUTE`). Le réglage sort de la configuration, de sa référence et du paquet de diagnostic.
+
+### Limites connues
+
+- **Contention de l'API pendant l'export (ENF-PERF-007)** : sur le profil de référence, la liste de la bibliothèque répond **2,3 à 2,5 fois** plus lentement pendant qu'un export de 500 chapitres tourne, parce que l'export est un fil du processus API. Le budget de la spécification reste **×2** (xfail strict au banc `tests/bench/bench_contention.py`) ; une aggravation au-delà de **×3** casse le nightly, et chaque passage enregistre sa mesure. Le fan-out vers le dossier natif (ComicInfo et couverture rendus dans le processus) est mesuré par la même passe. Correctif prévu en M5 : sortir l'export du processus API.
+- **Montage lié sous un dossier d'une autre destination (J-FS-2)** : la liaison ne lit pas `/proc/self/mountinfo` ; il faut être root pour monter. Prévu en M5 (L22b).
+- **Collections Kavita en double (J-REP-4)** : la passe, l'écouteur du hub et le travail `export.relations` publient sans verrou commun ; deux collections peuvent naître pour une seule. Prévu en M5 (L22b).
+- **Ancre kosync après un redémarrage (C3)** : si la progression a changé de chapitre entre le `GET` et le `PUT` qui suit un redémarrage, l'écho n'est pas reconnu et le `PUT` compte comme une position ordinaire (les règles de vitesse et de session le bornent). Prévu en M5.
+- **Image de base** : à la date de la version, l'analyse de `python:3.13-slim` signale deux CVE OpenSSL « high » (CVE-2026-107493, CVE-2026-124709) et quelques « medium » sans correctif publié par Debian. Shelfhold n'utilise OpenSSL que par Python (TLS sortant vers les sources et les destinations) ; l'image sera reconstruite dès que Debian publie le correctif (Dependabot suit le digest).
+
+Migration : oui (0065 à 0098 depuis la 1.0.1 ; 0084 à 0098 depuis la 1.1.0-rc.2), réversible : non (`shelfhold migrate` sauvegarde la base avant de migrer, `docs/admin/retour-arriere.md`)
 
 ## 1.1.0-rc.2 - 2026-11-16
 
@@ -93,6 +116,7 @@ Correctif de publication, sans changement de comportement : l'image `1.0.0` a é
 
 ### Corrigé
 
+- **Une liseuse retrouve un fichier dès son premier export (L47)** : l'export écrit la ligne `document_alias` du fichier qu'il produit (empreintes KOReader et Kavita comprises), dans la transaction qui ferme sa ligne du manifeste, une seule fois par fichier ; une copie octet pour octet n'en reçoit pas, et l'alias suit l'effacement de son document. Avant, `GET /kosync/syncs/progress/{empreinte}` d'un fichier tout juste exporté répondait `{}`. Aucune migration.
 - **Migrations figées** : `0064_m4_schema.py` et `0071_provider_quota.py`, déjà livrées dans l'image 1.0.0, entrent dans `tools/published-migrations.toml` avec `since = "1.0"`. `check_patch_migrations.py --tag v1.0.1` passe.
 - **Garde en CI de PR** : le job `lint` lance `tools/check_patch_migrations.py` sans `--tag` (donc dans `ci-success`). Une PR qui ajoute une migration la fige elle-même, avec la prochaine mineure (`--freeze 1.1`) ; `docs/releasing.md` et `CONTRIBUTING.md` le décrivent, et un test tient la liste complète.
 
@@ -259,7 +283,6 @@ Migrations de M2 que l'image taggée depuis `main` applique aussi (voir « Avant
 - **Qualité** (ENF-QUAL-006, ENF-OPS-008) : suite de propriétés sur le classement, parcours de bout en bout sur l'image réelle (famille, mise à l'abri, Sablier, sauvegarde et restauration, compte de service, passkey, retour arrière vers la 0.2.0), additions de nuit contre de vrais Kavita et Suwayomi.
 - **Documentation d'administration** : `docs/admin/` complété (rôles, famille, « À classer », Suwayomi multi-comptes, purge, copie conservée, retour arrière, restauration), `docs/decisions/M1b.md`.
 - Variables : `SHELFHOLD_BACKUP_DIR`, `SHELFHOLD_BACKUP_PASSPHRASE_FILE`, `SHELFHOLD_BACKUP_RETENTION`, `SHELFHOLD_BACKUP_STALE_HOURS`, `SHELFHOLD_WAKE_URL`, `_WAKE_SUWAYOMI`, `_WAKE_KAVITA`, `_WAKE_TIMEOUT_S`, `_WAKE_SESSION_S`, `_WAKE_TOKEN`, `SHELFHOLD_MAINTENANCE_WINDOW_START`, `_END`, `SHELFHOLD_TIMEZONE`, `SHELFHOLD_RETENTION_EVENTS_DAYS`, `SHELFHOLD_RETENTION_AUDIT_DAYS` (`docs/reference/config.md`).
-
 
 #### Modifié
 
