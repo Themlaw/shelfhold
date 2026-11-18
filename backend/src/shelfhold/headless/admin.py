@@ -1068,11 +1068,13 @@ class HeadlessAdmin:
         try:
             self._bootstrap()  # the folder of the shelf lives under a registered root
             self._make_folder(destination_id)
-            if self._linker is not None:
+            if target_row.kind == "kavita" and self._linker is not None:
+                # only a Kavita target has a library to link: a Komga or a folder target would
+                # open no client at all
                 self._linker.link(target_row.id, destination_id, library_name=name)
         except Exception:
             self._unbind(shelf_id, destination_id, shelf_was_new=shelf is None)
-            raise
+            raise  # the empty folder `_make_folder` made stays: deleting is fsops' alone
         _log.info("headless.shelf_created", name=name, target=target)
         return ShelfCreated(shelf_id, destination_id, True)
 

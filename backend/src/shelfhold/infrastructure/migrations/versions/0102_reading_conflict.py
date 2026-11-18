@@ -17,7 +17,7 @@ re-chaining.
 from alembic import op
 
 revision = "0102"
-down_revision = "0098"
+down_revision = "0100"
 branch_labels = None
 depends_on = None
 

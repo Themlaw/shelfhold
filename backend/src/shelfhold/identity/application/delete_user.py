@@ -28,7 +28,7 @@ SECTIONS = (
     "source_policies", "user_state", "requests", "follow_requests", "download_requests",
     "notification_digests", "reading_positions", "sessions", "api_keys", "passkeys",
     # M4 (J-FLUX-1)
-    "device_tokens", "collections", "collection_items", "destination_accounts",
+    "device_tokens", "devices", "collections", "collection_items", "destination_accounts",
     "notify_destinations", "read_markers", "tracker_hints", "request_list_imports",
     "source_accounts", "tachibk_imports",
     # M5 L07: the questions put to the reader (identifiers, choice, dates: no locator)

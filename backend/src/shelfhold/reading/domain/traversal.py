@@ -12,7 +12,7 @@ position B is **plausible** when:
 
 * it is at most `SMALL_GAP` pages (the old rule, always admitted), or
 * `(pages advanced) / (server_ts(B) - server_ts(A)) <= max_pages_per_minute` (default 20,
-  `reading_max_pages_per_minute`): wide enough for a manga or a webtoon, and a look at 200 pages
+  `DEFAULT_MAX_PAGES_PER_MINUTE`): wide enough for a manga or a webtoon, and a look at 200 pages
   in 30 seconds is 400 a minute.
 
 The plausible moves cover intervals of pages. A Unit is read when one merged interval covers it

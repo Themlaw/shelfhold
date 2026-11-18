@@ -11,6 +11,8 @@ CODES: tuple[ErrorCode, ...] = (
     ErrorCode("device_tls_required", 403, "admin"),
     # M4 L46b: another profile's token answers like one that is not there (no probing)
     ErrorCode("device_token_not_found", 404, "user"),  # M4 L46: an e-reader over plain HTTP
+    # M5 L02: two rotations of one device raced; the one that lost shows no secret
+    ErrorCode("device_rotation_conflict", 409, "user"),
     ErrorCode("remember_needs_confirmation", 422, "user"),
     ErrorCode("too_many_attempts", 429, "user"),
     ErrorCode("password_login_suspended", 409, "admin"),  # a restore: passwords may be old ones

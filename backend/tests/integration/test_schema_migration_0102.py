@@ -23,21 +23,21 @@ CARRIER = "01HZZZZZZZZZZZZZZZZZZZZZZC"
 WIN, LOSE = "01HZZZZZZZZZZZZZZZZZZZZZZD", "01HZZZZZZZZZZZZZZZZZZZZZZE"
 
 
-def test_the_revision_is_0102_the_head_on_0098() -> None:
+def test_the_revision_is_0102_the_head_on_0100() -> None:
     script = ScriptDirectory(str(default_script_location()))
     assert script.get_heads() == ["0102"]  # the head is pinned here, by the newest
-    # TODO(2026-11-18): chained on 0098 until #361-#366 land after L03 (0101); re-chained then
-    assert script.get_revision("0102").down_revision == "0098"
+    # chained on 0100 (L02), the head of main; re-chained on 0101 if L03 lands first
+    assert script.get_revision("0102").down_revision == "0100"
 
 
 def test_the_table_comes_and_goes_with_the_migration(settings: Settings) -> None:
     database = settings.database_path
     settings.data_dir.mkdir(parents=True, exist_ok=True)
-    command.upgrade(alembic_config(database), "0098")
+    command.upgrade(alembic_config(database), "0100")
     assert "reading_conflict" not in tables(database)
     assert "0102" in migrate(settings).applied
     assert "reading_conflict" in tables(database)
-    command.downgrade(alembic_config(database), "0098")
+    command.downgrade(alembic_config(database), "0100")
     assert "reading_conflict" not in tables(database)
 
 

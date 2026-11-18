@@ -438,6 +438,8 @@ def test_the_pass_takes_the_binding_that_was_switched_on_and_only_that_one(world
 
 
 def _komga_binding(world: World, kind: str) -> str:
+    """A binding of the adult shelf to a target of this kind. A Komga never owns a tree
+    (J-SIMP-4): it indexes the tree of a first binding, like Mihon's folder is told to."""
     target = new_ulid()
     path_map = [{"local": str(world.library), "remote": "/manga", "mode": "rw"}]
     with write_transaction(world.engine) as connection:
@@ -448,7 +450,14 @@ def _komga_binding(world: World, kind: str) -> str:
             )
         )  # fmt: skip
     extra = {"transport": "dropbox"} if kind == "cwa" else {}
-    return _bind(world, world.adult, f"sub-{kind}", target, **extra)
+    if kind != "komga":
+        return _bind(world, world.adult, f"sub-{kind}", target, **extra)
+    owner = _bind(world, world.adult, "sub-komga", world.server)
+    trees = {
+        d["id"]: d["tree_id"]
+        for d in world.api.client.get(world.path(world.adult)).json()["destinations"]
+    }
+    return _bind(world, world.adult, "sub-komga", target, tree_id=trees[owner])
 
 
 @pytest.mark.req("EF-LEC-014", "EF-EXP-047")
