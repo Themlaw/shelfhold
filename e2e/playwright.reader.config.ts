@@ -7,6 +7,7 @@ export default defineConfig({
   ...base,
   testDir: 'tests',
   testMatch: 'm5_reader_epub.spec.ts',
+  testIgnore: [],
   fullyParallel: false,
   projects: [
     { name: 'chromium', use: { ...devices['Desktop Chrome'] } },

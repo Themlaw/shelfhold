@@ -38,10 +38,11 @@ describe('the build of the reader', () => {
   });
 
   // req: ENF-SEC-004
-  it('has one inline script, hashed by the policy, that imports the entry of its own base', () => {
+  it('has one inline script, hashed by the policy, that adds the entry of its own base as a script element', () => {
     const scripts = inlineScripts(html());
     expect(scripts).toHaveLength(1);
-    expect(scripts[0]).toMatch(/^import\(["']\/reader-entry\/assets\/[^"']+\.js["']\);?$/);
+    // not a bare import(): under 'strict-dynamic' the browser refuses that one from a parser-inserted script
+    expect(scripts[0]).toMatch(/^document\.head\.append\(Object\.assign\(document\.createElement\("script"\),\{type:"module",src:"\/reader-entry\/assets\/[^"]+\.js"\}\)\);$/);
     expect(readerCsp(html())['script-src']).toEqual([scriptHash(scripts[0]!), "'strict-dynamic'"]);
   });
 

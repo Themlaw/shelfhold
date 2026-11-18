@@ -36,9 +36,11 @@ function foliateNotRead(): Plugin {
   };
 }
 
-// The page that is served: one inline script (hashed by the policy) imports the entry, which is
-// then a dynamic import of a script of trusted code (`'strict-dynamic'`). No `<script src>`, no
-// `modulepreload` (under `'strict-dynamic'` `'self'` is ignored and they would be refused).
+// The page that is served: one inline script (hashed by the policy) that adds the entry as a script
+// element. Under `'strict-dynamic'` a script that a trusted script creates is trusted, and so is
+// everything it imports; a bare `import()` from the inline script is NOT (a parser-inserted script
+// passes its metadata to the request, and the browser refuses it: measured on Chromium). No
+// `<script src>` in the page, no `modulepreload` (`'self'` is ignored and they would be refused).
 function readerPage(): Plugin {
   return {
     name: 'shelfhold-reader-page',
@@ -51,7 +53,8 @@ function readerPage(): Plugin {
       let html = String(page.source);
       html = html.replace(/<script\b[^>]*\bsrc=[^>]*><\/script>\s*/gi, '');
       html = html.replace(/<link\b[^>]*\brel="?modulepreload"?[^>]*>\s*/gi, '');
-      html = html.replace('</head>', `<script>import(${JSON.stringify(BASE + entry.fileName)});</script></head>`);
+      const boot = `document.head.append(Object.assign(document.createElement("script"),{type:"module",src:${JSON.stringify(BASE + entry.fileName)}}));`;
+      html = html.replace('</head>', `<script>${boot}</script></head>`);
       auditReaderPage(html);
       page.source = html;
     }

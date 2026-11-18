@@ -181,8 +181,10 @@ test.describe('the EPUB reader', () => {
       f.src = URL.createObjectURL(new Blob(['<!doctype html><body><script id="s">window.__owned=1</script></body>'], { type: 'text/html' }));
       document.body.append(f);
       await new Promise((r) => { f.onload = () => r(null); });
-      const moved = document.importNode(f.contentDocument!.getElementById('s')!, true);
-      document.body.append(moved);
+      // what trusted code would do to move a node of the book: write it again as markup (a node that was
+      // blocked is marked as started: a clone or an import of it does not run, a fresh fragment does)
+      const html = f.contentDocument!.getElementById('s')!.outerHTML;
+      document.body.append(document.createRange().createContextualFragment(html));
       return (window as unknown as { __owned?: number }).__owned ?? null;
     });
     expect(limit).toBe(1);
@@ -208,10 +210,10 @@ test.describe('the EPUB reader', () => {
     await page.goto('/lire/unit/U1');
     const csp = await page.evaluate(() => performance.getEntriesByType('navigation').length);
     expect(csp).toBe(1);
-    const header = await (await page.request.get('/lire/unit/U1')).headerValue('content-security-policy');
+    const header = (await page.request.get('/lire/unit/U1')).headers()['content-security-policy'];
     expect(header).toContain("'strict-dynamic'");
     expect(header).not.toContain("script-src 'self'");
-    const spa = await (await page.request.get('/bibliotheque')).headerValue('content-security-policy');
+    const spa = (await page.request.get('/bibliotheque')).headers()['content-security-policy'];
     expect(spa).not.toContain('strict-dynamic');
   });
 });
