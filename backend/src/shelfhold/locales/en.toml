@@ -1835,6 +1835,11 @@
     action = "A CWA drop box is bound as a drop box (transport “dropbox”): choose that transport."
     cause = "A drop box has no tree to index and no server to read from: another transport would not write where it should."
 
+  [errors."binding.komga_primary_unsupported"]
+    title = "Komga cannot be the primary destination of a shelf."
+    action = "Bind the shelf to a destination that writes its tree first (Kavita or a native folder), then bind Komga to that tree: a secondary destination that indexes it. Until M5, Komga receives no file of its own."
+    cause = "The executor plans no write for a tree owned by Komga: a shelf whose primary destination is Komga would never receive its files."
+
   [errors."target.folder_outside_root"]
     title = "This folder is not inside the folder of the destination."
     action = "Give a sub-folder of the folder the destination declares: a relative name, without “..”, that does not go through a link."

@@ -200,7 +200,6 @@ LOGGED_SETTINGS: dict[str, str] = {
     "metrics_enabled": "metrics_enabled",  # a switch
     "fresh_auth_s": "recent_login_window_s",  # a duration
     "revision_min_page_ratio": "revision_min_page_ratio",
-    "reading_max_pages_per_minute": "reading_max_pages_per_minute",  # a speed limit
     "reading_relay_max_session_hours": "reading_relay_max_hours",  # a duration
     "follow_fallback_return": "follow_fallback_return",
     "page_target_format": "page_target_format",

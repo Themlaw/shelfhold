@@ -31,7 +31,8 @@ Nothing of a call (query, body, field) is ever logged: no `model_dump` of an `Ap
 
 import hashlib
 import threading
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Iterator, Mapping, Sequence
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import PurePosixPath
@@ -41,6 +42,12 @@ import sqlalchemy as sa
 from sqlalchemy import Connection, Engine
 
 from shelfhold.export.application.intents import IntentJournal, RenameStep
+from shelfhold.export.application.locks import (
+    HeldLocks,
+    LockBusyError,
+    ResourceLocks,
+    path_resource,
+)
 from shelfhold.export.application.ports import TargetEvents
 from shelfhold.export.application.target_state import (
     DestinationPausedError,
@@ -62,6 +69,7 @@ from shelfhold.export.domain.trees import (
 from shelfhold.infrastructure.clock import Clock, SystemClock
 from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.fsops import Fsops, FsopsError
+from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import coherence, export, platform
 from shelfhold.sdk.api_call import ApiCall, check_api_call, parse_api_call
 from shelfhold.sdk.export_target import TargetCapabilities, sidecar_forbidden
@@ -182,6 +190,7 @@ class WrittenFile:
     mtime_ns: int
     dev: int | None = None  # the identity of the inode, for the registry of copies (EF-BIB-045)
     ino: int | None = None
+    path: str | None = None  # where it is on this host, for the alias of its hashes (L47)
 
 
 @dataclass(frozen=True)
@@ -237,7 +246,11 @@ class PlanExecutor:
         events: TargetEvents | None = None,
         recheck_every: int = 1,
         barrier: Barrier | None = None,
+        locks: ResourceLocks | None = None,
+        lock_wait: float = 30.0,
     ) -> None:
+        self._locks = locks
+        self._lock_wait = lock_wait
         self._barrier = barrier
         self._recheck_every = max(1, recheck_every)
         self._engine = engine
@@ -271,17 +284,37 @@ class PlanExecutor:
             binding, call_id, tree, plan, planned,
             snapshot=snapshot,
             keys=_keys(snapshot),
-            done=self._settled(call_id, binding.destination_id),
+            done=self._settled(call_id, binding.destination_id, tree.local),
             sidecars=self._ledger.sidecars(call_id, binding.destination_id),
             dropped=self._dropped(binding.destination_id) if dropbox else {},
         )  # fmt: skip
         for op in plan.ops:
             self._screen(run, op)  # every operation, before the first one runs
-        for index in range(len(run.snapshot)):
-            self._run_op(run, index)
+        with self._held(binding.destination_id) as held:
+            for index in range(len(run.snapshot)):
+                if held is not None:
+                    held.ensure()  # a lease lost is found before the next file, not after
+                self._run_op(run, index)
         return ExecutionReport(
             run.executed, run.skipped, tuple(run.files), tuple(run.moved), tuple(run.recycled)
         )
+
+    @contextmanager
+    def _held(self, destination_id: str) -> Iterator[HeldLocks | None]:
+        """The folders of the destination, shared with the other writers of it, for the length of
+        the plan (J-REP-2): the removal of the destination holds `dest:<id>` exclusive, so it
+        answers `busy` while a pass writes, and a pass that meets a removal waits, then refuses.
+        The one policy of the legacy pipeline (`path:<destination>/..`, M3 L30 B2)."""
+        if self._locks is None:
+            yield None
+            return
+        try:
+            with self._locks.hold_resources(
+                new_ulid(), [path_resource(f"{destination_id}/")], timeout=self._lock_wait
+            ) as held:
+                yield held
+        except LockBusyError:
+            raise PlanRefusedError("the destination is held by a removal or another run") from None
 
     def run_calls(
         self,
@@ -487,26 +520,61 @@ class PlanExecutor:
             raise PlanRefusedError("the plan is not one the host will run") from None
         return plan
 
-    def _settled(self, call_id: str, destination_id: str) -> frozenset[str]:
-        """The operations an earlier run of this call finished, by the **key** of each (its type,
-        its target, its content reference: see `_keys`), never by its place in a plan: a plan that
-        was made again redoes what is missing. An intent that is still open stops the run: the
-        boot settles it first, nothing is replayed blind."""
+    def _settled(self, call_id: str, destination_id: str, tree_local: str) -> frozenset[str]:
+        """The operations an earlier run finished, by the **key** of each (its type, its target,
+        its content reference: see `_keys`), never by its place in a plan: a plan that was made
+        again redoes what is missing. An intent that is still open stops the run: the boot settles
+        it first, nothing is replayed blind.
+
+        The identity of a pass is the binding, not the call (J-REP-1): the job gives every pass a
+        fresh call id, and a restart kills a pass before its manifest line is written. An
+        operation of the same binding that an earlier call finished counts as settled until the
+        manifest holds the file it wrote (same path, same digest): from then on the manifest
+        is the truth, and a file later removed is written again."""
         table = coherence.fs_intent
-        call = sa.func.json_extract(table.c.expected_file_id, "$.exec")
-        dest = sa.func.json_extract(table.c.expected_file_id, "$.dest")
-        key = sa.func.json_extract(table.c.expected_file_id, "$.op_key")
+        meta = table.c.expected_file_id
+        call = sa.func.json_extract(meta, "$.exec")
+        dest = sa.func.json_extract(meta, "$.dest")
+        key = sa.func.json_extract(meta, "$.op_key")
         with self._engine.connect() as connection:
             rows = connection.execute(
-                sa.select(table.c.state, key.label("k")).where(
-                    call == call_id,
+                sa.select(
+                    table.c.state,
+                    key.label("k"),
+                    call.label("call"),
+                    table.c.op,
+                    table.c.dst_path,
+                    table.c.expected_sha256,
+                ).where(
                     dest == destination_id,
                     table.c.state.in_(("pending", "applying", "done")),
                 )
             ).all()
-        if any(r.state != "done" for r in rows):
-            raise PlanRefusedError("an earlier run of this call is not settled yet")
-        return frozenset(str(r.k) for r in rows if r.k is not None)
+            if any(r.state != "done" for r in rows):
+                raise PlanRefusedError("an earlier run of this call is not settled yet")
+            record = export.export_record
+            manifest = {
+                (str(m.rel_path), str(m.file_hash))
+                for m in connection.execute(
+                    sa.select(record.c.rel_path, record.c.file_hash).where(
+                        record.c.shelf_destination_id == destination_id,
+                        record.c.rel_path.is_not(None),
+                    )
+                )
+            }
+        prefix = tree_local.rstrip("/") + "/"
+        settled: set[str] = set()
+        for r in rows:
+            if r.k is None:
+                continue
+            if r.call != call_id and r.op == "write" and r.dst_path is not None:
+                rel = r.dst_path[len(prefix) :] if r.dst_path.startswith(prefix) else None
+                if rel is None or (rel, str(r.expected_sha256)) in manifest:
+                    continue  # of another pass, and already in the manifest: it is the truth
+            elif r.call != call_id and r.op == "write":
+                continue
+            settled.add(str(r.k))
+        return frozenset(settled)
 
     # -- one operation --------------------------------------------------------------------------
 
@@ -682,7 +750,7 @@ class PlanExecutor:
         run.files.append(
             WrittenFile(
                 ref.ref, op.rel_path, digest, found[1].size, found[1].mtime_ns,
-                dev=None if seen is None else seen[0], ino=found[1].ino,
+                dev=None if seen is None else seen[0], ino=found[1].ino, path=where,
             )
         )  # fmt: skip
 

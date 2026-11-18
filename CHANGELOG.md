@@ -9,10 +9,29 @@ Format : [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/). Versionnement
 - **Connexion par OpenID Connect (M5 L03, EF-USR-004)** : avec `SHELFHOLD_OIDC_ISSUER`, `SHELFHOLD_OIDC_CLIENT_ID` (et un secret facultatif), la page de connexion offre un lien vers le fournisseur d'identité ; le mot de passe et les clés d'accès restent. Flux « authorization code » avec PKCE (S256), `state` et `nonce` vérifiés, jeton d'identité signé vérifié (clés lues par le Fetcher et sa garde réseau, `iss`, `aud`, `exp`, `nonce`). Le compte est lié par `(émetteur, sub)` à un compte qui existe déjà : **aucun compte n'est créé par une connexion**, un profil enfant n'est jamais lié. On lie depuis sa propre session fraîche (`POST /api/v1/auth/oidc/link`, action réservée `oidc.link_own`) ou par l'administrateur (`PUT /api/v1/profiles/{id}/oidc`, action réservée `oidc.link_account`). Une session ouverte par OIDC n'est jamais « fraîche » : une action réservée redemande un mot de passe ou une clé d'accès (le renvoi au fournisseur avec `prompt=login` et `max_age` suit avec L04). Le forward-auth reste refusé sur `/opds`, `/kosync`, `/kobo` et `/lite`. Migration 0101 (ligne 1.2) ; nouvelle dépendance : `Authlib` (et `joserfc`, sa bibliothèque JOSE). Voir `docs/admin/oidc.md`.
 - **Registre d'appareils et rotation du secret (M5 L02)** : chaque appairage fait un appareil (libellé, type, « vu pour la dernière fois ») ; l'écran « Connecter une liseuse » les liste par profil, change le secret d'un appareil sans réappairer (l'ancien est refusé à la requête suivante) et retire un appareil (tous ses jetons sont révoqués). Actions réservées `device_token.rotate` et `device.remove`, jamais ouvertes à une clé ni à un jeton ; un membre ne voit que ses appareils, un enfant aucun. `GET /api/v1/devices`, `POST /api/v1/devices/{id}/rotate`, `DELETE /api/v1/devices/{id}` ; `shelfhold admin device-tokens rotate|remove`. Migration 0100 (ligne 1.2) : chaque jeton existant reçoit son appareil ; un jeton dont l'appareil est retiré est refusé.
 
-## Non publié
+## 1.1.0 - AAAA-MM-JJ
+
+Clôture de M4 : plusieurs destinations par étagère, synchronisation de la progression avec Kavita et les liseuses, ouverture vers l'écosystème, métadonnées enrichies. Reprend les changements des candidates `1.1.0-rc.1` et `1.1.0-rc.2` (sections ci-dessous). La date est celle de la release.
 
 ### Ajouté
 
+- **Dossier natif (L07)** : une destination qui écrit `<série>/Ch.<n> <titre>.cbz` avec `ComicInfo.xml` et `cover.jpg`, à la disposition locale de Mihon ; une racine qui recouvre la source locale de Suwayomi est refusée, dans les deux sens, et revérifiée à chaque cycle.
+- **Komga (L08a, L08b)** : un scan de bibliothèque débouncé (jamais un scan par dossier) ; le cloisonnement par âge n'est accordé qu'après l'audit en lecture seule des comptes ; versions antérieures à 1.22.0 refusées.
+- **CWA (L09)** : dépôt atomique d'un EPUB par livre dans un dossier d'ingestion, suivi par identifiant ; refusé pour une étagère réservée aux adultes.
+- **Plusieurs destinations par étagère (L06a, L06b)** : un fan-out qui lit ses octets dans le magasin ou sur un exemplaire vérifié, refait le rendu par destination (jamais copié d'une destination à l'autre) et choisit le format natif de chacune.
+- **Tome assemblé (L10)** : un fichier remplace les chapitres d'un tome ; la progression des chapitres est reportée sur le tome.
+- **Progression gardée (L16, L15)** : un renommage, un reclassement ou un changement d'Édition préférée conserve la progression de chaque membre (position approximative marquée comme telle).
+- **Collections et listes de lecture (L18a, L18b)** : import CBL, listes par profil, poussée dans Kavita par le compte de service, puis promotion approuvée par l'administrateur.
+- **Œuvres liées (L19)** : relations visibles sur les deux fiches, poussées vers les séries liées de Kavita.
+- **Migration complète de source (L27)** : numérotation traduite, aucun nouveau téléchargement, historique conservé.
+- **Acheter ou emprunter ailleurs (L30)** : états de demande, arrivée appariée à la demande ouverte, propositions de recherche acceptées une à une par l'administrateur.
+- **Fournisseurs de métadonnées (L21a)** : Hardcover et Google Books, clés scellées données par `shelfhold meta provider-key`.
+- **Thèmes (L32b, L32c, L32d)** : « Console », « Galerie » et « Calme », à côté de « Bibliothèque », choisis par chaque personne ; contraste AA vérifié pour chacun, en clair et en sombre.
+- **Format des pages d'image (L53)** : les pages JPEG, PNG, GIF et WebP sont gardées, les autres formats (AVIF, BMP, TIFF, JPEG 2000) sont réencodés une fois, l'original restant dans `/store` ; réglages `page_target_format` (`SHELFHOLD_PAGE_TARGET_FORMAT`) et `page_target_quality` (`SHELFHOLD_PAGE_TARGET_QUALITY`), commande `shelfhold library normalize-pages [--dry-run]`. Une page vide, illisible, trop grande, JXL ou HEIC est refusée avec un code `page.*` et l'archive reste telle que reçue. Aucune migration.
+- **Un seul service dans le compose (#309)** : `shelfhold serve --migrate` migre puis sert (refus d'un schéma plus récent, sauvegarde avant migration, un échec ne sert rien) ; `compose.yaml` et `compose.simple.yaml` n'ont plus qu'un service, `start_period` du healthcheck à 10 min. Pour migrer à part : `docker compose run --rm shelfhold shelfhold migrate`.
+- **Retrait d'une destination (L34)** : avec ses fichiers ou en détachement complet, en tâches de fond (202 et identifiant de tâche), avec confirmation, sans jamais supprimer la dernière copie.
+- **Documentation (L42)** : pages d'administration sur les destinations, la synchronisation et les métriques ; page famille sur la progression ; chaque code d'erreur a sa cause et son action en français et en anglais.
+- **Parcours de bout en bout sur l'image (L44)** : étagère vers Kavita et dossier natif, progression dans les deux sens, renommage ; contrat Komga en nightly.
 - **Résilience à un retrait de la forge (L41)** : le vérificateur de mises à jour (`SHELFHOLD_UPDATE_CHECK_URL`) est désactivé par défaut, ne bloque rien (un échec n'est qu'une ligne `info`) et n'envoie aucun identifiant de l'instance ; l'adresse de l'index de plugins est un réglage (`SHELFHOLD_PLUGIN_INDEX_URL`, la signature authentifie le contenu) ; le workflow `publish-mirror` pousse `main` et les tags vers le miroir quand `CODEBERG_TOKEN` existe (sans lui, il réussit en le disant) ; le compose de référence nomme les deux images et `GOVERNANCE.md` écrit la procédure de continuité ; `shelfhold update check` lit à la demande le document de version (Fetcher gardé, User-Agent sans version, lecture bornée). ENF-GOV-004 reste ouverte sur la première publication vérifiée du second registre.
 - **Adoption d'une bibliothèque étrangère (L36)** : la première page de chaque CBZ adopté est lue dans le bac à sable de décodage (format et taille dans l'aperçu) ; une page ou une archive refusée (image géante, bombe, chemin `..`, lien symbolique) marque le fichier « à vérifier », sans jamais le toucher. Écran « Adopter une bibliothèque » dans les réglages ; section « bac à sable » dans le paquet de diagnostic ; l'aperçu des plans lit ses noms en lot (`BulkParse.for_plan`).
 - **Classement en masse avec aperçu (L28)** : dans « À classer », l'administrateur coche les Œuvres (ou fige un filtre), voit un aperçu qui ne classe rien, puis applique : **un seul** travail de la file classe la sélection, vérifiée de nouveau sous verrou ; si une Œuvre choisie a changé entre-temps, rien n'est classé et l'écran le dit. Une Œuvre hors de la sélection n'est jamais touchée, même si la liste a changé. Action réservée « classer » (session administrateur fraîche, jamais une clé, un membre ni un enfant). `POST /api/v1/bulk/rate/preview` et `/bulk/rate/{id}/apply`. Seules les Œuvres jamais classées sont retenues (aussi pour `rate --pending`). Classement par tranches de 100 Œuvres, repris après un arrêt. Le lot « tout classer » de l'écran est remplacé par cette sélection (la ligne de commande `rate --pending` reste).
@@ -31,8 +50,25 @@ Format : [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/). Versionnement
 ### Modifié
 
 - Une Œuvre ou une Édition rangée sur aucune étagère n'est plus visible pour un enfant (un adulte la voit toujours).
+- **Adoption (L48)** : un fichier adopté qui n'annonce aucun âge et rejoint, par son nom, une Édition déjà classée met cette Édition dans « À classer » (suggestion 18+) : un enfant ne voit plus un chapitre que personne n'a regardé.
+- **Liaison Komga** : une liaison Komga qui posséderait l'arbre est refusée (`binding.komga_primary_unsupported`, cause et action dans les deux langues) : l'exécuteur n'écrit pas de plan pour un arbre Komga et l'étagère ne recevrait jamais ses fichiers. Komga se lie en destination secondaire — l'arbre écrit par une autre liaison, qu'il indexe — jusqu'à M5.
 
-Migration : oui (0091, 0092, 0094, 0095, 0096, 0097 et 0098)
+### Corrigé
+
+- **`shelfhold shelf create` sur une cible Komga ou un dossier natif** : la commande plantait (elle ouvrait le client Kavita pour une cible qui n'en est pas un) ; seule une cible Kavita est liée à une bibliothèque. Un dossier natif se lie et reçoit son dossier ; une cible Komga répond désormais le refus de la ligne « Liaison Komga » ci-dessous. Le dossier vide créé avant un échec de liaison reste, comme avant.
+- **Réponse au contradicteur de jalon M4 (L48)** : une migration de source ou un relink vers une sous-source adulte pose la suggestion d'âge de la sous-source (l'Édition quitte l'étagère enfant) ; la reprise de la passe du dossier natif reconnaît ses fichiers après un redémarrage (identité de liaison, plus l'appel) et une liaison en échec est visible dans la santé de sa cible ; un retrait avec suppression des fichiers ne tourne plus pendant une passe qui écrit dans le dossier ; l'écho de kosync après un redémarrage ne marque plus « lu » un chapitre sauté ; une racine en écriture qui est un lien (ou passe par un lien) hors de la bibliothèque est refusée ; l'export d'un profil contient les données personnelles ajoutées en M4 (sans secret), tenu au schéma par un test.
+- **Une liseuse retrouve un fichier dès son premier export (L47)** : l'export écrit la ligne `document_alias` du fichier qu'il produit (empreintes KOReader et Kavita comprises), une seule fois par fichier ; avant, `GET /kosync/syncs/progress/{empreinte}` d'un fichier tout juste exporté répondait `{}`. Aucune migration.
+- **Suppression d'une étagère (L43)** : les enfants qui voyaient une Œuvre par cette étagère reçoivent l'événement de visibilité ; ils ne la voient plus.
+
+### Retiré
+
+- **Réglage `SHELFHOLD_READING_MAX_PAGES_PER_MINUTE`** : aucun code de production ne le lisait ; la vitesse plausible de lecture garde sa borne de 20 pages par minute dans le code (`DEFAULT_MAX_PAGES_PER_MINUTE`). Le réglage sort de la configuration, de sa référence et du paquet de diagnostic.
+
+### Limites connues
+
+- **Contention de l'API pendant l'export (ENF-PERF-007)** : sur le profil de référence, la liste de la bibliothèque répond **2,3 à 2,5 fois** plus lentement pendant qu'un export de 500 chapitres tourne, parce que l'export est un fil du processus API. Le budget de la spécification reste **×2** (xfail strict au banc `tests/bench/bench_contention.py`) ; une aggravation au-delà de **×3** casse le nightly, et chaque passage enregistre sa mesure. Le fan-out vers le dossier natif (ComicInfo et couverture rendus dans le processus) est mesuré par la même passe. Correctif prévu en M5 : sortir l'export du processus API.
+
+Migration : oui (0065 à 0098 depuis la 1.0.1 ; 0084 à 0098 depuis la 1.1.0-rc.2)
 
 ## 1.1.0-rc.2 - 2026-11-16
 
@@ -240,7 +276,6 @@ Migrations de M2 que l'image taggée depuis `main` applique aussi (voir « Avant
 - **Qualité** (ENF-QUAL-006, ENF-OPS-008) : suite de propriétés sur le classement, parcours de bout en bout sur l'image réelle (famille, mise à l'abri, Sablier, sauvegarde et restauration, compte de service, passkey, retour arrière vers la 0.2.0), additions de nuit contre de vrais Kavita et Suwayomi.
 - **Documentation d'administration** : `docs/admin/` complété (rôles, famille, « À classer », Suwayomi multi-comptes, purge, copie conservée, retour arrière, restauration), `docs/decisions/M1b.md`.
 - Variables : `SHELFHOLD_BACKUP_DIR`, `SHELFHOLD_BACKUP_PASSPHRASE_FILE`, `SHELFHOLD_BACKUP_RETENTION`, `SHELFHOLD_BACKUP_STALE_HOURS`, `SHELFHOLD_WAKE_URL`, `_WAKE_SUWAYOMI`, `_WAKE_KAVITA`, `_WAKE_TIMEOUT_S`, `_WAKE_SESSION_S`, `_WAKE_TOKEN`, `SHELFHOLD_MAINTENANCE_WINDOW_START`, `_END`, `SHELFHOLD_TIMEZONE`, `SHELFHOLD_RETENTION_EVENTS_DAYS`, `SHELFHOLD_RETENTION_AUDIT_DAYS` (`docs/reference/config.md`).
-
 
 #### Modifié
 

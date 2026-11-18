@@ -31240,6 +31240,10 @@
       "code": "bad_request",
       "status": 400
     },
+    "/api/v1/problems/binding.komga-primary-unsupported": {
+      "code": "binding.komga_primary_unsupported",
+      "status": 409
+    },
     "/api/v1/problems/bulk.refused": {
       "code": "bulk.refused",
       "status": 403

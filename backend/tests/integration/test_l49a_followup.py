@@ -335,7 +335,7 @@ def test_the_export_carries_the_history_and_an_import_gives_it_back(
         tables = (bundle.bundle_partition, bundle.bundle_version, export.document_alias)
         before = {
             t.name: sorted(map(tuple, env.rows(t))) for t in tables
-        }  # the alias rows are the block's alone here
+        }  # the blocks' aliases, and those of the files the library exported (M4 L47)
         assert all(before.values()), before
         out = tmp_path / "out"
         export_to(env, out)
@@ -356,7 +356,10 @@ def test_the_export_carries_the_history_and_an_import_gives_it_back(
     assert after["bundle_partition"] == before["bundle_partition"]
     assert after["bundle_version"] == before["bundle_version"]  # numbers, sizes, partial MD5
     carriers = {r[3] for r in before["bundle_partition"]}
-    assert {r[0] for r in after["document_alias"]} == carriers
+    # every alias comes back, a block's included (M4 L47: nothing rebuilds the alias of a file
+    # that was exported once and is up to date)
+    assert {r[0] for r in after["document_alias"]} == {r[0] for r in before["document_alias"]}
+    assert carriers <= {r[0] for r in after["document_alias"]}
 
 
 def _rows_of(engine: sa.Engine, table: sa.Table) -> list[Any]:

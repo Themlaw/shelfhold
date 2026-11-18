@@ -11,6 +11,8 @@ Hashes are stored like every digest of the schema, `md5:<lowercase hex>`, Kavita
 uppercase form is the one it prints, not one worth storing, and comparing is case-blind.
 """
 
+import os
+import stat
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -90,8 +92,21 @@ _NOT_THE_FILE_MAX = 10_000
 
 def _hash_once(path: Path, file_hash: str) -> DocumentHashes | bool:
     """SHA-256 and both sample hashes in ONE pass over ONE open file (`verified_hashes`): the
-    sampled bytes are the verified bytes. False when the file is not the one named."""
-    with path.open("rb") as stream:
+    sampled bytes are the verified bytes. False when the file is not the one named.
+
+    The file is opened without following a link and without ever blocking (a FIFO or a device put
+    at the path would hold the caller): a descriptor that is not a regular file is refused."""
+    descriptor = os.open(  # noqa: TID251 - read-only, no link, no blocking, S_ISREG checked below
+        path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC
+    )
+    try:
+        if not stat.S_ISREG(os.fstat(descriptor).st_mode):
+            return False
+        stream = os.fdopen(descriptor, "rb")
+    except BaseException:
+        os.close(descriptor)
+        raise
+    with stream:
         sha, koreader, kavita = verified_hashes(stream)
     if "sha256:" + sha != file_hash:
         return False
@@ -137,7 +152,7 @@ def heal_alias_hashes(
             path = locate(item_id, file_hash)
             if path is None:
                 continue
-            seen = path.stat()
+            seen = path.lstat()  # never through a link
             if _NOT_THE_FILE.get((item_id, file_hash)) == (seen.st_size, seen.st_mtime_ns):
                 continue
             hashes = _hash_once(path, file_hash)
