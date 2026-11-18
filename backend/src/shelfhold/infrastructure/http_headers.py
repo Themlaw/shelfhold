@@ -132,7 +132,9 @@ def meta_csp(html: str) -> str | None:
 
 _LOOSE_SOURCES = ("'unsafe-inline'", "'unsafe-eval'", "*", "https:", "http:", "data:", "blob:")
 _GUARDED = ("default-src", "script-src", "style-src")
-_IMAGE_SOURCES = ("'self'",)  # the reader (own entry, own policy: `reader_csp`) draws the `blob:` ones
+_IMAGE_SOURCES = (
+    "'self'",
+)  # the reader (own entry, own policy: `reader_csp`) draws the `blob:` ones
 
 
 def _directive(csp: str, name: str) -> list[str]:
@@ -172,12 +174,17 @@ def spa_csp(html: str) -> str:
     return csp
 
 
-_PRELOADS = frozenset({"modulepreload", "preload", "prefetch", "preconnect", "dns-prefetch", "prerender"})
+_PRELOADS = frozenset(
+    {"modulepreload", "preload", "prefetch", "preconnect", "dns-prefetch", "prerender"}
+)
 _REMOTE = re.compile(r"^\s*(?:[a-z][a-z0-9+.-]*:)?//", re.IGNORECASE)
 _READER_ASSETS = "/reader-entry/"
 _READER_TABLE = (
     ("default-src", ("'none'",)),
-    ("script-src", ()),  # the hash of the boot script, then `'strict-dynamic'`: filled from the page
+    (
+        "script-src",
+        (),
+    ),  # the hash of the boot script, then `'strict-dynamic'`: filled from the page
     ("style-src", ("'self'", "blob:", "'unsafe-inline'")),
     ("style-src-elem", ("'self'", "blob:", "'unsafe-inline'")),
     ("style-src-attr", ("'unsafe-inline'",)),
@@ -216,7 +223,9 @@ class _ReaderAudit(HTMLParser):
             if any(r in _PRELOADS for r in rel):
                 self.problems.append("it holds a preload")
             elif "stylesheet" not in rel or not values.get("href", "").startswith(_READER_ASSETS):
-                self.problems.append(f"a link that is not its own style sheet: {values.get('href')}")
+                self.problems.append(
+                    f"a link that is not its own style sheet: {values.get('href')}"
+                )
         for name, value in values.items():
             if name.startswith("on"):
                 self.problems.append(f"a handler: {name}")

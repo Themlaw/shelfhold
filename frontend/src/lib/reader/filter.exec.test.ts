@@ -24,8 +24,8 @@ const vectors: Record<string, { doc: string; fire: [string, string][] }> = {
 };
 
 describe('the filter alone, with no policy', () => {
-  // req: ENF-SEC-004
   for (const [name, { doc, fire }] of Object.entries(vectors)) {
+    // req: ENF-SEC-004
     it(`test_epub_script_never_runs (filter alone): ${name}`, () => {
       const type = doc.startsWith('<svg') ? 'image/svg+xml' : 'application/xhtml+xml';
       const raise = (w: Window & typeof globalThis) => {

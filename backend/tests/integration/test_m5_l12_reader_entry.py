@@ -121,7 +121,10 @@ def test_reader_csp_hash_follows_the_bytes_of_the_boot_script() -> None:
     ("page", "why"),
     [
         (_reader(head=f'<meta http-equiv="Content-Security-Policy" content="{SPA_CSP}">'), "meta"),
-        (_reader(head='<META HTTP-EQUIV="content-security-policy" content="default-src *">'), "meta"),
+        (
+            _reader(head='<META HTTP-EQUIV="content-security-policy" content="default-src *">'),
+            "meta",
+        ),
         (_reader((BOOT, "alert(1)")), "inline"),
         ("<!doctype html><head></head><body></body>", "inline"),
         (_reader(head='<script src="/reader-entry/assets/x.js"></script>'), "script"),

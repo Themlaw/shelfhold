@@ -254,7 +254,14 @@ def test_the_policy_served_for_the_spa_draws_images_of_its_own_origin_only(
 @pytest.mark.req("ENF-SEC-004")
 @pytest.mark.parametrize(
     "wider",
-    ["'self' blob:", "'self' blob: data:", "*", "'self' https:", "'self' http://x", "'unsafe-inline'"],
+    [
+        "'self' blob:",
+        "'self' blob: data:",
+        "*",
+        "'self' https:",
+        "'self' http://x",
+        "'unsafe-inline'",
+    ],
 )
 def test_a_build_that_widens_the_image_sources_is_refused(
     settings: Settings, tmp_path: Path, wider: str

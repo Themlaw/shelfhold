@@ -73,147 +73,145 @@ async function serve(page: Page, book: Book): Promise<Bench> {
 const frames = (page: Page) => page.frames().filter((f) => f.url().startsWith('blob:'));
 const textOf = async (page: Page) => (await Promise.all(frames(page).map((f) => f.locator('body').innerText().catch(() => '')))).join('\n');
 
-test.describe('the EPUB reader', () => {
-  // req: EF-LEC-003
-  test('test_foliate_epub_reflow_and_fixed: both layouts are drawn, in a blob: document', async ({ page }) => {
-    await serve(page, reflow([xhtml('<h1>Chapitre un</h1><p>Texte du premier chapitre.</p>'), xhtml('<h1>Chapitre deux</h1><p>Suite.</p>')]));
-    await page.goto('/lire/unit/U1');
-    await expect.poll(() => textOf(page)).toContain('Chapitre un');
-    expect(frames(page).length).toBeGreaterThan(0);
-    await page.keyboard.press('Escape');
-    await page.getByRole('button', { name: 'Page suivante' }).click();
-    await expect.poll(() => page.locator('[role=status]').innerText()).not.toBe('');
+// req: EF-LEC-003
+test('test_foliate_epub_reflow_and_fixed: both layouts are drawn, in a blob: document', async ({ page }) => {
+  await serve(page, reflow([xhtml('<h1>Chapitre un</h1><p>Texte du premier chapitre.</p>'), xhtml('<h1>Chapitre deux</h1><p>Suite.</p>')]));
+  await page.goto('/lire/unit/U1');
+  await expect.poll(() => textOf(page)).toContain('Chapitre un');
+  expect(frames(page).length).toBeGreaterThan(0);
+  await page.keyboard.press('Escape');
+  await page.getByRole('button', { name: 'Page suivante' }).click();
+  await expect.poll(() => page.locator('[role=status]').innerText()).not.toBe('');
 
-    const fixedPage = (n: number) => xhtml(`<p>Page fixe ${n}</p>`, '<meta name="viewport" content="width=400, height=600"/>');
-    await serve(page, {
-      fixed: true,
-      files: {
-        'OEBPS/content.opf': opf([['c1.xhtml', 'application/xhtml+xml'], ['c2.xhtml', 'application/xhtml+xml']], { fixed: true }),
-        'OEBPS/nav.xhtml': nav,
-        'OEBPS/c1.xhtml': fixedPage(1),
-        'OEBPS/c2.xhtml': fixedPage(2)
-      }
-    });
-    await page.goto('/lire/unit/U1');
-    await expect.poll(() => textOf(page)).toContain('Page fixe 1');
-  });
-
-  // req: ENF-SEC-004
-  test('test_blob_document_inherits_reader_csp: a blob: at the top, a blob: inside it, a srcdoc', async ({ page }) => {
-    await serve(page, reflow([xhtml('<p>Texte</p>')]));
-    await page.goto('/lire/unit/U1');
-    await expect.poll(() => textOf(page)).toContain('Texte');
-    const result = await page.evaluate(async () => {
-      const gif = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
-      const wait = (f: HTMLIFrameElement) => new Promise<void>((r) => { f.onload = () => r(); setTimeout(r, 1500); });
-      const probe = (doc: Document) => {
-        const img = doc.createElement('img');
-        img.src = gif;
-        doc.body.append(img);
-        const own = doc.createElement('img');
-        own.src = URL.createObjectURL(new Blob([Uint8Array.from(atob(gif.split(',')[1]!), (c) => c.charCodeAt(0))], { type: 'image/gif' }));
-        doc.body.append(own);
-        return new Promise<{ dataImage: number; blobImage: number }>((r) => setTimeout(() => r({ dataImage: img.naturalWidth, blobImage: own.naturalWidth }), 600));
-      };
-      const html = (inner: string) => `<!doctype html><body>${inner}<script>window.__ran=1</script></body>`;
-      const mount = async (src: { blob?: string; srcdoc?: string }, parent: Document) => {
-        const f = parent.createElement('iframe');
-        if (src.blob !== undefined) f.src = URL.createObjectURL(new Blob([src.blob], { type: 'text/html' }));
-        if (src.srcdoc !== undefined) f.srcdoc = src.srcdoc;
-        parent.body.append(f);
-        await wait(f);
-        return f;
-      };
-      const out: Record<string, unknown> = {};
-      const top = await mount({ blob: html('') }, document);
-      out.top = { ran: (top.contentWindow as unknown as { __ran?: number }).__ran ?? null, ...(await probe(top.contentDocument!)) };
-      const outer = await mount({ blob: html(`<p>outer</p>`) }, document);
-      const nested = await mount({ blob: html('') }, outer.contentDocument!);
-      out.nested = { ran: (nested.contentWindow as unknown as { __ran?: number }).__ran ?? null, ...(await probe(nested.contentDocument!)) };
-      const doc = await mount({ srcdoc: html('') }, document);
-      out.srcdoc = { ran: (doc.contentWindow as unknown as { __ran?: number }).__ran ?? null, ...(await probe(doc.contentDocument!)) };
-      return out as Record<'top' | 'nested' | 'srcdoc', { ran: number | null; dataImage: number; blobImage: number }>;
-    });
-    for (const level of ['top', 'nested', 'srcdoc'] as const) {
-      expect(result[level].ran, `${level}: no script runs`).toBeNull();
-      expect(result[level].dataImage, `${level}: img-src refuses data:`).toBe(0);
-      expect(result[level].blobImage, `${level}: img-src admits blob:`).toBeGreaterThan(0);
+  const fixedPage = (n: number) => xhtml(`<p>Page fixe ${n}</p>`, '<meta name="viewport" content="width=400, height=600"/>');
+  await serve(page, {
+    fixed: true,
+    files: {
+      'OEBPS/content.opf': opf([['c1.xhtml', 'application/xhtml+xml'], ['c2.xhtml', 'application/xhtml+xml']], { fixed: true }),
+      'OEBPS/nav.xhtml': nav,
+      'OEBPS/c1.xhtml': fixedPage(1),
+      'OEBPS/c2.xhtml': fixedPage(2)
     }
   });
+  await page.goto('/lire/unit/U1');
+  await expect.poll(() => textOf(page)).toContain('Page fixe 1');
+});
 
-  // req: ENF-SEC-004
-  test('test_epub_script_never_runs: a book full of traps runs nothing and asks nothing of the instance', async ({ page }) => {
-    const trap = xhtml(
-      `<h1>Piégé</h1><script>window.__owned=1;fetch('/api/v1/keys')</script><img src="x.png" onerror="window.__owned=1"/><a id="j" href="javascript:window.__owned=1">j</a>` +
-        `<svg xmlns="http://www.w3.org/2000/svg"><script>window.__owned=1</script><set attributeName="onload" to="window.__owned=1"/></svg>` +
-        `<iframe srcdoc="&lt;script&gt;parent.__owned=1&lt;/script&gt;"></iframe><form action="/api/v1/keys"><button id="b">go</button></form>` +
-        `<object data="/content/TICKET/OEBPS/x.js"></object><p style="background:url(/api/v1/keys)">fin</p>`,
-      '<script src="/content/TICKET/OEBPS/x.js"></script><script type="module" src="/_app/immutable/entry/start.js"></script><meta http-equiv="refresh" content="0;url=/api/v1/keys"/><link rel="prefetch" href="/api/v1/keys"/><style>@import url(/api/v1/keys); p{color:red}</style>'
-    );
-    const book = reflow([trap]);
-    book.files['OEBPS/x.js'] = 'window.__owned=1';
-    const bench = await serve(page, book);
-    await page.goto('/lire/unit/U1');
-    await expect.poll(() => textOf(page)).toContain('Piégé');
-    for (const f of frames(page)) {
-      await f.locator('#j').click({ timeout: 500, trial: false }).catch(() => undefined);
-      await f.locator('#b').click({ timeout: 500 }).catch(() => undefined);
-    }
-    await page.waitForTimeout(500);
-    for (const f of [page.mainFrame(), ...frames(page)]) expect(await f.evaluate(() => (window as unknown as { __owned?: number }).__owned ?? null)).toBeNull();
-    expect(bench.api).toEqual([]);
-    expect(bench.content).not.toContain('OEBPS/x.js');
-    expect(page.url()).toContain('/lire/unit/U1');
+// req: ENF-SEC-004
+test('test_blob_document_inherits_reader_csp: a blob: at the top, a blob: inside it, a srcdoc', async ({ page }) => {
+  await serve(page, reflow([xhtml('<p>Texte</p>')]));
+  await page.goto('/lire/unit/U1');
+  await expect.poll(() => textOf(page)).toContain('Texte');
+  const result = await page.evaluate(async () => {
+    const gif = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
+    const wait = (f: HTMLIFrameElement) => new Promise<void>((r) => { f.onload = () => r(); setTimeout(r, 1500); });
+    const probe = (doc: Document) => {
+      const img = doc.createElement('img');
+      img.src = gif;
+      doc.body.append(img);
+      const own = doc.createElement('img');
+      own.src = URL.createObjectURL(new Blob([Uint8Array.from(atob(gif.split(',')[1]!), (c) => c.charCodeAt(0))], { type: 'image/gif' }));
+      doc.body.append(own);
+      return new Promise<{ dataImage: number; blobImage: number }>((r) => setTimeout(() => r({ dataImage: img.naturalWidth, blobImage: own.naturalWidth }), 600));
+    };
+    const html = (inner: string) => `<!doctype html><body>${inner}<script>window.__ran=1</script></body>`;
+    const mount = async (src: { blob?: string; srcdoc?: string }, parent: Document) => {
+      const f = parent.createElement('iframe');
+      if (src.blob !== undefined) f.src = URL.createObjectURL(new Blob([src.blob], { type: 'text/html' }));
+      if (src.srcdoc !== undefined) f.srcdoc = src.srcdoc;
+      parent.body.append(f);
+      await wait(f);
+      return f;
+    };
+    const out: Record<string, unknown> = {};
+    const top = await mount({ blob: html('') }, document);
+    out.top = { ran: (top.contentWindow as unknown as { __ran?: number }).__ran ?? null, ...(await probe(top.contentDocument!)) };
+    const outer = await mount({ blob: html(`<p>outer</p>`) }, document);
+    const nested = await mount({ blob: html('') }, outer.contentDocument!);
+    out.nested = { ran: (nested.contentWindow as unknown as { __ran?: number }).__ran ?? null, ...(await probe(nested.contentDocument!)) };
+    const doc = await mount({ srcdoc: html('') }, document);
+    out.srcdoc = { ran: (doc.contentWindow as unknown as { __ran?: number }).__ran ?? null, ...(await probe(doc.contentDocument!)) };
+    return out as Record<'top' | 'nested' | 'srcdoc', { ran: number | null; dataImage: number; blobImage: number }>;
   });
+  for (const level of ['top', 'nested', 'srcdoc'] as const) {
+    expect(result[level].ran, `${level}: no script runs`).toBeNull();
+    expect(result[level].dataImage, `${level}: img-src refuses data:`).toBe(0);
+    expect(result[level].blobImage, `${level}: img-src admits blob:`).toBeGreaterThan(0);
+  }
+});
 
-  // req: ENF-SEC-004
-  test('a script that escaped the filter and is moved by a DOM API: the filter is the barrier', async ({ page }) => {
-    await serve(page, reflow([xhtml('<p>Texte</p><script>window.__owned=1</script>')]));
-    await page.goto('/lire/unit/U1');
-    await expect.poll(() => textOf(page)).toContain('Texte');
-    // with the filter, the document of the book holds nothing to move
-    const inBook = await Promise.all(frames(page).map((f) => f.evaluate(() => document.querySelectorAll('script').length)));
-    expect(inBook.every((n) => n === 0)).toBe(true);
-    // the limit, written down: a script that did reach a book document and that trusted code moves
-    // runs under `'strict-dynamic'` (the document is the page's, `window.__owned` is set)
-    const limit = await page.evaluate(async () => {
-      const f = document.createElement('iframe');
-      f.src = URL.createObjectURL(new Blob(['<!doctype html><body><script id="s">window.__owned=1</script></body>'], { type: 'text/html' }));
-      document.body.append(f);
-      await new Promise((r) => { f.onload = () => r(null); });
-      // what trusted code would do to move a node of the book: write it again as markup (a node that was
-      // blocked is marked as started: a clone or an import of it does not run, a fresh fragment does)
-      const html = f.contentDocument!.getElementById('s')!.outerHTML;
-      document.body.append(document.createRange().createContextualFragment(html));
-      return (window as unknown as { __owned?: number }).__owned ?? null;
-    });
-    expect(limit).toBe(1);
-  });
+// req: ENF-SEC-004
+test('test_epub_script_never_runs: a book full of traps runs nothing and asks nothing of the instance', async ({ page }) => {
+  const trap = xhtml(
+    `<h1>Piégé</h1><script>window.__owned=1;fetch('/api/v1/keys')</script><img src="x.png" onerror="window.__owned=1"/><a id="j" href="javascript:window.__owned=1">j</a>` +
+      `<svg xmlns="http://www.w3.org/2000/svg"><script>window.__owned=1</script><set attributeName="onload" to="window.__owned=1"/></svg>` +
+      `<iframe srcdoc="&lt;script&gt;parent.__owned=1&lt;/script&gt;"></iframe><form action="/api/v1/keys"><button id="b">go</button></form>` +
+      `<object data="/content/TICKET/OEBPS/x.js"></object><p style="background:url(/api/v1/keys)">fin</p>`,
+    '<script src="/content/TICKET/OEBPS/x.js"></script><script type="module" src="/_app/immutable/entry/start.js"></script><meta http-equiv="refresh" content="0;url=/api/v1/keys"/><link rel="prefetch" href="/api/v1/keys"/><style>@import url(/api/v1/keys); p{color:red}</style>'
+  );
+  const book = reflow([trap]);
+  book.files['OEBPS/x.js'] = 'window.__owned=1';
+  const bench = await serve(page, book);
+  await page.goto('/lire/unit/U1');
+  await expect.poll(() => textOf(page)).toContain('Piégé');
+  for (const f of frames(page)) {
+    await f.locator('#j').click({ timeout: 500, trial: false }).catch(() => undefined);
+    await f.locator('#b').click({ timeout: 500 }).catch(() => undefined);
+  }
+  await page.waitForTimeout(500);
+  for (const f of [page.mainFrame(), ...frames(page)]) expect(await f.evaluate(() => (window as unknown as { __owned?: number }).__owned ?? null)).toBeNull();
+  expect(bench.api).toEqual([]);
+  expect(bench.content).not.toContain('OEBPS/x.js');
+  expect(page.url()).toContain('/lire/unit/U1');
+});
 
-  // req: ENF-SEC-004
-  test('test_external_link_never_navigates_iframe: the link is cancelled, asked, and opened apart', async ({ page, context }) => {
-    await serve(page, reflow([xhtml('<p><a id="e" href="https://example.org/dehors">dehors</a> <a id="v" xmlns:x="http://www.w3.org/1999/xlink" href="#note">note</a></p><svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink"><a xlink:href="https://example.org/svg"><text y="10">svg</text></a></svg>')]));
-    await page.goto('/lire/unit/U1');
-    await expect.poll(() => textOf(page)).toContain('dehors');
-    const before = frames(page).map((f) => f.url());
-    page.once('dialog', (d) => d.dismiss());
-    await frames(page)[0]!.locator('#e').click();
-    await page.waitForTimeout(300);
-    expect(frames(page).map((f) => f.url())).toEqual(before);
-    expect(context.pages()).toHaveLength(1);
-    expect(page.url()).toContain('/lire/unit/U1');
+// req: ENF-SEC-004
+test('a script that escaped the filter and is moved by a DOM API: the filter is the barrier', async ({ page }) => {
+  await serve(page, reflow([xhtml('<p>Texte</p><script>window.__owned=1</script>')]));
+  await page.goto('/lire/unit/U1');
+  await expect.poll(() => textOf(page)).toContain('Texte');
+  // with the filter, the document of the book holds nothing to move
+  const inBook = await Promise.all(frames(page).map((f) => f.evaluate(() => document.querySelectorAll('script').length)));
+  expect(inBook.every((n) => n === 0)).toBe(true);
+  // the limit, written down: a script that did reach a book document and that trusted code moves
+  // runs under `'strict-dynamic'` (the document is the page's, `window.__owned` is set)
+  const limit = await page.evaluate(async () => {
+    const f = document.createElement('iframe');
+    f.src = URL.createObjectURL(new Blob(['<!doctype html><body><script id="s">window.__owned=1</script></body>'], { type: 'text/html' }));
+    document.body.append(f);
+    await new Promise((r) => { f.onload = () => r(null); });
+    // what trusted code would do to move a node of the book: write it again as markup (a node that was
+    // blocked is marked as started: a clone or an import of it does not run, a fresh fragment does)
+    const html = f.contentDocument!.getElementById('s')!.outerHTML;
+    document.body.append(document.createRange().createContextualFragment(html));
+    return (window as unknown as { __owned?: number }).__owned ?? null;
   });
+  expect(limit).toBe(1);
+});
 
-  // req: ENF-SEC-004
-  test('test_reader_refuses_to_mount_under_spa_csp: a client navigation from the SPA is a full load', async ({ page }) => {
-    await serve(page, reflow([xhtml('<p>Texte</p>')]));
-    await page.goto('/lire/unit/U1');
-    const csp = await page.evaluate(() => performance.getEntriesByType('navigation').length);
-    expect(csp).toBe(1);
-    const header = (await page.request.get('/lire/unit/U1')).headers()['content-security-policy'];
-    expect(header).toContain("'strict-dynamic'");
-    expect(header).not.toContain("script-src 'self'");
-    const spa = (await page.request.get('/bibliotheque')).headers()['content-security-policy'];
-    expect(spa).not.toContain('strict-dynamic');
-  });
+// req: ENF-SEC-004
+test('test_external_link_never_navigates_iframe: the link is cancelled, asked, and opened apart', async ({ page, context }) => {
+  await serve(page, reflow([xhtml('<p><a id="e" href="https://example.org/dehors">dehors</a> <a id="v" xmlns:x="http://www.w3.org/1999/xlink" href="#note">note</a></p><svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink"><a xlink:href="https://example.org/svg"><text y="10">svg</text></a></svg>')]));
+  await page.goto('/lire/unit/U1');
+  await expect.poll(() => textOf(page)).toContain('dehors');
+  const before = frames(page).map((f) => f.url());
+  page.once('dialog', (d) => d.dismiss());
+  await frames(page)[0]!.locator('#e').click();
+  await page.waitForTimeout(300);
+  expect(frames(page).map((f) => f.url())).toEqual(before);
+  expect(context.pages()).toHaveLength(1);
+  expect(page.url()).toContain('/lire/unit/U1');
+});
+
+// req: ENF-SEC-004
+test('test_reader_refuses_to_mount_under_spa_csp: a client navigation from the SPA is a full load', async ({ page }) => {
+  await serve(page, reflow([xhtml('<p>Texte</p>')]));
+  await page.goto('/lire/unit/U1');
+  const csp = await page.evaluate(() => performance.getEntriesByType('navigation').length);
+  expect(csp).toBe(1);
+  const header = (await page.request.get('/lire/unit/U1')).headers()['content-security-policy'];
+  expect(header).toContain("'strict-dynamic'");
+  expect(header).not.toContain("script-src 'self'");
+  const spa = (await page.request.get('/bibliotheque')).headers()['content-security-policy'];
+  expect(spa).not.toContain('strict-dynamic');
 });

@@ -129,8 +129,8 @@ describe('the whitelist corpus', () => {
     'poster et background': page('<video poster="https://evil.example/p.png"></video><table background="https://evil.example/b.png"><tr><td>x</td></tr></table>')
   };
 
-  // req: ENF-SEC-004
   for (const [name, text] of Object.entries(corpus)) {
+    // req: ENF-SEC-004
     it(`test_content_filter_whitelist_corpus: leaves nothing of "${name}"`, () => {
       const out = filterMarkup(text, XHTML, OPTS);
       expect(dangers(parse(out)), out).toEqual([]);

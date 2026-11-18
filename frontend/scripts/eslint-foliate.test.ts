@@ -22,8 +22,8 @@ describe('foliate is only imported by its adapter', () => {
     "export * from '#foliate/footnotes.js';"
   ];
 
-  // req: ENF-SEC-004
   for (const line of imports) {
+    // req: ENF-SEC-004
     it(`refuses ${line} anywhere else`, async () => {
       for (const file of ['src/lib/reader/engines/images.ts', 'src/lib/reader/filter.ts', 'src/lib/reader/registry.ts', 'src/routes/page.ts']) {
         expect((await messages(line, file)).length, `${file}: ${line}`).toBeGreaterThan(0);
