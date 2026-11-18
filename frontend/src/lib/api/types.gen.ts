@@ -1342,6 +1342,76 @@ export type DeviceConnectOut = {
 };
 
 /**
+ * DeviceList
+ */
+export type DeviceList = {
+    /**
+     * Items
+     */
+    items: Array<DeviceOut>;
+};
+
+/**
+ * DeviceOut
+ *
+ * What the registry shows of a device: never the secret, never what verifies it.
+ */
+export type DeviceOut = {
+    /**
+     * Created At
+     */
+    created_at: string;
+    /**
+     * Expires At
+     */
+    expires_at: string | null;
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Kind
+     */
+    kind: 'koreader' | 'kobo' | 'opds' | 'browser' | 'other';
+    /**
+     * Label
+     */
+    label: string | null;
+    /**
+     * Last Seen At
+     */
+    last_seen_at: string | null;
+    /**
+     * Public Id
+     */
+    public_id: string | null;
+    /**
+     * Revoked At
+     */
+    revoked_at: string | null;
+    /**
+     * Subject User Id
+     */
+    subject_user_id: string;
+    /**
+     * Subject Username
+     */
+    subject_username: string;
+};
+
+/**
+ * DeviceRotateIn
+ *
+ * Only a token past its expiry needs `expires_days`: a new secret would be refused as it is.
+ */
+export type DeviceRotateIn = {
+    /**
+     * Expires Days
+     */
+    expires_days?: number | null;
+};
+
+/**
  * DeviceSkippedOut
  *
  * A Kavita target left out, and why (`address_unusable`): the screen says so.
@@ -1445,6 +1515,10 @@ export type DeviceTokenPairIn = {
      */
     expires_days?: number | null;
     /**
+     * Kind
+     */
+    kind?: 'koreader' | 'kobo' | 'opds' | 'browser' | 'other' | null;
+    /**
      * Name
      */
     name?: string | null;
@@ -1460,6 +1534,10 @@ export type DeviceTokenPairIn = {
  * What is shown once. `secret` is typed as it is: no separator, case kept.
  */
 export type DeviceTokenPaired = {
+    /**
+     * Device Id
+     */
+    device_id: string;
     /**
      * Expires At
      */
@@ -9997,6 +10075,44 @@ export type DeviceTokenRevokeResponses = {
 
 export type DeviceTokenRevokeResponse = DeviceTokenRevokeResponses[keyof DeviceTokenRevokeResponses];
 
+export type DeviceListData = {
+    body?: never;
+    path?: never;
+    query?: {
+        /**
+         * Subject User Id
+         */
+        subject_user_id?: string | null;
+    };
+    url: '/api/v1/devices';
+};
+
+export type DeviceListErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type DeviceListError = DeviceListErrors[keyof DeviceListErrors];
+
+export type DeviceListResponses = {
+    /**
+     * Successful Response
+     */
+    200: DeviceList;
+};
+
+export type DeviceListResponse = DeviceListResponses[keyof DeviceListResponses];
+
 export type DeviceConnectData = {
     body?: never;
     path?: never;
@@ -10029,6 +10145,85 @@ export type DeviceConnectResponses = {
 };
 
 export type DeviceConnectResponse = DeviceConnectResponses[keyof DeviceConnectResponses];
+
+export type DeviceRemoveData = {
+    body?: never;
+    path: {
+        /**
+         * Device Id
+         */
+        device_id: string;
+    };
+    query?: never;
+    url: '/api/v1/devices/{device_id}';
+};
+
+export type DeviceRemoveErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type DeviceRemoveError = DeviceRemoveErrors[keyof DeviceRemoveErrors];
+
+export type DeviceRemoveResponses = {
+    /**
+     * Successful Response
+     */
+    204: void;
+};
+
+export type DeviceRemoveResponse = DeviceRemoveResponses[keyof DeviceRemoveResponses];
+
+export type DeviceRotateData = {
+    /**
+     * Body
+     */
+    body?: DeviceRotateIn | null;
+    path: {
+        /**
+         * Device Id
+         */
+        device_id: string;
+    };
+    query?: never;
+    url: '/api/v1/devices/{device_id}/rotate';
+};
+
+export type DeviceRotateErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type DeviceRotateError = DeviceRotateErrors[keyof DeviceRotateErrors];
+
+export type DeviceRotateResponses = {
+    /**
+     * Successful Response
+     */
+    200: DeviceTokenPaired;
+};
+
+export type DeviceRotateResponse = DeviceRotateResponses[keyof DeviceRotateResponses];
 
 export type DiagnosticBundleDownloadData = {
     body?: never;

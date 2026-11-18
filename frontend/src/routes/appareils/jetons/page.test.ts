@@ -32,7 +32,7 @@ function serve(role: string, extra: Parameters<typeof http.get>[1][] = []): void
   server.use(
     http.get(`${BASE}/api/v1/me`, () => HttpResponse.json(ME(role) as never)),
     http.get(`${BASE}/api/v1/device-tokens/setup`, () => HttpResponse.json(SETUP)),
-    http.get(`${BASE}/api/v1/device-tokens`, () => HttpResponse.json({ items: listed } as never)),
+    http.get(`${BASE}/api/v1/devices`, () => HttpResponse.json({ items: listed } as never)),
     http.get(`${BASE}/api/v1/profiles`, () => HttpResponse.json(PROFILES as never)),
     ...extra.map((handler) => http.get(`${BASE}/never`, handler))
   );
@@ -52,7 +52,13 @@ afterAll(() => server.close());
 
 const created = http.post(`${BASE}/api/v1/device-tokens`, () =>
   HttpResponse.json(
-    { public_id: 'abcd2345', secret: SECRET, subject_user_id: 'm1', expires_at: null },
+    {
+      public_id: 'abcd2345',
+      secret: SECRET,
+      subject_user_id: 'm1',
+      expires_at: null,
+      device_id: 'd1'
+    },
     { status: 201 }
   )
 );
@@ -121,31 +127,96 @@ describe('Connecter une liseuse', () => {
     expect(screen.queryByRole('button', { name: 'Créer le jeton' })).toBeNull();
   });
 
-  // req: EF-UX-004
-  it('revokes a token from the list', async () => {
-    listed = [
-      {
-        public_id: 'abcd2345',
-        name: 'Salon',
-        subject_user_id: 'm1',
-        subject_username: 'mum',
-        created_at: '2026-11-16T00:00:00Z',
-        expires_at: null,
-        last_used_at: null
-      }
-    ];
+  const DEVICE = {
+    id: 'd1',
+    label: 'Salon',
+    kind: 'koreader',
+    subject_user_id: 'm1',
+    subject_username: 'mum',
+    public_id: 'abcd2345',
+    created_at: '2026-11-16T00:00:00Z',
+    last_seen_at: '2026-11-17T08:30:00Z',
+    expires_at: null,
+    revoked_at: null
+  };
+
+  // req: EF-USR-008, EF-UX-004
+  it('lists the devices with their label, kind, profile and when they were last seen', async () => {
+    listed = [DEVICE, { ...DEVICE, id: 'd2', label: 'Chevet', kind: 'kobo', last_seen_at: null }];
     serve('member');
-    let revoked = false;
+    render(Page);
+    const salon = (await screen.findByText(/Salon/)).closest('li') as HTMLElement;
+    expect(salon).toHaveTextContent('KOReader');
+    expect(salon).toHaveTextContent('mum');
+    expect(salon).toHaveTextContent(/Vu pour la dernière fois/);
+    const chevet = screen.getByText(/Chevet/).closest('li') as HTMLElement;
+    expect(chevet).toHaveTextContent('Kobo');
+    expect(chevet).toHaveTextContent(/Jamais vu/);
+  });
+
+  // req: EF-USR-008, ENF-SEC-013
+  it('sends the kind chosen at pairing', async () => {
+    serve('member');
+    let sent: Record<string, unknown> = {};
     server.use(
-      http.delete(`${BASE}/api/v1/device-tokens/abcd2345`, () => {
-        revoked = true;
+      http.post(`${BASE}/api/v1/device-tokens`, async ({ request }) => {
+        sent = (await request.json()) as Record<string, unknown>;
+        return HttpResponse.json(
+          { public_id: 'abcd2345', secret: SECRET, subject_user_id: 'm1', expires_at: null, device_id: 'd1' },
+          { status: 201 }
+        );
+      })
+    );
+    render(Page);
+    await userEvent.selectOptions(await screen.findByRole('combobox', { name: /Type d'appareil/ }), 'kobo');
+    await userEvent.click(screen.getByRole('button', { name: 'Créer le jeton' }));
+    await screen.findByTestId('secret');
+    expect(sent.kind).toBe('kobo');
+  });
+
+  // req: EF-USR-008, ENF-SEC-013
+  it('rotates the secret of a device: the new one is shown once and nothing is paired again', async () => {
+    listed = [DEVICE];
+    serve('member');
+    let rotated = '';
+    server.use(
+      http.post(`${BASE}/api/v1/devices/d1/rotate`, () => {
+        rotated = 'd1';
+        return HttpResponse.json({
+          public_id: 'abcd2345',
+          secret: SECRET,
+          subject_user_id: 'm1',
+          expires_at: null,
+          device_id: 'd1'
+        });
+      })
+    );
+    const { container } = render(Page);
+    await userEvent.click(await screen.findByRole('button', { name: /Nouveau secret/ }));
+    await waitFor(() => expect(rotated).toBe('d1'));
+    expect((await screen.findByTestId('secret')).textContent).toBe(SECRET);
+    expect(screen.getByTestId('public-id').textContent).toBe('abcd2345');
+    expect(window.location.href).not.toContain(SECRET);
+    expect(JSON.stringify({ ...localStorage })).not.toContain(SECRET);
+    await userEvent.click(screen.getByRole('button', { name: "J'ai noté le secret" }));
+    expect(container.innerHTML).not.toContain(SECRET);
+  });
+
+  // req: EF-USR-008
+  it('removes a device from the list', async () => {
+    listed = [DEVICE];
+    serve('member');
+    let removed = false;
+    server.use(
+      http.delete(`${BASE}/api/v1/devices/d1`, () => {
+        removed = true;
         listed = [];
         return new HttpResponse(null, { status: 204 });
       })
     );
     render(Page);
-    await userEvent.click(await screen.findByRole('button', { name: 'Révoquer' }));
-    await waitFor(() => expect(revoked).toBe(true));
+    await userEvent.click(await screen.findByRole('button', { name: 'Retirer' }));
+    await waitFor(() => expect(removed).toBe(true));
     expect(await screen.findByText(/Aucune liseuse n'est connectée/)).toBeInTheDocument();
   });
 
