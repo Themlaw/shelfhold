@@ -1,5 +1,5 @@
 # ruff: noqa: E501
-"""EF-BIB-051 (2), (7), (8) and ENF-SEC-015: xhtml-neutralizer@v1 against the trapped-EPUB corpus."""
+"""EF-BIB-051 (2), (7), (8) and ENF-SEC-015: xhtml-neutralizer@v2 against the trapped-EPUB corpus."""
 
 from __future__ import annotations
 
@@ -116,7 +116,7 @@ def test_neutralizer_deterministic_same_derived_hash(trap: Trap) -> None:
     second, two = _run(trap.epub)
     assert first == second
     assert one.derived_hash == two.derived_hash  # type: ignore[attr-defined]
-    assert one.derived_by == DERIVED_BY == "xhtml-neutralizer@v1"  # type: ignore[attr-defined]
+    assert one.derived_by == DERIVED_BY == "xhtml-neutralizer@v2"  # type: ignore[attr-defined]
     assert one.derived_hash_by == DERIVED_HASH_BY  # type: ignore[attr-defined]
     assert one.derived_hash.startswith("sha256:")  # type: ignore[attr-defined]
 

@@ -1,6 +1,6 @@
 """M2 L03: the derivative pipeline of an `untrusted` EPUB (EF-BIB-051, EF-BIB-006, EF-BIB-045).
 
-Real files, a real database, the real neutralizer (`xhtml-neutralizer@v1`) over EPUB built by the
+Real files, a real database, the real neutralizer (`xhtml-neutralizer@v2`) over EPUB built by the
 conformance kit. The invariants under test:
 
 - no `untrusted` EPUB leaves Shelfhold except as its neutralized derivative;
@@ -50,7 +50,7 @@ pytestmark = pytest.mark.req("EF-BIB-051")
 
 TRAPPED = epub_bytes(xhtml("<p>chapter</p><script>alert(1)</script>"))
 CLEAN = epub_bytes(xhtml("<p>chapter</p>"))
-V2 = "xhtml-neutralizer@v2"
+V2 = "xhtml-neutralizer@v3"  # a release after the shipped one (v2)
 
 
 def sha(data: bytes) -> str:
@@ -416,14 +416,14 @@ def test_regeneration_without_original_restarts_from_stored_derivative_and_keeps
         assert not has_active_content(library.read_bytes())
 
         # and a second update stacks on the first: the chain keeps every generation
-        def v3(s: Any, o: Any, **kw: Any) -> Any:
-            return replace(neutralize_epub(s, o, **kw), derived_by="xhtml-neutralizer@v3")
+        def v4(s: Any, o: Any, **kw: Any) -> Any:
+            return replace(neutralize_epub(s, o, **kw), derived_by="xhtml-neutralizer@v4")
 
         again = Reneutralizer(
             store(env, with_store=False),
             engine=env.engine,
-            neutralize=v3,
-            target="xhtml-neutralizer@v3",
+            neutralize=v4,
+            target="xhtml-neutralizer@v4",
         )
         again.apply(again.plan().fingerprint)
         assert [e["derived_by"] for e in content_row(env).derived_chain] == [DERIVED_BY, V2]

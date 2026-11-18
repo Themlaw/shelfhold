@@ -28,6 +28,7 @@ from shelfhold.infrastructure.content_trust.sanitize import (
     sanitize_upstream_text,
 )
 from shelfhold.infrastructure.content_trust.xhtml_neutralizer import (
+    CONTENT_FILTER,
     DERIVED_BY,
     NEUTRALIZER_VERSION,
     NeutralizationError,
@@ -37,6 +38,7 @@ from shelfhold.infrastructure.content_trust.xhtml_neutralizer import (
 __all__ = [
     "ALLOWED_HTML_ATTRIBUTES",
     "ALLOWED_HTML_TAGS",
+    "CONTENT_FILTER",
     "DERIVED_BY",
     "DERIVED_HASH_BY",
     "KEEP_PAGE_KINDS",
