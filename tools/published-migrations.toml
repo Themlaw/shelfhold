@@ -314,3 +314,8 @@ since = "1.1"
 file = "0098_bulk_order.py"
 sha256 = "eaeab68ed573584dffc0d9233e05fcc46f429bfdaa62c4add4bf92d86f3e4820"
 since = "1.1"
+
+[[migration]]
+file = "0100_device_registry.py"
+sha256 = "aa34519af06ba1aed29fa1275152e504d1d0d928535af146ed1f8a32c6affb8f"
+since = "1.2"

@@ -43,6 +43,7 @@ from shelfhold.export.application.remove_destination import (
 )
 from shelfhold.export.application.root_ref import RootRef
 from shelfhold.export.application.target_state import load_fingerprint
+from shelfhold.export.domain.progress_sync import can_sync_progress
 from shelfhold.export.targets.kavita.account_session import KavitaAccountSession
 from shelfhold.export.targets.kavita.collections import CollectionsSync
 from shelfhold.export.targets.kavita.errors import TargetError
@@ -165,6 +166,7 @@ class DetachOps:
 
         shelf = export.shelf
         destination = export.shelf_destination
+        target = export.export_target
         with self._comp.engine.connect() as connection:
             rows = connection.execute(
                 sa.select(
@@ -176,8 +178,14 @@ class DetachOps:
                     destination.c.transport,
                     destination.c.adopted,
                     destination.c.template,
+                    destination.c.sync_progress,
+                    target.c.kind.label("target_kind"),
                 )
-                .select_from(destination.join(shelf, destination.c.shelf_id == shelf.c.id))
+                .select_from(
+                    destination.join(shelf, destination.c.shelf_id == shelf.c.id).join(
+                        target, destination.c.target_id == target.c.id
+                    )
+                )
                 .order_by(destination.c.id)
             ).all()
         count = self._flagged_names
@@ -211,6 +219,9 @@ class DetachOps:
                     "flagged_names": flagged,
                     "flagged_reason": reason,  # why there is no count: the screen says it
                     "template": template,
+                    "target_kind": row.target_kind,
+                    "sync_progress": bool(row.sync_progress),  # M4 L46: the switch of the binding
+                    "can_sync_progress": can_sync_progress(row.target_kind),
                 }
             )
         return items

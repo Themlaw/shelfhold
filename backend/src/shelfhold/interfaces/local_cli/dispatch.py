@@ -164,6 +164,7 @@ def _device_tokens_create(auth: LocalAuth, by: Principal, params: Params) -> obj
         subject_username=str(_text(params, "subject")),
         name=_text(params, "name", required=False),
         expires_days=_days(params),
+        kind=_text(params, "kind", required=False),
         by=by,
     )
     return {
@@ -171,7 +172,25 @@ def _device_tokens_create(auth: LocalAuth, by: Principal, params: Params) -> obj
         "secret": created.secret,  # the one time it leaves: the caller prints it once
         "subject_user_id": created.subject_user_id,
         "expires_at": _iso(created.expires_at),
+        "device_id": created.device_id,
     }
+
+
+def _device_tokens_rotate(auth: LocalAuth, by: Principal, params: Params) -> object:
+    rotated = auth.rotate_device(str(_text(params, "device_id")), by=by, expires_days=_days(params))
+    if rotated is None:
+        return None
+    return {
+        "public_id": rotated.public_id,
+        "secret": rotated.secret,  # the one time it leaves: the caller prints it once
+        "subject_user_id": rotated.subject_user_id,
+        "expires_at": _iso(rotated.expires_at),
+        "device_id": rotated.device_id,
+    }
+
+
+def _devices_remove(auth: LocalAuth, by: Principal, params: Params) -> object:
+    return auth.retire_device(str(_text(params, "device_id")), by=by)
 
 
 def _device_tokens_revoke(auth: LocalAuth, by: Principal, params: Params) -> object:
@@ -182,6 +201,7 @@ def _device_tokens_list(auth: LocalAuth, _by: Principal, _params: Params) -> obj
     return [
         {
             "public_id": token.public_id,
+            "device_id": token.device_id,
             "profile": token.subject.username,
             "name": token.name,
             "created_at": _iso(token.created_at),
@@ -284,6 +304,8 @@ METHODS: Mapping[str, tuple[Method, str | None]] = {
     "identity.device_tokens_create": (_device_tokens_create, "device_token.manage"),
     "identity.device_tokens_revoke": (_device_tokens_revoke, "device_token.manage"),
     "identity.device_tokens_list": (_device_tokens_list, None),
+    "identity.device_tokens_rotate": (_device_tokens_rotate, "device_token.rotate"),  # M5 L02
+    "identity.devices_remove": (_devices_remove, "device.remove"),  # M5 L02
     "identity.profile_add": (_profile_add, "profile.create"),
     "identity.profile_list": (_profile_list, None),
     "identity.profile_set": (_profile_set, "profile.update"),
@@ -385,6 +407,37 @@ def _target_add(admin: HeadlessAdmin, params: Params) -> object:
             "key_expires_at": _plain(added.key_expires_at)}  # fmt: skip
 
 
+def _target_add_komga(admin: HeadlessAdmin, params: Params) -> object:
+    path_map = params.get("path_map")
+    added = admin.target_add_komga(
+        name=str(_text(params, "name")),
+        url=str(_text(params, "url")),
+        api_key=str(_text(params, "api_key")),
+        path_map=path_map if isinstance(path_map, list) else None,
+        actor=_actor(params),
+    )
+    return {"id": added.id, "name": added.name, "created": added.created}
+
+
+def _target_add_cwa(admin: HeadlessAdmin, params: Params) -> object:
+    path_map = params.get("path_map")
+    added = admin.target_add_cwa(
+        name=str(_text(params, "name")),
+        path_map=path_map if isinstance(path_map, list) else None,
+        actor=_actor(params),
+    )
+    return {"id": added.id, "name": added.name, "created": added.created}
+
+
+def _destination_sync_progress(admin: HeadlessAdmin, params: Params) -> object:
+    done = admin.destination_sync_progress(
+        destination_id=str(_text(params, "destination_id")),
+        enabled=_flag(params, "enabled"),
+        actor=_actor(params),
+    )
+    return {"destination_id": done.destination_id, "sync_progress": done.sync_progress}
+
+
 def _source_add(admin: HeadlessAdmin, params: Params) -> object:
     if params.get("kind", "suwayomi") != "suwayomi":
         raise _invalid("kind", "suwayomi")
@@ -429,6 +482,9 @@ HEADLESS_METHODS: Mapping[str, tuple[HeadlessMethod, str | None]] = {
     "config.set": (_config_set, None),
     "config.apply": (_config_apply, None),
     "target.add": (_target_add, "admin_risk.accept"),
+    "target.add_komga": (_target_add_komga, "target.add_komga"),  # M4 L46: a secret
+    "target.add_cwa": (_target_add_cwa, "config.path_map"),  # M4 L46: which folders are written
+    "destination.sync_progress": (_destination_sync_progress, "destination.sync_progress"),
     "source.add": (_source_add, "source.set_secret"),
     "source.confirm_roles": (_source_confirm_roles, "source.set_secret"),
     "shelf.create": (_shelf_create, "shelf.max_age_rating"),

@@ -8,6 +8,7 @@ asks for SQL, and no secret is written anywhere but sealed: not in a log, a plan
 
 from __future__ import annotations
 
+import hmac
 import json
 import os
 from collections.abc import Callable, Mapping
@@ -43,6 +44,7 @@ from shelfhold.export.domain.bindings import (
 )
 from shelfhold.export.domain.kavita_key_expiry import KeyNoticeState
 from shelfhold.export.domain.path_map import PathEntry, PathMap, PathMapError, PathMode, within
+from shelfhold.export.domain.progress_sync import can_sync_progress
 from shelfhold.export.domain.reconcile import (
     CEILING_MISSING,
     FLOOR_MISSING,
@@ -50,6 +52,7 @@ from shelfhold.export.domain.reconcile import (
     Thresholds,
 )
 from shelfhold.export.targets.kavita import AdminKey, load_admin_key, store_admin_key
+from shelfhold.export.targets.komga.credentials import KomgaKey, load_komga_key, store_komga_key
 from shelfhold.headless import records
 from shelfhold.headless.actor import Actor
 from shelfhold.headless.desired import (
@@ -62,6 +65,7 @@ from shelfhold.headless.desired import (
 from shelfhold.headless.errors import (
     AdminRiskNotAccepted,
     ConfigFileError,
+    DestinationCannotSync,
     DestinationNotWritable,
     InvalidConfigValue,
     ReadOnlyConfigKey,
@@ -86,6 +90,7 @@ from shelfhold.headless.keys import (
 from shelfhold.headless.ports import (
     ChannelValidator,
     KavitaKeyExchange,
+    KomgaProbe,
     ShelfLinkPort,
     SuwayomiProbe,
 )
@@ -99,7 +104,7 @@ from shelfhold.infrastructure.secrets.vault import SecretVault
 from shelfhold.integrations.apprise.channels import ChannelStore
 from shelfhold.integrations.apprise.destination import ValidatedChannel
 
-__all__ = ["ConfigValue", "HeadlessAdmin", "Plan", "PlanChange"]
+__all__ = ["ConfigValue", "HeadlessAdmin", "Plan", "PlanChange", "SyncProgressSet"]
 
 KEY_NAME = "shelfhold"
 KEY_DAYS = 90  # the Kavita key expires; `target.key_expiring` warns at 14 and 1 days
@@ -137,6 +142,12 @@ class TargetAdded:
     name: str
     created: bool
     key_expires_at: datetime | None = None
+
+
+@dataclass(frozen=True)
+class SyncProgressSet:
+    destination_id: str
+    sync_progress: bool
 
 
 @dataclass(frozen=True)
@@ -288,7 +299,9 @@ class HeadlessAdmin:
         resolve: Callable[[], ResolvedSettings] | None = None,
         roots: RootPolicy | None = None,
         linker: ShelfLinkPort | None = None,
+        komga: KomgaProbe | None = None,
     ) -> None:
+        self._komga = komga
         self._engine = engine
         self._vault = vault
         self._clock = clock
@@ -552,7 +565,7 @@ class HeadlessAdmin:
             if existing.kind != "kavita" or existing.config.get("url") != clean_url:
                 raise TargetConflict(f"a target named {name!r} exists with another address")
             if path_map is not None and _normalise_path_map(list(existing.path_map)) != entries:
-                self._set_path_map(PATH_MAP_PREFIX + name, json.dumps(entries))
+                self._remap_audited(name, entries, actor)
             self._bootstrap()
             return TargetAdded(existing.id, name, False)
         if not accept_admin_risk:  # before anything leaves: the warning is the whole answer
@@ -594,7 +607,7 @@ class HeadlessAdmin:
         self._bootstrap()
         return TargetAdded(target_id, name, True, exchanged.expires_at)
 
-    # -- target add native-folder (EF-EXP-010) -------------------------------------------------
+    # -- target add native-folder (EF-EXP-010), target add cwa (EF-EXP-022) --------------------
 
     def target_add_native_folder(
         self, *, name: str, path_map: PathMapSpec, actor: Actor | None = None
@@ -603,34 +616,167 @@ class HeadlessAdmin:
         folders it writes, which must be writable roots, and which never meet the local source of
         Suwayomi (`RootGuard`: refused with `target.root_overlaps_local_source`). Idempotent by
         name; a name that is another kind of target is a conflict."""
+        return self._add_folder_target(
+            "native_folder", "target.add_native_folder", name, path_map, actor
+        )
+
+    def target_add_cwa(
+        self, *, name: str, path_map: PathMapSpec | None, actor: Actor | None = None
+    ) -> TargetAdded:
+        """The drop box of a Calibre-Web Automated: a folder it watches, takes a finished EPUB
+        from and empties. Like a native folder: no server, no key, writable folders, never the
+        local source of Suwayomi."""
+        if path_map is None:
+            raise InvalidConfigValue("a drop box needs the folder it writes: give a path map")
+        return self._add_folder_target("cwa", "target.add_cwa", name, path_map, actor)
+
+    def _add_folder_target(
+        self, kind: str, action: str, name: str, path_map: PathMapSpec, actor: Actor | None
+    ) -> TargetAdded:
         entries = _normalise_path_map(path_map)
         if not entries or any(e["mode"] != PathMode.RW.value for e in entries):
-            raise InvalidConfigValue("a native folder is written: give it rw folders")
+            raise InvalidConfigValue("this destination is written: give it rw folders")
         self._check_roots(entries)
         with self._engine.connect() as connection:
             existing = records.target_named(connection, name)
         if existing is not None:
-            if existing.kind != "native_folder":
-                raise TargetConflict(f"a target named {name!r} exists and is not a native folder")
+            if existing.kind != kind:
+                raise TargetConflict(f"a target named {name!r} exists and is not of this kind")
             return TargetAdded(existing.id, name, False)
         target_id = new_ulid()
         guard = RootGuard()
         with write_transaction(self._engine) as connection:
             for entry in entries:  # the local source of Suwayomi may be neither held nor covered
                 guard.check_root(connection, entry["local"])
-            records.insert_native_folder_target(
-                connection, target_id=target_id, name=name, path_map=entries
+            records.insert_folder_target(
+                connection, kind=kind, target_id=target_id, name=name, path_map=entries
             )
             records.insert_audit(
                 connection, audit_id=new_ulid(), actor_id=actor.actor_id if actor else None,
-                action="target.add_native_folder",
+                action=action,
                 target=name if actor else f"{name} uid={os.getuid()}",
                 at=self._clock.now(), session_id=actor.session_id if actor else None,
                 auth_time=actor.auth_time if actor else None,
             )  # fmt: skip
-        _log.info("headless.target_added", kind="native_folder", name=name)
+        _log.info("headless.target_added", kind=kind, name=name)
         self._bootstrap()
         return TargetAdded(target_id, name, True)
+
+    # -- target add komga (EF-EXP-020) ----------------------------------------------------------
+
+    def target_add_komga(
+        self,
+        *,
+        name: str,
+        url: str,
+        api_key: str,
+        path_map: PathMapSpec | None = None,
+        actor: Actor | None = None,
+    ) -> TargetAdded:
+        """A Komga with the API key of a dedicated administrator account (scan and `empty-trash`
+        need that role). The address goes through the guarded Fetcher; the key is shown to Komga
+        once (`/actuator/info`), sealed in the row of its target and never read back. Idempotent
+        by name and address."""
+        if not api_key or not api_key.strip():
+            raise InvalidConfigValue("the Komga key is empty")
+        clean_url = _service_url(url, "the Komga address")
+        entries = (
+            _normalise_path_map(path_map) if path_map is not None else self._default_path_map()
+        )
+        self._check_roots(entries)  # before the key leaves or anything is stored
+        with self._engine.connect() as connection:
+            existing = records.target_named(connection, name)
+        if existing is not None:
+            if existing.kind != "komga" or existing.config.get("url") != clean_url:
+                raise TargetConflict(f"a target named {name!r} exists with another address")
+            if self._komga is None:
+                raise TargetExchangeFailed("this instance cannot reach a Komga")
+            with self._engine.connect() as connection:
+                sealed = load_komga_key(self._vault, connection, existing.id).reveal()
+            rotated = not hmac.compare_digest(sealed.encode(), api_key.encode())
+            if rotated:  # a new key: shown to Komga first, then sealed in place of the old one
+                self._komga.probe(url=clean_url, api_key=api_key)
+                with write_transaction(self._engine) as connection:
+                    registry.register_active_key(connection, self._vault.keyring)
+                    store_komga_key(self._vault, connection, existing.id, KomgaKey(api_key))
+                    records.insert_audit(
+                        connection, audit_id=new_ulid(),
+                        actor_id=actor.actor_id if actor else None,
+                        action="target.rotate_komga_key",
+                        target=name if actor else f"{name} uid={os.getuid()}",
+                        at=self._clock.now(), session_id=actor.session_id if actor else None,
+                        auth_time=actor.auth_time if actor else None,
+                    )  # fmt: skip
+            if path_map is not None and _normalise_path_map(list(existing.path_map)) != entries:
+                self._remap_audited(name, entries, actor)
+            self._bootstrap()
+            return TargetAdded(existing.id, name, False)
+        if self._komga is None:
+            raise TargetExchangeFailed("this instance cannot reach a Komga")
+        probed = self._komga.probe(url=clean_url, api_key=api_key)
+        target_id = new_ulid()
+        with write_transaction(self._engine) as connection:
+            records.insert_komga_target(
+                connection, target_id=target_id, name=name, config={"url": clean_url},
+                path_map=entries, version_seen=probed.version,
+            )  # fmt: skip
+            registry.register_active_key(connection, self._vault.keyring)
+            store_komga_key(self._vault, connection, target_id, KomgaKey(api_key))
+            records.insert_audit(
+                connection, audit_id=new_ulid(), actor_id=actor.actor_id if actor else None,
+                action="target.add_komga",
+                target=name if actor else f"{name} uid={os.getuid()}",
+                at=self._clock.now(), session_id=actor.session_id if actor else None,
+                auth_time=actor.auth_time if actor else None,
+            )  # fmt: skip
+        _log.info("headless.target_added", kind="komga", name=name, url=clean_url)
+        self._bootstrap()
+        return TargetAdded(target_id, name, True)
+
+    # -- the progress switch of a binding (EF-LEC-014) ------------------------------------------
+
+    def destination_sync_progress(
+        self, *, destination_id: str, enabled: bool, actor: Actor | None = None
+    ) -> SyncProgressSet:
+        """Turn the progress sync of one binding on or off. Only a destination that keeps a reading
+        position per account can take it (`destination.sync_unsupported` otherwise); turning it
+        off is always allowed. A change is journaled (`destination.sync_progress`, `<id> on|off`),
+        a repeat is not."""
+        with write_transaction(self._engine) as connection:
+            row = records.destination_row(connection, destination_id)
+            if row is None:
+                raise UnknownTarget("no such destination")
+            if enabled and not can_sync_progress(row.kind):
+                raise DestinationCannotSync(
+                    f"a {row.kind} destination keeps no reading position: nothing to synchronise"
+                )
+            if bool(row.sync_progress) != enabled:
+                records.set_sync_progress(connection, destination_id, enabled)
+                records.insert_audit(
+                    connection, audit_id=new_ulid(),
+                    actor_id=actor.actor_id if actor else None,
+                    action="destination.sync_progress",
+                    target=f"{destination_id} {'on' if enabled else 'off'}"
+                    + ("" if actor else f" uid={os.getuid()}"),
+                    at=self._clock.now(), session_id=actor.session_id if actor else None,
+                    auth_time=actor.auth_time if actor else None,
+                )  # fmt: skip
+        _log.info("headless.sync_progress", destination=destination_id, enabled=enabled)
+        self._wake()
+        return SyncProgressSet(destination_id, enabled)
+
+    def _remap_audited(self, name: str, entries: PathMapSpec, actor: Actor | None) -> None:
+        """A door that adds a target may find it there and change its folders: that is the action
+        `config.path_map`, and it leaves its line like it (the guard of these doors writes none)."""
+        self._set_path_map(PATH_MAP_PREFIX + name, json.dumps(entries))
+        with write_transaction(self._engine) as connection:
+            records.insert_audit(
+                connection, audit_id=new_ulid(), actor_id=actor.actor_id if actor else None,
+                action="config.path_map",
+                target=name if actor else f"{name} uid={os.getuid()}",
+                at=self._clock.now(), session_id=actor.session_id if actor else None,
+                auth_time=actor.auth_time if actor else None,
+            )  # fmt: skip
 
     def _audit_admin_risk(self, connection: Connection, name: str, actor: Actor | None) -> None:
         """One row in the same transaction as the target: no accepted risk without its trace."""
@@ -922,11 +1068,13 @@ class HeadlessAdmin:
         try:
             self._bootstrap()  # the folder of the shelf lives under a registered root
             self._make_folder(destination_id)
-            if self._linker is not None:
+            if target_row.kind == "kavita" and self._linker is not None:
+                # only a Kavita target has a library to link: a Komga or a folder target would
+                # open no client at all
                 self._linker.link(target_row.id, destination_id, library_name=name)
         except Exception:
             self._unbind(shelf_id, destination_id, shelf_was_new=shelf is None)
-            raise
+            raise  # the empty folder `_make_folder` made stays: deleting is fsops' alone
         _log.info("headless.shelf_created", name=name, target=target)
         return ShelfCreated(shelf_id, destination_id, True)
 

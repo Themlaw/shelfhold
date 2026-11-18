@@ -3,10 +3,11 @@
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any, Protocol
+from typing import Any, Literal, Protocol
 
 from shelfhold.i18n import DEFAULT_LANGUAGE
 from shelfhold.identity.application.sessions import SessionView
+from shelfhold.identity.domain.device import Device
 
 
 @dataclass(frozen=True)
@@ -110,6 +111,9 @@ class NewApiKey:
     issued_by: str | None = None
 
 
+RotationOutcome = Literal["rotated", "gone", "conflict", "expired"]
+
+
 @dataclass(frozen=True)
 class DeviceTokenRecord:
     """A device token as stored. `secret_digest` verifies a secret and is never shown: it is out
@@ -125,10 +129,24 @@ class DeviceTokenRecord:
     last_used_at: datetime | None
     revoked_at: datetime | None
     secret_digest: str = field(repr=False, default="")
+    device_id: str | None = None  # M5 L02: every token is paired to a device
+    device_revoked_at: datetime | None = None  # its device, retired: the token opens nothing
 
     @property
     def profile(self) -> str:
         return self.subject.username
+
+
+@dataclass(frozen=True)
+class DeviceRecord:
+    """A device with the profile it reads as and what its live token shows of itself: the public
+    identifier and the expiry, never the digest."""
+
+    device: Device
+    subject: UserRecord
+    public_id: str | None
+    expires_at: datetime | None
+    secret_digest: str = field(repr=False, default="")  # what a rotation compares and swaps
 
 
 @dataclass(frozen=True)
@@ -141,6 +159,8 @@ class NewDeviceToken:
     secret_digest: str = field(repr=False)
     now: datetime
     expires_at: datetime | None
+    device_id: str = ""  # the device made with it (a pairing makes one)
+    kind: str = "other"
 
 
 @dataclass(frozen=True)
@@ -378,6 +398,19 @@ class IdentityStore(Protocol):
     def device_tokens(self) -> Sequence[DeviceTokenRecord]: ...
     def touch_device_token(self, token_id: str, *, now: datetime) -> None: ...
     def revoke_device_token(self, public_id: str, *, now: datetime) -> bool: ...
+    def devices(self, subject_user_id: str | None = None) -> Sequence[DeviceRecord]: ...
+    def device_by_id(self, device_id: str) -> DeviceRecord | None: ...
+    def rotate_device_secret(
+        self,
+        device_id: str,
+        *,
+        expected_digest: str,
+        secret_digest: str,
+        expires_at: datetime | None,
+        now: Callable[[], datetime],
+        audit: AuditEntry,
+    ) -> RotationOutcome: ...
+    def retire_device(self, device_id: str, *, now: datetime, audit: AuditEntry) -> bool: ...
     def insert_api_key(self, key: NewApiKey) -> None: ...
     def api_key_by_prefix(self, prefix: str) -> ApiKeyRecord | None: ...
     def api_keys(self) -> Sequence[ApiKeyRecord]: ...

@@ -266,6 +266,8 @@ FRESHNESS_LINE = {
             "secrets.import",
             "source.set_secret",
             "target.rotate_key",
+            "target.add_komga",  # M4 L46: the key of a Komga administrator is handed over
+            "destination.sync_progress",  # M4 L46: what each profile read goes to the server
             "tombstone.lift",
             "tombstone.list",
             "tombstone.accept_lost_keyring",
@@ -313,6 +315,7 @@ FRESHNESS_LINE = {
             "destination_account.bind",  # M4 L12: a member's Kavita key is a secret
             "notify.profile_destination",  # M4 L39: an Apprise URL with a token, sealed
             "device_token.issue",  # M4 L46b: the secret of an e-reader is shown once
+            "device_token.rotate",  # M5 L02: a new secret of an e-reader is shown once
         ),
         "p3",
     ),
@@ -338,6 +341,7 @@ FRESHNESS_LINE = {
             "keys.rotate",
             "keys.revoke",
             "device_token.manage",
+            "device.remove",  # M5 L02: retiring an e-reader ends all its tokens
             "passkey.revoke",
             "plugin.attest",  # D15: freshness only in the hardened profile
             "queue.control",  # M3 L13: reversible; freshness only in the hardened profile

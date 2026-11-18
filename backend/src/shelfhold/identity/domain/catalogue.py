@@ -38,6 +38,9 @@ _DECLARED = (
     _action("secrets.import", Effect.TOUCHES_SECRETS),
     _action("source.set_secret", Effect.TOUCHES_SECRETS),
     _action("target.rotate_key", Effect.TOUCHES_SECRETS),
+    # M4 L46 (EF-EXP-020): the API key of a dedicated Komga administrator is handed over once and
+    # sealed: fresh in every profile, never a key's
+    _action("target.add_komga", Effect.TOUCHES_SECRETS),
     # Tombstones and storage
     _action("tombstone.lift", Effect.TOUCHES_TOMBSTONES),
     _action("tombstone.list", Effect.TOUCHES_TOMBSTONES),
@@ -100,6 +103,10 @@ _DECLARED = (
     # notices go there, so it is handing over a secret (a URL with a token): fresh in every
     # profile, never a key's, never a child's
     _action("notify.profile_destination", Effect.TOUCHES_SECRETS),
+    # M4 L46 (EF-LEC-014): turning the progress sync of a binding on makes the server hold, and
+    # Shelfhold pull, what each profile has read there: instance data on the move, fresh, never a
+    # key's. Turning it off is the same action: one door, one audit line
+    _action("destination.sync_progress", Effect.MOVES_INSTANCE_DATA),
     # Parental control
     _action("shelf.max_age_rating", Effect.PARENTAL_CONTROL),
     _action("shelf.allowed_profiles", Effect.PARENTAL_CONTROL),
@@ -152,6 +159,11 @@ _DECLARED = (
     # M4 L46b: pairing an e-reader shows a new secret, once: a fresh session in every profile,
     # never a key or a token
     _action("device_token.issue", Effect.TOUCHES_SECRETS),
+    # M5 L02 (D19): a rotation shows a new secret, once, and refuses the old one at once: the same
+    # rule as pairing. Retiring a device ends every token it holds: the rule of the other
+    # credential actions (a fresh session in the hardened profile only), never a key or a token
+    _action("device_token.rotate", Effect.TOUCHES_SECRETS),
+    _action("device.remove", Effect.MANAGES_CREDENTIALS),
     # A passkey is a persistent way in: adding one needs a fresh proof in every profile (porteur,
     # 2026-11-11); retiring one keeps the rule of the other credential actions (hardened only)
     _action("passkey.register", Effect.ENROLS_PASSKEY),

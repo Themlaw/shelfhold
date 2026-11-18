@@ -95,6 +95,7 @@ EXCLUDED_TABLES: Final[Mapping[str, str]] = {
     "api_key": _CREDENTIAL, "webauthn_credential": _CREDENTIAL, "session": _CREDENTIAL,
     "secret_key": _CREDENTIAL, "export_target": _CREDENTIAL, "source_account": _CREDENTIAL,
     "destination_account": _CREDENTIAL, "device_token": _CREDENTIAL,
+    "device": _CREDENTIAL,  # M5 L02: the registry of the e-readers whose tokens stay behind
     "notify_destination": _CREDENTIAL,
     "source_secret": _CREDENTIAL, "source_config": _CREDENTIAL, "plugin_attestation": _CREDENTIAL,
     "provider_secret": _CREDENTIAL, "webhook_subscription": _CREDENTIAL,
@@ -468,8 +469,8 @@ def _keep(table: str, row: Mapping[str, Any], kept: _Kept) -> bool:
             )
         case "bundle_version" | "bundle_setting":
             return row["edition_id"] in kept.editions
-        case "document_alias":  # only those of a series block; the others are rebuilt
-            return row["export_item_id"] in kept.carriers
+        case "document_alias":  # those of every file kept: nothing rebuilds a first export's alias
+            return row["export_item_id"] in kept.export_items
         case "reading_position":
             carrier = {"export_item": kept.export_items, "content": kept.contents}.get(
                 row["carrier_type"]
@@ -484,6 +485,8 @@ def _repair(table: str, row: dict[str, Any], kept: _Kept) -> dict[str, Any]:
     was translated from, a Unit that hid a chapter, the Work that was purged."""
     if table == "edition" and row["translated_from_edition_id"] not in (None, *kept.editions):
         row["translated_from_edition_id"] = None
+    if table == "document_alias":
+        row["shelf_destination_id"] = None  # the binding does not travel; the alias outlives it
     if table == "source_migration":
         for column in ("replaces_binding_id", "binding_id"):
             if row[column] not in (None, *kept.bindings):

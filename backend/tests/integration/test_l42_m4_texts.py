@@ -68,6 +68,8 @@ def test_destinations_page_matches_the_code() -> None:
     # the doors that exist, one line each, as the code declares them
     assert "target add kavita" in text and "--accept-admin-risk" in text
     assert "/api/v1/targets/native-folder" in text
+    assert "target add komga" in text and "POST /api/v1/targets/komga" in text  # M4 L46
+    assert "target add cwa" in text and "POST /api/v1/targets/cwa" in text
     assert "POST /api/v1/shelves/{id}/destinations" in text  # the fan-out (L06a)
     assert "/api/v1/profiles/{id}/destination-accounts" in text  # the member keys (L12)
     assert "target remove" in text and "--keep-files" in text and "--delete-files" in text
@@ -89,7 +91,10 @@ def test_sync_page_matches_the_code() -> None:
     assert "GET /api/v1/sync-status" in text
     assert "renommage" in text  # the progress kept through a rename (L16)
     assert "kosync" in text
-    assert "pas encore disponible" in text  # no interface turns sync_progress on
+    assert "target sync-progress" in text  # M4 L46: the switch of a binding
+    assert "POST /api/v1/destinations/{id}/sync-progress" in text
+    assert "destination.sync_unsupported" in text
+    assert "pas encore disponible" in text  # sync with another destination than Kavita
     # the contract and the neighbouring pages
     assert "../reference/progress-sync.md" in text
     assert "../reference/read-state-push.md" in text and "[kosync.md](kosync.md)" in text

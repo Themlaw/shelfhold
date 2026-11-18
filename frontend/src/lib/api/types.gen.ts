@@ -1342,6 +1342,76 @@ export type DeviceConnectOut = {
 };
 
 /**
+ * DeviceList
+ */
+export type DeviceList = {
+    /**
+     * Items
+     */
+    items: Array<DeviceOut>;
+};
+
+/**
+ * DeviceOut
+ *
+ * What the registry shows of a device: never the secret, never what verifies it.
+ */
+export type DeviceOut = {
+    /**
+     * Created At
+     */
+    created_at: string;
+    /**
+     * Expires At
+     */
+    expires_at: string | null;
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Kind
+     */
+    kind: 'koreader' | 'kobo' | 'opds' | 'browser' | 'other';
+    /**
+     * Label
+     */
+    label: string | null;
+    /**
+     * Last Seen At
+     */
+    last_seen_at: string | null;
+    /**
+     * Public Id
+     */
+    public_id: string | null;
+    /**
+     * Revoked At
+     */
+    revoked_at: string | null;
+    /**
+     * Subject User Id
+     */
+    subject_user_id: string;
+    /**
+     * Subject Username
+     */
+    subject_username: string;
+};
+
+/**
+ * DeviceRotateIn
+ *
+ * Only a token past its expiry needs `expires_days`: a new secret would be refused as it is.
+ */
+export type DeviceRotateIn = {
+    /**
+     * Expires Days
+     */
+    expires_days?: number | null;
+};
+
+/**
  * DeviceSkippedOut
  *
  * A Kavita target left out, and why (`address_unusable`): the screen says so.
@@ -1445,6 +1515,10 @@ export type DeviceTokenPairIn = {
      */
     expires_days?: number | null;
     /**
+     * Kind
+     */
+    kind?: 'koreader' | 'kobo' | 'opds' | 'browser' | 'other' | null;
+    /**
      * Name
      */
     name?: string | null;
@@ -1460,6 +1534,10 @@ export type DeviceTokenPairIn = {
  * What is shown once. `secret` is typed as it is: no separator, case kept.
  */
 export type DeviceTokenPaired = {
+    /**
+     * Device Id
+     */
+    device_id: string;
     /**
      * Expires At
      */
@@ -2585,6 +2663,30 @@ export type KeyringOut = {
      * Waived
      */
     waived: Array<string>;
+};
+
+/**
+ * KomgaIn
+ */
+export type KomgaIn = {
+    /**
+     * Api Key
+     */
+    api_key: string;
+    /**
+     * Name
+     */
+    name: string;
+    /**
+     * Path Map
+     */
+    path_map?: Array<{
+        [key: string]: string;
+    }> | null;
+    /**
+     * Url
+     */
+    url: string;
 };
 
 /**
@@ -5963,6 +6065,30 @@ export type SupportAuthorOut = {
      * Pause Suggestions
      */
     pause_suggestions: Array<string>;
+};
+
+/**
+ * SyncProgressIn
+ */
+export type SyncProgressIn = {
+    /**
+     * Enabled
+     */
+    enabled: boolean;
+};
+
+/**
+ * SyncProgressOut
+ */
+export type SyncProgressOut = {
+    /**
+     * Destination Id
+     */
+    destination_id: string;
+    /**
+     * Sync Progress
+     */
+    sync_progress: boolean;
 };
 
 /**
@@ -9737,6 +9863,44 @@ export type RemovalPreviewResponses = {
 
 export type RemovalPreviewResponse = RemovalPreviewResponses[keyof RemovalPreviewResponses];
 
+export type SyncProgressData = {
+    body: SyncProgressIn;
+    path: {
+        /**
+         * Destination Id
+         */
+        destination_id: string;
+    };
+    query?: never;
+    url: '/api/v1/destinations/{destination_id}/sync-progress';
+};
+
+export type SyncProgressErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type SyncProgressError = SyncProgressErrors[keyof SyncProgressErrors];
+
+export type SyncProgressResponses = {
+    /**
+     * Successful Response
+     */
+    200: SyncProgressOut;
+};
+
+export type SyncProgressResponse = SyncProgressResponses[keyof SyncProgressResponses];
+
 export type RestoreUpstreamData = {
     body: ShelfholdInterfacesHttpApiLibraryDetachIn;
     path?: never;
@@ -9911,6 +10075,44 @@ export type DeviceTokenRevokeResponses = {
 
 export type DeviceTokenRevokeResponse = DeviceTokenRevokeResponses[keyof DeviceTokenRevokeResponses];
 
+export type DeviceListData = {
+    body?: never;
+    path?: never;
+    query?: {
+        /**
+         * Subject User Id
+         */
+        subject_user_id?: string | null;
+    };
+    url: '/api/v1/devices';
+};
+
+export type DeviceListErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type DeviceListError = DeviceListErrors[keyof DeviceListErrors];
+
+export type DeviceListResponses = {
+    /**
+     * Successful Response
+     */
+    200: DeviceList;
+};
+
+export type DeviceListResponse = DeviceListResponses[keyof DeviceListResponses];
+
 export type DeviceConnectData = {
     body?: never;
     path?: never;
@@ -9943,6 +10145,85 @@ export type DeviceConnectResponses = {
 };
 
 export type DeviceConnectResponse = DeviceConnectResponses[keyof DeviceConnectResponses];
+
+export type DeviceRemoveData = {
+    body?: never;
+    path: {
+        /**
+         * Device Id
+         */
+        device_id: string;
+    };
+    query?: never;
+    url: '/api/v1/devices/{device_id}';
+};
+
+export type DeviceRemoveErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type DeviceRemoveError = DeviceRemoveErrors[keyof DeviceRemoveErrors];
+
+export type DeviceRemoveResponses = {
+    /**
+     * Successful Response
+     */
+    204: void;
+};
+
+export type DeviceRemoveResponse = DeviceRemoveResponses[keyof DeviceRemoveResponses];
+
+export type DeviceRotateData = {
+    /**
+     * Body
+     */
+    body?: DeviceRotateIn | null;
+    path: {
+        /**
+         * Device Id
+         */
+        device_id: string;
+    };
+    query?: never;
+    url: '/api/v1/devices/{device_id}/rotate';
+};
+
+export type DeviceRotateErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type DeviceRotateError = DeviceRotateErrors[keyof DeviceRotateErrors];
+
+export type DeviceRotateResponses = {
+    /**
+     * Successful Response
+     */
+    200: DeviceTokenPaired;
+};
+
+export type DeviceRotateResponse = DeviceRotateResponses[keyof DeviceRotateResponses];
 
 export type DiagnosticBundleDownloadData = {
     body?: never;
@@ -16239,6 +16520,72 @@ export type AddTargetResponses = {
 };
 
 export type AddTargetResponse = AddTargetResponses[keyof AddTargetResponses];
+
+export type AddCwaData = {
+    body: NativeFolderIn;
+    path?: never;
+    query?: never;
+    url: '/api/v1/targets/cwa';
+};
+
+export type AddCwaErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type AddCwaError = AddCwaErrors[keyof AddCwaErrors];
+
+export type AddCwaResponses = {
+    /**
+     * Successful Response
+     */
+    201: Created;
+};
+
+export type AddCwaResponse = AddCwaResponses[keyof AddCwaResponses];
+
+export type AddKomgaData = {
+    body: KomgaIn;
+    path?: never;
+    query?: never;
+    url: '/api/v1/targets/komga';
+};
+
+export type AddKomgaErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type AddKomgaError = AddKomgaErrors[keyof AddKomgaErrors];
+
+export type AddKomgaResponses = {
+    /**
+     * Successful Response
+     */
+    201: Created;
+};
+
+export type AddKomgaResponse = AddKomgaResponses[keyof AddKomgaResponses];
 
 export type AddNativeFolderData = {
     body: NativeFolderIn;

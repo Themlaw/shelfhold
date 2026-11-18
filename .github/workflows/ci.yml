@@ -44,7 +44,7 @@ jobs:
     env:
       # The only place where the number of shards is defined (see CONTRIBUTING.md).
       BACKEND_SHARDS: "4"
-      BACKEND_INTEGRATION_SHARDS: "7"
+      BACKEND_INTEGRATION_SHARDS: "8"
       E2E_SHARDS: "2"
     steps:
       - id: shards
@@ -200,10 +200,10 @@ jobs:
       - name: typos
         id: typos-first
         continue-on-error: true  # the action downloads its binary from a release: one more try below
-        uses: crate-ci/typos@4c8b7f51ca60df14e3c5ca82770dfbbe6c3dae85 # v1.52.0
+        uses: crate-ci/typos@276087d9a4f06398b3e04825487805e2d7375888 # v1.52.2
       - name: typos (second try; a real finding fails it again)
         if: steps.typos-first.outcome == 'failure'
-        uses: crate-ci/typos@4c8b7f51ca60df14e3c5ca82770dfbbe6c3dae85 # v1.52.0
+        uses: crate-ci/typos@276087d9a4f06398b3e04825487805e2d7375888 # v1.52.2
       - name: actionlint
         working-directory: backend
         run: uv run --locked actionlint ../.github/workflows/*.yml
@@ -296,7 +296,7 @@ jobs:
     permissions:
       pull-requests: read
     steps:
-      - uses: amannn/action-semantic-pull-request@48f256284bd46cdaab1048c3721360e808335d50 # v6.1.1
+      - uses: amannn/action-semantic-pull-request@2252a14e810aa9b85c2d560bd7070c802206ecf6 # v6.1.2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -762,7 +762,7 @@ jobs:
           category: grype
 
   traceability:
-    # Blocking for every delivered milestone (M0, M1a, M1b, M2, M3), report only for M4: every requirement of the milestone has a test, every test has a marker.
+    # Blocking for every delivered milestone (M0, M1a, M1b, M2, M3, M4), report only for M5: every requirement of the milestone has a test, every test has a marker.
     # The matrix is not committed: it is an artifact and the job summary.
     runs-on: ubuntu-24.04
     timeout-minutes: 10
@@ -772,18 +772,20 @@ jobs:
           persist-credentials: false
       # Every delivered milestone blocks (M2 and M3 since the closure of M3, L58). A requirement
       # moved to a later milestone by the maintainer (ENF-GOV-004, M4) leaves the matrix of the
-      # milestone it left, in 01 and 03: it is never hidden here. M4 is reported without blocking (until L45 of M4); M5 and later are not built yet.
+      # milestone it left, in 01 and 03: it is never hidden here. M4 blocks since its closure (L45
+      # of M4); M5 is reported without blocking (L25 of M5 makes it blocking at the closure); M6
+      # and later are not built yet.
       - name: Build the traceability matrix of every delivered milestone
         run: |
           set +e
           status=0
-          # M4 is built: it is reported in the summary and never fails the job (L45 of M4 makes it
+          # M5 is built: it is reported in the summary and never fails the job (L25 of M5 makes it
           # blocking at the closure).
-          for ms in M0 M1a M1b M2 M3 M4; do
+          for ms in M0 M1a M1b M2 M3 M4 M5; do
             python3 tools/traceability.py --milestone "$ms" --output "$RUNNER_TEMP/$ms.md" 2> "$RUNNER_TEMP/errors-$ms.txt"
             code=$?
-            if [ "$ms" = M4 ]; then
-              [ $code -eq 0 ] || echo "::warning::traceability M4 (report only): exit $code"
+            if [ "$ms" = M5 ]; then
+              [ $code -eq 0 ] || echo "::warning::traceability M5 (non-blocking report): exit $code"
             else
               [ $code -eq 0 ] || status=1
             fi

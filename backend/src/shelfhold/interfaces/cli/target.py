@@ -1,7 +1,9 @@
-"""``shelfhold target add kavita`` (EF-INT-024, ENF-SEC-013).
+"""``shelfhold target add kavita|komga|cwa`` and ``target sync-progress`` (EF-INT-024, ENF-SEC-013).
 
 The Kavita key is the key of an administrator account: the command stops on that warning until
-``--accept-admin-risk``. The account's password is read from a file or stdin, never from argv.
+``--accept-admin-risk``. The account's password is read from a file or stdin, never from argv. So
+is the API key of the Komga account (M4 L46); a CWA drop box has no secret, only its folders.
+`target sync-progress` turns the progress sync of a binding on or off.
 """
 
 from __future__ import annotations
@@ -37,6 +39,17 @@ def register(commands: argparse._SubParsersAction[argparse.ArgumentParser]) -> N
     kavita.add_argument("--accept-admin-risk", action="store_true",
                         help=t("cli.target_accept_risk_help"))  # fmt: skip
     kavita.set_defaults(handler=run_add_kavita, configure_logging=False)
+    komga = kinds.add_parser("komga", help=t("cli.target_add_komga_help"), allow_abbrev=False)
+    komga.add_argument("--url", required=True, help=t("cli.target_komga_url_help"))
+    komga.add_argument("--password-file", "--api-key-file", dest="password_file", required=True,
+                       help=t("cli.target_key_file_help"))  # fmt: skip
+    komga.add_argument("--name", default="komga", help=t("cli.target_komga_name_help"))
+    komga.add_argument("--path-map", help=t("cli.target_path_map_help"))
+    komga.set_defaults(handler=run_add_komga, configure_logging=False)
+    cwa = kinds.add_parser("cwa", help=t("cli.target_add_cwa_help"), allow_abbrev=False)
+    cwa.add_argument("--name", default="cwa", help=t("cli.target_cwa_name_help"))
+    cwa.add_argument("--path-map", required=True, help=t("cli.target_cwa_path_map_help"))
+    cwa.set_defaults(handler=run_add_cwa, configure_logging=False)
     # the exits of EF-INT-023
     for name, handler, help_text in (
         ("recheck", run_recheck, t("ops.help_target_recheck")),
@@ -53,6 +66,13 @@ def register(commands: argparse._SubParsersAction[argparse.ArgumentParser]) -> N
     remove.add_argument("--confirm", default=None, help=t("removal.confirm_help"))
     remove.add_argument("--give-up", action="store_true", help=t("removal.give_up_help"))
     remove.set_defaults(handler=run_remove, configure_logging=False)
+    sync = actions.add_parser("sync-progress", help=t("cli.target_sync_progress_help"),
+                              allow_abbrev=False)  # fmt: skip
+    sync.add_argument("destination_id", help=t("cli.target_sync_destination_help"))
+    switch = sync.add_mutually_exclusive_group(required=True)
+    switch.add_argument("--on", action="store_true", help=t("cli.target_sync_on_help"))
+    switch.add_argument("--off", action="store_true", help=t("cli.target_sync_off_help"))
+    sync.set_defaults(handler=run_sync_progress, configure_logging=False)
     rotate = actions.add_parser("rotate-key", help=t("ops.help_target_rotate_key"),
                                 allow_abbrev=False)  # fmt: skip
     rotate.add_argument("target_id")
@@ -90,6 +110,61 @@ def _add(args: argparse.Namespace, commands: HeadlessCommands) -> int:
         print(t("headless.target_exists", name=added.name))
     if added.key_expires_at is not None:
         print(t("headless.key_expires", date=added.key_expires_at.date().isoformat()))
+    return 0
+
+
+def _path_map_of(args: argparse.Namespace) -> list[dict[str, str]] | str | None:
+    """The parsed map, None when absent, or the message of a map that is not JSON."""
+    if not args.path_map:
+        return None
+    try:
+        loaded = json.loads(args.path_map)
+    except ValueError:
+        return t("headless.path_map_invalid")
+    return loaded if isinstance(loaded, list) else t("headless.path_map_invalid")
+
+
+@headless_command
+def run_add_komga(args: argparse.Namespace, commands: HeadlessCommands) -> int:
+    try:
+        api_key = read_secret(args.password_file)
+    except (OSError, UnicodeDecodeError) as error:
+        return fail(t("headless.secret_unreadable", detail=error))
+    path_map = _path_map_of(args)
+    if isinstance(path_map, str):
+        return fail(path_map)
+    added = commands.target_add_komga(
+        name=args.name, url=args.url, api_key=api_key, path_map=path_map
+    )
+    if added.created:
+        print(t("headless.komga_added", name=added.name))
+    else:
+        print(t("headless.target_exists", name=added.name))
+    return 0
+
+
+@headless_command
+def run_add_cwa(args: argparse.Namespace, commands: HeadlessCommands) -> int:
+    path_map = _path_map_of(args)
+    if isinstance(path_map, str):
+        return fail(path_map)
+    added = commands.target_add_cwa(name=args.name, path_map=path_map)
+    if added.created:
+        print(t("headless.folder_added", name=added.name))
+    else:
+        print(t("headless.target_exists", name=added.name))
+    return 0
+
+
+@headless_command
+def run_sync_progress(args: argparse.Namespace, commands: HeadlessCommands) -> int:
+    done = commands.destination_sync_progress(
+        destination_id=args.destination_id, enabled=bool(args.on)
+    )
+    if done.sync_progress:
+        print(t("headless.sync_progress_on", destination=done.destination_id))
+    else:
+        print(t("headless.sync_progress_off", destination=done.destination_id))
     return 0
 
 

@@ -5,15 +5,16 @@
   // dropped when the person says they noted it, or leaves the screen.
   import { onDestroy, onMount } from 'svelte';
   import {
-    deviceTokenList,
+    deviceList,
+    deviceRemove,
+    deviceRotate,
     deviceTokenPair,
-    deviceTokenRevoke,
     deviceTokenSetup,
     listProfiles,
     me
   } from '#lib/api/index.ts';
   import type {
-    DeviceTokenOut,
+    DeviceOut,
     DeviceTokenSetup,
     ProfileOut
   } from '#lib/api/types.gen.ts';
@@ -21,7 +22,7 @@
   import ReauthPrompt from '#lib/components/ReauthPrompt.svelte';
   import { Guard } from '#lib/guard.svelte.ts';
   import { formatDateTime } from '#lib/i18n/format.ts';
-  import { t } from '#lib/i18n/index.ts';
+  import { t, type MessageKey } from '#lib/i18n/index.ts';
   import { webAddress } from '#lib/links.ts';
   import { csrfToken } from '#lib/passkeys.ts';
   import { isForbidden, needsReauth, needsSession } from '#lib/triage.ts';
@@ -30,11 +31,12 @@
 
   const guard = new Guard();
   let setup = $state<DeviceTokenSetup | null>(null);
-  let tokens = $state<DeviceTokenOut[]>([]);
+  let devices = $state<DeviceOut[]>([]);
   let profiles = $state<ProfileOut[]>([]);
   let role = $state('');
   let subject = $state('');
   let name = $state('');
+  let kind = $state<DeviceOut['kind']>('other');
   let shown = $state<{ publicId: string; secret: string } | null>(null);
   let message = $state('');
   let failed = $state(false);
@@ -44,6 +46,15 @@
   const origin = () => (typeof window === 'undefined' ? '' : window.location.origin);
   const opdsAddress = $derived(setup ? webAddress(origin() + setup.opds_path) : null);
   const kosyncAddress = $derived(setup ? webAddress(origin() + setup.kosync_path) : null);
+  const KINDS: Array<[DeviceOut['kind'], MessageKey]> = [
+    ['koreader', 'deviceTokens.kind_koreader'],
+    ['kobo', 'deviceTokens.kind_kobo'],
+    ['opds', 'deviceTokens.kind_opds'],
+    ['browser', 'deviceTokens.kind_browser'],
+    ['other', 'deviceTokens.kind_other']
+  ];
+  const kindName = (value: DeviceOut['kind']): MessageKey =>
+    KINDS.find(([id]) => id === value)?.[1] ?? 'deviceTokens.kind_other';
   const subjects = $derived(profiles.filter((p) => p.role !== 'admin'));
   const skewed = $derived(
     setup !== null && Math.abs(Date.now() - Date.parse(setup.server_time)) > CLOCK_SKEW_MS
@@ -54,11 +65,11 @@
       const [me_, setup_, list] = await Promise.all([
         me({ throwOnError: true }),
         deviceTokenSetup({ throwOnError: true }),
-        deviceTokenList({ throwOnError: true })
+        deviceList({ throwOnError: true })
       ]);
       role = me_.data.role;
       setup = setup_.data;
-      tokens = list.data.items;
+      devices = list.data.items;
       if (role === 'admin') {
         const found = await listProfiles({ throwOnError: true });
         profiles = found.data.items;
@@ -96,14 +107,15 @@
             headers: headers(),
             body: {
               name: name.trim() || null,
+              kind,
               subject_user_id: role === 'admin' ? subject : null
             },
             throwOnError: true
           });
           shown = { publicId: data.public_id, secret: data.secret };
           name = '';
-          const list = await deviceTokenList({ throwOnError: true });
-          tokens = list.data.items;
+          const list = await deviceList({ throwOnError: true });
+          devices = list.data.items;
         } catch (error) {
           said(error);
         }
@@ -113,17 +125,27 @@
     }
   }
 
-  async function revoke(token: DeviceTokenOut): Promise<void> {
+  /** A new secret on the same device: the old one is refused at once, nothing is paired again.
+   * The new one is shown once, as at pairing. */
+  async function rotate(device: DeviceOut): Promise<void> {
     await guard.run(async () => {
-      await deviceTokenRevoke({
+      const { data } = await deviceRotate({
         headers: headers(),
-        path: { public_id: token.public_id },
+        path: { device_id: device.id },
         throwOnError: true
       });
-      if (shown?.publicId === token.public_id) forget();
-      const list = await deviceTokenList({ throwOnError: true });
-      tokens = list.data.items;
-      message = t('deviceTokens.revoked', { id: token.public_id });
+      shown = { publicId: data.public_id, secret: data.secret };
+      message = t('deviceTokens.rotated', { name: device.label ?? device.public_id ?? '' });
+    });
+  }
+
+  async function remove(device: DeviceOut): Promise<void> {
+    await guard.run(async () => {
+      await deviceRemove({ headers: headers(), path: { device_id: device.id }, throwOnError: true });
+      if (shown?.publicId === device.public_id) forget();
+      const list = await deviceList({ throwOnError: true });
+      devices = list.data.items;
+      message = t('deviceTokens.removed', { name: device.label ?? device.public_id ?? '' });
     });
   }
 
@@ -227,6 +249,14 @@
           <p class="muted">{t('deviceTokens.admin_note')}</p>
         {/if}
         <label>
+          {t('deviceTokens.kind')}
+          <select bind:value={kind}>
+            {#each KINDS as [id, label] (id)}
+              <option value={id}>{t(label)}</option>
+            {/each}
+          </select>
+        </label>
+        <label>
           {t('deviceTokens.name')}
           <input type="text" bind:value={name} maxlength="80" autocomplete="off" />
         </label>
@@ -242,19 +272,30 @@
 
     <section aria-labelledby="list-title">
       <h2 id="list-title">{t('deviceTokens.list')}</h2>
-      {#if tokens.length === 0}
+      {#if devices.length === 0}
         <p>{t('deviceTokens.none')}</p>
       {:else}
         <ul class="tokens">
-          {#each tokens as token (token.public_id)}
+          {#each devices as device (device.id)}
             <li>
               <span>
-                <code>{token.public_id}</code>
-                {token.name ?? ''} · {token.subject_username}
+                <strong>{device.label ?? device.public_id ?? ''}</strong>
+                · {t(kindName(device.kind))} · {device.subject_username}
+                <br />
+                <span class="muted">
+                  {device.last_seen_at
+                    ? t('deviceTokens.last_seen', { time: formatDateTime(device.last_seen_at) })
+                    : t('deviceTokens.never_seen')}
+                </span>
               </span>
-              <button type="button" onclick={() => revoke(token)}>
-                {t('deviceTokens.revoke')}
-              </button>
+              <span class="actions">
+                <button type="button" onclick={() => rotate(device)}>
+                  {t('deviceTokens.rotate')}
+                </button>
+                <button type="button" onclick={() => remove(device)}>
+                  {t('deviceTokens.remove')}
+                </button>
+              </span>
             </li>
           {/each}
         </ul>
@@ -302,6 +343,10 @@
     margin: 0;
     padding: 0;
     display: grid;
+    gap: 0.5rem;
+  }
+  .actions {
+    display: flex;
     gap: 0.5rem;
   }
   .tokens li {

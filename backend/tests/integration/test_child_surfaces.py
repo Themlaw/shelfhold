@@ -202,6 +202,10 @@ CLOSED = (
     "POST /api/v1/device-tokens",
     "GET /api/v1/device-tokens/setup",
     "DELETE /api/v1/device-tokens/{public_id}",
+    # M5 L02: the registry of devices, its rotation and its removal: the same rule
+    "GET /api/v1/devices",
+    "POST /api/v1/devices/{device_id}/rotate",
+    "DELETE /api/v1/devices/{device_id}",
     "GET /api/v1/diagnostic/bundle",  # M3 L46: the bundle is the admin's alone
     "GET /api/v1/editions",
     "POST /api/v1/editions/{edition_id}/add-directly",
@@ -345,6 +349,9 @@ CLOSED = (
     "POST /api/v1/store/reinit",
     "POST /api/v1/targets",
     "POST /api/v1/targets/native-folder",  # M4 L07: a reserved action (config.path_map)
+    "POST /api/v1/targets/komga",  # M4 L46: a reserved action (target.add_komga)
+    "POST /api/v1/targets/cwa",  # M4 L46: a reserved action (config.path_map)
+    "POST /api/v1/destinations/{destination_id}/sync-progress",  # M4 L46: reserved
     "POST /api/v1/targets/{target_id}/recheck",
     "POST /api/v1/targets/{target_id}/reconnect",
     "POST /api/v1/targets/{target_id}/rotate-key",

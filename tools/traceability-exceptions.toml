@@ -61,8 +61,13 @@ reason = "porte P0 et règles d'arrêt documentées (portes.md), relevé de dép
 
 [[partial]]
 requirement = "EF-BIB-029"
-milestone = "M4"
-reason = "détection d'une migration Suwayomi et API livrées (test_m3_l21_suwayomi_migration.py) ; l'écran « Même œuvre ? » (proposition, plan de fusion ou de réaffectation) est reporté en M4 (L58 contradicteur M2)"
+milestone = "M5"
+reason = "détection d'une migration Suwayomi et API livrées (test_m3_l21_suwayomi_migration.py), migration complète de source avec table de correspondance et son écran (M4 L27) ; l'écran « Même œuvre ? » (proposition, plan de fusion ou de réaffectation) n'a eu aucune carte en M4 : redaté M5 par écrit le 2026-11-17 (M4 L43, dette de L58 contradicteur M2)"
+
+[[partial]]
+requirement = "EF-EXP-026"
+milestone = "relevé sur appareil"
+reason = "volet « progression lue dans Kover » (D-P5) : la CI prouve la synchronisation par les appels qu'écrit un client OPDS-PSE ou Kavita (L14b, parcours 2 de L44) et par les vecteurs de hash de KOReader (L13), jamais sur un appareil réel ; aucune lecture réelle sur liseuse n'a été faite au 2026-11-18. Soldé par le relevé du porteur : lire 3 pages dans Kover et vérifier « Où j'en suis » dans Shelfhold, puis l'inverse, sur une candidate ou une 1.1.x ; l'entrée est alors retirée. `v1.1.0` n'attend pas ce relevé."
 
 [[partial]]
 requirement = "EF-EXP-023"
@@ -116,6 +121,11 @@ path = "backend/tests/unit/test_production_reachability.py"
 reason = "garde de joignabilité des tests `req` (L58) : contrôle les tests, pas une exigence du produit"
 
 [[exception]]
+path = "backend/tests/integration/test_l00_m5_import_contracts.py"
+tests = ["test_allowlist_m5_entries_are_commented"]
+reason = "hygiène de la liste blanche de joignabilité (M5 L00) : chaque entrée `until = \"M5\"` porte son commentaire en ligne ; contrôle la garde, pas une exigence du produit"
+
+[[exception]]
 path = "backend/tests/unit/test_openapi_diff.py"
 reason = "règles de rupture de tools/openapi_diff.py (L58) : test de l'outil lui-même"
 
@@ -126,6 +136,14 @@ reason = "garde de l'hygiène des fixtures (aucun dossier laissé dans /tmp) : p
 [[exception]]
 path = "backend/tests/unit/test_sdk_export_target.py"
 reason = "dépréciations du contrat SDK ExportTarget (D9, M1b L31) : le contrat reste lisible, ce n'est pas une exigence EF-/ENF-"
+
+[[exception]]
+path = "backend/tests/integration/test_m4_l46_target_wiring_contradicteur.py"
+tests = [
+  "test_poc_a_path_map_change_through_the_komga_door_is_journaled",
+  "test_poc_a_new_key_for_an_existing_komga_is_not_silently_dropped",
+]
+reason = "PoC de la relecture adverse de #342 (L46), fichier figé par le contradicteur : les exigences du lot (EF-EXP-020, EF-EXP-022) sont prouvées par test_m4_l46_target_wiring.py"
 
 [[exception]]
 path = "backend/tests/unit/test_l05b_neutralizer_counter_review.py"
