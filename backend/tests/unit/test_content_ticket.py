@@ -19,8 +19,12 @@ NOW = datetime(2026, 11, 18, 9, 0, tzinfo=UTC)
 
 def claims(**kw: object) -> TicketClaims:
     base: dict[str, object] = {
-        "user_id": "U" * 26, "carrier_type": "content", "carrier_id": "C" * 26, "scope": "full",
-        "entries": None, "session_fp": session_fingerprint(KEY, "S" * 26),
+        "user_id": "U" * 26,
+        "carrier_type": "content",
+        "carrier_id": "C" * 26,
+        "scope": "full",
+        "entries": None,
+        "session_fp": session_fingerprint(KEY, "S" * 26),
         "expires_at": int((NOW + timedelta(seconds=TICKET_TTL_S)).timestamp()),
     }
     return TicketClaims(**{**base, **kw})  # type: ignore[arg-type]
@@ -57,12 +61,22 @@ def test_ticket_carries_scope_list_digest_and_session_fingerprint_not_the_sessio
 @pytest.mark.req("EF-LEC-005", "ENF-SEC-004")
 @pytest.mark.parametrize(
     ("name", "kind"),
-    [("a.png", "image/png"), ("a.JPG", "image/jpeg"), ("a.webp", "image/webp"),
-     ("a.css", "text/css"), ("a.woff2", "font/woff2"), ("a.xhtml", "application/xhtml+xml"),
-     ("a.svg", "image/svg+xml"), ("a.js", "application/octet-stream"),
-     ("a.mjs", "application/octet-stream"), ("a.wasm", "application/octet-stream"),
-     ("a.json", "application/octet-stream"), ("a", "application/octet-stream"),
-     ("a.png.js", "application/octet-stream"), ("a.js.png", "image/png")],
+    [
+        ("a.png", "image/png"),
+        ("a.JPG", "image/jpeg"),
+        ("a.webp", "image/webp"),
+        ("a.css", "text/css"),
+        ("a.woff2", "font/woff2"),
+        ("a.xhtml", "application/xhtml+xml"),
+        ("a.svg", "image/svg+xml"),
+        ("a.js", "application/octet-stream"),
+        ("a.mjs", "application/octet-stream"),
+        ("a.wasm", "application/octet-stream"),
+        ("a.json", "application/octet-stream"),
+        ("a", "application/octet-stream"),
+        ("a.png.js", "application/octet-stream"),
+        ("a.js.png", "image/png"),
+    ],
 )
 def test_media_type_comes_from_the_extension_only(name: str, kind: str) -> None:
     assert media_type_of(name) == kind
@@ -71,9 +85,20 @@ def test_media_type_comes_from_the_extension_only(name: str, kind: str) -> None:
 @pytest.mark.req("EF-LEC-005", "ENF-SEC-004")
 @pytest.mark.parametrize(
     ("name", "ok"),
-    [("OEBPS/ch1.xhtml", True), ("p1.png", True), ("../a", False), ("a/../b", False), ("/a", False),
-     ("a//b", False), ("a\\b", False), ("a\x00b", False), ("", False), ("a/", False),
-     ("./a", False), ("a/.", False)],
+    [
+        ("OEBPS/ch1.xhtml", True),
+        ("p1.png", True),
+        ("../a", False),
+        ("a/../b", False),
+        ("/a", False),
+        ("a//b", False),
+        ("a\\b", False),
+        ("a\x00b", False),
+        ("", False),
+        ("a/", False),
+        ("./a", False),
+        ("a/.", False),
+    ],
 )
 def test_safe_entry_is_a_plain_relative_name(name: str, ok: bool) -> None:
     assert safe_entry(name) is ok

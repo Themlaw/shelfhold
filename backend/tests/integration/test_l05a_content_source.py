@@ -36,7 +36,11 @@ def test_content_never_serves_untrusted_original() -> None:
             copies.open("content", row.id)
         # ... nor when there is no derivative recorded at all
         with env.engine.begin() as connection:
-            connection.execute(sa.update(storage.content).values(derived_hash=None))
+            connection.execute(
+                sa.update(storage.content).values(
+                    derived_hash=None, derived_by=None, derived_hash_by=None
+                )
+            )
         with pytest.raises(NoReadableCopyError):
             copies.open("content", row.id)
 
@@ -46,8 +50,11 @@ def test_export_item_resolves_to_its_content_and_absent_carriers_to_nothing() ->
     with lib_env() as env:
         _result, _library = ingest(env)
         copies = ReadableCopies(env.engine, lambda: env.fsops)
-        for carrier in (("content", "01HZZZZZZZZZZZZZZZZZZZZZZZ"), ("export_item", "01HZZZZZZZZZZZZZZZZZZZZZZZ"),
-                        ("other", content_row(env).id)):
+        for carrier in (
+            ("content", "01HZZZZZZZZZZZZZZZZZZZZZZZ"),
+            ("export_item", "01HZZZZZZZZZZZZZZZZZZZZZZZ"),
+            ("other", content_row(env).id),
+        ):
             with pytest.raises(NoReadableCopyError):
                 copies.open(*carrier)
 
@@ -58,7 +65,7 @@ def test_a_page_archive_is_read_from_its_library_copy() -> None:
 
     with export_env() as env:
         series = env.main_series()
-        unit = env.add_chapter(series, "1")
+        unit = env.add_chapter(series, "77")
         with env.engine.connect() as connection:
             content_id = connection.execute(
                 sa.select(storage.content.c.id).where(storage.content.c.unit_id == unit)

@@ -29519,6 +29519,59 @@
         ]
       }
     },
+    "/content/{ticket}/{path}": {
+      "get": {
+        "operationId": "content",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "ticket",
+            "required": true,
+            "schema": {
+              "title": "Ticket",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "path",
+            "required": true,
+            "schema": {
+              "title": "Path",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/octet-stream": {}
+            },
+            "description": "the entry"
+          },
+          "304": {
+            "description": "not-modified"
+          },
+          "404": {
+            "description": "not-found"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Détail du problème (RFC 9457)."
+          }
+        },
+        "summary": "Content",
+        "tags": [
+          "content"
+        ]
+      }
+    },
     "/healthz": {
       "get": {
         "operationId": "healthz",

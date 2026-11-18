@@ -52,8 +52,10 @@ class FakeArchives:
     def open(self, carrier_type: str, carrier_id: str) -> FakeArchive:
         from shelfhold.reading.application.content_access import NoReadableCopyError
 
-        content_id = self.item_content.get(carrier_id) if carrier_type == "export_item" else (
-            carrier_id if carrier_type == "content" else None
+        content_id = (
+            self.item_content.get(carrier_id)
+            if carrier_type == "export_item"
+            else (carrier_id if carrier_type == "content" else None)
         )
         if content_id is None or content_id not in self.by_content:
             raise NoReadableCopyError
@@ -83,7 +85,9 @@ def session_id_of(engine: sa.Engine, username: str) -> str:
             connection.execute(
                 sa.select(identity.session.c.id)
                 .join(identity.user, identity.user.c.id == identity.session.c.user_id)
-                .where(identity.user.c.username == username, identity.session.c.revoked_at.is_(None))
+                .where(
+                    identity.user.c.username == username, identity.session.c.revoked_at.is_(None)
+                )
                 .order_by(identity.session.c.created_at.desc())
             ).scalar_one()
         )

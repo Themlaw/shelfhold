@@ -38,14 +38,6 @@ symbols = [
 ]
 
 [[allow]]
-category = "unwired-m5"
-reason = "2026-11-14 (M3 L56, D9): `content_response` serves untrusted content under a sandbox (B1). M3 serves no content: reading goes through Kavita, and the reader of Shelfhold is M5's. Redated M5 in writing (docs/decisions/M3.md). The diagnostic bundle is wired by its CLI (M2 L30) and by its download over HTTP (M3 L46); `attachment_disposition` left this entry with M3 L40. The `?since=` tokens left this entry with M3 L11."
-until = "M5"
-symbols = [
-  "shelfhold.interfaces.http_api.content:content_response",
-]
-
-[[allow]]
 category = "unwired-m4-komga"
 reason = "2026-11-16 (M4 L08a): the Komga destination is described, tested against a fake and declared to the core (`KomgaDestination.capabilities`, read by `FirstPartyDestinations`), but nothing creates a Komga target yet and the export pass does not ask it for a scan: the card of L08a stops at the client and the destination. Its first callers are the creation of the target (key sealed by `store_komga_key`) and the scan relay of the pass, written down in docs/decisions/M4.md for the lot that wires them."
 until = "M4"  # settled by M4 lot L44 (Komga journey) or the lot that creates the target
@@ -90,14 +82,6 @@ tests = [
   "backend/tests/integration/test_review_pr41.py::test_idempotency_actor_is_one_credential",
   "backend/tests/unit/test_logging.py::test_unhandled_http_exception_and_library_logs_are_json_with_request_id",
   "backend/tests/integration/test_child_surfaces.py::test_meta_test_counts_mounts_and_websockets",
-]
-
-[[route_test]]
-category = "unwired-m5"
-reason = "2026-11-14 (M3 L56, D9): content_response (B1) has no route before the reader of M5: the sandbox/attachment headers are proved on a route declared by the test."
-until = "M5"
-tests = [
-  "backend/tests/integration/test_http_headers.py::test_svg_served_as_attachment_with_csp_sandbox",
 ]
 
 [[allow]]

@@ -34,6 +34,7 @@ from shelfhold.identity.application.preferences import PreferencesService
 from shelfhold.identity.public import PasskeyRecord, local_auth, reconcile_identity_counter
 from shelfhold.infrastructure.clock import Clock, SystemClock
 from shelfhold.infrastructure.db import create_db_engine, write_transaction
+from shelfhold.infrastructure.fsops import Fsops
 from shelfhold.infrastructure.health import HealthProbe
 from shelfhold.infrastructure.idempotency_store import IdempotencyStore
 from shelfhold.infrastructure.identity_counter import IdentityCounter
@@ -63,6 +64,7 @@ from shelfhold.interfaces.http_api.bundle_slices import build_bundle_slices_rout
 from shelfhold.interfaces.http_api.catalog_admin import build_catalog_admin_router
 from shelfhold.interfaces.http_api.catalog_lists import build_catalog_lists_router
 from shelfhold.interfaces.http_api.collections import build_collections_router
+from shelfhold.interfaces.http_api.content_routes import build_content_router
 from shelfhold.interfaces.http_api.destination_accounts import (
     build_destination_accounts_router,
 )
@@ -114,7 +116,7 @@ from shelfhold.interfaces.http_api.triage import build_triage_router
 from shelfhold.interfaces.http_api.webhooks import build_webhooks_router
 from shelfhold.interfaces.local_cli import IdentityDispatcher
 from shelfhold.jobs.mode import MaintenanceMode
-from shelfhold.library.public import ThumbnailService
+from shelfhold.library.public import ReadableCopies, ThumbnailService
 from shelfhold.ops import OpsServices
 from shelfhold.ops.activity_feed import kavita_open_url_of
 from shelfhold.ops.health import OpsHealth
@@ -124,6 +126,11 @@ from shelfhold.ops.wiring import open_ops
 from shelfhold.plugin_host.attestation import AttestationStore
 from shelfhold.plugin_host.public import PluginRegistry, installed_versions, start_plugins
 from shelfhold.plugin_host.settings import SettingsSchema, SourceSettings, parse_settings_schema
+from shelfhold.reading.application.content_access import (
+    ContentAccess,
+    ContentKey,
+    NoReadableCopyError,
+)
 from shelfhold.reading.bundle import SeriesBundles
 from shelfhold.reading.public import Kosync
 from shelfhold.runtime import RETAKE_INTERVAL_S, InstanceRuntime
@@ -325,6 +332,19 @@ def create_app(
         composition.plugins = lambda: plugins[0] if plugins else None
 
     @cache
+    def content_access() -> ContentAccess:  # M5 L05a: one, it holds the lists of the excerpts
+        def fsops() -> Fsops:
+            loaded = composition.load_roots()
+            if loaded is None:
+                raise NoReadableCopyError  # no library root: nothing to read
+            return composition.open_fsops(loaded)
+
+        return ContentAccess(
+            engine, ContentKey(composition.keyring).value, clock.now,
+            readable_copies(engine, fsops), content_origin=resolved.content_origin,
+        )  # fmt: skip
+
+    @cache
     def thumbnails() -> ThumbnailService:  # the session route and the OPDS one share it
         return ThumbnailService(engine, resolved.data_dir, clock)
 
@@ -434,6 +454,10 @@ def create_app(
         ),  # M3 L12 (EF-INT-002): typed SSE, one filter per reader
         build_thumbnails_router(  # M3 L24: a cover at 160/320/640, session only, authorised first
             lambda: engine, thumbnails
+        ),
+        build_content_router(  # M5 L05a: the bytes of a book, by ticket, sandboxed (EF-LEC-005)
+            content_access,
+            allowed_origin=_origin_of(resolved.public_url) if resolved.content_origin else None,
         ),
         build_opds_router(  # M4 L48: the e-reader's feed, behind a device token (ADR-0053)
             lambda: engine, thumbnails, bundles, clock.now
@@ -600,7 +624,7 @@ def create_app(
         async with local_cli_socket(), listeners.running():
             yield
 
-    return create_http_app(
+    app = create_http_app(
         health=health,
         on_startup=on_startup,
         on_shutdown=on_shutdown,
@@ -627,6 +651,23 @@ def create_app(
         device_allow_plain_http=resolved.device_allow_plain_http,
         maintenance_active=MaintenanceMode(engine, clock).probe,  # EF-INT-018
     )
+    app.state.content_access = content_access()  # the reader's server side issues tickets from it
+    return app
+
+
+def readable_copies(engine: sa.Engine, fsops: Callable[[], Fsops]) -> ReadableCopies:
+    """The archives `/content` may read (a seam: the tests of the route give their own)."""
+    return ReadableCopies(engine, fsops)
+
+
+def _origin_of(url: str | None) -> str | None:
+    """`scheme://host[:port]` of an address: what a browser sends as `Origin`."""
+    if not url:
+        return None
+    from urllib.parse import urlsplit
+
+    parts = urlsplit(url)
+    return f"{parts.scheme}://{parts.netloc}" if parts.scheme and parts.netloc else None
 
 
 def app_from_env() -> HttpApplication:

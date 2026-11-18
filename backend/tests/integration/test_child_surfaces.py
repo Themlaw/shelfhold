@@ -140,7 +140,7 @@ OPEN = {
     "GET /api/v1/works": "works_since",  # M3 L11: the list of Works and its `?since=` removals
     # M3 L24: a cover's thumbnail, by session only; hers when an Edition she may see points at it
     "GET /api/v1/thumbnails/{content_hash}/{size}": "thumbnail",
-    "GET /content/{ticket}/{path}": "content",  # M5 L05a: the bytes of a book, by ticket
+    "GET /content/{ticket}/{path:path}": "content",  # M5 L05a: the bytes of a book, by ticket
     # M4 L23: the official links of an Edition she may see; a hidden one is an absent one
     "GET /api/v1/editions/{edition_id}/support-author": "support_author",
     # M4 L18a: the collections and reading lists, made of the Works she may see and a list of her
@@ -1152,17 +1152,29 @@ def _surface_content(world: World) -> None:
     carrier she may not see; the ticket of an adult, shown by her, is an absent thing; a carrier
     reclassified under her own ticket is an absent thing at the next byte; and every refusal has
     the shape of the answer for a carrier that does not exist."""
-    from tests.content_env import PNG, FakeArchives, add_carrier, session_id_of, user_id_of
     from shelfhold.reading.public import UnknownCarrierError
+    from tests.content_env import PNG, FakeArchives, add_carrier, session_id_of, user_id_of
 
     seed = world.seed
     fake = FakeArchives()
     access = world.env.app.state.content_access  # type: ignore[attr-defined]
     access.archives = fake
     admin_id, kid_id = user_id_of(seed.engine, "admin"), user_id_of(seed.engine, "kid")
-    admin_session, kid_session = session_id_of(seed.engine, "admin"), session_id_of(seed.engine, "kid")
+    admin_session, kid_session = (
+        session_id_of(seed.engine, "admin"),
+        session_id_of(seed.engine, "kid"),
+    )
     carriers: dict[str, str] = {}
-    for key in ("ok", "mixed_rated", "twelve", "above", "adult_edition", "misfiled", "mixed_new", "reserved"):
+    for key in (
+        "ok",
+        "mixed_rated",
+        "twelve",
+        "above",
+        "adult_edition",
+        "misfiled",
+        "mixed_new",
+        "reserved",
+    ):
         carriers[key] = add_carrier(seed.engine, seed.editions[key], format="epub")
         fake.by_content[carriers[key]] = {"p1.png": PNG}
     absent = world.kid.get("/content/" + "A" * 80 + "/p1.png")
@@ -1182,7 +1194,9 @@ def _surface_content(world: World) -> None:
         else:
             with pytest.raises(UnknownCarrierError):
                 access.issue(
-                    user_id=kid_id, session_id=kid_session, carrier_type="content",
+                    user_id=kid_id,
+                    session_id=kid_session,
+                    carrier_type="content",
                     carrier_id=carrier,
                 )
     key = (

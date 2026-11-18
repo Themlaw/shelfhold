@@ -67,6 +67,11 @@ class Settings(BaseModel):
     # the secrets are 0600 by an explicit mode, whatever this says.
     umask: int = Field(default=0o022, ge=0, le=0o777)
     public_url: str | None = None
+    # M5 L05a (EF-LEC-005, ADR-0055 D-P2): a separate origin for the bytes of a book, e.g. a
+    # sub-domain (`https://content.example`). Unset: `/content/*` on the main origin, sandboxed.
+    # It brings no cookie to that origin and CORS for the origin of the SPA; it is a deployment
+    # setting (DNS, TLS, proxy are the host's), not an action reserved to a session.
+    content_origin: str | None = None
     api_token: SecretStr | None = None
     # Where the keyring lives when it must not be in /data (ENF-SEC-005); a path, not a secret.
     secret_key_file: Path | None = None
@@ -227,6 +232,18 @@ class Settings(BaseModel):
     @classmethod
     def _source_url_is_web(cls, value: str | None) -> str | None:
         return None if value is None else require_web_url(value)
+
+    @field_validator("content_origin")
+    @classmethod
+    def _content_origin_is_an_origin(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        require_plain_web_url(value)  # http(s), no credential, no query, no fragment
+        from urllib.parse import urlsplit
+
+        if urlsplit(value).path not in {"", "/"}:
+            raise ValueError("the content origin is a scheme and a host, without a path")
+        return value.rstrip("/")
 
     @field_validator("update_check_url", "plugin_index_url")
     @classmethod

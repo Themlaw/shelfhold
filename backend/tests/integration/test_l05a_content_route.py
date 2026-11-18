@@ -1,4 +1,4 @@
-"""M5 L05a (EF-LEC-005, ENF-SEC-004 reader side, EF-USR-006, ENF-SEC-010): `/content/{ticket}/{path}`.
+"""M5 L05a (EF-LEC-005, ENF-SEC-004, EF-USR-006, ENF-SEC-010): `/content/{ticket}/{path}`.
 
 The real application, real sessions. The archives come from a source the test controls (the
 adapter that reads a library is attacked in `test_l05a_content_source.py`). The attacks: a ticket
@@ -39,8 +39,17 @@ PAGES = {"p1.png": PNG, "p2.png": PNG + b"2", "p3.png": PNG + b"3"}
 
 
 class World:
-    def __init__(self, env: AuthEnv, seed: Seed, kid: TestClient, mum: TestClient, src: FakeArchives):
-        self.env, self.seed, self.kid, self.mum, self.admin, self.src = env, seed, kid, mum, env.client, src
+    def __init__(
+        self, env: AuthEnv, seed: Seed, kid: TestClient, mum: TestClient, src: FakeArchives
+    ):
+        self.env, self.seed, self.kid, self.mum, self.admin, self.src = (
+            env,
+            seed,
+            kid,
+            mum,
+            env.client,
+            src,
+        )
         self.access: Any = env.app.state.content_access  # type: ignore[attr-defined]
         self.open_item = add_carrier(seed.engine, seed.editions["ok"], format="epub")
         self.hidden_item = add_carrier(seed.engine, seed.editions["twelve"], format="epub")
@@ -52,7 +61,9 @@ class World:
         issued = self.access.issue(
             user_id=user_id_of(self.seed.engine, user),
             session_id=session_id_of(self.seed.engine, user),
-            carrier_type="content", carrier_id=carrier or self.open_item, **kw,
+            carrier_type="content",
+            carrier_id=carrier or self.open_item,
+            **kw,
         )
         return str(issued.token)
 
@@ -110,8 +121,15 @@ def test_svg_served_as_attachment_with_csp_sandbox(world: World, path: str) -> N
 @pytest.mark.req("EF-LEC-005", "ENF-SEC-004")
 @pytest.mark.parametrize(
     "path",
-    ["OEBPS/x.js", "OEBPS/m.mjs", "OEBPS/m.wasm", "OEBPS/data.json", "OEBPS/blob.php",
-     "OEBPS/page.html", "OEBPS/p1.svg"],
+    [
+        "OEBPS/x.js",
+        "OEBPS/m.mjs",
+        "OEBPS/m.wasm",
+        "OEBPS/data.json",
+        "OEBPS/blob.php",
+        "OEBPS/page.html",
+        "OEBPS/p1.svg",
+    ],
 )
 def test_content_never_serves_executable_type(world: World, path: str) -> None:
     got = world.get(world.admin, world.ticket(), path)
@@ -208,7 +226,9 @@ def test_content_rechecks_visibility_after_reclassification(world: World) -> Non
     assert world.get(world.kid, ticket, "OEBPS/cover.png").status_code == 200
     work = world.seed.works["ok"]
     with world.seed.engine.begin() as connection:
-        connection.execute(sa.update(catalog.work).where(catalog.work.c.id == work).values(age_rating=16))
+        connection.execute(
+            sa.update(catalog.work).where(catalog.work.c.id == work).values(age_rating=16)
+        )
     after = world.get(world.kid, ticket, "OEBPS/cover.png")
     assert after.status_code == 404 and "etag" not in after.headers
     assert world.get(world.admin, world.ticket("admin"), "OEBPS/cover.png").status_code == 200
@@ -229,7 +249,12 @@ def test_content_etag_decided_after_authorisation(world: World) -> None:
     ticket = world.ticket("admin")
     first = world.get(world.admin, ticket, "OEBPS/cover.png")
     tag = first.headers["etag"]
-    assert world.get(world.admin, ticket, "OEBPS/cover.png", headers={"If-None-Match": tag}).status_code == 304
+    assert (
+        world.get(
+            world.admin, ticket, "OEBPS/cover.png", headers={"If-None-Match": tag}
+        ).status_code
+        == 304
+    )
     # another profile that presents the tag learns nothing: no 304, no tag
     other = world.get(world.mum, ticket, "OEBPS/cover.png", headers={"If-None-Match": tag})
     assert other.status_code == 404 and "etag" not in other.headers
@@ -238,9 +263,18 @@ def test_content_etag_decided_after_authorisation(world: World) -> None:
 @pytest.mark.req("EF-LEC-005", "ENF-SEC-004")
 @pytest.mark.parametrize(
     "path",
-    ["../../etc/passwd", "..%2F..%2Fetc%2Fpasswd", "%2e%2e/%2e%2e/etc/passwd", "OEBPS/../ch1.xhtml",
-     "OEBPS/./ch1.xhtml", "/etc/passwd", "OEBPS//ch1.xhtml", "OEBPS%5Cch1.xhtml", "OEBPS/ch1.xhtml%00.png",
-     "OEBPS/ch1.xhtml/", ""],
+    [
+        "../../etc/passwd",
+        "..%2F..%2Fetc%2Fpasswd",
+        "%2e%2e/%2e%2e/etc/passwd",
+        "OEBPS/../ch1.xhtml",
+        "/etc/passwd",
+        "OEBPS//ch1.xhtml",
+        "OEBPS%5Cch1.xhtml",
+        "OEBPS/ch1.xhtml%00.png",
+        "OEBPS/ch1.xhtml/",
+        "",
+    ],
 )
 def test_content_path_traversal_refused(world: World, path: str) -> None:
     ticket = world.ticket()
@@ -267,13 +301,19 @@ def test_content_refuses_api_key_and_device_token(
     for headers in (
         {"Authorization": f"Basic {raw}"},
         {"Authorization": f"Bearer {created.secret}"},
-        {"x-auth-user": created.public_id, "x-auth-key": hashlib.md5(created.secret.encode()).hexdigest()},  # noqa: S324
+        {
+            "x-auth-user": created.public_id,
+            "x-auth-key": hashlib.md5(created.secret.encode()).hexdigest(),  # noqa: S324
+        },
     ):
         bare = world.env.other_client("10.0.0.8")
         got = world.get(bare, world.ticket("mum"), "OEBPS/cover.png", headers=headers)
         assert got.status_code in {401, 403, 404} and got.headers["content-type"] != "image/png"
     anonymous = world.env.other_client("10.0.0.7")
-    assert world.get(anonymous, ticket, "OEBPS/cover.png").status_code in {401, 404}  # no origin of its own
+    assert world.get(anonymous, ticket, "OEBPS/cover.png").status_code in {
+        401,
+        404,
+    }  # no origin of its own
 
 
 @pytest.mark.req("EF-LEC-005", "ENF-SEC-004")
@@ -294,7 +334,9 @@ def test_book_resources_served_from_dedicated_origin_with_csp_sandbox(
         assert got.headers["content-security-policy"].startswith("sandbox")
         assert got.headers["access-control-allow-origin"] == SHELF
         assert "access-control-allow-credentials" not in got.headers
-        evil = world.get(cookieless, ticket, "OEBPS/cover.png", headers={"Origin": "https://evil.example"})
+        evil = world.get(
+            cookieless, ticket, "OEBPS/cover.png", headers={"Origin": "https://evil.example"}
+        )
         assert "access-control-allow-origin" not in evil.headers
         preflight = cookieless.options(
             f"/content/{ticket}/OEBPS/cover.png",
@@ -312,37 +354,46 @@ def test_content_without_an_origin_of_its_own_needs_the_session_cookie(world: Wo
     ticket = world.ticket()
     bare = TestClient(world.env.app, base_url="https://testserver")  # type: ignore[arg-type]
     assert world.get(bare, ticket, "OEBPS/cover.png").status_code in {401, 404}
-    assert "access-control-allow-origin" not in world.get(
-        world.admin, ticket, "OEBPS/cover.png", headers={"Origin": SHELF}
-    ).headers
+    assert (
+        "access-control-allow-origin"
+        not in world.get(world.admin, ticket, "OEBPS/cover.png", headers={"Origin": SHELF}).headers
+    )
 
 
 @pytest.mark.req("ENF-SEC-004", "ENF-SEC-010", "EF-USR-024")
 def test_reserved_routes_require_fresh_auth_from_reader_session(world: World) -> None:
     """The defence in depth of ADR-0055: a session that is older than `fresh_auth_s` reaches no
     reserved action, whatever it is made to hold. Every route that declares one is attacked."""
-    from fastapi.routing import APIRoute
+    from tests.integration.test_auth_keys_reserved import _reserved_routes
 
     add_profile(world.env, "kid2", "child", "10.0.0.6", max_age_rating=10)  # a restricted profile
     ticket = world.ticket("admin", scope="full")
     assert world.get(world.admin, ticket, "OEBPS/cover.png").status_code == 200
     world.env.clock.advance(timedelta(seconds=world.env.settings.fresh_auth_s + 60))
-    reserved: list[APIRoute] = []
-
-    def walk(dependant: Any) -> bool:
-        return any(
-            hasattr(d.call, "reserved_action") or walk(d) for d in dependant.dependencies
-        )
-
-    for route in world.env.app.routes:  # type: ignore[attr-defined]
-        if isinstance(route, APIRoute) and walk(route.dependant):
-            reserved.append(route)
+    reserved = _reserved_routes(world.env.app)
     assert reserved, "no reserved route found: the scan is blind"
     headers = {"X-CSRF-Token": world.env.csrf()}
-    for route in reserved:
-        path = route.path_format.replace("{", "x").replace("}", "")
-        for method in sorted(route.methods - {"HEAD", "OPTIONS"}):
-            got = world.admin.request(method, path, json={}, headers=headers)
-            assert got.status_code != 200 and got.status_code != 204, (method, route.path)
-            if got.status_code == 401:
-                assert got.json()["code"] in {"reauth_required", "unauthenticated"}, (method, route.path)
+    from shelfhold.identity.domain.catalogue import RESERVED_ACTIONS
+
+    stale = 0
+    for method, route_path, action in reserved:
+        path = route_path.replace("{", "x").replace("}", "")
+        got = world.admin.request(method, path, json={}, headers=headers)
+        needs = RESERVED_ACTIONS[action].needs_fresh_auth(
+            restricted_profile_exists=True, hardened=False
+        )  # a read of a list asks for no fresh login: the rule is the catalogue's
+        if needs:
+            stale += 1
+            assert got.status_code in {401, 403}, (method, route_path, action, got.status_code)
+            if got.status_code == 401:  # (403: refused for another reason, e.g. made on the host)
+                assert got.json()["code"] == "reauth_required", (method, route_path, action)
+    assert stale, "no reserved route that needs a fresh login: the scan is blind"
+
+
+@pytest.mark.req("EF-LEC-005", "ENF-SEC-004")
+def test_content_ticket_absent_from_logs(world: World, capfd: pytest.CaptureFixture[str]) -> None:
+    ticket = world.ticket()
+    for path in ("OEBPS/cover.png", "OEBPS/none.png"):
+        world.get(world.admin, ticket, path)
+    seen = capfd.readouterr()
+    assert ticket not in seen.out + seen.err and ticket.split(".")[0] not in seen.out + seen.err
