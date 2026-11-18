@@ -182,6 +182,7 @@ class WrittenFile:
     mtime_ns: int
     dev: int | None = None  # the identity of the inode, for the registry of copies (EF-BIB-045)
     ino: int | None = None
+    path: str | None = None  # where it is on this host, for the alias of its hashes (L47)
 
 
 @dataclass(frozen=True)
@@ -682,7 +683,7 @@ class PlanExecutor:
         run.files.append(
             WrittenFile(
                 ref.ref, op.rel_path, digest, found[1].size, found[1].mtime_ns,
-                dev=None if seen is None else seen[0], ino=found[1].ino,
+                dev=None if seen is None else seen[0], ino=found[1].ino, path=where,
             )
         )  # fmt: skip
 
