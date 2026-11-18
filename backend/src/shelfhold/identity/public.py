@@ -99,7 +99,12 @@ from shelfhold.identity.domain.device import (
     Device,
 )
 from shelfhold.identity.domain.device_secret import normalise_secret
-from shelfhold.identity.domain.device_token import DeviceToken, device_token, token_principal
+from shelfhold.identity.domain.device_token import (
+    DeviceToken,
+    device_token,
+    device_token_is_live,
+    token_principal,
+)
 from shelfhold.identity.domain.emitters import (
     CLOSED_SITES,
     DELETION_SITES,
@@ -262,6 +267,7 @@ __all__ = [
     "default_visibility",
     "device_label",
     "device_token",
+    "device_token_is_live",
     "effective_visibility",
     "family_profile",
     "family_search_mode",

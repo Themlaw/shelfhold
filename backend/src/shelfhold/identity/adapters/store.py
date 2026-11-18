@@ -1293,7 +1293,7 @@ class SqlIdentityStore:
             )
 
     def revoke_device_token(self, public_id: str, *, now: datetime) -> bool:
-        with self._changing() as conn:
+        with self._changing(immediate=True) as conn:
             held = conn.execute(
                 sa.select(_device.c.device_id).where(_device.c.public_id == public_id)
             ).scalar()

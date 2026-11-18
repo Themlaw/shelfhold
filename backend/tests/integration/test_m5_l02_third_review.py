@@ -62,20 +62,17 @@ def test_an_open_download_stops_when_only_its_device_is_retired(world: World) ->
     assert not alive()
 
 
-def test_the_old_route_revoke_racing_a_rotation_never_answers_500(
+def test_the_old_route_revoke_takes_the_write_lock_first(
     world: World, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A rotation lands between the read and the write of the revocation: the answer is 204
-    (the revocation won) — never a 500 from a stale snapshot."""
+    """The revocation reads the device, then writes it: a deferred transaction fails with a stale
+    snapshot (500) when a rotation commits between the two. Like `retire_device`, it opens with
+    `BEGIN IMMEDIATE`: the rotation waits, then finds the device gone (404)."""
     made = world.paired(world.mum, name="Kobo")
     store = world.env.app.state.auth_gate.auth._store  # type: ignore[attr-defined]
     real = store.revoke_device_token
     inside = threading.local()
-    fired: list[threading.Thread] = []
-    results: list[Any] = []
-
-    def rotate() -> None:
-        results.append(world.rotate(world.mum, made["device_id"]))
+    openings: list[str] = []
 
     def revoking(*args: Any, **kwargs: Any) -> Any:
         inside.on = True
@@ -86,19 +83,14 @@ def test_the_old_route_revoke_racing_a_rotation_never_answers_500(
 
     monkeypatch.setattr(store, "revoke_device_token", revoking)
 
-    @event.listens_for(store._engine, "after_cursor_execute")
-    def after_first_read(*_: Any) -> None:
-        if getattr(inside, "on", False) and not fired:
-            worker = threading.Thread(target=rotate)
-            fired.append(worker)
-            worker.start()
-            worker.join(timeout=1.0)  # a held write lock makes it wait; a snapshot lets it commit
+    @event.listens_for(store._engine, "begin")
+    def opened(conn: Any) -> None:
+        if getattr(inside, "on", False):
+            openings.append(str(conn.get_execution_options().get("shelfhold_begin", "BEGIN")))
 
     try:
         answer = world.send(world.mum, "DELETE", f"{TOKENS}/{made['public_id']}")
     finally:
-        event.remove(store._engine, "after_cursor_execute", after_first_read)
-        for worker in fired:
-            worker.join(timeout=20)
-    assert answer.status_code in (204, 404), answer.text
-    assert [r.status_code for r in results] in ([404], [])  # the revoked device cannot be rotated
+        event.remove(store._engine, "begin", opened)
+    assert answer.status_code == 204, answer.text
+    assert openings == ["BEGIN IMMEDIATE"]
