@@ -774,3 +774,34 @@ def test_the_client_of_a_target_is_built_where_no_loop_runs(tmp_path: Path) -> N
         env.read_in_kavita(reader, chapter, 7)
         assert env.sync(reader).code == "ok"
         assert [p.locator["page"] for p in env.positions(reader, source="server")] == [7]
+
+
+@pytest.mark.req("EF-EXP-026")
+def test_the_one_shot_fetcher_posts_what_a_members_progress_writes() -> None:
+    """The progress pass writes a position with a POST on the fetcher of the target: the one-shot
+    fetcher answers it as it answers a GET, on a connection it closes (found by the e2e)."""
+    import asyncio
+
+    from shelfhold.infrastructure.fetcher.network import OneShotFetcher
+
+    seen: list[tuple[str, str]] = []
+
+    class _Fetcher:
+        async def get(self, url: str, **options: Any) -> str:
+            seen.append(("GET", url))
+            return "got"
+
+        async def post(self, url: str, **options: Any) -> str:
+            seen.append(("POST", url))
+            return "posted"
+
+        async def aclose(self) -> None:
+            seen.append(("CLOSE", ""))
+
+    class _Network:
+        async def open_integration_fetcher(self, url: str, limits: Any) -> _Fetcher:
+            return _Fetcher()
+
+    shot = OneShotFetcher(_Network(), "http://kavita.test:5000", None)  # type: ignore[arg-type]
+    assert asyncio.run(shot.post("http://kavita.test:5000/x", json={})) == "posted"
+    assert seen == [("POST", "http://kavita.test:5000/x"), ("CLOSE", "")]
