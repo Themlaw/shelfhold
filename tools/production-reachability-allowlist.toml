@@ -145,4 +145,5 @@ symbols = [
   "shelfhold.library.domain.rendition:UnsupportedSourceError",
   "shelfhold.library.domain.rendition:avif_announced_size",
   "shelfhold.library.domain.rendition:ensure_processor_allowed",
+  "shelfhold.library.domain.rendition:webp_announced_size",
 ]
