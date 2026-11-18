@@ -1007,7 +1007,6 @@
   "oidc.unlinked": "Identity unlinked. You will be told through your notification channels.",
   "oidc.unlink_error": "Unlinking failed.",
   "oidc.reauth_done": "Identity confirmed with the provider.",
-  "oidc.reauth_refused": "The provider could not confirm it is you. Try again.",
   "oidc.back": "Settings",
   "oidc.resume_unlink": "Identity confirmed. Do you want to unlink your account from the provider?",
   "oidc.resume_link": "Identity confirmed. Do you want to link your account to the provider?",
