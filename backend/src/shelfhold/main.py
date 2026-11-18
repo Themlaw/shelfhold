@@ -343,6 +343,7 @@ def create_app(
         return ContentAccess(
             engine, ContentKey(composition.keyring).value, clock.now,
             readable_copies(engine, fsops), content_origin=resolved.content_origin,
+            hardened=resolved.auth_hardened,
         )  # fmt: skip
 
     @cache

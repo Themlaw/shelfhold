@@ -9,12 +9,17 @@ this service looks again, in this order and before it reads or hashes anything,
 1. the ticket is ours, unexpired, and the session behind it is the caller's (the cookie of the
    session, or, on a separate origin where no cookie is sent, a live session of the profile whose
    fingerprint the ticket carries);
-2. the profile still sees the carrier (`check_carrier`: the one filter of every surface), so a
-   ceiling lowered or a Work reclassified takes effect on the next byte;
-3. the entry is a plain name of the archive, and, for an excerpt, one of the closed list the server
-   holds for that ticket;
-4. only then is the archive opened, by the port, which reads the **neutralized derivative** of an
-   `untrusted` EPUB and never its original (ADR-0047, I35 extended).
+2. the profile still sees the carrier **and the content it resolves to** (`check_carrier`, the one
+   filter of every surface, on both: an `export_item` names an Edition and a `content`, and nothing
+   ties them), so a ceiling lowered or a Work reclassified takes effect on the next byte;
+3. the scope is allowed (ADR-0055 D-P1: a full read is the kept copy of a content that is not
+   exported to a destination the profile reads; any other file is an excerpt);
+4. the entry is a plain name of the archive;
+5. only then is the archive opened, by the port, which is given the scope: it reads the
+   **neutralized derivative** of an `untrusted` EPUB and never its original (ADR-0047, I35
+   extended), and for an excerpt it computes the closed list of entries itself, from that file,
+   and refuses everything outside it. The ticket carries the digest of that list, so a file that
+   changed under it is refused.
 
 Every refusal is `ContentRefusedError`: one answer, so a client learns nothing of what exists.
 Nothing here is client-supplied as a path: a name is only ever compared with the names of the
@@ -24,8 +29,6 @@ archive the server chose.
 from __future__ import annotations
 
 import hashlib
-import threading
-from collections import OrderedDict
 from collections.abc import Callable, Collection
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -34,6 +37,7 @@ from typing import Protocol
 import sqlalchemy as sa
 
 from shelfhold.identity.public import live_session_ids
+from shelfhold.infrastructure.schema import export, identity
 from shelfhold.infrastructure.secrets.keyring import Keyring
 from shelfhold.infrastructure.secrets.tombstone_aead import hkdf_sha256
 from shelfhold.reading.application.progress import UnknownCarrierError, check_carrier
@@ -53,6 +57,8 @@ __all__ = [
     "ContentArchive",
     "ContentKey",
     "ContentRefusedError",
+    "ExcerptUnavailableError",
+    "FullReadNotAllowedError",
     "IssuedTicket",
     "NoReadableCopyError",
     "ServedEntry",
@@ -60,11 +66,21 @@ __all__ = [
 
 _INFO = b"shelfhold/content-ticket/v1"
 _KEY_TTL_S = 30.0
-_MAX_LISTS = 2048
 
 
 class NoReadableCopyError(LookupError):
     """The carrier has no file that may be read (no derivative, a format that is not read here)."""
+
+
+class ExcerptUnavailableError(NoReadableCopyError):
+    """No excerpt can be cut from this file within the bound (a single-document EPUB, a first
+    chapter beyond the share allowed): the typed refusal « extrait indisponible », never the whole
+    file."""
+
+
+class FullReadNotAllowedError(ValueError):
+    """A full read is the kept copy of a content that is not exported to a destination the profile
+    reads (ADR-0055 D-P1); anything else is an excerpt."""
 
 
 class ContentRefusedError(LookupError):
@@ -84,7 +100,10 @@ class ContentArchive(Protocol):
 class ArchiveSource(Protocol):
     """The files of a carrier that may be read. `NoReadableCopyError` when there is none."""
 
-    def open(self, carrier_type: str, carrier_id: str) -> ContentArchive: ...
+    def open(self, carrier_type: str, carrier_id: str, scope: Scope = "full") -> ContentArchive:
+        """The file to read for `scope`. For an excerpt the archive shows only the entries of the
+        closed list the source computed (`names()` and `read()`), or `ExcerptUnavailableError`."""
+        ...
 
 
 class ContentKey:
@@ -119,34 +138,6 @@ class ServedEntry:
     etag: str
 
 
-class _Lists:
-    """The closed lists of entries of the excerpts in force, by digest. They live here, in this
-    process, for as long as a ticket can: the ticket carries only the digest."""
-
-    def __init__(self) -> None:
-        self._by_digest: OrderedDict[str, tuple[frozenset[str], float]] = OrderedDict()
-        self._lock = threading.Lock()
-
-    def put(self, entries: frozenset[str], until: float, now: float) -> str:
-        digest = hashlib.sha256("\n".join(sorted(entries)).encode()).hexdigest()
-        with self._lock:
-            for old in [d for d, (_e, u) in self._by_digest.items() if u <= now]:
-                del self._by_digest[old]
-            self._by_digest[digest] = (
-                entries,
-                max(until, self._by_digest.get(digest, (None, 0))[1]),
-            )
-            self._by_digest.move_to_end(digest)
-            while len(self._by_digest) > _MAX_LISTS:
-                self._by_digest.popitem(last=False)
-        return digest
-
-    def get(self, digest: str, now: float) -> frozenset[str] | None:
-        with self._lock:
-            found = self._by_digest.get(digest)
-        return None if found is None or found[1] <= now else found[0]
-
-
 class ContentAccess:
     def __init__(
         self,
@@ -156,11 +147,12 @@ class ContentAccess:
         archives: ArchiveSource,
         *,
         content_origin: str | None = None,
+        hardened: bool = True,
     ) -> None:
         self._engine, self._key, self._now = engine, key, now
         self.archives = archives  # a field: the port is the composition's, a test may swap it
         self.content_origin = content_origin.rstrip("/") if content_origin else None
-        self._lists = _Lists()
+        self._hardened = hardened
 
     # -- issuing: called by the server for a profile it has authenticated, never from a request --
 
@@ -176,17 +168,23 @@ class ContentAccess:
     ) -> IssuedTicket:
         """A ticket for `user_id` on a carrier she may see (`UnknownCarrierError` otherwise: one
         answer for absent and hidden). An excerpt names the closed list of entries it opens."""
+        if entries is not None:
+            raise ValueError("the list of an excerpt is computed by the server, never given")
         with self._engine.connect() as connection:
-            check_carrier(connection, user_id, carrier_type, carrier_id)
+            content_id = self._checked(connection, user_id, carrier_type, carrier_id)
+            if scope == "full" and not self._full_allowed(
+                connection, user_id, carrier_type, content_id
+            ):
+                raise FullReadNotAllowedError
+        digest: str | None = None
+        if scope == "excerpt":  # computed now, from the file: refused here when it cannot be cut
+            archive = self.archives.open(carrier_type, carrier_id, "excerpt")
+            try:
+                digest = _digest(archive.names())
+            finally:
+                archive.close()
         now = self._now()
         expires = now + timedelta(seconds=TICKET_TTL_S)
-        digest: str | None = None
-        if scope == "excerpt":
-            if not entries or not all(safe_entry(e) for e in entries):
-                raise ValueError("an excerpt ticket names a closed list of plain entries")
-            digest = self._lists.put(frozenset(entries), expires.timestamp(), now.timestamp())
-        elif entries is not None:
-            raise ValueError("only an excerpt ticket carries a list of entries")
         key = self._key()
         token = seal(
             key,
@@ -224,21 +222,26 @@ class ContentAccess:
             raise ContentRefusedError
         try:
             with self._engine.connect() as connection:  # every request, before anything is read
-                check_carrier(connection, claims.user_id, claims.carrier_type, claims.carrier_id)
+                content_id = self._checked(
+                    connection, claims.user_id, claims.carrier_type, claims.carrier_id
+                )
+                if claims.scope == "full" and not self._full_allowed(
+                    connection, claims.user_id, claims.carrier_type, content_id
+                ):
+                    raise ContentRefusedError
         except UnknownCarrierError:
             raise ContentRefusedError from None
         if not safe_entry(entry):
             raise ContentRefusedError
-        if claims.scope == "excerpt":
-            allowed = self._lists.get(claims.entries or "", now.timestamp())
-            if allowed is None or entry not in allowed:
-                raise ContentRefusedError
         try:
-            archive = self.archives.open(claims.carrier_type, claims.carrier_id)
+            archive = self.archives.open(claims.carrier_type, claims.carrier_id, claims.scope)
         except NoReadableCopyError:
             raise ContentRefusedError from None
         try:
-            if entry not in archive.names():
+            names = archive.names()
+            if claims.scope == "excerpt" and _digest(names) != claims.entries:
+                raise ContentRefusedError  # the file is not the one the excerpt was cut from
+            if entry not in names:
                 raise ContentRefusedError
             body = archive.read(entry)
         except (KeyError, OSError, ValueError):
@@ -259,8 +262,65 @@ class ContentAccess:
         if self.content_origin is None:  # same origin: the cookie is always there, no cookie = no
             return False
         with self._engine.connect() as connection:  # a live session of the profile, by fingerprint
-            live = live_session_ids(connection, claims.user_id, now.astimezone(UTC))
+            live = live_session_ids(
+                connection, claims.user_id, now.astimezone(UTC), hardened=self._hardened
+            )
         return any(_same(session_fingerprint(key, s), claims.session_fp) for s in live)
+
+    # -- what a carrier is, and what may be read of it ----------------------------------------
+
+    @staticmethod
+    def _checked(
+        connection: sa.Connection, user_id: str, carrier_type: str, carrier_id: str
+    ) -> str:
+        """The profile sees the carrier **and** the content it resolves to: an `export_item` names
+        an Edition and a `content`, and nothing ties the two. Returns the content id."""
+        check_carrier(connection, user_id, carrier_type, carrier_id)
+        if carrier_type == "content":
+            return carrier_id
+        found = connection.execute(
+            sa.select(export.export_item.c.content_id).where(export.export_item.c.id == carrier_id)
+        ).scalar()
+        if found is None:
+            raise UnknownCarrierError
+        check_carrier(connection, user_id, "content", str(found))
+        return str(found)
+
+    @staticmethod
+    def _full_allowed(
+        connection: sa.Connection, user_id: str, carrier_type: str, content_id: str
+    ) -> bool:
+        """ADR-0055 D-P1: the full reader is for the kept copy (a `content`) that is not exported
+        to a destination the profile reads (a live, verified account of her own there): that one is
+        read where it was sent. An `export_item` is that exported file: an excerpt only."""
+        if carrier_type != "content":
+            return False
+        record, item, account = (
+            export.export_record,
+            export.export_item,
+            identity.destination_account,
+        )
+        readable_elsewhere = connection.execute(
+            sa.select(sa.literal(1))
+            .select_from(
+                item.join(record, record.c.export_item_id == item.c.id).join(
+                    account, account.c.shelf_destination_id == record.c.shelf_destination_id
+                )
+            )
+            .where(
+                item.c.content_id == content_id,
+                record.c.state == "written",
+                account.c.user_id == user_id,
+                account.c.revoked_at.is_(None),
+                account.c.verified_at.is_not(None),
+            )
+            .limit(1)
+        ).first()
+        return readable_elsewhere is None
+
+
+def _digest(names: Collection[str]) -> str:
+    return hashlib.sha256("\n".join(sorted(names)).encode()).hexdigest()
 
 
 def _same(left: str, right: str) -> bool:

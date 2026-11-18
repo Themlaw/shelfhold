@@ -16,6 +16,18 @@ envoyé, et ouvrir une adresse de contenu dans un onglet reste isolé par l'orig
    des identifiants.
 3. Redémarrez. Sans cette variable, rien ne change.
 
+**À savoir avant d'activer.**
+- Avec une origine séparée, **le ticket seul suffit** pendant sa durée (dix minutes) : le cookie n'y
+  est pas envoyé. Une adresse `/content/…` copiée s'ouvre donc depuis un autre appareil, ou sur
+  l'origine principale sans cookie, tant que le ticket n'a pas expiré **et** que la session qui l'a
+  demandé est ouverte (une déconnexion, ou une session inactive au-delà de sa limite, la coupe). Ne
+  partagez pas ces adresses ; elles n'apparaissent pas dans les journaux de Shelfhold, mais celles de
+  votre proxy les voient : n'y journalisez pas le chemin de `/content/`.
+- **Derrière un proxy d'identité** (`SHELFHOLD_AUTH_FORWARD_ENABLED`), le lecteur **exige** l'origine
+  séparée : une session ouverte par le proxy n'a pas de cookie propre, et la route refuse sur
+  l'origine principale tout appel qui n'a pas de session à lui. Sans origine séparée, le lecteur
+  est inutilisable dans ce mode.
+
 Ce que cela n'apporte pas : le rendu dans le lecteur. Les pages sont lues par le navigateur puis
 affichées depuis des objets `blob:` de la page de Shelfhold ; l'isolement de l'EPUB repose sur les
 filtres et la politique de sécurité du lecteur, pas sur l'origine. Les clés d'API et les jetons

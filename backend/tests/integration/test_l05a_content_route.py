@@ -20,7 +20,7 @@ from fastapi.testclient import TestClient
 
 from shelfhold.config import Settings
 from shelfhold.identity.public import local_auth
-from shelfhold.infrastructure.schema import catalog
+from shelfhold.infrastructure.schema import catalog, export
 from tests.auth_env import AuthEnv, auth_env
 from tests.content_env import (
     BOOK,
@@ -56,6 +56,19 @@ class World:
         for item in (self.open_item, self.hidden_item):
             src.by_content[item] = {**BOOK, **PAGES}
 
+    def export_item(self, edition_id: str, content_id: str) -> str:
+        from shelfhold.infrastructure.db import write_transaction
+        from shelfhold.infrastructure.ids import new_ulid
+
+        item_id = new_ulid()
+        with write_transaction(self.seed.engine) as connection:
+            connection.execute(
+                sa.insert(export.export_item).values(
+                    id=item_id, edition_id=edition_id, kind="unit", content_id=content_id
+                )
+            )
+        return item_id
+
     def ticket(self, who: str = "admin", carrier: str | None = None, **kw: Any) -> str:
         user = {"admin": "admin", "kid": "kid", "mum": "mum"}[who]
         issued = self.access.issue(
@@ -78,7 +91,8 @@ def _world(monkeypatch: pytest.MonkeyPatch, settings: Settings) -> Iterator[Worl
         seed = seed_catalogue(env)
         kid = add_profile(env, "kid", "child", "10.0.0.2", max_age_rating=10)
         mum = add_profile(env, "mum", "member", "10.0.0.3")
-        assert env.login().status_code == 200
+        hardened = {"remember": False} if settings.auth_hardened else {}  # EF-USR-022
+        assert env.login(**hardened).status_code == 200
         yield World(env, seed, kid, mum, src)
         seed.engine.dispose()
 
@@ -199,23 +213,86 @@ def test_content_ticket_dies_with_its_session(world: World) -> None:
 
 @pytest.mark.req("EF-LEC-005", "EF-USR-006", "ENF-SEC-010")
 def test_content_excerpt_ticket_refuses_out_of_bound_entry(world: World) -> None:
-    ticket = world.ticket(scope="excerpt", entries=["p1.png", "p2.png", "OEBPS/ch1.xhtml"])
+    bound = frozenset({"p1.png", "p2.png", "OEBPS/ch1.xhtml"})  # what the server cut, not a caller
+    world.src.excerpts[world.open_item] = bound
+    ticket = world.ticket(scope="excerpt")
     assert world.get(world.admin, ticket, "p1.png").status_code == 200
     assert world.get(world.admin, ticket, "OEBPS/ch1.xhtml").status_code == 200
     absent = world.get(world.admin, ticket, "nothing.png")
-    for path in ("p3.png", "OEBPS/ch2.xhtml", "OEBPS/style.css"):  # in the archive, not in the list
+    for path in ("p3.png", "OEBPS/ch2.xhtml", "OEBPS/style.css"):  # in the archive, not in the cut
         refused = world.get(world.admin, ticket, path)
         assert _shape(refused) == _shape(absent), path  # no oracle on what exists
         assert "etag" not in refused.headers
     full = world.ticket(scope="full")
     assert world.get(world.admin, full, "p3.png").status_code == 200  # the bound is the ticket's
+    world.src.excerpts[world.open_item] = bound | {"p3.png"}  # the file changed under the ticket
+    assert world.get(world.admin, ticket, "p1.png").status_code == 404
 
 
 @pytest.mark.req("EF-LEC-005", "ENF-SEC-010")
-def test_content_excerpt_without_a_list_is_refused(world: World) -> None:
-    for entries in (None, []):
-        with pytest.raises(ValueError):
-            world.ticket(scope="excerpt", entries=entries)
+def test_content_excerpt_is_computed_by_the_server_or_unavailable(world: World) -> None:
+    from shelfhold.reading.application.content_access import ExcerptUnavailableError
+
+    with pytest.raises(ValueError):  # a list from the caller is never taken
+        world.ticket(scope="excerpt", entries=["p1.png"])
+    with pytest.raises(ExcerptUnavailableError):  # nothing can be cut within the bound
+        world.ticket(scope="excerpt")
+
+
+@pytest.mark.req("EF-LEC-005", "EF-USR-006", "ENF-SEC-010")
+def test_content_export_item_is_read_as_an_excerpt_only(world: World) -> None:
+    """ADR-0055 D-P1: the full reader is the kept copy; the exported file is an excerpt."""
+    from shelfhold.reading.application.content_access import FullReadNotAllowedError
+
+    item = world.export_item(world.seed.editions["ok"], world.open_item)
+    world.src.item_content[item] = world.open_item
+    with pytest.raises(FullReadNotAllowedError):
+        world.access.issue(
+            user_id=user_id_of(world.seed.engine, "admin"),
+            session_id=session_id_of(world.seed.engine, "admin"),
+            carrier_type="export_item", carrier_id=item,
+        )  # fmt: skip
+    world.src.excerpts[world.open_item] = frozenset({"p1.png"})
+    issued = world.access.issue(
+        user_id=user_id_of(world.seed.engine, "admin"),
+        session_id=session_id_of(world.seed.engine, "admin"),
+        carrier_type="export_item", carrier_id=item, scope="excerpt",
+    )  # fmt: skip
+    assert world.get(world.admin, issued.token, "p1.png").status_code == 200
+    assert world.get(world.admin, issued.token, "p2.png").status_code == 404
+
+
+@pytest.mark.req("EF-LEC-005", "EF-USR-006", "ENF-SEC-010")
+def test_content_visibility_is_checked_on_the_content_actually_resolved(world: World) -> None:
+    """#361 C3: an `export_item` of a visible Edition that points at the content of a hidden one
+    serves nothing, at issue and on a ticket already given."""
+    from shelfhold.reading.public import UnknownCarrierError
+
+    crossed = world.export_item(world.seed.editions["ok"], world.hidden_item)
+    world.src.item_content[crossed] = world.hidden_item
+    world.src.excerpts[world.hidden_item] = frozenset({"p1.png"})
+    with pytest.raises(UnknownCarrierError):
+        world.access.issue(
+            user_id=user_id_of(world.seed.engine, "kid"),
+            session_id=session_id_of(world.seed.engine, "kid"),
+            carrier_type="export_item", carrier_id=crossed, scope="excerpt",
+        )  # fmt: skip
+    fine = world.export_item(world.seed.editions["ok"], world.open_item)
+    world.src.item_content[fine] = world.open_item
+    world.src.excerpts[world.open_item] = frozenset({"p1.png"})
+    ticket = world.access.issue(
+        user_id=user_id_of(world.seed.engine, "kid"),
+        session_id=session_id_of(world.seed.engine, "kid"),
+        carrier_type="export_item", carrier_id=fine, scope="excerpt",
+    ).token  # fmt: skip
+    assert world.get(world.kid, ticket, "p1.png").status_code == 200
+    with world.seed.engine.begin() as connection:  # the row is made to point elsewhere afterwards
+        connection.execute(
+            sa.update(export.export_item).where(export.export_item.c.id == fine)
+            .values(content_id=world.hidden_item)
+        )  # fmt: skip
+    world.src.item_content[fine] = world.hidden_item
+    assert world.get(world.kid, ticket, "p1.png").status_code == 404
 
 
 @pytest.mark.req("EF-LEC-005", "EF-USR-006", "ENF-SEC-010")
@@ -394,3 +471,21 @@ def test_content_ticket_absent_from_logs(world: World, capfd: pytest.CaptureFixt
         world.get(world.admin, ticket, path)
     seen = capfd.readouterr()
     assert ticket not in seen.out + seen.err and ticket.split(".")[0] not in seen.out + seen.err
+
+
+@pytest.mark.req("EF-LEC-005", "ENF-SEC-010")
+def test_content_cookieless_follows_the_session_rule_of_the_door(
+    monkeypatch: pytest.MonkeyPatch, settings: Settings
+) -> None:
+    """#361 C2: on a separate origin the live session is judged by the door's own rule: under the
+    hardened profile an admin session idle for more than 30 minutes is not live, though its stored
+    expiry is hours away."""
+    configured = settings.model_copy(
+        update={"public_url": SHELF, "content_origin": CONTENT, "auth_hardened": True}
+    )
+    for world in _world(monkeypatch, configured):
+        cookieless = TestClient(world.env.app, base_url=CONTENT)  # type: ignore[arg-type]
+        assert world.get(cookieless, world.ticket(), "OEBPS/cover.png").status_code == 200
+        world.env.clock.advance(timedelta(minutes=31))
+        late = world.get(cookieless, world.ticket(), "OEBPS/cover.png")  # a fresh ticket
+        assert late.status_code == 404

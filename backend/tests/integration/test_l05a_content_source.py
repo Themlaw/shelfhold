@@ -9,7 +9,10 @@ import sqlalchemy as sa
 
 from shelfhold.infrastructure.schema import storage
 from shelfhold.library.public import ReadableCopies
-from shelfhold.reading.application.content_access import NoReadableCopyError
+from shelfhold.reading.application.content_access import (
+    ExcerptUnavailableError,
+    NoReadableCopyError,
+)
 from tests.integration.test_untrusted_epub_pipeline import TRAPPED, content_row, ingest
 from tests.library_env import lib_env
 
@@ -80,3 +83,5 @@ def test_a_page_archive_is_read_from_its_library_copy() -> None:
                 archive.read("../../etc/passwd")  # only the names of the archive are readable
         finally:
             archive.close()
+        with pytest.raises(ExcerptUnavailableError):  # one page: not even one within a fifth
+            copies.open("content", content_id, "excerpt")
