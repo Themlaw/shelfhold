@@ -1071,11 +1071,21 @@ class Adopter:
         so the shelf's one door keeps the Edition out of a child's view until an admin rates it
         again, in "À classer"."""
         edition, work = catalog.edition, catalog.work
-        rated = connection.execute(
-            sa.select(sa.or_(edition.c.rated_at.is_not(None), work.c.rated_at.is_not(None)))
+        row = connection.execute(
+            sa.select(
+                edition.c.work_id,
+                sa.or_(edition.c.rated_at.is_not(None), work.c.rated_at.is_not(None)),
+            )
             .select_from(edition.join(work, work.c.id == edition.c.work_id))
             .where(edition.c.id == edition_id)
-        ).scalar()
+        ).first()
+        if row is None:
+            return
+        # the effective rating, not the Edition's own: a sibling Edition that is rated rates the
+        # Work for whoever reads it (C2, second review)
+        rated = (
+            bool(row[1]) or RatingService().effective_age_of(connection, str(row[0])) is not None
+        )
         unknown = content_warning_age(None)  # not known to be safe: 18+
         if rated and unknown is not None:
             suggest_age(connection, "edition", edition_id, unknown, provenance="import", now=now)

@@ -16,3 +16,17 @@ NON_CONTENT_ID_KEYS: Final = frozenset({
     "install_id", "instance_id", "template_id", "version_id", "binding_id", "from_binding_id",
     "to_binding_id", "source_id",
 })  # fmt: skip
+
+# Keys that end like a content key and name something else: a row of the destination's own
+# tables or an id of the connected service, never a Work, an Edition, a series or a Unit of the
+# catalogue (`event_refs` read `export_series_id` as a catalogue series, found none, and hid the
+# event from every reader with a ceiling).
+NOT_CATALOG_KEYS: Final = frozenset({"export_series_id", "kavita_series_id", "remote_unit_id"})
+
+
+def is_content_key(key: str, kind: str | None = None) -> bool:
+    """`key` names a content of the catalogue (of `kind`, or of any kind)."""
+    if key in NOT_CATALOG_KEYS:
+        return False
+    suffixes = CONTENT_ID_SUFFIXES if kind is None else (f"{kind}_id",)
+    return key.endswith(suffixes)

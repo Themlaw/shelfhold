@@ -24,7 +24,7 @@ from shelfhold.catalog.public import (
     visible_work_ids,
 )
 from shelfhold.events.activity import ActivityEvent, ActivityItem, Viewer, activity_view
-from shelfhold.events.id_keys import KINDS
+from shelfhold.events.id_keys import KINDS, is_content_key
 
 __all__ = ["EventRefs", "event_refs", "project_event"]
 
@@ -73,7 +73,7 @@ def event_refs(payload: Mapping[str, object]) -> EventRefs:
             opaque = True
             continue
         for kind in _KINDS:
-            if key.endswith(f"{kind}_id"):
+            if is_content_key(key, kind):
                 if isinstance(value, str):
                     found[kind].add(value)
             elif key.endswith(f"{kind}_ids") and isinstance(value, list | tuple):

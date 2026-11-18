@@ -124,3 +124,33 @@ def test_c2_a_declared_age_below_the_rating_is_no_age_and_the_chapter_is_held(
             ).scalar_one()
             assert visible_unit_ids(c, CHILD, [adopted]) == set()
             assert visible_unit_ids(c, CHILD, [held]) == set()  # the Edition waits for an admin
+
+
+@pytest.mark.req("EF-EXP-045", "EF-BIB-055")
+def test_c2_an_unrated_edition_joined_by_name_is_held_when_a_sibling_is_rated() -> None:
+    import sqlalchemy as sa
+
+    from shelfhold.infrastructure.schema import catalog
+    from tests.adopt_env import adoption
+    from tests.family_env import add_edition_to, rate_edition
+
+    with export_env() as env:
+        series = env.new_series("Tale of Orchard")
+        sibling = add_edition_to(env, series, "de")  # another Edition of the Work, filed nowhere
+        rate_edition(env, sibling, 10)  # rated: the Edition joined below is not
+        a = adoption(env)
+        a.add_series("Tale of Orchard", ["Tale of Orchard - Ch.2.cbz"])  # no age in the file
+        a.adopt()
+        with env.engine.connect() as c:
+            held = (
+                c.execute(
+                    sa.select(catalog.age_suggestion.c.value).where(
+                        catalog.age_suggestion.c.entity_type == "edition",
+                        catalog.age_suggestion.c.entity_id == series.edition_id,
+                        catalog.age_suggestion.c.state == "open",
+                    )
+                )
+                .scalars()
+                .all()
+            )
+        assert held == [18]
