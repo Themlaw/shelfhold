@@ -18,8 +18,8 @@ from tests.integration.test_l43_series_sheet_api import World, world  # noqa: F4
 pytestmark = pytest.mark.req("EF-UX-006")
 
 
-def _unit_of(world: World, content_id: str) -> str:
-    with world.seed.engine.connect() as connection:
+def _unit_of(engine: sa.Engine, content_id: str) -> str:
+    with engine.connect() as connection:
         return str(
             connection.execute(
                 sa.select(storage.content.c.unit_id).where(storage.content.c.id == content_id)
@@ -34,7 +34,7 @@ def test_the_sheet_names_no_unit_when_the_edition_has_no_file(world: World) -> N
 def test_the_sheet_names_the_first_unit_that_has_a_file(world: World) -> None:  # noqa: F811
     first = add_carrier(world.seed.engine, world.edition)
     add_carrier(world.seed.engine, world.edition)
-    assert world.sheet()["first_unit_id"] == _unit_of(world, first)
+    assert world.sheet()["first_unit_id"] == _unit_of(world.seed.engine, first)
 
 
 def test_the_sheet_stays_the_admins(world: World) -> None:  # noqa: F811

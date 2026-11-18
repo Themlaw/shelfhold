@@ -23,7 +23,7 @@ function publication(over: Partial<PublicationView> = {}, count = 10): Publicati
 /** A fetch that answers every page of the publication with `size` bytes, and counts what it served. */
 function bench(size = 1024) {
   const asked: string[] = [];
-  const fetcher = vi.fn(async (input: RequestInfo | URL) => {
+  const fetcher = vi.fn<typeof fetch>(async (input) => {
     asked.push(String(input));
     return new Response(new Uint8Array(size), { status: 200, headers: { 'Content-Type': 'image/jpeg' } });
   });
@@ -48,7 +48,7 @@ async function opened(pub: PublicationView, size = 1024, options: Record<string,
   const host = document.createElement('div');
   document.body.append(host);
   const engine = createImageEngine({
-    fetch: b.fetcher as unknown as typeof fetch,
+    fetch: b.fetcher,
     createObjectURL: b.createObjectURL,
     revokeObjectURL: b.revokeObjectURL,
     ...options
@@ -145,13 +145,13 @@ describe('the image engine', () => {
   // req: EF-UX-006
   it('says "end of the extract" when the server refuses a page, not a blank page', async () => {
     const b = bench();
-    b.fetcher.mockImplementation(async (input: RequestInfo | URL) => {
+    b.fetcher.mockImplementation(async (input) => {
       b.asked.push(String(input));
       return String(input).endsWith('p3.jpg') ? new Response(null, { status: 404 }) : new Response(new Uint8Array(8));
     });
     const host = document.createElement('div');
     const engine = createImageEngine({
-      fetch: b.fetcher as unknown as typeof fetch,
+      fetch: b.fetcher,
       createObjectURL: b.createObjectURL,
       revokeObjectURL: b.revokeObjectURL
     });
@@ -182,7 +182,7 @@ describe('the image engine', () => {
     const b = bench();
     const host = document.createElement('div');
     const engine = createImageEngine({
-      fetch: b.fetcher as unknown as typeof fetch,
+      fetch: b.fetcher,
       createObjectURL: b.createObjectURL,
       revokeObjectURL: b.revokeObjectURL
     });

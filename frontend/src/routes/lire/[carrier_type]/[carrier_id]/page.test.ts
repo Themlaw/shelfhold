@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/svelte';
+import { cleanup, render, screen, waitFor } from '@testing-library/svelte';
 import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
 import { setupServer } from 'msw/node';
@@ -16,7 +16,6 @@ vi.mock('$app/state', () => state);
 
 const BASE = 'http://shelfhold.test';
 const server = setupServer();
-const realFetch = globalThis.fetch;
 
 type Pub = Record<string, unknown>;
 const publication = (over: Pub = {}): Pub => ({
@@ -57,9 +56,10 @@ const serve = (pub: Pub) => [
 beforeAll(() => {
   server.listen({ onUnhandledRequest: 'error' } as never);
   client.setConfig({ baseUrl: BASE });
+  const patched = globalThis.fetch; // the one the mock server answers through
   // a relative link into /content, as the manifest gives it, lives on the instance
   vi.stubGlobal('fetch', (input: RequestInfo | URL, init?: RequestInit) =>
-    realFetch(typeof input === 'string' && input.startsWith('/') ? `${BASE}${input}` : input, init)
+    patched(typeof input === 'string' && input.startsWith('/') ? `${BASE}${input}` : input, init)
   );
   vi.stubGlobal('URL', Object.assign(URL, { createObjectURL: () => `blob:t/${Math.random()}`, revokeObjectURL: () => undefined }));
 });
@@ -71,7 +71,10 @@ beforeEach(() => {
   state.page.params = { carrier_type: 'unit', carrier_id: 'U1' };
   state.page.url = new URL('http://shelfhold.test/lire/unit/U1');
 });
-afterEach(() => server.resetHandlers());
+afterEach(() => {
+  cleanup(); // the reader says where it was when it is left, while its handlers are still there
+  server.resetHandlers();
+});
 afterAll(() => {
   server.close();
   vi.unstubAllGlobals();

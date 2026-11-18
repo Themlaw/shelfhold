@@ -28,7 +28,7 @@ import sqlalchemy as sa
 from shelfhold.catalog.public import COVER_FIELD, MERGE_WINDOW_DAYS, Catalog, relations_of
 from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.ids import is_ulid
-from shelfhold.infrastructure.schema import acquisition, catalog
+from shelfhold.infrastructure.schema import acquisition, catalog, storage
 from shelfhold.library.public import cover_hash
 from shelfhold.ops.errors import InvalidChoiceError, UnknownSubjectError
 from shelfhold.reading.public import prefer_edition
@@ -79,6 +79,7 @@ class SheetOps:
             fields = self._fields(connection, edition_id, work_id)
             cover = self._cover(connection, edition_id)
             relations = self._relations(connection, work_id)
+            first_unit = self._first_unit(connection, edition_id)
         paused = follow is not None and follow.check_override == "paused"
         active = [b for b in bindings if b["active"]]
         return {
@@ -89,7 +90,7 @@ class SheetOps:
             "upstream_status_by": edition.upstream_status_by,
             "followed": follow is not None, "bindings": bindings, "gaps": gaps,
             "teams": teams, "fields": fields, "merges": merges, "attach": attach,
-            "relations": relations,
+            "relations": relations, "first_unit_id": first_unit,
             "can": {
                 "check": follow is not None and not paused and bool(active),
                 "reorder": len(active) > 1,
@@ -214,6 +215,27 @@ class SheetOps:
              "outgoing": r.outgoing, "edition_id": editions.get(r.other_work_id)}
             for r in related
         ]  # fmt: skip
+
+    def _first_unit(self, connection: sa.Connection, edition_id: str) -> str | None:
+        """The Unit the "Lire" button opens (M5 L10): the first, by number, that has a file. Which
+        file is read, and whether in full or as an excerpt, is the publication route's choice."""
+        u = catalog.unit.c
+        row = connection.execute(
+            sa.select(u.id)
+            .where(
+                u.edition_id == edition_id,
+                sa.exists().where(storage.content.c.unit_id == u.id),
+            )
+            .order_by(
+                u.number_sort.is_(None),
+                u.number_sort,
+                u.number_segment_ordinal,
+                u.source_order,
+                u.id,
+            )
+            .limit(1)
+        ).first()
+        return None if row is None else str(row.id)
 
     def _cover(self, connection: sa.Connection, edition_id: str) -> str | None:
         t = catalog.metadata_field.c

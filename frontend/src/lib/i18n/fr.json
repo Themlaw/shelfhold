@@ -990,5 +990,21 @@
   "lists.state.cancelled": "Annulé",
   "lists.state.to_buy": "À acheter",
   "lists.state.borrow_elsewhere": "À emprunter ailleurs",
-  "approve.import_list": "Importer une liste"
+  "approve.import_list": "Importer une liste",
+  "reader.page_alt": "Page {n} sur {count}",
+  "reader.status": "Page {n} sur {count}",
+  "reader.next": "Page suivante",
+  "reader.previous": "Page précédente",
+  "reader.close": "Quitter la lecture",
+  "reader.excerpt_badge": "Extrait",
+  "reader.end_of_excerpt": "Fin de l’extrait",
+  "reader.end_of_book": "Fin de la lecture",
+  "reader.loading": "Ouverture du livre…",
+  "reader.unsupported": "Ce format n’est pas encore lisible ici",
+  "reader.page_failed": "Cette page n’a pas pu être chargée.",
+  "reader.toolbar": "Commandes de lecture",
+  "reader.pages": "Pages du livre",
+  "reader.read": "Lire",
+  "reader.read_excerpt": "Lire un extrait",
+  "reader.keys": "Flèches, Page suivante ou Espace pour tourner la page ; Échap pour revenir aux commandes."
 }
