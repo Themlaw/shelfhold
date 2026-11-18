@@ -14,6 +14,7 @@ import sqlite3
 from collections.abc import Iterator
 from contextlib import closing, contextmanager
 from datetime import timedelta
+from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
 
@@ -96,7 +97,7 @@ class World:
 
     def link_admin(self, username: str, sub: str | None = None) -> Any:
         return self.send(
-            self.admin, "PUT", f"/api/v1/users/{self.ids[username]}/oidc", {"sub": sub or self.idp.sub}
+            self.admin, "PUT", f"/api/v1/profiles/{self.ids[username]}/oidc", {"sub": sub or self.idp.sub}
         )
 
     def identities(self) -> list[tuple[Any, ...]]:
@@ -124,6 +125,7 @@ def world_for(
     provider = provider or FakeOidcProvider()
     network = network or Network(resolver=provider.resolver, transport=provider.transport)
     with auth_env(monkeypatch, configured(settings, provider, **update), network=network) as env:
+        provider.now = lambda: env.clock.now().timestamp()  # the tokens carry the test's time
         yield World(env, provider)
 
 
@@ -357,15 +359,15 @@ def test_oidc_link_is_refused_to_a_key_and_to_another_member(world: World) -> No
     assert by_key.status_code in (401, 403)
     assert by_key.status_code != 200
     put_by_key = anonymous.put(
-        f"/api/v1/users/{world.ids['mum']}/oidc",
+        f"/api/v1/profiles/{world.ids['mum']}/oidc",
         json={"sub": "x"},
         headers={"Authorization": f"Bearer {key}"},
     )
     assert put_by_key.status_code in (401, 403)
     # IDOR: a member names another account
-    theft = world.send(world.dad, "PUT", f"/api/v1/users/{world.ids['mum']}/oidc", {"sub": "x"})
+    theft = world.send(world.dad, "PUT", f"/api/v1/profiles/{world.ids['mum']}/oidc", {"sub": "x"})
     assert theft.status_code == 403
-    assert world.send(world.dad, "PUT", f"/api/v1/users/{world.ids['dad']}/oidc", {"sub": "x"}).status_code == 403
+    assert world.send(world.dad, "PUT", f"/api/v1/profiles/{world.ids['dad']}/oidc", {"sub": "x"}).status_code == 403
     # an anonymous caller
     assert anonymous.post(LINK).status_code in (401, 403)
     assert world.identities() == []
@@ -382,8 +384,9 @@ def test_oidc_link_finishes_for_the_account_that_started_it(world: World) -> Non
     started = world.send(world.mum, "POST", LINK).json()["authorization_url"]
     back = world.idp.authorize(started)
     assert world.send(world.mum, "POST", "/api/v1/auth/logout").status_code == 204
-    # the flow cookie stays in the jar, the session is gone
-    assert refused(world.callback(world.mum, back))
+    # the flow cookie stays in the jar, the session is gone: refused, back to the settings screen
+    ended = world.callback(world.mum, back)
+    assert ended.status_code == 303 and ended.headers["location"].endswith("oidc=refused")
     assert world.identities() == []
 
 
@@ -419,14 +422,14 @@ def test_oidc_discovery_goes_through_fetcher_ssrf_guard(
     with world_for(monkeypatch, settings, provider=provider, network=network) as world:
         world.link_admin("mum")
         # the keys document is on a private address that nobody declared: refused before a request
-        provider.discovery_overrides = {"jwks_uri": "http://internal.example.test/jwks"}
+        provider.discovery_overrides = {"jwks_uri": "https://internal.example.test/jwks"}
         assert refused(world.sign_in(world.browser()))
         # the token endpoint on the cloud metadata service: refused as well
-        provider.discovery_overrides = {"token_endpoint": "http://meta.example.test/token"}
+        provider.discovery_overrides = {"token_endpoint": "https://meta.example.test/token"}
         assert refused(world.sign_in(world.browser("198.51.100.80")))
         assert "internal.example.test" not in reached and "meta.example.test" not in reached
         # a literal address is the guard's too
-        provider.discovery_overrides = {"jwks_uri": "http://169.254.169.254/latest/keys"}
+        provider.discovery_overrides = {"jwks_uri": "https://169.254.169.254/latest/keys"}
         assert refused(world.sign_in(world.browser("198.51.100.81")))
         assert "169.254.169.254" not in reached
         # the DNS answer was the one the guard validated: the names went through the resolver
@@ -461,7 +464,7 @@ def test_oidc_provider_unreachable_is_a_refusal_not_an_error(
 
 
 def test_oidc_button_only_when_configured(
-    monkeypatch: pytest.MonkeyPatch, settings: Settings, world: World
+    monkeypatch: pytest.MonkeyPatch, settings: Settings, world: World, tmp_path: Path
 ) -> None:
     page = world.browser().get("/login")
     assert page.status_code == 200 and LOGIN in page.text
@@ -469,7 +472,9 @@ def test_oidc_button_only_when_configured(
     assert "default-src" in page.headers["content-security-policy"]
     assert "unsafe-inline" not in page.headers["content-security-policy"]
     # not configured: no button, no route
-    with auth_env(monkeypatch, settings.model_copy(update={"public_url": None})) as plain:
+    other = {"data_dir": tmp_path / "plain-data", "store_dir": tmp_path / "plain-store"}
+    plain_settings = settings.model_copy(update={"public_url": None, **other})
+    with auth_env(monkeypatch, plain_settings) as plain:
         client = plain.other_client("198.51.100.91")
         assert LOGIN not in client.get("/login").text
         assert client.get(LOGIN, follow_redirects=False).status_code == 404

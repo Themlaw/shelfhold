@@ -12,7 +12,7 @@ to look up.
 Never `X-Forwarded-For` here, never a header written by the caller: the peer is the socket's.
 
 A believed proxy that sends an identity to a route with its own credentials (`/opds`, `/kosync`,
-`/kobo`) is refused (403) and audited once per route: that is a mistake of configuration, not
+`/kobo`, `/lite`) is refused (403) and audited once per route: that is a mistake of configuration, not
 something to guess around. `/healthz` and `/readyz` simply never take an identity.
 
 Each header name stripped from a stranger is logged once per process and recorded in the audit,
@@ -91,7 +91,7 @@ def _peer_trusted(scope: Scope, trusted: tuple[IpNetwork, ...]) -> bool:
 SECRET_HEADER = "x-shelfhold-proxy-secret"  # noqa: S105 (a header name)
 USER_HEADER = "remote-user"
 # Routes with a credential of their own: an identity from a proxy is a mistake there.
-OWN_CREDENTIAL_PREFIXES = ("/opds", "/kosync", "/kobo")
+OWN_CREDENTIAL_PREFIXES = ("/opds", "/kosync", "/kobo", "/lite")  # 02 section 9
 NO_IDENTITY_PATHS = frozenset({"/healthz", "/readyz"})
 
 

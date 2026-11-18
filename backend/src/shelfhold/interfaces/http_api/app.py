@@ -34,6 +34,7 @@ from shelfhold.interfaces.http_api.identity_headers import (
     IdentityHeaderFilter,
     parse_networks,
 )
+from shelfhold.interfaces.http_api.auth_oidc import build_oidc_router
 from shelfhold.interfaces.http_api.login import build_login_router
 from shelfhold.interfaces.http_api.maintenance import MaintenanceGuard
 from shelfhold.interfaces.http_api.middleware import (
@@ -170,6 +171,7 @@ def create_http_app(
     resolved_source = require_web_url(source_url or build_source_url(version))
     include(build_login_router(resolved_source))
     include(build_passkeys_router())
+    include(build_oidc_router())
     include(build_sessions_router())
     include(build_profiles_router(on_profile_change))
     include(build_own_visibility_router())  # EF-USR-016

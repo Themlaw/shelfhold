@@ -26,6 +26,11 @@ CODES: tuple[ErrorCode, ...] = (
     ErrorCode("passkey_refused", 422, "user"),
     ErrorCode("passkey_not_found", 404, "user"),
     ErrorCode("last_login_factor", 409, "user"),
+    # OpenID Connect (M5 L03): the provider cannot be asked; an admin's link the rules refuse (the
+    # rule is in the `reason` extension, never a `sub`); a child profile is never linked
+    ErrorCode("oidc_unavailable", 503, "admin"),
+    ErrorCode("oidc_conflict", 409, "user"),
+    ErrorCode("oidc_child_profile", 403, "user"),
     # Sessions (M3 L07): another profile's session answers like one that is not there (no probing)
     ErrorCode("session_not_found", 404, "user"),
     # Household profiles (M3 L05): the rule that refused is in the `reason` extension

@@ -297,6 +297,8 @@ password = "Mot de passe"
 remember = "Se souvenir de moi"
 submit = "Se connecter"
 passkey = "Se connecter avec une clé d'accès"
+oidc = "Se connecter avec un fournisseur d'identité"
+oidc_error = "La connexion par le fournisseur d'identité n'a pas abouti."
 error = "Connexion impossible."
 source = "Code source"
 
@@ -1351,6 +1353,21 @@ cause = "Le profil a été supprimé, ou l'identifiant ne correspond à aucun pr
 title = "Ce profil ne respecte pas les règles du foyer."
 action = "Un enfant a toujours un âge maximal et jamais le droit de classer ; un adulte n'a pas d'âge maximal ; un enfant ne peut ajouter ou demander que sur une source « famille »."
 cause = "Les réglages demandés enfreignent une règle des profils : un enfant a un âge maximal et ne classe pas, un adulte n'a pas d'âge maximal."
+
+[errors."oidc_unavailable"]
+title = "Le fournisseur d'identité est injoignable."
+action = "Connectez-vous avec votre mot de passe ou une clé d'accès, et demandez à l'administrateur de vérifier l'adresse du fournisseur et que Shelfhold peut le joindre."
+cause = "Le fournisseur n'a pas répondu, a répondu quelque chose d'inutilisable, ou son adresse est refusée par la garde des requêtes sortantes."
+
+[errors."oidc_conflict"]
+title = "Cette identité ne peut pas être liée à ce compte."
+action = "Chaque personne du fournisseur appartient à un seul compte, et un compte porte une seule identité par fournisseur. Vérifiez quel compte la porte."
+cause = "La personne est déjà liée à un autre compte, ou ce compte est déjà lié à une autre personne du même fournisseur."
+
+[errors."oidc_child_profile"]
+title = "Un profil enfant n'est jamais lié à un fournisseur d'identité."
+action = "Un enfant se connecte sur l'appareil partagé avec l'aide des parents ; liez plutôt un compte adulte."
+cause = "Le compte est un profil enfant : Shelfhold refuse toute entrée qui ne passe pas par le foyer."
 
 [errors."device_token_not_found"]
 title = "Ce jeton d'appareil n'existe pas pour vous."

@@ -27,6 +27,11 @@ from shelfhold.identity.application.destination_accounts import (
     SecretToken,
     SyncStatusRow,
 )
+from shelfhold.identity.application.oidc import (
+    FLOW_COOKIE_MAX_AGE_S,
+    OidcRefusedError,
+    OidcUnavailableError,
+)
 from shelfhold.identity.application.passkeys import (
     PasskeyError,
     PasskeyOptions,
@@ -39,6 +44,7 @@ from shelfhold.identity.application.ports import (
     ChildKavitaAccount,
     DeviceRecord,
     DeviceTokenRecord,
+    OidcLink,
     PasskeyRecord,
     ProfileRecord,
     ReauthMethod,
@@ -154,6 +160,10 @@ from shelfhold.identity.domain.visibility import (
 )
 
 __all__ = [
+    "FLOW_COOKIE_MAX_AGE_S",
+    "OidcLink",
+    "OidcRefusedError",
+    "OidcUnavailableError",
     "ADD_DIRECTLY_REFUSALS",
     "CHALLENGE_TTL",
     "CLOSED_SITES",

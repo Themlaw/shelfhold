@@ -22,6 +22,8 @@ from shelfhold.identity.application.ports import (
     NewDeviceToken,
     NewPasskey,
     NewSession,
+    OidcIdentityRecord,
+    OidcLink,
     PasskeyGoneError,
     PasskeyRecord,
     ProfileRecord,
@@ -56,6 +58,7 @@ _key = identity.api_key
 _device = identity.device_token
 _registry = identity.device  # M5 L02: the device a token belongs to
 _passkey = identity.webauthn_credential
+_oidc = identity.oidc_identity  # M5 L03
 
 
 def _retire_devices(
@@ -119,6 +122,12 @@ def _user_of(row: Any) -> UserRecord:
 
 
 # Labelled: joined with `session` or `api_key`, whose own `id` and `user_id` must not clash.
+def _oidc_of(row: Any) -> OidcIdentityRecord:
+    return OidcIdentityRecord(
+        id=row.id, user_id=row.user_id, issuer=row.issuer, sub=row.sub, linked_at=row.linked_at
+    )
+
+
 _USER_COLUMNS = (
     _user.c.id.label("u_id"),
     _user.c.username.label("u_username"),
@@ -332,6 +341,66 @@ class SqlIdentityStore:
 
     def user_by_id(self, user_id: str) -> UserRecord | None:
         return self._one_user(_user.c.id == user_id)
+
+    def oidc_user(self, issuer: str, sub: str) -> UserRecord | None:
+        """The account the person `sub` of `issuer` is linked to (None: nobody, never created)."""
+        query = (
+            sa.select(*_USER_COLUMNS)
+            .join(_oidc, _oidc.c.user_id == _user.c.id)
+            .where(_oidc.c.issuer == issuer, _oidc.c.sub == sub)
+        )
+        with self._engine.connect() as conn:
+            row = conn.execute(query).first()
+        return None if row is None else _user_of(row)
+
+    def oidc_identity_of(self, user_id: str, issuer: str) -> OidcIdentityRecord | None:
+        with self._engine.connect() as conn:
+            row = conn.execute(
+                sa.select(_oidc).where(_oidc.c.user_id == user_id, _oidc.c.issuer == issuer)
+            ).first()
+        return None if row is None else _oidc_of(row)
+
+    def link_oidc_identity(
+        self, *, user_id: str, issuer: str, sub: str, now: datetime, audit: AuditEntry
+    ) -> OidcLink:
+        """One transaction under the write lock: the role is read where the row is written, so an
+        account turned into a child profile meanwhile is refused, and two links of one person
+        cannot both be made."""
+        engine = self._engine.execution_options(shelfhold_begin="BEGIN IMMEDIATE")
+        with write_transaction(engine) as conn:
+            role = conn.execute(sa.select(_user.c.role).where(_user.c.id == user_id)).scalar()
+            if role is None:
+                return OidcLink.NO_ACCOUNT
+            if role == "child":
+                return OidcLink.CHILD
+            owner = conn.execute(
+                sa.select(_oidc.c.user_id).where(_oidc.c.issuer == issuer, _oidc.c.sub == sub)
+            ).scalar()
+            if owner is not None:
+                return OidcLink.UNCHANGED if owner == user_id else OidcLink.SUBJECT_TAKEN
+            held = conn.execute(
+                sa.select(_oidc.c.id).where(_oidc.c.user_id == user_id, _oidc.c.issuer == issuer)
+            ).first()
+            if held is not None:
+                return OidcLink.ACCOUNT_HAS_ANOTHER
+            conn.execute(
+                sa.insert(_oidc).values(
+                    id=new_ulid(), user_id=user_id, issuer=issuer, sub=sub, linked_at=now
+                )
+            )
+            conn.execute(self._audit_insert(audit))
+        return OidcLink.LINKED
+
+    def session_is_live(self, session_id: str, *, now: datetime) -> bool:
+        with self._engine.connect() as conn:
+            row = conn.execute(
+                sa.select(_session.c.id).where(
+                    _session.c.id == session_id,
+                    _session.c.revoked_at.is_(None),
+                    _session.c.absolute_expiry > now,
+                )
+            ).first()
+        return row is not None
 
     def admins(self) -> Sequence[UserRecord]:
         with self._engine.connect() as conn:
@@ -1099,7 +1168,7 @@ class SqlIdentityStore:
                     csrf_secret=session.csrf_secret,
                     created_at=session.now,
                     last_seen_at=session.now,
-                    auth_time=session.now,
+                    auth_time=session.auth_time or session.now,
                     absolute_expiry=session.absolute_expiry,
                     remember=session.remember,
                     ip=session.ip,

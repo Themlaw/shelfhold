@@ -92,6 +92,13 @@ class Settings(BaseModel):
     # a fresh password on every reserved action; never required. The invisible protections
     # (argon2id, CSRF, cookies, CSP, attempt limiting) have no setting at all.
     auth_hardened: bool = False
+    # EF-USR-004 (M5 L03): sign-in through an OpenID Connect provider, off until the issuer and the
+    # client are both given. The redirect address is `public_url` + `/api/v1/auth/oidc/callback`
+    # (so `public_url` is needed too). A secret is optional (a public client uses PKCE alone).
+    # A sign-in never creates an account: it finds the one linked to the person's `sub`.
+    oidc_issuer: str | None = None
+    oidc_client_id: str | None = None
+    oidc_client_secret: SecretStr | None = None
     # ENF-OBS-002: `/metrics` (Prometheus text) answers only when the host turns it on; a key of
     # scope `metrics` is then the only credential that reads it. Off: the route says 404.
     metrics_enabled: bool = False
@@ -232,6 +239,45 @@ class Settings(BaseModel):
     @classmethod
     def _forge_urls_are_plain(cls, value: str | None) -> str | None:
         return None if value is None else require_plain_web_url(value)
+
+    @field_validator("oidc_issuer", "oidc_client_id", "oidc_client_secret", mode="before")
+    @classmethod
+    def _empty_oidc_variable_is_unset(cls, value: Any) -> Any:
+        text = value.get_secret_value() if isinstance(value, SecretStr) else value
+        return None if isinstance(text, str) and not text.strip() else value
+
+    @field_validator("oidc_issuer")
+    @classmethod
+    def _oidc_issuer_is_https(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        require_plain_web_url(value)
+        if not value.startswith("https://"):
+            raise ValueError("oidc_issuer must be an https URL")
+        return value.rstrip("/")
+
+    @field_validator("oidc_client_id")
+    @classmethod
+    def _oidc_client_id_is_plain(cls, value: str | None) -> str | None:
+        if value is not None and (
+            len(value) > 256 or not value.isascii() or not value.isprintable() or " " in value
+        ):
+            raise ValueError("oidc_client_id is not shaped like a client identifier")
+        return value
+
+    @model_validator(mode="after")
+    def _oidc_is_whole(self) -> Self:
+        if (self.oidc_issuer is None) != (self.oidc_client_id is None):
+            raise ValueError("oidc_issuer and oidc_client_id are given together or not at all")
+        if self.oidc_client_secret is not None and self.oidc_issuer is None:
+            raise ValueError("oidc_client_secret needs oidc_issuer and oidc_client_id")
+        if self.oidc_issuer is not None and not (self.public_url or "").startswith("https://"):
+            raise ValueError("OIDC needs public_url (https): the provider sends the browser back")
+        return self
+
+    @property
+    def oidc_enabled(self) -> bool:
+        return self.oidc_issuer is not None and self.oidc_client_id is not None
 
     @field_validator("metadata_contact")
     @classmethod

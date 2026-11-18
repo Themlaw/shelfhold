@@ -138,6 +138,7 @@ _PRESENCE = (
     "update_check_url", "plugin_index_url",
     "wake_token", "auth_forward_secret", "setup_token", "backup_dir", "backup_passphrase_file",
     "metadata_contact", "import_dir", "comicvine_api_key",
+    "oidc_issuer", "oidc_client_id", "oidc_client_secret",
 )  # fmt: skip
 _VOLUMES = ("data_dir", "store_dir", "library_dir")
 _COUNTS = ("plugin_repos", "active_sources", "http_trusted_proxies", "wake_suwayomi",
@@ -1027,7 +1028,10 @@ def build_bundle(
         )
         for index, path in enumerate(log_files, start=1)
     ]
-    for name in ("public_url", "source_url", "wake_url", "update_check_url", "plugin_index_url"):
+    for name in (
+        "public_url", "source_url", "wake_url", "update_check_url", "plugin_index_url",
+        "oidc_issuer",
+    ):
         forbidden.add(f"settings.{name}", getattr(settings, name))
     forbidden.add("settings.host", settings.host, word=True)
     hostname = host_platform.node()

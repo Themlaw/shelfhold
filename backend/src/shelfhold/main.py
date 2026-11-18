@@ -229,6 +229,7 @@ SECRET_SETTINGS = frozenset(
         "backup_passphrase_file",
         "metadata_contact",
         "comicvine_api_key",
+        "oidc_client_secret",
         "auth_forward_secret",
         "setup_token",
     }
@@ -279,7 +280,9 @@ def create_app(
                 {"user_id": record.user_id, "passkey_id": record.id},
             )
 
-    auth = local_auth(engine, resolved, clock, on_passkey_registered=passkey_registered)
+    auth = local_auth(
+        engine, resolved, clock, on_passkey_registered=passkey_registered, network=composition.network
+    )
     ready = Readiness()
     gate = AuthGate(auth, public_url=resolved.public_url, ready=ready.is_set)
 

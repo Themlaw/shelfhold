@@ -42,6 +42,9 @@ class Effect(StrEnum):
     MANAGES_CREDENTIALS = "manages_credentials"  # create, rotate or revoke a key or a token
     # `passkey.register`: adds a way in that outlives the session (and its revocation) that added it
     ENROLS_PASSKEY = "enrols_passkey"
+    # `oidc.link`, `oidc.link_account`: ties an account to a person of an identity provider, who
+    # then signs in without any local secret. Like a passkey it outlives the session that added it
+    LINKS_IDENTITY = "links_identity"
     ACCEPTS_ADMIN_RISK = "accepts_admin_risk"  # `--accept-admin-risk`
     # `profile add|set|remove` and the per-source policy: who may sign in, with which role, ceiling
     # and right to classify. A stolen session must not make an admin or lift a child's ceiling, so

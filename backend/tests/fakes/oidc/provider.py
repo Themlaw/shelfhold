@@ -55,6 +55,7 @@ class FakeOidcProvider:
         self.tamper: dict[str, Any] = {}
         self.sign_with_other_key = False
         self.discovery_overrides: dict[str, Any] = {}
+        self.now = time.time  # replaced by a test that moves its own clock
         self.auth_time_age_s: int | None = 0
         self._codes: dict[str, dict[str, Any]] = {}
         self._jwks = KeySet([_key("signing-1")])
@@ -105,7 +106,7 @@ class FakeOidcProvider:
         return f"{query['redirect_uri']}?code={code}&state={query['state']}"
 
     def claims(self, grant: Mapping[str, Any]) -> dict[str, Any]:
-        now = int(time.time())
+        now = int(self.now())
         claims: dict[str, Any] = {
             "iss": self.issuer,
             "sub": grant["sub"],
