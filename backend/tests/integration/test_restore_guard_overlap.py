@@ -34,8 +34,8 @@ class Gated:
         self,
         inner: Any,
         *,
-        before: Callable[[], None] | None = None,
-        after: Callable[[], None] | None = None,
+        before: Callable[[], object] | None = None,
+        after: Callable[[], object] | None = None,
     ) -> None:
         self._inner = inner
         self._before = before
@@ -67,7 +67,7 @@ def session(env: RestoreEnv) -> None:
     env.fsops.stamp_sentinel(str(env.library), generation=commit_generation(env))
 
 
-def guard_over(env: RestoreEnv, **hooks: Callable[[], None]) -> RestoreGuard:
+def guard_over(env: RestoreEnv, **hooks: Callable[[], object]) -> RestoreGuard:
     return RestoreGuard(env.engine, Gated(env.fsops, **hooks), clock=env.ex.clock, bus=env.bus)  # type: ignore[arg-type]
 
 
@@ -83,7 +83,7 @@ def test_a_session_between_the_two_looks_is_not_a_restore() -> None:
     with restore_env() as env:
         status = guard_over(env, before=lambda: session(env)).assess()
         assert not status.behind, status.findings
-        assert [f.state for f in status.findings] == [RootState.OK]
+        assert {f.state for f in status.findings} == {RootState.OK}  # the library and the store
 
 
 def test_a_session_between_the_two_looks_never_freezes_the_instance() -> None:
@@ -134,10 +134,11 @@ def test_a_real_restore_is_still_refused() -> None:
 
 
 def test_a_real_restore_is_still_refused_while_a_session_overlaps() -> None:
-    """The overlap moves both counters by one: the disk is still ahead of the database."""
+    """A session that commits a generation during the look moves the database by one: the disk
+    (two sessions ahead) is still ahead of it."""
     with restore_env() as env:
         restored_older(env)
-        status = guard_over(env, before=lambda: session(env)).assess()
+        status = guard_over(env, before=lambda: commit_generation(env)).assess()
         assert status.behind, status.findings
         assert [f.state for f in status.behind_roots] == [RootState.RESTORED_BEHIND]
 
