@@ -384,7 +384,7 @@ def _wrap_body(body: Element) -> None:
 # --- the writer ----------------------------------------------------------------------------------
 
 
-_FORBIDDEN: Final = re.compile("[\x00-\x08\x0b\x0c\x0e-\x1f\ufffe\uffff\ud800-\udfff]")
+_FORBIDDEN: Final = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\ufffe\uffff\ud800-\udfff]")
 
 
 def _esc_text(text: str) -> str:
