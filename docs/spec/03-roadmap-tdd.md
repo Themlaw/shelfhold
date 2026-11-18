@@ -502,7 +502,7 @@ Les EF de la partie famille (EF-USR-010, EF-UX-004/005/006, EF-INT-021) portent 
 - Passe 9 : `test_pdfjs_is_eval_supported_false` (ENF-SEC-004, CVE-2024-4367 ; **D7, ADR-0055** : aucun moteur PDF n'est livré en M5, le test prouve qu'aucun moteur PDF n'est enregistré et qu'un moteur PDF qui ne déclare pas le garde-fou typé `guards: { isEvalSupported: false }` fait échouer la construction du registre `ReaderEngine`), `test_remote_processor_refuses_watermarked` (EF-BIB-015).
 - Passe 10 : `test_device_token_scoped_to_subject_profile_not_issuer`, `test_pairing_requires_explicit_subject_profile`.
 - Passe 12 : `test_offline_copy_evicted_after_reclassification`, `test_reading_position_on_unexported_content_anchor`.
-- ADR-0055 (relecture adverse de L01) : `test_epub_script_never_runs` (Chromium, Firefox, WebKit), `test_blob_document_inherits_reader_csp`, `test_content_never_serves_executable_type`, `test_external_link_never_navigates_iframe`, `test_content_never_serves_untrusted_original`, `test_no_route_serves_untrusted_bytes_as_script`, `test_content_filter_whitelist_corpus`, `test_reserved_routes_require_fresh_auth_from_reader_session`, `test_locator_v1_schema_rejects_missing_fields`, `test_content_excerpt_ticket_refuses_out_of_bound_entry`, `test_excerpt_publication_is_bounded`, `test_excerpt_writes_no_position`, `test_excerpt_never_pushed_to_kavita` ; `test_keyboard_shortcuts_reader` focus dans l'iframe, WebKit compris.
+- ADR-0055 (relecture adverse de L01) : `test_reader_refuses_to_mount_under_spa_csp`, `test_reader_entry_has_no_spa_meta_csp`, `test_offline_reader_entry_keeps_reader_csp`, `test_registry_refuses_epub_engine_below_min_browser`, `test_content_filter_preserves_cfi_steps`, `test_locator_restored_across_filter_versions`, `test_neutralizer_v2_migration_regenerates_derivatives`, `test_reserved_routes_require_fresh_auth_from_reader_session`, `test_reader_metadata_rendered_as_text` ; `test_epub_script_never_runs` (Chromium, Firefox, WebKit ; cas « script échappé au filtre puis déplacé »), `test_blob_document_inherits_reader_csp`, `test_content_never_serves_executable_type`, `test_external_link_never_navigates_iframe`, `test_content_never_serves_untrusted_original`, `test_no_route_serves_untrusted_bytes_as_script`, `test_content_filter_whitelist_corpus`, `test_reserved_routes_require_fresh_auth_from_reader_session`, `test_locator_v1_schema_rejects_missing_fields`, `test_content_excerpt_ticket_refuses_out_of_bound_entry`, `test_excerpt_publication_is_bounded`, `test_excerpt_writes_no_position`, `test_excerpt_never_pushed_to_kavita` ; `test_keyboard_shortcuts_reader` focus dans l'iframe, WebKit compris.
 - Passe 11 : `test_kosync_auth_uses_device_token_secret`, `test_oidc_reserved_action_requires_max_age`.
 - Passe 7 : `test_kosync_volume_hash_resolves_single_export_item`, `test_offline_position_merge_by_bounded_client_ts` (seuil de conflit de Q47 fixé par D8, ADR-0055 : position perdante plus avancée de plus de 2 % de progression ; EPUB sur `totalProgression`, supports de pages avec 3 pages au moins), `test_opds_pull_destination_serves_from_store_or_tree_copy`.
 - `test_lite_page_works_without_javascript` (HTML serveur, Kobo WebKit 538.1 / anciens Kindle), `test_lite_greyscale_thumbnails`.
@@ -729,9 +729,9 @@ Marqueur pytest : `@pytest.mark.req("EF-EXP-028")` ; le rapport CI liste, par ja
 | EF-LEC-002 | M5 | `test_webtoon_continuous` |
 | EF-LEC-003 | M5 | `test_foliate_epub_reflow_and_fixed` |
 | EF-LEC-004 | Plus tard | — |
-| EF-LEC-005 | M5 | `test_book_resources_served_from_dedicated_origin_with_csp_sandbox` |
+| EF-LEC-005 | M5 | `test_book_resources_served_from_dedicated_origin_with_csp_sandbox`, `test_epub_script_never_runs`, `test_blob_document_inherits_reader_csp`, `test_content_never_serves_executable_type`, `test_content_never_serves_untrusted_original`, `test_no_route_serves_untrusted_bytes_as_script`, `test_content_filter_whitelist_corpus`, `test_external_link_never_navigates_iframe`, `test_content_excerpt_ticket_refuses_out_of_bound_entry` |
 | EF-LEC-006 | M5 | `test_settings_priority_per_type` |
-| EF-LEC-007 | M5 | `test_locator_progress_lww` |
+| EF-LEC-007 | M5 | `test_locator_progress_lww`, `test_locator_v1_schema_rejects_missing_fields`, `test_locator_restored_across_filter_versions`, `test_excerpt_writes_no_position`, `test_excerpt_never_pushed_to_kavita` |
 | EF-LEC-008 | M5 | `test_continue_reading_home` |
 | EF-LEC-009 | M5 | `test_kosync_hash_computed_on_exported_file`, `test_kosync_auth_uses_device_token_secret`, `test_kosync_metadata_never_used_to_match`, `test_kosync_ambiguous_hash_never_guesses` |
 | EF-LEC-010 | M5 | `test_lite_page_works_without_javascript`, contrôle CI « aucun `<script>` dans `/lite` » |
@@ -821,7 +821,7 @@ Marqueur pytest : `@pytest.mark.req("EF-EXP-028")` ; le rapport CI liste, par ja
 | ENF-SEC-001 | M1a | `test_ssrf_guard_property_suite`, `test_lan_target_name_pinned_to_declared_addresses` |
 | ENF-SEC-002 | M1a | `test_safe_open_archive_is_only_entry_point` |
 | ENF-SEC-003 | M1a | `test_image_bomb_caps_per_kind` |
-| ENF-SEC-004 | M1a (serveur, pages servies) / M3 (SPA) / M5 (lecteur) | `test_svg_served_as_attachment_with_csp_sandbox`, `test_spa_csp_hash_based`, `test_reader_csp_font_media_frame_blob` |
+| ENF-SEC-004 | M1a (serveur, pages servies) / M3 (SPA) / M5 (lecteur) | `test_svg_served_as_attachment_with_csp_sandbox`, `test_spa_csp_hash_based`, `test_reader_csp_font_media_frame_blob`, `test_reader_refuses_to_mount_under_spa_csp`, `test_reader_entry_has_no_spa_meta_csp`, `test_offline_reader_entry_keeps_reader_csp`, `test_registry_refuses_epub_engine_below_min_browser`, `test_content_filter_preserves_cfi_steps`, `test_neutralizer_v2_migration_regenerates_derivatives`, `test_reserved_routes_require_fresh_auth_from_reader_session`, `test_reader_metadata_rendered_as_text` |
 | ENF-SEC-005 | M1a | `test_secrets_redacted_including_api_key_in_bodies`, `test_cli_secrets_export_encrypted`, `test_cited_tombstone_kid_never_retired`, `test_rotation_never_rewrites_tombstone_journal`, `test_status_warns_after_each_rotation_until_export`, `test_kid_cited_only_by_unmounted_root_never_retired`, `test_rotation_never_reencrypts_tombstone_table` |
 | ENF-SEC-006 | M0 | E2E fumée conteneur durci |
 | ENF-SEC-007 | M0 / M1b / M3 / M6 | workflows par palier (actionlint + zizmor) |
@@ -835,7 +835,7 @@ Marqueur pytest : `@pytest.mark.req("EF-EXP-028")` ; le rapport CI liste, par ja
 | ENF-SEC-015 | M1a | `test_upstream_text_sanitized_injection_corpus`, `test_comicinfo_summary_plain_or_sanitized`, `test_notifications_escape_upstream_text` |
 | ENF-SEC-016 | M1a | `test_dependency_floors_enforced_in_lockfile`, `test_absolute_urls_built_from_configured_public_url`, `test_apprise_floor_and_no_auth_headers_on_redirect` |
 | ENF-A11Y-001 | M3 | axe bloquant + `test_token_contrast_aa` |
-| ENF-A11Y-002 | M3 | `test_keyboard_navigation_workshop`, `test_keyboard_shortcuts_reader` |
+| ENF-A11Y-002 | M3 (atelier) / M5 (lecteur) | `test_keyboard_navigation_workshop`, `test_keyboard_shortcuts_reader` |
 | ENF-A11Y-003 | M3 | `test_reduced_motion` |
 | ENF-A11Y-004 | M3 | `test_touch_targets_44px_and_cards_under_600px` |
 | ENF-I18N-001 | M0 / M3 | `test_ui_strings_extracted_no_hardcoded_text`, `test_i18n_catalogs_fr_en_same_keys` |

@@ -32,6 +32,7 @@ Un contenu **exporté vers une destination que le profil peut lire** (par exempl
 
 #### « Lire un extrait » : borné côté serveur, n'écrit rien
 - **Borne** : le **premier chapitre** (première entrée de la table des matières qui n'est ni couverture ni page de garde), ou à défaut les **N premières pages** (réglable, **N = 10** par défaut ; pour un EPUB sans chapitre exploitable, l'équivalent de N pages de 1 800 caractères). Dans tous les cas, jamais plus de **20 %** de la publication (valeur par défaut, réglable).
+- **Extrait EPUB = dérivé d'extrait coupé côté serveur** (N3). `/content` filtre par entrée : une liste d'entrées ne peut pas borner un premier chapitre qui pèse 60 % du livre, ni un EPUB à un seul fichier. Le serveur produit donc un **dérivé d'extrait** : spine tronqué à la borne, dernier document coupé proprement par `safe_parse_xml`, ressources réduites à celles qu'il référence ; il est mis en cache par (support, version du neutraliseur, borne). Si la coupe est **impossible dans la borne**, la réponse est un **refus typé « extrait indisponible »** (jamais le fichier entier). Pour les supports d'images, la borne s'applique à la liste de pages. Le test `test_excerpt_publication_is_bounded` (L06) reçoit les cas « EPUB à un seul fichier » et « premier chapitre au-delà de 20 % ».
 - **Le ticket porte la portée** (`full` ou `excerpt`) **et la liste fermée des entrées autorisées**. `/content` refuse toute page ou ressource hors de cette liste (`404`, sans oracle d'existence), ressources liées comprises : une image, une police ou une feuille de style n'est servie que si un document autorisé la référence. Un client qui forge `/content/<ticket>/…/ch42.xhtml` ou une page hors borne n'obtient rien.
 - **Aucune écriture** : ni `reading_position`, ni historique, ni `reading_conflict`, ni état « en cours », ni renvoi vers Kavita ou kosync. `PUT /api/reader/positions` refuse une publication ou un ticket de portée `excerpt`.
 - **Liste fermée** : calculée **côté serveur, à l'émission**, depuis le dérivé, par `safe_parse_xml` (`@import` en chaîne, `srcset` et `xlink:href` compris) ; elle vit côté serveur, le ticket étant un identifiant opaque (pas dans le chemin) ; l'OPF et le document de navigation en font partie. Une section hors borne répond `404` ; foliate affiche alors une erreur typée « fin de l'extrait », jamais une page blanche.
@@ -50,32 +51,50 @@ Elle protège la **navigation directe** vers une URL de contenu (onglet, lien co
   1. **la CSP héritée** par le document `blob:` (tableau ci-dessous) ;
   2. **le filtre de contenu client**, appliqué à tout EPUB avant la création du `blob:` (section « Filtre de contenu »), et, pour un EPUB `untrusted`, **le neutraliseur serveur** (ADR-0047), qui fait double emploi avec lui, volontairement.
 - Test de l'invariant : `test_epub_script_never_runs` sur Chromium, Firefox et WebKit, avec en plus un cas « EPUB `publisher`, CSP du lecteur retirée » : le filtre seul doit empêcher toute exécution, ce qui prouve l'indépendance des barrières.
-- **Défense en profondeur** : même si un script s'exécutait, les routes sensibles (création et rotation de clés d'API, contrôle parental, jetons d'appareil) sont des actions réservées qui exigent une **ré-authentification récente** (ADR-0049, ENF-SEC-010) et le code de l'entrée `/lire` ne les appelle pas (aucun accès depuis le lecteur). Test : `test_reserved_routes_require_fresh_auth_from_reader_session` (L05).
+- **Défense en profondeur** : même si un script s'exécutait, les routes sensibles (création et rotation de clés d'API, contrôle parental, jetons d'appareil) sont des actions réservées qui exigent une **ré-authentification récente** (ADR-0049, ENF-SEC-010) et le code de l'entrée `/lire` ne les appelle pas (aucun accès depuis le lecteur). **Limite écrite** : la fenêtre de ré-authentification (`fresh_auth_s`, 300 s par défaut, ADR-0049) fait que, dans les cinq minutes qui suivent une connexion, la session est fraîche et cette défense ne joue pas ; le contrôle parental n'est réservé que si un profil restreint existe, et la demande d'un ticket `full` n'est pas une action réservée. La défense en profondeur ne remplace donc pas les deux barrières. Test : `test_reserved_routes_require_fresh_auth_from_reader_session` (L05), sur une session dont `auth_age_s` **dépasse** `fresh_auth_s`.
 
 #### Navigateurs pris en charge par le moteur EPUB
-Le moteur EPUB exige l'héritage de la CSP par les `blob:` et `'strict-dynamic'` : **Safari et iOS 16.1 au moins** (WebKit n'applique l'héritage de la CSP du créateur que depuis octobre 2022, bogues 245682 et 224745 ; `'strict-dynamic'` depuis Safari 15.4), **Chromium 110 et Firefox 115 au moins** (valeurs proposées, à confirmer par le test de L11). Au-dessous, **le registre refuse le moteur EPUB** et le lecteur propose Kavita. Le moteur d'images (sans iframe) n'est pas concerné.
+Le moteur EPUB exige l'héritage de la CSP par les `blob:` et `'strict-dynamic'` : **Safari et iOS 16.1 au moins** (WebKit n'applique l'héritage de la CSP du créateur que depuis octobre 2022, bogues 245682 et 224745 ; `'strict-dynamic'` depuis Safari 15.4), **Chromium 110 et Firefox 115 au moins** (valeurs proposées, à confirmer par le test de L12). **Détection** : le registre lit les Client Hints (`Sec-CH-UA`) quand ils existent, sinon la chaîne UA, et en cas de doute **refuse** le moteur EPUB. Au-dessous de la version minimale, le lecteur propose Kavita. Le moteur d'images (sans iframe) n'est pas concerné. Test : `test_registry_refuses_epub_engine_below_min_browser` (L12).
 
-**Test d'héritage (L11, trois moteurs)** : `test_blob_document_inherits_reader_csp` charge un `blob:` de premier niveau, une iframe `blob:` imbriquée dans le livre (second niveau) et un `srcdoc`, et vérifie l'exécution de script **et** `img-src`. **Si le test échoue sur un moteur ciblé, L12 ne fusionne pas.**
+**Test d'héritage (L12, trois moteurs)** : `test_blob_document_inherits_reader_csp` charge un `blob:` de premier niveau, une iframe `blob:` imbriquée dans le livre (second niveau) et un `srcdoc`, et vérifie l'exécution de script **et** `img-src`. **Si le test échoue sur un moteur ciblé, L12 ne fusionne pas.** (L11 ne livre que le sous-module : il ne porte ni le lecteur ni sa CSP.)
 
 #### CSP du lecteur, directive par directive
-`/lire` est servi par une **entrée HTML séparée** (navigation complète depuis la SPA), avec sa propre CSP par hachage (`frontend/scripts/csp.ts`, `infrastructure/http_headers.py`). La CSP de la SPA n'est pas élargie. Un document `blob:` hérite de la CSP du document qui l'a créé :
+`/lire` est une **entrée HTML séparée**, **pas une route SvelteKit** : une route de la SPA porterait la `<meta http-equiv>` CSP de la SPA (`style-src 'self'`, que `spa_csp` impose au démarrage), les deux politiques s'appliqueraient ensemble et la CSP du tableau ne serait jamais la CSP effective. Règles :
+- **entrée de build distincte**, hors du routeur SvelteKit (`frontend/` : entrée `reader.html` et son module), **sans** `<meta>` CSP (la CSP vient de l'en-tête, ou d'une `<meta>` strictement identique) ;
+- **garde au démarrage symétrique de `spa_csp`** (`reader_csp`) : élargissements admis par rapport à la SPA, `style-src` avec `blob:` et `'unsafe-inline'` et `style-src-attr`, **rien d'autre** ; tout autre écart refuse de démarrer ;
+- **on y entre par navigation complète**, jamais par le routeur client : tout lien vers `/lire` force un chargement de document (`data-sveltekit-reload`, ou `<a>` hors routeur) ;
+- **le lecteur refuse de monter** si la CSP effective du document n'est pas celle du lecteur (lecture de `securitypolicyviolation` et sonde d'une ressource interdite au démarrage) ;
+- **le service worker de L16a ne sert jamais la coquille de la SPA pour `/lire`** : `/lire` est exclu du repli de navigation, et mis en cache avec ses en-têtes, par la copie hors ligne de L16b seulement ;
+- **la CSP de la SPA n'est pas élargie** ; la page `/lire` ne reçoit que sa propre CSP.
+
+Tests : `test_reader_refuses_to_mount_under_spa_csp` (navigation client vers `/lire`), `test_reader_entry_has_no_spa_meta_csp`, `test_offline_reader_entry_keeps_reader_csp` (L12, L16a).
+
+Un document `blob:` hérite de la CSP du document qui l'a créé :
 
 | Directive | Valeur | Remarque |
 |---|---|---|
 | `default-src` | `'none'` | |
-| `script-src` | `'sha256-<amorçage>' 'strict-dynamic'` | **sans** `'self'`, **sans** hôte, **jamais** `blob:`, `'unsafe-inline'` ni `'unsafe-eval'` : un script inséré par l'analyseur (tous ceux d'un livre) est refusé, les imports dynamiques du script d'amorçage restent admis ; vaut **sans condition** (indépendant de l'URL publique) |
-| `style-src`, `style-src-elem` | `'self' blob: 'unsafe-inline'` | les EPUB portent des `<style>` en ligne ; élargissement assumé, limité à l'entrée `/lire` |
+| `script-src` | `'sha256-<amorçage>' 'strict-dynamic'` | **sans** `'self'`, **sans** hôte, **jamais** `blob:`, `'unsafe-inline'` ni `'unsafe-eval'` : un script inséré par l'analyseur (tous ceux d'un livre) est refusé, les imports dynamiques du script d'amorçage restent admis ; vaut **sans condition** (indépendant de l'URL publique) ; **condition de validité** : voir « Condition de `'strict-dynamic'` » |
+| `style-src`, `style-src-elem` | `'self' blob: 'unsafe-inline'` | règle pour les styles d'EPUB **neutralisés** (`<style>` en ligne et feuilles `blob:` du livre, après filtre : ni `@import`, ni `url()` distant) ; élargissement assumé, limité à l'entrée `/lire` et vérifié par `reader_csp` |
 | `style-src-attr` | `'unsafe-inline'` | attributs `style=` omniprésents dans les EPUB |
 | `img-src` | `'self' blob:` | jamais `data:`, jamais d'hôte distant |
 | `font-src` | `'self' blob:` | jamais `data:`, jamais `*` |
 | `media-src` | `'self' blob:` | jamais `*` |
 | `frame-src` | `blob:` | |
+| `worker-src` | `'none'` | `/lire` n'enregistre aucun service worker ni worker ; l'enregistrement de la PWA reste dans la SPA (L16a) |
+| `manifest-src` | `'none'` | le manifeste de la PWA n'est pas lié depuis `/lire` |
 | `connect-src` | `'self'` | pour `fetch` de `/content/*` |
 | `object-src`, `base-uri`, `form-action` | `'none'` | |
 | `frame-ancestors` | `'none'` | ajouté par l'intergiciel |
 | `Referrer-Policy` | `no-referrer` | |
 
-**Origines distantes interdites** : toutes. `@import` et `url()` distants dans une CSS ou un attribut `style`, `<link rel="dns-prefetch|preconnect|prefetch">` et toute ressource distante sont refusés. Les métadonnées de la publication (titre, auteur) affichées par `/lire` sont **toujours insérées comme texte**, jamais par `{@html}` (le `style-src 'unsafe-inline'` vaut pour la page elle-même).
+**Origines distantes interdites** : toutes. `@import` et `url()` distants dans une CSS ou un attribut `style`, `<link rel="dns-prefetch|preconnect|prefetch">` et toute ressource distante sont refusés. Les métadonnées de la publication (titre, auteur) affichées par `/lire` sont **toujours insérées comme texte**, jamais par `{@html}` (le `style-src 'unsafe-inline'` vaut pour la page elle-même) ; test `test_reader_metadata_rendered_as_text` (L12).
+
+**Condition de `'strict-dynamic'`.** Sous `'strict-dynamic'`, seul un script **inséré par l'analyseur** est refusé. Un `<script>` qui échapperait au filtre puis serait cloné, importé ou rattaché par une API DOM depuis un script de confiance (`importNode`, `cloneNode` puis `append`, `range.extractContents` puis réinsertion) s'exécuterait : le document du livre est de même origine et l'iframe a `allow-scripts`. La barrière CSP n'est donc valable que si **aucun code de confiance** (foliate, adaptateur, relais clavier, L13) ne clone, n'importe ni ne réinsère un nœud du livre dans un document ; les notes de bas de page passent par un **nouveau document `blob:` filtré**.
+- **Audit en L11** des chemins de foliate au commit épinglé qui déplacent des nœuds (`footnotes`, surlignage et `overlayer`, `search`), consigné dans `docs/dependencies.md` ; tout chemin trouvé est écarté ou passe par le filtre.
+- `test_epub_script_never_runs` reçoit le cas « script échappé au filtre puis déplacé par une API DOM » : il doit **échouer sous la seule CSP** (pour documenter la limite) et **réussir avec le filtre**. Les deux barrières sont donc indépendantes pour tout vecteur sauf celui-ci, où le filtre est la barrière.
+- Facultatif, Chromium seulement : `require-trusted-types-for 'script'` sur `/lire` ferme ce cas.
+- Les `<link rel="modulepreload">` du HTML de `/lire` sont **filtrés du build** : sous `'strict-dynamic'`, `'self'` est ignoré et ils seraient refusés (rapports de violation bruyants pour les tests qui écoutent `securitypolicyviolation`).
 
 **Invariant pour toute l'origine** : aucune route ne sert des octets fournis par un tiers avec un type JavaScript (`test_no_route_serves_untrusted_bytes_as_script`).
 
@@ -97,9 +116,9 @@ Le filtre s'applique à **tout** EPUB, quel que soit son niveau de confiance. Il
 
 **Analyse** : `DOMParser` sur ce type final. En cas d'erreur d'analyse, le document est **refusé** (jamais réanalysé en HTML, ce que foliate ferait sinon), puis resérialisé après filtrage.
 
-**Éléments retirés avec leur contenu** : `script`, `iframe`, `frame`, `frameset`, `object`, `embed`, `applet`, `form`, `input`, `button`, `select`, `textarea`, `meta` (tout `http-equiv`, pas seulement `refresh`), `base`, `link` sauf `rel="stylesheet"` vers une entrée du livre, `portal` ; en SVG `script`, `foreignObject`, `animate`, `set`, `animateMotion`, `animateTransform` et `use` vers une ressource externe ; en MathML `maction` et `semantics`/`annotation-xml` à contenu HTML.
+**Éléments retirés avec leur contenu, et remplacés dans le corps par un élément inerte à la même place** (voir « Stabilité du CFI ») : `script`, `iframe`, `frame`, `frameset`, `object`, `embed`, `applet`, `form`, `input`, `button`, `select`, `textarea`, `meta` (tout `http-equiv`, pas seulement `refresh`), `base`, `link` sauf `rel="stylesheet"` vers une entrée du livre, `portal` ; en SVG `script`, `foreignObject`, `animate`, `set`, `animateMotion`, `animateTransform` et `use` vers une ressource externe ; en MathML `maction` et `semantics`/`annotation-xml` à contenu HTML.
 
-**Attributs retirés** : tout `on*`, `srcdoc`, `formaction`, `ping`, `http-equiv` ; tout attribut d'URL (`href`, `xlink:href`, `src`, `srcset`, `poster`, `data`, `action`, `background`, `cite`) dont la valeur n'est ni un `blob:` produit par le loader, ni un fragment `#…`, ni un lien `https:` ou `http:` destiné à l'interception ; MathML `href`.
+**Attributs retirés** : tout `on*`, `srcdoc`, `formaction`, `ping`, `http-equiv` ; tout attribut d'URL (`href`, `xlink:href`, `src`, `srcset`, `poster`, `data`, `action`, `background`, `cite`) dont la valeur n'est ni un `blob:` produit par le loader, ni un fragment `#…`, ni, **pour `a[href]` seulement** (le seul lien que foliate intercepte), un lien `https:` ou `http:` destiné à l'interception ; **`xlink:href` n'admet que `blob:` du loader et `#…`** ; MathML `href`.
 
 **URL vers l'origine de l'instance** : toute URL absolue ou relative à la racine vers l'origine de l'instance est retirée, y compris dans `url()` de CSS (sinon un livre enverrait des `GET` authentifiés vers l'API).
 
@@ -107,7 +126,7 @@ Le filtre s'applique à **tout** EPUB, quel que soit son niveau de confiance. Il
 
 **Liens externes** : l'adaptateur **annule toujours** l'événement `external-link` de foliate (qui ouvrirait sinon l'adresse sans `noopener`), demande une **confirmation**, puis ouvre l'adresse **hors du lecteur** en `noopener noreferrer`. Foliate n'intercepte que `a[href]` : un `<a xlink:href>` SVG est retiré par le filtre. Les liens internes sont résolus par foliate.
 
-**Neutraliseur serveur** : `xhtml-neutralizer` passe de `@v1` à `@v2` avec cette même liste. Les dérivés existants sont régénérés par une **migration nommée** (ENF-OPS-021 : une nouvelle version ne réécrit jamais rien d'elle-même) ; lot désigné : **L05** (à confirmer au plan).
+**Neutraliseur serveur** : `xhtml-neutralizer` passe de `@v1` à `@v2` avec cette même liste. Les dérivés existants sont régénérés par une **migration nommée** (ENF-OPS-021 : une nouvelle version ne réécrit jamais rien d'elle-même) ; lot ferme : **L05** (migration et test `test_neutralizer_v2_migration_regenerates_derivatives`).
 
 **Corpus d'EPUB piégés** : script en ligne, `on*`, `<script src>` absolu et relatif (dont `/content/…`), `<script type="module" src>` vers un asset de la SPA, `javascript:` dans un lien et dans `xlink:href`, `meta refresh` et autre `http-equiv`, `<base>`, `<link rel="prefetch">`, `@import` et `url()` distants, `url()` absolu vers l'instance, SVG avec `<script>` et avec `<set attributeName="href" to="javascript:…">`, `<iframe srcdoc>`, iframe `blob:` imbriquée contenant un script, `<object data>` et `<embed>`, formulaire, MathML `href`, `data:text/html`, OPF qui déclare un `.js` ou une image en XHTML, XHTML invalide qui serait rebasculé en HTML, EPUB `publisher` avec `<script src="/content/…">`.
 
@@ -145,10 +164,12 @@ Le port expose : ouvrir une publication, rendre une page ou un segment, produire
 
 ### Format du locator stocké (figé pour L07)
 JSON versionné, colonne `locator` de `reading_position` :
-- **EPUB** : `{"v": 1, "type": "cfi", "cfi": "epubcfi(…)", "totalProgression": 0.37}` ; `cfi` et `totalProgression` (0 à 1) sont **obligatoires**. Aucune liste de positions Readium n'est supposée : foliate n'en calcule pas.
+- **EPUB** : `{"v": 1, "type": "cfi", "cfi": "epubcfi(…)", "totalProgression": 0.37, "filter": "content-filter@2"}` ; `cfi`, `totalProgression` (0 à 1) et `filter` (version du filtre et du neutraliseur qui ont produit le DOM) sont **obligatoires**. Aucune liste de positions Readium n'est supposée : foliate n'en calcule pas.
 - **CBZ, PDF et tout support de pages** : `{"v": 1, "type": "page", "index": 11, "count": 180}` ; `index` est un **index de page à partir de 0**, `count` le nombre de pages du support ; `totalProgression = (index + 1) / count`.
 
-Test : `test_locator_v1_schema_rejects_missing_fields` (L07) : refus d'un EPUB sans `cfi` ou sans `totalProgression`, et d'un support de pages dont `index ≥ count`.
+**Stabilité du CFI (N2, réglé avant L07).** Un CFI compte les éléments frères et les nœuds de texte : retirer un élément du corps décalerait toutes les positions. Le filtre client **et** le neutraliseur **remplacent** donc chaque élément retiré du corps par un **élément inerte à la même place** (élément vide, sans attribut, de même rang) : la structure du DOM est préservée, les étapes de CFI restent stables d'une version à l'autre et entre filtre client et neutraliseur. Une position écrite sous une autre version de `filter` est **restaurée puis marquée `approximate`** (invariant I30) ou signalée, **jamais déplacée en silence**. La migration `@v1` vers `@v2` du neutraliseur a son test nommé, `test_neutralizer_v2_migration_regenerates_derivatives`, et un lot ferme : **L05**, dont la fiche du plan reçoit la migration (boîte à revoir).
+
+Tests : `test_content_filter_preserves_cfi_steps` (propriété, L11 et L12), `test_locator_restored_across_filter_versions` (L07), `test_locator_v1_schema_rejects_missing_fields` (L07) : refus d'un EPUB sans `cfi`, sans `totalProgression` ou sans `filter`, et d'un support de pages dont `index ≥ count`.
 
 ### D6 — kosync : l'ADR-0053 amendée prime
 01 (EF-LEC-009) et 03 sont alignés sur l'ADR-0053 amendée le 2026-11-16 :
