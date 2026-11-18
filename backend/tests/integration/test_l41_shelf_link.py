@@ -8,6 +8,7 @@ import sqlalchemy as sa
 
 from shelfhold.config import Settings
 from shelfhold.export.application.root_bootstrap import RootPolicy, register_roots
+from shelfhold.export.domain.bindings import KomgaPrimaryUnsupportedError
 from shelfhold.export.domain.path_map import PathMode
 from shelfhold.export.targets.kavita import AdminKey, KavitaClient
 from shelfhold.export.targets.kavita.adopt import AdoptionRefused
@@ -187,12 +188,12 @@ def test_the_jurisdiction_follows_the_locale_until_the_admin_sets_it(
 
 
 @pytest.mark.req("EF-EXP-020")
-def test_shelf_create_on_a_komga_target_links_no_kavita_library(
+def test_shelf_create_on_a_komga_target_is_refused_with_its_own_code(
     settings: Settings, tmp_path
 ) -> None:
-    """Only a Kavita target is linked to a library: on a Komga target `shelf create` keeps the
-    shelf and its binding, makes the folder, and opens no Kavita client (which a Komga or a
-    folder target would refuse with a KeyError of the composition)."""
+    """A Komga binding never owns a tree (J-SIMP-4), and `shelf create` binds a primary
+    destination: on a Komga target the command answers the typed refusal, never the crash of the
+    Kavita client it used to open for a target that is not Kavita, and no folder is left behind."""
     root = tmp_path / "library" / "manga"
     root.mkdir(parents=True)
     fake = FakeKomga(keys={KOMGA_KEY: True})
@@ -204,9 +205,12 @@ def test_shelf_create_on_a_komga_target_links_no_kavita_library(
             path_map=[{"local": str(root), "remote": "/manga", "mode": "rw"}],
         )  # fmt: skip
         asked = len(fake.requests)  # the probe of `target add` was the last ask of Komga
-        created = env.admin.shelf_create(name="Adultes", max_age="18+", target="komga", subpath="K")
-        assert created.created
-        assert (root / "K").is_dir()  # the folder of the shelf exists before the first export
+        with pytest.raises(KomgaPrimaryUnsupportedError) as refused:
+            env.admin.shelf_create(name="Adultes", max_age="18+", target="komga", subpath="K")
+        assert refused.value.code == "binding.komga_primary_unsupported"
+        assert env.count("shelf") == 1  # the shelf is there; its binding is not
+        assert env.count("shelf_destination") == 0
+        assert not (root / "K").exists()  # no folder was made for a refused binding
         assert len(fake.requests) == asked
 
 

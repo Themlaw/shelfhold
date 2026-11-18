@@ -67,7 +67,12 @@ def test_a_family_shelf_is_bound_to_komga_only_after_the_audit_proved_it(world: 
     assert "secretname" not in refused.text and API_KEY not in refused.text
 
     fake = audit(world, target, age=13)
-    accepted = world.bind(world.family, "kids", target=target)
+    # a Komga binding never owns a tree (J-SIMP-4): the tree of the shelf's own binding is the
+    # one it indexes, and the audit that proved the folder is the proof of that binding
+    owner = world.bind(world.family, "kids")
+    assert owner.status_code == 201, owner.text
+    tree = _tree_of_binding(world, owner.json()["id"])
+    accepted = world.bind(world.family, "kids", target=target, tree_id=tree)
     assert accepted.status_code == 201, accepted.text
     assert fake.violations == []
     listed = world.api.client.get(world.path(world.family))
@@ -76,8 +81,14 @@ def test_a_family_shelf_is_bound_to_komga_only_after_the_audit_proved_it(world: 
     assert "komga_api_key" not in listed.text and "secret" not in listed.text.lower()
 
     # another folder than the one audited is not covered by the proof
-    other = world.bind(world.family, "elsewhere", target=target)
+    other = world.bind(world.family, "elsewhere", target=target, tree_id=tree)
     assert other.json()["code"] == "shelf.destination_not_partitioned"
+
+
+def _tree_of_binding(world: World, destination_id: str) -> str:
+    """The tree a binding owns, read back from the destinations of its shelf."""
+    listed = world.api.client.get(world.path(world.family)).json()["destinations"]
+    return str(next(item["tree_id"] for item in listed if item["id"] == destination_id))
 
 
 @pytest.mark.req("EF-EXP-047", "EF-USR-024", "ENF-SEC-010")
@@ -124,7 +135,10 @@ def test_an_api_key_even_read_only_binds_nothing_and_reads_no_binding(
 def test_a_gap_shows_in_health_to_the_admin_without_a_name_or_a_key(world: World) -> None:
     target = komga_target(world)
     fake = audit(world, target, age=13)
-    accepted = world.bind(world.family, "kids", target=target)
+    owner = world.bind(world.family, "kids")
+    assert owner.status_code == 201, owner.text
+    tree = _tree_of_binding(world, owner.json()["id"])
+    accepted = world.bind(world.family, "kids", target=target, tree_id=tree)
     assert accepted.status_code == 201, accepted.text
     fake.users = [administrator(), reader("secretname", [LIBRARY], age=6)]
     client = KomgaClient(build_fetcher(fake), BASE_URL, KomgaKey(API_KEY), clock=world.api.clock)

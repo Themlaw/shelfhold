@@ -43,6 +43,7 @@ from shelfhold.export.domain.bindings import (
     WRITING_TRANSPORTS,
     BindingFacts,
     Egress,
+    KomgaPrimaryUnsupportedError,
     TargetKindTransportError,
     TreeOverlapError,
     UnpartitionedDestinationError,
@@ -90,6 +91,7 @@ class Actor(Protocol):
 
 NATIVE_FOLDER = "native_folder"  # the kind of target of EF-EXP-010
 CWA = "cwa"  # the kind of target of EF-EXP-022: a drop box, bound only as `dropbox`
+KOMGA = "komga"  # the kind of target of EF-EXP-020: an indexer, never the writer of a tree (M5)
 LOCAL_LIBRARY = "local"  # the one remote library of a folder destination: no server, a folder
 TAKEN = "remote_library_taken"  # the reason `FileResult` gives for the one-per-library rule
 
@@ -641,6 +643,13 @@ class ShelfService:
             )
             if row.kind == CWA and transport != "dropbox":
                 raise TargetKindTransportError("a CWA drop box is bound as a drop box")
+            if row.kind == KOMGA and attach_to_tree is None:
+                # J-SIMP-4: the executor plans no write for a Komga tree, so a binding that owns
+                # one would leave the shelf without its files. Until M5, Komga is bound as an
+                # indexer of a tree another binding writes (ADR-0052).
+                raise KomgaPrimaryUnsupportedError(
+                    "Komga is bound as a secondary destination only until M5: attach it to a tree"
+                )
             path_map = PathMap(
                 tuple(
                     PathEntry(e["local"], e["remote"], PathMode(e.get("mode", "rw")))

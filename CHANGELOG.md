@@ -24,6 +24,7 @@ Format : [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/). Versionnement
 ### Modifié
 
 - Une Œuvre ou une Édition rangée sur aucune étagère n'est plus visible pour un enfant (un adulte la voit toujours).
+- **Liaison Komga** : une liaison Komga qui posséderait l'arbre est refusée (`binding.komga_primary_unsupported`, cause et action dans les deux langues) : l'exécuteur n'écrit pas de plan pour un arbre Komga et l'étagère ne recevrait jamais ses fichiers. Komga se lie en destination secondaire — l'arbre écrit par une autre liaison, qu'il indexe — jusqu'à M5.
 
 ### Corrigé
 

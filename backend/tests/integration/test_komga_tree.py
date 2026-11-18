@@ -3,13 +3,21 @@
 The mechanics are those of L06a: one primary writes, the other server is a secondary indexer that
 copies the state of the primary in the same transaction and never writes; a tree is one copy; a
 server indexes a tree once; and a shelf below 18+ is never bound to a Komga that nobody audited.
+
+Since the contradicteur of M4 (J-SIMP-4), a Komga binding never owns a tree: the executor plans no
+write for one, so the shelf would never receive its files. Komga indexes a tree another binding
+writes.
 """
 
 from __future__ import annotations
 
 import pytest
 
-from shelfhold.export.domain.bindings import TreeOverlapError, UnpartitionedDestinationError
+from shelfhold.export.domain.bindings import (
+    KomgaPrimaryUnsupportedError,
+    TreeOverlapError,
+    UnpartitionedDestinationError,
+)
 from shelfhold.export.targets.kavita import KavitaDestination
 from shelfhold.export.targets.komga import KomgaDestination
 from tests.export_env import export_env
@@ -50,21 +58,29 @@ def test_kavita_and_komga_same_tree_per_adr() -> None:
         # a server indexes a tree once; a second Komga on the same folder is refused (T9)
         with pytest.raises(TreeOverlapError):
             bind(env, "Kavita", target_id=komga_target, attach_to_tree=tree_id)
-        # without the explicit choice the same folder is an overlap, for Komga as for any server
-        with pytest.raises(TreeOverlapError):
+        # without the explicit choice, a Komga that would own a tree is refused as a primary
+        # (J-SIMP-4): the folder overlap it would have raised never comes that far
+        with pytest.raises(KomgaPrimaryUnsupportedError):
             bind(env, "Kavita", target_id=add_target(env, kind="komga", partitioning="none"))
 
 
-@pytest.mark.req("EF-EXP-020", "EF-EXP-047")
-def test_komga_can_be_the_primary_and_kavita_its_secondary() -> None:
+@pytest.mark.req("EF-EXP-020")
+def test_komga_is_refused_as_a_primary_binding_until_m5() -> None:
+    """The executor plans no write for a Komga tree: a shelf bound to Komga alone would never
+    receive its files (J-SIMP-4). The binding is refused with its own code, and the door that
+    stays open is the indexer of a tree another binding writes (ADR-0052)."""
     with export_env() as env:
         komga_target = add_target(env, kind="komga", partitioning="none", name="Komga")
-        primary = bind(env, "Komga", target_id=komga_target)
-        tree_id = tree_of(env, primary)
-        secondary = bind(env, "Komga", target_id=add_target(env), attach_to_tree=tree_id)
+        with pytest.raises(KomgaPrimaryUnsupportedError) as refused:
+            bind(env, "Komga", target_id=komga_target)
+        assert refused.value.code == "binding.komga_primary_unsupported"
+        # the door that stays open: Komga indexes the tree of the shelf's own binding
+        service(env).list_bindings(env.shelf_id)
+        tree_id = tree_of(env, env.destination_id)
+        assert tree_id is not None
+        komga = bind(env, "Kavita", target_id=komga_target, attach_to_tree=tree_id, link=True)
         roles = {b.destination_id: b.role for b in service(env).list_bindings(env.shelf_id)}
-        assert roles[primary] == "primary" and roles[secondary] == "secondary"
-        assert run(env, secondary) == 0  # whichever the primary, the indexer writes nothing
+        assert roles[komga] == "secondary"
 
 
 @pytest.mark.req("EF-EXP-047", "EF-USR-024")

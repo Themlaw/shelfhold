@@ -212,13 +212,23 @@ def test_komga_idor_a_binding_of_one_shelf_never_shows_in_another(world: World) 
     the bindings of its own shelf only."""
     komga = _komga_on_world(world)
     (world.library / "komga").mkdir(exist_ok=True)
+    # a Komga binding never owns a tree (J-SIMP-4): the shelf's own binding is the one it indexes
+    owner = world.api.post(
+        world.path(world.adult), json={"target_id": world.server, "root_subpath": "komga"}
+    )
+    assert owner.status_code == 201, owner.text
+    trees = {
+        d["id"]: d["tree_id"]
+        for d in world.api.client.get(world.path(world.adult)).json()["destinations"]
+    }
     created = world.api.post(
-        world.path(world.adult), json={"target_id": komga, "root_subpath": "komga"}
+        world.path(world.adult),
+        json={"target_id": komga, "root_subpath": "komga", "tree_id": trees[owner.json()["id"]]},
     )
     assert created.status_code == 201, created.text
     own = world.api.client.get(world.path(world.adult)).json()["destinations"]
     other = world.api.client.get(world.path(world.family)).json()["destinations"]
-    assert [d["id"] for d in own] == [created.json()["id"]] and other == []
+    assert created.json()["id"] in [d["id"] for d in own] and other == []
     # the family shelf cannot take it: Komga keeps no account apart before the audit of L08b
     refused = world.api.post(
         world.path(world.family), json={"target_id": komga, "root_subpath": "komga"}
