@@ -71,7 +71,7 @@ def test_c4_a_disk_failure_of_a_binding_is_kept_in_the_health_of_its_target(
         unit_with_item(env, series, "1")
         destination = _native(env)
         fan, _source = run(env)
-        pipeline = fan._pipeline  # noqa: SLF001
+        pipeline = fan._pipeline
 
         def broken(*_a: Any, **_k: Any) -> Any:
             raise OSError("disk")
@@ -110,7 +110,8 @@ def test_c2_a_declared_age_below_the_rating_is_no_age_and_the_chapter_is_held(
         a = adoption(env)
         # a forged ComicInfo says the file is for everyone
         a.add_series(
-            "Tale of Orchard", ["Tale of Orchard - Ch.2.cbz"],
+            "Tale of Orchard",
+            ["Tale of Orchard - Ch.2.cbz"],
             info=comicinfo("Tale of Orchard", age=declared),
         )
         a.adopt()

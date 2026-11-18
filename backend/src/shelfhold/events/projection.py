@@ -23,8 +23,8 @@ from shelfhold.catalog.public import (
     visible_unit_ids,
     visible_work_ids,
 )
-from shelfhold.events.id_keys import KINDS
 from shelfhold.events.activity import ActivityEvent, ActivityItem, Viewer, activity_view
+from shelfhold.events.id_keys import KINDS
 
 __all__ = ["EventRefs", "event_refs", "project_event"]
 

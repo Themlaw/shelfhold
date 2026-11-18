@@ -950,9 +950,7 @@ class Adopter:
         if suspend and item.unrated:  # this Work alone, never the shelf (EF-EXP-048)
             suspend_follow(connection, ctx.shelf_id, [self._work_of(connection, edition_id)])
         self._freeze_series(connection, ctx, item, edition_id, now)
-        forged = item.edition_id is not None and self._declared_below(
-            connection, item, edition_id
-        )
+        forged = item.edition_id is not None and self._declared_below(connection, item, edition_id)
         if not forged:
             self._suggest_age(connection, item, edition_id, now)
         if item.edition_id is not None and (item.age is None or forged):

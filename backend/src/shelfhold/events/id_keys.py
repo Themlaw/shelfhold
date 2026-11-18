@@ -13,5 +13,6 @@ NON_CONTENT_ID_KEYS: Final = frozenset({
     "assembly_id", "target_id", "shelf_id", "team_id", "plugin_id", "session_id", "import_id",
     "pending_item_id", "trash_item_id", "plan_id", "migration_id", "key_id", "public_id",
     "profile_id", "subject_user_id", "actor_id", "owner_id", "requester_user_id",
-    "install_id", "instance_id", "template_id", "version_id",
+    "install_id", "instance_id", "template_id", "version_id", "binding_id", "from_binding_id",
+    "to_binding_id", "source_id",
 })  # fmt: skip
