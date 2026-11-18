@@ -5,6 +5,13 @@
 !backend/src/
 !docker/healthcheck.py
 !frontend/
+# foliate-js: only what the reader imports enters the build context (never pdf.js, which no engine
+# registers in M5, nor its tests, CI files or build config). EF-LEC-003.
+frontend/vendor/foliate-js/.git
+frontend/vendor/foliate-js/.github
+frontend/vendor/foliate-js/tests
+frontend/vendor/foliate-js/rollup
+frontend/vendor/foliate-js/vendor/pdfjs
 !open-api/
 **/__pycache__
 frontend/.env*
