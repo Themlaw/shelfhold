@@ -8,7 +8,8 @@ What the nightly exercises is the contract of `KomgaClient` against the real ser
 it says, the libraries and the accounts it reads, the scan of the library that holds a folder
 (Komga has no scan of a folder) and the trash emptied after a book the host removed. The journey
 of a shelf exported to Komga is another lot's: no route of Shelfhold creates a Komga target yet
-(M4 L08a, gap 1).
+(M4 L08a, gap 1); `target add komga` (M4 L46) probes `/actuator/info` with the key it is
+given, which the second test checks against the real server.
 """
 
 from __future__ import annotations
@@ -85,3 +86,29 @@ def test_komga_nightly_client_contract(komga: RealKomga) -> None:
     assert "Series Gamma" not in settled
     assert "Series Beta" not in settled
     assert settled["Series Alpha"]["deleted"] is False
+
+
+@pytest.mark.req("ENF-COMP-001", "EF-EXP-020", "ENF-SEC-013")
+def test_komga_nightly_actuator_info_needs_the_admin_role_and_takes_the_api_key(
+    komga: RealKomga,
+) -> None:
+    """The probe of `target add komga` proves the role only if `/actuator/info` (a) takes the key in
+    `X-API-Key`, (b) refuses a request with no key and (c) refuses the key of an account that is
+    not an administrator (#342 MIN-2). If this fails, the probe must move to a route that does."""
+    status, _body = komga.request("GET", "/actuator/info", headers={"X-API-Key": komga.key})
+    assert status == 200, "the administrator's key is not accepted in X-API-Key"
+    assert komga.request("GET", "/actuator/info")[0] in (401, 403), "the route is open"
+    reader = {"email": "reader@komga.invalid", "password": BOOTSTRAP["admin"]["password"] + "-r"}
+    basic = {"Authorization": f"Basic {komga._basic()}"}
+    made, _ = komga.request("POST", "/api/v2/users", body={**reader, "roles": []}, headers=basic)
+    assert made in (200, 201), "the reader account could not be made"
+    import base64
+
+    pair = base64.b64encode(f"{reader['email']}:{reader['password']}".encode()).decode()
+    status, key = komga.request(
+        "POST", "/api/v2/users/me/api-keys", body={"comment": "reader"},
+        headers={"Authorization": f"Basic {pair}"},
+    )  # fmt: skip
+    assert status == 200 and key["key"], key
+    refused, _ = komga.request("GET", "/actuator/info", headers={"X-API-Key": key["key"]})
+    assert refused in (401, 403), "a reader's key passes the probe: it proves no administrator"

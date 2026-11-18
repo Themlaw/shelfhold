@@ -61,8 +61,8 @@ reason = "porte P0 et règles d'arrêt documentées (portes.md), relevé de dép
 
 [[partial]]
 requirement = "EF-BIB-029"
-milestone = "M4"
-reason = "détection d'une migration Suwayomi et API livrées (test_m3_l21_suwayomi_migration.py) ; l'écran « Même œuvre ? » (proposition, plan de fusion ou de réaffectation) est reporté en M4 (L58 contradicteur M2)"
+milestone = "M5"
+reason = "détection d'une migration Suwayomi et API livrées (test_m3_l21_suwayomi_migration.py), migration complète de source avec table de correspondance et son écran (M4 L27) ; l'écran « Même œuvre ? » (proposition, plan de fusion ou de réaffectation) n'a eu aucune carte en M4 : redaté M5 par écrit le 2026-11-17 (M4 L43, dette de L58 contradicteur M2)"
 
 [[partial]]
 requirement = "EF-EXP-023"
@@ -126,6 +126,14 @@ reason = "garde de l'hygiène des fixtures (aucun dossier laissé dans /tmp) : p
 [[exception]]
 path = "backend/tests/unit/test_sdk_export_target.py"
 reason = "dépréciations du contrat SDK ExportTarget (D9, M1b L31) : le contrat reste lisible, ce n'est pas une exigence EF-/ENF-"
+
+[[exception]]
+path = "backend/tests/integration/test_m4_l46_target_wiring_contradicteur.py"
+tests = [
+  "test_poc_a_path_map_change_through_the_komga_door_is_journaled",
+  "test_poc_a_new_key_for_an_existing_komga_is_not_silently_dropped",
+]
+reason = "PoC de la relecture adverse de #342 (L46), fichier figé par le contradicteur : les exigences du lot (EF-EXP-020, EF-EXP-022) sont prouvées par test_m4_l46_target_wiring.py"
 
 [[deferred]]
 requirement = "ENF-GOV-004"

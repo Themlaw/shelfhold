@@ -87,7 +87,9 @@ une pause qu'il a posée. L'état gardé ne porte ni clé ni nom de compte.
 
 ## Ce que cette destination ne fait pas encore
 
-- Aucun appelant de production lance l'audit : la création de la cible, la route de liaison et le
-  contrôle quotidien sont d'un autre lot (entrée `unwired-m4-komga` de l'allowlist).
+- La cible se crée (`shelfhold target add komga`, `POST /api/v1/targets/komga`, M4 L46 : clé scellée,
+  sonde de `/actuator/info`). Mais aucun appelant de production ne lance encore l'audit (`admit` avant
+  la liaison, `audit` au contrôle quotidien) ni le relais de scan de la passe d'export (entrée
+  `unwired-m4-komga` de l'allowlist) : tant que la preuve est vide, toute liaison familiale vers Komga est refusée.
 - Ni progression, ni collections, ni événements : `progress`, `collections` et `events` valent
   `none`.

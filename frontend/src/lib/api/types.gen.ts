@@ -2666,6 +2666,30 @@ export type KeyringOut = {
 };
 
 /**
+ * KomgaIn
+ */
+export type KomgaIn = {
+    /**
+     * Api Key
+     */
+    api_key: string;
+    /**
+     * Name
+     */
+    name: string;
+    /**
+     * Path Map
+     */
+    path_map?: Array<{
+        [key: string]: string;
+    }> | null;
+    /**
+     * Url
+     */
+    url: string;
+};
+
+/**
  * LanguageIn
  */
 export type LanguageIn = {
@@ -6041,6 +6065,30 @@ export type SupportAuthorOut = {
      * Pause Suggestions
      */
     pause_suggestions: Array<string>;
+};
+
+/**
+ * SyncProgressIn
+ */
+export type SyncProgressIn = {
+    /**
+     * Enabled
+     */
+    enabled: boolean;
+};
+
+/**
+ * SyncProgressOut
+ */
+export type SyncProgressOut = {
+    /**
+     * Destination Id
+     */
+    destination_id: string;
+    /**
+     * Sync Progress
+     */
+    sync_progress: boolean;
 };
 
 /**
@@ -9814,6 +9862,44 @@ export type RemovalPreviewResponses = {
 };
 
 export type RemovalPreviewResponse = RemovalPreviewResponses[keyof RemovalPreviewResponses];
+
+export type SyncProgressData = {
+    body: SyncProgressIn;
+    path: {
+        /**
+         * Destination Id
+         */
+        destination_id: string;
+    };
+    query?: never;
+    url: '/api/v1/destinations/{destination_id}/sync-progress';
+};
+
+export type SyncProgressErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type SyncProgressError = SyncProgressErrors[keyof SyncProgressErrors];
+
+export type SyncProgressResponses = {
+    /**
+     * Successful Response
+     */
+    200: SyncProgressOut;
+};
+
+export type SyncProgressResponse = SyncProgressResponses[keyof SyncProgressResponses];
 
 export type RestoreUpstreamData = {
     body: ShelfholdInterfacesHttpApiLibraryDetachIn;
@@ -16434,6 +16520,72 @@ export type AddTargetResponses = {
 };
 
 export type AddTargetResponse = AddTargetResponses[keyof AddTargetResponses];
+
+export type AddCwaData = {
+    body: NativeFolderIn;
+    path?: never;
+    query?: never;
+    url: '/api/v1/targets/cwa';
+};
+
+export type AddCwaErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type AddCwaError = AddCwaErrors[keyof AddCwaErrors];
+
+export type AddCwaResponses = {
+    /**
+     * Successful Response
+     */
+    201: Created;
+};
+
+export type AddCwaResponse = AddCwaResponses[keyof AddCwaResponses];
+
+export type AddKomgaData = {
+    body: KomgaIn;
+    path?: never;
+    query?: never;
+    url: '/api/v1/targets/komga';
+};
+
+export type AddKomgaErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type AddKomgaError = AddKomgaErrors[keyof AddKomgaErrors];
+
+export type AddKomgaResponses = {
+    /**
+     * Successful Response
+     */
+    201: Created;
+};
+
+export type AddKomgaResponse = AddKomgaResponses[keyof AddKomgaResponses];
 
 export type AddNativeFolderData = {
     body: NativeFolderIn;
