@@ -1,7 +1,7 @@
 // The reader refuses to mount under a policy that is not its own (ADR-0055, "CSP du lecteur"):
 // a route of the SPA carries the SPA's `<meta>`, and the two policies would apply together.
 import { describe, expect, it } from 'vitest';
-import { checkReaderCsp, type GuardProbes } from './csp-guard.ts';
+import { browserProbes, checkReaderCsp, type GuardProbes } from './csp-guard.ts';
 
 const probes = (over: Partial<GuardProbes> = {}): GuardProbes => ({
   inlineStyleAllowed: async () => true,
@@ -46,5 +46,34 @@ describe('the guard of the reader', () => {
   it('refuses when a probe cannot answer', async () => {
     const broken = probes({ inlineStyleAllowed: async () => Promise.reject(new Error('no')) });
     expect(await checkReaderCsp(withHead(''), broken)).toBe('refused');
+  });
+});
+
+describe('the probes of the browser', () => {
+  const violation = (doc: Document, effectiveDirective: string, after = 5) =>
+    setTimeout(() => {
+      const event = new Event('securitypolicyviolation') as Event & { effectiveDirective: string };
+      event.effectiveDirective = effectiveDirective;
+      doc.dispatchEvent(event);
+    }, after);
+
+  // req: ENF-SEC-004
+  it('sees an inline style refused by the policy in force', async () => {
+    const doc = document.implementation.createHTMLDocument('p');
+    violation(doc, 'style-src-elem');
+    expect(await browserProbes(doc).inlineStyleAllowed()).toBe(false);
+  });
+
+  // req: ENF-SEC-004
+  it('sees an inline style applied when nothing refuses it', async () => {
+    expect(await browserProbes(document).inlineStyleAllowed()).toBe(true);
+  });
+
+  // req: ENF-SEC-004
+  it('sees a data: image refused, and one that is not (no violation, nothing said)', async () => {
+    const refused = document.implementation.createHTMLDocument('p');
+    violation(refused, 'img-src');
+    expect(await browserProbes(refused).forbiddenImageBlocked()).toBe(true);
+    expect(await browserProbes(document.implementation.createHTMLDocument('q')).forbiddenImageBlocked()).toBe(false);
   });
 });
