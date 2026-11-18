@@ -4,7 +4,17 @@ import globals from 'globals';
 import ts from 'typescript-eslint';
 
 export default ts.config(
-  { ignores: ['build/', '.svelte-kit/', 'node_modules/', 'coverage/', 'src/lib/api/', 'src/lib/themes/themes.css'] },
+  {
+    ignores: [
+      'build/',
+      '.svelte-kit/',
+      'node_modules/',
+      'coverage/',
+      'vendor/', // git submodules (foliate-js): third-party code, never linted nor built here
+      'src/lib/api/',
+      'src/lib/themes/themes.css'
+    ]
+  },
   js.configs.recommended,
   ...ts.configs.recommended,
   ...svelte.configs.recommended,
