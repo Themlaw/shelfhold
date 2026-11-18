@@ -82,12 +82,21 @@ const fetcher = (async (input: RequestInfo | URL, init?: RequestInit) => {
   return new Response(body, { status: 200 });
 }) as typeof fetch;
 
+interface BookLike {
+  sections: { load(): Promise<unknown> }[];
+  loadBlob(name: string): Promise<unknown>;
+  loadText(name: string): Promise<unknown>;
+  transformTarget: unknown;
+  isDirectory?: unknown;
+  arrayBuffer?: unknown;
+}
+
 async function opened(opts: Partial<Parameters<typeof createEpubEngine>[0]> = {}, v: PublicationView = view()) {
   const fake = new FakeView();
   const engine = createEpubEngine({ fetch: fetcher, createView: () => fake, origin: 'https://shelfhold.test', ...opts });
   const host = document.createElement('div');
   await engine.open(v, host);
-  return { engine, fake, host, book: fake.opened[0] as Record<string, any> };
+  return { engine, fake, host, book: fake.opened[0] as BookLike };
 }
 
 describe('the EPUB engine', () => {
@@ -145,7 +154,7 @@ describe('the EPUB engine', () => {
   // req: ENF-SEC-004
   it('test_epub_script_never_runs (unit): what the loader makes into a blob has passed the filter', async () => {
     const { book } = await opened();
-    const url = (await book.sections[0].load()) as string;
+    const url = (await book.sections[0]!.load()) as string;
     const doc = new DOMParser().parseFromString(await blobs.get(url)!.text(), 'application/xhtml+xml');
     expect(doc.querySelector('script')).toBeNull();
     expect(doc.querySelector('#a')?.textContent).toBe('t');
@@ -227,20 +236,20 @@ describe('the EPUB engine', () => {
     const extract = await opened({}, view({ scope: 'excerpt' }));
     const ends = vi.fn();
     extract.engine.onEnd(ends);
-    await expect(extract.book.sections[1].load()).rejects.toBeDefined();
+    await expect(extract.book.sections[1]!.load()).rejects.toBeDefined();
     expect(ends).toHaveBeenCalledTimes(1);
 
     const full = await opened();
     const errors: unknown[] = [];
     full.engine.onError((e) => errors.push(e));
-    await expect(full.book.sections[1].load()).rejects.toBeDefined();
+    await expect(full.book.sections[1]!.load()).rejects.toBeDefined();
     expect(errors).toEqual([{ kind: 'missing', index: 1 }]);
   });
 
   // req: ENF-SEC-004
   it('lets go of everything on destroy: the view, the blobs, the listeners', async () => {
     const { engine, fake, book } = await opened();
-    await book.sections[0].load();
+    await book.sections[0]!.load();
     expect(blobs.size).toBeGreaterThan(0);
     const seen: Locator[] = [];
     engine.onLocator((l) => seen.push(l));

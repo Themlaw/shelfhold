@@ -37,6 +37,20 @@ export interface EpubEngineOptions {
   renew?: () => Promise<PublicationView | null>;
 }
 
+/** What the adapter uses of `EPUB` (foliate is plain JavaScript: this is its typing, here and nowhere else). */
+interface EpubBook {
+  init(): Promise<unknown>;
+  sections: { load: () => Promise<unknown> }[];
+  transformTarget: EventTarget;
+  destroy(): void;
+}
+interface EpubLoader {
+  loadText(name: string): Promise<string | null>;
+  loadBlob(name: string): Promise<Blob | null>;
+  getSize(name: string): number;
+  sha1: undefined;
+}
+
 class MissingError extends Error {
   constructor(readonly entry: string) {
     super('missing');
@@ -83,7 +97,7 @@ export function createEpubEngine(options: EpubEngineOptions = {}): ReaderEngine 
   const endListeners = new Set<() => void>();
   const errorListeners = new Set<(error: EngineError) => void>();
   let view: FoliateViewLike | null = null;
-  let book: { destroy?: () => void } | null = null;
+  let book: EpubBook | null = null;
   let stops: (() => void)[] = [];
   let ended = false;
   let destroyed = false;
@@ -99,7 +113,9 @@ export function createEpubEngine(options: EpubEngineOptions = {}): ReaderEngine 
     async open(publication, host) {
       if (publication.kind !== 'epub' || publication.package === null) throw new Error('not an EPUB publication');
       const origin = options.origin ?? location.origin;
-      let { base, entry: opf } = ticketBase(publication.package);
+      const first = ticketBase(publication.package);
+      const opf = first.entry;
+      let base = first.base;
       let renewed = false;
 
       const get = async (name: string): Promise<Response> => {
@@ -123,7 +139,7 @@ export function createEpubEngine(options: EpubEngineOptions = {}): ReaderEngine 
         return response;
       };
 
-      const epub = new EPUB({
+      const epub = new (EPUB as unknown as new (loader: EpubLoader) => EpubBook)({
         loadText: async (name: string) => {
           if (name === 'META-INF/container.xml') return CONTAINER(opf);
           if (name.startsWith('META-INF/')) return null; // nothing is obfuscated, no display options: nothing is asked
@@ -140,7 +156,7 @@ export function createEpubEngine(options: EpubEngineOptions = {}): ReaderEngine 
       });
       await epub.init();
       // before the first read, and before foliate sees the book: no read has gone through the loader yet
-      installFilter(epub.transformTarget as EventTarget, { origin });
+      installFilter(epub.transformTarget, { origin });
 
       const fail = (index: number, cause: unknown) => {
         if (destroyed) return;
@@ -156,7 +172,7 @@ export function createEpubEngine(options: EpubEngineOptions = {}): ReaderEngine 
         } else if (cause instanceof FilterRefusal) say(errorListeners, { kind: 'undisplayable', index });
         else say(errorListeners, { kind: 'failed', index });
       };
-      epub.sections = epub.sections.map((section: { load: () => Promise<unknown> }, index: number) => ({
+      epub.sections = epub.sections.map((section, index) => ({
         ...section,
         load: async () => {
           try {
@@ -246,7 +262,7 @@ export function createEpubEngine(options: EpubEngineOptions = {}): ReaderEngine 
       stops = [];
       view?.close?.();
       view?.remove();
-      book?.destroy?.(); // every `blob:` of the book is let go
+      book?.destroy(); // every `blob:` of the book is let go
       view = null;
       book = null;
       locatorListeners.clear();

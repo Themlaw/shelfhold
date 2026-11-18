@@ -101,6 +101,7 @@ export function isLoadable(declared: string, isScript: boolean): boolean {
 // URLs
 
 /** An attribute value without what a browser throws away before reading the scheme. */
+// eslint-disable-next-line no-control-regex -- the control characters are what a browser drops before it reads a scheme
 const bare = (value: string): string => value.replace(/[\u0000-\u0020\u007f-\u009f\u200b-\u200f\u2028\u2029\ufeff]/g, '');
 
 const isLoaderUrl = (value: string, origin: string): boolean => bare(value).startsWith(`blob:${origin}/`) && !/[\s"'<>]/.test(value.trim());
@@ -181,7 +182,9 @@ function identEnd(css: string, from: number): number {
   return Math.min(i, css.length);
 }
 
+// eslint-disable-next-line no-control-regex -- ASCII boundary of an identifier
 const IDENT_START = /[a-z_\-\\]|[^\u0000-\u007f]/i;
+// eslint-disable-next-line no-control-regex -- ASCII boundary of an identifier
 const IDENT_CHAR = /[a-z0-9_\-\\]|[^\u0000-\u007f]/i;
 
 /** The CSS of a book without a fetch it did not bring, an `@import`, a script hook or a comment. */

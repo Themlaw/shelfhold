@@ -15,16 +15,16 @@ import {
 const ORIGIN = 'https://shelfhold.test';
 const LOADER = `blob:${ORIGIN}/6f1c2d7e-0000-4000-8000-000000000001`;
 const OPTS = { origin: ORIGIN };
-const XHTML = 'application/xhtml+xml';
-const SVG = 'image/svg+xml';
+const XHTML = 'application/xhtml+xml' as const;
+const SVG = 'image/svg+xml' as const;
 
 const page = (body: string, head = '') =>
   `<?xml version="1.0" encoding="utf-8"?><html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops"><head><title>t</title>${head}</head><body>${body}</body></html>`;
 const svg = (inner: string) =>
   `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 10 10">${inner}</svg>`;
 
-const parse = (text: string, type = XHTML) => new DOMParser().parseFromString(text, type);
-const run = (text: string, type = XHTML) => parse(filterMarkup(text, type, OPTS), type);
+const parse = (text: string, type: 'application/xhtml+xml' | 'image/svg+xml' = XHTML) => new DOMParser().parseFromString(text, type);
+const run = (text: string, type: 'application/xhtml+xml' | 'image/svg+xml' = XHTML) => parse(filterMarkup(text, type, OPTS), type);
 
 /** Everything a book must never keep, whatever the vector (independent of the filter's lists). */
 function dangers(doc: Document): string[] {
@@ -36,6 +36,7 @@ function dangers(doc: Document): string[] {
     if (name === 'link' && !(el.getAttribute('rel') === 'stylesheet' && el.getAttribute('href')?.startsWith('blob:')))
       found.push('link');
     for (const attr of Array.from(el.attributes)) {
+      // eslint-disable-next-line no-control-regex -- the controls a browser drops before it reads a scheme
       const v = attr.value.replace(/[\u0000-\u0020]/g, '').toLowerCase();
       if (/^on/i.test(attr.name)) found.push(`handler ${attr.name}`);
       if (/^(srcdoc|formaction|ping|http-equiv)$/i.test(attr.name)) found.push(`attr ${attr.name}`);

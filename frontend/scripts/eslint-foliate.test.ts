@@ -1,7 +1,9 @@
 // "foliate is only imported by its adapter" (ADR-0055, ENF-SEC-004 volet lecteur): the rule of the
 // ESLint config, played on the code it protects, with the paths the adapter really uses.
 import { ESLint } from 'eslint';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+
+vi.setConfig({ testTimeout: 120_000 }); // the first lint loads the whole configuration
 
 const eslint = new ESLint({ cwd: process.cwd() });
 const messages = async (code: string, filePath: string) => {

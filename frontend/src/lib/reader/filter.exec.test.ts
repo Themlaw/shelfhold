@@ -9,7 +9,7 @@ const OPTS = { origin: 'https://shelfhold.test' };
 const NS = 'xmlns="http://www.w3.org/1999/xhtml"';
 const run = (xhtml: string, contentType = 'application/xhtml+xml') => {
   const dom = new JSDOM(xhtml, { contentType, runScripts: 'dangerously', pretendToBeVisual: true, virtualConsole: new VirtualConsole() });
-  return dom.window as unknown as Window & { __ran?: number; document: Document };
+  return dom.window as unknown as Window & typeof globalThis & { __ran?: number };
 };
 const body = (inner: string) => `<html ${NS}><head><title>t</title></head><body>${inner}</body></html>`;
 
@@ -28,7 +28,7 @@ describe('the filter alone, with no policy', () => {
   for (const [name, { doc, fire }] of Object.entries(vectors)) {
     it(`test_epub_script_never_runs (filter alone): ${name}`, () => {
       const type = doc.startsWith('<svg') ? 'image/svg+xml' : 'application/xhtml+xml';
-      const raise = (w: Window & { document: Document }) => {
+      const raise = (w: Window & typeof globalThis) => {
         for (const [selector, kind] of fire) w.document.querySelector(selector)?.dispatchEvent(new w.Event(kind, { bubbles: true }));
       };
       const control = run(doc, type);

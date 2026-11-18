@@ -197,7 +197,7 @@
       <button
         type="button"
         onclick={() => turn('previous')}
-        aria-disabled={!at || at.index === 0}>{t('reader.previous')}</button
+        aria-disabled={!at || (at.type === 'page' && at.index === 0)}>{t('reader.previous')}</button
       >
       <button type="button" onclick={() => turn('next')} aria-disabled={!at}>{t('reader.next')}</button
       >
