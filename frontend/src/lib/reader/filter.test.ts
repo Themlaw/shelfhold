@@ -225,6 +225,15 @@ describe('the CSS of a book', () => {
   });
 
   // req: ENF-SEC-004
+  it('ends a string at an unescaped newline, as a browser does, and reads the rest as code', () => {
+    for (const css of ['a{b:"x\n}c{d:url(https://evil.example/a)} e{f:"y"}', "a{b:'x\r\nbackground:url(//evil.example/a);c:'}", 'a{b:"x\\\n"} c{d:"z\n;e:url(https://evil.example/a)"}']) {
+      expect(filterCss(css, OPTS), css).not.toContain('evil.example');
+    }
+    // an escaped newline continues the string
+    expect(filterCss('a{content:"x\\\ny"}', OPTS)).toContain('content:"x\\\ny"');
+  });
+
+  // req: ENF-SEC-004
   it('keeps a string that merely contains the word', () => {
     expect(filterCss('q::before{content:"url(a) and @import"}', OPTS)).toContain('content:"url(a) and @import"');
   });

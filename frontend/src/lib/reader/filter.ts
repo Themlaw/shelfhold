@@ -194,10 +194,14 @@ export function filterCss(css: string, options: FilterOptions): string {
   let i = 0;
 
   const readString = (quote: string): string => {
+    // CSS Syntax 3: a string ends at its quote, or BEFORE an unescaped newline (a bad string), where
+    // the rest is read as code again: swallowing up to a later quote would hide a `url()` from here
+    // that a browser runs
     let j = i + 1;
-    while (j < n && css[j] !== quote) j += css[j] === '\\' ? 2 : 1;
-    const text = css.slice(i, Math.min(j + 1, n));
-    i = Math.min(j + 1, n);
+    while (j < n && css[j] !== quote && css[j] !== '\n' && css[j] !== '\r' && css[j] !== '\f') j += css[j] === '\\' ? 2 : 1;
+    const end = j < n && css[j] === quote ? j + 1 : Math.min(j, n);
+    const text = css.slice(i, end);
+    i = end;
     return text;
   };
   const skipBlock = (): void => {
