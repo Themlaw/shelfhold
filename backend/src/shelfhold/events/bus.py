@@ -26,6 +26,7 @@ import sqlalchemy as sa
 import structlog
 from sqlalchemy import Connection
 
+from shelfhold.events.id_keys import CONTENT_ID_SUFFIXES, NON_CONTENT_ID_KEYS
 from shelfhold.events.operating import NOT_NOTIFIED, OPERATING_EVENTS
 from shelfhold.events.waiting_state import WaitingState
 from shelfhold.infrastructure.clock import Clock
@@ -237,6 +238,8 @@ def check_payload(payload: Mapping[str, object], event_type: str | None = None) 
         if key.endswith("_id"):
             if not _ULID.fullmatch(value):
                 raise EventPayloadError(f"{key} must be a ULID")
+            if not key.endswith(CONTENT_ID_SUFFIXES) and key not in NON_CONTENT_ID_KEYS:
+                raise EventPayloadError(f"{key} is not in the closed list of id keys of an event")
         elif key in _ENUM_KEYS:
             allowed = PAYLOAD_ENUMS.get(event_type or "", {}).get(key, _DEFAULT_ENUMS[key])
             if value not in allowed:
