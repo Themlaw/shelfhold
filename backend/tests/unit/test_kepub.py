@@ -14,8 +14,8 @@ import zipfile
 
 import pytest
 
-from shelfhold.infrastructure.xml import safe_parse_xml
-from shelfhold.library.application.kepub import KepubError, kepubify
+from shelfhold.infrastructure.xml import Element, safe_parse_xml
+from shelfhold.library.application.kepub import KepubError, _Serializer, kepubify
 
 XHTML = "{http://www.w3.org/1999/xhtml}"
 
@@ -239,3 +239,71 @@ def test_kepub_never_resolves_entities() -> None:
     )
     result = kepubify(epub(book(**{"OEBPS/chapter1.xhtml": plain})))
     assert "thé au lait.".encode() in read_entry(result, "OEBPS/chapter1.xhtml")
+
+
+MIXED = b"""<?xml version="1.0" encoding="utf-8"?>
+<html xmlns="http://www.w3.org/1999/xhtml"
+      xmlns:epub="http://www.idpf.org/2007/ops"
+      xmlns:xlink="http://www.w3.org/1999/xlink"
+      xmlns:mine="urn:shelfhold:test">
+<head><title>Mixed</title></head>
+<body>
+<p epub:type="chapter">A page with a drawing
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 4 4"><image xlink:href="pic.png"/></svg>
+  and a bare <plain xmlns="">no-namespace</plain> word.</p>
+<p mine:note="kept">A foreign <mine:note>element</mine:note> too.</p>
+</body>
+</html>
+"""
+
+_ADDED = ("koboSpan", "book-inner", "book-columns")  # what the transform itself adds
+
+
+def _shape(root: Element) -> list[tuple[str, tuple[tuple[str, str], ...]]]:
+    """Every element as (tag, attributes), the added spans and divs left out."""
+    return [
+        (element.tag, tuple(sorted(element.attrib.items())))
+        for element in root.iter()
+        if element.get("class") not in _ADDED
+    ]
+
+
+@pytest.mark.req("EF-BIB-015")
+def test_kepub_round_trip_keeps_every_namespace() -> None:
+    """A page that mixes namespaces goes through and comes back tag for tag: an element with
+    no namespace must not become an XHTML one on the way (it needs `xmlns=""`)."""
+    result = kepubify(epub(book(**{"OEBPS/chapter1.xhtml": MIXED})))
+    before = safe_parse_xml(MIXED)
+    after = safe_parse_xml(read_entry(result, "OEBPS/chapter1.xhtml"))
+    assert _shape(after) == _shape(before)
+    assert "".join(after.itertext()) == "".join(before.itertext())
+    # the bare element is still in no namespace, not in the XHTML default one
+    bare = [e for e in after.iter() if not e.tag.startswith("{")]
+    assert [e.tag for e in bare] == ["plain"]
+    assert "".join(bare[0].itertext()) == "no-namespace"
+
+
+@pytest.mark.req("EF-BIB-015")
+def test_kepub_refuses_characters_xml_cannot_write() -> None:
+    # through the entry point: a reference to a character XML 1.0 forbids is refused by the parser
+    for reference in (b"&#0;", b"&#11;", b"&#12;", b"&#31;", b"&#xFFFE;"):
+        page = (
+            b'<?xml version="1.0" encoding="utf-8"?>\n'
+            b'<html xmlns="http://www.w3.org/1999/xhtml"><body><p>before '
+            + reference
+            + b" after</p></body></html>"
+        )
+        with pytest.raises(KepubError) as caught:
+            kepubify(epub(book(**{"OEBPS/chapter1.xhtml": page})))
+        assert caught.value.reason.startswith("xml_")
+    # the writer itself refuses, in text and in attributes, rather than emitting a document
+    # no reader accepts: the parser can never hand it such a character, this is the backstop
+    for bad in ("\x00", "\x0b", "\x0c", "\x1f", "￾", "\ud800"):
+        element = Element(f"{XHTML}p", {})
+        element.text = f"before {bad} after"
+        with pytest.raises(KepubError) as caught:
+            _Serializer().document(element)
+        assert caught.value.reason == "character"
+    element = Element(f"{XHTML}p", {"title": "a\x0cb"})
+    with pytest.raises(KepubError):
+        _Serializer().document(element)
