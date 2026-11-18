@@ -342,7 +342,8 @@ class RestoreGuard:
         The sentinels are read **before** the counters of the database. Order of writes (I39): a
         write session commits `generation + 1` in the database first and re-stamps the sentinel
         after, so at every instant `sentinel <= database` unless a backup was put back (and the
-        epoch of a restore is written the same way: database first). The database only moves
+        epoch of a restore is written the same way: database first; only the first stamp of a
+        new root comes before its row, and the root is not listed yet). The database only moves
         forward. Read in that order, the value of a sentinel is therefore never above the counter
         read after it: a session that overlaps the look can only leave the sentinel behind the
         database (consistent by one step, or `stale` for a root alone), never ahead of it. A
