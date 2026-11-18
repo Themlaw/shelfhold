@@ -31,6 +31,10 @@ CODES: tuple[ErrorCode, ...] = (
     ErrorCode("oidc_unavailable", 503, "admin"),
     ErrorCode("oidc_conflict", 409, "user"),
     ErrorCode("oidc_child_profile", 403, "user"),
+    # an admin links her own account or an adult member's, never another admin's; a link that is
+    # no longer waiting for its confirmation (answered, expired, or another session's)
+    ErrorCode("oidc_admin_target", 403, "user"),
+    ErrorCode("oidc_link_expired", 409, "user"),
     # Sessions (M3 L07): another profile's session answers like one that is not there (no probing)
     ErrorCode("session_not_found", 404, "user"),
     # Household profiles (M3 L05): the rule that refused is in the `reason` extension

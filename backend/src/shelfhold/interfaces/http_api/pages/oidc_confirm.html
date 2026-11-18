@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="$lang">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<meta name="referrer" content="no-referrer">
+<title>$title</title>
+<style>
+body { font-family: system-ui, sans-serif; margin: 0; min-height: 100vh; display: grid;
+  place-items: center; background: #f4f4f2; color: #1d1d1b; }
+@media (prefers-color-scheme: dark) { body { background: #1d1d1b; color: #ececea; } }
+main { width: min(26rem, calc(100vw - 2rem)); }
+dl { margin: 1.25rem 0; }
+dt { margin-top: .75rem; font-size: .875rem; }
+dd { margin: .125rem 0 0; font-weight: 600; overflow-wrap: anywhere; }
+.actions { display: flex; gap: .75rem; margin-top: 1.5rem; }
+button { flex: 1; padding: .6rem; font: inherit; }
+#message { min-height: 1.5rem; margin-top: 1rem; }
+</style>
+</head>
+<body>
+<main id="confirm" data-endpoint="$endpoint" data-csrf-cookie="$csrf_cookie" data-done="$done" data-declined="$declined" data-error="$error">
+<h1>$title</h1>
+<p>$question</p>
+<dl>
+<dt>$identity_label</dt><dd>$identity</dd>
+<dt>$provider_label</dt><dd>$provider</dd>
+<dt>$account_label</dt><dd>$account</dd>
+</dl>
+<div class="actions">
+<button type="button" id="yes">$yes</button>
+<button type="button" id="no">$no</button>
+</div>
+<p id="message" role="alert"></p>
+</main>
+<script>
+const root = document.getElementById("confirm");
+const message = document.getElementById("message");
+const buttons = document.querySelectorAll("button");
+function csrf() {
+  const wanted = root.dataset.csrfCookie + "=";
+  for (const part of document.cookie.split("; ")) {
+    if (part.startsWith(wanted)) return decodeURIComponent(part.slice(wanted.length));
+  }
+  return "";
+}
+async function answer(confirm) {
+  message.textContent = "";
+  buttons.forEach((b) => { b.disabled = true; });
+  let text = root.dataset.error;
+  try {
+    const response = await fetch(root.dataset.endpoint, {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { "Content-Type": "application/json", "X-CSRF-Token": csrf() },
+      body: JSON.stringify({ confirm }),
+    });
+    if (response.ok) {
+      window.location.assign(confirm ? root.dataset.done : root.dataset.declined);
+      return;
+    }
+    const problem = await response.json();
+    if (problem && problem.title) text = problem.title;
+  } catch (error) {
+    // network failure: the generic message stays
+  }
+  message.textContent = text;
+  buttons.forEach((b) => { b.disabled = false; });
+}
+document.getElementById("yes").addEventListener("click", () => answer(true));
+document.getElementById("no").addEventListener("click", () => answer(false));
+</script>
+</body>
+</html>

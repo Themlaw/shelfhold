@@ -229,6 +229,17 @@ class OidcLink(StrEnum):
     CHILD = "child"  # a child profile is never linked
     SUBJECT_TAKEN = "subject_taken"  # the person is another account's
     ACCOUNT_HAS_ANOTHER = "account_has_another"  # the account holds another person of the provider
+    ADMIN_TARGET = "admin_target"  # an admin links her own account or an adult member's, no other
+
+
+@dataclass(frozen=True)
+class OidcIdentityView:
+    """What the holder of an account is shown of a link: the provider and since when, never the
+    `sub`. `linked_by_other`: an admin made it (None: the audit line is no longer there)."""
+
+    issuer: str
+    linked_at: datetime
+    linked_by_other: bool | None
 
 
 class ProofWithdrawnError(Exception):
@@ -249,8 +260,16 @@ class IdentityStore(Protocol):
     def user_by_id(self, user_id: str) -> UserRecord | None: ...
     def oidc_user(self, issuer: str, sub: str) -> UserRecord | None: ...
     def oidc_identity_of(self, user_id: str, issuer: str) -> OidcIdentityRecord | None: ...
+    def oidc_identities_of(self, user_id: str) -> Sequence[OidcIdentityView]: ...
     def link_oidc_identity(
-        self, *, user_id: str, issuer: str, sub: str, now: datetime, audit: AuditEntry
+        self,
+        *,
+        user_id: str,
+        issuer: str,
+        sub: str,
+        now: datetime,
+        audit: AuditEntry,
+        admin_actor: str | None = None,
     ) -> OidcLink: ...
     def session_is_live(self, session_id: str, *, now: datetime) -> bool: ...
     def admins(self) -> Sequence[UserRecord]: ...

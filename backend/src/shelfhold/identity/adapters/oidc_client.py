@@ -15,8 +15,9 @@ that goes to the log and never to the browser:
 - `iss` is the issuer the provider's own discovery document states, and that document names the
   issuer that was configured (a provider that names another one is refused: mix-up);
 - `aud` is this client and nobody else (a list with another audience is refused);
-- `exp` is not past and `iat` not in the future (a minute of leeway for the clocks), `sub` is a
-  plain non-empty string, and `nonce` is the one this flow sent.
+- `exp` is not past and `iat` not in the future (a minute of leeway for the clocks), each a finite
+  date a datetime can hold (a `NaN`, an infinity or `10**20` is a refusal, as is an `auth_time` that
+  is said and is not one); `sub` is a plain non-empty string, and `nonce` is the one this flow sent.
 """
 
 from __future__ import annotations
@@ -24,12 +25,13 @@ from __future__ import annotations
 import asyncio
 import base64
 import json
+import math
 import secrets
 import threading
 from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from typing import Any, TypeGuard, cast
+from typing import Any, cast
 from urllib.parse import quote, urlencode, urlsplit
 
 import structlog
@@ -248,10 +250,12 @@ class AuthlibOidcProvider:
         if audience != self._client_id and audience != [self._client_id]:
             raise OidcRefusedError("audience")  # this client and nobody else
         moment = now.timestamp()
-        exp, iat = claims.get("exp"), claims.get("iat")
-        if not _number(exp) or moment >= exp + LEEWAY.total_seconds():
+        exp, iat = _date(claims.get("exp")), _date(claims.get("iat"))
+        if exp is None or moment >= exp + LEEWAY.total_seconds():
             raise OidcRefusedError("expired")
-        if not _number(iat) or iat > moment + LEEWAY.total_seconds():
+        if iat is None:
+            raise OidcRefusedError("iat")
+        if iat > moment + LEEWAY.total_seconds():
             raise OidcRefusedError("issued_in_the_future")
         sent = claims.get("nonce")
         if not isinstance(sent, str) or not secrets.compare_digest(sent, nonce):
@@ -260,9 +264,23 @@ class AuthlibOidcProvider:
         if not isinstance(sub, str) or not sub or len(sub) > MAX_SUB_LENGTH:
             raise OidcRefusedError("sub")
         stated = claims.get("auth_time")
-        auth_time = datetime.fromtimestamp(stated, UTC) if _number(stated) and stated > 0 else None
+        auth_time = None
+        if stated is not None:  # said, so it has to be a date; it is not believed (see `NEVER`)
+            when = _date(stated)
+            if when is None:
+                raise OidcRefusedError("auth_time")
+            auth_time = datetime.fromtimestamp(when, UTC) if when > 0 else None
         return OidcClaims(issuer=self.issuer, sub=sub, auth_time=auth_time)
 
 
-def _number(value: object) -> TypeGuard[float]:
-    return isinstance(value, int | float) and not isinstance(value, bool)
+MAX_DATE = 253402300799  # 9999-12-31: the last second a datetime can hold
+
+
+def _date(value: object) -> float | None:
+    """A number of seconds that is a date: finite and within what a datetime holds. `NaN`, an
+    infinity or `10**20` (the JSON of a provider may say them) are not dates, never a 500."""
+    if not isinstance(value, int | float) or isinstance(value, bool):
+        return None
+    if not math.isfinite(value) or not 0 <= value <= MAX_DATE:
+        return None
+    return float(value)

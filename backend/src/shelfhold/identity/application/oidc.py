@@ -16,6 +16,7 @@ to start again, as for a passkey).
 from __future__ import annotations
 
 import hashlib
+import ipaddress
 import secrets
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -43,6 +44,18 @@ NEVER = datetime(1970, 1, 1, tzinfo=UTC)
 log = structlog.get_logger()
 
 Purpose = Literal["login", "link"]
+
+
+def flow_group(ip: str) -> str:
+    """The prefix whose flows are counted together: a /48 for IPv6 (whoever holds one holds 65 536
+    /64s, the unit of `address_key`), the address itself for IPv4."""
+    try:
+        parsed = ipaddress.ip_address(ip)
+    except ValueError:
+        return address_key(ip)
+    if isinstance(parsed, ipaddress.IPv6Address) and parsed.ipv4_mapped is None:
+        return "net:" + str(ipaddress.ip_network(f"{parsed}/48", strict=False))
+    return address_key(ip)
 
 
 class OidcError(Exception):
@@ -107,10 +120,36 @@ class OidcFlow:
     session_id: str | None = None  # a link: the session that started it, which must still live
 
 
+@dataclass(frozen=True)
+class PendingLink:
+    """A link the provider has vouched for and the person has not yet confirmed: written only by a
+    POST of the session that started the flow (a page of this site shows it first)."""
+
+    user_id: str
+    session_id: str
+    issuer: str
+    sub: str
+    account: str  # the username the link is for, as the confirmation page says it
+    expires_at: datetime
+
+
 class OidcFlows(Protocol):
-    def issue(self, state: str, flow: OidcFlow, *, owner: str, now: datetime) -> None: ...
+    def issue(self, state: str, flow: OidcFlow, *, owner: str, group: str, now: datetime) -> None:
+        """Raises `OidcUnavailableError` when the owner's prefix or the table is full."""
+        ...
+
     def consume(self, state: str) -> OidcFlow | None:
         """Removed whatever the outcome: a state is used once."""
+        ...
+
+    def hold(self, binder_digest: str, pending: PendingLink, *, now: datetime) -> None:
+        """One pending link per browser (the digest of its flow cookie)."""
+        ...
+
+    def peek(self, binder_digest: str, *, now: datetime) -> PendingLink | None: ...
+
+    def take(self, binder_digest: str, *, now: datetime) -> PendingLink | None:
+        """Removed whatever the outcome: a confirmation is answered once."""
         ...
 
 
@@ -124,6 +163,7 @@ class OidcStart:
 class OidcOutcome:
     purpose: Purpose
     issued: IssuedSession | None = None  # a sign-in: the new session
+    pending: bool = False  # a link vouched for by the provider, waiting for the confirmation
 
 
 def _digest(value: str) -> str:
@@ -155,6 +195,7 @@ class OidcAuth:
         purpose: Purpose,
         *,
         owner: str,
+        group: str,
         user_id: str | None = None,
         session_id: str | None = None,
     ) -> OidcStart:
@@ -170,18 +211,29 @@ class OidcAuth:
                 purpose, nonce, verifier, _digest(binder), now + FLOW_TTL, user_id, session_id
             ),
             owner=owner,
+            group=group,
             now=now,
         )
         return OidcStart(url, binder)
 
     def begin_login(self, *, ip: str) -> OidcStart:
         """Anonymous and cheap to call: each address gets a few a minute (`ThrottledError`)."""
+        self._refuse_while_restore_pending()
         self._auth.reserve_options(ip=ip)
-        return self._begin("login", owner=address_key(ip))  # the limiter's own unit (a /64)
+        # the limiter's own unit (a /64), and the /48 it belongs to
+        return self._begin("login", owner=address_key(ip), group=flow_group(ip))
 
     def begin_link(self, *, user_id: str, session_id: str) -> OidcStart:
         """For the account of a session the caller has already shown to be fresh and an adult's."""
-        return self._begin("link", owner=f"user:{user_id}", user_id=user_id, session_id=session_id)
+        owner = f"user:{user_id}"
+        return self._begin("link", owner=owner, group=owner, user_id=user_id, session_id=session_id)
+
+    def _refuse_while_restore_pending(self) -> None:
+        """After a restore a link removed since the backup is live again: nobody signs in through
+        the provider until the admin has looked and run `restore acknowledge`, as for passkeys.
+        Linking stays open (it adds an entry, it does not revive one)."""
+        if self._store.restore_notice_active():
+            raise OidcUnavailableError("restore_pending")
 
     def finish(
         self,
@@ -234,6 +286,8 @@ class OidcAuth:
     def _finish_login(
         self, claims: OidcClaims, *, ip: str, user_agent: str | None, presented: str | None
     ) -> OidcOutcome:
+        if self._store.restore_notice_active():
+            raise self._refuse("restore_pending", ip, "login")
         user = self._store.oidc_user(claims.issuer, claims.sub)
         if user is None:
             raise self._refuse("no_linked_account", ip, "login")  # no account is ever created here
@@ -257,12 +311,50 @@ class OidcAuth:
             raise self._refuse("link_without_account", ip, "link")
         if not self._store.session_is_live(flow.session_id, now=self._auth.now()):
             raise self._refuse("session_gone", ip, "link")  # closed since the link was asked for
-        outcome = self._auth.link_oidc_identity(
-            user_id=flow.user_id, issuer=claims.issuer, sub=claims.sub, session_id=flow.session_id
+        account = self._store.user_by_id(flow.user_id)
+        if account is None or account.role == "child":
+            raise self._refuse("link_account_gone", ip, "link")
+        # nothing is written yet: the person is shown the link on a page of this site and confirms
+        # it from the session that started the flow (a navigation from the provider carries no
+        # `Strict` cookie, so this return alone cannot tell whose browser it is)
+        try:
+            self._flows.hold(
+                flow.binder_digest,
+                PendingLink(
+                    user_id=flow.user_id,
+                    session_id=flow.session_id,
+                    issuer=claims.issuer,
+                    sub=claims.sub,
+                    account=account.username,
+                    expires_at=self._auth.now() + FLOW_TTL,
+                ),
+                now=self._auth.now(),
+            )
+        except OidcUnavailableError as full:
+            raise self._refuse(full.reason, ip, "link") from None
+        return OidcOutcome("link", pending=True)
+
+    def pending_link(self, binder: str) -> PendingLink | None:
+        """What the confirmation page shows: for the browser that holds the flow cookie only."""
+        return self._flows.peek(_digest(binder), now=self._auth.now())
+
+    def confirm_link(
+        self, *, binder: str, user_id: str, session_id: str, accept: bool
+    ) -> OidcLink | None:
+        """Raises `OidcRefusedError` (nothing pending, another session, a session closed since).
+        None: declined. The pending link is used up whatever the answer."""
+        pending = self._flows.take(_digest(binder), now=self._auth.now())
+        if pending is None:
+            raise self._refuse("link_expired", "-", "link")
+        if (pending.user_id, pending.session_id) != (user_id, session_id):
+            raise self._refuse("link_other_session", "-", "link")
+        if not accept:
+            return None
+        if not self._store.session_is_live(session_id, now=self._auth.now()):
+            raise self._refuse("session_gone", "-", "link")
+        return self._auth.link_oidc_identity(
+            user_id=user_id, issuer=pending.issuer, sub=pending.sub, session_id=session_id
         )
-        if outcome not in (OidcLink.LINKED, OidcLink.UNCHANGED):
-            raise self._refuse(f"link_{outcome.value}", ip, "link")
-        return OidcOutcome("link")
 
 
 __all__ = [
@@ -278,4 +370,6 @@ __all__ = [
     "OidcRefusedError",
     "OidcStart",
     "OidcUnavailableError",
+    "PendingLink",
+    "flow_group",
 ]

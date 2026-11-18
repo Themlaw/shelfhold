@@ -257,7 +257,7 @@ def test_oidc_flows_are_bounded_per_prefix_and_overall() -> None:
         )
     assert flows.consume("s0") is None and flows.consume("s1") is None and flows.consume("s5")
     # a group (a /48 of /64s) keeps six whoever of it asks: the seventh is refused
-    for n in range(10, 12):
+    for n in range(10, 13):
         flows.issue(
             f"s{n}", _flow(), owner=f"ip:2001:db8:1:{n}::/64", group="g:2001:db8:1::/48", now=now
         )

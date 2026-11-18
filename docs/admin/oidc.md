@@ -37,7 +37,8 @@ PKCE (S256), `state` et `nonce`, à usage unique et liés au navigateur qui a co
 d'identité est accepté seulement si sa signature est celle d'une clé publiée par le fournisseur
 (algorithme asymétrique de la liste fermée, jamais `none`), si `iss` est l'émetteur configuré (et
 que la découverte du fournisseur le nomme), si `aud` est ce client **et lui seul**, s'il n'est ni
-expiré ni émis dans le futur, et si le `nonce` est celui envoyé. Toute autre réponse est un refus
+expiré ni émis dans le futur (des dates finies, sans quoi c'est un refus), et si le `nonce` est
+celui envoyé. Toute autre réponse est un refus
 unique : l'écran ne dit pas laquelle des vérifications a échoué (la raison est dans le journal, sans
 jamais un `sub` ni un code).
 
@@ -52,10 +53,30 @@ https, et une redirection n'est jamais suivie.
   15 dernières minutes), `POST /api/v1/auth/oidc/link` renvoie l'adresse du fournisseur ; la
   personne s'y connecte et revient. Action réservée `oidc.link_own` : jamais une clé d'API ni un
   jeton d'appareil, jamais un enfant.
+  Au retour du fournisseur, **rien n'est encore écrit** : une page de Shelfhold dit « lier
+  l'identité X au compte Y ? », et la liaison n'est faite qu'après avoir cliqué sur « Lier », dans
+  la session qui l'a demandée (fraîche, avec son jeton CSRF). Sur un navigateur partagé, quelqu'un
+  d'autre qui se connecte chez le fournisseur ne peut donc pas lier son identité à votre compte.
 - **L'administrateur**, pour un compte existant : `PUT /api/v1/profiles/{id}/oidc` avec le `sub`
-  (action réservée `oidc.link_account`, session fraîche d'un administrateur).
+  (action réservée `oidc.link_account`, session fraîche d'un administrateur). Il peut lier **son
+  propre compte** ou celui d'un **membre adulte**, jamais celui d'un autre administrateur (chacun
+  lie le sien depuis sa session) ni un profil enfant.
 
-Chaque liaison est inscrite à l'audit (le compte, jamais le `sub`).
+Chaque liaison est inscrite à l'audit (le compte, jamais le `sub`), et le titulaire du compte voit
+ses liens (`GET /api/v1/auth/oidc/identities` : le fournisseur, la date, et si un administrateur les
+a faits). Une notification de sécurité au titulaire, et la déliaison, arrivent avec le lot suivant.
+
+## Après une restauration
+
+Tant que l'avis de restauration est actif (`shelfhold status`), la connexion par le fournisseur est
+**suspendue**, comme celle par clé d'accès : un lien retiré depuis la sauvegarde est de nouveau
+vivant. Vérifiez les comptes, puis `shelfhold restore acknowledge`. Lier un compte reste possible.
+
+## Rotation des clés du fournisseur
+
+Un jeton qui ne nomme pas sa clé (`kid`) est **refusé** quand le fournisseur en publie plusieurs
+(pendant une rotation, par exemple) : Shelfhold ne devine pas laquelle utiliser. Un fournisseur
+qui omet le `kid` ne fonctionne que lorsqu'une seule clé est publiée.
 
 ## Fraîcheur d'une session ouverte par OIDC
 

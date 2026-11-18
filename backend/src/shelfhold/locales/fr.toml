@@ -302,6 +302,16 @@ oidc_error = "La connexion par le fournisseur d'identité n'a pas abouti."
 error = "Connexion impossible."
 source = "Code source"
 
+[oidc_confirm]
+title = "Lier une identité à ce compte ?"
+question = "Le fournisseur d'identité vient de confirmer qui vous êtes. Une fois la liaison faite, cette personne pourra se connecter à ce compte."
+identity = "Identité"
+provider = "Fournisseur d'identité"
+account = "Compte Shelfhold"
+yes = "Lier"
+no = "Annuler"
+error = "La liaison n'a pas pu être confirmée. Reconnectez-vous puis recommencez."
+
 [passkeys.unavailable]
 restore_pending = "Une restauration vient d'avoir lieu : la connexion par clé d'accès est suspendue pour tous les comptes. Connectez-vous avec un mot de passe, revoyez les clés d'accès, puis l'administrateur lance « shelfhold restore acknowledge »."
 no_public_url = "Les clés d'accès demandent que l'adresse publique (public_url) soit définie en https:// ou en http://localhost."
@@ -1368,6 +1378,16 @@ cause = "La personne est déjà liée à un autre compte, ou ce compte est déj�
 title = "Un profil enfant n'est jamais lié à un fournisseur d'identité."
 action = "Un enfant se connecte sur l'appareil partagé avec l'aide des parents ; liez plutôt un compte adulte."
 cause = "Le compte est un profil enfant : Shelfhold refuse toute entrée qui ne passe pas par le foyer."
+
+[errors."oidc_admin_target"]
+title = "Un administrateur ne lie pas le compte d'un autre administrateur."
+action = "Chaque administrateur lie son propre compte depuis sa session. Un administrateur peut lier son compte ou celui d'un membre adulte."
+cause = "Lier une identité du fournisseur à un autre administrateur lui donnerait l'accès à ce compte sans qu'il le sache."
+
+[errors."oidc_link_expired"]
+title = "Cette liaison n'attend plus de confirmation."
+action = "Recommencez la liaison depuis votre compte."
+cause = "La liaison a déjà été confirmée ou refusée, elle a expiré, ou la confirmation ne vient pas de la session qui l'a demandée."
 
 [errors."device_token_not_found"]
 title = "Ce jeton d'appareil n'existe pas pour vous."

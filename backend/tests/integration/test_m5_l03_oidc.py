@@ -93,7 +93,11 @@ class World:
         return client.get(f"{parts.path}?{parts.query}", follow_redirects=False, **extra)
 
     def sign_in(self, client: TestClient, *, sub: str | None = None) -> Any:
-        return self.callback(client, self.idp.authorize(self.begin(client), sub=sub))
+        """The whole sign-in; a start the application refuses is that answer, as is."""
+        started = client.get(LOGIN, follow_redirects=False)
+        if started.status_code != 302:
+            return started
+        return self.callback(client, self.idp.authorize(str(started.headers["location"]), sub=sub))
 
     def link_admin(self, username: str, sub: str | None = None) -> Any:
         return self.send(
@@ -350,7 +354,10 @@ def test_oidc_link_from_the_own_fresh_session(world: World) -> None:
     url = started.json()["authorization_url"]
     assert url.startswith(f"{ISSUER}/authorize?")
     answer = world.callback(world.mum, world.idp.authorize(url))
-    assert answer.status_code == 303 and "oidc_error" not in answer.headers["location"]
+    # the provider's answer writes nothing: a page of this site asks, and the POST confirms
+    assert answer.status_code == 303 and answer.headers["location"] == f"{LINK}/confirm"
+    assert world.identities() == []
+    assert world.send(world.mum, "POST", f"{LINK}/confirm", {"confirm": True}).status_code == 204
     assert world.identities() == [(world.ids["mum"], ISSUER, world.idp.sub)]
     assert "oidc.linked" in world.actions()
     # linked: the same person now signs in from another browser

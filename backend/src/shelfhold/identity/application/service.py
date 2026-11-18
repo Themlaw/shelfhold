@@ -36,6 +36,7 @@ from shelfhold.identity.application.ports import (
     NewApiKey,
     NewDeviceToken,
     NewSession,
+    OidcIdentityView,
     OidcLink,
     PasskeyGoneError,
     PasskeyRecord,
@@ -1089,8 +1090,18 @@ class LocalAuth:
             auth_time=by.auth_time if by is not None else None,
         )
         return self._store.link_oidc_identity(
-            user_id=user_id, issuer=issuer, sub=sub, now=self.now(), audit=entry
+            user_id=user_id,
+            issuer=issuer,
+            sub=sub,
+            now=self.now(),
+            audit=entry,
+            admin_actor=by.user_id if by is not None else None,
         )
+
+    def oidc_identities_of(self, principal: Principal) -> Sequence[OidcIdentityView]:
+        """The links of the caller's own account (never another's): the provider and the date, and
+        whether an admin made the link. The identifier itself is not given back."""
+        return self._store.oidc_identities_of(principal.user_id)
 
     # --- API keys ----------------------------------------------------------------------------
 

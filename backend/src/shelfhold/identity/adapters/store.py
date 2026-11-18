@@ -23,6 +23,7 @@ from shelfhold.identity.application.ports import (
     NewPasskey,
     NewSession,
     OidcIdentityRecord,
+    OidcIdentityView,
     OidcLink,
     PasskeyGoneError,
     PasskeyRecord,
@@ -367,8 +368,31 @@ class SqlIdentityStore:
             ).first()
         return None if row is None else _oidc_of(row)
 
+    def oidc_identities_of(self, user_id: str) -> list[OidcIdentityView]:
+        with self._engine.connect() as conn:
+            rows = conn.execute(
+                sa.select(_oidc.c.issuer, _oidc.c.linked_at)
+                .where(_oidc.c.user_id == user_id)
+                .order_by(_oidc.c.linked_at)
+            ).all()
+            actor = conn.execute(
+                sa.select(identity.audit.c.actor_id)
+                .where(identity.audit.c.action == "oidc.linked", identity.audit.c.target == user_id)
+                .order_by(identity.audit.c.at.desc(), identity.audit.c.id.desc())
+                .limit(1)
+            ).first()
+        by_other = None if actor is None else actor[0] != user_id
+        return [OidcIdentityView(r.issuer, r.linked_at, by_other) for r in rows]
+
     def link_oidc_identity(
-        self, *, user_id: str, issuer: str, sub: str, now: datetime, audit: AuditEntry
+        self,
+        *,
+        user_id: str,
+        issuer: str,
+        sub: str,
+        now: datetime,
+        audit: AuditEntry,
+        admin_actor: str | None = None,
     ) -> OidcLink:
         """One transaction under the write lock: the role is read where the row is written, so an
         account turned into a child profile meanwhile is refused, and two links of one person
@@ -380,6 +404,8 @@ class SqlIdentityStore:
                 return OidcLink.NO_ACCOUNT
             if role == "child":
                 return OidcLink.CHILD
+            if admin_actor is not None and role == "admin" and user_id != admin_actor:
+                return OidcLink.ADMIN_TARGET  # an admin never takes another admin's account
             owner = conn.execute(
                 sa.select(_oidc.c.user_id).where(_oidc.c.issuer == issuer, _oidc.c.sub == sub)
             ).scalar()

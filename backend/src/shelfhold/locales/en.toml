@@ -303,6 +303,16 @@
   error = "Unable to connect."
   source = "Source code"
 
+[oidc_confirm]
+  title = "Link an identity to this account?"
+  question = "The identity provider has just confirmed who you are. Once linked, this person will be able to sign in to this account."
+  identity = "Identity"
+  provider = "Identity provider"
+  account = "Shelfhold account"
+  yes = "Link"
+  no = "Cancel"
+  error = "The link could not be confirmed. Sign in again and start over."
+
 [passkeys]
 
   [passkeys.unavailable]
@@ -1399,6 +1409,16 @@
     title = "A child profile is never linked to an identity provider."
     action = "A child signs in on the shared device with the parents' help; link an adult account instead."
     cause = "The account is a child profile: Shelfhold refuses any way in that does not go through the household."
+
+  [errors.oidc_admin_target]
+    title = "An admin does not link another admin's account."
+    action = "Each admin links their own account from their own session. An admin can link their own account or an adult member's."
+    cause = "Linking an identity of the provider to another admin would give it that account without them knowing."
+
+  [errors.oidc_link_expired]
+    title = "This link is no longer waiting for a confirmation."
+    action = "Start the link again from your account."
+    cause = "The link was already confirmed or declined, it expired, or the confirmation does not come from the session that asked for it."
 
   [errors.device_token_not_found]
     title = "This device token does not exist for you."
