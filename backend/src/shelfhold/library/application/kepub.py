@@ -304,7 +304,12 @@ def _wrap_body(body: Element) -> None:
 # --- the writer ----------------------------------------------------------------------------------
 
 
+_FORBIDDEN: Final = re.compile("[\x00-\x08\x0b\x0c\x0e-\x1f\ufffe\uffff\ud800-\udfff]")
+
+
 def _esc_text(text: str) -> str:
+    if _FORBIDDEN.search(text):
+        raise KepubError("character", "a character XML 1.0 cannot write")
     return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
 
@@ -320,16 +325,22 @@ class _Serializer:
 
     The prefixes come from a fixed table (svg, xlink, epub); anything else gets `ns0`, `ns1`, …
     in order of first appearance. The XHTML namespace is the default one, declared on the root.
+    The default namespace in effect is tracked element by element: an element with no namespace
+    under a non-empty default one is written with `xmlns=""`, or it would change space on the
+    way back. The parser can never hand over a character XML 1.0 forbids; the writer refuses one
+    anyway (`KepubError`), rather than emit a document no reader accepts.
     """
 
     def __init__(self) -> None:
-        self._scope: dict[str, str] = {}  # namespace -> prefix; "" is the default namespace
+        self._default: str | None = None  # the default namespace in effect
+        self._prefixes: dict[str, str] = {}  # namespace -> prefix
 
     def document(self, root: Element) -> str:
         return _PROLOG + self._element(root)
 
     def _element(self, el: Element) -> str:
-        saved = dict(self._scope)
+        saved_default = self._default
+        saved_prefixes = dict(self._prefixes)
         decls: list[str] = []
         qname, decl = self._name(el.tag)
         if decl:
@@ -345,42 +356,41 @@ class _Serializer:
         for child in el:
             inner += self._element(child)
             inner += _esc_text(child.tail or "")
-        self._scope = saved
+        self._default = saved_default
+        self._prefixes = saved_prefixes
         return f"{start}/>" if not inner else f"{start}>{inner}</{qname}>"
 
     def _name(self, tag: str) -> tuple[str, str]:
         namespace, local = _split(tag)
         if namespace is None:
+            if self._default:  # a bare element would otherwise ride the default namespace
+                self._default = None
+                return local, 'xmlns=""'
             return local, ""
-        prefix = self._scope.get(namespace)
-        if prefix is None:
-            prefix = _KNOWN_PREFIXES.get(namespace, f"ns{len(self._scope)}")
-            self._scope[namespace] = prefix
-            return (f"{prefix}:{local}" if prefix else local), self._declaration(namespace, prefix)
-        return (f"{prefix}:{local}" if prefix else local), ""
+        if namespace == self._default:
+            return local, ""
+        prefix = self._prefixes.get(namespace)
+        if prefix is not None:
+            return f"{prefix}:{local}", ""
+        if _KNOWN_PREFIXES.get(namespace) == "":  # XHTML rides the default namespace
+            self._default = namespace
+            return local, f'xmlns="{_esc_attr(namespace)}"'
+        prefix = _KNOWN_PREFIXES.get(namespace, f"ns{len(self._prefixes)}")
+        self._prefixes[namespace] = prefix
+        return f"{prefix}:{local}", f'xmlns:{prefix}="{_esc_attr(namespace)}"'
 
     def _attribute_name(self, key: str) -> tuple[str, str]:
         namespace, local = _split(key)
         if namespace is None:
-            return local, ""
+            return local, ""  # an unprefixed attribute is in no namespace, whatever the default
         if namespace == XML_NS:
             return f"xml:{local}", ""  # predefined, never declared
-        prefix = self._scope.get(namespace)
-        if prefix == "":  # an attribute never rides the default namespace
-            prefix = None
+        prefix = self._prefixes.get(namespace)
         if prefix is None:
-            prefix = _KNOWN_PREFIXES.get(namespace, f"ns{len(self._scope)}")
-            if not prefix:
-                prefix = f"ns{len(self._scope)}"
-            self._scope[namespace] = prefix
-            return f"{prefix}:{local}", self._declaration(namespace, prefix)
+            prefix = _KNOWN_PREFIXES.get(namespace) or f"ns{len(self._prefixes)}"
+            self._prefixes[namespace] = prefix
+            return f"{prefix}:{local}", f'xmlns:{prefix}="{_esc_attr(namespace)}"'
         return f"{prefix}:{local}", ""
-
-    @staticmethod
-    def _declaration(namespace: str, prefix: str) -> str:
-        if prefix:
-            return f'xmlns:{prefix}="{_esc_attr(namespace)}"'
-        return f'xmlns="{_esc_attr(namespace)}"'
 
 
 def _write(archive: SafeArchive, changed: dict[str, bytes], out: BinaryIO) -> None:
