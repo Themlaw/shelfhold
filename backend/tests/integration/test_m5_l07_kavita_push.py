@@ -12,6 +12,7 @@ from pathlib import Path
 import pytest
 import sqlalchemy as sa
 
+from shelfhold.infrastructure.content_trust import CONTENT_FILTER
 from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import reading
@@ -19,7 +20,7 @@ from tests.sync_env import sync_env
 
 CFI = {
     "v": 1, "type": "cfi", "cfi": "epubcfi(/6/4!/4/2/1:0)", "totalProgression": 0.9,
-    "filter": "xhtml-neutralizer@v1",
+    "filter": CONTENT_FILTER,
 }  # fmt: skip
 
 

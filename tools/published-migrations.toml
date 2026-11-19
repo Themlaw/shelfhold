@@ -321,6 +321,11 @@ sha256 = "aa34519af06ba1aed29fa1275152e504d1d0d928535af146ed1f8a32c6affb8f"
 since = "1.2"
 
 [[migration]]
+file = "0101_oidc_identity.py"
+sha256 = "b052b7e0b3071b30bc57dc65be876d7f4d2e7a2e9483bca07388a23c0cc4952f"
+since = "1.2"
+
+[[migration]]
 file = "0102_reading_conflict.py"
-sha256 = "0605a4775caaa3c9160fe2be591b504a15aec8bee9c33b745251ec7db7d923b5"
+sha256 = "e5f3947eb9f4e355f8cc5667a3afdc5e78735b42f5817103d4d1a34cf2f9ce00"
 since = "1.2"

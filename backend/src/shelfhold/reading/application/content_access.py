@@ -38,6 +38,7 @@ from urllib.parse import quote
 import sqlalchemy as sa
 
 from shelfhold.identity.public import live_session_ids
+from shelfhold.infrastructure.export_states import LIVE_STATES
 from shelfhold.infrastructure.schema import export, identity, storage
 from shelfhold.infrastructure.secrets.keyring import Keyring
 from shelfhold.infrastructure.secrets.tombstone_aead import hkdf_sha256
@@ -56,6 +57,7 @@ __all__ = [
     "ArchiveSource",
     "ContentAccess",
     "ContentArchive",
+    "ContentChangedError",
     "ContentKey",
     "ContentRefusedError",
     "ExcerptUnavailableError",
@@ -85,6 +87,15 @@ class FullReadNotAllowedError(ValueError):
     reads (ADR-0055 D-P1); anything else is an excerpt."""
 
 
+class ContentChangedError(LookupError):
+    """The file under a full ticket is no longer the one the ticket was made for (replaced between
+    two pages): typed, so that the reader loads the manifest again. Only ever said to the holder of
+    a ticket that is good and whose profile still sees the carrier."""
+
+    def __init__(self) -> None:
+        super().__init__("content changed")
+
+
 class ContentRefusedError(LookupError):
     """The one answer of every refusal of `/content`: a ticket that is not good, a profile that
     may not see, an entry that is not allowed or not there."""
@@ -95,6 +106,11 @@ class ContentRefusedError(LookupError):
 
 class ContentArchive(Protocol):
     def names(self) -> frozenset[str]: ...
+    def fingerprint(self) -> str:
+        """What the file is, cheaply (its registered identity, size and time): a full ticket pins
+        it, so that a file replaced between two pages is refused, not served."""
+        ...
+
     def read(self, name: str) -> bytes: ...
     def close(self) -> None: ...
 
@@ -189,12 +205,11 @@ class ContentAccess:
             ):
                 raise FullReadNotAllowedError
         digest: str | None = None
-        if scope == "excerpt":  # computed now, from the file: refused here when it cannot be cut
-            archive = self.archives.open(carrier_type, carrier_id, "excerpt")
-            try:
-                digest = _digest(archive.names())
-            finally:
-                archive.close()
+        archive = self.archives.open(carrier_type, carrier_id, scope)  # refused here: no copy, or
+        try:  # an excerpt that cannot be cut; a full ticket pins the file, an excerpt its list
+            digest = _digest(archive.names()) if scope == "excerpt" else _pin(archive)
+        finally:
+            archive.close()
         now = self._now()
         expires = now + timedelta(seconds=TICKET_TTL_S)
         key = self._key()
@@ -290,6 +305,8 @@ class ContentAccess:
             names = archive.names()
             if claims.scope == "excerpt" and _digest(names) != claims.entries:
                 raise ContentRefusedError  # the file is not the one the excerpt was cut from
+            if claims.scope == "full" and _pin(archive) != claims.entries:
+                raise ContentChangedError  # replaced since the ticket: load the manifest again
             if entry not in names:
                 raise ContentRefusedError
             body = archive.read(entry)
@@ -358,7 +375,7 @@ class ContentAccess:
             )
             .where(
                 item.c.content_id == content_id,
-                record.c.state == "written",
+                record.c.state.in_(sorted(LIVE_STATES)),
                 account.c.user_id == user_id,
                 account.c.revoked_at.is_(None),
                 account.c.verified_at.is_not(None),
@@ -370,6 +387,10 @@ class ContentAccess:
 
 def _digest(names: Collection[str]) -> str:
     return hashlib.sha256("\n".join(sorted(names)).encode()).hexdigest()
+
+
+def _pin(archive: ContentArchive) -> str:
+    return "fp:" + hashlib.sha256(archive.fingerprint().encode()).hexdigest()
 
 
 def _same(left: str, right: str) -> bool:
