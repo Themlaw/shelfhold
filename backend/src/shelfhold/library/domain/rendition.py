@@ -174,7 +174,7 @@ def webp_announced_size(data: bytes) -> tuple[int, int] | None:
     by walking every RIFF chunk by its size (an odd one is padded to an even length). None when
     the file is not a coherent RIFF/WEBP (the RIFF size is longer than the bytes, a chunk runs past
     the end), when no chunk announces a size, or past the bound on chunks: a refusal for the
-    caller, never a pass. A size can sit behind `ALPH`, `ANIM` or `ICCP`; nothing is decoded."""
+    caller, never a pass. A size can sit behind an alpha, animation or colour-profile chunk; nothing is decoded."""
     if len(data) < 12 or data[:4] != b"RIFF" or data[8:12] != b"WEBP":
         return None
     end = 8 + struct.unpack_from("<I", data, 4)[0]

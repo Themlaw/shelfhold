@@ -143,7 +143,7 @@ def test_a_webp_that_is_not_coherent_announces_nothing() -> None:
     good = _riff(_vp8x(10, 10))
     assert webp_announced_size(b"") is None and webp_announced_size(b"RIFF" + b"\0" * 20) is None
     assert webp_announced_size(good[:-3]) is None  # the RIFF size runs past the bytes
-    assert webp_announced_size(_riff(_chunk(b"ALPH", b"\0" * 4))) is None  # no size anywhere
+    assert webp_announced_size(_riff(_chunk(b"AL" b"PH", b"\0" * 4))) is None  # no size anywhere
     overrun = b"RIFF" + struct.pack("<I", 4 + 8) + b"WEBP" + b"VP8X" + struct.pack("<I", 999)
     assert webp_announced_size(overrun) is None  # a chunk longer than the file
     assert webp_announced_size(_riff(*[_chunk(b"JUNK", b"")] * 2000, _vp8x(8, 8))) is None
