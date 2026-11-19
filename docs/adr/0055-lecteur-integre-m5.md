@@ -79,13 +79,13 @@ Un document `blob:` hérite de la CSP du document qui l'a créé :
 | `style-src-attr` | `'unsafe-inline'` | attributs `style=` omniprésents dans les EPUB |
 | `img-src` | `'self' blob:` | jamais `data:`, jamais d'hôte distant |
 | `font-src` | `'self' blob:` | jamais `data:`, jamais `*` |
-| `media-src` | `'self' blob:` | jamais `*` |
+| `media-src` | `'none'` | le lecteur ne joue ni audio ni vidéo (relecture adverse de #381, C3) ; jamais `*` |
 | `frame-src` | `blob:` | |
 | `worker-src` | `'none'` | `/lire` n'enregistre aucun service worker ni worker ; l'enregistrement de la PWA reste dans la SPA (L16a) |
 | `manifest-src` | `'none'` | le manifeste de la PWA n'est pas lié depuis `/lire` |
 | `connect-src` | `'self'` | pour `fetch` de `/content/*` |
 | `object-src`, `base-uri`, `form-action` | `'none'` | |
-| `frame-ancestors` | `'none'` | ajouté par l'intergiciel |
+| `frame-ancestors` | `'self'` | seul `/lire` ; le reste reste `'none'` (intergiciel). Un document `blob:` hérite de la politique de sa page, `frame-ancestors` compris, et WebKit la vérifie pour le cadre de lecture (mesuré en CI) : `'none'` l'empêchait de s'afficher |
 | `Referrer-Policy` | `no-referrer` | |
 
 **Origines distantes interdites** : toutes. `@import` et `url()` distants dans une CSS ou un attribut `style`, `<link rel="dns-prefetch|preconnect|prefetch">` et toute ressource distante sont refusés. Les métadonnées de la publication (titre, auteur) affichées par `/lire` sont **toujours insérées comme texte**, jamais par `{@html}` (le `style-src 'unsafe-inline'` vaut pour la page elle-même) ; test `test_reader_metadata_rendered_as_text` (L12).
@@ -94,6 +94,7 @@ Un document `blob:` hérite de la CSP du document qui l'a créé :
 - **Audit en L11** des chemins de foliate au commit épinglé qui déplacent des nœuds (`footnotes`, surlignage et `overlayer`, `search`), consigné dans `docs/dependencies.md` ; tout chemin trouvé est écarté ou passe par le filtre.
 - `test_epub_script_never_runs` reçoit le cas « script échappé au filtre puis déplacé par une API DOM » : il doit **échouer sous la seule CSP** (pour documenter la limite) et **réussir avec le filtre**. Les deux barrières sont donc indépendantes pour tout vecteur sauf celui-ci, où le filtre est la barrière.
 - Facultatif, Chromium seulement : `require-trusted-types-for 'script'` sur `/lire` ferme ce cas.
+- **Amorçage (amendé le 2026-11-18, L12, mesuré sur Chromium)** : un `import()` lancé par le script en ligne haché est **refusé** sous `'strict-dynamic'` (la requête hérite de la métadonnée « inséré par l'analyseur »). Le script d'amorçage de `/lire` ajoute donc un `<script type="module">` ; ce module, et tout ce qu'il importe, est de confiance. Un nœud `<script>` déjà bloqué est marqué comme lancé : `importNode` et `cloneNode` ne l'exécutent pas, du balisage réécrit (`createContextualFragment`) si.
 - Les `<link rel="modulepreload">` du HTML de `/lire` sont **filtrés du build** : sous `'strict-dynamic'`, `'self'` est ignoré et ils seraient refusés (rapports de violation bruyants pour les tests qui écoutent `securitypolicyviolation`).
 
 **Invariant pour toute l'origine** : aucune route ne sert des octets fournis par un tiers avec un type JavaScript (`test_no_route_serves_untrusted_bytes_as_script`).
