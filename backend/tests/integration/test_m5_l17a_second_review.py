@@ -35,11 +35,12 @@ def world(monkeypatch: pytest.MonkeyPatch, settings: Settings) -> Iterator[World
 
 class _HostileName(FakeBundles):
     """Un fournisseur dont le nom de bloc tente une injection d'en-tête et de HTML : la route doit
-    le nettoyer deux fois (safe_filename, puis attachment_disposition) et ne montrer que le reste."""
+    le nettoyer deux fois (safe_filename, puis attachment_disposition) et ne montrer que le
+    reste."""
 
     def __init__(self) -> None:
         super().__init__()
-        self.filename = "pwned\"; filename=\"x.cbz'; charset=utf-8; x=y"
+        self.filename = 'pwned"; filename="x.cbz\'; charset=utf-8; x=y'
 
 
 def _session_cookie(client: TestClient) -> tuple[str, str]:
@@ -52,11 +53,6 @@ def _session_cookie(client: TestClient) -> tuple[str, str]:
 # -- le trou : « mal formé » est une seconde page ----------------------------------------------
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="la page 404 d'une requête mal formée est bâtie sur une page nue, sans l'en-tête du "
-    "lecteur (session.py, la branche RequestValidationError de LiteRoute), pas sur celle d'absent",
-)
 def test_second_review_a_malformed_entry_is_the_absent_page(world: World) -> None:
     """« Caché, absent et mal formé : la même page 404 (octet pour octet) » (décisions M5, L17a ;
     routes.py, docstring du module). Une entrée hors bornes — offset, partie, requête trop longue —
@@ -121,9 +117,7 @@ def test_second_review_the_pager_never_announces_hidden_works(world: World) -> N
     kid = signed_in(world, world.kid, "10.0.4.4")
     every = kid.get("/lite/search", params={"q": "Tale"})
     found = {h for h in Links(every.text).hrefs if h.startswith("/lite/works/")}
-    assert found == {
-        f"/lite/works/{world.seed.works[k]}" for k in ("ok", "adult_shelf", "mixed")
-    }
+    assert found == {f"/lite/works/{world.seed.works[k]}" for k in ("ok", "adult_shelf", "mixed")}
     assert not [h for h in Links(every.text).hrefs if "offset=" in h]
     world.clean(every.text)
     hidden_only = kid.get("/lite/search", params={"q": HIDDEN_TITLES["above"]})
@@ -136,7 +130,9 @@ def test_second_review_the_pager_never_announces_hidden_works(world: World) -> N
     for offset in (25, 50, 100000):  # marcher au bout d'une recherche vide ne sort rien du caché
         far = kid.get("/lite/search", params={"q": HIDDEN_TITLES["above"], "offset": offset})
         assert far.status_code == 200, offset
-        assert "/lite/works/" not in far.text, offset  # ni le titre, ni l'adresse d'une œuvre cachée
+        assert "/lite/works/" not in far.text, (
+            offset
+        )  # ni le titre, ni l'adresse d'une œuvre cachée
         assert not [h for h in Links(far.text).hrefs if h.startswith("/lite/works/")], offset
 
 
@@ -203,7 +199,11 @@ def test_second_review_untrusted_forwarded_headers_change_no_link(world: World) 
     assert token
     done = client.post(
         "/lite/sign-in",
-        data={"identifier": world.mum.public_id, "secret": world.mum.secret, "csrf": token.group(1)},
+        data={
+            "identifier": world.mum.public_id,
+            "secret": world.mum.secret,
+            "csrf": token.group(1),
+        },
         headers={**hostile, "Origin": "https://elsewhere.example"},
         follow_redirects=False,
     )
@@ -262,7 +262,8 @@ def test_second_review_a_refused_sign_in_shows_neither_identifier_nor_secret(
 
 
 def test_second_review_a_hostile_block_name_neither_injects_nor_shows_it_raw(
-    monkeypatch: pytest.MonkeyPatch, settings: Settings,
+    monkeypatch: pytest.MonkeyPatch,
+    settings: Settings,
 ) -> None:
     """Le nom du bloc vient du fournisseur : tenté d'injecter, il ne passe ni dans
     Content-Disposition (un seul nom, rien d'autre entre guillemets, aucun retour à la ligne), ni

@@ -24,6 +24,7 @@ from fastapi import Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import RedirectResponse, Response
 from fastapi.routing import APIRoute
+from starlette.concurrency import run_in_threadpool
 
 from shelfhold.identity.public import Principal
 from shelfhold.interfaces.http_api.auth import gate_of
@@ -114,19 +115,20 @@ def message(
     return page_response(page, title=title, body=body, status=status, headers=headers)
 
 
-def absent(who: "Reader") -> LiteStop:
-    """Hidden, unknown and malformed are one answer: this page, byte for byte."""
-    page = who.page
-    return LiteStop(
-        message(
-            page,
-            title=t("lite.not_found_title", page),
-            text=t("lite.not_found_text", page),
-            status=404,
-            href=page.paths.home(),
-            label=t("lite.home", page),
-        )
+def absent_page(page: Page) -> Response:
+    """The one 404 page of `/lite`: hidden, unknown and malformed are this page, byte for byte."""
+    return message(
+        page,
+        title=t("lite.not_found_title", page),
+        text=t("lite.not_found_text", page),
+        status=404,
+        href=page.paths.home(),
+        label=t("lite.home", page),
     )
+
+
+def absent(who: "Reader") -> LiteStop:
+    return LiteStop(absent_page(who.page))
 
 
 def require_tls(request: Request) -> None:
@@ -208,14 +210,10 @@ class LiteRoute(APIRoute):
             except LiteStop as stop:
                 return stop.response
             except RequestValidationError:  # a malformed address or query is an absent thing
-                page = bare_page(request)
-                return message(
-                    page,
-                    title=t("lite.not_found_title", page),
-                    text=t("lite.not_found_text", page),
-                    status=404,
-                    href=page.paths.home(),
-                    label=t("lite.home", page),
-                )
+                try:  # the page of the signed-in reader, as for a hidden Work (the door ran first)
+                    page = (await run_in_threadpool(reader_of, request)).page
+                except LiteStop:  # a form with no one behind it: the bare page
+                    page = bare_page(request)
+                return absent_page(page)
 
         return handler
