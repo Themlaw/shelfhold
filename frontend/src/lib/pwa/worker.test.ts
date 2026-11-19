@@ -181,7 +181,7 @@ describe('what the worker answers', () => {
   });
 
   // req: EF-LEC-012, ENF-SEC-004
-  it.each(['/lire', '/lire/', '/lire/U1', '/lire/U1/page/3?x=1', '/%6cire/U1', '/%4Cire', '/lire%2FU1', '/a/../lire/U1', '/./lire', '//lire', '//lire/U1'])(
+  it.each(['/lire', '/lire/', '/lire/U1', '/lire/U1/page/3?x=1', '/%6cire/U1', '/%4Cire', '/lire%2FU1', '/a/../lire/U1', '/./lire', '//lire', '//lire/U1', '/lire%2F..', '/lire%2F..%2Fx', '/lire%2F%2e%2e'])(
     'test_offline_reader_entry_keeps_reader_csp: %s never gets the shell of the SPA, online or not',
     async (path) => {
       const b = bench();
@@ -238,6 +238,16 @@ describe('what the worker answers', () => {
 });
 
 describe('isReserved', () => {
+  // req: EF-LEC-012, ENF-SEC-004
+  it('one rule with the server: an odd path (dot segment, encoded slash, double slash) has no answer, for every prefix', () => {
+    for (const path of ['/lire%2F..', '/content%2F..%2Fx', '/api%2F..', '/bibliotheque%2Fx', '/bibliotheque/%2e%2e/x', '/a//b', '//x', '/_app/immutable/%2e%2e/x.js']) {
+      expect(isReserved(path), path).toBe(true);
+    }
+    for (const path of ['/', '/bibliotheque/', '/serie/abc', '/_app/immutable/entry/app.js']) {
+      expect(isReserved(path), path).toBe(false);
+    }
+  });
+
   // req: EF-LEC-012, ENF-SEC-004
   it('is decided on the decoded path, and a path that does not decode is reserved', () => {
     expect(isReserved('/lire/x')).toBe(true);

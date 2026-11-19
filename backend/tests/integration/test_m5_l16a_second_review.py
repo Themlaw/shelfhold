@@ -39,12 +39,6 @@ def _client(settings: Settings, build: Path) -> TestClient:
 
 
 @pytest.mark.req("EF-LEC-012", "ENF-SEC-004")
-@pytest.mark.xfail(
-    strict=True,
-    reason="the reader entry is served for a request line whose decoded path leaves the reader"
-    " through its own dot segments, while the worker resolves the same dots and keeps the shell"
-    " of the SPA for it offline (the shell in place of the reader, which L16a promised never)",
-)
 @pytest.mark.parametrize("path", ["/lire%2F..", "/lire%2F..%2Fx", "/lire%2F%2e%2e"])
 def test_offline_reader_entry_keeps_reader_csp_the_entry_is_not_served_where_it_resolves_out(
     settings: Settings, build_dir: Path, path: str

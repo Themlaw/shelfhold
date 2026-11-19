@@ -37,23 +37,24 @@ const RESERVED = new Set(['lire', 'content', 'api', 'healthz', 'readyz', 'openap
 // What is answered from the kept shell: the hashed assets of the build and the manifest.
 const ASSET = /^\/(?:_app\/immutable\/|manifest\.webmanifest$|icons\/)/;
 
-/** Whether the first segment of the path, decoded and with its dot segments resolved, is one the
- * worker leaves to the network. Decided on the decoded path, as the server reads it (`/%6cire` is
- * the reader); a path that does not decode is reserved. */
+/** Whether the worker leaves the path to the network: the first segment of the decoded path is a
+ * reserved one, or the path is odd. A path is odd when its decoded form holds a `.` or `..` segment,
+ * an encoded slash (`%2F`) or a double slash: the server serves no page for it (404), so the worker
+ * never answers it either (no fallback to the shell, and the same for every prefix, `/lire`,
+ * `/content`, `/api`). One rule on both sides (`odd_path` of `spa.py`): the two never read one line
+ * as two paths. A path that does not decode is reserved. */
 export function isReserved(pathname: string): boolean {
+  if (/%2f/i.test(pathname)) return true;
   let decoded: string;
   try {
     decoded = decodeURIComponent(pathname);
   } catch {
     return true;
   }
-  const segments: string[] = [];
-  for (const segment of decoded.split('/')) {
-    if (segment === '' || segment === '.') continue;
-    if (segment === '..') segments.pop();
-    else segments.push(segment);
-  }
-  return RESERVED.has((segments[0] ?? '').toLowerCase());
+  if (decoded.includes('//')) return true;
+  const segments = decoded.split('/');
+  if (segments.some((segment) => segment === '.' || segment === '..')) return true;
+  return RESERVED.has((segments.find((segment) => segment !== '') ?? '').toLowerCase());
 }
 
 /** A name for a build: the cache of the shell changes with the files it holds. */

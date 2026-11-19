@@ -1,6 +1,7 @@
 """Serves the statically built SPA (SvelteKit adapter-static, `fallback: index.html`)."""
 
 from pathlib import Path
+from urllib.parse import unquote
 
 from fastapi import FastAPI
 from fastapi.responses import FileResponse, Response
@@ -22,6 +23,16 @@ IMMUTABLE_PREFIXES = ("_app/immutable/", "reader-entry/assets/")
 READER_SEGMENT = "lire"  # the reader is its own page, under its own policy (ADR-0055)
 READER_DIR = "reader-entry"
 WORKER_FILE = "service-worker.js"
+
+
+def odd_path(raw: str, decoded: str) -> bool:
+    """A request line the SPA never serves as a page: its decoded form holds a `.` or `..` segment,
+    an encoded slash (`%2F`) or a double slash. One rule, shared with the service worker
+    (`isReserved`), so that the server and the worker never read the same line as two different
+    paths: `/lire%2F..` is not the reader for one and a screen of the SPA for the other."""
+    if "%2f" in raw.lower() or "//" in raw or "//" in decoded:
+        return True
+    return any(segment in {".", ".."} for segment in unquote(raw).split("/"))
 
 
 def mount_spa(app: FastAPI, build_dir: Path) -> bool:
@@ -50,8 +61,10 @@ def mount_spa(app: FastAPI, build_dir: Path) -> bool:
 
     @app.api_route("/{path:path}", methods=["GET", "HEAD"], include_in_schema=False)
     def spa(path: str, request: Request) -> Response:
-        if "\0" in path:
-            return Response(status_code=404)
+        raw = request.scope.get("raw_path")
+        raw_path = raw.decode("latin-1").split("?", 1)[0] if isinstance(raw, bytes) else "/" + path
+        if "\0" in path or odd_path(raw_path, "/" + path):
+            return Response(status_code=404)  # neutral: not a page, whatever its first segment says
         if path.split("/", 1)[0] in API_SEGMENTS:  # an API client expects a problem, not a blank
             request_id = getattr(request.state, "request_id", None)
             return build_problem_response(error_code("not_found"), request_id=request_id)

@@ -15,7 +15,7 @@ describe('the second adverse review of L16a', () => {
   // reserved to it: offline, the fetch handler answers the navigation with the kept shell of the
   // SPA — the shell in place of the reader, and less than the server serves as the reader, which
   // the lot claimed never happens.
-  it.fails(
+  it(
     'test_offline_reader_entry_keeps_reader_csp: a request line the server serves as the reader is reserved',
     () => {
       for (const path of ['/lire%2F..', '/lire%2F..%2Fx', '/lire%2F%2e%2e']) {
