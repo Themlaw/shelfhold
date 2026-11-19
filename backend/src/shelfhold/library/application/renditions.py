@@ -24,7 +24,9 @@ import hashlib
 import json
 import os
 import re
-from collections.abc import Callable, Iterable
+import threading
+from collections.abc import Callable, Iterable, Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -44,11 +46,13 @@ from shelfhold.infrastructure.imaging import (
 )
 from shelfhold.infrastructure.schema import catalog, storage
 from shelfhold.infrastructure.volumes import erase_data_path, open_data_folder, write_data_file
+from shelfhold.library.application.kepub import KepubError, kepubify
 from shelfhold.library.domain.content_hash import FILE_HASH_BY
 from shelfhold.library.domain.failures import TombstonedContentError
 from shelfhold.library.domain.rendition import (
+    ALL_KIND_MEDIA,
     DECODABLE_SOURCES,
-    KIND_MEDIA,
+    KEPUB_KIND,
     LOCAL_PROCESSOR,
     Processor,
     RenditionParams,
@@ -66,6 +70,7 @@ __all__ = [
     "STRAY_GRACE",
     "Converter",
     "Rendition",
+    "RenditionBusyError",
     "RenditionService",
     "UnknownSourceError",
     "collect_orphans",
@@ -78,7 +83,16 @@ MAX_RENDITION_BYTES: Final = 128 * 1024 * 1024  # the byte cap of a page: what m
 Converter = Callable[[bytes, RenditionParams, ImageCaps], Reencoded]
 STRAY_GRACE: Final = timedelta(minutes=10)  # a render writes its file, then its row: seconds
 _SHARD: Final = re.compile(r"[0-9a-f]{2}")
-_NAME: Final = re.compile(r"([0-9a-f]{64})\.(jpeg|png)")
+_NAME: Final = re.compile(r"([0-9a-f]{64})\.(jpeg|png|kepub)")
+KEPUB_PARAMS: Final = RenditionParams(kind=KEPUB_KIND)
+MAX_KEPUB_BYTES: Final = 64 * 1024 * 1024  # an EPUB handed to the pure-Python conversion
+# Threads a request may hold in the cache (waiting for a conversion or making one), in all and per
+# profile; conversions that run at once; how long one waits for a conversion slot (seconds).
+MAX_HELD: Final = 8
+MAX_PER_OWNER: Final = 2
+MAX_CONVERTING: Final = 2
+WAIT_S: Final = 1.0
+RETRY_AFTER_S: Final = 5
 _FORMATS: Final = ("WEBP", "AVIF")  # what the worker is allowed to open for a rendition
 
 
@@ -103,6 +117,15 @@ class _Origin:
     place: PlaceRef | None
 
 
+class RenditionBusyError(RuntimeError):
+    """Every thread the cache lends is held (in all, or by this profile): come back in a moment.
+    Said before the cache is looked in, so that it is no oracle on what another profile read."""
+
+    def __init__(self, retry_after_s: int = RETRY_AFTER_S) -> None:
+        super().__init__("rendition busy")
+        self.retry_after_s = retry_after_s
+
+
 class UnknownSourceError(LookupError):
     """No `content` has this identifier: nothing is made for a source that is not one."""
 
@@ -117,7 +140,7 @@ class Rendition:
 
     @property
     def media_type(self) -> str:
-        return KIND_MEDIA[self.kind]
+        return ALL_KIND_MEDIA[self.kind]
 
     @property
     def rel(self) -> str:
@@ -174,8 +197,20 @@ class RenditionService:
         *,
         tombstones: SourceTombstones,
         convert: Converter | None = None,
+        kepub: Callable[[bytes], bytes] | None = None,
+        max_held: int = MAX_HELD,
+        max_per_owner: int = MAX_PER_OWNER,
+        max_converting: int = MAX_CONVERTING,
+        wait_s: float = WAIT_S,
+        max_kepub_bytes: int = MAX_KEPUB_BYTES,
     ) -> None:
         self._tombstones = tombstones
+        self._kepub = kepub or kepubify
+        self._max_held, self._max_per_owner = max_held, max_per_owner
+        self._max_kepub_bytes, self._wait_s = max_kepub_bytes, wait_s
+        self._converting = threading.BoundedSemaphore(max_converting)
+        self._lock = threading.Lock()
+        self._held: dict[str, int] = {}
         self._engine = engine
         self._data = data_dir
         self._clock = clock
@@ -271,6 +306,28 @@ class RenditionService:
         found = Rendition(source, params.kind, key, row.content_hash, row.size)
         return found if self.read(found) is not None else None
 
+    # -- the bound on threads --------------------------------------------------------------
+    @contextmanager
+    def slot(self, owner: str) -> Iterator[None]:
+        """One of the threads the cache lends, for `owner` (a profile): refused at once, with no
+        waiting, when all are held or when this profile holds its share. A caller takes it before
+        it looks in the cache and keeps it until its answer is sent, so that a refusal never tells
+        a cached book from one nobody made."""
+        with self._lock:
+            if (
+                sum(self._held.values()) >= self._max_held
+                or self._held.get(owner, 0) >= self._max_per_owner
+            ):
+                raise RenditionBusyError
+            self._held[owner] = self._held.get(owner, 0) + 1
+        try:
+            yield
+        finally:
+            with self._lock:
+                self._held[owner] -= 1
+                if not self._held[owner]:
+                    del self._held[owner]
+
     # -- making ----------------------------------------------------------------------------
     def render(
         self,
@@ -288,6 +345,8 @@ class RenditionService:
         Raises `UnknownSourceError`, `RemoteProcessorRefusedError` (a remote processor and a
         watermarked file), `UnsupportedSourceError` (not AVIF or WebP) and `ImageRejected`
         (`image.too_large`, `image.decode_failed`, `image.worker_failed`...)."""
+        if params.kind == KEPUB_KIND:
+            raise ValueError("a KEPUB is made by render_kepub, not by the image worker")
         origin = self._origin(content_id)
         source = origin.source
         self._refuse_purged(origin)
@@ -312,9 +371,48 @@ class RenditionService:
         made = self._convert(data, params, caps)  # the worker: its caps, memory, CPU, time; no net
         if made.format.lower() != params.kind or not made.data:
             raise ImageRejected("image.worker_failed", "bad reply", "worker")
-        out_hash = "sha256:" + hashlib.sha256(made.data).hexdigest()
-        rendition = Rendition(source, params.kind, key, out_hash, len(made.data))
-        write_data_file(self._data, rendition.rel, made.data)
+        return self._store(origin, params, key, made.data)
+
+    def render_kepub(self, content_id: str, data: bytes) -> Rendition:
+        """The KEPUB of `data`, the neutralized EPUB read from the content `content_id`, made now
+        if it is not there (rule X4: the caller judged the profile first and read these bytes from
+        the content it names). Pure Python, nothing leaves the host, so nothing here depends on
+        `watermarked`. Bounded by the size of the input, and by the conversions that run at once.
+
+        Raises `UnknownSourceError`, `TombstonedContentError`, `RenditionBusyError` (no conversion
+        slot came free in time) and `KepubError` (not an EPUB it can convert, or too large)."""
+        origin = self._origin(content_id)
+        self._refuse_purged(origin)
+        if len(data) > self._max_kepub_bytes:
+            raise KepubError("too_large", "the EPUB is larger than a KEPUB is made from")
+        # the slot is taken before the cache is looked in and held for a hit too: with every slot
+        # taken a book another profile made is refused like one nobody made (no oracle on it)
+        if not self._converting.acquire(timeout=self._wait_s):
+            raise RenditionBusyError
+        try:
+            key = self._key(KEPUB_PARAMS, data)
+            hit = self._cached(origin.source, KEPUB_PARAMS, key)
+            if hit is not None:
+                return hit
+            made = self._kepub(data)
+            if not made or len(made) > MAX_RENDITION_BYTES:
+                raise KepubError("bad_result", "the conversion gave nothing usable")
+            return self._store(origin, KEPUB_PARAMS, key, made)
+        finally:
+            self._converting.release()
+
+    def kepub_bytes(self, content_id: str, data: bytes) -> bytes:
+        """`render_kepub`, then the bytes, checked against their hash as they are read."""
+        rendition = self.render_kepub(content_id, data)
+        found = self.read(rendition)
+        if found is None:
+            raise KepubError("unavailable", "the file of the KEPUB is gone")
+        return found
+
+    def _store(self, origin: _Origin, params: RenditionParams, key: str, data: bytes) -> Rendition:
+        out_hash = "sha256:" + hashlib.sha256(data).hexdigest()
+        rendition = Rendition(origin.source, params.kind, key, out_hash, len(data))
+        write_data_file(self._data, rendition.rel, data)
         try:
             self._record(rendition, origin)
         except BaseException:

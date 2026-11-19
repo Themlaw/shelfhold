@@ -32979,6 +32979,51 @@
         ]
       }
     },
+    "/opds/kepub/{item_id}": {
+      "get": {
+        "description": "The KEPUB of an exported EPUB volume (one route for both feeds): judged for this\nprofile now (Edition and content, the whole copy only for a profile that does not read it\nelsewhere), made from the neutralized EPUB and kept in the cache of renditions. Everything\nrefused is the 404 of an absent item; a busy cache is 429, said after the profile is\njudged.",
+        "operationId": "opds_kepub",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "item_id",
+            "required": true,
+            "schema": {
+              "title": "Item Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/kepub+zip": {}
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "not-found"
+          },
+          "429": {
+            "description": "rendition-busy"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Détail du problème (RFC 9457)."
+          }
+        },
+        "summary": "Kepub",
+        "tags": [
+          "opds"
+        ]
+      }
+    },
     "/opds/opensearch.xml": {
       "get": {
         "operationId": "opds_opensearch",

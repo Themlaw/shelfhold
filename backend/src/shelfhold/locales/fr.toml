@@ -2992,6 +2992,7 @@ results = "Résultats de la recherche"
 search_description = "Chercher dans la bibliothèque"
 complete = "{title} — Série complète"
 complete_in = "{title} — Série complète ({lang})"
+kepub = "{title} {number} — KEPUB (Kobo)"
 stream = "{title} — lecture page à page"
 excluded = "{count, plural, one {# chapitre exclu} other {# chapitres exclus}} : format non lisible sur liseuse ou fichier indisponible."
 
@@ -3032,6 +3033,7 @@ edition_in = "Édition ({lang})"
 excluded = "{count, plural, one {# chapitre exclu} other {# chapitres exclus}} : format non lisible sur liseuse ou fichier indisponible."
 download_sized = "Télécharger ({mb} Mo)"
 download = "Télécharger"
+kepub = "KEPUB pour Kobo : {number}"
 no_download = "Aucun fichier à télécharger pour cette œuvre."
 
 [errors."source_migration.collision"]

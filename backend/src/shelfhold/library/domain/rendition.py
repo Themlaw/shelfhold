@@ -17,7 +17,9 @@ from dataclasses import dataclass
 from typing import Final
 
 from shelfhold.infrastructure.imaging.rendition_formats import (
+    ALL_KIND_MEDIA,
     DECODABLE_SOURCES,
+    KEPUB_KIND,
     KIND_MEDIA,
     SOURCE_MEDIA,
     source_format,
@@ -25,7 +27,9 @@ from shelfhold.infrastructure.imaging.rendition_formats import (
 )
 
 __all__ = [
+    "ALL_KIND_MEDIA",
     "DECODABLE_SOURCES",
+    "KEPUB_KIND",
     "KIND_MEDIA",
     "LOCAL_PROCESSOR",
     "SOURCE_MEDIA",
@@ -87,8 +91,8 @@ class RenditionParams:
     entry: str | None = None  # the page of an archive (None: the content is one image)
 
     def __post_init__(self) -> None:
-        if self.kind not in KIND_MEDIA:
-            raise ValueError(f"kind must be one of {sorted(KIND_MEDIA)}")
+        if self.kind not in ALL_KIND_MEDIA:
+            raise ValueError(f"kind must be one of {sorted(ALL_KIND_MEDIA)}")
         if not 1 <= self.quality <= 100:
             raise ValueError("quality must be between 1 and 100")
         if self.entry is not None and not 0 < len(self.entry) <= 512:

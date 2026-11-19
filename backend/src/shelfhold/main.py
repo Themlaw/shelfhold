@@ -136,6 +136,7 @@ from shelfhold.reading.application.content_access import (
     NoReadableCopyError,
 )
 from shelfhold.reading.application.continue_reading import ContinueReading
+from shelfhold.reading.application.kepub_delivery import KepubDelivery
 from shelfhold.reading.application.lease import ProgressLease
 from shelfhold.reading.application.page_stream import PageStream
 from shelfhold.reading.application.positions import ReaderPositions
@@ -375,6 +376,10 @@ def create_app(
         )
 
     @cache
+    def kepubs() -> KepubDelivery:  # M5 L20b: a KEPUB for a Kobo, in OPDS and in `/lite`
+        return KepubDelivery(engine, content_access(), renditions())
+
+    @cache
     def thumbnails() -> ThumbnailService:  # the session route and the OPDS one share it
         return ThumbnailService(engine, resolved.data_dir, clock)
 
@@ -511,9 +516,10 @@ def create_app(
             clock.now,
             page_stream,  # M5 L18: OPDS-PSE, a page at a time
             renditions,
+            kepubs,
         ),
         build_lite_router(  # M5 L17a: pages with no script, behind a cookie a token's secret opened
-            lambda: engine, thumbnails, bundles
+            lambda: engine, thumbnails, bundles, kepubs
         ),
         build_kosync_router(  # M4 L47: where the e-reader is, behind the same device token
             kosync, clock.now
@@ -705,6 +711,7 @@ def create_app(
         maintenance_active=MaintenanceMode(engine, clock).probe,  # EF-INT-018
     )
     app.state.content_access = content_access()  # the reader's server side issues tickets from it
+    app.state.renditions = renditions()  # the cache of renditions: one, with its thread bound
     return app
 
 

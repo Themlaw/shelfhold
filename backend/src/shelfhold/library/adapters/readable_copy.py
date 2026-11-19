@@ -50,8 +50,20 @@ class _Open:
         archive: Any,
         allowed: frozenset[str] | None = None,
         pin: str = "",
+        stream: Any = None,
     ) -> None:
         self._stack, self._archive, self._allowed, self._pin = stack, archive, allowed, pin
+        self._stream = stream
+
+    def whole(self, max_bytes: int) -> bytes:
+        """The file itself, for a full scope: an excerpt is never the whole file."""
+        if self._allowed is not None or self._stream is None:
+            raise ValueError("no whole file for an excerpt")
+        self._stream.seek(0)
+        data: bytes = self._stream.read(max_bytes + 1)
+        if len(data) > max_bytes:
+            raise ValueError("the file is larger than the bound")
+        return data
 
     def fingerprint(self) -> str:
         return self._pin
@@ -135,7 +147,7 @@ class ReadableCopies:
                 continue
             pin = f"{row.id}|{row.content_hash}|{stat.st_size}|{stat.st_mtime_ns}"
             if scope == "full":
-                return _Open(stack, archive, None, pin)
+                return _Open(stack, archive, None, pin, stream)
             try:  # an excerpt: the list is the server's, computed from this very file
                 allowed = self._excerpt(row.format, archive)
             except BaseException:
